@@ -486,7 +486,7 @@ fn document(
             summary: component.naming.summary.clone(),
             description: description(ir, component, binding),
             version: ir.version().to_string(),
-            provenance: provenance.clone(),
+            provenance: provenance.stamp(),
             reached_by: (component.reached_by == Reach::Network)
                 .then(|| component.reached_by.as_str()),
         },
@@ -3157,7 +3157,7 @@ struct Info {
     /// Design §10, as structured data rather than only as a comment: a comment is stripped by
     /// everything that round-trips YAML, and it is a tool that asks which model a document came from.
     #[serde(rename = "x-ess-provenance")]
-    provenance: Provenance,
+    provenance: crate::provenance::ArtifactStamp,
     /// Where the specification says this component's callers are.
     ///
     /// Present only where the specification said something — an absent keyword is the model's

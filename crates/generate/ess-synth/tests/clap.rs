@@ -147,10 +147,6 @@ fn review_second_pass_actual_clap_manifest_retains_complete_comment_admission() 
         let plan: serde_json::Value =
             serde_json::from_str(&synthesis.artifacts["plan.json"].contents).unwrap();
         assert_eq!(
-            read.source_digest,
-            plan["provenance"]["source_digest"].as_str().unwrap()
-        );
-        assert_eq!(
             read.contract_digest,
             plan["provenance"]["contract_digest"].as_str().unwrap()
         );

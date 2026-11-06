@@ -1154,9 +1154,9 @@ fn go_handler_package_local_matrix_compiles_runs_and_is_deterministic() {
     }
 }
 
-// Exact ordinary component bytes retained from baseline-run-2 before the port correction.
+// Exact ordinary component bytes retained from baseline-run-2 before the port correction, less
+// the whole-model digest line a generated file no longer stamps.
 const ORIGINAL_COMPONENT: &str = r#"// generated from renewal v1
-// model digest bd9369ee5b13977ab7a12e04821d6e452385a8217163e8ecdbb16c69d6aed911
 // contract digest 6ed5b0073d7232d7638b4c413988e29e5f514366f85af43ec43928ab20545a4a
 // do not edit: regenerate with `ess synthesize`
 

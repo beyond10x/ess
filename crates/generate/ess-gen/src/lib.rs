@@ -14,11 +14,14 @@
 //!
 //! # An artifact says where it came from
 //!
-//! Generated output carries the specification identity, the resolved-model digest, the digest of
-//! the model slice it derives from, and the regeneration command. [`Provenance`] deliberately does
-//! not stamp a compiler or generator build version: a release-only change must not rewrite an
-//! otherwise identical artifact. Every generator emits the content-addressed provenance because an
-//! artifact that cannot say which model produced it is an artifact nobody can audit.
+//! Generated output carries the specification identity, the digest of the model slice it derives
+//! from, and the regeneration command. [`Provenance`] deliberately does not stamp a compiler or
+//! generator build version: a release-only change must not rewrite an otherwise identical
+//! artifact. For the same reason a file does not stamp the whole model's digest: a change outside
+//! a file's slice must not rewrite it, so the whole-model digest is recorded once per run, in the
+//! `.ess-output` record, and not in every file. Every generator emits the content-addressed
+//! provenance because an artifact that cannot say which model produced it is an artifact nobody
+//! can audit.
 //!
 //! # Determinism
 //!

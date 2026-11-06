@@ -89,16 +89,11 @@ impl Fixture {
             "generate", "--path", "model", "--kind", "schema", "--out", "digest",
         ]);
         assert!(generated.status.success(), "{generated:?}");
-        let schema: serde_json::Value = serde_json::from_str(
-            &fs::read_to_string(
-                fixture
-                    .0
-                    .join("digest/schema/events/metering.items.UsageRecorded.schema.json"),
-            )
-            .unwrap(),
+        let state: serde_json::Value = serde_json::from_slice(
+            &fs::read(fixture.0.join("digest/.ess-output/state.json")).unwrap(),
         )
         .unwrap();
-        let digest = schema["x-ess-provenance"]["source_digest"]
+        let digest = state["payload"]["checkpoint"]["ledger"]["owners"][0]["model"]
             .as_str()
             .unwrap();
         fs::write(
@@ -148,16 +143,11 @@ fn parameter_fixture() -> Fixture {
         "parameter-digest",
     ]);
     assert!(generated.status.success(), "{generated:?}");
-    let schema: serde_json::Value = serde_json::from_str(
-        &fs::read_to_string(
-            fixture
-                .0
-                .join("parameter-digest/schema/events/routing.events.UsageRecorded.schema.json"),
-        )
-        .unwrap(),
+    let state: serde_json::Value = serde_json::from_slice(
+        &fs::read(fixture.0.join("parameter-digest/.ess-output/state.json")).unwrap(),
     )
     .unwrap();
-    let digest = schema["x-ess-provenance"]["source_digest"]
+    let digest = state["payload"]["checkpoint"]["ledger"]["owners"][0]["model"]
         .as_str()
         .unwrap();
     fs::write(

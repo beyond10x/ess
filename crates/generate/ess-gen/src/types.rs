@@ -549,9 +549,9 @@ impl serde::Serialize for Additional {
 /// schema, and 2020-12 requires validators to ignore it.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub(crate) struct Attribution {
-    /// Design §10's four facts.
+    /// The system, its version and the digest of the slice the artifact derives from.
     #[serde(flatten)]
-    pub(crate) provenance: Provenance,
+    pub(crate) provenance: crate::provenance::ArtifactStamp,
     /// How to reproduce the artifact carrying it.
     pub(crate) regenerate: &'static str,
 }
@@ -560,7 +560,7 @@ impl Attribution {
     /// Records provenance, and how to reproduce the artifact carrying it.
     pub(crate) fn new(provenance: &Provenance) -> Self {
         Self {
-            provenance: provenance.clone(),
+            provenance: provenance.stamp(),
             regenerate: "ess generate",
         }
     }

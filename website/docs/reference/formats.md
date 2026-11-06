@@ -77,6 +77,17 @@ run, which may hold a pending checkpoint and its binding, is never authoritative
 command that finds the root settled removes it, and `--check` reports it. Releases before `/3` refuse a `/3` checkpoint before
 writing: a settled one as an invalid output state missing `root`, a pending one as an
 unsupported output-state version.
+
+`ess-output-state/4` (unreleased) is `/3` plus an optional `model` on each owner: the digest of
+the whole compiled model an `ess generate` projection was generated from, 64 lowercase hex
+characters. A generated file carries only the digest of the model slice it derives from, so this
+record is where a generation's whole-model digest lives. Every publication writes `/4`; the reader
+accepts `/1` to `/4` and refuses `model` under any earlier version. An adopted owner, and an owner
+of a generator that names no model, records none. A generation over an owner recorded without a
+model digest records one, which is a publication even when no file changes; `--check` does not
+report that as drift. A recorded model digest that differs from the model being generated is
+drift: `--check` reports `.ess-output/state.json` as recording another generation. Releases before
+`/4` refuse a `/4` checkpoint as an unsupported output-state version.
 [Design](https://github.com/beyond10x/ess/blob/main/docs/design/specification-requires-release.md). See [the generation workflow](../guides/generate-artifacts.md#repeated-generation-and-recovery)
 for the filesystem assumptions and recovery command.
 

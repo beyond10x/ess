@@ -139,7 +139,9 @@ fn transport_1_asyncapi_keeps_the_released_0_52_0_bytes() {
             text
         });
     assert_eq!(
-        digest, "e16157db3270fc266628440c35f7c0377d96f265c99890c0efc17775c1fa43f5",
+        // The 0.52.0 bytes less the whole-model digest line the stamp no longer carries.
+        digest,
+        "f2e932d196855249ba9548bf5dddf644654ab3805f8eb23ba18fd0b4df0c10f6",
         "released transported AsyncAPI bytes changed"
     );
 }

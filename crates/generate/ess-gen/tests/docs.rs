@@ -314,7 +314,15 @@ fn every_page_says_which_specification_produced_it() {
             &format!("generated from {} {}", ir.system(), ir.version()),
             "an artifact that cannot say which specification produced it is one nobody can audit",
         );
-        assert_says(text, "model digest", "two checkouts differ by their digest");
+        assert_says(
+            text,
+            "contract digest",
+            "two checkouts differ by the digest of what the page derives from",
+        );
+        assert!(
+            !text.contains("model digest"),
+            "`{path}` stamps the whole model's digest, which moves with every change anywhere"
+        );
         assert_says(
             text,
             "ess generate",

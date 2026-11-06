@@ -9,9 +9,14 @@ use std::{
     path::{Component, Path, PathBuf},
 };
 
-/// Written by every publication: `/2` with the root binding recorded only while a transaction is
-/// pending, so a settled checkpoint names nothing about the machine that wrote it (ess#484).
-pub(super) const FORMAT: &str = "ess-output-state/3";
+/// Written by every publication: `/3` plus, on each owner a generation published, the digest of
+/// the whole model it was generated from (`model`). A generated file stamps only the digest of its
+/// own slice, so this record is where the run's whole-model digest lives.
+pub(super) const FORMAT: &str = "ess-output-state/4";
+/// `/2` with the root binding recorded only while a transaction is pending, so a settled
+/// checkpoint names nothing about the machine that wrote it (ess#484). Read and kept by recovery
+/// and adoption; it records no model digest.
+pub(super) const FORMAT_V3: &str = "ess-output-state/3";
 /// `/1` plus the `producer` that last published into the tree; read and kept by recovery and
 /// adoption. Like `/1`, it records the root binding in every phase.
 pub(super) const FORMAT_V2: &str = "ess-output-state/2";
@@ -286,6 +291,10 @@ pub(super) struct OwnedFile {
 pub(super) struct Owner {
     pub(super) key: OwnerKey,
     pub(super) files: Vec<OwnedFile>,
+    /// The digest of the whole model the owner's files were generated from, when the publication
+    /// named one (`ess generate` does); absent for an adopted owner and in `/1` to `/3`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(super) model: Option<String>,
 }
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -318,6 +327,12 @@ impl Ledger {
         for owner in &self.owners {
             owner.key.validate()?;
             strictly_sorted(owner.files.iter().map(|f| &f.path))?;
+            if let Some(model) = &owner.model {
+                ensure!(
+                    model.len() == 64 && unhex(model)?.len() == 32,
+                    "invalid model digest"
+                );
+            }
             for f in &owner.files {
                 f.path.output()?;
                 f.data.validate()?;
@@ -601,7 +616,8 @@ pub(super) struct Payload {
     pub(super) profile: Profile,
     pub(super) anchor_id: String,
     /// The absolute root the checkpoint is bound to: in every phase of `/1` and `/2`, and in `/3`
-    /// exactly while a transaction is pending. A read binds the root it was read in, in memory.
+    /// and `/4` exactly while a transaction is pending. A read binds the root it was read in, in
+    /// memory.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(super) root: Option<NativePath>,
     /// The root directory's device and inode, recorded with `root`.
@@ -609,8 +625,8 @@ pub(super) struct Payload {
     pub(super) directory: Option<Identity>,
     pub(super) sequence: u64,
     pub(super) checkpoint: Checkpoint,
-    /// The `ess` release that last published into the tree: required in `/2` and `/3`, absent in
-    /// `/1`.
+    /// The `ess` release that last published into the tree: required in `/2`, `/3` and `/4`,
+    /// absent in `/1`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(super) producer: Option<String>,
 }
@@ -626,10 +642,10 @@ impl Payload {
     /// Whether the checkpoint was written in `/1` or `/2`, whose settled form still records the
     /// root binding.
     pub(super) fn legacy(&self) -> bool {
-        self.format != FORMAT
+        !unbound_at_rest(&self.format)
     }
-    /// Move a `/1` or `/2` checkpoint to `/3` without publishing: a recorded producer is kept, and
-    /// this release is recorded where `/1` recorded none.
+    /// Move a `/1`, `/2` or `/3` checkpoint to `/4` without publishing: a recorded producer is
+    /// kept, and this release is recorded where `/1` recorded none.
     pub(super) fn upgrade(&mut self) {
         FORMAT.clone_into(&mut self.format);
         self.producer.get_or_insert_with(|| PRODUCER.to_owned());
@@ -663,11 +679,15 @@ fn canonical(value: &impl Serialize) -> Result<Vec<u8>> {
     bytes.push(b'\n');
     Ok(bytes)
 }
-/// Every checkpoint is written here, so a settled `/3` checkpoint never records the binding the
-/// in-memory payload carries.
+/// Whether a version records the root binding only while a transaction is pending: `/3` and `/4`.
+fn unbound_at_rest(format: &str) -> bool {
+    format == FORMAT || format == FORMAT_V3
+}
+/// Every checkpoint is written here, so a settled `/3` or `/4` checkpoint never records the
+/// binding the in-memory payload carries.
 pub(super) fn encode(payload: &Payload) -> Result<Vec<u8>> {
     let mut stored = payload.clone();
-    if stored.format == FORMAT && matches!(stored.checkpoint, Checkpoint::Idle { .. }) {
+    if unbound_at_rest(&stored.format) && matches!(stored.checkpoint, Checkpoint::Idle { .. }) {
         stored.root = None;
         stored.directory = None;
     }
@@ -692,7 +712,7 @@ pub(super) fn decode(bytes: &[u8]) -> Result<Payload> {
 }
 fn validate(payload: &Payload) -> Result<()> {
     match payload.format.as_str() {
-        FORMAT | FORMAT_V2 => ensure!(
+        FORMAT | FORMAT_V3 | FORMAT_V2 => ensure!(
             payload
                 .producer
                 .as_deref()
@@ -707,6 +727,24 @@ fn validate(payload: &Payload) -> Result<()> {
         _ => bail!("unsupported output-state version"),
     }
     binding(payload)?;
+    // `/4` added the owner's model digest; no earlier version records one.
+    if payload.format != FORMAT {
+        let ledgers: Vec<&Ledger> = match &payload.checkpoint {
+            Checkpoint::Idle { ledger } => vec![ledger],
+            Checkpoint::Staging { transaction }
+            | Checkpoint::Prepared { transaction }
+            | Checkpoint::Committed { transaction }
+            | Checkpoint::Restored { transaction } => vec![&transaction.before, &transaction.after],
+        };
+        ensure!(
+            ledgers
+                .iter()
+                .flat_map(|ledger| &ledger.owners)
+                .all(|owner| owner.model.is_none()),
+            "output-state {} records no model digest",
+            payload.format
+        );
+    }
     ensure!(
         payload.profile == Profile::current(),
         "output-state platform profile mismatch"
@@ -724,24 +762,24 @@ fn validate(payload: &Payload) -> Result<()> {
     }
 }
 /// Each version's binding shape: `/1` and `/2` record `root` and `directory` in every phase;
-/// `/3` records both exactly while a transaction is pending.
+/// `/3` and `/4` record both exactly while a transaction is pending.
 fn binding(payload: &Payload) -> Result<()> {
     let bound = payload.root.is_some() && payload.directory.is_some();
-    if payload.format != FORMAT {
+    let format = &payload.format;
+    if !unbound_at_rest(format) {
         ensure!(
             bound,
-            "output-state {} requires its `root` and `directory` binding",
-            payload.format
+            "output-state {format} requires its `root` and `directory` binding"
         );
     } else if matches!(payload.checkpoint, Checkpoint::Idle { .. }) {
         ensure!(
             payload.root.is_none() && payload.directory.is_none(),
-            "a settled output-state {FORMAT} checkpoint records no `root` or `directory`"
+            "a settled output-state {format} checkpoint records no `root` or `directory`"
         );
     } else {
         ensure!(
             bound,
-            "a pending output-state {FORMAT} checkpoint requires its `root` and `directory` binding"
+            "a pending output-state {format} checkpoint requires its `root` and `directory` binding"
         );
     }
     Ok(())

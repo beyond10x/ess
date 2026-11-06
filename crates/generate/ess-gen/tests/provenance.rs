@@ -173,14 +173,13 @@ fn the_reader_reads_back_every_form_the_writer_emits() {
     ] {
         let read = Provenance::read_digests(text)
             .unwrap_or_else(|| panic!("the {label} form must be readable:\n{text}"));
-        assert_eq!(read.source_digest, provenance.source_digest, "{label}");
         assert_eq!(read.contract_digest, provenance.contract_digest, "{label}");
     }
 }
 
 #[test]
-fn a_text_without_both_digests_reads_as_nothing() {
-    // Fail closed: one digest is not provenance. A file carrying only a model digest — every
+fn a_text_without_a_contract_digest_reads_as_nothing() {
+    // Fail closed: a model digest is not a contract. A file carrying only a model digest — every
     // artifact before wave 7 — must read as unreadable, so its owner treats it as owed.
     let ir = probe("String");
     let provenance = Provenance::of(&ir);
@@ -376,11 +375,9 @@ fn review_profile_is_read_in_all_emissions_and_old_reader_refuses_ordinary_slice
                 "ordinary new slice {path} must be owed by the old text reader"
             );
         } else {
-            assert_eq!(
-                legacy_read(&artifact.contents).unwrap().1,
-                current.contract_digest,
-                "{path}"
-            );
+            // The old reader wanted a whole-model digest beside the contract digest, and no
+            // generated file carries one any more.
+            assert!(legacy_read(&artifact.contents).is_none(), "{path}");
         }
     }
 }
@@ -426,7 +423,9 @@ events:
 #[test]
 fn review_marker_looking_model_content_does_not_override_real_emitted_stamps() {
     let fake = "a".repeat(64);
-    let ir = emission_probe(&format!("Example literal: \"contract_digest\": \"{fake}\""));
+    let ir = emission_probe(&format!(
+        "Example literal: \"source_digest\": \"{fake}\", \"contract_digest\": \"{fake}\""
+    ));
     let mint = ProvenanceMint::new(&ir);
     let mut old_reader_false_admissions = Vec::new();
     for (path, artifact) in ess_gen::generate_all(&ir).unwrap() {
@@ -471,7 +470,7 @@ fn review_conflicting_structured_and_comment_stamps_are_unreadable() {
         let body = artifact
             .contents
             .lines()
-            .skip(4)
+            .skip(3)
             .collect::<Vec<_>>()
             .join("\n");
         assert_eq!(
@@ -545,18 +544,13 @@ fn correction_actual_yaml_requires_complete_matching_paired_attribution() {
             .find(|(path, _)| path.starts_with(kind))
             .unwrap()
             .1;
-        let header: String = artifact.contents.split_inclusive('\n').take(4).collect();
+        let header: String = artifact.contents.split_inclusive('\n').take(3).collect();
         let body: ess_yaml::Value = ess_yaml::from_str(&artifact.contents).unwrap();
         assert!(
             Provenance::read_digests(&artifact.contents).is_some(),
             "{kind}"
         );
-        for field in [
-            "system",
-            "specification_version",
-            "source_digest",
-            "contract_digest",
-        ] {
+        for field in ["system", "specification_version", "contract_digest"] {
             let mut damaged = body.clone();
             damaged["info"]["x-ess-provenance"]
                 .as_mapping_mut()
@@ -625,4 +619,76 @@ fn review_docs_ir_retains_page_profiles_and_does_not_claim_a_flat_stamp() {
             .starts_with("slice-sha256/99:")),
         "generic old-compatible Deserialize is explicitly not profile admission"
     );
+}
+
+#[test]
+fn no_generated_file_stamps_the_whole_model_digest() {
+    // The digest of the whole model moves with every change anywhere in it, so a file carrying
+    // it is rewritten by changes it does not derive from. It is recorded once per run instead.
+    let ir = emission_probe("Ordinary summary.");
+    let model = Provenance::of(&ir).source_digest;
+    let artifacts = ess_gen::generate_all(&ir).unwrap();
+    assert!(!artifacts.is_empty());
+    for (path, artifact) in artifacts {
+        assert!(
+            !artifact.contents.contains(&model),
+            "`{path}` carries the whole-model digest"
+        );
+        assert!(
+            !artifact.contents.contains("model digest")
+                && !artifact.contents.contains("source_digest"),
+            "`{path}` still names a model digest"
+        );
+    }
+    let lines = Provenance::of(&ir).lines();
+    assert_eq!(lines.len(), 3, "{lines:?}");
+    assert!(lines[1].starts_with("contract digest "), "{lines:?}");
+}
+
+#[test]
+fn a_stamp_written_with_the_whole_model_digest_still_reads() {
+    // A file an earlier release wrote: four comment lines, and a `source_digest` beside the
+    // structured copy's contract digest. It must read — as the contract it claims — so a check
+    // calls it stale by its bytes rather than refusing it as unreadable.
+    let ir = probe("String");
+    let provenance = Provenance::of(&ir);
+    let legacy = |prefix: &str| {
+        format!(
+            "{prefix} generated from probe v1\n{prefix} model digest {}\n{prefix} contract digest \
+             {}\n{prefix} do not edit: regenerate with `ess generate`\n",
+            provenance.source_digest, provenance.contract_digest
+        )
+    };
+    let html = format!(
+        "<!--\n  generated from probe v1\n  model digest {}\n  contract digest {}\n  do not \
+         edit: regenerate with `ess generate`\n-->\n",
+        provenance.source_digest, provenance.contract_digest
+    );
+    for text in [legacy("#"), legacy("//"), html] {
+        let read = Provenance::read_digests(&text)
+            .unwrap_or_else(|| panic!("the legacy stamp reads:\n{text}"));
+        assert_eq!(read.contract_digest, provenance.contract_digest);
+    }
+
+    // Paired: the comment and the structured copy must agree about the model digest too.
+    let structured = format!(
+        "info:\n  x-ess-provenance:\n    system: probe\n    specification_version: v1\n    \
+         source_digest: {}\n    contract_digest: {}\n",
+        provenance.source_digest, provenance.contract_digest
+    );
+    let paired = format!("{}{structured}", legacy("#"));
+    assert!(Provenance::read_digests(&paired).is_some(), "{paired}");
+    let current_comment = format!("{}{structured}", provenance.commented("#"));
+    assert!(
+        Provenance::read_digests(&current_comment).is_none(),
+        "a comment without the model digest and a copy with it are two claims"
+    );
+    let damaged = paired.replacen(
+        &format!("# model digest {}", provenance.source_digest),
+        &format!("# model digest {}", "a".repeat(64)),
+        1,
+    );
+    assert!(Provenance::read_digests(&damaged).is_none(), "{damaged}");
+    let malformed = legacy("#").replace(&provenance.source_digest, "not-a-digest");
+    assert!(Provenance::read_digests(&malformed).is_none());
 }

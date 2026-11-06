@@ -94,21 +94,20 @@ impl Fixture {
             .unwrap()
     }
 
-    /// Writes `transport.yaml` with the model real digest, read from a generated schema provenance.
+    /// Writes `transport.yaml` with the model real digest, as the generation of its schemas
+    /// records it.
     fn transport(&self, body: &str) {
         let generated = self.ess(&[
             "generate", "--path", "model", "--kind", "schema", "--out", "digest",
         ]);
         assert!(generated.status.success(), "{generated:?}");
-        let schema = fs::read_to_string(
-            self.0
-                .join("digest/schema/events/metering.items.UsageRecorded.schema.json"),
+        let state: serde_json::Value = serde_json::from_slice(
+            &fs::read(self.0.join("digest/.ess-output/state.json")).unwrap(),
         )
         .unwrap();
-        let schema: serde_json::Value = serde_json::from_str(&schema).unwrap();
-        let digest = schema["x-ess-provenance"]["source_digest"]
+        let digest = state["payload"]["checkpoint"]["ledger"]["owners"][0]["model"]
             .as_str()
-            .unwrap_or_else(|| panic!("no source_digest in {schema}"))
+            .unwrap_or_else(|| panic!("no model digest in {state}"))
             .to_owned();
         fs::write(
             self.0.join("transport.yaml"),
@@ -135,16 +134,10 @@ fn parameter_fixture() -> Fixture {
         "generate", "--path", "model", "--kind", "schema", "--out", "digest",
     ]);
     assert!(generated.status.success(), "{}", text(&generated));
-    let schema: serde_json::Value = serde_json::from_str(
-        &fs::read_to_string(
-            fixture
-                .0
-                .join("digest/schema/events/routing.events.UsageRecorded.schema.json"),
-        )
-        .unwrap(),
-    )
-    .unwrap();
-    let digest = schema["x-ess-provenance"]["source_digest"]
+    let state: serde_json::Value =
+        serde_json::from_slice(&fs::read(fixture.0.join("digest/.ess-output/state.json")).unwrap())
+            .unwrap();
+    let digest = state["payload"]["checkpoint"]["ledger"]["owners"][0]["model"]
         .as_str()
         .unwrap();
     fs::write(

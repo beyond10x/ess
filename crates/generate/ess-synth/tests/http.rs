@@ -368,9 +368,11 @@ fn review_http_payloads_use_slice_profiles_while_neutral_plans_stay_frozen() {
                 read.contract_digest.starts_with("slice-sha256/2:"),
                 "{path}"
             );
-            assert_eq!(
-                read.source_digest,
-                "7d021b6ebe1c4715096f165d6564389be0f46311f67d791ed748f627314d611c"
+            assert!(
+                !artifact
+                    .contents
+                    .contains("7d021b6ebe1c4715096f165d6564389be0f46311f67d791ed748f627314d611c"),
+                "{path} stamps the whole-model digest"
             );
         }
     }
@@ -390,7 +392,6 @@ fn correction_actual_cargo_manifests_keep_their_comment_provenance() {
                     let read = ess_gen::Provenance::read_digests(&artifact.contents);
                     println!("{name}/{}/{path}: {read:?}", target.name());
                     if let Some(read) = read {
-                        assert_eq!(read.source_digest, expected.source_digest);
                         assert_eq!(read.contract_digest, expected.contract_digest);
                     } else {
                         unreadable.push(format!("{name}/{}/{path}", target.name()));

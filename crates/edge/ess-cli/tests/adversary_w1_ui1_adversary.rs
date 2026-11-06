@@ -243,7 +243,7 @@ fn items(path: &str) -> PathBuf {
         .join(path)
 }
 
-/// The source digest of the items toy, as its generated schemas' provenance carries it.
+/// The source digest of the items toy, as the generation of its schemas records it.
 fn digest(dir: &Path) -> String {
     let out = dir.join("schema");
     let model = items("system.yaml");
@@ -261,17 +261,14 @@ fn digest(dir: &Path) -> String {
         "{}",
         String::from_utf8_lossy(&generated.stderr)
     );
-    let commands = out.join("schema/commands");
-    for entry in std::fs::read_dir(&commands).expect("the schemas are written") {
-        let text = std::fs::read(entry.expect("an entry").path()).unwrap_or_default();
-        let Ok(schema) = serde_json::from_slice::<serde_json::Value>(&text) else {
-            continue;
-        };
-        if let Some(digest) = schema["x-ess-provenance"]["source_digest"].as_str() {
-            return digest.trim_start_matches("sha256:").to_owned();
-        }
-    }
-    panic!("no generated schema carries a source digest")
+    // A generated file stamps only its own slice's digest; the run records the model's.
+    let state: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(out.join(".ess-output/state.json")).unwrap())
+            .unwrap();
+    state["payload"]["checkpoint"]["ledger"]["owners"][0]["model"]
+        .as_str()
+        .unwrap_or_else(|| panic!("the generation recorded no model digest: {state}"))
+        .to_owned()
 }
 
 /// `RenameItem` served on `GET /items/{item_id}/titles/{title}`: the path carries both input
