@@ -13,7 +13,7 @@ refs:
 relations:
 - serves: vision:O2
 - decomposes: epic:ess-ui-renderer-neutral-ui
-revision: 3
+revision: 4
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-05T18:11:26Z", actor: "human:timo", revision: 2}
 - {from: "proposed", to: "active", at: "2026-11-05T18:11:26Z", actor: "human:timo", revision: 3}
@@ -56,3 +56,20 @@ Each bullet is a named test in `crates/ui/ess-ui-react/tests/`, red before the c
 
 The terminal renderer's collection, the `ess ui test` steps that act on these controls (their own
 story), and any new `ess-ui/1` key.
+
+## Decisions
+
+The 0.88.0 adversary pass on this unit found six introduced defects; the coordinator decided on
+2026-11-06 that one correction in this wave fixes them all, committed with the pass's cases:
+
+- A drag moves a row only onto a neighbour in the drawn order within its group, so a grouped
+  collection (a board) never moves a row across rows the group does not show.
+- The keyboard move refuses past the first and the last row.
+- A select-all selects only its group's rows, or the collection has one select-all.
+- The drag handle does not pass its click to the row.
+- Under a client sort on another field a reorder is refused or its handle hidden, whichever is the
+  smaller change.
+- The client sort's comparison is a total order (numbers before text), so mixed columns sort
+  consistently.
+- An item column sorts by the field the item shows, or is not sortable unless `sort.allowed` names a
+  row field.
