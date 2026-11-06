@@ -2380,3 +2380,54 @@ fn options_by_last_segments_count_enums_only() {
         "{finding:#?}"
     );
 }
+
+/// A board whose card priorities are one bare request body beside the board in the path
+/// (`story:a-command-route-takes-one-input-as-its-bare-request-body`, beyond10x/ess#748).
+const BOARD: &str = include_str!("../../../specify/ess-http/tests/fixtures/board.yaml");
+
+/// A command route whose `json` body is one input field, bare, is one a generated UI sends: the
+/// binding carries the route and names the field, so a renderer sends that field's value as the
+/// whole body.
+#[test]
+fn a_bare_body_route_is_served_to_a_generated_ui() {
+    let sources = vec![("board.yaml".to_owned(), BOARD.to_owned())];
+    let ir = ess_ui_check::compile_sources(&sources, Path::new("board.yaml"))
+        .unwrap_or_else(|error| panic!("{error}"));
+    let routes = format!(
+        "type: ess-http/1\nspecification:\n  system: catalog\n  version: v1\n  source_digest: \
+         sha256:{}\nroutes:
+  - command: catalog.board.SetCardPriorities
+    method: put
+    path: /boards/{{board_id}}/cards/priority
+    parameters: {{board_id: input.board_id}}
+    request: {{encoding: json, body: input.priorities}}
+",
+        ir.source_digest()
+    );
+    let spec = ess_gen::ess_http::HttpSpec::from_yaml(&routes).expect("parses");
+    let compiled = ess_gen::ess_http::compile(&spec, &ir, &ess_gen::http::derived(&ir))
+        .unwrap_or_else(|refused| panic!("compiles: {refused}"));
+    let bound = ess_gen::http::Binding::new(compiled).expect("every route has a path");
+    let text = "format: ess-ui/1\napp: board\nmodel: catalog\nplacement_profile: fat\n\
+                shells: {app: {regions: {main: {kind: page_outlet}}}}\n\
+                navigation: {home: p, sections: [{name: all, pages: [p]}]}\n\
+                pages: {p: {kind: detail_page, title: Board, sections: [{name: reorder, \
+                component: confirm, does: board.SetCardPriorities, body: Reorder?}]}}\n";
+    let document = ess_ui::load_str(text).unwrap_or_else(|error| panic!("{error}"));
+    let http = ess_ui_check::HttpBinding {
+        path: Path::new("board-http.yaml"),
+        binding: &bound,
+    };
+    let binding = ess_ui_check::binding_over(&document, &sources, Some(http))
+        .unwrap_or_else(|error| panic!("the route is served to a generated UI: {error}"));
+    let route = &binding.components["board-service"].commands["catalog.board.SetCardPriorities"];
+    assert_eq!(route.path, "/boards/{board_id}/cards/priority");
+    assert_eq!(route.method.as_deref(), Some("PUT"));
+    assert_eq!(route.body.as_deref(), Some("priorities"), "{route:#?}");
+    assert_eq!(route.body_alias, None, "{route:#?}");
+    assert!(binding.routed());
+    // The binding's JSON names the body; one without a bare body keeps its bytes.
+    let json = serde_json::to_string(&binding).expect("serialises");
+    assert!(json.contains("\"body\":\"priorities\""), "{json}");
+    assert!(!json.contains("body_alias"), "{json}");
+}

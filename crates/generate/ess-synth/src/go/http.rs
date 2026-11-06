@@ -210,6 +210,9 @@ fn helpers_file(
         } else {
             helpers.push_str(bound::BOUND);
         }
+        if bound::reads_a_bare_body(binding) {
+            helpers.push_str(bound::BARE_BODY);
+        }
         let checks_grant = served(ir, refusals).into_iter().any(|component| {
             http::bound_routes(ir, component, Some(binding))
                 .iter()

@@ -258,17 +258,30 @@ impl HttpAdapter {
         let carried = carried(&route.path_params, &route.path_aliases);
         let method = route.method.as_deref().unwrap_or("POST");
         // A `get` or `head` command carries every input field in its path (checked at generate)
-        // and is sent without a body.
-        let body = (!matches!(method, "GET" | "HEAD")).then(|| {
-            serde_json::Value::Object(
-                input
-                    .iter()
-                    .filter(|(name, _)| !carried.contains(name.as_str()))
-                    .map(|(name, value)| (name.clone(), to_json(value)))
-                    .collect(),
-            )
-            .to_string()
-        });
+        // and is sent without a body. A route that sends one field bare sends its value alone, by
+        // the field's wire name or else its model name; the path carries every other field.
+        let body = match (&route.body, matches!(method, "GET" | "HEAD")) {
+            (_, true) => None,
+            (Some(name), false) => {
+                let value = input
+                    .get(name)
+                    .or_else(|| route.body_alias.as_ref().and_then(|alias| input.get(alias)))
+                    .ok_or_else(|| {
+                        format!("{command}: no value for `{name}`, which the request body carries")
+                    })?;
+                Some(to_json(value).to_string())
+            }
+            (None, false) => Some(
+                serde_json::Value::Object(
+                    input
+                        .iter()
+                        .filter(|(name, _)| !carried.contains(name.as_str()))
+                        .map(|(name, value)| (name.clone(), to_json(value)))
+                        .collect(),
+                )
+                .to_string(),
+            ),
+        };
         self.exchange(
             base,
             method,

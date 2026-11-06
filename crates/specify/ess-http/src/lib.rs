@@ -272,14 +272,27 @@ pub struct RequestSpec {
     /// `refuse` or `ignore`; absent, `refuse`.
     #[serde(default)]
     pub unknown: Option<String>,
+    /// `input.<field>`: the one input field a `json` body carries bare, its JSON value the whole
+    /// body; absent, the body is the input object.
+    #[serde(default)]
+    pub body: Option<String>,
 }
 
 /// A compiled route's `request`. Each key whose value is its default is omitted from the IR, and
 /// a route whose request is all defaults carries none, so two documents that mean the same compile
 /// to the same bytes.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Request {
+    /// The one input field a `json` body carries bare (`input.<field>`), every other input field
+    /// being carried by the path; absent, the body is the input object less what the path
+    /// carries.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "input_body"
+    )]
+    pub body: Option<Source>,
     /// How the request carries the input.
     #[serde(
         default,
@@ -294,6 +307,27 @@ pub struct Request {
         deserialize_with = "omitted_default"
     )]
     pub unknown: Unknown,
+}
+
+impl Request {
+    /// The input field the body carries bare, by its local name, if it carries one.
+    pub fn body_field(&self) -> Option<&str> {
+        self.body.as_ref().map(Source::field)
+    }
+}
+
+/// Reads a compiled request's `body`, which names a command's input field and never a view
+/// parameter.
+fn input_body<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<Source>, D::Error> {
+    match <Source as serde::Deserialize>::deserialize(deserializer)? {
+        source @ Source::Input(_) => Ok(Some(source)),
+        source @ Source::Param(_) => Err(serde::de::Error::custom(format!(
+            "`request.body` is `{source}`; a request body is one input field of a command, \
+             `input.<field>`"
+        ))),
+    }
 }
 
 /// A request key compiled IR writes only when it differs from its default.
@@ -2516,7 +2550,7 @@ fn route_invariants(route: &Route, at: &str) -> Result<(), String> {
         read.push((source, name));
     }
     if let Some(request) = &route.request {
-        request_invariants(route, *request, at)?;
+        request_invariants(route, request, at)?;
     }
     answer_invariants(route, at)
 }
@@ -2883,15 +2917,30 @@ fn headers_invariants(
 
 /// The invariants of one compiled route's `request` (see [`HttpIr::from_json`]): it is on a
 /// command, not all defaults, and admitted for the route's method, with `ignore` beside `form` or
-/// `query` only.
-fn request_invariants(route: &Route, request: Request, at: &str) -> Result<(), String> {
+/// `query` only, and a bare `body` beside `json` only, naming no field the path carries.
+fn request_invariants(route: &Route, request: &Request, at: &str) -> Result<(), String> {
     if let Operation::View(_) = route.operation {
         return Err(format!(
             "`{at}.request` is on {}; a view takes no request",
             route.operation
         ));
     }
-    if request == Request::default() {
+    if let Some(body) = &request.body {
+        if request.encoding != Encoding::Json || route.method == Method::Get {
+            return Err(format!(
+                "`{at}.request.body` is `{body}` beside `{}` on `{}`; a bare body is a `json` \
+                 body, which `get` carries none of",
+                request.encoding, route.method
+            ));
+        }
+        if route.parameters.values().any(|source| source == body) {
+            return Err(format!(
+                "`{at}.request.body` is `{body}`, which the path carries; a field travels in one \
+                 place"
+            ));
+        }
+    }
+    if *request == Request::default() {
         return Err(format!(
             "`{at}.request` holds only defaults; compiled IR omits a request that is a `json` body \
              refusing an unknown key"
@@ -3040,7 +3089,7 @@ impl Refusals {
 /// | `ESS-HTTP-011` | two templates of one component and method that a request path can both match, with a literal beside a variable at the first position they differ: a literal takes no precedence |
 /// | `ESS-HTTP-013` | an operation with no HTTP surface: a command no component accepts, a view no `reached_by: network` component serves |
 /// | `ESS-HTTP-014` | a command on `get` with an input field no variable of the path maps, unless its request is encoded `query` |
-/// | `ESS-HTTP-020` | at `routes[i].request.encoding`: an encoding outside `json`, `form` and `query`, `json` or `form` written on a `get` command, or `query` on a method other than `get` and `delete`; at `routes[i].request.unknown`: a value outside `refuse` and `ignore`, or `ignore` with a `json` body; at `routes[i].request`: `request` on a view |
+/// | `ESS-HTTP-020` | at `routes[i].request.encoding`: an encoding outside `json`, `form` and `query`, `json` or `form` written on a `get` command, or `query` on a method other than `get` and `delete`; at `routes[i].request.unknown`: a value outside `refuse` and `ignore`, or `ignore` with a `json` body; at `routes[i].request`: `request` on a view; at `routes[i].request.body`: `body` on a view, beside `form` or `query`, or on a `get` command, a body that is not `input.<field>` naming an input field of the command, one that is `Optional` or that the path carries, and each other input field the path does not carry |
 /// | `ESS-HTTP-021` | at `routes[i].request.encoding`: a `form` or `query` request carrying an input field whose type has no flat spelling, naming the field and its type. A flat field is a scalar (a primitive other than `Json`, an enum, or a newtype of a scalar), an `Optional` scalar or a `List` of scalars; a field mapped to the path is not carried |
 /// | `ESS-HTTP-022` | at `routes[i].outcomes.<name>`: a key that is not the local name of an outcome of the command, or one listed twice; at `routes[i].outcomes`: `outcomes` on a view; at `routes[i].errors`: `errors` on a view, or on a command none of whose outcomes reports an error without being listed under `outcomes`; at `routes[i].alike`: `alike` on a view, a group of fewer than two names, a name that is not the local name of an outcome of the command, one in two groups or twice in one, or one with no declared answer (neither listed under `outcomes` nor covered by `errors`) |
 /// | `ESS-HTTP-023` | at `routes[i].outcomes.<name>.status`, or `routes[i].errors.status` once for each outcome `errors` covers: a status outside `100..=599`, a `1xx`, a `3xx` other than `301`, `302`, `303`, `307` and `308`, a `2xx` on an outcome with an error, or a `4xx` or `5xx` on one without |
@@ -3996,9 +4045,15 @@ fn extras_changes(
 
 /// A route's `request` keys as written, each absent one as its default, so that writing a default
 /// out is not a change.
-fn written_request(route: &RouteSpec) -> [(&'static str, &str); 2] {
+fn written_request(route: &RouteSpec) -> [(&'static str, &str); 3] {
     let request = route.request.as_ref();
     [
+        (
+            "body",
+            request
+                .and_then(|request| request.body.as_deref())
+                .unwrap_or("absent"),
+        ),
         (
             Encoding::KEY,
             request
@@ -4513,6 +4568,10 @@ fn carried(
     refusals: &mut Refusals,
 ) -> Result<Option<Request>, Refused> {
     let checked = request(spec, operation, method, path, refusals);
+    let bare = match (target, &checked.body) {
+        (Some(target), Some(text)) => bare_body(target, text, mapped, path, refusals),
+        _ => Ok(None),
+    };
     let flat = match (target, checked.encoding) {
         (Some(target), Some(encoding @ (Encoding::Form | Encoding::Query))) => {
             flat_input(target, encoding, mapped, path, refusals)
@@ -4525,10 +4584,89 @@ fn carried(
         }
         _ => false,
     };
-    if checked.refused || !flat || unmapped {
+    match bare {
+        Ok(_) if checked.refused || !flat || unmapped => Err(Refused),
+        Err(Refused) => Err(Refused),
+        Ok(None) => Ok(checked.request),
+        Ok(Some(body)) => Ok(Some(Request {
+            body: Some(body),
+            ..checked.request.unwrap_or_default()
+        })),
+    }
+}
+
+/// The input field a route's `request.body` names (`text`), once it is held to its rules
+/// (`ESS-HTTP-020`, at `routes[i].request.body`): it is `input.<field>` naming an input field of
+/// the command that is not `Optional` and that the path does not carry, and the path carries every
+/// other input field. A body that names no such field is the only refusal reported for it.
+fn bare_body(
+    target: &Target<'_>,
+    text: &str,
+    mapped: &[String],
+    path: &str,
+    refusals: &mut Refusals,
+) -> Result<Option<Source>, Refused> {
+    let at = format!("{path}.request.body");
+    let source = Source::parse(text).filter(|source| matches!(source, Source::Input(_)));
+    let field = source.as_ref().and_then(|source| {
+        target
+            .fields
+            .iter()
+            .find(|field| field.name == source.field())
+    });
+    let rule = match (&source, field) {
+        (None, _) => Some(format!(
+            "`{text}` is not `input.<field>`: a bare request body is one input field of the \
+             command, named by its namespace and its name"
+        )),
+        (Some(source), None) => Some(format!(
+            "`{text}` names no input field: the command declares no input field `{}`",
+            source.field()
+        )),
+        (Some(_), Some(field)) if matches!(field.type_ref, ResolvedTypeRef::Optional { .. }) => {
+            Some(format!(
+                "`{text}` has type `{}`, and a bare body is always present: it is one input \
+                 field that is not `Optional`",
+                field.type_ref
+            ))
+        }
+        (Some(_), Some(field)) if mapped.contains(&format!("input.{}", field.name)) => {
+            Some(format!(
+                "`{text}` is carried by the path already, and a field travels in one place: the \
+                 body is an input field `{}` does not map to a variable of the path",
+                field.name
+            ))
+        }
+        _ => None,
+    };
+    if let Some(rule) = rule {
+        refusals.refuse("ESS-HTTP-020", at, rule);
+        return Err(Refused);
+    }
+    let Some(source) = source else {
+        return Err(Refused);
+    };
+    let mut refused = false;
+    for other in target.fields {
+        if other.name == source.field() || mapped.contains(&format!("input.{}", other.name)) {
+            continue;
+        }
+        refusals.refuse(
+            "ESS-HTTP-020",
+            at.as_str(),
+            format!(
+                "input field `{}` is in neither the path nor the body: a route whose body is \
+                 `{text}` carries every other input field in its path, so map `{}` to a variable \
+                 of the path",
+                other.name, other.name
+            ),
+        );
+        refused = true;
+    }
+    if refused {
         Err(Refused)
     } else {
-        Ok(checked.request)
+        Ok(Some(source))
     }
 }
 
@@ -4536,16 +4674,21 @@ fn carried(
 struct Checked {
     /// Whether it earned a refusal (`ESS-HTTP-020`).
     refused: bool,
-    /// The compiled request when it earned none; `None` when it is all defaults.
+    /// The compiled request when it earned none, without its `body`; `None` when it is all
+    /// defaults.
     request: Option<Request>,
     /// The encoding, when it is one of the set and admitted for the route's method; `None` when it
     /// was refused, which leaves the input it would carry unchecked.
     encoding: Option<Encoding>,
+    /// `request.body` as written, when the encoding and the method admit one; the input field it
+    /// names is [`bare_body`]'s to check.
+    body: Option<String>,
 }
 
 /// Holds a route's `request` to its rules (`ESS-HTTP-020`): no `request` on a view, an encoding of
 /// the set that the method admits when one is written (`query` on `get` or `delete` only, and on
-/// `get` nothing else written), and an `unknown` of the set, `ignore` only beside `form` or `query`. An absent
+/// `get` nothing else written), an `unknown` of the set, `ignore` only beside `form` or `query`,
+/// and a `body` only beside `json` off `get` ([`view_request`], [`admitted_body`]). An absent
 /// `request` is a `json` body refusing an unknown key, which a `get` command is in stage 1.
 fn request(
     spec: &RouteSpec,
@@ -4559,22 +4702,11 @@ fn request(
             refused: false,
             request: None,
             encoding: Some(Encoding::Json),
+            body: None,
         };
     };
     if let Operation::View(_) = operation {
-        refusals.refuse(
-            "ESS-HTTP-020",
-            format!("{path}.request"),
-            format!(
-                "{operation} takes no `request`: a view reads its parameters from the path and the \
-                 query string"
-            ),
-        );
-        return Checked {
-            refused: true,
-            request: None,
-            encoding: None,
-        };
+        return view_request(written, operation, path, refusals);
     }
     let mut refused = false;
     let parsed = match written.encoding.as_deref() {
@@ -4643,17 +4775,86 @@ fn request(
         );
         refused = true;
     }
+    let body = written
+        .body
+        .as_deref()
+        .and_then(|text| admitted_body(text, method, parsed, path, refusals));
+    refused |= written.body.is_some() && body.is_none();
     let request = match (refused, encoding, unknown) {
-        (false, Some(encoding), Some(unknown)) => {
-            Some(Request { encoding, unknown }).filter(|request| *request != Request::default())
-        }
+        (false, Some(encoding), Some(unknown)) => Some(Request {
+            body: None,
+            encoding,
+            unknown,
+        })
+        .filter(|request| *request != Request::default()),
         _ => None,
     };
     Checked {
         refused,
         request,
-        encoding,
+        // A refused body leaves the input it would carry unchecked, as a refused encoding does.
+        encoding: encoding.filter(|_| body.is_some() || written.body.is_none()),
+        body,
     }
+}
+
+/// A view's `request`, always refused (`ESS-HTTP-020`): at `routes[i].request.body` when it
+/// writes a body, at `routes[i].request` otherwise.
+fn view_request(
+    written: &RequestSpec,
+    operation: &Operation,
+    path: &str,
+    refusals: &mut Refusals,
+) -> Checked {
+    let (at, rule) = match &written.body {
+        Some(body) => (
+            format!("{path}.request.body"),
+            format!(
+                "{operation} takes no request body (`{body}`): a view reads its parameters from \
+                 the path and the query string"
+            ),
+        ),
+        None => (
+            format!("{path}.request"),
+            format!(
+                "{operation} takes no `request`: a view reads its parameters from the path and \
+                 the query string"
+            ),
+        ),
+    };
+    refusals.refuse("ESS-HTTP-020", at, rule);
+    Checked {
+        refused: true,
+        request: None,
+        encoding: None,
+        body: None,
+    }
+}
+
+/// `request.body` as written (`text`), when a `json` body off `get` carries it; otherwise refused
+/// at `routes[i].request.body` (`ESS-HTTP-020`) and `None`. An encoding outside the set (`parsed`
+/// `None`) is refused by its own key, and leaves the body to [`bare_body`].
+fn admitted_body(
+    text: &str,
+    method: Option<Method>,
+    parsed: Option<Encoding>,
+    path: &str,
+    refusals: &mut Refusals,
+) -> Option<String> {
+    let rule = match (method, parsed) {
+        (_, Some(encoding @ (Encoding::Form | Encoding::Query))) => format!(
+            "`body: {text}` carries one input field as a bare `json` body, and a `{encoding}` \
+             request carries every field under its own key; a route with a bare body is encoded \
+             `json`"
+        ),
+        (Some(Method::Get), Some(Encoding::Json)) => format!(
+            "`body: {text}` carries one input field as the request body, and `get` carries none; \
+             a command with a bare body is bound to `post`, `put`, `patch` or `delete`"
+        ),
+        _ => return Some(text.to_owned()),
+    };
+    refusals.refuse("ESS-HTTP-020", format!("{path}.request.body"), rule);
+    None
 }
 
 /// Refuses each input field a `form` or `query` request carries, every one the path does not map,

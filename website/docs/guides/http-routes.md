@@ -149,6 +149,10 @@ The document follows those keys on the routes that use them:
   on a `get` or a `delete` command, removes the request body, and each input field the path does
   not carry becomes an `in: query` parameter under its wire name (a `List` repeats its key,
   `style: form`, `explode: true`, and is not required: an absent key is the empty list).
+- `body: input.<field>` beside `encoding: json` (or no `encoding`) sends that one input field as
+  the whole request body, bare: the request body's schema is the field's own, a list
+  `{type: array, items: …}`, and no `{command}.Input` is written. The field may not be `Optional`,
+  and the path must carry every other input field.
 - A view's parameter the path does not carry is an `in: query` parameter under the parameter's flat
   `wire:` when it declares one, and both generated servers read it under that name only.
 - Each declared status is its own response. `body: response` answers the command's response

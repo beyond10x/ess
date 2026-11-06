@@ -804,8 +804,19 @@ pub fn carried<'a>(ir: &'a EssIr, route: &Route<'a>) -> std::collections::BTreeS
 pub fn request(route: &Route<'_>) -> ess_http::Request {
     route
         .declared
-        .and_then(|declared| declared.request)
+        .and_then(|declared| declared.request.clone())
         .unwrap_or_default()
+}
+
+/// The input field of `command` a bound route takes as its whole request body, bare
+/// (`request: {body: input.<field>}`), its JSON value the body; every other input field is carried
+/// by the path. `None` for a route whose body is the input object, and for a derived route.
+pub fn bare_body<'a>(
+    command: &'a ess_compiler::ir::ResolvedCommand,
+    declared: Option<&ess_http::Route>,
+) -> Option<&'a ess_compiler::ir::ResolvedField> {
+    let name = declared?.request.as_ref()?.body_field()?;
+    command.input.iter().find(|field| field.name == name)
 }
 
 /// The answer a bound route declares for `outcome`: the one it lists under `outcomes`, else its

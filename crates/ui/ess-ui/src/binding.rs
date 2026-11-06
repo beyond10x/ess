@@ -48,19 +48,18 @@ impl Binding {
             .find_map(|served| served.views.get(qualified))
     }
 
-    /// Whether any route leaves the derived surface's method or carries a path parameter: what
-    /// an `ess-http/1` binding moves (beyond10x/ess#713). A renderer that reads only paths needs
-    /// nothing more when this is `false`.
+    /// Whether any route leaves the derived surface's method, carries a path parameter or takes
+    /// one input field as its bare body: what an `ess-http/1` binding moves (beyond10x/ess#713,
+    /// #748). A renderer that reads only paths needs nothing more when this is `false`.
     pub fn routed(&self) -> bool {
         self.components.values().any(|served| {
             served
                 .views
                 .values()
                 .any(|route| route.method.is_some() || !route.path_params.is_empty())
-                || served
-                    .commands
-                    .values()
-                    .any(|route| route.method.is_some() || !route.path_params.is_empty())
+                || served.commands.values().any(|route| {
+                    route.method.is_some() || !route.path_params.is_empty() || route.body.is_some()
+                })
         })
     }
 }
@@ -198,6 +197,16 @@ pub struct CommandRoute {
     /// when empty.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub path_aliases: BTreeMap<String, String>,
+    /// The input field whose value is the whole request body, by the name the input carries it
+    /// under, where an `ess-http/1` binding takes one bare (`request: {body: input.<field>}`);
+    /// the path carries every other input field. Absent from the JSON otherwise.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub body: Option<String>,
+    /// [`Self::body`]'s field by its model name, where it is renamed on the wire: a `bind` may
+    /// send the field under either name, and the body is the other's value when the wire name
+    /// holds none. Absent from the JSON otherwise.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub body_alias: Option<String>,
     /// Whether a request must carry a body (`ess_gen::http::body_required`).
     pub body_required: bool,
     /// Every declared error the command can answer, by its wire code (the `error` member of a

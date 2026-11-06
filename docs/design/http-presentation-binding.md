@@ -312,6 +312,35 @@ default, `refuse`, keeps ESS's closed bodies. A key whose percent-decoding fails
 because every declared name is UTF-8, so it is unknown: ignored with its value under `ignore`, and
 malformed under `refuse`.
 
+A `json` request may take one input field as its whole body, bare: `request: {encoding: json,
+body: input.<field>}` (`encoding` may be left out). The field's JSON value is the body: a list,
+an object, a string or a number, as the field's type is, never wrapped in the input object. It
+mirrors `response.<field>` on the response side
+(`story:a-command-route-takes-one-input-as-its-bare-request-body`, beyond10x/ess#748):
+
+```yaml
+  - command: demo.board.SetCardPriorities
+    method: put
+    path: /boards/{board_id}/cards/priority
+    parameters: {board_id: input.board_id}
+    request: {encoding: json, body: input.priorities}   # body: [{"id": "c-1", "priority": 1}]
+```
+
+- The body names one input field of the command that is not `Optional`, by `input.<field>`, and
+  the path does not carry it.
+- The path carries every other input field. `ess-http/1` has no per-field query placement beside
+  a JSON body, so a field left in neither place is refused rather than moved to the query string.
+- `body` is refused beside `form` or `query`, on a `get` command (which carries no body) and on a
+  view (which takes no request).
+- OpenAPI writes the field's own schema as the request body's (`{type: array, items: …}` for a
+  list), and no `{command}.Input` object. The Rust and Go servers read the body as the input object
+  holding that field alone, so a body of the wrong shape is `malformed`, as a wrong member type is.
+  The generated UIs (React and terminal) send the field's value alone as the body, under its wire
+  name or else its model name in the input a `bind` gives.
+- Compiled IR writes `body` only when it is declared, so every binding without one compiles to the
+  bytes it compiled to before. No format version: a reader without the key refuses `request.body`
+  as an unknown field by name, as stage 1 refused every stage-2 key.
+
 ### Response body per outcome
 
 | `body` | for | wire |
@@ -459,7 +488,7 @@ can answer a malformed request with its own error while the binding's other rout
 
 | code | refused | names |
 |---|---|---|
-| `ESS-HTTP-020` | an encoding outside the set; `form` or `json` on `get`; `query` on anything but `get` or `delete`; `request:` on a view; `unknown: ignore` with `json`, or an `unknown` value outside `refuse` and `ignore` | `routes[i].request.encoding` or `routes[i].request.unknown` |
+| `ESS-HTTP-020` | an encoding outside the set; `form` or `json` on `get`; `query` on anything but `get` or `delete`; `request:` on a view; `unknown: ignore` with `json`, or an `unknown` value outside `refuse` and `ignore`; a `body` on a view, beside `form` or `query`, or on a `get` command, one that is not `input.<field>` naming an input field of the command, one naming an `Optional` field or a field the path carries, and each other input field the path does not carry | `routes[i].request.encoding`, `routes[i].request.unknown` or `routes[i].request.body`, and for a field left out, the field |
 | `ESS-HTTP-021` | a `form` or `query` field whose type has no flat spelling (struct, nested list, map, `Json`) | the field and its type |
 | `ESS-HTTP-022` | an `outcomes:` key that is not an outcome of the command, or `outcomes:` on a view; `errors:` on a view, or on a route whose command has no outcome with `error` that `outcomes:` leaves unlisted; `alike:` on a view, or a group of one, a name that is not an outcome of the command, one in two groups or twice in one, or one with no declared answer | `routes[i].outcomes.<name>`, `routes[i].errors` or `routes[i].alike` |
 | `ESS-HTTP-023` | a status outside `100..=599`, in a class the outcome may not use, or a `3xx` other than `301`, `302`, `303`, `307` and `308` | the outcome, the status, the class |

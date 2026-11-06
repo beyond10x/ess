@@ -843,7 +843,26 @@ fn command(
     let request = http::request(route);
     let variables = !http::path_fields(ir, route).is_empty();
     let ignore = request.unknown == ess_http::Unknown::Ignore;
+    let bare = http::bare_body(command, route.declared);
     let read = match request.encoding {
+        // One input field's value is the whole body: read as the object holding that field alone,
+        // or, where the body is not required, no body as the input `{}`.
+        Encoding::Json if bare.is_some() => {
+            let wire = bare.map(ess_gen::schema::wire_field_name).unwrap_or_default();
+            let held = format!(
+                "json::Value::Object(vec![({wire:?}.to_owned(), http::json_body(&request.body, \
+                 true)?)])"
+            );
+            if http::body_required_without(command, &http::carried(ir, route)) {
+                held
+            } else {
+                format!(
+                    "if http::body_text(&request.body)?.trim().is_empty() {{\n            \
+                     json::Value::Object(Vec::new())\n        }} else {{\n            {held}\n        \
+                     }}"
+                )
+            }
+        }
         Encoding::Json => format!(
             "http::json_body(&request.body, {})?",
             http::body_required_without(command, &http::carried(ir, route))

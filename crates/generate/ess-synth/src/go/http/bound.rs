@@ -983,6 +983,38 @@ func boundMethodNotAllowed(allowed []string) response {
 /// The imports [`BOUND`] needs beyond the ones the helpers file always has.
 pub(super) const IMPORTS: [&str; 5] = ["net/url", "sort", "strings", "unicode", "unicode/utf8"];
 
+/// The reader of a bare request body (`request: {body: input.<field>}`), which follows [`BOUND`]
+/// only in a surface whose binding declares one, so every other bound surface keeps its bytes.
+pub(super) const BARE_BODY: &str = r#"
+// bareBody reads a `json` body whose whole value is the one input field `wire`, as the input
+// object holding that field alone: read as jsonBody reads a body, the value kept as a member of
+// the body is. Where the body is not required, no body, or one of only whitespace, is the input {}.
+func bareBody(body []byte, required bool, wire string) (any, error) {
+	if !utf8.Valid(body) {
+		return nil, fmt.Errorf("the body is not UTF-8")
+	}
+	if !required && len(bytes.TrimSpace(body)) == 0 {
+		return map[string]any{}, nil
+	}
+	value, err := parseJSON(string(body))
+	if err != nil {
+		return nil, fmt.Errorf("the body is not JSON: %s", err)
+	}
+	return map[string]any{wire: memberValue(value)}, nil
+}
+"#;
+
+/// Whether a route of `binding` takes one input field as its bare request body, which the surface
+/// reads with [`BARE_BODY`].
+pub(super) fn reads_a_bare_body(binding: &http::Binding) -> bool {
+    binding.ir().routes().iter().any(|route| {
+        route
+            .request
+            .as_ref()
+            .is_some_and(|request| request.body.is_some())
+    })
+}
+
 /// The route match of a bound surface: every row of the table, in path order, tried in turn.
 ///
 /// Every row is matched against the path as the request line spells it (`spelledPath`), as the
@@ -1253,7 +1285,16 @@ fn command(
     let method = layout.declared(&command.name);
     let request = http::request(route);
     let ignore = request.unknown == ess_http::Unknown::Ignore;
+    let bare = http::bare_body(command, route.declared);
     let read = match request.encoding {
+        Encoding::Json if bare.is_some() => format!(
+            "bareBody(body, {}, {})",
+            http::body_required_without(command, &http::carried(ir, route)),
+            go_string(
+                bare.map(ess_gen::schema::wire_field_name)
+                    .unwrap_or_default()
+            )
+        ),
         Encoding::Json => format!(
             "jsonBody(body, {}, []string{{{}}})",
             http::body_required_without(command, &http::carried(ir, route)),

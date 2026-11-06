@@ -1752,3 +1752,6 @@ mod adversary_u9d_pass1;
 
 #[path = "answer_forms.rs"]
 mod answer_forms;
+
+#[path = "board_routes.rs"]
+mod board_routes;

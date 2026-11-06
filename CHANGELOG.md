@@ -5,6 +5,7 @@
 ### Added
 
 - `ess-ui/1`: a field `as: tags` takes `suggests: {reads, value}`, the values the input offers: one per row of the read, its `value` field (default `name`), or the row itself when it is a plain string. The React runtime draws a button per value the input does not hold yet, which adds it, and keeps typed values whether or not a row holds them, so a tags input suggests existing tags without a create command. `ess ui check` refuses `suggests` on any other field (`suggests_needs_tags`) and, with `--model`, binds the read and a written `value`. The terminal renderer draws the input as before.
+- `ess-http/1`: a command route may take one input field as its whole request body, bare: `request: {encoding: json, body: input.<field>}`, the field not `Optional` and every other input field carried by the path (beyond10x/ess#748; story:a-command-route-takes-one-input-as-its-bare-request-body). OpenAPI publishes the field's own schema as the request body (a list as `{type: array, items: …}`) and no `Input` object; the generated Rust and Go servers read the body as that field, so a body of another shape is `malformed`; `ess ui` binds the route, and the React and terminal renderers send the field's value alone. `body` beside `form` or `query`, on a `get` command, on a view, naming no input field, an `Optional` one or one the path carries, or beside an input field the path does not carry is `ESS-HTTP-020`. Compiled IR writes `body` only when declared, so existing bindings compile to the same bytes. `ess_http::Request` is no longer `Copy`.
 
 ### Changed
 

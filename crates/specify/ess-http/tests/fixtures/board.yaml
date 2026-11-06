@@ -1,0 +1,81 @@
+# The board the `ess-http/1` request-body and route-precedence tests bind (beyond10x/ess#748): a
+# command whose list input is a bare request body beside the board's identity in the path, a
+# command whose card identity is a path variable under the same prefix, a command with an
+# `Optional` input, and a view.
+format: ess/22
+system: catalog
+version: v1
+domain: catalog.board
+types:
+  - {name: catalog.board.BoardId, kind: newtype, of: String}
+  - {name: catalog.board.CardId, kind: newtype, of: String}
+  - name: catalog.board.CardPriority
+    kind: struct
+    fields:
+      - {name: id, type: catalog.board.CardId}
+      - {name: priority, type: Integer}
+entities:
+  - name: catalog.board.Board
+    identity: {name: board_id, type: catalog.board.BoardId}
+    fields:
+      - {name: title, type: String}
+    lifecycle: {initial: Open, states: [Open], terminal: [Open], transitions: []}
+events:
+  - name: catalog.board.PrioritiesSet
+    fields:
+      - {name: board_id, type: catalog.board.BoardId}
+      - {name: priorities, type: List<catalog.board.CardPriority>}
+  - name: catalog.board.CardUpdated
+    fields:
+      - {name: board_id, type: catalog.board.BoardId}
+      - {name: card_id, type: catalog.board.CardId}
+  - name: catalog.board.BoardRenamed
+    fields:
+      - {name: board_id, type: catalog.board.BoardId}
+commands:
+  - name: catalog.board.SetCardPriorities
+    input:
+      - {name: board_id, type: catalog.board.BoardId}
+      - {name: priorities, type: List<catalog.board.CardPriority>}
+    outcomes:
+      - name: set
+        emits: [catalog.board.PrioritiesSet]
+        payload:
+          catalog.board.PrioritiesSet: {board_id: input.board_id, priorities: input.priorities}
+  - name: catalog.board.UpdateCard
+    input:
+      - {name: board_id, type: catalog.board.BoardId}
+      - {name: card_id, type: catalog.board.CardId}
+      - {name: title, type: String}
+    outcomes:
+      - name: updated
+        emits: [catalog.board.CardUpdated]
+        payload:
+          catalog.board.CardUpdated: {board_id: input.board_id, card_id: input.card_id}
+  - name: catalog.board.RenameBoard
+    input:
+      - {name: board_id, type: catalog.board.BoardId}
+      - {name: title, type: String}
+      - {name: note, type: Optional<String>}
+    outcomes:
+      - name: renamed
+        emits: [catalog.board.BoardRenamed]
+        payload:
+          catalog.board.BoardRenamed: {board_id: input.board_id}
+views:
+  - name: catalog.board.BoardById
+    source: catalog.board.Board
+    params:
+      - {name: board_id, type: catalog.board.BoardId}
+    filter: board_id == param.board_id
+    fields:
+      - {name: board_id, type: catalog.board.BoardId}
+      - {name: title, type: String}
+components:
+  - component: board-service
+    reached_by: network
+    owns: {domains: [catalog.board]}
+    accepts:
+      commands: [catalog.board.SetCardPriorities, catalog.board.UpdateCard, catalog.board.RenameBoard]
+    publishes:
+      events: [catalog.board.PrioritiesSet, catalog.board.CardUpdated, catalog.board.BoardRenamed]
