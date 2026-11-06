@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-host-slot-reads-and-commands-only-what-it-declares
 kind: story
-status: draft
+status: active
 title: A host slot reads and commands only what it declares, checked against the binding
 summary: 'ADR section 3, check side: ess ui check --model checks a slot as it checks a generated node'
 tags:
@@ -13,7 +13,10 @@ relations:
 - derived_from: design:ui-host-slots
 - serves: vision:O2
 - depends_on: story:a-ui-document-declares-a-host-slot
-revision: 1
+revision: 3
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-06T22:18:57Z", actor: "human:timo", revision: 2}
+- {from: "proposed", to: "active", at: "2026-11-06T22:18:58Z", actor: "human:timo", revision: 3}
 ---
 ## Need
 

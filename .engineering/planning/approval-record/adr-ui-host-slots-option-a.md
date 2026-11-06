@@ -9,6 +9,10 @@ tags:
 - non-interactive
 relations:
 - decides: architecture-decision-record:a-ui-document-declares-the-host-components-it-does-not-generate
+- decides: story:a-ui-document-declares-a-host-slot
+- decides: story:a-host-slot-names-the-generator-item-it-stands-in-for
+- decides: story:host-covered-rows-are-their-own-count
+- decides: story:a-host-slot-reads-and-commands-only-what-it-declares
 revision: 2
 transitions:
 - {from: "draft", to: "approved", at: "2026-11-06T21:10:21Z", actor: "human:timo", revision: 2}

@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-host-slot-names-the-generator-item-it-stands-in-for
 kind: story
-status: draft
+status: active
 title: A host slot names the generator item it stands in for
 summary: 'ADR section 4: stands_in_for is checked, and none slots are listed as generator backlog'
 tags:
@@ -13,7 +13,10 @@ relations:
 - derived_from: design:ui-host-slots
 - serves: vision:O2
 - depends_on: story:a-ui-document-declares-a-host-slot
-revision: 1
+revision: 3
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-06T22:18:54Z", actor: "human:timo", revision: 2}
+- {from: "proposed", to: "active", at: "2026-11-06T22:18:55Z", actor: "human:timo", revision: 3}
 ---
 ## Need
 
