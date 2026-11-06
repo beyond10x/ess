@@ -76,11 +76,13 @@ jobs:
       # The released binary, checked against the release's own `task_checksums.txt`; compiling it
       # with `go install` cost every job about a minute.
       - name: Install go-task
+        id: go-task
         env:
           TASK_VERSION: "3.52.0"
           TASK_SHA256: 02c679ffae53dca791804847d78b31731615894e292948397c971c87ac9e95bd
         run: |
-          curl --fail --silent --show-error --location --output "$RUNNER_TEMP/task.tar.gz" \
+          curl --fail --silent --show-error --location --retry 5 --retry-all-errors \
+            --output "$RUNNER_TEMP/task.tar.gz" \
             "https://github.com/go-task/task/releases/download/v$TASK_VERSION/task_linux_amd64.tar.gz"
           echo "$TASK_SHA256  $RUNNER_TEMP/task.tar.gz" | sha256sum --check --strict
           mkdir -p "$RUNNER_TEMP/task-bin"
@@ -166,11 +168,13 @@ jobs:
           targets: wasm32-unknown-unknown
 
       - name: Install go-task
+        id: go-task
         env:
           TASK_VERSION: "3.52.0"
           TASK_SHA256: 02c679ffae53dca791804847d78b31731615894e292948397c971c87ac9e95bd
         run: |
-          curl --fail --silent --show-error --location --output "$RUNNER_TEMP/task.tar.gz" \
+          curl --fail --silent --show-error --location --retry 5 --retry-all-errors \
+            --output "$RUNNER_TEMP/task.tar.gz" \
             "https://github.com/go-task/task/releases/download/v$TASK_VERSION/task_linux_amd64.tar.gz"
           echo "$TASK_SHA256  $RUNNER_TEMP/task.tar.gz" | sha256sum --check --strict
           mkdir -p "$RUNNER_TEMP/task-bin"
@@ -244,11 +248,13 @@ jobs:
           targets: wasm32-unknown-unknown
 
       - name: Install go-task
+        id: go-task
         env:
           TASK_VERSION: "3.52.0"
           TASK_SHA256: 02c679ffae53dca791804847d78b31731615894e292948397c971c87ac9e95bd
         run: |
-          curl --fail --silent --show-error --location --output "$RUNNER_TEMP/task.tar.gz" \
+          curl --fail --silent --show-error --location --retry 5 --retry-all-errors \
+            --output "$RUNNER_TEMP/task.tar.gz" \
             "https://github.com/go-task/task/releases/download/v$TASK_VERSION/task_linux_amd64.tar.gz"
           echo "$TASK_SHA256  $RUNNER_TEMP/task.tar.gz" | sha256sum --check --strict
           mkdir -p "$RUNNER_TEMP/task-bin"
@@ -393,11 +399,13 @@ jobs:
           cache: false
 
       - name: Install go-task
+        id: go-task
         env:
           TASK_VERSION: "3.52.0"
           TASK_SHA256: 02c679ffae53dca791804847d78b31731615894e292948397c971c87ac9e95bd
         run: |
-          curl --fail --silent --show-error --location --output "$RUNNER_TEMP/task.tar.gz" \
+          curl --fail --silent --show-error --location --retry 5 --retry-all-errors \
+            --output "$RUNNER_TEMP/task.tar.gz" \
             "https://github.com/go-task/task/releases/download/v$TASK_VERSION/task_linux_amd64.tar.gz"
           echo "$TASK_SHA256  $RUNNER_TEMP/task.tar.gz" | sha256sum --check --strict
           mkdir -p "$RUNNER_TEMP/task-bin"
@@ -491,7 +499,7 @@ jobs:
           path: target/nextest-archives
 
       - name: Workspace tests ${{ matrix.group }} ${{ matrix.part }}
-        if: ${{ !cancelled() && (steps.archives.outcome == 'success' || steps.archives-retry.outcome == 'success' || steps.archives-retry-2.outcome == 'success') }}
+        if: ${{ !cancelled() && steps.go-task.outcome == 'success' && (steps.archives.outcome == 'success' || steps.archives-retry.outcome == 'success' || steps.archives-retry-2.outcome == 'success') }}
         env:
           ESS_TUTORIAL_NETWORK: "1"
         run: task test-shard GROUP=${{ matrix.group }} PART=${{ matrix.part }}
@@ -514,7 +522,7 @@ jobs:
           df -h /
 
       - name: Feature-off tests ${{ matrix.shard }}
-        if: ${{ !cancelled() && (steps.feature-off-archive.outcome == 'success' || steps.feature-off-archive-retry.outcome == 'success' || steps.feature-off-archive-retry-2.outcome == 'success') }}
+        if: ${{ !cancelled() && steps.go-task.outcome == 'success' && (steps.feature-off-archive.outcome == 'success' || steps.feature-off-archive-retry.outcome == 'success' || steps.feature-off-archive-retry-2.outcome == 'success') }}
         run: task test-feature-off SHARD=${{ matrix.shard }}
 
       - name: Disk after the feature-off tests
