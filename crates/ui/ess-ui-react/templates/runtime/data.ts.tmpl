@@ -60,6 +60,8 @@ export interface DataAdapter {
   send(command: string, input: Record<string, unknown>): Promise<Json>;
   loadState(store: "server" | "server_session", key: string): Promise<Json | undefined>;
   saveState(store: "server" | "server_session", key: string, value: Json): Promise<void>;
+  /** A file export's answer as the server sent it; without it an export writes the read rows. */
+  download?(request: ReadRequest): Promise<Blob>;
 }
 
 const LATENCY_MS = 120;
@@ -168,17 +170,27 @@ async function answer(response: Response): Promise<Json> {
 
 /** An adapter for a backend serving `GET /views/<view>`, `POST /commands/<command>` and `/state`. */
 export function httpAdapter(base: string): DataAdapter {
+  const viewUrl = (request: ReadRequest) => {
+    const query = new URLSearchParams({ params: JSON.stringify(request.params) });
+    if (request.paging) {
+      query.set("paging", request.paging);
+    }
+    return `${base}/views/${request.view}?${query}`;
+  };
   return {
     async read(request) {
-      const query = new URLSearchParams({ params: JSON.stringify(request.params) });
-      if (request.paging) {
-        query.set("paging", request.paging);
-      }
-      const body = await answer(await fetch(`${base}/views/${request.view}?${query}`));
+      const body = await answer(await fetch(viewUrl(request)));
       if (isObject(body) && Array.isArray(body.rows)) {
         return { rows: body.rows, total: typeof body.total === "number" ? body.total : undefined };
       }
       return { rows: Array.isArray(body) ? body : [body] };
+    },
+    async download(request) {
+      const response = await fetch(viewUrl(request));
+      if (!response.ok) {
+        throw new DataError(`${response.status} ${response.statusText}`, response.status);
+      }
+      return response.blob();
     },
     async send(command, input) {
       return answer(
@@ -387,39 +399,44 @@ function bodiless(method: string): boolean {
  * answered as `classify` reads the answer. `base` gives each served component's base URL.
  */
 export function httpAdapter(binding: Binding, base: (component: string) => string = baseUrl): DataAdapter {
-  return {
-    async read(request) {
-      const found = served(binding, "views", request.view);
-      if (found === undefined) {
-        throw new DataError(`no served component answers ${request.view}`, 404);
-      }
-      const query = new URLSearchParams();
+  /** The answer to a view read, as the served component sent it. */
+  async function viewResponse(request: ReadRequest): Promise<Response> {
+    const found = served(binding, "views", request.view);
+    if (found === undefined) {
+      throw new DataError(`no served component answers ${request.view}`, 404);
+    }
+    const query = new URLSearchParams();
 //+routed
-      const carried = Object.values(found.route.path_params ?? {});
-      const path = routePath(found.route.path, found.route.path_params, request.params);
+    const carried = Object.values(found.route.path_params ?? {});
+    const path = routePath(found.route.path, found.route.path_params, request.params);
 //-routed
-      for (const param of found.route.params) {
+    for (const param of found.route.params) {
 //+routed
-        if (carried.includes(param.name)) {
-          continue;
-        }
-//-routed
-        const value = request.params[param.name];
-        if (value !== undefined && value !== null && value !== "") {
-          query.set(param.wire, typeof value === "object" ? JSON.stringify(value) : String(value));
-        }
+      if (carried.includes(param.name)) {
+        continue;
       }
-      const search = query.toString();
+//-routed
+      const value = request.params[param.name];
+      if (value !== undefined && value !== null && value !== "") {
+        query.set(param.wire, typeof value === "object" ? JSON.stringify(value) : String(value));
+      }
+    }
+    const search = query.toString();
 //+unrouted
-      const response = await fetch(`${base(found.component)}${found.route.path}${search ? `?${search}` : ""}`, {
+    const response = await fetch(`${base(found.component)}${found.route.path}${search ? `?${search}` : ""}`, {
 //-unrouted
 //+routed
-      const response = await fetch(`${base(found.component)}${path}${search ? `?${search}` : ""}`, {
-        method: found.route.method ?? "GET",
+    const response = await fetch(`${base(found.component)}${path}${search ? `?${search}` : ""}`, {
+      method: found.route.method ?? "GET",
 //-routed
-        headers: headers(false),
-        signal: request.signal,
-      });
+      headers: headers(false),
+      signal: request.signal,
+    });
+    return response;
+  }
+  return {
+    async read(request) {
+      const response = await viewResponse(request);
       const text = await response.text();
       if (response.status < 200 || response.status >= 300) {
         throw new DataError(`${response.status} ${request.view}`, response.status);
@@ -429,6 +446,13 @@ export function httpAdapter(binding: Binding, base: (component: string) => strin
         return { rows: body.rows, total: typeof body.total === "number" ? body.total : undefined };
       }
       return { rows: Array.isArray(body) ? body : [body] };
+    },
+    async download(request) {
+      const response = await viewResponse(request);
+      if (response.status < 200 || response.status >= 300) {
+        throw new DataError(`${response.status} ${request.view}`, response.status);
+      }
+      return response.blob();
     },
     async send(command, input) {
       const found = served(binding, "commands", command);

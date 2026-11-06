@@ -141,8 +141,8 @@ function bound(action: Pick<ActionSpec, "bind">, values: Record<string, unknown>
   return input;
 }
 
-function download(name: string, text: string, type: string): void {
-  const url = URL.createObjectURL(new Blob([text], { type }));
+function download(name: string, file: Blob): void {
+  const url = URL.createObjectURL(file);
   const link = document.createElement("a");
   link.href = url;
   link.download = name;
@@ -200,16 +200,25 @@ export async function runAction(
       }
       params = each;
     }
-    const result = await dataAdapter().read({
-      view: action.export.reads,
-      params: isObject(params) ? params : {},
-    });
-    const rows = result.rows;
-    const text =
+    const request = { view: action.export.reads, params: isObject(params) ? params : {} };
+    const name = `${action.export.reads}.${action.export.as}`;
+    const adapter = dataAdapter();
+    // A file the server answers (a zip, an image, a CSV it writes) is saved as it came, bytes and
+    // all; an answer in JSON, or an adapter that cannot fetch files, exports the read rows.
+    if (action.export.as !== "json" && adapter.download) {
+      const file = await adapter.download(request);
+      if (!/json/i.test(file.type)) {
+        download(name, file);
+        return true;
+      }
+    }
+    const rows = (await adapter.read(request)).rows;
+    download(
+      name,
       action.export.as === "csv"
-        ? rowsToCsv(rows)
-        : JSON.stringify(rows, null, 2);
-    download(`${action.export.reads}.${action.export.as}`, text, action.export.as === "csv" ? "text/csv" : "application/octet-stream");
+        ? new Blob([rowsToCsv(rows)], { type: "text/csv" })
+        : new Blob([JSON.stringify(rows, null, 2)], { type: "application/octet-stream" }),
+    );
   } else if (action.copy) {
     await navigator.clipboard.writeText(String(evaluate(action.copy, values) ?? ""));
     scope.notify("Copied", "success");

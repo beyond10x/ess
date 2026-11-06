@@ -137,14 +137,16 @@ fn fnv(text: &str) -> u64 {
 /// story:a-collection-draws-the-controls-it-declares: the collection runtime and its stylesheet draw
 /// the declared sort, expand, reorder, selection and column controls. The whole-project digest
 /// re-pinned for a client filter's `contains` (`expr.ts`). The whole-project digest re-pinned: the
-/// page header's help is drawn at its own path (`core.tsx`, `<header>/help`).
+/// page header's help is drawn at its own path (`core.tsx`, `<header>/help`). `actions.tsx`,
+/// `data.ts` and the whole-project digest re-pinned for a file export: the data adapter's
+/// `download` hands over the server's answer, which the export saves as it came.
 const PLAIN: [(&str, u64); 7] = [
     ("README.md", 0xdae6_c3b6_7e5c_2d28),
     ("src/main.tsx", 0x6fd5_ef21_0230_ebac),
-    ("src/runtime/actions.tsx", 0x129b_902b_3cbf_eed1),
+    ("src/runtime/actions.tsx", 0xc6f3_9de0_d12d_6bf3),
     ("src/runtime/composites/confirm.tsx", 0xbeef_774c_44b0_0be3),
     ("src/runtime/composites/form.tsx", 0xa0b0_e430_a6e8_4b79),
-    ("src/runtime/data.ts", 0x036a_4d67_6dc4_1ac6),
+    ("src/runtime/data.ts", 0x400e_ae09_0d5f_e141),
     ("www/index.html", 0x5972_6d4a_5ee2_5ce2),
 ];
 const PLAIN_PROJECT: u64 = 0x4fa9_3922_39cb_d52d;

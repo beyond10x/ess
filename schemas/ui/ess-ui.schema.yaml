@@ -1246,7 +1246,7 @@ constructs:
       bind:       {type: {map: {key: name, value: expr}}, note: "command input from row, selection or state"}
       opens:      {type: {ref: overlay}, note: overlay to open}
       navigate:   {type: {record: {to: {ref: page}, params: {optional: {map: {key: name, value: expr}}}}}, note: page to go to}
-      export:     {type: {record: {reads: {ref: view}, as: {enum: [csv, json, zip, png]}, params: {optional: {one_of: [{map: {key: name, value: expr}}, expr]}}}}, note: "download a view; `params` is each param written out, or one expression such as `same_as(<section>)`; on one of a collection's `bulk_actions` a param may read `selection.<field>`"}
+      export:     {type: {record: {reads: {ref: view}, as: {enum: [csv, json, zip, png]}, params: {optional: {one_of: [{map: {key: name, value: expr}}, expr]}}}}, note: "download a view: a file the server answers (a zip, an image, a CSV it writes) is saved as it came where the data adapter offers `download`, and an answer in JSON, or an adapter without it, is written from the read rows; `params` is each param written out, or one expression such as `same_as(<section>)`; on one of a collection's `bulk_actions` a param may read `selection.<field>`"}
       upload:     {type: {record: {accept: {list: string}, does: {ref: command}}}, note: file picker feeding a command}
       copy:       {type: expr, note: value copied to the clipboard}
       sets:       {type: {map: {key: expr, value: {one_of: [expr, {const: toggle}]}}}, note: "UI state change only, never business data"}
