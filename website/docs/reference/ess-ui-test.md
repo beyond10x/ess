@@ -78,7 +78,7 @@ field the section's `live.match` names, else `id`. A node inside a row is addres
 | `pages/partners.list/overlays/create/fields/name` | a form field in an overlay |
 
 An inline confirm (`confirm: {title: …}`) is the overlay at its action's path and
-`confirm/overlay`; a row action's is addressed under the row that opened it. Confirming runs
+`confirm/overlay`; a row action's, and a graph editor's node or edge action's, is addressed under the row that opened it (`<editor>/rows/<key>/node_actions/<action>/confirm/overlay`). Confirming runs
 the action that opened the confirm, inline or `confirm: <overlay>`, whether or not the confirm
 declares `does`.
 
@@ -363,7 +363,7 @@ refuses:
 | any step at a column cell of a cards, list or tree collection with an `item` | the generated app renders the item there, not the cells |
 | any step at a column header of a collection that is not a table | the generated app draws no header for it |
 | any step inside the rows of a references list | the generated app does not address its rows |
-| any step at a row action's inline confirm not under a row | the generated app draws it under the row that opened it |
+| any step at a row action's, or a graph editor's node or edge action's, inline confirm not under a row | the generated app draws it under the row that opened it |
 | any step at a collection that is not a section's or an overlay's own body, or at its rows | the terminal draws it inside its section without addressing it or its rows |
 | any step at a tab's nested node (`tabs/<t>/form` that is a node) or inside it | the terminal draws it below the tab's fields but moves no focus into it |
 | `text` or `not_text` at a node the terminal does not draw on cells of its own | its text cannot be told from its neighbours' |
