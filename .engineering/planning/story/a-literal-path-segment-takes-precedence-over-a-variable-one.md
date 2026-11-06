@@ -13,6 +13,7 @@ refs:
 relations:
 - serves: vision:O2
 - informed_by: epic:downstream-reported-gaps
+- supersedes: story:a-literal-path-segment-may-take-precedence-over-a-variable
 scope:
 - confidence: cited
   path: crates/generate/ess-gen/src/http.rs
@@ -22,7 +23,7 @@ scope:
   path: crates/generate/ess-synth/src/rust/http/bound.rs
 - confidence: cited
   path: crates/specify/ess-http/src/lib.rs
-revision: 7
+revision: 8
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-06T10:55:31Z", actor: "human:timo", revision: 6}
 - {from: "proposed", to: "active", at: "2026-11-06T10:55:32Z", actor: "human:timo", revision: 7}
@@ -72,8 +73,29 @@ Part 2 of https://github.com/beyond10x/ess/issues/748.
 
 ## Decisions
 
-Accept as proposed, the requester's first option: a literal segment takes precedence over a variable
-one at the first position two templates differ. `ESS-HTTP-010` (the same template twice) is unchanged.
+Accept, redesigned after the U2 adversary pass (2026-11-06), taking the analysis of the earlier
+draft `story:a-literal-path-segment-may-take-precedence-over-a-variable` (A2A report H5), which this
+story supersedes:
+
+- **Nested overlaps only.** Two templates of one component and method where, at every position they
+  differ, one holds a literal and the other a variable: the first template's paths are a strict
+  subset of the second's, and the more specific template answers. `/boards/{board_id}/cards/priority`
+  beside `/boards/{board_id}/cards/{card_id}` is nested.
+- **Crossed overlaps stay `ESS-HTTP-011`.** Where each template holds the literal at some position the
+  other holds a variable (`/{tenant}/tasks` beside `/tasks/{id}`), any order is a domain decision the
+  specification would make silently, so it stays refused, naming both operations and the segment.
+- **Per method, as today.** Specificity is decided among the request's method's templates; `404` and
+  `405` are unchanged.
+- **Literals compare after normalisation.** A request segment is compared with a literal after
+  decoding percent-encoded unreserved characters (RFC 3986 §6.2.2.2), so `%7Earchived` reaches the
+  `~archived` literal route in both servers, as `~archived` does.
+- **An older reader fails closed.** Where compiled `ess-http-ir/1` is read back by an `ess` that does
+  not order by specificity (`HttpIr::from_json`), a shadowed route must make that reader refuse by
+  name rather than serve the wrong route; the unit checks whether any reader takes IR across
+  versions and, if one does, records the shadowing paths on the route (`shadowed_by`, written only
+  when non-empty, so every IR valid today keeps its bytes).
+
+`ESS-HTTP-010` (the same template twice) is unchanged.
 
 ## Acceptance
 

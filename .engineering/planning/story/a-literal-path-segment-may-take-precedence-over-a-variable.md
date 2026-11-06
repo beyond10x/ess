@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-literal-path-segment-may-take-precedence-over-a-variable
 kind: story
-status: draft
+status: archived
 title: A literal path segment may take precedence over a variable, so /tasks/views/x and /tasks/{taskId}/x coexist
 summary: ESS-HTTP-011 refuses a literal beside a variable (stage-1 decision 3); four upstream A2A GET routes are refused (a2a wave 2, H5, 2026-10-22).
 tags:
@@ -13,7 +13,9 @@ relations:
 - serves: vision:O2
 - informed_by: story:a-command-binds-to-a-protocol-or-deployment-http-route
 - decomposes: epic:adopter-gaps-wire-and-answers
-revision: 4
+revision: 6
+transitions:
+- {from: "draft", to: "archived", at: "2026-11-06T12:50:47Z", actor: "human:timo", revision: 6}
 ---
 ## Need
 
@@ -186,3 +188,9 @@ generated servers:
 The requester is told: accepted, redesigned. `/tasks/views/x` beside `/tasks/{taskId}/x` and the
 moved view can return to their own paths. The four tenant GET routes are crossed overlaps and wait
 on the decision-blocker.
+
+## Superseded
+
+Superseded on 2026-11-06 by `story:a-literal-path-segment-takes-precedence-over-a-variable-one`
+(wave-2026-11-06-ess, ESS 0.89.0), which adopts this draft's nested-only rule, crossed overlaps
+still refused as `ESS-HTTP-011`, and its older-reader safeguard. Archived by the wave lead.
