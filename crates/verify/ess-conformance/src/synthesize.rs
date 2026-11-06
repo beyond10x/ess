@@ -7670,11 +7670,16 @@ fn invoke(
 /// otherwise:
 ///
 /// - it declares an `example:` and no fixture input;
-/// - it is not the creating branch's identity input, and no input guard reads it;
-/// - it was sent as the further instance's own unsteered witness, so no search chose it;
-/// - no field the branch copies it into is the identity or read by a view over the entity (filter,
+/// - it is not the creating branch's identity input, and no branch decision of the creating
+///   command reads it: an input guard, an `input.` operand of a guard over stored rows, a related
+///   row's reference ([`decision_inputs`]);
+/// - it was sent as the further instance's own witness, not a value a scenario arranged;
+/// - no field the branch copies it into is the identity, read by a view over the entity (filter,
 ///   order, grouping, aggregate input, computed field or reference), where further rows are told
-///   apart, ranked or counted;
+///   apart, ranked or counted, or read by any command's branch decision over a stored row of the
+///   entity (a uniqueness check's row selection, a related-row or subject predicate,
+///   [`decided_by`]): a search may have chosen that value to take or pass over such a branch, and
+///   the plain value could take the other side;
 /// - the plain value keeps the branch ([`keeps_branch`]).
 ///
 /// What the branch's `sets:` leave is read again from the input sent.
@@ -7709,11 +7714,12 @@ fn exampled(
         return;
     };
     let identity = existence::identity_input(creator.outcome);
-    let guarded: BTreeSet<&str> = input_guards(command)
+    let mut guarded: BTreeSet<&str> = input_guards(command)
         .into_iter()
         .flat_map(Predicate::fact_paths)
         .map(FactPath::namespace)
         .collect();
+    guarded.extend(decision_inputs(command));
     let told = told_apart(ir, entity, creator.outcome);
     let mut swapped: BTreeSet<&str> = BTreeSet::new();
     for field in command.examples.keys() {
@@ -7768,9 +7774,10 @@ fn exampled(
     }
 }
 
-/// The inputs a creating branch copies into a field that tells its rows apart: the identity, or a
+/// The inputs a creating branch copies into a field that tells its rows apart: the identity, a
 /// field a view over `entity` reads in its filter, order, grouping, aggregate input, computed
-/// fields or references.
+/// fields or references, or a field some command's branch decision reads of a stored row
+/// ([`decided_by`]).
 fn told_apart<'o>(
     ir: &EssIr,
     entity: &EntityHandle,
@@ -7782,8 +7789,10 @@ fn told_apart<'o>(
         .values()
         .filter(|view| view.source == *entity)
         .collect();
+    let decided = decided_by(ir, entity);
     let read = |target: &str| {
         target == identity
+            || decided.contains(target)
             || views.iter().any(|view| {
                 reads_root(view, target)
                     || view.order_by.iter().any(|rank| rank.field == target)
@@ -7808,17 +7817,184 @@ fn told_apart<'o>(
                     })
             })
     };
-    outcome
-        .sets
-        .iter()
-        .filter(|set| read(&set.target))
-        .filter_map(|set| match &set.value {
-            ResolvedPayloadValue::InputField { field, .. } => {
-                Some(field.split('.').next().unwrap_or(field))
+    let mut told = BTreeSet::new();
+    for set in outcome.sets.iter().filter(|set| read(&set.target)) {
+        inputs_read(&set.value, &mut told);
+    }
+    told
+}
+
+/// Each input a `sets:` value reads, by its root field: copied, defaulted, computed or carried in
+/// a member of a struct.
+fn inputs_read<'o>(value: &'o ResolvedPayloadValue, found: &mut BTreeSet<&'o str>) {
+    match value {
+        ResolvedPayloadValue::InputField { field, .. }
+        | ResolvedPayloadValue::InputOrGenerated { field, .. } => {
+            found.insert(field.split('.').next().unwrap_or(field));
+        }
+        ResolvedPayloadValue::Expression { expr, .. } => {
+            found.extend(expr.reads().into_iter().filter_map(input_root));
+        }
+        ResolvedPayloadValue::Struct { fields } => {
+            for field in fields {
+                inputs_read(&field.value, found);
             }
-            _ => None,
+        }
+        _ => {}
+    }
+}
+
+/// The input field an `input.<field>…` path reads, where it reads one.
+fn input_root(path: &FactPath) -> Option<&str> {
+    match path.segments() {
+        [root, field, ..] if root == ess_domain::command::subject_fact::INPUT_NAMESPACE => {
+            Some(field.as_str())
+        }
+        _ => None,
+    }
+}
+
+/// Every guard over stored rows that decides a branch of `command`, with the entity whose stored
+/// fields it reads: a subject guard (`when_subject:`, an `external:` branch narrowed by the
+/// subject), a related-row predicate and each `all:` row of `when_related:`, the field holding a
+/// related row's reference, a row selection (`when_related: {entity, where}`) and its `forall:`,
+/// and the filter of an `instances:` or `affects:` selection.
+fn stored_guards(command: &ResolvedCommand) -> Vec<(&EntityHandle, StoredGuard<'_>)> {
+    let mut guards = Vec::new();
+    for outcome in &command.outcomes {
+        let subject = command
+            .selection_subject(outcome)
+            .map(|subject| &subject.entity);
+        match &outcome.condition {
+            ResolvedCondition::SubjectField { field, .. } => {
+                guards.extend(subject.map(|entity| (entity, StoredGuard::Field(field))));
+            }
+            ResolvedCondition::SubjectPredicate { predicate, .. }
+            | ResolvedCondition::ExternalSubject { predicate, .. } => {
+                guards.extend(subject.map(|entity| (entity, StoredGuard::Predicate(predicate))));
+            }
+            ResolvedCondition::Related {
+                via,
+                entity,
+                test,
+                also,
+                ..
+            } => {
+                if let (ess_compiler::ir::ResolvedRelatedVia::Subject { field, .. }, Some(at)) =
+                    (via, subject)
+                {
+                    guards.push((at, StoredGuard::Field(field)));
+                }
+                if let ess_compiler::ir::ResolvedRelatedTest::Holds { predicate } = test {
+                    guards.push((entity, StoredGuard::Predicate(predicate)));
+                }
+                for row in also {
+                    guards.push((&row.entity, StoredGuard::Predicate(&row.predicate)));
+                }
+            }
+            ResolvedCondition::RelatedSet {
+                selection, test, ..
+            } => {
+                guards.push((&selection.entity, StoredGuard::Predicate(&selection.filter)));
+                if let ess_compiler::ir::ResolvedRowSetTest::Forall(predicate) = test {
+                    guards.push((&selection.entity, StoredGuard::Predicate(predicate)));
+                }
+            }
+            _ => {}
+        }
+        if let Some(instances) = &outcome.instances {
+            guards.push((&instances.entity, StoredGuard::Predicate(&instances.filter)));
+        }
+        for affect in &outcome.affects {
+            if let Some(filter) = &affect.filter {
+                guards.push((&affect.entity, StoredGuard::Predicate(filter)));
+                // `subject.<field>` in the filter reads the addressed row as it was before.
+                if let Some(at) = subject {
+                    for path in filter.fact_paths() {
+                        if let [root, field, ..] = path.segments() {
+                            if root == "subject" {
+                                guards.push((at, StoredGuard::Field(field)));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    guards
+}
+
+/// Every input a branch decision of `command` reads beside its input guards: an `input.` operand
+/// of a guard over stored rows ([`stored_guards`]), an input naming a related row, and the input
+/// guard beside a row selection.
+fn decision_inputs(command: &ResolvedCommand) -> BTreeSet<&str> {
+    let mut read: BTreeSet<&str> = stored_guards(command)
+        .into_iter()
+        .filter_map(|(_, guard)| match guard {
+            StoredGuard::Predicate(predicate) => Some(predicate),
+            StoredGuard::Field(_) => None,
         })
-        .collect()
+        .flat_map(Predicate::fact_paths)
+        .filter_map(input_root)
+        .collect();
+    for outcome in &command.outcomes {
+        match &outcome.condition {
+            ResolvedCondition::Related { via, also, .. } => {
+                for via in std::iter::once(via).chain(also.iter().map(|row| &row.via)) {
+                    if let ess_compiler::ir::ResolvedRelatedVia::Input { field, .. } = via {
+                        read.insert(field.split('.').next().unwrap_or(field));
+                    }
+                }
+            }
+            ResolvedCondition::RelatedSet {
+                input: Some(guard), ..
+            } => {
+                read.extend(guard.fact_paths().into_iter().map(FactPath::namespace));
+            }
+            _ => {}
+        }
+    }
+    read
+}
+
+/// What a [`stored_guards`] entry reads of its entity's stored row.
+enum StoredGuard<'c> {
+    /// One stored field by name.
+    Field(&'c str),
+    /// Every stored field the predicate reads: each path outside `input.` and `subject.`.
+    Predicate(&'c Predicate),
+}
+
+/// Every stored field of `entity` some command's branch decision reads ([`stored_guards`]): a
+/// further row carrying the plain row's value there could take the other side of that decision,
+/// so the value the search gave it stays.
+fn decided_by<'i>(ir: &'i EssIr, entity: &EntityHandle) -> BTreeSet<&'i str> {
+    let mut read = BTreeSet::new();
+    for command in ir.commands().values() {
+        for (at, guard) in stored_guards(command) {
+            if at != entity {
+                continue;
+            }
+            match guard {
+                StoredGuard::Field(field) => {
+                    read.insert(field);
+                }
+                StoredGuard::Predicate(predicate) => {
+                    read.extend(
+                        predicate
+                            .fact_paths()
+                            .into_iter()
+                            .map(FactPath::namespace)
+                            .filter(|root| {
+                                *root != ess_domain::command::subject_fact::INPUT_NAMESPACE
+                                    && *root != "subject"
+                            }),
+                    );
+                }
+            }
+        }
+    }
+    read
 }
 
 /// `input` with the identity an arranging creation names its new row by moved to `distinction`'s

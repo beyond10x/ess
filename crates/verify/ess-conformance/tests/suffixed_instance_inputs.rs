@@ -14,6 +14,10 @@
 //!   sibling.
 //!
 //! A command without examples synthesizes the suite it did before, byte for byte.
+//!
+//! A stored field some command's branch decision reads keeps telling the instances apart: a
+//! uniqueness check over the created rows, and another command's related-row predicate over a
+//! further row, keep the value the search gave it, and the branch keeps its scenario.
 
 use std::fmt::Write as _;
 
@@ -243,6 +247,228 @@ views:
       - {name: model_id, type: demo.room.ModelId}
 ";
 
+/// The widget, its creating command refusing a `name` another widget carries already: a
+/// uniqueness check over the stored rows, reading the input that has an example.
+const UNIQUE: &str = "format: ess/33
+system: demo
+version: v1
+domain: demo.widget
+types:
+  - {name: demo.widget.WidgetId, kind: newtype, of: String}
+entities:
+  - name: demo.widget.Widget
+    identity: {name: widget_id, type: demo.widget.WidgetId}
+    fields:
+      - {name: name, type: String}
+      - {name: config, type: \"Optional<Map<String, Json>>\"}
+    lifecycle:
+      initial: Active
+      states: [Active]
+      terminal: [Active]
+actors:
+  - name: demo.widget.User
+    attributes: []
+    may:
+      - demo.widget.CreateWidget
+      - demo.widget.WidgetById
+      - demo.widget.Widgets
+    naming: {display: User}
+errors:
+  - name: demo.widget.WidgetExists
+    summary: A widget of that id exists already.
+    fields: []
+  - name: demo.widget.NameTaken
+    summary: A widget of that name exists already.
+    fields: []
+commands:
+  - name: demo.widget.CreateWidget
+    input:
+      - {name: widget_id, type: demo.widget.WidgetId}
+      - {name: name, type: String, example: \"Front door\"}
+      - name: config
+        type: Optional<Map<String, Json>>
+        example: {type: object, properties: {color: {type: string}}}
+    outcomes:
+      - name: exists
+        existing_instance: true
+        error: demo.widget.WidgetExists
+      - name: name-taken
+        when_related: {entity: demo.widget.Widget, where: name == input.name, exists: true}
+        error: demo.widget.NameTaken
+      - name: created
+        creates: demo.widget.Widget
+        instance: widget_id
+        sets:
+          name: input.name
+          config: input.config
+        emits: [demo.widget.WidgetCreated]
+        payload:
+          demo.widget.WidgetCreated: {widget_id: input.widget_id}
+events:
+  - name: demo.widget.WidgetCreated
+    fields:
+      - {name: widget_id, type: demo.widget.WidgetId}
+views:
+  - name: demo.widget.WidgetById
+    source: demo.widget.Widget
+    consistency: read_your_writes
+    params:
+      - {name: widget_id, type: demo.widget.WidgetId}
+    filter: widget_id == param.widget_id
+    fields:
+      - {name: widget_id, type: demo.widget.WidgetId}
+      - {name: name, type: String}
+  - name: demo.widget.Widgets
+    source: demo.widget.Widget
+    consistency: read_your_writes
+    fields:
+      - {name: widget_id, type: demo.widget.WidgetId}
+      - {name: name, type: String}
+";
+
+/// The widget, and a tag put on a widget unless the widget's stored `name` is the protected one,
+/// which is the `name` example. Every widget the tagged scenario creates is a further instance,
+/// and the tag reads its stored name.
+const TAGGED: &str = "format: ess/33
+system: demo
+version: v1
+domain: demo.widget
+types:
+  - {name: demo.widget.WidgetId, kind: newtype, of: String}
+  - {name: demo.widget.TagId, kind: newtype, of: String}
+entities:
+  - name: demo.widget.Widget
+    identity: {name: widget_id, type: demo.widget.WidgetId}
+    fields:
+      - {name: name, type: String}
+      - {name: config, type: \"Optional<Map<String, Json>>\"}
+    lifecycle:
+      initial: Active
+      states: [Active]
+      terminal: [Active]
+  - name: demo.widget.Tag
+    identity: {name: tag_id, type: demo.widget.TagId}
+    fields:
+      - {name: widget_id, type: demo.widget.WidgetId}
+    relations:
+      - {name: widget, kind: references, target: demo.widget.Widget, cardinality: one, via: widget_id}
+    lifecycle:
+      initial: Put
+      states: [Put]
+      terminal: [Put]
+actors:
+  - name: demo.widget.User
+    attributes: []
+    may:
+      - demo.widget.CreateWidget
+      - demo.widget.TagWidget
+      - demo.widget.WidgetById
+      - demo.widget.Widgets
+      - demo.widget.TagById
+      - demo.widget.Tags
+    naming: {display: User}
+errors:
+  - name: demo.widget.WidgetExists
+    summary: A widget of that id exists already.
+    fields: []
+  - name: demo.widget.UnknownWidget
+    summary: No widget of that id.
+    fields: []
+  - name: demo.widget.Protected
+    summary: The widget is protected from tags.
+    fields: []
+commands:
+  - name: demo.widget.CreateWidget
+    input:
+      - {name: widget_id, type: demo.widget.WidgetId}
+      - {name: name, type: String, example: \"Front door\"}
+      - name: config
+        type: Optional<Map<String, Json>>
+        example: {type: object, properties: {color: {type: string}}}
+    outcomes:
+      - name: exists
+        existing_instance: true
+        error: demo.widget.WidgetExists
+      - name: created
+        creates: demo.widget.Widget
+        instance: widget_id
+        sets:
+          name: input.name
+          config: input.config
+        emits: [demo.widget.WidgetCreated]
+        payload:
+          demo.widget.WidgetCreated: {widget_id: input.widget_id}
+  - name: demo.widget.TagWidget
+    input:
+      - {name: tag_id, type: demo.widget.TagId}
+      - {name: widget_id, type: demo.widget.WidgetId}
+    outcomes:
+      - name: unknown-widget
+        when_related: {via: input.widget_id, exists: false}
+        error: demo.widget.UnknownWidget
+      - name: protected
+        when_related:
+          via: input.widget_id
+          predicate: 'name == \"Front door\"'
+        error: demo.widget.Protected
+      - name: tagged
+        creates: demo.widget.Tag
+        instance: tag_id
+        sets:
+          widget_id: input.widget_id
+        emits: [demo.widget.Tagged]
+        payload:
+          demo.widget.Tagged: {tag_id: input.tag_id}
+events:
+  - name: demo.widget.WidgetCreated
+    fields:
+      - {name: widget_id, type: demo.widget.WidgetId}
+  - name: demo.widget.Tagged
+    fields:
+      - {name: tag_id, type: demo.widget.TagId}
+views:
+  - name: demo.widget.WidgetById
+    source: demo.widget.Widget
+    consistency: read_your_writes
+    params:
+      - {name: widget_id, type: demo.widget.WidgetId}
+    filter: widget_id == param.widget_id
+    fields:
+      - {name: widget_id, type: demo.widget.WidgetId}
+      - {name: name, type: String}
+  - name: demo.widget.Widgets
+    source: demo.widget.Widget
+    consistency: read_your_writes
+    fields:
+      - {name: widget_id, type: demo.widget.WidgetId}
+      - {name: name, type: String}
+  - name: demo.widget.TagById
+    source: demo.widget.Tag
+    consistency: read_your_writes
+    params:
+      - {name: tag_id, type: demo.widget.TagId}
+    filter: tag_id == param.tag_id
+    fields:
+      - {name: tag_id, type: demo.widget.TagId}
+      - {name: widget_id, type: demo.widget.WidgetId}
+  - name: demo.widget.Tags
+    source: demo.widget.Tag
+    consistency: read_your_writes
+    fields:
+      - {name: tag_id, type: demo.widget.TagId}
+      - {name: widget_id, type: demo.widget.WidgetId}
+";
+
+/// The examples `UNIQUE` and `TAGGED` declare, removed.
+fn without_examples(text: &str) -> String {
+    let text = with(text, ", example: \"Front door\"", "");
+    with(
+        &text,
+        "\n        example: {type: object, properties: {color: {type: string}}}",
+        "",
+    )
+}
+
 fn ir(text: &str) -> EssIr {
     let raw = RawSpecFile::parse(text).unwrap_or_else(|error| panic!("{error}\n{text}"));
     let spec = Specification::assemble([(Source::new("spec.yaml"), raw)])
@@ -311,6 +537,45 @@ fn executed<'s>(
                         input,
                         ..
                     } if executed.to_string() == command => Some(input),
+                    _ => None,
+                })
+                .collect();
+            (id.to_string(), inputs)
+        })
+        .collect()
+}
+
+/// Each input sent to `command` whose next step expects `outcome`, by scenario.
+fn sent_expecting<'s>(
+    result: &'s Synthesis,
+    command: &str,
+    outcome: &str,
+) -> Vec<(
+    String,
+    Vec<&'s std::collections::BTreeMap<String, ScenarioValue>>,
+)> {
+    result
+        .suite
+        .scenarios
+        .iter()
+        .map(|(id, scenario)| {
+            let inputs = scenario
+                .steps
+                .iter()
+                .zip(scenario.steps.iter().skip(1))
+                .filter_map(|(step, next)| match (step, next) {
+                    (
+                        ScenarioStep::ExecuteCommand {
+                            command: executed,
+                            input,
+                            ..
+                        },
+                        ScenarioStep::ExpectOutcome { outcome: expected },
+                    ) if executed.to_string() == command
+                        && expected.outcome.as_str() == outcome =>
+                    {
+                        Some(input)
+                    }
                     _ => None,
                 })
                 .collect();
@@ -476,4 +741,75 @@ fn a_second_instance_without_examples_is_unchanged() {
         let result = synthesized(text);
         assert_eq!(suite_digest(&result), pinned, "{label}");
     }
+}
+
+/// A uniqueness check on `name` (`when_related: {entity, where: name == input.name}`) is what
+/// tells two widgets apart, so `name` differs between them; `config` is read by nothing and is
+/// sent as its example. Before, the further widget took the `name` example too, collided with the
+/// plain one, and synthesis refused `CreateWidget/created`.
+#[test]
+fn a_uniqueness_check_tells_further_widgets_apart_in_the_synthesized_inputs() {
+    let result = synthesized(UNIQUE);
+    let config =
+        ScenarioValue::literal(yaml("{type: object, properties: {color: {type: string}}}"));
+    let mut further = 0;
+    for (id, inputs) in sent_expecting(&result, "demo.widget.CreateWidget", "created") {
+        if inputs.len() > 1 {
+            further += 1;
+        }
+        let names: std::collections::BTreeSet<String> = inputs
+            .iter()
+            .map(|input| format!("{:?}", input.get("name")))
+            .collect();
+        assert_eq!(
+            names.len(),
+            inputs.len(),
+            "{id}: each widget created in one scenario carries its own name, or `name-taken` \
+             answers the further one: {inputs:#?}"
+        );
+        for input in &inputs {
+            assert_eq!(
+                input.get("config"),
+                Some(&config),
+                "{id}: nothing reads `config`, so every widget sends its example: {inputs:#?}"
+            );
+        }
+    }
+    assert!(further >= 1, "a scenario creates a further widget");
+}
+
+/// `TagWidget` refuses `protected` when the stored `name` of the widget it reads is the `name`
+/// example. Every widget the tagged scenario creates is a further one, and the search gave it a
+/// name the predicate passes over; that value stays, and the tagged branch keeps its scenario.
+/// `config` is read by no branch decision and is sent as its example. Before, the further widget
+/// took the `name` example after the search, and synthesis refused `TagWidget/tagged`.
+#[test]
+fn a_related_row_predicate_on_a_further_widget_keeps_its_branch() {
+    let control = without_examples(TAGGED);
+    let result = synthesized(&control);
+    passes_on_the_interpreter(&control, &result, result.suite.scenarios.len());
+
+    let result = synthesized(TAGGED);
+    assert!(
+        result
+            .suite
+            .scenarios
+            .keys()
+            .any(|id| id.to_string().ends_with("TagWidget/outcome/tagged")),
+        "the tagged branch has a scenario: {:?}",
+        result.suite.scenarios.keys().collect::<Vec<_>>()
+    );
+    let config =
+        ScenarioValue::literal(yaml("{type: object, properties: {color: {type: string}}}"));
+    for (id, inputs) in sent_expecting(&result, "demo.widget.CreateWidget", "created") {
+        for input in &inputs {
+            assert_eq!(
+                input.get("config"),
+                Some(&config),
+                "{id}: nothing decides by `config`, so every widget sends its example: \
+                 {inputs:#?}"
+            );
+        }
+    }
+    passes_on_the_interpreter(TAGGED, &result, result.suite.scenarios.len());
 }
