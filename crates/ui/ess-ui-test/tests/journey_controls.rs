@@ -40,6 +40,8 @@ pages:
           - {field: digest, as: toggle, label: Digest}
           - {field: shelf, as: choice, label: Preferred storage location, choice: {component: choice, options: [{value: north, label: North wing upper shelving}, {value: south, label: South wing lower shelving}]}}
           - {field: kinds, as: choice, label: Item categories, choice: {component: choice, multiple: true, options: [{value: hardware, label: Hardware and fittings}, {value: garden, label: Garden tools and seeds}, {value: paint, label: Paint and finishes}]}}
+        actions:
+          - {name: invite, does: shelf.Invite, label: Invite}
   prefs:
     kind: settings_page
     shell: app
@@ -96,6 +98,7 @@ pages:
           - {name: bay, component: choice, options: [east, west]}
         actions:
           - {name: apply, does: shelf.Report, bind: {window: state.window, kind: state.kind, bay: state.bay}, label: Run}
+          - {name: hold, does: shelf.Hold, bind: {bay: state.bay}, label: Hold}
       - name: level
         component: choice
         binds: state.level
@@ -294,7 +297,7 @@ fn a_step_reorders_a_row() {
         &[
             "open: items",
             &up,
-            "expect_command: {command: shelf.Move, input: {id: it-2}}",
+            "expect_command: {command: shelf.Move, input: {id: it-2, delta: -1}}",
         ],
     ));
 }
@@ -377,6 +380,25 @@ fn a_step_chooses_in_a_section_level_choice() {
             "choose: {at: pages/report/sections/level, option: high}",
             "act: pages/report/header/actions/level_report",
             "expect_command: {command: shelf.Level, input: {level: high}}",
+        ],
+    ));
+}
+
+/// A letter a view takes before its actions keys none of them: `i` edits a form's field and `h`
+/// moves a filter bar to its previous item, so a form action `invite` and a bar action `hold` are
+/// offered under other letters, and `act` reaches both.
+#[test]
+fn a_view_key_never_keys_an_action_of_the_view() {
+    passed(&run(
+        "view_keys",
+        &[
+            "open: settings",
+            "act: pages/settings/sections/settings/actions/invite",
+            "expect_command: {command: shelf.Invite}",
+            "open: report",
+            "choose: {at: pages/report/sections/filters/choices/bay, option: east}",
+            "act: pages/report/sections/filters/actions/hold",
+            "expect_command: {command: shelf.Hold, input: {bay: east}}",
         ],
     ));
 }

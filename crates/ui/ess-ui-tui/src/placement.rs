@@ -300,6 +300,13 @@ impl StateStore {
         }
     }
 
+    /// Drops every url-placed state under `prefix`, as loading its route with no query does: each
+    /// reads its default again.
+    pub fn forget_location(&mut self, prefix: &str) {
+        let under = format!("{prefix}/state/");
+        self.location.retain(|path, _| !path.starts_with(&under));
+    }
+
     /// The location query: every url-placed state under `prefix` with a value other than its
     /// default, by its last path segment.
     pub fn query(&self, prefix: &str) -> Vec<(String, Value)> {
