@@ -1,4 +1,4 @@
-#	models=94	lines=112
+#	models=96	lines=114
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor-service	suite=5 83258f8aee44f1c66a730f7d9a9245cd6fc1a51718a2f25a53a4e819e7975520:10202	outside=0 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855:0
 crates/edge/ess-cli/tests/fixtures/stored-rules/fold.yaml	rules	suite=5 370232c7ced707b90b7bffff39cf370202474cf971319bcc314bdb945b5abf5c:22834	outside=0 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855:0
 crates/edge/ess-cli/tests/fixtures/stored-rules/model.yaml	rules	suite=3 d6f554bab5f2e6d2e21ae3d24a390942b72cebaf6d753007ba763d2894d9a569:6257	outside=0 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855:0
@@ -30,6 +30,8 @@ crates/verify/ess-conformance/tests/fixtures/explore-component.yaml	back	suite=1
 crates/verify/ess-conformance/tests/fixtures/explore-component.yaml	front	suite=4 b4dd22cf52299504da93396d645ef6bf409d0fe9aeed433db541ef12ac31061b:10448	outside=1 3c36f04637f6952e595d44029ada698f6aac0fa60f36a052cce450b38bae86c9:118
 crates/verify/ess-conformance/tests/fixtures/held-state-input-refusal.yaml	sessions	suite=6 44db9e03fc8fb529354c1a5322fb50c835a9f387ec17c363bd971835f57c6867:26503	outside=0 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855:0
 crates/verify/ess-conformance/tests/fixtures/identity-changing-updates.yaml	vault-service	suite=5 e193d35ddb96b822299f1da7756a1477ab9113602165c14cfc322ffe59072518:21275	outside=0 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855:0
+crates/verify/ess-conformance/tests/fixtures/list-identity-guard-beside-creates.yaml	demo-service	suite=11 203330c44668c6c37e47c5be28b067a131b0ea28c1879270790b640ec1f28bf0:65799	outside=0 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855:0
+crates/verify/ess-conformance/tests/fixtures/list-identity-guard-beside-updates.yaml	demo-service	suite=10 9582faebf115d9251e0cdc3dbcf98416d4399eff40710ec92a9472636b384b12:65462	outside=0 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855:0
 crates/verify/ess-conformance/tests/fixtures/mutation-identical-answer.yaml	desk-server	suite=9 79f90b19aa20846bdeb7a123f7c9dac634e8ed4c1cb2210948e0e09879ebc52e:10446	outside=0 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855:0
 crates/verify/ess-conformance/tests/fixtures/orders-without-a-view.yaml	orders-server	suite=6 a200eac8ee2474dd8923903d6843715e3a1d858659afa51450078b39c708bcef:16976	outside=0 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855:0
 crates/verify/ess-conformance/tests/fixtures/refusal-pair-overlap.yaml	hold	suite=3 b19ec8a81487ac4766d18ff7c5b1e614917804caa78facd79ee1bf0b635163b9:5468	outside=0 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855:0

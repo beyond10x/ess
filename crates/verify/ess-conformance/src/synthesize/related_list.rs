@@ -150,6 +150,52 @@ pub(super) fn arrange(
     input: &BTreeMap<String, Node>,
 ) -> Result<Listed, RefusalCause> {
     let (field, entity) = reads(command).ok_or_else(unarranged)?;
+    // A branch selected by what the list holds is sent the list its witness holds, each element a
+    // row created under it (beyond10x/ess#761), and never the empty list again after it.
+    let guarded = !refuses(outcome) && guards_on_list(outcome, field);
+    let (mut steps, source, items) = if guarded {
+        let Some(Node::Seq(elements)) = input.get(field) else {
+            return Err(unarranged());
+        };
+        named_rows(ir, entity, actors, elements, (ROWS + 16, &setup.steps), &[])?
+    } else {
+        two_rows(ir, command, outcome, entity, actors, field)?
+    };
+    steps.append(&mut setup.steps);
+    setup.steps = steps;
+    setup.source.extend(source);
+    setup
+        .source
+        .insert(crate::scenario::EntityRef::from(entity).into());
+    Ok(Listed {
+        field: field.to_owned(),
+        value: ScenarioValue::List { items },
+        after: if refuses(outcome) || guarded {
+            Vec::new()
+        } else {
+            empty_after(command, outcome, actors, input)
+        },
+    })
+}
+
+/// The steps, sources and list items of a list naming created rows, and for the refusal an
+/// identity no row carries.
+pub(super) type Rows = (
+    Vec<super::ScenarioStep>,
+    std::collections::BTreeSet<crate::scenario::EssSemanticRef>,
+    Vec<ScenarioValue>,
+);
+
+/// One created row then, for the refusal, an identity no row carries, or for any other branch a
+/// second created row.
+fn two_rows(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    entity: &EntityHandle,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    field: &str,
+) -> Result<Rows, RefusalCause> {
     let initial = ir.entity(entity).lifecycle.initial.clone();
     let row = |at: usize| {
         arrange_first(
@@ -178,21 +224,170 @@ pub(super) fn arrange(
             instance: second.instance,
         });
     }
-    steps.append(&mut setup.steps);
-    setup.steps = steps;
-    setup.source.extend(source);
-    setup
-        .source
-        .insert(crate::scenario::EntityRef::from(entity).into());
-    Ok(Listed {
-        field: field.to_owned(),
-        value: ScenarioValue::List { items },
-        after: if refuses(outcome) {
-            Vec::new()
-        } else {
-            empty_after(command, outcome, actors, input)
-        },
+    Ok((steps, source, items))
+}
+
+/// Whether `outcome`'s own `when:` guard reads the list `field` (beyond10x/ess#761): a branch
+/// selected by what the list holds, whose scenario sends the list its witness holds.
+fn guards_on_list(outcome: &ResolvedOutcome, field: &str) -> bool {
+    crate::decision::when(outcome).is_some_and(|guard| {
+        guard
+            .fact_paths()
+            .iter()
+            .any(|path| path.segments().first().is_some_and(|root| root == field))
     })
+}
+
+/// Whether an empty list refutes `outcome`'s own `when:` guard over `input` (beyond10x/ess#761):
+/// a branch selected by what the list holds, which no run sending the empty list every other run
+/// of the command sends ([`empty`]) reaches.
+pub(super) fn refuted_by_empty(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    input: &BTreeMap<String, Node>,
+) -> bool {
+    let (Some((field, _)), Some(guard)) = (reads(command), crate::decision::when(outcome)) else {
+        return false;
+    };
+    let mut sent = input.clone();
+    sent.insert(field.to_owned(), Node::Seq(Vec::new()));
+    crate::input::flatten(ir, command, &sent)
+        .is_ok_and(|facts| matches!(facts.decide(guard), crate::decision::Decision::Refuted(_)))
+}
+
+/// Whether a driver [`refuted_by_empty`] gives way to a sibling: another branch of its command
+/// doing the same to the same entity that the empty list does not refute, which an arrangement
+/// reaches with the empty list every driver is sent (beyond10x/ess#761).
+pub(super) fn gives_way(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    input: &BTreeMap<String, Node>,
+) -> bool {
+    let Some(subject) = &outcome.subject else {
+        return false;
+    };
+    command.outcomes.iter().any(|other| {
+        other.name != outcome.name
+            && other.error.is_none()
+            && other.replays.is_none()
+            && other.subject.as_ref().is_some_and(|theirs| {
+                theirs.entity == subject.entity && theirs.effect == subject.effect
+            })
+            && !refuted_by_empty(ir, command, other, input)
+    })
+}
+
+/// The list a driver [`refuted_by_empty`] with no sibling to give way to is sent: its witness
+/// list, each element a row created under it ahead of the run, or the row `known` steps already
+/// created under it (beyond10x/ess#761). `at` keeps the rows apart from those of another
+/// arrangement of the same scenario.
+pub(super) fn driven(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    input: &BTreeMap<String, Node>,
+    (at, known): (Distinction, &[super::ScenarioStep]),
+    arranging: &[&EntityHandle],
+) -> Result<(String, Rows), RefusalCause> {
+    let (field, entity) = reads(command).ok_or_else(unarranged)?;
+    let Some(Node::Seq(elements)) = input.get(field) else {
+        return Err(unarranged());
+    };
+    let base = ROWS + 32 + 8 * at.get();
+    let rows = named_rows(ir, entity, actors, elements, (base, known), arranging)?;
+    Ok((field.to_owned(), rows))
+}
+
+/// The rows a branch [`guards_on_list`] is sent: one per distinct element of its witness list,
+/// each created under that element as its identity at a distinction from `base` on, or the row
+/// `known` steps already created under it, so the list holds the values its own guard reads
+/// (beyond10x/ess#761). Refused where no creation of the entity taking its identity from its
+/// input keeps its branch under that identity.
+fn named_rows(
+    ir: &EssIr,
+    entity: &EntityHandle,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    elements: &[Node],
+    (base, known): (usize, &[super::ScenarioStep]),
+    arranging: &[&EntityHandle],
+) -> Result<Rows, RefusalCause> {
+    let initial = &ir.entity(entity).lifecycle.initial;
+    let all = ir.drivers();
+    let creators: Vec<_> = all
+        .get(entity)
+        .map_or(&[][..], Vec::as_slice)
+        .iter()
+        .filter(|driver| matches!(driver.effect, ResolvedEffect::Creates))
+        .filter(|driver| super::born(ir, driver) == initial)
+        .collect();
+    let entity_ref = crate::scenario::EntityRef::from(entity);
+    let held = |element: &Node| {
+        known.iter().find_map(|step| match step {
+            super::ScenarioStep::CaptureInstance {
+                instance,
+                entity: captured,
+                ..
+            } if *captured == entity_ref
+                && super::related_guard::created_identity(ir, known, instance).as_ref()
+                    == Some(element) =>
+            {
+                Some(instance.clone())
+            }
+            _ => None,
+        })
+    };
+    let mut steps = Vec::new();
+    let mut source = std::collections::BTreeSet::new();
+    let mut named: Vec<(&Node, crate::scenario::InstanceName)> = Vec::new();
+    for element in elements {
+        if named.iter().any(|(held, _)| *held == element) {
+            continue;
+        }
+        if let Some(instance) = held(element) {
+            named.push((element, instance));
+            continue;
+        }
+        let distinction = Distinction::further(base + named.len());
+        let row = creators
+            .iter()
+            .find_map(|creator| {
+                let field = super::existence::identity_input(creator.outcome)?;
+                let mut sent =
+                    super::reach(ir, creator.command, creator.outcome, distinction).ok()?;
+                if !super::keeps_branch(ir, creator.command, &sent, field, element) {
+                    return None;
+                }
+                super::set_at(&mut sent, field, Some(element.clone()));
+                super::created(
+                    ir,
+                    entity,
+                    creator,
+                    actors,
+                    distinction,
+                    arranging,
+                    Some(&sent),
+                )
+                .ok()
+            })
+            .ok_or_else(unarranged)?;
+        steps.extend(row.steps);
+        source.extend(row.source);
+        named.push((element, row.instance));
+    }
+    let items = elements
+        .iter()
+        .filter_map(|element| {
+            named
+                .iter()
+                .find(|(held, _)| *held == element)
+                .map(|(_, instance)| ScenarioValue::Instance {
+                    instance: instance.clone(),
+                })
+        })
+        .collect();
+    Ok((steps, source, items))
 }
 
 /// What [`arrange`] decided: the list input, the list it is sent, and the steps that follow the
