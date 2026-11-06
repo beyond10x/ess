@@ -9,6 +9,14 @@ What each ESS release is worth to somebody using it: what became possible, how m
 
 This page is generated from the change records kept in the repository. A release with no entry here added nothing somebody using ESS would act on.
 
+## 0.89.0 — 2026-11-06
+
+### A route takes a bare body, a literal segment wins, and an each write takes repeated identities
+
+capability · significant impact · [release post](https://beyond10x.github.io/ess/releases/bare-bodies-literal-routes-and-repeated-identities) · [release notes](https://github.com/beyond10x/ess/releases/tag/0.89.0)
+
+A command route may take one input field as its bare request body, and a literal path segment wins over a variable one. From ess/35 an each write may name one row more than once, in list order. A generated file carries only its own slice digest; the model digest moves to ess-output-state/4, which older releases refuse.
+
 ## 0.88.0 — 2026-11-06
 
 ### Journeys reach every control a page declares, and a collection draws the controls it declares

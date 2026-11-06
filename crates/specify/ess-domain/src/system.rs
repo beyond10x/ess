@@ -372,7 +372,7 @@ pub const FORMAT_HISTORY: &[FormatHistoryEntry] = &[
     },
     FormatHistoryEntry {
         major: 35,
-        release: None,
+        release: Some("0.89.0"),
         added: &[
             "An `affects:` entry over an input list may take a list naming one row more than once, `each: {in: input.<list>, as: <name>, repeated: last_wins}`: its elements apply one after another in list order, each to the row as the elements before it left it, and the entry needs no declared `distinct:` holding the identity member distinct. An upsert repeat writes over what an earlier element wrote, so the last element's values stay; a move repeat takes the transition only from a state in its `from` and is otherwise skipped; a delete repeat names no row and is skipped; and `where:` inside `each:` selects the elements first. `last_wins` is the only value; another is refused by name. List order holds inside one entry, so the key is refused as `conflicting_declaration` where another `each:` entry of the outcome writes the same entity. Below `ess/35` the key is refused as `unsupported_format_version` naming `ess/35`; an entry without it keeps its `distinct:` requirement and its IR bytes. The interpreted target applies the list in order and synthesis sends a list naming the held row twice, reading back the last element's values; generated Rust and Go keep the command an obligation naming the key, Entity Runtime lowering refuses it by name, and `ess verify diff` reports declaring it as widening and dropping it as narrowing (beyond10x/ess#748).",
         ],

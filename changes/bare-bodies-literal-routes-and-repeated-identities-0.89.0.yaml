@@ -1,0 +1,17 @@
+schema: b10x-change/v1
+id: ess/bare-bodies-literal-routes-and-repeated-identities-0.89.0
+repository: ess
+publishedAt: 2026-11-06T00:00:00Z
+title: A route takes a bare body, a literal segment wins, and an each write takes repeated identities
+summary: >-
+  A command route may take one input field as its bare request body, and a literal path segment
+  wins over a variable one. From ess/35 an each write may name one row more than once, in list
+  order. A generated file carries only its own slice digest; the model digest moves to
+  ess-output-state/4, which older releases refuse.
+kind: capability
+impact: significant
+source:
+  url: https://github.com/beyond10x/ess/releases/tag/0.89.0
+  version: 0.89.0
+journeys: [specify, operate-services]
+affectedSurfaces: [ess/docs]
