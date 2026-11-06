@@ -9,6 +9,14 @@ What each ESS release is worth to somebody using it: what became possible, how m
 
 This page is generated from the change records kept in the repository. A release with no entry here added nothing somebody using ESS would act on.
 
+## 0.88.0 — 2026-11-06
+
+### Journeys reach every control a page declares, and a collection draws the controls it declares
+
+capability · notable impact · [release post](https://beyond10x.github.io/ess/releases/journey-controls-and-collection-controls) · [release notes](https://github.com/beyond10x/ess/releases/tag/0.88.0)
+
+`ess ui test` gains a step for every control a page declares, and the terminal and the React app send the same reorder and toggle payloads. The React collection sorts numbers by value and draws its sort, expand, reorder, selection and column controls. Synthesis uses the input examples for a further instance.
+
 ## 0.87.0 — 2026-11-05
 
 ### UI values render in their declared form, forms show their help, and synthesis refuses a misplaced not-found once

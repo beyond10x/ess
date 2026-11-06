@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-06T07:40:09Z",
+  "actor": "human:timo",
+  "artifact": "story:a-collection-draws-the-controls-it-declares",
+  "kind": "story",
+  "revision": 4,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "ESS 0.88.0 staged local gate on integration/ess-0.88.0 at 581e2395406: S1-S4 the six ess-ui crates in full, S5 task ci-lint (fmt-check, workspace clippy --all-targets, doc-check, release-check, action-check), S6 ess-conformance synthesis targets and byte tables with the 244b slow probe, S7 ess-gen in full and the ess-synth targets, S8 ess-cli named targets and ess-xtask in full, S9 projection-check, release-check and test-xtask: every stage exit 0 (2026-11-06); each unit passed an adversary pass, after one correction where it returned NEEDS-CHANGE",
+    "reference": "581e2395406"
+  }
+}

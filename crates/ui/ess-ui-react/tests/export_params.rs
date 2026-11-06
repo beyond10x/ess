@@ -73,11 +73,11 @@ async function settle() { for (let i = 0; i < 4; i++) { root.settle(); await tic
 const textOf = (node) => (typeof node === "string" ? node : (node.children || []).map(textOf).join(""));
 (async () => {
   await settle();
-  const boxes = root.find((node) => node.tag === "input" && node.props.type === "checkbox");
+  const boxes = root.find((node) => node.tag === "input" && node.props.type === "checkbox" && node.props["aria-label"] === "Select row");
   assert.strictEqual(boxes.length, 3, `three rows to select: ${root.text()}`);
   boxes[0].props.onChange({ target: { checked: true } });
   await settle();
-  root.find((node) => node.tag === "input" && node.props.type === "checkbox")[2].props.onChange({ target: { checked: true } });
+  root.find((node) => node.tag === "input" && node.props.type === "checkbox" && node.props["aria-label"] === "Select row")[2].props.onChange({ target: { checked: true } });
   await settle();
   const button = root.find((node) => node.tag === "button" && textOf(node) === "Download");
   assert.strictEqual(button.length, 1, `the bulk action renders once: ${root.text()}`);

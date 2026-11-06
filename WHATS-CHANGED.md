@@ -6,6 +6,7 @@ Generated from `changes/*.yaml` by `cargo xtask whats-changed`. Edit a fragment,
 
 | Release | Change | Kind | Impact |
 |---|---|---|---|
+| [0.88.0](#journeys-reach-every-control-a-page-declares-and-a-collection-draws-the-controls-it-declares) | Journeys reach every control a page declares, and a collection draws the controls it declares | capability | notable |
 | [0.87.0](#ui-values-render-in-their-declared-form-forms-show-their-help-and-synthesis-refuses-a-misplaced-not-found-once) | UI values render in their declared form, forms show their help, and synthesis refuses a misplaced not-found once | capability | notable |
 | [0.86.0](#ui-documents-label-their-values-show-a-toggles-state-page-by-size-and-report-a-refusal-where-it-is) | UI documents label their values, show a toggle's state, page by size and report a refusal where it is | capability | notable |
 | [0.85.0](#every-witness-reads-back-its-effect-and-the-mutation-audit-covers-grants-and-lists-its-gaps) | Every witness reads back its effect, and the mutation audit covers grants and lists its gaps | capability | significant |
@@ -98,6 +99,14 @@ Generated from `changes/*.yaml` by `cargo xtask whats-changed`. Edit a fragment,
 | [0.16.0](#an-authored-scenario-can-claim-a-length-of-time-and-a-target-has-to-answer-for-it) | An authored scenario can claim a length of time, and a target has to answer for it | capability | significant |
 | [0.14.0](#a-component-can-declare-a-command-line-surface-and-ess-synthesizes-its-parser) | A component can declare a command-line surface, and ESS synthesizes its parser | capability | significant |
 | [0.1.0](#ess-becomes-a-standalone-executable-specification-toolchain) | ESS becomes a standalone executable specification toolchain | migration | significant |
+
+## 0.88.0 — 2026-11-06
+
+### Journeys reach every control a page declares, and a collection draws the controls it declares
+
+capability · notable impact · [release notes](https://github.com/beyond10x/ess/releases/tag/0.88.0)
+
+`ess ui test` gains a step for every control a page declares, and the terminal and the React app send the same reorder and toggle payloads. The React collection sorts numbers by value and draws its sort, expand, reorder, selection and column controls. Synthesis uses the input examples for a further instance.
 
 ## 0.87.0 — 2026-11-05
 

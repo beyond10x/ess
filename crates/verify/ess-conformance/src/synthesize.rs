@@ -7384,7 +7384,15 @@ fn created_owned(
         // Mid-arrangement of `entity`: a creator that needs a related row of an entity already
         // being arranged stops there (ess/18).
         let chain: Vec<&EntityHandle> = arranging.iter().copied().chain([entity]).collect();
-        if related_guard::routes(creator.command, creator.outcome) {
+        // An external branch reading a related row is sent naming a present row, as [`invoke`]
+        // sends it when it chooses the input itself: a chosen input naming no declared row is
+        // answered by the `when_related` sibling, not the forced branch (beyond10x/ess#736).
+        let external = input.is_some_and(|input| {
+            creator.outcome.test_strategy == TestStrategy::InjectFault
+                && related_guard::arranges_external(creator.command, creator.outcome)
+                && related_guard::reads_row(creator.command, input, bound)
+        });
+        if related_guard::routes(creator.command, creator.outcome) || external {
             related_guard::drive(
                 ir,
                 creator,
@@ -7440,7 +7448,10 @@ fn created_by<E>(
     };
 
     let mut settled = BTreeMap::new();
-    let created = run(&bound, &steps)?;
+    let mut created = run(&bound, &steps)?;
+    if distinction != Distinction::PLAIN {
+        exampled(ir, entity, creator, distinction, &mut created);
+    }
     steps.extend(created.steps);
     source.extend(created.source);
     absorb(&mut settled, creator.outcome, created.settled);
@@ -7644,6 +7655,346 @@ fn invoke(
     } else {
         Ok(invoke_with(ir, driver, instance, actors, bound, &input))
     }
+}
+
+/// A further instance's creation, with each input that declares an `example:` sent as the plain
+/// instance sends it (beyond10x/ess#736).
+///
+/// Rule 5 of [`crate::witness`] moves every leaf of a further instance's witness, examples
+/// included, so two runs of one creating command never submit one input. But what tells two rows
+/// apart is their identity and the fields something reads to tell them apart. Every other field
+/// of `widget-2` was sent as a generated placeholder, and an implementation needing a member the
+/// example carries refused a create the specification says how to build.
+///
+/// An input takes the plain instance's value where all of these hold, and keeps its own
+/// otherwise:
+///
+/// - it declares an `example:` and no fixture input;
+/// - it is not the creating branch's identity input, and no branch decision of the creating
+///   command reads it: an input guard, an `input.` operand of a guard over stored rows, a related
+///   row's reference ([`decision_inputs`]);
+/// - it was sent as the further instance's own witness, not a value a scenario arranged;
+/// - no field the branch copies it into is the identity, read by a view over the entity (filter,
+///   order, grouping, aggregate input, computed field or reference), where further rows are told
+///   apart, ranked or counted, or read by any command's branch decision over a stored row of the
+///   entity (a uniqueness check's row selection, a related-row or subject predicate,
+///   [`decided_by`]): a search may have chosen that value to take or pass over such a branch, and
+///   the plain value could take the other side;
+/// - the plain value keeps the branch ([`keeps_branch`]).
+///
+/// What the branch's `sets:` leave is read again from the input sent.
+fn exampled(
+    ir: &EssIr,
+    entity: &EntityHandle,
+    creator: &Driver<'_>,
+    distinction: Distinction,
+    created: &mut Invocation,
+) {
+    let command = creator.command;
+    if command.examples.is_empty() {
+        return;
+    }
+    let first = |at: Distinction| {
+        candidates(ir, command, &[], at)
+            .ok()
+            .and_then(|inputs| inputs.into_iter().next())
+    };
+    let (Some(plain), Some(own)) = (first(Distinction::PLAIN), first(distinction)) else {
+        return;
+    };
+    let name = CommandRef::new(command.name.clone());
+    let Some(input) = created.steps.iter_mut().rev().find_map(|step| match step {
+        ScenarioStep::ExecuteCommand {
+            command: executed,
+            input,
+            ..
+        } if *executed == name => Some(input),
+        _ => None,
+    }) else {
+        return;
+    };
+    let identity = existence::identity_input(creator.outcome);
+    let mut guarded: BTreeSet<&str> = input_guards(command)
+        .into_iter()
+        .flat_map(Predicate::fact_paths)
+        .map(FactPath::namespace)
+        .collect();
+    guarded.extend(decision_inputs(command));
+    let told = told_apart(ir, entity, creator.outcome);
+    let mut swapped: BTreeSet<&str> = BTreeSet::new();
+    for field in command.examples.keys() {
+        let field = field.as_str();
+        if command.fixture_inputs.contains_key(field)
+            || identity == Some(field)
+            || guarded.contains(field)
+            || told.contains(field)
+        {
+            continue;
+        }
+        let (Some(example), Some(placeholder)) = (plain.get(field), own.get(field)) else {
+            continue;
+        };
+        if example == placeholder
+            || input.get(field) != Some(&ScenarioValue::literal(placeholder.clone()))
+        {
+            continue;
+        }
+        let literals: BTreeMap<String, Node> = input
+            .iter()
+            .filter_map(|(name, value)| match value {
+                ScenarioValue::Literal { value } => Some((name.clone(), value.clone())),
+                _ => None,
+            })
+            .collect();
+        if !keeps_branch(ir, command, &literals, field, example) {
+            continue;
+        }
+        input.insert(field.to_owned(), ScenarioValue::literal(example.clone()));
+        swapped.insert(field);
+    }
+    if swapped.is_empty() {
+        return;
+    }
+    let refreshed = settled(ir, creator.outcome, input, &BTreeMap::new());
+    for set in &creator.outcome.sets {
+        let ResolvedPayloadValue::InputField { field: read, .. } = &set.value else {
+            continue;
+        };
+        if !swapped.contains(read.split('.').next().unwrap_or(read)) {
+            continue;
+        }
+        match refreshed.get(&set.target) {
+            Some(held) => {
+                created.settled.insert(set.target.clone(), held.clone());
+            }
+            None => {
+                created.settled.remove(&set.target);
+            }
+        }
+    }
+}
+
+/// The inputs a creating branch copies into a field that tells its rows apart: the identity, a
+/// field a view over `entity` reads in its filter, order, grouping, aggregate input, computed
+/// fields or references, or a field some command's branch decision reads of a stored row
+/// ([`decided_by`]).
+fn told_apart<'o>(
+    ir: &EssIr,
+    entity: &EntityHandle,
+    outcome: &'o ResolvedOutcome,
+) -> BTreeSet<&'o str> {
+    let identity = &ir.entity(entity).identity.name;
+    let views: Vec<&ResolvedView> = ir
+        .views()
+        .values()
+        .filter(|view| view.source == *entity)
+        .collect();
+    let decided = decided_by(ir, entity);
+    let read = |target: &str| {
+        target == identity
+            || decided.contains(target)
+            || views.iter().any(|view| {
+                reads_root(view, target)
+                    || view.order_by.iter().any(|rank| rank.field == target)
+                    || view
+                        .references
+                        .iter()
+                        .any(|reference| reference.via == target)
+                    || view.computed.values().any(|expression| {
+                        expression
+                            .reads()
+                            .into_iter()
+                            .any(|path| path.namespace() == target)
+                    })
+                    || view.aggregation.as_ref().is_some_and(|aggregation| {
+                        aggregation.group_by.iter().any(|field| field == target)
+                            || aggregation.functions.values().any(|function| {
+                                function
+                                    .input
+                                    .as_ref()
+                                    .is_some_and(|input| input.name == target)
+                            })
+                    })
+            })
+    };
+    let mut told = BTreeSet::new();
+    for set in outcome.sets.iter().filter(|set| read(&set.target)) {
+        inputs_read(&set.value, &mut told);
+    }
+    told
+}
+
+/// Each input a `sets:` value reads, by its root field: copied, defaulted, computed or carried in
+/// a member of a struct.
+fn inputs_read<'o>(value: &'o ResolvedPayloadValue, found: &mut BTreeSet<&'o str>) {
+    match value {
+        ResolvedPayloadValue::InputField { field, .. }
+        | ResolvedPayloadValue::InputOrGenerated { field, .. } => {
+            found.insert(field.split('.').next().unwrap_or(field));
+        }
+        ResolvedPayloadValue::Expression { expr, .. } => {
+            found.extend(expr.reads().into_iter().filter_map(input_root));
+        }
+        ResolvedPayloadValue::Struct { fields } => {
+            for field in fields {
+                inputs_read(&field.value, found);
+            }
+        }
+        _ => {}
+    }
+}
+
+/// The input field an `input.<field>…` path reads, where it reads one.
+fn input_root(path: &FactPath) -> Option<&str> {
+    match path.segments() {
+        [root, field, ..] if root == ess_domain::command::subject_fact::INPUT_NAMESPACE => {
+            Some(field.as_str())
+        }
+        _ => None,
+    }
+}
+
+/// Every guard over stored rows that decides a branch of `command`, with the entity whose stored
+/// fields it reads: a subject guard (`when_subject:`, an `external:` branch narrowed by the
+/// subject), a related-row predicate and each `all:` row of `when_related:`, the field holding a
+/// related row's reference, a row selection (`when_related: {entity, where}`) and its `forall:`,
+/// and the filter of an `instances:` or `affects:` selection.
+fn stored_guards(command: &ResolvedCommand) -> Vec<(&EntityHandle, StoredGuard<'_>)> {
+    let mut guards = Vec::new();
+    for outcome in &command.outcomes {
+        let subject = command
+            .selection_subject(outcome)
+            .map(|subject| &subject.entity);
+        match &outcome.condition {
+            ResolvedCondition::SubjectField { field, .. } => {
+                guards.extend(subject.map(|entity| (entity, StoredGuard::Field(field))));
+            }
+            ResolvedCondition::SubjectPredicate { predicate, .. }
+            | ResolvedCondition::ExternalSubject { predicate, .. } => {
+                guards.extend(subject.map(|entity| (entity, StoredGuard::Predicate(predicate))));
+            }
+            ResolvedCondition::Related {
+                via,
+                entity,
+                test,
+                also,
+                ..
+            } => {
+                if let (ess_compiler::ir::ResolvedRelatedVia::Subject { field, .. }, Some(at)) =
+                    (via, subject)
+                {
+                    guards.push((at, StoredGuard::Field(field)));
+                }
+                if let ess_compiler::ir::ResolvedRelatedTest::Holds { predicate } = test {
+                    guards.push((entity, StoredGuard::Predicate(predicate)));
+                }
+                for row in also {
+                    guards.push((&row.entity, StoredGuard::Predicate(&row.predicate)));
+                }
+            }
+            ResolvedCondition::RelatedSet {
+                selection, test, ..
+            } => {
+                guards.push((&selection.entity, StoredGuard::Predicate(&selection.filter)));
+                if let ess_compiler::ir::ResolvedRowSetTest::Forall(predicate) = test {
+                    guards.push((&selection.entity, StoredGuard::Predicate(predicate)));
+                }
+            }
+            _ => {}
+        }
+        if let Some(instances) = &outcome.instances {
+            guards.push((&instances.entity, StoredGuard::Predicate(&instances.filter)));
+        }
+        for affect in &outcome.affects {
+            if let Some(filter) = &affect.filter {
+                guards.push((&affect.entity, StoredGuard::Predicate(filter)));
+                // `subject.<field>` in the filter reads the addressed row as it was before.
+                if let Some(at) = subject {
+                    for path in filter.fact_paths() {
+                        if let [root, field, ..] = path.segments() {
+                            if root == "subject" {
+                                guards.push((at, StoredGuard::Field(field)));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    guards
+}
+
+/// Every input a branch decision of `command` reads beside its input guards: an `input.` operand
+/// of a guard over stored rows ([`stored_guards`]), an input naming a related row, and the input
+/// guard beside a row selection.
+fn decision_inputs(command: &ResolvedCommand) -> BTreeSet<&str> {
+    let mut read: BTreeSet<&str> = stored_guards(command)
+        .into_iter()
+        .filter_map(|(_, guard)| match guard {
+            StoredGuard::Predicate(predicate) => Some(predicate),
+            StoredGuard::Field(_) => None,
+        })
+        .flat_map(Predicate::fact_paths)
+        .filter_map(input_root)
+        .collect();
+    for outcome in &command.outcomes {
+        match &outcome.condition {
+            ResolvedCondition::Related { via, also, .. } => {
+                for via in std::iter::once(via).chain(also.iter().map(|row| &row.via)) {
+                    if let ess_compiler::ir::ResolvedRelatedVia::Input { field, .. } = via {
+                        read.insert(field.split('.').next().unwrap_or(field));
+                    }
+                }
+            }
+            ResolvedCondition::RelatedSet {
+                input: Some(guard), ..
+            } => {
+                read.extend(guard.fact_paths().into_iter().map(FactPath::namespace));
+            }
+            _ => {}
+        }
+    }
+    read
+}
+
+/// What a [`stored_guards`] entry reads of its entity's stored row.
+enum StoredGuard<'c> {
+    /// One stored field by name.
+    Field(&'c str),
+    /// Every stored field the predicate reads: each path outside `input.` and `subject.`.
+    Predicate(&'c Predicate),
+}
+
+/// Every stored field of `entity` some command's branch decision reads ([`stored_guards`]): a
+/// further row carrying the plain row's value there could take the other side of that decision,
+/// so the value the search gave it stays.
+fn decided_by<'i>(ir: &'i EssIr, entity: &EntityHandle) -> BTreeSet<&'i str> {
+    let mut read = BTreeSet::new();
+    for command in ir.commands().values() {
+        for (at, guard) in stored_guards(command) {
+            if at != entity {
+                continue;
+            }
+            match guard {
+                StoredGuard::Field(field) => {
+                    read.insert(field);
+                }
+                StoredGuard::Predicate(predicate) => {
+                    read.extend(
+                        predicate
+                            .fact_paths()
+                            .into_iter()
+                            .map(FactPath::namespace)
+                            .filter(|root| {
+                                *root != ess_domain::command::subject_fact::INPUT_NAMESPACE
+                                    && *root != "subject"
+                            }),
+                    );
+                }
+            }
+        }
+    }
+    read
 }
 
 /// `input` with the identity an arranging creation names its new row by moved to `distinction`'s

@@ -688,17 +688,26 @@ impl<'d> Gen<'d> {
     }
 
     /// Whether a read on the page being written takes the state at `path` (a filter bar's
-    /// search): one of its expressions names `path` or a field inside it. Outside a page, any
-    /// read may, so it is taken.
+    /// search): one of its expressions names `path`, a field inside it, or a record that holds
+    /// it (`state.filters` holds `state.filters.q`), given whole. Outside a page, any read may,
+    /// so it is taken.
     fn read_takes(&self, path: &str) -> bool {
+        let word = |c: char| c.is_ascii_alphanumeric() || c == '_';
+        let names = |text: &str, name: &str, whole: bool| {
+            text.match_indices(name).any(|(at, _)| {
+                let before = text[..at].chars().next_back();
+                let rest = &text[at + name.len()..];
+                let inside =
+                    rest.starts_with('.') || rest.starts_with('[') || rest.starts_with("?.");
+                let cut = before.is_some_and(|c| word(c) || c == '.')
+                    || rest.chars().next().is_some_and(word);
+                !(cut || (whole && inside))
+            })
+        };
+        let holders: Vec<&str> = path.match_indices('.').map(|(at, _)| &path[..at]).collect();
         self.page_reads.as_ref().is_none_or(|exprs| {
             exprs.iter().any(|text| {
-                text.match_indices(path).any(|(at, _)| {
-                    let word = |c: char| c.is_ascii_alphanumeric() || c == '_';
-                    let before = text[..at].chars().next_back();
-                    let after = text[at + path.len()..].chars().next();
-                    !before.is_some_and(|c| word(c) || c == '.') && !after.is_some_and(word)
-                })
+                names(text, path, false) || holders.iter().any(|holder| names(text, holder, true))
             })
         })
     }
@@ -1189,7 +1198,19 @@ impl<'d> Gen<'d> {
                     .expand
                     .as_deref()
                     .map(|node| self.node(&at.child("expand"), node, &Opts::own()));
-                let item = self.node_fragment(at, "item", &c.item);
+                // Each `item` node by its name: a table draws it in a column of its own.
+                let items = (!c.item.is_empty()).then(|| {
+                    let rendered = self.node_list(at, "item", &c.item);
+                    ts::array(c.item.iter().zip(rendered).map(|(node, rendered)| {
+                        ts::object([
+                            (
+                                "name",
+                                Some(ts::string(node.common.name.as_deref().unwrap_or(""))),
+                            ),
+                            ("node", Some(rendered)),
+                        ])
+                    }))
+                });
                 let reorder = c
                     .reorder
                     .as_ref()
@@ -1215,7 +1236,7 @@ impl<'d> Gen<'d> {
                     .opt("bulkActions", bulk_actions)
                     .opt("actions", actions)
                     .opt("expand", expand)
-                    .opt("item", item)
+                    .opt("items", items)
                     .opt("reorder", reorder)
                     .opt("groupBy", quoted(c.group_by.as_ref()))
                     .opt(

@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-not-found-branch-after-a-guarded-move-is-refused-with-its-repair
 kind: story
-status: active
+status: implemented
 title: A not-found branch after a guarded move is refused with its repair, never as a defect in ess
 summary: An external not-found declared after a when-guarded move gets one refusal naming before_row, not ESS-SYNTH-019 (adopter report 2026-11-04, ess 0.85.0)
 tags:
@@ -16,10 +16,11 @@ scope:
   path: crates/verify/ess-conformance/src/synthesize.rs
 - confidence: inferred
   path: crates/verify/ess-conformance/tests/precedence_order.rs
-revision: 6
+revision: 7
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-04T08:47:27Z", actor: "human:timo", revision: 5, executor: "agent:ess-w1-lead", correlation: "ess-0.87.0-w1"}
 - {from: "proposed", to: "active", at: "2026-11-04T08:47:28Z", actor: "human:timo", revision: 6, executor: "agent:ess-w1-lead", correlation: "ess-0.87.0-w1"}
+- {from: "active", to: "implemented", at: "2026-11-05T17:37:07Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"test_result":1}}}
 ---
 # Story: a not-found branch after a guarded move is refused with its repair, never as a defect in ess
 

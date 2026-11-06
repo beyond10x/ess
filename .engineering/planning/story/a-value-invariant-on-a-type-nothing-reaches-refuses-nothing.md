@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-value-invariant-on-a-type-nothing-reaches-refuses-nothing
 kind: story
-status: active
+status: implemented
 title: A value invariant on a type nothing reaches refuses nothing and is named
 summary: ESS-SYNTH-013 on a type no command, event, error, view, entity or binding reaches becomes a note, as an unreached Binary64 already is (loom report 2026-11-04, ess 0.85.0)
 tags:
@@ -20,10 +20,11 @@ scope:
   path: crates/verify/ess-conformance/src/synthesize.rs
 - confidence: inferred
   path: crates/verify/ess-conformance/tests/value_invariant_reach.rs
-revision: 8
+revision: 9
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-04T08:47:28Z", actor: "human:timo", revision: 7, executor: "agent:ess-w1-lead", correlation: "ess-0.87.0-w1"}
 - {from: "proposed", to: "active", at: "2026-11-04T08:47:28Z", actor: "human:timo", revision: 8, executor: "agent:ess-w1-lead", correlation: "ess-0.87.0-w1"}
+- {from: "active", to: "implemented", at: "2026-11-05T17:37:08Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"test_result":1}}}
 ---
 # Story: a value invariant on a type nothing reaches refuses nothing and is named
 

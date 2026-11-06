@@ -208,7 +208,10 @@ pages:
     let runtime = generated(&files, "src/runtime/composites/collection.tsx");
     let header = runtime
         .lines()
-        .find(|line| line.contains("<th key={column.name}"))
+        .find(|line| {
+            line.contains("<th key={column.name}")
+                || line.contains("<th key={`column:${column.name}`}")
+        })
         .unwrap_or_else(|| panic!("the collection renders a header cell per column:\n{runtime}"));
     let container = "pages/things/sections/list";
     let rendered = if header.contains("data-ui-path={columnPath(column.name)}")

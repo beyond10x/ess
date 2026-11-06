@@ -214,6 +214,14 @@ const BASE: &str = include_str!("fixtures/adversary-244b-base-digests.tsv");
 /// refusals grow. Since 0.82.0 `binding-arrangement`'s binding scenarios compare their trigger
 /// event's identities (`b1a810d3d7`, story binding-site-identity-comparisons), so its suite grows.
 /// Their mutants are those of the 0.85.0 audit. IR is unchanged.
+///
+/// 0.87.0, first recorded at the 0.88.0 release bar: two refusal moves this probe was not run
+/// against, each already re-pinned in `synthesis-suite-bytes-table.tsv` by the 0.87.0 release.
+/// `model-types` loses its unreached value-invariant refusal to a note
+/// (story:a-value-invariant-on-a-type-nothing-reaches-refuses-nothing). `explore-external` and
+/// `explore-external-exits` keep their refusal counts with the repair the refusal now names
+/// (story:a-not-found-branch-after-a-guarded-move-is-refused-with-its-repair). Their entries
+/// above are superseded in the refusals column only; IR, suite and mutants are unchanged.
 const INTENDED: &[(&str, &str)] = &[
     (
         "crates/verify/ess-conformance/tests/fixtures/arrangement-input-refusal.yaml",
@@ -357,11 +365,11 @@ const INTENDED: &[(&str, &str)] = &[
     ),
     (
         "crates/generate/ess-gen/tests/fixtures/model-types.yaml",
-        "ir=91f0042ec0ca486d8095:4855 suite=01c5b843e68efa1d3e0a:363 refusals=bd8344ba32d2d00918b3:359 mutants=e3b0c44298fc1c149afb:0",
+        "ir=91f0042ec0ca486d8095:4855 suite=01c5b843e68efa1d3e0a:363 refusals=e3b0c44298fc1c149afb:0 mutants=e3b0c44298fc1c149afb:0",
     ),
     (
         "crates/generate/ess-gen/tests/fixtures/model-types.yaml@ess22",
-        "ir=91f0042ec0ca486d8095:4855 suite=01c5b843e68efa1d3e0a:363 refusals=bd8344ba32d2d00918b3:359 mutants=e3b0c44298fc1c149afb:0",
+        "ir=91f0042ec0ca486d8095:4855 suite=01c5b843e68efa1d3e0a:363 refusals=e3b0c44298fc1c149afb:0 mutants=e3b0c44298fc1c149afb:0",
     ),
     (
         "crates/generate/ess-synth/tests/fixtures/bounded-accessor.yaml",
@@ -649,19 +657,19 @@ const INTENDED: &[(&str, &str)] = &[
     ),
     (
         "crates/verify/ess-conformance/tests/fixtures/explore-external-exits.yaml",
-        "ir=07a4759345deb9f1564f:11916 suite=110b5cca61360a40533a:18834 refusals=03843445ae95de8a2f8e:1169 mutants=bde81fbdcaf446ae8212:1442",
+        "ir=07a4759345deb9f1564f:11916 suite=110b5cca61360a40533a:18834 refusals=7ba5bcde185c04381238:1462 mutants=bde81fbdcaf446ae8212:1442",
     ),
     (
         "crates/verify/ess-conformance/tests/fixtures/explore-external-exits.yaml@ess22",
-        "ir=07a4759345deb9f1564f:11916 suite=110b5cca61360a40533a:18834 refusals=03843445ae95de8a2f8e:1169 mutants=bde81fbdcaf446ae8212:1442",
+        "ir=07a4759345deb9f1564f:11916 suite=110b5cca61360a40533a:18834 refusals=7ba5bcde185c04381238:1462 mutants=bde81fbdcaf446ae8212:1442",
     ),
     (
         "crates/verify/ess-conformance/tests/fixtures/explore-external.yaml",
-        "ir=6bea432cebf5f5cd90a1:12469 suite=4c73c1cd67fcd2fd10f4:29517 refusals=92126ffa688e233df54f:351 mutants=0998cfcaed5183e6d475:1424",
+        "ir=6bea432cebf5f5cd90a1:12469 suite=4c73c1cd67fcd2fd10f4:29517 refusals=44d73b7a9592cd0d3c76:636 mutants=0998cfcaed5183e6d475:1424",
     ),
     (
         "crates/verify/ess-conformance/tests/fixtures/explore-external.yaml@ess22",
-        "ir=751c3beb20f5a45e0eaa:12505 suite=f2a5f7b617e678103c60:21822 refusals=348686e1681154d62d51:1362 mutants=0998cfcaed5183e6d475:1424",
+        "ir=751c3beb20f5a45e0eaa:12505 suite=f2a5f7b617e678103c60:21822 refusals=e1cf89867f269108415d:1647 mutants=0998cfcaed5183e6d475:1424",
     ),
     (
         "crates/verify/ess-conformance/tests/fixtures/explore-guards-first.yaml",

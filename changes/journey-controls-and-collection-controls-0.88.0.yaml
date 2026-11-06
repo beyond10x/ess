@@ -1,0 +1,17 @@
+schema: b10x-change/v1
+id: ess/journey-controls-and-collection-controls-0.88.0
+repository: ess
+publishedAt: 2026-11-06T00:00:00Z
+title: Journeys reach every control a page declares, and a collection draws the controls it declares
+summary: >-
+  `ess ui test` gains a step for every control a page declares, and the terminal and the React app
+  send the same reorder and toggle payloads. The React collection sorts numbers by value and draws
+  its sort, expand, reorder, selection and column controls. Synthesis uses the input examples for a
+  further instance.
+kind: capability
+impact: notable
+source:
+  url: https://github.com/beyond10x/ess/releases/tag/0.88.0
+  version: 0.88.0
+journeys: [specify]
+affectedSurfaces: [ess/docs]

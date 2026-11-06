@@ -1056,8 +1056,9 @@ fn assert_archive_downloads_survive_slow_throughput(ci: &Value) {
         };
         assert_eq!(
             text(&run["if"]),
-            format!("${{{{ !cancelled() && ({any}) }}}}"),
-            "`{task}` does not run after any successful attempt of `{artifact}`"
+            format!("${{{{ !cancelled() && steps.go-task.outcome == 'success' && ({any}) }}}}"),
+            "`{task}` does not run after any successful attempt of `{artifact}`, or runs without \
+             go-task"
         );
         assert!(run["continue-on-error"].is_null());
     }
@@ -1120,7 +1121,8 @@ fn each_nextest_archive_gets_three_forty_minute_attempts_and_a_missing_one_fails
             .find(|step| text(&step["run"]).contains("task test-shard"))
             .unwrap();
         run["if"] = Value::String(
-            "${{ !cancelled() && (steps.archives.outcome == 'success' || \
+            "${{ !cancelled() && steps.go-task.outcome == 'success' && \
+             (steps.archives.outcome == 'success' || \
              steps.archives-retry.outcome == 'success') }}"
                 .to_owned(),
         );
@@ -1512,6 +1514,230 @@ fn every_job_that_runs_task_installs_the_pinned_release_by_checksum() {
     );
     let (version, _) = pins.into_iter().next().unwrap();
     assert_eq!(version, "3.52.0");
+}
+
+/// The workflows whose jobs install go-task from its release archive.
+const GO_TASK_WORKFLOWS: [&str; 2] = [".github/workflows/ci.yml", ".github/workflows/release.yml"];
+
+/// How often, at least, a go-task download is retried before its job fails.
+const GO_TASK_RETRIES: u32 = 5;
+
+/// Whether `step` runs go-task: a line of its script starts with `task `.
+fn runs_task(step: &Value) -> bool {
+    text(&step["run"])
+        .lines()
+        .any(|line| line.trim_start().starts_with("task "))
+}
+
+/// The words of the `curl` command in `script`, its `\` line continuations joined.
+fn curl_words(script: &str) -> Vec<String> {
+    script
+        .replace("\\\n", " ")
+        .lines()
+        .find(|line| line.trim_start().starts_with("curl "))
+        .map(|line| line.split_whitespace().map(str::to_owned).collect())
+        .unwrap_or_default()
+}
+
+/// Whether a step guarded by `condition` still runs once an earlier step has failed its job, with
+/// each earlier step's outcome under `steps.<id>.outcome` in `outcomes`. GitHub prefixes a
+/// condition that calls no status function with `success()`, so such a step, like one with no
+/// condition, is skipped.
+fn runs_after_a_failed_step(condition: &Value, outcomes: &BTreeMap<String, &'static str>) -> bool {
+    let condition = text(condition).trim();
+    let status = ["success()", "failure()", "always()", "cancelled()"];
+    if !status.iter().any(|function| condition.contains(function)) {
+        return false;
+    }
+    let condition = condition
+        .replace("success()", "''")
+        .replace("failure()", "'true'")
+        .replace("always()", "'true'")
+        .replace("cancelled()", "''");
+    let condition = if condition.starts_with("${{") {
+        condition
+    } else {
+        format!("${{{{ {condition} }}}}")
+    };
+    let context: BTreeMap<&str, &str> = outcomes
+        .iter()
+        .map(|(name, outcome)| (name.as_str(), *outcome))
+        .collect();
+    evaluate(&condition, &context).truthy()
+}
+
+/// Every job of `workflow` that runs go-task downloads it with `curl --fail`, retried at least
+/// [`GO_TASK_RETRIES`] times on any error with curl's own doubling backoff, and an install that
+/// still fails stops the job there: the install step is neither conditional nor allowed to fail,
+/// and no later step that runs `task` runs once it has failed. Returns how many installs it read.
+fn assert_go_task_install_survives_a_download_error(file: &str, workflow: &Value) -> usize {
+    let mut installs = 0;
+    for (id, job) in workflow["jobs"].as_mapping().expect("jobs") {
+        let id = text(id);
+        let steps: Vec<&Value> = job["steps"].as_sequence().into_iter().flatten().collect();
+        if !steps.iter().any(|step| runs_task(step)) {
+            continue;
+        }
+        let at = steps
+            .iter()
+            .position(|step| text(&step["run"]).contains("task_linux_amd64.tar.gz"))
+            .unwrap_or_else(|| panic!("{file} `{id}` runs go-task and never installs it"));
+        let install = steps[at];
+        let words = curl_words(text(&install["run"]));
+        assert!(
+            words.iter().any(|word| word == "--fail"),
+            "{file} `{id}`: an HTTP error on the go-task download does not fail curl: {words:?}"
+        );
+        let retries = words
+            .iter()
+            .position(|word| word == "--retry")
+            .and_then(|at| words.get(at + 1))
+            .and_then(|count| count.parse::<u32>().ok());
+        assert!(
+            retries.is_some_and(|count| count >= GO_TASK_RETRIES),
+            "{file} `{id}`: the go-task download is retried {retries:?} times, not at least \
+             {GO_TASK_RETRIES}, so one transient error fails the job: {words:?}"
+        );
+        assert!(
+            words.iter().any(|word| word == "--retry-all-errors"),
+            "{file} `{id}`: the go-task download is not retried on every error: {words:?}"
+        );
+        assert!(
+            !words.iter().any(|word| word.starts_with("--retry-delay")),
+            "{file} `{id}`: a fixed `--retry-delay` replaces curl's doubling backoff: {words:?}"
+        );
+        assert!(
+            install["continue-on-error"].is_null() && install["if"].is_null(),
+            "{file} `{id}`: a failed go-task install must fail the job at the install step"
+        );
+        let mut outcomes: BTreeMap<String, &'static str> = steps
+            .iter()
+            .filter_map(|step| step["id"].as_str())
+            .map(|step| (format!("steps.{step}.outcome"), "skipped"))
+            .collect();
+        for (index, step) in steps.iter().enumerate().take(at + 1) {
+            if let Some(step) = step["id"].as_str() {
+                let outcome = if index == at { "failure" } else { "success" };
+                outcomes.insert(format!("steps.{step}.outcome"), outcome);
+            }
+        }
+        for step in &steps[at + 1..] {
+            if !runs_after_a_failed_step(&step["if"], &outcomes) {
+                continue;
+            }
+            assert!(
+                !runs_task(step),
+                "{file} `{id}`: `{}` still runs once the go-task install has failed, so the job \
+                 fails there as `task: command not found` rather than at the install",
+                text(&step["name"])
+            );
+            if let Some(step) = step["id"].as_str() {
+                outcomes.insert(format!("steps.{step}.outcome"), "success");
+            }
+        }
+        installs += 1;
+    }
+    installs
+}
+
+/// The go-task install in `job` of `workflow`.
+fn go_task_install<'a>(workflow: &'a mut Value, job: &str) -> &'a mut Value {
+    workflow["jobs"][job]["steps"]
+        .as_sequence_mut()
+        .unwrap()
+        .iter_mut()
+        .find(|step| text(&step["run"]).contains("task_linux_amd64.tar.gz"))
+        .unwrap_or_else(|| panic!("`{job}` installs go-task"))
+}
+
+/// A transient error on the go-task release download must not fail a job. In the 0.87.0 queue run
+/// 42043226338 the download returned HTTP 504 on two of twenty test shards; `task` was missing, and
+/// the shards' test steps, which run under `!cancelled()` so that every archive attempt is read,
+/// exited 127 with `task: command not found`. Every install now retries the download on any error
+/// with curl's doubling backoff, and a job whose install still fails stops there. `pages.yml`
+/// compiles go-task with `go install` and is left as it is
+/// (`every_job_that_runs_task_installs_the_pinned_release_by_checksum`).
+#[test]
+fn a_go_task_install_retries_its_download_and_a_failed_one_stops_the_job_there() {
+    for file in GO_TASK_WORKFLOWS {
+        let installs = assert_go_task_install_survives_a_download_error(file, &yaml(file));
+        assert!(installs > 0, "{file} installs go-task in no job");
+    }
+
+    for file in GO_TASK_WORKFLOWS {
+        let workflow = yaml(file);
+        let jobs: Vec<String> = workflow["jobs"]
+            .as_mapping()
+            .unwrap()
+            .iter()
+            .filter(|(_, job)| {
+                job["steps"]
+                    .as_sequence()
+                    .into_iter()
+                    .flatten()
+                    .any(runs_task)
+            })
+            .map(|(id, _)| text(id).to_owned())
+            .collect();
+        let mutate = |job: &str, change: &dyn Fn(&mut Value)| {
+            let mut mutated = workflow.clone();
+            change(go_task_install(&mut mutated, job));
+            let caught = std::panic::catch_unwind(|| {
+                assert_go_task_install_survives_a_download_error(file, &mutated)
+            });
+            assert!(
+                caught.is_err(),
+                "a mutation of {file} `{job}` went unnoticed"
+            );
+        };
+        let edit = |from: &'static str, to: &'static str| {
+            move |install: &mut Value| {
+                let run = text(&install["run"]).to_owned();
+                assert!(run.contains(from), "the install has no `{from}`: {run}");
+                install["run"] = Value::String(run.replace(from, to));
+            }
+        };
+        for job in &jobs {
+            // The retry dropped: one 504 fails the job.
+            mutate(job, &edit("--retry 5 ", ""));
+            // Too few retries.
+            mutate(job, &edit("--retry 5 ", "--retry 1 "));
+            // Retried only on the errors curl calls transient.
+            mutate(job, &edit(" --retry-all-errors", ""));
+            // A fixed delay instead of the backoff.
+            mutate(
+                job,
+                &edit("--retry-all-errors", "--retry-all-errors --retry-delay 5"),
+            );
+            // A failed install that lets the job go on.
+            mutate(job, &|install: &mut Value| {
+                install["continue-on-error"] = Value::Bool(true);
+            });
+        }
+    }
+
+    // The test steps as they were in run 42043226338: guarded by the archive attempts alone, they
+    // run without go-task.
+    let ci = yaml(".github/workflows/ci.yml");
+    for task in ["task test-shard", "task test-feature-off"] {
+        let mut mutated = ci.clone();
+        let step = mutated["jobs"]["test"]["steps"]
+            .as_sequence_mut()
+            .unwrap()
+            .iter_mut()
+            .find(|step| text(&step["run"]).contains(task))
+            .unwrap();
+        let guard = text(&step["if"]).replace(" && steps.go-task.outcome == 'success'", "");
+        assert_ne!(guard, text(&step["if"]), "`{task}` is guarded on go-task");
+        step["if"] = Value::String(guard);
+        let caught = std::panic::catch_unwind(|| {
+            assert_go_task_install_survives_a_download_error("ci.yml", &mutated)
+        });
+        assert!(
+            caught.is_err(),
+            "`{task}` runs after a failed go-task install unnoticed"
+        );
+    }
 }
 
 /// The test binaries carry line tables, not full debug information: the archive every shard

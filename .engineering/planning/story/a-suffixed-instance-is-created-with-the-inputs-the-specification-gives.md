@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-suffixed-instance-is-created-with-the-inputs-the-specification-gives
 kind: story
-status: active
+status: implemented
 title: A suffixed instance is created with the inputs the specification gives
 summary: Synthesis sends generated placeholders instead of input examples for a second instance, and a forced external create of it references an undeclared row (beyond10x/ess#736; 0.78.0 to 0.86.0)
 tags:
@@ -14,10 +14,11 @@ refs:
 relations:
 - serves: vision:O2
 - decomposes: epic:adopter-gaps-synthesis
-revision: 3
+revision: 6
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-05T00:13:28Z", actor: "human:timo", revision: 2}
 - {from: "proposed", to: "active", at: "2026-11-05T00:13:28Z", actor: "human:timo", revision: 3}
+- {from: "active", to: "implemented", at: "2026-11-06T07:40:05Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"test_result":1}}}
 ---
 ## Outcome
 
@@ -91,3 +92,22 @@ Two consequences:
 
 Accepted by the orchestrator on 2026-11-05. It goes first in the next ESS wave after 0.87.0; it joins 0.87.0 only
 if that wave has a free unit slot and no collision (it lands in `synthesize.rs`, which U1 holds).
+
+## Decisions
+
+The 0.88.0 adversary pass on this unit found two introduced defects; the coordinator decided on
+2026-11-05 that one correction in this wave fixes both:
+
+- A further instance takes the input's example even where a `when_related` row-set uniqueness check
+  on the create needs the instances told apart, and synthesis then refuses the created outcome.
+- A further instance takes the example where a later command's related-row or subject predicate reads
+  that field, and that command's branch loses its scenario: the code inferred that no search chose the
+  value from placeholder equality and checked only the creating command's guards.
+
+The correction treats every stored field that any command's row selection, related-row predicate or
+subject predicate reads as told apart (or carries whether a search steered the value), and adds both
+models to `suffixed_instance_inputs`.
+
+## Review
+
+Adversary pass 1 (2026-11-05): NEEDS-CHANGE, 2 introduced findings (a uniqueness check and a later command's related-row predicate on a further instance), 1 pre-existing out of scope (filed as story:a-uniqueness-create-read-by-identity-passes-on-the-interpreter). One correction fixed both, with both models added to `suffixed_instance_inputs` (5 passed); the byte-table pins returned to their pre-wave values.

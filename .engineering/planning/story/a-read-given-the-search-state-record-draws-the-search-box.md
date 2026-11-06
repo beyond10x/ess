@@ -2,13 +2,20 @@
 format: aep.planning-md/3
 id: story:a-read-given-the-search-state-record-draws-the-search-box
 kind: story
-status: draft
+status: implemented
 title: A read given the record holding the search state draws the search box
 summary: read_takes counts a read of the search field but not a read given the record that holds it (0.87.0 adversary F2; from-finding)
 tags:
 - backlog
 - from-finding
-revision: 1
+- next-wave-first
+relations:
+- serves: vision:O2
+revision: 7
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-05T18:11:37Z", actor: "human:timo", revision: 4}
+- {from: "proposed", to: "active", at: "2026-11-05T18:11:38Z", actor: "human:timo", revision: 5}
+- {from: "active", to: "implemented", at: "2026-11-06T07:40:07Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"test_result":1}}}
 ---
 ## Need
 
@@ -26,3 +33,17 @@ No document in the repository has that shape today.
 ## Schedule
 
 Backlog finding (from-finding).
+
+## The next wave takes it
+
+ESS 0.87.0 shipped with this finding pinned as an ignored test,
+`defect_a_read_given_the_search_state_parent_draws_the_search_box` in
+`crates/ui/ess-ui-react/tests/adversary_w087_ui_pass1.rs`, and the release check flags every added
+`#[ignore]`. The release was accepted with the ignore on the condition that the next ESS wave takes
+this story: it either fixes `read_takes` so the test runs green without the ignore, or rewrites the
+test to assert today's behaviour and drops the ignore. Either way the next release adds no ignore
+for it.
+
+## Review
+
+No separate adversary pass: two commits over six files; the staged gate ran ess-ui-react and ess-xtask in full and `task ci-lint`. The 0.87.0 adversary test the story names runs again without its ignore. Pre-existing, filed: story:the-terminal-draws-a-search-box-only-when-a-read-takes-it.

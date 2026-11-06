@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:ci-test-shards-leave-evidence-when-the-runner-runs-out-of-disk
 kind: story
-status: active
+status: implemented
 title: CI test shards leave evidence when the runner runs out of disk
 summary: Three shards crashed with No space left on device about 2 min into the test step on 2026-11-03 (runs 41703340966, 41721030813); cause unknown, no logs (from-finding, backlog)
 tags:
@@ -10,10 +10,11 @@ tags:
 - from-finding
 relations:
 - serves: vision:O2
-revision: 5
+revision: 6
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-04T08:56:06Z", actor: "human:timo", revision: 3}
 - {from: "proposed", to: "active", at: "2026-11-04T08:56:07Z", actor: "human:timo", revision: 4}
+- {from: "active", to: "implemented", at: "2026-11-05T17:37:15Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"test_result":1}}}
 ---
 ## Need
 

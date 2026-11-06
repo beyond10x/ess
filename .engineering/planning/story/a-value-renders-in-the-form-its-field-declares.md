@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-value-renders-in-the-form-its-field-declares
 kind: story
-status: active
+status: implemented
 title: A value renders in the form its field declares
 summary: Dates from epoch ms, audio, links, object tags, JSON and list fields, byte sizes and fixtures.dir render or send as declared (A03-A08, A41, adopter report; beyond10x/ess#723)
 tags:
@@ -33,10 +33,11 @@ scope:
   path: schemas/ui/ess-ui.schema.yaml
 - confidence: inferred
   path: website/docs/reference/ess-ui.md
-revision: 21
+revision: 22
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-04T08:47:29Z", actor: "human:timo", revision: 12, executor: "agent:ess-w1-lead", correlation: "ess-0.87.0-w1"}
 - {from: "proposed", to: "active", at: "2026-11-04T08:47:30Z", actor: "human:timo", revision: 13, executor: "agent:ess-w1-lead", correlation: "ess-0.87.0-w1"}
+- {from: "active", to: "implemented", at: "2026-11-05T17:37:10Z", actor: "human:timo", revision: 22, decided_on: {"recorded":{"test_result":1}}}
 ---
 # Story: a value renders in the form its field declares
 

@@ -1,4 +1,4 @@
-import { useEffect, useState, type ChangeEvent, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ChangeEvent, type KeyboardEvent, type ReactNode } from "react";
 import { useUiPath } from "../core";
 import { ActionControl, runCommand, type ActionSpec } from "../actions";
 import { RowPath, ScopeLayer, display, rowKey, useData, useFramePath, useReport, useScope, useSectionName, type Scope } from "../core";
@@ -7,7 +7,28 @@ import { assignable, evaluate, truthy } from "../expr";
 import { FieldValue, HelpNote, fieldLabel, useLabelled, type FieldSpec } from "../fields";
 import { getPath, isObject, setPath, stableKey, type Json } from "../json";
 
-/** Rows of one read as a table, cards, a list or a tree. */
+/** One `item` node of a collection, by its name. */
+export interface ItemSpec {
+  name: string;
+  node: ReactNode;
+}
+
+/** A sort a collection applies: the field and its direction. */
+type SortState = { by: string; dir: "asc" | "desc" };
+
+/** The column formats whose values sort as numbers, even when a row carries them as text. */
+const NUMERIC = new Set(["number", "currency", "percent", "bytes", "duration"]);
+
+/**
+ * Rows of one read as a table, cards, a list or a tree.
+ *
+ * A table draws each declared column, then one column per `item` node and per toggle row action,
+ * each with its heading, then an `Actions` column for the other row actions, the expand control
+ * and the drag handle. It scrolls inside its frame. Cards, lists and trees draw the declared sort
+ * as a sort control, the select-all of a multiple selection above the rows, and each row's
+ * actions below or beside its fields. A `columnsBind` state holding a list of column names draws
+ * only those columns.
+ */
 export function Collection(props: {
   "data-ui-path"?: string;
   reads?: ReadSpec;
@@ -28,7 +49,7 @@ export function Collection(props: {
   bulkActions?: ActionSpec[];
   actions?: ActionSpec[];
   expand?: ReactNode;
-  item?: ReactNode;
+  items?: ItemSpec[];
   reorder?: { does: string };
   /** The field that keys rows (`live.match`); `id` when absent. */
   rowKey?: string;
@@ -63,9 +84,11 @@ export function Collection(props: {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stableKey(selected), focused === undefined]);
   const [expanded, setExpanded] = useState<string | undefined>(undefined);
-  const [clientSort, setClientSort] = useState<{ by: string; dir: "asc" | "desc" } | undefined>(
+  const [clientSort, setClientSort] = useState<SortState | undefined>(
     props.sort ? { by: props.sort.by, dir: props.sort.dir ?? "asc" } : undefined,
   );
+  // The key of the row whose drag handle is being dragged.
+  const dragging = useRef<string | undefined>(undefined);
   useReport(section, { selection: props.selection === "multiple" ? selected : focused });
   const selectionState = props.selectionState;
   useEffect(() => {
@@ -78,64 +101,124 @@ export function Collection(props: {
     props.selection !== undefined &&
     props.selection !== "none" &&
     (props.selectionEnabled === undefined || truthy(evaluate(props.selectionEnabled, scope.values)));
+  const multiple = selectionOn && props.selection === "multiple";
+  const table = props.style !== "cards" && props.style !== "list" && props.style !== "tree";
   let rows: Json[] = data?.rows ?? [];
   if (clientSort && props.sort?.mode !== "server") {
     const { by, dir } = clientSort;
-    rows = [...rows].sort((a, b) => {
-      const left = stableKey(display(a, by));
-      const right = stableKey(display(b, by));
-      return (left < right ? -1 : left > right ? 1 : 0) * (dir === "desc" ? -1 : 1);
-    });
+    const column = (props.columns ?? []).find((entry) => entry.field === by);
+    const asNumber = column?.as !== undefined && NUMERIC.has(column.as);
+    rows = [...rows].sort((a, b) => compareValues(display(a, by), display(b, by), asNumber) * (dir === "desc" ? -1 : 1));
   }
+  // A selectable-columns state holding a list draws only the columns it names, in declared order.
+  const chosen = props.columnsBind === undefined ? undefined : evaluate(props.columnsBind, scope.values);
   const columns = (props.columns ?? []).filter(
-    (column) => column.visible === undefined || truthy(evaluate(column.visible, scope.values)),
+    (column) =>
+      (column.visible === undefined || truthy(evaluate(column.visible, scope.values))) &&
+      (!Array.isArray(chosen) || chosen.some((name) => name === column.name || name === column.field)),
   );
-  const toggleSort = (field: string) => {
-    const next = { by: field, dir: clientSort?.by === field && clientSort.dir === "asc" ? "desc" as const : "asc" as const };
+  const allowed = props.sort?.allowed ?? [];
+  const sortableColumn = (column: FieldSpec) =>
+    column.sortable === true || allowed.includes(column.field) || allowed.includes(column.name);
+  const items = props.items ?? [];
+  // An item shows what its node draws, which no row field names; it sorts only when `sort.allowed`
+  // names it and the rows carry a field of that name, and then by that field.
+  const itemSortable = (item: ItemSpec) =>
+    allowed.includes(item.name) && rows.some((row) => display(row, item.name) !== undefined);
+  const rowActions = props.rowActions ?? [];
+  // A table draws each toggle in a column of its own; cards and lists keep it with the row's actions.
+  const toggles = table ? rowActions.filter((action) => action.as === "toggle") : [];
+  const buttons = table ? rowActions.filter((action) => action.as !== "toggle") : rowActions;
+  const moveButtons = props.reorder !== undefined && props.degrades?.no_drag === "move_buttons";
+  const actionsColumn = buttons.length > 0 || props.reorder !== undefined || props.expand !== undefined;
+  const applySort = (next: SortState) => {
     setClientSort(next);
     if (props.sort?.mode === "server") {
       scope.set("state.sort", next);
     }
   };
+  const toggleSort = (field: string) =>
+    applySort({ by: field, dir: clientSort?.by === field && clientSort.dir === "asc" ? "desc" : "asc" });
+  const sortHeading = (field: string, label: string, sortable: boolean): ReactNode =>
+    sortable ? (
+      <button type="button" className="ui-sort" onClick={() => toggleSort(field)}>
+        {label}
+        {clientSort?.by === field ? (clientSort.dir === "asc" ? " ▲" : " ▼") : ""}
+      </button>
+    ) : (
+      label
+    );
+  // What a sort control offers: sortable columns, then the other fields `sort.allowed` names, then `sort.by`.
+  const sortOptions: { field: string; label: string }[] = [];
+  const offer = (name: string) => {
+    const column = (props.columns ?? []).find((entry) => entry.field === name || entry.name === name);
+    const field = column?.field ?? name;
+    if (!sortOptions.some((option) => option.field === field)) {
+      sortOptions.push({ field, label: column ? fieldLabel(column) : humanise(name) });
+    }
+  };
+  columns.filter(sortableColumn).forEach((column) => offer(column.field));
+  allowed.forEach(offer);
+  if (props.sort) {
+    offer(props.sort.by);
+  }
+  const isSelected = (row: Json) => selected.some((entry) => stableKey(entry) === stableKey(row));
+  // A select-all over `entries`, the rows drawn below it: it adds them to the selection or takes them out.
+  const selectAllOf = (entries: Json[]) =>
+    multiple ? (
+      <input
+        type="checkbox"
+        className="ui-select-all"
+        aria-label="Select all rows"
+        checked={entries.length > 0 && entries.every(isSelected)}
+        onChange={(event: ChangeEvent<HTMLInputElement>) => {
+          const on = event.target.checked;
+          setSelected((list) => {
+            const rest = list.filter((entry) => !entries.some((row) => stableKey(row) === stableKey(entry)));
+            return on ? [...rest, ...entries] : rest;
+          });
+        }}
+      />
+    ) : null;
   const move = (row: Json, delta: number) => {
     if (props.reorder && isObject(row)) {
       void runCommand(scope, props.reorder.does, { id: row.id, delta });
     }
   };
+  const groups: [string, Json[]][] = props.groupBy
+    ? groupRows(rows, props.groupBy, props.groupOrder, props.showEmptyGroups)
+    : [["", rows]];
+  // Where each row is drawn: its group and its place in it.
+  const place = new Map<string, { group: number; at: number; size: number }>();
+  groups.forEach(([, entries], group) =>
+    entries.forEach((row, at) => place.set(rowKey(row, props.rowKey), { group, at, size: entries.length })),
+  );
+  // A row moves one place within its group, never past either end. Under a client sort the drawn
+  // order is not the read's, so no place in it is a place in the read: nothing moves.
+  const sortedOnClient = clientSort !== undefined && props.sort?.mode !== "server";
+  const canMove = (key: string, delta: number): boolean => {
+    const at = place.get(key);
+    return !sortedOnClient && at !== undefined && at.at + delta >= 0 && at.at + delta < at.size;
+  };
+  // A drop moves the dragged row one place, onto the row drawn next to it in its group: the same
+  // `{id, delta}` the move buttons send.
+  const dropDelta = (target: string): number | undefined => {
+    const from = dragging.current;
+    const source = from === undefined ? undefined : place.get(from);
+    const onto = place.get(target);
+    if (from === undefined || source === undefined || onto === undefined || source.group !== onto.group) {
+      return undefined;
+    }
+    const delta = onto.at - source.at;
+    return (delta === 1 || delta === -1) && canMove(from, delta) ? delta : undefined;
+  };
   const renderRow = (row: Json) => {
     const key = rowKey(row, props.rowKey);
-    const isSelected = selected.some((entry) => stableKey(entry) === stableKey(row));
-    const cells = columns.map((column) => (
-      <td key={column.name}>
-        <FieldValue field={column} row={labelled(row)} />
-      </td>
-    ));
-    const extras = (
-      <>
-        {props.item ? <div className="ui-item">{props.item}</div> : null}
-        {props.rowActions && props.rowActions.length > 0 ? (
-          <span className="ui-row-actions">
-            {props.rowActions.map((action) => (
-              <ActionControl key={action.name} action={action} />
-            ))}
-          </span>
-        ) : null}
-        {props.reorder && props.degrades?.no_drag === "move_buttons" ? (
-          <span className="ui-move">
-            <button type="button" className="ui-button" onClick={() => move(row, -1)}>
-              ↑
-            </button>
-            <button type="button" className="ui-button" onClick={() => move(row, 1)}>
-              ↓
-            </button>
-          </span>
-        ) : null}
-      </>
-    );
+    const open = expanded === key;
     const select = selectionOn ? (
       <input
         type={props.selection === "single" ? "radio" : "checkbox"}
-        checked={isSelected}
+        checked={isSelected(row)}
         aria-label="Select row"
         onChange={(event: ChangeEvent<HTMLInputElement>) =>
           setSelected((list) =>
@@ -151,19 +234,105 @@ export function Collection(props: {
     const onFocus = () => {
       setFocused(row);
       if (props.expand) {
-        setExpanded(expanded === key ? undefined : key);
+        setExpanded(open ? undefined : key);
       }
     };
-    const content =
-      props.style === "cards" || props.style === "list" || props.style === "tree" ? (
-        <li
-          key={key}
-          data-ui-path={rowPath(key)}
-          className={`ui-row ui-${props.style === "cards" ? "card" : "list-item"}${focused === row ? " ui-focused" : ""}`}
-          onClick={onFocus}
-        >
-          {select}
-          {props.item ? null : (
+    const expandControl = props.expand ? (
+      <button
+        type="button"
+        className="ui-button ui-icon-button ui-expand-toggle"
+        aria-expanded={open}
+        aria-label={open ? "Collapse row" : "Expand row"}
+        onClick={(event: { stopPropagation(): void }) => {
+          event.stopPropagation();
+          setFocused(row);
+          setExpanded(open ? undefined : key);
+        }}
+      >
+        {open ? "▾" : "▸"}
+      </button>
+    ) : null;
+    const handle = props.reorder ? (
+      <span
+        className="ui-drag-handle"
+        role="button"
+        tabIndex={0}
+        draggable={true}
+        aria-label="Drag to reorder"
+        onDragStart={(event: { dataTransfer: DataTransfer | null }) => {
+          dragging.current = key;
+          event.dataTransfer?.setData("text/plain", key);
+        }}
+        onDragEnd={() => {
+          dragging.current = undefined;
+        }}
+        onClick={(event: { stopPropagation(): void }) => event.stopPropagation()}
+        onKeyDown={(event: KeyboardEvent<HTMLElement>) => {
+          if (event.key === "ArrowUp" || event.key === "ArrowDown") {
+            event.preventDefault();
+            const delta = event.key === "ArrowUp" ? -1 : 1;
+            if (canMove(key, delta)) {
+              move(row, delta);
+            }
+          }
+        }}
+      >
+        ⠿
+      </span>
+    ) : null;
+    const drop = props.reorder
+      ? {
+          onDragOver: (event: { preventDefault(): void }) => {
+            if (dropDelta(key) !== undefined) {
+              event.preventDefault();
+            }
+          },
+          onDrop: (event: { preventDefault(): void }) => {
+            event.preventDefault();
+            const delta = dropDelta(key);
+            const from = rows.find((entry) => rowKey(entry, props.rowKey) === dragging.current);
+            dragging.current = undefined;
+            if (delta !== undefined && from !== undefined) {
+              move(from, delta);
+            }
+          },
+        }
+      : {};
+    const actionButtons =
+      buttons.length > 0 ? (
+        <span className="ui-row-actions">
+          {buttons.map((action) => (
+            <ActionControl key={action.name} action={action} />
+          ))}
+        </span>
+      ) : null;
+    const moves = moveButtons ? (
+      <span className="ui-move">
+        <button type="button" className="ui-button" onClick={() => move(row, -1)}>
+          ↑
+        </button>
+        <button type="button" className="ui-button" onClick={() => move(row, 1)}>
+          ↓
+        </button>
+      </span>
+    ) : null;
+    const content = !table ? (
+      <li
+        key={key}
+        data-ui-path={rowPath(key)}
+        className={`ui-row ui-${props.style === "cards" ? "card" : "list-item"}${focused === row ? " ui-focused" : ""}`}
+        onClick={onFocus}
+        {...drop}
+      >
+        {select || handle || expandControl ? (
+          <div className="ui-row-controls">
+            {select}
+            {handle}
+            {expandControl}
+          </div>
+        ) : null}
+        <div className="ui-row-body">
+          {columns.length > 0 ? (
             <dl>
               {columns.map((column) => (
                 <div key={column.name}>
@@ -174,20 +343,64 @@ export function Collection(props: {
                 </div>
               ))}
             </dl>
-          )}
-          {extras}
-          {expanded === key ? <div className="ui-expand">{props.expand}</div> : null}
-        </li>
-      ) : (
-        <tr key={key} data-ui-path={rowPath(key)} className={`ui-row${focused === row ? " ui-focused" : ""}`} onClick={onFocus}>
+          ) : null}
+          {items.map((item) => (
+            <div key={item.name} className="ui-item">
+              {item.node}
+            </div>
+          ))}
+        </div>
+        {actionButtons || moves ? (
+          <div className="ui-row-tail">
+            {actionButtons}
+            {moves}
+          </div>
+        ) : null}
+        {open ? <div className="ui-expand">{props.expand}</div> : null}
+      </li>
+    ) : (
+      <>
+        <tr
+          key={key}
+          data-ui-path={rowPath(key)}
+          className={`ui-row${focused === row ? " ui-focused" : ""}`}
+          onClick={onFocus}
+          {...drop}
+        >
           {selectionOn ? <td>{select}</td> : null}
-          {cells}
-          <td>
-            {extras}
-            {expanded === key ? <div className="ui-expand">{props.expand}</div> : null}
-          </td>
+          {columns.map((column) => (
+            <td key={`column:${column.name}`}>
+              <FieldValue field={column} row={labelled(row)} />
+            </td>
+          ))}
+          {items.map((item) => (
+            <td key={`item:${item.name}`} className="ui-item-cell">
+              <div className="ui-item">{item.node}</div>
+            </td>
+          ))}
+          {toggles.map((action) => (
+            <td key={`toggle:${action.name}`} className="ui-toggle-cell">
+              <ActionControl action={action} />
+            </td>
+          ))}
+          {actionsColumn ? (
+            <td className="ui-actions-cell">
+              {expandControl}
+              {handle}
+              {actionButtons}
+              {moves}
+            </td>
+          ) : null}
         </tr>
-      );
+        {open ? (
+          <tr className="ui-expand-row">
+            <td colSpan={(selectionOn ? 1 : 0) + columns.length + items.length + toggles.length + (actionsColumn ? 1 : 0)}>
+              <div className="ui-expand">{props.expand}</div>
+            </td>
+          </tr>
+        ) : null}
+      </>
+    );
     return (
       <ScopeLayer key={key} values={{ row }}>
         {container === undefined ? content : (
@@ -198,50 +411,109 @@ export function Collection(props: {
       </ScopeLayer>
     );
   };
-  const groups: [string, Json[]][] = props.groupBy
-    ? groupRows(rows, props.groupBy, props.groupOrder, props.showEmptyGroups)
-    : [["", rows]];
   const list = (entries: Json[]) =>
-    props.style === "cards" || props.style === "list" || props.style === "tree" ? (
+    !table ? (
       <ul className={`ui-collection-${props.style}`}>{entries.map(renderRow)}</ul>
     ) : (
-      <table className="ui-table">
-        <thead>
-          <tr>
-            {selectionOn ? <th /> : null}
-            {columns.map((column) => (
-              <th key={column.name} data-ui-path={columnPath(column["data-ui-path"])}>
-                {column.sortable ? (
-                  <button type="button" className="ui-sort" onClick={() => toggleSort(column.field)}>
-                    {fieldLabel(column)}
-                    {clientSort?.by === column.field ? (clientSort.dir === "asc" ? " ▲" : " ▼") : ""}
-                  </button>
-                ) : (
-                  fieldLabel(column)
-                )}
-                <HelpNote help={column.help} />
-              </th>
-            ))}
-            <th />
-          </tr>
-        </thead>
-        <tbody>{entries.map(renderRow)}</tbody>
-      </table>
+      <div className="ui-table-frame">
+        <table className="ui-table">
+          <thead>
+            <tr>
+              {selectionOn ? <th className="ui-select-head">{selectAllOf(entries)}</th> : null}
+              {columns.map((column) => (
+                <th key={`column:${column.name}`} data-ui-path={columnPath(column["data-ui-path"])}>
+                  {sortHeading(column.field, fieldLabel(column), sortableColumn(column))}
+                  <HelpNote help={column.help} />
+                </th>
+              ))}
+              {items.map((item) => (
+                <th key={`item:${item.name}`} className="ui-item-head">
+                  {sortHeading(item.name, humanise(item.name), itemSortable(item))}
+                </th>
+              ))}
+              {toggles.map((action) => {
+                const field = toggleField(action);
+                return (
+                  <th key={`toggle:${action.name}`} className="ui-toggle-head">
+                    {sortHeading(field, action.label ?? humanise(action.name), allowed.includes(field) || allowed.includes(action.name))}
+                  </th>
+                );
+              })}
+              {actionsColumn ? <th className="ui-actions-head">Actions</th> : null}
+            </tr>
+          </thead>
+          <tbody>{entries.map(renderRow)}</tbody>
+        </table>
+      </div>
     );
+  // Above cards, a list or a tree: one select-all over every row, and the declared sort, which a
+  // table puts in its header (one select-all per group's table, over that group's rows).
+  const tools =
+    !table && (multiple || sortOptions.length > 0) ? (
+      <div className="ui-collection-tools">
+        {multiple ? (
+          <label className="ui-select-all-label">
+            {selectAllOf(rows)}
+            <span>Select all</span>
+          </label>
+        ) : null}
+        {sortOptions.length > 0 ? (
+          <span className="ui-sort-control">
+            <label>
+              <span className="ui-form-label">Sort by</span>
+              <select
+                aria-label="Sort by"
+                value={clientSort?.by ?? ""}
+                onChange={(event: ChangeEvent<HTMLSelectElement>) => {
+                  if (event.target.value !== "") {
+                    applySort({ by: event.target.value, dir: clientSort?.dir ?? "asc" });
+                  }
+                }}
+              >
+                {clientSort === undefined ? <option value="">None</option> : null}
+                {sortOptions.map((option) => (
+                  <option key={option.field} value={option.field}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button
+              type="button"
+              className="ui-button ui-icon-button ui-sort-dir"
+              aria-label={clientSort?.dir === "desc" ? "Descending" : "Ascending"}
+              disabled={clientSort === undefined}
+              onClick={() => {
+                if (clientSort) {
+                  applySort({ by: clientSort.by, dir: clientSort.dir === "asc" ? "desc" : "asc" });
+                }
+              }}
+            >
+              {clientSort?.dir === "desc" ? "▼" : "▲"}
+            </button>
+          </span>
+        ) : null}
+      </div>
+    ) : null;
+  const bulkActions = props.bulkActions ?? [];
   return (
     <div className={`ui-collection ui-collection-style-${props.style ?? "table"}`} data-ui-path={useUiPath(props["data-ui-path"])}>
-      {(props.actions && props.actions.length > 0) || (selectionOn && props.bulkActions && props.bulkActions.length > 0) ? (
+      {props.actions && props.actions.length > 0 ? (
         <div className="ui-collection-actions">
-          {(props.actions ?? []).map((action) => (
+          {props.actions.map((action) => (
             <ActionControl key={action.name} action={action} />
           ))}
-          {selectionOn && selected.length > 0 ? (
-            <ScopeLayer values={{ selection: selected }}>
-              {(props.bulkActions ?? []).map((action) => (
-                <ActionControl key={action.name} action={action} />
-              ))}
-            </ScopeLayer>
-          ) : null}
+        </div>
+      ) : null}
+      {tools}
+      {selectionOn && bulkActions.length > 0 && selected.length > 0 ? (
+        <div className="ui-bulk-menu" role="toolbar" aria-label="Bulk actions">
+          <span className="ui-bulk-count">{selected.length} selected</span>
+          <ScopeLayer values={{ selection: selected }}>
+            {bulkActions.map((action) => (
+              <ActionControl key={action.name} action={action} />
+            ))}
+          </ScopeLayer>
         </div>
       ) : null}
       {groups.map(([group, entries]) => (
@@ -253,6 +525,46 @@ export function Collection(props: {
       {data && props.pager ? <Pager pager={props.pager} total={data.total} rows={rows.length} /> : null}
     </div>
   );
+}
+
+/**
+ * Orders two values of a sort, a total order: numbers (and, under a numeric column, text that
+ * reads as one) by value and before every other value; the others by their text.
+ */
+export function compareValues(left: unknown, right: unknown, asNumber = false): number {
+  const a = numeric(left, asNumber);
+  const b = numeric(right, asNumber);
+  if (a !== undefined && b !== undefined) {
+    return a < b ? -1 : a > b ? 1 : 0;
+  }
+  if (a !== undefined || b !== undefined) {
+    return a !== undefined ? -1 : 1;
+  }
+  const l = stableKey(left);
+  const r = stableKey(right);
+  return l < r ? -1 : l > r ? 1 : 0;
+}
+
+function numeric(value: unknown, asNumber: boolean): number | undefined {
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? value : undefined;
+  }
+  if (asNumber && typeof value === "string" && value.trim() !== "") {
+    const number = Number(value);
+    return Number.isFinite(number) ? number : undefined;
+  }
+  return undefined;
+}
+
+/** A name as a heading: `owner_name` reads `owner name`. */
+function humanise(name: string): string {
+  return name.replace(/_/g, " ");
+}
+
+/** The row field a toggle column sorts by: the `row.<field>` its state reads, else its name. */
+function toggleField(action: ActionSpec): string {
+  const read = action.checked === undefined ? null : /^row\.([A-Za-z_][\w.]*)$/.exec(action.checked.trim());
+  return read ? read[1] : action.name;
 }
 
 /**

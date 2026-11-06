@@ -230,6 +230,7 @@ impl App {
         match &self.prompt {
             Some(Prompt::Filter { text, .. }) => Line::from(format!("/{text}▏")),
             Some(Prompt::Palette(query)) => Line::from(format!(":{query}▏")),
+            Some(Prompt::Upload { does, text }) => Line::from(format!("file for {does}: {text}▏")),
             None => Line::from(
                 self.notifications
                     .last()
@@ -865,7 +866,7 @@ impl App {
                     lines.extend(self.node_lines(node, &inner));
                 }
                 let actions = record_actions(record, tab);
-                lines.extend(self.action_hint(&actions, &inner.ctx));
+                lines.extend(self.action_hint(&actions, &inner.ctx, ""));
                 lines.extend(self.refusal_lines(place.ui, Refusing::Actions(&actions)));
                 lines
             }
@@ -876,7 +877,12 @@ impl App {
                     .as_ref()
                     .and_then(|binds| self.eval(&binds.0, &place.ctx))
                     .unwrap_or(Value::Null);
-                vec![Line::from(self.choice_spans(choice, &value, place, None))]
+                // A choice that is a section of its own shows its option cursor while focused.
+                let cursor = place
+                    .focused
+                    .then(|| self.ui(place.ui).option)
+                    .filter(|_| choice.binds.is_some());
+                vec![Line::from(self.choice_spans(choice, &value, place, cursor))]
             }
             Composite::FilterBar(bar) => self.bar_lines(bar, place),
             Composite::Confirm(confirm) => self.confirm_lines(confirm, place),
@@ -912,7 +918,7 @@ impl App {
                 }
                 let row = rows.get(cursor);
                 let ctx = Ctx { row, ..place.ctx };
-                lines.extend(self.action_hint(&board.item_actions, &ctx));
+                lines.extend(self.action_hint(&board.item_actions, &ctx, ""));
                 lines.extend(self.refusal_lines(place.ui, Refusing::Actions(&board.item_actions)));
                 lines
             }
@@ -1060,8 +1066,15 @@ impl App {
         lines
     }
 
-    fn action_hint(&self, actions: &[ess_ui::Action], ctx: &Ctx<'_>) -> Vec<Line<'static>> {
-        let keyed = self.action_keys(actions, ctx);
+    /// The keyed actions of a view, as its key handler reaches them: none takes one of the letters
+    /// of `view_keys`, which the view takes itself.
+    fn action_hint(
+        &self,
+        actions: &[ess_ui::Action],
+        ctx: &Ctx<'_>,
+        view_keys: &str,
+    ) -> Vec<Line<'static>> {
+        let keyed = self.action_keys_besides(actions, ctx, view_keys);
         if keyed.is_empty() {
             return Vec::new();
         }
@@ -1359,10 +1372,27 @@ impl App {
             }
             if state.expanded {
                 if let Some(expand) = &collection.expand {
+                    let start = lines.len();
                     for line in self.node_lines(expand, &inner) {
                         let mut spans = vec![Span::raw("    ")];
                         spans.extend(line.spans);
                         lines.push(Line::from(spans));
+                    }
+                    // The expanded detail is the cursor row's, drawn below the rows: its own
+                    // region, at the path React scopes it to.
+                    if place.record && lines.len() > start {
+                        if let Some(row) = row {
+                            let key = display(&row[key_field.as_str()]);
+                            self.mark(Mark {
+                                path: format!("{container}/rows/{key}/expand"),
+                                row: Some(key),
+                                line: start,
+                                height: lines.len() - start,
+                                x: 0,
+                                width: None,
+                                text: None,
+                            });
+                        }
                     }
                 }
             }
@@ -1404,7 +1434,7 @@ impl App {
                 place,
             );
         }
-        lines.extend(self.action_hint(&collection.row_actions, &row_ctx));
+        lines.extend(self.action_hint(&collection.row_actions, &row_ctx, ""));
         lines.extend(self.refusal_lines(place.ui, Refusing::Actions(&collection.row_actions)));
         let bulk = crate::app::bulk_keys(&collection.bulk_actions);
         if !bulk.is_empty() {
@@ -1602,20 +1632,35 @@ impl App {
                         Some(Body::Composite(Composite::Choice(choice))) => Some(choice),
                         _ => None,
                     };
-                    let options = choice.map_or_else(Vec::new, |choice| {
+                    let mut options = choice.map_or_else(Vec::new, |choice| {
                         self.choice_options(choice, Some(&field.field), &place.ctx)
                             .into_iter()
                             .map(|(_, label)| label)
                             .collect::<Vec<_>>()
                     });
+                    // A multiple choice field being edited marks the option `space` adds or
+                    // takes out (moved by `l` and `h`).
+                    let multiple = crate::app::is_multiple_choice(field);
+                    if multiple && place.focused && index == state.item && !options.is_empty() {
+                        let at = state.option % options.len();
+                        options[at] = format!("›{}‹", options[at]);
+                    }
+                    let shown = match &value {
+                        Value::Sequence(items) if multiple => {
+                            items.iter().map(display).collect::<Vec<_>>().join(", ")
+                        }
+                        other => display(other),
+                    };
                     // Nothing chosen: the choice's placeholder.
-                    let chosen = Some(display(&value))
+                    let chosen = Some(shown)
                         .filter(|text| !text.is_empty())
                         .or_else(|| choice.and_then(|choice| choice.placeholder.clone()))
                         .unwrap_or_default();
                     format!("‹{chosen}› of {}", options.join("/"))
                 }
                 Some("file") => format!("path: {}", display(&value)),
+                // A toggle nobody touched is unchecked, as the form sends it.
+                Some("toggle") => if truthy(&value) { "[x]" } else { "[ ]" }.into(),
                 // An input edits the number the field holds, as the React input does.
                 Some("duration") => display(&value),
                 _ => cell_value(field, &value),
@@ -1653,10 +1698,10 @@ impl App {
             dim(),
         ));
         lines.extend(self.refusal_lines(place.ui, Refusing::Form));
-        lines.extend(self.action_hint(&form.actions, &place.ctx));
+        lines.extend(self.action_hint(&form.actions, &place.ctx, crate::app::FORM_KEYS));
         lines.extend(self.refusal_lines(place.ui, Refusing::Actions(&form.actions)));
         for group in &form.groups {
-            lines.extend(self.action_hint(&group.actions, &place.ctx));
+            lines.extend(self.action_hint(&group.actions, &place.ctx, crate::app::FORM_KEYS));
             lines.extend(self.refusal_lines(place.ui, Refusing::Actions(&group.actions)));
         }
         if let Some(result) = &form.result {
@@ -1780,7 +1825,7 @@ impl App {
                 style(BarItem::Input(index)),
             ));
         }
-        let mut extra = self.action_hint(&bar.actions, &place.ctx);
+        let mut extra = self.action_hint(&bar.actions, &place.ctx, crate::app::BAR_KEYS);
         if bar.offers_reset() {
             let label = bar.reset_label().unwrap_or("reset all").to_owned();
             extra.push(Line::styled(label, dim()));
