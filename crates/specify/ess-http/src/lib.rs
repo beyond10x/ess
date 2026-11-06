@@ -3088,7 +3088,7 @@ impl Refusals {
 /// | `ESS-HTTP-011` | reserved: until 0.88.0, two templates of one component and method that a request path can both match, a literal beside a variable at the first position they differ; from 0.89.0 the literal takes precedence there, which orders every such pair, so nothing is refused under it |
 /// | `ESS-HTTP-013` | an operation with no HTTP surface: a command no component accepts, a view no `reached_by: network` component serves |
 /// | `ESS-HTTP-014` | a command on `get` with an input field no variable of the path maps, unless its request is encoded `query` |
-/// | `ESS-HTTP-020` | at `routes[i].request.encoding`: an encoding outside `json`, `form` and `query`, `json` or `form` written on a `get` command, or `query` on a method other than `get` and `delete`; at `routes[i].request.unknown`: a value outside `refuse` and `ignore`, or `ignore` with a `json` body; at `routes[i].request`: `request` on a view; at `routes[i].request.body`: `body` on a view, beside `form` or `query`, or on a `get` command, a body that is not `input.<field>` naming an input field of the command, one that is `Optional` or that the path carries, and each other input field the path does not carry |
+/// | `ESS-HTTP-020` | at `routes[i].request.encoding`: an encoding outside `json`, `form` and `query`, `json` or `form` written on a `get` command, or `query` on a method other than `get` and `delete`; at `routes[i].request.unknown`: a value outside `refuse` and `ignore`, or `ignore` with a `json` body; at `routes[i].request`: `request` on a view; at `routes[i].request.body`: `body` on a view, beside `form` or `query`, or on a `get` command, a body that is not `input.<field>` naming an input field of the command, one that is `Optional` or that the path carries, and, on a route with a path, each other input field the path does not carry |
 /// | `ESS-HTTP-021` | at `routes[i].request.encoding`: a `form` or `query` request carrying an input field whose type has no flat spelling, naming the field and its type. A flat field is a scalar (a primitive other than `Json`, an enum, or a newtype of a scalar), an `Optional` scalar or a `List` of scalars; a field mapped to the path is not carried |
 /// | `ESS-HTTP-022` | at `routes[i].outcomes.<name>`: a key that is not the local name of an outcome of the command, or one listed twice; at `routes[i].outcomes`: `outcomes` on a view; at `routes[i].errors`: `errors` on a view, or on a command none of whose outcomes reports an error without being listed under `outcomes`; at `routes[i].alike`: `alike` on a view, a group of fewer than two names, a name that is not the local name of an outcome of the command, one in two groups or twice in one, or one with no declared answer (neither listed under `outcomes` nor covered by `errors`) |
 /// | `ESS-HTTP-023` | at `routes[i].outcomes.<name>.status`, or `routes[i].errors.status` once for each outcome `errors` covers: a status outside `100..=599`, a `1xx`, a `3xx` other than `301`, `302`, `303`, `307` and `308`, a `2xx` on an outcome with an error, or a `4xx` or `5xx` on one without |
@@ -4568,7 +4568,9 @@ fn carried(
 ) -> Result<Option<Request>, Refused> {
     let checked = request(spec, operation, method, path, refusals);
     let bare = match (target, &checked.body) {
-        (Some(target), Some(text)) => bare_body(target, text, mapped, path, refusals),
+        (Some(target), Some(text)) => {
+            bare_body(target, text, mapped, spec.path.is_none(), path, refusals)
+        }
         _ => Ok(None),
     };
     let flat = match (target, checked.encoding) {
@@ -4599,10 +4601,16 @@ fn carried(
 /// the command that is not `Optional` and that the path does not carry, and the path carries every
 /// other input field. A body that names no such field is the only refusal reported for it.
 fn bare_body(
+///
+/// On an `open` route, one without a path yet, whether the path carries every other input field
+/// is the document's to answer that fills the path in: a protocol binding may fix the body of a
+/// route whose path each server binding chooses, and the server binding, restating the body
+/// (`ESS-HTTP-012`), is held to it.
     target: &Target<'_>,
     text: &str,
     mapped: &[String],
     path: &str,
+    open: bool,
     refusals: &mut Refusals,
 ) -> Result<Option<Source>, Refused> {
     let at = format!("{path}.request.body");
@@ -4646,7 +4654,7 @@ fn bare_body(
         return Err(Refused);
     };
     let mut refused = false;
-    for other in target.fields {
+    for other in target.fields.iter().filter(|_| !open) {
         if other.name == source.field() || mapped.contains(&format!("input.{}", other.name)) {
             continue;
         }

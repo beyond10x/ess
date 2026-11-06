@@ -352,6 +352,10 @@ mirrors `response.<field>` on the response side
   holding that field alone, so a body of the wrong shape is `malformed`, as a wrong member type is.
   The generated UIs (React and terminal) send the field's value alone as the body, under its wire
   name or else its model name in the input a `bind` gives.
+  On an open route that rule waits for the path: a protocol binding may fix the body of a route
+  whose path each server binding chooses, and the server binding, which restates the body
+  (`ESS-HTTP-012` for adding, dropping or changing it), is held to the rule when it fills the path
+  in.
 - Compiled IR writes `body` only when it is declared, so every binding without one compiles to the
   bytes it compiled to before. No format version: a reader without the key refuses `request.body`
   as an unknown field by name, as stage 1 refused every stage-2 key.
