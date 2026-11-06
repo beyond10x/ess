@@ -609,6 +609,7 @@ pub const CONSTRUCTS: &[Construct] = &[
             "tests/set_effects.rs::affects_is_refused_by_name",
             "tests/set_effects.rs::set_delete_targets_refuse_by_name",
             "tests/set_effects.rs::each_entry_targets_refuse_by_name",
+            "tests/set_effects.rs::a_repeated_each_entry_is_refused_naming_the_key",
         ],
     ),
     refused(

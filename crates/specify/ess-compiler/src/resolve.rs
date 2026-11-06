@@ -6320,6 +6320,7 @@ fn resolved_each(
             })
             .collect(),
         filter: each.filter.clone(),
+        repeated: each.repeated,
     }
 }
 

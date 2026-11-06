@@ -3344,7 +3344,8 @@ fn entry_unarranged(
 
 /// The one `each:` entry of a branch (ess/23, beyond10x/ess#459) and the two lists its scenario
 /// sends: `first`, the held row's element and a decoy's, and `second`, an element naming the held
-/// row with other values and one naming an identity no row holds.
+/// row with other values and one naming an identity no row holds; for an entry admitting repeated
+/// identities (ess/35, beyond10x/ess#748), `second` opens with the held row's `first` element.
 struct EachLists<'o> {
     index: usize,
     affect: &'o ResolvedAffect,
@@ -3462,15 +3463,24 @@ fn each_lists<'o>(
         {
             continue;
         }
-        let list = |items: [&BTreeMap<String, Node>; 2]| {
-            Node::Seq(items.into_iter().cloned().map(Node::Map).collect())
+        let list = |items: &[&BTreeMap<String, Node>]| {
+            Node::Seq(items.iter().copied().cloned().map(Node::Map).collect())
         };
-        let (first, second) = (list([&held_row, &decoy]), list([&again, &new]));
         let reaches = |list: &Node| {
             let mut sent = input.clone();
             sent.insert(each.list.clone(), list.clone());
             super::selects_branch(ir, command, outcome, held, &sent).is_ok_and(|reached| reached)
         };
+        let first = list(&[&held_row, &decoy]);
+        // An entry admitting repeated identities (ess/35, beyond10x/ess#748) is sent the held
+        // row's element twice, the values the row already holds first: the row reads back the
+        // later element's, which a target keeping the first element for a repeated identity does
+        // not leave. Where the branch's guard refuses a repeated list, the plain list is sent.
+        let repeated = each
+            .repeated
+            .map(|_| list(&[&held_row, &again, &new]))
+            .filter(|repeated| reaches(repeated));
+        let second = repeated.unwrap_or_else(|| list(&[&again, &new]));
         if !(reaches(&first) && reaches(&second)) {
             continue;
         }

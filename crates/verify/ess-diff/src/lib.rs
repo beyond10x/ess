@@ -68,6 +68,8 @@
 //! | one loses a variant | [`Narrowed`](SemanticRelation::Narrowed) | [`TypeChange::relation`] |
 //! | a struct, or a command's response, comes to ignore the fields it does not declare (`ess-diff/18`) | [`Expanded`](SemanticRelation::Expanded) | [`TypeChange::relation`], [`CommandChange::relation`] |
 //! | one comes to refuse them again | [`Narrowed`](SemanticRelation::Narrowed) | the same |
+//! | an `each:` entry comes to admit a list naming one row more than once, `repeated: last_wins` (ess/35), and nothing else of the branch's set effects moves | [`Expanded`](SemanticRelation::Expanded) | [`CommandChange::relation`] |
+//! | one stops admitting it | [`Narrowed`](SemanticRelation::Narrowed) | the same |
 //! | anything else | [`Changed`](SemanticRelation::Changed) | the family's `relation` |
 //!
 //! Design §21 lists seven relations. Four of them — `Equivalent`, `Strengthened`, `Weakened`,

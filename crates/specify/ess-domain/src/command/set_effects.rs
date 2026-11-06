@@ -30,6 +30,13 @@
 //! `sets:` source may read `<name>.<member>`; the member is held distinct across the list by a
 //! declared `distinct:`. Below ess/23 `each:` is refused, naming ess/23.
 //!
+//! From ess/35 (beyond10x/ess#748) an `each:` may declare `repeated: last_wins`: the list may name
+//! one row more than once, and its elements apply one after another in list order, each to the row
+//! as the elements before it left it, so no declared `distinct:` need hold the member distinct.
+//! Below ess/35 the key is refused, naming ess/35; beside another `each:` entry of the outcome over
+//! the same entity it is refused as a conflicting declaration, since list order holds inside one
+//! entry only.
+//!
 //! From ess/25 (beyond10x/ess#531) an outcome with `instances:` may publish an event once per row it
 //! changed: `emits:` lists it as `{event: <name>, each: changed}`, optionally with `when_state:`
 //! naming the states such a row held before the outcome, and its payload block reads that row with
@@ -127,7 +134,8 @@ pub struct RawAffect {
     pub deletes: Option<QualifiedName>,
 }
 
-/// `each: {in: input.<list>, as: <name>}` as written (ess/23, beyond10x/ess#459).
+/// `each: {in: input.<list>, as: <name>}` as written (ess/23, beyond10x/ess#459), from ess/27 with
+/// `where:` and from ess/35 with `repeated:`.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct RawEach {
@@ -141,6 +149,53 @@ pub struct RawEach {
     /// (ess/27, beyond10x/ess#596); every element where absent.
     #[serde(rename = "where", default, skip_serializing_if = "Option::is_none")]
     pub filter: Option<WrittenPredicate>,
+    /// How a list naming one row more than once is taken (ess/35, beyond10x/ess#748); where
+    /// absent, a declared `distinct:` holds the identity member distinct across the list.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub repeated: Option<Repeated>,
+}
+
+/// How an `each:` entry takes a list naming one row more than once (ess/35, beyond10x/ess#748).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum Repeated {
+    /// The elements apply one after another in list order, each to the row as the elements before
+    /// it left it: an upsert repeat writes over what an earlier element wrote, a move repeat takes
+    /// its transition only from a state in its `from`, and a delete repeat is skipped.
+    LastWins,
+}
+
+impl<'de> serde::Deserialize<'de> for Repeated {
+    /// `last_wins`, and nothing else: any other value, of any type, is refused naming itself and
+    /// `last_wins`.
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct Visitor;
+        impl serde::de::Visitor<'_> for Visitor {
+            type Value = Repeated;
+            fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                f.write_str("`last_wins`, the only value of `repeated:`")
+            }
+            fn visit_str<E: serde::de::Error>(self, value: &str) -> Result<Repeated, E> {
+                match value {
+                    "last_wins" => Ok(Repeated::LastWins),
+                    other => Err(E::custom(format!(
+                        "`repeated: {other}` is not a value of `repeated:`; its only value is \
+                         `last_wins`"
+                    ))),
+                }
+            }
+        }
+        deserializer.deserialize_any(Visitor)
+    }
+}
+
+impl fmt::Display for Repeated {
+    /// The value as written.
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::LastWins => f.write_str("last_wins"),
+        }
+    }
 }
 
 /// One row per element of an input list (ess/23, beyond10x/ess#459): for each element, the row
@@ -162,6 +217,11 @@ pub struct Each {
     /// beyond10x/ess#596); `None` where it acts on every element.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub filter: Option<Predicate>,
+    /// `repeated: last_wins` (ess/35, beyond10x/ess#748): the list may name one row more than
+    /// once, its elements applying in list order; `None` where a declared `distinct:` holds the
+    /// identity member distinct instead.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub repeated: Option<Repeated>,
 }
 
 /// The rows a `moves:`, `updates:` or — from ess/23 — `deletes:` outcome changes, selected by a
@@ -979,6 +1039,7 @@ fn each_entry(
         member: identity,
         reads,
         filter,
+        repeated: each.repeated,
     }))
 }
 
@@ -1164,6 +1225,7 @@ pub(super) fn written(
                     list: format!("input.{}", each.list),
                     binder: each.binder,
                     filter: each.filter.map(Into::into),
+                    repeated: each.repeated,
                 }),
                 entity: affect.entity,
                 sets: PayloadTable(sets),
@@ -1331,6 +1393,61 @@ pub(crate) fn validate(spec: &Specification) -> ValidationErrors {
                     // A backstop for a specification assembled without the one header
                     // [`refuse_each`] reads.
                     errors.push(each_below_ess_23(at.clone().key("each").render()));
+                }
+                // `repeated:` (ess/35, beyond10x/ess#748) is refused alone below it: the entry is
+                // then not also refused for the `distinct:` the key stands in for.
+                if let Some(repeated) = affect.each.as_ref().and_then(|each| each.repeated) {
+                    if format.major() < FormatVersion::V35.major() {
+                        errors.push(
+                            ValidationError::at(
+                                at.clone().key("each").key("repeated"),
+                                ValidationCode::UnsupportedFormatVersion,
+                                format!(
+                                    "outcome `{}` of `{}` declares `repeated: {repeated}` on the \
+                                     `each:` of `affects[{index}]`; an `each:` entry taking a \
+                                     list that names one row more than once, its elements \
+                                     applied in list order, requires specification format \
+                                     ess/35",
+                                    outcome.name, command.name
+                                ),
+                            )
+                            .with_hint(
+                                "declare `format: ess/35`, or hold the member distinct with a \
+                                 declared `distinct:`",
+                            ),
+                        );
+                    } else if let Some((other, _)) = outcome
+                        .set_effects
+                        .affects
+                        .iter()
+                        .enumerate()
+                        .find(|(other, entry)| {
+                            *other != index && entry.each.is_some() && entry.entity == affect.entity
+                        })
+                    {
+                        // List order holds inside one entry only: the entries apply one after
+                        // another, so a row two `each:` entries over one entity both name would
+                        // be decided by entry order, not by list order. Refused, fail closed.
+                        errors.push(
+                            ValidationError::at(
+                                at.clone().key("each").key("repeated"),
+                                ValidationCode::ConflictingDeclaration,
+                                format!(
+                                    "outcome `{}` of `{}` declares `repeated: {repeated}` on the \
+                                     `each:` of `affects[{index}]`, and `affects[{other}]` is \
+                                     another `each:` entry over `{}`; list order holds inside \
+                                     one entry, so a row both entries name would be decided by \
+                                     the order of the entries, not of the list",
+                                    outcome.name, command.name, affect.entity
+                                ),
+                            )
+                            .with_hint(
+                                "write the rows of that entity through one `each:` entry, or \
+                                 drop `repeated:` and hold the member distinct with a declared \
+                                 `distinct:`",
+                            ),
+                        );
+                    }
                 }
                 if let Some(entity) =
                     declared(spec, &affect.entity, &at.clone().key("entity"), &mut errors)
@@ -3063,10 +3180,11 @@ pub(crate) fn refuse_each(
 
 /// The rules of an `each:` entry that need the whole specification (ess/23, beyond10x/ess#459):
 /// the list is a declared input holding a `List` of a struct; `instance:` names a member of the
-/// entity's identity type; that member is held distinct across the list by a declared `distinct:`;
-/// each element read names a member of the type of the field it fills, and not the identity; no
-/// element read sits inside a nested mapping; and every required field an entity invariant reads is
-/// written, as by any creation (`ESS-COMMAND-018`).
+/// entity's identity type; that member is held distinct across the list by a declared `distinct:`,
+/// unless `repeated: last_wins` (ess/35) applies the list in order; each element read names a
+/// member of the type of the field it fills, and not the identity; no element read sits inside a
+/// nested mapping; and every required field an entity invariant reads is written, as by any
+/// creation (`ESS-COMMAND-018`).
 #[allow(clippy::too_many_lines)] // One rule per paragraph of the design note's section.
 fn each_rules(
     spec: &Specification,
@@ -3174,7 +3292,9 @@ fn each_rules(
             .with_hint("name each row by a member holding the entity's identity type"),
         ),
         Some(_) => {
-            if !held_distinct(command, outcome, each) {
+            // `repeated: last_wins` (ess/35, beyond10x/ess#748) defines the order instead: the
+            // elements apply in list order, so a repeated member leaves no ambiguous result.
+            if each.repeated.is_none() && !held_distinct(command, outcome, each) {
                 errors.push(
                     ValidationError::at(
                         site,
@@ -3189,8 +3309,10 @@ fn each_rules(
                     )
                     .with_hint(format!(
                         "refuse a repeated member with a branch `when: {{not: {{distinct: {{in: \
-                         {list}, as: item, by: item.{member}}}}}}}`, or require that `distinct:` \
-                         in this branch's own `when:`",
+                         {list}, as: item, by: item.{member}}}}}}}`, require that `distinct:` \
+                         in this branch's own `when:`, or from ess/35 declare `repeated: \
+                         last_wins` on the `each:` so the elements apply in list order, each \
+                         to the row as the earlier ones left it",
                         list = each.list,
                         member = each.member
                     )),

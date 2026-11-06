@@ -175,13 +175,55 @@ fn a_plain_update_is_not_refused_for_it() {
     assert!(!refused_codes(&ir).contains(&LoweringCode::SetEffectUnsupported));
 }
 
+const EACH: &str = include_str!("../../../specify/ess-compiler/tests/fixtures/set-each.yaml");
+
 /// One record per element of an input list (ess/23, beyond10x/ess#459): an `each:` entry is
 /// refused by name, as every set effect is.
 #[test]
 fn each_entry_targets_refuse_by_name() {
-    const EACH: &str = include_str!("../../../specify/ess-compiler/tests/fixtures/set-each.yaml");
+    let codes: Vec<LoweringCode> = each_diagnostics(EACH)
+        .into_iter()
+        .map(|diagnostic| diagnostic.code)
+        .collect();
+    assert!(
+        codes.contains(&LoweringCode::SetEffectUnsupported),
+        "{codes:?}"
+    );
+}
+
+/// An `each:` entry admitting repeated identities (`repeated: last_wins`, ess/35,
+/// story:an-each-write-may-take-repeated-identities-in-list-order) is refused as every set effect
+/// is, and the refusal names the key.
+#[test]
+fn a_repeated_each_entry_is_refused_naming_the_key() {
+    let text = EACH
+        .replacen("format: ess/23", "format: ess/35", 1)
+        .replacen(
+            "      - name: duplicated\n        when: {not: {distinct: {in: applied, as: d, by: d.document_id}}}\n        error: demo.feed.DuplicateDocument\n",
+            "",
+            1,
+        )
+        .replacen(
+            "each: {in: input.applied, as: doc}",
+            "each: {in: input.applied, as: doc, repeated: last_wins}",
+            1,
+        );
+    let diagnostics = each_diagnostics(&text);
+    assert!(
+        diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == LoweringCode::SetEffectUnsupported
+                && diagnostic.path.ends_with("ran.affects[0].each.repeated")
+                && diagnostic.message.contains("repeated: last_wins")
+        }),
+        "{diagnostics:#?}"
+    );
+}
+
+/// What lowering the `feed-service` component of `model` (the `set-each.yaml` fixture, edited)
+/// refuses.
+fn each_diagnostics(model: &str) -> Vec<ess_entity_runtime::LoweringDiagnostic> {
     const FEED: &str = "components:\n  - component: feed-service\n    owns:\n      domains: [demo.feed]\n    accepts:\n      commands: [demo.feed.AddSource, demo.feed.RunSource]\n    publishes:\n      events: [demo.feed.SourceAdded, demo.feed.SourceRan]\n";
-    let text = format!("{EACH}{FEED}");
+    let text = format!("{model}{FEED}");
     let mut sources = SourceMap::new();
     sources.insert("feed.yaml".to_owned(), text.clone());
     let specification =
@@ -203,16 +245,8 @@ fn each_entry_targets_refuse_by_name() {
             .collect(),
         scales: BTreeMap::new(),
     };
-    let codes: Vec<LoweringCode> = match lower(&service, &options) {
+    match lower(&service, &options) {
         Ok(_) => Vec::new(),
-        Err(diagnostics) => diagnostics
-            .into_vec()
-            .into_iter()
-            .map(|diagnostic| diagnostic.code)
-            .collect(),
-    };
-    assert!(
-        codes.contains(&LoweringCode::SetEffectUnsupported),
-        "{codes:?}"
-    );
+        Err(diagnostics) => diagnostics.into_vec(),
+    }
 }

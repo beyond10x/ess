@@ -52,7 +52,7 @@ use crate::types::{NamedType, TypeBody, TypeRef, TypeRegistry};
 /// Specification format major versions this build implements.
 pub const SUPPORTED_FORMATS: &[u32] = &[
     1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26,
-    27, 28, 29, 30, 31, 32, 33, 34,
+    27, 28, 29, 30, 31, 32, 33, 34, 35,
 ];
 
 /// What one specification format admits that the format before it did not.
@@ -370,6 +370,14 @@ pub const FORMAT_HISTORY: &[FormatHistoryEntry] = &[
             "A named refusal decided by input (`when:`) or by a related row (`when_related:`) that names no subject of its own, on a command whose other branches address an existing row through the input, observes that row completely and requires it unchanged, as a held-state, `when_subject:` or `external:` refusal does; below `ess/34` its suite keeps its bytes (beyond10x/ess#587).",
         ],
     },
+    FormatHistoryEntry {
+        major: 35,
+        release: None,
+        added: &[
+            "An `affects:` entry over an input list may take a list naming one row more than once, `each: {in: input.<list>, as: <name>, repeated: last_wins}`: its elements apply one after another in list order, each to the row as the elements before it left it, and the entry needs no declared `distinct:` holding the identity member distinct. An upsert repeat writes over what an earlier element wrote, so the last element's values stay; a move repeat takes the transition only from a state in its `from` and is otherwise skipped; a delete repeat names no row and is skipped; and `where:` inside `each:` selects the elements first. `last_wins` is the only value; another is refused by name. List order holds inside one entry, so the key is refused as `conflicting_declaration` where another `each:` entry of the outcome writes the same entity. Below `ess/35` the key is refused as `unsupported_format_version` naming `ess/35`; an entry without it keeps its `distinct:` requirement and its IR bytes. The interpreted target applies the list in order and synthesis sends a list naming the held row twice, reading back the last element's values; generated Rust and Go keep the command an obligation naming the key, Entity Runtime lowering refuses it by name, and `ess verify diff` reports declaring it as widening and dropping it as narrowing (beyond10x/ess#748).",
+        ],
+        stricter: &[],
+    },
 ];
 
 // `FORMAT_HISTORY` and `SUPPORTED_FORMATS` name the same majors in the same order, and every row
@@ -513,6 +521,10 @@ impl FormatVersion {
     /// named refusal of a command addressing an existing row
     /// (`story:every-witness-reads-back-its-outcome-effect`, beyond10x/ess#585, #587).
     pub const V34: Self = Self(34);
+    /// An `each:` entry taking a list that names one row more than once, its elements applied in
+    /// list order, `repeated: last_wins`
+    /// (`story:an-each-write-may-take-repeated-identities-in-list-order`, beyond10x/ess#748).
+    pub const V35: Self = Self(35);
 
     /// How a format version is written.
     pub const PREFIX: &'static str = "ess/";
