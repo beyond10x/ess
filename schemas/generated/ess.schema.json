@@ -4245,7 +4245,7 @@
       "description": "How an `each:` entry takes a list naming one row more than once (ess/35, beyond10x/ess#748).",
       "oneOf": [
         {
-          "description": "The elements apply one after another in list order, each to the row as the elements before it left it, so the last element naming a row decides what it holds.",
+          "description": "The elements apply one after another in list order, each to the row as the elements before it left it: an upsert repeat writes over what an earlier element wrote, a move repeat takes its transition only from a state in its `from`, and a delete repeat is skipped.",
           "type": "string",
           "enum": [
             "last_wins"

@@ -68,8 +68,8 @@ fn repeated_sentence(each: &ResolvedEach) -> Vec<Inline> {
     }
     vec![
         Inline::text(
-            " The elements apply in list order, so a row named more than once takes the last \
-             element (",
+            " The elements apply in list order, each to the row as the earlier ones left it \
+             (",
         ),
         Inline::code("repeated: last_wins"),
         Inline::text(")."),

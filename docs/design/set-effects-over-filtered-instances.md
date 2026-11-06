@@ -379,10 +379,18 @@ since `order` reads as a sort of the list.
 
 **Meaning.** The elements apply one after another in list order, each to the row as the elements
 before it left it, the order `affects:` entries already apply in and the interpreter already walks.
-An upsert repeat updates the row an earlier element wrote; a move repeat takes the transition only
-from a state in its `from`, else it is skipped (the ess/27 skip rule); a delete repeat names no row
-and is skipped; `where:` inside `each:` selects the elements before order applies. With the key no
-`distinct:` is required; one declared beside it is still admitted.
+An upsert repeat writes over what an earlier element wrote, so the last element's values stay; a
+move repeat takes the transition only from a state in its `from`, else it is skipped (the ess/27
+skip rule), so it does not override the earlier move; a delete repeat names no row and is skipped;
+`where:` inside `each:` selects the elements before order applies. With the key no `distinct:` is
+required; one declared beside it is still admitted.
+
+**One entry per entity.** List order holds inside one entry. Entries apply one after another, so
+where two `each:` entries of an outcome write one entity (the ess/27 shape, one entry per verdict),
+a row both name would be decided by the order of the entries, not of the list (adversary pass 1,
+`ess-conformance/tests/adversary_w089_u3_pass1.rs`). The key is then refused, fail closed, as
+`conflicting_declaration` at each such entry's `each.repeated`. An entry over the same entity
+without `each:` (a `where:` selection) is admitted beside it: its rows are not taken from the list.
 
 **Format.** Below `ess/35` the key is refused as `unsupported_format_version` naming `ess/35`, at
 `affects[i].each.repeated`, alone: the entry is not also refused for the `distinct:` the key

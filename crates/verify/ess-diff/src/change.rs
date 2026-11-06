@@ -1220,7 +1220,7 @@ fn undeclared_fields_relation(after: ess_domain::types::UndeclaredFields) -> Sem
 /// What an `each:` entry's line in [`CommandChange::OutcomeSetEffectChanged`] carries where the
 /// entry declares `repeated: last_wins` (ess/35, beyond10x/ess#748).
 pub(crate) const REPEATED_CLAUSE: &str =
-    ", a row named more than once taking the last element (`repeated: last_wins`)";
+    ", applied in list order, each to the row as the earlier ones left it (`repeated: last_wins`)";
 
 /// How a branch's set-effect lines moving relates the revisions: where the only difference is
 /// [`REPEATED_CLAUSE`] gained by some `each:` lines, the entries admit every list they admitted and

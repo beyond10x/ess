@@ -33,7 +33,9 @@
 //! From ess/35 (beyond10x/ess#748) an `each:` may declare `repeated: last_wins`: the list may name
 //! one row more than once, and its elements apply one after another in list order, each to the row
 //! as the elements before it left it, so no declared `distinct:` need hold the member distinct.
-//! Below ess/35 the key is refused, naming ess/35.
+//! Below ess/35 the key is refused, naming ess/35; beside another `each:` entry of the outcome over
+//! the same entity it is refused as a conflicting declaration, since list order holds inside one
+//! entry only.
 //!
 //! From ess/25 (beyond10x/ess#531) an outcome with `instances:` may publish an event once per row it
 //! changed: `emits:` lists it as `{event: <name>, each: changed}`, optionally with `when_state:`
@@ -158,7 +160,8 @@ pub struct RawEach {
 #[serde(rename_all = "snake_case")]
 pub enum Repeated {
     /// The elements apply one after another in list order, each to the row as the elements before
-    /// it left it, so the last element naming a row decides what it holds.
+    /// it left it: an upsert repeat writes over what an earlier element wrote, a move repeat takes
+    /// its transition only from a state in its `from`, and a delete repeat is skipped.
     LastWins,
 }
 
@@ -1411,6 +1414,37 @@ pub(crate) fn validate(spec: &Specification) -> ValidationErrors {
                             .with_hint(
                                 "declare `format: ess/35`, or hold the member distinct with a \
                                  declared `distinct:`",
+                            ),
+                        );
+                    } else if let Some((other, _)) = outcome
+                        .set_effects
+                        .affects
+                        .iter()
+                        .enumerate()
+                        .find(|(other, entry)| {
+                            *other != index && entry.each.is_some() && entry.entity == affect.entity
+                        })
+                    {
+                        // List order holds inside one entry only: the entries apply one after
+                        // another, so a row two `each:` entries over one entity both name would
+                        // be decided by entry order, not by list order. Refused, fail closed.
+                        errors.push(
+                            ValidationError::at(
+                                at.clone().key("each").key("repeated"),
+                                ValidationCode::ConflictingDeclaration,
+                                format!(
+                                    "outcome `{}` of `{}` declares `repeated: {repeated}` on the \
+                                     `each:` of `affects[{index}]`, and `affects[{other}]` is \
+                                     another `each:` entry over `{}`; list order holds inside \
+                                     one entry, so a row both entries name would be decided by \
+                                     the order of the entries, not of the list",
+                                    outcome.name, command.name, affect.entity
+                                ),
+                            )
+                            .with_hint(
+                                "write the rows of that entity through one `each:` entry, or \
+                                 drop `repeated:` and hold the member distinct with a declared \
+                                 `distinct:`",
                             ),
                         );
                     }
@@ -3277,8 +3311,8 @@ fn each_rules(
                         "refuse a repeated member with a branch `when: {{not: {{distinct: {{in: \
                          {list}, as: item, by: item.{member}}}}}}}`, require that `distinct:` \
                          in this branch's own `when:`, or from ess/35 declare `repeated: \
-                         last_wins` on the `each:` so the elements apply in list order and the \
-                         last naming a row wins",
+                         last_wins` on the `each:` so the elements apply in list order, each \
+                         to the row as the earlier ones left it",
                         list = each.list,
                         member = each.member
                     )),

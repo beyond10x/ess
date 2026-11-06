@@ -1779,7 +1779,7 @@ impl Projector<'_> {
                 );
                 refused = true;
             }
-            // A list applied in order, the last element naming a row winning (ess/35,
+            // A list applied in order, each element to the row as the earlier ones left it (ess/35,
             // beyond10x/ess#748), is named apart: it is the order the operation would have to
             // keep.
             for (index, affect) in outcome.affects.iter().enumerate() {

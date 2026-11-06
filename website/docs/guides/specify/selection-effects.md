@@ -231,11 +231,13 @@ record. Below `ess/23` `each:` is refused, naming `ess/23`.
 From `format: ess/35` (beyond10x/ess#748) a service that accepts a list naming one record twice,
 and applies the list in order, says so on the entry instead of declaring `distinct:`:
 `each: {in: input.applied, as: doc, repeated: last_wins}`. The elements then apply one after
-another in list order, each to the record as the elements before it left it, so the last element
-naming a record decides what it holds. An updating entry's repeat updates the record an earlier
-element wrote; a moving entry's repeat takes the transition only from a state in its `from`, and is
-skipped otherwise; a removing entry's repeat names no record and is skipped; `where:` inside
-`each:` selects the elements first. `last_wins` is the only value. Below `ess/35` the key is
+another in list order, each to the record as the elements before it left it. An updating entry's
+repeat writes over what an earlier element wrote, so the last element's values stay; a moving
+entry's repeat takes the transition only from a state in its `from`, and is skipped otherwise; a
+removing entry's repeat names no record and is skipped; `where:` inside `each:` selects the
+elements first. `last_wins` is the only value. List order holds inside one entry, so the key is
+refused as `conflicting_declaration` where another `each:` entry of the branch writes the same
+entity: write those records through one entry. Below `ess/35` the key is
 refused as `unsupported_format_version` naming `ess/35`, and an entry without it keeps the
 `distinct:` requirement. The suite then sends the record's element twice, the stale values first,
 and reads back the last element's values. Generated Rust and Go keep the command an obligation

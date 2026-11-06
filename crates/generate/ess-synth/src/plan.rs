@@ -968,7 +968,7 @@ fn affect_clause(ir: &EssIr, affect: &ResolvedAffect) -> String {
         // From ess/35 (beyond10x/ess#748): a list that may name one row more than once.
         if each.repeated.is_some() {
             selected.push_str(
-                ", applied in list order so a row named more than once takes the last element \
+                ", applied in list order, each to the row as the earlier ones left it \
                  (`repeated: last_wins`)",
             );
         }

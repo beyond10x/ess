@@ -1,8 +1,8 @@
 //! An `each:` entry admitting repeated identities (`repeated: last_wins`, ess/35,
 //! story:an-each-write-may-take-repeated-identities-in-list-order) stays owed by generated Rust
 //! and Go, as every `each:` entry is: generated storage writes no row per element in this cut. The
-//! obligation names the key, so an implementor knows the list applies in order, the last write to
-//! a row winning.
+//! obligation names the key, so an implementor knows the list applies in order, each
+//! element to the row as the earlier ones left it.
 
 use ess_compiler::{ir::EssIr, resolve::compile, source::SourceMap};
 use ess_domain::{spec::RawSpecFile, system::Source, Specification};
