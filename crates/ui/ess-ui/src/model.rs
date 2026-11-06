@@ -1077,6 +1077,15 @@ impl HostSlot {
                  replaces, or `none`"
             ));
         }
+        let item = slot.stands_in_for.as_str();
+        if !(item == "none" || COMPOSITE_KINDS.contains(&item) || PRIMITIVE_KINDS.contains(&item)) {
+            return Err(format!(
+                "host slot `{host}` stands in for `{item}`, which names no composite and no \
+                 primitive: `stands_in_for` is one of {}, {} or `none`",
+                COMPOSITE_KINDS.join(", "),
+                PRIMITIVE_KINDS.join(", ")
+            ));
+        }
         Ok(slot)
     }
 

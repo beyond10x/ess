@@ -229,6 +229,7 @@ fn severity_of(id: &str) -> Severity {
 #[derive(Default)]
 pub(crate) struct Sink {
     findings: Vec<Finding>,
+    backlog: Vec<BacklogEntry>,
 }
 
 impl Sink {
@@ -255,6 +256,19 @@ pub struct Report {
     pub document: String,
     /// Every finding, ordered by path, then check, then message.
     pub findings: Vec<Finding>,
+    /// The generator's backlog: every host slot that stands in for `none`, ordered by path.
+    pub backlog: Vec<BacklogEntry>,
+}
+
+/// A host slot no generator item fits (`stands_in_for: none`).
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, serde::Serialize)]
+pub struct BacklogEntry {
+    /// The slot's canonical path.
+    pub path: String,
+    /// The component name the host registers.
+    pub host: String,
+    /// Why the generator cannot draw it.
+    pub reason: String,
 }
 
 #[derive(serde::Serialize)]
@@ -262,6 +276,8 @@ struct Json<'a> {
     format: &'static str,
     document: &'a str,
     findings: &'a [Finding],
+    #[serde(skip_serializing_if = "<[BacklogEntry]>::is_empty")]
+    backlog: &'a [BacklogEntry],
 }
 
 impl Report {
@@ -269,9 +285,12 @@ impl Report {
         let mut findings = sink.findings;
         findings.sort();
         findings.dedup();
+        let mut backlog = sink.backlog;
+        backlog.sort();
         Self {
             document: document.to_owned(),
             findings,
+            backlog,
         }
     }
 
@@ -309,6 +328,13 @@ impl Report {
                         finding.severity, finding.check, finding.path, finding.message
                     );
                 }
+                for entry in &self.backlog {
+                    let _ = writeln!(
+                        text,
+                        "backlog {} {}: {}",
+                        entry.path, entry.host, entry.reason
+                    );
+                }
                 let _ = writeln!(
                     text,
                     "{}: {} error(s), {} warning(s)",
@@ -323,6 +349,7 @@ impl Report {
                     format: FORMAT,
                     document: &self.document,
                     findings: &self.findings,
+                    backlog: &self.backlog,
                 };
                 let mut text =
                     serde_json::to_string_pretty(&json).expect("a report serializes to JSON");

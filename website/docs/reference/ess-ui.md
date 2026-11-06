@@ -1939,7 +1939,7 @@ primitive: divider
 
 A declared place where the host application supplies its own component.
 
-A host slot stands where the generator cannot draw yet: a bespoke editor, a vendor widget, a visualisation with its own interaction. ESS does not draw it and never counts it as covered by the specification. It stands where a node may stand, at one of five scopes: a page (the slot keys beside the page's own, and the page draws no sections), a section, an overlay, a tab (as the tab's `form` node) or a field (the slot keys beside the field's own). Its scope is its node path. A node is a slot when it carries `host`, and a slot beside `component` or `primitive` is refused. `host` names the component the host registers and is unique in the document; a widget's declaration is not drawn, so a slot in a widget is found at each use. `reason` says why the generator cannot draw it and is never empty. `stands_in_for` names the generator item the slot replaces, so a later generator can take it back. `reads` and `commands` declare what the host component reads and sends. `ess ui check --hosts <file>` refuses a name the host registers that no slot declares.
+A host slot stands where the generator cannot draw yet: a bespoke editor, a vendor widget, a visualisation with its own interaction. ESS does not draw it and never counts it as covered by the specification. It stands where a node may stand, at one of five scopes: a page (the slot keys beside the page's own, and the page draws no sections), a section, an overlay, a tab (as the tab's `form` node) or a field (the slot keys beside the field's own). Its scope is its node path. A node is a slot when it carries `host`, and a slot beside `component` or `primitive` is refused. `host` names the component the host registers and is unique in the document; a widget's declaration is not drawn, so a slot in a widget is found at each use. `reason` says why the generator cannot draw it and is never empty. `stands_in_for` names the generator item the slot replaces, so a later generator can take it back. `reads` and `commands` declare what the host component reads and sends. `ess ui check --hosts <file>` refuses a name the host registers that no slot declares, and every report of `ess ui check` lists the slots that stand in for `none`, each with its path and reason, as the generator's backlog.
 
 **Properties**
 
@@ -1947,7 +1947,7 @@ A host slot stands where the generator cannot draw yet: a bespoke editor, a vend
 |---|---|---|---|---|
 | `host` | `name` | yes |   | the component name the host registers; unique in the document |
 | `reason` | `string` | yes |   | why the generator cannot draw it; never empty |
-| `stands_in_for` | `name` | yes |   | the composite or primitive the slot replaces, or `none` where no generator item fits |
+| `stands_in_for` | one of: name of a [Composite](#composite) \| `text` \| `badge` \| `icon` \| `button` \| `link` \| `input` \| `toggle` \| `image` \| `divider` \| exactly `none` | yes |   | the composite or primitive the slot replaces, or `none` where no generator item fits |
 | `reads` | [Reads](#reads) |   |   | the view the host component reads, written as a composite's `reads` |
 | `commands` | list of name of an ESS `command` |   |   | the commands the host component sends |
 

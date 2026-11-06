@@ -1203,11 +1203,13 @@ constructs:
       a widget is found at each use. `reason` says why the generator cannot draw it and is never
       empty. `stands_in_for` names the generator item the slot replaces, so a later generator
       can take it back. `reads` and `commands` declare what the host component reads and sends.
-      `ess ui check --hosts <file>` refuses a name the host registers that no slot declares.
+      `ess ui check --hosts <file>` refuses a name the host registers that no slot declares, and
+      every report of `ess ui check` lists the slots that stand in for `none`, each with its path
+      and reason, as the generator's backlog.
     fields:
       host:          {type: name, required: true, note: "the component name the host registers; unique in the document"}
       reason:        {type: string, required: true, note: "why the generator cannot draw it; never empty"}
-      stands_in_for: {type: name, required: true, note: "the composite or primitive the slot replaces, or `none` where no generator item fits"}
+      stands_in_for: {type: {one_of: [{ref: composite_kind}, {enum: [text, badge, icon, button, link, input, toggle, image, divider]}, {const: none}]}, required: true, note: "the composite or primitive the slot replaces, or `none` where no generator item fits"}
       reads:         {type: Reads, note: "the view the host component reads, written as a composite's `reads`"}
       commands:      {type: {list: {ref: command}}, note: the commands the host component sends}
     example: {name: route, host: RouteMap, reason: draws the delivery route on a map, stands_in_for: chart, reads: {view: deliveries.Route, params: {id: params.id}}}

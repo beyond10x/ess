@@ -367,3 +367,164 @@ fn the_schema_and_the_reference_describe_the_host_slot() {
         );
     }
 }
+
+// ── stands_in_for (story:a-host-slot-names-the-generator-item-it-stands-in-for) ──────────────
+
+/// One section slot standing in for `stands_in_for`, written as given.
+fn standing_in_for(stands_in_for: &str) -> String {
+    document(
+        &format!(
+            "{{name: summary, reads: t.ById}}, \
+             {{name: map, host: RouteMap, reason: a map widget, {stands_in_for}}}"
+        ),
+        "",
+        "{kind: detail_page, title: E}",
+    )
+}
+
+#[test]
+fn stands_in_for_accepts_every_composite_every_primitive_and_none() {
+    let items = ess_ui::COMPOSITE_KINDS
+        .iter()
+        .chain(ess_ui::PRIMITIVE_KINDS)
+        .chain(&["none"]);
+    for item in items {
+        let report = report(&standing_in_for(&format!("stands_in_for: {item}")));
+        assert!(errors(&report).is_empty(), "{item}: {:#?}", report.findings);
+    }
+}
+
+#[test]
+fn the_schema_lists_the_stand_ins_the_loader_accepts() {
+    let schema: ess_yaml::Value = ess_yaml::from_str(ess_ui::SCHEMA).expect("the schema");
+    let names = |value: &ess_yaml::Value| -> Vec<String> {
+        value
+            .as_sequence()
+            .expect("a list")
+            .iter()
+            .map(|name| name.as_str().expect("a name").to_owned())
+            .collect()
+    };
+    let primitives =
+        names(&schema["constructs"]["Primitive"]["fields"]["primitive"]["type"]["enum"]);
+    assert_eq!(primitives, ess_ui::PRIMITIVE_KINDS);
+    let one_of = &schema["constructs"]["HostSlot"]["fields"]["stands_in_for"]["type"]["one_of"];
+    assert_eq!(one_of[0]["ref"].as_str(), Some("composite_kind"));
+    assert_eq!(names(&one_of[1]["enum"]), ess_ui::PRIMITIVE_KINDS);
+    assert_eq!(one_of[2]["const"].as_str(), Some("none"));
+}
+
+#[test]
+fn any_other_stands_in_for_is_refused_by_name() {
+    for item in ["map_view", "Chart", "widget", "nothing"] {
+        refused(
+            &report(&standing_in_for(&format!("stands_in_for: {item}"))),
+            "host_slots",
+            "pages/p/sections/map",
+            &["RouteMap", &format!("`{item}`")],
+        );
+    }
+}
+
+#[test]
+fn a_none_slot_without_a_reason_is_refused() {
+    let text = document(
+        "{name: summary, reads: t.ById}, \
+         {name: map, host: RouteMap, stands_in_for: none}",
+        "",
+        "{kind: detail_page, title: E}",
+    );
+    refused(
+        &report(&text),
+        "host_slots",
+        "pages/p/sections/map",
+        &["RouteMap", "reason"],
+    );
+}
+
+/// The five-scope document with its overlay slot and a second field slot standing in for
+/// nothing the generator has.
+fn with_backlog() -> String {
+    five_scopes()
+        .replace(
+            "captures a pen signature, \
+                stands_in_for: form",
+            "captures a pen signature, \
+                stands_in_for: none",
+        )
+        .replace(
+            "stands_in_for: rich_text}]",
+            "stands_in_for: rich_text}, {field: colour, host: ColourWheel, \
+             reason: no colour picker yet, stands_in_for: none}]",
+        )
+}
+
+#[test]
+fn the_reports_list_the_none_slots_as_the_generator_backlog() {
+    let text = with_backlog();
+    let report = report(&text);
+    assert!(errors(&report).is_empty(), "{:#?}", report.findings);
+    let backlog: Vec<(&str, &str, &str)> = report
+        .backlog
+        .iter()
+        .map(|entry| {
+            (
+                entry.path.as_str(),
+                entry.host.as_str(),
+                entry.reason.as_str(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        backlog,
+        [
+            (
+                "pages/p/overlays/sign",
+                "SignaturePad",
+                "captures a pen signature"
+            ),
+            (
+                "pages/p/sections/summary/fields/colour",
+                "ColourWheel",
+                "no colour picker yet"
+            ),
+        ]
+    );
+    let text_report = report.render(OutputFormat::Text);
+    for line in [
+        "backlog pages/p/overlays/sign SignaturePad: captures a pen signature",
+        "backlog pages/p/sections/summary/fields/colour ColourWheel: no colour picker yet",
+    ] {
+        assert!(
+            text_report.lines().any(|written| written == line),
+            "no line `{line}` in:\n{text_report}"
+        );
+    }
+    let json: serde_json::Value =
+        serde_json::from_str(&report.render(OutputFormat::Json)).expect("the report is JSON");
+    assert_eq!(
+        json["backlog"],
+        serde_json::json!([
+            {"path": "pages/p/overlays/sign", "host": "SignaturePad",
+             "reason": "captures a pen signature"},
+            {"path": "pages/p/sections/summary/fields/colour", "host": "ColourWheel",
+             "reason": "no colour picker yet"},
+        ])
+    );
+}
+
+#[test]
+fn a_document_without_none_slots_reports_as_before() {
+    for text in [five_scopes(), standing_in_for("stands_in_for: chart")] {
+        let report = report(&text);
+        assert!(report.backlog.is_empty(), "{:#?}", report.backlog);
+        let json: serde_json::Value =
+            serde_json::from_str(&report.render(OutputFormat::Json)).expect("JSON");
+        assert!(json.get("backlog").is_none(), "{json}");
+        assert!(
+            !report.render(OutputFormat::Text).contains("backlog"),
+            "{}",
+            report.render(OutputFormat::Text)
+        );
+    }
+}
