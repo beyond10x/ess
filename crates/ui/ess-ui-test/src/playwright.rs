@@ -396,7 +396,16 @@ fn refusal(step: &Step, document: &Document) -> Option<String> {
     if matches!(step, Step::Choose { .. }) {
         return crate::parity::choose(document, &target);
     }
-    checks?
+    let checks = checks?;
+    if checks
+        .iter()
+        .any(|check| matches!(check, Check::Checked(_)))
+    {
+        if let Some(reason) = crate::parity::checked(document, &target) {
+            return Some(reason);
+        }
+    }
+    checks
         .iter()
         .filter(|check| matches!(check, Check::Text(_) | Check::NotText(_)))
         .find_map(|_| crate::parity::text(document, &target))
@@ -685,6 +694,11 @@ fn emit_check(at: &str, check: &Check) -> Vec<String> {
             }
             lines
         }
+        Check::Checked(on) => vec![format!(
+            "await expect(page.locator('{} input[type=\"checkbox\"]')).{}toBeChecked();",
+            selector(at),
+            if *on { "" } else { "not." }
+        )],
         Check::State(state) => match state {
             SectionState::Loading => vec![status("loading")],
             SectionState::Failed => vec![status("failed")],

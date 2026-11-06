@@ -203,6 +203,7 @@ Checks a node. Every key given must hold.
 | `not_text` | the node does not show the text |
 | `rows` | a count: the collection shows that many rows; a list: it shows the rows with these keys, in this order |
 | `state` | the section is `loading`, `empty`, `stale`, `failed`, `ready` or `not_loaded` |
+| `checked` | `true` or `false`: the form field `as: toggle` at `at` (`…/fields/<f>`, in a group `…/groups/<g>/fields/<f>`, in a tab `…/tabs/<t>/fields/<f>`) of a section's or an overlay's own form is on or off. The terminal reads the toggle it draws on the field's line (`[x]`, `[ ]`, or empty before it has a value, read as off); the browser reads the field's checkbox. At any other node the step is refused in both renderers |
 
 `text` never reads a wider area than the node's own. A node the terminal does not draw on cells of
 its own — a field inside an overlay, a node inside a row's `item` — fails the step naming its
@@ -373,6 +374,7 @@ refuses:
 | `text` or `not_text` at a node the terminal does not draw on cells of its own | its text cannot be told from its neighbours' |
 | `text` or `not_text` at an icon action, or an action drawn as a choice | the browser shows no label there |
 | `choose` at a field `as: choice` without a `choice` node | it offers no options in either renderer |
+| `checked` at a node that is not a form toggle of a section's or an overlay's own form | neither renderer holds a toggle's state there |
 | `advance` or `play` past the end of the clock | the move does not fit |
 | `advance` or `play` over more than `MAX_CYCLES_PER_ADVANCE` cycles of a looping script | every cycle's events are delivered one by one |
 

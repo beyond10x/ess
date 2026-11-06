@@ -1684,6 +1684,19 @@ impl App {
             let editing = current && state.editing;
             let cursor = if editing { "▏" } else { "" };
             let text = format!("{} [{shown}{cursor}]", pad(&label_of(field), 16));
+            // A section's or an overlay's own form records each field's line at the field's path,
+            // with its whole label, so a test reads a control's state there.
+            if place.record {
+                self.mark(Mark {
+                    path: form_field_path(place.path, form, field, state.tab),
+                    row: None,
+                    line: lines.len(),
+                    height: 1,
+                    x: 0,
+                    width: None,
+                    text: Some(format!("{} [{shown}]", label_of(field))),
+                });
+            }
             let style = if current {
                 reversed()
             } else {
@@ -2237,6 +2250,26 @@ fn flatten(lines: Vec<Line<'static>>) -> Vec<Span<'static>> {
 
 fn label_of(field: &Field) -> String {
     field.label.clone().unwrap_or_else(|| field.field.clone())
+}
+
+/// The canonical path of a field of `form` drawn at `at`: `fields/<f>`, `groups/<g>/fields/<f>`
+/// or, for a field of the current tab, `tabs/<t>/fields/<f>`.
+fn form_field_path(at: &NodePath, form: &Form, field: &Field, tab: usize) -> String {
+    let is = |fields: &[Field]| {
+        fields
+            .iter()
+            .any(|candidate| std::ptr::eq(candidate, field))
+    };
+    let owner = if is(&form.fields) {
+        at.clone()
+    } else if let Some(group) = form.groups.iter().find(|group| is(&group.fields)) {
+        at.child("groups").child(&group.name)
+    } else if let Some(current) = form.tabs.get(tab) {
+        at.child("tabs").child(&current.name)
+    } else {
+        at.clone()
+    };
+    owner.child("fields").child(&field.name).to_string()
 }
 
 /// A `help: {text, link}` of a form group, field or column as one dim line after `lead`: its
