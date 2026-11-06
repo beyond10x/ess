@@ -10,7 +10,10 @@
 
 use std::fmt::Write as _;
 
-use ess_compiler::ir::{EssIr, ResolvedCommand, ResolvedComponent, ResolvedField, ResolvedView};
+use ess_compiler::ir::{
+    EssIr, ResolvedBody, ResolvedCommand, ResolvedComponent, ResolvedField, ResolvedTypeRef,
+    ResolvedView,
+};
 use ess_gen::ess_http::{
     self, AnswerSource, Body, Encoding, Header, Param, RedirectMode, RefusalBody, RefusalKey,
     ResponseEncoding,
@@ -1031,7 +1034,9 @@ pub(super) const BARE_BODY: &str = r#"
 // bareBody reads a `json` body whose whole value is the one input field `wire`, as the input
 // object holding that field alone: read as jsonBody reads a body, the value kept as a member of
 // the body is. Where the body is not required, no body, or one of only whitespace, is the input {}.
-func bareBody(body []byte, required bool, wire string) (any, error) {
+// members, where not nil, are the members the value's struct declares, the value itself or each
+// element of the list it is, and any other member is refused, as the Rust server's decoder does.
+func bareBody(body []byte, required bool, wire string, members []string) (any, error) {
 	if !utf8.Valid(body) {
 		return nil, fmt.Errorf("the body is not UTF-8")
 	}
@@ -1042,9 +1047,67 @@ func bareBody(body []byte, required bool, wire string) (any, error) {
 	if err != nil {
 		return nil, fmt.Errorf("the body is not JSON: %s", err)
 	}
+	if members != nil {
+		if err := closedMembers(value, members); err != nil {
+			return nil, err
+		}
+	}
 	return map[string]any{wire: memberValue(value)}, nil
 }
+
+// closedMembers refuses an object holding a member none of members names: the value, or each
+// element of the list it is. A value of another shape is the decoder's to refuse.
+func closedMembers(value any, members []string) error {
+	objects, at := []jsonObject{}, []string{}
+	switch shaped := value.(type) {
+	case jsonObject:
+		objects, at = append(objects, shaped), append(at, "body")
+	case []any:
+		for index, item := range shaped {
+			if object, ok := item.(jsonObject); ok {
+				objects, at = append(objects, object), append(at, fmt.Sprintf("body[%d]", index))
+			}
+		}
+	}
+	for position, object := range objects {
+		for _, member := range object {
+			named := false
+			for _, name := range members {
+				named = named || name == member.name
+			}
+			if !named {
+				return DecodeError{At: nested(at[position], member.name), Expected: "no member: no field is named so", Found: describes(memberValue(member.value))}
+			}
+		}
+	}
+	return nil
+}
 "#;
+
+/// The members a bare body's value may hold, each written as Go source: the wire names of the
+/// fields of the struct the field is, or the list of which it is, where that struct refuses the
+/// fields it does not declare. `None` for any other field, whose value the decoder holds to its
+/// type alone. A struct nested deeper is held by the decoder, as in a body that is not bare.
+fn bare_members(ir: &EssIr, field: &ResolvedField) -> Option<Vec<String>> {
+    let handle = match &field.type_ref {
+        ResolvedTypeRef::Declared { name } => name,
+        ResolvedTypeRef::List { of } => match of.as_ref() {
+            ResolvedTypeRef::Declared { name } => name,
+            _ => return None,
+        },
+        _ => return None,
+    };
+    let declared = ir.named_type(handle);
+    let ResolvedBody::Struct { fields, .. } = &declared.body else {
+        return None;
+    };
+    ir.undeclared_fields(&declared.name).is_refused().then(|| {
+        fields
+            .iter()
+            .map(|field| go_string(ess_gen::schema::wire_field_name(field)))
+            .collect()
+    })
+}
 
 /// Whether a route of `binding` takes one input field as its bare request body, which the surface
 /// reads with [`BARE_BODY`].
@@ -1339,11 +1402,15 @@ fn command(
     let bare = http::bare_body(command, route.declared);
     let read = match request.encoding {
         Encoding::Json if bare.is_some() => format!(
-            "bareBody(body, {}, {})",
+            "bareBody(body, {}, {}, {})",
             http::body_required_without(command, &http::carried(ir, route)),
             go_string(
                 bare.map(ess_gen::schema::wire_field_name)
                     .unwrap_or_default()
+            ),
+            bare.and_then(|field| bare_members(ir, field)).map_or_else(
+                || "nil".to_owned(),
+                |members| format!("[]string{{{}}}", members.join(", "))
             )
         ),
         Encoding::Json => format!(
