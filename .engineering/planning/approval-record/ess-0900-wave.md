@@ -17,7 +17,8 @@ relations:
 - decides: story:a-client-row-filter-keeps-its-rows-without-paging-and-by-path-id
 - decides: story:a-column-may-show-a-plain-string-row
 - decides: story:a-client-paged-collection-offers-sizes-and-a-range
-revision: 6
+- decides: story:a-guard-over-several-list-literals-is-witnessed
+revision: 7
 transitions:
 - {from: "draft", to: "approved", at: "2026-11-06T22:18:50Z", actor: "human:timo", revision: 2}
 ---
@@ -138,3 +139,24 @@ The coordinator decided the following under the operator's grant on 2026-11-07.
 - A reused template holding a slot stays refused as "declared twice" in 0.90.0, the fail-closed
   reading of the ADR's section 1. The draft story:a-host-slot-in-a-reused-template-is-one-registration
   takes it to 0.91.0.
+
+## Amendment: U1 merged, U4 several-literal guard
+
+On 2026-11-07, the coordinator decided under the operator's grant:
+
+- U1 merges into the integration branch (d91b3a039c2). Its fix round (0d69cf8f32a) also fixed the
+  vacuous forall guard. story:a-forall-list-guard-is-witnessed is therefore absorbed into the issue
+  761 story and archived, and its adversary case passes.
+- The several-literal guard would ship as an added `#[ignore]` in the 0.89.0..0.90.0 diff, and
+  verify-release fails on that. story:a-guard-over-several-list-literals-is-witnessed is taken
+  into this wave as U4, which removes the ignore. U4 works in tree ess-w090-u1, on branch
+  unit/w090-u4-literals.
+- If U4 fails its gate twice on one cause, 0.90.0 ships with the ignore and a recorded verify
+  FAIL, and the coordinator is told.
+
+The wave now delivers five stories in four units:
+
+- issue 761;
+- host-slot stories 1 and 2;
+- the null tag chip;
+- the several-literal guard.

@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-forall-list-guard-is-witnessed
 kind: story
-status: draft
+status: archived
 title: Synthesis witnesses a forall guard over an identity list
 summary: Vacuous forall over an empty list is sent two generated rows (0.90.0 U1 adversary; from-finding)
 tags:
@@ -10,7 +10,9 @@ tags:
 - from-finding
 relations:
 - serves: vision:O2
-revision: 1
+revision: 2
+transitions:
+- {from: "draft", to: "archived", at: "2026-11-06T23:53:28Z", actor: "human:timo", revision: 2}
 ---
 ## Need
 
