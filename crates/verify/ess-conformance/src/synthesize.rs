@@ -7644,13 +7644,31 @@ fn invoke(
         outcome: outcome_ref.clone(),
     })?;
     // A driver of a command guarding on a list of references is sent the empty list
-    // ([`related_list::empty`]): a branch that list cannot select gives way to the next driver
+    // ([`related_list::empty`]): a branch that list cannot select gives way to a sibling the
+    // empty list reaches, and where none does is sent its witness list, its rows arranged first
     // (beyond10x/ess#761).
-    if related_list::refuted_by_empty(ir, driver.command, driver.outcome, &input) {
-        return Err(Unreachable::Unwitnessable {
-            outcome: outcome_ref,
-        });
-    }
+    let listed = if related_list::refuted_by_empty(ir, driver.command, driver.outcome, &input) {
+        if related_list::gives_way(ir, driver.command, driver.outcome, &input) {
+            return Err(Unreachable::Unwitnessable {
+                outcome: outcome_ref,
+            });
+        }
+        Some(
+            related_list::driven(
+                ir,
+                driver.command,
+                actors,
+                &input,
+                (distinction, &[]),
+                arranging,
+            )
+            .map_err(|_| Unreachable::Unwitnessable {
+                outcome: outcome_ref.clone(),
+            })?,
+        )
+    } else {
+        None
+    };
     // An external branch driven on a row is sent an input no sibling the row selects claims, as
     // its own scenario is (beyond10x/ess#464): one reading a related row is run with a present
     // row arranged first, and one beside branches selected by the held state with an input they
@@ -7681,12 +7699,42 @@ fn invoke(
     } else {
         input
     };
-    if matches!(driver.effect, ResolvedEffect::Creates) {
+    let invoked = if matches!(driver.effect, ResolvedEffect::Creates) {
         let input = own_identity(ir, driver, distinction, input);
-        invoke_created_with(ir, driver, actors, distinction, bound, &input, arranging)
+        invoke_created_with(ir, driver, actors, distinction, bound, &input, arranging)?
     } else {
-        Ok(invoke_with(ir, driver, instance, actors, bound, &input))
+        invoke_with(ir, driver, instance, actors, bound, &input)
+    };
+    Ok(match listed {
+        Some(listed) => with_listed(ir, driver, invoked, listed),
+        None => invoked,
+    })
+}
+
+/// `invoked` sending the list `related_list::driven` arranged in place of the empty one, the rows
+/// it names created ahead of it, and what the branch's `sets:` copy from that list settled again.
+fn with_listed(
+    ir: &EssIr,
+    driver: &Driver<'_>,
+    mut invoked: Invocation,
+    (field, (mut steps, source, items)): (String, related_list::Rows),
+) -> Invocation {
+    let command_ref = CommandRef::new(driver.command.name.clone());
+    let sent = invoked.steps.iter_mut().rev().find_map(|step| match step {
+        ScenarioStep::ExecuteCommand { command, input, .. } if *command == command_ref => {
+            Some(input)
+        }
+        _ => None,
+    });
+    if let Some(input) = sent {
+        input.insert(field, ScenarioValue::List { items });
+        let resettled = settled(ir, driver.outcome, input, &BTreeMap::new());
+        invoked.settled.extend(resettled);
     }
+    steps.append(&mut invoked.steps);
+    invoked.steps = steps;
+    invoked.source.extend(source);
+    invoked
 }
 
 /// A further instance's creation, with each input that declares an `example:` sent as the plain
@@ -15246,7 +15294,7 @@ fn refused_here(
     if let Some(preservation) = &preservation {
         steps.extend(preservation.before.iter().cloned());
     }
-    let supplied = supply(
+    let mut supplied = supply(
         ir,
         attempt.command,
         &input,
@@ -15256,6 +15304,25 @@ fn refused_here(
         // names that row; an owner, where there was one, was arranged inside `arrange`.
         &bound,
     );
+    // The input that would have reached the moving branch: a list its guard reads is sent as its
+    // witness holds it, not the empty list every other run sends (beyond10x/ess#761).
+    let mut listed_source = BTreeSet::new();
+    if related_list::refuted_by_empty(ir, attempt.command, attempt.outcome, &input) {
+        let (field, (mut rows, from, items)) = related_list::driven(
+            ir,
+            attempt.command,
+            actors,
+            &input,
+            (Distinction::UNKNOWN, &steps),
+            &[],
+        )
+        .map_err(|cause| refusals.push(Refusal::about(id, cause)))
+        .ok()?;
+        models.mark(caller::InvocationPhase::Arrange, &mut rows);
+        steps.extend(rows);
+        listed_source = from;
+        supplied.insert(field, ScenarioValue::List { items });
+    }
     steps.push(ScenarioStep::ExecuteCommand {
         caller: std::collections::BTreeMap::new(),
         command: command_ref.clone(),
@@ -15264,6 +15331,7 @@ fn refused_here(
     });
 
     let mut source = arrangement.source;
+    source.extend(listed_source);
     source.insert(command_ref.clone().into());
     source.insert(EntityRef::from(handle).into());
     for driver in &movers {

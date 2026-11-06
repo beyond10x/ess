@@ -2128,6 +2128,7 @@ impl<'a> Identities<'a> {
         let tested =
             tested.map(|(command, branches)| Tested::of(self.ir, command, branches, again));
         let tested = tested.as_ref();
+        let runs = listed_runs(self.ir, again);
         let mut drawn = BTreeMap::new();
         let sent = self.sent(again);
         let mut avoid: BTreeSet<String> = self
@@ -2169,7 +2170,7 @@ impl<'a> Identities<'a> {
                     members.as_ref(),
                     &avoid,
                     &sending,
-                    tested,
+                    (tested, &runs),
                 )
                 .ok_or_else(exhausted)?;
             let new = key(&fresh);
@@ -2209,7 +2210,7 @@ impl<'a> Identities<'a> {
         members: Option<&BTreeSet<String>>,
         avoid: &BTreeSet<String>,
         sending: &[&Sent<'_, '_>],
-        tested: Option<&Tested<'_>>,
+        (tested, runs): (Option<&Tested<'_>>, &[ListedRun<'_>]),
     ) -> Option<Node> {
         let far: Vec<Distinction> = (0..SWAPPED_TRIES)
             .map(|offset| Distinction::further(SWAPPED_IDENTITY + self.next + offset))
@@ -2245,10 +2246,9 @@ impl<'a> Identities<'a> {
             }
             if sending.iter().all(|sent| {
                 super::keeps_branch(self.ir, sent.command, &sent.input, sent.field, &value)
-                    && tested.is_none_or(|tested| {
-                        keeps_stored_branch(self.ir, tested, sent, &value)
-                            && keeps_listed_branch(self.ir, tested, sent, &value)
-                    })
+                    && tested
+                        .is_none_or(|tested| keeps_stored_branch(self.ir, tested, sent, &value))
+                    && keeps_listed_branch(self.ir, runs, sent, &value)
             }) {
                 return Some(value);
             }
@@ -2515,12 +2515,7 @@ fn only_members(old: &Node, drawn: &Node, paths: &BTreeSet<String>) -> Option<No
 /// decide the one under test, and the input of every step of that run sending it: what a
 /// stored-row guard of it reads is the row those inputs address.
 struct Tested<'t> {
-    command: &'t ResolvedCommand,
     branches: &'t [ResolvedOutcome],
-    /// Each step's input as the literals it sends, a list's captured instances read as the
-    /// identities their creating steps sent: what an input guard over a list of identities reads
-    /// (beyond10x/ess#761). A value that is neither, and a list holding one, is left out.
-    listed: Vec<BTreeMap<String, Node>>,
     /// Each step's input, every value the literal it is or names: an instance a step captured is
     /// the identity its creating step sent, where that step sent it as a literal. `None` where it
     /// is neither.
@@ -2530,14 +2525,13 @@ struct Tested<'t> {
 impl<'t> Tested<'t> {
     fn of(
         ir: &EssIr,
-        command: &'t ResolvedCommand,
+        command: &ResolvedCommand,
         branches: &'t [ResolvedOutcome],
         steps: &'t [ScenarioStep],
     ) -> Self {
         let mut captured: BTreeMap<&InstanceName, &Node> = BTreeMap::new();
         let mut last: Option<(&ResolvedCommand, &BTreeMap<String, ScenarioValue>)> = None;
         let mut inputs = Vec::new();
-        let mut listed = Vec::new();
         for step in steps {
             match step {
                 ScenarioStep::ExecuteCommand {
@@ -2551,7 +2545,6 @@ impl<'t> Tested<'t> {
                         .find(|known| known.name.to_string() == sent.to_string())
                         .map(|known| (known, input));
                     if sent.to_string() == command.name.to_string() {
-                        listed.push(resolved(input, &captured));
                         inputs.push(
                             input
                                 .iter()
@@ -2600,12 +2593,7 @@ impl<'t> Tested<'t> {
                 _ => {}
             }
         }
-        Tested {
-            command,
-            branches,
-            listed,
-            inputs,
-        }
+        Tested { branches, inputs }
     }
 
     /// Whether a step of the run sending the command under test may address `row` in `by`: where
@@ -2670,29 +2658,118 @@ fn resolved(
         .collect()
 }
 
-/// Whether the redraw of `sent`'s value to `new` leaves every `when:` guard of the command under
-/// test over a list holding that identity deciding as it did (beyond10x/ess#761): the list's
+/// One step of a swapped run sending a command that guards on a list of references
+/// ([`super::related_list::uses`]): the branches selection tries up to the one the step expects,
+/// and the step's input as the literals it sends, a list's captured instances read as the
+/// identities their creating steps sent ([`resolved`]).
+struct ListedRun<'t> {
+    command: &'t ResolvedCommand,
+    branches: &'t [ResolvedOutcome],
+    input: BTreeMap<String, Node>,
+}
+
+/// Every step of `steps` sending a command that guards on a list of references and expecting one
+/// of its branches, arranging steps included: a redrawn identity an arranging step's list names
+/// moves its branch as surely as the command under test's (beyond10x/ess#761).
+fn listed_runs<'t>(ir: &'t EssIr, steps: &[ScenarioStep]) -> Vec<ListedRun<'t>> {
+    let mut captured: BTreeMap<&InstanceName, &Node> = BTreeMap::new();
+    let mut last: Option<(&ResolvedCommand, &BTreeMap<String, ScenarioValue>)> = None;
+    let mut runs = Vec::new();
+    for step in steps {
+        match step {
+            ScenarioStep::ExecuteCommand {
+                command: sent,
+                input,
+                ..
+            } => {
+                last = ir
+                    .commands()
+                    .values()
+                    .find(|known| known.name.to_string() == sent.to_string())
+                    .map(|known| (known, input));
+            }
+            ScenarioStep::ExpectOutcome { outcome } => {
+                let Some((command, input)) = last else {
+                    continue;
+                };
+                if !super::related_list::uses(command)
+                    || command.name.to_string() != outcome.command.to_string()
+                {
+                    continue;
+                }
+                let reached = command
+                    .outcomes
+                    .iter()
+                    .position(|branch| branch.name == outcome.outcome)
+                    .map_or(command.outcomes.len(), |at| at + 1);
+                runs.push(ListedRun {
+                    command,
+                    branches: &command.outcomes[..reached],
+                    input: resolved(input, &captured),
+                });
+            }
+            ScenarioStep::CaptureInstance {
+                instance,
+                event,
+                field,
+                ..
+            } => {
+                let Some((creating, input)) = last else {
+                    continue;
+                };
+                let from = creating.outcomes.iter().find_map(|outcome| {
+                    let subject = outcome.subject.as_ref()?;
+                    let ResolvedInstance::Observed {
+                        event: published,
+                        field: carried,
+                    } = &subject.instance
+                    else {
+                        return None;
+                    };
+                    (EventRef::from(published) == *event && carried.name == *field)
+                        .then(|| instance_input(outcome, subject))
+                        .flatten()
+                });
+                if let Some(ScenarioValue::Literal { value }) =
+                    from.and_then(|name| input.get(name))
+                {
+                    captured.insert(instance, value);
+                }
+            }
+            _ => {}
+        }
+    }
+    runs
+}
+
+/// Whether the redraw of `sent`'s value to `new` leaves every `when:` guard over a list holding
+/// that identity deciding as it did, on every step of `runs` (beyond10x/ess#761): the list's
 /// elements are the identities of the rows the run created, so a guard over them
 /// (`exists p in permissions: p == "telephony"`) reads the value redrawn. Decided on the values
 /// the step sends as literals alone, as [`keeps_stored_branch`] decides a stored row.
-fn keeps_listed_branch(ir: &EssIr, tested: &Tested<'_>, sent: &Sent<'_, '_>, new: &Node) -> bool {
+fn keeps_listed_branch(
+    ir: &EssIr,
+    runs: &[ListedRun<'_>],
+    sent: &Sent<'_, '_>,
+    new: &Node,
+) -> bool {
     let old = sent.value;
-    let decide = |predicate: &Predicate, input: &BTreeMap<String, Node>| {
-        let facts = crate::input::bind(
-            ir,
-            &tested.command.input,
-            input,
-            crate::input::Completeness::Partial,
-        )
-        .ok()?;
-        Some(predicate.evaluate(&crate::input::TypedFacts::new(
-            ir,
-            &tested.command.input,
-            facts,
-        )))
-    };
-    tested.listed.iter().all(|input| {
-        let mut moved = input.clone();
+    runs.iter().all(|run| {
+        let decide = |predicate: &Predicate, input: &BTreeMap<String, Node>| {
+            let facts = crate::input::bind(
+                ir,
+                &run.command.input,
+                input,
+                crate::input::Completeness::Partial,
+            )
+            .ok()?;
+            Some(predicate.evaluate(&crate::input::TypedFacts::new(
+                ir,
+                &run.command.input,
+                facts,
+            )))
+        };
+        let mut moved = run.input.clone();
         let mut changed = false;
         for value in moved.values_mut() {
             if let Node::Seq(items) = value {
@@ -2703,11 +2780,11 @@ fn keeps_listed_branch(ir: &EssIr, tested: &Tested<'_>, sent: &Sent<'_, '_>, new
             }
         }
         !changed
-            || tested
+            || run
                 .branches
                 .iter()
                 .filter_map(crate::decision::when)
-                .all(|guard| decide(guard, input) == decide(guard, &moved))
+                .all(|guard| decide(guard, &run.input) == decide(guard, &moved))
     })
 }
 
