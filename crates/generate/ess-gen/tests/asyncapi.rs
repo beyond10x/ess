@@ -948,9 +948,14 @@ fn every_document_carries_the_provenance_of_the_model_it_came_from() {
         let document: Value = ess_yaml::from_str(&text).expect("parses");
         let recorded = at(&document, &["info", "x-ess-provenance"]);
         assert_eq!(
-            recorded.get("source_digest").and_then(Value::as_str),
-            Some(provenance.source_digest.as_str()),
+            recorded.get("contract_digest").and_then(Value::as_str),
+            text.lines()
+                .find_map(|line| line.strip_prefix("# contract digest ")),
             "{path} carries the digest as data, not only as a comment a parser throws away"
+        );
+        assert!(
+            recorded.get("source_digest").is_none() && !text.contains(&provenance.source_digest),
+            "{path} carries the whole-model digest, which moves with every change anywhere"
         );
         // What it was made from, never which build made it: `story:generator-version-stamp`.
         assert!(

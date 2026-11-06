@@ -244,7 +244,7 @@ fn the_terminal_fills_each_path_variable_as_one_segment_of_its_route() {
 
 // ── React's routed adapter ──────────────────────────────────────────────────────────────────
 
-/// The model's source digest, as its generated schemas' provenance carries it.
+/// The model's source digest, as the generation of its schemas records it.
 fn digest(dir: &Path, model: &Path) -> String {
     let out = dir.join("schema");
     let generated = ess(&[
@@ -257,31 +257,14 @@ fn digest(dir: &Path, model: &Path) -> String {
         utf8(&out),
     ]);
     assert!(generated.status.success(), "{}", text(&generated.stderr));
-    let mut pending = vec![out];
-    let mut files = Vec::new();
-    while let Some(dir) = pending.pop() {
-        for entry in std::fs::read_dir(&dir).expect("the schema directory") {
-            let path = entry.expect("an entry").path();
-            if path.is_dir() {
-                pending.push(path);
-            } else {
-                files.push(path);
-            }
-        }
-    }
-    files.sort();
-    for path in files {
-        let Ok(bytes) = std::fs::read(&path) else {
-            continue;
-        };
-        let Ok(schema) = serde_json::from_slice::<serde_json::Value>(&bytes) else {
-            continue;
-        };
-        if let Some(digest) = schema["x-ess-provenance"]["source_digest"].as_str() {
-            return digest.trim_start_matches("sha256:").to_owned();
-        }
-    }
-    panic!("no generated schema carries a source digest")
+    // A generated file stamps only its own slice's digest; the run records the model's.
+    let state: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(out.join(".ess-output/state.json")).unwrap())
+            .unwrap();
+    state["payload"]["checkpoint"]["ledger"]["owners"][0]["model"]
+        .as_str()
+        .unwrap_or_else(|| panic!("the generation recorded no model digest: {state}"))
+        .to_owned()
 }
 
 /// The React app `ess generate ui --target react --http` writes for the `items` toy, whose

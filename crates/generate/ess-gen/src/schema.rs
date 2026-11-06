@@ -38,7 +38,8 @@
 //!
 //! # Provenance goes in a keyword, not a comment
 //!
-//! `x-ess-provenance`, at the root of every document, holding design §10's four facts.
+//! `x-ess-provenance`, at the root of every document: the system, its version, the digest of the
+//! model slice the document derives from, and how to regenerate it.
 //! `Attribution` carries why that is a keyword rather than a `$comment`. The
 //! cost is that a linter demanding a closed keyword set will flag it.
 

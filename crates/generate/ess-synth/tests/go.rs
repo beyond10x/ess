@@ -1019,6 +1019,7 @@ fn a_served_component_not_named_server_keeps_its_file_names() {
     // Re-read for 0.87.0: the served `.openapi.json` the tree embeds calls an event published to
     // consumers only when the component publishes it
     // (story:the-openapi-says-published-only-for-events-the-component-publishes).
+    // Re-read again when a generated file stopped carrying the whole-model digest.
     let synthesis = served("gateway", "relay-service");
     assert_eq!(
         server_files(&synthesis),
@@ -1033,7 +1034,7 @@ fn a_served_component_not_named_server_keeps_its_file_names() {
     );
     assert_eq!(
         format!("{:016x}", tree_digest(&synthesis)),
-        "dde261e8d3484aa8",
+        "730c25150655ccb5",
         "{SERVED_STORY}: the control tree keeps its bytes"
     );
     go_builds_where_present("gateway", &synthesis);

@@ -1,5 +1,4 @@
 # generated from billing v3
-# model digest 096efa38ec46e97a32f81b72193e43114df1156464648a885134ffafc9ac9648
 # contract digest slice-sha256/2:62844a99484b1ca122933899d4b6a26aac5221ea03aa037fb91c8cf6a01ca1ba
 # do not edit: regenerate with `ess generate`
 openapi: 3.1.0
@@ -14,7 +13,6 @@ info:
   x-ess-provenance:
     system: billing
     specification_version: v3
-    source_digest: 096efa38ec46e97a32f81b72193e43114df1156464648a885134ffafc9ac9648
     contract_digest: slice-sha256/2:62844a99484b1ca122933899d4b6a26aac5221ea03aa037fb91c8cf6a01ca1ba
 tags:
 - name: invoices

@@ -11,8 +11,9 @@ use sha2::{Digest, Sha256};
 /// Documents 0.76.0 accepted, with the SHA-256 of the envelope `ess 0.76.0 infra import openapi
 /// --out` wrote for each. The items service document is the committed fixture, regenerated for
 /// 0.87.0 with the published-to-consumers wording
-/// (story:the-openapi-says-published-only-for-events-the-component-publishes); its digest is the
-/// envelope the 0.76.0 release binary writes for the regenerated document.
+/// (story:the-openapi-says-published-only-for-events-the-component-publishes) and again when a
+/// generated file stopped carrying the whole-model digest; its digest is the envelope the 0.76.0
+/// release binary writes for the regenerated document.
 const STORED_0_76: [(&str, &str, &str); 5] = [
     (
         "wide 3.1",
@@ -37,7 +38,7 @@ const STORED_0_76: [(&str, &str, &str); 5] = [
     (
         "items service",
         include_str!("../../ess-gen/tests/fixtures/openapi-http/items-service.stage-1.yaml"),
-        "345391a04bb6b4c6b70c964cec861f803055c31bc0d5ca6eaade5edf96e80f36",
+        "e207a25336c00a3baa814acf94b42f3a45f5b307c5d7e25523fc83de50b90056",
     ),
 ];
 

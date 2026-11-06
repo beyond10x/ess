@@ -26,7 +26,7 @@ fn text(output: &Output) -> String {
     )
 }
 
-/// The digest a generated schema's provenance carries.
+/// The model digest the generation of its schemas records.
 fn digest(root: &TemporaryDirectory) -> String {
     let generated = ess(
         root,
@@ -35,13 +35,13 @@ fn digest(root: &TemporaryDirectory) -> String {
         ],
     );
     assert!(generated.status.success(), "{}", text(&generated));
-    let schema =
-        fs::read_to_string(root.join("digest/schema/events/catalog.items.ItemTouched.schema.json"))
+    // A generated file stamps only its own slice's digest; the run records the model's.
+    let state: serde_json::Value =
+        serde_json::from_slice(&fs::read(root.join("digest/.ess-output/state.json")).unwrap())
             .unwrap();
-    let schema: serde_json::Value = serde_json::from_str(&schema).unwrap();
-    schema["x-ess-provenance"]["source_digest"]
+    state["payload"]["checkpoint"]["ledger"]["owners"][0]["model"]
         .as_str()
-        .unwrap_or_else(|| panic!("no source_digest in {schema}"))
+        .unwrap_or_else(|| panic!("no model digest in {state}"))
         .to_owned()
 }
 

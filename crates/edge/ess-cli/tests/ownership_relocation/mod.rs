@@ -63,10 +63,10 @@ fn recorded_root(root: &Path) -> PathBuf {
     path
 }
 
-/// A settled `ess-output-state/3` checkpoint records neither the root nor its directory identity.
+/// A settled `ess-output-state/4` checkpoint records neither the root nor its directory identity.
 fn unbound(root: &Path) -> bool {
     let payload = payload(root);
-    payload["format"] == "ess-output-state/3"
+    payload["format"] == "ess-output-state/4"
         && payload.get("root").is_none()
         && payload.get("directory").is_none()
 }

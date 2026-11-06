@@ -23,8 +23,16 @@ use std::{
 pub(crate) struct Publication {
     owner: OwnerKey,
     files: BTreeMap<PathBuf, Vec<u8>>,
+    /// The whole-model digest the files were generated from, recorded on the owner.
+    model: Option<String>,
 }
 impl Publication {
+    /// Records the digest of the whole model these files were generated from on the owner, which
+    /// is where a generation's whole-model digest lives: each file stamps only its own slice's.
+    pub(crate) fn with_model(mut self, digest: String) -> Self {
+        self.model = Some(digest);
+        self
+    }
     pub(crate) fn tree<'a>(
         family: &str,
         files: impl IntoIterator<Item = (&'a str, &'a str)>,
@@ -65,6 +73,7 @@ impl Publication {
         Ok(Self {
             owner,
             files: admitted,
+            model: None,
         })
     }
 }
@@ -94,7 +103,7 @@ pub(crate) fn check(anchor: &Path) -> Result<CheckGuard> {
     Ok(CheckGuard { _locks: locks })
 }
 /// A check admits a settled `/1` or `/2` record without calling it drift, although the same
-/// command without `--check` rewrites it as `/3` (ess#484): say once what it still records.
+/// command without `--check` rewrites it as `/4` (ess#484): say once what it still records.
 fn warn_legacy(payload: &Payload, root: &Path) {
     if payload.legacy() {
         eprintln!(
@@ -143,8 +152,10 @@ const BLOCKED: &str = "regeneration refuses until the owned files named here are
 /// not the recorded ones, which publication refuses in every root; and the record itself, when it
 /// is missing or [`plan`] would rewrite it. Each says what brings it back, and an owned file with
 /// other bytes names the re-enroll route rather than regeneration. A settled `/1` or `/2` record
-/// is the one exception: the command without `--check` rewrites it as `/3`, and that is reported
-/// as a warning, not drift. A pending operation refuses, as it does for [`check`].
+/// is one exception: the command without `--check` rewrites it as `/4`, and that is reported
+/// as a warning, not drift. An owner recorded without a model digest is the other: the command
+/// without `--check` records one ([`same_generation`]). A pending operation refuses, as it does
+/// for [`check`].
 pub(crate) fn drift(anchor: &Path, publications: &[Publication]) -> Result<Vec<Drift>> {
     let path = filesystem::absolute(anchor)?;
     let locks = Locks::acquire(&[(path.clone(), Access::Shared)])?;
@@ -215,7 +226,7 @@ pub(crate) fn drift(anchor: &Path, publications: &[Publication]) -> Result<Vec<D
             }
             // The ledger `publish` would write, from the same read-only plan it decides with.
             let planned = plan(Some(fd), mount, ledger, publications.to_vec(), None)?;
-            if planned.transaction.before != planned.transaction.after {
+            if !same_generation(&planned.transaction.before, &planned.transaction.after) {
                 let fix = if refused.is_empty() {
                     REGENERATE
                 } else {
@@ -246,6 +257,23 @@ pub(crate) fn drift(anchor: &Path, publications: &[Publication]) -> Result<Vec<D
             remedy,
         })
         .collect())
+}
+/// Whether the record `after` is the one `before` already holds, for `--check`. An owner recorded
+/// without a model digest — by a release before `ess-output-state/4`, or by adoption — gains one at
+/// the next write run; like the `/1` and `/2` rewrite, that is not drift. A recorded model digest
+/// that differs is.
+fn same_generation(before: &Ledger, after: &Ledger) -> bool {
+    let mut after = after.clone();
+    for owner in &mut after.owners {
+        if before
+            .owners
+            .iter()
+            .any(|recorded| recorded.key == owner.key && recorded.model.is_none())
+        {
+            owner.model = None;
+        }
+    }
+    *before == after
 }
 /// Why the generated file at `relative` is not current, if it is not; `present` records that
 /// something already sits at a generated path.
@@ -435,13 +463,15 @@ fn adopt_observers(
             data,
         });
     }
+    // Adoption enrolls bytes, not a generation: it records no model digest.
     let selected = Owner {
         key: owner.clone(),
         files,
+        model: None,
     };
     if let Some(previous) = before.owners.iter().find(|o| o.key == owner) {
         ensure!(
-            previous == &selected,
+            previous.files == selected.files,
             "adoption cannot change or shrink an already enrolled owner"
         );
         return match admitted {
@@ -601,9 +631,9 @@ fn read_state_at(
             }
         }
     }
-    // Bound in memory only: a settled `/3` checkpoint never records it, and the first checkpoint
-    // with a transaction does, so a regeneration that changes nothing leaves a committed state
-    // byte-identical (ess#306, ess#484).
+    // Bound in memory only: a settled `/3` or `/4` checkpoint never records it, and the first
+    // checkpoint with a transaction does, so a regeneration that changes nothing leaves a
+    // committed state byte-identical (ess#306, ess#484).
     payload.root = Some(binding);
     payload.directory = Some(identity);
     let tx = match &payload.checkpoint {
@@ -894,7 +924,7 @@ impl Session<'_> {
         Ok(true)
     }
     /// Leave the settled record an operation found, and changed nothing in, naming no machine
-    /// (ess#484). A `/1` or `/2` record is rewritten as `/3` in one checkpoint replacement,
+    /// (ess#484). A `/1` or `/2` record is rewritten as `/4` in one checkpoint replacement,
     /// keeping its anchor, ledger and producer; nothing is published, so there is no transaction
     /// and no producer note. A slot an interrupted run left, which may hold a pending
     /// checkpoint's binding, is removed.
@@ -1116,6 +1146,7 @@ fn plan(
         after.owners.push(Owner {
             key: publication.owner,
             files,
+            model: publication.model,
         });
     }
     after.owners.sort_by(|a, b| a.key.cmp(&b.key));
@@ -1788,7 +1819,7 @@ fn cleanup(
         &mut session.observer,
         "transaction-cleanup-complete",
     )?;
-    // The settled checkpoint this release writes is `/3`, whatever version the transaction began
+    // The settled checkpoint this release writes is `/4`, whatever version the transaction began
     // under, so it names no machine (ess#484); a recorded producer is kept.
     payload.upgrade();
     session.checkpoint(

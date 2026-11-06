@@ -643,7 +643,7 @@ fn every_artifact_names_its_specification_and_the_verb_that_rewrites_it() {
             continue;
         }
         assert!(
-            artifact.contents.contains("model digest"),
+            artifact.contents.contains("contract digest"),
             "`{path}` carries no provenance"
         );
         assert!(

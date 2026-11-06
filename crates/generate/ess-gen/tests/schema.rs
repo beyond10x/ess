@@ -925,10 +925,14 @@ fn every_schema_says_which_specification_it_came_from() {
         let parsed: Value = serde_json::from_str(&artifact.contents).expect("is JSON");
         let attribution = &parsed["x-ess-provenance"];
         assert_eq!(attribution["system"].as_str(), Some("billing"), "{path}");
-        assert_eq!(
-            attribution["source_digest"].as_str(),
-            Some(provenance.source_digest.as_str()),
-            "{path} claims a different model"
+        assert!(
+            attribution["contract_digest"].is_string(),
+            "{path} does not say which model slice it derives from"
+        );
+        assert!(
+            attribution.get("source_digest").is_none()
+                && !artifact.contents.contains(&provenance.source_digest),
+            "{path} carries the whole-model digest, which moves with every change anywhere"
         );
         assert_eq!(
             attribution["specification_version"].as_str(),

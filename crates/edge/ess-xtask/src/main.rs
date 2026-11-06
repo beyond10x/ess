@@ -927,7 +927,7 @@ fn safe_relative_path(path: &str) -> AnyResult<()> {
     Ok(())
 }
 
-/// Reads the whole-model stamp from the generated documentation index.
+/// Reads the whole-model contract stamp from the generated documentation index.
 fn projection_provenance(artifacts: &BTreeMap<String, String>) -> AnyResult<String> {
     let index = artifacts
         .get("docs/index.md")
@@ -940,8 +940,8 @@ fn projection_provenance(artifacts: &BTreeMap<String, String>) -> AnyResult<Stri
     let digests = ess_gen::Provenance::read_digests(index)
         .context("`docs/index.md` carries no readable provenance digests")?;
     Ok(format!(
-        "{subject} (model digest {}, contract digest {})",
-        digests.source_digest, digests.contract_digest
+        "{subject} (contract digest {})",
+        digests.contract_digest
     ))
 }
 
@@ -1664,7 +1664,7 @@ mod tests {
     #[test]
     fn the_generated_index_includes_static_site_source() {
         let generated = Generated {
-            provenance: "billing v3 (model digest a, contract digest b)".to_owned(),
+            provenance: "billing v3 (contract digest b)".to_owned(),
             projections: vec![Projection {
                 name: "site".to_owned(),
                 directory: "site".to_owned(),

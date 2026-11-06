@@ -470,17 +470,17 @@ fn every_document_carries_its_provenance_as_a_comment_and_as_data() {
             artifact.contents.starts_with("# generated from billing v3"),
             "{path} does not open with its provenance"
         );
+        // The document's own inputs only: the whole-model digest moves with every change anywhere
+        // in the model, and is recorded once per run in `.ess-output` instead.
         assert!(
-            artifact
-                .contents
-                .contains(&format!("# model digest {}", provenance.source_digest)),
-            "{path}"
+            !artifact.contents.contains(&provenance.source_digest),
+            "{path} carries the whole-model digest"
         );
         let document = parsed(&artifact);
         let carried = &document["info"]["x-ess-provenance"];
         assert_eq!(carried["system"], "billing", "{path}");
         assert_eq!(carried["specification_version"], "v3", "{path}");
-        assert_eq!(carried["source_digest"], provenance.source_digest, "{path}");
+        assert!(carried.get("source_digest").is_none(), "{path}");
         // Its own slice's digest, not the whole model's, so only the shape is asserted here —
         // `run` re-derives it from the recorded slice and refuses a stamp that disagrees.
         assert!(

@@ -129,7 +129,6 @@ commands:
   "x-ess-provenance": {
     "system": "billing",
     "specification_version": "v3",
-    "source_digest": "096efa38ec46e97a32f81b72193e43114df1156464648a885134ffafc9ac9648",
     "contract_digest": "slice-sha256/2:79a52ac939c2e51d1a43759c926d7366c3f4cbae003a2993d8f93a23b103f004",
     "regenerate": "ess generate"
   },
@@ -178,20 +177,20 @@ commands:
 
 Three things to notice. The newtype survived as its own definition rather than collapsing into
 `string`. The struct's invariant travelled with it as `x-ess-invariants`. And the provenance block
-carries two digests, not one: `source_digest` is the whole model this file was generated from, and
-`contract_digest` is the digest of the *slice* it actually derives from — the seed constructs closed
-over everything they rest on.
+carries one digest, `contract_digest`: the digest of the *slice* this file derives from — the seed
+constructs closed over everything they rest on — and not of the whole model.
 
-The second digest is what stops a one-word change costing a full regeneration. When the
-specification moves, `ess verify impact` compares each artifact's committed `contract_digest`
-against the digest its slice computes, and names only the artifacts whose slice actually moved.
-Without it, every change owes the whole generated tree.
+That digest is what stops a one-word change costing a full regeneration. When the specification
+moves, `ess verify impact` compares each artifact's committed `contract_digest` against the digest
+its slice computes, and names only the artifacts whose slice actually moved; and regeneration
+rewrites only those files, because nothing else in a file moves with the rest of the model. The
+whole model's digest is recorded once per generation, in `.ess-output/state.json`.
 
 ## OpenAPI 3.1
 
 `generated/openapi/invoice-service.yaml`, the path for the same command:
 
-```yaml file=generated/openapi/invoice-service.yaml lines=66-93
+```yaml file=generated/openapi/invoice-service.yaml lines=64-91
   /invoices/commands/create-invoice:
     post:
       operationId: billing.invoice.CreateInvoice
@@ -231,7 +230,7 @@ the provenance and the regeneration command.
 `generated/asyncapi/invoice-service.yaml` describes what the component publishes, and says plainly
 what the model does not know:
 
-```text file=generated/asyncapi/invoice-service.yaml lines=16-16
+```text file=generated/asyncapi/invoice-service.yaml lines=15-15
     The specification declares no transport, so each address below is a name and not a topic on a named broker. Servers, protocol bindings, security schemes, message keys, partitioning, retention and ordering are absent because the model does not state them.
 ```
 
@@ -242,7 +241,7 @@ A generator that invented a broker here would be inventing a decision nobody mad
 `generated/docs/domains/billing-invoice.md` renders the entity lifecycle from the declared
 transitions:
 
-```mermaid file=generated/docs/domains/billing-invoice.md lines=126-133
+```mermaid file=generated/docs/domains/billing-invoice.md lines=125-132
 stateDiagram-v2
     [*] --> Draft
     Draft --> Issued: issue (IssueInvoice)
@@ -257,7 +256,7 @@ Then it does something a diagram cannot: it lists the absences. Illegal transiti
 because no arrow exists — there is no second, forbidding rule to fall out of date — and since a
 diagram cannot show an absence, the unconnected pairs are listed, derived from the same transitions:
 
-```markdown file=generated/docs/domains/billing-invoice.md lines=146-153
+```markdown file=generated/docs/domains/billing-invoice.md lines=145-152
 - `Cancelled` may not become `Draft`
 - `Cancelled` may not become `Issued`
 - `Cancelled` may not become `Paid`
@@ -277,10 +276,9 @@ its outcomes, and the escalation event that makes the failure path observable at
 per domain, the interaction and topology pages, and a local stylesheet and diagram renderer. Every
 page opens with the same provenance as the Markdown:
 
-```html file=generated/site/index.html lines=2-7
+```html file=generated/site/index.html lines=2-6
 <!--
   generated from billing v3
-  model digest 096efa38ec46e97a32f81b72193e43114df1156464648a885134ffafc9ac9648
   contract digest c9ecfdf5bed1bcb88068dad060895f16ca73de361204ae488d6f0d39477f6f79
   do not edit: regenerate with `ess generate`
 -->

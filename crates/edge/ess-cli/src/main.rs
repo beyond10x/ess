@@ -3584,12 +3584,15 @@ fn generate(
             let mut all = std::collections::BTreeMap::new();
             for generator in ess_gen::generators() {
                 let files = ess_gen::artifact::run(generator.as_ref(), &ir)?;
-                publications.push(output_ownership::Publication::tree(
-                    &format!("projection:{}", generator.name()),
-                    files
-                        .values()
-                        .map(|a| (a.path.as_str(), a.contents.as_str())),
-                )?);
+                publications.push(
+                    output_ownership::Publication::tree(
+                        &format!("projection:{}", generator.name()),
+                        files
+                            .values()
+                            .map(|a| (a.path.as_str(), a.contents.as_str())),
+                    )?
+                    .with_model(ir.source_digest()),
+                );
                 for (path, artifact) in files {
                     if all.insert(path.clone(), artifact).is_some() {
                         bail!("duplicate generated projection path: {path}");
@@ -3600,12 +3603,16 @@ fn generate(
         }
     };
     if let Some(kind) = kind {
-        publications.push(output_ownership::Publication::tree(
-            &format!("projection:{}", kind.name()),
-            artifacts
-                .values()
-                .map(|a| (a.path.as_str(), a.contents.as_str())),
-        )?);
+        // The whole-model digest lives here, in the record, and in no generated file.
+        publications.push(
+            output_ownership::Publication::tree(
+                &format!("projection:{}", kind.name()),
+                artifacts
+                    .values()
+                    .map(|a| (a.path.as_str(), a.contents.as_str())),
+            )?
+            .with_model(ir.source_digest()),
+        );
     }
     if !delivery.deliver(publications)? {
         return Ok(ExitCode::from(1));

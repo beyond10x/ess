@@ -9,6 +9,10 @@ const LICENSE_SUFFIX: &str =
 struct Envelope {
     system: String,
     specification_version: String,
+    /// The whole-model digest an earlier release stamped beside the contract digest, or a record
+    /// that carries provenance as data still carries. Read so that a comment and its structured
+    /// copy are held to agree; never returned.
+    model: Option<String>,
     digests: ArtifactDigests,
 }
 
@@ -78,9 +82,15 @@ fn comment(text: &str) -> Option<(Comment, &str)> {
         if text.starts_with(prefix) {
             let mut rest = text;
             let mut block = Vec::new();
-            for _ in 0..4 {
+            // Three lines, or four in the profile that also stamped the whole-model digest.
+            let mut length = 3;
+            while block.len() < length {
                 let (line, tail) = rest.split_once('\n')?;
-                block.push(line.strip_prefix(prefix)?);
+                let line = line.strip_prefix(prefix)?;
+                if block.len() == 1 && line.starts_with("model digest ") {
+                    length = 4;
+                }
+                block.push(line);
                 rest = tail;
             }
             return Some((lines(block.into_iter())?, rest));
@@ -105,8 +115,15 @@ fn lines<'a>(mut lines: impl Iterator<Item = &'a str>) -> Option<Comment> {
     if system.is_empty() || specification_version.trim().is_empty() {
         return None;
     }
-    let source = lines.next()?.strip_prefix("model digest ")?;
-    let contract = lines.next()?.strip_prefix("contract digest ")?;
+    let mut next = lines.next()?;
+    let source = match next.strip_prefix("model digest ") {
+        Some(source) => {
+            next = lines.next()?;
+            Some(source)
+        }
+        None => None,
+    };
+    let contract = next.strip_prefix("contract digest ")?;
     let regenerate = lines
         .next()?
         .strip_prefix("do not edit: regenerate with `")?;
@@ -114,11 +131,7 @@ fn lines<'a>(mut lines: impl Iterator<Item = &'a str>) -> Option<Comment> {
         return None;
     }
     Some(Comment {
-        envelope: Envelope {
-            system: system.to_owned(),
-            specification_version: specification_version.to_owned(),
-            digests: digests(source, contract)?,
-        },
+        envelope: envelope(system, specification_version, source, contract)?,
         regenerate: regenerate.strip_suffix('`')?.to_owned(),
     })
 }
@@ -130,11 +143,21 @@ fn hash(value: &str) -> bool {
             .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
 }
 
-fn digests(source: &str, contract: &str) -> Option<ArtifactDigests> {
+/// The envelope, if every digest in it is well formed; the whole-model digest is optional.
+fn envelope(
+    system: &str,
+    specification_version: &str,
+    source: Option<&str>,
+    contract: &str,
+) -> Option<Envelope> {
     let contract_hash = contract.strip_prefix("slice-sha256/2:").unwrap_or(contract);
-    (hash(source) && hash(contract_hash)).then(|| ArtifactDigests {
-        source_digest: source.to_owned(),
-        contract_digest: contract.to_owned(),
+    (source.is_none_or(hash) && hash(contract_hash)).then(|| Envelope {
+        system: system.to_owned(),
+        specification_version: specification_version.to_owned(),
+        model: source.map(str::to_owned),
+        digests: ArtifactDigests {
+            contract_digest: contract.to_owned(),
+        },
     })
 }
 
@@ -178,15 +201,19 @@ fn structured(text: &str) -> Option<Envelope> {
     if schema_attribution {
         required_text(stamp, "regenerate")?;
     }
+    // A generated file carries no whole-model digest; a record carrying provenance as data, and a
+    // file from an earlier release, carry it under one of two names, never both.
     let source = match (stamp.get("source_digest"), stamp.get("spec_digest")) {
-        (Some(value), None) | (None, Some(value)) => value.as_str()?,
-        _ => return None,
+        (Some(value), None) | (None, Some(value)) => Some(value.as_str()?),
+        (None, None) => None,
+        (Some(_), Some(_)) => return None,
     };
-    Some(Envelope {
-        system: required_text(stamp, "system")?.to_owned(),
-        specification_version: required_text(stamp, "specification_version")?.to_owned(),
-        digests: digests(source, stamp.get("contract_digest")?.as_str()?)?,
-    })
+    envelope(
+        required_text(stamp, "system")?,
+        required_text(stamp, "specification_version")?,
+        source,
+        stamp.get("contract_digest")?.as_str()?,
+    )
 }
 
 fn required_text<'a>(stamp: &'a ess_yaml::Mapping, key: &str) -> Option<&'a str> {

@@ -367,7 +367,7 @@ struct Info {
     #[serde(rename = "x-ess-component")]
     component: String,
     #[serde(rename = "x-ess-provenance")]
-    provenance: Provenance,
+    provenance: crate::provenance::ArtifactStamp,
 }
 
 /// A `$ref` into this same document.
@@ -870,7 +870,7 @@ fn document(
             version: ir.version().to_string(),
             description: Some(describe(ir, component, transport.is_some())),
             component: component.name.to_string(),
-            provenance: provenance.clone(),
+            provenance: provenance.stamp(),
         },
         servers: transport.map(|transport| servers(transport, &brokers)),
         default_content_type: CONTENT_TYPE,

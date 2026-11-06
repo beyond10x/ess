@@ -1,9 +1,9 @@
 //! A settled `.ess-output` record carries no absolute path, device or inode (beyond10x/ess#484).
 //!
-//! `ess-output-state/3` binds a checkpoint to its root only while a transaction is in flight,
-//! because only an in-flight transaction is recovered where it was recorded. A settled (Idle)
+//! `ess-output-state/3` and `/4` bind a checkpoint to its root only while a transaction is in
+//! flight, because only an in-flight transaction is recovered where it was recorded. A settled (Idle)
 //! record is what a repository commits, so it names nothing about the machine that wrote it.
-//! `/1` and `/2` records stay readable: a write-mode run rewrites one as `/3`, and `--check`
+//! `/1` and `/2` records stay readable: a write-mode run rewrites one as `/4`, and `--check`
 //! admits it with one warning.
 use super::{ownership, serial, snapshot, workspace, Fixture};
 use serde_json::{json, Value};
@@ -36,6 +36,7 @@ const IDLE_KEYS: &[&str] = &[
     "ledger",
     "length",
     "location",
+    "model",
     "mode",
     "owners",
     "path",
@@ -130,6 +131,12 @@ fn as_legacy(root: &Path, format: &str, bound: &Path, producer: Option<&str>) {
         payload["format"] = format.into();
         payload["root"] = native;
         payload["directory"] = identity;
+        // No release before `/4` recorded an owner's model digest.
+        if let Some(owners) = payload["checkpoint"]["ledger"]["owners"].as_array_mut() {
+            for owner in owners {
+                owner.as_object_mut().unwrap().remove("model");
+            }
+        }
         let object = payload.as_object_mut().unwrap();
         if let Some(producer) = producer {
             object.insert("producer".to_owned(), producer.into());
@@ -249,7 +256,7 @@ fn a_written_idle_record_names_no_absolute_path_device_or_inode() {
             assert!(!text.contains(plain), "{plain:?}: {text}");
         }
     }
-    assert_eq!(record["payload"]["format"], "ess-output-state/3");
+    assert_eq!(record["payload"]["format"], "ess-output-state/4");
     assert_eq!(record["payload"]["producer"], format!("ess {THIS}"));
 }
 
@@ -292,7 +299,7 @@ fn a_pending_record_keeps_its_binding_and_refuses_at_another_root() {
         let b = f.0.join("b");
         interrupt(&a, phase);
         let pending = state(&a)["payload"].clone();
-        assert_eq!(pending["format"], "ess-output-state/3", "{phase}");
+        assert_eq!(pending["format"], "ess-output-state/4", "{phase}");
         let (native, identity) = binding(&a);
         assert_eq!(pending["root"], native, "{phase}: {pending}");
         assert_eq!(pending["directory"], identity, "{phase}: {pending}");
@@ -312,7 +319,7 @@ fn a_pending_record_keeps_its_binding_and_refuses_at_another_root() {
         ownership::recover(&a).unwrap();
         let settled = state(&a)["payload"].clone();
         assert_eq!(settled["checkpoint"]["phase"], "Idle", "{phase}");
-        assert_eq!(settled["format"], "ess-output-state/3", "{phase}");
+        assert_eq!(settled["format"], "ess-output-state/4", "{phase}");
         assert!(
             settled.get("root").is_none() && settled.get("directory").is_none(),
             "{phase}: the settled record kept its binding: {settled}"
@@ -321,11 +328,11 @@ fn a_pending_record_keeps_its_binding_and_refuses_at_another_root() {
 }
 
 /// A `/1` or `/2` settled record is admitted where it was written and in a copy of its root, and
-/// a write-mode run rewrites it as `/3` although no owned file changes. A recorded producer is
-/// kept, since nothing was published; `/1` recorded none, so the run records itself. The `/3`
-/// record it leaves is not rewritten again.
+/// a write-mode run rewrites it as `/4` although no owned file changes. It records the model
+/// digest the older record lacked, which is a publication, so the run records itself as the
+/// producer. The `/4` record it leaves is not rewritten again.
 #[test]
-fn a_legacy_idle_record_is_admitted_and_a_write_run_rewrites_it_as_version_three() {
+fn a_legacy_idle_record_is_admitted_and_a_write_run_rewrites_it_as_version_four() {
     let _serial = serial();
     let this = format!("ess {THIS}");
     for (format, producer) in [
@@ -352,14 +359,24 @@ fn a_legacy_idle_record_is_admitted_and_a_write_run_rewrites_it_as_version_three
             let rewritten = generate(&root, false);
             assert!(rewritten.status.success(), "{case}: {}", stderr(&rewritten));
             let payload = state(&root)["payload"].clone();
-            assert_eq!(payload["format"], "ess-output-state/3", "{case}: {payload}");
+            assert_eq!(payload["format"], "ess-output-state/4", "{case}: {payload}");
             assert!(
                 payload.get("root").is_none() && payload.get("directory").is_none(),
                 "{case}: the rewritten record kept its binding: {payload}"
             );
             assert_eq!(payload["anchor_id"], legacy["anchor_id"], "{case}");
-            assert_eq!(payload["checkpoint"], legacy["checkpoint"], "{case}");
-            assert_eq!(payload["producer"], producer.unwrap_or(&this), "{case}");
+            // The generation records the model digest the older record lacked, and nothing else
+            // in the ledger moves; recording it is a publication, so the run names itself.
+            let mut checkpoint = payload["checkpoint"].clone();
+            for owner in checkpoint["ledger"]["owners"].as_array_mut().unwrap() {
+                let model = owner.as_object_mut().unwrap().remove("model");
+                assert!(
+                    model.as_ref().and_then(Value::as_str).is_some(),
+                    "{case}: no model digest recorded: {payload}"
+                );
+            }
+            assert_eq!(checkpoint, legacy["checkpoint"], "{case}");
+            assert_eq!(payload["producer"], this.as_str(), "{case}");
             assert_eq!(outputs(&root), files, "{case}: an owned file changed");
 
             let settled = fs::read(state_path(&root)).unwrap();
@@ -368,7 +385,7 @@ fn a_legacy_idle_record_is_admitted_and_a_write_run_rewrites_it_as_version_three
             assert_eq!(
                 fs::read(state_path(&root)).unwrap(),
                 settled,
-                "{case}: an unchanged run rewrote a /3 record"
+                "{case}: an unchanged run rewrote a /4 record"
             );
         }
     }
@@ -505,7 +522,7 @@ fn each_output_state_version_is_held_to_its_own_binding_shape() {
     );
     fs::write(state_path(&idle), &settled).unwrap();
     rewrite(&idle, |payload| {
-        payload["format"] = "ess-output-state/4".into();
+        payload["format"] = "ess-output-state/5".into();
     });
     refuses(&idle, "a later version", "unsupported output-state version");
 
