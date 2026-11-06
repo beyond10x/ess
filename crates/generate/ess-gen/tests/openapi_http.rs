@@ -1118,3 +1118,50 @@ fn route_refusals_empty_bodies_and_arrays_project() {
     let placed = &document["paths"]["/api/orders"]["post"]["responses"];
     assert!(!any_key(placed, "x-ess-outcomes"), "{placed:#}");
 }
+
+/// A board whose card priorities are one bare list body beside the board in the path
+/// (`story:a-command-route-takes-one-input-as-its-bare-request-body`, beyond10x/ess#748).
+const BOARD: &str = include_str!("../../../specify/ess-http/tests/fixtures/board.yaml");
+
+/// `SetCardPriorities` on `put /boards/{board_id}/cards/priority`, its list input the whole body.
+const BARE_PRIORITIES: &str = "routes:
+  - command: catalog.board.SetCardPriorities
+    method: put
+    path: /boards/{board_id}/cards/priority
+    parameters: {board_id: input.board_id}
+    request: {encoding: json, body: input.priorities}
+";
+
+#[test]
+fn a_bare_list_body_is_an_array_request_schema() {
+    let ir = model_of("board.yaml", BOARD);
+    let document = bound_document(&ir, binding(&ir, BARE_PRIORITIES), "board-service");
+    let put = &document["paths"]["/boards/{board_id}/cards/priority"]["put"];
+    let body = &put["requestBody"];
+    assert_eq!(keys(&body["content"]), ["application/json"], "{body}");
+    assert_eq!(body["required"], true, "{body}");
+    assert_eq!(
+        body["content"]["application/json"]["schema"],
+        json!({"type": "array", "items": {"$ref": "#/components/schemas/catalog.board.CardPriority"}}),
+        "{body}"
+    );
+    let description = body["description"].as_str().expect("a description");
+    assert!(description.contains("`priorities`"), "{description}");
+    // No object wraps the list, and the item type it names is published.
+    let schemas = &document["components"]["schemas"];
+    assert!(
+        schemas
+            .get("catalog.board.SetCardPriorities.Input")
+            .is_none(),
+        "{schemas:#}"
+    );
+    assert_eq!(
+        keys(&schemas["catalog.board.CardPriority"]["properties"]),
+        ["id", "priority"]
+    );
+    // The board is the one path parameter.
+    let parameters = put["parameters"].as_array().expect("parameters");
+    assert_eq!(parameters.len(), 1, "{parameters:?}");
+    assert_eq!(parameters[0]["name"], "board_id");
+    assert_eq!(parameters[0]["in"], "path");
+}

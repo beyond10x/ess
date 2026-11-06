@@ -272,14 +272,27 @@ pub struct RequestSpec {
     /// `refuse` or `ignore`; absent, `refuse`.
     #[serde(default)]
     pub unknown: Option<String>,
+    /// `input.<field>`: the one input field a `json` body carries bare, its JSON value the whole
+    /// body; absent, the body is the input object.
+    #[serde(default)]
+    pub body: Option<String>,
 }
 
 /// A compiled route's `request`. Each key whose value is its default is omitted from the IR, and
 /// a route whose request is all defaults carries none, so two documents that mean the same compile
 /// to the same bytes.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Request {
+    /// The one input field a `json` body carries bare (`input.<field>`), every other input field
+    /// being carried by the path; absent, the body is the input object less what the path
+    /// carries.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "input_body"
+    )]
+    pub body: Option<Source>,
     /// How the request carries the input.
     #[serde(
         default,
@@ -294,6 +307,27 @@ pub struct Request {
         deserialize_with = "omitted_default"
     )]
     pub unknown: Unknown,
+}
+
+impl Request {
+    /// The input field the body carries bare, by its local name, if it carries one.
+    pub fn body_field(&self) -> Option<&str> {
+        self.body.as_ref().map(Source::field)
+    }
+}
+
+/// Reads a compiled request's `body`, which names a command's input field and never a view
+/// parameter.
+fn input_body<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<Source>, D::Error> {
+    match <Source as serde::Deserialize>::deserialize(deserializer)? {
+        source @ Source::Input(_) => Ok(Some(source)),
+        source @ Source::Param(_) => Err(serde::de::Error::custom(format!(
+            "`request.body` is `{source}`; a request body is one input field of a command, \
+             `input.<field>`"
+        ))),
+    }
 }
 
 /// A request key compiled IR writes only when it differs from its default.
@@ -2516,7 +2550,7 @@ fn route_invariants(route: &Route, at: &str) -> Result<(), String> {
         read.push((source, name));
     }
     if let Some(request) = &route.request {
-        request_invariants(route, *request, at)?;
+        request_invariants(route, request, at)?;
     }
     answer_invariants(route, at)
 }
@@ -2883,15 +2917,30 @@ fn headers_invariants(
 
 /// The invariants of one compiled route's `request` (see [`HttpIr::from_json`]): it is on a
 /// command, not all defaults, and admitted for the route's method, with `ignore` beside `form` or
-/// `query` only.
-fn request_invariants(route: &Route, request: Request, at: &str) -> Result<(), String> {
+/// `query` only, and a bare `body` beside `json` only, naming no field the path carries.
+fn request_invariants(route: &Route, request: &Request, at: &str) -> Result<(), String> {
     if let Operation::View(_) = route.operation {
         return Err(format!(
             "`{at}.request` is on {}; a view takes no request",
             route.operation
         ));
     }
-    if request == Request::default() {
+    if let Some(body) = &request.body {
+        if request.encoding != Encoding::Json || route.method == Method::Get {
+            return Err(format!(
+                "`{at}.request.body` is `{body}` beside `{}` on `{}`; a bare body is a `json` \
+                 body, which `get` carries none of",
+                request.encoding, route.method
+            ));
+        }
+        if route.parameters.values().any(|source| source == body) {
+            return Err(format!(
+                "`{at}.request.body` is `{body}`, which the path carries; a field travels in one \
+                 place"
+            ));
+        }
+    }
+    if *request == Request::default() {
         return Err(format!(
             "`{at}.request` holds only defaults; compiled IR omits a request that is a `json` body \
              refusing an unknown key"
@@ -3037,10 +3086,10 @@ impl Refusals {
 /// | `ESS-HTTP-008` | a path variable not mapped, mapped twice (two segments or two keys), reading a source another variable of the route already reads, or a mapping for no variable of the path |
 /// | `ESS-HTTP-009` | a source in the wrong namespace (`input.` for a command, `param.` for a view), naming no field, or of a type a segment cannot carry: `String`, `Integer`, an enum or an unconstrained newtype of one of them |
 /// | `ESS-HTTP-010` | two operations of one component on one method and template, variable names ignored, declared or derived |
-/// | `ESS-HTTP-011` | two templates of one component and method that a request path can both match, with a literal beside a variable at the first position they differ: a literal takes no precedence |
+/// | `ESS-HTTP-011` | two templates of one component and method that cross: a request path matches both, and each holds a literal at some position the other holds a variable (`/{a}/x` beside `/y/{b}`), naming both operations, a path both match and the segments. From 0.89.0 a nested pair, where one template holds the literal at every position the two differ (`/items/current` beside `/items/{item_id}`), is admitted and the more specific answers |
 /// | `ESS-HTTP-013` | an operation with no HTTP surface: a command no component accepts, a view no `reached_by: network` component serves |
 /// | `ESS-HTTP-014` | a command on `get` with an input field no variable of the path maps, unless its request is encoded `query` |
-/// | `ESS-HTTP-020` | at `routes[i].request.encoding`: an encoding outside `json`, `form` and `query`, `json` or `form` written on a `get` command, or `query` on a method other than `get` and `delete`; at `routes[i].request.unknown`: a value outside `refuse` and `ignore`, or `ignore` with a `json` body; at `routes[i].request`: `request` on a view |
+/// | `ESS-HTTP-020` | at `routes[i].request.encoding`: an encoding outside `json`, `form` and `query`, `json` or `form` written on a `get` command, or `query` on a method other than `get` and `delete`; at `routes[i].request.unknown`: a value outside `refuse` and `ignore`, or `ignore` with a `json` body; at `routes[i].request`: `request` on a view; at `routes[i].request.body`: `body` on a view, beside `form` or `query`, or on a `get` command, a body that is not `input.<field>` naming an input field of the command, one that is `Optional` or that the path carries, and, on a route with a path, each other input field the path does not carry |
 /// | `ESS-HTTP-021` | at `routes[i].request.encoding`: a `form` or `query` request carrying an input field whose type has no flat spelling, naming the field and its type. A flat field is a scalar (a primitive other than `Json`, an enum, or a newtype of a scalar), an `Optional` scalar or a `List` of scalars; a field mapped to the path is not carried |
 /// | `ESS-HTTP-022` | at `routes[i].outcomes.<name>`: a key that is not the local name of an outcome of the command, or one listed twice; at `routes[i].outcomes`: `outcomes` on a view; at `routes[i].errors`: `errors` on a view, or on a command none of whose outcomes reports an error without being listed under `outcomes`; at `routes[i].alike`: `alike` on a view, a group of fewer than two names, a name that is not the local name of an outcome of the command, one in two groups or twice in one, or one with no declared answer (neither listed under `outcomes` nor covered by `errors`) |
 /// | `ESS-HTTP-023` | at `routes[i].outcomes.<name>.status`, or `routes[i].errors.status` once for each outcome `errors` covers: a status outside `100..=599`, a `1xx`, a `3xx` other than `301`, `302`, `303`, `307` and `308`, a `2xx` on an outcome with an error, or a `4xx` or `5xx` on one without |
@@ -3084,7 +3133,7 @@ pub fn compile(
 /// | code | refused |
 /// |---|---|
 /// | `ESS-HTTP-003` | at `refines`: a value that is not `sha256:` and 64 lower-case hex digits; `refines` given and no refined binding supplied; the supplied binding's byte digest differs; the refined binding itself refines (a refinement of a refinement is refused in `/1`); or a refined binding supplied to a document that refines nothing |
-/// | `ESS-HTTP-012` | at `routes[i].method` or `routes[i].path`: a method or path the refined binding fixed is changed, or a fixed path left open; at `routes[i].request.encoding` or `routes[i].request.unknown`: a refined route's request restated with another value, a default written out or left out counting as that default; at `routes[i].outcomes.<name>`, `routes[i].errors`, `routes[i].body` or `routes[i].empty`: a refined route's outcome, `errors` (its headers and redirect included), view body or empty answer (its body included, none written out or left out counting as none) added, dropped or restated with another status or body, by the same counting; at `routes[i].outcomes.<name>.headers` or `….redirect`: an outcome both list whose headers or redirect differ, compared in name order with an empty map counting as none; at `refusals.<key>`: a standard refusal added, dropped or changed; at `refusals.<key>.headers`: one both declare whose headers differ; at `routes[i].refusals.<key>` and `routes[i].refusals.<key>.headers`: the same for a route's own refusals; at `routes`: a route of the refined binding is dropped; at `routes[i].operation_id`: an operation id the refined route fixes changed or left out (one may be added where the refined route has none); at `routes[i].outcomes.<name>`: an outcome both list restated with another `encoding`, `json` written out or left out counting as `json`; at `routes[i].alike`: the groups added, dropped or restated, each compared in name order |
+/// | `ESS-HTTP-012` | at `routes[i].method` or `routes[i].path`: a method or path the refined binding fixed is changed, or a fixed path left open; at `routes[i].request.encoding`, `routes[i].request.unknown` or `routes[i].request.body`: a refined route's request restated with another value, a default written out or left out counting as that default, and a body added or dropped; at `routes[i].outcomes.<name>`, `routes[i].errors`, `routes[i].body` or `routes[i].empty`: a refined route's outcome, `errors` (its headers and redirect included), view body or empty answer (its body included, none written out or left out counting as none) added, dropped or restated with another status or body, by the same counting; at `routes[i].outcomes.<name>.headers` or `….redirect`: an outcome both list whose headers or redirect differ, compared in name order with an empty map counting as none; at `refusals.<key>`: a standard refusal added, dropped or changed; at `refusals.<key>.headers`: one both declare whose headers differ; at `routes[i].refusals.<key>` and `routes[i].refusals.<key>.headers`: the same for a route's own refusals; at `routes`: a route of the refined binding is dropped; at `routes[i].operation_id`: an operation id the refined route fixes changed or left out (one may be added where the refined route has none); at `routes[i].outcomes.<name>`: an outcome both list restated with another `encoding`, `json` written out or left out counting as `json`; at `routes[i].alike`: the groups added, dropped or restated, each compared in name order |
 ///
 /// `servers` is not compared: each server binding states its own deployment.
 ///
@@ -3996,9 +4045,15 @@ fn extras_changes(
 
 /// A route's `request` keys as written, each absent one as its default, so that writing a default
 /// out is not a change.
-fn written_request(route: &RouteSpec) -> [(&'static str, &str); 2] {
+fn written_request(route: &RouteSpec) -> [(&'static str, &str); 3] {
     let request = route.request.as_ref();
     [
+        (
+            "body",
+            request
+                .and_then(|request| request.body.as_deref())
+                .unwrap_or("absent"),
+        ),
         (
             Encoding::KEY,
             request
@@ -4513,6 +4568,12 @@ fn carried(
     refusals: &mut Refusals,
 ) -> Result<Option<Request>, Refused> {
     let checked = request(spec, operation, method, path, refusals);
+    let bare = match (target, &checked.body) {
+        (Some(target), Some(text)) => {
+            bare_body(target, text, mapped, spec.path.is_none(), path, refusals)
+        }
+        _ => Ok(None),
+    };
     let flat = match (target, checked.encoding) {
         (Some(target), Some(encoding @ (Encoding::Form | Encoding::Query))) => {
             flat_input(target, encoding, mapped, path, refusals)
@@ -4525,10 +4586,95 @@ fn carried(
         }
         _ => false,
     };
-    if checked.refused || !flat || unmapped {
+    match bare {
+        Ok(_) if checked.refused || !flat || unmapped => Err(Refused),
+        Err(Refused) => Err(Refused),
+        Ok(None) => Ok(checked.request),
+        Ok(Some(body)) => Ok(Some(Request {
+            body: Some(body),
+            ..checked.request.unwrap_or_default()
+        })),
+    }
+}
+
+/// The input field a route's `request.body` names (`text`), once it is held to its rules
+/// (`ESS-HTTP-020`, at `routes[i].request.body`): it is `input.<field>` naming an input field of
+/// the command that is not `Optional` and that the path does not carry, and the path carries every
+/// other input field. A body that names no such field is the only refusal reported for it.
+///
+/// On an `open` route, one without a path yet, whether the path carries every other input field
+/// is the document's to answer that fills the path in: a protocol binding may fix the body of a
+/// route whose path each server binding chooses, and the server binding, restating the body
+/// (`ESS-HTTP-012`), is held to it.
+fn bare_body(
+    target: &Target<'_>,
+    text: &str,
+    mapped: &[String],
+    open: bool,
+    path: &str,
+    refusals: &mut Refusals,
+) -> Result<Option<Source>, Refused> {
+    let at = format!("{path}.request.body");
+    let source = Source::parse(text).filter(|source| matches!(source, Source::Input(_)));
+    let field = source.as_ref().and_then(|source| {
+        target
+            .fields
+            .iter()
+            .find(|field| field.name == source.field())
+    });
+    let rule = match (&source, field) {
+        (None, _) => Some(format!(
+            "`{text}` is not `input.<field>`: a bare request body is one input field of the \
+             command, named by its namespace and its name"
+        )),
+        (Some(source), None) => Some(format!(
+            "`{text}` names no input field: the command declares no input field `{}`",
+            source.field()
+        )),
+        (Some(_), Some(field)) if matches!(field.type_ref, ResolvedTypeRef::Optional { .. }) => {
+            Some(format!(
+                "`{text}` has type `{}`, and a bare body is always present: it is one input \
+                 field that is not `Optional`",
+                field.type_ref
+            ))
+        }
+        (Some(_), Some(field)) if mapped.contains(&format!("input.{}", field.name)) => {
+            Some(format!(
+                "`{text}` is carried by the path already, and a field travels in one place: the \
+                 body is an input field `{}` does not map to a variable of the path",
+                field.name
+            ))
+        }
+        _ => None,
+    };
+    if let Some(rule) = rule {
+        refusals.refuse("ESS-HTTP-020", at, rule);
+        return Err(Refused);
+    }
+    let Some(source) = source else {
+        return Err(Refused);
+    };
+    let mut refused = false;
+    for other in target.fields.iter().filter(|_| !open) {
+        if other.name == source.field() || mapped.contains(&format!("input.{}", other.name)) {
+            continue;
+        }
+        refusals.refuse(
+            "ESS-HTTP-020",
+            at.as_str(),
+            format!(
+                "input field `{}` is in neither the path nor the body: a route whose body is \
+                 `{text}` carries every other input field in its path, so map `{}` to a variable \
+                 of the path",
+                other.name, other.name
+            ),
+        );
+        refused = true;
+    }
+    if refused {
         Err(Refused)
     } else {
-        Ok(checked.request)
+        Ok(Some(source))
     }
 }
 
@@ -4536,16 +4682,21 @@ fn carried(
 struct Checked {
     /// Whether it earned a refusal (`ESS-HTTP-020`).
     refused: bool,
-    /// The compiled request when it earned none; `None` when it is all defaults.
+    /// The compiled request when it earned none, without its `body`; `None` when it is all
+    /// defaults.
     request: Option<Request>,
     /// The encoding, when it is one of the set and admitted for the route's method; `None` when it
     /// was refused, which leaves the input it would carry unchecked.
     encoding: Option<Encoding>,
+    /// `request.body` as written, when the encoding and the method admit one; the input field it
+    /// names is [`bare_body`]'s to check.
+    body: Option<String>,
 }
 
 /// Holds a route's `request` to its rules (`ESS-HTTP-020`): no `request` on a view, an encoding of
 /// the set that the method admits when one is written (`query` on `get` or `delete` only, and on
-/// `get` nothing else written), and an `unknown` of the set, `ignore` only beside `form` or `query`. An absent
+/// `get` nothing else written), an `unknown` of the set, `ignore` only beside `form` or `query`,
+/// and a `body` only beside `json` off `get` ([`view_request`], [`admitted_body`]). An absent
 /// `request` is a `json` body refusing an unknown key, which a `get` command is in stage 1.
 fn request(
     spec: &RouteSpec,
@@ -4559,22 +4710,11 @@ fn request(
             refused: false,
             request: None,
             encoding: Some(Encoding::Json),
+            body: None,
         };
     };
     if let Operation::View(_) = operation {
-        refusals.refuse(
-            "ESS-HTTP-020",
-            format!("{path}.request"),
-            format!(
-                "{operation} takes no `request`: a view reads its parameters from the path and the \
-                 query string"
-            ),
-        );
-        return Checked {
-            refused: true,
-            request: None,
-            encoding: None,
-        };
+        return view_request(written, operation, path, refusals);
     }
     let mut refused = false;
     let parsed = match written.encoding.as_deref() {
@@ -4643,17 +4783,86 @@ fn request(
         );
         refused = true;
     }
+    let body = written
+        .body
+        .as_deref()
+        .and_then(|text| admitted_body(text, method, parsed, path, refusals));
+    refused |= written.body.is_some() && body.is_none();
     let request = match (refused, encoding, unknown) {
-        (false, Some(encoding), Some(unknown)) => {
-            Some(Request { encoding, unknown }).filter(|request| *request != Request::default())
-        }
+        (false, Some(encoding), Some(unknown)) => Some(Request {
+            body: None,
+            encoding,
+            unknown,
+        })
+        .filter(|request| *request != Request::default()),
         _ => None,
     };
     Checked {
         refused,
         request,
-        encoding,
+        // A refused body leaves the input it would carry unchecked, as a refused encoding does.
+        encoding: encoding.filter(|_| body.is_some() || written.body.is_none()),
+        body,
     }
+}
+
+/// A view's `request`, always refused (`ESS-HTTP-020`): at `routes[i].request.body` when it
+/// writes a body, at `routes[i].request` otherwise.
+fn view_request(
+    written: &RequestSpec,
+    operation: &Operation,
+    path: &str,
+    refusals: &mut Refusals,
+) -> Checked {
+    let (at, rule) = match &written.body {
+        Some(body) => (
+            format!("{path}.request.body"),
+            format!(
+                "{operation} takes no request body (`{body}`): a view reads its parameters from \
+                 the path and the query string"
+            ),
+        ),
+        None => (
+            format!("{path}.request"),
+            format!(
+                "{operation} takes no `request`: a view reads its parameters from the path and \
+                 the query string"
+            ),
+        ),
+    };
+    refusals.refuse("ESS-HTTP-020", at, rule);
+    Checked {
+        refused: true,
+        request: None,
+        encoding: None,
+        body: None,
+    }
+}
+
+/// `request.body` as written (`text`), when a `json` body off `get` carries it; otherwise refused
+/// at `routes[i].request.body` (`ESS-HTTP-020`) and `None`. An encoding outside the set (`parsed`
+/// `None`) is refused by its own key, and leaves the body to [`bare_body`].
+fn admitted_body(
+    text: &str,
+    method: Option<Method>,
+    parsed: Option<Encoding>,
+    path: &str,
+    refusals: &mut Refusals,
+) -> Option<String> {
+    let rule = match (method, parsed) {
+        (_, Some(encoding @ (Encoding::Form | Encoding::Query))) => format!(
+            "`body: {text}` carries one input field as a bare `json` body, and a `{encoding}` \
+             request carries every field under its own key; a route with a bare body is encoded \
+             `json`"
+        ),
+        (Some(Method::Get), Some(Encoding::Json)) => format!(
+            "`body: {text}` carries one input field as the request body, and `get` carries none; \
+             a command with a bare body is bound to `post`, `put`, `patch` or `delete`"
+        ),
+        _ => return Some(text.to_owned()),
+    };
+    refusals.refuse("ESS-HTTP-020", format!("{path}.request.body"), rule);
+    None
 }
 
 /// Refuses each input field a `form` or `query` request carries, every one the path does not map,
@@ -6576,31 +6785,65 @@ impl Claim<'_> {
 enum Clash {
     /// The same template once variable names are ignored (`ESS-HTTP-010`).
     Same,
-    /// Different templates one request path matches both of, a literal beside a variable at the
-    /// zero-based position they first differ (`ESS-HTTP-011`).
-    Overlap(usize),
+    /// Different templates one request path matches both of, nested: at every position they
+    /// differ, one and the same template holds the literal and the other a variable, so its paths
+    /// are a strict subset of the other's and it answers them
+    /// (`story:a-literal-path-segment-takes-precedence-over-a-variable-one`).
+    Nested,
+    /// Different templates one request path matches both of, crossed: each holds a literal at some
+    /// position the other holds a variable, `left` the first such position of the first template
+    /// and `right` of the second, zero-based. Neither is more specific (`ESS-HTTP-011`).
+    Crossed {
+        /// Where the first template first holds the literal.
+        left: usize,
+        /// Where the second template first holds the literal.
+        right: usize,
+    },
 }
 
 /// Whether two templates meet. They can only when they have as many segments and no position
-/// holds two different literals; then they are the same template, or they overlap at the first
-/// position one holds a literal and the other a variable, after a prefix equal but for variable
-/// names.
+/// holds two different literals; then they are the same template but for variable names, nested
+/// (one holds the literal at every position they differ), or crossed.
 fn clash(left: &[Segment], right: &[Segment]) -> Option<Clash> {
     if left.len() != right.len() {
         return None;
     }
-    let mut first_mixed = None;
+    let (mut left_literal, mut right_literal) = (None, None);
     for (position, pair) in left.iter().zip(right).enumerate() {
         match pair {
             (Segment::Literal(left), Segment::Literal(right)) if left != right => return None,
-            (Segment::Literal(_), Segment::Variable(_))
-            | (Segment::Variable(_), Segment::Literal(_)) => {
-                first_mixed.get_or_insert(position);
+            (Segment::Literal(_), Segment::Variable(_)) => {
+                left_literal.get_or_insert(position);
+            }
+            (Segment::Variable(_), Segment::Literal(_)) => {
+                right_literal.get_or_insert(position);
             }
             _ => {}
         }
     }
-    Some(first_mixed.map_or(Clash::Same, Clash::Overlap))
+    Some(match (left_literal, right_literal) {
+        (None, None) => Clash::Same,
+        (Some(left), Some(right)) => Clash::Crossed { left, right },
+        _ => Clash::Nested,
+    })
+}
+
+/// A request path two templates that meet both match: each position's literal where either holds
+/// one, the first template's variable where both hold variables.
+fn common_path(left: &[Segment], right: &[Segment]) -> String {
+    let mut path = String::new();
+    for pair in left.iter().zip(right) {
+        path.push('/');
+        let segment = match pair {
+            (literal @ Segment::Literal(_), _) | (_, literal @ Segment::Literal(_)) => literal,
+            (variable, _) => variable,
+        };
+        path.push_str(&segment.to_string());
+    }
+    if path.is_empty() {
+        path.push('/');
+    }
+    path
 }
 
 /// A derived path's segments: literals only, since ESS derives no variable.
@@ -6615,9 +6858,9 @@ fn literal_segments(path: &str) -> Vec<Segment> {
 }
 
 /// Checks every component's surface, declared and derived routes together, for two operations
-/// on one method and template (`ESS-HTTP-010`) and for templates that overlap (`ESS-HTTP-011`),
-/// and returns the derived routes that stay: those of every operation the binding does not name,
-/// in IR order.
+/// on one method and template (`ESS-HTTP-010`) and for templates that cross (`ESS-HTTP-011`); of
+/// nested templates the more specific answers ([`Clash::Nested`]). Returns the derived routes that
+/// stay: those of every operation the binding does not name, in IR order.
 ///
 /// A declared route is on the surface of every component the table derives a route for its
 /// operation on, and replaces that route there. An operation is named by every route that names
@@ -6690,21 +6933,29 @@ fn surface(
                             other.describe()
                         ),
                     ),
-                    Some(Clash::Overlap(position)) => refusals.refuse(
+                    // story:a-literal-path-segment-takes-precedence-over-a-variable-one: crossed
+                    // templates stay refused, and of nested ones the more specific answers.
+                    Some(Clash::Crossed { left, right }) => refusals.refuse(
                         "ESS-HTTP-011",
                         format!("routes[{at}]"),
                         format!(
-                            "{} and {} overlap on component `{component}`: after an equal prefix, \
-                             segment {} is `{}` in one and `{}` in the other, so one request path \
-                             matches both, and a literal takes no precedence over a variable",
+                            "{} and {} cross on component `{component}`: both match `{}`, and \
+                             neither is more specific, since segment {} is `{}` in one where the \
+                             other has `{}`, and segment {} is `{}` in the other where the one has \
+                             `{}`; a literal takes precedence over a variable only where one \
+                             template holds the literal at every segment the two differ",
                             this.describe(),
                             other.describe(),
-                            position + 1,
-                            this.segments[position],
-                            other.segments[position]
+                            common_path(&this.segments, &other.segments),
+                            left + 1,
+                            this.segments[left],
+                            other.segments[left],
+                            right + 1,
+                            other.segments[right],
+                            this.segments[right]
                         ),
                     ),
-                    None => {}
+                    Some(Clash::Nested) | None => {}
                 }
             }
         }
@@ -6724,7 +6975,7 @@ fn derived_order(left: &DerivedRoute, right: &DerivedRoute) -> std::cmp::Orderin
 
 #[cfg(test)]
 mod tests {
-    use super::{clash, segment, template, Clash, Segment, Source};
+    use super::{clash, common_path, segment, template, Clash, Segment, Source};
 
     fn literal(text: &str) -> Segment {
         Segment::Literal(text.to_owned())
@@ -6798,13 +7049,22 @@ mod tests {
             &[literal("items"), literal("current")],
             &[literal("items"), variable("id")],
         );
-        assert_eq!(overlap, Some(Clash::Overlap(1)));
-        // The first literal beside a variable is the one named, later ones are not.
+        // story:a-literal-path-segment-takes-precedence-over-a-variable-one: one template holds the
+        // literal at every position they differ, nested; each holds one the other does not,
+        // crossed, naming the first position of each.
+        assert_eq!(overlap, Some(Clash::Nested));
         let later = clash(
             &[variable("a"), literal("b"), variable("c")],
             &[variable("x"), variable("y"), literal("z")],
         );
-        assert_eq!(later, Some(Clash::Overlap(1)));
+        assert_eq!(later, Some(Clash::Crossed { left: 1, right: 2 }));
+        assert_eq!(
+            common_path(
+                &[variable("a"), literal("b"), variable("c")],
+                &[variable("x"), variable("y"), literal("z")],
+            ),
+            "/{a}/b/z"
+        );
         assert_eq!(clash(&[literal("a")], &[literal("b")]), None);
         assert_eq!(
             clash(&[variable("a")], &[variable("a"), literal("b")]),

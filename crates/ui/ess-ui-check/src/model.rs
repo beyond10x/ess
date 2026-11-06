@@ -1763,32 +1763,18 @@ impl Surface {
                 match route.serves {
                     Served::Command(handle) => {
                         let command = ir.command(handle);
-                        let mut errors = BTreeMap::new();
-                        let declared = command.outcomes.iter().chain(
-                            ess_gen::unknown_instance::unknown_instance_answer(ir, command),
-                        );
-                        for outcome in declared {
-                            let Some(error) = &outcome.error else {
-                                continue;
-                            };
-                            let error = ir.error(error);
-                            errors
-                                .entry(error.wire_code())
-                                .or_insert_with(|| ErrorRoute {
-                                    status: http::status(outcome)
-                                        .parse()
-                                        .expect("every status the contract declares is a number"),
-                                    display: error.naming.display_or(&error.name).to_owned(),
-                                });
-                        }
                         let off = moved(ir, &route, http::Method::Post);
+                        let (body, body_alias) =
+                            bare_names(http::bare_body(command, route.declared));
                         let route = CommandRoute {
                             path: route.path,
                             body_required: http::body_required(command),
-                            errors,
+                            errors: error_routes(ir, command),
                             method: off.method,
                             path_params: off.path_params,
                             path_aliases: off.path_aliases,
+                            body,
+                            body_alias,
                         };
                         surface
                             .commands
@@ -1842,6 +1828,49 @@ impl Surface {
 }
 
 /// Fields by name and by wire name, each with the wire variants of its enum, if it is one.
+/// Each error a command can answer, by its wire code: the status it is answered at and the name a
+/// UI shows for it.
+fn error_routes(
+    ir: &EssIr,
+    command: &ess_compiler::ir::ResolvedCommand,
+) -> BTreeMap<String, ErrorRoute> {
+    let mut errors = BTreeMap::new();
+    let declared =
+        command
+            .outcomes
+            .iter()
+            .chain(ess_gen::unknown_instance::unknown_instance_answer(
+                ir, command,
+            ));
+    for outcome in declared {
+        let Some(error) = &outcome.error else {
+            continue;
+        };
+        let error = ir.error(error);
+        errors
+            .entry(error.wire_code())
+            .or_insert_with(|| ErrorRoute {
+                status: http::status(outcome)
+                    .parse()
+                    .expect("every status the contract declares is a number"),
+                display: error.naming.display_or(&error.name).to_owned(),
+            });
+    }
+    errors
+}
+
+/// The names a bare body is sent under: the field's wire name, and its model name when the wire
+/// renames it, which a `bind` may name the field by instead, as a path variable's.
+fn bare_names(bare: Option<&ess_compiler::ir::ResolvedField>) -> (Option<String>, Option<String>) {
+    let Some(field) = bare else {
+        return (None, None);
+    };
+    match &field.naming.wire {
+        Some(wire) if *wire != field.name => (Some(wire.clone()), Some(field.name.clone())),
+        _ => (Some(field.name.clone()), None),
+    }
+}
+
 fn fields_of(ir: &EssIr, fields: &[ess_compiler::ir::ResolvedField]) -> Fields {
     let mut out = BTreeMap::new();
     for field in fields {

@@ -269,6 +269,10 @@ export interface CommandRoute {
   /** Each path variable whose field is renamed on the wire to the field's model name, which a
    * `bind` may send it under instead. */
   path_aliases?: Record<string, string>;
+  /** The input field whose value is the whole body, where the binding sends one bare. */
+  body?: string;
+  /** That field's model name, where it is renamed on the wire. */
+  body_alias?: string;
 //-routed
 }
 
@@ -387,6 +391,18 @@ function routePath(
   return filled;
 }
 
+/**
+ * The body of a route that sends one input field bare: that field's value alone, as JSON, by its
+ * wire name or else its model name; the path carries every other field.
+ */
+function bareBody(name: string, alias: string | undefined, values: Record<string, unknown>): string {
+  const value = values[name] ?? (alias === undefined ? undefined : values[alias]);
+  if (value === undefined) {
+    throw new DataError(`no value for \`${name}\`, which the request body carries`, 400);
+  }
+  return JSON.stringify(value);
+}
+
 /** Whether a command on `method` is sent without a body: `GET` and `HEAD` carry none. */
 function bodiless(method: string): boolean {
   return method === "GET" || method === "HEAD";
@@ -467,7 +483,9 @@ export function httpAdapter(binding: Binding, base: (component: string) => strin
       // A `GET` or `HEAD` command carries every input field in its path (checked at generate).
       const body = bodiless(method)
         ? undefined
-        : JSON.stringify(Object.fromEntries(Object.entries(input).filter(([name]) => !carried.includes(name))));
+        : found.route.body !== undefined
+          ? bareBody(found.route.body, found.route.body_alias, input)
+          : JSON.stringify(Object.fromEntries(Object.entries(input).filter(([name]) => !carried.includes(name))));
 //-routed
       let status = 0;
       let text = "";

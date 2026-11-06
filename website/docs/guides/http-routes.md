@@ -52,9 +52,12 @@ ess specify http compile  --path MODEL --binding catalog-http.yaml --out catalog
 ```
 
 Every refusal is reported at once, with an `ESS-HTTP-` code and the path of the key it is about. Two
-operations on one method and path of a component, declared or derived, are refused, and so are two
-paths one request can match, such as `/items/current` beside `/items/{item_id}`: neither takes
-precedence.
+operations on one method and path of a component, declared or derived, are refused, variable names
+ignored. Two paths one request can match are admitted where one is more specific, holding the
+literal at every segment they differ: `/items/current` beside `/items/{item_id}` serves
+`/items/current` by its own route and every other item id by `/items/{item_id}`. Two that cross,
+each holding a literal where the other holds a variable, such as `/{tenant}/tasks` beside
+`/tasks/{id}` (both match `/tasks/tasks`), are refused: neither takes precedence.
 
 ## Protocol and server bindings
 
@@ -149,6 +152,10 @@ The document follows those keys on the routes that use them:
   on a `get` or a `delete` command, removes the request body, and each input field the path does
   not carry becomes an `in: query` parameter under its wire name (a `List` repeats its key,
   `style: form`, `explode: true`, and is not required: an absent key is the empty list).
+- `body: input.<field>` beside `encoding: json` (or no `encoding`) sends that one input field as
+  the whole request body, bare: the request body's schema is the field's own, a list
+  `{type: array, items: …}`, and no `{command}.Input` is written. The field may not be `Optional`,
+  and the path must carry every other input field.
 - A view's parameter the path does not carry is an `in: query` parameter under the parameter's flat
   `wire:` when it declares one, and both generated servers read it under that name only.
 - Each declared status is its own response. `body: response` answers the command's response
