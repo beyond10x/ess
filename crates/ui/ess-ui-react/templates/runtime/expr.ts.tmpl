@@ -258,6 +258,24 @@ export function keeps(text: string, values: Record<string, unknown>): boolean {
   } catch { return false; }
 }
 
+/**
+ * Whether a toggle's state is on, read as the terminal reads it: in the filter grammar when it
+ * parses there and reads only the client-data roots (so `row.title contains 'et'` is a search),
+ * otherwise as a display expression (`checked_unreadable` warns on that).
+ */
+export function holds(text: string, values: Record<string, unknown>): boolean {
+  let ast: Ast | null = null;
+  try {
+    ast = new Parser(tokenize(text, true), true).parse();
+  } catch {
+    ast = null;
+  }
+  if (ast !== null && filterForm(ast)) {
+    return truthy(run(filterLiterals(ast), values));
+  }
+  return truthy(evaluate(text, values));
+}
+
 // In a predicate a bare word is text, even when its spelling is also a root name.
 function filterLiterals(ast: Ast): Ast {
   switch (ast.kind) {
@@ -300,7 +318,8 @@ function equal(left: unknown, right: unknown): boolean {
 function containsWords(text: unknown, search: unknown): boolean {
   const haystack = String(text ?? "").toLowerCase();
   return String(search ?? "")
-    .split(/\s+/)
+    // Rust's `split_whitespace` (Unicode White_Space): `\s` would add U+FEFF and miss U+0085.
+    .split(/[\t\n\v\f\r \u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]+/)
     .filter((word) => word !== "")
     .every((word) => haystack.includes(word.toLowerCase()));
 }

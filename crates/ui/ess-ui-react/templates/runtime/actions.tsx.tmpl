@@ -5,7 +5,7 @@ import { useUiPath } from "./core";
 import { hrefFor } from "../routes";
 import { ScopeLayer, useScope, type Opener, type Scope } from "./core";
 import { dataAdapter, invalidate } from "./data";
-import { evaluate, truthy } from "./expr";
+import { evaluate, holds, truthy } from "./expr";
 import { isObject } from "./json";
 //+bound
 import { CommandRefused } from "./data";
@@ -309,7 +309,8 @@ export function ActionControl(props: { action: ActionSpec }): ReactNode {
     );
   } else if (action.as === "toggle") {
     // A toggle whose state no expression names is drawn off (`toggle_state_unknown` reports it).
-    const on = action.checked !== undefined ? truthy(evaluate(action.checked, scope.values)) : false;
+    // Read as the terminal reads it: in the filter grammar where it parses there (`holds`).
+    const on = action.checked !== undefined ? holds(action.checked, scope.values) : false;
     control = (
       <label className="ui-toggle" data-ui-path={useUiPath(path)}>
         <input type="checkbox" checked={on} onChange={() => start()} />
