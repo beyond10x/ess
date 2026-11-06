@@ -1,4 +1,4 @@
-#	models=448	lines=611
+#	models=450	lines=615
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	components=1
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor-service	REFUSED	95eb461796949834a9d78ef0c04afcab1acfa13dbf2dfd6da3af2f3c93549630:687
 crates/edge/ess-cli/tests/fixtures/coverage-producers/inputs/models/billing/system.yaml	ASSEMBLE
@@ -248,6 +248,10 @@ crates/verify/ess-conformance/tests/fixtures/input-guard-overlap.yaml	components
 crates/verify/ess-conformance/tests/fixtures/input-refusal-beside-exhaustive-partition.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/keypad.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/latest-correlated-record.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/list-identity-guard-beside-creates.yaml	components=1
+crates/verify/ess-conformance/tests/fixtures/list-identity-guard-beside-creates.yaml	demo-service	REFUSED	f3bf81a300a8398a8f68034b7a30c41ca0138106bee5a8c66dcd1fe0ac6468dc:1233
+crates/verify/ess-conformance/tests/fixtures/list-identity-guard-beside-updates.yaml	components=1
+crates/verify/ess-conformance/tests/fixtures/list-identity-guard-beside-updates.yaml	demo-service	REFUSED	f3bf81a300a8398a8f68034b7a30c41ca0138106bee5a8c66dcd1fe0ac6468dc:1233
 crates/verify/ess-conformance/tests/fixtures/list-of-references.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/minted-value-sources.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/mutation-arms.yaml	components=0

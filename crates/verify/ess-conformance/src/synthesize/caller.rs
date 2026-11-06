@@ -2245,8 +2245,10 @@ impl<'a> Identities<'a> {
             }
             if sending.iter().all(|sent| {
                 super::keeps_branch(self.ir, sent.command, &sent.input, sent.field, &value)
-                    && tested
-                        .is_none_or(|tested| keeps_stored_branch(self.ir, tested, sent, &value))
+                    && tested.is_none_or(|tested| {
+                        keeps_stored_branch(self.ir, tested, sent, &value)
+                            && keeps_listed_branch(self.ir, tested, sent, &value)
+                    })
             }) {
                 return Some(value);
             }
@@ -2513,7 +2515,12 @@ fn only_members(old: &Node, drawn: &Node, paths: &BTreeSet<String>) -> Option<No
 /// decide the one under test, and the input of every step of that run sending it: what a
 /// stored-row guard of it reads is the row those inputs address.
 struct Tested<'t> {
+    command: &'t ResolvedCommand,
     branches: &'t [ResolvedOutcome],
+    /// Each step's input as the literals it sends, a list's captured instances read as the
+    /// identities their creating steps sent: what an input guard over a list of identities reads
+    /// (beyond10x/ess#761). A value that is neither, and a list holding one, is left out.
+    listed: Vec<BTreeMap<String, Node>>,
     /// Each step's input, every value the literal it is or names: an instance a step captured is
     /// the identity its creating step sent, where that step sent it as a literal. `None` where it
     /// is neither.
@@ -2523,13 +2530,14 @@ struct Tested<'t> {
 impl<'t> Tested<'t> {
     fn of(
         ir: &EssIr,
-        command: &ResolvedCommand,
+        command: &'t ResolvedCommand,
         branches: &'t [ResolvedOutcome],
         steps: &'t [ScenarioStep],
     ) -> Self {
         let mut captured: BTreeMap<&InstanceName, &Node> = BTreeMap::new();
         let mut last: Option<(&ResolvedCommand, &BTreeMap<String, ScenarioValue>)> = None;
         let mut inputs = Vec::new();
+        let mut listed = Vec::new();
         for step in steps {
             match step {
                 ScenarioStep::ExecuteCommand {
@@ -2543,6 +2551,7 @@ impl<'t> Tested<'t> {
                         .find(|known| known.name.to_string() == sent.to_string())
                         .map(|known| (known, input));
                     if sent.to_string() == command.name.to_string() {
+                        listed.push(resolved(input, &captured));
                         inputs.push(
                             input
                                 .iter()
@@ -2591,7 +2600,12 @@ impl<'t> Tested<'t> {
                 _ => {}
             }
         }
-        Tested { branches, inputs }
+        Tested {
+            command,
+            branches,
+            listed,
+            inputs,
+        }
     }
 
     /// Whether a step of the run sending the command under test may address `row` in `by`: where
@@ -2629,6 +2643,72 @@ fn instance_input<'o>(
                 _ => None,
             }),
     }
+}
+
+/// `input` as the literals it sends, an instance and each list item naming one read as the
+/// identity `captured` holds for it; a value that is neither, or a list holding one, left out.
+fn resolved(
+    input: &BTreeMap<String, ScenarioValue>,
+    captured: &BTreeMap<&InstanceName, &Node>,
+) -> BTreeMap<String, Node> {
+    let one = |value: &ScenarioValue| match value {
+        ScenarioValue::Literal { value } => Some(value.clone()),
+        ScenarioValue::Instance { instance } => captured.get(instance).map(|held| (*held).clone()),
+        _ => None,
+    };
+    input
+        .iter()
+        .filter_map(|(name, value)| {
+            let value = match value {
+                ScenarioValue::List { items } => {
+                    Node::Seq(items.iter().map(one).collect::<Option<Vec<_>>>()?)
+                }
+                other => one(other)?,
+            };
+            Some((name.clone(), value))
+        })
+        .collect()
+}
+
+/// Whether the redraw of `sent`'s value to `new` leaves every `when:` guard of the command under
+/// test over a list holding that identity deciding as it did (beyond10x/ess#761): the list's
+/// elements are the identities of the rows the run created, so a guard over them
+/// (`exists p in permissions: p == "telephony"`) reads the value redrawn. Decided on the values
+/// the step sends as literals alone, as [`keeps_stored_branch`] decides a stored row.
+fn keeps_listed_branch(ir: &EssIr, tested: &Tested<'_>, sent: &Sent<'_, '_>, new: &Node) -> bool {
+    let old = sent.value;
+    let decide = |predicate: &Predicate, input: &BTreeMap<String, Node>| {
+        let facts = crate::input::bind(
+            ir,
+            &tested.command.input,
+            input,
+            crate::input::Completeness::Partial,
+        )
+        .ok()?;
+        Some(predicate.evaluate(&crate::input::TypedFacts::new(
+            ir,
+            &tested.command.input,
+            facts,
+        )))
+    };
+    tested.listed.iter().all(|input| {
+        let mut moved = input.clone();
+        let mut changed = false;
+        for value in moved.values_mut() {
+            if let Node::Seq(items) = value {
+                for item in items.iter_mut().filter(|item| *item == old) {
+                    *item = new.clone();
+                    changed = true;
+                }
+            }
+        }
+        !changed
+            || tested
+                .branches
+                .iter()
+                .filter_map(crate::decision::when)
+                .all(|guard| decide(guard, input) == decide(guard, &moved))
+    })
 }
 
 /// Whether the redraw of `sent`'s value to `new` leaves every guard of the command under test

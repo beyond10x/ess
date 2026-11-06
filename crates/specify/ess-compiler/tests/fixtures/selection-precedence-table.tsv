@@ -1,4 +1,4 @@
-#	models=371	commands=742
+#	models=373	commands=748
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	ir=d47970055f083eda582673dfe528f0af87f902defa07339aa014f6c8d50be57f:5099
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor.core.Publish	default: accepted
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor.core.Receive	default: accepted
@@ -665,6 +665,14 @@ crates/verify/ess-conformance/tests/fixtures/keypad.yaml	keypad.dial.SendKeys	in
 crates/verify/ess-conformance/tests/fixtures/latest-correlated-record.yaml	ir=e5ca03db93153d0c79df03994437ff2e2df16254751811567682bdf24fba4717:28645
 crates/verify/ess-conformance/tests/fixtures/latest-correlated-record.yaml	idioms.correlated.Begin	existence: opened | default: superseded
 crates/verify/ess-conformance/tests/fixtures/latest-correlated-record.yaml	idioms.correlated.End	present_related: ambiguous, unmatched | accepting: carried, clamped | default: derived
+crates/verify/ess-conformance/tests/fixtures/list-identity-guard-beside-creates.yaml	ir=fd8a84b23948af9d3ed0c3f2f7ef3154dd280da6402ad6c64b32e090868bb51c:27511
+crates/verify/ess-conformance/tests/fixtures/list-identity-guard-beside-creates.yaml	demo.role.DefineRole	present_related: unknown-permission | accepting: defined-with-telephony | default: defined
+crates/verify/ess-conformance/tests/fixtures/list-identity-guard-beside-creates.yaml	demo.role.SupplyPermission	default: supplied
+crates/verify/ess-conformance/tests/fixtures/list-identity-guard-beside-creates.yaml	demo.role.UpdateRolePermissions	existence: not-found | present_related: unknown-permission | accepting: updated-with-telephony | default: updated
+crates/verify/ess-conformance/tests/fixtures/list-identity-guard-beside-updates.yaml	ir=232a0ca658a126fb8616fcd552ad8f3ca7913f827b54c4e3bf684b2cc602a0f1:24020
+crates/verify/ess-conformance/tests/fixtures/list-identity-guard-beside-updates.yaml	demo.role.DefineRole	present_related: unknown-permission | default: defined
+crates/verify/ess-conformance/tests/fixtures/list-identity-guard-beside-updates.yaml	demo.role.SupplyPermission	default: supplied
+crates/verify/ess-conformance/tests/fixtures/list-identity-guard-beside-updates.yaml	demo.role.UpdateRolePermissions	existence: not-found | present_related: unknown-permission | accepting: updated-with-telephony | default: updated
 crates/verify/ess-conformance/tests/fixtures/list-of-references.yaml	ir=b47cee86cc41230127050eb9ea953b24bbb904c44d7bae85587388388224ae03:12069
 crates/verify/ess-conformance/tests/fixtures/list-of-references.yaml	ledger.desk.AddService	default: added
 crates/verify/ess-conformance/tests/fixtures/list-of-references.yaml	ledger.desk.OpenIncident	present_related: unknown-service | default: opened

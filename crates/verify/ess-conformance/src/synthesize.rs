@@ -4816,14 +4816,22 @@ fn run_as(
             return Err(related_guard::unarranged());
         }
         // A refusal acting on no row has nothing of its own to arrange: the rows its list
-        // names are the whole arrangement.
+        // names are the whole arrangement. Beside a sibling acting on a row the input names, it
+        // is sent for such a row, which is checked before the list is read (beyond10x/ess#761);
+        // the not-found branch alone is sent for none.
         let (mut setup, input) = if outcome.subject.is_none() && outcome.error.is_some() {
             let input = candidates(ir, command, &[], Distinction::PLAIN)
                 .map_err(RefusalCause::NoWitness)?
                 .into_iter()
                 .next()
                 .ok_or_else(related_guard::unarranged)?;
-            (Setup::none(), input)
+            let beside = (outcome.condition != ResolvedCondition::UnknownInstance)
+                .then(|| {
+                    related_guard::beside_acting(ir, command, outcome, actors, Distinction::PLAIN)
+                })
+                .flatten()
+                .transpose()?;
+            (beside.unwrap_or_else(Setup::none), input)
         } else {
             arranged_as(ir, command, outcome, actors, routed, witness)?
         };
@@ -7411,6 +7419,22 @@ fn created_owned(
             })
         } else {
             Ok(match input {
+                // Sent the empty list, as every driver is ([`invoke`], beyond10x/ess#761).
+                Some(input)
+                    if related_list::refuted_by_empty(
+                        ir,
+                        creator.command,
+                        creator.outcome,
+                        input,
+                    ) =>
+                {
+                    return Err(Unreachable::Unwitnessable {
+                        outcome: OutcomeRef::new(
+                            CommandRef::new(creator.command.name.clone()),
+                            creator.outcome.name.clone(),
+                        ),
+                    })
+                }
                 Some(input) => {
                     invoke_created_with(ir, creator, actors, distinction, bound, input, &chain)?
                 }
@@ -7619,6 +7643,14 @@ fn invoke(
     .map_err(|_| Unreachable::Unwitnessable {
         outcome: outcome_ref.clone(),
     })?;
+    // A driver of a command guarding on a list of references is sent the empty list
+    // ([`related_list::empty`]): a branch that list cannot select gives way to the next driver
+    // (beyond10x/ess#761).
+    if related_list::refuted_by_empty(ir, driver.command, driver.outcome, &input) {
+        return Err(Unreachable::Unwitnessable {
+            outcome: outcome_ref,
+        });
+    }
     // An external branch driven on a row is sent an input no sibling the row selects claims, as
     // its own scenario is (beyond10x/ess#464): one reading a related row is run with a present
     // row arranged first, and one beside branches selected by the held state with an input they
