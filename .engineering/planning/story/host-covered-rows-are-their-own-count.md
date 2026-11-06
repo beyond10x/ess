@@ -7,13 +7,13 @@ title: Rows a host slot reaches are counted as host-covered, never as covered
 summary: 'ADR section 2: a third coverage count in the text and JSON reports'
 tags:
 - backlog
-- queue-0.90.0
+- queue-0.91.0
 - rank-4
 relations:
 - derived_from: design:ui-host-slots
 - serves: vision:O2
 - depends_on: story:a-ui-document-declares-a-host-slot
-revision: 3
+revision: 4
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-06T22:18:56Z", actor: "human:timo", revision: 2}
 - {from: "proposed", to: "active", at: "2026-11-06T22:18:56Z", actor: "human:timo", revision: 3}

@@ -3,7 +3,7 @@ format: aep.planning-md/3
 id: approval-record:ess-0900-wave
 kind: approval-record
 status: approved
-title: 'ESS 0.90.0 runs wave-2026-11-07-ess: issue 761, host-slot stories 1-4, two runtime fixes and two gap items in four units'
+title: 'ESS 0.90.0 runs wave-2026-11-07-ess: issue 761, host-slot stories 1-2 and two runtime fixes in three units (five-story cap)'
 summary: Coordinator approval of 2026-11-06 under the operator grant, with units and build terms
 tags:
 - non-interactive
@@ -17,7 +17,7 @@ relations:
 - decides: story:a-client-row-filter-keeps-its-rows-without-paging-and-by-path-id
 - decides: story:a-column-may-show-a-plain-string-row
 - decides: story:a-client-paged-collection-offers-sizes-and-a-range
-revision: 2
+revision: 4
 transitions:
 - {from: "draft", to: "approved", at: "2026-11-06T22:18:50Z", actor: "human:timo", revision: 2}
 ---
@@ -74,3 +74,22 @@ section read, U4 `display`. Conflicts are resolved at merge into the integration
   and a tree is cleaned when it merges or when a disk notice names it.
 - `build-slot.sh` caps concurrent cargo at 3. Under host I/O pressure, cargo runs one at a time
   under `nice -n 10 ionice -c3` with `RUST_TEST_THREADS=4`.
+
+## Amendment: five-story cap
+
+The ess `AGENTS.md` caps a wave at five stories, and this record first listed nine. The wave is cut
+to five stories in three units:
+
+- U1: issue 761.
+- U2: host-slot stories 1 and 2.
+- U3: the two runtime fixes.
+
+These four stories are accepted and active, but are not delivered by this wave. They lead 0.91.0,
+tagged queue-0.91.0:
+
+- story:host-covered-rows-are-their-own-count
+- story:a-host-slot-reads-and-commands-only-what-it-declares
+- story:a-column-may-show-a-plain-string-row
+- story:a-client-paged-collection-offers-sizes-and-a-range
+
+Host-slot stories 5 and 6 and gap B4-19 follow them.
