@@ -76,7 +76,7 @@ const tick = () => new Promise((resolve) => setTimeout(resolve, 5));
 const root = React.__root(jsx(FilesPage, {}));
 async function settle() { for (let i = 0; i < 4; i++) { root.settle(); await tick(); } root.settle(); }
 const textOf = (node) => (typeof node === "string" ? node : (node.children || []).map(textOf).join(""));
-const boxes = () => root.find((node) => node.tag === "input" && node.props.type === "checkbox");
+const boxes = () => root.find((node) => node.tag === "input" && node.props.type === "checkbox" && node.props["aria-label"] === "Select row");
 (async () => {
   await settle();
   assert.strictEqual(boxes().length, 3, `three rows to select: ${root.text()}`);

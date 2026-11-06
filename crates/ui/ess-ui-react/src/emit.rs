@@ -1198,7 +1198,19 @@ impl<'d> Gen<'d> {
                     .expand
                     .as_deref()
                     .map(|node| self.node(&at.child("expand"), node, &Opts::own()));
-                let item = self.node_fragment(at, "item", &c.item);
+                // Each `item` node by its name: a table draws it in a column of its own.
+                let items = (!c.item.is_empty()).then(|| {
+                    let rendered = self.node_list(at, "item", &c.item);
+                    ts::array(c.item.iter().zip(rendered).map(|(node, rendered)| {
+                        ts::object([
+                            (
+                                "name",
+                                Some(ts::string(node.common.name.as_deref().unwrap_or(""))),
+                            ),
+                            ("node", Some(rendered)),
+                        ])
+                    }))
+                });
                 let reorder = c
                     .reorder
                     .as_ref()
@@ -1224,7 +1236,7 @@ impl<'d> Gen<'d> {
                     .opt("bulkActions", bulk_actions)
                     .opt("actions", actions)
                     .opt("expand", expand)
-                    .opt("item", item)
+                    .opt("items", items)
                     .opt("reorder", reorder)
                     .opt("groupBy", quoted(c.group_by.as_ref()))
                     .opt(
