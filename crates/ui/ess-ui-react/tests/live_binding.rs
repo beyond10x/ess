@@ -133,7 +133,9 @@ fn fnv(text: &str) -> u64 {
 /// layer that saves on change, and a help link or a `link` primitive's address goes through
 /// `safeUrl`. `form.tsx` and the whole-project digest re-pinned for
 /// story:a-journey-step-reaches-every-control-a-page-declares: a form sends a toggle never touched
-/// as `false` when its draft declares no default.
+/// as `false` when its draft declares no default. The whole-project digest re-pinned for
+/// story:a-collection-draws-the-controls-it-declares: the collection runtime and its stylesheet draw
+/// the declared sort, expand, reorder, selection and column controls.
 const PLAIN: [(&str, u64); 7] = [
     ("README.md", 0xdae6_c3b6_7e5c_2d28),
     ("src/main.tsx", 0x6fd5_ef21_0230_ebac),
@@ -143,7 +145,7 @@ const PLAIN: [(&str, u64); 7] = [
     ("src/runtime/data.ts", 0x036a_4d67_6dc4_1ac6),
     ("www/index.html", 0x5972_6d4a_5ee2_5ce2),
 ];
-const PLAIN_PROJECT: u64 = 0x21db_d543_5555_4dbe;
+const PLAIN_PROJECT: u64 = 0x4fa9_3922_39cb_d52d;
 
 #[test]
 fn without_a_model_the_project_is_byte_identical() {
