@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-command-route-takes-one-input-as-its-bare-request-body
 kind: story
-status: draft
+status: active
 title: A command route takes one input as its bare request body
 summary: 'ess-http/1 request.body: input.<field>, the rest on the path; OpenAPI, Rust and Go servers and both UIs (beyond10x/ess#748 part 1)'
 tags:
@@ -28,7 +28,10 @@ scope:
   path: crates/ui/ess-ui-react/templates/runtime/data.ts.tmpl
 - confidence: inferred
   path: crates/ui/ess-ui-tui/src/http.rs
-revision: 8
+revision: 10
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-06T10:55:30Z", actor: "human:timo", revision: 9}
+- {from: "proposed", to: "active", at: "2026-11-06T10:55:31Z", actor: "human:timo", revision: 10}
 ---
 ## Outcome
 
