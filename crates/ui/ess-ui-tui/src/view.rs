@@ -866,7 +866,7 @@ impl App {
                     lines.extend(self.node_lines(node, &inner));
                 }
                 let actions = record_actions(record, tab);
-                lines.extend(self.action_hint(&actions, &inner.ctx));
+                lines.extend(self.action_hint(&actions, &inner.ctx, ""));
                 lines.extend(self.refusal_lines(place.ui, Refusing::Actions(&actions)));
                 lines
             }
@@ -918,7 +918,7 @@ impl App {
                 }
                 let row = rows.get(cursor);
                 let ctx = Ctx { row, ..place.ctx };
-                lines.extend(self.action_hint(&board.item_actions, &ctx));
+                lines.extend(self.action_hint(&board.item_actions, &ctx, ""));
                 lines.extend(self.refusal_lines(place.ui, Refusing::Actions(&board.item_actions)));
                 lines
             }
@@ -1066,8 +1066,15 @@ impl App {
         lines
     }
 
-    fn action_hint(&self, actions: &[ess_ui::Action], ctx: &Ctx<'_>) -> Vec<Line<'static>> {
-        let keyed = self.action_keys(actions, ctx);
+    /// The keyed actions of a view, as its key handler reaches them: none takes one of the letters
+    /// of `view_keys`, which the view takes itself.
+    fn action_hint(
+        &self,
+        actions: &[ess_ui::Action],
+        ctx: &Ctx<'_>,
+        view_keys: &str,
+    ) -> Vec<Line<'static>> {
+        let keyed = self.action_keys_besides(actions, ctx, view_keys);
         if keyed.is_empty() {
             return Vec::new();
         }
@@ -1427,7 +1434,7 @@ impl App {
                 place,
             );
         }
-        lines.extend(self.action_hint(&collection.row_actions, &row_ctx));
+        lines.extend(self.action_hint(&collection.row_actions, &row_ctx, ""));
         lines.extend(self.refusal_lines(place.ui, Refusing::Actions(&collection.row_actions)));
         let bulk = crate::app::bulk_keys(&collection.bulk_actions);
         if !bulk.is_empty() {
@@ -1691,10 +1698,10 @@ impl App {
             dim(),
         ));
         lines.extend(self.refusal_lines(place.ui, Refusing::Form));
-        lines.extend(self.action_hint(&form.actions, &place.ctx));
+        lines.extend(self.action_hint(&form.actions, &place.ctx, crate::app::FORM_KEYS));
         lines.extend(self.refusal_lines(place.ui, Refusing::Actions(&form.actions)));
         for group in &form.groups {
-            lines.extend(self.action_hint(&group.actions, &place.ctx));
+            lines.extend(self.action_hint(&group.actions, &place.ctx, crate::app::FORM_KEYS));
             lines.extend(self.refusal_lines(place.ui, Refusing::Actions(&group.actions)));
         }
         if let Some(result) = &form.result {
@@ -1818,7 +1825,7 @@ impl App {
                 style(BarItem::Input(index)),
             ));
         }
-        let mut extra = self.action_hint(&bar.actions, &place.ctx);
+        let mut extra = self.action_hint(&bar.actions, &place.ctx, crate::app::BAR_KEYS);
         if bar.offers_reset() {
             let label = bar.reset_label().unwrap_or("reset all").to_owned();
             extra.push(Line::styled(label, dim()));

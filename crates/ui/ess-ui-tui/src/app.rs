@@ -390,6 +390,13 @@ enum Target {
 /// Letters no row action may take, because navigation uses them.
 const RESERVED: &str = "jknpsSxqgRJK/: []";
 
+/// Letters a filter bar takes before its own actions: `h` and `l` move between its items.
+pub(crate) const BAR_KEYS: &str = "hl";
+
+/// Letters a form takes before its own actions: `h` and `l` move a multiple choice field's option,
+/// `i` edits the field under the cursor.
+pub(crate) const FORM_KEYS: &str = "hli";
+
 /// A running `ess-ui/1` document.
 pub struct App {
     pub(crate) doc: Document,
@@ -628,8 +635,14 @@ impl App {
             .map_or(Lifecycle::Failed, |section| self.lifecycle(section))
     }
 
-    /// Opens a page; params the page does not declare are dropped.
+    /// Opens a page; params the page does not declare are dropped. It opens as its route does with
+    /// no query: a state it keeps in the URL holds its default, whatever an earlier link set.
     pub fn open_page(&mut self, page: &str, params: &[(&str, &str)]) {
+        self.store.forget_location(&format!("pages/{page}"));
+        self.enter_page(page, params);
+    }
+
+    fn enter_page(&mut self, page: &str, params: &[(&str, &str)]) {
         let declared = self
             .doc
             .pages
@@ -645,9 +658,10 @@ impl App {
         self.pump();
     }
 
-    /// Opens a page as a link carrying page state in its query does: each of `state` is a state
+    /// Opens a page as a link carrying page state in its query opens it: each of `state` is a state
     /// the page keeps in the URL (`store: url`), set before the page reads. A state the page does
-    /// not declare, or keeps elsewhere, is refused and nothing is opened.
+    /// not declare, or keeps elsewhere, is refused and nothing is opened. A URL state the link does
+    /// not carry holds its default.
     pub fn open_page_with_state(
         &mut self,
         page: &str,
@@ -670,10 +684,11 @@ impl App {
             }
             paths.push(path);
         }
+        self.store.forget_location(&format!("pages/{page}"));
         for (path, value) in paths.into_iter().zip(state.values()) {
             self.store.set(&path, value.clone(), self.adapter.as_mut());
         }
-        self.open_page(page, params);
+        self.enter_page(page, params);
         Ok(())
     }
 
@@ -1742,7 +1757,18 @@ impl App {
 
     /// The row actions of a collection that apply to `row`, with their keys.
     pub(crate) fn action_keys(&self, actions: &[Action], ctx: &Ctx<'_>) -> Vec<(char, Action)> {
-        let mut taken = String::new();
+        self.action_keys_besides(actions, ctx, "")
+    }
+
+    /// The actions of a view that takes the letters of `view_keys` itself ([`BAR_KEYS`],
+    /// [`FORM_KEYS`]) before its actions, with their keys: no action is keyed by one of them.
+    pub(crate) fn action_keys_besides(
+        &self,
+        actions: &[Action],
+        ctx: &Ctx<'_>,
+        view_keys: &str,
+    ) -> Vec<(char, Action)> {
+        let mut taken = view_keys.to_owned();
         let mut keyed = Vec::new();
         for action in actions {
             if !self.visible(action.visible.as_ref().map(|expr| expr.0.as_str()), ctx) {
@@ -2855,11 +2881,14 @@ impl App {
             }
             KeyCode::Char(direction @ ('J' | 'K')) if moves => {
                 if let (Some(reorder), Some(row)) = (&collection.reorder, &row) {
+                    // What the generated React project's move buttons send: the row's id and
+                    // `delta`, -1 one place up and 1 one place down. Neither the document's
+                    // `reorder` nor what the terminal reads of the model declares another input.
                     let mut input = BTreeMap::new();
                     input.insert("id".to_owned(), row["id"].clone());
                     input.insert(
-                        "direction".to_owned(),
-                        Value::String(if direction == 'J' { "down" } else { "up" }.into()),
+                        "delta".to_owned(),
+                        Value::Number(if direction == 'J' { 1_i64 } else { -1 }.into()),
                     );
                     if let Some(refused) = self.run_command(&reorder.does, &input) {
                         self.notify(format!("{} refused: {}", reorder.does, refused.text));
@@ -2998,7 +3027,7 @@ impl App {
             // The bar's own actions, by the key its hint line offers.
             KeyCode::Char(letter) => {
                 if let Some((_, action)) = self
-                    .action_keys(&bar.actions, &ctx)
+                    .action_keys_besides(&bar.actions, &ctx, BAR_KEYS)
                     .into_iter()
                     .find(|(key, _)| *key == letter)
                 {
@@ -3203,7 +3232,7 @@ impl App {
             }
             KeyCode::Char(letter) => {
                 if let Some((_, action)) = self
-                    .action_keys(&form.actions, &ctx)
+                    .action_keys_besides(&form.actions, &ctx, FORM_KEYS)
                     .into_iter()
                     .find(|(key, _)| *key == letter)
                 {
@@ -3920,12 +3949,16 @@ impl App {
     // ── prompts ─────────────────────────────────────────────────────────────────────────────
 
     /// Sends the file at `path` to an upload's command as the generated React project does:
-    /// `{name, content}`, its file name and its text. A file that does not read is notified and
-    /// sends nothing.
+    /// `{name, content}`, its file name and its text, decoded as the browser's `File.text()`
+    /// decodes it: UTF-8 without a leading byte order mark, a byte that is not UTF-8 replaced by
+    /// U+FFFD. A file that does not read is notified and sends nothing.
     fn upload(&mut self, does: &str, path: &str) {
         let file = Path::new(path.trim());
-        let content = match std::fs::read_to_string(file) {
-            Ok(content) => content,
+        let content = match std::fs::read(file) {
+            Ok(bytes) => {
+                let bytes = bytes.strip_prefix(b"\xEF\xBB\xBF").unwrap_or(&bytes);
+                String::from_utf8_lossy(bytes).into_owned()
+            }
             Err(error) => {
                 self.notify(format!("upload for {does}: {}: {error}", file.display()));
                 return;
@@ -4294,9 +4327,6 @@ fn put(target: &mut Value, segments: &[&str], next: Value) {
     put(&mut target[*head], rest, next);
 }
 
-/// A form field's text typed by its `as`, as the React renderer types it: `number` text is a
-/// number (empty is no value) and `tags` text a comma-separated list. Text that does not parse
-/// as a number is sent as typed.
 /// Whether `field` is drawn `as: choice` with a choice of many values.
 pub(crate) fn is_multiple_choice(field: &Field) -> bool {
     field.field_as.as_deref() == Some("choice")
@@ -4324,6 +4354,9 @@ fn picked_into(value: &Value, picked: Value, multiple: bool) -> Value {
     Value::Sequence(items)
 }
 
+/// A form field's text typed by its `as`, as the React renderer types it: `number` text is a
+/// number (empty is no value) and `tags` text a comma-separated list. Text that does not parse
+/// as a number is sent as typed.
 fn typed(field_as: Option<&str>, value: Value) -> Value {
     let Value::String(text) = &value else {
         return value;
