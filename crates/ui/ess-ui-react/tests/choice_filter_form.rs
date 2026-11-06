@@ -273,6 +273,32 @@ fn a_read_given_neither_the_search_nor_a_record_holding_it_draws_no_search_box()
 }
 
 #[test]
+fn a_search_a_client_filter_takes_draws_its_box_and_narrows_the_loaded_rows() {
+    let filtered = "      - name: list
+        component: collection
+        reads: {view: shelf.Items, paging: client, filter: row.title contains state.search}
+        columns: [title]";
+    run(
+        "search_filter",
+        &document(
+            "list_page",
+            "      search: {type: string, class: page_state, store: memory}",
+            filtered,
+        ),
+        r"
+  await settle();
+  const boxes = root.find((node) => node.tag === 'input' && node.props.type === 'search');
+  assert.equal(boxes.length, 1, `a client filter takes the search, so the box is drawn: ${root.text()}`);
+  assert.ok(/Alpha/.test(root.text()) && /Beta/.test(root.text()), `an empty search keeps every row: ${root.text()}`);
+  boxes[0].props.onChange({ target: { value: 'ALP' } });
+  await settle();
+  assert.ok(/Alpha/.test(root.text()), `the row holding the search stays: ${root.text()}`);
+  assert.ok(!/Beta/.test(root.text()), `the row without it is hidden: ${root.text()}`);
+",
+    );
+}
+
+#[test]
 fn a_tree_choice_sends_the_chosen_value() {
     let sections = "      - name: form
         component: form

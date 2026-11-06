@@ -1,5 +1,5 @@
 // Binding expressions (`expressions` in the ess-ui/1 schema): short paths rooted at a known
-// name, plus `==`, `!=`, `in [..]`, `not`, `and`, `or`, literals and calls such as
+// name, plus `==`, `!=`, `in [..]`, `contains` (in a filter), `not`, `and`, `or`, literals and calls such as
 // `same_as(list)`, `matches(params)` and `actor.may(<command>)`. A bare word is its own text, so
 // `row.status == overdue` compares with the text "overdue"; a string that does not parse as an
 // expression, or reads no path and calls no function form, is literal text.
@@ -79,7 +79,8 @@ function tokenize(text: string, filter = false): Token[] {
 
 class Parser {
   private index = 0;
-  constructor(private readonly tokens: Token[]) {}
+  /** `filter` admits the predicate-only `contains`; a display expression keeps it as text. */
+  constructor(private readonly tokens: Token[], private readonly filter = false) {}
 
   parse(): Ast {
     const ast = this.or();
@@ -146,6 +147,10 @@ class Parser {
     if (this.isWord("in")) {
       this.index += 1;
       return { kind: "binary", op: "in", left, right: this.primary() };
+    }
+    if (this.filter && this.isWord("contains")) {
+      this.index += 1;
+      return { kind: "binary", op: "contains", left, right: this.primary() };
     }
     return left;
   }
@@ -236,7 +241,7 @@ function filterForm(ast: Ast): boolean {
   switch (ast.kind) {
     case "call": return false;
     case "literal": return true;
-    case "path": return ast.segments.length === 1 ? !["and", "or", "not", "in"].includes(ast.segments[0]) : ["row", "params", "state", "shell", "args"].includes(ast.segments[0]);
+    case "path": return ast.segments.length === 1 ? !["and", "or", "not", "in", "contains"].includes(ast.segments[0]) : ["row", "params", "state", "shell", "args"].includes(ast.segments[0]);
     case "list": return ast.items.every(filterForm);
     case "not": return filterForm(ast.operand);
     case "binary": return (ast.op !== "in" || ast.right.kind === "list") && filterForm(ast.left) && filterForm(ast.right);
@@ -248,7 +253,7 @@ export function keeps(text: string, values: Record<string, unknown>): boolean {
   try {
     const tokens = tokenize(text, true);
     if (tokens.some((token, at) => token.kind === "op" && (["{", "}"].includes(token.text) || (token.text === "," && tokens[at + 1]?.kind === "op" && (tokens[at + 1] as {text: string}).text === "]")))) return false;
-    const ast = new Parser(tokens).parse();
+    const ast = new Parser(tokens, true).parse();
     return (ast.kind === "not" || ast.kind === "binary") && filterForm(ast) && run(filterLiterals(ast), values) === true;
   } catch { return false; }
 }
@@ -286,6 +291,18 @@ function equal(left: unknown, right: unknown): boolean {
     return stableKey(left) === stableKey(right);
   }
   return String(left ?? "") === String(right ?? "");
+}
+
+/**
+ * Whether `text` holds every whitespace-separated word of `search`, ignoring case; a search with no
+ * words keeps every row. Values are read as text the way `==` reads them.
+ */
+function containsWords(text: unknown, search: unknown): boolean {
+  const haystack = String(text ?? "").toLowerCase();
+  return String(search ?? "")
+    .split(/\s+/)
+    .filter((word) => word !== "")
+    .every((word) => haystack.includes(word.toLowerCase()));
 }
 
 function run(ast: Ast, values: Record<string, unknown>): unknown {
@@ -331,6 +348,9 @@ function run(ast: Ast, values: Record<string, unknown>): unknown {
       }
       if (ast.op === "!=") {
         return !equal(left, right);
+      }
+      if (ast.op === "contains") {
+        return containsWords(left, right);
       }
       if (Array.isArray(right)) {
         return right.some((entry) => equal(left, entry));
