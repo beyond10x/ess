@@ -3,7 +3,7 @@
 import { useState, type ChangeEvent, type ReactNode } from "react";
 import { useUiPath } from "./core";
 import { display, formatDuration, formatValue, safeUrl, ScopeLayer, useScope } from "./core";
-import { useRead, type ReadSpec } from "./data";
+import { filterRead, useRead, type ReadSpec } from "./data";
 import { evaluate, truthy } from "./expr";
 import { getPath, isObject, stableKey } from "./json";
 
@@ -283,7 +283,9 @@ function TagsInput(props: { field: FieldSpec; value: unknown; text: string; set:
   const scope = useScope();
   const { field, set } = props;
   const held = Array.isArray(props.value) ? props.value.map((tag) => String(tag)) : [];
-  const read = useRead(field.suggests?.reads, scope.values, field.suggests !== undefined);
+  const raw = useRead(field.suggests?.reads, scope.values, field.suggests !== undefined);
+  // The read's client filter hides the rows it excludes, as on every other read.
+  const read = filterRead(raw, field.suggests?.reads.filter, scope.values);
   const offered: string[] = [];
   for (const row of field.suggests ? read.rows : []) {
     const suggestion = suggestionOf(row, field.suggests?.value);
