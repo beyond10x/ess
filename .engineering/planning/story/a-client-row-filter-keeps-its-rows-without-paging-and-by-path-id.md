@@ -6,10 +6,10 @@ status: active
 title: A client row filter keeps its rows on an unpaged read and by the page path id
 summary: Runtime fix taken upstream ("rowFilters paging none + path id"); reproduce first
 tags:
-- queue-0.90.0
+- needs-repro
 relations:
 - serves: vision:O2
-revision: 3
+revision: 5
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-06T22:19:00Z", actor: "human:timo", revision: 2}
 - {from: "proposed", to: "active", at: "2026-11-06T22:19:01Z", actor: "human:timo", revision: 3}
@@ -44,3 +44,17 @@ apply the filter.
 - inferred: `crates/ui/ess-ui-react/templates/runtime/data.ts.tmpl` (`filterRead`),
   `crates/ui/ess-ui-react/templates/runtime/core.tsx.tmpl` (section read),
   `crates/ui/ess-ui-react/tests/read_filter.rs`.
+
+## Status note
+
+Not reproduced on 0.89.0. In unit U3 of wave-2026-11-07-ess, both candidate cases passed in the
+React project and in the terminal:
+
+- a client row filter on a read with `paging: none`;
+- a filter on the page's path id, including after navigating to another id.
+
+A mutation of `filterRead` turned the check red, so the check can fail. The repro tests were not
+applied. The lead keeps them outside the repository as `story2-repro-tests.patch`.
+
+By the coordinator's decision of 2026-11-07, the story leaves 0.90.0. The reporter is asked for
+its exact document and data, and the story waits for that answer (tag `needs-repro`).

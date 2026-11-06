@@ -17,7 +17,7 @@ relations:
 - decides: story:a-client-row-filter-keeps-its-rows-without-paging-and-by-path-id
 - decides: story:a-column-may-show-a-plain-string-row
 - decides: story:a-client-paged-collection-offers-sizes-and-a-range
-revision: 4
+revision: 5
 transitions:
 - {from: "draft", to: "approved", at: "2026-11-06T22:18:50Z", actor: "human:timo", revision: 2}
 ---
@@ -93,3 +93,16 @@ tagged queue-0.91.0:
 - story:a-client-paged-collection-offers-sizes-and-a-range
 
 Host-slot stories 5 and 6 and gap B4-19 follow them.
+
+## Amendment: row filter out, object tag drafted
+
+On 2026-11-07, the coordinator decided under the operator's grant:
+
+- story:a-client-row-filter-keeps-its-rows-without-paging-and-by-path-id leaves this wave. It was
+  not reproduced on 0.89.0; the repro attempts are in a patch kept by the lead. The reporter is
+  asked for its exact document and data.
+- The object-tag gap the U3 implementor found becomes a draft:
+  story:the-terminal-draws-an-object-tag-by-its-label.
+- U3 goes to the adversary on story:a-null-tag-draws-no-chip only.
+
+The wave now delivers four stories: issue 761, host-slot stories 1 and 2, and the null tag chip.
