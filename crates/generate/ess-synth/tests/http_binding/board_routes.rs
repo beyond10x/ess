@@ -1,11 +1,14 @@
 //! A board's card priorities sent as one bare request body beside the board in the path
-//! (`story:a-command-route-takes-one-input-as-its-bare-request-body`, beyond10x/ess#748), sent to
-//! both generated servers.
+//! (`story:a-command-route-takes-one-input-as-its-bare-request-body`, beyond10x/ess#748), and
+//! fixed sub-resources beside a card under one prefix, a literal taking precedence over a
+//! variable (`story:a-literal-path-segment-takes-precedence-over-a-variable-one`), sent to both
+//! generated servers.
 //!
 //! The shared model gains the board's types, events and commands, granted to `Clerk`, and the
 //! shared routes `SetCardPriorities` on `put /boards/{board_id}/cards/priority`, its list input
-//! the whole body. Every other route keeps the shared binding's answers, `refusals.malformed`
-//! (`400`, `{"error": "invalid_request"}`) among them.
+//! the whole body, `ArchiveCards` on `put /boards/{board_id}/cards/~archived` and `UpdateCard` on
+//! `put /boards/{board_id}/cards/{card_id}`. Every other route keeps the shared binding's
+//! answers, `refusals.malformed` (`400`, `{"error": "invalid_request"}`) among them.
 
 use std::collections::BTreeMap;
 
@@ -38,6 +41,9 @@ const MODEL_EDITS: &[(&str, &str)] = &[
     fields:
       - {name: board_id, type: shop.items.BoardId}
       - {name: card_id, type: shop.items.CardId}
+  - name: shop.items.CardsArchived
+    fields:
+      - {name: board_id, type: shop.items.BoardId}
   - name: shop.items.Approved
 ",
     ),
@@ -62,6 +68,14 @@ const MODEL_EDITS: &[(&str, &str)] = &[
         emits: [shop.items.CardUpdated]
         payload:
           shop.items.CardUpdated: {board_id: input.board_id, card_id: input.card_id}
+  - name: shop.items.ArchiveCards
+    input:
+      - {name: board_id, type: shop.items.BoardId}
+    outcomes:
+      - name: archived
+        emits: [shop.items.CardsArchived]
+        payload:
+          shop.items.CardsArchived: {board_id: input.board_id}
   - name: shop.items.Purge
 ",
     ),
@@ -70,6 +84,7 @@ const MODEL_EDITS: &[(&str, &str)] = &[
         "      - shop.items.Approve
       - shop.items.SetCardPriorities
       - shop.items.UpdateCard
+      - shop.items.ArchiveCards
 components:
 ",
     ),
@@ -78,20 +93,30 @@ components:
         "        - shop.items.Archive
         - shop.items.SetCardPriorities
         - shop.items.UpdateCard
+        - shop.items.ArchiveCards
 ",
     ),
     (
         "shop.items.Searched, shop.items.Approved]",
-        "shop.items.Searched, shop.items.Approved, shop.items.PrioritiesSet, shop.items.CardUpdated]",
+        "shop.items.Searched, shop.items.Approved, shop.items.PrioritiesSet, shop.items.CardUpdated, shop.items.CardsArchived]",
     ),
 ];
 
-/// The board's routes, after the shared ones.
+/// The board's routes, after the shared ones. `~archived` and `priority` are literals beside the
+/// variable `{card_id}` at one position; `{` sorts after `priority` and before `~archived`.
 const BOARD_ROUTES: &str = "  - command: shop.items.SetCardPriorities
     method: put
     path: /boards/{board_id}/cards/priority
     parameters: {board_id: input.board_id}
     request: {encoding: json, body: input.priorities}
+  - command: shop.items.UpdateCard
+    method: put
+    path: /boards/{board_id}/cards/{card_id}
+    parameters: {board_id: input.board_id, card_id: input.card_id}
+  - command: shop.items.ArchiveCards
+    method: put
+    path: /boards/{board_id}/cards/~archived
+    parameters: {board_id: input.board_id}
 ";
 
 const PRIORITIES: &str = r#"[{"id":"c-1","priority":1},{"id":"c-2","priority":2}]"#;
@@ -132,6 +157,24 @@ const REQUESTS: &[[&str; 7]] = &[
         "",
         "",
         "[",
+    ],
+    [
+        "card-c9",
+        "y",
+        "PUT",
+        "/boards/b-1/cards/c-9",
+        "",
+        "",
+        r#"{"title":"T"}"#,
+    ],
+    [
+        "cards-archived",
+        "y",
+        "PUT",
+        "/boards/b-1/cards/~archived",
+        "",
+        "",
+        "",
     ],
 ];
 
@@ -228,6 +271,35 @@ fn both_servers_decode_a_bare_array_body() {
                 "{label}: {answer:?}"
             );
         }
+    }
+}
+
+/// story:a-literal-path-segment-takes-precedence-over-a-variable-one: at the position a literal
+/// sits beside `{card_id}`, the literal route serves its own path, whether it sorts before `{`
+/// (`priority`) or after it (`~archived`), and every other card id reaches `UpdateCard`.
+#[test]
+fn both_servers_serve_the_literal_route_before_the_variable_one() {
+    for answer in answered("priorities-bare") {
+        assert_eq!(answer.status, 202, "{answer:?}");
+        assert_eq!(answer.json()["outcome"], "set", "{answer:?}");
+    }
+    for answer in answered("cards-archived") {
+        assert_eq!(answer.status, 202, "{answer:?}");
+        assert_eq!(answer.json()["outcome"], "archived", "{answer:?}");
+        assert_eq!(
+            shared::published(answer),
+            serde_json::json!({"board_id": "b-1"}),
+            "{answer:?}"
+        );
+    }
+    for answer in answered("card-c9") {
+        assert_eq!(answer.status, 202, "{answer:?}");
+        assert_eq!(answer.json()["outcome"], "updated", "{answer:?}");
+        assert_eq!(
+            shared::published(answer),
+            serde_json::json!({"board_id": "b-1", "card_id": "c-9"}),
+            "{answer:?}"
+        );
     }
 }
 

@@ -43,7 +43,6 @@ pub const CODES: &[&str] = &[
     "ESS-HTTP-008",
     "ESS-HTTP-009",
     "ESS-HTTP-010",
-    "ESS-HTTP-011",
     "ESS-HTTP-012",
     "ESS-HTTP-013",
     "ESS-HTTP-014",
@@ -3086,7 +3085,7 @@ impl Refusals {
 /// | `ESS-HTTP-008` | a path variable not mapped, mapped twice (two segments or two keys), reading a source another variable of the route already reads, or a mapping for no variable of the path |
 /// | `ESS-HTTP-009` | a source in the wrong namespace (`input.` for a command, `param.` for a view), naming no field, or of a type a segment cannot carry: `String`, `Integer`, an enum or an unconstrained newtype of one of them |
 /// | `ESS-HTTP-010` | two operations of one component on one method and template, variable names ignored, declared or derived |
-/// | `ESS-HTTP-011` | two templates of one component and method that a request path can both match, with a literal beside a variable at the first position they differ: a literal takes no precedence |
+/// | `ESS-HTTP-011` | reserved: until 0.88.0, two templates of one component and method that a request path can both match, a literal beside a variable at the first position they differ; from 0.89.0 the literal takes precedence there, which orders every such pair, so nothing is refused under it |
 /// | `ESS-HTTP-013` | an operation with no HTTP surface: a command no component accepts, a view no `reached_by: network` component serves |
 /// | `ESS-HTTP-014` | a command on `get` with an input field no variable of the path maps, unless its request is encoded `query` |
 /// | `ESS-HTTP-020` | at `routes[i].request.encoding`: an encoding outside `json`, `form` and `query`, `json` or `form` written on a `get` command, or `query` on a method other than `get` and `delete`; at `routes[i].request.unknown`: a value outside `refuse` and `ignore`, or `ignore` with a `json` body; at `routes[i].request`: `request` on a view; at `routes[i].request.body`: `body` on a view, beside `form` or `query`, or on a `get` command, a body that is not `input.<field>` naming an input field of the command, one that is `Optional` or that the path carries, and each other input field the path does not carry |
@@ -6778,30 +6777,31 @@ enum Clash {
     /// The same template once variable names are ignored (`ESS-HTTP-010`).
     Same,
     /// Different templates one request path matches both of, a literal beside a variable at the
-    /// zero-based position they first differ (`ESS-HTTP-011`).
-    Overlap(usize),
+    /// first position they differ, where the literal takes precedence
+    /// (`story:a-literal-path-segment-takes-precedence-over-a-variable-one`).
+    Overlap,
 }
 
 /// Whether two templates meet. They can only when they have as many segments and no position
-/// holds two different literals; then they are the same template, or they overlap at the first
+/// holds two different literals; then they are the same template, or they overlap: at the first
 /// position one holds a literal and the other a variable, after a prefix equal but for variable
-/// names.
+/// names, the literal takes precedence.
 fn clash(left: &[Segment], right: &[Segment]) -> Option<Clash> {
     if left.len() != right.len() {
         return None;
     }
-    let mut first_mixed = None;
-    for (position, pair) in left.iter().zip(right).enumerate() {
+    let mut mixed = false;
+    for pair in left.iter().zip(right) {
         match pair {
             (Segment::Literal(left), Segment::Literal(right)) if left != right => return None,
             (Segment::Literal(_), Segment::Variable(_))
             | (Segment::Variable(_), Segment::Literal(_)) => {
-                first_mixed.get_or_insert(position);
+                mixed = true;
             }
             _ => {}
         }
     }
-    Some(first_mixed.map_or(Clash::Same, Clash::Overlap))
+    Some(if mixed { Clash::Overlap } else { Clash::Same })
 }
 
 /// A derived path's segments: literals only, since ESS derives no variable.
@@ -6816,9 +6816,9 @@ fn literal_segments(path: &str) -> Vec<Segment> {
 }
 
 /// Checks every component's surface, declared and derived routes together, for two operations
-/// on one method and template (`ESS-HTTP-010`) and for templates that overlap (`ESS-HTTP-011`),
-/// and returns the derived routes that stay: those of every operation the binding does not name,
-/// in IR order.
+/// on one method and template (`ESS-HTTP-010`); templates that overlap are admitted, the literal
+/// taking precedence ([`Clash::Overlap`]). Returns the derived routes that stay: those of every
+/// operation the binding does not name, in IR order.
 ///
 /// A declared route is on the surface of every component the table derives a route for its
 /// operation on, and replaces that route there. An operation is named by every route that names
@@ -6891,21 +6891,10 @@ fn surface(
                             other.describe()
                         ),
                     ),
-                    Some(Clash::Overlap(position)) => refusals.refuse(
-                        "ESS-HTTP-011",
-                        format!("routes[{at}]"),
-                        format!(
-                            "{} and {} overlap on component `{component}`: after an equal prefix, \
-                             segment {} is `{}` in one and `{}` in the other, so one request path \
-                             matches both, and a literal takes no precedence over a variable",
-                            this.describe(),
-                            other.describe(),
-                            position + 1,
-                            this.segments[position],
-                            other.segments[position]
-                        ),
-                    ),
-                    None => {}
+                    // story:a-literal-path-segment-takes-precedence-over-a-variable-one: at the
+                    // first position two overlapping templates differ, the literal takes
+                    // precedence, which orders every such pair; `ESS-HTTP-011` is reserved.
+                    Some(Clash::Overlap) | None => {}
                 }
             }
         }
@@ -6999,13 +6988,14 @@ mod tests {
             &[literal("items"), literal("current")],
             &[literal("items"), variable("id")],
         );
-        assert_eq!(overlap, Some(Clash::Overlap(1)));
-        // The first literal beside a variable is the one named, later ones are not.
+        // story:a-literal-path-segment-takes-precedence-over-a-variable-one: an overlap carries no
+        // position any more; the literal takes precedence wherever they first differ.
+        assert_eq!(overlap, Some(Clash::Overlap));
         let later = clash(
             &[variable("a"), literal("b"), variable("c")],
             &[variable("x"), variable("y"), literal("z")],
         );
-        assert_eq!(later, Some(Clash::Overlap(1)));
+        assert_eq!(later, Some(Clash::Overlap));
         assert_eq!(clash(&[literal("a")], &[literal("b")]), None);
         assert_eq!(
             clash(&[variable("a")], &[variable("a"), literal("b")]),

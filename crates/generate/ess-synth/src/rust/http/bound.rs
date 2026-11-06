@@ -600,7 +600,9 @@ pub fn single(rows: &str, empty: u16) -> Response {
 }
 "#;
 
-/// The route match of a bound surface: every row of the table, in path order, tried in turn.
+/// The route match of a bound surface: every row of the table, tried in turn in
+/// [`http::dispatch_order`], path order but for a literal segment taking precedence over a
+/// variable at the first position two templates of one method differ.
 ///
 /// A row the binding declares is a template ([`http::Route::declared`]); a derived row and the two
 /// documents are exact paths. A path some row matches under the request's method is answered by
@@ -626,7 +628,15 @@ pub(super) fn dispatch(out: &mut String, server: &Server<'_>, routes: &[http::Ro
     }
     super::dispatch_entries(out, server, routes);
     out.push_str("{\n    let mut allowed: Vec<&str> = Vec::new();\n");
-    for (method, path, _, _) in table(routes, ir) {
+    let rows = table(routes, ir);
+    let keys: Vec<(&str, &str)> = rows
+        .iter()
+        .map(|(method, path, _, _)| (*method, path.as_str()))
+        .collect();
+    for (method, path, _, _) in http::dispatch_order(&keys)
+        .into_iter()
+        .map(|index| rows[index].clone())
+    {
         let route = routes
             .iter()
             .find(|route| route.path == path && route.method.as_str() == method);

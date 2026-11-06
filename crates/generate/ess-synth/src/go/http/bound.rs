@@ -1015,7 +1015,9 @@ pub(super) fn reads_a_bare_body(binding: &http::Binding) -> bool {
     })
 }
 
-/// The route match of a bound surface: every row of the table, in path order, tried in turn.
+/// The route match of a bound surface: every row of the table, tried in turn in
+/// [`http::dispatch_order`], path order but for a literal segment taking precedence over a
+/// variable at the first position two templates of one method differ.
 ///
 /// Every row is matched against the path as the request line spells it (`spelledPath`), as the
 /// Rust server matches: a row the binding declares is a template whose variables are
@@ -1050,7 +1052,14 @@ pub(super) fn dispatch(
          spelledPath(request)\n\tallowed := []string{{}}\n"
     );
     let mut reads_body = false;
-    for (method, path, _, _) in rows {
+    let keys: Vec<(&str, &str)> = rows
+        .iter()
+        .map(|(method, path, _, _)| (*method, path.as_str()))
+        .collect();
+    for (method, path, _, _) in http::dispatch_order(&keys)
+        .into_iter()
+        .map(|index| &rows[index])
+    {
         let route = routes
             .iter()
             .find(|route| &route.path == path && route.method.as_str() == *method);

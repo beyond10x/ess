@@ -1002,37 +1002,23 @@ fn ess_http_010_collisions_are_checked_per_component() {
     );
 }
 
+/// story:a-literal-path-segment-takes-precedence-over-a-variable-one: two templates one request
+/// path matches both of, a literal beside a variable at the first position they differ, compile,
+/// the literal taking precedence there. Until 0.89.0 `ESS-HTTP-011` refused them; no pair is left
+/// for it to refuse, and the code stays reserved.
 #[test]
-fn ess_http_011_a_literal_beside_a_variable_after_an_equal_prefix_is_refused() {
+fn ess_http_011_a_literal_beside_a_variable_after_an_equal_prefix_compiles() {
     let ir = model();
-    let routes = "routes:
+    for routes in [
+        "routes:
   - {command: catalog.items.ListItem, method: post, path: '/items/{item_id}', parameters: {item_id: input.item_id}}
   - {command: catalog.items.TouchItem, method: post, path: /items/current}
-";
-    assert_eq!(
-        routes_refusals(&ir, routes),
-        [refused("ESS-HTTP-011", "routes[1]")]
-    );
-    let message = &messages(&ir, routes)[0];
-    for named in [
-        "command `catalog.items.ListItem`",
-        "command `catalog.items.TouchItem`",
-        "`current`",
-        "`{item_id}`",
+",
+        // Against a derived route: `{id}` sits where `ListItem`'s derived path has `commands`.
+        "routes:\n  - {command: catalog.items.TouchItem, method: post, path: '/items/{id}/ListItem', parameters: {id: input.item_id}}\n",
     ] {
-        assert!(message.contains(named), "{named}: {message}");
+        assert_eq!(routes_refusals(&ir, routes), [], "{routes}");
     }
-    // Against a derived route: `{id}` sits where `ListItem`'s derived path has `commands`.
-    let routes = "routes:\n  - {command: catalog.items.TouchItem, method: post, path: '/items/{id}/ListItem', parameters: {id: input.item_id}}\n";
-    assert_eq!(
-        routes_refusals(&ir, routes),
-        [refused("ESS-HTTP-011", "routes[0]")]
-    );
-    let message = &messages(&ir, routes)[0];
-    assert!(
-        message.contains("`commands`") && message.contains("catalog.items.ListItem"),
-        "{message}"
-    );
     // No path matches both: they differ in length, or in a later literal.
     for (left, right) in [
         ("/items/{item_id}", "/items/current/x"),
@@ -1056,6 +1042,68 @@ fn ess_http_011_a_literal_beside_a_variable_after_an_equal_prefix_is_refused() {
 "
         ),
         []
+    );
+}
+
+/// The board of beyond10x/ess#748: card priorities on a fixed sub-resource beside a card.
+const BOARD: &str = include_str!("fixtures/board.yaml");
+
+#[test]
+fn a_literal_beside_a_variable_at_the_first_difference_compiles() {
+    let ir = model_from(BOARD);
+    let routes = "routes:
+  - command: catalog.board.UpdateCard
+    method: put
+    path: /boards/{board_id}/cards/{card_id}
+    parameters: {board_id: input.board_id, card_id: input.card_id}
+  - command: catalog.board.SetCardPriorities
+    method: put
+    path: /boards/{board_id}/cards/priority
+    parameters: {board_id: input.board_id}
+    request: {body: input.priorities}
+";
+    assert_eq!(routes_refusals(&ir, routes), []);
+    let spec = HttpSpec::from_yaml(&(header(&ir) + routes)).expect("parses");
+    let http = compile(&spec, &ir, &derived(&ir)).expect("compiles");
+    // The IR keeps its order, by path then method: precedence is a rule over the templates, and
+    // no key records it.
+    let paths: Vec<Option<&str>> = http
+        .routes()
+        .iter()
+        .map(|route| route.path.as_deref())
+        .collect();
+    assert_eq!(
+        paths,
+        [
+            Some("/boards/{board_id}/cards/priority"),
+            Some("/boards/{board_id}/cards/{card_id}"),
+        ]
+    );
+}
+
+#[test]
+fn the_same_template_twice_is_still_ess_http_010() {
+    let ir = model_from(BOARD);
+    let routes = "routes:
+  - command: catalog.board.UpdateCard
+    method: put
+    path: /boards/{board_id}/cards/{card_id}
+    parameters: {board_id: input.board_id, card_id: input.card_id}
+  - command: catalog.board.RenameBoard
+    method: put
+    path: /boards/{board}/cards/{title}
+    parameters: {board: input.board_id, title: input.title}
+";
+    assert_eq!(
+        routes_refusals(&ir, routes),
+        [refused("ESS-HTTP-010", "routes[1]")]
+    );
+    let message = &messages(&ir, routes)[0];
+    assert!(
+        message.contains("two operations claim the same method and path")
+            && message.contains("catalog.board.UpdateCard")
+            && message.contains("catalog.board.RenameBoard"),
+        "{message}"
     );
 }
 
