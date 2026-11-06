@@ -78,8 +78,8 @@ command that finds the root settled removes it, and `--check` reports it. Releas
 writing: a settled one as an invalid output state missing `root`, a pending one as an
 unsupported output-state version.
 
-`ess-output-state/4` (unreleased) is `/3` plus an optional `model` on each owner: the digest of
-the whole compiled model an `ess generate` projection was generated from, 64 lowercase hex
+`ess-output-state/4` (unreleased) adds an optional `model` on each owner to the previous
+version: the digest of the whole compiled model an `ess generate` projection was generated from, 64 lowercase hex
 characters. A generated file carries only the digest of the model slice it derives from, so this
 record is where a generation's whole-model digest lives. Every publication writes `/4`; the reader
 accepts `/1` to `/4` and refuses `model` under any earlier version. An adopted owner, and an owner
