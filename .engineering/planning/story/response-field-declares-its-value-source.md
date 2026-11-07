@@ -12,7 +12,7 @@ refs:
 relations:
 - serves: vision:O2
 - decomposes: epic:adopter-gaps-wire-and-answers
-revision: 2
+revision: 3
 ---
 ## Outcome
 
@@ -48,3 +48,26 @@ beyond10x/a2a (ESS 0.67.0, a2a main 3a18050):
 - **M7** (a2a wave-1 gaps list, line 41): the found branch of a get command cannot bind its
   response body to the matched row. That is this story's stored-field value source, applied to
   every field of the response (the whole row), not one field.
+
+## Fake backend, 2026-11-07
+
+An adopter reported this on 2026-11-07 against ESS 0.87.0, while specifying an existing backend for
+a testing fake. The gap is still present in 0.90.0.
+
+- 24 commands bound with `body: response` answer fields that nothing in the model sources:
+  - `success: true`, a literal;
+  - `item.id`, equal to `input.id`, an input echo inside a nested response struct;
+  - a fixed `message` text, a literal.
+- The adopter's feature docs record each value, with a citation, but the model leaves them
+  unmapped. A runtime built from the specification therefore mints its own values, and conformance
+  cannot hold a target to the documented ones.
+- Their framing: "ESS has no form that sources a command response field (as `payload:` sources
+  event fields)."
+
+This widens the outcome beyond an input or a stored field.
+
+- A response value source should also take a literal, and a path into a nested response field.
+  It should be per outcome, the same way `payload:` maps an event's fields.
+- This is the same construct as the A2A M7 row binding above. One design should cover the input
+  echo, the stored field, the whole matched row and the literal.
+- The design decision about the converse `{response: <field>}` form is unchanged.
