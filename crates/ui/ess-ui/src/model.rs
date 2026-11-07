@@ -599,7 +599,8 @@ pub struct Page {
     #[serde(default)]
     pub unmapped: Vec<String>,
     /// The host slot the page is, when it carries `host`: the host draws the page's content in
-    /// place of sections; its header and overlays are still the document's.
+    /// place of sections; it inherits no sections, layout or header from its kind, and its own
+    /// header and overlays are still the document's.
     #[serde(skip)]
     pub host: Option<HostSlot>,
 }
@@ -1064,6 +1065,12 @@ impl HostSlot {
             Some(Value::String(host)) => host.clone(),
             other => return Err(format!("a host slot's `host` is a name, not {other:?}")),
         };
+        if !crate::path::is_segment(&host) {
+            return Err(format!(
+                "host slot `{host}`: `host` is a node name, matching `{}`",
+                crate::path::SEGMENT_PATTERN
+            ));
+        }
         let slot = from_mapping::<Self>(mapping)
             .map_err(|message| format!("host slot `{host}`: {message}"))?;
         if slot.reason.trim().is_empty() {

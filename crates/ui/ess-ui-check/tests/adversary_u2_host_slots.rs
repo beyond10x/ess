@@ -36,7 +36,7 @@ fn with_section_slot(slot: &str) -> String {
 }
 
 /// `HostSlot.host` is `{type: name}` in the unit's schema, and `name` is "a node name; matches
-/// NodePath.syntax.segment_pattern". A host name that is empty, holds a space or holds `#` (which
+/// `NodePath.syntax.segment_pattern`". A host name that is empty, holds a space or holds `#` (which
 /// `--hosts` reads as a comment, so the name can never be registered) is not a name.
 #[test]
 fn adversary_u2_a_host_name_that_is_not_a_name_is_refused() {
@@ -121,7 +121,9 @@ fn adversary_u2_a_hosts_file_with_a_byte_order_mark_registers_its_first_name() {
     let ui = root.join("ui.yaml");
     std::fs::write(
         &ui,
-        with_section_slot("{name: map, host: RouteMap, reason: a map widget, stands_in_for: chart}"),
+        with_section_slot(
+            "{name: map, host: RouteMap, reason: a map widget, stands_in_for: chart}",
+        ),
     )
     .expect("the document");
     let registered = root.join("hosts.txt");
@@ -135,7 +137,10 @@ fn adversary_u2_a_hosts_file_with_a_byte_order_mark_registers_its_first_name() {
     };
     let code = exit_code(&args).expect("the check runs");
     let _ = std::fs::remove_dir_all(&root);
-    assert_eq!(code, 0, "a BOM-prefixed hosts file registers a name no slot declares");
+    assert_eq!(
+        code, 0,
+        "a BOM-prefixed hosts file registers a name no slot declares"
+    );
 }
 
 /// Probes that should hold: a slot at a shell overlay, a collection column and a header metric

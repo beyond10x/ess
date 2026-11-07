@@ -18,7 +18,7 @@ pub(crate) fn run(document: &Document, options: &Options, sink: &mut Sink) {
             sink.backlog.push(BacklogEntry {
                 path: path.to_string(),
                 host: slot.host.clone(),
-                reason: slot.reason.clone(),
+                reason: slot.reason.trim().to_owned(),
             });
         }
     }

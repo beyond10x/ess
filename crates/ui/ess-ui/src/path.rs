@@ -499,7 +499,7 @@ fn check_unit(path: &NodePath, field: &Field) -> Result<(), LoadError> {
 /// `NodePath.syntax.segment_pattern`; `tests/schema.rs` holds this text to the schema's.
 pub const SEGMENT_PATTERN: &str = "^[A-Za-z0-9_.-]+$";
 
-fn is_segment(segment: &str) -> bool {
+pub(crate) fn is_segment(segment: &str) -> bool {
     !segment.is_empty()
         && segment
             .chars()

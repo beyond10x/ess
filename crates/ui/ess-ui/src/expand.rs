@@ -169,7 +169,8 @@ pub(crate) fn expand(
 }
 
 /// The kind `page` is merged over. A page that is a host slot draws no sections, so it writes
-/// none and inherits neither its kind's sections nor their layout.
+/// none and inherits neither its kind's sections, their layout nor the header that names them;
+/// its own header and overlays stay.
 fn page_base(mut base: Mapping, page: &Mapping, at: &NodePath) -> Result<Mapping> {
     let Some(host) = page.get("host") else {
         return Ok(base);
@@ -186,6 +187,7 @@ fn page_base(mut base: Mapping, page: &Mapping, at: &NodePath) -> Result<Mapping
     }
     base.remove("sections");
     base.remove("layout");
+    base.remove("header");
     Ok(base)
 }
 

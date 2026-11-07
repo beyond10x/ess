@@ -417,11 +417,14 @@ pub struct CheckArgs {
     pub hosts: Option<PathBuf>,
 }
 
-/// The names a `--hosts` file lists: one per line, trimmed, blank lines and `#` comments skipped.
+/// The names a `--hosts` file lists: one per line, trimmed, a leading byte-order mark dropped, blank
+/// lines and `#` comments skipped.
 fn registered_hosts(file: &Path) -> Result<Vec<String>, CheckError> {
     let text = std::fs::read_to_string(file)
         .map_err(|error| CheckError(format!("cannot read {}: {error}", file.display())))?;
     Ok(text
+        .strip_prefix('\u{feff}')
+        .unwrap_or(&text)
         .lines()
         .map(|line| line.split_once('#').map_or(line, |(name, _)| name).trim())
         .filter(|name| !name.is_empty())
