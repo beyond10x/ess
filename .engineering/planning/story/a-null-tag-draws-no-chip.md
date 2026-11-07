@@ -2,17 +2,18 @@
 format: aep.planning-md/3
 id: story:a-null-tag-draws-no-chip
 kind: story
-status: active
+status: implemented
 title: A null entry in a tags field draws no chip
 summary: 'Runtime fix taken upstream: tagText drew "null" for a null list entry'
 tags:
 - queue-0.90.0
 relations:
 - serves: vision:O2
-revision: 3
+revision: 4
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-06T22:18:59Z", actor: "human:timo", revision: 2}
 - {from: "proposed", to: "active", at: "2026-11-06T22:18:59Z", actor: "human:timo", revision: 3}
+- {from: "active", to: "implemented", at: "2026-11-07T04:10:57Z", actor: "human:timo", revision: 4, decided_on: {"recorded":{"test_result":1,"review_outcome":1}}}
 ---
 ## Need
 

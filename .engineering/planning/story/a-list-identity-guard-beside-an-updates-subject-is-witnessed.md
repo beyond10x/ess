@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-list-identity-guard-beside-an-updates-subject-is-witnessed
 kind: story
-status: active
+status: implemented
 title: Synthesis witnesses a list-of-identity guard beside an updates or creates subject
 summary: 'Issue 761: list guard scenarios fail or are refused ESS-SYNTH-019; queued first for 0.90.0'
 tags:
@@ -15,10 +15,11 @@ refs:
   reference: beyond10x/ess#761
 relations:
 - serves: vision:O2
-revision: 4
+revision: 5
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-06T22:18:51Z", actor: "human:timo", revision: 3}
 - {from: "proposed", to: "active", at: "2026-11-06T22:18:52Z", actor: "human:timo", revision: 4}
+- {from: "active", to: "implemented", at: "2026-11-07T04:10:54Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"test_result":1,"review_outcome":1}}}
 ---
 ## Need
 

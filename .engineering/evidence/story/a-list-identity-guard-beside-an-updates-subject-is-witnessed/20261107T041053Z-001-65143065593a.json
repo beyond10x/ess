@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-07T04:10:53Z",
+  "actor": "human:timo",
+  "artifact": "story:a-list-identity-guard-beside-an-updates-subject-is-witnessed",
+  "kind": "story",
+  "revision": 4,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "PR 763 CI run 42328951670 (all checks green at 18e91e142b2, squash 9a2468ef48e on main) and the staged local gate",
+    "reference": "https://github.com/beyond10x/ess/actions/runs/42328951670"
+  }
+}
