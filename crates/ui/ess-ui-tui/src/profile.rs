@@ -145,6 +145,15 @@ impl Plan {
 
 /// Holds `document` to `profile`.
 pub fn check(document: &Document, profile: &RendererProfile) -> Result<Plan, Refusal> {
+    if let Some((path, slot)) = document.host_slots().into_iter().next() {
+        return Err(Refusal {
+            path,
+            message: format!(
+                "host slot `{}`: host slots are generated from 0.91.0",
+                slot.host
+            ),
+        });
+    }
     let mut plan = Plan::default();
     for Located { path, node } in document.nodes() {
         let (degrades, uses, construct_degrades) = match node {

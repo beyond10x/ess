@@ -82,6 +82,12 @@ pub fn render_bound(
     source_dir: &Path,
     binding: Option<&Binding>,
 ) -> Result<GeneratedFiles, GenerateError> {
+    if let Some((path, slot)) = document.host_slots().first() {
+        return Err(GenerateError::new(format!(
+            "{path}: host slot `{}`: host slots are generated from 0.91.0",
+            slot.host
+        )));
+    }
     let mut files = BTreeMap::new();
     let title = document
         .title

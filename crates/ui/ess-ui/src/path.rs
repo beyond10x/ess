@@ -9,8 +9,8 @@ use std::fmt;
 
 use crate::model::{
     Action, ActionConfirm, Body, Columns, Composite, Document, Field, FormGroup, Guard, Header,
-    Help, LayoutColumn, NavSection, Node, Overlay, Page, PageKind, PageLayout, Primitive, Reads,
-    Region, Section, Shell, State, Tab, TabFields, TabForm, Widget,
+    Help, HostSlot, LayoutColumn, NavSection, Node, Overlay, Page, PageKind, PageLayout, Primitive,
+    Reads, Region, Section, Shell, State, Tab, TabFields, TabForm, Widget,
 };
 use crate::LoadError;
 
@@ -166,6 +166,34 @@ impl Document {
         }
         walk.found
     }
+
+    /// Every host slot the document draws, with its canonical path, in the order of
+    /// [`Document::nodes`]: a page, a section, an overlay, a nested node (a tab's `form` among
+    /// them) or a field that carries `host`. A widget's declaration is not drawn, so a slot in
+    /// it is found at each use of the widget instead.
+    pub fn host_slots(&self) -> Vec<(NodePath, &HostSlot)> {
+        self.nodes()
+            .into_iter()
+            .filter(|located| {
+                located
+                    .path
+                    .segments()
+                    .first()
+                    .is_none_or(|top| top != "widgets")
+            })
+            .filter_map(|Located { path, node }| {
+                let slot = match node {
+                    NodeRef::Page(page) => page.host.as_ref(),
+                    NodeRef::Field(field) => field.host.as_ref(),
+                    NodeRef::Section(section) => section.body.host(),
+                    NodeRef::Overlay(overlay) => overlay.body.host(),
+                    NodeRef::Node(node) => node.body.host(),
+                    _ => None,
+                };
+                slot.map(|slot| (path, slot))
+            })
+            .collect()
+    }
 }
 
 #[derive(Default)]
@@ -294,7 +322,7 @@ impl<'a> Walk<'a> {
                     self.action(&at.child("action"), action);
                 }
             }
-            Body::Primitive(_) => {}
+            Body::Primitive(_) | Body::Host(_) => {}
         }
     }
 
@@ -421,6 +449,29 @@ pub(crate) fn check(document: &Document) -> Result<(), LoadError> {
             }
         }
     }
+    check_host_slots(document)
+}
+
+/// A host slot's `host` names one component the host registers, so no two slots share it; a
+/// slot's own read is held to the rules of every read.
+fn check_host_slots(document: &Document) -> Result<(), LoadError> {
+    let mut declared: BTreeMap<&str, NodePath> = BTreeMap::new();
+    for (path, slot) in document.host_slots() {
+        if let Some(reads) = &slot.reads {
+            check_reads(&path.child("reads"), reads)?;
+        }
+        if let Some(first) = declared.get(slot.host.as_str()) {
+            return Err(LoadError::new(
+                path,
+                format!(
+                    "host slot `{}` is declared twice, here and at `{first}`: a host name is \
+                     unique in the document",
+                    slot.host
+                ),
+            ));
+        }
+        declared.insert(&slot.host, path);
+    }
     Ok(())
 }
 
@@ -448,7 +499,7 @@ fn check_unit(path: &NodePath, field: &Field) -> Result<(), LoadError> {
 /// `NodePath.syntax.segment_pattern`; `tests/schema.rs` holds this text to the schema's.
 pub const SEGMENT_PATTERN: &str = "^[A-Za-z0-9_.-]+$";
 
-fn is_segment(segment: &str) -> bool {
+pub(crate) fn is_segment(segment: &str) -> bool {
     !segment.is_empty()
         && segment
             .chars()

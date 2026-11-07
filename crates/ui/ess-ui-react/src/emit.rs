@@ -1147,6 +1147,8 @@ impl<'d> Gen<'d> {
                     .render()
             }
             Body::Primitive(primitive) => self.primitive(at, primitive),
+            // `render_bound` refuses a document with a host slot before any body is emitted.
+            Body::Host(_) => String::new(),
         }
     }
 

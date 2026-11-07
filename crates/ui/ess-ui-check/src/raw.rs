@@ -30,6 +30,7 @@ const PROSE: &[&str] = &[
     "note",
     "placeholder",
     "purpose",
+    "reason",
     "source",
     "summary",
     "synonyms",

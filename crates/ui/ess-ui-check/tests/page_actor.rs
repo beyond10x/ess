@@ -152,6 +152,7 @@ fn the_284_reduction_fails_ess_ui_check_naming_page_actor_and_command() {
         model: Some(root.join("model")),
         format: OutputFormat::Text,
         lacks: Vec::new(),
+        hosts: None,
     };
     assert_eq!(exit_code(&args).expect("the check runs"), 1);
     let report = ess_ui_check::check(&ui, Some(&root.join("model"))).expect("the check runs");

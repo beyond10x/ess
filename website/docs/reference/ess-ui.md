@@ -1935,6 +1935,38 @@ name: rule
 primitive: divider
 ```
 
+### HostSlot
+
+A declared place where the host application supplies its own component.
+
+A host slot stands where the generator cannot draw yet: a bespoke editor, a vendor widget, a visualisation with its own interaction. ESS does not draw it and never counts it as covered by the specification. It stands where a node may stand, at one of five scopes: a page (the slot keys beside the page's own; the page draws no sections and inherits no sections, layout or header from its kind), a section, an overlay, a tab (as the tab's `form` node) or a field (the slot keys beside the field's own). Its scope is its node path. A node is a slot when it carries `host`, and a slot beside `component` or `primitive` is refused. `host` names the component the host registers and is unique in the document; a widget's declaration is not drawn, so a slot in a widget is found at each use. `reason` says why the generator cannot draw it and is never empty. `stands_in_for` names the generator item the slot replaces, so a later generator can take it back. `reads` and `commands` declare what the host component reads and sends. `ess ui check --hosts <file>` refuses a name the host registers that no slot declares, and every report of `ess ui check` lists the slots that stand in for `none`, each with its path and reason, as the generator's backlog.
+
+**Properties**
+
+| Property | Type | Required | Default | Note |
+|---|---|---|---|---|
+| `host` | `name` | yes |   | the component name the host registers, a node name; unique in the document |
+| `reason` | `string` | yes |   | why the generator cannot draw it; never empty |
+| `stands_in_for` | one of: name of a [Composite](#composite) \| `text` \| `badge` \| `icon` \| `button` \| `link` \| `input` \| `toggle` \| `image` \| `divider` \| exactly `none` | yes |   | the composite or primitive the slot replaces, or `none` where no generator item fits |
+| `reads` | [Reads](#reads) |   |   | the view the host component reads, written as a composite's `reads` |
+| `commands` | list of name of an ESS `command` |   |   | the commands the host component sends |
+
+**Example**
+
+```yaml
+name: route
+host: RouteMap
+reason: draws the delivery route on a map
+stands_in_for: chart
+reads: {view: deliveries.Route, params: {id: params.id}}
+```
+
+**Checks**
+
+| Check | Subject | Rule | Severity |
+|---|---|---|---|
+| `host_slots` | `**.host` | `{must: [carry_a_non_empty_reason, name_what_it_stands_in_for, be_the_only_slot_of_its_host_name, carry_neither_component_nor_primitive]}` | error |
+
 ## Reads, actions and fixtures
 
 How the UI reads ESS views, runs ESS commands, and runs without a backend.
@@ -2745,6 +2777,8 @@ What a validator checks in a document, and the construct each check applies to. 
 | `suggests_needs_tags` | [Field](#field) | `**.suggests` | `{must: sit_on_an_as_tags_field}` | error |
 | `toggle_state_unknown` | [Action](#action) | `**.checked absent on an as toggle action with does` | `{must: [write_checked, or_bind_exactly_one_input_as_not_expr]}` | warning |
 | `checked_unreadable` | [Action](#action) | `**.checked on an as toggle action` | `{must: [parse_as_a_filter_predicate, read_only_row_params_state_shell_args]}` | warning |
+| `host_slots` | [HostSlot](#hostslot) | `**.host` | `{must: [carry_a_non_empty_reason, name_what_it_stands_in_for, be_the_only_slot_of_its_host_name, carry_neither_component_nor_primitive]}` | error |
+| `hosts_registered` | every node | `**.host, for every name ess ui check --hosts lists` | `{must_resolve_in: ["**.host"]}` | error |
 
 ## Retrofits and lowering
 
@@ -2844,6 +2878,7 @@ Every construct with its one-line summary, chapter by chapter.
 | [toggle](#toggle) | [Composites, widgets and primitives](#composites-widgets-and-primitives) | An on/off switch bound to state, or running an action. |
 | [image](#image) | [Composites, widgets and primitives](#composites-widgets-and-primitives) | An image with required alternative text. |
 | [divider](#divider) | [Composites, widgets and primitives](#composites-widgets-and-primitives) | A visual separator. |
+| [HostSlot](#hostslot) | [Composites, widgets and primitives](#composites-widgets-and-primitives) | A declared place where the host application supplies its own component. |
 | [Reads](#reads) | [Reads, actions and fixtures](#reads-actions-and-fixtures) | The ESS view a section or composite reads — or, while designing, a named placeholder backed by a fixture. |
 | [Action](#action) | [Reads, actions and fixtures](#reads-actions-and-fixtures) | One user-triggered effect: run a command (`does`), open an overlay, navigate, export, upload, copy or set UI state. |
 | [FixtureIndex](#fixtureindex) | [Reads, actions and fixtures](#reads-actions-and-fixtures) | Sample data per view and event scripts per channel, so renderers run without a backend. |
