@@ -109,8 +109,7 @@ fn unbacked(document: &Value) -> Vec<String> {
             continue;
         };
         for (at, step) in steps.iter().enumerate() {
-            if step["step"] != "execute_command" || !step["command"].to_string().contains(UPDATE)
-            {
+            if step["step"] != "execute_command" || !step["command"].to_string().contains(UPDATE) {
                 continue;
             }
             let expects_missing = steps[at + 1..]
@@ -215,7 +214,10 @@ fn mutant_caught(label: &str, text: &str, mutant: &str) {
         .map(|(id, _)| id)
         .collect();
     assert!(
-        !caught.is_empty() && against_model.values().all(|status| *status == Status::Passed),
+        !caught.is_empty()
+            && against_model
+                .values()
+                .all(|status| *status == Status::Passed),
         "{label}: the mutant passes every scenario ({} run); against the model: \
          {against_model:#?}\nrefusals: {:#?}",
         against_mutant.len(),
@@ -264,7 +266,11 @@ fn adversary_u4_repeated_literal_is_witnessed() {
 fn adversary_u4_any_of_two_literals_does_not_force_both() {
     let text = guarded("any", &telephony_voice());
     check("any of two", &text, ALL_OUTCOMES);
-    mutant_caught("any read as all", &text, &guarded("all", &telephony_voice()));
+    mutant_caught(
+        "any read as all",
+        &text,
+        &guarded("all", &telephony_voice()),
+    );
 }
 
 /// `all:` of two literals: a target deciding it as `any:` fails the suite, so some scenario sends
@@ -273,7 +279,11 @@ fn adversary_u4_any_of_two_literals_does_not_force_both() {
 fn adversary_u4_all_of_two_literals_is_told_from_any() {
     let text = guarded("all", &telephony_voice());
     check("all of two", &text, ALL_OUTCOMES);
-    mutant_caught("all read as any", &text, &guarded("any", &telephony_voice()));
+    mutant_caught(
+        "all read as any",
+        &text,
+        &guarded("any", &telephony_voice()),
+    );
 }
 
 /// The second literal is an identity no creation accepts: the branch is unreachable, refused and
@@ -392,7 +402,8 @@ fn adversary_u4_swapped_callers_reach_the_guarded_scenario() {
             steps
                 .iter()
                 .filter(|step| {
-                    step["step"] == "execute_command" && step["command"].to_string().contains(UPDATE)
+                    step["step"] == "execute_command"
+                        && step["command"].to_string().contains(UPDATE)
                 })
                 .map(|step| step["actor"].to_string())
                 .collect()
