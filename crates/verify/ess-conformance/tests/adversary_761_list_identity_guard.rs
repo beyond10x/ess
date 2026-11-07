@@ -152,7 +152,6 @@ fn adversary_761_forall_guard_beside_an_updates_subject_is_witnessed() {
 
 /// Two literals in one guard: the list must hold a row for each.
 #[test]
-#[ignore = "story:a-guard-over-several-list-literals-is-witnessed"]
 fn adversary_761_two_literal_guard_is_witnessed() {
     let text = replaced(
         UPDATES,

@@ -18501,6 +18501,10 @@ fn sent_requiring(
     sent
 }
 
+/// The first distinction the rows a boundary row's list names are created at
+/// ([`related_list::backed`]): past every one an arrangement numbers, so they bind apart.
+const BOUNDARY_LISTS: usize = 1 << 12;
+
 /// The branch sent again at each of its [`boundary_inputs`], after everything else it asserts.
 ///
 /// Each further invocation requires the branch and, where it declares one, its error — which is
@@ -18682,6 +18686,28 @@ fn boundaries(
                 field.name.clone(),
                 ScenarioValue::instance(arrangement.instance),
             );
+        }
+        // A row moving the list a related guard reads is sent rows created under its elements: a
+        // literal no row carries is answered by the refusal over a missing row (beyond10x/ess#761).
+        let moved_list = related_list::reads(command).is_some_and(|(list, _)| {
+            matches!(supplied.get(list), Some(ScenarioValue::Literal { .. }))
+        });
+        if moved_list {
+            let prior = [steps, out.0.as_slice()].concat();
+            let at = Distinction::further(BOUNDARY_LISTS + out.0.len());
+            match related_list::backed(ir, command, outcome, actors, &row, (at, &prior)) {
+                Some(Ok((list, (mut rows, from, items)))) => {
+                    models.mark(caller::InvocationPhase::Arrange, &mut rows);
+                    out.0.extend(rows);
+                    out.1.extend(from);
+                    supplied.insert(list, ScenarioValue::List { items });
+                }
+                Some(Err(cause)) => {
+                    refusals.push(Refusal::beside(id, cause));
+                    continue;
+                }
+                None => {}
+            }
         }
         let expected = outcome
             .error

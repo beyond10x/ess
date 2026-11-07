@@ -300,6 +300,24 @@ pub(super) fn driven(
     Ok((field.to_owned(), rows))
 }
 
+/// The rows a further run of `outcome` is sent where its `row` moves the list a related guard
+/// reads off the scenario's own: each element a row created under it, or the row `known` steps
+/// already created under it, so the run is decided by its own guard rather than answered by the
+/// refusal over a missing row (beyond10x/ess#761). `None` for the refusal, which sends a missing
+/// element on purpose, and for a row sending the empty list, which names no row.
+pub(super) fn backed(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    row: &BTreeMap<String, Node>,
+    (at, known): (Distinction, &[super::ScenarioStep]),
+) -> Option<Result<(String, Rows), RefusalCause>> {
+    let (field, _) = reads(command)?;
+    let named = matches!(row.get(field), Some(Node::Seq(items)) if !items.is_empty());
+    (named && !refuses(outcome)).then(|| driven(ir, command, actors, row, (at, known), &[]))
+}
+
 /// The rows a branch [`guards_on_list`] is sent: one per distinct element of its witness list,
 /// each created under that element as its identity at a distinction from `base` on, or the row
 /// `known` steps already created under it, so the list holds the values its own guard reads
