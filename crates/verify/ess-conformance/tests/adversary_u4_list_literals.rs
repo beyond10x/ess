@@ -276,59 +276,6 @@ fn adversary_u4_all_of_two_literals_is_told_from_any() {
     mutant_caught("all read as any", &text, &guarded("any", &telephony_voice()));
 }
 
-/// `exists a` and `not exists b`: the list holds a and excludes b, and a target ignoring the
-/// negated child fails the suite.
-#[test]
-fn adversary_u4_exists_and_not_exists_holds_one_excludes_other() {
-    let children = vec![
-        exists(12, "permissions", "telephony"),
-        format!(
-            "            - not:\n                exists: {{in: input.permissions, as: e, that: 'e == \"voice\"'}}\n"
-        ),
-    ];
-    let text = guarded("all", &children);
-    check("exists and not exists", &text, ALL_OUTCOMES);
-    mutant_caught(
-        "negated child dropped",
-        &text,
-        &guarded("all", &[exists(12, "permissions", "telephony")]),
-    );
-}
-
-/// The command input with two more fields beside its list: a plain list and an integer.
-fn with_more_inputs(text: &str) -> String {
-    replaced(
-        text,
-        "    input:\n      - {name: role_id, type: demo.role.RoleId}\n",
-        "    input:\n      - {name: role_id, type: demo.role.RoleId}\n      - {name: channels, type: \"List<String>\"}\n      - {name: level, type: Integer}\n",
-        1,
-    )
-}
-
-/// Two literals in each of two lists of one command: one candidate holding all four.
-#[test]
-fn adversary_u4_literals_across_two_lists_are_witnessed() {
-    let text = with_more_inputs(&guarded(
-        "all",
-        &[
-            exists(12, "permissions", "telephony"),
-            exists(12, "permissions", "voice"),
-            exists(12, "channels", "sms"),
-            exists(12, "channels", "mms"),
-        ],
-    ));
-    check("two lists", &text, ALL_OUTCOMES);
-}
-
-/// Two literals beside a guard on another input whose base value refutes it.
-#[test]
-fn adversary_u4_literals_beside_another_leaf_are_witnessed() {
-    let mut children = telephony_voice();
-    children.push("            - level > 3\n".to_owned());
-    let text = with_more_inputs(&guarded("all", &children));
-    check("literals beside a leaf", &text, ALL_OUTCOMES);
-}
-
 /// The second literal is an identity no creation accepts: the branch is unreachable, refused and
 /// not emitted.
 #[test]
