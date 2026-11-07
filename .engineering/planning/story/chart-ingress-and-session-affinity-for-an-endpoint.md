@@ -11,7 +11,7 @@ tags:
 relations:
 - serves: vision:O2
 - decomposes: epic:adopter-gaps-delivery
-revision: 1
+revision: 2
 ---
 ## Outcome
 
@@ -30,3 +30,22 @@ or path (`runtime.rs:90-101`).
 - An environment (host is per environment) declares the ingress for a provided endpoint; the
   chart renders an Ingress and the Service's session affinity; a projection test pins the bytes.
 - An endpoint without the declaration renders as today.
+
+## Evidence (0.90.0)
+
+An adopter on 0.90.0, deploying a WebSocket push service behind an edge proxy, hand-wrote its chart
+partly for this. Re-verified on current main: the chart renders no Ingress or route object at all
+(the file set is fixed at `crates/generate/ess-deployment/src/environment.rs:721-727`), a provided
+Service carries no `sessionAffinity` (`environment.rs:1242`), and `ProvidedEndpoint` still has no
+host, path or affinity (`crates/generate/ess-deployment/src/runtime.rs:106-116`). This adopter
+additionally needs, at the edge: (a) WebSocket upgrade passed through to the backend; (b) a request
+or idle timeout well above common proxy defaults, for upgraded connections and for long-poll
+requests that are held open by design; (c) session affinity that keeps a client on one backend pod
+for the life of its session, including a bounded affinity timeout
+(`sessionAffinityConfig.clientIP.timeoutSeconds` on a Service). The `Ingress` API has no portable
+field for (a) or (b); they exist only as controller-specific annotations, while the Gateway API's
+`HTTPRoute` has portable request timeouts — the story has to choose which object it renders, or
+refuse (a) and (b) by name. The specification-side binding of a WebSocket upgrade is a separate,
+already decided question (`decision-blocker:websocket-upgrade-binding-form`, cleared, for
+`story:http-binding-carries-transport-framing`); this story stays the deployment half and should
+not invent a second spelling of the upgrade.
