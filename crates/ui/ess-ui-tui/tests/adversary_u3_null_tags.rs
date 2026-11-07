@@ -76,8 +76,16 @@ fn cell<'a>(screen: &'a str, title: &str, after: &str) -> &'a str {
 #[test]
 fn the_terminal_draws_the_chips_react_draws() {
     let screen = screen("parity");
-    assert_eq!(cell(&screen, "quoted", "end-1"), "#null", "the text null is a tag:\n{screen}");
-    assert_eq!(cell(&screen, "spelled", "end-2"), "", "every YAML null draws nothing:\n{screen}");
+    assert_eq!(
+        cell(&screen, "quoted", "end-1"),
+        "#null",
+        "the text null is a tag:\n{screen}"
+    );
+    assert_eq!(
+        cell(&screen, "spelled", "end-2"),
+        "",
+        "every YAML null draws nothing:\n{screen}"
+    );
     assert_eq!(cell(&screen, "falsy", "end-3"), "#false #0", "{screen}");
     assert_eq!(cell(&screen, "repeated", "end-4"), "#a #a #a", "{screen}");
     assert_eq!(cell(&screen, "empty", "end-5"), "", "{screen}");

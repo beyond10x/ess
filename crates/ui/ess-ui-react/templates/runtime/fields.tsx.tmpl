@@ -283,7 +283,10 @@ export function suggestionOf(row: unknown, value: string | undefined): string | 
 function TagsInput(props: { field: FieldSpec; value: unknown; text: string; set: (next: unknown) => void }): ReactNode {
   const scope = useScope();
   const { field, set } = props;
-  const held = Array.isArray(props.value) ? props.value.map((tag) => String(tag)) : [];
+  // A null entry carries no tag: it is neither shown, compared nor written back as text.
+  const held = Array.isArray(props.value)
+    ? props.value.filter((tag) => tag !== null && tag !== undefined).map((tag) => String(tag))
+    : [];
   const raw = useRead(field.suggests?.reads, scope.values, field.suggests !== undefined);
   // The read's client filter hides the rows it excludes, as on every other read.
   const read = filterRead(raw, field.suggests?.reads.filter, scope.values);
@@ -297,7 +300,7 @@ function TagsInput(props: { field: FieldSpec; value: unknown; text: string; set:
   return (
     <>
       <input
-        value={Array.isArray(props.value) ? props.value.join(", ") : props.text}
+        value={Array.isArray(props.value) ? held.join(", ") : props.text}
         placeholder="comma, separated"
         onChange={(event: ChangeEvent<HTMLInputElement>) =>
           set(

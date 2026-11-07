@@ -289,3 +289,29 @@ fn a_null_tag_draws_no_chip_in_a_column_or_a_record() {
         "no chip for null:\n{screen}"
     );
 }
+
+/// An edit form loading a record whose tags hold `null`: editing the tags input starts from the
+/// held tags without an empty slot for the null, as the React input shows them.
+#[test]
+fn a_held_null_tag_leaves_no_empty_slot_in_the_tags_input() {
+    let base = dir("null-tags-input");
+    std::fs::write(base.join("data/last.yaml"), LAST_ROWS).expect("the fixture is written");
+    let doc = TAGS.replace(
+        "      - name: last\n        component: record\n        reads: {view: t.Last}\n        fields:\n          - {field: labels, label: Labelled, as: tags}",
+        "      - name: edit\n        component: form\n        does: t.Save\n        loads: {view: t.Last}\n        fields:\n          - {field: labels, label: Edited, as: tags}",
+    );
+    assert!(doc.contains("label: Edited"), "the edit applied");
+    std::fs::write(base.join("data/tags.yaml"), TAG_ROWS).expect("the fixture is written");
+    let mut app = App::from_text(&doc, &base, Options::new(base.join("state")))
+        .unwrap_or_else(|error| panic!("{error}"));
+    app.open_page("calls", &[]);
+    app.focus_section("edit");
+    app.keys("<enter>x");
+    let screen = app.render_text(140, 48);
+    let edited = row(&screen, "Edited");
+    assert!(
+        edited.contains("[p, qx"),
+        "the held tags, then the typed text:\n{screen}"
+    );
+    assert!(!edited.contains(", ,"), "no empty slot for null:\n{screen}");
+}

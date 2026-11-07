@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 
 use support::{compile, node};
 
-const DOCUMENT: &str = r#"
+const DOCUMENT: &str = r"
 format: ess-ui/1
 app: t
 model: t.system
@@ -31,7 +31,7 @@ pages:
         does: t.AddRun
         fields:
           - {field: tags, label: Tags, as: tags, suggests: {reads: {view: t.Tags}, value: name}}
-"#;
+";
 
 fn scratch(name: &str) -> PathBuf {
     let dir = Path::new(env!("CARGO_TARGET_TMPDIR"))
