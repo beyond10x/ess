@@ -196,6 +196,13 @@ fn newtype(
     alphabet_doc(out, text[0]);
     prefix_doc(out, text[1]);
     invariant_doc(out, invariants);
+    if declared.body.is_constrained() {
+        let _ = writeln!(
+            out,
+            "//\n// Checked by [{type_name}.BrokenConstraint]; the generated decoder refuses a value \
+             that breaks one."
+        );
+    }
     let _ = writeln!(
         out,
         "//\n// The field is unexported, so the only way to make one carrying a value is \
@@ -207,6 +214,7 @@ fn newtype(
          Value is the wrapped `{of}`.\nfunc (v {type_name}) Value() {inner} {{\n\treturn \
          v.value\n}}"
     );
+    super::invariant::newtype_check(out, emit, declared);
     super::reading::wrapper(out, emit, declared);
 }
 
@@ -592,16 +600,17 @@ pub(super) fn summary_doc(out: &mut String, summary: Option<&str>) {
     }
 }
 
-/// A declared alphabet, documented as an invariant is: the type carries it in its documentation
-/// and does not check it.
+/// A declared alphabet, documented as an invariant is. The type's `BrokenConstraint` checks it, and
+/// the generated decoder refuses a value outside it.
 fn alphabet_doc(out: &mut String, alphabet: Option<&str>) {
     if let Some(alphabet) = alphabet {
         let _ = writeln!(out, "//\n// Every character is one of `{alphabet}`.");
     }
 }
 
-/// The declared invariants, documented rather than silently dropped. The type does not check
-/// them; a behaviour that constructs a value does.
+/// The declared invariants, documented rather than silently dropped. A struct does not check
+/// them; a behaviour that constructs a value does. A newtype's are checked by its
+/// `BrokenConstraint`, which the generated decoder calls.
 pub(super) fn invariant_doc(out: &mut String, invariants: &[Invariant]) {
     if invariants.is_empty() {
         return;
