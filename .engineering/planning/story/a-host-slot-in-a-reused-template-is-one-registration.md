@@ -9,11 +9,12 @@ tags:
 - backlog
 - from-finding
 - queue-0.91.0
+- rank-10
 relations:
 - derived_from: design:ui-host-slots
 - depends_on: story:a-ui-document-declares-a-host-slot
 - serves: vision:O2
-revision: 1
+revision: 2
 ---
 ## Need
 

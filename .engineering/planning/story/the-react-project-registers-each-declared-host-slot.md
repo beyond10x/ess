@@ -7,13 +7,13 @@ title: The React project registers each declared host slot with a narrowed adapt
 summary: 'ADR Effect (React): a typed registry, one entry per slot, and tsc fails on a missing, extra or undeclared access'
 tags:
 - backlog
-- queue-0.90.0
-- rank-6
+- queue-0.91.0
+- rank-2
 relations:
 - derived_from: design:ui-host-slots
 - serves: vision:O2
 - depends_on: story:a-ui-document-declares-a-host-slot
-revision: 1
+revision: 4
 ---
 ## Need
 

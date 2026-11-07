@@ -8,12 +8,12 @@ summary: 'ADR section 3, check side: ess ui check --model checks a slot as it ch
 tags:
 - backlog
 - queue-0.91.0
-- rank-5
+- rank-9
 relations:
 - derived_from: design:ui-host-slots
 - serves: vision:O2
 - depends_on: story:a-ui-document-declares-a-host-slot
-revision: 4
+revision: 6
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-06T22:18:57Z", actor: "human:timo", revision: 2}
 - {from: "proposed", to: "active", at: "2026-11-06T22:18:58Z", actor: "human:timo", revision: 3}

@@ -7,9 +7,10 @@ title: A client-paged collection offers page sizes, a from-to range and resets o
 summary: 'Gap B4-7 (G-27): client pager sizes, range label for every pager, page reset on filter change'
 tags:
 - queue-0.91.0
+- rank-12
 relations:
 - serves: vision:O2
-revision: 4
+revision: 5
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-06T22:19:03Z", actor: "human:timo", revision: 2}
 - {from: "proposed", to: "active", at: "2026-11-06T22:19:04Z", actor: "human:timo", revision: 3}

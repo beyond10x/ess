@@ -8,12 +8,12 @@ summary: 'ADR section 2: a third coverage count in the text and JSON reports'
 tags:
 - backlog
 - queue-0.91.0
-- rank-4
+- rank-8
 relations:
 - derived_from: design:ui-host-slots
 - serves: vision:O2
 - depends_on: story:a-ui-document-declares-a-host-slot
-revision: 4
+revision: 6
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-06T22:18:56Z", actor: "human:timo", revision: 2}
 - {from: "proposed", to: "active", at: "2026-11-06T22:18:56Z", actor: "human:timo", revision: 3}

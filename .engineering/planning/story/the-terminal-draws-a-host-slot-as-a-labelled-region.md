@@ -7,13 +7,13 @@ title: The terminal draws a host slot as a labelled region
 summary: 'ADR Effect (terminal): a placeholder region that ess-ui-test can address; steps inside it are refused'
 tags:
 - backlog
-- queue-0.90.0
-- rank-7
+- queue-0.91.0
+- rank-3
 relations:
 - derived_from: design:ui-host-slots
 - serves: vision:O2
 - depends_on: story:a-ui-document-declares-a-host-slot
-revision: 1
+revision: 4
 ---
 ## Need
 

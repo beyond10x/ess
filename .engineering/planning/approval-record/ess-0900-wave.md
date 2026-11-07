@@ -18,7 +18,7 @@ relations:
 - decides: story:a-column-may-show-a-plain-string-row
 - decides: story:a-client-paged-collection-offers-sizes-and-a-range
 - decides: story:a-guard-over-several-list-literals-is-witnessed
-revision: 9
+revision: 10
 transitions:
 - {from: "draft", to: "approved", at: "2026-11-06T22:18:50Z", actor: "human:timo", revision: 2}
 ---
@@ -190,3 +190,24 @@ there the same way:
 - **`not exists`:** the mutant that drops the negated child passes every scenario (10 run).
 
 They predate U4. The draft is tagged queue-0.91.0 and rank-1, and U4 merges.
+
+## 0.91.0 ranking
+
+The coordinator's 0.91.0 ranking of 2026-11-07 is recorded as `rank-N` tags beside `queue-0.91.0`:
+
+1. story:a-list-literal-guard-is-witnessed-beside-other-inputs-and-negation
+2. story:the-react-project-registers-each-declared-host-slot
+3. story:the-terminal-draws-a-host-slot-as-a-labelled-region
+4. story:generated-rust-types-pass-rustfmt-and-clippy (spindle wave 12)
+5. story:an-enum-value-starting-with-a-digit-keeps-its-name (spindle wave 12)
+6. story:an-optional-list-view-parameter-is-read-as-published (spindle wave 12)
+7. story:validate-bundle-enforces-a-string-equality-invariant (spindle wave 12)
+8. story:host-covered-rows-are-their-own-count
+9. story:a-host-slot-reads-and-commands-only-what-it-declares
+10. story:a-host-slot-in-a-reused-template-is-one-registration
+11. story:a-column-may-show-a-plain-string-row
+12. story:a-client-paged-collection-offers-sizes-and-a-range
+
+The two generator stories are ranked 2 and 3 because the 0.90.0 generators refuse a host slot with
+"host slots are generated from 0.91.0". Under the four-unit cap, a lower rank would break that
+promise.
