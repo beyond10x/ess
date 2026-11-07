@@ -18,7 +18,7 @@ relations:
 - decides: story:a-column-may-show-a-plain-string-row
 - decides: story:a-client-paged-collection-offers-sizes-and-a-range
 - decides: story:a-guard-over-several-list-literals-is-witnessed
-revision: 7
+revision: 9
 transitions:
 - {from: "draft", to: "approved", at: "2026-11-06T22:18:50Z", actor: "human:timo", revision: 2}
 ---
@@ -160,3 +160,33 @@ The wave now delivers five stories in four units:
 - host-slot stories 1 and 2;
 - the null tag chip;
 - the several-literal guard.
+
+## Amendment: U4 trimmed cases
+
+The U4 adversary left three cases red:
+
+- two lists;
+- a leaf beside the literals that its base value refutes;
+- `not exists` never tested.
+
+On 2026-11-07, the coordinator accepted moving them to
+story:a-list-literal-guard-is-witnessed-beside-other-inputs-and-negation, on one condition: they
+must predate U4. The lead runs the three cases on base d91b3a039c2, without U4.
+
+- If all three fail the same way there, they predate U4. The draft is ranked first for 0.91.0, and
+  U4 merges.
+- If any passes on base, U4 broke it, and U4 fixes it before merging.
+
+The third case means a target that ignores the negated child of a list guard passes the suite. The
+0.90.0 CHANGELOG names it under Known limitations.
+
+## U4 base run
+
+The lead ran the three trimmed cases on base d91b3a039c2 without U4, one cargo, niced. All three fail
+there the same way:
+
+- **Two lists:** ESS-SYNTH-003 on the guarded branch, and four ESS-SYNTH-022 on `updated`.
+- **Leaf beside the literals:** ESS-SYNTH-003 and ESS-SYNTH-022.
+- **`not exists`:** the mutant that drops the negated child passes every scenario (10 run).
+
+They predate U4. The draft is tagged queue-0.91.0 and rank-1, and U4 merges.
