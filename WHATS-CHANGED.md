@@ -6,6 +6,7 @@ Generated from `changes/*.yaml` by `cargo xtask whats-changed`. Edit a fragment,
 
 | Release | Change | Kind | Impact |
 |---|---|---|---|
+| [0.90.0](#ui-documents-declare-host-slots-and-synthesis-witnesses-guards-over-lists-of-identities) | UI documents declare host slots, and synthesis witnesses guards over lists of identities | capability | notable |
 | [0.89.0](#a-route-takes-a-bare-body-a-literal-segment-wins-and-an-each-write-takes-repeated-identities) | A route takes a bare body, a literal segment wins, and an each write takes repeated identities | capability | significant |
 | [0.88.0](#journeys-reach-every-control-a-page-declares-and-a-collection-draws-the-controls-it-declares) | Journeys reach every control a page declares, and a collection draws the controls it declares | capability | notable |
 | [0.87.0](#ui-values-render-in-their-declared-form-forms-show-their-help-and-synthesis-refuses-a-misplaced-not-found-once) | UI values render in their declared form, forms show their help, and synthesis refuses a misplaced not-found once | capability | notable |
@@ -100,6 +101,14 @@ Generated from `changes/*.yaml` by `cargo xtask whats-changed`. Edit a fragment,
 | [0.16.0](#an-authored-scenario-can-claim-a-length-of-time-and-a-target-has-to-answer-for-it) | An authored scenario can claim a length of time, and a target has to answer for it | capability | significant |
 | [0.14.0](#a-component-can-declare-a-command-line-surface-and-ess-synthesizes-its-parser) | A component can declare a command-line surface, and ESS synthesizes its parser | capability | significant |
 | [0.1.0](#ess-becomes-a-standalone-executable-specification-toolchain) | ESS becomes a standalone executable specification toolchain | migration | significant |
+
+## 0.90.0 — 2026-11-07
+
+### UI documents declare host slots, and synthesis witnesses guards over lists of identities
+
+capability · notable impact · [release notes](https://github.com/beyond10x/ess/releases/tag/0.90.0)
+
+An ess-ui/1 document may declare host slots, places the host application draws itself; ess ui check holds them to their rules and lists the generator's backlog. Conformance synthesis witnesses a guard over a list of identities beside an updates subject, in a creating command and over several literals, and a null tag draws no chip.
 
 ## 0.89.0 — 2026-11-06
 
