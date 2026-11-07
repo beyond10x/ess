@@ -3340,7 +3340,13 @@ impl App {
             ..Ctx::default()
         };
         let mut text = match &form {
-            Some(form) => display(&self.field_value(form, &draft, &field, &ctx)),
+            // A null entry of a held list carries no tag: no empty slot in the text edited.
+            Some(form) => match self.field_value(form, &draft, &field, &ctx) {
+                Value::Sequence(items) => display(&Value::Sequence(
+                    items.into_iter().filter(|item| !item.is_null()).collect(),
+                )),
+                value => display(&value),
+            },
             None => display(&field_path(
                 &self.store.get(&draft, self.adapter.as_ref()),
                 &field,
