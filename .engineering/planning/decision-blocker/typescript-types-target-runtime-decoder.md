@@ -2,11 +2,13 @@
 format: aep.planning-md/3
 id: decision-blocker:typescript-types-target-runtime-decoder
 kind: decision-blocker
-status: open
+status: cleared
 title: Does the TypeScript types target gain a runtime decoder, or refuse constrained types?
 relations:
 - blocks: story:generated-decoders-enforce-declared-value-constraints
-revision: 1
+revision: 3
+transitions:
+- {from: "open", to: "cleared", at: "2026-11-07T18:38:08Z", actor: "human:timo", revision: 3}
 ---
 # Does the TypeScript types target gain a runtime decoder, or refuse constrained types?
 
@@ -32,3 +34,9 @@ promise the story exists to keep unkept. A also makes the Go/TypeScript agreemen
 ## What waits
 
 Wave 3 of the 0.91.0 plan (decoders part B). Waves 1 and 2 proceed without it.
+
+## Decision
+
+2026-11-07: option A. The TypeScript types target gains a runtime decoder per type that
+enforces every published constraint and names the path, agreeing with the Go decoder. Additive;
+it is decoders part B, wave 3 of the 0.91.0 plan.
