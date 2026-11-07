@@ -2,11 +2,13 @@
 format: aep.planning-md/3
 id: decision-blocker:how-a-stack-carries-an-optional-or-managed-dependency
 kind: decision-blocker
-status: open
+status: cleared
 title: Where a stack states that a supporting system is optional, and whether ESS deploys a managed one
 relations:
 - blocks: story:stack-external-system-may-be-optional-and-wired-by-the-environment
-revision: 1
+revision: 3
+transitions:
+- {from: "open", to: "cleared", at: "2026-11-07T23:12:14Z", actor: "human:timo", revision: 3}
 ---
 
 # Where a stack states an optional dependency, and what `managed` means
@@ -49,3 +51,10 @@ and the `optional` key of `story:runtime-secret-may-be-optional` should be spell
 whichever option is chosen.
 
 Decider: operator
+
+## Decision
+
+2026-11-07: option C. Runtime slots may be optional; an external system takes `optional: true`
+in a new `ess-stack/2` beside `/1` and is bound in full or not at all; a required slot targeting
+an optional system is refused at resolve; `managed: true` is refused by name in `/2`. Option D
+(ESS deploys managed providers) is declined for now.
