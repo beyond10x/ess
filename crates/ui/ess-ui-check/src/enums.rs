@@ -179,6 +179,7 @@ mod tests {
         "Document.actor",
         "Document.placement_profile",
         "Field.unit",
+        "HostSlot.stands_in_for",
         "Live.effect",
         "Live.when_paged_away",
         "Navigation.visibility",

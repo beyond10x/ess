@@ -107,11 +107,8 @@ pub(crate) fn expand(
                 Some(Value::String(kind)) => kind.clone(),
                 _ => return Err(LoadError::new(at, "a page names its `kind`")),
             };
-            let merged = kinds.merge(
-                &kinds.resolve(&kind, &mut Vec::new(), &at.child("kind"))?,
-                body,
-                &at,
-            )?;
+            let base = kinds.resolve(&kind, &mut Vec::new(), &at.child("kind"))?;
+            let merged = kinds.merge(&page_base(base, body, &at)?, body, &at)?;
             *page = Value::Mapping(merged);
         }
     }
@@ -169,6 +166,37 @@ pub(crate) fn expand(
         }
     }
     Ok((Value::Mapping(document), resolved.into_inner()))
+}
+
+/// The kind `page` is merged over. A page that is a host slot draws no sections, so it writes
+/// none and inherits neither its kind's sections, their layout nor the header that names them;
+/// its own header and overlays stay.
+fn page_base(mut base: Mapping, page: &Mapping, at: &NodePath) -> Result<Mapping> {
+    let Some(host) = page.get("host") else {
+        return Ok(base);
+    };
+    if page.contains_key("sections") {
+        return Err(LoadError::new(
+            at.clone(),
+            format!(
+                "host slot `{}` is the whole page, which draws no `sections`: remove them, or \
+                 make one section the slot",
+                host.as_str().unwrap_or_default()
+            ),
+        ));
+    }
+    base.remove("sections");
+    base.remove("layout");
+    base.remove("header");
+    Ok(base)
+}
+
+/// `true` when a value at a `one_of: [Node, Action]` position (`Tab.form`) is a node: it names a
+/// component, a primitive or a host.
+fn is_node(value: &Mapping) -> bool {
+    ["component", "primitive", "host"]
+        .iter()
+        .any(|key| value.contains_key(*key))
 }
 
 /// `Composite.union.other_tag_values`: a `component` names a widget only when it names no member,
@@ -551,7 +579,7 @@ impl Local<'_> {
                 _ => {}
             }
             // A position typed `one_of: [Node, Action]` (`Tab.form`) holds an action when the
-            // value names neither a component nor a primitive.
+            // value names neither a component, a primitive nor a host.
             let mut child_ctx = if ctx == Ctx::Action && key == "export" {
                 Ctx::Export
             } else {
@@ -559,7 +587,7 @@ impl Local<'_> {
             };
             if actions_one {
                 if let Value::Mapping(action) = child {
-                    if !action.contains_key("component") && !action.contains_key("primitive") {
+                    if !is_node(action) {
                         if all {
                             self.action(action, &here)?;
                         }

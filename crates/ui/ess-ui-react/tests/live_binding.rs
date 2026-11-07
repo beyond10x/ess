@@ -146,7 +146,9 @@ fn fnv(text: &str) -> u64 {
 /// `actions.tsx` and the whole-project digest re-pinned when a toggle's state was read as the
 /// terminal reads it (`holds` in `expr.ts`, so a `contains` state is a search), a `contains`
 /// search was split on the whitespace Rust splits on, and a tags input applied its suggestions
-/// read's client filter (`fields.tsx`).
+/// read's client filter (`fields.tsx`). The whole-project digest re-pinned for
+/// story:a-null-tag-draws-no-chip: a null entry of a tags value draws no chip and is neither shown,
+/// compared nor written back by the tags input (`fields.tsx`).
 const PLAIN: [(&str, u64); 7] = [
     ("README.md", 0xdae6_c3b6_7e5c_2d28),
     ("src/main.tsx", 0x6fd5_ef21_0230_ebac),
@@ -156,7 +158,7 @@ const PLAIN: [(&str, u64); 7] = [
     ("src/runtime/data.ts", 0x400e_ae09_0d5f_e141),
     ("www/index.html", 0x5972_6d4a_5ee2_5ce2),
 ];
-const PLAIN_PROJECT: u64 = 0xada5_bdf3_03cd_4d08;
+const PLAIN_PROJECT: u64 = 0xdc38_894e_ef27_945f;
 
 #[test]
 fn without_a_model_the_project_is_byte_identical() {

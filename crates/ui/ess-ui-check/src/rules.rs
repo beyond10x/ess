@@ -980,6 +980,7 @@ impl Checker<'_> {
             }
             Body::Primitive(primitive) => self.primitive(sink, path, primitive),
             Body::Widget(instance) => self.arguments(sink, path, instance),
+            Body::Host(_) => {}
         }
     }
 

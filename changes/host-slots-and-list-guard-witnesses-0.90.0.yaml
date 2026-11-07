@@ -1,0 +1,17 @@
+schema: b10x-change/v1
+id: ess/host-slots-and-list-guard-witnesses-0.90.0
+repository: ess
+publishedAt: 2026-11-07T00:00:00Z
+title: UI documents declare host slots, and synthesis witnesses guards over lists of identities
+summary: >-
+  An ess-ui/1 document may declare host slots, places the host application draws itself; ess ui
+  check holds them to their rules and lists the generator's backlog. Conformance synthesis
+  witnesses a guard over a list of identities beside an updates subject, in a creating command and
+  over several literals, and a null tag draws no chip.
+kind: capability
+impact: notable
+source:
+  url: https://github.com/beyond10x/ess/releases/tag/0.90.0
+  version: 0.90.0
+journeys: [specify]
+affectedSurfaces: [ess/docs]

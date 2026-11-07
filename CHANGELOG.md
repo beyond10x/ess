@@ -2,6 +2,23 @@
 
 ## [Unreleased]
 
+## [0.90.0] — 2026-11-07
+
+### Added
+
+- `ess-ui/1`: a node may be a host slot, a declared place the host application draws with its own component and ESS does not draw: `host`, the component name the host registers, a node name unique in the document; `reason`, why the generator cannot draw it, never empty; `stands_in_for`; and optional `reads` and `commands`, the view and the commands the host component uses. A slot stands at a page (its keys beside the page's own; the page then draws no sections and inherits no sections, layout or header from its kind), a section, an overlay, a tab (as the tab's `form` node) or a field (its keys beside the field's own), and its node path is its scope. `ess ui check` refuses a slot without a reason or without `stands_in_for`, two slots of one `host` name, a `host` that is no node name, and `host` beside `component` or `primitive`, as `host_slots`; `ess ui check --hosts <file>`, one registered name per line with `#` starting a comment, refuses a name no slot declares as `hosts_registered`. The schema and the `ess-ui/1` reference carry the shape. `ess generate ui --target react` and the terminal renderer (`--target tui`, `ess ui run`) refuse a document holding a host slot, naming its path, until host slots are generated in 0.91.0. The node is optional, so `ess-ui/1` stays `/1`: a document without a slot loads, checks and renders as before, and an `ess` before 0.90.0 refuses `host` as an unknown key (story:a-ui-document-declares-a-host-slot).
+- `ess-ui/1`: a host slot's `stands_in_for` names the generator item it replaces, a composite, a primitive (`text`, `badge`, `icon`, `button`, `link`, `input`, `toggle`, `image`, `divider`) or `none`; any other value is refused by name as `host_slots`. `ess ui check` lists the slots that stand in for `none` as the generator's backlog, each with its path, host and reason: a `backlog` line per slot in the text report and a `backlog` list in the `ess-ui-check/1` JSON report. A document without such a slot reports byte for byte as before (story:a-host-slot-names-the-generator-item-it-stands-in-for).
+
+### Fixed
+
+- Conformance synthesis: a refusal over a list of identities in the input, beside a branch acting on a row the input names, is sent for a row that branch arranges; before, the not-found answer for an identity no row carries came first and decided the refusal's scenario. A branch whose own `when:` guard the empty list refutes is sent the list its witness holds, each element a row created under it, instead of generated identities no row carries. A step creating rows through such a branch gives way to a sibling the empty list reaches instead of being refused `ESS-SYNTH-019`, and where the guarded branch is the only route it is sent a list that satisfies the guard, so the outcomes over the rows it creates are no longer refused `ESS-SYNTH-004`. A vacuous `forall` guard over the list is witnessed the same way, and a swapped-caller run keeps every list guard it sends deciding as before or is left out with its note. No repository model's synthesized bytes moved (beyond10x/ess#761; story:a-list-identity-guard-beside-an-updates-subject-is-witnessed).
+- Conformance synthesis: a guard that needs several text literals in one identity list, `all: [exists a: a == x, exists b: b == y]`, is witnessed by one list holding every literal, tried after every other candidate and only for a command with such a guard; before, it was refused `ESS-SYNTH-003`, because a one-element list holds one literal at most. A boundary scenario that moves the list a related guard reads is sent rows created under its elements instead of literals no row carries (beyond10x/ess#761; story:a-guard-over-several-list-literals-is-witnessed).
+- `ess-ui/1` React target and terminal: a null entry of an `as: tags` field draws no chip, so `["a", null, "b"]` draws `a` and `b` and a list holding only null draws nothing; before, the React runtime drew a chip reading `null` and the terminal an empty `#`. The tags input neither shows, compares nor writes back a held null: it shows `a, b`, picking a suggestion no longer saves the text `null`, a suggestion named `null` stays offered, and the terminal's edit text has no empty slot (story:a-null-tag-draws-no-chip).
+
+### Known
+
+- Conformance synthesis does not test the negated side of a list guard with a negated child, `all: [exists a: …, not exists b: …]`: no scenario sends a list holding the negated literal, so a target that ignores the negation passes the suite. story:a-list-literal-guard-is-witnessed-beside-other-inputs-and-negation tracks it.
+
 ## [0.89.0] — 2026-11-06
 
 ### Added

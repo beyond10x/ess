@@ -1,0 +1,140 @@
+format: ess/32
+system: demo
+version: v1
+domain: demo.role
+summary: Roles composed of permissions that a repository holds, a list guard beside an updates subject and in the creating command.
+naming: {wire: roles, display: Roles}
+types:
+  - {name: demo.role.PermissionId, kind: newtype, of: String}
+  - {name: demo.role.RoleId, kind: newtype, of: String}
+  - {name: demo.role.ServiceRef, kind: newtype, of: String}
+entities:
+  - name: demo.role.Permission
+    identity: {name: permission_id, type: demo.role.PermissionId}
+    fields:
+      - {name: supplier, type: demo.role.ServiceRef}
+    lifecycle: {initial: Active, states: [Active], terminal: [Active]}
+  - name: demo.role.Role
+    identity: {name: role_id, type: demo.role.RoleId}
+    fields:
+      - {name: name, type: String}
+      - {name: permissions, type: "List<demo.role.PermissionId>"}
+      - {name: telephony_eligible, type: Boolean}
+    relations:
+      - {name: permissions, kind: references, target: demo.role.Permission, cardinality: many, via: permissions}
+    lifecycle: {initial: Active, states: [Active], terminal: [Active]}
+actors:
+  - name: demo.role.Admin
+    may: [demo.role.DefineRole, demo.role.UpdateRolePermissions]
+  - name: demo.role.Supplier
+    attributes: [{name: service_id, type: demo.role.ServiceRef}]
+    may: [demo.role.SupplyPermission]
+errors:
+  - {name: demo.role.UnknownPermission, summary: A permission is not in the repository.}
+  - {name: demo.role.RoleNotFound, summary: No role has this id.}
+commands:
+  - name: demo.role.SupplyPermission
+    naming: {wire: supply-permission, display: Supply permission}
+    input: [{name: permission_id, type: demo.role.PermissionId}]
+    outcomes:
+      - name: supplied
+        creates: demo.role.Permission
+        instance: permission_id
+        emits: [demo.role.PermissionSupplied]
+        payload:
+          demo.role.PermissionSupplied: {permission_id: input.permission_id}
+        sets: {supplier: {caller: service_id}}
+  - name: demo.role.DefineRole
+    naming: {wire: define-role, display: Define role}
+    input:
+      - {name: name, type: String}
+      - {name: permissions, type: "List<demo.role.PermissionId>"}
+    outcomes:
+      - name: unknown-permission
+        when_related: {via: input.permissions, exists: false}
+        error: demo.role.UnknownPermission
+      - name: defined-with-telephony
+        when:
+          exists: {in: input.permissions, as: p, that: 'p == "telephony"'}
+        creates: demo.role.Role
+        instance: role_id
+        emits: [demo.role.RoleDefined]
+        payload:
+          demo.role.RoleDefined: {role_id: {generated: true}, permissions: input.permissions}
+        sets: {name: input.name, permissions: input.permissions, telephony_eligible: true}
+      - name: defined
+        creates: demo.role.Role
+        instance: role_id
+        emits: [demo.role.RoleDefined]
+        payload:
+          demo.role.RoleDefined: {role_id: {generated: true}, permissions: input.permissions}
+        sets: {name: input.name, permissions: input.permissions, telephony_eligible: false}
+  - name: demo.role.UpdateRolePermissions
+    naming: {wire: update-role-permissions, display: Update role permissions}
+    input:
+      - {name: role_id, type: demo.role.RoleId}
+      - {name: permissions, type: "List<demo.role.PermissionId>"}
+    outcomes:
+      - name: unknown-permission
+        when_related: {via: input.permissions, exists: false}
+        error: demo.role.UnknownPermission
+      - name: updated-with-telephony
+        when:
+          exists: {in: input.permissions, as: p, that: 'p == "telephony"'}
+        updates: demo.role.Role
+        instance: role_id
+        emits: [demo.role.RolePermissionsUpdated]
+        payload:
+          demo.role.RolePermissionsUpdated: {role_id: input.role_id, permissions: input.permissions}
+        sets: {permissions: input.permissions, telephony_eligible: true}
+      - name: updated
+        updates: demo.role.Role
+        instance: role_id
+        emits: [demo.role.RolePermissionsUpdated]
+        payload:
+          demo.role.RolePermissionsUpdated: {role_id: input.role_id, permissions: input.permissions}
+        sets: {permissions: input.permissions, telephony_eligible: false}
+      - name: not-found
+        unknown_instance: true
+        error: demo.role.RoleNotFound
+events:
+  - name: demo.role.PermissionSupplied
+    fields: [{name: permission_id, type: demo.role.PermissionId}]
+  - name: demo.role.RoleDefined
+    fields:
+      - {name: role_id, type: demo.role.RoleId}
+      - {name: permissions, type: "List<demo.role.PermissionId>"}
+  - name: demo.role.RolePermissionsUpdated
+    fields:
+      - {name: role_id, type: demo.role.RoleId}
+      - {name: permissions, type: "List<demo.role.PermissionId>"}
+views:
+  - name: demo.role.RoleCatalog
+    source: demo.role.Role
+    consistency: eventual
+    fields:
+      - {name: role_id, type: demo.role.RoleId}
+      - {name: permissions, type: "List<demo.role.PermissionId>"}
+      - {name: telephony_eligible, type: Boolean}
+    naming: {wire: catalog, display: Role catalogue}
+  - name: demo.role.PermissionRepository
+    source: demo.role.Permission
+    consistency: eventual
+    fields: [{name: permission_id, type: demo.role.PermissionId}]
+    naming: {wire: permission-repository, display: Permission repository}
+components:
+  - component: demo-service
+    summary: The one component.
+    owns:
+      domains: [demo.role]
+    accepts:
+      commands:
+        - demo.role.SupplyPermission
+        - demo.role.DefineRole
+        - demo.role.UpdateRolePermissions
+    publishes:
+      events:
+        - demo.role.PermissionSupplied
+        - demo.role.RoleDefined
+        - demo.role.RolePermissionsUpdated
+    reached_by: network

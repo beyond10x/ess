@@ -218,6 +218,29 @@ assert.deepStrictEqual(tags(bare), ['{"id":"l-3"}']);
     );
 }
 
+/// story:a-null-tag-draws-no-chip: a `null` entry carries no tag, so it draws no chip (never the
+/// text "null"); a list of only `null` draws nothing; objects and other values draw as before.
+/// Record and collection fields both render through `FieldValue`.
+#[test]
+fn a_null_tag_draws_no_chip() {
+    let (project, _) = generate("null-tags");
+    render(
+        &project,
+        "null-tags",
+        r#"
+const tags = (root) => root.find((n) => n.tag === "span" && n.props.className === "ui-tag").map((n) => n.children.join(""));
+const mixed = shown(column("labels", { as: "tags" }), { labels: ["a", null, "b"] });
+assert.deepStrictEqual(tags(mixed), ["a", "b"]);
+assert.ok(!mixed.text().includes("null"), mixed.text());
+const only = shown(column("labels", { as: "tags" }), { labels: [null] });
+assert.deepStrictEqual(tags(only), []);
+assert.strictEqual(only.text(), "");
+const others = shown(column("labels", { as: "tags" }), { labels: [{ id: "l-1", label: "Urgent" }, 3, true, "x", { id: "l-3" }] });
+assert.deepStrictEqual(tags(others), ["Urgent", "3", "true", "x", '{"id":"l-3"}']);
+"#,
+    );
+}
+
 #[test]
 fn a_dotted_path_into_a_list_renders_its_values() {
     let (project, pages) = generate("dotted");

@@ -1050,6 +1050,18 @@ fn search_with(
     }
     // A `distinct` guard is decided by lists that hold two or more elements ([`decisive_first`]).
     let mut inputs = decisive_first(&mut builder, command, &expanded, inputs)?;
+    // A list several existentials compare with literals of their own is tried once holding each
+    // of them, every other leaf at its base: a one-element list holds one at most
+    // (beyond10x/ess#761). Tried last, so a branch an earlier candidate witnessed keeps it. Only
+    // commands with such a guard get it, so every other suite keeps its bytes.
+    for (list, members) in member_literals(guards) {
+        let mut input = builder.input(command, &BTreeMap::new())?;
+        if crate::synthesize::set_at(&mut input, &list.to_string(), Some(Node::Seq(members)))
+            && !inputs.contains(&input)
+        {
+            inputs.push(input);
+        }
+    }
     // Where the bound cut the walk short, the leaves late in path order never left their first
     // values, and a guard over them was refused. What the walk tried stays first, in its order, so
     // a branch it witnessed is sent the input it was always sent; only a caller that found nothing
@@ -2979,6 +2991,59 @@ fn omissions(guards: &[&Predicate], optionals: &BTreeSet<FactPath>) -> Vec<FactP
         }
     }
     omitted.into_iter().collect()
+}
+
+/// The lists two or more `exists` quantifiers of `guards` walk, each comparing its element with a
+/// text literal by `==` (`exists p in permissions: p == telephony`), with those literals, distinct,
+/// in the order the guards write them (beyond10x/ess#761).
+fn member_literals(guards: &[&Predicate]) -> Vec<(FactPath, Vec<Node>)> {
+    fn walk(predicate: &Predicate, found: &mut BTreeMap<FactPath, Vec<Node>>) {
+        match predicate {
+            Predicate::All(children) | Predicate::Any(children) => {
+                for child in children {
+                    walk(child, found);
+                }
+            }
+            Predicate::Exists(quantified) => {
+                let Some(over) = quantified.over.fact() else {
+                    return;
+                };
+                let Predicate::Compare {
+                    left,
+                    op: CompareOp::Eq,
+                    right,
+                    ..
+                } = &quantified.body
+                else {
+                    return;
+                };
+                let binder = |operand: &Operand| {
+                    matches!(operand, Operand::Fact(path)
+                        if path.segments().len() == 1 && path.namespace() == quantified.bind)
+                };
+                for (element, other) in [(left, right), (right, left)] {
+                    if let (true, Operand::Literal(FactValue::Text(literal))) =
+                        (binder(element), other)
+                    {
+                        let members = found.entry(over.clone()).or_default();
+                        let node = Node::Text(literal.clone());
+                        if !members.contains(&node) {
+                            members.push(node);
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    let mut found = BTreeMap::new();
+    for guard in guards {
+        walk(guard, &mut found);
+    }
+    found
+        .into_iter()
+        .filter(|(_, members)| members.len() > 1)
+        .collect()
 }
 
 /// Every quantifier body under `predicate`, rebound onto the first element of what it walks.

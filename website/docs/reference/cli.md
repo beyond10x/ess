@@ -1801,6 +1801,7 @@ ess ui check [OPTIONS] --path <PATH>
 | `--model` | `<MODEL>` | no |  | An ESS specification (one file, or a directory with `system.yaml`) the document's views, commands and events must exist in |
 | `--format` | `<FORMAT>` | no | `text` | Output rendering. One of `text`, `json`. |
 | `--lacks` | `<CAPABILITY>`… | no |  | A capability the target renderer lacks (repeatable), such as `no_file_upload` |
+| `--hosts` | `<FILE>` | no |  | A file of the host component names the host application registers, one per line (`#` starts a comment); a name no host slot of the document declares is refused |
 
 #### `ess ui docs`
 

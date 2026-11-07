@@ -354,6 +354,30 @@ fn export_selection() {
 }
 
 #[test]
+fn host_slots() {
+    let text = page(
+        "{kind: detail_page, title: P, sections: [{name: summary, reads: t.ById}, \
+         {name: map, host: RouteMap, reason: \"\", stands_in_for: chart}]}",
+    );
+    let finding = trips(&text, "host_slots", "pages/p/sections/map");
+    assert!(finding.message.contains("reason"), "{finding:?}");
+}
+
+#[test]
+fn hosts_registered() {
+    let text = page(
+        "{kind: detail_page, title: P, sections: [{name: summary, reads: t.ById}, \
+         {name: map, host: RouteMap, reason: a map widget, stands_in_for: chart}]}",
+    );
+    let options = Options {
+        hosts: Some(vec!["RouteMap".to_owned(), "Ghost".to_owned()]),
+        ..Options::default()
+    };
+    let finding = trips_in(&report_with(&text, None, &options), "hosts_registered", "/");
+    assert!(finding.message.contains("`Ghost`"), "{finding:?}");
+}
+
+#[test]
 fn layout_complete() {
     let text = page(
         "{kind: detail_page, title: P, layout: {columns: [{name: main, sections: []}]}, \
@@ -1240,6 +1264,7 @@ fn degrades_cover() {
     );
     let lacking = Options {
         lacks: vec!["no_file_upload".to_owned()],
+        ..Options::default()
     };
     let lacks = report_with(&text, None, &lacking);
     trips_in(
@@ -1254,6 +1279,7 @@ fn degrades_cover() {
     );
     let graph = Options {
         lacks: vec!["no_graph_editor".to_owned()],
+        ..Options::default()
     };
     assert_eq!(
         tripped(&report_with(&covered, None, &graph), "degrades_cover").len(),
@@ -1284,6 +1310,7 @@ fn degrades_cover() {
     ]);
     let no_live = Options {
         lacks: vec!["no_live".to_owned()],
+        ..Options::default()
     };
     trips_in(
         &report_with(&nested, None, &no_live),
@@ -1292,6 +1319,7 @@ fn degrades_cover() {
     );
     let unknown = Options {
         lacks: vec!["no_teleport".to_owned()],
+        ..Options::default()
     };
     trips_in(
         &report_with(&doc(&[]), None, &unknown),
@@ -1746,6 +1774,7 @@ fn run_exits_1_on_an_error_and_0_on_warnings_only() {
         model: None,
         format: OutputFormat::Json,
         lacks: Vec::new(),
+        hosts: None,
     };
     assert_eq!(
         ess_ui_check::exit_code(&failing).expect("the check runs"),

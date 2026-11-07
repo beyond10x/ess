@@ -1186,6 +1186,35 @@ constructs:
       orientation: {type: {enum: [horizontal, vertical]}, default: horizontal, note: direction}
     example: {name: rule, primitive: divider}
 
+  # ── host slots ───────────────────────────────────────────────────────────────────────────
+  HostSlot:
+    group: composites
+    order: 33
+    summary: A declared place where the host application supplies its own component.
+    doc: >
+      A host slot stands where the generator cannot draw yet: a bespoke editor, a vendor widget,
+      a visualisation with its own interaction. ESS does not draw it and never counts it as
+      covered by the specification. It stands where a node may stand, at one of five scopes: a
+      page (the slot keys beside the page's own; the page draws no sections and inherits no
+      sections, layout or header from its kind), a section, an
+      overlay, a tab (as the tab's `form` node) or a field (the slot keys beside the field's
+      own). Its scope is its node path. A node is a slot when it carries `host`, and a slot
+      beside `component` or `primitive` is refused. `host` names the component the host
+      registers and is unique in the document; a widget's declaration is not drawn, so a slot in
+      a widget is found at each use. `reason` says why the generator cannot draw it and is never
+      empty. `stands_in_for` names the generator item the slot replaces, so a later generator
+      can take it back. `reads` and `commands` declare what the host component reads and sends.
+      `ess ui check --hosts <file>` refuses a name the host registers that no slot declares, and
+      every report of `ess ui check` lists the slots that stand in for `none`, each with its path
+      and reason, as the generator's backlog.
+    fields:
+      host:          {type: name, required: true, note: "the component name the host registers, a node name; unique in the document"}
+      reason:        {type: string, required: true, note: "why the generator cannot draw it; never empty"}
+      stands_in_for: {type: {one_of: [{ref: composite_kind}, {enum: [text, badge, icon, button, link, input, toggle, image, divider]}, {const: none}]}, required: true, note: "the composite or primitive the slot replaces, or `none` where no generator item fits"}
+      reads:         {type: Reads, note: "the view the host component reads, written as a composite's `reads`"}
+      commands:      {type: {list: {ref: command}}, note: the commands the host component sends}
+    example: {name: route, host: RouteMap, reason: draws the delivery route on a map, stands_in_for: chart, reads: {view: deliveries.Route, params: {id: params.id}}}
+
   # ── data ─────────────────────────────────────────────────────────────────────────────────
   Reads:
     group: data
@@ -1711,3 +1740,5 @@ checks:
     - {id: suggests_needs_tags, subject: "**.suggests", must: sit_on_an_as_tags_field, severity: error}
     - {id: toggle_state_unknown, subject: "**.checked absent on an as toggle action with does", must: [write_checked, or_bind_exactly_one_input_as_not_expr], severity: warning}
     - {id: checked_unreadable, subject: "**.checked on an as toggle action", must: [parse_as_a_filter_predicate, read_only_row_params_state_shell_args], severity: warning}
+    - {id: host_slots, subject: "**.host", must: [carry_a_non_empty_reason, name_what_it_stands_in_for, be_the_only_slot_of_its_host_name, carry_neither_component_nor_primitive], severity: error}
+    - {id: hosts_registered, subject: "**.host, for every name ess ui check --hosts lists", must_resolve_in: ["**.host"], severity: error}

@@ -818,6 +818,8 @@ impl App {
                 }
             }
             Body::Composite(composite) => self.composite_lines(composite, place),
+            // `profile::check` refuses a document with a host slot before anything is drawn.
+            Body::Host(_) => Vec::new(),
         }
     }
 
@@ -1509,8 +1511,10 @@ fn cell_value(field: &Field, value: &Value) -> String {
         Some("tags") => value.as_sequence().map_or_else(
             || display(value),
             |items| {
+                // A null entry carries no tag, so it draws no chip.
                 items
                     .iter()
+                    .filter(|item| !item.is_null())
                     .map(|item| format!("#{}", display(item)))
                     .collect::<Vec<_>>()
                     .join(" ")

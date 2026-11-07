@@ -9,6 +9,14 @@ What each ESS release is worth to somebody using it: what became possible, how m
 
 This page is generated from the change records kept in the repository. A release with no entry here added nothing somebody using ESS would act on.
 
+## 0.90.0 — 2026-11-07
+
+### UI documents declare host slots, and synthesis witnesses guards over lists of identities
+
+capability · notable impact · [release post](https://beyond10x.github.io/ess/releases/host-slots-and-list-guard-witnesses) · [release notes](https://github.com/beyond10x/ess/releases/tag/0.90.0)
+
+An ess-ui/1 document may declare host slots, places the host application draws itself; ess ui check holds them to their rules and lists the generator's backlog. Conformance synthesis witnesses a guard over a list of identities beside an updates subject, in a creating command and over several literals, and a null tag draws no chip.
+
 ## 0.89.0 — 2026-11-06
 
 ### A route takes a bare body, a literal segment wins, and an each write takes repeated identities

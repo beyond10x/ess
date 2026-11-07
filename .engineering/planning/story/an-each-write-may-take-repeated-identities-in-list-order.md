@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:an-each-write-may-take-repeated-identities-in-list-order
 kind: story
-status: active
+status: implemented
 title: An each write may take repeated identities in list order
 summary: 'each: {repeated: last_wins} at ess/35 lifts the distinct requirement; elements apply in list order (beyond10x/ess#748 part 3)'
 tags:
@@ -30,10 +30,11 @@ scope:
   path: crates/verify/ess-diff/src/diff.rs
 - confidence: inferred
   path: schemas/generated/ess.schema.json
-revision: 11
+revision: 12
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-06T10:55:32Z", actor: "human:timo", revision: 10}
 - {from: "proposed", to: "active", at: "2026-11-06T10:55:33Z", actor: "human:timo", revision: 11}
+- {from: "active", to: "implemented", at: "2026-11-06T20:28:01Z", actor: "human:timo", revision: 12, decided_on: {"recorded":{"test_result":1}}}
 ---
 ## Outcome
 

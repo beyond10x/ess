@@ -2214,6 +2214,45 @@ fn unknown_answered_at(ir: &EssIr, command: &ResolvedCommand, declared: &Resolve
     }
 }
 
+/// The arrangement of a branch naming no subject of its own, beside one acting on an existing row
+/// the input names: it is sent for a row that branch could act on, so the guard under test is the
+/// only thing that refuses it. `None` where no sibling acts on such a row.
+///
+/// A list of references (`related_list`, beyond10x/ess#761) is arranged the same way: an identity
+/// no row carries is answered before the related rows are read, so a refusal sent for no row would
+/// be answered by the not-found branch instead.
+pub(super) fn beside_acting(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    distinction: Distinction,
+) -> Option<Result<Setup, RefusalCause>> {
+    let (sibling, named) = acting(command)?;
+    Some(
+        prepare_in(ir, sibling, actors, None, distinction).and_then(|arranged| {
+            let instance = arranged.instance.ok_or_else(unarranged)?;
+            // A complete input-guarded or related-row refusal (ess/34) reads the row back
+            // unchanged, so the state and fields it was left in are kept for its snapshot
+            // (`story:every-witness-reads-back-its-outcome-effect`); every other branch keeps
+            // what it had.
+            let complete = super::guarded_complete(outcome);
+            Ok(Setup {
+                steps: arranged.steps,
+                source: arranged.source,
+                bound: BTreeMap::from([(named.to_owned(), instance)]),
+                before: arranged.before.filter(|_| complete),
+                settled: if complete {
+                    arranged.settled
+                } else {
+                    BTreeMap::new()
+                },
+                ..Setup::none()
+            })
+        }),
+    )
+}
+
 /// The first branch of the command acting on an existing row the input names, and that input.
 fn acting(command: &ResolvedCommand) -> Option<(&ResolvedOutcome, &str)> {
     command
@@ -3687,29 +3726,8 @@ fn own_arrangement(
         }
     };
     let setup = match (&outcome.subject, acting(command)) {
-        // A branch naming no subject of its own, beside one acting on an existing row, is sent for
-        // a row that branch could act on: the related row is then the only thing that refuses it.
-        (None, Some((sibling, named))) => {
-            let arranged = prepare_in(ir, sibling, actors, None, distinction)?;
-            let instance = arranged.instance.ok_or_else(unarranged)?;
-            // A complete input-guarded or related-row refusal (ess/34) reads the row back
-            // unchanged, so the state and fields it was left in are kept for its snapshot
-            // (`story:every-witness-reads-back-its-outcome-effect`); every other branch keeps
-            // what it had.
-            let complete = super::guarded_complete(outcome);
-            Setup {
-                steps: arranged.steps,
-                source: arranged.source,
-                bound: BTreeMap::from([(named.to_owned(), instance)]),
-                before: arranged.before.filter(|_| complete),
-                settled: if complete {
-                    arranged.settled
-                } else {
-                    BTreeMap::new()
-                },
-                ..Setup::none()
-            }
-        }
+        (None, Some(_)) => beside_acting(ir, command, outcome, actors, distinction)
+            .expect("a sibling acts on an existing row")?,
         // A creation owned by the related row: the row is arranged below, once, as the related
         // row, and the owner field points at it — or, on the `exists: false` branch, at none.
         (Some(subject), _) if owner_is_related(ir, command, outcome) => {

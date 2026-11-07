@@ -2,15 +2,17 @@
 format: aep.planning-md/3
 id: architecture-decision-record:a-ui-document-declares-the-host-components-it-does-not-generate
 kind: architecture-decision-record
-status: proposed
+status: accepted
 title: A UI document declares the host components it does not generate
 summary: 'Proposed: ess-ui/1 host slots (declared, own coverage count, binding-only access, named stand-in); Decider: operator'
 relations:
 - serves: vision:O2
 - informed_by: epic:ess-ui-renderer-neutral-ui
-revision: 1
+revision: 4
+transitions:
+- {from: "proposed", to: "accepted", at: "2026-11-06T21:10:21Z", actor: "human:timo", revision: 2}
 ---
-Status: proposed. Decider: operator. Nothing is built until this record is accepted.
+Status: accepted 2026-11-06 (option A). Decider: operator.
 
 ## Context
 
@@ -106,5 +108,6 @@ slot: page and section become the node path, component becomes `host:`, reason s
 
 ## Acceptance evidence
 
-None yet. Acceptance is the operator's move of this record to `accepted`; the design page and
-stories follow it.
+The operator answered "A" on 2026-11-06 at about 21:0xZ; see approval-record:adr-ui-host-slots-option-a.
+The record is accepted. The design is design:ui-host-slots, and its six draft stories are queued
+for 0.90.0 after the issue 761 story.

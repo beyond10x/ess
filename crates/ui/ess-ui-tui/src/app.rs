@@ -1427,7 +1427,7 @@ impl App {
     fn node_reads(&self, at: &NodePath, body: &Body, ui: &str, ctx: &Ctx<'_>, out: &mut Wanted) {
         match body {
             Body::Widget(widget) => self.nodes_reads(at, "body", &widget.body, ui, ctx, out),
-            Body::Primitive(_) => {}
+            Body::Primitive(_) | Body::Host(_) => {}
             Body::Composite(composite) => {
                 if let Some(reads) = body_reads(body) {
                     out.reads.push(self.request(reads, ctx));
@@ -3340,7 +3340,13 @@ impl App {
             ..Ctx::default()
         };
         let mut text = match &form {
-            Some(form) => display(&self.field_value(form, &draft, &field, &ctx)),
+            // A null entry of a held list carries no tag: no empty slot in the text edited.
+            Some(form) => match self.field_value(form, &draft, &field, &ctx) {
+                Value::Sequence(items) => display(&Value::Sequence(
+                    items.into_iter().filter(|item| !item.is_null()).collect(),
+                )),
+                value => display(&value),
+            },
             None => display(&field_path(
                 &self.store.get(&draft, self.adapter.as_ref()),
                 &field,
@@ -4655,6 +4661,7 @@ pub(crate) fn columns_of(collection: &ess_ui::Collection, rows: &[Value]) -> Vec
                         labels: None,
                         note: None,
                         help: None,
+                        host: None,
                     })
                     .collect()
             })
@@ -4678,6 +4685,7 @@ fn plain_field(name: &str, field_as: Option<&str>) -> Field {
         labels: None,
         note: None,
         help: None,
+        host: None,
     }
 }
 

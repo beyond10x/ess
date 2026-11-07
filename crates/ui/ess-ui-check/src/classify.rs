@@ -49,7 +49,9 @@ pub(crate) fn refusal(text: &str, error: &LoadError, sink: &mut Sink) {
 }
 
 fn classify(message: &str) -> &'static str {
-    if message.contains("(names_unique)") {
+    if message.contains("host slot") {
+        "host_slots"
+    } else if message.contains("(names_unique)") {
         "names_unique"
     } else if message.contains("names no entry of `tone_maps`") {
         "tone_map_refs"
