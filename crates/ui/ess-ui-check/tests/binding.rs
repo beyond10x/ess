@@ -486,6 +486,118 @@ fn a_choice_carries_its_views_identity_and_its_model_enums_variants() {
     assert!(bound.enums.is_empty());
 }
 
+/// A page of model `shop` with a section slot reading `view` and sending `command`, a page slot
+/// sending `page_command`, and a field slot reading nothing and sending nothing.
+fn slotted(view: &str, command: &str, page_command: &str) -> String {
+    format!(
+        "format: ess-ui/1\napp: desk\nmodel: shop\nplacement_profile: fat\n\
+         shells: {{app: {{regions: {{main: {{kind: page_outlet}}}}}}}}\n\
+         navigation: {{home: p, sections: [{{name: all, pages: [p, editor]}}]}}\n\
+         pages:\n  \
+           p: {{kind: detail_page, title: P, sections: [\
+             {{name: map, host: StockMap, reason: a vendor map, stands_in_for: collection, \
+               reads: {view}, commands: [{command}]}}, \
+             {{name: summary, reads: stock.Items, fields: [{{field: label, host: LabelPad, \
+               reason: a pen input, stands_in_for: rich_text}}]}}]}}\n  \
+           editor: {{kind: detail_page, title: E, host: AuditCanvas, reason: a vendor canvas, \
+             stands_in_for: graph_editor, commands: [{page_command}]}}\n"
+    )
+}
+
+/// story:a-host-slot-reads-and-commands-only-what-it-declares: a host component reads and sends
+/// only through the binding of what its slot declares, so the binding routes exactly the slot's
+/// reads and commands, and refuses them as it refuses a generated node's: an unknown name, a name
+/// no network component serves, and an operation an `ess-http/1` binding does not route.
+#[test]
+fn a_host_slots_reads_and_commands_bind_as_a_generated_nodes_do() {
+    let sources = shop_with_components(&[]);
+    let text = slotted("stock.Items", "stock.AddItem", "audit.RecordEntry");
+    let binding = bound(&text, &sources);
+    let served = &binding.components["shop-service"];
+    assert_eq!(
+        served.views.keys().collect::<Vec<_>>(),
+        ["shop.stock.Items"],
+        "{served:#?}"
+    );
+    assert_eq!(
+        served.commands.keys().collect::<Vec<_>>(),
+        ["shop.audit.RecordEntry", "shop.stock.AddItem"],
+        "{served:#?}"
+    );
+    assert_eq!(
+        served.commands["shop.stock.AddItem"].path,
+        derived(&sources, "shop-service", "shop.stock.AddItem")
+    );
+    assert_eq!(binding.names["audit.RecordEntry"], "shop.audit.RecordEntry");
+
+    // Names the model does not declare.
+    let unknown = slotted("stock.Missing", "stock.Nope", "audit.Gone");
+    let refusals = refusals_of(&unknown, &sources);
+    for (path, name) in [
+        ("pages/p/sections/map/reads", "`stock.Missing`"),
+        ("pages/p/sections/map/commands", "`stock.Nope`"),
+        ("pages/editor/commands", "`audit.Gone`"),
+    ] {
+        let refusal = refused_at(&refusals, path);
+        assert!(refusal.message.contains(name), "{refusal:?}");
+    }
+    assert_eq!(refusals.len(), 3, "{refusals:#?}");
+
+    // No component reached over a network serves them.
+    let unserved = shop_with_components(&[("    reached_by: network\n", "")]);
+    let refusals = refusals_of(&text, &unserved);
+    for path in [
+        "pages/p/sections/map/reads",
+        "pages/p/sections/map/commands",
+        "pages/editor/commands",
+    ] {
+        let refusal = refused_at(&refusals, path);
+        assert!(
+            refusal.message.contains("reached_by: network"),
+            "{refusal:?}"
+        );
+    }
+
+    // An `ess-http/1` binding that routes the section slot's view and command, and not the page
+    // slot's command.
+    let ir = compile_sources(&sources, Path::new("shop")).unwrap_or_else(|error| panic!("{error}"));
+    let declared = format!(
+        "type: ess-http/1\nspecification:\n  system: shop\n  version: v1\n  source_digest: \
+         sha256:{}\nroutes:\n  - {{view: shop.stock.Items, method: get, path: /items}}\n  \
+         - {{command: shop.stock.AddItem, method: post, path: /items}}\n",
+        ir.source_digest()
+    );
+    let spec = ess_gen::ess_http::HttpSpec::from_yaml(&declared).expect("parses");
+    let compiled = ess_gen::ess_http::compile(&spec, &ir, &http::derived(&ir))
+        .unwrap_or_else(|refused| panic!("compiles: {refused}"));
+    let routed = http::Binding::new(compiled).expect("every route has a path");
+    let document = ess_ui::load_str(&text).unwrap_or_else(|error| panic!("{error}"));
+    let over = |path: &'static str| ess_ui_check::HttpBinding {
+        path: Path::new(path),
+        binding: &routed,
+    };
+    let Err(BindingError::Refused(refusals)) =
+        ess_ui_check::binding_over(&document, &sources, Some(over("shop-http.yaml")))
+    else {
+        panic!("the page slot's unrouted command is refused");
+    };
+    let refusal = refused_at(&refusals, "pages/editor/commands");
+    assert!(
+        refusal.message.contains("shop.audit.RecordEntry")
+            && refusal.message.contains("shop-http.yaml"),
+        "{refusal:?}"
+    );
+    assert_eq!(refusals.len(), 1, "{refusals:#?}");
+    let routed_only = slotted("stock.Items", "stock.AddItem", "stock.AddItem");
+    let document = ess_ui::load_str(&routed_only).unwrap_or_else(|error| panic!("{error}"));
+    let binding = ess_ui_check::binding_over(&document, &sources, Some(over("shop-http.yaml")))
+        .unwrap_or_else(|error| panic!("the routed slots bind: {error}"));
+    assert_eq!(
+        binding.components["shop-service"].views["shop.stock.Items"].path,
+        "/items"
+    );
+}
+
 fn bound_with_model(text: &str, sources: &[(String, String)]) -> Binding {
     let document = ess_ui::load_str(text).unwrap_or_else(|error| panic!("{error}"));
     binding(&document, sources).unwrap_or_else(|error| panic!("{error}"))
