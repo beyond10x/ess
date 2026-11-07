@@ -12,7 +12,20 @@ refs:
 relations:
 - serves: vision:O2
 - decomposes: epic:generic-aggregates
-revision: 4
+scope:
+- confidence: inferred
+  path: CHANGELOG.md
+- confidence: inferred
+  path: crates/generate/ess-synth/src/view_query.rs
+- confidence: inferred
+  path: crates/specify/ess-compiler/src/ir.rs
+- confidence: inferred
+  path: crates/specify/ess-domain/src/system.rs
+- confidence: cited
+  path: crates/specify/ess-domain/src/view.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/interpret/views.rs
+revision: 11
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-21T22:08:02Z", actor: "human:timo", revision: 2}
 - {from: "proposed", to: "active", at: "2026-10-21T22:08:02Z", actor: "human:timo", revision: 3}
@@ -61,3 +74,17 @@ Accept, redesigned: per-element grouping is spelled explicitly.
 ## State
 
 2026-11-02 (store hygiene H0 of wave W1, reconcile roadmap section 2d; decision D9 option A, kept active with a dated note): Not started (`view.rs:1474` still refuses); scheduled W9, 0.92.0.
+
+## Scope
+
+Derived 2026-11-07 by `story-scoper`. Not delivered: `Aggregation.group_by` is still `Vec<String>`, and a list key is still refused (`ess-domain/src/view.rs`). Cited.
+
+- **Primary surface:** `crates/specify/ess-domain/src/view.rs` (`Aggregation.group_by`, `validate_grouping`, the list-key refusal): cited.
+- **Also, inferred:**
+  - `ess-compiler/src/ir.rs` (`ResolvedAggregation`) and `resolve.rs`;
+  - `ess-conformance/src/interpret/views.rs` and `synthesize/aggregate.rs`;
+  - `ess-synth/src/view_query.rs`, `rust/behaviour/query.rs` and `go/behaviour/query.rs`;
+  - `ess-diff/src/change.rs` (`GroupingChanged`), `ess-domain/src/system.rs` and `schemas/generated/ess.schema.json`;
+  - docs: `generic-language-features.md` (G3), `aggregate-views.md`, `spec-versions.md` and `CHANGELOG.md`.
+- **Order:** after story:aggregate-measures-over-expressions. Both rewrite the aggregate types.
+- **Confidence:** medium.

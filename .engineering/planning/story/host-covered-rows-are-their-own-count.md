@@ -13,7 +13,24 @@ relations:
 - derived_from: design:ui-host-slots
 - serves: vision:O2
 - depends_on: story:a-ui-document-declares-a-host-slot
-revision: 6
+scope:
+- confidence: inferred
+  path: CHANGELOG.md
+- confidence: inferred
+  path: crates/edge/ess-cli/tests/ui_commands.rs
+- confidence: inferred
+  path: crates/ui/ess-ui-check/src/hosts.rs
+- confidence: cited
+  path: crates/ui/ess-ui-check/src/lib.rs
+- confidence: inferred
+  path: crates/ui/ess-ui-check/src/model.rs
+- confidence: inferred
+  path: crates/ui/ess-ui-check/tests/checks.rs
+- confidence: inferred
+  path: website/docs/reference/ess-ui.md
+- confidence: inferred
+  path: website/docs/reference/formats.md
+revision: 15
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-06T22:18:56Z", actor: "human:timo", revision: 2}
 - {from: "proposed", to: "active", at: "2026-11-06T22:18:56Z", actor: "human:timo", revision: 3}
@@ -36,5 +53,27 @@ is design:ui-host-slots, section Check.
 
 ## Scope
 
-- inferred: `crates/ui/ess-ui-check/src/` (coverage, report), the CLI's `ess ui check` JSON
-  output.
+Derived 2026-11-07 by `story-scoper`. Every line is **cited** (read from the story or the tree) or
+**inferred** (a reading that could be wrong).
+
+- **Primary surface:** `crates/ui/ess-ui-check` — cited (design:ui-host-slots, section Check).
+- **Files:** `crates/ui/ess-ui-check/src/lib.rs` (`Sink`, `Report`, the `Json` envelope,
+  `Report::render`) — cited. The third count and the slot list go into this report.
+- **Files:** `crates/ui/ess-ui-check/src/hosts.rs` (`hosts::run` walks `document.host_slots()`) —
+  inferred.
+- **Also likely:** `crates/ui/ess-ui-check/src/model.rs` (with `--model`, the views, commands and
+  fields the specification serves) — inferred.
+- **Also likely:** `crates/ui/ess-ui/src/path.rs` and `crates/ui/ess-ui/src/model.rs` — inferred,
+  read only.
+- **Also likely:** `crates/edge/ess-cli/src/ui.rs` and `crates/edge/ess-cli/tests/ui_commands.rs`
+  (JSON output pins) — inferred.
+- **Tests:** `crates/ui/ess-ui-check/tests/checks.rs` and `adversary_u2_host_slots.rs` — inferred.
+- **Documents:** `website/docs/reference/ess-ui.md` (host slot paragraph),
+  `website/docs/reference/formats.md` (`ess-ui-check/1` row), `CHANGELOG.md` — inferred.
+- **Confidence:** medium. The tree has no covered or uncovered count over a UI document yet, so
+  this story probably builds the whole three-way count.
+- **Would collide with:** story:a-host-slot-reads-and-commands-only-what-it-declares (same crate,
+  `model.rs`).
+- **Format:** `ess-ui-check/1` is serialize-only with no digest, and the 0.90.0 `backlog` was added
+  as an optional key left out when empty. A third count added the same way leaves a document
+  without slots byte for byte unchanged (unproven).

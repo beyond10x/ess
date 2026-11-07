@@ -15,7 +15,18 @@ relations:
 - serves: vision:O2
 - decomposes: epic:generic-aggregates
 - depends_on: story:expression-arithmetic-and-time
-revision: 5
+scope:
+- confidence: inferred
+  path: CHANGELOG.md
+- confidence: inferred
+  path: crates/specify/ess-domain/src/system.rs
+- confidence: cited
+  path: crates/specify/ess-domain/src/view.rs
+- confidence: inferred
+  path: crates/specify/ess-primitives/src/expr.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/aggregate.rs
+revision: 11
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-21T22:08:02Z", actor: "human:timo", revision: 3}
 - {from: "proposed", to: "active", at: "2026-10-21T22:08:03Z", actor: "human:timo", revision: 4}
@@ -74,3 +85,19 @@ decision to build the four generic features.
 ## State
 
 2026-11-02 (store hygiene H0 of wave W1, reconcile roadmap section 2d; decision D9 option A, kept active with a dated note): Not started; scheduled W9.
+
+## Scope
+
+Derived 2026-11-07 by `story-scoper`. Not delivered: an `expr:` field on an aggregate view is refused, `AggregateFunction` has no interval union, and the expression language has no view-parameter operand. Cited.
+
+- **Primary surface:** `crates/specify/ess-domain/src/view.rs` (`validate_computed`, `AggregateFunction`): cited.
+- **Also, inferred:**
+  - `ess-primitives/src/expr.rs` and `ess-domain/src/expression/value.rs` (a `param.` operand);
+  - `ess-compiler` `ir.rs` and `resolve.rs`;
+  - `ess-conformance` `aggregate.rs`, `interpret/views.rs` and `synthesize/aggregate.rs`;
+  - the generated queries in `ess-synth`;
+  - the suite format pair (`admission.rs`, `coverage.rs`, `go/runtime.go`, `ts/runtime.ts`);
+  - `ess-diff`, `system.rs` and the generated schema.
+- **Documents:** `docs/design/aggregate-views.md` (decision 3) and `docs/design/read-api-view-idioms.md` (cited); G3, the aggregate guide, spec-versions and `CHANGELOG.md` (inferred).
+- **Order:** after the measures story and the group-keys story.
+- **Confidence:** medium.
