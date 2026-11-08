@@ -56,7 +56,7 @@ fn state_dir(test: &str) -> PathBuf {
 }
 
 /// Answers no read with rows and records every command it is sent.
-struct Recording(Rc<RefCell<Vec<(String, BTreeMap<String, Value>)>>>);
+struct Recording(Sent);
 
 impl DataAdapter for Recording {
     fn read(&self, _request: &ReadRequest) -> Result<ReadResult, String> {

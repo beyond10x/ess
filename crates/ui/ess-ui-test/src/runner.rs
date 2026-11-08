@@ -100,19 +100,19 @@ impl<'d> Runner<'d> {
                 state,
             } => self.open(page, params, state),
             Step::Select { at } => {
-                let target = self.resolve(at)?;
+                let target = self.acting(at)?;
                 self.select(&target)
             }
             Step::Mark { at } => {
-                let target = self.resolve(at)?;
+                let target = self.acting(at)?;
                 self.mark(&target)
             }
             Step::Move { at, up } => {
-                let target = self.resolve(at)?;
+                let target = self.acting(at)?;
                 self.move_row(&target, *up)
             }
             Step::Upload { at, file } => {
-                let target = self.resolve(at)?;
+                let target = self.acting(at)?;
                 self.upload(&target, file)
             }
             Step::ExpectExport {
@@ -121,19 +121,19 @@ impl<'d> Runner<'d> {
                 params,
             } => self.expect_export(view, format.as_deref(), params),
             Step::Type { at, text } => {
-                let target = self.resolve(at)?;
+                let target = self.acting(at)?;
                 self.type_text(&target, text)
             }
             Step::Choose { at, option } => {
-                let target = self.resolve(at)?;
+                let target = self.acting(at)?;
                 self.choose(&target, option)
             }
             Step::Act { at } => {
-                let target = self.resolve(at)?;
+                let target = self.acting(at)?;
                 self.act(&target)
             }
             Step::Page { at, to } => {
-                let target = self.resolve(at)?;
+                let target = self.acting(at)?;
                 self.page(&target, *to)
             }
             Step::Expect { at, checks } => {
@@ -156,6 +156,15 @@ impl<'d> Runner<'d> {
         self.app.advance(by);
         self.now = now;
         Ok(())
+    }
+
+    /// Resolves `at` for a step that acts there, refusing it inside a host slot first
+    /// ([`crate::parity::inside_host`]): a path below a slot names no node to resolve.
+    fn acting(&self, at: &str) -> Result<Target, String> {
+        if let Some(reason) = crate::parity::inside_host(self.doc, at) {
+            return Err(reason);
+        }
+        self.resolve(at)
     }
 
     /// Resolves `at`, refusing a path the generated React project renders no element at

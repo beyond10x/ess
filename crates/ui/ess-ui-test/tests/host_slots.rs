@@ -103,8 +103,12 @@ fn a_text_check_of_the_label_at_the_slots_path_passes() {
         &[
             "open: p",
             &format!("expect: {{at: {MAP}, text: \"RouteMap: a map widget\"}}"),
-            &format!("expect: {{at: {FORM}/children/preview, text: \"RoutePreview: a vendor preview\"}}"),
-            &format!("expect: {{at: {FORM}/fields/route, text: \"RoutePicker: a vendor route picker\"}}"),
+            &format!(
+                "expect: {{at: {FORM}/children/preview, text: \"RoutePreview: a vendor preview\"}}"
+            ),
+            &format!(
+                "expect: {{at: {FORM}/fields/route, text: \"RoutePicker: a vendor route picker\"}}"
+            ),
             "act: pages/p/header/actions/pick",
             "expect: {at: pages/p/overlays/picker, text: \"TruckPicker: a fleet picker\"}",
             "open: grid",
@@ -157,7 +161,10 @@ fn mark_inside_a_slot_is_refused() {
 #[test]
 fn move_inside_a_slot_is_refused() {
     let below = format!("{MAP}/rows/r-1");
-    let outcome = run("move", &["open: p", &format!("move: {{at: {below}, to: up}}")]);
+    let outcome = run(
+        "move",
+        &["open: p", &format!("move: {{at: {below}, to: up}}")],
+    );
     assert_refused_at_step_two(&outcome, &inside(&below, "RouteMap"));
 }
 
@@ -166,7 +173,10 @@ fn upload_at_a_slot_is_refused() {
     let at = format!("{FORM}/children/preview");
     let outcome = run(
         "upload",
-        &["open: p", &format!("upload: {{at: {at}, file: route.json}}")],
+        &[
+            "open: p",
+            &format!("upload: {{at: {at}, file: route.json}}"),
+        ],
     );
     assert_refused_at_step_two(&outcome, &inside(&at, "RoutePreview"));
 }
@@ -174,7 +184,10 @@ fn upload_at_a_slot_is_refused() {
 #[test]
 fn type_at_a_field_slot_is_refused() {
     let at = format!("{FORM}/fields/route");
-    let outcome = run("type", &["open: p", &format!("type: {{at: {at}, text: A12}}")]);
+    let outcome = run(
+        "type",
+        &["open: p", &format!("type: {{at: {at}, text: A12}}")],
+    );
     assert_refused_at_step_two(&outcome, &inside(&at, "RoutePicker"));
 }
 

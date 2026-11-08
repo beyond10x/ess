@@ -19,8 +19,8 @@ use ratatui::widgets::{Block, Clear, Paragraph};
 use ratatui::{Frame, Terminal};
 
 use ess_ui::{
-    Body, ChartKind, Composite, Field, Form, MetricFormat, Node, NodePath, Primitive, TabFields,
-    TextFormat, TextStyle,
+    Body, ChartKind, Composite, Field, Form, HostSlot, MetricFormat, Node, NodePath, Primitive,
+    TabFields, TextFormat, TextStyle,
 };
 
 use crate::app::{
@@ -317,6 +317,19 @@ impl App {
             height: area.height - header_height,
             ..area
         };
+        // A page that is a host slot draws no sections: its label, bordered, below the header.
+        if let Some(slot) = &self.page_def().host {
+            let drawn = Rect {
+                height: rest.height.min(3),
+                ..rest
+            };
+            self.region(self.page_path().to_string(), None, drawn, None);
+            frame.render_widget(
+                Paragraph::new(host_label(slot)).block(Block::bordered()),
+                drawn,
+            );
+            return;
+        }
         let width = rest.width.saturating_sub(2) as usize;
         let sections = self.visible_sections();
         let blocks: Vec<SectionBlock> = sections
@@ -819,8 +832,7 @@ impl App {
                 }
             }
             Body::Composite(composite) => self.composite_lines(composite, place),
-            // `profile::check` refuses a document with a host slot before anything is drawn.
-            Body::Host(_) => Vec::new(),
+            Body::Host(slot) => host_box(slot),
         }
     }
 
@@ -1494,8 +1506,29 @@ fn browser_label(action: &ess_ui::Action) -> String {
         .unwrap_or_else(|| action.name.replace('_', " "))
 }
 
-/// One cell of a row, drawn by the field's `as`.
+/// The label of a host slot: `<host>: <reason>`. The terminal cannot draw the host's component,
+/// so it marks the slot's place with this.
+fn host_label(slot: &HostSlot) -> String {
+    format!("{}: {}", slot.host, slot.reason)
+}
+
+/// A host slot drawn as a bordered box around its label.
+fn host_box(slot: &HostSlot) -> Vec<Line<'static>> {
+    let label = host_label(slot);
+    let rule = "─".repeat(label.width());
+    vec![
+        Line::from(format!("┌{rule}┐")),
+        Line::from(format!("│{label}│")),
+        Line::from(format!("└{rule}┘")),
+    ]
+}
+
+/// One cell of a row, drawn by the field's `as`; a field slot's label, bordered, in place of
+/// its value.
 fn cell(field: &Field, row: &Value) -> String {
+    if let Some(slot) = &field.host {
+        return format!("│{}│", host_label(slot));
+    }
     let value = field_path(row, &field.field);
     labelled_cell(field, &value).unwrap_or_else(|| cell_value(field, &value))
 }
@@ -1696,7 +1729,15 @@ impl App {
             let current = place.focused && index == state.item;
             let editing = current && state.editing;
             let cursor = if editing { "▏" } else { "" };
-            let text = format!("{} [{shown}{cursor}]", pad(&label_of(field), 16));
+            // A field slot's input is the host's: its label, bordered, stands in its place.
+            let (input, read) = match &field.host {
+                Some(slot) => {
+                    let label = format!("│{}│", host_label(slot));
+                    (label.clone(), label)
+                }
+                None => (format!("[{shown}{cursor}]"), format!("[{shown}]")),
+            };
+            let text = format!("{} {input}", pad(&label_of(field), 16));
             // A section's or an overlay's own form records each field's line at the field's path,
             // with its whole label, so a test reads a control's state there.
             if place.record {
@@ -1707,7 +1748,7 @@ impl App {
                     height: 1,
                     x: 0,
                     width: None,
-                    text: Some(format!("{} [{shown}]", label_of(field))),
+                    text: Some(format!("{} {read}", label_of(field))),
                 });
             }
             let style = if current {
