@@ -148,7 +148,8 @@ fn fnv(text: &str) -> u64 {
 /// search was split on the whitespace Rust splits on, and a tags input applied its suggestions
 /// read's client filter (`fields.tsx`). The whole-project digest re-pinned for
 /// story:a-null-tag-draws-no-chip: a null entry of a tags value draws no chip and is neither shown,
-/// compared nor written back by the tags input (`fields.tsx`).
+/// compared nor written back by the tags input (`fields.tsx`). The whole-project digest re-pinned
+/// for a client pager, the pager range and `field: .` (`collection.tsx`, `core.tsx`).
 const PLAIN: [(&str, u64); 7] = [
     ("README.md", 0xdae6_c3b6_7e5c_2d28),
     ("src/main.tsx", 0x6fd5_ef21_0230_ebac),
@@ -158,7 +159,7 @@ const PLAIN: [(&str, u64); 7] = [
     ("src/runtime/data.ts", 0x400e_ae09_0d5f_e141),
     ("www/index.html", 0x5972_6d4a_5ee2_5ce2),
 ];
-const PLAIN_PROJECT: u64 = 0xdc38_894e_ef27_945f;
+const PLAIN_PROJECT: u64 = 0xf7f1_e985_ebbc_a827;
 
 #[test]
 fn without_a_model_the_project_is_byte_identical() {

@@ -2370,7 +2370,9 @@ pub struct Divider {
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(remote = "Self", deny_unknown_fields)]
 pub struct Field {
-    /// Field of the command input or view row.
+    /// Field of the command input or view row. [`Field::ROW`] (`.`) names the row itself, in a
+    /// collection column or a record field: a plain-string row shows as itself, and an object
+    /// row reads as an absent value.
     pub field: String,
     /// Node name (the field when not written).
     pub name: String,
@@ -2416,6 +2418,14 @@ impl<'de> Deserialize<'de> for Field {
 }
 
 impl Field {
+    /// The `field` that names the row itself rather than a field of it.
+    pub const ROW: &'static str = ".";
+
+    /// Whether this field names the row itself ([`Field::ROW`]).
+    pub fn is_row(&self) -> bool {
+        self.field == Self::ROW
+    }
+
     /// The unit an `as: duration` value counts: its `unit`, else milliseconds. An unmapped unit
     /// is treated as absent.
     pub fn duration_unit(&self) -> DurationUnit {
@@ -2666,7 +2676,8 @@ pub struct Reads {
     pub params: BTreeMap<String, Expr>,
     /// Who pages.
     pub paging: Option<Paging>,
-    /// The params that carry a server page and its size, and the sizes a reader may choose.
+    /// The sizes a reader may choose, and on a server read the params that carry its page and
+    /// its size.
     pub pager: Option<Pager>,
     /// Coalesce param changes before reading.
     pub debounce: Option<String>,
@@ -2717,14 +2728,17 @@ impl Reads {
     }
 }
 
-/// The params of a server-paged read that carry its page and its page size, named among the
-/// read's `params`, and the page sizes a reader may choose.
+/// The page sizes a reader may choose, and on a server-paged read the params that carry its page
+/// and its page size, named among the read's `params`. A client-paged read's pager names no
+/// param: the renderer pages the rows it holds.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Pager {
-    /// The read param that carries the page number.
-    pub page: String,
-    /// The read param that carries the page size; absent, the footer offers no size.
+    /// The read param that carries the page number; required with `paging: server`, refused
+    /// with `paging: client`.
+    pub page: Option<String>,
+    /// The read param that carries the page size; absent on a server read, the footer offers no
+    /// size. Refused with `paging: client`, whose footer always offers `sizes`.
     pub size: Option<String>,
     /// The page sizes offered, in order; absent, [`Pager::DEFAULT_SIZES`].
     #[serde(default = "Pager::default_sizes")]

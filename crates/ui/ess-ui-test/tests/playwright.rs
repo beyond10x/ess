@@ -89,7 +89,8 @@ fn select_focuses_a_row_and_page_reaches_an_absolute_page() {
         format!("await {row}.dispatchEvent(\"click\");"),
         format!("await expect({row}).toHaveClass(/(^|\\s)ui-focused(\\s|$)/);"),
         "await page.locator('[data-ui-path=\"pages/partners.list/sections/list\"] .ui-pager').locator(\"button\").last().click();".to_owned(),
-        "await expect(page.locator('[data-ui-path=\"pages/partners.list/sections/list\"] .ui-pager').locator(\"span\")).toHaveText(\"Page 2\");".to_owned(),
+        // The pager's own page `span`, read whether or not the footer counts its pages.
+        "await expect(page.locator('[data-ui-path=\"pages/partners.list/sections/list\"] .ui-pager').locator(\":scope > span\")).toHaveText(/^Page 2( of [0-9]+)?$/);".to_owned(),
     ] {
         assert!(spec.contains(&wanted), "{wanted}\n\n{spec}");
     }

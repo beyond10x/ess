@@ -24,10 +24,11 @@ use ess_ui::{
 };
 
 use crate::app::{
-    aggregate, bar_items, board_rows, columns_of, form_fields, graph_collection, group_names,
-    references_collection, App, BarItem, Ctx, Focus, Lifecycle, Mark, Prompt, ReadState, Region,
+    aggregate, bar_items, board_rows, client_sizes, columns_of, form_fields, graph_collection,
+    group_names, paged, references_collection, App, BarItem, Ctx, Focus, Lifecycle, Mark, Prompt,
+    ReadState, Region,
 };
-use crate::expr::{display, field_path, truthy};
+use crate::expr::{display, field_path, row_key, truthy};
 
 const NAV_WIDTH: u16 = 26;
 const SPARKS: [char; 8] = ['▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'];
@@ -1148,7 +1149,7 @@ impl App {
             .collect();
         // Filtered and sorted once: the page shown and the footer's row count both read it.
         let arranged = self.arranged_rows(place.ui, collection, all);
-        let (rows, pages) = self.page_of(place.ui, &arranged);
+        let (rows, pages) = self.page_of(place.ui, collection, &arranged);
         let state = self.ui(place.ui);
         let cursor = state.cursor.min(rows.len().saturating_sub(1));
         let cards = matches!(
@@ -1304,7 +1305,7 @@ impl App {
                 Style::default()
             };
             if place.record {
-                let key = display(&row[key_field.as_str()]);
+                let key = row_key(row, &key_field);
                 // The row's and each cell's whole text: the screen cuts a cell at its column's
                 // width and a line at the box's, the generated React project does not.
                 let whole = if cards {
@@ -1399,7 +1400,7 @@ impl App {
                     // region, at the path React scopes it to.
                     if place.record && lines.len() > start {
                         if let Some(row) = row {
-                            let key = display(&row[key_field.as_str()]);
+                            let key = row_key(row, &key_field);
                             self.mark(Mark {
                                 path: format!("{container}/rows/{key}/expand"),
                                 row: Some(key),
@@ -1414,8 +1415,18 @@ impl App {
                 }
             }
         }
-        let mut footer = vec![format!("page {}/{pages}", state.page.min(pages - 1) + 1)];
+        let page = state.page.min(pages - 1);
+        let mut footer = vec![format!("page {}/{pages}", page + 1)];
         footer.push(format!("{} rows", arranged.len()));
+        // A paged read's footer shows the rows drawn as a range of all of them, as React's
+        // pager does; it follows `page N/M · N rows`, so a reader of those reads them as before.
+        let size = self.page_size(place.ui, collection);
+        if paged(collection) {
+            footer.push(page_range(page, size, rows.len(), arranged.len()));
+        }
+        if client_sizes(collection).is_some_and(|sizes| sizes.len() > 1) {
+            footer.push(format!("+ {size} per page"));
+        }
         if let Some((by, descending)) = state.sort.clone().or_else(|| {
             collection
                 .sort
@@ -1438,9 +1449,7 @@ impl App {
         }
         lines.push(Line::styled(footer.join(" · "), dim()));
         if let Some(segment) = row_actions_at {
-            let cursor_key = rows
-                .get(cursor)
-                .map(|row| display(&row[key_field.as_str()]));
+            let cursor_key = rows.get(cursor).map(|row| row_key(row, &key_field));
             self.mark_row_actions(
                 &collection.row_actions,
                 &format!("{container}/rows"),
@@ -2353,6 +2362,16 @@ fn tab_line(labels: impl Iterator<Item = String>, current: usize) -> Line<'stati
     }
     spans.push(Span::styled("[ ] switch tabs", dim()));
     Line::from(spans)
+}
+
+/// The rows a page draws as a range of all of them: `11-20 of 34`, `0 of 0` with none. `page`
+/// counts from 0.
+fn page_range(page: usize, size: usize, rows: usize, total: usize) -> String {
+    if rows == 0 {
+        return format!("0 of {total}");
+    }
+    let from = page * size + 1;
+    format!("{from}-{} of {total}", from + rows - 1)
 }
 
 /// The fewest cells a table column is cut to while its table's line does not fit the box.

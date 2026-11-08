@@ -216,7 +216,10 @@ interface RowAddress {
 
 const RowContext = createContext<RowAddress[]>([]);
 
-/** The row key: the `match` field (from `live.match`), else `id`; never a list index. */
+/**
+ * The row key: the `match` field (from `live.match`), else `id`; a plain row (a string, a
+ * number, a boolean) is its own key; never a list index.
+ */
 export function rowKey(row: unknown, match?: string): string {
   const field = match ?? "id";
   if (row !== null && typeof row === "object" && !Array.isArray(row)) {
@@ -224,6 +227,9 @@ export function rowKey(row: unknown, match?: string): string {
     if (value !== undefined && value !== null) {
       return String(value);
     }
+  }
+  if (typeof row === "string" || typeof row === "number" || typeof row === "boolean") {
+    return String(row);
   }
   // No key field: the row's content addresses it, so the same row keeps its path when others
   // are inserted before it.
@@ -643,8 +649,14 @@ export function safeUrl(value: unknown): string | undefined {
   }
 }
 
-/** Resolves a row field or an expression to display. */
+/**
+ * Resolves a row field or an expression to display. `.` is the row itself: a plain row (a
+ * string, a number, a boolean) shows as itself, and an object or list row reads as absent.
+ */
 export function display(row: unknown, field: string): unknown {
+  if (field === ".") {
+    return row !== null && typeof row === "object" ? undefined : row;
+  }
   return getPath(row, field.split("."));
 }
 

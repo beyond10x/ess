@@ -553,19 +553,21 @@ fn emit_step(
         },
         Step::Page { at, to } => {
             // `to` is absolute: back to page 1 from wherever the pager is, then forward. Each click
-            // waits for the pager to show the page it leads to.
+            // waits for the pager to show the page it leads to. The page is the pager's own
+            // `span` (`Page 2`, or `Page 2 of 3` when the page count is known), not the per-page
+            // select's label inside it nor the range beside it; its first number is the page.
             let pager = format!("page.locator('{} .ui-pager')", selector(at));
+            let shown = format!("{pager}.locator(\":scope > span\")");
             let mut lines = vec![
                 format!("// page {to} of {at}"),
                 format!(
-                    "for (let shown = (await {pager}.count()) > 0 ? Number((await {pager}.locator(\"span\").textContent())?.replace(/\\D/g, \"\")) : 1; shown > 1; shown -= 1) {{ await {pager}.locator(\"button\").first().click(); await expect({pager}.locator(\"span\")).toHaveText(`Page ${{shown - 1}}`); }}"
+                    "for (let shown = (await {pager}.count()) > 0 ? Number((await {shown}.textContent())?.match(/[0-9]+/)?.[0] ?? 1) : 1; shown > 1; shown -= 1) {{ await {pager}.locator(\"button\").first().click(); await expect({shown}).toHaveText(new RegExp(`^Page ${{shown - 1}}( of [0-9]+)?$`)); }}"
                 ),
             ];
             for page in 2..=*to {
                 lines.push(format!("await {pager}.locator(\"button\").last().click();"));
                 lines.push(format!(
-                    "await expect({pager}.locator(\"span\")).toHaveText({});",
-                    string(&format!("Page {page}"))
+                    "await expect({shown}).toHaveText(/^Page {page}( of [0-9]+)?$/);"
                 ));
             }
             lines
