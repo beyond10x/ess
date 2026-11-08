@@ -386,7 +386,6 @@ fn v8_an_argument_whose_unwrapped_type_the_function_does_not_admit() {
         ("count_distinct", "tags"),
         ("count_distinct", "ratio"),
         ("sum", "ratio"),
-        ("max", "took"),
     ] {
         let text = typed_view(&format!(
             "    fields:\n      - {{name: n, type: Integer, aggregate: {{{function}: {field}}}}}\n"
@@ -398,6 +397,16 @@ fn v8_an_argument_whose_unwrapped_type_the_function_does_not_admit() {
             &format!("{V}.fields[0].aggregate"),
         );
     }
+    // A Duration measure is admitted from ess/36, so below it the refusal names the format, as the
+    // ess/36 changelog entry promises.
+    let errors = refused(&typed_view(
+        "    fields:\n      - {name: n, type: Integer, aggregate: {max: took}}\n",
+    ));
+    assert_has(
+        &errors,
+        ValidationCode::UnsupportedFormatVersion,
+        &format!("{V}.fields[0].aggregate"),
+    );
 }
 
 #[test]
