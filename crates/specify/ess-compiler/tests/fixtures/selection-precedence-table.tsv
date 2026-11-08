@@ -1,4 +1,4 @@
-#	models=374	commands=749
+#	models=375	commands=751
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	ir=d47970055f083eda582673dfe528f0af87f902defa07339aa014f6c8d50be57f:5099
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor.core.Publish	default: accepted
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor.core.Receive	default: accepted
@@ -1017,6 +1017,9 @@ crates/verify/ess-conformance/tests/fixtures/subject-state.yaml	ir=583250f2bff52
 crates/verify/ess-conformance/tests/fixtures/subject-state.yaml	calls.core.Bridge	held_state: already-bridged | default: bridged
 crates/verify/ess-conformance/tests/fixtures/subject-state.yaml	calls.core.Open	default: opened
 crates/verify/ess-conformance/tests/fixtures/subject-state.yaml	calls.core.Report	held_state: ringing, refreshed, preserved | default: enriched
+crates/verify/ess-conformance/tests/fixtures/system-guard.yaml	ir=84ea9d731a86804e696e1e5f338e622efb34b7d793cc6a7d0f7efd20029853e2:10260
+crates/verify/ess-conformance/tests/fixtures/system-guard.yaml	inspection.check.OpenCheck	default: opened
+crates/verify/ess-conformance/tests/fixtures/system-guard.yaml	inspection.check.RecordCheck	held_state: closed | accepting: accepted, rejected
 crates/verify/ess-conformance/tests/fixtures/system-issued-queue.yaml	ir=78c8c58e784937e45609d4e14eaefcaf1677f4390d1e0c6c1c71d3d50581b6d1:13087
 crates/verify/ess-conformance/tests/fixtures/system-issued-queue.yaml	queueing.entry.AddWorker	default: added
 crates/verify/ess-conformance/tests/fixtures/system-issued-queue.yaml	queueing.entry.Assign	held_state: wrong-state | accepting: dialler-refused | default: assigned

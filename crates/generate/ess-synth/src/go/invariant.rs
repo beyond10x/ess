@@ -43,8 +43,9 @@ pub(super) fn used(ir: &EssIr) -> bool {
     ir.entities()
         .values()
         .any(|entity| !entity.invariants.is_empty())
-        || ir.types().values().any(|declared| {
-            matches!(&declared.body, ResolvedBody::Newtype { invariants, .. } if !invariants.is_empty())
+        || ir.types().values().any(|declared| match &declared.body {
+            ResolvedBody::Newtype { invariants, .. } => !invariants.is_empty(),
+            _ => false,
         })
 }
 

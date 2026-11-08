@@ -1,4 +1,4 @@
-#	models=451	lines=616
+#	models=452	lines=620
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	components=1
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor-service	REFUSED	95eb461796949834a9d78ef0c04afcab1acfa13dbf2dfd6da3af2f3c93549630:687
 crates/edge/ess-cli/tests/fixtures/coverage-producers/inputs/models/billing/system.yaml	ASSEMBLE
@@ -361,6 +361,10 @@ crates/verify/ess-conformance/tests/fixtures/subject-history.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/subject-state-source.yaml	components=1
 crates/verify/ess-conformance/tests/fixtures/subject-state-source.yaml	docs-service	REFUSED	3a47e494bbe0dc6de6360fca89a26008758a6f567e5c1a2b1074310b7ec8b5e0:1072
 crates/verify/ess-conformance/tests/fixtures/subject-state.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/system-guard.yaml	components=1
+crates/verify/ess-conformance/tests/fixtures/system-guard.yaml	inspection-service	inspection.check.Check	definition=8478fe6f837689ed11bcc6ef53be6cd8e6da5d9a559787cbac5427125dfd9fd0:3014
+crates/verify/ess-conformance/tests/fixtures/system-guard.yaml	inspection-service	inspection.check.Check	create	opened
+crates/verify/ess-conformance/tests/fixtures/system-guard.yaml	inspection-service	inspection.check.Check	inspection.check.RecordCheck	accepted, rejected, closed
 crates/verify/ess-conformance/tests/fixtures/system-issued-queue.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/two-related-selectors.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/two-rows-one-branch.yaml	components=0
