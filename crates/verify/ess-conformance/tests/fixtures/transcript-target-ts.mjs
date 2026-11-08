@@ -116,7 +116,7 @@ const target = () => {
         {
           instance: request.instance,
           within: request.within ?? null,
-          compared: [...request.compared].sort(),
+          compared: Object.keys(request.compared).sort(),
         },
         true,
       );

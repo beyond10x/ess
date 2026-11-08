@@ -108,16 +108,11 @@ func (r *run) awaitOutcome(index int, step Step) bool {
 	if !ok {
 		return false
 	}
-	compared := make([]string, 0, len(stated))
-	for field := range stated {
-		compared = append(compared, field)
-	}
-	sort.Strings(compared)
 	attempts := r.harness.Deadline().Attempts
 	for attempt := 0; ; attempt++ {
 		answer, err := r.askAwait(AwaitRequest{
 			Command: step.Command, Instance: instance, Within: within,
-			Deadline: Deadline{Attempts: attempts - attempt}, Compared: compared,
+			Deadline: Deadline{Attempts: attempts - attempt}, Compared: stated,
 			Correlation: r.correlation,
 		})
 		if err != nil {
@@ -212,7 +207,7 @@ func (r *run) expectNotIssued(index int, step Step) bool {
 	for attempt := 0; ; attempt++ {
 		answer, err := r.askAwait(AwaitRequest{
 			Command: step.Command, Instance: instance, Within: within,
-			Deadline: Deadline{Attempts: attempts - attempt}, Compared: []string{},
+			Deadline: Deadline{Attempts: attempts - attempt}, Compared: map[string]Node{},
 			Correlation: r.correlation,
 		})
 		if err != nil {
