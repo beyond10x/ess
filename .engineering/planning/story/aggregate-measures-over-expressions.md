@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:aggregate-measures-over-expressions
 kind: story
-status: active
+status: implemented
 title: An aggregate measure takes an expression, and min/max admit an ordered enum
 tags:
 - adopter-report
@@ -44,10 +44,11 @@ scope:
   path: crates/verify/ess-diff/src/change.rs
 - confidence: inferred
   path: schemas/generated/ess.schema.json
-revision: 19
+revision: 20
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-21T22:08:01Z", actor: "human:timo", revision: 2}
 - {from: "proposed", to: "active", at: "2026-10-21T22:08:01Z", actor: "human:timo", revision: 3}
+- {from: "active", to: "implemented", at: "2026-11-08T22:10:14Z", actor: "human:timo", revision: 20, decided_on: {"recorded":{"test_result":1}}}
 ---
 ## Outcome
 
