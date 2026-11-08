@@ -105,7 +105,10 @@ const SignaturePad: HostComponents["SignaturePad"] = ({ adapter }) => {
 fn type_check(project: &Path, edit: impl Fn(&str) -> String, hosts: &str) -> (bool, String) {
     write(
         &project.join("src/host-components.tsx"),
-        &format!("{}\nexport const hosts = {{ {hosts} }};\n", edit(COMPONENTS)),
+        &format!(
+            "{}\nexport const hosts = {{ {hosts} }};\n",
+            edit(COMPONENTS)
+        ),
     );
     let output = Command::new("tsc")
         .args(["-p", "tsconfig.offline.json", "--noEmit"])
@@ -192,7 +195,10 @@ fn a_document_without_host_slots_keeps_its_entry_and_app() {
 fn the_project_type_checks_with_every_slot_registered() {
     let (project, _) = generate("complete", FIVE_SCOPES);
     let (ok, output) = type_check(&project, str::to_owned, ALL);
-    assert!(ok, "every slot registered with its declared access:\n{output}");
+    assert!(
+        ok,
+        "every slot registered with its declared access:\n{output}"
+    );
 }
 
 #[test]
@@ -292,7 +298,8 @@ fn a_component_taking_the_whole_adapter_fails_the_type_check() {
 }
 
 /// A page with route params and page state: the section `map` is a slot between two generated
-/// sections, and `pin` a slot between two nodes of `notes`, whose record adds `row` to the scope.
+/// sections, and `pin` a slot between two item nodes of the record `notes`, which adds `row` to
+/// the scope.
 const RENDERED: &str = "format: ess-ui/1
 app: t
 model: t.system
@@ -317,7 +324,7 @@ pages:
       - name: notes
         component: record
         fields: [title]
-        children:
+        item:
           - {name: hint, primitive: text, text: row.title}
           - {name: pin, host: PinBoard, reason: a pin board, stands_in_for: none}
           - {name: tail, primitive: text, text: row.title}
@@ -351,7 +358,7 @@ const root = React.__root(jsx(App, { hosts: { RouteMap: probe("RouteMap"), PinBo
 
 // Each slot renders inside one element carrying its path and its host, at its place among its
 // siblings, with the registered component inside it.
-for (const [host, path] of [["RouteMap", "pages/things/sections/map"], ["PinBoard", "pages/things/sections/notes/children/pin"]]) {
+for (const [host, path] of [["RouteMap", "pages/things/sections/map"], ["PinBoard", "pages/things/sections/notes/item/pin"]]) {
   const regions = root.find((n) => n.props && n.props["data-ui-host"] === host);
   assert.strictEqual(regions.length, 1, `${host} renders once`);
   assert.strictEqual(regions[0].props["data-ui-path"], path, `${host} carries its path`);
@@ -364,14 +371,14 @@ for (const [host, path] of [["RouteMap", "pages/things/sections/map"], ["PinBoar
 const order = root
   .find((n) => n.props && typeof n.props["data-ui-path"] === "string")
   .map((n) => n.props["data-ui-path"])
-  .filter((path) => /^pages\/things\/sections\/[a-z]+(\/children\/[a-z]+)?$/.test(path));
+  .filter((path) => /^pages\/things\/sections\/[a-z]+(\/item\/[a-z]+)?$/.test(path));
 assert.deepStrictEqual(order, [
   "pages/things/sections/summary",
   "pages/things/sections/map",
   "pages/things/sections/notes",
-  "pages/things/sections/notes/children/hint",
-  "pages/things/sections/notes/children/pin",
-  "pages/things/sections/notes/children/tail",
+  "pages/things/sections/notes/item/hint",
+  "pages/things/sections/notes/item/pin",
+  "pages/things/sections/notes/item/tail",
 ], "each slot stands at its position among its siblings");
 
 // The four props, and nothing else.
@@ -379,7 +386,7 @@ for (const host of ["RouteMap", "PinBoard"]) {
   assert.deepStrictEqual(Object.keys(seen[host]).sort(), ["adapter", "page", "path", "scope"], host);
 }
 assert.strictEqual(seen.RouteMap.path, "pages/things/sections/map");
-assert.strictEqual(seen.PinBoard.path, "pages/things/sections/notes/children/pin");
+assert.strictEqual(seen.PinBoard.path, "pages/things/sections/notes/item/pin");
 for (const host of ["RouteMap", "PinBoard"]) {
   assert.deepStrictEqual({ ...seen[host].page }, { id: "7" }, `${host} gets the page's route params`);
   const scope = seen[host].scope;

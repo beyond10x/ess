@@ -14,6 +14,12 @@
 //! document does not use contributes no code — a runtime module is emitted only when a generated
 //! file imports it.
 //!
+//! A document with host slots gives `src/hosts.ts`, the `HostComponents` registry type with one
+//! entry per declared `host` name, each typed by the views and commands its slot declares. The app
+//! takes the host's registry, which `main.tsx` imports from the host's own
+//! `src/host-components.tsx` (never generated), so a slot left unregistered, a name no slot
+//! declares and an access a slot does not declare fail the project's type check.
+//!
 //! [`render_bound`] binds the same project to the HTTP surface an ESS model serves, from the
 //! route table `ess_ui_check::binding` computes ([`ess_ui::binding::Binding`]); without a binding
 //! it gives exactly what [`render`] gives. Only a table that moves a method or carries a path
@@ -82,18 +88,26 @@ pub fn render_bound(
     source_dir: &Path,
     binding: Option<&Binding>,
 ) -> Result<GeneratedFiles, GenerateError> {
-    if let Some((path, slot)) = document.host_slots().first() {
-        return Err(GenerateError::new(format!(
-            "{path}: host slot `{}`: host slots are validated by `ess ui check` and not generated yet",
-            slot.host
-        )));
-    }
     let mut files = BTreeMap::new();
     let title = document
         .title
         .clone()
         .unwrap_or_else(|| document.app.clone());
     files.extend(assets::project(&document.app, &title, binding));
+    let mut gen = emit::Gen::new(document, binding);
+    // Host slots: `src/hosts.ts` types the registry, and the entry hands the app the host's own
+    // `src/host-components.tsx`, which is never generated.
+    if let Some(hosts) = gen.hosts() {
+        files.insert("src/hosts.ts".to_owned(), hosts);
+        if let Some(main) = files.get_mut("src/main.tsx") {
+            *main = main
+                .replace(
+                    "import { App } from \"./App\";\n",
+                    "import { App } from \"./App\";\nimport { hosts } from \"./host-components\";\n",
+                )
+                .replace("<App />", "<App hosts={hosts} />");
+        }
+    }
     files.insert(
         "src/fixtures.ts".to_owned(),
         fixtures::emit(document, source_dir)?,
@@ -101,7 +115,6 @@ pub fn render_bound(
     if let Some(binding) = binding {
         files.insert("src/binding.ts".to_owned(), assets::binding(binding));
     }
-    let mut gen = emit::Gen::new(document, binding);
     files.insert("src/routes.ts".to_owned(), gen.routes());
     for (name, shell) in &document.shells {
         let file = format!("src/shells/{}Shell.tsx", ts::pascal(name));
