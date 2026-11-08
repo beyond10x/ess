@@ -17,6 +17,7 @@
 //!
 //! | input | candidates, in order |
 //! |---|---|
+//! | stated by the scenario ([`AwaitRequest::compared`]) | that value alone: the scenario holds the system to it (story:a-system-issued-awaited-step-honours-its-outcomes-input-guard) |
 //! | read by a `when_related:` guard through the input | the identities of held rows of that entity, in canonical order |
 //! | any other | one value minted from the scenario's counter, as every value the model leaves to the implementation is (`interpret.rs`, *Where the identifiers come from*) |
 //! | either, declared `Optional` | absent first |
@@ -34,10 +35,10 @@
 //!
 //! - combinations reaching different accepting branches: which the system takes is not in the
 //!   model;
-//! - a compared input the model does not determine: the identity input is the instance, and an
-//!   input a `when_related:` guard reads is determined when every reached combination carries the
-//!   same value of it; a minted value never is, because it is this interpreter's own;
 //! - a model that leaves one combination's outcome open, or a construct it does not execute.
+//!
+//! A compared input is never left open: the scenario states its value, and only that value is a
+//! candidate, in place of any the interpreter would otherwise try, a minted one included.
 //!
 //! Each is [`TargetError::Unsupported`], never a guess.
 //!
@@ -95,7 +96,7 @@ impl Interpreted {
             model,
             command,
             (identity, &request.instance),
-            &related,
+            (&related, &request.compared),
             &mut base,
         )
         .map_err(|why| refusal(observation.clone(), &why))?;
@@ -152,7 +153,7 @@ impl Interpreted {
         if reached.is_empty() {
             return self.nothing_reached(model, request, &observation);
         }
-        if let Err(why) = chosen(&reached, &request.compared, identity, &related) {
+        if let Err(why) = chosen(&reached) {
             return Err(TargetError::unsupported(observation, why));
         }
 
@@ -225,15 +226,9 @@ impl Interpreted {
     }
 }
 
-/// Whether the reached combinations leave the interpreter nothing to choose: one branch, and every
-/// compared input determined. The identity input is the instance; an input a `when_related:`
-/// guard reads is determined when every reached combination carries one value of it.
-fn chosen(
-    reached: &[Candidate],
-    compared: &BTreeSet<String>,
-    identity: &str,
-    related: &BTreeMap<&str, &QualifiedName>,
-) -> Result<(), String> {
+/// Whether the reached combinations leave the interpreter no branch to choose. Every compared
+/// input is determined already: the scenario states it, and it was the only candidate.
+fn chosen(reached: &[Candidate]) -> Result<(), String> {
     let branches: BTreeSet<String> = reached
         .iter()
         .filter_map(|candidate| candidate.step.outcome.as_ref().map(ToString::to_string))
@@ -244,22 +239,6 @@ fn chosen(
              interpreter does not choose",
             branches.into_iter().collect::<Vec<_>>().join(", ")
         ));
-    }
-    let Some(first) = reached.first() else {
-        return Ok(());
-    };
-    for field in compared {
-        let determined = field == identity
-            || (related.contains_key(field.as_str())
-                && reached
-                    .iter()
-                    .all(|candidate| candidate.input.get(field) == first.input.get(field)));
-        if !determined {
-            return Err(format!(
-                "the scenario compares input `{field}`, which the system decides and the model \
-                 does not determine"
-            ));
-        }
     }
     Ok(())
 }
@@ -331,12 +310,13 @@ fn related_inputs(command: &ResolvedCommand) -> BTreeMap<&str, &QualifiedName> {
 /// Each declared input with its candidates in order: `None` for absent.
 type Choices = Vec<(String, Vec<Option<Node>>)>;
 
-/// Each declared input with its candidates in order.
+/// Each declared input with its candidates in order. A value the scenario states is the only
+/// candidate of its input.
 fn choices(
     model: &EssIr,
     command: &ResolvedCommand,
     (identity, instance): (&str, &Node),
-    related: &BTreeMap<&str, &QualifiedName>,
+    (related, stated): (&BTreeMap<&str, &QualifiedName>, &BTreeMap<String, Node>),
     base: &mut Store,
 ) -> Result<Choices, execute::Undetermined> {
     let mut choices = Vec::with_capacity(command.input.len());
@@ -344,6 +324,8 @@ fn choices(
         let mut values = Vec::new();
         if field.name == identity {
             values.push(Some(instance.clone()));
+        } else if let Some(value) = stated.get(&field.name) {
+            values.push(Some(value.clone()));
         } else {
             if field.type_ref.is_optional() {
                 values.push(None);

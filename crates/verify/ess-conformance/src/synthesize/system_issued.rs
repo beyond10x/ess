@@ -7,7 +7,7 @@
 //!
 //! | the branch the step claims (its `expect_outcome`) | becomes |
 //! |---|---|
-//! | accepting | [`AwaitOutcome`](ScenarioStep::AwaitOutcome) on the identity input, stating no input; the expectations after it stay |
+//! | accepting | [`AwaitOutcome`](ScenarioStep::AwaitOutcome) on the identity input, stating what was sent for each input a `when:` guard selecting the branch reads (for a default branch, every other branch's), or refused `ESS-SYNTH-006` where such an input was sent absent; the expectations after it stay |
 //! | `external:`, refusal or not | the same: the system issued it, and the provider's answer is the outcome reached |
 //! | decided by the addressed record: `wrong_state:`, `unknown_instance:`, a held-state or stored-field guard with no input guard | [`ExpectNotIssued`](ScenarioStep::ExpectNotIssued); the steps that read the result nobody produced are dropped, the subject checks stay |
 //! | decided by the input or the rows it names: `when:`, `when_related:`, a refusing default, `input_absent:`, an input guard beside a held state | the scenario is withdrawn, `ESS-SYNTH-024` naming the branch |
@@ -20,8 +20,10 @@
 //! # A value the system decides is never compared as synthesis chose it
 //!
 //! Every input but the identity is the system's, so what synthesis sent for it is a value it
-//! invented. Where the reached branch writes such an input into an event field, an error field or a
-//! stored field, the expectation reads what the target reported instead:
+//! invented — except where a guard selecting the claimed branch reads it: there the await states
+//! the value, and the system is held to it, because another value could select another branch.
+//! Where the reached branch writes such an input into an event field, an error field or a stored
+//! field, the expectation reads what the target reported instead:
 //!
 //! | the field's declared source | the expected value |
 //! |---|---|
@@ -194,7 +196,7 @@ fn rewritten<'ir>(
             instance: instance.clone(),
             identity: identity.to_owned(),
             within,
-            input: BTreeMap::new(),
+            input: guarded_input(command, outcome, identity, input)?,
             shape: input_shape(ir, command),
         });
         awaits.push(Awaited {
@@ -292,6 +294,92 @@ fn claim_of(outcome: &ResolvedOutcome) -> Claim {
         ResolvedCondition::External { .. }
         | ResolvedCondition::ExternalWhen { .. }
         | ResolvedCondition::ExternalSubject { .. } => Claim::Reached,
+    }
+}
+
+/// What a refused await of a guarded branch names as the construct not synthesised.
+const ABSENT_GUARDED_INPUT: &str = "an await of a system-issued step whose branch a `when:` guard \
+     selects over an input the send leaves absent (an await states a value for each input it \
+     names, and cannot state that one is absent)";
+
+/// The input the await of the claimed branch states: what synthesis sent for each input a guard
+/// that selects the branch reads, so that the system is held to an input that selects it
+/// (story:a-system-issued-awaited-step-honours-its-outcomes-input-guard).
+///
+/// The system decides every input but the identity, and an await stating none is answered by
+/// whichever branch the system's choice selects: a scenario claiming one of two branches an input
+/// guard tells apart failed a correct target that took the other (an adopter report,
+/// 2026-10-26). The guards read are the claimed branch's own `when:` (an `external:` branch's
+/// eligibility included) and, for a default branch, every other branch's `when:`, which the
+/// default is taken by refuting. Each input is stated top-level and whole; the identity is the
+/// instance and is never stated. Any other branch states nothing, as before.
+///
+/// An input such a guard reads that the send leaves absent is refused
+/// `ESS-SYNTH-006` for the scenario: an await states a value for
+/// each input it names, and cannot state an absence.
+fn guarded_input(
+    command: &ResolvedCommand,
+    outcome: Option<&ResolvedOutcome>,
+    identity: &str,
+    sent: Option<&BTreeMap<String, ScenarioValue>>,
+) -> Result<BTreeMap<String, ScenarioValue>, RefusalCause> {
+    let Some(outcome) = outcome else {
+        return Ok(BTreeMap::new());
+    };
+    let guards: Vec<_> = match &outcome.condition {
+        ResolvedCondition::Otherwise => command
+            .outcomes
+            .iter()
+            .filter(|other| other.name != outcome.name)
+            .filter_map(|other| guard(&other.condition))
+            .collect(),
+        own => guard(own).into_iter().collect(),
+    };
+    let mut stated = BTreeMap::new();
+    for predicate in &guards {
+        for path in predicate.fact_paths() {
+            let Some(field) = input_read(command, path.segments()) else {
+                continue;
+            };
+            if field == identity {
+                continue;
+            }
+            let value =
+                sent.and_then(|sent| sent.get(field))
+                    .ok_or(RefusalCause::NotSynthesisedYet {
+                        construct: ABSENT_GUARDED_INPUT,
+                        sections: "docs/design/system-issued-commands.md (Which branches a \
+                               scenario can claim)",
+                    })?;
+            stated.insert(field.to_owned(), value.clone());
+        }
+    }
+    Ok(stated)
+}
+
+/// The `when:` guard of a branch selected by one: its own, or an `external:` branch's eligibility.
+fn guard(condition: &ResolvedCondition) -> Option<&ess_primitives::predicate::Predicate> {
+    match condition {
+        ResolvedCondition::When { predicate }
+        | ResolvedCondition::ExternalWhen { predicate, .. } => Some(predicate),
+        _ => None,
+    }
+}
+
+/// The declared top-level input of `command` a guard's fact path reads, written bare (`verdict`)
+/// or under its namespace (`input.verdict`); `None` for a path that reads no input.
+fn input_read<'c>(command: &'c ResolvedCommand, segments: &[String]) -> Option<&'c str> {
+    let declared = |name: &str| {
+        command
+            .input
+            .iter()
+            .find(|field| field.name == name)
+            .map(|field| field.name.as_str())
+    };
+    match segments {
+        [first, ..] if declared(first).is_some() => declared(first),
+        [namespace, field, ..] if namespace == "input" => declared(field),
+        _ => None,
     }
 }
 

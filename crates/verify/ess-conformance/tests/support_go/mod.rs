@@ -450,7 +450,7 @@ impl<T: ConformanceTarget> ConformanceTarget for Recorder<T> {
         let described = json!({
             "instance": nodes(&request.instance),
             "within": request.within.map(|within| within.millis() / 1000),
-            "compared": request.compared.iter().collect::<Vec<_>>(),
+            "compared": request.compared.keys().collect::<Vec<_>>(),
         });
         let key = request.command.to_string();
         let answer = self.inner.await_outcome(request);
