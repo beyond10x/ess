@@ -647,11 +647,19 @@ fn type_decoder(out: &mut String, emit: &Emit<'_>, declared: &ResolvedType) {
         ResolvedBody::Newtype { of, .. } => {
             let mut slot = 0;
             let held = decode_into(out, emit, "\t", "value", "at", of, &mut slot);
-            let _ = writeln!(
-                out,
-                "\treturn {}({held}), nil",
-                emit.reference_ctor(&declared.name)
-            );
+            let ctor = emit.reference_ctor(&declared.name);
+            if declared.body.is_constrained() {
+                // The declared alphabet, prefix and invariants are held here, because this decoder
+                // is what a served route reads a request with (beyond10x/ess#579).
+                let _ = writeln!(
+                    out,
+                    "\tdecoded := {ctor}({held})\n\tif expected, broken := \
+                     decoded.BrokenConstraint(); broken {{\n\t\treturn out, DecodeError{{At: at, \
+                     Expected: expected, Found: describes(value)}}\n\t}}\n\treturn decoded, nil"
+                );
+            } else {
+                let _ = writeln!(out, "\treturn {ctor}({held}), nil");
+            }
         }
         ResolvedBody::Struct { fields, .. } => {
             let _ = writeln!(

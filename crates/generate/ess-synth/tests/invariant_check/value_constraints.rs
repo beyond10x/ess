@@ -120,16 +120,7 @@ fn model_decoder_refuses_a_value_outside_the_alphabet() {
     )
     .unwrap();
     std::fs::write(harness.join("src/main.rs"), HARNESS).unwrap();
-    let cases = [
-        input("m/s", "u-1", 0),
-        input("m s", "u-1", 0),
-        input("m\u{7f}", "u-1", 0),
-        input("µm", "u-1", 0),
-        input("", "u-1", 0),
-        input("m\ts", "u-1", 0),
-        input("m", "x-1", 0),
-        input("m", "u-1", -1),
-    ];
+    let cases = cases();
     let mut arguments = vec![
         "run",
         "--offline",
@@ -148,9 +139,30 @@ fn model_decoder_refuses_a_value_outside_the_alphabet() {
     let _ = std::fs::remove_dir_all(&root);
     assert!(run.status.success(), "the harness builds and runs");
 
+    let lines: Vec<&str> = stdout.lines().collect();
+    assert_eq!(lines, expected(), "{stdout}");
+}
+
+/// The command inputs both decoders read: one inside every constraint, then one per way out of
+/// each — the report's four units, a tab, a code without its prefix and a negative scale.
+fn cases() -> [String; 8] {
+    [
+        input("m/s", "u-1", 0),
+        input("m s", "u-1", 0),
+        input("m\u{7f}", "u-1", 0),
+        input("µm", "u-1", 0),
+        input("", "u-1", 0),
+        input("m\ts", "u-1", 0),
+        input("m", "x-1", 0),
+        input("m", "u-1", -1),
+    ]
+}
+
+/// The verdict on each of [`cases`], the same from every generated decoder.
+fn expected() -> [String; 8] {
     let alphabet = (0x21u8..=0x7e).map(char::from).collect::<String>();
     let outside = format!("refused $.unit | a value whose every character is one of `{alphabet}`");
-    let expected = [
+    [
         "ok".to_owned(),
         outside.clone(),
         outside.clone(),
@@ -159,7 +171,128 @@ fn model_decoder_refuses_a_value_outside_the_alphabet() {
         outside,
         "refused $.code | a value starting with `u-`".to_owned(),
         "refused $.scale | a value satisfying `value >= 0`".to_owned(),
-    ];
-    let lines: Vec<&str> = stdout.lines().collect();
-    assert_eq!(lines, expected, "{stdout}");
+    ]
+}
+
+/// The throwaway test file that decodes each case with the generated Go server's command decoder,
+/// written beside the generated package into a scratch copy, never emitted. `{cases}` is replaced
+/// by one Go raw string literal per case.
+const GO_HARNESS: &str = r#"package server
+
+import (
+	"errors"
+	"fmt"
+	"testing"
+)
+
+func TestValueConstraints(t *testing.T) {
+	for _, input := range []string{
+{cases}	} {
+		document, refused := readJSON([]byte(input))
+		if refused != nil {
+			t.Fatalf("%s does not parse: %s", input, refused.body)
+		}
+		_, err := decodeCommandDemoUnitsRecord(document, "$")
+		var refusal DecodeError
+		switch {
+		case err == nil:
+			fmt.Println("case\tok")
+		case errors.As(err, &refusal):
+			fmt.Printf("case\trefused %s | %s\n", refusal.At, refusal.Expected)
+		default:
+			t.Fatalf("%s: %v", input, err)
+		}
+	}
+}
+"#;
+
+/// `story:generated-decoders-enforce-declared-value-constraints`, part A: the generated Go
+/// server's decoder holds the same alphabet, prefix and invariants, and gives the Rust model
+/// decoder's verdict on every case — naming the same path and the same constraint.
+#[test]
+fn go_server_decoder_refuses_a_value_outside_the_declared_constraints() {
+    if !std::process::Command::new("go")
+        .arg("version")
+        .output()
+        .is_ok_and(|output| output.status.success())
+    {
+        eprintln!(
+            "no Go toolchain on this machine; the Go decoder's constraints are unchecked here"
+        );
+        return;
+    }
+    let synthesis = synthesize_for(&ir(&model()), Target::Go).expect("the model synthesizes");
+    let types = &synthesis.artifacts["types/units/units.go"].contents;
+    for method in [
+        "func (v Unit) BrokenConstraint() (string, bool) {",
+        "func (v Code) BrokenConstraint() (string, bool) {",
+        "func (v Scale) BrokenConstraint() (string, bool) {",
+    ] {
+        assert!(types.contains(method), "`{method}` in:\n{types}");
+    }
+
+    let root = scratch("go-value-constraints");
+    write(&synthesis, &root);
+    let literals = cases().iter().fold(String::new(), |mut out, case| {
+        assert!(!case.contains('`'), "{case}");
+        let _ = writeln!(out, "\t\t`{case}`,");
+        out
+    });
+    std::fs::write(
+        root.join("server/zz_value_constraints_test.go"),
+        GO_HARNESS.replace("{cases}", &literals),
+    )
+    .unwrap();
+    let unformatted = super::go_tool(&root, "gofmt", &["-l", "."]);
+    let vet = super::go_tool(&root, "go", &["vet", "./..."]);
+    let run = super::go_tool(
+        &root,
+        "go",
+        &[
+            "test",
+            "-count=1",
+            "-run",
+            "TestValueConstraints",
+            "-v",
+            "./server/",
+        ],
+    );
+    let stdout = String::from_utf8_lossy(&run.stdout).into_owned();
+    let _ = std::fs::remove_dir_all(&root);
+    assert!(
+        unformatted.status.success() && unformatted.stdout.is_empty(),
+        "the generated Go is gofmt-clean"
+    );
+    assert!(vet.status.success(), "the generated Go is vet clean");
+    assert!(
+        run.status.success(),
+        "the harness builds and runs: {stdout}"
+    );
+
+    let lines: Vec<&str> = stdout
+        .lines()
+        .filter_map(|line| line.strip_prefix("case\t"))
+        .collect();
+    assert_eq!(lines, expected(), "{stdout}");
+}
+
+/// A newtype that declares no alphabet, prefix or invariant keeps its exact Go bytes: no check, no
+/// evaluator, and a decoder that returns the wrapped value.
+#[test]
+fn a_go_newtype_without_constraints_carries_no_check() {
+    let bare = model()
+        .replace(&format!("    alphabet: {}\n", printable()), "")
+        .replace("    invariants: [value.count >= 1]\n", "")
+        .replace("    prefix: \"u-\"\n", "")
+        .replace("    invariants: [value >= 0]\n", "");
+    let synthesis = synthesize_for(&ir(&bare), Target::Go).expect("the model synthesizes");
+    assert!(!synthesis
+        .artifacts
+        .contains_key("types/invariant/invariant.go"));
+    for (path, artifact) in &synthesis.artifacts {
+        assert!(
+            !artifact.contents.contains("BrokenConstraint"),
+            "`{path}` carries a constraint check for a model that declares none"
+        );
+    }
 }
