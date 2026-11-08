@@ -847,6 +847,7 @@ impl App {
                 let mut lines = Vec::new();
                 let shown = self.labelled(&record.fields, &row);
                 for field in &record.fields {
+                    self.mark_field_slot(field, place, &place.path.child("fields"), lines.len());
                     lines.push(labelled(field, &cell(field, &shown)));
                 }
                 let tab = self
@@ -875,7 +876,12 @@ impl App {
                         current.and_then(|tab| tab.fields.as_ref())
                     {
                         let shown = self.labelled(fields, &row);
+                        let at = current.map_or_else(
+                            || place.path.child("fields"),
+                            |tab| place.path.child("tabs").child(&tab.name).child("fields"),
+                        );
                         for field in fields {
+                            self.mark_field_slot(field, place, &at, lines.len());
                             lines.push(labelled(field, &cell(field, &shown)));
                         }
                     }
@@ -888,7 +894,21 @@ impl App {
                             path: &path,
                             ..inner
                         };
-                        lines.extend(self.body_lines(&node.body, &nested));
+                        let drawn = self.body_lines(&node.body, &nested);
+                        // A section's or an overlay's own record records a tab's slot at its
+                        // path, so a test reads its label there.
+                        if place.record && node.body.host().is_some() {
+                            self.mark(Mark {
+                                path: path.to_string(),
+                                row: None,
+                                line: lines.len(),
+                                height: drawn.len(),
+                                x: 0,
+                                width: None,
+                                text: None,
+                            });
+                        }
+                        lines.extend(drawn);
                         lines.extend(self.live_stale(node));
                     }
                 }
@@ -2368,6 +2388,24 @@ pub(crate) fn record_actions(record: &ess_ui::Record, tab: usize) -> Vec<ess_ui:
 impl App {
     /// Records each tab of a section's or an overlay's own record at `<path>/tabs/<name>`, on
     /// the tab line drawn at `line` ([`tab_line`]).
+    /// Records a record's field slot on its line at `fields`/`<name>`, with its label and the
+    /// slot's label, when the record is a section's or an overlay's own body.
+    fn mark_field_slot(&self, field: &Field, place: &Place<'_>, fields: &NodePath, line: usize) {
+        let Some(slot) = &field.host else { return };
+        if !place.record {
+            return;
+        }
+        self.mark(Mark {
+            path: fields.child(&field.name).to_string(),
+            row: None,
+            line,
+            height: 1,
+            x: 0,
+            width: None,
+            text: Some(format!("{} │{}│", label_of(field), host_label(slot))),
+        });
+    }
+
     fn mark_tabs(&self, tabs: &[ess_ui::Tab], place: &Place<'_>, line: usize) {
         if !place.record {
             return;
