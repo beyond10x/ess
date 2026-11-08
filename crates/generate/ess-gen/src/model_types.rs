@@ -312,6 +312,7 @@ fn event_payload(event: &ResolvedEvent) -> ResolvedType {
         },
         naming: event.naming.clone(),
         reading: None,
+        ordered: false,
     }
 }
 

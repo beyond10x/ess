@@ -1,0 +1,14 @@
+{
+  "at": "2026-11-07T04:10:57Z",
+  "actor": "human:timo",
+  "artifact": "story:a-guard-over-several-list-literals-is-witnessed",
+  "kind": "story",
+  "revision": 4,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "review-result:ess-0900-u4-literals-adversary",
+    "review": "review-result:ess-0900-u4-literals-adversary",
+    "outcome": "escalated"
+  }
+}

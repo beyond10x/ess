@@ -27,7 +27,7 @@ fn the_terminal_refuses_a_host_slot_by_name() {
         refusal.message.contains("RouteMap")
             && refusal
                 .message
-                .contains("host slots are generated from 0.91.0"),
+                .contains("host slots are validated by `ess ui check` and not generated yet"),
         "{refusal}"
     );
 }

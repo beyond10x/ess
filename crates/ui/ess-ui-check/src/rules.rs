@@ -7,8 +7,8 @@ use std::path::Path;
 use ess_ui::{
     Action, ActionAs, ActionConfirm, Body, Composite, Document, Export, ExportParams, FixtureIndex,
     GuardThen, Header, Located, NavPages, NodeCommon, NodePath, NodeRef, OverlayKind, PageLayout,
-    Paging, PlacementProfile, Primitive, Profile, Reads, RegionKind, State, StateClass, Store,
-    TabFields, TypeExpr, WidgetUse,
+    Pager, Paging, PlacementProfile, Primitive, Profile, Reads, RegionKind, State, StateClass,
+    Store, TabFields, TypeExpr, WidgetUse,
 };
 use ess_yaml::Value;
 
@@ -213,11 +213,13 @@ fn reads_of<'a>(located: &'a Located<'_>) -> Vec<(NodePath, &'a Reads)> {
     reads
 }
 
-/// `pager_paging`, `pager_params`, `pager_sizes`: a read's `pager` pages a server read, names
-/// two params of that read each bound to a `state.<path>` a renderer can set, neither path the
-/// other or inside it (both are written when a size is chosen), and offers at least one page
-/// size, each at least 1. Nothing is recognised by its name: a param is a pager param only when
-/// the pager names it.
+/// `pager_paging`, `pager_params`, `pager_sizes`: a read's `pager` pages a server read or a
+/// client read. On a server read it names its `page` param and may name a `size` param, each a
+/// param of that read bound to a `state.<path>` a renderer can set, neither path the other or
+/// inside it (both are written when a size is chosen). On a client read it names no param: the
+/// renderer pages the rows it holds, so `page` and `size` are refused by name. Either offers at
+/// least one page size, each at least 1 and none listed twice. Nothing is recognised by its name: a param is a pager
+/// param only when the pager names it.
 ///
 /// `pager_outside_collection`: only a collection renders a pager footer, so a `pager` on any
 /// other read (another composite's, a graph editor's edges', an action's `loads`) is a key no
@@ -241,14 +243,8 @@ fn pagers(located: &Located<'_>, sink: &mut Sink) {
             );
             continue;
         }
-        if !matches!(read.paging, Some(Paging::Server)) {
-            sink.push(
-                "pager_paging",
-                &at,
-                "a `pager` pages a read the server pages: it needs `paging: server`",
-            );
-        }
-        for (key, name) in [("page", Some(&pager.page)), ("size", pager.size.as_ref())] {
+        let (page, size) = pager_paging(read, pager, &at, sink);
+        for (key, name) in [("page", page), ("size", size)] {
             let Some(name) = name else {
                 continue;
             };
@@ -262,7 +258,7 @@ fn pagers(located: &Located<'_>, sink: &mut Sink) {
                      `state.<path>` the pager sets",
                     bound.0
                 ),
-                Some(_) if key == "size" && name == &pager.page => format!(
+                Some(_) if key == "size" && Some(name) == page => format!(
                     "`pager.size` names `{name}`, the page param; the size needs a param of its \
                      own"
                 ),
@@ -270,9 +266,9 @@ fn pagers(located: &Located<'_>, sink: &mut Sink) {
             };
             sink.push("pager_params", &pager_at.child(key), message);
         }
-        if let Some(size) = pager.size.as_ref().filter(|size| *size != &pager.page) {
+        if let (Some(page), Some(size)) = (page, size.filter(|size| Some(*size) != page)) {
             if let (Some(page_path), Some(size_path)) =
-                (read.state_path(&pager.page), read.state_path(size))
+                (read.state_path(page), read.state_path(size))
             {
                 if overlaps(page_path, size_path) {
                     sink.push(
@@ -301,7 +297,69 @@ fn pagers(located: &Located<'_>, sink: &mut Sink) {
                 format!("a page size is at least 1, not {size}"),
             );
         }
+        // A repeated size is offered twice: React keys its options by the size, and the
+        // terminal's `+` never passes the repeat to the sizes after it.
+        let mut seen = std::collections::BTreeSet::new();
+        let mut repeated = std::collections::BTreeSet::new();
+        for size in &pager.sizes {
+            if !seen.insert(*size) {
+                repeated.insert(*size);
+            }
+        }
+        for size in repeated {
+            sink.push(
+                "pager_sizes",
+                &pager_at.child("sizes"),
+                format!("the page size {size} is listed more than once; list each size once"),
+            );
+        }
     }
+}
+
+/// `pager_paging`, reported at the read: a server pager names its `page`, a client pager names
+/// neither `page` nor `size`, and no other paging takes a pager. Returns the page and size params
+/// `pager_params` goes on to check: none on a client read, whose params were refused here.
+fn pager_paging<'r>(
+    read: &Reads,
+    pager: &'r Pager,
+    at: &NodePath,
+    sink: &mut Sink,
+) -> (Option<&'r String>, Option<&'r String>) {
+    match read.paging {
+        Some(Paging::Server) => {
+            if pager.page.is_none() {
+                sink.push(
+                    "pager_paging",
+                    at,
+                    "with `paging: server` a `pager` names the param that carries the page: add \
+                     `page`",
+                );
+            }
+        }
+        Some(Paging::Client) => {
+            for (key, name) in [("page", &pager.page), ("size", &pager.size)] {
+                if let Some(name) = name {
+                    sink.push(
+                        "pager_paging",
+                        at,
+                        format!(
+                            "with `paging: client` the renderer pages the rows it holds and a \
+                             `pager` offers only `sizes`; `{key}` names the param `{name}`, which \
+                             only `paging: server` sends: remove `{key}`"
+                        ),
+                    );
+                }
+            }
+            return (None, None);
+        }
+        _ => sink.push(
+            "pager_paging",
+            at,
+            "a `pager` pages a read the server pages or the renderer pages: it needs `paging: \
+             server` or `paging: client`",
+        ),
+    }
+    (pager.page.as_ref(), pager.size.as_ref())
 }
 
 /// Whether two `state.<path>` texts are the same path or one lies inside the other, compared

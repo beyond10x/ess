@@ -316,7 +316,10 @@ func (b *transcriptTarget) EstablishEntity(r EntitySetupRequest) error {
 // issues itself (beyond10x/ess#542): the question is the instance, the declared bound and the
 // compared field names, never the runner's deadline.
 func (b *transcriptTarget) AwaitOutcome(r AwaitRequest) (AwaitAnswer, error) {
-	compared := append([]string{}, r.Compared...)
+	compared := make([]string, 0, len(r.Compared))
+	for field := range r.Compared {
+		compared = append(compared, field)
+	}
 	sort.Strings(compared)
 	var within any
 	if r.Within > 0 {

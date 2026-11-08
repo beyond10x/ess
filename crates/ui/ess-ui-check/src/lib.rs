@@ -8,7 +8,12 @@
 //! fields, `bind` keys, columns and `row.<field>` paths name inputs and fields that exist, and
 //! that every section's read is readable by some actor — an approximation, since ESS grants
 //! commands and not views (documented on [`Model`]) — and that a page naming its `actor` sends
-//! only commands that actor is granted. [`CHECKS`] lists them all.
+//! only commands that actor is granted. [`CHECKS`] lists them all. A host slot's `reads` and
+//! `commands` are held to every one of the model checks a generated node's are.
+//!
+//! The report lists every host slot ([`HostEntry`]) and, given a model, its [`Coverage`]: the
+//! model's views and commands a generated node reaches, those only a host slot reaches, and the
+//! rest. A host slot never adds to the covered count.
 //!
 //! A document the loader refuses yields exactly one finding, the refusal, classified under the
 //! check it breaks. A document that loads is checked in full, and every finding names its node by
@@ -173,7 +178,8 @@ pub const CHECKS: &[Check] = &[
     rule("enum_values"),
     // Every key of an overlay's `params` is read inside it as `params.<key>`.
     rule("overlay_params"),
-    // With `--model`: the names the document resolves in the ESS model.
+    // With `--model`: the names the document resolves in the ESS model; a view or command no
+    // `reached_by: network` component serves is refused under the first two.
     rule("view_in_model"),
     rule("command_in_model"),
     rule("event_in_model"),
@@ -230,6 +236,8 @@ fn severity_of(id: &str) -> Severity {
 pub(crate) struct Sink {
     findings: Vec<Finding>,
     backlog: Vec<BacklogEntry>,
+    hosts: Vec<HostEntry>,
+    coverage: Option<Coverage>,
 }
 
 impl Sink {
@@ -258,6 +266,49 @@ pub struct Report {
     pub findings: Vec<Finding>,
     /// The generator's backlog: every host slot that stands in for `none`, ordered by path.
     pub backlog: Vec<BacklogEntry>,
+    /// Every host slot of the document, ordered by path.
+    pub hosts: Vec<HostEntry>,
+    /// With a model, how many of its views and commands the document reaches through generated
+    /// nodes, through host slots only, and not at all. `None` without a model, whose views and
+    /// commands are the rows counted.
+    pub coverage: Option<Coverage>,
+}
+
+/// A host slot of the document: a place the host application draws with its own component.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, serde::Serialize)]
+pub struct HostEntry {
+    /// The slot's canonical path.
+    pub path: String,
+    /// The component name the host registers.
+    pub host: String,
+    /// Why the generator cannot draw it.
+    pub reason: String,
+    /// The generator item the slot replaces: a composite, a primitive, or `none`.
+    pub stands_in_for: String,
+}
+
+/// The views and commands of the model — the rows — split three ways by what reaches them.
+///
+/// A row is **covered** when a generated node of the document reads or sends it, **host-covered**
+/// when only a host slot's `reads` or `commands` reach it, and **uncovered** when nothing in the
+/// document does. A row a generated node and a slot both reach is covered, so a slot never adds to
+/// the covered count: the document with its slots removed has the same one. The three add up to
+/// the model's views and commands.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize)]
+pub struct Coverage {
+    /// Rows a generated node reaches.
+    pub covered: usize,
+    /// Rows only a host slot reaches.
+    pub host_covered: usize,
+    /// Rows nothing in the document reaches.
+    pub uncovered: usize,
+}
+
+impl Coverage {
+    /// Every row: the model's views and commands.
+    pub fn rows(&self) -> usize {
+        self.covered + self.host_covered + self.uncovered
+    }
 }
 
 /// A host slot no generator item fits (`stands_in_for: none`).
@@ -278,6 +329,10 @@ struct Json<'a> {
     findings: &'a [Finding],
     #[serde(skip_serializing_if = "<[BacklogEntry]>::is_empty")]
     backlog: &'a [BacklogEntry],
+    #[serde(skip_serializing_if = "<[HostEntry]>::is_empty")]
+    hosts: &'a [HostEntry],
+    #[serde(skip_serializing_if = "Option::is_none")]
+    coverage: Option<Coverage>,
 }
 
 impl Report {
@@ -287,10 +342,14 @@ impl Report {
         findings.dedup();
         let mut backlog = sink.backlog;
         backlog.sort();
+        let mut hosts = sink.hosts;
+        hosts.sort();
         Self {
             document: document.to_owned(),
             findings,
             backlog,
+            hosts,
+            coverage: sink.coverage,
         }
     }
 
@@ -335,6 +394,24 @@ impl Report {
                         entry.path, entry.host, entry.reason
                     );
                 }
+                for entry in &self.hosts {
+                    let _ = writeln!(
+                        text,
+                        "host {} {} stands in for {}: {}",
+                        entry.path, entry.host, entry.stands_in_for, entry.reason
+                    );
+                }
+                if let Some(coverage) = &self.coverage {
+                    let _ = writeln!(
+                        text,
+                        "coverage: {} covered, {} host-covered, {} uncovered of {} views and \
+                         commands",
+                        coverage.covered,
+                        coverage.host_covered,
+                        coverage.uncovered,
+                        coverage.rows()
+                    );
+                }
                 let _ = writeln!(
                     text,
                     "{}: {} error(s), {} warning(s)",
@@ -350,6 +427,8 @@ impl Report {
                     document: &self.document,
                     findings: &self.findings,
                     backlog: &self.backlog,
+                    hosts: &self.hosts,
+                    coverage: self.coverage,
                 };
                 let mut text =
                     serde_json::to_string_pretty(&json).expect("a report serializes to JSON");

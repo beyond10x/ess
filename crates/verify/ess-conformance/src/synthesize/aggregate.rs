@@ -38,7 +38,7 @@ use super::{
     route_from, shares_owner, shows, subject_fact, Arrangement, CommandRef, Determined, Refusal,
     RefusalCause,
 };
-use crate::aggregate::{evaluate, evaluate_skipping_absent, ValueKind};
+use crate::aggregate::ValueKind;
 use crate::scenario::{
     ActorRef, ConformanceScenario, ConformanceSuite, EntityRef, EssSemanticRef, ScenarioId,
     ScenarioInitialState, ScenarioStep, ScenarioValue, ViewExpectation, ViewRef,
@@ -135,6 +135,8 @@ enum Ladder {
         prefix: String,
     },
     Timestamp,
+    /// Whole minutes, as a `Duration` is spelled (ess/36).
+    Duration,
     Enum(Vec<String>),
     Boolean,
     Uuid {
@@ -153,6 +155,7 @@ impl Ladder {
                 prefix: format!("{view}/{path}"),
             },
             Leaf::Primitive(Primitive::Timestamp) => Self::Timestamp,
+            Leaf::Primitive(Primitive::Duration) => Self::Duration,
             Leaf::Primitive(Primitive::Boolean) => Self::Boolean,
             Leaf::Primitive(Primitive::Uuid) => Self::Uuid {
                 prefix: format!("{view}#{path}"),
@@ -175,6 +178,7 @@ impl Ladder {
                     minutes % 60
                 ))
             }
+            Self::Duration => Node::Text(format!("PT{}S", ordinal * 60)),
             Self::Enum(variants) => Node::Text(variants[ordinal % variants.len()].clone()),
             Self::Boolean => Node::Bool(ordinal % 2 == 1),
             Self::Uuid { prefix } => Node::Text(uuid_of(&format!("{prefix}#{ordinal}"))),
@@ -1911,14 +1915,40 @@ fn scenario(
         .chain(scopes.iter().map(|scope| scope.field.as_str()))
         .collect();
     let mut inputs: Vec<(String, Ladder)> = Vec::new();
+    // An expression measure (ess/36, beyond10x/ess#561) varies every field its expression reads:
+    // each is an input of its own, walked by its own ladder, and the expected figure is what the
+    // expression computes per row (`docs/design/generic-language-features.md` § G3, "Cost").
+    let mut read_fields: Vec<(&str, String)> = Vec::new();
     for field in &view.fields {
         let Some(aggregate) = aggregation.functions.get(&field.name) else {
             continue;
         };
-        let Some(input) = &aggregate.input else {
-            continue;
-        };
-        let name = input.name.as_str();
+        if let Some(measured) = &aggregate.expr {
+            if aggregate.skip_absent || aggregate.r#where.is_some() {
+                return Err(unwitnessed(
+                    view,
+                    format!(
+                        "`{}` computes {aggregate}, an expression measure that {}; this \
+                         arrangement witnesses an expression measure over every row of its group",
+                        field.name,
+                        if aggregate.skip_absent {
+                            "skips absent values"
+                        } else {
+                            "reads only the rows its condition admits"
+                        }
+                    ),
+                ));
+            }
+            for read in measured.fields() {
+                read_fields.push((field.name.as_str(), read));
+            }
+        }
+        if let Some(input) = &aggregate.input {
+            read_fields.push((field.name.as_str(), input.name.clone()));
+        }
+    }
+    for (measure, name) in &read_fields {
+        let name = name.as_str();
         if keyed.contains(name)
             || name == entity.identity.name
             || name == EntitySpec::STATE
@@ -1926,6 +1956,11 @@ fn scenario(
         {
             continue;
         }
+        let field = view
+            .fields
+            .iter()
+            .find(|field| field.name == *measure)
+            .expect("a measure is a view field");
         if mapped.contains_key(name) {
             let (_, found) = field_type(name).unwrap_or((false, Leaf::Other));
             let ladder = Ladder::of(&view.name, name, &found).ok_or_else(|| {
@@ -2088,6 +2123,10 @@ fn scenario(
                     .input
                     .as_ref()
                     .is_some_and(|input| input.name == *field)
+                    || aggregate
+                        .expr
+                        .as_ref()
+                        .is_some_and(|measured| measured.fields().iter().any(|read| read == field))
             })
         })
     });
@@ -4560,28 +4599,41 @@ fn aggregate_over(
             &selected
         }
     };
-    let (values, kind) = match &aggregate.input {
-        None => (vec![Node::Null; members.len()], ValueKind::Other),
-        Some(input) => {
-            let mut values = Vec::new();
-            for index in members {
-                values.push(
-                    held(plan, &arranged[*index], *index, &input.name).ok_or_else(|| {
-                        plan.unwitnessed(format!(
-                            "row `{}` holds a value of `{}` nothing determined",
-                            arranged[*index].row.label, input.name
-                        ))
-                    })?,
-                );
-            }
-            (values, kind(plan.ir, plan.entity, &input.name))
-        }
+    // What the measure reads of each row: its input field, or every field its expression reads
+    // (ess/36), as the arrangement determined them.
+    let reads: Vec<String> = match (&aggregate.input, &aggregate.expr) {
+        (Some(input), _) => vec![input.name.clone()],
+        (None, Some(measured)) => measured.fields(),
+        (None, None) => Vec::new(),
     };
-    let value = if aggregate.skip_absent {
-        evaluate_skipping_absent(aggregate.function, &values, kind)
-    } else {
-        evaluate(aggregate.function, &values, kind)
+    let mut values = Vec::new();
+    for index in members {
+        let mut row = BTreeMap::new();
+        for read in &reads {
+            let value = held(plan, &arranged[*index], *index, read).ok_or_else(|| {
+                plan.unwitnessed(format!(
+                    "row `{}` holds a value of `{read}` nothing determined",
+                    arranged[*index].row.label
+                ))
+            })?;
+            row.insert(read.clone(), value);
+        }
+        values.push(
+            crate::aggregate::measured(plan.ir, plan.entity, aggregate, &row).ok_or_else(|| {
+                plan.unwitnessed(format!(
+                    "`{field}` = {aggregate} has no value over row `{}`",
+                    arranged[*index].row.label
+                ))
+            })?,
+        );
     }
+    let kind = crate::aggregate::measure_kind(plan.ir, plan.entity, aggregate);
+    let value = crate::aggregate::evaluate_measure(
+        aggregate.function,
+        &values,
+        &kind,
+        aggregate.skip_absent,
+    )
     .ok_or_else(|| {
         plan.unwitnessed(format!(
             "`{field}` has no exact value over the arranged rows"
@@ -4620,6 +4672,16 @@ fn observe_change(
         if !additive(aggregate.function) {
             unasserted.push(format!("`{field}`"));
             continue;
+        }
+        // A change is a number a runner subtracts; a total of Durations (ess/36) is spelled as one.
+        if aggregate.function == AggregateFunction::Sum
+            && crate::aggregate::measure_kind(plan.ir, plan.entity, aggregate)
+                == crate::aggregate::MeasureKind::Duration
+        {
+            return Err(plan.unwitnessed(format!(
+                "`{field}` = {aggregate} totals Durations, and the change of an ungrouped view's \
+                 total is asserted as a number"
+            )));
         }
         let value = match aggregate_over(
             plan,

@@ -1,5 +1,6 @@
-//! Host slots: the names a host registers (`--hosts`) are each declared by a slot, and the slots
-//! that stand in for `none` are the generator's backlog.
+//! Host slots: every slot is listed in the report, the names a host registers (`--hosts`) are
+//! each declared by a slot, and the slots that stand in for `none` are the generator's backlog.
+//! What a slot reads and sends is checked, and counted as host-covered, with the model (`model`).
 //!
 //! The declaration refusals (no `reason`, a `host` written twice, `host` beside `component` or
 //! `primitive`, a `stands_in_for` that names no composite, no primitive and is not `none`) are
@@ -9,11 +10,17 @@ use std::collections::BTreeSet;
 
 use ess_ui::{Document, NodePath};
 
-use crate::{BacklogEntry, Options, Sink};
+use crate::{BacklogEntry, HostEntry, Options, Sink};
 
 pub(crate) fn run(document: &Document, options: &Options, sink: &mut Sink) {
     let slots = document.host_slots();
     for (path, slot) in &slots {
+        sink.hosts.push(HostEntry {
+            path: path.to_string(),
+            host: slot.host.clone(),
+            reason: slot.reason.trim().to_owned(),
+            stands_in_for: slot.stands_in_for.clone(),
+        });
         if slot.stands_in_for == "none" {
             sink.backlog.push(BacklogEntry {
                 path: path.to_string(),

@@ -528,3 +528,278 @@ fn a_document_without_none_slots_reports_as_before() {
         );
     }
 }
+
+// ── access (story:a-host-slot-reads-and-commands-only-what-it-declares) ──────────────────────
+
+/// The fixture model the model checks use: system `shop`, views `stock.Items` and
+/// `audit.Entries`, commands `stock.AddItem` and `audit.RecordEntry`; only `stock` is granted to
+/// an actor (`shop.stock.Clerk`, who may invoke `stock.AddItem`).
+fn shop() -> ess_ui_check::Model {
+    ess_ui_check::load_model(&crate_dir().join("tests/fixtures/model"))
+        .unwrap_or_else(|error| panic!("{error}"))
+}
+
+/// A document of model `shop` whose page `p` is written as given, and whose page `editor` is
+/// written as `editor`, or left out when it is empty.
+fn shop_document(p: &str, editor: &str) -> String {
+    let (pages, editor) = if editor.is_empty() {
+        ("[p]", String::new())
+    } else {
+        ("[p, editor]", format!("\n  editor: {editor}"))
+    };
+    format!(
+        "format: ess-ui/1\napp: t\nmodel: shop\nplacement_profile: fat\n\
+         shells: {{app: {{regions: {{main: {{kind: page_outlet}}}}}}}}\n\
+         navigation: {{home: p, sections: [{{name: all, pages: {pages}}}]}}\n\
+         pages:\n  p: {p}{editor}\n"
+    )
+}
+
+fn checked(text: &str, model: Option<&ess_ui_check::Model>) -> Report {
+    check_source(text, "test.yaml", &crate_dir(), model, &Options::default())
+}
+
+/// A slot at a section, an overlay, a field and a page, each naming a view or a command the model
+/// does not have, beside a generated section reading a view it does not have either.
+fn unknown_names() -> String {
+    shop_document(
+        "{kind: detail_page, title: P, sections: [\
+           {name: map, host: StockMap, reason: a vendor map, stands_in_for: collection, \
+            reads: stock.Missing, commands: [stock.Nope]}, \
+           {name: list, component: collection, reads: stock.Missing}, \
+           {name: summary, reads: stock.Items, fields: [{field: label, host: LabelEditor, \
+            reason: needs spell checking, stands_in_for: rich_text, commands: [stock.Unknown]}]}], \
+         overlays: {sign: {kind: dialog, host: SignaturePad, reason: a pen signature, \
+                           stands_in_for: form, commands: [audit.Gone]}}}",
+        "{kind: detail_page, title: E, host: FlowCanvas, reason: a vendor canvas, \
+          stands_in_for: graph_editor, reads: audit.Absent}",
+    )
+}
+
+#[test]
+fn with_a_model_a_slots_reads_and_commands_resolve_as_a_generated_nodes_do() {
+    let text = unknown_names();
+    // Without a model nothing is resolved, so the slots stand.
+    let unmodelled = checked(&text, None);
+    assert!(errors(&unmodelled).is_empty(), "{:#?}", unmodelled.findings);
+    let model = shop();
+    let report = checked(&text, Some(&model));
+    // The generated section's unknown read and the slot's are the same diagnostic.
+    refused(
+        &report,
+        "view_in_model",
+        "pages/p/sections/list/reads",
+        &["`stock.Missing`", "`shop`"],
+    );
+    refused(
+        &report,
+        "view_in_model",
+        "pages/p/sections/map/reads",
+        &["`stock.Missing`", "`shop`"],
+    );
+    refused(
+        &report,
+        "view_in_model",
+        "pages/editor/reads",
+        &["`audit.Absent`"],
+    );
+    for (path, name) in [
+        ("pages/p/sections/map/commands", "`stock.Nope`"),
+        (
+            "pages/p/sections/summary/fields/label/commands",
+            "`stock.Unknown`",
+        ),
+        ("pages/p/overlays/sign/commands", "`audit.Gone`"),
+    ] {
+        refused(&report, "command_in_model", path, &[name, "`shop`"]);
+    }
+    assert_eq!(tripped(&report, "view_in_model").len(), 3, "{report:#?}");
+    assert_eq!(tripped(&report, "command_in_model").len(), 3, "{report:#?}");
+}
+
+#[test]
+fn a_slot_reading_a_view_no_actor_can_read_is_reported_as_a_section_would_be() {
+    let model = shop();
+    let text = shop_document(
+        "{kind: detail_page, title: P, sections: [\
+           {name: map, host: EntryMap, reason: a vendor map, stands_in_for: collection, \
+            reads: audit.Entries}, \
+           {name: list, component: collection, reads: audit.Entries}]}",
+        "",
+    );
+    let report = checked(&text, Some(&model));
+    for section in ["pages/p/sections/map", "pages/p/sections/list"] {
+        refused(
+            &report,
+            "section_readable",
+            section,
+            &["`shop.audit.Entries`"],
+        );
+    }
+}
+
+#[test]
+fn a_slot_sending_a_command_its_pages_actor_is_not_granted_is_reported() {
+    let model = shop();
+    let text = shop_document(
+        "{kind: detail_page, title: P, actor: shop.stock.Clerk, sections: [\
+           {name: summary, reads: stock.Items}, \
+           {name: note, host: NotePad, reason: a vendor editor, stands_in_for: form, \
+            commands: [stock.AddItem, audit.RecordEntry]}]}",
+        "",
+    );
+    let report = checked(&text, Some(&model));
+    refused(
+        &report,
+        "page_actor_grants",
+        "pages/p/sections/note/commands",
+        &["`shop.audit.RecordEntry`", "`shop.stock.Clerk`"],
+    );
+    assert_eq!(
+        tripped(&report, "page_actor_grants").len(),
+        1,
+        "{report:#?}"
+    );
+}
+
+#[test]
+fn a_slot_declaring_only_what_the_model_serves_passes() {
+    let model = shop();
+    let text = shop_document(
+        "{kind: detail_page, title: P, sections: [\
+           {name: map, host: StockMap, reason: a vendor map, stands_in_for: collection, \
+            reads: stock.Items, commands: [stock.AddItem]}]}",
+        "",
+    );
+    let report = checked(&text, Some(&model));
+    assert!(errors(&report).is_empty(), "{:#?}", report.findings);
+}
+
+#[test]
+fn a_slot_with_no_reads_and_no_commands_is_accepted_and_reaches_no_row() {
+    let model = shop();
+    let text = shop_document(
+        "{kind: detail_page, title: P, sections: [\
+           {name: map, host: Decoration, reason: a vendor animation, stands_in_for: none}]}",
+        "",
+    );
+    let report = checked(&text, Some(&model));
+    assert!(errors(&report).is_empty(), "{:#?}", report.findings);
+    let coverage = report
+        .coverage
+        .expect("a check with a model counts coverage");
+    assert_eq!(
+        (coverage.covered, coverage.host_covered, coverage.uncovered),
+        (0, 0, 4)
+    );
+}
+
+// ── coverage (story:host-covered-rows-are-their-own-count) ───────────────────────────────────
+
+/// A generated section reading `stock.Items`, and — when `slot` holds — a page slot reading
+/// `audit.Entries` and sending `audit.RecordEntry`, plus a section slot reading `stock.Items`,
+/// which a generated node already reaches.
+fn covered_document(slot: bool) -> String {
+    let p = if slot {
+        "{kind: detail_page, title: P, sections: [{name: list, component: collection, \
+          reads: stock.Items}, {name: map, host: StockMap, reason: a vendor map, \
+          stands_in_for: chart, reads: stock.Items}]}"
+    } else {
+        "{kind: detail_page, title: P, sections: [{name: list, component: collection, \
+          reads: stock.Items}]}"
+    };
+    let editor = if slot {
+        "{kind: detail_page, title: E, host: AuditCanvas, reason: a vendor canvas, \
+          stands_in_for: graph_editor, reads: audit.Entries, commands: [audit.RecordEntry]}"
+    } else {
+        ""
+    };
+    shop_document(p, editor)
+}
+
+#[test]
+fn the_rows_a_slot_reaches_are_host_covered_and_never_covered() {
+    let model = shop();
+    let with = checked(&covered_document(true), Some(&model));
+    let without = checked(&covered_document(false), Some(&model));
+    assert!(errors(&with).is_empty(), "{:#?}", with.findings);
+    assert!(errors(&without).is_empty(), "{:#?}", without.findings);
+    let with = with.coverage.expect("counted with a model");
+    let without = without.coverage.expect("counted with a model");
+    // The slot's view and command are host-covered; `stock.Items`, which a generated node reads
+    // too, stays covered; `stock.AddItem` nobody reaches.
+    assert_eq!((with.covered, with.host_covered, with.uncovered), (1, 2, 1));
+    // The covered count is the one the document has with its slots removed.
+    assert_eq!(with.covered, without.covered);
+    assert_eq!(
+        (without.covered, without.host_covered, without.uncovered),
+        (1, 0, 3)
+    );
+}
+
+#[test]
+fn the_text_and_json_reports_carry_the_third_count_and_list_each_slot() {
+    let model = shop();
+    let report = checked(&covered_document(true), Some(&model));
+    let text = report.render(OutputFormat::Text);
+    for line in [
+        "host pages/editor AuditCanvas stands in for graph_editor: a vendor canvas",
+        "host pages/p/sections/map StockMap stands in for chart: a vendor map",
+        "coverage: 1 covered, 2 host-covered, 1 uncovered of 4 views and commands",
+    ] {
+        assert!(
+            text.lines().any(|written| written == line),
+            "no line `{line}` in:\n{text}"
+        );
+    }
+    let json: serde_json::Value =
+        serde_json::from_str(&report.render(OutputFormat::Json)).expect("the report is JSON");
+    assert_eq!(
+        json["coverage"],
+        serde_json::json!({"covered": 1, "host_covered": 2, "uncovered": 1})
+    );
+    assert_eq!(
+        json["hosts"],
+        serde_json::json!([
+            {"path": "pages/editor", "host": "AuditCanvas", "reason": "a vendor canvas",
+             "stands_in_for": "graph_editor"},
+            {"path": "pages/p/sections/map", "host": "StockMap", "reason": "a vendor map",
+             "stands_in_for": "chart"},
+        ])
+    );
+    // Without a model the slots are listed and no row is counted: the rows are the model's.
+    let unmodelled = checked(&covered_document(true), None);
+    assert!(unmodelled.coverage.is_none());
+    let json: serde_json::Value =
+        serde_json::from_str(&unmodelled.render(OutputFormat::Json)).expect("JSON");
+    assert!(json.get("coverage").is_none(), "{json}");
+    assert_eq!(json["hosts"].as_array().map(Vec::len), Some(2), "{json}");
+}
+
+#[test]
+fn a_document_without_slots_checked_without_a_model_renders_as_before() {
+    let text = shop_document(
+        "{kind: detail_page, title: P, sections: [{name: list, component: collection, \
+          reads: stock.Items}]}",
+        "",
+    );
+    let report = checked(&text, None);
+    assert_eq!(report.hosts, Vec::new());
+    let json: serde_json::Value =
+        serde_json::from_str(&report.render(OutputFormat::Json)).expect("JSON");
+    let mut keys: Vec<&str> = json
+        .as_object()
+        .expect("an object")
+        .keys()
+        .map(String::as_str)
+        .collect();
+    keys.sort_unstable();
+    assert_eq!(keys, ["document", "findings", "format"], "{json}");
+    let rendered = report.render(OutputFormat::Text);
+    assert!(
+        rendered
+            .lines()
+            .all(|line| !line.starts_with("host ") && !line.starts_with("coverage")),
+        "{rendered}"
+    );
+}

@@ -6393,7 +6393,7 @@ fn example_admitted(
             (value, *primitive == Primitive::Timestamp)
         }
         TypeRef::Named(name) => match types.get(name).map(|named| &named.body) {
-            Some(crate::types::TypeBody::Enum { variants }) => match example.as_text() {
+            Some(crate::types::TypeBody::Enum { variants, .. }) => match example.as_text() {
                 Some(text) if variants.iter().any(|variant| variant.name() == text) => {
                     (FactValue::text(text), false)
                 }
@@ -10253,6 +10253,7 @@ payload:
                 reading: None,
                 name: name("billing.invoice.Channel"),
                 body: TypeBody::Enum {
+                    ordered: false,
                     variants: EnumVariant::bare(["Email", "Post", "Portal"]),
                 },
                 naming: Naming::default(),

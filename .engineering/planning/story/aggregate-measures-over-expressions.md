@@ -15,7 +15,36 @@ relations:
 - serves: vision:O2
 - decomposes: epic:generic-aggregates
 - depends_on: story:expression-arithmetic-and-time
-revision: 4
+scope:
+- confidence: inferred
+  path: CHANGELOG.md
+- confidence: inferred
+  path: crates/generate/ess-synth/src/go/behaviour/query.rs
+- confidence: inferred
+  path: crates/generate/ess-synth/src/rust/behaviour/query.rs
+- confidence: inferred
+  path: crates/generate/ess-synth/src/view_query.rs
+- confidence: cited
+  path: crates/specify/ess-compiler/src/ir.rs
+- confidence: cited
+  path: crates/specify/ess-compiler/src/resolve.rs
+- confidence: inferred
+  path: crates/specify/ess-domain/src/system.rs
+- confidence: inferred
+  path: crates/specify/ess-domain/src/types.rs
+- confidence: cited
+  path: crates/specify/ess-domain/src/view.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/aggregate.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/interpret/views.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/synthesize/aggregate.rs
+- confidence: inferred
+  path: crates/verify/ess-diff/src/change.rs
+- confidence: inferred
+  path: schemas/generated/ess.schema.json
+revision: 19
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-21T22:08:01Z", actor: "human:timo", revision: 2}
 - {from: "proposed", to: "active", at: "2026-10-21T22:08:01Z", actor: "human:timo", revision: 3}
@@ -73,3 +102,19 @@ Accept, redesigned into the generic aggregate feature.
 ## State
 
 2026-11-02 (store hygiene H0 of wave W1, reconcile roadmap section 2d; decision D9 option A, kept active with a dated note): Not started (ESS-VIEW-009); core of beyond10x/ess#561; scheduled W9.
+
+## Scope
+
+Derived 2026-11-07 by `story-scoper`. **cited** lines were read from the story or the tree; **inferred** lines are readings that could be wrong.
+
+- **Not delivered**: `Aggregate.input` is still `Option<String>` (`ess-domain/src/view.rs`), ESS-VIEW-009 still refuses a path, and enums have no `ordered` flag. Cited.
+- **Primary surface:** `crates/specify/ess-domain/src/view.rs` (`Aggregate`, `RawAggregate`, `validate_aggregate`, `result_type`): cited.
+- **Also:** `crates/specify/ess-domain/src/types.rs` (enum `ordered: true`) and `view/measure.rs`: inferred.
+- **Also:** `crates/specify/ess-compiler/src/ir.rs` (`ResolvedAggregate`) and `resolve.rs`: cited by design G3.
+- **Also:** `crates/verify/ess-conformance/src/aggregate.rs` (`evaluate`), `synthesize/aggregate.rs`, `synthesize/aggregate/contrast.rs`, `interpret/views.rs` and `mutate.rs`: cited by design G3, `mutate.rs` inferred.
+- **Also:** `crates/generate/ess-synth/src/view_query.rs`, `rust/behaviour/query.rs` and `go/behaviour/query.rs`: inferred.
+- **Also:** `crates/verify/ess-diff/src/change.rs`, `crates/specify/ess-domain/src/system.rs` (the next source format after `ess/35`) and `schemas/generated/ess.schema.json`: inferred.
+- **Documents:** `docs/design/generic-language-features.md` (G3), `website/docs/guides/specify/aggregate-views.md`, `website/docs/reference/spec-versions.md` and `CHANGELOG.md`: inferred.
+- **Confidence:** high for `view.rs`, medium downstream.
+- **Would collide with:** the other two aggregate stories, which share the whole pipeline and run after this one, and story:navigation-reaches-any-depth-in-view-filters-and-guards (`view.rs`).
+- **Safety:** a field-input measure must keep its IR bytes and digests unchanged below the new format.

@@ -341,6 +341,14 @@ adds no head literal below.
 declares `deletes:` below `ess/34` is refused as `refusal_mutated_state` at the outcome's
 `ConstructRef`, so it adds no head literal below.
 
+`view.rs` gains four string-located sites with format `ess/36`
+(`story:aggregate-measures-over-expressions`, beyond10x/ess#561): an expression measure below
+`ess/36`, the expression's own refusal, a function that does not admit what the expression
+computes, and a Duration measure below `ess/36` refused as `unsupported_format_version`, each at `view.<name>.fields[<n>].aggregate`, written through the view's own `at`
+helper, so they add no head literal below. `types.rs` gains one, `ordered: true` below `ess/36`,
+at `types.<name>.ordered`, for the reason the #426 and #448 sites above are, and its `types` head
+rises from 14 to 15 literals.
+
 <!-- inventory:begin -->
 ```text
 accessor.rs 1 0
@@ -359,9 +367,9 @@ spec.rs 7 0
 system.rs 10 0
 system_issued.rs 0 3
 topology.rs 10 0
-types.rs 23 1
+types.rs 24 1
 undeclared_fields.rs 0 4
-view.rs 35 1
+view.rs 39 1
 wire.rs 2 0
 ```
 <!-- inventory:end -->
@@ -409,7 +417,7 @@ outcome_groups outcome_group.rs 17
 topology topology.rs 6
 types primitive_admission.rs 1
 types system.rs 3
-types types.rs 14
+types types.rs 15
 types wire.rs 1
 view primitive_admission.rs 3
 view view.rs 14

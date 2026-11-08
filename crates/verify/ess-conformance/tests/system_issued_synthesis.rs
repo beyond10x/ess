@@ -759,3 +759,139 @@ fn the_coverage_inventory_carries_the_awaits_and_both_refusals() {
     assert!(codes.contains("ESS-SYNTH-023"), "{codes:?}");
     assert_eq!(major, ess_conformance::system_issued::COVERAGE);
 }
+
+/// The neutral repro of an adopter report (2026-10-26, `system-guard`): a system-issued command
+/// whose two accepting branches are selected by an equality guard over an input the system
+/// decides.
+const SYSTEM_GUARD: &str = include_str!("fixtures/system-guard.yaml");
+
+const RECORD_CHECK: &str = "inspection.check.RecordCheck";
+
+fn verdict(value: &str) -> ScenarioValue {
+    ScenarioValue::literal(ess_primitives::node::Node::Text(value.to_owned()))
+}
+
+/// The input the await of `command_name` in `scenario_id` states.
+fn stated<'s>(
+    synthesis: &'s Synthesis,
+    scenario_id: &str,
+    command_name: &str,
+) -> &'s BTreeMap<String, ScenarioValue> {
+    let awaited = after_await(scenario(synthesis, scenario_id), command_name);
+    let ScenarioStep::AwaitOutcome { input, .. } = &awaited[0] else {
+        unreachable!()
+    };
+    input
+}
+
+/// story:a-system-issued-awaited-step-honours-its-outcomes-input-guard: each accepting branch's
+/// await states the input its guard admits, and the reference target passes every scenario.
+#[test]
+fn an_awaited_system_step_carries_its_outcomes_input_guard() {
+    let ir = ir_of(SYSTEM_GUARD);
+    let synthesis = synthesize(&ir);
+    assert_never_driven(&ir, &synthesis);
+    for (outcome, admitted) in [("accepted", "Passed"), ("rejected", "Refused")] {
+        let id = format!("{RECORD_CHECK}/outcome/{outcome}");
+        let input = stated(&synthesis, &id, RECORD_CHECK);
+        assert_eq!(
+            input,
+            &BTreeMap::from([("verdict".to_owned(), verdict(admitted))]),
+            "story:a-system-issued-awaited-step-honours-its-outcomes-input-guard: `{id}` awaits \
+             the input its guard admits, and never the identity, which is the instance"
+        );
+    }
+    // The reporter's suite (0.69.2) held seven scenarios; this release also writes
+    // `RecordCheck/grant/denied`, an outside caller refused the system's own step, which stays
+    // driven.
+    assert_eq!(
+        ids(&synthesis),
+        [
+            "inspection.check.Check/transition/accept/by/inspection.check.RecordCheck/accepted",
+            "inspection.check.Check/transition/reject/by/inspection.check.RecordCheck/rejected",
+            "inspection.check.OpenCheck/grant/denied",
+            "inspection.check.OpenCheck/outcome/opened",
+            "inspection.check.RecordCheck/grant/denied",
+            "inspection.check.RecordCheck/outcome/accepted",
+            "inspection.check.RecordCheck/outcome/closed",
+            "inspection.check.RecordCheck/outcome/rejected",
+        ]
+    );
+    for transition in ["accept", "reject"] {
+        let (outcome, admitted) = if transition == "accept" {
+            ("accepted", "Passed")
+        } else {
+            ("rejected", "Refused")
+        };
+        let id =
+            format!("inspection.check.Check/transition/{transition}/by/{RECORD_CHECK}/{outcome}");
+        assert_eq!(
+            stated(&synthesis, &id, RECORD_CHECK),
+            &BTreeMap::from([("verdict".to_owned(), verdict(admitted))]),
+            "`{id}` awaits the input its guard admits too"
+        );
+    }
+    run_on_the_interpreter(ir, &synthesis);
+}
+
+/// A default branch is taken for every input no guard admits: its await states what synthesis
+/// sent for each input another branch's guard reads, which is a value none of them admits.
+#[test]
+fn an_awaited_default_branch_states_the_inputs_the_other_guards_read() {
+    let model = SYSTEM_GUARD.replace("        when: verdict == Refused\n", "");
+    let ir = ir_of(&model);
+    let synthesis = synthesize(&ir);
+    assert_never_driven(&ir, &synthesis);
+    let input = stated(
+        &synthesis,
+        &format!("{RECORD_CHECK}/outcome/rejected"),
+        RECORD_CHECK,
+    );
+    assert_eq!(
+        input.keys().collect::<Vec<_>>(),
+        vec!["verdict"],
+        "{input:#?}"
+    );
+    assert_ne!(input.get("verdict"), Some(&verdict("Passed")), "{input:#?}");
+    run_on_the_interpreter(ir, &synthesis);
+}
+
+/// A guard over an input the send leaves absent cannot be stated by an await, which states a value
+/// for each input it names and nothing about an absent one: that scenario is refused by name, and
+/// the scenarios beside it still pass.
+#[test]
+fn a_guard_over_an_input_the_system_leaves_absent_is_refused_by_name() {
+    let model = SYSTEM_GUARD
+        .replace(
+            "      - {name: verdict, type: inspection.check.Verdict}\n",
+            "      - {name: verdict, type: inspection.check.Verdict}\n      \
+             - {name: note, type: Optional<String>}\n",
+        )
+        .replace(
+            "        when: verdict == Passed\n",
+            "        when: {note: {exists: false}}\n",
+        )
+        .replace("        when: verdict == Refused\n", "");
+    let ir = ir_of(&model);
+    let synthesis = synthesize(&ir);
+    assert_never_driven(&ir, &synthesis);
+    let accepted = format!("{RECORD_CHECK}/outcome/accepted");
+    assert!(
+        synthesis.suite.scenario(&id(&accepted)).is_none(),
+        "`{accepted}` is not synthesized: {:#?}",
+        ids(&synthesis)
+    );
+    let refusal = synthesis
+        .refusals
+        .iter()
+        .find(|refusal| refusal.scenario.as_ref() == Some(&id(&accepted)))
+        .unwrap_or_else(|| panic!("`{accepted}` is refused by name: {:#?}", synthesis.refusals));
+    assert_eq!(refusal.code().to_string(), "ESS-SYNTH-006", "{refusal}");
+    let text = refusal.to_string();
+    assert!(text.contains("absent"), "the refusal says why: {text}");
+
+    let rejected = format!("{RECORD_CHECK}/outcome/rejected");
+    let input = stated(&synthesis, &rejected, RECORD_CHECK);
+    assert!(input.contains_key("note"), "{input:#?}");
+    run_on_the_interpreter(ir, &synthesis);
+}

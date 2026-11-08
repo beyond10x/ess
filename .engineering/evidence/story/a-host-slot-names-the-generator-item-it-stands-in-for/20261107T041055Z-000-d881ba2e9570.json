@@ -1,0 +1,14 @@
+{
+  "at": "2026-11-07T04:10:55Z",
+  "actor": "human:timo",
+  "artifact": "story:a-host-slot-names-the-generator-item-it-stands-in-for",
+  "kind": "story",
+  "revision": 3,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "review-result:ess-0900-u2-host-slots-adversary",
+    "review": "review-result:ess-0900-u2-host-slots-adversary",
+    "outcome": "fixed"
+  }
+}

@@ -16,6 +16,15 @@ export interface ItemSpec {
 /** A sort a collection applies: the field and its direction. */
 type SortState = { by: string; dir: "asc" | "desc" };
 
+/** A collection's pager: on the state paths a server read binds, or `client` on its own state. */
+type PagerSpec = { page?: string; size?: string; sizes?: number[]; declared?: boolean; client?: boolean; filter?: string };
+
+/** The page a client pager shows, and the filter it was chosen under. */
+type ClientPage = { page: number; filter: string };
+
+/** A client pager's page, size and row count, and how it moves to another page or size. */
+type LocalPage = { page: number; size: number; total: number; go(page: number): void; resize(size: number): void };
+
 /** The column formats whose values sort as numbers, even when a row carries them as text. */
 const NUMERIC = new Set(["number", "currency", "percent", "bytes", "duration"]);
 
@@ -35,9 +44,11 @@ export function Collection(props: {
   /**
    * The pager footer, on the state paths the read's page and size params bind. A `declared`
    * pager (`reads.pager`) always shows its footer; otherwise it shows when the total exceeds
-   * the rows.
+   * the rows. A `client` pager binds no state: the collection pages the rows it holds by the
+   * first of `sizes` until another is chosen, and returns to page 1 when its params or its row
+   * filter's inputs change.
    */
-  pager?: { page: string; size?: string; sizes?: number[]; declared?: boolean };
+  pager?: PagerSpec;
   columns?: FieldSpec[];
   columnsBind?: string;
   sort?: { by: string; dir?: "asc" | "desc"; allowed: string[]; mode?: "server" | "client" };
@@ -109,6 +120,35 @@ export function Collection(props: {
     const column = (props.columns ?? []).find((entry) => entry.field === by);
     const asNumber = column?.as !== undefined && NUMERIC.has(column.as);
     rows = [...rows].sort((a, b) => compareValues(display(a, by), display(b, by), asNumber) * (dir === "desc" ? -1 : 1));
+  }
+  // A client pager pages the rows the collection holds, after the row filter and the sort. A
+  // change to the read's params or to anything its row filter reads besides the row (a search,
+  // a filter bar) returns it to page 1, so a filter that shrinks the rows never shows an empty page.
+  const client = props.pager?.client === true ? props.pager : undefined;
+  const filterKey = client === undefined ? "" : stableKey([data?.params ?? {}, filterInputs(client.filter ?? props.reads?.filter, scope.values)]);
+  const [clientPage, setClientPage] = useState<ClientPage>({ page: 1, filter: filterKey });
+  const [clientSize, setClientSize] = useState<number | undefined>(undefined);
+  if (clientPage.filter !== filterKey) {
+    // Kept, not only shown: going back to the earlier filter must not bring its page back.
+    setClientPage({ page: 1, filter: filterKey });
+  }
+  let local: LocalPage | undefined;
+  if (client !== undefined) {
+    const size = clientSize ?? client.sizes?.[0] ?? 25;
+    const total = rows.length;
+    const pages = Math.max(1, Math.ceil(total / size));
+    const page = Math.min(clientPage.filter === filterKey ? clientPage.page : 1, pages);
+    rows = rows.slice((page - 1) * size, page * size);
+    local = {
+      page,
+      size,
+      total,
+      go: (next) => setClientPage({ page: next, filter: filterKey }),
+      resize: (next) => {
+        setClientSize(next);
+        setClientPage({ page: 1, filter: filterKey });
+      },
+    };
   }
   // A selectable-columns state holding a list draws only the columns it names, in declared order.
   const chosen = props.columnsBind === undefined ? undefined : evaluate(props.columnsBind, scope.values);
@@ -522,7 +562,7 @@ export function Collection(props: {
           {list(entries)}
         </div>
       ))}
-      {data && props.pager ? <Pager pager={props.pager} total={data.total} rows={rows.length} /> : null}
+      {data && props.pager ? <Pager pager={props.pager} total={data.total} rows={rows.length} local={local} /> : null}
     </div>
   );
 }
@@ -574,21 +614,22 @@ function toggleField(action: ActionSpec): string {
  * size even when `sizes` does not list it, any other value the state holds (0, a negative, text)
  * as an entry of its own text, and a "Default" entry only while the state holds nothing
  * (`undefined`, `null`, `""`), so it always shows what the read sends. Reads and writes only the
- * state paths it is handed.
+ * state paths it is handed. With `local`, a client pager's page and size, it reads and writes
+ * those instead and always offers its sizes. Whenever the size and the total are known it shows
+ * the rows on the page as a from-to range of the total (`1-10 of 30`), in an `output` so the
+ * page's own `span` reads as it did.
  */
-function Pager(props: {
-  pager: { page: string; size?: string; sizes?: number[]; declared?: boolean };
-  total?: number;
-  rows: number;
-}): ReactNode {
+function Pager(props: { pager: PagerSpec; total?: number; rows: number; local?: LocalPage }): ReactNode {
   const scope = useScope();
-  const { pager, total } = props;
-  const current = evaluate(pager.page, scope.values);
+  const { pager, local } = props;
+  const total = local !== undefined ? local.total : props.total;
+  const current = local !== undefined ? local.page : pager.page === undefined ? undefined : evaluate(pager.page, scope.values);
   if (!pager.declared && (current === undefined || total === undefined || total <= props.rows)) {
     return null;
   }
   const page = Number(current ?? 1) || 1;
-  const held = pager.size === undefined ? undefined : evaluate(pager.size, scope.values);
+  const sized = local !== undefined || pager.size !== undefined;
+  const held = local !== undefined ? local.size : pager.size === undefined ? undefined : evaluate(pager.size, scope.values);
   const unset = held === undefined || held === null || held === "";
   const size = pageSize(held);
   const other = unset || size !== undefined ? undefined : typeof held === "object" ? JSON.stringify(held) : String(held);
@@ -598,9 +639,11 @@ function Pager(props: {
     sizes.sort((left, right) => left - right);
   }
   const pages = pager.declared && total !== undefined && size !== undefined ? Math.max(1, Math.ceil(total / size)) : undefined;
+  const range = total !== undefined && size !== undefined ? rangeLabel(page, size, props.rows, total) : undefined;
+  const go = (next: number) => (local !== undefined ? local.go(next) : pager.page !== undefined ? scope.set(pager.page, next) : undefined);
   return (
     <div className="ui-pager">
-      <button type="button" className="ui-button" disabled={page <= 1} onClick={() => scope.set(pager.page, page - 1)}>
+      <button type="button" className="ui-button" disabled={page <= 1} onClick={() => go(page - 1)}>
         Previous
       </button>
       <span>{pages === undefined ? `Page ${page}` : `Page ${page} of ${pages}`}</span>
@@ -608,20 +651,26 @@ function Pager(props: {
         type="button"
         className="ui-button"
         disabled={pages !== undefined && page >= pages}
-        onClick={() => scope.set(pager.page, page + 1)}
+        onClick={() => go(page + 1)}
       >
         Next
       </button>
-      {pager.size !== undefined ? (
+      {range !== undefined ? <output className="ui-pager-range">{range}</output> : null}
+      {sized ? (
         <label className="ui-page-size">
           <span className="ui-form-label">Per page</span>
           <select
             value={size !== undefined ? String(size) : (other ?? "")}
             onChange={(event: ChangeEvent<HTMLSelectElement>) => {
               const chosen = pageSize(event.target.value);
-              if (chosen !== undefined) {
+              if (chosen === undefined) {
+                return;
+              }
+              if (local !== undefined) {
+                local.resize(chosen);
+              } else if (pager.size !== undefined && pager.page !== undefined) {
                 setPaths(scope, [
-                  [pager.size as string, chosen],
+                  [pager.size, chosen],
                   [pager.page, 1],
                 ]);
               }
@@ -639,6 +688,33 @@ function Pager(props: {
       ) : null}
     </div>
   );
+}
+
+/** The rows on a page as a range of the total: `11-20 of 34`, `0 of 0` with none. */
+function rangeLabel(page: number, size: number, rows: number, total: number): string | undefined {
+  if (rows === 0 || total === 0) {
+    return `0 of ${total}`;
+  }
+  const from = (page - 1) * size + 1;
+  const to = from + rows - 1;
+  // A server that answers more rows than its total says has no range to show.
+  return to > total ? undefined : `${from}-${to} of ${total}`;
+}
+
+/**
+ * The values a row filter reads besides the row (`state.q` in `row.name contains state.q`): what
+ * a search or a filter bar changes.
+ */
+function filterInputs(filter: string | undefined, values: Record<string, unknown>): unknown[] {
+  if (filter === undefined) {
+    return [];
+  }
+  const found: unknown[] = [];
+  const path = /(^|[^\w.])((?:params|state|shell|args)(?:\.[A-Za-z_]\w*)+)/g;
+  for (let match = path.exec(filter); match !== null; match = path.exec(filter)) {
+    found.push(evaluate(match[2], values));
+  }
+  return found;
 }
 
 /** A page size the read sends: a number of at least 1, or `undefined` when the state holds none. */

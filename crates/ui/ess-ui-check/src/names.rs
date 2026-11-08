@@ -4,7 +4,9 @@
 //! construct of the schema, an ESS primitive, or a type, entity or view of the model; and
 //! `field_in_model` — a form's fields and an action's `bind` keys are inputs of the command they
 //! run, and a collection's columns, a record's fields and the `row.<field>` paths of a row
-//! action's `visible` are fields of the view the composite reads.
+//! action's `visible` are fields of the view the composite reads. `field: .` names the row
+//! itself, which only a plain-string row has: it is refused on a view of the model, whose rows
+//! are entities, and on a command, and left to a placeholder read, which the model does not type.
 //!
 //! Without one: `overlay_params` — every key of an overlay's `params` is read inside the overlay
 //! as `params.<key>`.
@@ -168,6 +170,25 @@ impl<'m> Known<'m> {
     fn fields(&self, sink: &mut Sink, under: &NodePath, fields: &[Field]) {
         let Self { owner, names, what } = self;
         for field in fields {
+            if field.is_row() {
+                // `field: .` shows a plain-string row as itself; every row of a model view is an
+                // entity, and a command's input is a mapping, so here it would read nothing.
+                let shape = if *what == "field" {
+                    "entity rows"
+                } else {
+                    "a record of inputs"
+                };
+                sink.push(
+                    "field_in_model",
+                    &under.child(&field.name),
+                    format!(
+                        "`field: .` names the row itself, a plain string; `{owner}` carries \
+                         {shape}, so it reads as absent: name one of its {what}s, {}",
+                        listing(names)
+                    ),
+                );
+                continue;
+            }
             let Some(head) = field_head(field) else {
                 continue;
             };

@@ -1315,9 +1315,12 @@ type AwaitRequest struct {
 	Within int
 	// Deadline is the runner's budget, where there is no declared bound.
 	Deadline Deadline
-	// Compared names the input fields whose values the scenario will compare: names only, never
-	// values. A real target ignores it.
-	Compared    []string
+	// Compared is each input value the scenario states, resolved by the runner
+	// (story:a-system-issued-awaited-step-honours-its-outcomes-input-guard). A test adapter that
+	// steers its system's choice issues the command with these values; a target that does not is
+	// held to them all the same, because the runner compares each with the input the answer
+	// carries.
+	Compared    map[string]Node
 	Correlation string
 }
 

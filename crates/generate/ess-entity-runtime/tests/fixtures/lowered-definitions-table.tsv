@@ -1,4 +1,4 @@
-#	models=450	lines=615
+#	models=452	lines=620
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	components=1
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor-service	REFUSED	95eb461796949834a9d78ef0c04afcab1acfa13dbf2dfd6da3af2f3c93549630:687
 crates/edge/ess-cli/tests/fixtures/coverage-producers/inputs/models/billing/system.yaml	ASSEMBLE
@@ -141,6 +141,7 @@ crates/verify/ess-conformance/tests/fixtures/aggregate-group-selection-guarded.y
 crates/verify/ess-conformance/tests/fixtures/aggregate-group-selection-owner.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/aggregate-group-selection.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/aggregate-list-parameter.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/aggregate-measures-over-expressions.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/aggregate-optional-fields.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/aggregate-state-groups.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/aggregate-stored-guarded-move.yaml	components=0
@@ -360,6 +361,10 @@ crates/verify/ess-conformance/tests/fixtures/subject-history.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/subject-state-source.yaml	components=1
 crates/verify/ess-conformance/tests/fixtures/subject-state-source.yaml	docs-service	REFUSED	3a47e494bbe0dc6de6360fca89a26008758a6f567e5c1a2b1074310b7ec8b5e0:1072
 crates/verify/ess-conformance/tests/fixtures/subject-state.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/system-guard.yaml	components=1
+crates/verify/ess-conformance/tests/fixtures/system-guard.yaml	inspection-service	inspection.check.Check	definition=8478fe6f837689ed11bcc6ef53be6cd8e6da5d9a559787cbac5427125dfd9fd0:3014
+crates/verify/ess-conformance/tests/fixtures/system-guard.yaml	inspection-service	inspection.check.Check	create	opened
+crates/verify/ess-conformance/tests/fixtures/system-guard.yaml	inspection-service	inspection.check.Check	inspection.check.RecordCheck	accepted, rejected, closed
 crates/verify/ess-conformance/tests/fixtures/system-issued-queue.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/two-related-selectors.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/two-rows-one-branch.yaml	components=0
@@ -609,7 +614,7 @@ system-dir:models/toolchain	infra	toolchain.infra.Observation	create	refused, co
 system-dir:models/toolchain	infra	toolchain.infra.Observation	toolchain.infra.ImportObservation	refused, imported, wrong-state
 system-dir:models/toolchain	release-automation	REFUSED	fca88a6cb61e25f86e28e8a69b4bf8ee5aadc05cb16ff6e4a728fb0ef5f0e657:375
 system-dir:models/toolchain	specify	toolchain.specify.Declaration	definition=f008c7ec58b6b8996de589cd7e5ce17e0cc8ba0610e93e9ac4e1f24d786ff2aa:1384
-system-dir:models/toolchain	specify	toolchain.specify.Model	definition=77787e0ee6c78f538470fd8e82d7d32190cefaf710718ca289195eabc63e5494:7550
+system-dir:models/toolchain	specify	toolchain.specify.Model	definition=b1a61e971732ff08fbd66670a1bfd5cd6248446b643bf96a500cc9337c52d434:7568
 system-dir:models/toolchain	specify	toolchain.specify.Model	create	refused, selected
 system-dir:models/toolchain	specify	toolchain.specify.Model	toolchain.specify.CompileModel	refused, compiled, wrong-state
 system-dir:models/toolchain	specify	toolchain.specify.Model	toolchain.specify.ResolveModel	refused, resolved, wrong-state

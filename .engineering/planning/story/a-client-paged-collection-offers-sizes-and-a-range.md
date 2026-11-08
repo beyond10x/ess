@@ -10,7 +10,30 @@ tags:
 - rank-12
 relations:
 - serves: vision:O2
-revision: 5
+scope:
+- confidence: inferred
+  path: crates/ui/ess-ui-check/src/rules.rs
+- confidence: inferred
+  path: crates/ui/ess-ui-check/tests/checks.rs
+- confidence: inferred
+  path: crates/ui/ess-ui-react/src/emit.rs
+- confidence: inferred
+  path: crates/ui/ess-ui-react/templates/runtime/composites/collection.tsx.tmpl
+- confidence: inferred
+  path: crates/ui/ess-ui-test/src/playwright.rs
+- confidence: inferred
+  path: crates/ui/ess-ui-test/src/runner.rs
+- confidence: inferred
+  path: crates/ui/ess-ui-tui/src/app.rs
+- confidence: inferred
+  path: crates/ui/ess-ui-tui/src/view.rs
+- confidence: inferred
+  path: crates/ui/ess-ui/src/model.rs
+- confidence: inferred
+  path: schemas/ui/ess-ui.schema.yaml
+- confidence: inferred
+  path: website/docs/reference/ess-ui.md
+revision: 17
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-06T22:19:03Z", actor: "human:timo", revision: 2}
 - {from: "proposed", to: "active", at: "2026-11-06T22:19:04Z", actor: "human:timo", revision: 3}
@@ -45,6 +68,28 @@ rows, so it can show an empty page.
 
 ## Scope
 
-- inferred: `crates/ui/ess-ui/src/model.rs` (Pager rules), `crates/ui/ess-ui-check/src/`,
-  `crates/ui/ess-ui-react/templates/runtime/composites/collection.tsx.tmpl`,
-  `crates/ui/ess-ui-tui/src/`.
+Derived 2026-11-07 by `story-scoper`. Every line is **cited** (read from the story or the tree) or
+**inferred** (a reading that could be wrong).
+
+- **Primary surface:** the `paging: client` pager in the four UI crates that carry `reads.pager`:
+  `ess-ui`, `ess-ui-check`, `ess-ui-react` and `ess-ui-tui` — inferred.
+- **Files:**
+  - `crates/ui/ess-ui/src/model.rs` (`Pager`; `page` becomes optional) — inferred.
+  - `schemas/ui/ess-ui.schema.yaml` (the `pager` record and the `pager_*` rules) — inferred.
+  - `crates/ui/ess-ui-check/src/rules.rs` (`fn pagers`, `pager_paging`) — inferred.
+  - `crates/ui/ess-ui-check/src/lib.rs` (rule registration, only if a new rule id is added) —
+    inferred.
+  - `crates/ui/ess-ui-react/src/emit.rs` (`fn pager`) — inferred.
+  - `crates/ui/ess-ui-react/templates/runtime/composites/collection.tsx.tmpl` (the `Pager` footer,
+    client slicing, the range label, reset on filter) — inferred.
+  - `crates/ui/ess-ui-tui/src/app.rs` (`page_size`, `page_of`, `reset_page`) and
+    `crates/ui/ess-ui-tui/src/view.rs` (the footer) — inferred.
+- **Also likely:** `crates/ui/ess-ui-test/src/playwright.rs` and `runner.rs`, which parse the pager
+  text; `crates/ui/ess-ui-react/templates/runtime/data.ts.tmpl`; and the tests that pin today's
+  refusal (`ess-ui-check/tests/checks.rs`, `adversary_w086_u3_pass2.rs`) — inferred.
+- **Documents:** `website/docs/reference/ess-ui.md`, re-rendered through `crates/ui/ess-ui-docs` —
+  inferred.
+- **Confidence:** medium. The story cites no path; the predecessor story
+  `story:a-server-paged-collection-has-a-page-size-control` scoped the same files with citations.
+- **Safety fact:** both test runners read the pager text, the terminal one by the `page N/M`
+  prefix and Playwright by the `.ui-pager` span. A new range label must leave both readings intact.

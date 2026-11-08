@@ -298,6 +298,8 @@ pub(crate) enum Focus {
 pub(crate) struct Ui {
     pub cursor: usize,
     pub page: usize,
+    /// The page size chosen among a client pager's sizes (`+`); absent, its first size.
+    pub size: Option<usize>,
     pub filter: String,
     pub sort: Option<(String, bool)>,
     pub expanded: bool,
@@ -1695,13 +1697,35 @@ impl App {
         let Some(result) = self.read_rows(reads, ctx) else {
             return (Vec::new(), 0);
         };
-        let (rows, pages) = self.page_of(ui, &self.arranged_rows(ui, collection, &result.rows));
+        let (rows, pages) = self.page_of(
+            ui,
+            collection,
+            &self.arranged_rows(ui, collection, &result.rows),
+        );
         (rows.into_iter().cloned().collect(), pages)
     }
 
+    /// Rows per page of `collection`: with a client pager the size chosen among its sizes, else
+    /// the first of them; otherwise the run's page size.
+    pub(crate) fn page_size(&self, ui: &str, collection: &ess_ui::Collection) -> usize {
+        let size = match client_sizes(collection) {
+            Some(sizes) => {
+                let chosen = self.ui(ui).size.filter(|size| sizes.contains(size));
+                chosen.or_else(|| sizes.first().copied())
+            }
+            None => None,
+        };
+        size.unwrap_or(self.options.page_size).max(1)
+    }
+
     /// The page of `arranged` (from `arranged_rows`) shown, and how many pages there are.
-    pub(crate) fn page_of<'r>(&self, ui: &str, arranged: &[&'r Value]) -> (Vec<&'r Value>, usize) {
-        let size = self.options.page_size.max(1);
+    pub(crate) fn page_of<'r>(
+        &self,
+        ui: &str,
+        collection: &ess_ui::Collection,
+        arranged: &[&'r Value],
+    ) -> (Vec<&'r Value>, usize) {
+        let size = self.page_size(ui, collection);
         let pages = arranged.len().div_ceil(size).max(1);
         let page = self.ui(ui).page.min(pages - 1);
         (
@@ -2805,6 +2829,19 @@ impl App {
                     state: None,
                     text: self.ui(ui).filter,
                 });
+            }
+            // A client pager's next size, after the last its first, as React's per-page select
+            // chooses one; a new size starts at the first page.
+            KeyCode::Char('+') => {
+                if let Some(sizes) = client_sizes(collection).filter(|sizes| !sizes.is_empty()) {
+                    let current = self.page_size(ui, collection);
+                    let next = sizes
+                        .iter()
+                        .position(|size| *size == current)
+                        .map_or(0, |at| (at + 1) % sizes.len());
+                    self.ui_mut(ui).size = Some(sizes[next]);
+                    self.reset_page(ui);
+                }
             }
             KeyCode::Char('s' | 'S') => {
                 let mut fields: Vec<String> = collection
@@ -4471,6 +4508,34 @@ pub(crate) fn actor_ids(
         id_of(&[&["user_id"], &["id"]]),
         id_of(&[&["account_id"], &["account", "id"], &["organization", "id"]]),
     )
+}
+
+/// The page sizes a client-paged collection offers (`paging: client` with a `pager`), each at
+/// least 1, in order; `None` for any other collection, which pages by the run's page size.
+pub(crate) fn client_sizes(collection: &ess_ui::Collection) -> Option<Vec<usize>> {
+    let reads = collection.reads.as_ref()?;
+    let pager = reads.pager.as_ref()?;
+    if !matches!(reads.paging, Some(ess_ui::Paging::Client)) {
+        return None;
+    }
+    Some(
+        pager
+            .sizes
+            .iter()
+            .filter_map(|size| usize::try_from(*size).ok().filter(|size| *size >= 1))
+            .collect(),
+    )
+}
+
+/// Whether a collection's read is paged, by the server or by the renderer: its footer shows the
+/// rows it draws as a from-to range of all of them.
+pub(crate) fn paged(collection: &ess_ui::Collection) -> bool {
+    collection.reads.as_ref().is_some_and(|reads| {
+        matches!(
+            reads.paging,
+            Some(ess_ui::Paging::Server | ess_ui::Paging::Client)
+        )
+    })
 }
 
 /// Keys for a collection's bulk actions: an upper-case letter of the action's name, never one

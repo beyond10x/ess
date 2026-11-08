@@ -168,6 +168,10 @@ never V8/V12. Only a chain with no `Optional` in it reaches the admitted-type ta
 field's declared `type:` must be **exactly** the result type in the table. Anything else gets
 `ESS-VIEW-002` (below).
 
+From `ess/36` the table widens to the measure row of grid O, and a measure may read an expression
+of the row instead of one field: `docs/design/generic-language-features.md` § G3, "Expression
+measures and ordered enums", is binding for both.
+
 | function | admitted input (unwrapped) | result type | over zero rows (ungrouped only) |
 |---|---|---|---|
 | `count` | none | `Integer` | `0` |

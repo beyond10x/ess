@@ -1208,8 +1208,9 @@ fn no_source_file_in_this_crate_reads_a_clock_or_an_unordered_map() {
     }
 }
 
-/// A declared alphabet is documented on the generated Rust and Go wrapper, as an invariant is, and
-/// enforced by neither: checking is behaviour (`docs/design/string-alphabet-and-length.md`, section 1).
+/// A declared alphabet is documented on the generated Rust and Go wrapper, as an invariant is, in
+/// one doc line. Each wrapper's constraint check and its generated decoder enforce it
+/// (beyond10x/ess#579); `invariant_check/value_constraints.rs` holds that.
 #[test]
 fn a_declared_alphabet_is_one_doc_line_on_the_rust_and_go_wrapper() {
     let ir = fixture(&[(

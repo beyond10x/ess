@@ -1195,11 +1195,15 @@ pub struct AwaitRequest {
     pub within: Option<Elapsed>,
     /// When the target may stop waiting, where there is no declared bound: the runner's own.
     pub deadline: Deadline,
-    /// The input fields whose values the scenario will compare: names only, never values.
+    /// Each input field the scenario will compare, with the value it states, resolved by the
+    /// runner (story:a-system-issued-awaited-step-honours-its-outcomes-input-guard).
     ///
-    /// A real target ignores it; the interpreted model reads it to answer unsupported where the
-    /// scenario compares a value the model does not determine.
-    pub compared: std::collections::BTreeSet<String>,
+    /// Synthesis states the value a guard that selects the claimed branch admits, for an input
+    /// the system decides; an authored scenario states what its author arranged. A test adapter
+    /// that steers its system's choice issues the command with these values, as the interpreted
+    /// model does; a target that does not is held to them all the same, because the runner
+    /// compares each with the input the answer carries.
+    pub compared: BTreeMap<String, Node>,
     /// The scenario this belongs to.
     pub correlation: CorrelationId,
 }

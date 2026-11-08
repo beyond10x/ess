@@ -28,12 +28,14 @@ fn registry() -> TypeRegistry {
         (
             "sample.State",
             TypeBody::Enum {
+                ordered: false,
                 variants: vec!["Ready".into(), "false".into(), "1".into()],
             },
         ),
         (
             "sample.OtherState",
             TypeBody::Enum {
+                ordered: false,
                 variants: vec!["Absent".into()],
             },
         ),

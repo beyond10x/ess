@@ -367,9 +367,14 @@ impl fmt::Display for AggregateFunction {
 pub struct Aggregate {
     /// The function.
     pub function: AggregateFunction,
-    /// The source field it reads: a top-level observable field of the view's source. `None`
-    /// exactly for [`AggregateFunction::Count`].
+    /// The source field it reads: a top-level observable field of the view's source. `None` for
+    /// [`AggregateFunction::Count`] and for a measure over [`Self::expr`].
     pub input: Option<String>,
+    /// The expression of the source row it reads instead of one field, as written (`{sum: {expr:
+    /// "duration_s * level.weight"}}`, `ess/36`, beyond10x/ess#561,
+    /// `docs/design/generic-language-features.md` § G3). `None` for every measure over a field and
+    /// for `count`; never set beside [`Self::input`].
+    pub expr: Option<String>,
     /// Absent values of [`Self::input`] are skipped, as SQL skips `NULL` (`skip_absent: true`,
     /// `ess/15`, beyond10x/ess#148). Never set for [`AggregateFunction::Count`], which counts rows.
     pub skip_absent: bool,
@@ -390,27 +395,37 @@ impl Ord for Aggregate {
         (self.function, &self.input, self.skip_absent)
             .cmp(&(other.function, &other.input, other.skip_absent))
             .then_with(|| measure::cmp(self.r#where.as_ref(), other.r#where.as_ref()))
+            .then_with(|| self.expr.cmp(&other.expr))
     }
 }
 
 impl std::hash::Hash for Aggregate {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        // The feed a derived `Hash` gave before the condition existed, field by field.
+        // The feed a derived `Hash` gave before the condition existed, field by field; an
+        // expression (ess/36) is fed only where there is one, so a measure over a field hashes as
+        // it always did.
         self.function.hash(state);
         self.input.hash(state);
         self.skip_absent.hash(state);
         measure::hash(self.r#where.as_ref(), state);
+        if let Some(expr) = &self.expr {
+            expr.hash(state);
+        }
     }
 }
 
 impl fmt::Display for Aggregate {
-    /// `sum(talk_seconds)`, `sum(duration, skip_absent)`, or `count()`.
+    /// `sum(talk_seconds)`, `sum(duration, skip_absent)`, `avg(ended_at - started_at)` or
+    /// `count()`.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
             "{}({}{})",
             self.function,
-            self.input.as_deref().unwrap_or_default(),
+            self.input
+                .as_deref()
+                .or(self.expr.as_deref())
+                .unwrap_or_default(),
             if self.skip_absent {
                 ", skip_absent"
             } else {
@@ -430,15 +445,18 @@ impl RawAggregate {
     /// only measure's condition failed is not also refused as declaring no aggregate.
     fn read(&self, at: String, errors: &mut ValidationErrors) -> Aggregate {
         let raw = self;
-        let (function, input) = match &raw.function {
+        let (function, read) = match &raw.function {
             RawFunction::Count(_) => (AggregateFunction::Count, None),
-            RawFunction::CountDistinct(input) => {
-                (AggregateFunction::CountDistinct, Some(input.clone()))
-            }
-            RawFunction::Sum(input) => (AggregateFunction::Sum, Some(input.clone())),
-            RawFunction::Min(input) => (AggregateFunction::Min, Some(input.clone())),
-            RawFunction::Max(input) => (AggregateFunction::Max, Some(input.clone())),
-            RawFunction::Avg(input) => (AggregateFunction::Avg, Some(input.clone())),
+            RawFunction::CountDistinct(input) => (AggregateFunction::CountDistinct, Some(input)),
+            RawFunction::Sum(input) => (AggregateFunction::Sum, Some(input)),
+            RawFunction::Min(input) => (AggregateFunction::Min, Some(input)),
+            RawFunction::Max(input) => (AggregateFunction::Max, Some(input)),
+            RawFunction::Avg(input) => (AggregateFunction::Avg, Some(input)),
+        };
+        let (input, expr) = match read {
+            None => (None, None),
+            Some(RawMeasureInput::Field(field)) => (Some(field.clone()), None),
+            Some(RawMeasureInput::Expr { expr }) => (None, Some(expr.clone())),
         };
         let r#where = match raw.r#where.clone().map(|condition| condition.read(at)) {
             Some(Ok(condition)) => Some(condition),
@@ -451,6 +469,7 @@ impl RawAggregate {
         Aggregate {
             function,
             input,
+            expr,
             skip_absent: raw.skip_absent,
             r#where,
         }
@@ -459,7 +478,10 @@ impl RawAggregate {
 
 impl From<&Aggregate> for RawAggregate {
     fn from(aggregate: &Aggregate) -> Self {
-        let input = aggregate.input.clone().unwrap_or_default();
+        let input = match &aggregate.expr {
+            Some(expr) => RawMeasureInput::Expr { expr: expr.clone() },
+            None => RawMeasureInput::Field(aggregate.input.clone().unwrap_or_default()),
+        };
         let function = match aggregate.function {
             AggregateFunction::Count => RawFunction::Count(Empty {}),
             AggregateFunction::CountDistinct => RawFunction::CountDistinct(input),
@@ -536,15 +558,142 @@ pub enum RawFunction {
     /// `{count: {}}`.
     Count(Empty),
     /// `{count_distinct: field}`.
-    CountDistinct(String),
+    CountDistinct(RawMeasureInput),
     /// `{sum: field}`.
-    Sum(String),
+    Sum(RawMeasureInput),
     /// `{min: field}`.
-    Min(String),
+    Min(RawMeasureInput),
     /// `{max: field}`.
-    Max(String),
+    Max(RawMeasureInput),
     /// `{avg: field}`.
-    Avg(String),
+    Avg(RawMeasureInput),
+}
+
+/// What a measure that reads a value reads, as written: one top-level field of the source, `{sum:
+/// talk_seconds}`, or an expression of the source row, `{sum: {expr: "duration_s *
+/// level.weight"}}` (`ess/36`, beyond10x/ess#561, `docs/design/generic-language-features.md`
+/// § G3). The bare name stays a field, so no document written before the expression form changes
+/// meaning; the expression is in `{expr: …}` as it is in every other value position.
+///
+/// Read by hand: a map naming anything but exactly `expr:` with text is refused by the reader,
+/// naming both spellings, rather than read as some other thing.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(untagged)]
+pub enum RawMeasureInput {
+    /// A top-level field of the source, by name.
+    Field(String),
+    /// An expression of the source row.
+    Expr {
+        /// The expression, in the expression language's text form.
+        expr: String,
+    },
+}
+
+impl RawMeasureInput {
+    /// The one key of the expression form.
+    const EXPR: &'static str = "expr";
+}
+
+impl<'de> serde::Deserialize<'de> for RawMeasureInput {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct Visitor;
+        impl<'de> serde::de::Visitor<'de> for Visitor {
+            type Value = RawMeasureInput;
+
+            fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                f.write_str(
+                    "a field of the source, `talk_seconds`, or an expression of its row, \
+                     `{expr: \"ended_at - started_at\"}`",
+                )
+            }
+
+            fn visit_str<E: serde::de::Error>(self, value: &str) -> Result<Self::Value, E> {
+                Ok(RawMeasureInput::Field(value.to_owned()))
+            }
+
+            fn visit_string<E: serde::de::Error>(self, value: String) -> Result<Self::Value, E> {
+                Ok(RawMeasureInput::Field(value))
+            }
+
+            fn visit_map<A: serde::de::MapAccess<'de>>(
+                self,
+                mut map: A,
+            ) -> Result<Self::Value, A::Error> {
+                use serde::de::Error;
+                let mut expr: Option<String> = None;
+                while let Some(key) = map.next_key::<String>()? {
+                    if key != RawMeasureInput::EXPR {
+                        return Err(A::Error::unknown_field(&key, &[RawMeasureInput::EXPR]));
+                    }
+                    if expr.is_some() {
+                        return Err(A::Error::duplicate_field(RawMeasureInput::EXPR));
+                    }
+                    expr = Some(map.next_value()?);
+                }
+                expr.map(|expr| RawMeasureInput::Expr { expr })
+                    .ok_or_else(|| A::Error::missing_field(RawMeasureInput::EXPR))
+            }
+        }
+        deserializer.deserialize_any(Visitor)
+    }
+}
+
+impl schemars::JsonSchema for RawMeasureInput {
+    fn schema_name() -> String {
+        "RawMeasureInput".to_owned()
+    }
+
+    fn json_schema(generator: &mut schemars::gen::SchemaGenerator) -> schemars::schema::Schema {
+        use schemars::schema::{
+            InstanceType, Metadata, ObjectValidation, Schema, SchemaObject, SubschemaValidation,
+        };
+        let text = generator.subschema_for::<String>();
+        let mut object = ObjectValidation::default();
+        object.required.insert(Self::EXPR.to_owned());
+        object
+            .properties
+            .insert(Self::EXPR.to_owned(), text.clone());
+        object.additional_properties = Some(Box::new(Schema::Bool(false)));
+        let expression = Schema::Object(SchemaObject {
+            metadata: Some(Box::new(Metadata {
+                description: Some(
+                    "An expression of the source row, `{expr: \"ended_at - started_at\"}` (ess/36)."
+                        .to_owned(),
+                ),
+                ..Metadata::default()
+            })),
+            instance_type: Some(InstanceType::Object.into()),
+            object: Some(Box::new(object)),
+            ..SchemaObject::default()
+        });
+        Schema::Object(SchemaObject {
+            metadata: Some(Box::new(Metadata {
+                description: Some(
+                    "What a measure reads: a top-level field of the source, by name, or an \
+                     expression of the source row (ess/36)."
+                        .to_owned(),
+                ),
+                ..Metadata::default()
+            })),
+            subschemas: Some(Box::new(SubschemaValidation {
+                any_of: Some(vec![text, expression]),
+                ..SubschemaValidation::default()
+            })),
+            ..SchemaObject::default()
+        })
+    }
+}
+
+impl From<String> for RawMeasureInput {
+    fn from(field: String) -> Self {
+        Self::Field(field)
+    }
+}
+
+impl From<&str> for RawMeasureInput {
+    fn from(field: &str) -> Self {
+        Self::Field(field.to_owned())
+    }
 }
 
 impl RawAggregate {
@@ -691,34 +840,34 @@ impl schemars::JsonSchema for RawAggregate {
             const_value: Some(serde_json::Value::Bool(true)),
             ..SchemaObject::default()
         });
-        let text = generator.subschema_for::<String>();
+        let text = generator.subschema_for::<RawMeasureInput>();
         let empty = generator.subschema_for::<Empty>();
         let condition = generator.subschema_for::<Predicate>();
         let variants = [
             ("count", "`{count: {}}`.", empty),
             (
                 "count_distinct",
-                "`{count_distinct: field}`, optionally with `skip_absent: true`.",
+                "`{count_distinct: field}` or `{count_distinct: {expr: …}}` (ess/36), optionally with `skip_absent: true`.",
                 text.clone(),
             ),
             (
                 "sum",
-                "`{sum: field}`, optionally with `skip_absent: true`.",
+                "`{sum: field}` or `{sum: {expr: …}}` (ess/36), optionally with `skip_absent: true`.",
                 text.clone(),
             ),
             (
                 "min",
-                "`{min: field}`, optionally with `skip_absent: true`.",
+                "`{min: field}` or `{min: {expr: …}}` (ess/36), optionally with `skip_absent: true`.",
                 text.clone(),
             ),
             (
                 "max",
-                "`{max: field}`, optionally with `skip_absent: true`.",
+                "`{max: field}` or `{max: {expr: …}}` (ess/36), optionally with `skip_absent: true`.",
                 text.clone(),
             ),
             (
                 "avg",
-                "`{avg: field}`, optionally with `skip_absent: true`.",
+                "`{avg: field}` or `{avg: {expr: …}}` (ess/36), optionally with `skip_absent: true`.",
                 text,
             ),
         ]
@@ -833,8 +982,12 @@ struct Unwrapped {
 enum Leaf {
     /// A primitive.
     Primitive(Primitive),
-    /// A declared enum (including an entity's `state`).
-    Enum,
+    /// A declared enum (including an entity's `state`), and whether it declares `ordered: true`
+    /// (ess/36), which gives `min` and `max` an order over it.
+    Enum {
+        /// Its declaration order is the order of its values.
+        ordered: bool,
+    },
     /// A struct, a union, a list, a map, or a type that does not resolve.
     Other,
 }
@@ -856,10 +1009,10 @@ fn unwrap_chain(type_ref: &TypeRef, types: &TypeRegistry) -> Unwrapped {
             }
             TypeRef::Named(name) => match types.get(name).map(|declared| &declared.body) {
                 Some(TypeBody::Newtype { of, .. }) => current = of,
-                Some(TypeBody::Enum { .. }) => {
+                Some(TypeBody::Enum { ordered, .. }) => {
                     return Unwrapped {
                         optional,
-                        leaf: Leaf::Enum,
+                        leaf: Leaf::Enum { ordered: *ordered },
                     }
                 }
                 _ => break,
@@ -886,21 +1039,28 @@ impl Leaf {
 /// values is absent where no value is present, as SQL's `SUM` is `NULL` there, so it is `Optional`;
 /// every other result type is the one a required input gives, `min`/`max` reading `T` off the
 /// declared type with its outer `Optional` removed.
+///
+/// `ordered` (`ess/36`, `docs/design/generic-language-features.md` § G3): the measure row of grid O
+/// closed whole — `sum` and `avg` over a `Duration` (its total a `Duration`, its mean the `Decimal`
+/// seconds), `min`/`max` over a `Duration` and over an enum declaring `ordered: true`. Below the
+/// format each stays refused as before it.
 fn result_type(
     function: AggregateFunction,
     leaf: Leaf,
     source: &TypeRef,
     skip_absent: bool,
+    ordered: bool,
 ) -> Option<TypeRef> {
     use Primitive as P;
     let integer = TypeRef::Primitive(P::Integer);
     let optional = |of: TypeRef| TypeRef::Optional(Box::new(of));
     if skip_absent && function == AggregateFunction::Sum {
-        return result_type(function, leaf, source, false).map(optional);
+        return result_type(function, leaf, source, false, ordered).map(optional);
     }
+    let duration = ordered && leaf.is(P::Duration);
     match function {
         AggregateFunction::Count => Some(integer),
-        AggregateFunction::CountDistinct => (leaf == Leaf::Enum
+        AggregateFunction::CountDistinct => (matches!(leaf, Leaf::Enum { .. })
             || [
                 P::String,
                 P::Integer,
@@ -916,21 +1076,38 @@ fn result_type(
         AggregateFunction::Sum => match leaf {
             Leaf::Primitive(P::Integer) => Some(integer),
             Leaf::Primitive(P::Decimal) => Some(TypeRef::Primitive(P::Decimal)),
+            Leaf::Primitive(P::Duration) if duration => Some(TypeRef::Primitive(P::Duration)),
             _ => None,
         },
         // A minimum is one of the inputs, so it keeps the source's declared type — the value, not
         // its absence, which the result's own `Optional` carries.
         AggregateFunction::Min | AggregateFunction::Max => {
-            [P::Integer, P::Decimal, P::String, P::Timestamp]
+            ([P::Integer, P::Decimal, P::String, P::Timestamp]
                 .iter()
                 .any(|admitted| leaf.is(*admitted))
-                .then(|| match source {
-                    TypeRef::Optional(inner) => optional(inner.as_ref().clone()),
-                    declared => optional(declared.clone()),
-                })
+                || duration
+                || (ordered && leaf == Leaf::Enum { ordered: true }))
+            .then(|| match source {
+                TypeRef::Optional(inner) => optional(inner.as_ref().clone()),
+                declared => optional(declared.clone()),
+            })
         }
-        AggregateFunction::Avg => (leaf.is(P::Integer) || leaf.is(P::Decimal))
+        AggregateFunction::Avg => (leaf.is(P::Integer) || leaf.is(P::Decimal) || duration)
             .then(|| optional(TypeRef::Primitive(P::Decimal))),
+    }
+}
+
+/// The primitive an expression's [`Kind`](ess_primitives::expr::Kind) is declared as.
+fn kind_primitive(kind: ess_primitives::expr::Kind) -> Primitive {
+    use ess_primitives::expr::Kind;
+    match kind {
+        Kind::Integer => Primitive::Integer,
+        Kind::Decimal => Primitive::Decimal,
+        Kind::Timestamp => Primitive::Timestamp,
+        Kind::Duration => Primitive::Duration,
+        Kind::String => Primitive::String,
+        Kind::Bytes => Primitive::Bytes,
+        Kind::Boolean => Primitive::Boolean,
     }
 }
 
@@ -1394,6 +1571,235 @@ impl ViewSpec {
         crate::expression::value::check(written, &read, types, (&field.name, &field.type_ref))
     }
 
+    /// The expression `written` a measure of this view computes per source row (`{sum: {expr: …}}`,
+    /// ess/36, beyond10x/ess#561, `docs/design/generic-language-features.md` § G3), typed against
+    /// the row: a path is one of the source's observable fields, or `<field>.<attribute>`, an
+    /// attribute the enum of that field declares (ess/23), absent where the field may be. What
+    /// validation reports and the compiler lowers; its result type is the function's.
+    pub fn measure_value(
+        &self,
+        field: &Field,
+        written: &str,
+        types: &TypeRegistry,
+        source_fields: &[Field],
+    ) -> Result<crate::expression::value::Checked, crate::expression::value::Refusal> {
+        use crate::expression::value::Refusal;
+        let fields = || join(source_fields.iter().map(|declared| declared.name.clone()));
+        let read = |path: &ess_primitives::facts::FactPath| -> Result<TypeRef, Refusal> {
+            let segments = path.segments();
+            let declared = source_fields
+                .iter()
+                .find(|declared| declared.name == segments[0])
+                .ok_or_else(|| {
+                    Refusal::new(
+                        ValidationCode::UndeclaredReference,
+                        format!(
+                            "`{}` is no field of `{}`, the row `{}` measures `{}` over",
+                            segments[0], self.source, self.name, field.name
+                        ),
+                    )
+                    .with_hint(format!(
+                        "fields of `{}`: {}",
+                        self.source,
+                        fields()
+                    ))
+                })?;
+            match segments {
+                [_] => Ok(declared.type_ref.clone()),
+                [_, attribute] => {
+                    let layers = types.newtype_layers(&declared.type_ref);
+                    let declared_attributes = match &layers.terminal {
+                        TypeRef::Named(name) => match types.get(name).map(|named| &named.body) {
+                            Some(TypeBody::Enum { variants, .. }) => variants
+                                .first()
+                                .map(|variant| variant.attributes.as_slice())
+                                .unwrap_or_default(),
+                            _ => &[],
+                        },
+                        _ => &[],
+                    };
+                    let found = declared_attributes
+                        .iter()
+                        .find(|declared| &declared.name == attribute)
+                        .ok_or_else(|| {
+                            Refusal::new(
+                                ValidationCode::UndeclaredReference,
+                                format!(
+                                    "`{path}` reads `{attribute}` of `{}`, which is `{}` and \
+                                     declares no such attribute",
+                                    declared.name, declared.type_ref
+                                ),
+                            )
+                            .with_hint(format!(
+                                "a measure reads a field of `{}` or an attribute its enum \
+                                 declares: {}",
+                                self.source,
+                                join(declared_attributes.iter().map(|known| known.name.clone()))
+                            ))
+                        })?;
+                    Ok(if layers.optional {
+                        TypeRef::Optional(Box::new(found.type_ref.clone()))
+                    } else {
+                        found.type_ref.clone()
+                    })
+                }
+                _ => Err(Refusal::new(
+                    ValidationCode::UnsupportedConstruct,
+                    format!(
+                        "`{path}` reads into `{}` more than one step; a measure reads a field of \
+                         `{}` or an attribute of an enum field",
+                        segments[0], self.source
+                    ),
+                )),
+            }
+        };
+        crate::expression::value::infer(written, &read, types)
+    }
+
+    /// V8 and V9 for a measure over the source field `source_field`: what an absent value means is
+    /// said, and the function admits the field's type — from `ess/36` (`ordered`) every type grid O
+    /// orders; its result type, or the refusal at `at`, its hint naming the flag or the format that
+    /// would admit it.
+    fn field_measure_type(
+        &self,
+        at: &str,
+        aggregate: &Aggregate,
+        source_field: &Field,
+        types: &TypeRegistry,
+        ordered: bool,
+    ) -> Result<TypeRef, ValidationError> {
+        let unwrapped = unwrap_chain(&source_field.type_ref, types);
+        if let Some(refused) = self.absence_refusal(
+            at.to_owned(),
+            aggregate,
+            &format!("`{}`", source_field.name),
+            &source_field.type_ref.to_string(),
+            unwrapped.optional,
+        ) {
+            return Err(refused);
+        }
+        let admitted = |ordered: bool| {
+            result_type(
+                aggregate.function,
+                unwrapped.leaf,
+                &source_field.type_ref,
+                aggregate.skip_absent,
+                ordered,
+            )
+        };
+        if let Some(expected) = admitted(ordered) {
+            return Ok(expected);
+        }
+        let refused = ValidationError::new(
+            ValidationCode::TypeMismatch,
+            at,
+            format!(
+                "`{}` computes {aggregate}, and `{}` does not admit `{}` of type {}",
+                self.name, aggregate.function, source_field.name, source_field.type_ref
+            ),
+        );
+        let extreme = matches!(
+            aggregate.function,
+            AggregateFunction::Min | AggregateFunction::Max
+        );
+        Err(match unwrapped.leaf {
+            Leaf::Enum { ordered: false } if extreme => refused.with_hint(format!(
+                "an enum has an order only where its declaration says so: write `ordered: true` \
+                 on the type of `{}` (specification format ess/36), and `{}` reads its last \
+                 declared variant as the greatest",
+                source_field.name, aggregate.function
+            )),
+            _ if admitted(true).is_some() => ValidationError::new(
+                ValidationCode::UnsupportedFormatVersion,
+                at,
+                format!(
+                    "`{}` computes {aggregate}, and `{}` admits `{}` of type {} from \
+                     specification format ess/36",
+                    self.name, aggregate.function, source_field.name, source_field.type_ref
+                ),
+            )
+            .with_hint(
+                "declare `format: ess/36`, from which a measure admits every type grid O orders",
+            ),
+            _ => refused,
+        })
+    }
+
+    /// One expression measure (ess/36): the format admits it, its expression is typed against the
+    /// row, the function admits what it computes, and what an absent value means is said; its
+    /// result type, or the refusal at `at`.
+    fn validate_measure_expr(
+        &self,
+        at: &str,
+        field: &Field,
+        written: &str,
+        types: &TypeRegistry,
+        source_fields: &[Field],
+    ) -> Result<TypeRef, ValidationError> {
+        let aggregate = self
+            .aggregation
+            .as_ref()
+            .and_then(|aggregation| aggregation.function(&field.name))
+            .expect("an expression measure is an aggregate");
+        if types
+            .format()
+            .is_some_and(|format| format.major() < crate::system::FormatVersion::V36.major())
+        {
+            return Err(ValidationError::new(
+                ValidationCode::UnsupportedFormatVersion,
+                at,
+                format!(
+                    "`{}.{}` computes {aggregate}, a measure over an expression of the row, from \
+                     specification format ess/36",
+                    self.name, field.name
+                ),
+            )
+            .with_hint("declare `format: ess/36`, or measure one field of the source"));
+        }
+        let checked = self
+            .measure_value(field, written, types, source_fields)
+            .map_err(|refusal| {
+                let error = ValidationError::new(refusal.code, at, refusal.message);
+                match refusal.hint {
+                    Some(hint) => error.with_hint(hint),
+                    None => error,
+                }
+            })?;
+        if let Some(refused) = self.absence_refusal(
+            at.to_owned(),
+            aggregate,
+            &format!("`{written}`"),
+            &checked.typed.to_string(),
+            checked.typed.optional,
+        ) {
+            return Err(refused);
+        }
+        let primitive = TypeRef::Primitive(kind_primitive(checked.typed.kind));
+        result_type(
+            aggregate.function,
+            Leaf::Primitive(kind_primitive(checked.typed.kind)),
+            &primitive,
+            aggregate.skip_absent,
+            true,
+        )
+        .ok_or_else(|| {
+            ValidationError::new(
+                ValidationCode::TypeMismatch,
+                at,
+                format!(
+                    "`{}` computes {aggregate}, and `{}` does not admit `{written}`, which computes \
+                     a {}",
+                    self.name, aggregate.function, checked.typed.kind
+                ),
+            )
+            .with_hint(
+                "`sum` and `avg` take an Integer, Decimal or Duration; `min` and `max` an Integer, \
+                 Decimal, String, Timestamp or Duration; `count_distinct` an Integer, Decimal, \
+                 String, Boolean or Timestamp",
+            )
+        })
+    }
+
     /// A computed field (`expr:`, ess/27, beyond10x/ess#560): its expression reads the source
     /// row's fields by name and computes the field's declared type. An aggregate view computes over
     /// groups, where arithmetic over measures is a later design's (G3), so it takes none.
@@ -1476,7 +1882,10 @@ impl ViewSpec {
                             self.name, self.source
                         ),
                     )
-                    .with_hint("aggregate a top-level field; struct paths are not in this cut"),
+                    .with_hint(
+                        "aggregate a top-level field, or, from specification format ess/36, an \
+                         expression of the row: `{sum: {expr: \"<field> * <field>.<attribute>\"}}`",
+                    ),
                 );
                 return Some(errors);
             }
@@ -1505,36 +1914,31 @@ impl ViewSpec {
             }
         };
 
-        let expected = match source_type {
-            None => result_type(aggregate.function, Leaf::Other, &field.type_ref, false),
-            Some(source_field) => {
-                let unwrapped = unwrap_chain(&source_field.type_ref, types);
-                if let Some(refused) = self.absence_refusal(
-                    at("aggregate"),
-                    aggregate,
-                    source_field,
-                    unwrapped.optional,
-                ) {
-                    errors.push(refused);
-                    return Some(errors);
-                }
-                let Some(expected) = result_type(
-                    aggregate.function,
-                    unwrapped.leaf,
-                    &source_field.type_ref,
-                    aggregate.skip_absent,
-                ) else {
-                    errors.push(ValidationError::new(
-                        ValidationCode::TypeMismatch,
-                        at("aggregate"),
-                        format!(
-                            "`{}` computes {aggregate}, and `{}` does not admit `{}` of type {}",
-                            self.name, aggregate.function, source_field.name, source_field.type_ref
-                        ),
-                    ));
-                    return Some(errors);
-                };
-                Some(expected)
+        // The measure row of grid O, closed whole from `ess/36` (§ G3).
+        let ordered = types
+            .format()
+            .is_none_or(|format| format.major() >= crate::system::FormatVersion::V36.major());
+        let site = at("aggregate");
+        let expected = match (source_type, &aggregate.expr) {
+            (None, Some(written)) => self
+                .validate_measure_expr(&site, field, written, types, source_fields)
+                .map(Some),
+            (None, None) => Ok(result_type(
+                aggregate.function,
+                Leaf::Other,
+                &field.type_ref,
+                false,
+                ordered,
+            )),
+            (Some(source_field), _) => self
+                .field_measure_type(&site, aggregate, source_field, types, ordered)
+                .map(Some),
+        };
+        let expected = match expected {
+            Ok(expected) => expected,
+            Err(refused) => {
+                errors.push(refused);
+                return Some(errors);
             }
         };
         if let Some(expected) = expected {
@@ -1612,7 +2016,8 @@ impl ViewSpec {
         &self,
         at: String,
         aggregate: &Aggregate,
-        source_field: &Field,
+        read: &str,
+        typed: &str,
         optional: bool,
     ) -> Option<ValidationError> {
         match (optional, aggregate.skip_absent) {
@@ -1621,9 +2026,9 @@ impl ViewSpec {
                     ValidationCode::UnsupportedConstruct,
                     at,
                     format!(
-                        "`{}` computes {aggregate} over `{}`, which may be absent ({}), and does \
-                         not say what an absent value means",
-                        self.name, source_field.name, source_field.type_ref
+                        "`{}` computes {aggregate} over {read}, which may be absent ({typed}), and \
+                         does not say what an absent value means",
+                        self.name
                     ),
                 )
                 .with_hint(
@@ -1636,9 +2041,9 @@ impl ViewSpec {
                     ValidationCode::ConflictingDeclaration,
                     at,
                     format!(
-                        "`{}` computes {aggregate} over `{}`, which every row holds ({}), so \
+                        "`{}` computes {aggregate} over {read}, which every row holds ({typed}), so \
                          there is no absent value to skip",
-                        self.name, source_field.name, source_field.type_ref
+                        self.name
                     ),
                 )
                 .with_hint("drop `skip_absent: true`"),
@@ -1787,7 +2192,7 @@ impl ViewSpec {
                 );
                 continue;
             }
-            let equality = unwrapped.leaf == Leaf::Enum
+            let equality = matches!(unwrapped.leaf, Leaf::Enum { .. })
                 || [
                     Primitive::String,
                     Primitive::Integer,
@@ -2302,6 +2707,7 @@ mod tests {
             (
                 "billing.invoice.Invoice.State",
                 TypeBody::Enum {
+                    ordered: false,
                     variants: crate::types::EnumVariant::bare([
                         "Draft",
                         "Issued",

@@ -442,6 +442,10 @@ impl SemanticChange {
                 changed: TypeChange::ShorthandChanged { .. },
                 ..
             } => SHORTHAND_DELTA_FORMAT,
+            Self::Type {
+                changed: TypeChange::OrderedChanged { .. },
+                ..
+            } => ORDERED_DELTA_FORMAT,
             Self::View {
                 changed: ViewChange::AbsentChanged { .. },
                 ..
@@ -864,6 +868,13 @@ pub const FIELD_SOURCE_DELTA_FORMAT: u32 = 21;
 /// that carries one is classified even when nobody asked.
 pub const TRANSITION_SUMMARY_DELTA_FORMAT: u32 = 22;
 
+/// The first delta format whose vocabulary has `ordered-changed` on a type: an enum's
+/// `ordered: true` declared or dropped (`ess/36`, beyond10x/ess#566).
+///
+/// Above [`CLASSIFIED_DELTA_FORMAT`](crate::compatibility::CLASSIFIED_DELTA_FORMAT) too, so a delta
+/// that carries one is classified even when nobody asked.
+pub const ORDERED_DELTA_FORMAT: u32 = 23;
+
 /// A domain entered in, or dropped from, the system's `domains:` list.
 ///
 /// Only the arrival and the departure. A domain's member sets are derived from each construct's
@@ -1205,6 +1216,17 @@ pub enum TypeChange {
         /// The field it can be written as, if any.
         after: Option<String>,
     },
+    /// An enum came to declare `ordered: true`, or stopped (`ess/36`, beyond10x/ess#566). Only an
+    /// `ess-diff/23` delta carries it.
+    ///
+    /// What `min` and `max` over a field of the enum answer moves with it, and a measure over an
+    /// enum without an order is refused, so it is a change with no direction.
+    OrderedChanged {
+        /// Whether the declaration order was the order of its values.
+        before: bool,
+        /// Whether it is.
+        after: bool,
+    },
 }
 
 /// How a record's `undeclared_fields:` moving relates the revisions: opening it widens what it
@@ -1283,6 +1305,7 @@ impl TypeChange {
             Self::PrefixChanged { .. } => "prefix-changed",
             Self::UndeclaredFieldsChanged { .. } => "undeclared-fields-changed",
             Self::ShorthandChanged { .. } => "shorthand-changed",
+            Self::OrderedChanged { .. } => "ordered-changed",
         }
     }
 
@@ -1425,6 +1448,7 @@ impl TypeChange {
                 optional(before.as_ref()),
                 optional(after.as_ref())
             ),
+            Self::OrderedChanged { before, after } => format!("ordered {before} → {after}"),
             Self::InvariantsChanged { before, after } => format!(
                 "invariants [{}] → [{}]",
                 before.join("; "),

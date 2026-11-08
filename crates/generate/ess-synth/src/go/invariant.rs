@@ -1,4 +1,5 @@
-//! The invariant check on each entity's data: `BrokenInvariant`, and the evaluator it shares.
+//! The invariant check on each entity's data, `BrokenInvariant`; the constraint check on each
+//! constrained newtype, `BrokenConstraint`; and the evaluator they share.
 //!
 //! The Go rendering of [`crate::rust`]'s `invariant` module, with the same semantics: each
 //! invariant is read in the three values the conformance interpreter reads it in — true, false, or
@@ -11,9 +12,9 @@
 //! same answer in any order — the one order Go does not keep, a map's, does not matter.
 //!
 //! The shared evaluator is its own leaf package, `types/invariant`, emitted only in a model where
-//! some entity declares an invariant, so a model that declares none keeps every byte it had. An
-//! invariant this emitter cannot evaluate is refused before anything is rendered ([`preflight`]),
-//! naming the invariant, rather than dropped from the check.
+//! some entity or newtype declares an invariant, so a model that declares none keeps every byte it
+//! had. A constraint this emitter cannot evaluate is refused before anything is rendered
+//! ([`preflight`]), naming the constraint, rather than dropped from the check.
 
 use std::collections::BTreeSet;
 use std::fmt::Write as _;
@@ -35,14 +36,21 @@ use crate::plan::{CapabilityKind, SynthesisPlan, REGENERATE};
 /// How deep a path may unwrap before the walk gives up — the compiler's own bound on a type chain.
 const MAX_STEPS: usize = 64;
 
-/// Whether any entity of the model declares an invariant, which is what brings the evaluator in.
+/// Whether any entity or newtype of the model declares an invariant, which is what brings the
+/// evaluator in. A newtype's alphabet or prefix is checked with `strings` and needs no evaluator,
+/// so this asks about invariants alone rather than `ResolvedBody::is_constrained`.
 pub(super) fn used(ir: &EssIr) -> bool {
     ir.entities()
         .values()
         .any(|entity| !entity.invariants.is_empty())
+        || ir.types().values().any(|declared| match &declared.body {
+            ResolvedBody::Newtype { invariants, .. } => !invariants.is_empty(),
+            _ => false,
+        })
 }
 
-/// Refuses the target when an entity it emits declares an invariant this emitter cannot evaluate.
+/// Refuses the target when an entity or a newtype it emits declares a constraint this emitter
+/// cannot evaluate.
 pub(super) fn preflight(
     ir: &EssIr,
     plan: &SynthesisPlan,
@@ -67,6 +75,23 @@ pub(super) fn preflight(
                     ),
                 ));
             }
+        }
+    }
+    for declared in ir.types().values() {
+        if !plan.is_generated(CapabilityKind::DomainType, &declared.name.to_string()) {
+            continue;
+        }
+        let package = layout.package_of(&declared.name);
+        let emit = Emit::new(ir, layout, package, Some(layout.owner(&declared.name)));
+        if let Err((at, reason)) = newtype_checks(&emit, declared) {
+            causes.push(TargetFailureCause::new(
+                TargetFailureCode::MissingRepresentation,
+                vec![format!("types.{}.{at}", declared.name)],
+                format!(
+                    "the generated decoder cannot check `{}`: {reason}",
+                    declared.name
+                ),
+            ));
         }
     }
     if causes.is_empty() {
@@ -162,7 +187,150 @@ pub(super) fn check(out: &mut String, emit: &Emit<'_>, entity: &ResolvedEntity) 
     );
 }
 
-/// The `invariant` package: the evaluator, in a model where some entity declares an invariant.
+/// One constraint a newtype declares: what a decoder refusal names as expected instead, the
+/// statements its test reads, and the Go condition that is true when the value breaks it.
+struct Constraint {
+    expected: String,
+    prelude: Vec<String>,
+    broken: String,
+}
+
+/// A newtype's declared constraints — its alphabet, its prefix and each invariant, in that order —
+/// as [`Constraint`]s over the method's receiver, `v` moved out of the way of every package name
+/// the file may import, as [`newtype_check`] names it. Empty for a newtype that declares none, and
+/// for every other kind of type. Each expectation is spelled as the Rust target's
+/// `broken_constraint` spells it, so the two decoders refuse a value with the same words.
+///
+/// # Errors
+///
+/// The declaration's member (`alphabet`, `prefix` or `invariants.<n>`) and why it cannot be
+/// checked.
+fn newtype_checks(
+    emit: &Emit<'_>,
+    declared: &ess_compiler::ir::ResolvedType,
+) -> Result<Vec<Constraint>, (String, String)> {
+    let ResolvedBody::Newtype {
+        of,
+        alphabet,
+        prefix,
+        invariants,
+    } = &declared.body
+    else {
+        return Ok(Vec::new());
+    };
+    let mut check = Check::rooted(emit, Subject::Newtype(of), emit.layout.package_names(), "v");
+    let mut checks = Vec::new();
+    if alphabet.is_some() || prefix.is_some() {
+        // The text the declaration constrains: the field, through every newtype it wraps.
+        let mut text = format!("{}.value", check.receiver);
+        let mut current = of;
+        for _ in 0..MAX_STEPS {
+            match current {
+                ResolvedTypeRef::Declared { name } => match &emit.ir.named_type(name).body {
+                    ResolvedBody::Newtype { of, .. } => {
+                        text.push_str(".Value()");
+                        current = of;
+                    }
+                    _ => break,
+                },
+                _ => break,
+            }
+        }
+        let member = if alphabet.is_some() {
+            "alphabet"
+        } else {
+            "prefix"
+        };
+        if primitive(current) != Some(Primitive::String) {
+            return Err((
+                member.to_owned(),
+                format!("its {member} constrains `{current}`, which is not a String"),
+            ));
+        }
+        if let Some(alphabet) = alphabet {
+            emit.import("strings");
+            // Trimming every character of the alphabet from both ends leaves nothing exactly when
+            // every character is one of it; the empty text is inside every alphabet.
+            checks.push(Constraint {
+                expected: format!("a value whose every character is one of `{alphabet}`"),
+                prelude: Vec::new(),
+                broken: format!("strings.Trim({text}, {}) != \"\"", go_string(alphabet)),
+            });
+        }
+        if let Some(prefix) = prefix {
+            emit.import("strings");
+            checks.push(Constraint {
+                expected: format!("a value starting with `{prefix}`"),
+                prelude: Vec::new(),
+                broken: format!("!strings.HasPrefix({text}, {})", go_string(prefix)),
+            });
+        }
+    }
+    for (index, invariant) in invariants.iter().enumerate() {
+        let truth = check.predicate(&invariant.predicate).map_err(|reason| {
+            (
+                format!("invariants.{index}"),
+                format!("`{}`: {reason}", invariant.statement),
+            )
+        })?;
+        checks.push(Constraint {
+            expected: format!("a value satisfying `{}`", invariant.statement),
+            prelude: std::mem::take(&mut check.prelude),
+            broken: format!("{}({truth})", check.iv("Broken")),
+        });
+    }
+    Ok(checks)
+}
+
+/// `func (v <Newtype>) BrokenConstraint() (string, bool)`, for a newtype that declares an
+/// alphabet, a prefix or an invariant. The generated decoder refuses a value for which it is true,
+/// naming the path and the constraint (beyond10x/ess#579).
+///
+/// # Panics
+///
+/// If a constraint cannot be rendered — [`preflight`] refuses such a model before any rendering
+/// starts, so reaching it is a defect in this crate.
+pub(super) fn newtype_check(
+    out: &mut String,
+    emit: &Emit<'_>,
+    declared: &ess_compiler::ir::ResolvedType,
+) {
+    let checks = newtype_checks(emit, declared).unwrap_or_else(|(at, reason)| {
+        panic!(
+            "preflight admitted `{}.{at}`, which cannot be rendered: {reason}",
+            declared.name
+        )
+    });
+    if checks.is_empty() {
+        return;
+    }
+    let receiver = fresh(&emit.layout.package_names(), "v");
+    let mut body = Lines::new(1);
+    for constraint in checks {
+        body.extend(constraint.prelude);
+        body.push(&format!("if {} {{", constraint.broken));
+        body.push(&format!(
+            "\treturn {}, true",
+            go_string(&constraint.expected)
+        ));
+        body.push("}");
+    }
+    let _ = writeln!(
+        out,
+        "\n// BrokenConstraint is the first constraint `{}` declares that this value breaks — its\n// \
+         alphabet, its prefix, then each invariant — as what a decoder expected instead, and true;\n// \
+         or \"\" and false when it breaks none.\n//\n// An invariant is broken only when it is \
+         false of this value, as the conformance\n// interpreter reads it. A wrapped newtype's own \
+         constraints are its own to check.\nfunc ({receiver} {}) BrokenConstraint() (string, \
+         bool) {{\n{}\treturn \"\", false\n}}",
+        declared.name,
+        emit.layout.declared(&declared.name),
+        body.text()
+    );
+}
+
+/// The `invariant` package: the evaluator, in a model where some entity or newtype declares an
+/// invariant.
 pub(super) fn package(ir: &EssIr, layout: &Layout, provenance: &Provenance) -> Option<Artifact> {
     if !used(ir) {
         return None;
@@ -269,10 +437,21 @@ enum Leaf {
     Variants(Vec<(String, String)>),
 }
 
-/// Renders the invariants of one entity into statements and `invariant.Truth` expressions.
+/// What an invariant's paths start from.
+#[derive(Clone, Copy)]
+enum Subject<'a> {
+    /// An entity's data: its identity and fields, as members of the receiver, and `state`, which
+    /// reads as absent.
+    Entity(&'a ResolvedEntity),
+    /// A newtype's `value`: the representation it wraps, as the receiver's unexported field.
+    Newtype(&'a ResolvedTypeRef),
+}
+
+/// Renders the invariants of one entity or newtype into statements and `invariant.Truth`
+/// expressions.
 struct Check<'a> {
     emit: &'a Emit<'a>,
-    entity: &'a ResolvedEntity,
+    subject: Subject<'a>,
     binders: Vec<Binder>,
     /// Statements the next truth expression reads, in order.
     prelude: Vec<String>,
@@ -288,10 +467,19 @@ struct Check<'a> {
 
 impl<'a> Check<'a> {
     fn new(emit: &'a Emit<'a>, entity: &'a ResolvedEntity, reserved: BTreeSet<String>) -> Self {
-        let receiver = fresh(&reserved, "d");
+        Self::rooted(emit, Subject::Entity(entity), reserved, "d")
+    }
+
+    fn rooted(
+        emit: &'a Emit<'a>,
+        subject: Subject<'a>,
+        reserved: BTreeSet<String>,
+        receiver: &str,
+    ) -> Self {
+        let receiver = fresh(&reserved, receiver);
         Self {
             emit,
-            entity,
+            subject,
             binders: Vec::new(),
             prelude: Vec::new(),
             depth: 1,
@@ -722,24 +910,31 @@ impl<'a> Check<'a> {
         })
     }
 
-    /// Where a path starts — a binder, the identity or a field — as the expression holding it and
-    /// its type; `None` for `state`, which the data type does not hold.
+    /// Where a path starts — a binder, the identity, a field or a newtype's `value` — as the
+    /// expression holding it and its type; `None` for `state`, which the data type does not hold.
     fn root(&self, path: &FactPath) -> Result<Option<(String, ResolvedTypeRef)>, String> {
         let root = path.namespace();
         if let Some(binder) = self.binders.iter().rev().find(|binder| binder.name == root) {
             return Ok(Some((binder.variable.clone(), binder.element.clone())));
         }
-        let stored: Vec<ResolvedField> = std::iter::once(&self.entity.identity)
-            .chain(&self.entity.fields)
+        let entity = match self.subject {
+            Subject::Entity(entity) => entity,
+            Subject::Newtype(of) if root == "value" => {
+                return Ok(Some((format!("{}.value", self.receiver), of.clone())));
+            }
+            Subject::Newtype(_) => {
+                return Err(format!(
+                    "`{path}` reads `{root}`, which this newtype does not hold"
+                ));
+            }
+        };
+        let stored: Vec<ResolvedField> = std::iter::once(&entity.identity)
+            .chain(&entity.fields)
             .cloned()
             .collect();
         if let Some(field) = stored.iter().find(|field| field.name == root) {
             return Ok(Some((
-                format!(
-                    "{}.{}",
-                    self.receiver,
-                    data_member(self.entity, &field.name)
-                ),
+                format!("{}.{}", self.receiver, data_member(entity, &field.name)),
                 field.type_ref.clone(),
             )));
         }

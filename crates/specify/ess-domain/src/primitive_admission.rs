@@ -222,7 +222,7 @@ pub(crate) fn system(system: &SystemSpec) -> ValidationErrors {
                     );
                 }
             }
-            TypeBody::Enum { variants } => {
+            TypeBody::Enum { variants, .. } => {
                 for variant in variants {
                     if system.format.major() < 5 && !variant.is_bare() {
                         errors.push(ValidationError::new(

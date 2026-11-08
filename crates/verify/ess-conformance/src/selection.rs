@@ -60,6 +60,7 @@ impl Declaration {
                     .map(ess_domain::types::RawEnumVariant::from)
                     .collect(),
                 attributes: Vec::new(),
+                ordered: false,
             },
             Self::Union { tag, variants } => ess_domain::types::RawTypeBody::Union {
                 tag: tag.clone(),

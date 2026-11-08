@@ -102,6 +102,66 @@ pub fn check(
     types: &TypeRegistry,
     (target_name, target): (&str, &TypeRef),
 ) -> Result<Checked, Refusal> {
+    let Checked {
+        expr,
+        typed: computed,
+    } = infer(written, read, types)?;
+    let Some(wanted) = kind_of(types, target) else {
+        return Err(Refusal::new(
+            ValidationCode::TypeMismatch,
+            format!(
+                "`{target_name}` is `{target}`, and an expression computes an Integer, a Decimal, a \
+                 Timestamp, a Duration, a String, Bytes or a Boolean"
+            ),
+        ));
+    };
+    if computed.kind != wanted.kind {
+        return Err(Refusal::new(
+            ValidationCode::TypeMismatch,
+            format!(
+                "`{written}` computes {} `{}`, and `{target_name}` is `{target}`",
+                article(computed.kind),
+                computed.kind
+            ),
+        )
+        .with_hint(match (computed.kind, wanted.kind) {
+            (Kind::Duration, Kind::Integer | Kind::Decimal) => {
+                "a difference of two instants is a Duration; declare the field `Duration`"
+                    .to_owned()
+            }
+            _ => format!("declare `{target_name}` as {}", computed.kind),
+        }));
+    }
+    if computed.optional && !wanted.optional {
+        return Err(Refusal::new(
+            ValidationCode::TypeMismatch,
+            format!(
+                "`{written}` is `{computed}`: a quotient is absent where its divisor is zero, and an \
+                 Optional read where it is absent; `{target_name}` is `{target}`, which is always \
+                 present"
+            ),
+        )
+        .with_hint(format!(
+            "say what stands in for no value, such as `coalesce({written}, 0)`, or declare \
+             `{target_name}` Optional"
+        )));
+    }
+    Ok(Checked {
+        expr,
+        typed: computed,
+    })
+}
+
+/// Parses `written` and types every path it reads by `read`: its tree with each read's kind
+/// filled, and what it computes, with no field to fill — what a measure's input is
+/// (`docs/design/generic-language-features.md` § G3), whose result type is its function's.
+///
+/// `now` is refused, as by [`check`].
+pub fn infer(
+    written: &str,
+    read: &dyn Fn(&FactPath) -> Result<TypeRef, Refusal>,
+    types: &TypeRegistry,
+) -> Result<Checked, Refusal> {
     let parsed = Expr::parse(written).map_err(|error| {
         Refusal::new(ValidationCode::UnparsablePredicate, error.message).with_hint(
             "an expression is written with paths, literals (`1`, `2.5`, `\"text\"`, `60s`), `+ - \
@@ -150,46 +210,6 @@ pub fn check(
                 })
         })
         .map_err(|error| Refusal::new(ValidationCode::TypeMismatch, error.message))?;
-    let Some(wanted) = kind_of(types, target) else {
-        return Err(Refusal::new(
-            ValidationCode::TypeMismatch,
-            format!(
-                "`{target_name}` is `{target}`, and an expression computes an Integer, a Decimal, a \
-                 Timestamp, a Duration, a String, Bytes or a Boolean"
-            ),
-        ));
-    };
-    if computed.kind != wanted.kind {
-        return Err(Refusal::new(
-            ValidationCode::TypeMismatch,
-            format!(
-                "`{written}` computes {} `{}`, and `{target_name}` is `{target}`",
-                article(computed.kind),
-                computed.kind
-            ),
-        )
-        .with_hint(match (computed.kind, wanted.kind) {
-            (Kind::Duration, Kind::Integer | Kind::Decimal) => {
-                "a difference of two instants is a Duration; declare the field `Duration`"
-                    .to_owned()
-            }
-            _ => format!("declare `{target_name}` as {}", computed.kind),
-        }));
-    }
-    if computed.optional && !wanted.optional {
-        return Err(Refusal::new(
-            ValidationCode::TypeMismatch,
-            format!(
-                "`{written}` is `{computed}`: a quotient is absent where its divisor is zero, and an \
-                 Optional read where it is absent; `{target_name}` is `{target}`, which is always \
-                 present"
-            ),
-        )
-        .with_hint(format!(
-            "say what stands in for no value, such as `coalesce({written}, 0)`, or declare \
-             `{target_name}` Optional"
-        )));
-    }
     let expr = parsed.with_kinds(&|path| {
         kinds
             .iter()

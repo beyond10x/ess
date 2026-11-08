@@ -1262,6 +1262,11 @@
                 }
               ]
             },
+            "ordered": {
+              "description": "`ordered: true`: the declaration order is the order of its values (`ess/36`, beyond10x/ess#566). Absent, or `false`, declares no order.",
+              "default": false,
+              "type": "boolean"
+            },
             "reading": {
               "$ref": "#/definitions/ReadingContract"
             },
@@ -1831,14 +1836,14 @@
           "additionalProperties": false
         },
         {
-          "description": "`{count_distinct: field}`, optionally with `skip_absent: true`.",
+          "description": "`{count_distinct: field}` or `{count_distinct: {expr: …}}` (ess/36), optionally with `skip_absent: true`.",
           "type": "object",
           "required": [
             "count_distinct"
           ],
           "properties": {
             "count_distinct": {
-              "type": "string"
+              "$ref": "#/definitions/RawMeasureInput"
             },
             "skip_absent": {
               "description": "Absent values of the argument are skipped, as SQL skips NULL (ess/15). Written `true` or not at all.",
@@ -1852,7 +1857,7 @@
           "additionalProperties": false
         },
         {
-          "description": "`{sum: field}`, optionally with `skip_absent: true`.",
+          "description": "`{sum: field}` or `{sum: {expr: …}}` (ess/36), optionally with `skip_absent: true`.",
           "type": "object",
           "required": [
             "sum"
@@ -1864,7 +1869,7 @@
               "const": true
             },
             "sum": {
-              "type": "string"
+              "$ref": "#/definitions/RawMeasureInput"
             },
             "where": {
               "$ref": "#/definitions/Predicate"
@@ -1873,14 +1878,14 @@
           "additionalProperties": false
         },
         {
-          "description": "`{min: field}`, optionally with `skip_absent: true`.",
+          "description": "`{min: field}` or `{min: {expr: …}}` (ess/36), optionally with `skip_absent: true`.",
           "type": "object",
           "required": [
             "min"
           ],
           "properties": {
             "min": {
-              "type": "string"
+              "$ref": "#/definitions/RawMeasureInput"
             },
             "skip_absent": {
               "description": "Absent values of the argument are skipped, as SQL skips NULL (ess/15). Written `true` or not at all.",
@@ -1894,14 +1899,14 @@
           "additionalProperties": false
         },
         {
-          "description": "`{max: field}`, optionally with `skip_absent: true`.",
+          "description": "`{max: field}` or `{max: {expr: …}}` (ess/36), optionally with `skip_absent: true`.",
           "type": "object",
           "required": [
             "max"
           ],
           "properties": {
             "max": {
-              "type": "string"
+              "$ref": "#/definitions/RawMeasureInput"
             },
             "skip_absent": {
               "description": "Absent values of the argument are skipped, as SQL skips NULL (ess/15). Written `true` or not at all.",
@@ -1915,14 +1920,14 @@
           "additionalProperties": false
         },
         {
-          "description": "`{avg: field}`, optionally with `skip_absent: true`.",
+          "description": "`{avg: field}` or `{avg: {expr: …}}` (ess/36), optionally with `skip_absent: true`.",
           "type": "object",
           "required": [
             "avg"
           ],
           "properties": {
             "avg": {
-              "type": "string"
+              "$ref": "#/definitions/RawMeasureInput"
             },
             "skip_absent": {
               "description": "Absent values of the argument are skipped, as SQL skips NULL (ess/15). Written `true` or not at all.",
@@ -2852,6 +2857,27 @@
         }
       },
       "additionalProperties": false
+    },
+    "RawMeasureInput": {
+      "description": "What a measure reads: a top-level field of the source, by name, or an expression of the source row (ess/36).",
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "description": "An expression of the source row, `{expr: \"ended_at - started_at\"}` (ess/36).",
+          "type": "object",
+          "required": [
+            "expr"
+          ],
+          "properties": {
+            "expr": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
     },
     "RawMissingSource": {
       "description": "`{missing: input.<list>}` as written.",

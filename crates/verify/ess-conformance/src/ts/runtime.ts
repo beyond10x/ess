@@ -2101,8 +2101,13 @@ export interface AwaitRequest {
   within?: number;
   /** The runner's budget, where there is no declared bound. */
   deadline: Deadline;
-  /** The input fields whose values the scenario will compare: names only, never values. */
-  compared: string[];
+  /**
+   * Each input value the scenario states, resolved by the runner
+   * (story:a-system-issued-awaited-step-honours-its-outcomes-input-guard). A test adapter that
+   * steers its system's choice issues the command with these values; a target that does not is
+   * held to them all the same, because the runner compares each with the input the answer carries.
+   */
+  compared: { [field: string]: Node };
   correlation: string;
 }
 
@@ -4076,7 +4081,6 @@ export class ScenarioRun {
     const [instance, within] = setup;
     const stated = this.resolveAll(index, step.input);
     if (stated === null) return false;
-    const compared = sortStrings(Object.keys(stated));
     const attempts = this.harness.noInvocationDeadline().attempts;
     for (let attempt = 0; ; attempt += 1) {
       let answer: AwaitAnswer;
@@ -4085,7 +4089,7 @@ export class ScenarioRun {
           command: step.command,
           instance,
           deadline: { attempts: attempts - attempt },
-          compared,
+          compared: stated,
           correlation: this.correlation,
         };
         if (within !== undefined) request.within = within;
@@ -4197,7 +4201,7 @@ export class ScenarioRun {
           command: step.command,
           instance,
           deadline: { attempts: attempts - attempt },
-          compared: [],
+          compared: {},
           correlation: this.correlation,
         };
         if (within !== undefined) request.within = within;

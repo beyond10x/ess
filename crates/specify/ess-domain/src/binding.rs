@@ -2534,7 +2534,7 @@ pub(crate) fn representation<'a>(
                     slot.insert(base_cases);
                     match types.get(named).map(|declared| &declared.body) {
                         Some(TypeBody::Newtype { of, .. }) => current = of,
-                        Some(TypeBody::Enum { variants }) => {
+                        Some(TypeBody::Enum { variants, .. }) => {
                             return Resolution::Established(Representation::Variants(variants));
                         }
                         Some(TypeBody::Struct { .. } | TypeBody::Union { .. }) => {
@@ -2771,6 +2771,7 @@ on_failure: {escalate: {emits: billing.email.DeliveryEscalated}}
             (
                 "billing.invoice.Channel",
                 TypeBody::Enum {
+                    ordered: false,
                     variants: EnumVariant::bare(["Email", "Post", "Portal"]),
                 },
             ),

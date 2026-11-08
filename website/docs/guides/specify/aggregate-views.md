@@ -34,8 +34,9 @@ Each field declares its result type exactly, and validation names the one it exp
 for `count`, `count_distinct` and `sum` of an `Integer`; `Decimal` for `sum` of a `Decimal`;
 `Optional<T>` for `min` and `max`, keeping a newtype; `Optional<Decimal>` for `avg`, which is
 rounded to 6 fractional digits, ties to even. An aggregate reads one top-level field of the source
-that every row holds, so an `Optional` argument or group key is refused, and so is grouping by a
-`Timestamp` or ranking an aggregate view with `order_by:`.
+(from `ess/36` also an expression of the row, below) that every row holds, so an `Optional`
+argument or group key is refused, and so is grouping by a `Timestamp` or ranking an aggregate view
+with `order_by:`.
 
 Conformance creates the rows itself, through the declared creating outcome, and asserts every
 group's exact numbers. Because a target may be shared, the rows are kept apart from every other
@@ -75,6 +76,56 @@ fields it reads that the creating command sets and the lifecycle state — so th
 exact value would change if its condition were dropped or inverted, and refuses the view
 (`ESS-SYNTH-017`) where no arrangement does. Such a suite is written as `ess-conformance/38` or
 `/39`. A view a binding or precondition changes the rows of is refused by name.
+
+### Measures over expressions and ordered enums
+
+From `format: ess/36` a measure may compute an expression of the source row instead of reading one
+field, written as every expression value is, `{expr: "…"}`. The expression reads the row's fields
+and an attribute of an enum field, `<field>.<attribute>`:
+
+```yaml
+types:
+  - name: incident.ImpactLevel
+    kind: enum
+    ordered: true
+    attributes:
+      - {name: weight, type: Integer}
+    variants:
+      - {name: Minor, attributes: {weight: 1}}
+      - {name: Major, attributes: {weight: 3}}
+      - {name: Critical, attributes: {weight: 10}}
+views:
+  - name: incident.Impact
+    source: incident.Window
+    consistency: eventual
+    group_by: [incident_id]
+    fields:
+      - {name: incident_id, type: incident.IncidentId}
+      - {name: mttr, type: Optional<Decimal>, aggregate: {avg: {expr: "ended_at - started_at"}}}
+      - {name: downtime, type: Duration, aggregate: {sum: {expr: "ended_at - started_at"}}}
+      - {name: weighted, type: Integer, aggregate: {sum: {expr: "duration_s * level.weight"}}}
+      - {name: worst, type: Optional<incident.ImpactLevel>, aggregate: {max: level}}
+```
+
+The result type follows what the expression computes: `sum` of an `Integer`, `Decimal` or
+`Duration` is that type; `avg` of any of them is `Optional<Decimal>`, a `Duration`'s mean in
+seconds; `min` and `max` of an `Integer`, `Decimal`, `String`, `Timestamp` or `Duration` are
+`Optional` of it. A quotient or an `Optional` read may be absent, so a measure over one needs
+`skip_absent: true`. `now` is refused: a figure read at the current time has no clock a suite fixes.
+
+An enum orders its values only where it declares `ordered: true`: `min` and `max` then read the
+variant declared last as the greatest, whatever the names spell, so `Critical` is the worst level
+above although `Minor` is the greatest word. `min` or `max` over an enum without it is refused,
+naming the flag. A `Duration` field takes `sum`, `avg`, `min` and `max` as an expression of one does.
+
+Conformance varies every field the expression reads and asserts the figure the expression
+computes per row, so a target that reads one field of a difference, ignores an attribute, or orders
+an enum's variants as words fails. A measure over an expression that also declares `skip_absent:`
+or `where:` gets no scenario yet and is refused by name (`ESS-SYNTH-017`), and so is a `sum` whose
+values are `Duration`s, such as `downtime` above, and an `avg` of a `Duration` field where no arrangement of whole
+seconds tells rounding from truncation: their figure is not yet asserted. Generated Rust and Go
+view queries keep a view with an expression measure, a `Duration` measure or an ordered enum's
+extreme an obligation, named by it.
 
 ## A list parameter, an empty list and a default
 

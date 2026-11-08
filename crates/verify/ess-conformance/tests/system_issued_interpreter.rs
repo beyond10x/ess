@@ -6,8 +6,8 @@
 //! in a fixed order — the identities of held rows a `when_related:` guard reads, in canonical
 //! order; otherwise a value minted from the scenario's counter; for an `Optional` input, absent
 //! first. The first candidate that reaches an accepting branch, or a forced external one, is the
-//! answer. No candidate reaching means nothing was issued; candidates reaching different accepting
-//! branches, or a compared input the model does not determine, mean unsupported.
+//! answer; an input the scenario states is that value alone. No candidate reaching means nothing was
+//! issued; candidates reaching different accepting branches mean unsupported.
 //!
 //! The await steps here are written by hand; `system_issued_synthesis.rs` runs synthesized ones.
 
@@ -449,14 +449,17 @@ fn created(target: &Interpreted, command_name: &str, input: &[(&str, Node)], fie
     result.direct_events[0].payload[field].clone()
 }
 
-fn ask(target: &Interpreted, on: &Node, within: bool, compared: &[&str]) -> AwaitRequest {
+fn ask(target: &Interpreted, on: &Node, within: bool, compared: &[(&str, Node)]) -> AwaitRequest {
     let _ = target;
     AwaitRequest {
         command: command(ASSIGN),
         instance: on.clone(),
         within: within.then(|| Elapsed::seconds(5)),
         deadline: Deadline::at(Timestamp::EPOCH),
-        compared: compared.iter().map(|field| (*field).to_owned()).collect(),
+        compared: compared
+            .iter()
+            .map(|(field, value)| ((*field).to_owned(), value.clone()))
+            .collect(),
         correlation: correlation(),
     }
 }
@@ -562,7 +565,7 @@ fn nothing_is_issued_on_a_record_that_refuses_and_the_hold_changes_nothing() {
 }
 
 #[test]
-fn a_compared_input_the_model_does_not_determine_is_unsupported() {
+fn a_compared_input_is_issued_as_the_scenario_states_it() {
     let target = Interpreted::for_model(ir_of(&model(BOUND)));
     begin(&target);
     created(
@@ -571,7 +574,7 @@ fn a_compared_input_the_model_does_not_determine_is_unsupported() {
         &[("free", Node::Bool(true))],
         "worker_id",
     );
-    created(
+    let second = created(
         &target,
         ADD_WORKER,
         &[("free", Node::Bool(true))],
@@ -579,18 +582,21 @@ fn a_compared_input_the_model_does_not_determine_is_unsupported() {
     );
     let entry = created(&target, ENQUEUE, &[], "entry_id");
 
-    // Two free workers: either is the system's to pick, so a scenario comparing the worker asks
-    // for a value the model leaves open.
-    let error = target
-        .await_outcome(ask(&target, &entry, true, &["worker"]))
-        .unwrap_err();
-    assert!(
-        matches!(error, TargetError::Unsupported { .. }),
-        "{error:?}"
-    );
-    // The identity input is the instance, which the scenario names: comparing it is determined.
+    // Two free workers: either is the system's to pick, and the scenario states which, so the
+    // system is held to it rather than the interpreter's first candidate
+    // (story:a-system-issued-awaited-step-honours-its-outcomes-input-guard).
     let answer = target
-        .await_outcome(ask(&target, &entry, true, &["entry_id"]))
+        .await_outcome(ask(&target, &entry, true, &[("worker", second.clone())]))
+        .unwrap();
+    let AwaitAnswer::Reached { input, .. } = answer else {
+        panic!("the stated worker is free, so the system takes the step: {answer:?}");
+    };
+    assert_eq!(input.get("worker"), Some(&second), "{input:?}");
+
+    // The identity input is the instance, which the scenario names: stating it changes nothing.
+    let entry = created(&target, ENQUEUE, &[], "entry_id");
+    let answer = target
+        .await_outcome(ask(&target, &entry, true, &[("entry_id", entry.clone())]))
         .unwrap();
     assert!(matches!(answer, AwaitAnswer::Reached { .. }), "{answer:?}");
 }

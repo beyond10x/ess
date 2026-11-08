@@ -745,6 +745,12 @@ fn compare_types(
         });
     }
     body_changes(&before.body, &after.body, &mut *push);
+    if before.ordered != after.ordered {
+        push(TypeChange::OrderedChanged {
+            before: before.ordered,
+            after: after.ordered,
+        });
+    }
     for delta in naming_deltas(&before.naming, &after.naming, name.local()) {
         match delta {
             NamingDelta::Wire(a, b) => push(TypeChange::WireNameChanged {
@@ -2090,6 +2096,11 @@ fn compare_aggregations(was: &ResolvedView, is: &ResolvedView, push: &mut impl F
                 aggregate.input.as_ref().map(|input| input.name.clone()),
                 aggregate.skip_absent,
                 aggregate.r#where.clone(),
+                // An expression measure (ess/36) is compared as its parsed tree.
+                aggregate
+                    .expr
+                    .as_ref()
+                    .map(|measured| measured.expr.clone()),
             )
         })
     };
@@ -2770,7 +2781,8 @@ fn residual_construct(declaration: &mut serde_json::Value, family: &str) {
     match family {
         "types" => {
             // `reading` is `reading-contract-changed`; leaving it here reported one change twice.
-            remove_keys(declaration, &["reading"]);
+            // `ordered` (ess/36) is `ordered-changed`, for the same reason.
+            remove_keys(declaration, &["reading", "ordered"]);
             if let Some(body) = declaration.get_mut("body") {
                 // An enum's typed variant attributes (ess/23, beyond10x/ess#450) have no typed
                 // comparison in any released delta format, so they stay in the residual: an

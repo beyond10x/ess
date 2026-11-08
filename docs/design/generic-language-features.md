@@ -403,6 +403,48 @@ one. Mutation has no aggregate class today beyond `order-flip` (`conf/mutate.rs:
 function swap (`sum`↔`avg`, `min`↔`max`) and the arithmetic classes on the input. Decimal stays
 exact i128 (`conf/aggregate.rs:215-300`).
 
+### Expression measures and ordered enums (`ess/36`, decided 2026-11-07)
+
+The first cut of G3, `story:aggregate-measures-over-expressions` (beyond10x/ess#561, #566):
+
+- **Spelling.** A measure that reads a value takes a field, `{sum: talk_seconds}`, or an
+  expression of the source row, `{sum: {expr: "duration_s * level.weight"}}`; `count` takes
+  neither. The bare name keeps its meaning and its IR bytes at every format.
+- **What an expression reads.** The source row's observable fields, and `<field>.<attribute>`, an
+  attribute of the enum a field is declared as (`ess/23`), read off the variant the row holds and
+  absent where the field is. This answers the fit review's open question: the weight is an enum
+  attribute, so no navigated row is needed for it. A reference navigated to another row, `now`,
+  a parameter and a path of more than two steps are refused by name; navigation stays G2's.
+- **Types, the measure row of grid O closed whole.** `count_distinct` over an Integer, Decimal,
+  String, Boolean or Timestamp value; `sum` over an Integer, Decimal or Duration, its result that
+  type; `avg` over the same, its result `Optional<Decimal>` — a Duration's mean in seconds, at six
+  places half-even like every mean, because a Duration is spelled in whole seconds and a second
+  rounding rule would be a second semantics; `min`/`max` over an Integer, Decimal, String,
+  Timestamp or Duration, `Optional` of it. A Duration **field** takes `sum`, `avg`, `min` and `max`
+  from `ess/36` too, and `min`/`max` take an enum declaring `ordered: true` (answer 5), reading the
+  variant declared last as the greatest. Over an enum without the flag they are refused as
+  `type_mismatch`, the hint naming the flag.
+- **Absence.** An expression whose type may be absent — an `Optional` read, a quotient — needs
+  `skip_absent: true`, and `skip_absent` over an expression always present is
+  `conflicting_declaration`, as for a field (V9).
+- **IR.** `ResolvedAggregate.expr` beside `input`, each read carrying its kind, and
+  `ResolvedType.ordered`; both omitted when absent, so a model without them keeps its bytes.
+- **Synthesis.** Every field an expression reads is an input of the pattern with its own ladder,
+  and the expected figure is evaluated per row by the shared evaluator before the function, as
+  "Cost" above says. An expression measure that also declares `skip_absent:` or `where:` is
+  refused as `ESS-SYNTH-017` naming it; the absent rows and the contrast arrangement vary one
+  field each and are not extended in this cut. No suite format moves: the scenario's vocabulary is
+  unchanged.
+- **Targets.** The interpreted target evaluates the expression per row. Generated Rust and Go view
+  queries keep a view with an expression measure an obligation named by its expression, and keep
+  refusing a Duration measure and an ordered enum's extremes, as values they do not compare.
+- **Diff.** A moved expression is `field-aggregate-changed`, compared as the parsed tree; a flipped
+  `ordered:` is the enum's `ordered-changed` (`ess-diff/23`), relation `changed`.
+- **Not in this cut.** Function-swap and arithmetic mutation classes on a measure, expression group
+  keys, arithmetic over measures, `arg_max`/`covered` and ranking: the other G3 stories. An
+  ordering comparison of an ordered enum in a guard or a filter stays refused; grid O's comparison
+  row is not opened here.
+
 ## G4. One precedence rule
 
 ### What exists

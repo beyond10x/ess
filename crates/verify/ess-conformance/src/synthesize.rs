@@ -5043,6 +5043,16 @@ fn run_as(
             related_at = expression_distinction(nth);
             true
         }
+        // ess/22 (#418): a further run per union variant makes a row of its own, which publishes
+        // the same event the full invocation's row did; bound here, it is read under its own
+        // identity and not the first occurrence's (the reporter's `union-identity`).
+        Witness::UnionVariant(nth) => match unit_union_variants(ir, command) {
+            Some((lcm, _)) => {
+                related_at = union_variant_distinction(lcm, nth);
+                true
+            }
+            None => false,
+        },
         _ => false,
     };
     if related || captured || rows {
@@ -7893,6 +7903,9 @@ fn told_apart<'o>(
                                     .input
                                     .as_ref()
                                     .is_some_and(|input| input.name == target)
+                                    || function.expr.as_ref().is_some_and(|measured| {
+                                        measured.fields().iter().any(|read| read == target)
+                                    })
                             })
                     })
             })
@@ -10279,17 +10292,21 @@ fn view_expectations(
     let (instance, settled) = (run.instance.as_ref(), &with_identity);
     // The row a further run of a creating branch made for its absent-reference witness is named
     // by the capture that run made, not by the first event that published an identity (ess/22,
-    // beyond10x/ess#285).
+    // beyond10x/ess#285). So is the row each union-variant run made (#418).
+    let union_runs = union_variant_instances(ir, command, &ir.entity(&subject.entity).name);
     let absent_run = |captured: &InstanceName| {
-        (0..related::absence_points(ir, command, outcome).len()).any(|point| {
-            *captured
-                == instance_name(
-                    &ir.entity(&subject.entity).name,
-                    Distinction::further(ABSENT_REFERENCE_WITNESS + point),
-                )
-        }) || (0..MAX_FALLBACK_RUNS).any(|run| {
-            *captured == instance_name(&ir.entity(&subject.entity).name, fallback_distinction(run))
-        })
+        union_runs.contains(captured)
+            || (0..related::absence_points(ir, command, outcome).len()).any(|point| {
+                *captured
+                    == instance_name(
+                        &ir.entity(&subject.entity).name,
+                        Distinction::further(ABSENT_REFERENCE_WITNESS + point),
+                    )
+            })
+            || (0..MAX_FALLBACK_RUNS).any(|run| {
+                *captured
+                    == instance_name(&ir.entity(&subject.entity).name, fallback_distinction(run))
+            })
     };
     let rekeyed = rekeyed_identity(outcome, run, ir);
     let identity = match (instance, &subject.instance) {
@@ -10374,7 +10391,7 @@ fn view_expectations(
 
     // ess/27 (#545): the events a step before the branch under test may already have published,
     // which a row claim reading the published value must not name.
-    let earlier = earlier_events(
+    let mut earlier = earlier_events(
         ir,
         run.setup.iter().chain(
             companions
@@ -10382,6 +10399,12 @@ fn view_expectations(
                 .flat_map(|companion| companion.steps.iter()),
         ),
     );
+    // A further run of the branch on a row of its own (an absent reference, a fallback, a union
+    // variant) follows the full invocation, which already published the outcome's events: an
+    // observed value read here would be the full invocation's.
+    if instance.is_some_and(absent_run) {
+        earlier.extend(outcome.emits.iter().map(|event| event.name().clone()));
+    }
     for (view, admits_subject) in &decided {
         let name = ViewRef::new(view.name.clone());
         let fields = naming(view);
@@ -11852,6 +11875,26 @@ fn arranged_with_absent_reference(
 /// every absent-reference witness, so their rows and identities are their own.
 const UNION_VARIANT_WITNESS: usize = 2 * ABSENT_REFERENCE_WITNESS;
 
+/// The witness the `nth` union-variant run is arranged under, where `lcm` is the least common
+/// multiple [`unit_union_variants`] answers: `nth` past a multiple of it.
+fn union_variant_distinction(lcm: usize, nth: usize) -> Distinction {
+    Distinction::further(UNION_VARIANT_WITNESS.div_ceil(lcm) * lcm + nth)
+}
+
+/// The instance names every union-variant run of `command` captures the row it creates under
+/// ([`Witness::UnionVariant`]); empty where its input reaches no union with a unit variant.
+fn union_variant_instances(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    entity: &QualifiedName,
+) -> Vec<InstanceName> {
+    unit_union_variants(ir, command).map_or_else(Vec::new, |(lcm, largest)| {
+        (1..largest)
+            .map(|nth| instance_name(entity, union_variant_distinction(lcm, nth)))
+            .collect()
+    })
+}
+
 /// How many variants the unions with a unit variant that `command`'s input reaches declare, as the
 /// least common multiple of their counts and the largest of them; `None` where it reaches none.
 ///
@@ -11933,7 +11976,7 @@ fn arranged_with_union_variant(
     {
         return Err(no_union_variant_run(command));
     }
-    let distinction = Distinction::further(UNION_VARIANT_WITNESS.div_ceil(lcm) * lcm + nth);
+    let distinction = union_variant_distinction(lcm, nth);
     let setup = prepare_in(ir, outcome, actors, None, distinction)?;
     let reached = reach(ir, command, outcome, distinction);
     let setup = stored_where_unknown_first(

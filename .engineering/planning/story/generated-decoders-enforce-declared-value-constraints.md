@@ -13,7 +13,22 @@ refs:
 relations:
 - serves: vision:O2
 - decomposes: epic:adopter-gaps-generated-code
-revision: 4
+scope:
+- confidence: cited
+  path: CHANGELOG.md
+- confidence: cited
+  path: crates/generate/ess-synth/src/go/http.rs
+- confidence: inferred
+  path: crates/generate/ess-synth/src/go/invariant.rs
+- confidence: cited
+  path: crates/generate/ess-synth/src/go/items.rs
+- confidence: inferred
+  path: crates/generate/ess-synth/src/go/runtime/invariant.go
+- confidence: inferred
+  path: crates/generate/ess-synth/tests/invariant_check/value_constraints.rs
+- confidence: inferred
+  path: crates/generate/schema-contract/src/realize.rs
+revision: 12
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-16T10:20:19Z", actor: "human:timo", revision: 2}
 - {from: "proposed", to: "active", at: "2026-10-16T10:20:19Z", actor: "human:timo", revision: 3}
@@ -89,3 +104,42 @@ every constraint its type publishes, or the generator refuses the type by name".
 ## State
 
 2026-11-02 (store hygiene H0 of wave W1, reconcile roadmap section 2d; decision D9 option A, kept active with a dated note): Rust half done; Go and TypeScript half remains; scheduled W3.
+
+## Scope
+
+Derived 2026-11-07 by `story-scoper`. Every line is **cited** (read from the story or the tree) or
+**inferred** (a reading that could be wrong).
+
+- **Already delivered (0.62.0, beyond10x/ess#579):**
+  - the Rust model decoder (`453bde9ad`), acceptance test
+    `model_decoder_refuses_a_value_outside_the_alphabet`;
+  - Rust types alphabet and length (`1d94e6977`), acceptance test
+    `rust_refuses_a_value_outside_a_declared_alphabet_or_length`.
+
+  Both are cited.
+- **Primary surface, remaining part A:** the generated Go server decoder in
+  `crates/generate/ess-synth/src/go/` — cited.
+  - `go/http.rs` (`decode<Type>` for `ResolvedBody::Newtype` returns the ctor with no constraint
+    check) — cited.
+  - `go/items.rs` (`newtype`, `alphabet_doc`, `prefix_doc`: documented "and does not check it") —
+    cited.
+  - `go/invariant.rs` (`preflight`, entity invariants only today) and
+    `go/runtime/invariant.go` — inferred.
+- **Remaining part B:**
+  - the Go and TypeScript types targets, and Rust prefix and invariants:
+    `crates/generate/schema-contract/src/realize.rs` (the `model_invariants` and `model_alphabet`
+    obligations) and `realize/{go,ts,rust}.rs` — cited.
+  - The TypeScript types target emits declarations only, so "enforce it or refuse the type" there
+    is a design decision: a new runtime decoder, or refusing every constrained type.
+- **Symbols:** `broken_constraint`, the Rust shape to mirror, in `ess-synth/src/rust/wire.rs` and
+  `rust/items.rs` — cited.
+- **Tests:** `crates/generate/ess-synth/tests/invariant_check/value_constraints.rs` and
+  `crates/generate/schema-contract/tests/model_ergonomics.rs` — inferred.
+- **Documents:** `CHANGELOG.md`, breaking for a client that sends a value outside a declared
+  constraint — cited.
+- **Confidence:** medium. The Go decoder site is pinned by the tree; the TypeScript leg is a design
+  reading.
+- **Safety fact:** a newtype with no alphabet, prefix or invariant keeps its exact Go and
+  types-target bytes; the check is emitted only where a constraint is declared (unproven).
+- **Split:** part A, the Go server decoder, is one unit. Part B waits on the TypeScript decision.
+  `every_published_constraint_is_enforced_or_refused` lands with or after part B.

@@ -209,7 +209,7 @@ struct Queue {
     log: RefCell<Vec<ObservedEvent>>,
     minted: Cell<u32>,
     awaits: Cell<u32>,
-    compared: RefCell<Vec<BTreeSet<String>>>,
+    compared: RefCell<Vec<BTreeMap<String, Node>>>,
     implements_await: bool,
 }
 
@@ -348,7 +348,7 @@ fn the_queue_passes_the_await_scenarios() {
         queue.awaits.get()
     );
     assert!(
-        queue.compared.borrow().iter().all(BTreeSet::is_empty),
+        queue.compared.borrow().iter().all(BTreeMap::is_empty),
         "synthesis-shaped steps compare no input value"
     );
 }
@@ -370,7 +370,7 @@ fn await_outcome_unsupported_by_default_keeps_old_targets_green() {
 }
 
 #[test]
-fn a_stated_input_is_compared_and_named_to_the_target() {
+fn a_stated_input_is_compared_and_carried_to_the_target() {
     let stated = |worker: &str| {
         BTreeMap::from([("worker".to_owned(), ScenarioValue::literal(text(worker)))])
     };
@@ -390,8 +390,9 @@ fn a_stated_input_is_compared_and_named_to_the_target() {
             .compared
             .borrow()
             .iter()
-            .any(|names| names == &BTreeSet::from(["worker".to_owned()])),
-        "the request names the compared field, never its value"
+            .any(|stated| stated == &BTreeMap::from([("worker".to_owned(), text("w-1"))])),
+        "the request carries the compared field with the value the scenario states \
+         (story:a-system-issued-awaited-step-honours-its-outcomes-input-guard)"
     );
 
     let results = run(

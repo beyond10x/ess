@@ -16,7 +16,7 @@ fn a_read_takes_a_pager() {
         .pager
         .as_ref()
         .expect("the typed read carries its pager");
-    assert_eq!(pager.page, "page");
+    assert_eq!(pager.page.as_deref(), Some("page"));
     assert_eq!(pager.size.as_deref(), Some("size"));
     assert_eq!(pager.sizes, vec![25, 50, 100]);
     assert_eq!(read.state_path("page"), Some("state.page"));

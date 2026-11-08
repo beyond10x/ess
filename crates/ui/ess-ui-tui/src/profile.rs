@@ -149,7 +149,7 @@ pub fn check(document: &Document, profile: &RendererProfile) -> Result<Plan, Ref
         return Err(Refusal {
             path,
             message: format!(
-                "host slot `{}`: host slots are generated from 0.91.0",
+                "host slot `{}`: host slots are validated by `ess ui check` and not generated yet",
                 slot.host
             ),
         });

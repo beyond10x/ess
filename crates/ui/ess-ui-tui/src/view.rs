@@ -24,10 +24,11 @@ use ess_ui::{
 };
 
 use crate::app::{
-    aggregate, bar_items, board_rows, columns_of, form_fields, graph_collection, group_names,
-    references_collection, App, BarItem, Ctx, Focus, Lifecycle, Mark, Prompt, ReadState, Region,
+    aggregate, bar_items, board_rows, client_sizes, columns_of, form_fields, graph_collection,
+    group_names, paged, references_collection, App, BarItem, Ctx, Focus, Lifecycle, Mark, Prompt,
+    ReadState, Region,
 };
-use crate::expr::{display, field_path, truthy};
+use crate::expr::{display, field_path, row_key, truthy};
 
 const NAV_WIDTH: u16 = 26;
 const SPARKS: [char; 8] = ['▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'];
@@ -1148,7 +1149,7 @@ impl App {
             .collect();
         // Filtered and sorted once: the page shown and the footer's row count both read it.
         let arranged = self.arranged_rows(place.ui, collection, all);
-        let (rows, pages) = self.page_of(place.ui, &arranged);
+        let (rows, pages) = self.page_of(place.ui, collection, &arranged);
         let state = self.ui(place.ui);
         let cursor = state.cursor.min(rows.len().saturating_sub(1));
         let cards = matches!(
@@ -1304,7 +1305,7 @@ impl App {
                 Style::default()
             };
             if place.record {
-                let key = display(&row[key_field.as_str()]);
+                let key = row_key(row, &key_field);
                 // The row's and each cell's whole text: the screen cuts a cell at its column's
                 // width and a line at the box's, the generated React project does not.
                 let whole = if cards {
@@ -1399,7 +1400,7 @@ impl App {
                     // region, at the path React scopes it to.
                     if place.record && lines.len() > start {
                         if let Some(row) = row {
-                            let key = display(&row[key_field.as_str()]);
+                            let key = row_key(row, &key_field);
                             self.mark(Mark {
                                 path: format!("{container}/rows/{key}/expand"),
                                 row: Some(key),
@@ -1414,8 +1415,33 @@ impl App {
                 }
             }
         }
-        let mut footer = vec![format!("page {}/{pages}", state.page.min(pages - 1) + 1)];
+        let page = state.page.min(pages - 1);
+        let mut footer = vec![format!("page {}/{pages}", page + 1)];
         footer.push(format!("{} rows", arranged.len()));
+        // A paged read's footer shows the rows drawn as a range of all of them, as React's
+        // pager does; it follows `page N/M · N rows`, so a reader of those reads them as before.
+        // A server pager's range is the server's page of the server's total, from the page and
+        // size params the read sent, and none without a size or a total, as in React.
+        let size = self.page_size(place.ui, collection);
+        let range = match (&reads.paging, &reads.pager) {
+            (Some(ess_ui::Paging::Server), Some(server_pager)) => server_range(
+                server_pager,
+                &request.params,
+                read.as_ref().and_then(|result| result.total),
+                arranged.len(),
+            ),
+            _ if paged(collection) => page_range(
+                page as u64 + 1,
+                size as u64,
+                rows.len(),
+                arranged.len() as u64,
+            ),
+            _ => None,
+        };
+        footer.extend(range);
+        if client_sizes(collection).is_some_and(|sizes| sizes.len() > 1) {
+            footer.push(format!("+ {size} per page"));
+        }
         if let Some((by, descending)) = state.sort.clone().or_else(|| {
             collection
                 .sort
@@ -1438,9 +1464,7 @@ impl App {
         }
         lines.push(Line::styled(footer.join(" · "), dim()));
         if let Some(segment) = row_actions_at {
-            let cursor_key = rows
-                .get(cursor)
-                .map(|row| display(&row[key_field.as_str()]));
+            let cursor_key = rows.get(cursor).map(|row| row_key(row, &key_field));
             self.mark_row_actions(
                 &collection.row_actions,
                 &format!("{container}/rows"),
@@ -2353,6 +2377,44 @@ fn tab_line(labels: impl Iterator<Item = String>, current: usize) -> Line<'stati
     }
     spans.push(Span::styled("[ ] switch tabs", dim()));
     Line::from(spans)
+}
+
+/// The rows a page draws as a range of all of them: `11-20 of 34`, `0 of 0` with none, as
+/// React's `rangeLabel`. `page` counts from 1. A page that would reach past the total (a server
+/// answering more rows than its total says) has no range.
+fn page_range(page: u64, size: u64, rows: usize, total: u64) -> Option<String> {
+    if rows == 0 || total == 0 {
+        return Some(format!("0 of {total}"));
+    }
+    let from = page
+        .saturating_sub(1)
+        .saturating_mul(size)
+        .saturating_add(1);
+    let to = from.saturating_add(rows as u64 - 1);
+    (to <= total).then(|| format!("{from}-{to} of {total}"))
+}
+
+/// A server pager's range: the page and size the read sent in its `page` and `size` params, of
+/// the total the server answered. None without a `size` param holding a number of at least 1 or
+/// without a total, as React draws none; a page param that is not a number of at least 1 is
+/// page 1.
+fn server_range(
+    pager: &ess_ui::Pager,
+    params: &std::collections::BTreeMap<String, Value>,
+    total: Option<u64>,
+    rows: usize,
+) -> Option<String> {
+    let number = |name: &Option<String>| {
+        let number = match params.get(name.as_ref()?)? {
+            Value::Number(number) => number.as_u64(),
+            Value::String(text) => text.trim().parse::<u64>().ok(),
+            _ => None,
+        }?;
+        (number >= 1).then_some(number)
+    };
+    let size = number(&pager.size)?;
+    let page = number(&pager.page).unwrap_or(1);
+    page_range(page, size, rows, total?)
 }
 
 /// The fewest cells a table column is cut to while its table's line does not fit the box.

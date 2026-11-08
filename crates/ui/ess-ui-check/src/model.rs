@@ -31,6 +31,23 @@
 //! reported for reading it (beyond10x/ess#286). An actor the model does not declare is `actor_in_model`;
 //! a page without `actor`, or an `UNMAPPED:` one, is not held to any actor's grants.
 //!
+//! # A host slot is held as a generated node is
+//!
+//! A host slot's `reads` and `commands` are names the document writes like any other (design
+//! `ui-host-slots`, section Check): the same walk yields them, so the model checks and the
+//! [`binding`] hold them to exactly what a generated node's are held to. The walk marks them, and
+//! every other name written on the slot (a field slot's `suggests` and `label_from`), as a
+//! slot's, and the coverage the report carries counts a view or command only a slot reaches as
+//! host-covered, never covered.
+//!
+//! # Served by the derived binding
+//!
+//! A view or command the model declares and no `reached_by: network` component serves is refused
+//! under `view_in_model` or `command_in_model`, with the words [`binding`] refuses it in, for a
+//! generated node and a host slot alike: `ess ui check --model` holds a name to the derived
+//! `ess-http/1` binding before `ess generate ui` does. A binding file (`--http`) is not an input of
+//! the check, so what only such a file leaves unrouted is refused at generation alone.
+//!
 //! Widget declarations are not checked here: `args.<param>` is unbound in them. Their views,
 //! commands and events are checked at each use, on the expanded body.
 
@@ -48,13 +65,13 @@ use ess_ui::binding::{
     Binding, CommandRoute, EnumLookup, EnumVariant, ErrorRoute, ModelEnums, QueryParam, ViewRoute,
 };
 use ess_ui::{
-    Action, ActorSource, Body, Carries, Channel, Composite, Document, ExportParams, Expr, NavPages,
-    NodePath, NodeRef, Paging, Reads, Region, RegionKind,
+    Action, ActorSource, Body, Carries, Channel, Composite, Document, ExportParams, Expr, HostSlot,
+    NavPages, NodePath, NodeRef, Paging, Reads, Region, RegionKind,
 };
 use ess_yaml::Value;
 
 use crate::walk::{composite_reads, in_declaration, is_section, page_of, section_of};
-use crate::{CheckError, Sink};
+use crate::{CheckError, Coverage, Sink};
 
 /// Fields by name (and wire name), each with the wire variants of its enum, if it is one.
 pub(crate) type Fields = BTreeMap<String, Option<Vec<String>>>;
@@ -86,6 +103,10 @@ pub struct Model {
     pub(crate) type_names: BTreeSet<String>,
     /// Every enum of the model by qualified name, with its variants as a choice offers them.
     enums: BTreeMap<String, Vec<EnumVariant>>,
+    /// The qualified views and commands some `reached_by: network` component serves on the
+    /// derived `ess-http/1` binding: what [`binding`] routes. A name the model declares outside
+    /// it is refused here as the binding refuses it.
+    served: BTreeSet<String>,
 }
 
 /// One view of the model: the bounded context that owns it and the parameters it declares.
@@ -239,7 +260,14 @@ impl Model {
             .flat_map(|actor| &actor.may)
             .map(|command| ir.command(command).domain.clone())
             .collect();
+        let surface = Surface::of(ir, None);
+        let served = surface
+            .views
+            .into_keys()
+            .chain(surface.commands.into_keys())
+            .collect();
         Self {
+            served,
             system: ir.system().to_string(),
             views: ir
                 .views()
@@ -372,12 +400,16 @@ impl Model {
     }
 
     fn command_ref(&self, sink: &mut Sink, path: &NodePath, name: &str) {
-        if self.command(name).is_none() {
-            sink.push(
+        match self.command(name) {
+            None => sink.push(
                 "command_in_model",
                 path,
                 format!("`{name}` names no command of model `{}`", self.system),
-            );
+            ),
+            Some(qualified) if !self.served.contains(&qualified) => {
+                sink.push("command_in_model", path, unserved("command", &qualified));
+            }
+            Some(_) => {}
         }
     }
 
@@ -411,6 +443,9 @@ impl Model {
                         self.view_ref(sink, &named.at, name);
                         continue;
                     };
+                    if !self.served.contains(&qualified) {
+                        sink.push("view_in_model", &named.at, unserved("view", &qualified));
+                    }
                     if body && grants_apply {
                         if let Some(section) = reading_section(document, &named.node) {
                             self.readable(sink, &section, &qualified, &view.domain);
@@ -427,6 +462,37 @@ impl Model {
             }
         }
         self.values(document, sink);
+        sink.coverage = Some(self.coverage(document));
+    }
+
+    /// The model's views and commands split by what reaches them (ADR section 2): covered by a
+    /// generated node, host-covered by a host slot alone, or uncovered. A name the model does not
+    /// have is no row; `view_in_model` and `command_in_model` report it.
+    fn coverage(&self, document: &Document) -> Coverage {
+        let mut generated = BTreeSet::new();
+        let mut hosted = BTreeSet::new();
+        for named in names(document) {
+            let row = match named.kind {
+                Kind::View { name, .. } => self.view(name).map(|(qualified, _)| (0, qualified)),
+                Kind::Command(name) => self.command(name).map(|qualified| (1, qualified)),
+                Kind::Event(_) => None,
+            };
+            if let Some(row) = row {
+                if named.host {
+                    hosted.insert(row);
+                } else {
+                    generated.insert(row);
+                }
+            }
+        }
+        let rows = self.views.len() + self.commands.len();
+        let covered = generated.len();
+        let host_covered = hosted.difference(&generated).count();
+        Coverage {
+            covered,
+            host_covered,
+            uncovered: rows - covered - host_covered,
+        }
     }
 
     /// Each page that names an actor of the model, with that actor's qualified name. A name the
@@ -1025,6 +1091,9 @@ struct Named<'a> {
     /// Where a finding about it goes.
     at: NodePath,
     kind: Kind<'a>,
+    /// `true` when a host slot names it — its `reads` and `commands`, or any other name written
+    /// on the slot, such as a field slot's `suggests` or `label_from` — not a generated node.
+    host: bool,
 }
 
 enum Kind<'a> {
@@ -1089,11 +1158,16 @@ fn names(document: &Document) -> Vec<Named<'_>> {
         if in_declaration(path) {
             continue; // checked at each use, on the expanded body
         }
+        // Every name written on a host slot is the slot's, not only its `reads` and `commands`: a
+        // field slot's `suggests` and `label_from` are read by the host component that draws it.
+        let slot = host_slot(located.node);
+        let host = slot.is_some();
         let mut push = |at: NodePath, kind| {
             out.push(Named {
                 node: path.clone(),
                 at,
                 kind,
+                host,
             });
         };
         match located.node {
@@ -1170,8 +1244,48 @@ fn names(document: &Document) -> Vec<Named<'_>> {
             }
             _ => {}
         }
+        if let Some(slot) = slot {
+            slot_names(path, slot, &mut out);
+        }
     }
     out
+}
+
+/// The host slot `node` is: a page or a field carrying `host`, or a body that is a slot.
+fn host_slot(node: NodeRef<'_>) -> Option<&HostSlot> {
+    match node {
+        NodeRef::Page(page) => page.host.as_ref(),
+        NodeRef::Field(field) => field.host.as_ref(),
+        _ => crate::walk::body_of(node).and_then(Body::host),
+    }
+}
+
+/// What a host slot at `path` reads and sends (ADR section 3): its `reads` as the composite read
+/// of a body, so a section slot is held to `section_readable` as a generated section is, and each
+/// of its `commands`. Marked as a slot's, so coverage counts them as host-covered.
+fn slot_names<'a>(path: &NodePath, slot: &'a HostSlot, out: &mut Vec<Named<'a>>) {
+    if let Some(reads) = &slot.reads {
+        if let Some(name) = &reads.view {
+            out.push(Named {
+                node: path.clone(),
+                at: path.child("reads"),
+                kind: Kind::View {
+                    name,
+                    bound: Bound::Read(Read::of(reads)),
+                    body: true,
+                },
+                host: true,
+            });
+        }
+    }
+    for command in &slot.commands {
+        out.push(Named {
+            node: path.clone(),
+            at: path.child("commands"),
+            kind: Kind::Command(command),
+            host: true,
+        });
+    }
 }
 
 /// The commands a shell region sends: the assistant's `does:`, and each account menu entry's
