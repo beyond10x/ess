@@ -35,9 +35,18 @@
 //!
 //! A host slot's `reads` and `commands` are names the document writes like any other (design
 //! `ui-host-slots`, section Check): the same walk yields them, so the model checks and the
-//! [`binding`] hold them to exactly what a generated node's are held to. The walk marks them as a
+//! [`binding`] hold them to exactly what a generated node's are held to. The walk marks them, and
+//! every other name written on the slot (a field slot's `suggests` and `label_from`), as a
 //! slot's, and the coverage the report carries counts a view or command only a slot reaches as
 //! host-covered, never covered.
+//!
+//! # Served by the derived binding
+//!
+//! A view or command the model declares and no `reached_by: network` component serves is refused
+//! under `view_in_model` or `command_in_model`, with the words [`binding`] refuses it in, for a
+//! generated node and a host slot alike: `ess ui check --model` holds a name to the derived
+//! `ess-http/1` binding before `ess generate ui` does. A binding file (`--http`) is not an input of
+//! the check, so what only such a file leaves unrouted is refused at generation alone.
 //!
 //! Widget declarations are not checked here: `args.<param>` is unbound in them. Their views,
 //! commands and events are checked at each use, on the expanded body.
@@ -94,6 +103,10 @@ pub struct Model {
     pub(crate) type_names: BTreeSet<String>,
     /// Every enum of the model by qualified name, with its variants as a choice offers them.
     enums: BTreeMap<String, Vec<EnumVariant>>,
+    /// The qualified views and commands some `reached_by: network` component serves on the
+    /// derived `ess-http/1` binding: what [`binding`] routes. A name the model declares outside
+    /// it is refused here as the binding refuses it.
+    served: BTreeSet<String>,
 }
 
 /// One view of the model: the bounded context that owns it and the parameters it declares.
@@ -247,7 +260,14 @@ impl Model {
             .flat_map(|actor| &actor.may)
             .map(|command| ir.command(command).domain.clone())
             .collect();
+        let surface = Surface::of(ir, None);
+        let served = surface
+            .views
+            .into_keys()
+            .chain(surface.commands.into_keys())
+            .collect();
         Self {
+            served,
             system: ir.system().to_string(),
             views: ir
                 .views()
@@ -380,12 +400,16 @@ impl Model {
     }
 
     fn command_ref(&self, sink: &mut Sink, path: &NodePath, name: &str) {
-        if self.command(name).is_none() {
-            sink.push(
+        match self.command(name) {
+            None => sink.push(
                 "command_in_model",
                 path,
                 format!("`{name}` names no command of model `{}`", self.system),
-            );
+            ),
+            Some(qualified) if !self.served.contains(&qualified) => {
+                sink.push("command_in_model", path, unserved("command", &qualified));
+            }
+            Some(_) => {}
         }
     }
 
@@ -419,6 +443,9 @@ impl Model {
                         self.view_ref(sink, &named.at, name);
                         continue;
                     };
+                    if !self.served.contains(&qualified) {
+                        sink.push("view_in_model", &named.at, unserved("view", &qualified));
+                    }
                     if body && grants_apply {
                         if let Some(section) = reading_section(document, &named.node) {
                             self.readable(sink, &section, &qualified, &view.domain);
@@ -1064,7 +1091,8 @@ struct Named<'a> {
     /// Where a finding about it goes.
     at: NodePath,
     kind: Kind<'a>,
-    /// `true` when a host slot's `reads` or `commands` name it, not a generated node.
+    /// `true` when a host slot names it — its `reads` and `commands`, or any other name written
+    /// on the slot, such as a field slot's `suggests` or `label_from` — not a generated node.
     host: bool,
 }
 
@@ -1130,12 +1158,16 @@ fn names(document: &Document) -> Vec<Named<'_>> {
         if in_declaration(path) {
             continue; // checked at each use, on the expanded body
         }
+        // Every name written on a host slot is the slot's, not only its `reads` and `commands`: a
+        // field slot's `suggests` and `label_from` are read by the host component that draws it.
+        let slot = host_slot(located.node);
+        let host = slot.is_some();
         let mut push = |at: NodePath, kind| {
             out.push(Named {
                 node: path.clone(),
                 at,
                 kind,
-                host: false,
+                host,
             });
         };
         match located.node {
@@ -1212,7 +1244,7 @@ fn names(document: &Document) -> Vec<Named<'_>> {
             }
             _ => {}
         }
-        if let Some(slot) = host_slot(located.node) {
+        if let Some(slot) = slot {
             slot_names(path, slot, &mut out);
         }
     }

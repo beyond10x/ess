@@ -178,7 +178,8 @@ pub const CHECKS: &[Check] = &[
     rule("enum_values"),
     // Every key of an overlay's `params` is read inside it as `params.<key>`.
     rule("overlay_params"),
-    // With `--model`: the names the document resolves in the ESS model.
+    // With `--model`: the names the document resolves in the ESS model; a view or command no
+    // `reached_by: network` component serves is refused under the first two.
     rule("view_in_model"),
     rule("command_in_model"),
     rule("event_in_model"),
