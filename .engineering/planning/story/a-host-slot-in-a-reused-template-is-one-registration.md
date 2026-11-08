@@ -14,6 +14,8 @@ relations:
 - derived_from: design:ui-host-slots
 - depends_on: story:a-ui-document-declares-a-host-slot
 - serves: vision:O2
+- depends_on: story:the-react-project-registers-each-declared-host-slot
+- depends_on: story:the-terminal-draws-a-host-slot-as-a-labelled-region
 revision: 2
 ---
 ## Need

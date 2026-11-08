@@ -7,6 +7,7 @@ title: The ui test runner acts on an action inside an overlay of every kind
 relations:
 - serves: vision:O2
 - decomposes: epic:ess-ui-renderer-neutral-ui
+- depends_on: story:the-terminal-draws-a-host-slot-as-a-labelled-region
 revision: 3
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-07T21:42:29Z", actor: "human:timo", revision: 2}
