@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-form-field-over-a-union-draws-the-chosen-variants-fields
 kind: story
-status: draft
+status: active
 title: A form field over a union draws the chosen variant's fields, and a column or record shows one
 summary: 'A union-typed input edits as a variant choice plus that variant''s fields, layout optional via variants: (UI adopter composition report, P2)'
 tags:
@@ -34,7 +34,10 @@ scope:
   path: schemas/ui/ess-ui.schema.yaml
 - confidence: inferred
   path: website/docs/reference/ess-ui.md
-revision: 2
+revision: 6
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-08T15:49:59Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"review_outcome":2}}}
+- {from: "proposed", to: "active", at: "2026-11-08T15:50:00Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":2}}}
 ---
 ## Need
 
@@ -106,11 +109,27 @@ follows from the field's type), and typing an opaque payload is the model's `uni
 UI key. Depends on the list-of-records story, which introduces the nested `Field` list checked
 against a struct. Design page under `docs/design/` first.
 
+**Read side added under the grid policy.** The request's P2 asks for the write side only (a group
+of fields chosen by a type field, written into one typed object). A column or record field showing
+a union value as its variant and that variant's fields is added for the same reason as the
+list-of-records story's read side: a nested value is opened for every field position (form input,
+form group, tab, collection column, record field), not for one cell, so a value a form writes can
+also be shown where it is read.
+
+**Content key.** The submitted value uses the union's existing adjacent tagging: the tag member and
+the payload under the content key `value`, or `content` where the tag is itself named `value`
+(`ess_gen::schema::union_content_key`, `docs/design/union-unit-variants.md` § Wire form). This story
+adds no authored content key; `story:a-guard-reads-a-union-tag-and-a-union-names-its-content-key`
+is not a dependency, and if it later lets a union name its content key, the form submits under that
+key as every other projection does.
+
 ## Acceptance
 
 - With `--model`, a form field over a union input draws a choice of its variants (display names)
-  and the chosen variant's struct fields, and submits `{<tag>: <variant>, <content>: {…}}`; a unit
-  variant submits the tag only (a React test).
+  and the chosen variant's struct fields, and submits `{<tag>: <variant>, value: {…}}` (the content
+  key is `content` where the tag member is itself named `value`, as
+  `ess_gen::schema::union_content_key` projects it); a unit variant submits the tag only (a React
+  test).
 - Changing the variant clears the previous variant's inputs from the submitted value.
 - `variants: {Webhook: [url]}` shows only `url` for that variant; `ess ui check --model` refuses, by
   node path, a `variants` key the union does not declare, a field its variant struct lacks, and

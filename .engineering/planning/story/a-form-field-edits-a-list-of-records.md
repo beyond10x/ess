@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-form-field-edits-a-list-of-records
 kind: story
-status: draft
+status: active
 title: A form field edits a list of records, and a column or record draws one
 summary: 'as: list with fields: edits and shows a List of structs; bounds from the model''s .count invariant (UI adopter composition report, P1)'
 tags:
@@ -31,7 +31,10 @@ scope:
   path: schemas/ui/ess-ui.schema.yaml
 - confidence: inferred
   path: website/docs/reference/ess-ui.md
-revision: 2
+revision: 4
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-08T15:49:57Z", actor: "human:timo", revision: 3}
+- {from: "proposed", to: "active", at: "2026-11-08T15:49:58Z", actor: "human:timo", revision: 4}
 ---
 ## Need
 
