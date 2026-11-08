@@ -29,6 +29,8 @@ export interface FieldSpec {
   suggests?: { reads: ReadSpec; value?: string };
   /** Help text or link shown with the input, or on its column header. */
   help?: HelpSpec;
+  /** The host slot the field is: the host's component, drawn in place of the value or input. */
+  host?: ReactNode;
 }
 
 /** Help text or link (`help: {text, link}`). */
@@ -128,6 +130,10 @@ export function valueLabel(labels: Readonly<Record<string, string>> | undefined,
 /** A field's value in a row, rendered by its `as`. */
 export function FieldValue(props: { field: FieldSpec; row: unknown }): ReactNode {
   const { field } = props;
+  // A field that is a host slot: the host draws the value.
+  if (field.host !== undefined) {
+    return field.host;
+  }
   const value = display(props.row, field.field);
   let content: ReactNode;
   switch (field.as) {
@@ -330,6 +336,10 @@ export function FieldInput(props: { field: FieldSpec }): ReactNode {
   const visible = useFieldVisible(field);
   if (!visible) {
     return null;
+  }
+  // A field that is a host slot: the host draws the input.
+  if (field.host !== undefined) {
+    return field.host;
   }
   const target = field.binds ?? `draft.${field.field}`;
   const value = evaluate(target, scope.values);

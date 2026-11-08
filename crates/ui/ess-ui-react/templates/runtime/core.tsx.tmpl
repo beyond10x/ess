@@ -276,6 +276,8 @@ export function PageFrame(props: {
   "data-ui-path": string;
   title?: string;
   profile?: string;
+  /** The host slot the page is: the `host` its component is registered under. */
+  host?: string;
   children?: ReactNode;
 }): ReactNode {
   const [sections, setSections] = useState<Record<string, SectionInfo>>({});
@@ -292,7 +294,7 @@ export function PageFrame(props: {
   return (
     <RegistryContext.Provider value={report}>
       <ScopeLayer values={{ section: sections, same_as: (name: string) => sections[name]?.params }}>
-        <main className="ui-page" data-ui-path={props["data-ui-path"]} data-profile={props.profile}>
+        <main className="ui-page" data-ui-path={props["data-ui-path"]} data-ui-host={props.host} data-profile={props.profile}>
           {props.children}
         </main>
       </ScopeLayer>
@@ -408,6 +410,8 @@ export function SectionFrame(props: {
   emptyAction?: ReactNode;
   degrades?: Record<string, string>;
   profile?: string;
+  /** The host slot the section is: the `host` its component is registered under. */
+  host?: string;
   /** The page header's title reads this section's record: report its first row. */
   reportsRow?: boolean;
   children?: ReactNode;
@@ -472,6 +476,7 @@ export function SectionFrame(props: {
           className={`ui-section${mark === "dim" || mark === "both" ? " ui-dim" : ""}`}
           data-ui-path={props["data-ui-path"]}
           data-status={data?.status ?? "ready"}
+          data-ui-host={props.host}
           data-profile={props.profile}
         >
           {props.title ? <h2 className="ui-section-title">{props.title}</h2> : null}

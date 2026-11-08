@@ -1,0 +1,108 @@
+// Host slots: the places the document leaves to the host application, which draws each with a
+// component of its own. `src/hosts.ts` types the registry, one entry per slot; the app takes it
+// and each slot renders the component registered under its `host` name, handing it a data
+// adapter narrowed to the slot's declared reads and commands, the slot's document path, the
+// page's route parameters and the scope values in force where the slot stands.
+
+import { createContext, useContext, useMemo, type ReactNode } from "react";
+import { usePageParams, useScope, useUiPath } from "./core";
+import { DataError, dataAdapter, invalidate, type ReadRequest, type ReadResult } from "./data";
+import type { Json } from "./json";
+
+/** A read a host component asks for: one of the views its slot declares. */
+export type HostReadRequest<View extends string> = Omit<ReadRequest, "view"> & { view: View };
+
+/** Every access a slot may declare; a slot's adapter keeps the part it declares. */
+interface HostAccess<View extends string, Command extends string> {
+  read: (request: HostReadRequest<View>) => Promise<ReadResult>;
+  send: (command: Command, input: Record<string, unknown>) => Promise<Json>;
+}
+
+/**
+ * The `DataAdapter` narrowed to a slot's declarations: `read` of the views it reads, `send` of
+ * the commands it sends, and neither where it declares none.
+ */
+export type HostAdapter<View extends string = never, Command extends string = never> = Pick<
+  HostAccess<View, Command>,
+  ([View] extends [never] ? never : "read") | ([Command] extends [never] ? never : "send")
+>;
+
+/** What a host component receives. */
+export interface HostProps<View extends string = never, Command extends string = never> {
+  /** The data adapter, narrowed to the slot's declared reads and commands. */
+  adapter: HostAdapter<View, Command>;
+  /** The slot's document path. */
+  path: string;
+  /** The page's route parameters. */
+  page: Readonly<Record<string, string | undefined>>;
+  /** The scope values in force at the slot's position. */
+  scope: Readonly<Record<string, unknown>>;
+}
+
+/** A host component: what the host registers for one slot. */
+export type HostComponent<View extends string = never, Command extends string = never> = (
+  props: HostProps<View, Command>,
+) => ReactNode;
+
+type Registry = Readonly<Record<string, ((props: never) => ReactNode) | undefined>>;
+
+const HostContext = createContext<Registry>({});
+
+/** Makes `hosts`, the host's registry, the components the slots below render. */
+export function HostRegistry(props: { hosts: object; children?: ReactNode }): ReactNode {
+  return <HostContext.Provider value={props.hosts as Registry}>{props.children}</HostContext.Provider>;
+}
+
+/** An adapter that reads `views` and sends `commands` through the adapter in use, and nothing else. */
+function narrow(views: readonly string[], commands: readonly string[]): Record<string, unknown> {
+  const adapter: Record<string, unknown> = {};
+  if (views.length > 0) {
+    adapter.read = (request: ReadRequest) =>
+      views.includes(request.view)
+        ? dataAdapter().read(request)
+        : Promise.reject(new DataError(`this host slot does not read ${request.view}`, 403));
+  }
+  if (commands.length > 0) {
+    adapter.send = async (command: string, input: Record<string, unknown>) => {
+      if (!commands.includes(command)) {
+        throw new DataError(`this host slot does not send ${command}`, 403);
+      }
+      const answer = await dataAdapter().send(command, input);
+      invalidate();
+      return answer;
+    };
+  }
+  return adapter;
+}
+
+/**
+ * A host slot: the component registered under `host`. In a section, overlay or page frame the
+ * frame carries the slot's path and host; anywhere else the slot's own element carries them.
+ */
+export function HostSlot(props: {
+  path: string;
+  host: string;
+  reads?: string[];
+  commands?: string[];
+  /** The enclosing frame carries `data-ui-path` and `data-ui-host`. */
+  framed?: boolean;
+}): ReactNode {
+  const Component = useContext(HostContext)[props.host] as ((props: HostProps<string, string>) => ReactNode) | undefined;
+  const scope = useScope();
+  const page = usePageParams();
+  const uiPath = useUiPath(props.path);
+  const reads = props.reads ?? [];
+  const commands = props.commands ?? [];
+  const adapter = useMemo(() => narrow(reads, commands), [reads.join("\n"), commands.join("\n")]);
+  const content = Component ? (
+    <Component adapter={adapter as HostAdapter<string, string>} path={props.path} page={page} scope={scope.values} />
+  ) : null;
+  if (props.framed) {
+    return content;
+  }
+  return (
+    <div className="ui-host" data-ui-path={uiPath} data-ui-host={props.host}>
+      {content}
+    </div>
+  );
+}

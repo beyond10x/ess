@@ -149,7 +149,10 @@ fn fnv(text: &str) -> u64 {
 /// read's client filter (`fields.tsx`). The whole-project digest re-pinned for
 /// story:a-null-tag-draws-no-chip: a null entry of a tags value draws no chip and is neither shown,
 /// compared nor written back by the tags input (`fields.tsx`). The whole-project digest re-pinned
-/// for a client pager, the pager range and `field: .` (`collection.tsx`, `core.tsx`).
+/// for a client pager, the pager range and `field: .` (`collection.tsx`, `core.tsx`). The
+/// whole-project digest re-pinned for story:the-react-project-registers-each-declared-host-slot:
+/// the page, section and overlay frames take an optional `host` and a field an optional `host`
+/// node (`core.tsx`, `overlays.tsx`, `fields.tsx`).
 const PLAIN: [(&str, u64); 7] = [
     ("README.md", 0xdae6_c3b6_7e5c_2d28),
     ("src/main.tsx", 0x6fd5_ef21_0230_ebac),
@@ -159,7 +162,7 @@ const PLAIN: [(&str, u64); 7] = [
     ("src/runtime/data.ts", 0x400e_ae09_0d5f_e141),
     ("www/index.html", 0x5972_6d4a_5ee2_5ce2),
 ];
-const PLAIN_PROJECT: u64 = 0xf7f1_e985_ebbc_a827;
+const PLAIN_PROJECT: u64 = 0x0bc4_0592_8955_3713;
 
 #[test]
 fn without_a_model_the_project_is_byte_identical() {
@@ -186,7 +189,8 @@ fn without_a_model_the_project_is_byte_identical() {
     assert_eq!(
         fnv(&whole),
         PLAIN_PROJECT,
-        "the project differs from the consolidated unbound projection: {:?}",
+        "the project (digest {:#x}) differs from the consolidated unbound projection: {:?}",
+        fnv(&whole),
         plain.files.keys()
     );
     for absent in ["src/binding.ts", "src/runtime/answer.ts"] {
