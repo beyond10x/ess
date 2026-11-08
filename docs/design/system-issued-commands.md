@@ -135,13 +135,27 @@ not drive them.
 
 ### Inputs: decided and minted
 
-- **Every input of a system-issued command is decided by the system.** The await request does not
-  carry the scenario's values, so a target cannot echo them back. The answer reports the input the
-  system used. The runner holds each declared input field in that answer to its declared type
-  (`ESS-CF-PAYLOAD`). It holds the identity input to the awaited instance (`ESS-CF-AWAIT`). It
-  compares any input value the scenario states (`ESS-CF-AWAIT`). Synthesis states none, because
-  the specification does not determine how the system decides. An authored scenario may state
-  values for the arrangement its author built, for example the one free worker.
+- **Every input of a system-issued command is decided by the system.** The answer reports the
+  input the system used. The runner holds each declared input field in that answer to its declared
+  type (`ESS-CF-PAYLOAD`). It holds the identity input to the awaited instance (`ESS-CF-AWAIT`). It
+  compares any input value the scenario states (`ESS-CF-AWAIT`), and hands those values to the
+  target in the request (`compared`, *Target interface*), so a test adapter that steers its
+  system's choice can issue the command with them. An authored scenario may state values for the
+  arrangement its author built, for example the one free worker.
+- **Synthesis states what selects the claimed branch, and nothing else.** Where a `when:` guard
+  that selects the claimed accepting branch reads an input the system decides, the await states
+  the value synthesis sent for it, which the guard admits: `RecordCheck/outcome/rejected`, guarded
+  `when: verdict == Refused`, is awaited with `input: {verdict: Refused}`. The guards read are the
+  claimed branch's own (an `external:` branch's eligibility `when:` included) and, for a default
+  branch, every other branch's `when:`, which the default is taken by refuting. Each such input is
+  stated top-level and whole; the identity input is the instance and is never stated. Without it
+  the await is answered by whichever branch the system's choice selects, and a scenario claiming
+  one of two branches an input guard tells apart fails a correct target that took the other (an
+  adopter report against 0.69.2, the neutral repro `tests/fixtures/system-guard.yaml`). An await
+  states a value for each input it names and cannot state that one is absent, so a branch such a
+  guard selects over an input synthesis sent absent has no scenario: it is refused by scenario as
+  `ESS-SYNTH-006`, a construct not synthesised yet. Every other input stays unstated, because the
+  specification does not determine how the system decides it.
 - **A stated relation is checked without an oracle.** Where the reached outcome writes an input
   into an event payload or a stored field (`payload: {worker: input.worker}`, `sets: {worker:
   input.worker}`), the expectations after the await read the new value `{kind: awaited, field:
@@ -164,7 +178,7 @@ not drive them.
 
 | what selects the branch | today | system-issued |
 |---|---|---|
-| an accepting branch (`moves:`/`updates:` + `instance:`) | `execute_command`, `expect_outcome` | `await_outcome`, then the same expectations |
+| an accepting branch (`moves:`/`updates:` + `instance:`) | `execute_command`, `expect_outcome` | `await_outcome`, stating the inputs a `when:` guard selecting the branch reads (*Inputs: decided and minted*), then the same expectations |
 | `external:`, refusal or not, `compensates:` included | `configure_external_outcome`, `execute_command`, `expect_error` | `configure_external_outcome`, `await_outcome`, `expect_outcome`, `expect_error`. The system did issue the command, and the outcome it reached is the refusal |
 | the addressed subject alone: `wrong_state:`, `when_subject_state:`, `when_subject:`, `unknown_instance:` | `execute_command`, `expect_error`, subject unchanged | `expect_not_issued`: **nothing within the bound**, no event the command's outcomes publish, the subject unchanged (absent, for `unknown_instance:`) |
 | the input, or rows the input names: `when:` input guards, a refusing default, `input_absent:`, `when_related:` | `execute_command`, `expect_error` | no scenario from synthesis. The system chooses the input, so a refusal that some other choice would avoid is not an observable obligation. Recorded as `ESS-SYNTH-024`, naming the branch. An authored scenario may still claim `expect_not_issued` over an arrangement its author states |
@@ -237,8 +251,8 @@ A model without either key keeps its IR bytes.
 ```
 
 - **`await_outcome`** requires an outcome of `command` on `instance`. `within` is present exactly
-  when the command declares `await_within:`. `input` is partial: the stated values, authored only.
-  The answer becomes the scenario's current command result, so every existing expectation that
+  when the command declares `await_within:`. `input` is partial: the stated values, an author's
+  or, for an input a guard selecting the claimed branch reads, synthesis's. The answer becomes the scenario's current command result, so every existing expectation that
   reads "the preceding command" reads the awaited one: `expect_outcome`, `expect_error`,
   `expect_event`, `expect_event_values`, `expect_no_event`, `expect_no_events`,
   `expect_direct_response`. Nothing about them changes.
@@ -315,7 +329,7 @@ pub struct AwaitRequest {
     pub instance: Node,              // the identity input, resolved
     pub within: Option<Elapsed>,     // the declared bound, where there is one
     pub deadline: Deadline,          // the runner's, when there is none
-    pub compared: BTreeSet<String>,  // input fields the scenario will compare: names only
+    pub compared: BTreeMap<String, Node>,  // each input value the scenario states, resolved
 }
 
 pub enum AwaitAnswer {
@@ -324,8 +338,12 @@ pub enum AwaitAnswer {
 }
 ```
 
-`compared` carries names, never values. Real targets ignore it. The interpreter reads it to answer
-unsupported where the scenario compares a value the model does not determine (see *Every lane*).
+`compared` carries each input value the step states, resolved by the runner
+(`decision-blocker:system-issued-await-carries-compared-values`, option A; until 0.91.0 it carried
+names only). A test adapter that steers its system's choice issues the command with these values,
+as the interpreter does: a stated value is the only candidate of its input (see *Every lane*). A
+target that does not steer is held to them all the same, because the runner compares each with
+the input the answer carries.
 The wrappers that forward a target (`Untraced<T>` in `reference.rs`, `Faulty<T>`) must forward the
 method. A wrapper that falls back to the default hides the capability.
 
@@ -373,7 +391,7 @@ merge order. Each entry gets a row in `website/docs/reference/diagnostics.md`.
 | domain, compiler | the keys, the validation table, the IR fields | `ess-domain/src/{actor,command,binding,system}.rs`, `ess-compiler/src/{ir,resolve}.rs`, `schemas/generated/ess.schema.json` |
 | synthesis | one rewrite pass over each built scenario: a step that drives a system-issued command becomes `await_outcome` (or `expect_not_issued` for the subject row of the branch table), decided-input literals are dropped, expectations sourced from an input read `{kind: awaited}`; the two refusals; no admitted-grant scenario for a system actor | `synthesize/system_issued.rs` (new), its call where `synthesize.rs` collects scenarios, `synthesize/grant.rs` |
 | Rust runner | the two steps and the value, the bound loop, `ESS-CF-AWAIT` | `runner.rs`, `runner/await_outcome.rs` (new), `report.rs` |
-| interpreter | issues only when awaited. The identity input is the instance. Every other input is decided by candidates in a fixed order: for an input a `when_related:` guard reads, the identities of held rows of that entity in canonical order; otherwise the value its mint counter gives (`interpret.rs`, *Where the identifiers come from*); for an `Optional` input, absent first. The first candidate under which `execute` selects one accepting branch, or a forced external one, is reached. No candidate reached means `NotIssued`. Candidates reaching different accepting branches mean unsupported ("nothing is chosen here", `interpret.rs`). A `compared` name that the model does not determine also means unsupported. `within` is answered as `observe_elapsed` is | `interpret.rs`, `interpret/await_outcome.rs` (new) |
+| interpreter | issues only when awaited. The identity input is the instance. Every other input is decided by candidates in a fixed order: for an input a `when_related:` guard reads, the identities of held rows of that entity in canonical order; otherwise the value its mint counter gives (`interpret.rs`, *Where the identifiers come from*); for an `Optional` input, absent first. The first candidate under which `execute` selects one accepting branch, or a forced external one, is reached. No candidate reached means `NotIssued`. Candidates reaching different accepting branches mean unsupported ("nothing is chosen here", `interpret.rs`). A value `compared` states is the only candidate of its input. `within` is answered as `observe_elapsed` is | `interpret.rs`, `interpret/await_outcome.rs` (new) |
 | authored | an act naming a system-issued command, with no actor, compiles to `await_outcome` (an accepting or external outcome) or `expect_not_issued` (a refusal outcome). Its `input:` is the stated, partial input, and the identity input is required. `events:` compile as after any act; on a refusal act, which nothing issues, `no_events:` joins `unpublished` and the claims only an issued command answers are refused (`ESS-AUTHOR-046`) | `authored.rs` |
 | Go runner, TypeScript runner | stage 2: the same steps, value, bound and codes; `AwaitTarget` / `awaitOutcome?`; the majors tables; the explorers skip system-issued commands | `go/{runtime,prerequisites,replay,explore}.go`, `go/mod.rs`; `ts/{runtime,explore}.ts`, `ts/mod.rs` |
 | browser replay | refuses suites `/52`–`/53` by version, as it refuses every major it does not run | `web_replay.rs`, `web_execution.rs` (test only, where the version table already refuses) |

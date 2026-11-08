@@ -1,0 +1,80 @@
+# The neutral repro of an adopter report (2026-10-26, `system-guard`): a system inspector records a
+# verdict on an open check, and the verdict, an input the system decides, selects which of two
+# accepting branches is taken. Each awaited step states the verdict its branch's guard admits
+# (story:a-system-issued-awaited-step-honours-its-outcomes-input-guard).
+
+format: ess/27
+system: inspection
+version: v1
+domain: inspection.check
+types:
+  - {name: inspection.check.CheckId, kind: newtype, of: Uuid}
+  - {name: inspection.check.Verdict, kind: enum, variants: [Passed, Refused]}
+entities:
+  - name: inspection.check.Check
+    identity: {name: check_id, type: inspection.check.CheckId}
+    fields: []
+    lifecycle:
+      initial: Open
+      states: [Open, Accepted, Rejected]
+      terminal: [Accepted, Rejected]
+      transitions:
+        - {name: accept, from: [Open], to: Accepted}
+        - {name: reject, from: [Open], to: Rejected}
+errors:
+  - {name: inspection.check.CheckClosed, summary: The check is not open., fields: []}
+events:
+  - name: inspection.check.CheckOpened
+    fields:
+      - {name: check_id, type: inspection.check.CheckId}
+  - name: inspection.check.CheckAccepted
+    fields:
+      - {name: check_id, type: inspection.check.CheckId}
+  - name: inspection.check.CheckRejected
+    fields:
+      - {name: check_id, type: inspection.check.CheckId}
+actors:
+  - name: inspection.check.Clerk
+    may: [inspection.check.OpenCheck]
+  - name: inspection.check.Inspector
+    system: true
+    may: [inspection.check.RecordCheck]
+components:
+  - component: inspection-service
+    owns: {domains: [inspection.check]}
+    accepts:
+      commands: [inspection.check.OpenCheck, inspection.check.RecordCheck]
+    publishes:
+      events: [inspection.check.CheckOpened, inspection.check.CheckAccepted,
+               inspection.check.CheckRejected]
+    reached_by: network
+commands:
+  - name: inspection.check.OpenCheck
+    input: []
+    outcomes:
+      - name: opened
+        creates: inspection.check.Check
+        instance: check_id
+        emits: [inspection.check.CheckOpened]
+        payload:
+          inspection.check.CheckOpened: {check_id: {generated: true}}
+  - name: inspection.check.RecordCheck
+    input:
+      - {name: check_id, type: inspection.check.CheckId}
+      - {name: verdict, type: inspection.check.Verdict}
+    outcomes:
+      - name: accepted
+        when: verdict == Passed
+        moves: inspection.check.Check.accept
+        instance: check_id
+        emits: [inspection.check.CheckAccepted]
+        payload:
+          inspection.check.CheckAccepted: {check_id: input.check_id}
+      - name: rejected
+        when: verdict == Refused
+        moves: inspection.check.Check.reject
+        instance: check_id
+        emits: [inspection.check.CheckRejected]
+        payload:
+          inspection.check.CheckRejected: {check_id: input.check_id}
+      - {name: closed, wrong_state: true, error: inspection.check.CheckClosed}

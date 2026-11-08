@@ -106,7 +106,7 @@ impl<C: Clock> Runner<C> {
                 instance: instance.clone(),
                 within,
                 deadline,
-                compared: stated.keys().cloned().collect(),
+                compared: stated.clone(),
                 correlation: run.context.correlation.clone(),
             };
             match target.await_outcome(request) {
@@ -196,7 +196,7 @@ impl<C: Clock> Runner<C> {
                 instance: instance.clone(),
                 within,
                 deadline,
-                compared: std::collections::BTreeSet::new(),
+                compared: BTreeMap::new(),
                 correlation: run.context.correlation.clone(),
             };
             let failure = match target.await_outcome(request) {

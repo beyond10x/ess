@@ -2403,7 +2403,13 @@ pub enum ScenarioStep {
         /// bound is the runner's own eventual deadline.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         within: Option<ess_domain::binding::periodic::Period>,
-        /// Input values the scenario states and the answer must carry: partial, authored only.
+        /// Input values the scenario states and the answer must carry: partial. The runner hands
+        /// them to the target with the request ([`AwaitRequest::compared`]). An authored scenario
+        /// states what its author arranged; synthesis states, for each input the system decides
+        /// that a guard selecting the claimed branch reads, the value it chose to select it
+        /// (story:a-system-issued-awaited-step-honours-its-outcomes-input-guard).
+        ///
+        /// [`AwaitRequest::compared`]: crate::target::AwaitRequest::compared
         #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
         input: BTreeMap<String, ScenarioValue>,
         /// The command's declared input, flattened as an event payload's is: the answer's input
