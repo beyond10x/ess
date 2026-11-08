@@ -16,9 +16,12 @@
 //!   age of the tool; the number turns that into "upgrade the tool". Each major implies every one below
 //!   it.
 use std::cmp::Ordering;
+use std::collections::BTreeMap;
 
+use ess_compiler::ir::{EssIr, ResolvedAggregate, ResolvedBody, ResolvedEntity, ResolvedTypeRef};
+use ess_domain::types::{Primitive, MAX_TYPE_DEPTH};
 use ess_domain::view::AggregateFunction;
-use ess_primitives::facts::{FactValue, Number};
+use ess_primitives::facts::{FactPath, FactValue, Number};
 use ess_primitives::node::Node;
 use ess_primitives::time::Rfc3339Instant;
 
@@ -142,6 +145,236 @@ pub fn evaluate(function: AggregateFunction, values: &[Node], kind: ValueKind) -
             decimal(divide_half_even(numerator, denominator)?, AVG_SCALE)
         }
     }
+}
+
+/// How the values one measure reads compare (ess/36, `docs/design/generic-language-features.md`
+/// § G3): a [`ValueKind`], and where the values are a `Duration` or an enum declaring
+/// `ordered: true`, what [`measured`] turns them into first.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum MeasureKind {
+    /// Compared as the kind says.
+    Plain(ValueKind),
+    /// Elapsed seconds: [`measured`] reads each as a number, and a `sum`, `min` or `max` is
+    /// spelled back as a `Duration`; a mean stays the `Decimal` of seconds.
+    Duration,
+    /// The variants of an ordered enum, in declaration order: [`measured`] reads each as its
+    /// position, and a `min` or `max` is spelled back as the variant.
+    Ordered(Vec<String>),
+}
+
+/// How the values of a measure over `type_ref`, a source field's declared type, compare.
+pub fn field_kind(ir: &EssIr, type_ref: &ResolvedTypeRef) -> MeasureKind {
+    let mut current = type_ref.required();
+    for _ in 0..=MAX_TYPE_DEPTH {
+        let ResolvedTypeRef::Declared { name } = current else {
+            break;
+        };
+        let declared = ir.named_type(name);
+        match &declared.body {
+            ResolvedBody::Newtype { of, .. } => current = of.required(),
+            ResolvedBody::Enum { variants } if declared.ordered => {
+                return MeasureKind::Ordered(
+                    variants
+                        .iter()
+                        .map(|variant| variant.name().to_owned())
+                        .collect(),
+                )
+            }
+            _ => return MeasureKind::Plain(ValueKind::Other),
+        }
+    }
+    match current {
+        ResolvedTypeRef::Primitive {
+            name: Primitive::Integer | Primitive::Decimal,
+        } => MeasureKind::Plain(ValueKind::Numeric),
+        ResolvedTypeRef::Primitive {
+            name: Primitive::String,
+        } => MeasureKind::Plain(ValueKind::Text),
+        ResolvedTypeRef::Primitive {
+            name: Primitive::Timestamp,
+        } => MeasureKind::Plain(ValueKind::Timestamp),
+        ResolvedTypeRef::Primitive {
+            name: Primitive::Duration,
+        } => MeasureKind::Duration,
+        _ => MeasureKind::Plain(ValueKind::Other),
+    }
+}
+
+/// How the values of `aggregate` over rows of `entity` compare: its input field's, or what its
+/// expression computes; [`ValueKind::Other`] for `count`, which reads no value.
+pub fn measure_kind(
+    ir: &EssIr,
+    entity: &ResolvedEntity,
+    aggregate: &ResolvedAggregate,
+) -> MeasureKind {
+    use ess_primitives::expr::Kind;
+    match (&aggregate.input, &aggregate.expr) {
+        (Some(input), _) => entity
+            .observable_field(&input.name)
+            .map_or(MeasureKind::Plain(ValueKind::Other), |field| {
+                field_kind(ir, &field.type_ref)
+            }),
+        (None, Some(measured)) => match measured.typed.kind {
+            Kind::Integer | Kind::Decimal => MeasureKind::Plain(ValueKind::Numeric),
+            Kind::String => MeasureKind::Plain(ValueKind::Text),
+            Kind::Timestamp => MeasureKind::Plain(ValueKind::Timestamp),
+            Kind::Duration => MeasureKind::Duration,
+            Kind::Bytes | Kind::Boolean => MeasureKind::Plain(ValueKind::Other),
+        },
+        (None, None) => MeasureKind::Plain(ValueKind::Other),
+    }
+}
+
+/// The value `aggregate` reads off one source row of `entity`, `row` holding its observable
+/// fields by name, in the form [`evaluate_measure`] compares: `null` where it is absent, and `None`
+/// where it is unknown — an expression over a value it cannot read.
+///
+/// A field input is the row's value; an expression (ess/36) is evaluated by the shared evaluator,
+/// a read `<field>.<attribute>` reading that attribute of the variant the row holds. A `Duration`
+/// is read as its elapsed seconds and an ordered enum's variant as its position, so the functions
+/// compare them as numbers.
+pub fn measured(
+    ir: &EssIr,
+    entity: &ResolvedEntity,
+    aggregate: &ResolvedAggregate,
+    row: &BTreeMap<String, Node>,
+) -> Option<Node> {
+    use ess_primitives::expr::{Evaluated, Reading, Value};
+    let kind = measure_kind(ir, entity, aggregate);
+    let held = match (&aggregate.input, &aggregate.expr) {
+        (Some(input), _) => row.get(&input.name).cloned().unwrap_or(Node::Null),
+        (None, Some(measured)) => {
+            let reads = |path: &FactPath| match path.segments() {
+                [field] => row.get(field).map_or(Reading::Absent, Reading::of_node),
+                [field, attribute] => match row.get(field) {
+                    None | Some(Node::Null) => Reading::Absent,
+                    Some(Node::Text(variant)) => {
+                        attribute_of(ir, entity, field, variant, attribute)
+                    }
+                    Some(_) => Reading::Unknown,
+                },
+                _ => Reading::Unknown,
+            };
+            match measured.expr.evaluate(&reads) {
+                Evaluated::Absent => Node::Null,
+                Evaluated::Unknown => return None,
+                Evaluated::Value(Value::Duration(seconds)) => {
+                    return Some(Node::Number(Number::from(i64::try_from(seconds).ok()?)))
+                }
+                value @ Evaluated::Value(_) => value.to_node()?,
+            }
+        }
+        (None, None) => return Some(Node::Null),
+    };
+    Some(match (&kind, held) {
+        (_, Node::Null) => Node::Null,
+        (MeasureKind::Duration, Node::Text(text)) => {
+            Node::Number(Number::from(ess_primitives::expr::parse_elapsed(&text)?))
+        }
+        (MeasureKind::Ordered(variants), Node::Text(text)) => Node::Number(Number::from(
+            variants.iter().position(|variant| *variant == text)?,
+        )),
+        (_, held) => held,
+    })
+}
+
+/// `attribute` of `variant`, the variant of the enum `field` of `entity` is declared as, as the
+/// expression reads it: absent where the variant leaves an `Optional` attribute unfilled.
+fn attribute_of(
+    ir: &EssIr,
+    entity: &ResolvedEntity,
+    field: &str,
+    variant: &str,
+    attribute: &str,
+) -> ess_primitives::expr::Reading {
+    use ess_primitives::expr::Reading;
+    let Some(declared) = entity.observable_field(field) else {
+        return Reading::Unknown;
+    };
+    let mut current = declared.type_ref.required();
+    for _ in 0..=MAX_TYPE_DEPTH {
+        let ResolvedTypeRef::Declared { name } = current else {
+            return Reading::Unknown;
+        };
+        match &ir.named_type(name).body {
+            ResolvedBody::Newtype { of, .. } => current = of.required(),
+            ResolvedBody::Enum { variants } => {
+                let Some(found) = variants
+                    .iter()
+                    .find(|declared| declared.name() == variant)
+                    .and_then(|declared| {
+                        declared
+                            .attributes
+                            .iter()
+                            .find(|held| held.name == attribute)
+                    })
+                else {
+                    return Reading::Unknown;
+                };
+                let Some(text) = &found.value else {
+                    return Reading::Absent;
+                };
+                let textual = matches!(
+                    found.type_ref.required(),
+                    ess_domain::types::TypeRef::Primitive(Primitive::String)
+                );
+                if textual {
+                    return Reading::Value(FactValue::Text(text.clone()));
+                }
+                return match FactValue::parse_literal(text) {
+                    FactValue::Number(number) => Reading::Value(FactValue::Number(number)),
+                    FactValue::Bool(value) => Reading::Value(FactValue::Bool(value)),
+                    FactValue::Text(_) => Reading::Value(FactValue::Text(text.clone())),
+                };
+            }
+            _ => return Reading::Unknown,
+        }
+    }
+    Reading::Unknown
+}
+
+/// The value `function` takes over `values`, each read by [`measured`] under `kind`, skipping
+/// absent values where `skip_absent` says so: [`evaluate`] or [`evaluate_skipping_absent`], with a
+/// `Duration`'s total and extremes spelled back as a `Duration` and an ordered enum's extremes as
+/// the variant.
+pub fn evaluate_measure(
+    function: AggregateFunction,
+    values: &[Node],
+    kind: &MeasureKind,
+    skip_absent: bool,
+) -> Option<Node> {
+    let plain = match kind {
+        MeasureKind::Plain(kind) => *kind,
+        MeasureKind::Duration | MeasureKind::Ordered(_) => ValueKind::Numeric,
+    };
+    let value = if skip_absent {
+        evaluate_skipping_absent(function, values, plain)
+    } else {
+        evaluate(function, values, plain)
+    }?;
+    let spelled = matches!(
+        function,
+        AggregateFunction::Sum | AggregateFunction::Min | AggregateFunction::Max
+    );
+    Some(match (kind, &value) {
+        (MeasureKind::Duration, Node::Number(number)) if spelled => {
+            let seconds = number.as_i64()?;
+            if seconds < 0 {
+                return None;
+            }
+            Node::Text(format!("PT{seconds}S"))
+        }
+        (MeasureKind::Ordered(variants), Node::Number(number))
+            if function != AggregateFunction::Sum && spelled =>
+        {
+            Node::Text(
+                variants
+                    .get(usize::try_from(number.as_i64()?).ok()?)?
+                    .clone(),
+            )
+        }
+        _ => value,
+    })
 }
 
 /// The value a skipping aggregate (`skip_absent: true`, `docs/design/aggregate-views.md`, "Absent

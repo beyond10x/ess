@@ -358,6 +358,10 @@ fn type_changes() -> Vec<TypeChange> {
             before: vec![was.clone()],
             after: vec![is.clone()],
         },
+        TypeChange::OrderedChanged {
+            before: false,
+            after: true,
+        },
         TypeChange::VariantTypeChanged {
             variant: "V".to_owned(),
             before: was.clone(),

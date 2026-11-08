@@ -1054,6 +1054,7 @@ impl EntitySpec {
             reading: None,
             name: self.name.child(Self::STATE_TYPE),
             body: crate::types::TypeBody::Enum {
+                ordered: false,
                 variants: self
                     .states
                     .states

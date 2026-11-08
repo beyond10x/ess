@@ -736,7 +736,7 @@ impl TypeEnvironment for DomainEnvironment<'_> {
             {
                 TypeBody::Newtype { of, .. } => Shape::Alias(of.clone()),
                 TypeBody::Struct { .. } => Shape::Struct,
-                TypeBody::Enum { variants } => Shape::Enum(
+                TypeBody::Enum { variants, .. } => Shape::Enum(
                     variants
                         .iter()
                         .map(|variant| variant.name().to_owned())
@@ -750,7 +750,7 @@ impl TypeEnvironment for DomainEnvironment<'_> {
         let TypeRef::Named(declared) = reference else {
             return None;
         };
-        let TypeBody::Enum { variants } = &self.registry.get(declared)?.body else {
+        let TypeBody::Enum { variants, .. } = &self.registry.get(declared)?.body else {
             return None;
         };
         let first = variants.first()?;
@@ -3981,7 +3981,7 @@ fn attribute_words(registry: &TypeRegistry, type_ref: &TypeRef) -> Option<Vec<St
             TypeRef::Optional(inner) => current = inner,
             TypeRef::Named(name) => match &registry.get(name)?.body {
                 TypeBody::Newtype { of, .. } => current = of,
-                TypeBody::Enum { variants } => {
+                TypeBody::Enum { variants, .. } => {
                     return Some(
                         variants
                             .iter()

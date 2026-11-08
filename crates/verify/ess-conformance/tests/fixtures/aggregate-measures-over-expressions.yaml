@@ -1,0 +1,82 @@
+format: ess/36
+system: demo
+version: v1
+domain: demo.ledger
+types:
+  - {name: demo.ledger.WindowId, kind: newtype, of: Uuid}
+  # Declared worst-last, so that declaration order and alphabetical order disagree: `Minor` is the
+  # least level and the greatest word.
+  - name: demo.ledger.ImpactLevel
+    kind: enum
+    ordered: true
+    attributes:
+      - {name: weight, type: Integer}
+    variants:
+      - {name: Minor, attributes: {weight: 1}}
+      - {name: Major, attributes: {weight: 3}}
+      - {name: Critical, attributes: {weight: 10}}
+entities:
+  - name: demo.ledger.Window
+    identity: {name: window_id, type: demo.ledger.WindowId}
+    fields:
+      - {name: incident, type: String}
+      - {name: started_at, type: Timestamp}
+      - {name: ended_at, type: Timestamp}
+      - {name: duration_s, type: Integer}
+      - {name: level, type: demo.ledger.ImpactLevel}
+    lifecycle:
+      initial: Recorded
+      states: [Recorded]
+      terminal: [Recorded]
+      transitions: []
+events:
+  - name: demo.ledger.WindowRecorded
+    fields:
+      - {name: window_id, type: demo.ledger.WindowId}
+actors:
+  - name: demo.ledger.Clerk
+    may: [demo.ledger.RecordWindow]
+commands:
+  - name: demo.ledger.RecordWindow
+    input:
+      - {name: incident, type: String}
+      - {name: started_at, type: Timestamp}
+      - {name: ended_at, type: Timestamp}
+      - {name: duration_s, type: Integer}
+      - {name: level, type: demo.ledger.ImpactLevel}
+    outcomes:
+      - name: recorded
+        creates: demo.ledger.Window
+        instance: window_id
+        emits: [demo.ledger.WindowRecorded]
+        payload:
+          demo.ledger.WindowRecorded:
+            window_id: {generated: true}
+        sets:
+          incident: input.incident
+          started_at: input.started_at
+          ended_at: input.ended_at
+          duration_s: input.duration_s
+          level: input.level
+views:
+  - name: demo.ledger.Mttr
+    source: demo.ledger.Window
+    consistency: read_your_writes
+    group_by: [incident]
+    fields:
+      - {name: incident, type: String}
+      - {name: mttr, type: Optional<Decimal>, aggregate: {avg: {expr: "ended_at - started_at"}}}
+  - name: demo.ledger.Downtime
+    source: demo.ledger.Window
+    consistency: read_your_writes
+    group_by: [incident]
+    fields:
+      - {name: incident, type: String}
+      - {name: weighted, type: Integer, aggregate: {sum: {expr: "duration_s * level.weight"}}}
+  - name: demo.ledger.Headline
+    source: demo.ledger.Window
+    consistency: read_your_writes
+    group_by: [incident]
+    fields:
+      - {name: incident, type: String}
+      - {name: worst, type: Optional<demo.ledger.ImpactLevel>, aggregate: {max: level}}

@@ -7903,6 +7903,9 @@ fn told_apart<'o>(
                                     .input
                                     .as_ref()
                                     .is_some_and(|input| input.name == target)
+                                    || function.expr.as_ref().is_some_and(|measured| {
+                                        measured.fields().iter().any(|read| read == target)
+                                    })
                             })
                     })
             })

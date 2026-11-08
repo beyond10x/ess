@@ -399,6 +399,11 @@ pub struct ResolvedType {
     /// Declared clock-reading authority retained through resolution.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reading: Option<ess_domain::reading::ReadingContract>,
+    /// An enum whose declaration order is the order of its values (`ordered: true`, `ess/36`,
+    /// beyond10x/ess#566): `min` and `max` over it read the variant declared last as the
+    /// greatest. Omitted when false, so every type declared without it keeps its IR bytes.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub ordered: bool,
 }
 
 /// An entity: something with stable identity, with its fields and its lifecycle resolved.
@@ -2471,6 +2476,12 @@ pub struct ResolvedAggregate {
     /// `count`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub input: Option<ResolvedField>,
+    /// The expression of the source row it reads instead of one field (`{sum: {expr: …}}`,
+    /// `ess/36`, beyond10x/ess#561, `docs/design/generic-language-features.md` § G3). Never
+    /// beside [`Self::input`]: a measure with neither is `count`. Omitted when `None`, so a model
+    /// whose measures read fields keeps its IR bytes and digests.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub expr: Option<ResolvedMeasureExpr>,
     /// Absent values of the input are skipped, as SQL skips `NULL` (`ess/15`,
     /// beyond10x/ess#148). Omitted when false, so a model that does not write it keeps its bytes.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
@@ -2482,15 +2493,59 @@ pub struct ResolvedAggregate {
     pub r#where: Option<Predicate>,
 }
 
+/// The expression a measure computes per source row (ess/36, § G3), as the checker typed it: each
+/// read carries its kind, and [`Self::typed`] is what it computes. A read is one of the source's
+/// observable fields, or `<field>.<attribute>`, an attribute of that field's enum, read off the
+/// variant the row holds (`ess-conformance`'s `aggregate::measured`).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct ResolvedMeasureExpr {
+    /// The expression.
+    pub expr: ess_primitives::expr::Expr,
+    /// What it computes per row, `Duration` or `Optional<Decimal>`.
+    #[serde(serialize_with = "serialize_expr_type")]
+    pub typed: ess_primitives::expr::ExprType,
+}
+
+impl ResolvedMeasureExpr {
+    /// The top-level fields of the source row it reads, each once, in the order first read.
+    pub fn fields(&self) -> Vec<String> {
+        let mut out: Vec<String> = Vec::new();
+        for path in self.expr.reads() {
+            let field = path.segments()[0].clone();
+            if !out.contains(&field) {
+                out.push(field);
+            }
+        }
+        out
+    }
+}
+
+#[allow(
+    clippy::trivially_copy_pass_by_ref,
+    reason = "serde's `serialize_with` hands the field by reference"
+)]
+fn serialize_expr_type<S: serde::Serializer>(
+    typed: &ess_primitives::expr::ExprType,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    serializer.collect_str(typed)
+}
+
 impl std::fmt::Display for ResolvedAggregate {
-    /// `sum(talk_seconds)`, `sum(duration, skip_absent)`, `count()`, or
-    /// `count() where state == Completed`: the rendering every projection of the construct uses.
+    /// `sum(talk_seconds)`, `sum(duration, skip_absent)`, `avg(ended_at - started_at)`,
+    /// `count()`, or `count() where state == Completed`: the rendering every projection of the
+    /// construct uses.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let read = match (&self.input, &self.expr) {
+            (Some(input), _) => input.name.clone(),
+            (None, Some(measured)) => measured.expr.to_string(),
+            (None, None) => String::new(),
+        };
         write!(
             f,
             "{}({}{})",
             self.function,
-            self.input.as_ref().map_or("", |input| input.name.as_str()),
+            read,
             if self.skip_absent {
                 ", skip_absent"
             } else {
@@ -2520,10 +2575,11 @@ impl ResolvedAggregate {
     /// description, the documentation page, the native plan and the generated row types — so two
     /// artifacts of one model cannot describe one field two ways.
     pub fn describe(&self) -> String {
-        let input = self
-            .input
-            .as_ref()
-            .map_or_else(String::new, |input| format!("`{}`", input.name));
+        let input = match (&self.input, &self.expr) {
+            (Some(input), _) => format!("`{}`", input.name),
+            (None, Some(measured)) => format!("`{}`", measured.expr),
+            (None, None) => String::new(),
+        };
         let described = match self.function {
             AggregateFunction::Count => "count of instances".to_owned(),
             AggregateFunction::CountDistinct => format!("count of distinct {input} values"),

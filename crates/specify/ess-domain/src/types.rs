@@ -1187,6 +1187,11 @@ pub enum TypeBody {
     Enum {
         /// The variants, in declaration order.
         variants: Vec<EnumVariant>,
+        /// The declaration order is the order of its values (`ordered: true`, `ess/36`,
+        /// beyond10x/ess#566): `min` and `max` over it read the variant declared last as the
+        /// greatest. Omitted when false, so every enum declared without it keeps its bytes.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        ordered: bool,
     },
     /// One of several shapes, distinguished by a tag field.
     ///
@@ -1241,6 +1246,32 @@ impl NamedType {
         .with_hint(hint)
     }
 
+    /// An enum declaring `ordered: true` in a specification below `ess/36` (beyond10x/ess#566),
+    /// refused at the key, naming the format.
+    fn ordered_below_format(
+        &self,
+        format: Option<crate::system::FormatVersion>,
+    ) -> Option<ValidationError> {
+        let TypeBody::Enum { ordered: true, .. } = &self.body else {
+            return None;
+        };
+        if format.is_none_or(|format| format.major() >= crate::system::FormatVersion::V36.major()) {
+            return None;
+        }
+        Some(
+            ValidationError::new(
+                ValidationCode::UnsupportedFormatVersion,
+                format!("types.{}.ordered", self.name),
+                format!(
+                    "`{}` declares `ordered: true`, an order of its variants that `min` and `max` \
+                     read, from specification format ess/36",
+                    self.name
+                ),
+            )
+            .with_hint("write `format: ess/36` on the source that declares the system"),
+        )
+    }
+
     /// A struct with `fields: []` in a specification below `ess/32`, refused as before that
     /// format admitted it (beyond10x/ess#649); its message is unchanged and its hint names `ess/32`.
     fn empty_struct_below_format(
@@ -1289,7 +1320,7 @@ impl NamedType {
         }
 
         let no_variants = match &self.body {
-            TypeBody::Enum { variants } => variants.is_empty(),
+            TypeBody::Enum { variants, .. } => variants.is_empty(),
             TypeBody::Union { variants, .. } => variants.is_empty(),
             TypeBody::Struct { .. } | TypeBody::Newtype { .. } => false,
         };
@@ -1592,7 +1623,7 @@ impl NamedType {
     /// the rule `sets:` types a literal by.
     pub fn validate_attributes(&self, registry: &TypeRegistry) -> ValidationErrors {
         let mut errors = ValidationErrors::new();
-        let TypeBody::Enum { variants } = &self.body else {
+        let TypeBody::Enum { variants, .. } = &self.body else {
             return errors;
         };
         let Some(declared) = variants.first().map(|variant| &variant.attributes) else {
@@ -1824,6 +1855,10 @@ pub enum RawTypeBody {
         /// `{name, type}` shape of `fields:`.
         #[serde(default)]
         attributes: Vec<Field>,
+        /// `ordered: true`: the declaration order is the order of its values (`ess/36`,
+        /// beyond10x/ess#566). Absent, or `false`, declares no order.
+        #[serde(default)]
+        ordered: bool,
     },
     /// One of several shapes, distinguished by a tag field.
     Union {
@@ -1960,6 +1995,7 @@ impl RawTypeBody {
             Self::Enum {
                 variants,
                 attributes,
+                ordered,
             } => {
                 let mut booleans = Vec::new();
                 let variants = variants
@@ -1980,7 +2016,7 @@ impl RawTypeBody {
                 if !booleans.is_empty() {
                     errors.push(boolean_variants(location, &booleans));
                 }
-                TypeBody::Enum { variants }
+                TypeBody::Enum { variants, ordered }
             }
             Self::Union { tag, variants } => TypeBody::Union { tag, variants },
         }
@@ -2189,6 +2225,7 @@ impl RawNamedType {
             RawTypeBody::Enum {
                 variants,
                 attributes,
+                ..
             } => {
                 // What each variant's attributes leave out or add (ess/23, beyond10x/ess#450),
                 // refused here so the enum stays declared and nothing that names it is refused a
@@ -2692,6 +2729,10 @@ impl TypeRegistry {
             errors.extend(declared.validate_alphabet(self));
             errors.extend(declared.validate_prefix(self));
             errors.extend(declared.validate_attributes(self));
+            // An enum's `ordered: true`, below `ess/36` (beyond10x/ess#566).
+            if let Some(refused) = declared.ordered_below_format(self.format()) {
+                errors.push(refused);
+            }
             errors.extend(declared.validate_invariants(self));
             // A struct with `fields: []`, below `ess/32` (beyond10x/ess#649).
             if let Some(refused) = declared.empty_struct_below_format(self.format()) {
@@ -3048,6 +3089,7 @@ mod tests {
                 reading: None,
                 name: name("billing.Email"),
                 body: TypeBody::Enum {
+                    ordered: false,
                     variants: EnumVariant::bare(["Work", "Personal"]),
                 },
                 naming: Naming::default(),

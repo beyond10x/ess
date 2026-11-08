@@ -32,7 +32,7 @@ fn variants_of(spec: &Specification) -> Vec<EnumVariant> {
         .get(&"recordings.backend.RecordingAction".parse().unwrap())
         .expect("the enum is declared");
     match &declared.body {
-        TypeBody::Enum { variants } => variants.clone(),
+        TypeBody::Enum { variants, .. } => variants.clone(),
         other => panic!("declared as an enum, read back as {other:?}"),
     }
 }

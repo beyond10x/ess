@@ -416,6 +416,15 @@ fn aggregate(
     let integer = ResolvedTypeRef::Primitive {
         name: Primitive::Integer,
     };
+    // A measure over an expression of the row (ess/36, beyond10x/ess#561): the generated query
+    // computes no expression, so the view stays owed, named by it.
+    if let Some(measured) = &aggregate.expr {
+        return Err(format!(
+            "`{aggregate}`, a measure over the expression `{}`, which a generated query does not \
+             compute",
+            measured.expr
+        ));
+    }
     let Some(input) = &aggregate.input else {
         return expect(&field.type_ref, &integer);
     };

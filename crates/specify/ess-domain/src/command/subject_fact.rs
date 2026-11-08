@@ -380,7 +380,9 @@ fn declares_variant(entity: &EntitySpec, types: &TypeRegistry, field: &str, equa
             _ => None,
         })
         .is_some_and(|named| match &named.body {
-            TypeBody::Enum { variants } => variants.iter().any(|variant| variant.name() == equals),
+            TypeBody::Enum { variants, .. } => {
+                variants.iter().any(|variant| variant.name() == equals)
+            }
             _ => false,
         })
 }

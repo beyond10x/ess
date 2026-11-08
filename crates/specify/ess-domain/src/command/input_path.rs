@@ -256,7 +256,7 @@ fn attributed_enum(
             TypeRef::Optional(inner) => current = inner,
             TypeRef::Named(name) => match &types.get(name)?.body {
                 crate::types::TypeBody::Newtype { of, .. } => current = of,
-                crate::types::TypeBody::Enum { variants } => {
+                crate::types::TypeBody::Enum { variants, .. } => {
                     return variants.first()?.attribute(attribute).map(|_| name.clone());
                 }
                 _ => return None,

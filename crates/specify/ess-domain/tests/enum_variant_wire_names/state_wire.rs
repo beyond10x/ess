@@ -32,7 +32,7 @@ fn a_lifecycle_state_declares_its_wire_name_from_ess_32() {
     );
     assert_eq!(job.states.initial, indexing);
     let state_type = job.state_type();
-    let TypeBody::Enum { variants } = &state_type.body else {
+    let TypeBody::Enum { variants, .. } = &state_type.body else {
         panic!("the state type is an enum: {state_type:?}");
     };
     assert_eq!(
@@ -150,7 +150,7 @@ fn a_lifecycle_state_and_transition_carry_a_summary_from_ess_33() {
         "a summary-only state declares no wire spelling"
     );
     let state_type = job.state_type();
-    let TypeBody::Enum { variants } = &state_type.body else {
+    let TypeBody::Enum { variants, .. } = &state_type.body else {
         panic!("the state type is an enum: {state_type:?}");
     };
     assert_eq!(
