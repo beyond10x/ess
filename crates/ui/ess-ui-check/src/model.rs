@@ -31,6 +31,14 @@
 //! reported for reading it (beyond10x/ess#286). An actor the model does not declare is `actor_in_model`;
 //! a page without `actor`, or an `UNMAPPED:` one, is not held to any actor's grants.
 //!
+//! # A host slot is held as a generated node is
+//!
+//! A host slot's `reads` and `commands` are names the document writes like any other (design
+//! `ui-host-slots`, section Check): the same walk yields them, so the model checks and the
+//! [`binding`] hold them to exactly what a generated node's are held to. The walk marks them as a
+//! slot's, and the coverage the report carries counts a view or command only a slot reaches as
+//! host-covered, never covered.
+//!
 //! Widget declarations are not checked here: `args.<param>` is unbound in them. Their views,
 //! commands and events are checked at each use, on the expanded body.
 
@@ -48,13 +56,13 @@ use ess_ui::binding::{
     Binding, CommandRoute, EnumLookup, EnumVariant, ErrorRoute, ModelEnums, QueryParam, ViewRoute,
 };
 use ess_ui::{
-    Action, ActorSource, Body, Carries, Channel, Composite, Document, ExportParams, Expr, NavPages,
-    NodePath, NodeRef, Paging, Reads, Region, RegionKind,
+    Action, ActorSource, Body, Carries, Channel, Composite, Document, ExportParams, Expr, HostSlot,
+    NavPages, NodePath, NodeRef, Paging, Reads, Region, RegionKind,
 };
 use ess_yaml::Value;
 
 use crate::walk::{composite_reads, in_declaration, is_section, page_of, section_of};
-use crate::{CheckError, Sink};
+use crate::{CheckError, Coverage, Sink};
 
 /// Fields by name (and wire name), each with the wire variants of its enum, if it is one.
 pub(crate) type Fields = BTreeMap<String, Option<Vec<String>>>;
@@ -427,6 +435,37 @@ impl Model {
             }
         }
         self.values(document, sink);
+        sink.coverage = Some(self.coverage(document));
+    }
+
+    /// The model's views and commands split by what reaches them (ADR section 2): covered by a
+    /// generated node, host-covered by a host slot alone, or uncovered. A name the model does not
+    /// have is no row; `view_in_model` and `command_in_model` report it.
+    fn coverage(&self, document: &Document) -> Coverage {
+        let mut generated = BTreeSet::new();
+        let mut hosted = BTreeSet::new();
+        for named in names(document) {
+            let row = match named.kind {
+                Kind::View { name, .. } => self.view(name).map(|(qualified, _)| (0, qualified)),
+                Kind::Command(name) => self.command(name).map(|qualified| (1, qualified)),
+                Kind::Event(_) => None,
+            };
+            if let Some(row) = row {
+                if named.host {
+                    hosted.insert(row);
+                } else {
+                    generated.insert(row);
+                }
+            }
+        }
+        let rows = self.views.len() + self.commands.len();
+        let covered = generated.len();
+        let host_covered = hosted.difference(&generated).count();
+        Coverage {
+            covered,
+            host_covered,
+            uncovered: rows - covered - host_covered,
+        }
     }
 
     /// Each page that names an actor of the model, with that actor's qualified name. A name the
@@ -1025,6 +1064,8 @@ struct Named<'a> {
     /// Where a finding about it goes.
     at: NodePath,
     kind: Kind<'a>,
+    /// `true` when a host slot's `reads` or `commands` name it, not a generated node.
+    host: bool,
 }
 
 enum Kind<'a> {
@@ -1094,6 +1135,7 @@ fn names(document: &Document) -> Vec<Named<'_>> {
                 node: path.clone(),
                 at,
                 kind,
+                host: false,
             });
         };
         match located.node {
@@ -1170,8 +1212,48 @@ fn names(document: &Document) -> Vec<Named<'_>> {
             }
             _ => {}
         }
+        if let Some(slot) = host_slot(located.node) {
+            slot_names(path, slot, &mut out);
+        }
     }
     out
+}
+
+/// The host slot `node` is: a page or a field carrying `host`, or a body that is a slot.
+fn host_slot(node: NodeRef<'_>) -> Option<&HostSlot> {
+    match node {
+        NodeRef::Page(page) => page.host.as_ref(),
+        NodeRef::Field(field) => field.host.as_ref(),
+        _ => crate::walk::body_of(node).and_then(Body::host),
+    }
+}
+
+/// What a host slot at `path` reads and sends (ADR section 3): its `reads` as the composite read
+/// of a body, so a section slot is held to `section_readable` as a generated section is, and each
+/// of its `commands`. Marked as a slot's, so coverage counts them as host-covered.
+fn slot_names<'a>(path: &NodePath, slot: &'a HostSlot, out: &mut Vec<Named<'a>>) {
+    if let Some(reads) = &slot.reads {
+        if let Some(name) = &reads.view {
+            out.push(Named {
+                node: path.clone(),
+                at: path.child("reads"),
+                kind: Kind::View {
+                    name,
+                    bound: Bound::Read(Read::of(reads)),
+                    body: true,
+                },
+                host: true,
+            });
+        }
+    }
+    for command in &slot.commands {
+        out.push(Named {
+            node: path.clone(),
+            at: path.child("commands"),
+            kind: Kind::Command(command),
+            host: true,
+        });
+    }
 }
 
 /// The commands a shell region sends: the assistant's `does:`, and each account menu entry's
