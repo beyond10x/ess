@@ -737,7 +737,9 @@ impl<'d> Gen<'d> {
     /// The collection's pager: the state paths its read's page and size params bind, resolved
     /// here so the runtime never assumes `state.page` or `state.size`. A declared `pager` always
     /// shows its footer; a read with a `page` param and no `pager` keeps the footer it had,
-    /// shown when the total exceeds the rows, on the state path that param binds.
+    /// shown when the total exceeds the rows, on the state path that param binds. A
+    /// client-paged read's pager is `client`: the collection pages the rows it holds, by the
+    /// first of `sizes` until another is chosen, on state of its own.
     fn pager(reads: Option<&Reads>) -> Option<String> {
         let reads = reads?;
         let Some(pager) = &reads.pager else {
@@ -745,7 +747,23 @@ impl<'d> Gen<'d> {
                 .state_path("page")
                 .map(|page| ts::object([("page", Some(ts::string(page)))]));
         };
-        let page = reads.state_path(&pager.page)?;
+        if matches!(reads.paging, Some(ess_ui::Paging::Client)) {
+            return Some(ts::object([
+                ("client", Some("true".to_owned())),
+                // The row filter, so a change to what it reads returns to page 1 even where the
+                // section frame, not the collection, holds the read.
+                (
+                    "filter",
+                    reads.filter.as_ref().map(|filter| ts::string(&filter.0)),
+                ),
+                (
+                    "sizes",
+                    Some(ts::array(pager.sizes.iter().map(ToString::to_string))),
+                ),
+                ("declared", Some("true".to_owned())),
+            ]));
+        }
+        let page = reads.state_path(pager.page.as_deref()?)?;
         let size = pager
             .size
             .as_deref()

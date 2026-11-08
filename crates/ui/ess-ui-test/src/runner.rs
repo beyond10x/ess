@@ -1386,8 +1386,13 @@ fn row_section(target: &Target, row: &Row) -> Result<String, String> {
     }
 }
 
+/// A row's key: its `field`, or a plain row (a string, a number, a boolean) itself, as both
+/// renderers key it.
 fn key_of(row: &Value, field: &str) -> String {
-    row.get(field).map(scalar).unwrap_or_default()
+    match row {
+        Value::String(_) | Value::Number(_) | Value::Bool(_) => scalar(row),
+        _ => row.get(field).map(scalar).unwrap_or_default(),
+    }
 }
 
 fn label(action: &Action) -> String {

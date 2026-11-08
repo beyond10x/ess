@@ -1448,7 +1448,7 @@ Columns and form inputs are fields. `as` is a semantic widget, not a component; 
 
 | Property | Type | Required | Default | Note |
 |---|---|---|---|---|
-| `field` | `name` | yes |   | field of the command input or view row |
+| `field` | `name` | yes |   | field of the command input or view row; in a collection column or a record field, `.` names the row itself, so a read whose rows are plain strings shows each string, sorts by it and keys the row by it; on a row that is an object, `.` reads as an absent value, and `ess ui check --model` refuses it on a view of the model, whose rows are entities |
 | `name` | `name` |   | `{from: field}` | node name |
 | `label` | `string` |   | `{from: model.field_label}` | caption |
 | `as` | one of: `text` \| `number` \| `secret` \| `toggle` \| `choice` \| `tags` \| `time` \| `date` \| `date_range` \| `duration` \| `file` \| `rich_text` \| `json` \| `list` \| `map` \| `cron` \| `color` \| `badge` \| `audio` \| `link` \| `metric` \| `bytes` |   | `text` | semantic widget; `bytes` shows a byte count in B, KB, MB or GB, in 1024 steps; `duration` shows `h:mm:ss`, counted in its `unit` |
@@ -1975,7 +1975,7 @@ How the UI reads ESS views, runs ESS commands, and runs without a backend.
 
 The ESS view a section or composite reads — or, while designing, a named placeholder backed by a fixture.
 
-Every piece of data on screen comes from an ESS view. Params bind page state; `paging` says who pages. While a screen is designed before its model exists, write `placeholder` with a view name and a `fixture` file instead of `view`; renderers read the fixture, validators report the placeholder as a warning until it is bound. `key` names the field that identifies a row when it is not `id`, so row paths and row actions address the rows of a view keyed by another field, with or without a channel. `endpoint` and `derived` are traceability for retrofits. `pager` names, among `params`, the param that carries a server read's page and the one that carries its page size, each bound to a `state.<path>`: a collection shows Previous, the page and Next on those paths, and with a `size` a per-page select over `sizes` that returns to page 1.
+Every piece of data on screen comes from an ESS view. Params bind page state; `paging` says who pages. While a screen is designed before its model exists, write `placeholder` with a view name and a `fixture` file instead of `view`; renderers read the fixture, validators report the placeholder as a warning until it is bound. `key` names the field that identifies a row when it is not `id`, so row paths and row actions address the rows of a view keyed by another field, with or without a channel. `endpoint` and `derived` are traceability for retrofits. `pager` names, among `params`, the param that carries a server read's page and the one that carries its page size, each bound to a `state.<path>`: a collection shows Previous, the page and Next on those paths, and with a `size` a per-page select over `sizes` that returns to page 1. With `paging: client` the pager names no param, only `sizes`: the collection pages the rows it holds by the first size until the per-page select chooses another, and a change to the read's params or to what its row filter reads (a search, a filter bar) returns it to page 1. Whenever the page size and the total are known, the footer shows the rows on the page as a range of the total, `1-10 of 30`.
 
 **Properties**
 
@@ -1988,7 +1988,7 @@ Every piece of data on screen comes from an ESS view. Params bind page state; `p
 | `params` | map of `name` → `expr` |   |   | view params bound to state |
 | `filter` | `expr` |   |   | Client row predicate after live effects and before local paging; never sent to the server, never authorization. Only listing reads and choices, with client or none paging. `<a> contains <b>` keeps a row whose `<a>`, read as text, holds every whitespace-separated word of `<b>` in any case, and every row while `<b>` has none; a filter bar search bound to `<b>` is then drawn. |
 | `paging` | one of: `server` \| `client` \| `cursor` \| `append` \| `none` |   | `none` | who pages |
-| `pager` | record \{ `page`: `name`, `size`: optional `name`, `sizes`: optional list of `integer` \} |   |   | the params of this read that carry the page and the page size, and the sizes offered; only on a collection's `reads`, with `paging: server`; sizes default: `[25, 50, 100]` |
+| `pager` | record \{ `page`: optional `name`, `size`: optional `name`, `sizes`: optional list of `integer` \} |   |   | the sizes offered and, with `paging: server`, the params of this read that carry the page (required) and the page size; with `paging: client`, `sizes` alone; only on a collection's `reads`; sizes default: `[25, 50, 100]` |
 | `debounce` | `duration` |   |   | coalesce param changes before reading |
 | `refresh` | one of: `duration` \| `expr` |   |   | poll interval |
 | `cache` | record \{ `store`: [Store](#store), `ttl`: optional `duration` \} |   | `{store: {resolve: {class: view_cache}}}` | where the result is cached |
@@ -2011,7 +2011,10 @@ Every piece of data on screen comes from an ESS view. Params bind page state; `p
 - {when: {paging: client}, requires: {view.bounded: true}, else: refuse}
 - {when: {placeholder: present}, requires: {fixture: present}, else: refuse}
 - {when: {filter: present}, requires: {paging: {one_of: [client, none]}}, else: refuse}
-- {when: {pager: present}, requires: {paging: server}, else: refuse}
+- {when: {pager: present}, requires: {paging: {one_of: [server, client]}}, else: refuse}
+- {when: {pager: present, paging: server}, requires: {pager.page: present}, else: refuse}
+- {when: {pager: present, paging: client}, requires: {pager.page: absent}, else: refuse}
+- {when: {pager: present, paging: client}, requires: {pager.size: absent}, else: refuse}
 ```
 
 **Example**
@@ -2033,7 +2036,7 @@ fixture: fixtures/forecast.yaml
 | `filter_place` | `reads.filter` | `{must: belong_to_listing_or_choice}` | error |
 | `filter_paging` | `reads.filter` | `{must: use_client_or_none_paging}` | error |
 | `filter_over_param` | `reads.filter` | `{must: prefer_existing_server_parameter}` | warning |
-| `pager_paging` | `reads.pager` | `{must: use_server_paging}` | error |
+| `pager_paging` | `reads.pager` | `{must: use_server_paging_naming_a_page_or_client_paging_naming_no_param}` | error |
 | `pager_params` | `reads.pager.page`, `reads.pager.size` | `{must: name_distinct_params_of_the_read_each_bound_to_a_state_path_neither_inside_the_other}` | error |
 | `pager_sizes` | `reads.pager.sizes` | `{must: list_at_least_one_size_each_at_least_1}` | error |
 | `pager_outside_collection` | `reads.pager` | `{must: belong_to_a_collection_reads}` | error |
@@ -2768,7 +2771,7 @@ What a validator checks in a document, and the construct each check applies to. 
 | `filter_paging` | [Reads](#reads) | `reads.filter` | `{must: use_client_or_none_paging}` | error |
 | `filter_over_param` | [Reads](#reads) | `reads.filter` | `{must: prefer_existing_server_parameter}` | warning |
 | `filter_export` | [Action](#action) | `export.params` | `{must: not_claim_to_copy_client_filter}` | warning |
-| `pager_paging` | [Reads](#reads) | `reads.pager` | `{must: use_server_paging}` | error |
+| `pager_paging` | [Reads](#reads) | `reads.pager` | `{must: use_server_paging_naming_a_page_or_client_paging_naming_no_param}` | error |
 | `pager_params` | [Reads](#reads) | `reads.pager.page`, `reads.pager.size` | `{must: name_distinct_params_of_the_read_each_bound_to_a_state_path_neither_inside_the_other}` | error |
 | `pager_sizes` | [Reads](#reads) | `reads.pager.sizes` | `{must: list_at_least_one_size_each_at_least_1}` | error |
 | `pager_outside_collection` | [Reads](#reads) | `reads.pager` | `{must: belong_to_a_collection_reads}` | error |

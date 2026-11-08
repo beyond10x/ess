@@ -1,0 +1,6 @@
+# Plain-string rows for tests/plain_row.rs.
+views:
+  t.Names:
+    rows: [alpha, beta]
+  t.Name:
+    rows: [alpha]

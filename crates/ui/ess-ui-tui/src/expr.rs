@@ -180,9 +180,26 @@ pub(crate) fn walk(value: &Value, segments: &[&str]) -> Value {
     at.clone()
 }
 
-/// A row's field: `budget.limit_cents` is the `limit_cents` member of the row's `budget`.
+/// A row's field: `budget.limit_cents` is the `limit_cents` member of the row's `budget`. `.` is
+/// the row itself: a plain row (a string, a number, a boolean) is its own value, and a mapping
+/// or a list row reads as absent.
 pub(crate) fn field_path(row: &Value, field: &str) -> Value {
+    if field == ess_ui::Field::ROW {
+        return match row {
+            Value::Mapping(_) | Value::Sequence(_) => Value::Null,
+            plain => plain.clone(),
+        };
+    }
     walk(row, &field.split('.').collect::<Vec<_>>())
+}
+
+/// A row's key: its `key_field`, or for a plain row (a string, a number, a boolean) the row
+/// itself, as the generated React project keys it.
+pub(crate) fn row_key(row: &Value, key_field: &str) -> String {
+    match row {
+        Value::String(_) | Value::Number(_) | Value::Bool(_) => display(row),
+        _ => display(&row[key_field]),
+    }
 }
 
 /// Whether a value counts as true in a condition.
