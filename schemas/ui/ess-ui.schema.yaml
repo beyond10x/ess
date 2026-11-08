@@ -1203,10 +1203,16 @@ constructs:
       registers and is unique in the document; a widget's declaration is not drawn, so a slot in
       a widget is found at each use. `reason` says why the generator cannot draw it and is never
       empty. `stands_in_for` names the generator item the slot replaces, so a later generator
-      can take it back. `reads` and `commands` declare what the host component reads and sends.
-      `ess ui check --hosts <file>` refuses a name the host registers that no slot declares, and
-      every report of `ess ui check` lists the slots that stand in for `none`, each with its path
-      and reason, as the generator's backlog.
+      can take it back. `reads` and `commands` declare what the host component reads and sends,
+      and it reads and sends nothing else: with `--model`, `ess ui check` holds them to the
+      specification as it holds a generated node's (`view_in_model`, `command_in_model`,
+      `section_readable`, `page_actor_grants`, `read_params`), and a binding routes them, and
+      refuses them, as it does a generated node's. `ess ui check --hosts <file>` refuses a name
+      the host registers that no slot declares. Every report of `ess ui check` lists each slot
+      with its path, `host`, `stands_in_for` and reason, and the slots that stand in for `none`
+      again as the generator's backlog. With `--model` it counts the model's views and commands
+      three ways: covered, reached by a generated node; host-covered, reached only by a slot's
+      `reads` or `commands`; and uncovered. A slot never adds to the covered count.
     fields:
       host:          {type: name, required: true, note: "the component name the host registers, a node name; unique in the document"}
       reason:        {type: string, required: true, note: "why the generator cannot draw it; never empty"}
