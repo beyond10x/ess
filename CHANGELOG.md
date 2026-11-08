@@ -30,6 +30,8 @@
 - An `observed` reference written after its event was published twice in one scenario still resolves, in every runner, to the event's first occurrence, neither to the latest nor refused as ambiguous; synthesis still writes one where a ranked view's companion rows are created by the same command as the scenario's own row (it reads the scenario's own row, the first, so such a suite passes a correct target). story:a-union-variant-scenario-reads-each-row-under-its-own-identity stays open for it.
 - Conformance synthesis refuses a `sum` of Durations and an `avg` of a Duration field it cannot tell from a truncating one as `ESS-SYNTH-017`; a target computing them wrongly is not caught. A draft story tracks witnessing them.
 
+Language: 2 general, 0 one-to-one, 0 part (general share 100%; cumulative 17%).
+
 ## [0.90.0] — 2026-11-07
 
 ### Added
