@@ -1237,17 +1237,42 @@ impl<'d> Gen<'d> {
             ));
             w.line(format!(
                 "readonly {}: HostComponent<{}, {}>;",
-                slot.host,
+                ts::key(&slot.host),
                 union(views),
                 union(slot.commands.iter().collect())
             ));
         }
         w.close("}");
         w.line("");
-        w.line("/** A registry `H` with every name no slot declares refused. */");
-        w.line(
-            "export type Registered<H> = H & { readonly [K in Exclude<keyof H, keyof HostComponents>]: never };",
-        );
+        for line in [
+            "/**",
+            " * The views (`Reads`) or commands (`Sends`) a component's `adapter` prop lets it read or",
+            " * send. A component typed from the runtime's `DataAdapter` passes the registry entry",
+            " * bivariantly, because `read` and `send` are methods there; these read what it takes.",
+            " */",
+            "type Reads<C> = C extends (props: infer P) => unknown",
+            "  ? P extends { adapter: { read(...args: infer A): unknown } }",
+            "    ? A extends [{ view: infer V }, ...unknown[]] ? V : never",
+            "    : never",
+            "  : never;",
+            "type Sends<C> = C extends (props: infer P) => unknown",
+            "  ? P extends { adapter: { send(...args: infer A): unknown } }",
+            "    ? A extends [infer K, ...unknown[]] ? K : never",
+            "    : never",
+            "  : never;",
+            "",
+            "/**",
+            " * A registry `H` with every name no slot declares refused, and every component whose",
+            " * adapter reads a view or sends a command beyond its slot's declaration.",
+            " */",
+            "export type Registered<H> = H & { readonly [K in Exclude<keyof H, keyof HostComponents>]: never } & {",
+            "  readonly [K in keyof HostComponents & keyof H]: [Reads<H[K]>] extends [Reads<HostComponents[K]>]",
+            "    ? [Sends<H[K]>] extends [Sends<HostComponents[K]>] ? unknown : never",
+            "    : never;",
+            "};",
+        ] {
+            w.line(line);
+        }
         Some(w.finish())
     }
 
