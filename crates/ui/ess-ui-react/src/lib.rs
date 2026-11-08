@@ -84,7 +84,7 @@ pub fn render_bound(
 ) -> Result<GeneratedFiles, GenerateError> {
     if let Some((path, slot)) = document.host_slots().first() {
         return Err(GenerateError::new(format!(
-            "{path}: host slot `{}`: host slots are generated from 0.91.0",
+            "{path}: host slot `{}`: host slots are validated by `ess ui check` and not generated yet",
             slot.host
         )));
     }

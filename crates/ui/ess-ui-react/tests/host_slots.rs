@@ -27,7 +27,7 @@ fn the_react_generator_refuses_a_host_slot_by_name() {
     assert!(
         message.contains("pages/p/sections/map")
             && message.contains("RouteMap")
-            && message.contains("host slots are generated from 0.91.0"),
+            && message.contains("host slots are validated by `ess ui check` and not generated yet"),
         "{message}"
     );
 }
