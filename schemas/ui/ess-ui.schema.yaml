@@ -1747,7 +1747,7 @@ checks:
     - {id: filter_export, subject: "export.params", must: not_claim_to_copy_client_filter, severity: warning}
     - {id: pager_paging, subject: "reads.pager", must: use_server_paging_naming_a_page_or_client_paging_naming_no_param, severity: error}
     - {id: pager_params, subject: ["reads.pager.page", "reads.pager.size"], must: name_distinct_params_of_the_read_each_bound_to_a_state_path_neither_inside_the_other, severity: error}
-    - {id: pager_sizes, subject: "reads.pager.sizes", must: list_at_least_one_size_each_at_least_1, severity: error}
+    - {id: pager_sizes, subject: "reads.pager.sizes", must: list_at_least_one_size_each_at_least_1_none_repeated, severity: error}
     - {id: pager_outside_collection, subject: "reads.pager", must: belong_to_a_collection_reads, severity: error}
     - {id: account_menu_keys, subject: "shells.*.regions.*.props.actions[] of an account_menu", must_be_in: [name, label, opens, does, sets, navigate], severity: error}
     - {id: checked_needs_toggle, subject: "**.checked", must: sit_on_an_as_toggle_action, severity: error}

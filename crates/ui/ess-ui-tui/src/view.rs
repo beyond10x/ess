@@ -1420,10 +1420,25 @@ impl App {
         footer.push(format!("{} rows", arranged.len()));
         // A paged read's footer shows the rows drawn as a range of all of them, as React's
         // pager does; it follows `page N/M · N rows`, so a reader of those reads them as before.
+        // A server pager's range is the server's page of the server's total, from the page and
+        // size params the read sent, and none without a size or a total, as in React.
         let size = self.page_size(place.ui, collection);
-        if paged(collection) {
-            footer.push(page_range(page, size, rows.len(), arranged.len()));
-        }
+        let range = match (&reads.paging, &reads.pager) {
+            (Some(ess_ui::Paging::Server), Some(server_pager)) => server_range(
+                server_pager,
+                &request.params,
+                read.as_ref().and_then(|result| result.total),
+                arranged.len(),
+            ),
+            _ if paged(collection) => page_range(
+                page as u64 + 1,
+                size as u64,
+                rows.len(),
+                arranged.len() as u64,
+            ),
+            _ => None,
+        };
+        footer.extend(range);
         if client_sizes(collection).is_some_and(|sizes| sizes.len() > 1) {
             footer.push(format!("+ {size} per page"));
         }
@@ -2364,14 +2379,42 @@ fn tab_line(labels: impl Iterator<Item = String>, current: usize) -> Line<'stati
     Line::from(spans)
 }
 
-/// The rows a page draws as a range of all of them: `11-20 of 34`, `0 of 0` with none. `page`
-/// counts from 0.
-fn page_range(page: usize, size: usize, rows: usize, total: usize) -> String {
-    if rows == 0 {
-        return format!("0 of {total}");
+/// The rows a page draws as a range of all of them: `11-20 of 34`, `0 of 0` with none, as
+/// React's `rangeLabel`. `page` counts from 1. A page that would reach past the total (a server
+/// answering more rows than its total says) has no range.
+fn page_range(page: u64, size: u64, rows: usize, total: u64) -> Option<String> {
+    if rows == 0 || total == 0 {
+        return Some(format!("0 of {total}"));
     }
-    let from = page * size + 1;
-    format!("{from}-{} of {total}", from + rows - 1)
+    let from = page
+        .saturating_sub(1)
+        .saturating_mul(size)
+        .saturating_add(1);
+    let to = from.saturating_add(rows as u64 - 1);
+    (to <= total).then(|| format!("{from}-{to} of {total}"))
+}
+
+/// A server pager's range: the page and size the read sent in its `page` and `size` params, of
+/// the total the server answered. None without a `size` param holding a number of at least 1 or
+/// without a total, as React draws none; a page param that is not a number of at least 1 is
+/// page 1.
+fn server_range(
+    pager: &ess_ui::Pager,
+    params: &std::collections::BTreeMap<String, Value>,
+    total: Option<u64>,
+    rows: usize,
+) -> Option<String> {
+    let number = |name: &Option<String>| {
+        let number = match params.get(name.as_ref()?)? {
+            Value::Number(number) => number.as_u64(),
+            Value::String(text) => text.trim().parse::<u64>().ok(),
+            _ => None,
+        }?;
+        (number >= 1).then_some(number)
+    };
+    let size = number(&pager.size)?;
+    let page = number(&pager.page).unwrap_or(1);
+    page_range(page, size, rows, total?)
 }
 
 /// The fewest cells a table column is cut to while its table's line does not fit the box.

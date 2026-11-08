@@ -218,7 +218,7 @@ fn reads_of<'a>(located: &'a Located<'_>) -> Vec<(NodePath, &'a Reads)> {
 /// param of that read bound to a `state.<path>` a renderer can set, neither path the other or
 /// inside it (both are written when a size is chosen). On a client read it names no param: the
 /// renderer pages the rows it holds, so `page` and `size` are refused by name. Either offers at
-/// least one page size, each at least 1. Nothing is recognised by its name: a param is a pager
+/// least one page size, each at least 1 and none listed twice. Nothing is recognised by its name: a param is a pager
 /// param only when the pager names it.
 ///
 /// `pager_outside_collection`: only a collection renders a pager footer, so a `pager` on any
@@ -295,6 +295,22 @@ fn pagers(located: &Located<'_>, sink: &mut Sink) {
                 "pager_sizes",
                 &pager_at.child("sizes"),
                 format!("a page size is at least 1, not {size}"),
+            );
+        }
+        // A repeated size is offered twice: React keys its options by the size, and the
+        // terminal's `+` never passes the repeat to the sizes after it.
+        let mut seen = std::collections::BTreeSet::new();
+        let mut repeated = std::collections::BTreeSet::new();
+        for size in &pager.sizes {
+            if !seen.insert(*size) {
+                repeated.insert(*size);
+            }
+        }
+        for size in repeated {
+            sink.push(
+                "pager_sizes",
+                &pager_at.child("sizes"),
+                format!("the page size {size} is listed more than once; list each size once"),
             );
         }
     }

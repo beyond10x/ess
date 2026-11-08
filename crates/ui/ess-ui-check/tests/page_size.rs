@@ -153,3 +153,16 @@ fn pager_sizes_are_positive() {
     }
     clean("{view: t.All, params: {p: state.at, n: state.per}, paging: server, pager: {page: p, size: n, sizes: [1]}}");
 }
+
+/// A size listed twice is offered twice, on a server pager and on a client one: React keys its
+/// options by the size and the terminal's `+` never passes the repeat.
+#[test]
+fn pager_sizes_are_listed_once() {
+    for reads in [
+        "{view: t.All, params: {p: state.at, n: state.per}, paging: server, pager: {page: p, size: n, sizes: [10, 25, 10]}}",
+        "{view: t.All, paging: client, pager: {sizes: [10, 10, 25]}}",
+    ] {
+        trips(reads, "pager_sizes", &format!("{READ}/pager/sizes"));
+    }
+    clean("{view: t.All, paging: client, pager: {sizes: [10, 25, 50]}}");
+}
