@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+## [0.91.1] — 2026-11-09
+
+### Fixed
+
+- Release: 0.91.0 was tagged but never released: its format history lacked the release of `ess/36`, so its packaging refused the tag. 0.91.1 carries the same content, with `ess/36` recorded as introduced in 0.91.1; the 0.91.0 tag stays, without a release, and `task release-status` names it as such.
+- CI: the required gate now runs `cargo xtask release verify` with the workspace version whenever that version is not tagged yet, so a release whose packaging would refuse it, such as one shipping a format whose release is not recorded, fails on its pull request rather than after the tag is pushed. The release candidate job of a queue branch fails the same way; before, it read that refusal as "not a dated release" and skipped.
+
 ## [0.91.0] — 2026-11-08
 
 ### Added

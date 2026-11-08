@@ -127,6 +127,20 @@ jobs:
         if: ${{ !cancelled() && steps.dependencies.outcome == 'success' }}
         run: task ci-lint
 
+      # `task release-check` cannot tell a release commit from the work after it, so it skips the
+      # checks the tag's packaging runs. An untagged workspace version is a release being cut, and
+      # those checks run here, in the required gate, rather than after the tag is pushed.
+      - name: Release being cut
+        if: ${{ !cancelled() && steps.dependencies.outcome == 'success' }}
+        run: |
+          version=$(cargo metadata --locked --no-deps --format-version 1 \
+            | jq -r '.packages[] | select(.name == "ess-cli") | .version')
+          if git rev-parse --quiet --verify "refs/tags/$version" > /dev/null; then
+            echo "$version is tagged already"
+            exit 0
+          fi
+          cargo xtask release verify "$version"
+
       - name: Smoke (examples, projections, support matrix, workspace doc-tests)
         if: ${{ !cancelled() && steps.dependencies.outcome == 'success' }}
         run: task ci-smoke

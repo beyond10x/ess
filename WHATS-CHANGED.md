@@ -6,6 +6,7 @@ Generated from `changes/*.yaml` by `cargo xtask whats-changed`. Edit a fragment,
 
 | Release | Change | Kind | Impact |
 |---|---|---|---|
+| [0.91.1](#aggregate-measures-compute-expressions-enums-can-be-ordered-and-host-slots-are-checked) | Aggregate measures compute expressions, enums can be ordered, and host slots are checked | capability | significant |
 | [0.90.0](#ui-documents-declare-host-slots-and-synthesis-witnesses-guards-over-lists-of-identities) | UI documents declare host slots, and synthesis witnesses guards over lists of identities | capability | notable |
 | [0.89.0](#a-route-takes-a-bare-body-a-literal-segment-wins-and-an-each-write-takes-repeated-identities) | A route takes a bare body, a literal segment wins, and an each write takes repeated identities | capability | significant |
 | [0.88.0](#journeys-reach-every-control-a-page-declares-and-a-collection-draws-the-controls-it-declares) | Journeys reach every control a page declares, and a collection draws the controls it declares | capability | notable |
@@ -101,6 +102,14 @@ Generated from `changes/*.yaml` by `cargo xtask whats-changed`. Edit a fragment,
 | [0.16.0](#an-authored-scenario-can-claim-a-length-of-time-and-a-target-has-to-answer-for-it) | An authored scenario can claim a length of time, and a target has to answer for it | capability | significant |
 | [0.14.0](#a-component-can-declare-a-command-line-surface-and-ess-synthesizes-its-parser) | A component can declare a command-line surface, and ESS synthesizes its parser | capability | significant |
 | [0.1.0](#ess-becomes-a-standalone-executable-specification-toolchain) | ESS becomes a standalone executable specification toolchain | migration | significant |
+
+## 0.91.1 — 2026-11-09
+
+### Aggregate measures compute expressions, enums can be ordered, and host slots are checked
+
+capability · significant impact · [release notes](https://github.com/beyond10x/ess/releases/tag/0.91.1)
+
+From format ess/36 an aggregate measure may compute an expression of its source row, sum and avg admit a Duration, and an enum declaring ordered true gives min and max an order. ess ui check holds a host slot's reads and commands to the specification, and a client-paged collection takes a pager. 0.91.0 had no release; 0.91.1 carries its content.
 
 ## 0.90.0 — 2026-11-07
 
