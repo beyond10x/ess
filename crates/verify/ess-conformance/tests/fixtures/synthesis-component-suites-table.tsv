@@ -1,4 +1,4 @@
-#	models=96	lines=114
+#	models=97	lines=115
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor-service	suite=5 83258f8aee44f1c66a730f7d9a9245cd6fc1a51718a2f25a53a4e819e7975520:10202	outside=0 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855:0
 crates/edge/ess-cli/tests/fixtures/stored-rules/fold.yaml	rules	suite=5 370232c7ced707b90b7bffff39cf370202474cf971319bcc314bdb945b5abf5c:22834	outside=0 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855:0
 crates/edge/ess-cli/tests/fixtures/stored-rules/model.yaml	rules	suite=3 d6f554bab5f2e6d2e21ae3d24a390942b72cebaf6d753007ba763d2894d9a569:6257	outside=0 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855:0
@@ -41,6 +41,7 @@ crates/verify/ess-conformance/tests/fixtures/related-guard-stored-reference.yaml
 crates/verify/ess-conformance/tests/fixtures/row-set-struct-identity.yaml	vault-lib	suite=3 abfa4738f21188abdeaa2f11fce9212d22ab6dbbc51949b49392099ae9be3918:14317	outside=0 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855:0
 crates/verify/ess-conformance/tests/fixtures/subject-fact-complete-refusal.yaml	instances	suite=14 a38d176920907246f8f0172828f41ce3ff15bf2a4a931ed0e54af7f44fecc83b:74195	outside=0 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855:0
 crates/verify/ess-conformance/tests/fixtures/subject-state-source.yaml	docs-service	suite=11 a5978bd5b92f213ab51ded37a24f873ab5d1bff424910f0d71b6a33c04d2b08f:44835	outside=0 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855:0
+crates/verify/ess-conformance/tests/fixtures/system-guard.yaml	inspection-service	suite=8 ab8f0f2c7d38030c1919218714aa0a05506b49788e704a34cfbf8950775219ca:21173	outside=0 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855:0
 crates/verify/ess-conformance/tests/fixtures/typed-text-operands.yaml	directory-service	suite=11 87efac9312a922b05844b38363a696c51ffe0904bc65d2a10462033b2e52adb5:60513	outside=0 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855:0
 crates/verify/ess-diff/tests/fixtures/upcast/after-additive.yaml	items-server	suite=6 d888a9b6f66cce16877f209a40381e454210f98fe722ed2e0ed9fc7460f746c7:21465	outside=0 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855:0
 crates/verify/ess-diff/tests/fixtures/upcast/after.yaml	items-server	suite=6 8b7c54313d4dc2992ecaab99cc9805c55d5994a3ba06689979ec4fa00baec190:20625	outside=0 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855:0
