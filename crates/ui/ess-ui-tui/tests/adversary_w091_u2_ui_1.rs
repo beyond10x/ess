@@ -52,7 +52,9 @@ impl DataAdapter for Server {
         };
         let page = number("page", 1).max(1);
         let rows = ((page - 1) * size..(page * size).min(34))
-            .map(|index| ess_yaml::from_str(&format!("{{id: r-{index}, name: row-{index}}}")).unwrap())
+            .map(|index| {
+                ess_yaml::from_str(&format!("{{id: r-{index}, name: row-{index}}}")).unwrap()
+            })
             .collect();
         Ok(ReadResult {
             rows,
