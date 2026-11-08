@@ -52,7 +52,7 @@ use crate::types::{NamedType, TypeBody, TypeRef, TypeRegistry};
 /// Specification format major versions this build implements.
 pub const SUPPORTED_FORMATS: &[u32] = &[
     1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26,
-    27, 28, 29, 30, 31, 32, 33, 34, 35,
+    27, 28, 29, 30, 31, 32, 33, 34, 35, 36,
 ];
 
 /// What one specification format admits that the format before it did not.
@@ -378,6 +378,15 @@ pub const FORMAT_HISTORY: &[FormatHistoryEntry] = &[
         ],
         stricter: &[],
     },
+    FormatHistoryEntry {
+        major: 36,
+        release: None,
+        added: &[
+            "An aggregate measure may compute an expression of its source row, `{avg: {expr: \"ended_at - started_at\"}}`, `{sum: {expr: \"duration_s * level.weight\"}}`: the expression reads the row's observable fields and an attribute of an enum field (`<field>.<attribute>`), typed by the expression language, and the measure is over its value per row. `count_distinct` admits an Integer, Decimal, String, Boolean or Timestamp value; `sum` an Integer, Decimal or Duration, whose result is that type; `avg` an Integer, Decimal or Duration, whose result is `Optional<Decimal>`, a Duration's mean in seconds; `min`/`max` an Integer, Decimal, String, Timestamp or Duration, whose result is `Optional` of it. A value that may be absent, an `Optional` read or a quotient, needs `skip_absent: true`, and `skip_absent` over a value always present is refused as `conflicting_declaration`; a read of a field the source does not declare, of an attribute its enum does not declare, or of `now` is refused by name. The bare `{sum: field}` keeps its meaning and its IR bytes. The interpreted target and synthesis compute the expected figure per row with the shared evaluator; generated Rust and Go view queries keep such a view an obligation naming the expression (`docs/design/generic-language-features.md` § G3, beyond10x/ess#561).",
+            "An enum may declare `ordered: true`: its declaration order is the order of its values, so `min` and `max` over a field of it read the variant declared last as the greatest. `min`/`max` over an enum without it are refused as `type_mismatch`, naming the flag, and over a `Duration` field they compare elapsed seconds, as do `sum` and `avg`. `ess verify diff` reports a flipped flag as the enum's `ordered-changed`. Below `ess/36` the key, an expression measure and a Duration measure are refused as `unsupported_format_version` naming `ess/36`; an enum without the key keeps its IR bytes (beyond10x/ess#566).",
+        ],
+        stricter: &[],
+    },
 ];
 
 // `FORMAT_HISTORY` and `SUPPORTED_FORMATS` name the same majors in the same order, and every row
@@ -525,6 +534,11 @@ impl FormatVersion {
     /// list order, `repeated: last_wins`
     /// (`story:an-each-write-may-take-repeated-identities-in-list-order`, beyond10x/ess#748).
     pub const V35: Self = Self(35);
+    /// Aggregates over expressions (`docs/design/generic-language-features.md` § G3): a measure
+    /// computes an expression of the source row, and `min`/`max` admit every ordered type, an enum
+    /// declaring `ordered: true` included (`story:aggregate-measures-over-expressions`,
+    /// beyond10x/ess#561, #566).
+    pub const V36: Self = Self(36);
 
     /// How a format version is written.
     pub const PREFIX: &'static str = "ess/";

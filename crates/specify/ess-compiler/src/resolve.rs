@@ -71,11 +71,11 @@ use crate::ir::{
     ResolvedCommandLineSurface, ResolvedComponent, ResolvedComponentSetting, ResolvedCondition,
     ResolvedConversion, ResolvedDomain, ResolvedEffect, ResolvedEntity, ResolvedError,
     ResolvedEvent, ResolvedFallback, ResolvedField, ResolvedInputRead, ResolvedInstance,
-    ResolvedMapping, ResolvedMappingValue, ResolvedOutcome, ResolvedPayload, ResolvedPayloadField,
-    ResolvedPayloadValue, ResolvedPublishedRead, ResolvedRelatedHop, ResolvedRelatedTest,
-    ResolvedRelatedVia, ResolvedRelation, ResolvedRowSelection, ResolvedRowSetTest,
-    ResolvedSubject, ResolvedType, ResolvedTypeRef, ResolvedView, ResolvedWorkload, TypeHandle,
-    ViewHandle,
+    ResolvedMapping, ResolvedMappingValue, ResolvedMeasureExpr, ResolvedOutcome, ResolvedPayload,
+    ResolvedPayloadField, ResolvedPayloadValue, ResolvedPublishedRead, ResolvedRelatedHop,
+    ResolvedRelatedTest, ResolvedRelatedVia, ResolvedRelation, ResolvedRowSelection,
+    ResolvedRowSetTest, ResolvedSubject, ResolvedType, ResolvedTypeRef, ResolvedView,
+    ResolvedWorkload, TypeHandle, ViewHandle,
 };
 use crate::source::{Location, SourceMap, Span};
 
@@ -1884,6 +1884,7 @@ impl<'a> Resolver<'a> {
                 resolved.insert(
                     declared.name.clone(),
                     ResolvedType {
+                        ordered: matches!(declared.body, TypeBody::Enum { ordered: true, .. }),
                         name: declared.name,
                         body,
                         naming: declared.naming,
@@ -1932,7 +1933,7 @@ impl<'a> Resolver<'a> {
                     invariants: invariants.clone(),
                 })
             }
-            TypeBody::Enum { variants } => Some(ResolvedBody::Enum {
+            TypeBody::Enum { variants, .. } => Some(ResolvedBody::Enum {
                 variants: variants.clone(),
             }),
             TypeBody::Union { tag, variants } => {
@@ -4643,11 +4644,37 @@ impl<'a> Resolver<'a> {
                     Some(resolved)
                 }
             };
+            // An expression measure (ess/36, § G3), typed again by the checker `ess-domain`
+            // admitted it with; a refusal keeps compilation closed.
+            let expr = match &aggregate.expr {
+                None => None,
+                Some(written) => {
+                    let checked = self
+                        .spec
+                        .entities()
+                        .get(&view.source)
+                        .map(ess_domain::entity::EntitySpec::observable_fields)
+                        .and_then(|fields| {
+                            let declared = view.fields.iter().find(|known| &known.name == field)?;
+                            view.measure_value(declared, written, &self.registry, &fields)
+                                .ok()
+                        });
+                    let Some(checked) = checked else {
+                        self.off_contract = true;
+                        continue;
+                    };
+                    Some(ResolvedMeasureExpr {
+                        expr: checked.expr,
+                        typed: checked.typed,
+                    })
+                }
+            };
             functions.insert(
                 field.clone(),
                 ResolvedAggregate {
                     function: aggregate.function,
                     input,
+                    expr,
                     skip_absent: aggregate.skip_absent,
                     r#where: aggregate.r#where.clone(),
                 },

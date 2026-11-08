@@ -1,4 +1,4 @@
-#	models=373	commands=748
+#	models=374	commands=749
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	ir=d47970055f083eda582673dfe528f0af87f902defa07339aa014f6c8d50be57f:5099
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor.core.Publish	default: accepted
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor.core.Receive	default: accepted
@@ -307,6 +307,8 @@ crates/verify/ess-conformance/tests/fixtures/aggregate-group-selection.yaml	demo
 crates/verify/ess-conformance/tests/fixtures/aggregate-group-selection.yaml	demo.work.Open	default: opened
 crates/verify/ess-conformance/tests/fixtures/aggregate-list-parameter.yaml	ir=f1b6f25c1642e2d1dc117057fc482aafbeaad2566bcec7843fcaf8a707b7c0d5:9819
 crates/verify/ess-conformance/tests/fixtures/aggregate-list-parameter.yaml	demo.calls.RecordCall	default: recorded
+crates/verify/ess-conformance/tests/fixtures/aggregate-measures-over-expressions.yaml	ir=ac46746f89ae12bb4de43ccffc3f1b6162ead23de3b868308c0d78207867c164:11638
+crates/verify/ess-conformance/tests/fixtures/aggregate-measures-over-expressions.yaml	demo.ledger.RecordWindow	default: recorded
 crates/verify/ess-conformance/tests/fixtures/aggregate-optional-fields.yaml	ir=b5c5844d95d664bb1f49461762123b89242fc1951b6870f671091dde1c89aae3:17481
 crates/verify/ess-conformance/tests/fixtures/aggregate-optional-fields.yaml	demo.orders.Place	default: placed
 crates/verify/ess-conformance/tests/fixtures/aggregate-state-groups.yaml	ir=65c5754ef78908b3e6cc238f43927c61d7112d041c3c202ae9106ace0bb20ea2:7836

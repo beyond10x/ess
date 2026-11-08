@@ -28,7 +28,7 @@ decided today.
 | entity / type invariant | n/a | own fields and `state` | no | no | n/a | no | n/a | `dom/entity.rs:970-978, 1053-1057` |
 | view `filter:` | n/a | source row fields and `state` | part: one hop through a reference of the source, `<reference>.<field>` (`ess/28`) | no | no | no | yes | `dom/view.rs:1154-1157`; `dom/expression.rs:2268-2287` |
 | measure `where:` | n/a | source row fields | no | no | no | no | yes | `dom/view.rs:1194-1226` |
-| measure input | n/a | part: one top-level field | no | no | no | no | no | `dom/view.rs:1316-1328`, `361-372` |
+| measure input | n/a | yes: one top-level field, or an expression of the source row and its enum fields' attributes (`ess/36`) | no | no | no | no | no | `dom/view.rs` `ViewSpec::measure_value`, `validate_measure_expr` |
 | view field | n/a | part: one source field, no computation | part: one hop, `field: {related: {via, field}}` (`ess/28`) | no | no | no | no | `dom/view.rs:1302`; `read-api-view-idioms.md:191-192` |
 | `sets:` (subject) | yes | yes (`ess/14`) | yes (`ess/16`; two hops `ess/22`; `state` `ess/28`) | part: exactly one row (`ess/22`) | yes (`ess/16`) | no | n/a | `dom/command/value_expression.rs:339-462, 1018-1050`; `dom/command.rs:1162-1199` |
 | `sets:` under `instances:` / `affects:` | yes | no | no | no | no | no | n/a | `dom/command/set_effects.rs:38-41` |
@@ -77,8 +77,8 @@ field** take any expression over their row (G3).
 | `defined()` | Optional of any type | | | | | | | | | Optional aggregate from `ess/16` | `dom/expression.rs:3087-3121` |
 | `coalesce(x, d)` | yes | yes | no | yes | yes | yes | no | yes | no | no | a value from `ess/27`; a command guard's operand, structured from `ess/27` and on the left of a compact comparison from `ess/29`, an absent `x` reading as `d` (beyond10x/ess#620); `prim/expr.rs` `Function::Coalesce`, `prim/predicate.rs` `Derived::value` |
 | `forall` `exists` `distinct` | n/a | n/a | n/a | n/a | n/a | n/a | n/a | n/a | n/a | yes | `dom/expression.rs:2470-2471` |
-| measure `sum` `avg` | yes | yes | no | no | no | no | no | no | no | no | `dom/view.rs:865-909` |
-| measure `min` `max` | yes | yes | no | yes | no | yes | no | no | no | no | `dom/view.rs:865-909` |
+| measure `sum` `avg` | yes | yes | no | no | yes (`ess/36`; `avg` a Decimal of seconds) | no | no | no | no | no | `dom/view.rs` `result_type` |
+| measure `min` `max` | yes | yes | no | yes | yes (`ess/36`) | yes | with `ordered: true` (`ess/36`) | no | no | no | `dom/view.rs` `result_type` |
 | measure `count_distinct` | yes | yes | no | yes | no | yes | yes | yes | Uuid | no | `dom/view.rs:865-909` |
 
 **Target.** Rows closed whole, by the operations table above: ordering applies to every ordered

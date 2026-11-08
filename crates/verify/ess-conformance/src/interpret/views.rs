@@ -286,28 +286,6 @@ fn absent_navigation(facts: &ViewFacts<'_>, filter: &ess_primitives::predicate::
         })
 }
 
-fn kind(ir: &EssIr, ty: &ResolvedTypeRef) -> crate::aggregate::ValueKind {
-    use crate::aggregate::ValueKind;
-    let mut ty = ty.required();
-    while let ResolvedTypeRef::Declared { name } = ty {
-        match &ir.named_type(name).body {
-            ResolvedBody::Newtype { of, .. } => ty = of.required(),
-            _ => break,
-        }
-    }
-    match ty {
-        ResolvedTypeRef::Primitive {
-            name: Primitive::Integer | Primitive::Decimal,
-        } => ValueKind::Numeric,
-        ResolvedTypeRef::Primitive {
-            name: Primitive::String,
-        } => ValueKind::Text,
-        ResolvedTypeRef::Primitive {
-            name: Primitive::Timestamp,
-        } => ValueKind::Timestamp,
-        _ => ValueKind::Other,
-    }
-}
 /// How two rows of `view` rank by its `order_by` keys, which [`super::values::order_view_rows`]
 /// sorts by.
 pub(super) fn rank(ir: &EssIr, view: &ResolvedView, left: &ViewRow, right: &ViewRow) -> Ordering {
@@ -396,6 +374,7 @@ fn project(
 ) -> Result<Vec<ViewRow>, TargetError> {
     let mut rows = Vec::new();
     if let Some(aggregation) = &view.aggregation {
+        let entity = ir.entity(&view.source);
         let mut groups: BTreeMap<Vec<Node>, Vec<(ViewRow, std::collections::BTreeSet<String>)>> =
             BTreeMap::new();
         if aggregation.group_by.is_empty() {
@@ -428,27 +407,24 @@ fn project(
                     if aggregate.r#where.is_some() && !admitted_by.contains(name) {
                         continue;
                     }
-                    let value = match &aggregate.input {
-                        None => Node::Null,
-                        Some(field) => match fields.get(&field.name) {
-                            Some(value) => value.clone(),
-                            None if field.type_ref.is_optional() => Node::Null,
-                            None => return Err(unsupported()),
-                        },
-                    };
+                    if let Some(field) = &aggregate.input {
+                        if !fields.contains_key(&field.name) && !field.type_ref.is_optional() {
+                            return Err(unsupported());
+                        }
+                    }
+                    // A field's value, or what an expression computes from the row (ess/36,
+                    // beyond10x/ess#561), by the shared evaluator.
+                    let value = crate::aggregate::measured(ir, entity, aggregate, fields)
+                        .ok_or_else(unsupported)?;
                     values.push(value);
                 }
-                let kind = aggregate
-                    .input
-                    .as_ref()
-                    .map_or(crate::aggregate::ValueKind::Other, |field| {
-                        kind(ir, &field.type_ref)
-                    });
-                let value = if aggregate.skip_absent {
-                    crate::aggregate::evaluate_skipping_absent(aggregate.function, &values, kind)
-                } else {
-                    crate::aggregate::evaluate(aggregate.function, &values, kind)
-                }
+                let kind = crate::aggregate::measure_kind(ir, entity, aggregate);
+                let value = crate::aggregate::evaluate_measure(
+                    aggregate.function,
+                    &values,
+                    &kind,
+                    aggregate.skip_absent,
+                )
                 .ok_or_else(unsupported)?;
                 row.insert(name.clone(), value);
             }

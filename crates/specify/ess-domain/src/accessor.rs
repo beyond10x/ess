@@ -148,7 +148,7 @@ fn value_shape(
                 })?;
                 match &declared.body {
                     TypeBody::Newtype { of, .. } => source = of,
-                    TypeBody::Enum { variants } => {
+                    TypeBody::Enum { variants, .. } => {
                         let mut bytes = Bytes::default();
                         serde_json::to_writer(&mut bytes, variants)
                             .map_err(|_| resource(at, "enum shape bytes", bytes.0, MAX_BYTES))?;

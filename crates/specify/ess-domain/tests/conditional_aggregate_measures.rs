@@ -357,6 +357,7 @@ fn aggregate(r#where: Option<Predicate>) -> Aggregate {
     Aggregate {
         function: AggregateFunction::Sum,
         input: Some("cents".to_owned()),
+        expr: None,
         skip_absent: false,
         r#where,
     }

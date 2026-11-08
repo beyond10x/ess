@@ -44,6 +44,7 @@ fn registry() -> TypeRegistry {
         (
             "sample.Channel",
             TypeBody::Enum {
+                ordered: false,
                 variants: vec!["Email".into(), "Post".into(), "Portal".into()],
             },
         ),

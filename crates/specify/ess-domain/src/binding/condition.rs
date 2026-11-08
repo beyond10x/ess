@@ -149,7 +149,7 @@ fn leaf_of(present: &TypeRef, types: &TypeRegistry) -> Leaf {
         TypeRef::Primitive(crate::Primitive::String) => Leaf::String,
         TypeRef::Primitive(crate::Primitive::Boolean) => Leaf::Boolean,
         TypeRef::Named(name) => match types.get(name).map(|declared| &declared.body) {
-            Some(TypeBody::Enum { variants }) => Leaf::Enum {
+            Some(TypeBody::Enum { variants, .. }) => Leaf::Enum {
                 variants: variants.iter().map(|v| v.name().to_owned()).collect(),
             },
             _ => Leaf::Other,
