@@ -121,7 +121,9 @@ naming the flag. A `Duration` field takes `sum`, `avg`, `min` and `max` as an ex
 Conformance varies every field the expression reads and asserts the figure the expression
 computes per row, so a target that reads one field of a difference, ignores an attribute, or orders
 an enum's variants as words fails. A measure over an expression that also declares `skip_absent:`
-or `where:` gets no scenario yet and is refused by name (`ESS-SYNTH-017`). Generated Rust and Go
+or `where:` gets no scenario yet and is refused by name (`ESS-SYNTH-017`), and so is a `sum` whose
+values are `Duration`s, such as `downtime` above, and an `avg` of a `Duration` field where no arrangement of whole
+seconds tells rounding from truncation: their figure is not yet asserted. Generated Rust and Go
 view queries keep a view with an expression measure, a `Duration` measure or an ordered enum's
 extreme an obligation, named by it.
 

@@ -1709,7 +1709,16 @@ impl ViewSpec {
                  declared variant as the greatest",
                 source_field.name, aggregate.function
             )),
-            _ if admitted(true).is_some() => refused.with_hint(
+            _ if admitted(true).is_some() => ValidationError::new(
+                ValidationCode::UnsupportedFormatVersion,
+                at,
+                format!(
+                    "`{}` computes {aggregate}, and `{}` admits `{}` of type {} from \
+                     specification format ess/36",
+                    self.name, aggregate.function, source_field.name, source_field.type_ref
+                ),
+            )
+            .with_hint(
                 "declare `format: ess/36`, from which a measure admits every type grid O orders",
             ),
             _ => refused,

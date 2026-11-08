@@ -4,8 +4,8 @@
 //! interpreted target.
 //!
 //! The guide: "A `Duration` field takes `sum`, `avg`, `min` and `max` as an expression of one
-//! does", and the only measures it names as getting no scenario are an expression measure beside
-//! `skip_absent:` or `where:`.
+//! does". Its `max` and an ordered enum's `min` are witnessed; a `Duration` `sum` and a
+//! `Duration` field's `avg` are refused by name (`ESS-SYNTH-017`), as the guide says.
 use std::collections::BTreeMap;
 
 use ess_compiler::{ir::EssIr, resolve::compile, source::SourceMap};
@@ -83,12 +83,36 @@ fn witnessed_and_passing(views: &str, view: &str) {
     assert!(failed.is_empty(), "{failed:#?}");
 }
 
+/// `views` synthesizes no scenario for `view` and refuses it by name as unwitnessed
+/// (`ESS-SYNTH-017`) with a reason containing `because`: a refusal, never a scenario that fails a
+/// correct target. The guide names these refusals; witnessing them is later work.
+fn refused_unwitnessed(views: &str, view: &str, because: &str) {
+    let synthesis = synthesize(&ir(&model(views)));
+    let id = format!("demo.ledger.{view}/aggregate");
+    assert!(
+        !synthesis
+            .suite
+            .scenarios
+            .keys()
+            .any(|scenario| scenario.to_string() == id),
+        "`{id}` is synthesized"
+    );
+    let refusals = format!("{:?}", synthesis.refusals);
+    assert!(
+        refusals.contains("AggregateUnwitnessed")
+            && refusals.contains(&format!("demo.ledger.{view}"))
+            && refusals.contains(because),
+        "no named refusal of `{view}` ({because}):\n{refusals}"
+    );
+}
+
 /// The guide's own `downtime`: a grouped `sum` of `ended_at - started_at`, declared `Duration`.
 #[test]
-fn the_guides_downtime_sum_of_a_difference_is_witnessed() {
-    witnessed_and_passing(
+fn the_guides_downtime_sum_of_a_difference_is_refused_by_name() {
+    refused_unwitnessed(
         "  - name: demo.ledger.Down\n    source: demo.ledger.Window\n    consistency: read_your_writes\n    group_by: [incident]\n    fields:\n      - {name: incident, type: String}\n      - {name: downtime, type: Duration, aggregate: {sum: {expr: \"ended_at - started_at\"}}}\n",
         "Down",
+        "has no exact value over the arranged rows",
     );
 }
 
@@ -103,19 +127,21 @@ fn a_grouped_max_of_a_duration_field_is_witnessed() {
 
 /// A grouped `avg` of a Duration field, a Decimal of seconds.
 #[test]
-fn a_grouped_avg_of_a_duration_field_is_witnessed() {
-    witnessed_and_passing(
+fn a_grouped_avg_of_a_duration_field_is_refused_by_name() {
+    refused_unwitnessed(
         "  - name: demo.ledger.Mean\n    source: demo.ledger.Window\n    consistency: read_your_writes\n    group_by: [incident]\n    fields:\n      - {name: incident, type: String}\n      - {name: mean, type: Optional<Decimal>, aggregate: {avg: elapsed}}\n",
         "Mean",
+        "no arrangement here tells rounding from truncation",
     );
 }
 
-/// An ungrouped `sum` of a Duration field: the guide names no refusal for it.
+/// An ungrouped `sum` of a Duration field.
 #[test]
-fn an_ungrouped_sum_of_a_duration_field_is_witnessed() {
-    witnessed_and_passing(
+fn an_ungrouped_sum_of_a_duration_field_is_refused_by_name() {
+    refused_unwitnessed(
         "  - name: demo.ledger.Total\n    source: demo.ledger.Window\n    consistency: read_your_writes\n    fields:\n      - {name: total, type: Duration, aggregate: {sum: elapsed}}\n",
         "Total",
+        "totals Durations",
     );
 }
 
