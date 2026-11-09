@@ -56,10 +56,13 @@ jobs:
             echo "$version is tagged already; nothing to prebuild"
             exit 0
           fi
-          if ! cargo xtask release verify "$version"; then
+          if ! cargo xtask release verify; then
             echo "$version is not a dated release; nothing to prebuild"
             exit 0
           fi
+          # A dated, untagged version is a release being cut: the checks the tag's packaging
+          # runs fail here, on its pull request, rather than after the tag is pushed.
+          cargo xtask release verify "$version"
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
   package:

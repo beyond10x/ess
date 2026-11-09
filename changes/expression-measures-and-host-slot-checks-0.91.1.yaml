@@ -1,0 +1,17 @@
+schema: b10x-change/v1
+id: ess/expression-measures-and-host-slot-checks-0.91.1
+repository: ess
+publishedAt: 2026-11-09T00:00:00Z
+title: Aggregate measures compute expressions, enums can be ordered, and host slots are checked
+summary: >-
+  From format ess/36 an aggregate measure may compute an expression of its source row, sum and avg
+  admit a Duration, and an enum declaring ordered true gives min and max an order. ess ui check
+  holds a host slot's reads and commands to the specification, and a client-paged collection takes
+  a pager. 0.91.0 had no release; 0.91.1 carries its content.
+kind: capability
+impact: significant
+source:
+  url: https://github.com/beyond10x/ess/releases/tag/0.91.1
+  version: 0.91.1
+journeys: [specify, operate-services]
+affectedSurfaces: [ess/docs]

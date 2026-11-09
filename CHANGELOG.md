@@ -2,7 +2,7 @@
 
 ## [Unreleased]
 
-## [0.92.0] — 2026-11-08
+## [0.92.0] — 2026-11-09
 
 ### Added
 
@@ -13,6 +13,19 @@
 ### Changed
 
 - `ess generate ui --target react` and the terminal renderer no longer refuse a document holding a host slot, which 0.90.0 and 0.91.0 did with "validated by `ess ui check` and not generated yet".
+
+## [0.91.2] — 2026-11-09
+
+### Fixed
+
+- Generated Go conformance runner: a suite holding a complete subject comparison around a system-issued command is admitted. For a `system: true` command's refusal synthesis writes `snapshot_complete_subject`, then `expect_not_issued` (or `await_outcome`), then `query_view` and `expect_complete_subject_unchanged`; the Go admission counted only a sent command between the snapshot and the comparison and refused the whole suite with `complete subject comparison lacks its fresh original pair`, so no scenario ran, while the Rust and interpreted runners passed it. Go now counts an awaited or not-issued step as the one command the comparison brackets, as the Rust admission does, and judges each scenario with the Rust runner's verdict, a row changed behind the refusal included. The TypeScript runner already did (story:the-go-and-typescript-runners-admit-and-judge-an-awaited-optional-suite-like-rust).
+
+## [0.91.1] — 2026-11-09
+
+### Fixed
+
+- Release: 0.91.0 was tagged but never released: its format history lacked the release of `ess/36`, so its packaging refused the tag. 0.91.1 carries the same content, with `ess/36` recorded as introduced in 0.91.1; the 0.91.0 tag stays, without a release, and `task release-status` names it as such.
+- CI: the required gate now runs `cargo xtask release verify` with the workspace version whenever that version is not tagged yet, so a release whose packaging would refuse it, such as one shipping a format whose release is not recorded, fails on its pull request rather than after the tag is pushed. The release candidate job of a queue branch fails the same way; before, it read that refusal as "not a dated release" and skipped.
 
 ## [0.91.0] — 2026-11-08
 

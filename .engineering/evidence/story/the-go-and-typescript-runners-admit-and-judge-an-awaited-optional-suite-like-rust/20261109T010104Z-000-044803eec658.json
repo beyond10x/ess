@@ -1,0 +1,12 @@
+{
+  "at": "2026-11-09T01:01:04Z",
+  "actor": "human:timo",
+  "artifact": "story:the-go-and-typescript-runners-admit-and-judge-an-awaited-optional-suite-like-rust",
+  "kind": "story",
+  "revision": 4,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "cargo test -p ess-conformance --test system_issued_complete_subject_runners (2 passed; red on Go before the fix) and --test system_issued_interpreter (16 passed, incl. the_whole_job_suite_reads_alike_in_the_go_runner and _typescript_runner), 2026-11-09"
+  }
+}
