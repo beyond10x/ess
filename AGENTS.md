@@ -437,6 +437,8 @@ within one hour of the reproduction.
    the tag. The tag's release workflow is the gate. No pull request and no wave.
 6. Afterwards, merge the fix into `main` through the normal route.
 
+A tagged hotfix commit reaches main through a merge commit, never a squash, so the tag stays on main.
+
 ## Commits
 
 Public Gates owns common security/privacy checks and generic bot delivery (Atlas ADR 0048).
