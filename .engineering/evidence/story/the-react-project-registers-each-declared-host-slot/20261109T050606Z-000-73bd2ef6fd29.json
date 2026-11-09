@@ -1,0 +1,12 @@
+{
+  "at": "2026-11-09T05:06:06Z",
+  "actor": "human:timo",
+  "artifact": "story:the-react-project-registers-each-declared-host-slot",
+  "kind": "story",
+  "revision": 11,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "https://github.com/beyond10x/ess/actions/runs/42552652300 (PR 768 Gate, 0.92.0)"
+  }
+}
