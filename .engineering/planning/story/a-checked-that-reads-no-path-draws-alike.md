@@ -2,16 +2,21 @@
 format: aep.planning-md/3
 id: story:a-checked-that-reads-no-path-draws-alike
 kind: story
-status: draft
+status: archived
 title: A checked that reads no path draws alike in both renderers
 summary: 'checked_unreadable is silent on a checked: that reads no path, which React draws on and the terminal evaluates (UI-adopter wave 1 U2 pass-4 note, backlog)'
 tags:
+- already-fixed
 - backlog
 - from-finding
 - review-finding
+- zero-open-issues
 relations:
 - informed_by: review-result:w086-u2-adversary-pass-4
-revision: 1
+- decomposes: epic:zero-open-issues-2026-11
+revision: 4
+transitions:
+- {from: "draft", to: "archived", at: "2026-11-09T23:06:47Z", actor: "human:timo", revision: 4}
 ---
 ## Need
 
@@ -43,3 +48,15 @@ The check case `a_checked_the_renderers_disagree_on_warns` asserts that `checked
 ## Schedule
 
 Backlog: not waved; considered only after every predefined wave is released.
+
+
+## Verification on 0.92.0 (2026-11-09)
+
+Result: **already-fixed**. Checked against main at 4ab2ea1449 and the 0.92.0 release binary by the
+zero-open-issues run (epic `epic:zero-open-issues-2026-11`); this draft leaves the plan as archived.
+
+Proof: verify/a-checked-that-reads-no-path-draws-alike/repro/run.txt (toggles ta, tb, tl); templates/runtime/expr.ts.tmpl:266-277 (holds), :243 (filterForm admits a literal); commit ec2cb77cad (0.89.0)
+
+The acceptance holds on 0.92.0: "a checked that reads no path ... draws the same mark in both renderers". Rows are [{off: true}, {off: false}]. For `checked: "not true"`, `"1 == 2"` and `"not -1"`, the generated React `holds` draws off, off, and the terminal's hint line draws `[ ]` on both rows for Alfa, Bravo and Lima (run.txt).
+The draft's premise is that React evaluates a no-path `checked` as literal text (truthy, so on). It predates `holds`, added in 0.89.0 (ec2cb77cad; CHANGELOG 0.89.0: "the React runtime reads a toggle's `checked` state in the filter grammar"). `holds` parses in the filter grammar first, `filterForm` admits literals (:243), and the value is run there. It falls back to `evaluate` only for text the filter grammar refuses, and `checked_unreadable` warns on that text (rules.rs:1333-1345).
+The pass-4 cases were never committed, and no test at TREE pins them. A small regression test would be cheap, but nothing is left to fix.

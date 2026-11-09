@@ -5,6 +5,8 @@ kind: story
 status: draft
 title: An exchange is declared in the specification
 summary: 'exchanges: at the next ess/N: who sends which message, correlation, open and close; size L'
+tags:
+- zero-open-issues
 refs:
 - provider: github
   reference: beyond10x/ess#650
@@ -12,36 +14,117 @@ relations:
 - serves: vision:O2
 - decomposes: epic:messages-are-exchanged-independent-of-the-wire
 - informed_by: architecture-decision-record:messages-are-exchanged-independent-of-the-wire
-revision: 1
+- decomposes: epic:zero-open-issues-2026-11
+revision: 3
 ---
-## Problem
+## Need
 
-A specification cannot say that a command opens a conversation in which both sides then send
-messages that belong to one row until something ends it (beyond10x/ess#650). ADR
-`messages-are-exchanged-independent-of-the-wire` § 1, F1 (a) and F2 (a), puts that statement in the
-specification.
+A specification cannot say that a command opens a conversation in which both parties then send
+messages that belong to one row until something ends it. A request answered by `101 Switching
+Protocols` followed by messages both ways on the socket is the case reported; the same conversation
+spoken over a broker or as JSON-RPC notifications has the same gap. The accepted ADR
+`messages-are-exchanged-independent-of-the-wire` § 1 (F1 (a), F2 (a)) puts that statement in the
+specification as `exchanges:`, carrying no wire word.
 
-## Design
+Minimal reproduction on 0.92.0 (`ess/36`, a `Call` entity with `Open`/`Ended`, a `Connect` command
+creating it, a `HangUp` command moving it to `Ended`, a `CallEnded` event):
 
-`exchanges:` at the next `ess/N`: `name`, `opens` (a command), `follows` (the entity whose row the
-opening outcome creates or addresses), `initiator_sends` (commands), `responder_sends` (events),
-`closes` (`states:` of the followed lifecycle, a `command:`, or both), optional `max_followers`
-with the error answered over it. Order is the followed row's lifecycle and the commands' guards; no
-ordering syntax. Below the new format `exchanges:` is refused as `unsupported_format_version`
-naming it; a specification without it keeps its IR bytes.
+```yaml
+exchanges:
+  - name: example.calls.Session
+    opens: example.calls.Connect
+    follows: example.calls.Call
+    initiator_sends: [example.calls.HangUp]
+    responder_sends: [example.calls.CallEnded]
+    closes: {states: [Ended]}
+```
+
+```text
+$ ess specify validate --path model-exchange
+  - system.yaml: unknown field `exchanges`, expected one of `format`, `system`, ... `outcome_groups`
+exit 1
+```
 
 ## Acceptance
 
-- A specification with one exchange validates and compiles; its IR carries the exchange in a
-  deterministic order (`cargo test -p ess-domain --locked --test exchanges`, new).
-- Refused by name, each with its own `ValidationCode` and path: an `opens` command that creates or
-  addresses no row of `follows`; an `initiator_sends` command that addresses no row of `follows`; a
-  `responder_sends` event that carries no identity of `follows`; a `closes` state outside the
-  lifecycle; a message listed twice or on both sides; `max_followers` below 1 or without an error.
-- The same document one format lower is refused naming the new format.
-- `FORMAT_HISTORY` gains the row; `ess verify diff` reports an added, removed or changed exchange.
+- `docs/design/message-exchanges.md` exists, status accepted, and states the keys below, each
+  refusal with its `ValidationCode`, the format consequence, and how every target treats an
+  exchange (built, or refused by name) before any code lands.
+- Under the next source format (`ess/37` unless an open format of the same decision takes it), the
+  specification above validates and `ess specify compile` writes the exchange into the IR in name
+  order; compiling it twice gives identical bytes
+  (`cargo test -p ess-domain --locked --test exchanges`, new).
+- Keys: `name`, `opens` (a command), `follows` (an entity), `initiator_sends` (commands),
+  `responder_sends` (events), `closes` (`states:`, `command:` or both), optional
+  `max_followers: {count: <n>, error: <error>}`. No ordering key.
+- Each of these is refused with its own code and its path: an `opens` command none of whose
+  accepting outcomes creates or addresses a row of `follows`; an `initiator_sends` command that
+  addresses no row of `follows` through its identity input; a `responder_sends` event with no field
+  of the identity type of `follows`; a `closes.states` member outside the lifecycle; a
+  `closes.command` that is not in `initiator_sends` or whose accepting outcomes move the row into
+  no `closes.states` member (into no terminal state when `states:` is absent); a message listed
+  twice or on both sides; `max_followers.count` below 1; an unknown name anywhere.
+- A message after close is answered by the command's own refusal in the closing state (the
+  lifecycle already refuses it); the page says so and no after-close error key exists.
+- The same document at `format: ess/36` is refused as `unsupported_format_version` naming the new
+  format; a specification without `exchanges:` keeps its IR bytes at every format.
+- `FORMAT_HISTORY` gains the row; `cargo xtask schema` regenerates
+  `schemas/generated/ess.schema.json`; `ess specify formats` prints the row.
 
-## Size
+## Scope
 
-L: ess-domain (parse, checks), ess-compiler (IR), ess-diff, format history, docs page
-`docs/design/message-exchanges.md`.
+- cited: docs/design/message-exchanges.md (new; named by the epic and the earlier body)
+- cited: crates/specify/ess-domain/src/spec.rs (`RawSpecFile`, beside `outcome_groups`)
+- inferred: crates/specify/ess-domain/src/exchange.rs (new, shaped like `outcome_group.rs`)
+- cited: crates/specify/ess-domain/src/system.rs (`FORMAT_HISTORY`)
+- inferred: crates/specify/ess-domain/src/lib.rs
+- cited: crates/specify/ess-compiler/src/resolve.rs (lowers top-level constructs such as outcome groups)
+- inferred: crates/specify/ess-compiler/src/ir.rs
+- inferred: crates/specify/ess-domain/tests/exchanges.rs (new)
+- inferred: schemas/generated/ess.schema.json (regenerated)
+- inferred: website/docs/reference/spec-versions.md (regenerated by `cargo xtask format-history`)
+confidence: medium
+
+## Fit review
+
+1. **Need.** A conversation (who opens it, which messages each party sends, the row they belong to,
+   what ends it) cannot be stated; reproduction above, 0.92.0 refuses `exchanges` as an unknown
+   field (`triage/650/repro/run.txt`). Requester's syntax: a WebSocket upgrade route with the
+   messages each side sends (issue body, "Expected"); not adopted as written, see 7.
+2. **Class: gap.** No construct states a multi-message conversation: commands answer once, events
+   are published once (ADR § Context, lines 41-58). Not a defect: `101` is refused on purpose
+   (`docs/design/http-presentation-binding.md:405`).
+3. **Already expressible?** No. The closest idiom, separate commands and events with no link
+   between them, leaves the pairing and the direction of each message out of the specification, so
+   the suite checks none of it (fails policy 1, `docs/design/generic-language-features.md:588-594`).
+4. **Fit.** Not a cell of grid R or grid O (`docs/design/language-grids.md`): it reads nothing in a
+   guard or value position and adds no operation; it names existing commands, events, an entity
+   and lifecycle states. Order reuses the lifecycle and guards (F2 (a), ADR line 165), so guards,
+   outcomes and views are untouched. Every target: the interpreter and synthesis in
+   `story:conformance-synthesizes-exchange-scenarios`; `ess verify diff` in
+   `story:ess-verify-diff-reports-a-changed-exchange`; AsyncAPI and OpenAPI in
+   `story:asyncapi-and-openapi-project-an-exchange`; generated Rust, Go, TypeScript and Entity
+   Runtime ignore it by design (it adds no behaviour to a command), which the design page states.
+5. **Second adopter.** A price feed: `Subscribe` opens an exchange following a `Subscription` row,
+   the server sends `QuoteChanged` events, `Unsubscribe` moves the row to `Closed`.
+6. **Cost.** One source format (`ess/37`), one new top-level key, about eight validation codes, a
+   diff kind, a schema regeneration. No migration: specifications without it keep their bytes
+   (ADR § 5, lines 142-149).
+7. **Alternatives.** (a) Change nothing: the WebSocket, broker and JSON-RPC forms would each state
+   the conversation apart, unchecked against each other (ADR lines 55-58). (b) A sibling
+   `ess-exchange/1` document (F1 (b)): rejected by the operator's acceptance of F1 (a). (c) Chosen:
+   `exchanges:` in the model. The requester's route-level syntax became binding C
+   (`story:an-http-route-upgrades-to-an-exchange`) on top of this.
+
+## Decisions
+
+**accept, redesigned.** The requester asked for a WebSocket binding on a route; the accepted ADR
+`messages-are-exchanged-independent-of-the-wire` (accepted 2026-10-28, F1 (a), F2 (a), F3 (a))
+moves the conversation into the specification and makes the WebSocket one binding of it. Refined
+here: the after-close refusal is the lifecycle's own, so no error key is added for it, and
+`max_followers` is a mapping `{count, error}`. Format consequence: the next `ess/N`, shared with
+`story:a-view-may-answer-values-no-row-holds` when both land in one release (epic note).
+
+## Source
+
+github:beyond10x/ess#650

@@ -7,27 +7,104 @@ title: check-history determines a record identity taken from a response field
 tags:
 - adopter-report
 - defect
+- severity-medium
+- zero-open-issues
 relations:
 - serves: vision:O2
 - decomposes: epic:adopter-gaps-verdicts
-revision: 1
+- decomposes: epic:zero-open-issues-2026-11
+revision: 3
 ---
 ## Outcome
 
 `ess verify conform check-history` determines a record's identity when the model takes it from a
 response field, instead of exiting 2 with `check.model-undetermined`.
 
-## Evidence
+## Problem
 
 An adopter on ess 0.56.0: `check-history` exits 2 (`check.model-undetermined`) on a history whose
-record identity comes from a response field. On `main`,
-`crates/verify/ess-conformance/src/interpret/execute/history.rs:201` passes
-`response::Authority::default()`, so the recorded response never reaches the model; reading a
-response field then returns `NotInterpreted` (`src/interpret/response.rs:98-101`), which
-`linearize.rs:296` reports as `check.model-undetermined`. Adjacent:
-`story:stored-field-equals-returned-response-value`.
+record identity comes from a response field. Still so on 0.92.0.
+
+`crates/verify/ess-conformance/src/interpret/execute/history.rs` steps each operation with
+`response::Authority::default()`, which holds no issued response, so `Authority::prepare`
+(`src/interpret/response.rs`) returns `None` for a creating branch whose observed identity reads the
+response (`src/interpret/execute.rs`, the `Creates`/`Observed` arm). The payload evaluator
+`determined::response` (`src/interpret/execute/determined.rs`) then has no actual value and answers
+`NotInterpreted`, which `linearize.rs` reports as `check.model-undetermined`. An `ess-history/3`
+operation records its published events, so the identity the response carried is in the history.
+
+Minimal reproduction (ess 0.92.0):
+
+```yaml
+format: ess/18
+system: demo
+version: v1
+domain: demo.items
+types:
+  - {name: demo.items.ItemId, kind: newtype, of: Uuid}
+entities:
+  - name: demo.items.Item
+    identity: {name: item_id, type: demo.items.ItemId}
+    lifecycle: {initial: Open, states: [Open, Closed], terminal: [Closed],
+                transitions: [{name: close, from: [Open], to: Closed}]}
+events:
+  - {name: demo.items.Created, fields: [{name: item_id, type: demo.items.ItemId}]}
+  - {name: demo.items.Closed, fields: [{name: item_id, type: demo.items.ItemId}]}
+commands:
+  - name: demo.items.Create
+    input: []
+    response: [{name: item_id, type: demo.items.ItemId}]
+    outcomes:
+      - name: created
+        creates: demo.items.Item
+        instance: item_id
+        emits: [demo.items.Created]
+        payload: {demo.items.Created: {item_id: {response: item_id}}}
+  - name: demo.items.Close
+    input: [{name: item_id, type: demo.items.ItemId}]
+    outcomes:
+      - name: closed
+        moves: demo.items.Item.close
+        instance: item_id
+        emits: [demo.items.Closed]
+        payload: {demo.items.Closed: {item_id: input.item_id}}
+```
+
+An `ess-history/3` document, one client: `Create` (input `{}`, `subject_key` `…aa`, events
+`[Created {item_id: …aa}]`, outcome `created`), then `Close` (input `{item_id: …aa}`, outcome
+`closed`, events `[Closed {item_id: …aa}]`).
+
+```
+$ ess verify conform check-history --path model.yaml --history right.json
+right.json cannot be checked: check.model-undetermined: the model cannot decide operation …0101: an actual response field or its executable conversion is not interpreted yet
+exit 2
+```
+
+The same history with `Created {item_id: …bb}` gives the same exit 2, so neither a correct nor a
+wrong history is judged.
 
 ## Acceptance
 
-- A `check-history` test over a history whose created record's id is a response field: it
-  linearizes and exits 0; the same history with a wrong recorded id exits with the mismatch.
+- `check-history` over the model and the correct history above exits 0 (linearizable).
+- The same history with `Created` publishing `…bb` while `Close` addresses `…aa` exits 1 and names
+  the `Create` operation in the violation.
+- An operation that records no `events` (an `ess-history/1` or `/2` document) on such a command
+  either takes the identity from `subject_key` and is checked, or is refused with a code naming the
+  response field rather than `check.model-undetermined`.
+- Tests in `crates/edge/ess-cli/tests/check_history.rs` (exit statuses) and
+  `crates/verify/ess-conformance/tests/linearizability.rs` (verdicts).
+
+Adjacent, not a duplicate: `story:stored-field-equals-returned-response-value` (storing a returned
+value with `sets:`).
+
+## Scope
+
+- cited: crates/verify/ess-conformance/src/interpret/execute/history.rs
+- cited: crates/verify/ess-conformance/src/interpret/response.rs
+- cited: crates/verify/ess-conformance/src/interpret/execute/determined.rs
+- inferred: crates/verify/ess-conformance/src/interpret/execute.rs
+- inferred: crates/verify/ess-conformance/src/linearize.rs
+- inferred: crates/verify/ess-conformance/tests/linearizability.rs
+- inferred: crates/edge/ess-cli/tests/check_history.rs
+
+confidence: medium

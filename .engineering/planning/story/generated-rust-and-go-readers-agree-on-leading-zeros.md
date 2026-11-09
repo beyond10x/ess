@@ -6,59 +6,71 @@ status: draft
 title: Generated Rust and Go readers agree on leading zeros
 summary: The generated Rust JSON reader accepts 01 (and 01.0 since U15); Go refuses it; found by the batch-3 adversary
 tags:
+- defect
 - ess-next
+- severity-medium
+- zero-open-issues
 relations:
 - informed_by: story:an-integer-literal-is-written-into-the-suite-as-an-integer
-revision: 3
+- decomposes: epic:zero-open-issues-2026-11
+revision: 5
 ---
-<!-- Starting point for a `story` artifact, seeded by `aep artifact new story <name>`.
-     No frontmatter here on purpose: the `---` block is written by the CLI from the id, kind, status
-     and relations you gave it, and a second copy in this file would be the one that went stale.
-     Delete the italic guidance as you fill each section. -->
-
-# Story: <name>
-
 ## Outcome
 
-*What is true for whom once this has shipped, in one sentence. If it names a component rather than a
-person, it is a task — say what changes for someone.*
-
-## Context
-
-*Why this is worth doing now, and what it depends on. Link the epic or specification it comes from
-rather than restating it; the `derived_from` relation already carries the edge.*
-
-## Acceptance
-
-- The generated Rust and Go readers give the same answer for every number spelling. A leading zero
-  (other than `0` itself, `0.x` or `0e..`) is refused by both with the same message. A test runs a
-  shared spelling table through both servers.
-- The fit review decides, under D135, whether refusing `01` in Rust breaks a client that relies on
-  it, and records the opt-in or notice if it does.
-
-## Out of Scope
-
-*What a reasonable reader would expect to be included and is not — the boundary that stops this
-story quietly becoming an epic.*
-
-## Ambiguities
-
-*Each gap this story found and did not close, classified. `inferable` — the answer is already
-written down, so give the `path:line` or the artifact id that settles it.
-`requires-stakeholder-input` — nobody here can decide it, so name who does, and raise that entry as
-a `decision-blocker` with a `blocks` edge to this story, or it is a sentence somebody improvises
-later.*
-
-## Open Questions
-
-*Anything still undecided belongs in `## Ambiguities` above, classified and with its citation or its
-decider. Keep this section for a question that is neither — an unowned question is a story that
-stalls without anybody noticing.*
+A client gets the same answer from the generated Rust server and the generated Go server for every
+spelling of a JSON number in a command body, a leading zero included.
 
 ## Problem
 
-Found by the batch-3 adversary pass over the integer decoders (U15). The generated Rust JSON reader
-(`crates/generate/ess-synth/src/rust/json.rs`) accepts a number with a leading zero (`01`, and since
-U15 also `01.0` and `007.0e0`), while the generated Go reader refuses all of them as not JSON. JSON
-forbids leading zeros, so two servers generated from one model answer the same request differently.
-The disagreement over `01` predates U15.
+Found by the batch-3 adversary pass over the integer decoders (U15). Two servers generated from one
+model answer the same request differently:
+
+- The generated Rust server reads every body with `json::parse`
+  (`crates/generate/ess-synth/src/rust/http.rs`, `json::parse(text)`). Its `number` reader
+  (`crates/generate/ess-synth/src/rust/json.rs`, `fn number`) takes any run of digits, so `01`,
+  `-01`, `01.0` and `007.0e0` are numbers, and `integer_at` reads `01` as `1`.
+- The generated Go server without an `ess-http/1` binding reads a body with `encoding/json`
+  (`readJSON` in `SURFACE_HELPERS`, `crates/generate/ess-synth/src/go/http.rs`), which refuses
+  `01` as not JSON: `400 the body is not JSON: ...`.
+- The generated Go server with a binding already reads as Rust does: `parseJSON` in
+  `crates/generate/ess-synth/src/go/http/bound.rs`, pinned by
+  `http_binding::go::a_json_body_is_read_as_the_rust_server_reads_it` (`place-leading-zero` is
+  `201` in both servers).
+
+Minimal reproduction: a command `Count {n: Integer}` with one outcome, served by
+`ess generate synthesize --target rust` and `--target go` with no `--http`; `POST` the body
+`{"n":01}` to the command's route. Rust answers the outcome as for `{"n":1}`; Go answers `400`.
+
+JSON (RFC 8259 §6) forbids a leading zero, and the served OpenAPI document is JSON, so either both
+servers refuse or both read; today the unbound pair disagrees and the bound pair reads.
+
+## Decisions
+
+Open, to settle before implementation, under D135 (a pinned reader is a documented contract):
+
+- (a) Both refuse a leading zero (other than `0`, `0.x`, `0e..`) as malformed JSON, bound and
+  unbound. Breaks a client that sends `01` to a Rust server today, and moves the pinned
+  `place-leading-zero` answer of the binding tests from `201` to `400`; listed in the CHANGELOG.
+- (b) The unbound Go server reads as Rust does, through the reader the bound server already uses.
+  No Rust client breaks; the servers keep reading text that is not JSON.
+
+## Acceptance
+
+- `generated_servers_agree_on_number_spellings`: a shared spelling table (`0`, `-0`, `0.5`, `0e1`,
+  `01`, `-01`, `01.0`, `007.0e0`, `1`) is sent as an `Integer` input's value to the unbound Rust and
+  Go servers and to the bound pair; each spelling gets the same status and body from every server.
+- Under (a), `01`, `-01`, `01.0` and `007.0e0` are answered `400` naming the body as not JSON;
+  under (b) they run as `1`, `-1`, `1` and `7`.
+- The CHANGELOG names the client that changes answer.
+
+## Scope
+
+- cited: crates/generate/ess-synth/src/rust/json.rs
+- cited: crates/generate/ess-synth/src/go/http.rs
+- cited: crates/generate/ess-synth/src/go/http/bound.rs
+- cited: crates/generate/ess-synth/tests/http_binding/shared.rs
+- cited: crates/generate/ess-synth/tests/http_binding/go.rs
+- cited: crates/generate/ess-synth/tests/http_binding_rust.rs
+- inferred: CHANGELOG.md
+
+confidence: medium

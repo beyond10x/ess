@@ -3,57 +3,107 @@ format: aep.planning-md/3
 id: story:a-badge-field-takes-a-tone
 kind: story
 status: draft
-title: A badge field takes a tone
+title: A field takes a tone, a widget passes its fallback tone, and a tone map may band numbers
 summary: 'tone and tone_by on a Field with as: badge are refused as an unknown field, so tone maps cannot reach status columns (0.77.0)'
 tags:
 - ess-batch-5
 - ess-next
 - ess-ui
-revision: 3
+- zero-open-issues
+refs:
+- provider: github
+  reference: beyond10x/ess#723
+relations:
+- decomposes: epic:zero-open-issues-2026-11
+revision: 6
 ---
-<!-- Starting point for a `story` artifact, seeded by `aep artifact new story <name>`.
-     No frontmatter here on purpose: the `---` block is written by the CLI from the id, kind, status
-     and relations you gave it, and a second copy in this file would be the one that went stale.
-     Delete the italic guidance as you fill each section. -->
+## Need
 
-# Story: <name>
+A value shown in a collection column or a record field cannot be colored by what it means, and a
+toned badge cannot say what a value no map names, or a number in a range, looks like. On ess 0.92.0
+(minimal document in the triage's `repro/`):
 
-## Outcome
-
-*What is true for whom once this has shipped, in one sentence. If it names a component rather than a
-person, it is a task — say what changes for someone.*
-
-## Context
-
-*Why this is worth doing now, and what it depends on. Link the epic or specification it comes from
-rather than restating it; the `derived_from` relation already carries the edge.*
+- A column cannot take a tone: `{field: state, as: badge, labels: order_state, tone_by: order_state}`
+  is refused, `` unknown field `tone_by`, expected one of `field`, `name`, `label`, `as`, … ``. The
+  document's `tone_maps.order_state` is then reported `tone_map_unused`, because only a badge or
+  icon primitive can name it (`docs/design/ui-style-tokens.md` § "Tones and status colors").
+- A widget cannot hand its badge the tone of an unmapped value: a body badge
+  `tone: args.otherwise`, the param typed `{enum: [neutral, info, success, warning, danger]}`, is
+  refused, `data did not match any variant of untagged enum Tone`.
+- A tone map keys exact values only: `load: {"0..50": success, "50..": danger}` loads, and `0..50`
+  is a literal key no number ever equals, so a numeric column cannot be colored by range.
 
 ## Acceptance
 
-- A Field with `as: badge` accepts `tone` and `tone_by`. The React renderer draws each row's badge in the tone its value maps to. A toy document with a status column covers both forms.
-- `tone_by` that names a missing tone map is refused with a named code.
+- A field (collection column, record field) takes `tone` and `tone_by`, as decided (G-8 answer a):
+  `tone_by: <tone map name>` reads the field's own value, `tone` is the tone of a value the map
+  does not name (default `neutral`). React draws the value as a badge in that tone when `as: badge`
+  and as toned text otherwise; the terminal applies its emphasis table
+  (`docs/design/ui-style-tokens.md` § Renderers). `tone_by` naming no map is `tone_map_refs` at the
+  field's path, and a map a field names is no longer `tone_map_unused`
+  (`crates/ui/ess-ui-check/tests/field_tone.rs`, `crates/ui/ess-ui-react/tests/field_tone.rs`).
+- Inside a widget body, `tone: args.<param>` is substituted at expansion when the param is typed as
+  the tone enum; any other param type is refused by path.
+- A tone map may be written as bands, `{bands: [{from: 0, tone: success}, {from: 50, tone: warning}, {from: 80, tone: danger}]}`:
+  a number takes the tone of the last band whose `from` it reaches; below the first band, or a
+  value that is no number, takes the node's `tone`. `ess ui check` refuses bands whose `from` is
+  not strictly ascending, and a band map named where values are not numbers is not checked
+  (no model types; the reference says so).
+- `website/docs/reference/ess-ui.md` is a fresh render of the schema; a document without the keys
+  generates the same bytes.
 
-## Out of Scope
+## Scope
 
-*What a reasonable reader would expect to be included and is not — the boundary that stops this
-story quietly becoming an epic.*
+- cited: `crates/ui/ess-ui/src/model.rs`
+- cited: `crates/ui/ess-ui/src/expand.rs`
+- cited: `schemas/ui/ess-ui.schema.yaml`
+- cited: `crates/ui/ess-ui-react/templates/runtime/fields.tsx.tmpl`
+- inferred: `crates/ui/ess-ui-react/templates/runtime/primitives/badge.tsx.tmpl`
+- inferred: `crates/ui/ess-ui-check/src/rules.rs`
+- inferred: `crates/ui/ess-ui-check/src/classify.rs`
+- inferred: `crates/ui/ess-ui-tui/src/view.rs`
+- inferred: `docs/design/ui-style-tokens.md`
+- inferred: `website/docs/reference/ess-ui.md`
+- confidence: medium
 
-## Ambiguities
+## Fit review
 
-*Each gap this story found and did not close, classified. `inferable` — the answer is already
-written down, so give the `path:line` or the artifact id that settles it.
-`requires-stakeholder-input` — nobody here can decide it, so name who does, and raise that entry as
-a `decision-blocker` with a `blocks` edge to this story, or it is a sentence somebody improvises
-later.*
+Tree `995e29579d`, binary ess 0.92.0. Covers #723 items C18, "a widget has no fallback tone" and
+"a tone map cannot cover a value range"; also the 2026-10-29 report this story was first drafted
+from (a badge field refused `tone_by`).
 
-## Open Questions
+1. **Need.** A status column, a level column or a widget's badge shows the tone of what its value
+   means, from one map per meaning, including values the map does not list and numbers by range.
+   Reproductions above (`repro/run.txt`, `repro/widget.txt`). The requester's proposals, theirs:
+   "columns take `tone_by`", "a fallback tone", "a tone map over a value range".
+2. **Class.** *Gap*, all three: a field has no tone (`schemas/ui/ess-ui.schema.yaml` `Field`), a
+   widget param cannot reach `tone`, and `ToneMap` keys are exact strings.
+3. **Already expressible?** A column: no; the idiom of an `item:` node holding a toned badge
+   primitive draws a second cell beside the column, not the column, and does not sort with it.
+   A range: no; the expression grammar has no ordering operator (`schemas/ui/ess-ui.schema.yaml`
+   `expressions.forms`: `==, !=, in, not, and, or`). The idiom "the view publishes a band enum" moves
+   a presentation choice into the model and is not taken.
+4. **Fit.** The language grids do not apply (`docs/design/language-grids.md:15`, `:63`). The
+   sibling set is every node that shows a value with a tone: badge, icon, and now field; each takes
+   `tone` and `tone_by` with the same meaning (`docs/design/ui-style-tokens.md` § "Tones and status
+   colors": "a value the map does not name takes the node's `tone`"). `label_maps` do not take
+   bands: the words for a band are domain vocabulary a view should publish, while a tone is
+   presentation of a number the model already publishes.
+5. **Second adopter.** A capacity page: a disk-usage column green below 70%, amber to 90%, red
+   above; a job list whose state column follows the job-state tone map.
+6. **Cost.** Additive in `ess-ui/1`: two optional keys on `Field`, a second `ToneMap` form,
+   `args` substitution into `tone`; no migration. `docs/design/ui-style-tokens.md` gains the field
+   tone and the band form before code.
+7. **Considered.** (a) Change nothing. (b) Per-value conditions (`tone_if: [{when, tone}]`): needs
+   ordering operators in the expression grammar, a larger change across both renderers. (c) Chosen:
+   the decided field tone, and bands as a second form of the existing map.
 
-*Anything still undecided belongs in `## Ambiguities` above, classified and with its citation or its
-decider. Keep this section for a question that is neither — an unowned question is a story that
-stalls without anybody noticing.*
+## Decisions
 
-## Problem
+**Accept, redesigned.** Field `tone`/`tone_by` as decided (`approval-record:ess-0870-wave`, G-8
+answer a); the fallback tone is the node's existing `tone`, reachable from a widget param; ranges are
+a band form of `tone_maps` rather than range-shaped keys. No new format version.
 
-Reported 2026-10-29 on ESS 0.77.0 by a downstream session, through the orchestrator. Not yet reproduced in this repository. ess-ui/1 accepts look-and-feel that the React renderer does not draw.
+## Source
 
-`tone` or `tone_by` on a Field with `as: badge` is refused with "unknown field tone_by". A tone map therefore cannot reach a status column.
+`github:beyond10x/ess#723`

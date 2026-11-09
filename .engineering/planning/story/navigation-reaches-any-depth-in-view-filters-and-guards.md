@@ -3,9 +3,10 @@ format: aep.planning-md/3
 id: story:navigation-reaches-any-depth-in-view-filters-and-guards
 kind: story
 status: active
-title: Navigation through declared references reaches any depth in view fields, view filters and guards
+title: Navigation reaches any depth in view fields, view filters and view expressions
 tags:
 - adopter-report
+- zero-open-issues
 refs:
 - provider: github
   reference: beyond10x/ess#564
@@ -14,6 +15,8 @@ relations:
 - serves: vision:O2
 - informed_by: story:row-queries-navigate-a-reference
 - depends_on: story:a-set-effect-selection-reads-the-rows-state
+- decomposes: epic:zero-open-issues-2026-11
+- depends_on: story:a-reference-scenario-reads-every-navigated-filter-conjunct
 scope:
 - confidence: inferred
   path: crates/generate/ess-synth/src
@@ -25,100 +28,122 @@ scope:
   path: crates/specify/ess-domain/src/view.rs
 - confidence: inferred
   path: crates/verify/ess-conformance/src/synthesize/related.rs
-revision: 6
+revision: 9
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-21T22:07:59Z", actor: "human:timo", revision: 2}
 - {from: "proposed", to: "active", at: "2026-10-21T22:07:59Z", actor: "human:timo", revision: 3}
 ---
-## Outcome
+## Need
 
-From `format: ess/30`, navigation through declared references reaches any depth in a view filter,
-a view field and a `when_related:` guard, as the binding design states
-(`docs/design/generic-language-features.md` § G2, lines 236-239: "Depth is any chain of declared
-references"; open question 8, lines 673-675: "a path is a finite sequence of reference steps
-spelled in the specification … There is no transitive closure and no recursion"; wave 4 item 2,
-line 623). The first cut (`ess/28`, lines 241-249) shipped one hop in views and kept the value
-source's two-hop chain; "a second hop in a view or a guard … not in this cut and stay refused".
-This story ships that second hop and every further one.
+A view reads a row more than one declared reference away, and a computed view field reads a
+navigated value: a window counts only while its incident's cause counts (window → incident →
+cause), and a window without an end ends with its incident (`coalesce(ended_at,
+incident_id.ended_at)`). `ess/28` shipped one hop, in a view field (`field: {related: {via,
+field}}`) and a filter path (`<via>.<field>`), and kept a second hop and navigation inside a view
+expression refused.
 
-The spelling is the one the value source already has, `via: [a, b, …]`
-(`{related: {via, field}}` with `via: [a, b]`, design table line 265): a list of reference steps
-from the near row. A view filter writes the path `<a>.<b>.<field>`. A missing row at any step
-reads as absent, by the first cut's rule (lines 244-247): a navigated view field is `Optional`, a
-filter over an absent path shows no row, and a guard's `exists: false` answers a missing row at
-any step.
+This story is the view half: view fields, view filters and view field expressions. Guards are
+`story:navigation-reaches-any-depth-in-guards`; aggregate views are
+`story:an-aggregate-view-reads-through-a-reference`.
 
-Finding 10 of https://github.com/beyond10x/ess/issues/564 (downstream report, 2026-10-19): a guard
-on a port reads the state of the board that owns the port's node. On the integration build
-(e44d2b75c, sizing pass 2, 2026-10-21) a second hop is refused ESS-VIEW-003 in a view filter and
-ESS-COMMAND-003 in a guard, and `via:` as a list in `when_related:` is a serde error rather than a
-named refusal. Below `ess/30` those refusals stay, the guard's list form becoming a named refusal
-whose hint names `ess/30`.
+Minimal reproduction (ess 0.92.0, `format: ess/36`; `repro/b-two-hops`, `repro/b2-two-hop-filter`,
+`repro/c-expr` of the triage of beyond10x/ess#564; `Window.incident_id` references `Incident`,
+`Incident.cause_id` references `Cause { counts: Boolean }`):
 
-## Fit review
-
-1. **Need.** A guard and a view read a row two references away: a port's board state; a window's
-   incident's customer.
-2. **Class.** Gap, decided by the binding design (open question 8); the one-hop limit is the first
-   cut's, not a decision against depth.
-3. **Already expressible?** Only by copying the far row's value at write time, which goes stale
-   when the far row changes (the reason #564 reopened #447).
-4. **Fit.** One navigation rule, the one the value source already applies to two hops; no new
-   key, the existing `via:` takes a list in every position.
-5. **Second adopter.** An order line showing its order's customer's current tier.
-6. **Cost.** A format gate; synthesis arranges a chain with a decoy at each step and changes the
-   far row after the near row is written (the `<view>/reference/<field>` scenario of the first
-   cut, extended); generated Rust and Go view queries read the chain; Entity Runtime keeps
-   `RelatedGuardUnsupported` for guards and refuses a navigated view by name.
-7. **Alternatives.** (a) Change nothing. (b) A per-position depth limit: a second rule. (c) Any
-   finite chain everywhere navigation is admitted (chosen, as designed).
-
-## Decisions
-
-- Accept, as designed: any finite `via:` chain in view fields, view filters and `when_related:`
-  guards from `ess/30`; no transitive closure, no recursion (open question 8).
-- Navigation inside a guard *predicate* (`E[input.a].x == E[input.b].x`) is not this story: it is
-  outside the cut (lines 247-252) and stays deferred in
-  `story:a-guard-compares-fields-of-two-named-rows`.
-- Aggregate, paged and `absent:` views keep refusing navigation by name (line 252).
-
-- Taken by the coordinator, 2026-10-22: out of 0.68.0. A chain of hops changes the persisted IR (`ResolvedViewReference { via: String }` in `ess-compiler/src/ir.rs`, `ess-domain/src/view/navigation.rs:55-64`, `command/related_guard.rs:98,111`) and reaches `ess-diff` and the TypeScript runtime; the design does not say whether that is a new `ess-ir` version. A design page settles the IR shape before this story is dispatched. The one-hop cut (ab2cd8454) was 111 files, +5052/-312.
+```text
+$ ess specify validate --path b2-two-hop-filter        # filter: [incident_id.cause_id.counts == true]
+error[ESS-VIEW-003]: `incident_id.cause_id.counts` cannot select `counts` from `demo.ops.CauseId` (resolved prefix type `Uuid`); a view cannot select on something its source never observes
+exit 1
+$ ess specify validate --path b-two-hops               # field: {related: {via: [incident_id, cause_id], field: counts}}
+system.yaml: invalid type: sequence, expected a string
+exit 1
+$ ess specify validate --path c-expr                   # expr: "coalesce(ended_at, incident_id.ended_at)"
+error[ESS-VIEW-001]: `incident_id.ended_at` is no field of `demo.ops.Window`, the row `demo.ops.WindowEnds` computes `ends` from
+exit 1
+```
 
 ## Acceptance
 
-Each line names the failing test written first, as a case in an existing test binary.
+At G2's next source format (the next free `ess/N` when this lands):
 
-- `crates/specify/ess-domain/tests/row_queries_navigate.rs`:
-  `from_ess_30_a_view_filter_navigates_two_hops`,
-  `from_ess_30_a_view_field_navigates_two_hops`,
-  `from_ess_30_a_guard_via_list_reads_the_far_rows_state` (the finding-10 shape validates), and
-  `below_ess_30_a_guard_via_list_is_a_named_refusal_naming_ess_30` (no serde error).
-- `crates/verify/ess-conformance/tests/row_queries_navigate_a_reference.rs`:
-  `two_hop_view_filter_is_witnessed_with_a_decoy_at_each_step` and
-  `two_hop_view_field_reads_the_far_rows_current_value` (the far row changes after the near row
-  is written and the view answers the new value).
-- `crates/verify/ess-conformance/tests/related_guard_state.rs`:
-  `a_two_hop_guard_refuses_on_the_far_rows_state_and_on_a_missing_middle_row`.
-- `crates/verify/ess-conformance/tests/view_reference_go.rs`:
-  `generated_go_view_reads_a_two_hop_chain`.
+- all three views above validate (`ess specify validate`, exit 0); a path through a reference the
+  entity does not declare, or past a field that is no reference, is refused as ESS-VIEW-003 naming
+  the step; a view field read through a chain is `Optional` (else `type_mismatch`);
+- `ess verify conform synthesize` writes a `<view>/reference/<field>` scenario per chain that
+  arranges a decoy at each step, a missing middle row, and a second read after the far row
+  changes; `ess verify conform run --target interpreted` passes it, and an interpreted target
+  reading the near row's field instead fails it;
+- for `c-expr`, the scenario reads `ends` as the window's own end where it has one and as the
+  incident's `ended_at` after the incident is resolved where it has none;
+- below that format each keeps today's refusal, the serde error for `via: [..]` in a view field
+  becoming a named `unsupported_format_version` naming the format; a model without a chain keeps
+  its IR bytes;
+- generated Rust and Go view queries keep a chained or expression-navigated view an obligation
+  naming the path; Entity Runtime refuses it by name; `ess verify diff` reports a changed chain as
+  the existing view field change.
 
 ## Scope
 
-| unit | files | confidence |
-|---|---|---|
-| validation | `crates/specify/ess-domain/src/view.rs` (filter and field paths), `crates/specify/ess-domain/src/command/related_guard.rs` (`via:` as a list), `crates/specify/ess-domain/src/command.rs` (value-source chain, `:1162-1186`, `:1861-1863`, design citations) | inferred from design citations |
-| interpreter, synthesis | `crates/verify/ess-conformance/src/interpret/`, `src/synthesize/related.rs` | inferred |
-| generation | `crates/generate/ess-synth/src/` view queries (Rust, Go) | inferred |
-| docs | `website/docs/reference/predicates.md`, `spec-versions.md` (`ess/30` row) | inferred |
+- cited: crates/specify/ess-domain/src/view/navigation.rs (path resolution, the one-hop limit)
+- cited: crates/specify/ess-domain/src/view.rs (view field `field: {related}` and `expr:` reads)
+- inferred: crates/specify/ess-domain/src/expression.rs (a navigated path as an operand of a view expression)
+- cited: crates/specify/ess-compiler/src/ir.rs (`ResolvedViewReference { via: String }`, line 2431)
+- inferred: crates/specify/ess-compiler/src/resolve.rs
+- inferred: crates/verify/ess-conformance/src/interpret/views.rs
+- cited: crates/verify/ess-conformance/src/synthesize/view_reference.rs
+- inferred: crates/generate/ess-synth/src/view_query.rs (obligation naming the path)
+- inferred: crates/specify/ess-domain/src/system.rs (`FORMAT_HISTORY`)
+- inferred: schemas/generated/ess.schema.json
+- cited: docs/design/generic-language-features.md (§ G2, a decided subsection for depth and view expressions, with the IR shape, before code)
+- inferred: docs/design/language-grids.md (grid R rows view field and view filter)
+- inferred: website/docs/reference/predicates.md
+- inferred: website/docs/reference/spec-versions.md
+- inferred: CHANGELOG.md
+confidence: medium
 
-Crates: ess-domain, ess-synth, ess-conformance (sizing: M).
+## Fit review
 
-## Order
+1. **Need.** A view that reads a value two references away, and a view value computed from the
+   row and a navigated value. Reproduction above (run.txt § B, § C). Requester's shapes (theirs,
+   the issue body): "its cause counts", "a window without an end ends with its incident", with a
+   one-hop `field: {related: {via, field}}` example.
+2. **Class.** Gap: the design decides depth as "any chain of declared references"
+   (`docs/design/generic-language-features.md:238-240`, answer 8 at `:725`) and the first cut
+   kept the second hop refused (`:248-252`).
+3. **Already expressible?** Only by copying the far value into the near row at write time, which
+   goes stale when the far row changes: the reason the issue reopened beyond10x/ess#447
+   (copy-at-write "does not serve: the incident changes after the window is written"). No idiom
+   keeps the figure checked.
+4. **Fit.** No new key: `via:` takes a list as the value source already does (`via: [a, b]`,
+   `generic-language-features.md:265`) and a filter path gains steps. Grid R: the view field and
+   view filter rows close whole for the related-row column (`docs/design/language-grids.md` Target,
+   "related row and row set: every … view position"); the view field row "takes any expression
+   over its row (G3)" (same page), so a navigated path inside `expr:` is the same decision.
+   IR: per § "Migration and format consequences" (`generic-language-features.md:617-620`) a
+   chain is an optional list beside `ResolvedViewReference.via`, omitted for one hop, so one-hop
+   models keep their bytes and no `ess-ir` version moves (AGENTS.md "Boundaries": no `ess-ir/2`).
+   This answers the coordinator's 2026-10-22 hold ("a design page settles the IR shape"): the G2
+   subsection records it. Targets: interpreter and synthesis read the chain; Rust and Go keep an
+   obligation, named; Entity Runtime refuses by name; diff.
+5. **Second adopter.** An order line showing its order's customer's current tier; a ticket view
+   showing its desk's site's time zone.
+6. **Cost.** One source format (G2's next), no new key, no new diagnostic code; the `<view>/
+   reference/` scenario family extends to chains, no suite format unless the story finds a new
+   expectation shape, which it then names.
+7. **Alternatives.** (a) Change nothing. (b) A per-position depth limit: a second rule. (c) A
+   join on arbitrary keys: refused by G2 ("a view reads other entities only by navigation from its
+   source row", `generic-language-features.md:287-289`). (d) Chosen: any finite chain in every
+   view read position, and inside view expressions, as designed.
 
-Lane L4b, after `story:a-set-effect-selection-reads-the-rows-state`, before
-`story:a-view-source-list-is-refused-by-name`. Serialized with the L4a lane on ess-domain
-related-guard code.
+## Decisions
 
-## State
+**Accept, redesigned** (the requester's one-hop shape shipped in `ess/28`; depth and expressions
+follow the binding design). Any finite `via:` chain in view fields and filters, and navigated
+paths inside a view field's `expr:`, from G2's next source format; no transitive closure, no
+recursion (answer 8). Guards move to `story:navigation-reaches-any-depth-in-guards`; aggregate
+views to `story:an-aggregate-view-reads-through-a-reference`. Retitle: "Navigation reaches any
+depth in view fields, view filters and view expressions".
 
-2026-11-02 (store hygiene H0 of wave W1, reconcile roadmap section 2d; decision D9 option A, kept active with a dated note): Not started; scheduled W11, 0.94.0.
+## Source
+
+github:beyond10x/ess#564

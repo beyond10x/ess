@@ -8,13 +8,15 @@ summary: Synthesis sends generated placeholders instead of input examples for a 
 tags:
 - from-consumer-report
 - next-wave-first
+- zero-open-issues
 refs:
 - provider: github
   reference: beyond10x/ess#736
 relations:
 - serves: vision:O2
 - decomposes: epic:adopter-gaps-synthesis
-revision: 6
+- decomposes: epic:zero-open-issues-2026-11
+revision: 7
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-05T00:13:28Z", actor: "human:timo", revision: 2}
 - {from: "proposed", to: "active", at: "2026-11-05T00:13:28Z", actor: "human:timo", revision: 3}

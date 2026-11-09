@@ -3,10 +3,13 @@ format: aep.planning-md/3
 id: story:derived-measures-and-interval-union
 kind: story
 status: active
-title: A view derives figures from measures (uptime ratio over the period) and unions intervals clipped to a period
+title: A view derives figures from its measures and parameters
 tags:
 - adopter-report
+- zero-open-issues
 refs:
+- provider: github
+  reference: beyond10x/ess#561
 - provider: github
   reference: beyond10x/ess#562
 - provider: github
@@ -15,6 +18,8 @@ relations:
 - serves: vision:O2
 - decomposes: epic:generic-aggregates
 - depends_on: story:expression-arithmetic-and-time
+- decomposes: epic:zero-open-issues-2026-11
+- depends_on: story:aggregate-group-keys-are-expressions
 scope:
 - confidence: inferred
   path: CHANGELOG.md
@@ -26,78 +31,126 @@ scope:
   path: crates/specify/ess-primitives/src/expr.rs
 - confidence: inferred
   path: crates/verify/ess-conformance/src/aggregate.rs
-revision: 11
+revision: 14
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-21T22:08:02Z", actor: "human:timo", revision: 3}
 - {from: "proposed", to: "active", at: "2026-10-21T22:08:03Z", actor: "human:timo", revision: 4}
 ---
-## Outcome
+## Need
 
-A view derives figures from its measures: arithmetic over measures with a declared rounding and a
-zero-denominator rule, with the period length of the view's own parameters as an operand (strict
-uptime `1 - downtime / span`), and an interval-union measure clipped to a period, so overlapping
-windows count once and a window across two periods counts in each.
+An aggregate view states a figure computed from its own measures and its parameters, and the suite
+checks that figure exactly: strict uptime per group as `1 - down / (param.to - param.from)`, a
+conversion rate as `won / offered`. Today a computed field on an aggregate view is refused, so the
+figure leaves the specification and no suite checks it.
 
-Binding design: `docs/design/generic-language-features.md` (being drafted), feature 3, derived
-measures and library functions. Parent: `epic:generic-aggregates`.
+This story is the arithmetic-over-measures half; the interval union clipped to a period is
+`story:an-interval-union-measure-is-clipped-to-a-period`, which builds on it.
 
-## Fit review
+Minimal reproduction (ess 0.92.0, `format: ess/36`; `repro/c-derived` of the triage of
+beyond10x/ess#561):
 
-Findings covered: https://github.com/beyond10x/ess/issues/562 and
-https://github.com/beyond10x/ess/issues/563 (a downstream incident-ledger specification, ess 0.59.0,
-`ess/24`).
+```yaml
+  - name: demo.ledger.Uptime
+    source: demo.ledger.Window
+    params: [{name: from, type: Timestamp}, {name: to, type: Timestamp}]
+    group_by: [incident]
+    fields:
+      - {name: incident, type: String}
+      - {name: down_s, type: Integer, aggregate: {sum: duration_s}}
+      - {name: uptime, type: Optional<Decimal>, expr: "1 - down_s / (param.to - param.from)"}
+```
 
-1. **Need.** Downtime per environment as the length of the union of `[start, end)` intervals clipped
-   to `[param.from, param.to)` (a consumer cannot derive it from counts or sums; it needs the rows),
-   and uptime as `1 - downtime / (to - from)`. Refusals: `unknown variant union` and `unknown variant
-   divide`, "expected one of count, count_distinct, sum, min, max, avg". Requester's syntax (theirs):
-   `aggregate: {union: {from, to, clip}}`, `aggregate: {ratio: {numerator, denominator: {param_span}}}`.
-2. **Class.** Gap. https://github.com/beyond10x/ess/issues/563 reopens
-   https://github.com/beyond10x/ess/issues/441 (decision 3, `docs/design/aggregate-views.md:1031`;
-   idiom in `docs/design/read-api-view-idioms.md:26-54`): the idiom moves the figure out of
-   conformance.
-3. **Already expressible?** No for the union. The ratio's operands are, the figure is not.
-4. **Fit.** The ratio is the shape `story:feature-request-441` recorded as alternative (c) (Decimal,
-   half-even, absent on a zero denominator), generalised to arithmetic over measures with
-   `param.to - param.from` from the expression language. The interval union is a library measure over
-   two expressions and a clip, not a new key family. Depends on the expression arithmetic
-   (`story:expression-arithmetic-and-time`). Targets: validation, interpreter, synthesis (overlapping,
-   adjacent, spanning and outside windows; a zero-length period), generated queries, diff.
-5. **Second adopter.** Room occupancy per day from overlapping bookings; conversion rate per
-   campaign (https://github.com/beyond10x/ess/issues/441).
-6. **Cost.** A source format version; a suite pair carrying computed Decimal values; diff classes.
-7. **Alternatives.** (a) Change nothing. (b) The requester's two keys. (c) Arithmetic over measures
-   plus one library measure (chosen).
-
-## Decisions
-
-Accept, redesigned. Decision 3 of `docs/design/aggregate-views.md` is reopened by the 2026-10-13
-decision to build the four generic features.
+```text
+$ ess specify validate --path c-derived
+error[ESS-VIEW-009]: `demo.ledger.Uptime` is an aggregate view, and `uptime` computes from one row; arithmetic over measures is not admitted yet
+error[ESS-VIEW-003]: `demo.ledger.Uptime` declares the parameter `from` and no filter reads it, so every value of it returns the same rows
+error[ESS-VIEW-005]: `uptime` is neither an aggregate nor a group key, so a row has no single value for it
+exit 1
+```
 
 ## Acceptance
 
-- `interval_union_counts_overlap_once`: two overlapping windows of different incidents add their
-  union, not their sum.
-- `interval_union_clips_to_the_period`: a window across two periods counts its part in each.
-- `uptime_ratio_over_the_parameter_span`: uptime is witnessed with a half-even tie and a zero-length
-  period answering absent.
+At the next source format (`ess/37`):
 
-## State
-
-2026-11-02 (store hygiene H0 of wave W1, reconcile roadmap section 2d; decision D9 option A, kept active with a dated note): Not started; scheduled W9.
+- a view field on an aggregate view that is not named in `group_by:` may declare `expr:` reading
+  the same row's measures by field name, its group keys and `param.<name>`; with
+  `down: Duration` (`{sum: {expr: "ended_at - started_at"}}`) and
+  `{name: uptime, type: Optional<Decimal>, expr: "round(1 - down / (param.to - param.from), 4, half_even)"}`
+  the view validates (exit 0), and a parameter read only there is not ESS-VIEW-003;
+- `Duration / Duration` is a Decimal of elapsed seconds, and a zero divisor answers absent, so the
+  field's type must be `Optional<…>` (else `type_mismatch`);
+- such a field reading a source row field is refused as `unsupported_construct` naming the field
+  ("a derived figure reads measures, keys and parameters"); one reading another derived field is
+  refused as `unsupported_construct`;
+- `ess verify conform synthesize` witnesses it on a group whose `down` makes the quotient a
+  half-even tie at the declared digits and on a zero-length period, which answers absent; `ess
+  verify conform run --target interpreted` passes both and a target computing half-up fails the
+  first;
+- below `ess/37` the field keeps ESS-VIEW-009, its hint naming `ess/37`; a model without one keeps
+  its IR bytes;
+- generated Rust and Go view queries keep such a view an obligation naming the expression; Entity
+  Runtime refuses it by name; `ess verify diff` reports a moved expression as a field change.
 
 ## Scope
 
-Derived 2026-11-07 by `story-scoper`. Not delivered: an `expr:` field on an aggregate view is refused, `AggregateFunction` has no interval union, and the expression language has no view-parameter operand. Cited.
+- cited: crates/specify/ess-domain/src/view.rs (the computed-field refusal around line 1838, `validate_grouping`, parameter-read check)
+- inferred: crates/specify/ess-domain/src/expression.rs (a measure and `param.` root in a derived field; `Duration / Duration`)
+- inferred: crates/specify/ess-primitives/src/expr.rs
+- inferred: crates/specify/ess-compiler/src/ir.rs
+- inferred: crates/specify/ess-compiler/src/resolve.rs
+- inferred: crates/verify/ess-conformance/src/aggregate.rs (evaluated after grouping)
+- inferred: crates/verify/ess-conformance/src/interpret/views.rs
+- inferred: crates/verify/ess-conformance/src/synthesize/aggregate.rs
+- inferred: crates/generate/ess-synth/src/view_query.rs
+- inferred: crates/verify/ess-diff/src/change.rs
+- inferred: crates/specify/ess-domain/src/system.rs (`FORMAT_HISTORY` row for `ess/37`)
+- inferred: schemas/generated/ess.schema.json
+- cited: docs/design/generic-language-features.md (§ G3, a decided subsection "Derived measures" before code)
+- cited: docs/design/language-grids.md (grid O, `/` over Duration)
+- cited: docs/design/aggregate-views.md (decision 3 revised)
+- cited: docs/design/read-api-view-idioms.md (the ratio idiom retired)
+- inferred: website/docs/reference/spec-versions.md
+- inferred: CHANGELOG.md
+confidence: medium
 
-- **Primary surface:** `crates/specify/ess-domain/src/view.rs` (`validate_computed`, `AggregateFunction`): cited.
-- **Also, inferred:**
-  - `ess-primitives/src/expr.rs` and `ess-domain/src/expression/value.rs` (a `param.` operand);
-  - `ess-compiler` `ir.rs` and `resolve.rs`;
-  - `ess-conformance` `aggregate.rs`, `interpret/views.rs` and `synthesize/aggregate.rs`;
-  - the generated queries in `ess-synth`;
-  - the suite format pair (`admission.rs`, `coverage.rs`, `go/runtime.go`, `ts/runtime.ts`);
-  - `ess-diff`, `system.rs` and the generated schema.
-- **Documents:** `docs/design/aggregate-views.md` (decision 3) and `docs/design/read-api-view-idioms.md` (cited); G3, the aggregate guide, spec-versions and `CHANGELOG.md` (inferred).
-- **Order:** after the measures story and the group-keys story.
-- **Confidence:** medium.
+## Fit review
+
+1. **Need.** A ratio of a group's measures to each other or to the requested period, checked
+   exactly by the suite. Reproduction above (run.txt § D). Requester's syntax (theirs,
+   beyond10x/ess#563 under the #561 feature): `aggregate: {ratio: {numerator, denominator:
+   {param_span}}}`.
+2. **Class.** Gap. beyond10x/ess#563 reopens beyond10x/ess#441 (decision 3,
+   `docs/design/aggregate-views.md:23`, out of scope at `:1035`); its idiom (`docs/design/read-api-view-idioms.md:28`, "Derived values over aggregates are the consumer's")
+   has the consumer divide, which moves the figure out of the specification.
+3. **Already expressible?** The operands are, the figure is not; by policy 1
+   (`docs/design/generic-language-features.md` § Policy, 1) the consumer-side idiom is no answer.
+4. **Fit.** G3 decides it: "a view field `{expr: "…"}` reading the row's measures and view
+   parameters … evaluated after grouping, reads no source row, and is checked exactly by the
+   suite" (`generic-language-features.md:378-382`). The spelling reuses view-field `expr:` (G1)
+   and the `{expr: …}` decision (answer 3, `:714`); a computed field not in `group_by:` is
+   derived, one in `group_by:` is a key (`story:aggregate-group-keys-are-expressions`), so one
+   rule decides both. `Duration / Duration` follows grid O's closing target for the Duration
+   column (`docs/design/language-grids.md:89-90`). Targets: interpreter and synthesis evaluate;
+   Rust and Go keep an obligation, named; Entity Runtime refuses by name; diff.
+5. **Second adopter.** Conversion rate per campaign (beyond10x/ess#441); share of on-time
+   deliveries per carrier; occupancy per day as booked time over the day.
+6. **Cost.** The next source format (`ess/37`), counted under G3. No new key: `expr:` exists. One
+   grid O cell column completion (`/` over Duration). Suite: computed Decimal values are already
+   carried for `avg`; no suite format unless the story finds a new expectation shape, which it
+   names. Diagnostics: reuse ESS-VIEW-009 / `type_mismatch`.
+7. **Alternatives.** (a) Change nothing: the figure stays outside conformance. (b) The requester's
+   `ratio:` key with a `param_span` operand: a key per arithmetic shape; refused. (c) Chosen:
+   arithmetic over measures in a derived view field, one expression language.
+
+## Decisions
+
+**Accept, redesigned.** Arithmetic over measures is a derived view field (`expr:`, not named in
+`group_by:`) reading the row's measures, keys and parameters, evaluated after grouping, with `/`
+answering absent on a zero divisor and `round(…)` stating digits and mode. Decision 3 of
+`docs/design/aggregate-views.md` is reopened by the 2026-10-13 decision to build the four generic
+features. The interval union moves to its own story. Retitle: "A view derives figures from its
+measures and parameters". From `ess/37`, counted under G3.
+
+## Source
+
+github:beyond10x/ess#561 (finding beyond10x/ess#563)

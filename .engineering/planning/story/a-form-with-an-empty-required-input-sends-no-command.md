@@ -6,61 +6,104 @@ status: draft
 title: A form with an empty required input sends no command
 summary: Neither renderer enforces required command inputs, and ess-ui-test has no step asserting that no command was sent (0.77.0)
 tags:
+- defect
 - ess-batch-4
 - ess-next
 - ess-ui
-revision: 4
+- severity-medium
+- zero-open-issues
+relations:
+- decomposes: epic:zero-open-issues-2026-11
+revision: 6
 ---
-<!-- Starting point for a `story` artifact, seeded by `aep artifact new story <name>`.
-     No frontmatter here on purpose: the `---` block is written by the CLI from the id, kind, status
-     and relations you gave it, and a second copy in this file would be the one that went stale.
-     Delete the italic guidance as you fill each section. -->
-
-# Story: <name>
-
 ## Outcome
 
-*What is true for whom once this has shipped, in one sentence. If it names a component rather than a
-person, it is a task — say what changes for someone.*
-
-## Context
-
-*Why this is worth doing now, and what it depends on. Link the epic or specification it comes from
-rather than restating it; the `derived_from` relation already carries the edge.*
-
-## Acceptance
-
-- In both renderers, submitting a form whose required input is empty sends no command and marks the
-  input as required.
-- `ess-ui-test` gains a step that asserts no command was sent since a named point. Adding it is a
-  format decision for the fit review: an additive step in `ess-ui-test/1`, or a new format version.
-- A toy script submits the empty form, asserts no command was sent, fills the input and asserts the
-  command with the field. It passes against both renderers.
-
-## Out of Scope
-
-*What a reasonable reader would expect to be included and is not — the boundary that stops this
-story quietly becoming an epic.*
-
-## Ambiguities
-
-*Each gap this story found and did not close, classified. `inferable` — the answer is already
-written down, so give the `path:line` or the artifact id that settles it.
-`requires-stakeholder-input` — nobody here can decide it, so name who does, and raise that entry as
-a `decision-blocker` with a `blocks` edge to this story, or it is a sentence somebody improvises
-later.*
-
-## Open Questions
-
-*Anything still undecided belongs in `## Ambiguities` above, classified and with its citation or its
-decider. Keep this section for a question that is neither — an unowned question is a story that
-stalls without anybody noticing.*
+A person filling a form in either renderer cannot send a command while a required input is empty.
+The form marks that input as required, and an `ess-ui-test/1` script can assert that nothing was
+sent.
 
 ## Problem
 
-Reported 2026-10-29 on ESS 0.77.0 by a downstream session, through the orchestrator. Not yet
-reproduced in this repository.
+Reported on 0.77.0 and reproduced on 0.92.0. Neither the terminal renderer nor the React target
+enforces a command's required inputs in a form:
 
-Neither the terminal renderer nor the React target enforces a command's required inputs in a form.
-Submitting with an empty required text input sends the command without that field. `ess-ui-test/1`
-has no step that asserts that no command was sent, so a script cannot pin the refusal.
+- Terminal: `submit` sends `form_input`, which drops every null field and checks nothing
+  (`crates/ui/ess-ui-tui/src/app.rs`, `form_input` and `submit`).
+- React: the form's `submit` passes the draft to `runCommand` unchecked
+  (`crates/ui/ess-ui-react/templates/runtime/composites/form.tsx.tmpl`).
+- Neither renderer receives the command's required inputs. A React command route carries only
+  `body_required` (`templates/runtime/data.ts.tmpl`, `CommandRoute`), and `ess ui test --model`
+  reads the model only for enum options.
+- `ess-ui-test/1` has `expect_command` but no step asserting that no command was sent
+  (`crates/ui/ess-ui-test/src/spec.rs`, `Step`).
+
+Minimal reproduction. The model has one domain `probe.core` with `probe.core.CreateItem`, whose
+inputs are `id: String` and `title: String`, both required. It creates `probe.core.Item`. The
+document:
+
+```yaml
+format: ess-ui/1
+app: probe
+model: probe
+placement_profile: fat
+fixtures: {dir: fixtures, views: {probe.core.Items: items.yaml}}
+shells:
+  app:
+    regions:
+      main: {kind: page_outlet}
+navigation:
+  home: items.new
+  sections: [{name: all, pages: [items.new]}]
+pages:
+  items.new:
+    kind: form_page
+    title: New item
+    sections:
+      - name: form
+        component: form
+        does: probe.core.CreateItem
+        fields:
+          - {field: id, label: Id}
+          - {field: title, label: Title}
+```
+
+A test types `i-1` into `id`, runs `act: pages/items.new/sections/form`, and expects
+`probe.core.CreateItem` with `{id: i-1, title: ""}`, only so that the runner prints what was sent:
+
+```text
+$ ess ui test --path ui.yaml --model spec t-show.yaml
+failed  probe shows the sent input (step 4)
+        expect_command probe.core.CreateItem: command probe.core.CreateItem was sent with {id="i-1"}, not with {id="i-1", title=""}: title is absent, expected string ""
+```
+
+## Acceptance
+
+- In both renderers, submitting a form whose command input is required while the field is empty
+  sends no command, and the field at its path is marked as required. In the terminal, a `text`
+  check at the form finds the mark; in React, the field's input carries `required` or
+  `aria-invalid`.
+- `ess-ui-test/1` gains a step asserting that no command was sent since a named point. The fit
+  review decides whether this is an additive step in `ess-ui-test/1` or a new format version.
+- A script over the document above submits the empty form, asserts that no command was sent,
+  fills `title` and asserts `probe.core.CreateItem {id: i-1, title: <text>}`. It passes with
+  `ess ui test` and in the spec written by `ess ui test --playwright`.
+
+## Ambiguities
+
+- `requires-stakeholder-input`: where "required" comes from when no `--model` is given (fixture
+  mode). The options are a `required:` key on a form field, or only the model's command input,
+  which leaves fixture runs unchecked. A format owner decides.
+- `inferable`: an `Optional<…>` input is never required (the model's type says so).
+
+## Scope
+
+- cited: `crates/ui/ess-ui-tui/src/app.rs`
+- cited: `crates/ui/ess-ui-react/templates/runtime/composites/form.tsx.tmpl`
+- cited: `crates/ui/ess-ui-react/templates/runtime/data.ts.tmpl`
+- cited: `crates/ui/ess-ui-test/src/spec.rs`
+- inferred: `crates/ui/ess-ui-test/src/runner.rs`
+- inferred: `crates/ui/ess-ui-test/src/playwright.rs`
+- inferred: `crates/ui/ess-ui-check/src/model.rs`
+- inferred: `website/docs/reference/ess-ui-test.md`
+
+confidence: medium

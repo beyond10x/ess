@@ -6,10 +6,14 @@ status: active
 title: A client row filter keeps its rows on an unpaged read and by the page path id
 summary: Runtime fix taken upstream ("rowFilters paging none + path id"); reproduce first
 tags:
+- defect
 - needs-repro
+- severity-medium
+- zero-open-issues
 relations:
 - serves: vision:O2
-revision: 5
+- decomposes: epic:zero-open-issues-2026-11
+revision: 6
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-06T22:19:00Z", actor: "human:timo", revision: 2}
 - {from: "proposed", to: "active", at: "2026-11-06T22:19:01Z", actor: "human:timo", revision: 3}

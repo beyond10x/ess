@@ -3,103 +3,158 @@ format: aep.planning-md/3
 id: story:via-and-instance-may-name-a-member-of-a-struct-input
 kind: story
 status: draft
-title: 'A when_related via: and an instance: may name a member of a struct input, as sets: already may'
+title: via:, all:, instance:, each.in and {missing:} accept an input path into a struct input, a List<Id> member included
 summary: 'via: and instance: accept only top-level inputs (ESS-COMMAND-001) (adopter item 3, beyond10x/a2a); gap, needs ess/31.'
 tags:
 - adopter-report
 - ess-0.71.0
 - feature-request
+- zero-open-issues
 refs:
 - provider: github
   reference: beyond10x/ess#640
 relations:
 - serves: vision:O2
 - decomposes: epic:adopter-gaps-synthesis
-revision: 4
+- decomposes: epic:zero-open-issues-2026-11
+revision: 7
 ---
 ## Need
 
-Reported by the adopter session specifying A2A in beyond10x/a2a (item 3 of 9, 2026-10-22). A
-command whose identifying reference sits inside a struct input (`message.taskId`) cannot name it
-in `when_related: {via: …}` or in `instance:`. Validation refuses with `ESS-COMMAND-001`
-(`COMMAND_UNDECLARED_REFERENCE`, `crates/specify/ess-compiler/src/resolve.rs:590`), message format
-from `crates/specify/ess-domain/src/command/related_guard.rs:1658-1670`:
+A command whose reference sits inside a struct input cannot name it where a row is addressed. Four
+positions are affected:
 
-```text
-`{via}` is not an input of `{command}`   (hint: declared input: …)
+- `when_related: {via: …}`, including a `List<Id>` member and the per-element existence of
+  beyond10x/ess#558;
+- `instance:`;
+- `affects: [{each: {in: …}}]`;
+- the `{missing: …}` payload source.
+
+`sets:` and `payload:` read `input.<path>` from `ess/22`. Flattening the input changes a wire shape
+a published protocol fixes.
+
+Minimal reproduction (0.92.0, `ess/36`). `example.g.Settings {parents: List<example.g.ParentId>,
+primary: example.g.ParentId, entries: List<example.g.Entry>}`, and command
+`example.g.Make(settings: example.g.Settings)`:
+
+```yaml
+      - name: unknown-parent
+        when_related: {via: input.settings.parents, exists: false}
+        error: example.g.ParentNotFound
+      - name: made
+        creates: example.g.Child
+        instance: child_id
+        sets: {parents: input.settings.parents}
 ```
 
-(Format string quoted from the code; the adopter's rendered line was not captured.)
+```text
+error[ESS-COMMAND-001]: `settings.parents` is not an input of `example.g.Make`
+  help: declared input: `settings`
+```
 
-Minimal reproduction (brand-free): `Reply(message: Message)` where `Message { thread_id: Ref<Thread>,
-text }`, with `when_related: {via: message.thread_id, …}` or `instance: message.thread_id`.
-
-## Where it lives
-
-- `crates/specify/ess-domain/src/command/related_guard.rs:307-308` keeps `via` as one string;
-  refusal at `:1658-1670`; `crates/specify/ess-domain/src/command.rs:2784` (`input_field`) looks up
-  top-level inputs only.
-- `crates/specify/ess-compiler/src/resolve.rs:3538` (related_read), `:4077`, `:4153-4177`
-  (instance refusal).
-- `sets:` already resolves nested paths through `crates/specify/ess-domain/src/command/input_path.rs`
-  (ess/22, `story:feature-request-233`, `docs/design/expression-family-source22.md:369-414`).
-
-## 0.68.0
-
-No.
-
-## Cause
-
-Not a defect: the language has no input path in these two positions. The nearest story,
-`story:related-guard-on-a-captured-struct-input-member` (implemented), covers a predicate reading a
-member, not `via:` or `instance:`.
-
-## Fit review
-
-1. **Need.** A command must be able to address the row it acts on, or a related row, through a
-   reference nested in a struct input. Requester's wording: "when_related.via and instance: accept
-   only top-level inputs; nested message.taskId".
-2. **Class: gap.** The domain fact (the reference lives in a sub-structure of the request) cannot
-   be stated; flattening the input changes the wire shape a published protocol fixes.
-3. **Already expressible?** Only by a duplicate top-level input, which changes the wire and is not
-   checked against the nested value. Not an idiom under policy 1
-   (`docs/design/generic-language-features.md` § Policy).
-4. **Fit.** Grid R row "input member readable in position X" (`docs/design/language-grids.md`):
-   `sets:` and guard predicates already read an input path; `via:` and `instance:` are the two
-   cells of the row still closed. Open the row: both take the same `input_path` syntax and
-   resolution `sets:` uses, so one spelling everywhere. Every target reads the resolved reference,
-   not the path, so Rust, Go, TypeScript, the interpreter and synthesis see a resolved field
-   (inferred; the implementor confirms each lowers from the resolved form or refuses by name).
-5. **Second adopter.** A payments API whose `Capture(request: {payment_id, amount})` guards on
-   the payment's state through `request.payment_id`.
-6. **Cost.** A new format version: `via:`/`instance:` accepting a path is a new meaning under an
-   existing key, so it lands in ess/31 (the next format) and older headers refuse it as
-   `unsupported_format_version`. No new keyword, no new diagnostic code; `ess verify diff`
-   classification of a moved via path to be checked.
-7. **Alternatives.** (a) Change nothing: adopters duplicate the reference at top level. (b) A new
-   key such as `via_path:`: two spellings for one idea, refused as a red flag. (c) Chosen: the
-   existing keys accept the `sets:` input path.
-
-## Decisions
-
-**accept, redesigned.** Not a new key: `via:` and `instance:` accept the input path `sets:`
-already accepts, under the next format version (ess/31).
+The same holds for a scalar member, `via: input.settings.primary`. `instance: settings.primary` on an
+`updates:` branch gives ESS-COMMAND-001, ``acts on the instance named by `settings.primary`, which is
+no input field of it``. `each: {in: input.settings.entries, as: e}` gives ESS-COMMAND-009, ``each:
+walks a list of the command's input, written `input.<field>` ``. The top-level control
+`via: input.parents` validates, synthesizes 3 scenarios and passes on the interpreted target.
 
 ## Acceptance
 
-- The minimal reproduction validates and compiles under ess/31, and its conformance suite
-  exercises the guard and the addressed instance through the nested reference.
-- The same document under ess/30 is refused as `unsupported_format_version` naming ess/31.
-- A path naming a non-reference member, or a member that does not exist, is refused by name.
+At the new source format, `ess specify validate` exits 0 on each of the following, and on
+`all: [{via: input.settings.primary, predicate: …}, …]`:
 
-## Schedule
+- `via: input.settings.parents, exists: false`, where the list member has the per-element meaning
+  of `ess/28`;
+- `via: input.settings.primary` with `exists: false` and with `predicate:`;
+- `instance: settings.primary` on `updates:`, `moves:`, `deletes:` and the `unknown_instance:` /
+  `existing_instance:` branches that answer it;
+- `each: {in: input.settings.entries, as: e}`;
+- `{missing: input.settings.parents}` in an error payload.
 
-Gap; not tagged for 0.69.0. Needs a new format version (ess/31).
+Refusals and compatibility:
 
-## Format retarget (2026-10-28)
+- Below the new format, each of these is refused as `unsupported_format_version` naming it, instead
+  of ESS-COMMAND-001 or ESS-COMMAND-009.
+- A path to a member that does not exist is refused as `undeclared_reference` naming the struct's
+  members.
+- A member that is no entity identity (or a list of one), and a path crossing a list or a union, are
+  each refused as `type_mismatch` naming the member's type.
+- A path crossing an `Optional` member reads as an Optional reference: `ess/22`'s "checked only when
+  present" rule applies, and `instance:` over it is refused as today for an Optional input.
+- The compiled IR of a model that uses no input path keeps its bytes.
+- `docs/design/expression-family-source22.md` (input paths) and `website/docs/reference/predicates.md`
+  list the new positions.
 
-`ess/31` shipped in 0.69.0 and `ess/32` in 0.70.0 without this story (`FORMAT_HISTORY` in
-`crates/specify/ess-domain/src/system.rs`). Its planned format gate is now the next one, `ess/33`,
-opened once for the open-issue batch that carries the `ess/33` language changes
-(`docs/plan/wave-ess-issues-1.md` § Batches). Read `ess/31` above as `ess/33`, and `ess/30` as
-"below `ess/33`". Store drift fixed under D136 (`approval-record:d136-synthesis-defects-and-store-drift`).
+## Scope
+
+- cited: crates/specify/ess-domain/src/command/related_guard.rs
+- cited: crates/specify/ess-domain/src/command/input_path.rs
+- cited: crates/specify/ess-domain/src/command/set_effects.rs
+- cited: crates/specify/ess-domain/src/entity.rs
+- cited: crates/specify/ess-domain/src/command.rs
+- cited: crates/specify/ess-compiler/src/ir.rs
+- inferred: crates/specify/ess-compiler/src/resolve.rs
+- inferred: crates/specify/ess-domain/src/command/related_list.rs
+- inferred: crates/specify/ess-domain/src/system.rs
+- inferred: crates/specify/ess-domain/tests/input_path_addressing.rs
+- inferred: docs/design/expression-family-source22.md
+- inferred: website/docs/reference/predicates.md
+confidence: medium
+
+## Fit review
+
+1. **Need.** A command must address the row it acts on, a related row or a list of rows through a
+   reference nested in a struct input. Minimal reproduction above (triage run: `list-member`,
+   `scalar-member`, `instance-member` and `each-member` exit 1; `top-level-list` exits 0). The
+   requester's proposed syntax: `via: input.settings.parents`. An earlier report on the same story
+   proposed `instance: message.thread_id`.
+2. **Class.** Gap. Each of these refuses a member path:
+   - the related-row check looks up a top-level input only
+     (`crates/specify/ess-domain/src/command/related_guard.rs:1665-1678`,
+     `crates/specify/ess-domain/src/command.rs:2891`, `input_field`);
+   - so does the instance check (`crates/specify/ess-domain/src/entity.rs:1493`);
+   - the `each:` check refuses anything but `input.<field>`
+     (`crates/specify/ess-domain/src/command/set_effects.rs:980`);
+   - the IR's `ResolvedRelatedVia::Input` holds one field name
+     (`crates/specify/ess-compiler/src/ir.rs:1845-1853`).
+3. **Already expressible?** Only by a duplicate top-level input. That changes the wire, and nothing
+   checks it against the nested value. It is no idiom under policy 1
+   (`docs/design/generic-language-features.md:588-592`).
+4. **Fit.**
+   - Grid R input column: the target admits the input "in every command position"
+     (`docs/design/language-grids.md:46`), and G1 spells every input read `input.f`
+     (`docs/design/generic-language-features.md:146-154`).
+   - The path rule exists (`crates/specify/ess-domain/src/command/input_path.rs:1-11`: declared
+     struct members, through `Optional` and newtype; lists, maps and unions stop a path).
+   - The closing rule opens every addressing position at once (`via:`, `all:` elements,
+     `instance:`, `each.in`, `{missing:}`), not `via:` alone (`generic-language-features.md:211-216`).
+   - The list member reuses `ess/28`'s per-element meaning (`generic-language-features.md` § G2,
+     "The same format quantifies over a list of references").
+   - No new key: the existing keys take the existing path syntax.
+5. **Second adopter.** A payment API, `Capture(request: {payment_id, amount})`, guarding on the
+   payment's state through `request.payment_id`. A message API, `Reply(message: {thread_id, text})`,
+   addressing the thread.
+6. **Cost.**
+   - One source format, the next one open (`ess/37` if no other decision allocates it first). An
+     earlier draft of this story named `ess/31` and then `ess/33`, both shipped without it.
+   - No new keyword and no new diagnostic code.
+   - An IR change to carry a path in `ResolvedRelatedVia::Input` and in the instance source, left
+     out for one segment so that existing IR keeps its bytes.
+   - `ess verify diff` reports a moved path as the existing `outcome-condition-changed`.
+7. **Alternatives.** (a) Change nothing: adopters duplicate the reference at top level, which
+   policy 1 rejects. (b) A new key, `via_path:`: two spellings for one idea, refused as a red flag.
+   (c) Open `via:` only, as the issue asks: refused by the closing rule. (d) The existing keys
+   accept the `sets:` input path in every addressing position: chosen.
+
+## Decisions
+
+accept, redesigned. `via:`, `all:` elements, `instance:`, `each: {in:}` and `{missing:}` accept the
+`input.<path>` that `sets:` accepts, a `List<Id>` member included, under the next source format. The
+request named `via:` alone; the closing rule widens it to the whole row. Follow-ups:
+
+- `story:synthesis-witnesses-a-row-addressed-through-a-struct-input-member`
+- `story:generated-targets-read-a-reference-nested-in-a-struct-input`
+
+## Source
+
+github:beyond10x/ess#640

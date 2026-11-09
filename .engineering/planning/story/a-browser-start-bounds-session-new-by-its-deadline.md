@@ -4,14 +4,19 @@ id: story:a-browser-start-bounds-session-new-by-its-deadline
 kind: story
 status: draft
 title: A browser start bounds its first session.new by the startup deadline
+tags:
+- defect
+- severity-low
+- zero-open-issues
 relations:
 - serves: vision:O2
+- decomposes: epic:zero-open-issues-2026-11
 scope:
 - confidence: inferred
   path: crates/edge/ess-cli/tests/browser_startup_refusal_boundary.rs
 - confidence: cited
   path: crates/edge/ess-cli/tests/support/browser.rs
-revision: 4
+revision: 5
 ---
 ## Finding
 
