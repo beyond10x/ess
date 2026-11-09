@@ -422,6 +422,21 @@ external request is not dispatched in a wave without its fit review.
   request. An issue already filed for a single finding is linked to its feature's story and closed
   or merged into the feature's issue, with a comment naming it.
 
+## Hotfix
+
+A defect an adopter reports, once reproduced, is pending work, never new work: it starts at once,
+in parallel with any running wave, and needs no operator confirmation. The target is a pushed tag
+within one hour of the reproduction.
+
+1. Branch from the latest release tag, or from the newest release head not yet released.
+2. Write the failing regression test first, then the fix.
+3. Bump the patch version and add its `CHANGELOG.md` section.
+4. Before the tag, run only the regression test and the touched crates' tests and Clippy: no local
+   full gate.
+5. Commit with `b10x-gates bot`, create an annotated tag with `b10x-gates bot -- tag -a`, and push
+   the tag. The tag's release workflow is the gate. No pull request and no wave.
+6. Afterwards, merge the fix into `main` through the normal route.
+
 ## Commits
 
 Public Gates owns common security/privacy checks and generic bot delivery (Atlas ADR 0048).
