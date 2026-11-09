@@ -1,0 +1,16 @@
+$ ess specify validate --path spec  [exit 0]
+gap v1 — 3 file(s), valid
+
+$ ess conform synthesize --path spec --out suite.json  [exit 0]
+refused: refusal[ESS-SYNTH-017]: view gap.demo.MeanScore has no scenario `gap.demo.MeanScore/aggregate`
+  `gap.demo.MeanScore` cannot be arranged: the creating command does not set `score`, which `mean` aggregates
+  help: let the creating command set every field the view groups by or aggregates from its input, and read a parameter only as `field == param.name` at the top of the filter
+note: `gap.demo.Item/state/Done/refuses/gap.demo.FinishItem` observes its subject only through what the declared views publish; no view publishes `parent_id`, `score`, `tags`, so the scenario's outcome, error and events are its evidence about them, and a refusal that changed them is not checked; a field published only by an `eventual` view is checked against an eventually consistent read, which a projection that has not yet caught up with a wrong change still passes
+note: the specification declares actors and serves no component, so enforcing a grant is the caller's, against the generated grant table, and no `<command>/grant/denied` scenario is owed
+note: every declared actor may read `gap.demo.Items`, so `gap.demo.Items/grant/read/denied` reads it as no actor only
+note: every declared actor may read `gap.demo.MeanScore`, so `gap.demo.MeanScore/grant/read/denied` reads it as no actor only
+12 scenario(s) (0 authored), 1 refusal(s), written to suite.json
+
+$ ess generate synthesize --target rust --layout crate --path spec --out rust-out  [exit 0]
+24 capabilities: 24 generated, 0 obligation(s), 0 refused
+23 artifact(s), written to rust-out

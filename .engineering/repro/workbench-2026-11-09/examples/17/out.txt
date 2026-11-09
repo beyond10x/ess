@@ -1,0 +1,6 @@
+$ ess specify validate --path spec  [exit 1]
+spec was refused:
+  - [unparsable_predicate] entity gap.demo.Tally.invariants[0]: cannot parse predicate "passed + failed == total": left-hand side must be a fact path: invalid fact path identifier "passed + failed": contains disallowed character ' '
+  - error[ESS-SPEC-012]: cannot parse predicate "passed + failed == total": left-hand side must be a fact path: invalid fact path identifier "passed + failed": contains disallowed character ' '
+  `ess-domain` refuses this as `unparsable_predicate`
+  --> demo.yaml:51:3

@@ -1,0 +1,23 @@
+$ ess specify validate --path spec  [exit 1]
+spec was refused:
+  - [unobservable_fact] command.gap.demo.FinishIfParentNamed.outcomes.parent-wrong.when_subject: `parent.name` reads `parent`, which is not a declared observable root; `when_subject` reads the stored fields of `gap.demo.Item`, and `parent` is not one (hint: stored fields: `title`, `parent_id`, `n`, `tags`, `due`, `note`; the input is read as `input.<field>` (ess/15) or in `when:`, and the lifecycle state in `when_subject_state:`)
+  - error[ESS-COMMAND-003]: `parent.name` reads `parent`, which is not a declared observable root; `when_subject` reads the stored fields of `gap.demo.Item`, and `parent` is not one
+  `ess-domain` refuses this as `unobservable_fact`
+  help: stored fields: `title`, `parent_id`, `n`, `tags`, `due`, `note`; the input is read as `input.<field>` (ess/15) or in `when:`, and the lifecycle state in `when_subject_state:`
+  --> demo.yaml:150:5
+
+$ ess conform synthesize --path spec --out suite.json  [exit 1]
+spec was refused:
+  - [unobservable_fact] command.gap.demo.FinishIfParentNamed.outcomes.parent-wrong.when_subject: `parent.name` reads `parent`, which is not a declared observable root; `when_subject` reads the stored fields of `gap.demo.Item`, and `parent` is not one (hint: stored fields: `title`, `parent_id`, `n`, `tags`, `due`, `note`; the input is read as `input.<field>` (ess/15) or in `when:`, and the lifecycle state in `when_subject_state:`)
+  - error[ESS-COMMAND-003]: `parent.name` reads `parent`, which is not a declared observable root; `when_subject` reads the stored fields of `gap.demo.Item`, and `parent` is not one
+  `ess-domain` refuses this as `unobservable_fact`
+  help: stored fields: `title`, `parent_id`, `n`, `tags`, `due`, `note`; the input is read as `input.<field>` (ess/15) or in `when:`, and the lifecycle state in `when_subject_state:`
+  --> demo.yaml:150:5
+
+$ ess generate synthesize --target rust --layout crate --path spec --out rust-out  [exit 1]
+spec was refused:
+  - [unobservable_fact] command.gap.demo.FinishIfParentNamed.outcomes.parent-wrong.when_subject: `parent.name` reads `parent`, which is not a declared observable root; `when_subject` reads the stored fields of `gap.demo.Item`, and `parent` is not one (hint: stored fields: `title`, `parent_id`, `n`, `tags`, `due`, `note`; the input is read as `input.<field>` (ess/15) or in `when:`, and the lifecycle state in `when_subject_state:`)
+  - error[ESS-COMMAND-003]: `parent.name` reads `parent`, which is not a declared observable root; `when_subject` reads the stored fields of `gap.demo.Item`, and `parent` is not one
+  `ess-domain` refuses this as `unobservable_fact`
+  help: stored fields: `title`, `parent_id`, `n`, `tags`, `due`, `note`; the input is read as `input.<field>` (ess/15) or in `when:`, and the lifecycle state in `when_subject_state:`
+  --> demo.yaml:150:5

@@ -1,0 +1,12 @@
+$ ess specify validate --path spec  [exit 0]
+gap v1 — 3 file(s), valid
+
+$ ess conform synthesize --path spec --out suite.json  [exit 0]
+note: `gap.demo.Item/state/Done/refuses/gap.demo.FinishItem` observes its subject only through what the declared views publish; no view publishes `parent_id`, `tags`, so the scenario's outcome, error and events are its evidence about them, and a refusal that changed them is not checked; a field published only by an `eventual` view is checked against an eventually consistent read, which a projection that has not yet caught up with a wrong change still passes
+note: the specification declares actors and serves no component, so enforcing a grant is the caller's, against the generated grant table, and no `<command>/grant/denied` scenario is owed
+note: every declared actor may read `gap.demo.Items`, so `gap.demo.Items/grant/read/denied` reads it as no actor only
+9 scenario(s) (0 authored), 0 refusal(s), written to suite.json
+
+$ ess generate synthesize --target rust --layout crate --path spec --out rust-out  [exit 0]
+19 capabilities: 18 generated, 1 obligation(s), 0 refused
+23 artifact(s), written to rust-out

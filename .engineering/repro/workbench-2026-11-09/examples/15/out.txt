@@ -1,0 +1,23 @@
+$ ess specify validate --path spec  [exit 1]
+spec was refused:
+  - [unsupported_construct] view.gap.demo.ItemsByWeek.fields[0].expr: `gap.demo.ItemsByWeek` is an aggregate view, and `week` computes from one row; arithmetic over measures is not admitted yet (hint: compute the field in a view that projects rows)
+  - error[ESS-VIEW-009]: `gap.demo.ItemsByWeek` is an aggregate view, and `week` computes from one row; arithmetic over measures is not admitted yet
+  `ess-domain` refuses this as `unsupported_construct`
+  help: compute the field in a view that projects rows
+  --> demo.yaml:169:5
+
+$ ess conform synthesize --path spec --out suite.json  [exit 1]
+spec was refused:
+  - [unsupported_construct] view.gap.demo.ItemsByWeek.fields[0].expr: `gap.demo.ItemsByWeek` is an aggregate view, and `week` computes from one row; arithmetic over measures is not admitted yet (hint: compute the field in a view that projects rows)
+  - error[ESS-VIEW-009]: `gap.demo.ItemsByWeek` is an aggregate view, and `week` computes from one row; arithmetic over measures is not admitted yet
+  `ess-domain` refuses this as `unsupported_construct`
+  help: compute the field in a view that projects rows
+  --> demo.yaml:169:5
+
+$ ess generate synthesize --target rust --layout crate --path spec --out rust-out  [exit 1]
+spec was refused:
+  - [unsupported_construct] view.gap.demo.ItemsByWeek.fields[0].expr: `gap.demo.ItemsByWeek` is an aggregate view, and `week` computes from one row; arithmetic over measures is not admitted yet (hint: compute the field in a view that projects rows)
+  - error[ESS-VIEW-009]: `gap.demo.ItemsByWeek` is an aggregate view, and `week` computes from one row; arithmetic over measures is not admitted yet
+  `ess-domain` refuses this as `unsupported_construct`
+  help: compute the field in a view that projects rows
+  --> demo.yaml:169:5

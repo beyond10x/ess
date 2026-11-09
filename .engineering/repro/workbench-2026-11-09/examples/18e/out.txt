@@ -1,0 +1,11 @@
+$ ess specify validate --path spec  [exit 1]
+spec was refused:
+  - demo.yaml: unknown field `any`, expected one of `field`, `equals`, `predicate`
+
+$ ess conform synthesize --path spec --out suite.json  [exit 1]
+spec was refused:
+  - demo.yaml: unknown field `any`, expected one of `field`, `equals`, `predicate`
+
+$ ess generate synthesize --target rust --layout crate --path spec --out rust-out  [exit 1]
+spec was refused:
+  - demo.yaml: unknown field `any`, expected one of `field`, `equals`, `predicate`

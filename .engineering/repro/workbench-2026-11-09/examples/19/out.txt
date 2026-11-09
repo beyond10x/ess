@@ -1,0 +1,23 @@
+$ ess specify validate --path spec  [exit 1]
+spec was refused:
+  - [type_mismatch] command.gap.demo.NoteItem.outcomes.noted.payload.gap.demo.ItemNoted.note: the subject's `note` has type `Optional<String>`, and `note` requires `String`; no conversion is declared (hint: declare the crossing — `conversions: [{from: Optional<String>, to: String, because: …}]` — or make the two types agree)
+  - error[ESS-COMMAND-002]: the subject's `note` has type `Optional<String>`, and `note` requires `String`; no conversion is declared
+  `ess-domain` refuses this as `type_mismatch`
+  help: declare the crossing — `conversions: [{from: Optional<String>, to: String, because: …}]` — or make the two types agree
+  --> demo.yaml:150:3
+
+$ ess conform synthesize --path spec --out suite.json  [exit 1]
+spec was refused:
+  - [type_mismatch] command.gap.demo.NoteItem.outcomes.noted.payload.gap.demo.ItemNoted.note: the subject's `note` has type `Optional<String>`, and `note` requires `String`; no conversion is declared (hint: declare the crossing — `conversions: [{from: Optional<String>, to: String, because: …}]` — or make the two types agree)
+  - error[ESS-COMMAND-002]: the subject's `note` has type `Optional<String>`, and `note` requires `String`; no conversion is declared
+  `ess-domain` refuses this as `type_mismatch`
+  help: declare the crossing — `conversions: [{from: Optional<String>, to: String, because: …}]` — or make the two types agree
+  --> demo.yaml:150:3
+
+$ ess generate synthesize --target rust --layout crate --path spec --out rust-out  [exit 1]
+spec was refused:
+  - [type_mismatch] command.gap.demo.NoteItem.outcomes.noted.payload.gap.demo.ItemNoted.note: the subject's `note` has type `Optional<String>`, and `note` requires `String`; no conversion is declared (hint: declare the crossing — `conversions: [{from: Optional<String>, to: String, because: …}]` — or make the two types agree)
+  - error[ESS-COMMAND-002]: the subject's `note` has type `Optional<String>`, and `note` requires `String`; no conversion is declared
+  `ess-domain` refuses this as `type_mismatch`
+  help: declare the crossing — `conversions: [{from: Optional<String>, to: String, because: …}]` — or make the two types agree
+  --> demo.yaml:150:3

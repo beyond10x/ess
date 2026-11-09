@@ -1,0 +1,173 @@
+domain: gap.demo
+entities:
+- name: gap.demo.Parent
+  identity:
+    name: id
+    type: String
+  fields:
+  - name: name
+    type: String
+  lifecycle:
+    initial: Open
+    states:
+    - Open
+    terminal:
+    - Open
+- name: gap.demo.Item
+  identity:
+    name: id
+    type: String
+  fields:
+  - name: title
+    type: String
+  - name: parent_id
+    type: String
+  - name: n
+    type: Integer
+  - name: tags
+    type: List<String>
+  - name: due
+    type: Optional<Timestamp>
+  - name: note
+    type: Optional<String>
+  relations:
+  - name: parent
+    kind: references
+    target: gap.demo.Parent
+    cardinality: one
+    via: parent_id
+  lifecycle:
+    initial: Open
+    states:
+    - Open
+    - Done
+    terminal:
+    - Done
+    transitions:
+    - name: finish
+      from:
+      - Open
+      to: Done
+events:
+- name: gap.demo.ParentCreated
+  fields:
+  - name: id
+    type: String
+- name: gap.demo.ItemCreated
+  fields:
+  - name: id
+    type: String
+- name: gap.demo.ItemFinished
+  fields:
+  - name: id
+    type: String
+errors:
+- name: gap.demo.NoSuchItem
+  fields:
+  - name: id
+    type: String
+commands:
+- name: gap.demo.CreateParent
+  input:
+  - name: id
+    type: String
+  - name: name
+    type: String
+  outcomes:
+  - name: created
+    creates: gap.demo.Parent
+    instance: id
+    sets:
+      name: input.name
+    emits:
+    - gap.demo.ParentCreated
+    payload:
+      gap.demo.ParentCreated:
+        id: input.id
+- name: gap.demo.CreateItem
+  input:
+  - name: id
+    type: String
+  - name: title
+    type: String
+  - name: parent_id
+    type: String
+  - name: n
+    type: Integer
+  - name: tags
+    type: List<String>
+  - name: due
+    type: Optional<Timestamp>
+  - name: note
+    type: Optional<String>
+  outcomes:
+  - name: out-of-range
+    when: n < 0 or n > 100
+    error: gap.demo.NoSuchItem
+    payload:
+      gap.demo.NoSuchItem:
+        id: input.id
+  - name: created
+    creates: gap.demo.Item
+    instance: id
+    sets:
+      title: input.title
+      parent_id: input.parent_id
+      n: input.n
+      tags: input.tags
+      due: input.due
+      note: input.note
+    emits:
+    - gap.demo.ItemCreated
+    payload:
+      gap.demo.ItemCreated:
+        id: input.id
+- name: gap.demo.FinishItem
+  input:
+  - name: id
+    type: String
+  outcomes:
+  - name: finished
+    moves: gap.demo.Item.finish
+    instance: id
+    emits:
+    - gap.demo.ItemFinished
+    payload:
+      gap.demo.ItemFinished:
+        id: input.id
+  - name: unknown
+    unknown_instance: true
+    error: gap.demo.NoSuchItem
+    payload:
+      gap.demo.NoSuchItem:
+        id: input.id
+  - name: wrong-state
+    wrong_state: true
+    error: gap.demo.NoSuchItem
+    payload:
+      gap.demo.NoSuchItem:
+        id: input.id
+views:
+- name: gap.demo.Items
+  source: gap.demo.Item
+  consistency: read_your_writes
+  fields:
+  - name: id
+    type: String
+  - name: title
+    type: String
+  - name: n
+    type: Integer
+  - name: due
+    type: Optional<Timestamp>
+  - name: note
+    type: Optional<String>
+  - name: state
+    type: gap.demo.Item.State
+actors:
+- name: gap.demo.Anyone
+  may:
+  - gap.demo.CreateParent
+  - gap.demo.CreateItem
+  - gap.demo.FinishItem
+  - gap.demo.Items

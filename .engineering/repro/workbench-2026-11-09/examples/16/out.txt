@@ -1,0 +1,38 @@
+$ ess specify validate --path spec  [exit 1]
+spec was refused:
+  - [unsupported_construct] view.gap.demo.DoneRate.fields[2].expr: `gap.demo.DoneRate` is an aggregate view, and `rate` computes from one row; arithmetic over measures is not admitted yet (hint: compute the field in a view that projects rows)
+  - [missing_declaration] view.gap.demo.DoneRate.fields[2]: `rate` is neither an aggregate nor a group key, so a row has no single value for it (hint: list `rate` in `group_by:`, give it an `aggregate:`, or drop it)
+  - error[ESS-VIEW-009]: `gap.demo.DoneRate` is an aggregate view, and `rate` computes from one row; arithmetic over measures is not admitted yet
+  `ess-domain` refuses this as `unsupported_construct`
+  help: compute the field in a view that projects rows
+  --> demo.yaml:176:5
+  - error[ESS-VIEW-005]: `rate` is neither an aggregate nor a group key, so a row has no single value for it
+  `ess-domain` refuses this as `missing_declaration`
+  help: list `rate` in `group_by:`, give it an `aggregate:`, or drop it
+  --> demo.yaml:161:3
+
+$ ess conform synthesize --path spec --out suite.json  [exit 1]
+spec was refused:
+  - [unsupported_construct] view.gap.demo.DoneRate.fields[2].expr: `gap.demo.DoneRate` is an aggregate view, and `rate` computes from one row; arithmetic over measures is not admitted yet (hint: compute the field in a view that projects rows)
+  - [missing_declaration] view.gap.demo.DoneRate.fields[2]: `rate` is neither an aggregate nor a group key, so a row has no single value for it (hint: list `rate` in `group_by:`, give it an `aggregate:`, or drop it)
+  - error[ESS-VIEW-009]: `gap.demo.DoneRate` is an aggregate view, and `rate` computes from one row; arithmetic over measures is not admitted yet
+  `ess-domain` refuses this as `unsupported_construct`
+  help: compute the field in a view that projects rows
+  --> demo.yaml:176:5
+  - error[ESS-VIEW-005]: `rate` is neither an aggregate nor a group key, so a row has no single value for it
+  `ess-domain` refuses this as `missing_declaration`
+  help: list `rate` in `group_by:`, give it an `aggregate:`, or drop it
+  --> demo.yaml:161:3
+
+$ ess generate synthesize --target rust --layout crate --path spec --out rust-out  [exit 1]
+spec was refused:
+  - [unsupported_construct] view.gap.demo.DoneRate.fields[2].expr: `gap.demo.DoneRate` is an aggregate view, and `rate` computes from one row; arithmetic over measures is not admitted yet (hint: compute the field in a view that projects rows)
+  - [missing_declaration] view.gap.demo.DoneRate.fields[2]: `rate` is neither an aggregate nor a group key, so a row has no single value for it (hint: list `rate` in `group_by:`, give it an `aggregate:`, or drop it)
+  - error[ESS-VIEW-009]: `gap.demo.DoneRate` is an aggregate view, and `rate` computes from one row; arithmetic over measures is not admitted yet
+  `ess-domain` refuses this as `unsupported_construct`
+  help: compute the field in a view that projects rows
+  --> demo.yaml:176:5
+  - error[ESS-VIEW-005]: `rate` is neither an aggregate nor a group key, so a row has no single value for it
+  `ess-domain` refuses this as `missing_declaration`
+  help: list `rate` in `group_by:`, give it an `aggregate:`, or drop it
+  --> demo.yaml:161:3

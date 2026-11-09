@@ -1,0 +1,11 @@
+$ ess ui check --path ui/gap.ui.yaml  [exit 1]
+error overlay_params pages/items.list/overlays/finish: `params.id` is passed to this overlay and read nowhere inside it; it reads no parameter
+ui/gap.ui.yaml: 1 error(s), 0 warning(s)
+
+$ ess ui check --path ui/gap.ui.yaml --model spec  [exit 1]
+error overlay_params pages/items.list/overlays/finish: `params.id` is passed to this overlay and read nowhere inside it; it reads no parameter
+coverage: 2 covered, 0 host-covered, 3 uncovered of 5 views and commands
+ui/gap.ui.yaml: 1 error(s), 0 warning(s)
+
+$ ess generate ui --target react --path ui/gap.ui.yaml --out react-out --model spec  [exit 0]
+34 files written to react-out

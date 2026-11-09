@@ -1,0 +1,4 @@
+view: gap.demo.Items
+rows:
+  - {id: a, title: First, n: 5, due: null, note: x, state: Open}
+  - {id: b, title: Second, n: 90, due: null, note: null, state: Done}

@@ -1,0 +1,6 @@
+$ ess specify validate --path spec  [exit 0]
+gap v1 — 3 file(s), valid
+
+$ ess generate synthesize --target rust --layout crate --path spec --out rust-out  [exit 0]
+19 capabilities: 19 generated, 0 obligation(s), 0 refused
+23 artifact(s), written to rust-out

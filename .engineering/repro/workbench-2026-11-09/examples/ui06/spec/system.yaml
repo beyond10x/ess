@@ -1,0 +1,6 @@
+format: ess/35
+system: gap
+version: v1
+summary: minimal example for gap ui06
+domains:
+  - gap.demo

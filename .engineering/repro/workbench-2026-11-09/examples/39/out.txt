@@ -1,0 +1,7 @@
+$ ess specify validate --path spec  [exit 1]
+spec was refused:
+  - [missing_causation] entity gap.demo.Parent.transitions[0]: `close` moves `gap.demo.Parent` to `Closed`, and no command outcome takes it, so nothing in this specification can make that state change happen (hint: give some outcome `moves: gap.demo.Parent.close`, or delete the transition)
+  - error[ESS-ENTITY-005]: `close` moves `gap.demo.Parent` to `Closed`, and no command outcome takes it, so nothing in this specification can make that state change happen
+  `ess-domain` refuses this as `missing_causation`
+  help: give some outcome `moves: gap.demo.Parent.close`, or delete the transition
+  --> demo.yaml:3:3

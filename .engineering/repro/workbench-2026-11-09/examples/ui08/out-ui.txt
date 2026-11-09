@@ -1,0 +1,9 @@
+$ ess ui check --path ui/gap.ui.yaml  [exit 0]
+ui/gap.ui.yaml: 0 error(s), 0 warning(s)
+
+$ ess ui check --path ui/gap.ui.yaml --model spec  [exit 0]
+coverage: 1 covered, 0 host-covered, 4 uncovered of 5 views and commands
+ui/gap.ui.yaml: 0 error(s), 0 warning(s)
+
+$ ess generate ui --target react --path ui/gap.ui.yaml --out react-out --model spec  [exit 0]
+32 files written to react-out

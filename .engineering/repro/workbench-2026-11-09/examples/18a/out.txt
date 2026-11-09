@@ -1,0 +1,20 @@
+$ ess specify validate --path spec  [exit 1]
+spec was refused:
+  - [type_mismatch] command.gap.demo.CreateItem.outcomes.out-of-range.when: `n < 0 or n > 100`: operator `<` does not admit `Integer` (Number) and `Text literal `0 or n > 100`` (Text)
+  - error[ESS-COMMAND-002]: `n < 0 or n > 100`: operator `<` does not admit `Integer` (Number) and `Text literal `0 or n > 100`` (Text)
+  `ess-domain` refuses this as `type_mismatch`
+  --> demo.yaml:87:3
+
+$ ess conform synthesize --path spec --out suite.json  [exit 1]
+spec was refused:
+  - [type_mismatch] command.gap.demo.CreateItem.outcomes.out-of-range.when: `n < 0 or n > 100`: operator `<` does not admit `Integer` (Number) and `Text literal `0 or n > 100`` (Text)
+  - error[ESS-COMMAND-002]: `n < 0 or n > 100`: operator `<` does not admit `Integer` (Number) and `Text literal `0 or n > 100`` (Text)
+  `ess-domain` refuses this as `type_mismatch`
+  --> demo.yaml:87:3
+
+$ ess generate synthesize --target rust --layout crate --path spec --out rust-out  [exit 1]
+spec was refused:
+  - [type_mismatch] command.gap.demo.CreateItem.outcomes.out-of-range.when: `n < 0 or n > 100`: operator `<` does not admit `Integer` (Number) and `Text literal `0 or n > 100`` (Text)
+  - error[ESS-COMMAND-002]: `n < 0 or n > 100`: operator `<` does not admit `Integer` (Number) and `Text literal `0 or n > 100`` (Text)
+  `ess-domain` refuses this as `type_mismatch`
+  --> demo.yaml:87:3

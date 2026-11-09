@@ -1,0 +1,7 @@
+$ ess specify validate --path spec  [exit 0]
+gap v1 — 3 file(s), valid
+
+$ ess generate synthesize --target rust --layout crate --path spec --out rust-out  [exit 101]
+thread 'main' (2850046) panicked at crates/generate/ess-synth/src/rust/behaviour.rs:2850:28:
+the plan admits `{subject:}` only where a row is held
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace

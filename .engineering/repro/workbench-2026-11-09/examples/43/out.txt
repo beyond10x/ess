@@ -1,0 +1,13 @@
+$ ess specify validate --path spec  [exit 0]
+gap v1 — 3 file(s), valid
+
+$ ess conform synthesize --path spec --out suite.json  [exit 0]
+refused: refusal[ESS-SYNTH-023]: outcome gap.demo.StampItem/no-such-parent has no scenario `gap.demo.StampItem/outcome/no-such-parent`
+  `gap.demo.StampItem` is issued by the system itself, and its outcome `stamped` creates the record it addresses, so no record exists before the step; a scenario awaits a system-issued step on an existing record and never drives one
+  help: a step the system takes to create a record, or over rows with no subject, is not awaited in this release; grant the command to a caller as well to keep it driven, or move the step onto an existing record that its outcomes name with `instance:`
+refused: refusal[ESS-SYNTH-023]: outcome gap.demo.StampItem/stamped has no scenario `gap.demo.StampItem/outcome/stamped`
+  `gap.demo.StampItem` is issued by the system itself, and its outcome `stamped` creates the record it addresses, so no record exists before the step; a scenario awaits a system-issued step on an existing record and never drives one
+  help: a step the system takes to create a record, or over rows with no subject, is not awaited in this release; grant the command to a caller as well to keep it driven, or move the step onto an existing record that its outcomes name with `instance:`
+note: `gap.demo.Item/state/Done/refuses/gap.demo.FinishItem` observes its subject only through what the declared views publish; no view publishes `parent_id`, `tags`, so the scenario's outcome, error and events are its evidence about them, and a refusal that changed them is not checked; a field published only by an `eventual` view is checked against an eventually consistent read, which a projection that has not yet caught up with a wrong change still passes
+note: the specification declares actors and serves no component, so enforcing a grant is the caller's, against the generated grant table, and no `<command>/grant/denied` scenario is owed
+8 scenario(s) (0 authored), 2 refusal(s), written to suite.json

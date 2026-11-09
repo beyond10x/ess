@@ -1,0 +1,7 @@
+$ ess ui check --path ui/gap.ui.yaml  [exit 1]
+error document_loads pages/items.list/sections/rec/fields/n: `m` is no duration unit: `unit` is `ms` or `s`
+ui/gap.ui.yaml: 1 error(s), 0 warning(s)
+
+$ ess ui check --path ui/gap.ui.yaml --model spec  [exit 1]
+error document_loads pages/items.list/sections/rec/fields/n: `m` is no duration unit: `unit` is `ms` or `s`
+ui/gap.ui.yaml: 1 error(s), 0 warning(s)

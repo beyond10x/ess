@@ -1,0 +1,16 @@
+$ ess specify validate --path spec  [exit 0]
+gap v1 — 3 file(s), valid
+
+$ ess conform synthesize --path spec --out suite.json  [exit 0]
+refused: refusal[ESS-SYNTH-017]: view gap.demo.NotedItems has no scenario `gap.demo.NotedItems/aggregate`
+  `gap.demo.NotedItems` cannot be arranged: a measure's condition: no arrangement of one group's rows gives the condition of `with_x` rows it admits and rows it refuses that its measure tells apart (and, for an `avg`, a mean rounding and truncation tell apart), so a target dropping or inverting the condition would pass
+  help: give a measure's condition rows on both sides of it that the creating command can arrange — a field it sets from its input, or the lifecycle state — with a second group every condition refuses, and an `avg`'s selected rows a mean rounding and truncation tell apart; or declare the measure without `where:`
+note: `gap.demo.Item/state/Done/refuses/gap.demo.FinishItem` observes its subject only through what the declared views publish; no view publishes `parent_id`, `tags`, so the scenario's outcome, error and events are its evidence about them, and a refusal that changed them is not checked; a field published only by an `eventual` view is checked against an eventually consistent read, which a projection that has not yet caught up with a wrong change still passes
+note: the specification declares actors and serves no component, so enforcing a grant is the caller's, against the generated grant table, and no `<command>/grant/denied` scenario is owed
+note: every declared actor may read `gap.demo.Items`, so `gap.demo.Items/grant/read/denied` reads it as no actor only
+note: every declared actor may read `gap.demo.NotedItems`, so `gap.demo.NotedItems/grant/read/denied` reads it as no actor only
+10 scenario(s) (0 authored), 1 refusal(s), written to suite.json
+
+$ ess generate synthesize --target rust --layout crate --path spec --out rust-out  [exit 0]
+21 capabilities: 21 generated, 0 obligation(s), 0 refused
+23 artifact(s), written to rust-out

@@ -1,0 +1,38 @@
+$ ess specify validate --path spec  [exit 1]
+spec was refused:
+  - [type_mismatch] view.gap.demo.ItemsByParent.fields[0].field: `parent_name` reads `gap.demo.Parent.name` through `parent_id`, which is absent where the reference is or names no row; `parent_name` is `String`, which cannot be left absent (hint: declare `parent_name` as `Optional<String>`)
+  - [unsupported_construct] view.gap.demo.ItemsByParent.fields: `gap.demo.ItemsByParent` reads through a reference of `gap.demo.Item`, and an aggregate view is not read through one in this cut (hint: read the referenced row in a view of its own, or drop the navigation)
+  - error[ESS-VIEW-002]: `parent_name` reads `gap.demo.Parent.name` through `parent_id`, which is absent where the reference is or names no row; `parent_name` is `String`, which cannot be left absent
+  `ess-domain` refuses this as `type_mismatch`
+  help: declare `parent_name` as `Optional<String>`
+  --> demo.yaml:161:3
+  - error[ESS-VIEW-009]: `gap.demo.ItemsByParent` reads through a reference of `gap.demo.Item`, and an aggregate view is not read through one in this cut
+  `ess-domain` refuses this as `unsupported_construct`
+  help: read the referenced row in a view of its own, or drop the navigation
+  --> demo.yaml:161:3
+
+$ ess conform synthesize --path spec --out suite.json  [exit 1]
+spec was refused:
+  - [type_mismatch] view.gap.demo.ItemsByParent.fields[0].field: `parent_name` reads `gap.demo.Parent.name` through `parent_id`, which is absent where the reference is or names no row; `parent_name` is `String`, which cannot be left absent (hint: declare `parent_name` as `Optional<String>`)
+  - [unsupported_construct] view.gap.demo.ItemsByParent.fields: `gap.demo.ItemsByParent` reads through a reference of `gap.demo.Item`, and an aggregate view is not read through one in this cut (hint: read the referenced row in a view of its own, or drop the navigation)
+  - error[ESS-VIEW-002]: `parent_name` reads `gap.demo.Parent.name` through `parent_id`, which is absent where the reference is or names no row; `parent_name` is `String`, which cannot be left absent
+  `ess-domain` refuses this as `type_mismatch`
+  help: declare `parent_name` as `Optional<String>`
+  --> demo.yaml:161:3
+  - error[ESS-VIEW-009]: `gap.demo.ItemsByParent` reads through a reference of `gap.demo.Item`, and an aggregate view is not read through one in this cut
+  `ess-domain` refuses this as `unsupported_construct`
+  help: read the referenced row in a view of its own, or drop the navigation
+  --> demo.yaml:161:3
+
+$ ess generate synthesize --target rust --layout crate --path spec --out rust-out  [exit 1]
+spec was refused:
+  - [type_mismatch] view.gap.demo.ItemsByParent.fields[0].field: `parent_name` reads `gap.demo.Parent.name` through `parent_id`, which is absent where the reference is or names no row; `parent_name` is `String`, which cannot be left absent (hint: declare `parent_name` as `Optional<String>`)
+  - [unsupported_construct] view.gap.demo.ItemsByParent.fields: `gap.demo.ItemsByParent` reads through a reference of `gap.demo.Item`, and an aggregate view is not read through one in this cut (hint: read the referenced row in a view of its own, or drop the navigation)
+  - error[ESS-VIEW-002]: `parent_name` reads `gap.demo.Parent.name` through `parent_id`, which is absent where the reference is or names no row; `parent_name` is `String`, which cannot be left absent
+  `ess-domain` refuses this as `type_mismatch`
+  help: declare `parent_name` as `Optional<String>`
+  --> demo.yaml:161:3
+  - error[ESS-VIEW-009]: `gap.demo.ItemsByParent` reads through a reference of `gap.demo.Item`, and an aggregate view is not read through one in this cut
+  `ess-domain` refuses this as `unsupported_construct`
+  help: read the referenced row in a view of its own, or drop the navigation
+  --> demo.yaml:161:3

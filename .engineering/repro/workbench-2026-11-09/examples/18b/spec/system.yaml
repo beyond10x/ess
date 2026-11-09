@@ -1,0 +1,6 @@
+format: ess/35
+system: gap
+version: v1
+summary: minimal example for gap 18b
+domains:
+  - gap.demo
