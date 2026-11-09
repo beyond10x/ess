@@ -422,6 +422,30 @@ external request is not dispatched in a wave without its fit review.
   request. An issue already filed for a single finding is linked to its feature's story and closed
   or merged into the feature's issue, with a comment naming it.
 
+## Hotfix
+
+A defect an adopter reports, once reproduced, is pending work, never new work: it starts at once,
+in parallel with any running wave, and needs no operator confirmation. The target is a pushed tag
+within one hour of the reproduction.
+
+1. Branch from the latest release tag, or from the newest release head not yet released.
+2. Write the failing regression test first, then the fix.
+3. Bump the patch version and add its `CHANGELOG.md` section.
+4. Before the tag, run only the regression test and the touched crates' tests and Clippy: no local
+   full gate.
+5. Commit with `b10x-gates bot`, create an annotated tag with `b10x-gates bot -- tag -a`, and push
+   the tag. The tag's release workflow is the gate. No wave.
+6. In the same minute, push the branch and open its pull request to `main`. The main ruleset needs
+   its required checks on the tagged commit itself, and the tag's release run does not count; a pull
+   request opened only after the release costs a second full CI run (0.91.2: 50 extra minutes).
+7. While a hotfix release runs, start no other release or release-candidate run in this repository.
+   The runners are shared; 0.91.2's test shards queued for up to 72 minutes behind the 0.92.0 runs.
+8. Watch the release run until it ends and publish it within five minutes of success. The session
+   that pushed the tag owns this; a finished release left unpublished is the slowest step there is
+   (0.91.2: 34 minutes).
+
+A tagged hotfix commit reaches main through a merge commit, never a squash, so the tag stays on main.
+
 ## Commits
 
 Public Gates owns common security/privacy checks and generic bot delivery (Atlas ADR 0048).
