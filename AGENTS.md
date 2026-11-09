@@ -434,8 +434,15 @@ within one hour of the reproduction.
 4. Before the tag, run only the regression test and the touched crates' tests and Clippy: no local
    full gate.
 5. Commit with `b10x-gates bot`, create an annotated tag with `b10x-gates bot -- tag -a`, and push
-   the tag. The tag's release workflow is the gate. No pull request and no wave.
-6. Afterwards, merge the fix into `main` through the normal route.
+   the tag. The tag's release workflow is the gate. No wave.
+6. In the same minute, push the branch and open its pull request to `main`. The main ruleset needs
+   its required checks on the tagged commit itself, and the tag's release run does not count; a pull
+   request opened only after the release costs a second full CI run (0.91.2: 50 extra minutes).
+7. While a hotfix release runs, start no other release or release-candidate run in this repository.
+   The runners are shared; 0.91.2's test shards queued for up to 72 minutes behind the 0.92.0 runs.
+8. Watch the release run until it ends and publish it within five minutes of success. The session
+   that pushed the tag owns this; a finished release left unpublished is the slowest step there is
+   (0.91.2: 34 minutes).
 
 A tagged hotfix commit reaches main through a merge commit, never a squash, so the tag stays on main.
 
