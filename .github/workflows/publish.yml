@@ -1,0 +1,141 @@
+# Publishes the release a successful `Release preparation` run prepared: its retained artifact's
+# four archives, SHA256SUMS and notes, as the organization bot, so no agent step stands between a
+# green release run and the published release. `release.yml` itself keeps no write authority.
+#
+# The bot's token comes from the organization App (`B10X_BOT_APP_ID`, `B10X_BOT_PRIVATE_KEY`).
+# Without both secrets this run says so and publishes nothing; it never falls back to the
+# Actions token, whose releases are authored by `github-actions[bot]`.
+#
+# A release is marked latest only when its tag is the highest published version, so a hotfix of an
+# older line does not take latest from a newer release. A tag that already has a published release
+# is left as it is.
+name: Publish release
+
+on:
+  workflow_run:
+    workflows: ["Release preparation"]
+    types: [completed]
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: publish-${{ github.event.workflow_run.id }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Publish the prepared release
+    if: ${{ github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.repository.full_name == github.repository }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Require the bot App secrets
+        id: secrets
+        env:
+          APP_ID: ${{ secrets.B10X_BOT_APP_ID }}
+          PRIVATE_KEY: ${{ secrets.B10X_BOT_PRIVATE_KEY }}
+        run: |
+          if [ -z "$APP_ID" ] || [ -z "$PRIVATE_KEY" ]; then
+            echo "::error::B10X_BOT_APP_ID and B10X_BOT_PRIVATE_KEY are not available to this repository; publish the release by hand"
+            exit 1
+          fi
+
+      - name: Find the prepared artifact
+        id: artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          RUN: ${{ github.event.workflow_run.id }}
+        run: |
+          set -euo pipefail
+          names=$(gh api "repos/$REPOSITORY/actions/runs/$RUN/artifacts?per_page=100" \
+            --jq '[.artifacts[] | select(.expired == false) | .name | select(startswith("ess-release-"))] | .[]')
+          count=$(printf '%s\n' "$names" | grep -c . || true)
+          if [ "$count" != 1 ]; then
+            echo "::error::run $RUN holds $count release artifacts, not one: $names" >&2
+            exit 1
+          fi
+          name=$names
+          rest=${name#ess-release-}
+          tag=${rest%-*}
+          commit=${rest##*-}
+          if [[ ! "$tag" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || [[ ! "$commit" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::artifact $name names no tag and commit" >&2
+            exit 1
+          fi
+          remote=$(git ls-remote "https://github.com/$REPOSITORY.git" "refs/tags/$tag^{}" | cut -f1)
+          if [ "$remote" != "$commit" ]; then
+            echo "::error::tag $tag points to ${remote:-nothing}, not the prepared $commit" >&2
+            exit 1
+          fi
+          echo "name=$name" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ${{ steps.artifact.outputs.name }}
+          path: prepared
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
+
+      - name: Verify the prepared files
+        env:
+          TAG: ${{ steps.artifact.outputs.tag }}
+        run: |
+          set -euo pipefail
+          test -s prepared/notes.md
+          cd prepared/dist
+          for target in x86_64-unknown-linux-gnu aarch64-unknown-linux-gnu x86_64-apple-darwin aarch64-apple-darwin; do
+            test -f "ess-$TAG-$target.tar.gz"
+          done
+          test "$(find . -maxdepth 1 -type f -name '*.tar.gz' | wc -l | tr -d ' ')" = 4
+          sha256sum --check --strict SHA256SUMS
+
+      - name: Bot token
+        id: app-token
+        uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349 # v2
+        with:
+          app-id: ${{ secrets.B10X_BOT_APP_ID }}
+          private-key: ${{ secrets.B10X_BOT_PRIVATE_KEY }}
+          owner: beyond10x
+          repositories: ess
+
+      - name: Publish as the bot
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          REPOSITORY: ${{ github.repository }}
+          TAG: ${{ steps.artifact.outputs.tag }}
+        run: |
+          set -euo pipefail
+          if gh release view "$TAG" --repo "$REPOSITORY" --json isDraft --jq '.isDraft' 2> /dev/null | grep -qx false; then
+            echo "$TAG is published already"
+            exit 0
+          fi
+          newest=$( (gh release list --repo "$REPOSITORY" --exclude-drafts --limit 100 --json tagName --jq '.[].tagName'; echo "$TAG") \
+            | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -1)
+          latest=false
+          [ "$newest" = "$TAG" ] && latest=true
+          cd prepared/dist
+          gh release create "$TAG" --repo "$REPOSITORY" --verify-tag --title "ESS $TAG" \
+            --notes-file ../notes.md --latest="$latest" \
+            "ess-$TAG-aarch64-apple-darwin.tar.gz" "ess-$TAG-aarch64-unknown-linux-gnu.tar.gz" \
+            "ess-$TAG-x86_64-apple-darwin.tar.gz" "ess-$TAG-x86_64-unknown-linux-gnu.tar.gz" \
+            SHA256SUMS
+
+      - name: Read the release back
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          TAG: ${{ steps.artifact.outputs.tag }}
+        run: |
+          set -euo pipefail
+          read -r author draft assets < <(gh release view "$TAG" --repo "$REPOSITORY" \
+            --json author,isDraft,assets --jq '"\(.author.login) \(.isDraft) \(.assets | length)"')
+          echo "$TAG: author $author, draft $draft, $assets assets"
+          if [ "$author" != "b10x-bot[bot]" ] || [ "$draft" != false ] || [ "$assets" != 5 ]; then
+            echo "::error::release $TAG is not a published bot release with five assets" >&2
+            exit 1
+          fi
+          echo "https://github.com/$REPOSITORY/releases/tag/$TAG" >> "$GITHUB_STEP_SUMMARY"
