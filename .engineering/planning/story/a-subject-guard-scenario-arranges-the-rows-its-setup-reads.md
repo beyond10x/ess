@@ -14,7 +14,16 @@ relations:
 - serves: vision:O2
 - decomposes: epic:generic-guard-precedence
 - decomposes: epic:zero-open-issues-2026-11
-revision: 3
+scope:
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/synthesize/related_guard.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/synthesize/subject_fact.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/tests/fixtures/
+- confidence: cited
+  path: crates/verify/ess-conformance/tests/when_subject_witness.rs
+revision: 5
 ---
 ## Need
 

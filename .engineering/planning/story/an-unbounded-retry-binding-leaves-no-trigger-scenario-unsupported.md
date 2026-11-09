@@ -20,12 +20,18 @@ relations:
 - decomposes: epic:zero-open-issues-2026-11
 scope:
 - confidence: cited
+  path: crates/verify/ess-conformance/src/interpret/bindings.rs
+- confidence: cited
   path: crates/verify/ess-conformance/src/synthesize.rs
 - confidence: cited
   path: crates/verify/ess-conformance/src/synthesize/binding_effects.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/synthesize/delivery_context.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/tests/adversary_d350_u2_pass1.rs
 - confidence: cited
   path: crates/verify/ess-conformance/tests/binding_arranged_rows.rs
-revision: 10
+revision: 12
 ---
 ## Need
 

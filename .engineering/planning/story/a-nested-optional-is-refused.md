@@ -12,7 +12,21 @@ tags:
 relations:
 - serves: vision:O2
 - decomposes: epic:zero-open-issues-2026-11
-revision: 3
+- depends_on: story:ess-37-and-conformance-64-65-are-open-for-the-epics-constructs
+scope:
+- confidence: cited
+  path: crates/generate/ess-synth/tests/fixtures/bounded-accessor.yaml
+- confidence: inferred
+  path: crates/specify/ess-domain/src/system.rs
+- confidence: cited
+  path: crates/specify/ess-domain/src/types.rs
+- confidence: inferred
+  path: crates/specify/ess-domain/tests/
+- confidence: cited
+  path: docs/design/binding-mapping-bounded-accessor.md
+- confidence: cited
+  path: website/docs/guides/verify/observations.md
+revision: 5
 ---
 ## Finding
 

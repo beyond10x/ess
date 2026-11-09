@@ -12,7 +12,22 @@ refs:
 relations:
 - decomposes: epic:zero-open-issues-2026-11
 - depends_on: story:a-guard-reads-a-union-tag-and-a-union-names-its-content-key
-revision: 2
+scope:
+- confidence: inferred
+  path: crates/generate/ess-entity-runtime/src/subset.rs
+- confidence: inferred
+  path: crates/generate/ess-synth/src/go/invariant.rs
+- confidence: inferred
+  path: crates/generate/ess-synth/src/rust/invariant.rs
+- confidence: inferred
+  path: crates/specify/ess-domain/src/entity.rs
+- confidence: inferred
+  path: crates/specify/ess-domain/src/types.rs
+- confidence: inferred
+  path: crates/specify/ess-domain/tests/union_variant_guards.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/interpret/facts.rs
+revision: 3
 ---
 ## Need
 

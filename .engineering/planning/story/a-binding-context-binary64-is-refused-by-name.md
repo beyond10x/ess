@@ -12,7 +12,16 @@ tags:
 relations:
 - informed_by: review-result:ess-d335-wave-adversary-u3
 - decomposes: epic:zero-open-issues-2026-11
-revision: 3
+scope:
+- confidence: cited
+  path: crates/specify/ess-compiler/src/binary64.rs
+- confidence: inferred
+  path: crates/specify/ess-compiler/tests/
+- confidence: cited
+  path: crates/verify/ess-conformance/src/synthesize.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/tests/adversary_d335_u3_pass1.rs
+revision: 5
 ---
 ## Problem
 

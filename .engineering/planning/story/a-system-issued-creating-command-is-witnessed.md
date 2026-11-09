@@ -15,7 +15,26 @@ tags:
 relations:
 - serves: vision:O2
 - decomposes: epic:zero-open-issues-2026-11
-revision: 3
+scope:
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/go/runtime.go
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/interpret
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/runner.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/synthesize/system_issued.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/system_issued.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/target.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/ts/runtime.ts
+- confidence: inferred
+  path: crates/verify/ess-conformance/tests/system_issued_synthesis.rs
+- confidence: cited
+  path: docs/design/system-issued-commands.md
+revision: 5
 ---
 ## Need
 

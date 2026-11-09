@@ -13,7 +13,27 @@ relations:
 - decomposes: epic:zero-open-issues-2026-11
 - depends_on: story:stored-field-equals-returned-response-value
 - depends_on: story:the-interpreter-answers-the-response-value-an-outcome-stores
-revision: 2
+- depends_on: story:ess-37-and-conformance-64-65-are-open-for-the-epics-constructs
+scope:
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/admission.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/replay.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/responded_values.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/runner.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/scenario.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/synthesize.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/synthesize/subject_fact.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/tests/stored_response_values.rs
+- confidence: inferred
+  path: website/docs/reference/formats.md
+revision: 4
 ---
 ## Need
 

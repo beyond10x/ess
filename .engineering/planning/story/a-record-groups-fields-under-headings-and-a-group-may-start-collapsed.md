@@ -24,6 +24,8 @@ scope:
 - confidence: inferred
   path: crates/ui/ess-ui-react/templates/runtime/composites/record.tsx.tmpl
 - confidence: inferred
+  path: crates/ui/ess-ui-react/templates/runtime/core.tsx.tmpl
+- confidence: inferred
   path: crates/ui/ess-ui-tui/src/view.rs
 - confidence: inferred
   path: crates/ui/ess-ui/src/model.rs
@@ -31,7 +33,7 @@ scope:
   path: schemas/ui/ess-ui.schema.yaml
 - confidence: inferred
   path: website/docs/reference/ess-ui.md
-revision: 5
+revision: 6
 ---
 ## Need
 

@@ -14,7 +14,25 @@ refs:
 relations:
 - decomposes: epic:adopter-gaps-wire-and-answers
 - decomposes: epic:zero-open-issues-2026-11
-revision: 7
+- depends_on: story:ess-37-and-conformance-64-65-are-open-for-the-epics-constructs
+scope:
+- confidence: cited
+  path: crates/specify/ess-domain/src/system.rs
+- confidence: cited
+  path: crates/specify/ess-domain/src/view.rs
+- confidence: cited
+  path: crates/specify/ess-domain/src/view/paging.rs
+- confidence: inferred
+  path: crates/specify/ess-domain/tests/view_paging.rs
+- confidence: cited
+  path: crates/verify/ess-diff/src/change.rs
+- confidence: cited
+  path: docs/design/view-paging.md
+- confidence: inferred
+  path: schemas/generated/ess.schema.json
+- confidence: inferred
+  path: website/docs/reference/spec-versions.md
+revision: 9
 ---
 ## Need
 

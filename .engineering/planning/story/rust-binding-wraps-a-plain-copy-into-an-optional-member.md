@@ -13,7 +13,14 @@ relations:
 - serves: vision:O2
 - decomposes: epic:adopter-gaps-generated-code
 - decomposes: epic:zero-open-issues-2026-11
-revision: 3
+scope:
+- confidence: cited
+  path: crates/generate/ess-synth/src/rust/feasibility.rs
+- confidence: inferred
+  path: crates/generate/ess-synth/src/rust/system.rs
+- confidence: inferred
+  path: crates/generate/ess-synth/tests/binding_optional_wrap_go.rs
+revision: 5
 ---
 ## Outcome
 

@@ -16,13 +16,17 @@ relations:
 scope:
 - confidence: inferred
   path: crates/verify/ess-conformance/src/synthesize.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/synthesize/related_guard.rs
 - confidence: cited
   path: crates/verify/ess-conformance/src/synthesize/row_set.rs
 - confidence: cited
   path: crates/verify/ess-conformance/src/synthesize/set_effects.rs
 - confidence: inferred
   path: crates/verify/ess-conformance/src/synthesize/subject_fact.rs
-revision: 8
+- confidence: cited
+  path: crates/verify/ess-conformance/tests/parent_row_guard.rs
+revision: 10
 ---
 ## Outcome
 

@@ -12,7 +12,18 @@ refs:
 relations:
 - decomposes: epic:zero-open-issues-2026-11
 - depends_on: story:a-timestamp-newtype-declares-its-wire-encoding
-revision: 2
+scope:
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/authored.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/interpret/values.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/synthesize.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/witness.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/tests/timestamp_encoding.rs
+revision: 4
 ---
 ## Need
 

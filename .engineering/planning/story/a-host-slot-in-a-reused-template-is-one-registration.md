@@ -20,7 +20,20 @@ relations:
 - depends_on: story:the-react-project-registers-each-declared-host-slot
 - depends_on: story:the-terminal-draws-a-host-slot-as-a-labelled-region
 - decomposes: epic:zero-open-issues-2026-11
-revision: 4
+scope:
+- confidence: inferred
+  path: .engineering/planning/design/ui-host-slots.md
+- confidence: inferred
+  path: crates/ui/ess-ui-check/src/
+- confidence: inferred
+  path: crates/ui/ess-ui-react/src/emit.rs
+- confidence: inferred
+  path: crates/ui/ess-ui-tui/src/view.rs
+- confidence: inferred
+  path: crates/ui/ess-ui/src/expand.rs
+- confidence: cited
+  path: crates/ui/ess-ui/src/path.rs
+revision: 6
 ---
 ## Need
 

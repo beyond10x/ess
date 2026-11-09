@@ -12,7 +12,16 @@ refs:
 relations:
 - decomposes: epic:zero-open-issues-2026-11
 - depends_on: story:stored-field-equals-returned-response-value
-revision: 2
+scope:
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/interpret/execute.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/interpret/execute/determined.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/interpret/response.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/tests/interpreted_response_values.rs
+revision: 4
 ---
 ## Need
 

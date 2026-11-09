@@ -12,7 +12,23 @@ refs:
 relations:
 - decomposes: epic:zero-open-issues-2026-11
 - depends_on: story:an-input-keeps-missing-and-null-apart
-revision: 2
+- depends_on: story:ess-37-and-conformance-64-65-are-open-for-the-epics-constructs
+scope:
+- confidence: cited
+  path: crates/verify/ess-conformance/src/go/runtime.go
+- confidence: cited
+  path: crates/verify/ess-conformance/src/input.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/interpret/command.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/synthesize.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/ts/
+- confidence: inferred
+  path: crates/verify/ess-conformance/tests/keep_on_missing.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/tests/synthesis_suite_bytes_table.rs
+revision: 4
 ---
 ## Need
 

@@ -12,7 +12,16 @@ refs:
 relations:
 - decomposes: epic:zero-open-issues-2026-11
 - depends_on: story:a-view-may-answer-values-no-row-holds
-revision: 2
+scope:
+- confidence: cited
+  path: crates/generate/ess-gen/src/openapi.rs
+- confidence: inferred
+  path: crates/generate/ess-gen/src/schema.rs
+- confidence: cited
+  path: crates/specify/ess-http/src/lib.rs
+- confidence: inferred
+  path: crates/specify/ess-http/tests/sourceless_view.rs
+revision: 4
 ---
 ## Need
 

@@ -13,7 +13,16 @@ relations:
 - serves: vision:O2
 - decomposes: epic:adopter-gaps-domain-language
 - decomposes: epic:zero-open-issues-2026-11
-revision: 3
+scope:
+- confidence: cited
+  path: crates/specify/ess-domain/src/command.rs
+- confidence: inferred
+  path: crates/specify/ess-domain/src/command/finite.rs
+- confidence: inferred
+  path: crates/specify/ess-domain/tests/
+- confidence: inferred
+  path: crates/specify/ess-primitives/src/error.rs
+revision: 5
 ---
 ## Outcome
 

@@ -13,7 +13,20 @@ tags:
 - zero-open-issues
 relations:
 - decomposes: epic:zero-open-issues-2026-11
-revision: 6
+scope:
+- confidence: inferred
+  path: crates/generate/ess-gen/tests/openapi.rs
+- confidence: cited
+  path: crates/generate/ess-synth/src/go/items.rs
+- confidence: cited
+  path: crates/generate/ess-synth/src/plan.rs
+- confidence: cited
+  path: crates/generate/ess-synth/src/rust/items.rs
+- confidence: inferred
+  path: crates/generate/ess-synth/tests/declared_behaviour.rs
+- confidence: cited
+  path: crates/specify/ess-primitives/src/predicate.rs
+revision: 8
 ---
 ## Outcome
 

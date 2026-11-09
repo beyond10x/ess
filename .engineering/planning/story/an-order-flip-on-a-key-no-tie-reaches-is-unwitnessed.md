@@ -12,7 +12,22 @@ refs:
 relations:
 - decomposes: epic:zero-open-issues-2026-11
 - depends_on: story:a-tie-breaking-sort-key-is-pinned-by-a-synthesized-tie
-revision: 2
+scope:
+- confidence: inferred
+  path: crates/edge/ess-cli/src/
+- confidence: cited
+  path: crates/verify/ess-conformance/src/mutate.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/tests/mutation_audit.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/tests/mutation_gained_refusals.rs
+- confidence: cited
+  path: docs/design/mutation-audit-and-model-runner.md
+- confidence: inferred
+  path: website/docs/guides/verify/mutation-audit.md
+- confidence: inferred
+  path: website/docs/reference/cli.md
+revision: 4
 ---
 ## Need
 

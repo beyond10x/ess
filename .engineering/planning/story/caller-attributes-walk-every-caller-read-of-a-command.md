@@ -15,7 +15,16 @@ relations:
 - serves: vision:O2
 - decomposes: epic:adopter-gaps-synthesis
 - decomposes: epic:zero-open-issues-2026-11
-revision: 3
+scope:
+- confidence: cited
+  path: crates/generate/ess-gen/src/http.rs
+- confidence: cited
+  path: crates/generate/ess-gen/tests/caller_values.rs
+- confidence: cited
+  path: crates/specify/ess-compiler/src/expression.rs
+- confidence: cited
+  path: docs/design/language-grids.md
+revision: 4
 ---
 ## Need
 

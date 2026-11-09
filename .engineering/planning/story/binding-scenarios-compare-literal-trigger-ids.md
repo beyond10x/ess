@@ -12,7 +12,18 @@ tags:
 relations:
 - serves: vision:O2
 - decomposes: epic:zero-open-issues-2026-11
-revision: 3
+scope:
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/fixtures.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/synthesize.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/tests/adversary_273_pass1.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/tests/fixtures/binding-arrangement.yaml
+- confidence: inferred
+  path: suites/generated/billing/suite.json
+revision: 5
 ---
 ## Finding
 

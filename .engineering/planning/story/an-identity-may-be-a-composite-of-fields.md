@@ -17,7 +17,27 @@ relations:
 - serves: vision:O2
 - decomposes: epic:adopter-gaps-domain-language
 - decomposes: epic:zero-open-issues-2026-11
-revision: 8
+- depends_on: story:ess-37-and-conformance-64-65-are-open-for-the-epics-constructs
+scope:
+- confidence: inferred
+  path: crates/specify/ess-compiler/src/ir.rs
+- confidence: cited
+  path: crates/specify/ess-domain/src/command.rs
+- confidence: cited
+  path: crates/specify/ess-domain/src/entity.rs
+- confidence: inferred
+  path: crates/specify/ess-domain/src/system.rs
+- confidence: inferred
+  path: crates/specify/ess-domain/tests/unique_tuple.rs
+- confidence: cited
+  path: docs/design/cross-record-and-stored-field-guards.md
+- confidence: inferred
+  path: docs/design/outcome-shapes.md
+- confidence: inferred
+  path: schemas/generated/ess.schema.json
+- confidence: inferred
+  path: website/docs/reference/spec-versions.md
+revision: 10
 ---
 ## Need
 

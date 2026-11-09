@@ -15,7 +15,14 @@ tags:
 relations:
 - informed_by: review-result:adversary-w2-mut1-pass-1
 - decomposes: epic:zero-open-issues-2026-11
-revision: 3
+scope:
+- confidence: inferred
+  path: crates/edge/ess-cli/src/main.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/mutate.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/tests/mutation_audit.rs
+revision: 5
 ---
 ## Need
 

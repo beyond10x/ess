@@ -15,7 +15,18 @@ tags:
 relations:
 - serves: vision:O2
 - decomposes: epic:zero-open-issues-2026-11
-revision: 3
+scope:
+- confidence: cited
+  path: crates/specify/ess-domain/src/command/narrowing.rs
+- confidence: cited
+  path: crates/specify/ess-domain/src/command/value_expression.rs
+- confidence: inferred
+  path: crates/specify/ess-domain/tests/
+- confidence: inferred
+  path: crates/verify/ess-conformance/tests/
+- confidence: inferred
+  path: docs/design/optional-input-narrowing.md
+revision: 5
 ---
 ## Need
 

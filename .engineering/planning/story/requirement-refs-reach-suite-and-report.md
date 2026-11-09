@@ -14,7 +14,30 @@ refs:
 relations:
 - serves: vision:O2
 - decomposes: epic:zero-open-issues-2026-11
-revision: 5
+scope:
+- confidence: inferred
+  path: crates/edge/ess-cli/src/main.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/admission.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/authored.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/counts.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/go/mod.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/report.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/runner.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/scenario.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/synthesize.rs
+- confidence: cited
+  path: crates/verify/ess-diff/src/compatibility.rs
+- confidence: inferred
+  path: crates/verify/ess-diff/src/diff.rs
+revision: 7
 ---
 ## Outcome
 

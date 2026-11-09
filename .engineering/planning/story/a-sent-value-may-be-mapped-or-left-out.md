@@ -17,7 +17,26 @@ relations:
 - informed_by: epic:downstream-reported-gaps
 - decomposes: epic:zero-open-issues-2026-11
 - depends_on: story:both-renderers-read-one-binding-expression-grammar
-revision: 4
+scope:
+- confidence: inferred
+  path: crates/ui/ess-ui-check/src/model.rs
+- confidence: inferred
+  path: crates/ui/ess-ui-check/src/rules.rs
+- confidence: inferred
+  path: crates/ui/ess-ui-react/src/emit.rs
+- confidence: inferred
+  path: crates/ui/ess-ui-react/templates/runtime/actions.tsx.tmpl
+- confidence: cited
+  path: crates/ui/ess-ui-react/templates/runtime/data.ts.tmpl
+- confidence: cited
+  path: crates/ui/ess-ui-tui/src/http.rs
+- confidence: cited
+  path: crates/ui/ess-ui/src/model.rs
+- confidence: inferred
+  path: schemas/ui/ess-ui.schema.yaml
+- confidence: inferred
+  path: website/docs/reference/ess-ui.md
+revision: 6
 ---
 ## Need
 

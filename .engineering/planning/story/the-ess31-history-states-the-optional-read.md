@@ -12,7 +12,12 @@ tags:
 relations:
 - serves: vision:O2
 - decomposes: epic:zero-open-issues-2026-11
-revision: 3
+scope:
+- confidence: cited
+  path: crates/specify/ess-domain/src/system.rs
+- confidence: inferred
+  path: website/docs
+revision: 5
 ---
 ## Finding
 

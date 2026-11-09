@@ -13,7 +13,20 @@ tags:
 relations:
 - informed_by: story:an-integer-literal-is-written-into-the-suite-as-an-integer
 - decomposes: epic:zero-open-issues-2026-11
-revision: 5
+scope:
+- confidence: cited
+  path: crates/generate/ess-synth/src/go/http.rs
+- confidence: cited
+  path: crates/generate/ess-synth/src/go/http/bound.rs
+- confidence: cited
+  path: crates/generate/ess-synth/src/rust/json.rs
+- confidence: cited
+  path: crates/generate/ess-synth/tests/http_binding/go.rs
+- confidence: cited
+  path: crates/generate/ess-synth/tests/http_binding/shared.rs
+- confidence: cited
+  path: crates/generate/ess-synth/tests/http_binding_rust.rs
+revision: 6
 ---
 ## Outcome
 

@@ -11,7 +11,18 @@ tags:
 relations:
 - serves: vision:O2
 - decomposes: epic:zero-open-issues-2026-11
-revision: 4
+scope:
+- confidence: cited
+  path: crates/generate/ess-synth/src/determined.rs
+- confidence: cited
+  path: crates/generate/ess-synth/src/go/behaviour.rs
+- confidence: cited
+  path: crates/generate/ess-synth/src/plan.rs
+- confidence: cited
+  path: crates/generate/ess-synth/src/rust/behaviour.rs
+- confidence: cited
+  path: crates/generate/ess-synth/tests/related_guard_several_rows.rs
+revision: 5
 ---
 ## Outcome
 

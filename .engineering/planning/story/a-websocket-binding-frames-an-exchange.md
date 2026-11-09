@@ -18,7 +18,24 @@ relations:
 - decomposes: epic:zero-open-issues-2026-11
 - depends_on: story:an-http-route-upgrades-to-an-exchange
 - depends_on: story:asyncapi-and-openapi-project-an-exchange
-revision: 3
+scope:
+- confidence: inferred
+  path: README.md
+- confidence: cited
+  path: crates/edge/ess-cli/src/main.rs
+- confidence: inferred
+  path: crates/edge/ess-cli/src/websocket.rs
+- confidence: cited
+  path: crates/generate/ess-gen/src/asyncapi.rs
+- confidence: inferred
+  path: crates/specify/ess-websocket/Cargo.toml
+- confidence: inferred
+  path: crates/specify/ess-websocket/src/lib.rs
+- confidence: inferred
+  path: crates/specify/ess-websocket/tests/compile.rs
+- confidence: inferred
+  path: docs/design/websocket-binding.md
+revision: 5
 ---
 ## Need
 

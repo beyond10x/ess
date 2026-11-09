@@ -11,7 +11,16 @@ refs:
   reference: beyond10x/ess#765
 relations:
 - decomposes: epic:zero-open-issues-2026-11
-revision: 2
+scope:
+- confidence: cited
+  path: crates/verify/ess-conformance/src/synthesize.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/synthesize/set_effects.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/tests/absent_payload_read.rs
+- confidence: inferred
+  path: docs/design/value-expressions.md
+revision: 4
 ---
 ## Need
 

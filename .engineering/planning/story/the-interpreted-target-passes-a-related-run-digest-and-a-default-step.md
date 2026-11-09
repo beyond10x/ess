@@ -15,7 +15,14 @@ tags:
 relations:
 - serves: vision:O2
 - decomposes: epic:zero-open-issues-2026-11
-revision: 3
+scope:
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/interpret/
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/runner/await_outcome.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/synthesize/related_guard.rs
+revision: 4
 ---
 ## Need
 

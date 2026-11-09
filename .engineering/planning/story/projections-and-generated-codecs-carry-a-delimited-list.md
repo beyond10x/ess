@@ -12,7 +12,20 @@ refs:
 relations:
 - decomposes: epic:zero-open-issues-2026-11
 - depends_on: story:a-list-newtype-declares-a-delimited-wire-encoding
-revision: 2
+scope:
+- confidence: inferred
+  path: crates/generate/ess-gen/src/http.rs
+- confidence: cited
+  path: crates/generate/ess-gen/src/openapi.rs
+- confidence: cited
+  path: crates/generate/ess-gen/src/types.rs
+- confidence: inferred
+  path: crates/generate/ess-synth/src/go/http.rs
+- confidence: inferred
+  path: crates/generate/ess-synth/src/rust/http.rs
+- confidence: inferred
+  path: crates/generate/ess-synth/tests/list_encoding.rs
+revision: 4
 ---
 ## Need
 

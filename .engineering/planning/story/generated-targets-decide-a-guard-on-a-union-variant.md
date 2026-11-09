@@ -15,7 +15,22 @@ relations:
 - decomposes: epic:zero-open-issues-2026-11
 - depends_on: story:a-guard-reads-a-union-tag-and-a-union-names-its-content-key
 - depends_on: story:synthesis-and-the-interpreter-decide-a-guard-on-a-union-variant
-revision: 3
+scope:
+- confidence: inferred
+  path: crates/generate/ess-entity-runtime/src/subset.rs
+- confidence: cited
+  path: crates/generate/ess-synth/src/determined.rs
+- confidence: inferred
+  path: crates/generate/ess-synth/src/go/behaviour.rs
+- confidence: inferred
+  path: crates/generate/ess-synth/src/rust/behaviour.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/go/predicate.go
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/ts/predicate.ts
+- confidence: inferred
+  path: website/docs/reference/entity-runtime-lowering.md
+revision: 5
 ---
 ## Need
 

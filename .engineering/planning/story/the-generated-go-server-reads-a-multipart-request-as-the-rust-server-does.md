@@ -12,7 +12,16 @@ refs:
 relations:
 - decomposes: epic:zero-open-issues-2026-11
 - depends_on: story:the-generated-rust-server-reads-a-multipart-request
-revision: 2
+scope:
+- confidence: inferred
+  path: crates/generate/ess-synth/src/go/http.rs
+- confidence: cited
+  path: crates/generate/ess-synth/src/go/http/bound.rs
+- confidence: cited
+  path: crates/generate/ess-synth/tests/http_binding/go.rs
+- confidence: cited
+  path: docs/design/http-presentation-binding.md
+revision: 4
 ---
 ## Need
 

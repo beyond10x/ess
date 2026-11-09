@@ -12,7 +12,16 @@ tags:
 relations:
 - serves: vision:O2
 - decomposes: epic:zero-open-issues-2026-11
-revision: 3
+scope:
+- confidence: cited
+  path: crates/verify/ess-conformance/src/synthesize.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/synthesize/row_set.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/tests/a_creator_under_a_row_set_is_arranged.rs
+- confidence: inferred
+  path: examples/
+revision: 5
 ---
 ## Finding
 

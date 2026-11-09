@@ -12,7 +12,14 @@ refs:
 relations:
 - decomposes: epic:zero-open-issues-2026-11
 - depends_on: story:the-rust-http-server-answers-an-unauthenticated-call-with-its-challenge
-revision: 2
+scope:
+- confidence: inferred
+  path: crates/generate/ess-synth/src/go/http
+- confidence: cited
+  path: crates/generate/ess-synth/src/go/http.rs
+- confidence: inferred
+  path: crates/generate/ess-synth/tests/served_authentication_go.rs
+revision: 4
 ---
 ## Need
 

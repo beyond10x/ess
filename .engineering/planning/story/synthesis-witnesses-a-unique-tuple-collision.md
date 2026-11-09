@@ -12,7 +12,16 @@ refs:
 relations:
 - decomposes: epic:zero-open-issues-2026-11
 - depends_on: story:an-identity-may-be-a-composite-of-fields
-revision: 2
+scope:
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/interpret/execute/existence.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/synthesize/caller.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/synthesize/existence.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/tests/unique_tuple.rs
+revision: 3
 ---
 ## Need
 

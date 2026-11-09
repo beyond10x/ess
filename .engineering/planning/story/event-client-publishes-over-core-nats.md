@@ -15,7 +15,22 @@ relations:
 - serves: vision:O2
 - decomposes: epic:adopter-gaps-event-client
 - decomposes: epic:zero-open-issues-2026-11
-revision: 3
+scope:
+- confidence: inferred
+  path: crates/edge/ess-cli/src/main.rs
+- confidence: inferred
+  path: crates/edge/ess-cli/tests/client.rs
+- confidence: cited
+  path: crates/generate/ess-publisher/src/go_natsjs.go.txt
+- confidence: cited
+  path: crates/generate/ess-publisher/src/lib.rs
+- confidence: cited
+  path: crates/generate/ess-publisher/src/rust_nats.rs.txt
+- confidence: inferred
+  path: crates/generate/ess-publisher/tests/generated.rs
+- confidence: cited
+  path: crates/specify/ess-transport/src/lib.rs
+revision: 5
 ---
 ## Outcome
 

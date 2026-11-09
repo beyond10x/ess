@@ -11,7 +11,14 @@ tags:
 relations:
 - decomposes: epic:adopter-gaps-synthesis
 - decomposes: epic:zero-open-issues-2026-11
-revision: 4
+scope:
+- confidence: cited
+  path: crates/verify/ess-conformance/src/synthesize/caller.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/synthesize/caller/arranged.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/tests/caller_arranged_rows.rs
+revision: 6
 ---
 ## Outcome
 

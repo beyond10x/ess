@@ -16,7 +16,16 @@ refs:
 relations:
 - decomposes: epic:zero-open-issues-2026-11
 - depends_on: story:the-react-renderer-draws-the-declared-tokens
-revision: 5
+scope:
+- confidence: inferred
+  path: crates/ui/ess-ui-react/src/assets.rs
+- confidence: inferred
+  path: crates/ui/ess-ui-react/src/emit.rs
+- confidence: cited
+  path: crates/ui/ess-ui-react/templates/runtime/shell.tsx.tmpl
+- confidence: inferred
+  path: crates/ui/ess-ui-react/tests/themes.rs
+revision: 7
 ---
 ## Need
 

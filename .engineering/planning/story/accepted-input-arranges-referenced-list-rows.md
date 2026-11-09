@@ -10,7 +10,18 @@ tags:
 - zero-open-issues
 relations:
 - decomposes: epic:zero-open-issues-2026-11
-revision: 3
+scope:
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/synthesize.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/synthesize/related.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/tests/referenced_list_input.rs
+- confidence: inferred
+  path: docs/design/
+- confidence: inferred
+  path: examples/
+revision: 5
 ---
 ## Summary
 

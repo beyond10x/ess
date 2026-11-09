@@ -12,7 +12,17 @@ refs:
 relations:
 - decomposes: epic:zero-open-issues-2026-11
 - depends_on: story:a-view-read-checks-every-rows-shape
-revision: 2
+- depends_on: story:ess-37-and-conformance-64-65-are-open-for-the-epics-constructs
+scope:
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/ts/mod.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/ts/runtime.test.ts
+- confidence: cited
+  path: crates/verify/ess-conformance/src/ts/runtime.ts
+- confidence: inferred
+  path: crates/verify/ess-conformance/tests/view_row_shape_typescript.rs
+revision: 4
 ---
 ## Need
 

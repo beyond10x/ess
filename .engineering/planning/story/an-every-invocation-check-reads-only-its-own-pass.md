@@ -13,7 +13,14 @@ tags:
 relations:
 - informed_by: approval-record:ess-0720-hold-for-gap-q
 - decomposes: epic:zero-open-issues-2026-11
-revision: 3
+scope:
+- confidence: cited
+  path: crates/verify/ess-conformance/src/synthesize/binding_effects.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/synthesize/caller.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/tests/binding_drop_swapped_caller.rs
+revision: 5
 ---
 ## Problem
 

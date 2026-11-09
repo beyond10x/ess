@@ -15,7 +15,16 @@ relations:
 - serves: vision:O2
 - decomposes: epic:adopter-gaps-verdicts
 - decomposes: epic:zero-open-issues-2026-11
-revision: 3
+scope:
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/mutate.rs
+- confidence: cited
+  path: crates/verify/ess-diff/src/compatibility.rs
+- confidence: cited
+  path: crates/verify/ess-diff/tests/narrowed_acceptance.rs
+- confidence: inferred
+  path: crates/verify/ess-diff/tests/subject_fact_complete_refusal.rs
+revision: 5
 ---
 ## Outcome
 

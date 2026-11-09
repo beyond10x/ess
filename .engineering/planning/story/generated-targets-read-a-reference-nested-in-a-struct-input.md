@@ -13,7 +13,18 @@ relations:
 - decomposes: epic:zero-open-issues-2026-11
 - depends_on: story:via-and-instance-may-name-a-member-of-a-struct-input
 - depends_on: story:synthesis-witnesses-a-row-addressed-through-a-struct-input-member
-revision: 2
+scope:
+- confidence: inferred
+  path: crates/generate/ess-entity-runtime/src/subset.rs
+- confidence: cited
+  path: crates/generate/ess-synth/src/determined.rs
+- confidence: inferred
+  path: crates/generate/ess-synth/src/go/behaviour.rs
+- confidence: inferred
+  path: crates/generate/ess-synth/src/rust/behaviour.rs
+- confidence: inferred
+  path: website/docs/reference/entity-runtime-lowering.md
+revision: 4
 ---
 ## Need
 

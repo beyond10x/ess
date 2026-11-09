@@ -11,7 +11,16 @@ tags:
 relations:
 - serves: vision:O2
 - decomposes: epic:zero-open-issues-2026-11
-revision: 3
+scope:
+- confidence: cited
+  path: crates/generate/ess-gen/src/model_types.rs
+- confidence: cited
+  path: crates/generate/ess-gen/src/types.rs
+- confidence: inferred
+  path: crates/generate/ess-gen/tests/adversary_d350_u1_pass1.rs
+- confidence: inferred
+  path: crates/generate/ess-gen/tests/model_types.rs
+revision: 5
 ---
 ## Problem
 

@@ -12,7 +12,12 @@ tags:
 relations:
 - serves: vision:O2
 - decomposes: epic:zero-open-issues-2026-11
-revision: 3
+scope:
+- confidence: cited
+  path: crates/verify/ess-conformance/src/interpret/response.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/tests/adversary_e1_reachability.rs
+revision: 4
 ---
 # Story: a response newtype witness lets a prefix and a suffix overlap
 

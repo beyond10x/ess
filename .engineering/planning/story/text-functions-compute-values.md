@@ -11,7 +11,29 @@ refs:
   reference: beyond10x/ess#756
 relations:
 - decomposes: epic:zero-open-issues-2026-11
-revision: 2
+- depends_on: story:ess-37-and-conformance-64-65-are-open-for-the-epics-constructs
+scope:
+- confidence: inferred
+  path: crates/specify/ess-domain/src/expression/value.rs
+- confidence: inferred
+  path: crates/specify/ess-domain/src/system.rs
+- confidence: cited
+  path: crates/specify/ess-primitives/src/expr.rs
+- confidence: inferred
+  path: crates/specify/ess-primitives/tests/text_functions.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/synthesize.rs
+- confidence: cited
+  path: docs/design/generic-language-features.md
+- confidence: cited
+  path: docs/design/language-grids.md
+- confidence: cited
+  path: website/docs/guides/specify/values-and-views.md
+- confidence: inferred
+  path: website/docs/reference/predicates.md
+- confidence: inferred
+  path: website/docs/reference/spec-versions.md
+revision: 4
 ---
 ## Need
 

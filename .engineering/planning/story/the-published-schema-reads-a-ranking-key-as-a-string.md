@@ -11,7 +11,16 @@ tags:
 relations:
 - serves: vision:O2
 - decomposes: epic:zero-open-issues-2026-11
-revision: 3
+scope:
+- confidence: inferred
+  path: crates/edge/ess-xtask
+- confidence: cited
+  path: crates/specify/ess-domain/src/view.rs
+- confidence: cited
+  path: crates/specify/ess-domain/tests/published_name_aliases.rs
+- confidence: cited
+  path: schemas/generated/ess.schema.json
+revision: 5
 ---
 ## Finding
 

@@ -12,7 +12,12 @@ refs:
 relations:
 - decomposes: epic:zero-open-issues-2026-11
 - depends_on: story:a-command-route-takes-a-multipart-request-with-file-parts
-revision: 2
+scope:
+- confidence: cited
+  path: crates/generate/ess-gen/src/openapi.rs
+- confidence: inferred
+  path: crates/generate/ess-gen/tests/openapi_http_presentation.rs
+revision: 4
 ---
 ## Need
 

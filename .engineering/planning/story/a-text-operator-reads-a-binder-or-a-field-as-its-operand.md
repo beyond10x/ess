@@ -11,7 +11,27 @@ refs:
   reference: beyond10x/ess#759
 relations:
 - decomposes: epic:zero-open-issues-2026-11
-revision: 2
+- depends_on: story:ess-37-and-conformance-64-65-are-open-for-the-epics-constructs
+scope:
+- confidence: inferred
+  path: crates/specify/ess-domain/src/expression.rs
+- confidence: inferred
+  path: crates/specify/ess-domain/src/expression/lexical.rs
+- confidence: cited
+  path: crates/specify/ess-primitives/src/predicate.rs
+- confidence: inferred
+  path: crates/specify/ess-primitives/tests/text_operand_fact.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/go/predicate.go
+- confidence: cited
+  path: crates/verify/ess-conformance/src/ts/predicate.ts
+- confidence: cited
+  path: crates/verify/ess-conformance/src/witness.rs
+- confidence: cited
+  path: docs/design/language-grids.md
+- confidence: cited
+  path: website/docs/reference/predicates.md
+revision: 4
 ---
 ## Need
 

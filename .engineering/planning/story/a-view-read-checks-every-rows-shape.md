@@ -16,6 +16,7 @@ relations:
 - serves: vision:O2
 - decomposes: epic:adopter-gaps-verdicts
 - decomposes: epic:zero-open-issues-2026-11
+- depends_on: story:ess-37-and-conformance-64-65-are-open-for-the-epics-constructs
 scope:
 - confidence: cited
   path: crates/verify/ess-conformance/src/admission.rs
@@ -25,6 +26,8 @@ scope:
   path: crates/verify/ess-conformance/src/go/mod.rs
 - confidence: cited
   path: crates/verify/ess-conformance/src/go/runtime.go
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/lib.rs
 - confidence: cited
   path: crates/verify/ess-conformance/src/runner.rs
 - confidence: cited
@@ -33,7 +36,15 @@ scope:
   path: crates/verify/ess-conformance/src/synthesize.rs
 - confidence: cited
   path: crates/verify/ess-conformance/src/ts/runtime.ts
-revision: 12
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/view_row_shape.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/tests/view_row_shape.rs
+- confidence: inferred
+  path: docs/design/view-row-shape.md
+- confidence: inferred
+  path: website/docs/reference/formats.md
+revision: 13
 ---
 ## Need
 

@@ -22,7 +22,20 @@ relations:
 - decomposes: epic:zero-open-issues-2026-11
 - depends_on: story:an-exchange-is-declared-in-the-specification
 - depends_on: story:asyncapi-and-openapi-project-an-exchange
-revision: 5
+scope:
+- confidence: cited
+  path: crates/generate/ess-gen/src/openapi.rs
+- confidence: inferred
+  path: crates/generate/ess-synth/src/go/http.rs
+- confidence: inferred
+  path: crates/generate/ess-synth/src/rust/http.rs
+- confidence: cited
+  path: crates/specify/ess-http/src/lib.rs
+- confidence: inferred
+  path: crates/specify/ess-http/tests/stream.rs
+- confidence: cited
+  path: docs/design/http-presentation-binding.md
+revision: 7
 ---
 **Blocked on the exchange layer: `story:an-exchange-is-declared-in-the-specification` and
 `story:asyncapi-and-openapi-project-an-exchange` land first.** The relation to

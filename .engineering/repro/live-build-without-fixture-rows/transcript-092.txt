@@ -1,0 +1,56 @@
+$ ess --version
+ess 0.92.0
+
+$ ess generate ui --help | grep -E "^      --"   (every option of the command)
+      --target <TARGET>
+      --path <PATH>
+      --out <OUT>
+      --model <MODEL>
+      --http <HTTP>
+      --refines <REFINES>
+      --strict-requires
+
+$ ess generate ui --help | grep -ciE "no-fixture|without-fixture|fixtures-off|omit-fixture|strip-fixture"
+0
+
+$ ess ui check --path ui/shelf.ui.yaml --model spec
+warning: spec/ess-inputs.yaml requires ess 0.90.0 and this is ess 0.92.0, which is newer; continuing (--strict-requires refuses)
+coverage: 1 covered, 0 host-covered, 2 uncovered of 3 views and commands
+ui/shelf.ui.yaml: 0 error(s), 0 warning(s)
+
+$ ess generate ui --target react --path ui/shelf.ui.yaml --out react-out --model spec   (live build: bound to the served surface)
+warning: spec/ess-inputs.yaml requires ess 0.90.0 and this is ess 0.92.0, which is newer; continuing (--strict-requires refuses)
+32 files written to react-out
+
+$ grep -n fixture-marker react-out/src/fixtures.ts
+36:      { "id": "a", "title": "fixture-marker-lamp-7731", "qty": 5, "state": "Stored" },
+37:      { "id": "b", "title": "fixture-marker-chair-7732", "qty": 90, "state": "Shipped" },
+
+$ grep -n "httpAdapter\|setDataAdapter" react-out/src/main.tsx   (the app reads over HTTP, not from fixtures)
+5:import { httpAdapter, setDataAdapter } from "./runtime/data";
+10:setDataAdapter(httpAdapter(binding));
+
+$ (cd react-out && npm install && npm run build)
+  www/assets/main.js   272.0kb
+  www/assets/main.css   10.2kb
+
+⚡ Done in 36ms
+
+$ grep -o "fixture-marker-[a-z]*-[0-9]*" react-out/www/assets/main.js | sort -u
+fixture-marker-chair-7732
+fixture-marker-lamp-7731
+
+$ grep -c "fixture-marker" react-out/www/assets/main.js   (lines of the minified bundle that hold a fixture row)
+1
+
+--- Only workaround found: delete the fixtures block from the document for the live build
+$ ess ui check --path nofx.ui.yaml --model spec   (the document without its fixtures block)
+warning: spec/ess-inputs.yaml requires ess 0.90.0 and this is ess 0.92.0, which is newer; continuing (--strict-requires refuses)
+warning fixture_per_view pages/items.list/header/metrics/stored/reads: no fixture answers view `store.shelf.Items` (`fixtures.views` or `fixtures.derived`)
+warning fixture_per_view pages/items.list/sections/list/reads: no fixture answers view `store.shelf.Items` (`fixtures.views` or `fixtures.derived`)
+coverage: 1 covered, 0 host-covered, 2 uncovered of 3 views and commands
+nofx.ui.yaml: 0 error(s), 2 warning(s)
+warning: spec/ess-inputs.yaml requires ess 0.90.0 and this is ess 0.92.0, which is newer; continuing (--strict-requires refuses)
+32 files written to nofx-out
+$ grep -c fixture-marker nofx-out/src/fixtures.ts
+0

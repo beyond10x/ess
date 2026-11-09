@@ -14,7 +14,22 @@ relations:
 - decomposes: epic:ess-ui-renderer-neutral-ui
 - depends_on: story:the-terminal-draws-a-host-slot-as-a-labelled-region
 - decomposes: epic:zero-open-issues-2026-11
-revision: 6
+scope:
+- confidence: inferred
+  path: crates/ui/ess-ui-test/src/parity.rs
+- confidence: inferred
+  path: crates/ui/ess-ui-test/src/playwright.rs
+- confidence: cited
+  path: crates/ui/ess-ui-test/src/runner.rs
+- confidence: inferred
+  path: crates/ui/ess-ui-test/tests/journey_actions.rs
+- confidence: cited
+  path: crates/ui/ess-ui-tui/src/app.rs
+- confidence: cited
+  path: crates/ui/ess-ui-tui/src/view.rs
+- confidence: inferred
+  path: website/docs/reference/ess-ui-test.md
+revision: 8
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-07T21:42:29Z", actor: "human:timo", revision: 2}
 - {from: "proposed", to: "active", at: "2026-11-07T21:42:29Z", actor: "human:timo", revision: 3}

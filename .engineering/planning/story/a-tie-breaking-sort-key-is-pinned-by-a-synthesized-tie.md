@@ -14,7 +14,28 @@ refs:
   reference: beyond10x/ess#708
 relations:
 - decomposes: epic:zero-open-issues-2026-11
-revision: 5
+scope:
+- confidence: cited
+  path: crates/verify/ess-conformance/src/synthesize.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/synthesize/ordered_head.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/synthesize/paging.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/tests/fixtures/
+- confidence: inferred
+  path: crates/verify/ess-conformance/tests/mutation_audit.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/tests/synthesis_suite_bytes_table.rs
+- confidence: cited
+  path: docs/design/mutation-audit-and-model-runner.md
+- confidence: cited
+  path: docs/design/read-api-view-idioms.md
+- confidence: inferred
+  path: website/docs/guides/verify/mutation-audit.md
+- confidence: inferred
+  path: website/docs/reference/diagnostics.md
+revision: 7
 ---
 ## Need
 

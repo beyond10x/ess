@@ -14,7 +14,20 @@ tags:
 relations:
 - informed_by: review-result:adversary-w1-gen1-pass-1
 - decomposes: epic:zero-open-issues-2026-11
-revision: 4
+scope:
+- confidence: inferred
+  path: crates/generate/ess-openapi/src/lib.rs
+- confidence: inferred
+  path: crates/generate/ess-synth/src/go/
+- confidence: cited
+  path: crates/generate/ess-synth/src/rust/behaviour.rs
+- confidence: cited
+  path: crates/generate/ess-synth/src/rust/json.rs
+- confidence: cited
+  path: crates/generate/ess-synth/tests/adversary_w1_gen1_adversary.rs
+- confidence: cited
+  path: crates/specify/ess-primitives/tests/vectors/rfc3339-instants.json
+revision: 6
 ---
 ## Need
 

@@ -15,7 +15,16 @@ relations:
 - serves: vision:O2
 - decomposes: epic:ess-ui-renderer-neutral-ui
 - decomposes: epic:zero-open-issues-2026-11
-revision: 3
+scope:
+- confidence: cited
+  path: crates/ui/ess-ui-test/src/playwright.rs
+- confidence: inferred
+  path: crates/ui/ess-ui-test/src/runner.rs
+- confidence: inferred
+  path: crates/ui/ess-ui-test/tests/journey_controls.rs
+- confidence: cited
+  path: crates/ui/ess-ui-tui/src/app.rs
+revision: 5
 ---
 ## Need
 

@@ -15,7 +15,10 @@ relations:
 - serves: vision:O2
 - decomposes: epic:adopter-gaps-verdicts
 - decomposes: epic:zero-open-issues-2026-11
+- depends_on: story:ess-37-and-conformance-64-65-are-open-for-the-epics-constructs
 scope:
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/go/mod.rs
 - confidence: cited
   path: crates/verify/ess-conformance/src/go/runtime.go
 - confidence: cited
@@ -24,7 +27,7 @@ scope:
   path: crates/verify/ess-conformance/src/synthesize.rs
 - confidence: cited
   path: crates/verify/ess-conformance/src/ts/runtime.ts
-revision: 11
+revision: 12
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-02T20:48:56Z", actor: "human:timo", revision: 7}
 - {from: "proposed", to: "active", at: "2026-11-02T20:48:56Z", actor: "human:timo", revision: 8}

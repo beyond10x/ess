@@ -14,7 +14,20 @@ relations:
 - informed_by: story:generated-decoders-enforce-declared-value-constraints
 - serves: vision:O2
 - decomposes: epic:zero-open-issues-2026-11
-revision: 3
+scope:
+- confidence: cited
+  path: crates/generate/ess-synth/src/go/http.rs
+- confidence: inferred
+  path: crates/generate/ess-synth/src/go/invariant.rs
+- confidence: inferred
+  path: crates/generate/ess-synth/src/go/items.rs
+- confidence: inferred
+  path: crates/generate/ess-synth/src/rust/items.rs
+- confidence: cited
+  path: crates/generate/ess-synth/src/rust/wire.rs
+- confidence: inferred
+  path: crates/generate/ess-synth/tests/invariant_check/value_constraints.rs
+revision: 5
 ---
 ## Need
 

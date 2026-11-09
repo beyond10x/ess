@@ -14,7 +14,14 @@ relations:
 - serves: vision:O2
 - decomposes: epic:adopter-gaps-synthesis
 - decomposes: epic:zero-open-issues-2026-11
-revision: 3
+scope:
+- confidence: cited
+  path: crates/verify/ess-conformance/src/interpret/bindings.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/synthesize.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/tests/adversary_0710_pass1.rs
+revision: 5
 ---
 ## Problem
 

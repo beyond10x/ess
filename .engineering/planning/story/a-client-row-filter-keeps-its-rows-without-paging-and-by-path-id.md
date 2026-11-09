@@ -13,7 +13,10 @@ tags:
 relations:
 - serves: vision:O2
 - decomposes: epic:zero-open-issues-2026-11
-revision: 6
+scope:
+- confidence: inferred
+  path: crates/ui/ess-ui-react/templates/runtime/data.ts.tmpl
+revision: 7
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-06T22:19:00Z", actor: "human:timo", revision: 2}
 - {from: "proposed", to: "active", at: "2026-11-06T22:19:01Z", actor: "human:timo", revision: 3}

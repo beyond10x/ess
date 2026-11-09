@@ -14,7 +14,18 @@ tags:
 - zero-open-issues
 relations:
 - decomposes: epic:zero-open-issues-2026-11
-revision: 7
+scope:
+- confidence: inferred
+  path: crates/specify/ess-compiler/src/resolve.rs
+- confidence: cited
+  path: crates/specify/ess-domain/src/component.rs
+- confidence: inferred
+  path: crates/specify/ess-domain/tests/
+- confidence: cited
+  path: crates/ui/ess-ui-check/src/names.rs
+- confidence: inferred
+  path: crates/ui/ess-ui-check/tests/checks.rs
+revision: 9
 ---
 ## Outcome
 

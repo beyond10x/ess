@@ -1,0 +1,120 @@
+domain: store.shelf
+entities:
+- name: store.shelf.Box
+  identity:
+    name: id
+    type: String
+  fields:
+  - name: label
+    type: String
+  lifecycle:
+    initial: Open
+    states:
+    - Open
+    terminal:
+    - Open
+- name: store.shelf.Item
+  identity:
+    name: id
+    type: String
+  fields:
+  - name: title
+    type: String
+  - name: box_id
+    type: String
+  - name: qty
+    type: Integer
+  lifecycle:
+    initial: Stored
+    states:
+    - Stored
+    - Shipped
+    terminal:
+    - Shipped
+    transitions:
+    - name: ship
+      from:
+      - Stored
+      to: Shipped
+events:
+- name: store.shelf.ItemStored
+  fields:
+  - name: id
+    type: String
+- name: store.shelf.ItemShipped
+  fields:
+  - name: id
+    type: String
+errors:
+- name: store.shelf.NoSuchItem
+  fields:
+  - name: id
+    type: String
+commands:
+- name: store.shelf.StoreItem
+  input:
+  - name: id
+    type: String
+  - name: title
+    type: String
+  - name: box_id
+    type: String
+  - name: qty
+    type: Integer
+  outcomes:
+  - name: stored
+    creates: store.shelf.Item
+    instance: id
+    sets:
+      title: input.title
+      box_id: input.box_id
+      qty: input.qty
+    emits:
+    - store.shelf.ItemStored
+    payload:
+      store.shelf.ItemStored:
+        id: input.id
+- name: store.shelf.ShipItem
+  input:
+  - name: id
+    type: String
+  outcomes:
+  - name: shipped
+    moves: store.shelf.Item.ship
+    instance: id
+    emits:
+    - store.shelf.ItemShipped
+    payload:
+      store.shelf.ItemShipped:
+        id: input.id
+  - name: unknown
+    unknown_instance: true
+    error: store.shelf.NoSuchItem
+    payload:
+      store.shelf.NoSuchItem:
+        id: input.id
+  - name: wrong-state
+    wrong_state: true
+    error: store.shelf.NoSuchItem
+    payload:
+      store.shelf.NoSuchItem:
+        id: input.id
+views:
+- name: store.shelf.Items
+  source: store.shelf.Item
+  consistency: read_your_writes
+  fields:
+  - name: id
+    type: String
+  - name: title
+    type: String
+  - name: qty
+    type: Integer
+  - name: state
+    type: store.shelf.Item.State
+actors:
+- name: store.shelf.Anyone
+  may:
+  - store.shelf.StoreItem
+  - store.shelf.ShipItem
+  - store.shelf.Items

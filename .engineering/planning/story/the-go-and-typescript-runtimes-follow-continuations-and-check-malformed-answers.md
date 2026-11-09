@@ -13,7 +13,20 @@ relations:
 - decomposes: epic:zero-open-issues-2026-11
 - depends_on: story:conformance-follows-a-views-continuation-to-its-last-page
 - depends_on: story:a-value-outside-its-declared-type-is-answered-malformed
-revision: 2
+scope:
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/go/mod.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/go/runtime.go
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/ts/mod.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/ts/runtime.test.ts
+- confidence: cited
+  path: crates/verify/ess-conformance/src/ts/runtime.ts
+- confidence: inferred
+  path: crates/verify/ess-conformance/tests/go_runtime.rs
+revision: 4
 ---
 ## Need
 

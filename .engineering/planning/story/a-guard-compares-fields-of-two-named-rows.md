@@ -17,7 +17,31 @@ relations:
 - informed_by: story:navigation-reaches-any-depth-in-view-filters-and-guards
 - decomposes: epic:zero-open-issues-2026-11
 - depends_on: story:navigation-reaches-any-depth-in-guards
-revision: 4
+- depends_on: story:ess-37-and-conformance-64-65-are-open-for-the-epics-constructs
+scope:
+- confidence: inferred
+  path: crates/specify/ess-compiler/src/ir.rs
+- confidence: inferred
+  path: crates/specify/ess-domain/src/command.rs
+- confidence: inferred
+  path: crates/specify/ess-domain/src/command/precedence.rs
+- confidence: inferred
+  path: crates/specify/ess-domain/src/expression.rs
+- confidence: inferred
+  path: crates/specify/ess-domain/src/system.rs
+- confidence: inferred
+  path: crates/specify/ess-primitives/src/predicate.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/interpret/execute.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/synthesize/related_guard.rs
+- confidence: cited
+  path: docs/design/generic-language-features.md
+- confidence: inferred
+  path: docs/design/language-grids.md
+- confidence: inferred
+  path: website/docs/reference/predicates.md
+revision: 6
 ---
 ## Need
 

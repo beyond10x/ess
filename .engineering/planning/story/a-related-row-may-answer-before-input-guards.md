@@ -16,7 +16,26 @@ relations:
 - decomposes: epic:adopter-gaps-synthesis
 - decomposes: epic:generic-guard-precedence
 - decomposes: epic:zero-open-issues-2026-11
-revision: 6
+scope:
+- confidence: inferred
+  path: crates/edge/ess-xtask
+- confidence: cited
+  path: crates/specify/ess-domain/src/command.rs
+- confidence: cited
+  path: crates/specify/ess-domain/tests/precedence_classification.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/synthesize.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/synthesize/related_guard.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/synthesize/row_set.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/tests/input_guard_overlap.rs
+- confidence: cited
+  path: docs/design/generic-language-features.md
+- confidence: cited
+  path: docs/design/input-guard-overlap-precedence.md
+revision: 8
 ---
 ## Need
 

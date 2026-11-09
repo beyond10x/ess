@@ -14,7 +14,27 @@ relations:
 - depends_on: story:a-view-read-checks-every-rows-shape
 - depends_on: story:the-go-runtime-checks-a-view-rows-shape
 - depends_on: story:the-typescript-runtime-checks-a-view-rows-shape
-revision: 2
+- depends_on: story:ess-37-and-conformance-64-65-are-open-for-the-epics-constructs
+scope:
+- confidence: cited
+  path: crates/verify/ess-conformance/src/authored.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/synthesize.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/view_row_shape.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/web_replay.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/tests/view_row_shape.rs
+- confidence: inferred
+  path: suites/generated/billing/suite.json
+- confidence: inferred
+  path: suites/generated/gatepass/suite.json
+- confidence: inferred
+  path: suites/generated/oracle-fixture/suite.json
+- confidence: inferred
+  path: website/data/billing.presentation.json
+revision: 4
 ---
 ## Need
 

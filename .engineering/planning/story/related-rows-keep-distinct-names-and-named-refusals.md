@@ -13,7 +13,20 @@ relations:
 - serves: vision:O2
 - decomposes: epic:adopter-gaps-synthesis
 - decomposes: epic:zero-open-issues-2026-11
-revision: 5
+scope:
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/synthesize/existence.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/synthesize/related_guard.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/synthesize/related_guard/stored.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/synthesize/subject_fact.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/tests/fixtures/arrangement-through-writers.yaml
+- confidence: cited
+  path: crates/verify/ess-conformance/tests/fixtures/beside-row-once.yaml
+revision: 7
 ---
 ## Need
 

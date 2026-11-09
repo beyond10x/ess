@@ -12,7 +12,29 @@ refs:
 relations:
 - decomposes: epic:zero-open-issues-2026-11
 - depends_on: story:navigation-reaches-any-depth-in-view-filters-and-guards
-revision: 2
+- depends_on: story:ess-37-and-conformance-64-65-are-open-for-the-epics-constructs
+scope:
+- confidence: inferred
+  path: crates/generate/ess-synth/src/view_query.rs
+- confidence: cited
+  path: crates/specify/ess-domain/src/expression.rs
+- confidence: inferred
+  path: crates/specify/ess-domain/src/system.rs
+- confidence: inferred
+  path: crates/specify/ess-domain/src/view.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/interpret/views.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/synthesize.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/synthesize/row_set.rs
+- confidence: inferred
+  path: docs/design/language-grids.md
+- confidence: cited
+  path: docs/design/related-rows-quantifier.md
+- confidence: inferred
+  path: website/docs/reference/predicates.md
+revision: 4
 ---
 ## Need
 

@@ -12,7 +12,16 @@ refs:
 relations:
 - decomposes: epic:zero-open-issues-2026-11
 - depends_on: story:an-input-keeps-missing-and-null-apart
-revision: 2
+scope:
+- confidence: cited
+  path: crates/verify/ess-diff/src/change.rs
+- confidence: cited
+  path: crates/verify/ess-diff/src/compatibility.rs
+- confidence: cited
+  path: crates/verify/ess-diff/src/diff.rs
+- confidence: inferred
+  path: crates/verify/ess-diff/tests/keep_on_missing.rs
+revision: 4
 ---
 ## Need
 

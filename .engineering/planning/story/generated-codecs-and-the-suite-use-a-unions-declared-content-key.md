@@ -12,7 +12,31 @@ refs:
 relations:
 - decomposes: epic:zero-open-issues-2026-11
 - depends_on: story:projections-use-a-unions-declared-content-key
-revision: 2
+- depends_on: story:ess-37-and-conformance-64-65-are-open-for-the-epics-constructs
+scope:
+- confidence: cited
+  path: crates/generate/ess-synth/src/go/http.rs
+- confidence: cited
+  path: crates/generate/ess-synth/src/rust/wire.rs
+- confidence: cited
+  path: crates/generate/ess-synth/src/web/catalog.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/accessor.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/go/one_time_execution.go
+- confidence: cited
+  path: crates/verify/ess-conformance/src/go/response.go
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/go/runtime.go
+- confidence: cited
+  path: crates/verify/ess-conformance/src/input.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/selection.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/ts/response.ts
+- confidence: cited
+  path: crates/verify/ess-conformance/src/witness.rs
+revision: 4
 ---
 ## Need
 

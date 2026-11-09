@@ -16,7 +16,26 @@ relations:
 - serves: vision:O2
 - informed_by: epic:downstream-reported-gaps
 - decomposes: epic:zero-open-issues-2026-11
-revision: 4
+scope:
+- confidence: inferred
+  path: crates/ui/ess-ui-check/src/rules.rs
+- confidence: inferred
+  path: crates/ui/ess-ui-react/src/emit.rs
+- confidence: inferred
+  path: crates/ui/ess-ui-react/templates/runtime/actions.tsx.tmpl
+- confidence: cited
+  path: crates/ui/ess-ui-react/templates/runtime/primitives/icon.tsx.tmpl
+- confidence: cited
+  path: crates/ui/ess-ui-react/templates/runtime/styles.css.tmpl
+- confidence: inferred
+  path: crates/ui/ess-ui-tui/src/view.rs
+- confidence: cited
+  path: crates/ui/ess-ui/src/model.rs
+- confidence: cited
+  path: schemas/ui/ess-ui.schema.yaml
+- confidence: inferred
+  path: website/docs/reference/ess-ui.md
+revision: 6
 ---
 ## Need
 

@@ -11,7 +11,12 @@ tags:
 - zero-open-issues
 relations:
 - decomposes: epic:zero-open-issues-2026-11
-revision: 3
+scope:
+- confidence: cited
+  path: crates/generate/ess-entity-runtime/src/lib.rs
+- confidence: inferred
+  path: crates/generate/ess-entity-runtime/tests/
+revision: 5
 ---
 ## Outcome
 

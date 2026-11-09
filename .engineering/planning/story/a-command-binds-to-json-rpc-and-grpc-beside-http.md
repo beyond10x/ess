@@ -18,7 +18,22 @@ relations:
 - informed_by: story:http-binding-carries-transport-framing
 - informed_by: architecture-decision-record:transport-and-idl-compile-targets
 - decomposes: epic:zero-open-issues-2026-11
-revision: 6
+scope:
+- confidence: inferred
+  path: README.md
+- confidence: inferred
+  path: crates/edge/ess-cli/src/jsonrpc.rs
+- confidence: cited
+  path: crates/edge/ess-cli/src/main.rs
+- confidence: inferred
+  path: crates/specify/ess-jsonrpc/Cargo.toml
+- confidence: inferred
+  path: crates/specify/ess-jsonrpc/src/lib.rs
+- confidence: inferred
+  path: crates/specify/ess-jsonrpc/tests/compile.rs
+- confidence: cited
+  path: docs/design/rpc-bindings.md
+revision: 8
 ---
 ## Need
 

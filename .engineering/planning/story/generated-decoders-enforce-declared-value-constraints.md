@@ -27,11 +27,21 @@ scope:
   path: crates/generate/ess-synth/src/go/items.rs
 - confidence: inferred
   path: crates/generate/ess-synth/src/go/runtime/invariant.go
+- confidence: cited
+  path: crates/generate/ess-synth/src/rust/wire.rs
 - confidence: inferred
   path: crates/generate/ess-synth/tests/invariant_check/value_constraints.rs
 - confidence: inferred
   path: crates/generate/schema-contract/src/realize.rs
-revision: 14
+- confidence: inferred
+  path: crates/generate/schema-contract/src/realize/go.rs
+- confidence: cited
+  path: crates/generate/schema-contract/src/realize/rust.rs
+- confidence: inferred
+  path: crates/generate/schema-contract/src/realize/ts.rs
+- confidence: inferred
+  path: crates/generate/schema-contract/tests/model_ergonomics.rs
+revision: 16
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-16T10:20:19Z", actor: "human:timo", revision: 2}
 - {from: "proposed", to: "active", at: "2026-10-16T10:20:19Z", actor: "human:timo", revision: 3}

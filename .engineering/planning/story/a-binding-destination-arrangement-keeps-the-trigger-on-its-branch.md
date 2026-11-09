@@ -13,7 +13,12 @@ tags:
 relations:
 - informed_by: review-result:ess-0720-wave-1-adversary-pass-1
 - decomposes: epic:zero-open-issues-2026-11
-revision: 4
+scope:
+- confidence: cited
+  path: crates/verify/ess-conformance/src/synthesize/binding_effects.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/tests/
+revision: 6
 ---
 ## Problem
 

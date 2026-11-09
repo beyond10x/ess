@@ -14,7 +14,18 @@ tags:
 relations:
 - informed_by: review-result:adversary-w1-gen1-pass-1
 - decomposes: epic:zero-open-issues-2026-11
-revision: 3
+scope:
+- confidence: inferred
+  path: crates/generate/ess-synth/src/go/
+- confidence: cited
+  path: crates/generate/ess-synth/src/rust/wire.rs
+- confidence: cited
+  path: crates/specify/ess-domain/src/types.rs
+- confidence: inferred
+  path: crates/specify/ess-primitives/src/time.rs
+- confidence: cited
+  path: crates/specify/ess-primitives/tests/vectors/primitive-semantics.json
+revision: 5
 ---
 ## Need
 

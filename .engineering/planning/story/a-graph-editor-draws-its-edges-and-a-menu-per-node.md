@@ -11,7 +11,16 @@ refs:
   reference: beyond10x/ess#723
 relations:
 - decomposes: epic:zero-open-issues-2026-11
-revision: 2
+scope:
+- confidence: cited
+  path: crates/ui/ess-ui-react/templates/runtime/composites/graph_editor.tsx.tmpl
+- confidence: inferred
+  path: crates/ui/ess-ui-react/templates/runtime/styles.css.tmpl
+- confidence: inferred
+  path: crates/ui/ess-ui-react/tests/graph_editor.rs
+- confidence: inferred
+  path: crates/ui/ess-ui-test/src/playwright.rs
+revision: 4
 ---
 ## Need
 

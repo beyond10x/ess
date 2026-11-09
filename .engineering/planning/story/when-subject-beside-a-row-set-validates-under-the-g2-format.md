@@ -18,10 +18,21 @@ relations:
 - informed_by: story:a-guard-on-the-input-addressed-parent-row-holds-on-every-command-of-its-children
 - decomposes: epic:generic-row-queries
 - decomposes: epic:zero-open-issues-2026-11
+- depends_on: story:ess-37-and-conformance-64-65-are-open-for-the-epics-constructs
 scope:
 - confidence: cited
+  path: crates/specify/ess-domain/src/command/precedence.rs
+- confidence: cited
   path: crates/specify/ess-domain/src/command/row_set.rs
-revision: 6
+- confidence: inferred
+  path: crates/specify/ess-domain/src/system.rs
+- confidence: inferred
+  path: crates/specify/ess-domain/tests/row_set_beside_subject_guard.rs
+- confidence: inferred
+  path: docs/design/language-grids.md
+- confidence: inferred
+  path: website/docs/reference/predicates.md
+revision: 8
 ---
 ## Need
 

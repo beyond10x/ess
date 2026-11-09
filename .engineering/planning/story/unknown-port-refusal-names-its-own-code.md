@@ -13,7 +13,16 @@ relations:
 - serves: vision:O2
 - decomposes: epic:zero-open-issues-2026-11
 - depends_on: story:an-unknown-identity-beside-a-related-guard-is-synthesized
-revision: 3
+scope:
+- confidence: cited
+  path: crates/generate/ess-synth/tests/enforced_reference_served.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/synthesize.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/synthesize/related_guard.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/tests/unknown_identity_beside_related_guard.rs
+revision: 5
 ---
 ## Problem
 

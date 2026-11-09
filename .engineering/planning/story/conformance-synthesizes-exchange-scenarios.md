@@ -16,7 +16,21 @@ relations:
 - informed_by: architecture-decision-record:messages-are-exchanged-independent-of-the-wire
 - depends_on: story:an-exchange-is-declared-in-the-specification
 - decomposes: epic:zero-open-issues-2026-11
-revision: 3
+- depends_on: story:ess-37-and-conformance-64-65-are-open-for-the-epics-constructs
+scope:
+- confidence: cited
+  path: crates/verify/ess-conformance/src/interpret.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/interpret/command.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/synthesize.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/synthesize/
+- confidence: inferred
+  path: crates/verify/ess-conformance/tests/exchange_scenarios.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/tests/synthesis_suite_bytes_table.rs
+revision: 5
 ---
 ## Need
 

@@ -21,10 +21,12 @@ scope:
 - confidence: cited
   path: crates/generate/ess-gen/tests/asyncapi.rs
 - confidence: inferred
+  path: crates/generate/ess-gen/tests/asyncapi_transport.rs
+- confidence: inferred
   path: generated/asyncapi/email-service.yaml
 - confidence: inferred
   path: generated/asyncapi/invoice-service.yaml
-revision: 7
+revision: 8
 ---
 ## Need
 

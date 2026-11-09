@@ -12,7 +12,14 @@ refs:
 relations:
 - decomposes: epic:zero-open-issues-2026-11
 - depends_on: story:a-view-route-answers-a-csv-representation-its-query-value-selects
-revision: 2
+scope:
+- confidence: cited
+  path: crates/generate/ess-gen/src/openapi.rs
+- confidence: inferred
+  path: crates/generate/ess-gen/tests/fixtures/openapi-http/
+- confidence: inferred
+  path: crates/generate/ess-gen/tests/openapi_http_presentation.rs
+revision: 4
 ---
 ## Need
 

@@ -11,7 +11,18 @@ refs:
   reference: beyond10x/ess#561
 relations:
 - decomposes: epic:zero-open-issues-2026-11
-revision: 2
+scope:
+- confidence: cited
+  path: crates/verify/ess-conformance/src/synthesize/aggregate.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/synthesize/aggregate/contrast.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/tests/aggregate_measures_over_expressions.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/tests/fixtures/
+- confidence: cited
+  path: docs/design/generic-language-features.md
+revision: 4
 ---
 ## Need
 

@@ -12,7 +12,22 @@ refs:
 relations:
 - decomposes: epic:zero-open-issues-2026-11
 - depends_on: story:a-json-request-may-ignore-undeclared-members-and-echoed-path-fields
-revision: 2
+scope:
+- confidence: inferred
+  path: crates/generate/ess-synth/src/go/http.rs
+- confidence: cited
+  path: crates/generate/ess-synth/src/go/http/bound.rs
+- confidence: inferred
+  path: crates/generate/ess-synth/src/rust/http.rs
+- confidence: cited
+  path: crates/generate/ess-synth/src/rust/http/bound.rs
+- confidence: inferred
+  path: crates/generate/ess-synth/tests/fixtures/http-binding-shop.routes.yaml
+- confidence: inferred
+  path: crates/generate/ess-synth/tests/http_binding/board_routes.rs
+- confidence: cited
+  path: crates/generate/ess-synth/tests/http_binding/go.rs
+revision: 4
 ---
 ## Need
 

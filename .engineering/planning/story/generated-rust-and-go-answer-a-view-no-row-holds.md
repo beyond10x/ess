@@ -13,7 +13,18 @@ relations:
 - decomposes: epic:zero-open-issues-2026-11
 - depends_on: story:a-view-may-answer-values-no-row-holds
 - depends_on: story:conformance-reads-a-view-no-row-holds
-revision: 2
+scope:
+- confidence: inferred
+  path: crates/generate/ess-entity-runtime/src/lib.rs
+- confidence: inferred
+  path: crates/generate/ess-synth/src/go/
+- confidence: cited
+  path: crates/generate/ess-synth/src/rust/behaviour.rs
+- confidence: cited
+  path: crates/generate/ess-synth/src/view_query.rs
+- confidence: cited
+  path: website/docs/reference/entity-runtime-lowering.md
+revision: 4
 ---
 ## Need
 

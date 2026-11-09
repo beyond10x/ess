@@ -12,7 +12,18 @@ relations:
 - serves: vision:O2
 - decomposes: epic:adopter-gaps-generated-code
 - decomposes: epic:zero-open-issues-2026-11
-revision: 3
+scope:
+- confidence: cited
+  path: crates/edge/ess-cli/src/transport.rs
+- confidence: cited
+  path: crates/edge/ess-cli/tests/client.rs
+- confidence: cited
+  path: crates/edge/ess-cli/tests/transport.rs
+- confidence: cited
+  path: docs/design/event-transport-binding.md
+- confidence: cited
+  path: website/docs/reference/formats.md
+revision: 4
 ---
 ## Outcome
 

@@ -13,7 +13,20 @@ tags:
 - zero-open-issues
 relations:
 - decomposes: epic:zero-open-issues-2026-11
-revision: 3
+scope:
+- confidence: cited
+  path: crates/verify/ess-conformance/src/authored.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/interpret/execute.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/synthesize.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/tests/notfound_after_guarded_move.rs
+- confidence: inferred
+  path: docs/design/input-guard-overlap-precedence.md
+- confidence: cited
+  path: docs/design/typed-literals-and-unknown-instances.md
+revision: 5
 ---
 ## Need
 

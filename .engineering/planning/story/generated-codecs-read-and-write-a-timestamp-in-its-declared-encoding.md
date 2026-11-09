@@ -13,7 +13,22 @@ relations:
 - decomposes: epic:zero-open-issues-2026-11
 - depends_on: story:a-timestamp-newtype-declares-its-wire-encoding
 - depends_on: story:projections-write-a-timestamp-in-its-declared-encoding
-revision: 2
+scope:
+- confidence: inferred
+  path: crates/generate/ess-entity-runtime/src/subset.rs
+- confidence: cited
+  path: crates/generate/ess-synth/src/go/context.rs
+- confidence: inferred
+  path: crates/generate/ess-synth/src/go/http.rs
+- confidence: cited
+  path: crates/generate/ess-synth/src/rust/context.rs
+- confidence: inferred
+  path: crates/generate/ess-synth/src/rust/http.rs
+- confidence: inferred
+  path: crates/generate/ess-synth/tests/timestamp_encoding.rs
+- confidence: inferred
+  path: crates/generate/schema-contract/src/realize.rs
+revision: 4
 ---
 ## Need
 

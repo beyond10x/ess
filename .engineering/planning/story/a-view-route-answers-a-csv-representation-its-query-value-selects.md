@@ -11,7 +11,18 @@ refs:
   reference: beyond10x/ess#753
 relations:
 - decomposes: epic:zero-open-issues-2026-11
-revision: 2
+scope:
+- confidence: cited
+  path: crates/specify/ess-http/src/lib.rs
+- confidence: inferred
+  path: crates/specify/ess-http/tests/representations.rs
+- confidence: cited
+  path: docs/design/http-presentation-binding.md
+- confidence: cited
+  path: website/docs/guides/http-routes.md
+- confidence: inferred
+  path: website/docs/reference/diagnostics.md
+revision: 4
 ---
 ## Need
 

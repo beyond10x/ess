@@ -12,7 +12,22 @@ relations:
 - serves: vision:O2
 - decomposes: epic:language-consistency-after-adoption
 - decomposes: epic:zero-open-issues-2026-11
-revision: 4
+scope:
+- confidence: cited
+  path: crates/generate/ess-gen/src/openapi.rs
+- confidence: cited
+  path: crates/generate/ess-synth/src/go/http.rs
+- confidence: cited
+  path: crates/generate/ess-synth/src/rust/http.rs
+- confidence: inferred
+  path: crates/generate/ess-synth/src/rust/http/bound.rs
+- confidence: cited
+  path: crates/generate/ess-synth/src/web/bridge.rs
+- confidence: cited
+  path: crates/generate/ess-synth/tests/served_unfinished_committed.rs
+- confidence: inferred
+  path: crates/generate/ess-synth/tests/transport_free_entry.rs
+revision: 6
 ---
 ## Outcome
 

@@ -20,9 +20,18 @@ relations:
 - depends_on: story:expression-arithmetic-and-time
 - decomposes: epic:zero-open-issues-2026-11
 - depends_on: story:aggregate-group-keys-are-expressions
+- depends_on: story:ess-37-and-conformance-64-65-are-open-for-the-epics-constructs
 scope:
 - confidence: inferred
   path: CHANGELOG.md
+- confidence: inferred
+  path: crates/generate/ess-synth/src/view_query.rs
+- confidence: inferred
+  path: crates/specify/ess-compiler/src/ir.rs
+- confidence: inferred
+  path: crates/specify/ess-compiler/src/resolve.rs
+- confidence: inferred
+  path: crates/specify/ess-domain/src/expression.rs
 - confidence: inferred
   path: crates/specify/ess-domain/src/system.rs
 - confidence: cited
@@ -31,7 +40,25 @@ scope:
   path: crates/specify/ess-primitives/src/expr.rs
 - confidence: inferred
   path: crates/verify/ess-conformance/src/aggregate.rs
-revision: 14
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/interpret/views.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/synthesize/aggregate.rs
+- confidence: inferred
+  path: crates/verify/ess-diff/src/change.rs
+- confidence: cited
+  path: docs/design/aggregate-views.md
+- confidence: cited
+  path: docs/design/generic-language-features.md
+- confidence: cited
+  path: docs/design/language-grids.md
+- confidence: cited
+  path: docs/design/read-api-view-idioms.md
+- confidence: inferred
+  path: schemas/generated/ess.schema.json
+- confidence: inferred
+  path: website/docs/reference/spec-versions.md
+revision: 16
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-21T22:08:02Z", actor: "human:timo", revision: 3}
 - {from: "proposed", to: "active", at: "2026-10-21T22:08:03Z", actor: "human:timo", revision: 4}

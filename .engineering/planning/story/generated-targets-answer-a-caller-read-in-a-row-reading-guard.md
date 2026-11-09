@@ -13,7 +13,20 @@ relations:
 - decomposes: epic:zero-open-issues-2026-11
 - depends_on: story:caller-attributes-are-readable-in-a-when-related-predicate
 - depends_on: story:caller-attributes-walk-every-caller-read-of-a-command
-revision: 2
+scope:
+- confidence: cited
+  path: crates/generate/ess-entity-runtime/src/subset.rs
+- confidence: inferred
+  path: crates/generate/ess-entity-runtime/tests/caller_values.rs
+- confidence: cited
+  path: crates/generate/ess-gen/src/http.rs
+- confidence: inferred
+  path: crates/generate/ess-gen/tests/http_caller.rs
+- confidence: cited
+  path: crates/generate/ess-synth/src/determined.rs
+- confidence: inferred
+  path: crates/generate/ess-synth/tests/caller_values.rs
+revision: 4
 ---
 ## Need
 

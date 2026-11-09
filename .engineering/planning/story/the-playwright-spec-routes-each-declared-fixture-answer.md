@@ -12,7 +12,16 @@ refs:
 relations:
 - decomposes: epic:zero-open-issues-2026-11
 - depends_on: story:a-ui-test-declares-how-each-read-and-command-is-answered
-revision: 2
+scope:
+- confidence: inferred
+  path: crates/ui/ess-ui-test/src/parity.rs
+- confidence: cited
+  path: crates/ui/ess-ui-test/src/playwright.rs
+- confidence: inferred
+  path: crates/ui/ess-ui-test/tests/playwright_answers.rs
+- confidence: inferred
+  path: website/docs/reference/ess-ui-test.md
+revision: 4
 ---
 ## Need
 

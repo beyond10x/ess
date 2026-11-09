@@ -10,7 +10,16 @@ tags:
 - zero-open-issues
 relations:
 - decomposes: epic:zero-open-issues-2026-11
-revision: 3
+scope:
+- confidence: cited
+  path: crates/edge/ess-cli/tests/openapi_accounting.rs
+- confidence: inferred
+  path: crates/specify/ess-domain/src/command.rs
+- confidence: cited
+  path: crates/specify/ess-http/src/status.rs
+- confidence: inferred
+  path: website/docs/reference/diagnostics.md
+revision: 5
 ---
 ## Context
 

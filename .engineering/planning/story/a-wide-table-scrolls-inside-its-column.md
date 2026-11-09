@@ -15,7 +15,14 @@ refs:
   reference: beyond10x/ess#723
 relations:
 - decomposes: epic:zero-open-issues-2026-11
-revision: 6
+scope:
+- confidence: cited
+  path: crates/ui/ess-ui-react/templates/runtime/styles.css.tmpl
+- confidence: inferred
+  path: crates/ui/ess-ui-react/tests/narrow_layout.rs
+- confidence: inferred
+  path: website/docs/reference/ess-ui.md
+revision: 8
 ---
 ## Need
 

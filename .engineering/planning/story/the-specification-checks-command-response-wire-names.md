@@ -13,7 +13,16 @@ relations:
 - serves: vision:O2
 - decomposes: epic:adopter-gaps-domain-language
 - decomposes: epic:zero-open-issues-2026-11
-revision: 3
+scope:
+- confidence: inferred
+  path: crates/generate/ess-synth/tests/adversary_ess_issues_2_u8.rs
+- confidence: cited
+  path: crates/specify/ess-domain/src/wire.rs
+- confidence: inferred
+  path: crates/specify/ess-domain/tests/
+- confidence: cited
+  path: docs/design/unique-wire-field-identity.md
+revision: 5
 ---
 ## Problem
 

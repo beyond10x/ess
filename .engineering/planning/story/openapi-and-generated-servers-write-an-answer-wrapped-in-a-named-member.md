@@ -12,7 +12,20 @@ refs:
 relations:
 - decomposes: epic:zero-open-issues-2026-11
 - depends_on: story:an-answer-may-be-wrapped-in-one-named-member
-revision: 2
+scope:
+- confidence: cited
+  path: crates/generate/ess-gen/src/openapi.rs
+- confidence: inferred
+  path: crates/generate/ess-gen/tests/openapi_http_presentation.rs
+- confidence: cited
+  path: crates/generate/ess-synth/src/go/http/bound.rs
+- confidence: cited
+  path: crates/generate/ess-synth/src/rust/http/bound.rs
+- confidence: inferred
+  path: crates/generate/ess-synth/tests/http_binding/answer_forms.rs
+- confidence: cited
+  path: crates/generate/ess-synth/tests/http_binding/go.rs
+revision: 4
 ---
 ## Need
 

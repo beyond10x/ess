@@ -13,8 +13,14 @@ relations:
 - decomposes: epic:zero-open-issues-2026-11
 scope:
 - confidence: cited
+  path: crates/verify/ess-conformance/src/go/explore.go
+- confidence: cited
   path: crates/verify/ess-conformance/src/sessions.rs
-revision: 4
+- confidence: cited
+  path: crates/verify/ess-conformance/src/ts/explore.ts
+- confidence: inferred
+  path: crates/verify/ess-conformance/tests/view_consistency.rs
+revision: 6
 ---
 # Story: the Rust recorder does not lose a creation it observed
 

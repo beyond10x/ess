@@ -12,7 +12,25 @@ refs:
 relations:
 - decomposes: epic:zero-open-issues-2026-11
 - depends_on: story:a-view-answer-takes-its-protocols-list-shape
-revision: 2
+- depends_on: story:ess-37-and-conformance-64-65-are-open-for-the-epics-constructs
+scope:
+- confidence: cited
+  path: crates/verify/ess-conformance/src/interpret/views.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/runner/page.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/scenario.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/synthesize/paging.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/target.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/view_paging.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/tests/view_paging.rs
+- confidence: inferred
+  path: website/docs/reference/formats.md
+revision: 4
 ---
 ## Need
 

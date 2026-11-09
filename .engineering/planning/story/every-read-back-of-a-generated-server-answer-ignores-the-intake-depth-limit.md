@@ -13,7 +13,16 @@ relations:
 - serves: vision:O2
 - decomposes: epic:adopter-gaps-generated-code
 - decomposes: epic:zero-open-issues-2026-11
-revision: 3
+scope:
+- confidence: cited
+  path: crates/generate/ess-synth/src/go/http/bound.rs
+- confidence: cited
+  path: crates/generate/ess-synth/src/rust/http/bound.rs
+- confidence: cited
+  path: crates/generate/ess-synth/src/rust/json.rs
+- confidence: inferred
+  path: crates/generate/ess-synth/tests/
+revision: 5
 ---
 ## Need
 

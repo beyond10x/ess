@@ -12,7 +12,20 @@ refs:
 relations:
 - decomposes: epic:zero-open-issues-2026-11
 - depends_on: story:a-view-route-answers-a-csv-representation-its-query-value-selects
-revision: 2
+scope:
+- confidence: inferred
+  path: crates/generate/ess-synth/src/go/http.rs
+- confidence: cited
+  path: crates/generate/ess-synth/src/go/http/bound.rs
+- confidence: inferred
+  path: crates/generate/ess-synth/src/rust/http.rs
+- confidence: cited
+  path: crates/generate/ess-synth/src/rust/http/bound.rs
+- confidence: inferred
+  path: crates/generate/ess-synth/tests/http_binding/answer_forms.rs
+- confidence: cited
+  path: crates/generate/ess-synth/tests/http_binding/go.rs
+revision: 4
 ---
 ## Need
 

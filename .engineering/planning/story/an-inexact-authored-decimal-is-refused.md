@@ -12,7 +12,22 @@ relations:
 - serves: vision:O2
 - informed_by: decision-blocker:decimal-canonical-serialization-crosses-repositories
 - decomposes: epic:zero-open-issues-2026-11
-revision: 3
+scope:
+- confidence: cited
+  path: crates/specify/ess-domain/src/command.rs
+- confidence: inferred
+  path: crates/specify/ess-domain/src/command/value_expression.rs
+- confidence: inferred
+  path: crates/specify/ess-domain/tests/
+- confidence: cited
+  path: crates/specify/ess-primitives/src/facts.rs
+- confidence: cited
+  path: crates/specify/ess-primitives/tests/vectors/primitive-semantics.json
+- confidence: inferred
+  path: crates/specify/ess-yaml
+- confidence: inferred
+  path: the
+revision: 5
 ---
 ## Outcome
 

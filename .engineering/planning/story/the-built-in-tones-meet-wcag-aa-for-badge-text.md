@@ -14,7 +14,18 @@ tags:
 - zero-open-issues
 relations:
 - decomposes: epic:zero-open-issues-2026-11
-revision: 5
+scope:
+- confidence: cited
+  path: crates/ui/ess-ui-react/templates/runtime/styles.css.tmpl
+- confidence: inferred
+  path: crates/ui/ess-ui-react/tests/
+- confidence: cited
+  path: crates/ui/ess-ui/src/style.rs
+- confidence: cited
+  path: schemas/ui/ess-ui.schema.yaml
+- confidence: inferred
+  path: website/docs/reference/ess-ui.md
+revision: 7
 ---
 ## Outcome
 

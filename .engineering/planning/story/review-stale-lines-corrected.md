@@ -12,7 +12,16 @@ relations:
 - serves: vision:O2
 - decomposes: epic:language-consistency-after-adoption
 - decomposes: epic:zero-open-issues-2026-11
-revision: 3
+scope:
+- confidence: cited
+  path: crates/generate/ess-gen/src/http.rs
+- confidence: inferred
+  path: crates/generate/ess-gen/src/openapi.rs
+- confidence: cited
+  path: website/docs/guides/specify/guards-and-predicates.md
+- confidence: cited
+  path: website/docs/guides/specify/selection-effects.md
+revision: 5
 ---
 ## Outcome
 

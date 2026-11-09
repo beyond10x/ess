@@ -11,7 +11,16 @@ tags:
 relations:
 - serves: vision:O2
 - decomposes: epic:zero-open-issues-2026-11
-revision: 3
+scope:
+- confidence: cited
+  path: crates/verify/ess-conformance/src/interpret/execute/subject.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/synthesize/subject_fact.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/tests/unknown_by_absence_witnesses.rs
+- confidence: inferred
+  path: docs/design/cross-record-and-stored-field-guards.md
+revision: 5
 ---
 ## Finding
 

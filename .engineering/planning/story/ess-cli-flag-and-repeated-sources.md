@@ -14,7 +14,24 @@ relations:
 - decomposes: epic:adopter-gaps-generated-code
 - serves: vision:O2
 - decomposes: epic:zero-open-issues-2026-11
-revision: 4
+scope:
+- confidence: inferred
+  path: crates/edge/ess-xtask/src/consumer_coverage/entry-classifications.json
+- confidence: cited
+  path: crates/generate/ess-cli-project/src/runtime.rs
+- confidence: inferred
+  path: crates/generate/ess-cli-project/tests/adversarial.rs
+- confidence: cited
+  path: crates/specify/ess-cli-contract/src/resolve.rs
+- confidence: cited
+  path: crates/specify/ess-cli-contract/src/wire.rs
+- confidence: inferred
+  path: crates/specify/ess-cli-contract/tests/binding.rs
+- confidence: cited
+  path: docs/design/cli-presentation-binding.md
+- confidence: inferred
+  path: website/docs/reference/formats.md
+revision: 6
 ---
 ## Need
 

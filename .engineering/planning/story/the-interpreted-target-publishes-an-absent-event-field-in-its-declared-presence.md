@@ -12,7 +12,14 @@ refs:
 relations:
 - decomposes: epic:zero-open-issues-2026-11
 - depends_on: story:an-absent-payload-read-is-claimed-absent-in-either-spelling-not-as-null
-revision: 2
+scope:
+- confidence: cited
+  path: crates/verify/ess-conformance/src/interpret/execute.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/tests/interpreted_command_execution.rs
+- confidence: inferred
+  path: docs/design/wire-presence-json-prefix.md
+revision: 4
 ---
 ## Need
 

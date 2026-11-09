@@ -13,7 +13,10 @@ relations:
 - serves: vision:O2
 - decomposes: epic:adopter-gaps-verdicts
 - decomposes: epic:zero-open-issues-2026-11
+- depends_on: story:ess-37-and-conformance-64-65-are-open-for-the-epics-constructs
 scope:
+- confidence: inferred
+  path: crates/specify/ess-compiler/src/ir.rs
 - confidence: inferred
   path: crates/verify/ess-conformance/src/authored.rs
 - confidence: cited
@@ -26,11 +29,13 @@ scope:
   path: crates/verify/ess-conformance/src/scenario.rs
 - confidence: inferred
   path: crates/verify/ess-conformance/src/synthesize.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/ts/runtime.test.ts
 - confidence: cited
   path: crates/verify/ess-conformance/src/ts/runtime.ts
 - confidence: cited
   path: crates/verify/ess-conformance/tests/adversary_u28_pass1.rs
-revision: 12
+revision: 13
 ---
 ## Need
 

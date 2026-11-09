@@ -15,7 +15,14 @@ relations:
 - informed_by: review-result:adversary-w1-run1-pass-1
 - informed_by: review-result:security-w1-run1-pass-1
 - decomposes: epic:zero-open-issues-2026-11
-revision: 4
+scope:
+- confidence: cited
+  path: crates/verify/ess-conformance/src/authored.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/tests/authored_success_act_claiming_an_error.rs
+- confidence: inferred
+  path: website/docs/reference/diagnostics.md
+revision: 6
 ---
 ## Need
 

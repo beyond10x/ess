@@ -12,7 +12,22 @@ refs:
 relations:
 - decomposes: epic:zero-open-issues-2026-11
 - depends_on: story:via-and-instance-may-name-a-member-of-a-struct-input
-revision: 2
+scope:
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/interpret/execute/existence.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/interpret/execute/related.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/synthesize/existence.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/synthesize/related.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/synthesize/related_list.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/synthesize/set_effects.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/tests/input_path_addressing.rs
+revision: 3
 ---
 ## Need
 

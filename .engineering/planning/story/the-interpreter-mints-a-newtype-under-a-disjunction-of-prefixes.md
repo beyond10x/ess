@@ -22,10 +22,12 @@ scope:
 - confidence: inferred
   path: crates/verify/ess-conformance/src/interpret/response.rs
 - confidence: cited
+  path: crates/verify/ess-conformance/src/interpret/values.rs
+- confidence: cited
   path: crates/verify/ess-conformance/src/witness.rs
 - confidence: inferred
   path: crates/verify/ess-conformance/tests/newtype_any_prefix.rs
-revision: 12
+revision: 13
 ---
 ## Need
 

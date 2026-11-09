@@ -14,7 +14,20 @@ relations:
 - serves: vision:O2
 - informed_by: decision-blocker:decimal-canonical-serialization-crosses-repositories
 - decomposes: epic:zero-open-issues-2026-11
-revision: 3
+scope:
+- confidence: inferred
+  path: crates/specify/ess-primitives/src/facts.rs
+- confidence: cited
+  path: crates/specify/ess-primitives/src/node.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/runner.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/tests/retained_replay.rs
+- confidence: cited
+  path: docs/design/retained-command-results.md
+- confidence: cited
+  path: website/docs/reference/formats.md
+revision: 5
 ---
 ## Problem
 

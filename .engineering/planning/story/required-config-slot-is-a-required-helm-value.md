@@ -12,7 +12,16 @@ relations:
 - serves: vision:O2
 - decomposes: epic:adopter-gaps-delivery
 - decomposes: epic:zero-open-issues-2026-11
-revision: 3
+scope:
+- confidence: cited
+  path: crates/generate/ess-deployment/src/environment.rs
+- confidence: inferred
+  path: crates/generate/ess-deployment/tests/deployment.rs
+- confidence: cited
+  path: crates/generate/ess-deployment/tests/workload_kinds/mod.rs
+- confidence: inferred
+  path: website/docs/concepts/component-delivery.md
+revision: 5
 ---
 ## Outcome
 

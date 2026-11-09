@@ -17,7 +17,16 @@ relations:
 - depends_on: story:an-exchange-is-declared-in-the-specification
 - decomposes: epic:zero-open-issues-2026-11
 - depends_on: story:an-http-route-upgrades-to-an-exchange
-revision: 3
+scope:
+- confidence: cited
+  path: crates/generate/ess-gen/src/asyncapi.rs
+- confidence: cited
+  path: crates/generate/ess-gen/src/openapi.rs
+- confidence: inferred
+  path: crates/generate/ess-gen/tests/
+- confidence: inferred
+  path: crates/generate/ess-gen/tests/asyncapi_exchange.rs
+revision: 5
 ---
 ## Need
 

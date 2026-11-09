@@ -1,0 +1,4 @@
+view: store.shelf.Items
+rows:
+  - {id: a, title: fixture-marker-lamp-7731, qty: 5, state: Stored}
+  - {id: b, title: fixture-marker-chair-7732, qty: 90, state: Shipped}

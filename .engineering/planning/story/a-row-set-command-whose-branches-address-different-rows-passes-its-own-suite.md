@@ -12,7 +12,16 @@ tags:
 - zero-open-issues
 relations:
 - decomposes: epic:zero-open-issues-2026-11
-revision: 3
+scope:
+- confidence: cited
+  path: crates/verify/ess-conformance/src/interpret/execute.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/synthesize.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/tests/adversary_l5_pass1.rs
+- confidence: inferred
+  path: docs/design/filtered-related-reads.md
+revision: 5
 ---
 ## Problem
 

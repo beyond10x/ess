@@ -12,7 +12,16 @@ refs:
 relations:
 - decomposes: epic:zero-open-issues-2026-11
 - depends_on: story:an-exchange-is-declared-in-the-specification
-revision: 2
+scope:
+- confidence: cited
+  path: crates/verify/ess-diff/src/change.rs
+- confidence: cited
+  path: crates/verify/ess-diff/src/compatibility.rs
+- confidence: inferred
+  path: crates/verify/ess-diff/src/raw.rs
+- confidence: inferred
+  path: crates/verify/ess-diff/tests/exchanges.rs
+revision: 4
 ---
 ## Need
 

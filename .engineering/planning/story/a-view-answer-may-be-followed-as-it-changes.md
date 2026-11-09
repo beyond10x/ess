@@ -13,7 +13,18 @@ relations:
 - decomposes: epic:zero-open-issues-2026-11
 - depends_on: story:an-exchange-is-declared-in-the-specification
 - depends_on: story:an-event-channel-may-be-bound-to-server-sent-events
-revision: 2
+scope:
+- confidence: inferred
+  path: crates/specify/ess-compiler/src/ir.rs
+- confidence: inferred
+  path: crates/specify/ess-domain/src/exchange.rs
+- confidence: cited
+  path: crates/specify/ess-http/src/lib.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/synthesize.rs
+- confidence: inferred
+  path: docs/design/message-exchanges.md
+revision: 4
 ---
 ## Need
 

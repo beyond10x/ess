@@ -12,7 +12,18 @@ tags:
 relations:
 - serves: vision:O2
 - decomposes: epic:zero-open-issues-2026-11
-revision: 3
+scope:
+- confidence: cited
+  path: crates/verify/ess-conformance/src/synthesize.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/synthesize/subject_fact.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/tests/explore_guards_first.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/tests/wrong_state_beside_subject_guard.rs
+- confidence: inferred
+  path: synthesis
+revision: 5
 ---
 ## Problem
 

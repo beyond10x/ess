@@ -13,7 +13,37 @@ refs:
 relations:
 - serves: vision:O2
 - decomposes: epic:zero-open-issues-2026-11
-revision: 9
+- depends_on: story:ess-37-and-conformance-64-65-are-open-for-the-epics-constructs
+scope:
+- confidence: inferred
+  path: crates/generate/ess-entity-runtime/tests/response_source.rs
+- confidence: inferred
+  path: crates/generate/ess-synth/tests/response_source_obligation.rs
+- confidence: inferred
+  path: crates/specify/ess-compiler/src/resolve.rs
+- confidence: cited
+  path: crates/specify/ess-domain/src/command.rs
+- confidence: inferred
+  path: crates/specify/ess-domain/src/command/minted_value.rs
+- confidence: inferred
+  path: crates/specify/ess-domain/src/command/one_time_response.rs
+- confidence: inferred
+  path: crates/specify/ess-domain/src/command/set_effects.rs
+- confidence: cited
+  path: crates/specify/ess-domain/src/system.rs
+- confidence: inferred
+  path: crates/specify/ess-domain/tests/response_payload.rs
+- confidence: inferred
+  path: crates/verify/ess-diff/tests/response_source.rs
+- confidence: cited
+  path: docs/design/language-grids.md
+- confidence: cited
+  path: docs/design/minted-value-sources.md
+- confidence: cited
+  path: docs/design/typed-response-outcome-payloads.md
+- confidence: inferred
+  path: website/docs/reference/spec-versions.md
+revision: 11
 ---
 ## Need
 

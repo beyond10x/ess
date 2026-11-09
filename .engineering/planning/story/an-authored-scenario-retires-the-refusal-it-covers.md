@@ -15,7 +15,25 @@ relations:
 - serves: vision:O2
 - decomposes: epic:adopter-gaps-synthesis
 - decomposes: epic:zero-open-issues-2026-11
-revision: 4
+- depends_on: story:ess-37-and-conformance-64-65-are-open-for-the-epics-constructs
+scope:
+- confidence: inferred
+  path: crates/edge/ess-cli/src/coverage.rs
+- confidence: inferred
+  path: crates/specify/ess-domain/src/spec.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/authored.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/coverage.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/coverage_build.rs
+- confidence: inferred
+  path: docs/design/review-conformance-coverage.md
+- confidence: inferred
+  path: website/docs/guides/verify/author-scenarios.md
+- confidence: inferred
+  path: website/docs/reference/formats.md
+revision: 5
 ---
 ## Need
 

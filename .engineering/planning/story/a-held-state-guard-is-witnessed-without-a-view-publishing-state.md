@@ -12,7 +12,18 @@ refs:
 relations:
 - decomposes: epic:zero-open-issues-2026-11
 - depends_on: story:a-multi-state-wrong-state-error-branch-is-synthesized
-revision: 2
+scope:
+- confidence: cited
+  path: crates/verify/ess-conformance/src/synthesize.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/synthesize/existence.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/synthesize/subject_fact.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/tests/held_state_guard_without_state_view.rs
+- confidence: cited
+  path: docs/design/cross-record-and-stored-field-guards.md
+revision: 4
 ---
 ## Need
 

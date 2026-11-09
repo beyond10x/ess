@@ -15,7 +15,18 @@ relations:
 - serves: vision:O2
 - decomposes: epic:adopter-gaps-domain-language
 - decomposes: epic:zero-open-issues-2026-11
-revision: 3
+scope:
+- confidence: inferred
+  path: crates/generate/ess-synth/
+- confidence: cited
+  path: crates/specify/ess-domain/src/command/finite.rs
+- confidence: inferred
+  path: crates/specify/ess-domain/src/command/subject_fact.rs
+- confidence: inferred
+  path: crates/specify/ess-domain/tests/
+- confidence: cited
+  path: docs/design/closed-enum-outcome-coverage.md
+revision: 5
 ---
 ## Problem
 

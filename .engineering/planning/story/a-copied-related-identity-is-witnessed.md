@@ -11,7 +11,16 @@ tags:
 relations:
 - decomposes: epic:adopter-gaps-synthesis
 - decomposes: epic:zero-open-issues-2026-11
-revision: 4
+scope:
+- confidence: cited
+  path: crates/verify/ess-conformance/src/synthesize/row_set.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/synthesize/row_set/copied.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/tests/fixtures/row-set-related-copy-identity.yaml
+- confidence: cited
+  path: crates/verify/ess-conformance/tests/row_set_related_copy.rs
+revision: 6
 ---
 ## Outcome
 

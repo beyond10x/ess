@@ -16,7 +16,16 @@ tags:
 relations:
 - serves: vision:O2
 - decomposes: epic:zero-open-issues-2026-11
-revision: 3
+scope:
+- confidence: inferred
+  path: crates/generate/ess-gen/tests/model_types.rs
+- confidence: inferred
+  path: crates/generate/schema-contract/src/realize/rust.rs
+- confidence: cited
+  path: crates/generate/schema-contract/src/realize/rust_support.rs.txt
+- confidence: inferred
+  path: crates/generate/schema-contract/tests/normalization_legacy_bytes.rs
+revision: 5
 ---
 ## Need
 

@@ -17,6 +17,7 @@ relations:
 - decomposes: epic:generic-aggregates
 - decomposes: epic:zero-open-issues-2026-11
 - depends_on: story:an-expression-measure-that-skips-absent-rows-is-witnessed
+- depends_on: story:ess-37-and-conformance-64-65-are-open-for-the-epics-constructs
 scope:
 - confidence: inferred
   path: CHANGELOG.md
@@ -25,12 +26,30 @@ scope:
 - confidence: inferred
   path: crates/specify/ess-compiler/src/ir.rs
 - confidence: inferred
+  path: crates/specify/ess-compiler/src/resolve.rs
+- confidence: inferred
+  path: crates/specify/ess-domain/src/expression.rs
+- confidence: inferred
   path: crates/specify/ess-domain/src/system.rs
 - confidence: cited
   path: crates/specify/ess-domain/src/view.rs
 - confidence: inferred
+  path: crates/verify/ess-conformance/src/aggregate.rs
+- confidence: inferred
   path: crates/verify/ess-conformance/src/interpret/views.rs
-revision: 13
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/synthesize/aggregate.rs
+- confidence: inferred
+  path: crates/verify/ess-diff/src/change.rs
+- confidence: cited
+  path: docs/design/generic-language-features.md
+- confidence: inferred
+  path: docs/design/language-grids.md
+- confidence: inferred
+  path: schemas/generated/ess.schema.json
+- confidence: inferred
+  path: website/docs/reference/spec-versions.md
+revision: 15
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-21T22:08:02Z", actor: "human:timo", revision: 2}
 - {from: "proposed", to: "active", at: "2026-10-21T22:08:02Z", actor: "human:timo", revision: 3}

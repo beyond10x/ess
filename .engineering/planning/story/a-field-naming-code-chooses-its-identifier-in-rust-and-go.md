@@ -14,7 +14,18 @@ relations:
 - depends_on: story:a-command-input-and-response-field-may-share-a-name-in-rust
 - decomposes: epic:adopter-gaps-generated-code
 - decomposes: epic:zero-open-issues-2026-11
-revision: 3
+scope:
+- confidence: cited
+  path: crates/generate/ess-synth/src/alias.rs
+- confidence: inferred
+  path: crates/generate/ess-synth/src/go/
+- confidence: inferred
+  path: crates/generate/ess-synth/src/rust/
+- confidence: cited
+  path: crates/generate/ess-synth/src/rust/feasibility.rs
+- confidence: inferred
+  path: crates/generate/ess-synth/src/rust/name.rs
+revision: 5
 ---
 ## Need
 

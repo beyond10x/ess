@@ -14,7 +14,18 @@ tags:
 relations:
 - informed_by: review-result:security-w1-gen1-pass-1
 - decomposes: epic:zero-open-issues-2026-11
-revision: 3
+scope:
+- confidence: inferred
+  path: crates/generate/ess-synth/Cargo.toml
+- confidence: cited
+  path: crates/generate/ess-synth/tests/json_body_closure.rs
+- confidence: inferred
+  path: crates/generate/schema-contract/Cargo.toml
+- confidence: inferred
+  path: crates/generate/schema-contract/src/uniqueness.rs
+- confidence: cited
+  path: crates/generate/schema-contract/src/validate.rs
+revision: 5
 ---
 ## Need
 

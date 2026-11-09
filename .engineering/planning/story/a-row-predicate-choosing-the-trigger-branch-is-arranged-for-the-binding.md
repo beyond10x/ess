@@ -14,7 +14,22 @@ refs:
   reference: beyond10x/ess#706
 relations:
 - decomposes: epic:zero-open-issues-2026-11
-revision: 5
+scope:
+- confidence: cited
+  path: crates/verify/ess-conformance/src/synthesize.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/synthesize/binding_effects.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/synthesize/refusal_policy.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/synthesize/related_guard.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/tests/binding_related_branch.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/tests/synthesis_suite_bytes_table.rs
+- confidence: cited
+  path: website/docs/guides/specify/bindings-and-components.md
+revision: 7
 ---
 ## Need
 

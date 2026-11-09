@@ -15,7 +15,14 @@ relations:
 - serves: vision:O2
 - decomposes: epic:adopter-gaps-synthesis
 - decomposes: epic:zero-open-issues-2026-11
-revision: 3
+scope:
+- confidence: cited
+  path: crates/verify/ess-conformance/src/synthesize/subject_fact.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/tests/subject_field_in_input_list.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/tests/synthesis_suite_bytes_table.rs
+revision: 5
 ---
 ## Need
 

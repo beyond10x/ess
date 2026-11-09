@@ -14,7 +14,16 @@ tags:
 relations:
 - informed_by: review-result:security-w1-gen1-pass-1
 - decomposes: epic:zero-open-issues-2026-11
-revision: 4
+scope:
+- confidence: inferred
+  path: crates/generate/ess-gen/src/openapi.rs
+- confidence: inferred
+  path: crates/generate/ess-synth/src/go/http.rs
+- confidence: cited
+  path: crates/generate/ess-synth/src/rust/wire.rs
+- confidence: cited
+  path: crates/generate/ess-synth/tests/adversary_w1_gen1_security.rs
+revision: 6
 ---
 ## Need
 

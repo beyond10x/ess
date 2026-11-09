@@ -15,7 +15,21 @@ relations:
 - serves: vision:O2
 - decomposes: epic:adopter-gaps-synthesis
 - decomposes: epic:zero-open-issues-2026-11
-revision: 3
+- depends_on: story:ess-37-and-conformance-64-65-are-open-for-the-epics-constructs
+scope:
+- confidence: cited
+  path: crates/verify/ess-conformance/src/replay.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/subject.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/synthesize.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/tests/retained_replay.rs
+- confidence: cited
+  path: docs/design/retained-command-results.md
+- confidence: cited
+  path: website/docs/guides/verify/observations.md
+revision: 4
 ---
 ## Need
 

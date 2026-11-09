@@ -17,18 +17,45 @@ relations:
 - depends_on: story:a-set-effect-selection-reads-the-rows-state
 - decomposes: epic:zero-open-issues-2026-11
 - depends_on: story:a-reference-scenario-reads-every-navigated-filter-conjunct
+- depends_on: story:ess-37-and-conformance-64-65-are-open-for-the-epics-constructs
 scope:
 - confidence: inferred
   path: crates/generate/ess-synth/src
+- confidence: inferred
+  path: crates/generate/ess-synth/src/view_query.rs
+- confidence: cited
+  path: crates/specify/ess-compiler/src/ir.rs
+- confidence: inferred
+  path: crates/specify/ess-compiler/src/resolve.rs
 - confidence: inferred
   path: crates/specify/ess-domain/src/command.rs
 - confidence: inferred
   path: crates/specify/ess-domain/src/command/related_guard.rs
 - confidence: inferred
+  path: crates/specify/ess-domain/src/expression.rs
+- confidence: inferred
+  path: crates/specify/ess-domain/src/system.rs
+- confidence: inferred
   path: crates/specify/ess-domain/src/view.rs
+- confidence: cited
+  path: crates/specify/ess-domain/src/view/navigation.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/interpret/views.rs
 - confidence: inferred
   path: crates/verify/ess-conformance/src/synthesize/related.rs
-revision: 9
+- confidence: cited
+  path: crates/verify/ess-conformance/src/synthesize/view_reference.rs
+- confidence: cited
+  path: docs/design/generic-language-features.md
+- confidence: inferred
+  path: docs/design/language-grids.md
+- confidence: inferred
+  path: schemas/generated/ess.schema.json
+- confidence: inferred
+  path: website/docs/reference/predicates.md
+- confidence: inferred
+  path: website/docs/reference/spec-versions.md
+revision: 11
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-21T22:07:59Z", actor: "human:timo", revision: 2}
 - {from: "proposed", to: "active", at: "2026-10-21T22:07:59Z", actor: "human:timo", revision: 3}

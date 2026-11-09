@@ -16,7 +16,16 @@ tags:
 relations:
 - serves: vision:O2
 - decomposes: epic:zero-open-issues-2026-11
-revision: 3
+scope:
+- confidence: inferred
+  path: crates/edge/ess-cli/tests/schema_bundle.rs
+- confidence: cited
+  path: crates/generate/ess-gen/src/types.rs
+- confidence: inferred
+  path: crates/generate/ess-gen/tests/
+- confidence: inferred
+  path: website/docs/guides/generate-artifacts.md
+revision: 5
 ---
 ## Need
 

@@ -14,7 +14,31 @@ relations:
 - serves: vision:O2
 - decomposes: epic:adopter-gaps-domain-language
 - decomposes: epic:zero-open-issues-2026-11
-revision: 5
+- depends_on: story:ess-37-and-conformance-64-65-are-open-for-the-epics-constructs
+scope:
+- confidence: inferred
+  path: crates/specify/ess-compiler/src/ir.rs
+- confidence: cited
+  path: crates/specify/ess-domain/src/command.rs
+- confidence: cited
+  path: crates/specify/ess-domain/src/command/value_expression.rs
+- confidence: cited
+  path: crates/specify/ess-domain/src/expression.rs
+- confidence: cited
+  path: crates/specify/ess-domain/src/primitive_admission.rs
+- confidence: cited
+  path: crates/specify/ess-domain/src/system.rs
+- confidence: inferred
+  path: crates/specify/ess-domain/tests/keep_on_missing.rs
+- confidence: cited
+  path: crates/specify/ess-primitives/src/predicate.rs
+- confidence: cited
+  path: docs/design/language-grids.md
+- confidence: cited
+  path: docs/design/omitted-or-null-presence.md
+- confidence: inferred
+  path: schemas/generated/ess.schema.json
+revision: 7
 ---
 ## Need
 

@@ -14,7 +14,24 @@ tags:
 - zero-open-issues
 relations:
 - decomposes: epic:zero-open-issues-2026-11
-revision: 6
+scope:
+- confidence: inferred
+  path: crates/ui/ess-ui-check/src/model.rs
+- confidence: cited
+  path: crates/ui/ess-ui-react/templates/runtime/composites/form.tsx.tmpl
+- confidence: cited
+  path: crates/ui/ess-ui-react/templates/runtime/data.ts.tmpl
+- confidence: inferred
+  path: crates/ui/ess-ui-test/src/playwright.rs
+- confidence: inferred
+  path: crates/ui/ess-ui-test/src/runner.rs
+- confidence: cited
+  path: crates/ui/ess-ui-test/src/spec.rs
+- confidence: cited
+  path: crates/ui/ess-ui-tui/src/app.rs
+- confidence: inferred
+  path: website/docs/reference/ess-ui-test.md
+revision: 8
 ---
 ## Outcome
 

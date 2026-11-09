@@ -11,7 +11,24 @@ refs:
   reference: beyond10x/ess#723
 relations:
 - decomposes: epic:zero-open-issues-2026-11
-revision: 2
+scope:
+- confidence: inferred
+  path: crates/ui/ess-ui-check/src/rules.rs
+- confidence: cited
+  path: crates/ui/ess-ui-react/templates/runtime/composites/board.tsx.tmpl
+- confidence: cited
+  path: crates/ui/ess-ui-react/templates/runtime/composites/collection.tsx.tmpl
+- confidence: inferred
+  path: crates/ui/ess-ui-react/templates/runtime/composites/record.tsx.tmpl
+- confidence: cited
+  path: crates/ui/ess-ui-react/templates/runtime/core.tsx.tmpl
+- confidence: inferred
+  path: crates/ui/ess-ui-tui/src/app.rs
+- confidence: inferred
+  path: crates/ui/ess-ui-tui/src/view.rs
+- confidence: inferred
+  path: schemas/ui/ess-ui.schema.yaml
+revision: 4
 ---
 ## Need
 

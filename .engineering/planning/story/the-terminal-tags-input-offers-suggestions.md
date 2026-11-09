@@ -15,7 +15,16 @@ relations:
 - serves: vision:O2
 - informed_by: epic:downstream-reported-gaps
 - decomposes: epic:zero-open-issues-2026-11
-revision: 3
+scope:
+- confidence: inferred
+  path: crates/ui/ess-ui-test/src/runner.rs
+- confidence: inferred
+  path: crates/ui/ess-ui-test/tests/
+- confidence: cited
+  path: crates/ui/ess-ui-tui/src/app.rs
+- confidence: inferred
+  path: crates/ui/ess-ui-tui/src/view.rs
+revision: 5
 ---
 ## Need
 

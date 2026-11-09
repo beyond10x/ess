@@ -17,7 +17,10 @@ relations:
 - supersedes: story:creates-leaving-required-field-unset-is-refused
 - decomposes: epic:adopter-gaps-domain-language
 - decomposes: epic:zero-open-issues-2026-11
+- depends_on: story:ess-37-and-conformance-64-65-are-open-for-the-epics-constructs
 scope:
+- confidence: inferred
+  path: crates/edge/ess-cli/tests/validate_completeness.rs
 - confidence: cited
   path: crates/edge/ess-xtask/src/consumer_coverage/macro-guards.json
 - confidence: inferred
@@ -25,8 +28,12 @@ scope:
 - confidence: inferred
   path: crates/specify/ess-domain/src/command.rs
 - confidence: cited
+  path: crates/specify/ess-domain/tests/created_invariant_fields.rs
+- confidence: inferred
+  path: crates/specify/ess-primitives/src/error.rs
+- confidence: cited
   path: docs/design/review-typed-diagnostics.md
-revision: 5
+revision: 7
 ---
 ## Need
 

@@ -11,7 +11,18 @@ refs:
   reference: beyond10x/ess#766
 relations:
 - decomposes: epic:zero-open-issues-2026-11
-revision: 2
+scope:
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/scenario.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/synthesize/caller.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/synthesize/singleton.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/tests/caller_swap_authored_field_names.rs
+- confidence: cited
+  path: docs/design/caller-values.md
+revision: 4
 ---
 ## Need
 

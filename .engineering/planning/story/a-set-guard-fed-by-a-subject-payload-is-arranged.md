@@ -14,7 +14,16 @@ refs:
   reference: beyond10x/ess#705
 relations:
 - decomposes: epic:zero-open-issues-2026-11
-revision: 5
+scope:
+- confidence: cited
+  path: crates/verify/ess-conformance/src/synthesize/binding_effects.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/synthesize/binding_effects/set_guard.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/tests/binding_set_guard.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/tests/fixtures/binding-set-guard/
+revision: 7
 ---
 ## Need
 

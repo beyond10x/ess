@@ -11,7 +11,18 @@ refs:
   reference: beyond10x/ess#722
 relations:
 - decomposes: epic:zero-open-issues-2026-11
-revision: 2
+scope:
+- confidence: inferred
+  path: crates/ui/ess-ui-test/tests/journey_visible.rs
+- confidence: cited
+  path: crates/ui/ess-ui-tui/src/app.rs
+- confidence: cited
+  path: crates/ui/ess-ui-tui/src/expr.rs
+- confidence: cited
+  path: crates/ui/ess-ui-tui/src/view.rs
+- confidence: inferred
+  path: crates/ui/ess-ui-tui/tests/visible.rs
+revision: 4
 ---
 ## Need
 

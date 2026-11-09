@@ -15,7 +15,16 @@ tags:
 relations:
 - informed_by: review-result:w086-u3-adversary-pass-1
 - decomposes: epic:zero-open-issues-2026-11
-revision: 3
+scope:
+- confidence: cited
+  path: crates/ui/ess-ui-react/src/emit.rs
+- confidence: inferred
+  path: crates/ui/ess-ui-react/templates/runtime/core.tsx.tmpl
+- confidence: cited
+  path: crates/ui/ess-ui-react/templates/runtime/data.ts.tmpl
+- confidence: inferred
+  path: crates/ui/ess-ui-react/tests/adversary_w086_u3_pass1.rs
+revision: 5
 ---
 ## Need
 

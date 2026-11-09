@@ -12,7 +12,23 @@ refs:
 relations:
 - decomposes: epic:zero-open-issues-2026-11
 - depends_on: story:a-timestamp-newtype-declares-its-wire-encoding
-revision: 2
+- depends_on: story:ess-37-and-conformance-64-65-are-open-for-the-epics-constructs
+scope:
+- confidence: inferred
+  path: crates/specify/ess-compiler/src/ir.rs
+- confidence: cited
+  path: crates/specify/ess-domain/src/types.rs
+- confidence: inferred
+  path: crates/specify/ess-domain/tests/list_encoding.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/synthesize.rs
+- confidence: inferred
+  path: crates/verify/ess-diff/src/change.rs
+- confidence: inferred
+  path: docs/design/value-wire-encodings.md
+- confidence: inferred
+  path: schemas/generated/ess.schema.json
+revision: 4
 ---
 ## Need
 

@@ -12,7 +12,18 @@ relations:
 - serves: vision:O2
 - decomposes: epic:language-consistency-after-adoption
 - decomposes: epic:zero-open-issues-2026-11
-revision: 3
+scope:
+- confidence: cited
+  path: crates/specify/ess-composition/src/conformance.rs
+- confidence: cited
+  path: crates/specify/ess-composition/src/lib.rs
+- confidence: cited
+  path: crates/specify/ess-composition/tests/adversary_reader_conformance.rs
+- confidence: cited
+  path: website/docs/reference/formats.md
+- confidence: cited
+  path: website/docs/reference/spec-versions.md
+revision: 4
 ---
 ## Outcome
 

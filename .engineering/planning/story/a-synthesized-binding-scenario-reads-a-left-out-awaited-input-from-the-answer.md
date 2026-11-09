@@ -13,7 +13,18 @@ relations:
 - serves: vision:O2
 - decomposes: epic:adopter-gaps-synthesis
 - decomposes: epic:zero-open-issues-2026-11
-revision: 3
+scope:
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/go/runtime.go
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/runner.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/synthesize/system_issued.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/ts/runtime.ts
+- confidence: cited
+  path: crates/verify/ess-conformance/tests/system_issued_interpreter.rs
+revision: 5
 ---
 ## Need
 

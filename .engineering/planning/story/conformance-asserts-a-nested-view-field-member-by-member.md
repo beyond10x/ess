@@ -12,7 +12,14 @@ refs:
 relations:
 - decomposes: epic:zero-open-issues-2026-11
 - depends_on: story:a-view-field-nests-source-fields-under-a-struct-member
-revision: 2
+scope:
+- confidence: cited
+  path: crates/verify/ess-conformance/src/interpret/views.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/synthesize.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/tests/view_nested_field.rs
+revision: 4
 ---
 ## Need
 

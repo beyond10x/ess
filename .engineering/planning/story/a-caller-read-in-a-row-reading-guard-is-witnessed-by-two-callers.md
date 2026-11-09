@@ -14,7 +14,22 @@ refs:
 relations:
 - decomposes: epic:zero-open-issues-2026-11
 - depends_on: story:caller-attributes-are-readable-in-a-when-related-predicate
-revision: 3
+scope:
+- confidence: cited
+  path: crates/verify/ess-conformance/src/interpret/execute/row_set.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/interpret/execute/set_effects.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/synthesize/caller.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/synthesize/caller/arranged.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/synthesize/related_guard.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/synthesize/row_set.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/tests/caller_values.rs
+revision: 5
 ---
 ## Need
 

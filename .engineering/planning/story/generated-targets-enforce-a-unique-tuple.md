@@ -13,7 +13,22 @@ relations:
 - decomposes: epic:zero-open-issues-2026-11
 - depends_on: story:an-identity-may-be-a-composite-of-fields
 - depends_on: story:synthesis-witnesses-a-unique-tuple-collision
-revision: 2
+scope:
+- confidence: inferred
+  path: crates/generate/ess-entity-runtime/src/subset.rs
+- confidence: inferred
+  path: crates/generate/ess-gen/src/http.rs
+- confidence: inferred
+  path: crates/generate/ess-synth/src/determined.rs
+- confidence: inferred
+  path: crates/generate/ess-synth/src/go/behaviour.rs
+- confidence: inferred
+  path: crates/generate/ess-synth/src/rust/behaviour.rs
+- confidence: inferred
+  path: crates/verify/ess-diff/src/delta.rs
+- confidence: inferred
+  path: website/docs/reference/entity-runtime-lowering.md
+revision: 3
 ---
 ## Need
 

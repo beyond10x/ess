@@ -14,7 +14,10 @@ relations:
 - informed_by: release-plan:ess-063-downstream
 - decomposes: epic:adopter-gaps-verdicts
 - decomposes: epic:zero-open-issues-2026-11
+- depends_on: story:ess-37-and-conformance-64-65-are-open-for-the-epics-constructs
 scope:
+- confidence: cited
+  path: crates/specify/ess-primitives/src/facts.rs
 - confidence: inferred
   path: crates/verify/ess-conformance/src/scenario.rs
 - confidence: cited
@@ -23,7 +26,7 @@ scope:
   path: crates/verify/ess-conformance/tests/integer_literal_token.rs
 - confidence: cited
   path: website/docs/guides/verify/runners.md
-revision: 6
+revision: 7
 ---
 ## Outcome
 

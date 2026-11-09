@@ -15,7 +15,12 @@ tags:
 relations:
 - informed_by: review-result:w086-u4-adversary-pass-2
 - decomposes: epic:zero-open-issues-2026-11
-revision: 3
+scope:
+- confidence: cited
+  path: crates/ui/ess-ui/src/locate.rs
+- confidence: inferred
+  path: crates/ui/ess-ui/tests/
+revision: 5
 ---
 ## Need
 

@@ -15,7 +15,22 @@ relations:
 - serves: vision:O2
 - decomposes: epic:adopter-gaps-delivery
 - decomposes: epic:zero-open-issues-2026-11
-revision: 6
+scope:
+- confidence: cited
+  path: crates/edge/ess-cli/src/main.rs
+- confidence: inferred
+  path: crates/edge/ess-cli/src/vendor.rs
+- confidence: inferred
+  path: crates/edge/ess-cli/tests/vendor.rs
+- confidence: inferred
+  path: crates/specify/ess-composition/src/lib.rs
+- confidence: inferred
+  path: crates/specify/ess-composition/src/vendor.rs
+- confidence: cited
+  path: docs/design/composition-type-conformance.md
+- confidence: inferred
+  path: website/docs/reference/cli.md
+revision: 8
 ---
 ## Need
 

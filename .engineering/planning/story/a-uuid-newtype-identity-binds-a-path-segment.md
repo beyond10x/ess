@@ -14,7 +14,22 @@ refs:
   reference: beyond10x/ess#755
 relations:
 - decomposes: epic:zero-open-issues-2026-11
-revision: 6
+scope:
+- confidence: inferred
+  path: crates/generate/ess-gen/tests/openapi_http.rs
+- confidence: cited
+  path: crates/generate/ess-synth/src/rust/http/bound.rs
+- confidence: cited
+  path: crates/generate/ess-synth/tests/http_binding/go.rs
+- confidence: cited
+  path: crates/specify/ess-http/src/lib.rs
+- confidence: inferred
+  path: crates/specify/ess-http/tests/compile.rs
+- confidence: cited
+  path: docs/design/http-presentation-binding.md
+- confidence: cited
+  path: website/docs/guides/http-routes.md
+revision: 8
 ---
 ## Need
 

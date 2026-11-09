@@ -14,7 +14,18 @@ tags:
 relations:
 - serves: vision:O2
 - decomposes: epic:zero-open-issues-2026-11
-revision: 3
+scope:
+- confidence: cited
+  path: crates/ui/ess-ui-react/templates/runtime/expr.ts.tmpl
+- confidence: inferred
+  path: crates/ui/ess-ui-test/tests/form_toggle.rs
+- confidence: cited
+  path: crates/ui/ess-ui-tui/src/app.rs
+- confidence: inferred
+  path: crates/ui/ess-ui-tui/src/view.rs
+- confidence: cited
+  path: crates/ui/ess-ui/src/filter.rs
+revision: 5
 ---
 ## Need
 

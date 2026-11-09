@@ -15,7 +15,14 @@ tags:
 relations:
 - informed_by: review-result:adversary-w2-gen2-pass-1
 - decomposes: epic:zero-open-issues-2026-11
-revision: 3
+scope:
+- confidence: cited
+  path: crates/generate/ess-synth/tests/adversary_w2_gen2_adversary.rs
+- confidence: cited
+  path: crates/specify/ess-domain/src/component.rs
+- confidence: inferred
+  path: crates/specify/ess-domain/tests/
+revision: 5
 ---
 ## Need
 

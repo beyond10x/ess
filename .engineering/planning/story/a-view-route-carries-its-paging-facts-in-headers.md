@@ -12,7 +12,22 @@ refs:
 relations:
 - decomposes: epic:zero-open-issues-2026-11
 - depends_on: story:a-view-answer-takes-its-protocols-list-shape
-revision: 2
+scope:
+- confidence: inferred
+  path: crates/generate/ess-gen/src/docs.rs
+- confidence: cited
+  path: crates/generate/ess-gen/src/openapi.rs
+- confidence: inferred
+  path: crates/generate/ess-gen/tests/openapi_http.rs
+- confidence: cited
+  path: crates/specify/ess-http/src/lib.rs
+- confidence: inferred
+  path: crates/specify/ess-http/tests/view_headers.rs
+- confidence: cited
+  path: docs/design/http-presentation-binding.md
+- confidence: inferred
+  path: website/docs/reference/formats.md
+revision: 4
 ---
 ## Need
 

@@ -11,7 +11,14 @@ refs:
   reference: beyond10x/ess#564
 relations:
 - decomposes: epic:zero-open-issues-2026-11
-revision: 2
+scope:
+- confidence: cited
+  path: crates/verify/ess-conformance/src/synthesize/view_reference.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/tests/fixtures/
+- confidence: cited
+  path: crates/verify/ess-conformance/tests/row_queries_navigate_a_reference.rs
+revision: 4
 ---
 ## Need
 

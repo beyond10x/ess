@@ -11,7 +11,12 @@ refs:
   reference: beyond10x/ess#728
 relations:
 - decomposes: epic:zero-open-issues-2026-11
-revision: 2
+scope:
+- confidence: cited
+  path: crates/verify/ess-conformance/src/synthesize.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/tests/arrangement_refusal_names_every_creator.rs
+revision: 4
 ---
 ## Need
 

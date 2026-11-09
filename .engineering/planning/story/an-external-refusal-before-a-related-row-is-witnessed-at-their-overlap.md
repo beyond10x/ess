@@ -12,7 +12,22 @@ refs:
 relations:
 - decomposes: epic:zero-open-issues-2026-11
 - depends_on: story:a-related-row-may-answer-before-input-guards
-revision: 2
+scope:
+- confidence: cited
+  path: crates/specify/ess-domain/src/command.rs
+- confidence: cited
+  path: crates/specify/ess-domain/tests/precedence_classification.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/synthesize/existence.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/synthesize/related_guard.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/synthesize/row_set.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/tests/explore_before_row.rs
+- confidence: inferred
+  path: docs/design/cross-record-and-stored-field-guards.md
+revision: 4
 ---
 ## Need
 

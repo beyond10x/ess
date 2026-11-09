@@ -12,7 +12,20 @@ refs:
 relations:
 - decomposes: epic:zero-open-issues-2026-11
 - depends_on: story:the-ui-test-runner-acts-on-an-action-inside-an-overlay
-revision: 2
+scope:
+- confidence: inferred
+  path: crates/ui/ess-ui-test/src/parity.rs
+- confidence: cited
+  path: crates/ui/ess-ui-test/src/runner.rs
+- confidence: cited
+  path: crates/ui/ess-ui-test/src/screen.rs
+- confidence: inferred
+  path: crates/ui/ess-ui-test/tests/journey_regions.rs
+- confidence: cited
+  path: crates/ui/ess-ui-tui/src/view.rs
+- confidence: inferred
+  path: website/docs/reference/ess-ui-test.md
+revision: 4
 ---
 ## Need
 

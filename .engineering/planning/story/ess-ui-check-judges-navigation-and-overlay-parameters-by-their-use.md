@@ -16,7 +16,20 @@ relations:
 - serves: vision:O2
 - decomposes: epic:zero-open-issues-2026-11
 - depends_on: story:ui-component-diagnostics-cite-their-own-view-and-reader
-revision: 3
+scope:
+- confidence: cited
+  path: crates/ui/ess-ui-check/src/lib.rs
+- confidence: cited
+  path: crates/ui/ess-ui-check/src/names.rs
+- confidence: cited
+  path: crates/ui/ess-ui-check/src/rules.rs
+- confidence: cited
+  path: crates/ui/ess-ui-check/tests/checks.rs
+- confidence: inferred
+  path: schemas/ui/ess-ui.schema.yaml
+- confidence: inferred
+  path: website/docs/reference/ess-ui.md
+revision: 5
 ---
 ## Need
 

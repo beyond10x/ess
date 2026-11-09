@@ -16,7 +16,39 @@ relations:
 - informed_by: architecture-decision-record:a-command-guard-reads-a-component-setting
 - decomposes: epic:adopter-gaps-wire-and-answers
 - decomposes: epic:zero-open-issues-2026-11
-revision: 5
+- depends_on: story:ess-37-and-conformance-64-65-are-open-for-the-epics-constructs
+scope:
+- confidence: cited
+  path: crates/generate/ess-synth/src/rust/behaviour.rs
+- confidence: inferred
+  path: crates/specify/ess-compiler/src/ir.rs
+- confidence: cited
+  path: crates/specify/ess-compiler/src/resolve.rs
+- confidence: cited
+  path: crates/specify/ess-domain/src/component.rs
+- confidence: cited
+  path: crates/specify/ess-domain/src/expression.rs
+- confidence: cited
+  path: crates/specify/ess-domain/src/system.rs
+- confidence: cited
+  path: crates/specify/ess-domain/src/view.rs
+- confidence: cited
+  path: crates/specify/ess-domain/src/view/from.rs
+- confidence: inferred
+  path: crates/specify/ess-domain/tests/view_settings.rs
+- confidence: cited
+  path: crates/specify/ess-http/src/lib.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/interpret/views.rs
+- confidence: cited
+  path: crates/verify/ess-diff/src/diff.rs
+- confidence: inferred
+  path: docs/design/component-setting-reads.md
+- confidence: cited
+  path: docs/design/language-grids.md
+- confidence: inferred
+  path: schemas/generated/ess.schema.json
+revision: 7
 ---
 ## Need
 

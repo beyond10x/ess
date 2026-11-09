@@ -15,7 +15,18 @@ tags:
 relations:
 - depends_on: story:ess-manages-its-toolchain
 - decomposes: epic:zero-open-issues-2026-11
-revision: 5
+scope:
+- confidence: cited
+  path: crates/edge/ess-cli/src/input_discovery.rs
+- confidence: cited
+  path: crates/edge/ess-cli/src/requires.rs
+- confidence: cited
+  path: crates/edge/ess-cli/src/toolchain.rs
+- confidence: inferred
+  path: crates/edge/ess-cli/tests/toolchain.rs
+- confidence: inferred
+  path: website/docs
+revision: 7
 ---
 ## Need
 

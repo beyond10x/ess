@@ -13,7 +13,12 @@ relations:
 - serves: vision:O2
 - decomposes: epic:adopter-gaps-synthesis
 - decomposes: epic:zero-open-issues-2026-11
-revision: 3
+scope:
+- confidence: inferred
+  path: .engineering/repro/
+- confidence: inferred
+  path: website/docs/reference/diagnostics.md
+revision: 4
 ---
 ## Outcome
 

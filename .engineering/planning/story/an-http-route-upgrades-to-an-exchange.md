@@ -16,7 +16,18 @@ relations:
 - informed_by: architecture-decision-record:messages-are-exchanged-independent-of-the-wire
 - depends_on: story:an-exchange-is-declared-in-the-specification
 - decomposes: epic:zero-open-issues-2026-11
-revision: 3
+scope:
+- confidence: inferred
+  path: crates/edge/ess-cli/tests/http.rs
+- confidence: cited
+  path: crates/specify/ess-http/src/lib.rs
+- confidence: cited
+  path: crates/specify/ess-http/src/status.rs
+- confidence: inferred
+  path: crates/specify/ess-http/tests/upgrade.rs
+- confidence: cited
+  path: docs/design/http-presentation-binding.md
+revision: 5
 ---
 ## Need
 

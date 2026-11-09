@@ -12,7 +12,14 @@ relations:
 - serves: vision:O2
 - decomposes: epic:adopter-gaps-verdicts
 - decomposes: epic:zero-open-issues-2026-11
-revision: 3
+scope:
+- confidence: cited
+  path: crates/verify/ess-conformance/src/go/explore.go
+- confidence: cited
+  path: crates/verify/ess-conformance/src/ts/explore.ts
+- confidence: inferred
+  path: crates/verify/ess-conformance/tests/
+revision: 5
 ---
 ## Outcome
 

@@ -15,7 +15,18 @@ tags:
 relations:
 - informed_by: review-result:adversary-w2-exp1-pass-1
 - decomposes: epic:zero-open-issues-2026-11
-revision: 3
+scope:
+- confidence: cited
+  path: crates/verify/ess-conformance/src/go/explore.go
+- confidence: cited
+  path: crates/verify/ess-conformance/src/ts/explore.ts
+- confidence: cited
+  path: crates/verify/ess-conformance/tests/explore_direct_response.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/tests/fixtures/explore-direct-response-target.mjs
+- confidence: inferred
+  path: crates/verify/ess-conformance/tests/fixtures/explore_direct_response_target.go
+revision: 5
 ---
 ## Need
 

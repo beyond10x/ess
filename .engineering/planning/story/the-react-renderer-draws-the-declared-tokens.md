@@ -15,7 +15,22 @@ refs:
   reference: beyond10x/ess#723
 relations:
 - decomposes: epic:zero-open-issues-2026-11
-revision: 5
+scope:
+- confidence: cited
+  path: crates/ui/ess-ui-react/src/assets.rs
+- confidence: inferred
+  path: crates/ui/ess-ui-react/src/emit.rs
+- confidence: inferred
+  path: crates/ui/ess-ui-react/templates/project/main.tsx.tmpl
+- confidence: inferred
+  path: crates/ui/ess-ui-react/templates/runtime/primitives/badge.tsx.tmpl
+- confidence: inferred
+  path: crates/ui/ess-ui-react/templates/runtime/primitives/button.tsx.tmpl
+- confidence: cited
+  path: crates/ui/ess-ui-react/templates/runtime/styles.css.tmpl
+- confidence: inferred
+  path: crates/ui/ess-ui-react/tests/tokens.rs
+revision: 7
 ---
 ## Need
 

@@ -11,7 +11,27 @@ refs:
   reference: beyond10x/ess#760
 relations:
 - decomposes: epic:zero-open-issues-2026-11
-revision: 2
+- depends_on: story:ess-37-and-conformance-64-65-are-open-for-the-epics-constructs
+scope:
+- confidence: inferred
+  path: crates/specify/ess-compiler/src/ir.rs
+- confidence: cited
+  path: crates/specify/ess-domain/src/view.rs
+- confidence: cited
+  path: crates/specify/ess-domain/src/view/from.rs
+- confidence: cited
+  path: crates/specify/ess-domain/src/view/navigation.rs
+- confidence: inferred
+  path: crates/specify/ess-domain/tests/view_nested_field.rs
+- confidence: inferred
+  path: crates/verify/ess-diff/src/change.rs
+- confidence: inferred
+  path: docs/design/value-expressions.md
+- confidence: inferred
+  path: schemas/generated/ess.schema.json
+- confidence: cited
+  path: website/docs/guides/specify/values-and-views.md
+revision: 4
 ---
 ## Need
 

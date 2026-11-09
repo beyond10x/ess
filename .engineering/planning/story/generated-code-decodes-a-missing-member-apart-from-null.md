@@ -13,7 +13,18 @@ relations:
 - decomposes: epic:zero-open-issues-2026-11
 - depends_on: story:an-input-keeps-missing-and-null-apart
 - depends_on: story:conformance-holds-missing-keeps-and-null-clears
-revision: 2
+scope:
+- confidence: inferred
+  path: crates/generate/ess-entity-runtime/src/lib.rs
+- confidence: cited
+  path: crates/generate/ess-gen/src/types.rs
+- confidence: inferred
+  path: crates/generate/ess-synth/src/go/
+- confidence: cited
+  path: crates/generate/ess-synth/src/rust/behaviour.rs
+- confidence: cited
+  path: website/docs/reference/entity-runtime-lowering.md
+revision: 4
 ---
 ## Need
 

@@ -11,7 +11,22 @@ refs:
   reference: beyond10x/ess#722
 relations:
 - decomposes: epic:zero-open-issues-2026-11
-revision: 2
+scope:
+- confidence: inferred
+  path: crates/ui/ess-ui-test/src/parity.rs
+- confidence: inferred
+  path: crates/ui/ess-ui-test/src/playwright.rs
+- confidence: cited
+  path: crates/ui/ess-ui-test/src/runner.rs
+- confidence: cited
+  path: crates/ui/ess-ui-test/src/spec.rs
+- confidence: inferred
+  path: crates/ui/ess-ui-test/tests/fixture_answers.rs
+- confidence: cited
+  path: crates/ui/ess-ui-tui/src/data.rs
+- confidence: cited
+  path: website/docs/reference/ess-ui-test.md
+revision: 4
 ---
 ## Need
 
