@@ -2,6 +2,31 @@
 
 ## [Unreleased]
 
+## [0.92.0] — 2026-11-09
+
+### Added
+
+- `ess-ui/1` React target: `ess generate ui --target react` generates a document holding host slots instead of refusing it. The project exports `src/hosts.ts`, the `HostComponents` registry type with exactly one entry per declared `host` name, each a component receiving `{ adapter, path, page, scope }`: a data adapter narrowed to the slot's declared `reads` and `commands` (`read` of its view, `send` of its commands, and neither where it declares none; any other view or command is refused with status 403 at run time), the slot's node path, the page's route parameters and the scope values in force at the slot's position. `App` requires a registry of that type, and `main.tsx` imports it as `hosts` from the host's own `src/host-components.tsx`, which is never generated; a slot left unregistered, a name no slot declares, and a read or command the slot does not declare each fail `tsc`. A registered slot renders at its position inside the element carrying `data-ui-path` (its path) and `data-ui-host` (its `host`): the page, section or overlay frame where the slot is one, its own element where it is a nested node, a tab's `form` or a field. A document without a slot generates byte for byte as before, apart from the optional `host` prop of the page, section and overlay frames and `host` member of `FieldSpec` in the runtime (story:the-react-project-registers-each-declared-host-slot).
+- `ess ui run --tui` and `ess generate ui --target tui`: a document holding a host slot is drawn instead of refused. The terminal cannot draw the host's component, so it draws a placeholder at the slot's path labelled `<host>: <reason>`: a bordered box for a page (below its title and header), a section, an overlay and a node (a section's child, a tab's nested node, a record's item or a form's part), and `│<host>: <reason>│` in place of the value of a field slot (a form field, a record field or a collection cell). The terminal records the region at the slot's path for a page, a section, an overlay, a section's child, a field of a section's or an overlay's own form, and a field slot or a tab's `form` slot of a section's or an overlay's own record, and keys at a form field slot edit nothing, so the form never sends a value the host's input did not set (story:the-terminal-draws-a-host-slot-as-a-labelled-region).
+- `ess-ui-test/1`: a `text` or `not_text` check at a host slot's path reads the terminal's label there. A step that acts inside a slot — `act`, `select`, `mark`, `move`, `upload`, `type`, `choose` or `page` at the slot's path (a column slot addressed in a row, `<collection>/rows/<key>/columns/<c>`, included) or a path below it that names no node of the document — is refused by one rule in both renderers, `` `<path>` is host slot `<host>`: the host draws it, so a test cannot act inside it ``: the terminal run fails at that step and the Playwright spec marks the test `test.fixme` with the same reason. A page slot's own header and overlays are the document's and are driven as before. The Playwright spec marks a `text` or `not_text` check at a slot (other than a page) `test.fixme`, because the generated app draws the host's component there and not the terminal's label (story:the-terminal-draws-a-host-slot-as-a-labelled-region).
+
+### Changed
+
+- `ess generate ui --target react` and the terminal renderer no longer refuse a document holding a host slot, which 0.90.0 and 0.91.0 did with "validated by `ess ui check` and not generated yet".
+
+## [0.91.2] — 2026-11-09
+
+### Fixed
+
+- Generated Go conformance runner: a suite holding a complete subject comparison around a system-issued command is admitted. For a `system: true` command's refusal synthesis writes `snapshot_complete_subject`, then `expect_not_issued` (or `await_outcome`), then `query_view` and `expect_complete_subject_unchanged`; the Go admission counted only a sent command between the snapshot and the comparison and refused the whole suite with `complete subject comparison lacks its fresh original pair`, so no scenario ran, while the Rust and interpreted runners passed it. Go now counts an awaited or not-issued step as the one command the comparison brackets, as the Rust admission does, and judges each scenario with the Rust runner's verdict, a row changed behind the refusal included. The TypeScript runner already did (story:the-go-and-typescript-runners-admit-and-judge-an-awaited-optional-suite-like-rust).
+
+## [0.91.1] — 2026-11-09
+
+### Fixed
+
+- Release: 0.91.0 was tagged but never released: its format history lacked the release of `ess/36`, so its packaging refused the tag. 0.91.1 carries the same content, with `ess/36` recorded as introduced in 0.91.1; the 0.91.0 tag stays, without a release, and `task release-status` names it as such.
+- CI: the required gate now runs `cargo xtask release verify` with the workspace version whenever that version is not tagged yet, so a release whose packaging would refuse it, such as one shipping a format whose release is not recorded, fails on its pull request rather than after the tag is pushed. The release candidate job of a queue branch fails the same way; before, it read that refusal as "not a dated release" and skipped.
+
 ## [0.91.0] — 2026-11-08
 
 ### Added

@@ -66,6 +66,8 @@ export function OverlayFrame(props: {
   "data-ui-path": string;
   kind: "drawer" | "dialog" | "fullscreen" | "popover";
   title?: string;
+  /** The host slot the overlay is: the `host` its component is registered under. */
+  host?: string;
   children?: ReactNode;
 }): ReactNode {
   const scope = useScope();
@@ -77,6 +79,7 @@ export function OverlayFrame(props: {
         aria-modal="true"
         aria-label={props.title}
         data-ui-path={useUiPath(props["data-ui-path"])}
+        data-ui-host={props.host}
         onClick={(event: { stopPropagation(): void }) => event.stopPropagation()}
       >
         <div className="ui-overlay-head">

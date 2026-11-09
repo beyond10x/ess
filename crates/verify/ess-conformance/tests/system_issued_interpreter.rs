@@ -1295,6 +1295,40 @@ fn an_optional_awaited_input_left_out_or_issued_wrong_reads_alike_in_the_typescr
     }
 }
 
+/// The whole synthesized suite of the job model, on the interpreted model, gets the reference
+/// verdict per scenario in the Go runner. `jobs.job.Job/state/Done/refuses/jobs.job.Finish`
+/// brackets the not-issued `Finish` with a complete subject comparison, which the Go admission
+/// refused for the whole suite before 0.91.2.
+#[test]
+fn the_whole_job_suite_reads_alike_in_the_go_runner() {
+    let suite = suite_for(&job_ir());
+    let directory =
+        support_go::package("job-whole", suite.suite(), &[support_go::TRANSCRIPT_TARGET]);
+    let (verdicts, recorder) = recorded(&suite, Interpreted::for_model(job_ir()));
+    assert!(
+        verdicts.contains_key("jobs.job.Job/state/Done/refuses/jobs.job.Finish"),
+        "{verdicts:?}"
+    );
+    assert_eq!(go_replay(&directory, &recorder), verdicts);
+}
+
+/// The same whole suite in the TypeScript runner.
+#[test]
+fn the_whole_job_suite_reads_alike_in_the_typescript_runner() {
+    let suite = suite_for(&job_ir());
+    let package = support_ts::Package::new("job-whole", suite.suite());
+    let (verdicts, recorder) = recorded(&suite, Interpreted::for_model(job_ir()));
+    let replayed = package.replay(&suite, &recorder.transcript(), false);
+    assert_ne!(replayed.exit, Some(2), "{}", replayed.log);
+    assert!(
+        replayed.divergences.is_empty(),
+        "the TypeScript runtime sent requests the reference runner did not:\n{}\n{}",
+        replayed.divergences.join("\n"),
+        replayed.log
+    );
+    assert_eq!(replayed.outcomes, verdicts, "{}", replayed.log);
+}
+
 /// The Go runtime's verdicts replaying what `recorder` wrote.
 fn go_replay<T>(
     directory: &std::path::Path,

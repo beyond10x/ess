@@ -378,7 +378,12 @@ fn refusal(step: &Step, document: &Document) -> Option<String> {
         | Step::Type { at, .. }
         | Step::Choose { at, .. }
         | Step::Act { at }
-        | Step::Page { at, .. } => (at, None),
+        | Step::Page { at, .. } => {
+            if let Some(reason) = crate::parity::inside_host(document, at) {
+                return Some(reason);
+            }
+            (at, None)
+        }
         Step::Expect { at, checks } => (at, Some(checks)),
         Step::Open { .. }
         | Step::Play(_)
@@ -408,7 +413,10 @@ fn refusal(step: &Step, document: &Document) -> Option<String> {
     checks
         .iter()
         .filter(|check| matches!(check, Check::Text(_) | Check::NotText(_)))
-        .find_map(|_| crate::parity::text(document, &target))
+        .find_map(|_| {
+            crate::parity::text(document, &target)
+                .or_else(|| crate::parity::host_text(document, &target))
+        })
 }
 
 #[allow(clippy::too_many_lines)] // one arm per step

@@ -14,8 +14,12 @@
 //!   where React renders the item instead of the cells;
 //! - a references list's rows are not addressed by React, so a path into them is refused;
 //! - `text` reads a node that has cells of its own: the page, a section, an overlay, the page
-//!   header and its actions, a section's child, and the collection parts above; and never an
-//!   icon action or an action drawn as a choice, which show no label in the browser.
+//!   header and its actions, a section's child, a field slot of a section's or an overlay's own
+//!   form, and the collection parts above; and never an icon action or an action drawn as a
+//!   choice, which show no label in the browser;
+//! - a host slot is drawn by the host in the generated app and as a labelled region by the
+//!   terminal, so a step that acts inside it is refused ([`inside_host`]), and the spec marks a
+//!   `text` check at it `test.fixme` ([`host_text`]).
 
 use ess_ui::{ActionAs, Body, Collection, Composite, Document, NodeRef};
 
@@ -170,7 +174,15 @@ pub(crate) fn undriven(document: &Document, target: &Target) -> Option<String> {
         let is_node = document.nodes().into_iter().any(|located| {
             located.path.to_string() == form && matches!(located.node, NodeRef::Node(_))
         });
-        if is_node {
+        // A tab's slot is drawn as its label, recorded at its own path: read, never driven
+        // ([`inside_host`] refuses a step that acts there).
+        let is_slot = target.row.is_none()
+            && target.node == form
+            && document
+                .host_slots()
+                .into_iter()
+                .any(|(path, _)| path.to_string() == form);
+        if is_node && !is_slot {
             return Some(format!(
                 "{path}: the terminal draws a tab's nested node but does not move into it, so \
                  one test cannot drive it in both renderers"
@@ -178,6 +190,53 @@ pub(crate) fn undriven(document: &Document, target: &Target) -> Option<String> {
         }
     }
     None
+}
+
+/// Why a step that acts at `written` — `act`, `select`, `mark`, `move`, `upload`, `type`,
+/// `choose` or `page` — is refused because it acts inside a host slot, if it does: the host draws
+/// what is inside the slot, in both renderers. Holds at the slot's path, and at a path below it
+/// that names no node of the document (a page slot's own header and overlays are the
+/// document's). A path that resolves is compared by its node, so a column slot addressed in a
+/// row (`<collection>/rows/<key>/columns/<c>`) is the slot. The innermost slot is named.
+pub(crate) fn inside_host(document: &Document, written: &str) -> Option<String> {
+    let node = crate::target::resolve(document, written)
+        .ok()
+        .map(|target| target.node);
+    document
+        .host_slots()
+        .into_iter()
+        .map(|(path, slot)| (path.to_string(), slot))
+        .filter(|(path, _)| match &node {
+            Some(node) => node == path,
+            None => written
+                .strip_prefix(path.as_str())
+                .is_some_and(|rest| rest.starts_with('/')),
+        })
+        .max_by_key(|(path, _)| path.len())
+        .map(|(_, slot)| {
+            format!(
+                "`{written}` is host slot `{}`: the host draws it, so a test cannot act inside it",
+                slot.host
+            )
+        })
+}
+
+/// Why the Playwright spec marks a `text` or `not_text` check at `target` `test.fixme` because
+/// it is a host slot other than a page, if it is: the generated app draws the host's component
+/// there, where the terminal draws its label.
+pub(crate) fn host_text(document: &Document, target: &Target) -> Option<String> {
+    if target.row.is_some() || target.is_page() {
+        return None;
+    }
+    let (_, slot) = document
+        .host_slots()
+        .into_iter()
+        .find(|(path, _)| path.to_string() == target.node)?;
+    Some(format!(
+        "`{}` is host slot `{}`: the generated app draws the host's component there, not the \
+         terminal's label, so its text is the host's",
+        target.written, slot.host
+    ))
 }
 
 /// Why `text` (or `not_text`) at `target` is refused, if it is: a node the generated app renders
@@ -228,6 +287,13 @@ pub(crate) fn text(document: &Document, target: &Target) -> Option<String> {
     if target.is_page() || target.is_section() {
         return None;
     }
+    // A field slot of a section's or an overlay's own form: the terminal draws its label on the
+    // field's line, recorded at the field's path.
+    if own_form_field(document, target).is_some_and(|field| field.host.is_some())
+        || own_record_slot(document, target)
+    {
+        return None;
+    }
     if let Some((_, overlay)) = target.overlay() {
         if overlay == target.node {
             return None;
@@ -276,6 +342,47 @@ pub(crate) fn checked(document: &Document, target: &Target) -> Option<String> {
 /// overlay's own form, directly or in one of its groups or tabs. Both renderers draw it at its
 /// path: the terminal on the field's line, the generated app as a checkbox in the field's label.
 pub(crate) fn form_toggle(document: &Document, target: &Target) -> Option<ess_ui::Field> {
+    own_form_field(document, target).filter(|field| field.field_as.as_deref() == Some("toggle"))
+}
+
+/// Whether `target` is a host slot of a section's or an overlay's own record — a field, a field
+/// of a tab, or a tab's `form` — which the terminal records on lines of its own at its path.
+fn own_record_slot(document: &Document, target: &Target) -> bool {
+    if target.row.is_some() {
+        return false;
+    }
+    let is_slot = document
+        .host_slots()
+        .into_iter()
+        .any(|(path, _)| path.to_string() == target.node);
+    let segments: Vec<&str> = target.node.split('/').collect();
+    // A tab's field first: its owner is the record that holds the tab.
+    let ([owner @ .., "tabs", _, "fields", _]
+    | [owner @ .., "tabs", _, "form"]
+    | [owner @ .., "fields", _]) = segments.as_slice()
+    else {
+        return false;
+    };
+    let owner = owner.join("/");
+    is_slot
+        && document.nodes().into_iter().any(|located| {
+            located.path.to_string() == owner
+                && matches!(
+                    located.node,
+                    NodeRef::Section(ess_ui::Section {
+                        body: Body::Composite(Composite::Record(_)),
+                        ..
+                    }) | NodeRef::Overlay(ess_ui::Overlay {
+                        body: Body::Composite(Composite::Record(_)),
+                        ..
+                    })
+                )
+        })
+}
+
+/// The field at `target` of a section's or an overlay's own form, directly or in one of its
+/// groups or tabs: the terminal records its line at its path.
+fn own_form_field(document: &Document, target: &Target) -> Option<ess_ui::Field> {
     if target.row.is_some() {
         return None;
     }
@@ -308,12 +415,7 @@ pub(crate) fn form_toggle(document: &Document, target: &Target) -> Option<ess_ui
         return None;
     }
     nodes.into_iter().find_map(|located| match located.node {
-        NodeRef::Field(field)
-            if located.path.to_string() == target.node
-                && field.field_as.as_deref() == Some("toggle") =>
-        {
-            Some(field.clone())
-        }
+        NodeRef::Field(field) if located.path.to_string() == target.node => Some(field.clone()),
         _ => None,
     })
 }

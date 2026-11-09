@@ -486,6 +486,11 @@ const WITHOUT_RELEASE: &[(&str, &str)] = &[(
      `consumer_coverage::metadata::tests::current_compiled_provider_executes_one_guard_and_binds_\
      its_opaque_proof_to_this_run`. The tag stays public and the release cannot be gated. Remove \
      this entry if that tree is ever made to pass.",
+), (
+    "0.91.0",
+    "its tree records no release for `ess/36` in FORMAT_HISTORY, so `cargo xtask release verify \
+     0.91.0` refuses it and release run 42528706040 could not package it. A consumer already \
+     binds the tag, so it stays public; 0.91.1 carries the same content with `ess/36` recorded.",
 )];
 
 /// The release record: what the workspace claims, and what the remote actually carries.

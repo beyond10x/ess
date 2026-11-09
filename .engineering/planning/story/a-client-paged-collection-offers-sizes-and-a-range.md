@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-client-paged-collection-offers-sizes-and-a-range
 kind: story
-status: active
+status: implemented
 title: A client-paged collection offers page sizes, a from-to range and resets on filter
 summary: 'Gap B4-7 (G-27): client pager sizes, range label for every pager, page reset on filter change'
 tags:
@@ -33,10 +33,11 @@ scope:
   path: schemas/ui/ess-ui.schema.yaml
 - confidence: inferred
   path: website/docs/reference/ess-ui.md
-revision: 17
+revision: 18
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-06T22:19:03Z", actor: "human:timo", revision: 2}
 - {from: "proposed", to: "active", at: "2026-11-06T22:19:04Z", actor: "human:timo", revision: 3}
+- {from: "active", to: "implemented", at: "2026-11-08T22:10:12Z", actor: "human:timo", revision: 18, decided_on: {"recorded":{"test_result":1}}}
 ---
 ## Need
 

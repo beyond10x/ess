@@ -38,6 +38,7 @@ const RUNTIME: &[Module] = &[
     module!("runtime/shell", "tsx"),
     module!("runtime/navigation", "tsx"),
     module!("runtime/widget", "tsx"),
+    module!("runtime/hosts", "tsx"),
     module!("runtime/composites/collection", "tsx"),
     module!("runtime/composites/record", "tsx"),
     module!("runtime/composites/form", "tsx"),

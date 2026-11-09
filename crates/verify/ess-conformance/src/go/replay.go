@@ -277,7 +277,9 @@ func admitCompleteSubjectSteps(steps []Step) error {
 	queried := ""
 	for _, step := range steps {
 		switch step.Step {
-		case "execute_command", "execute_command_without_input":
+		// A step the system takes itself, awaited or required not to happen, is the one command a
+		// complete comparison brackets as a sent one is, as in the Rust admission (beyond10x/ess#542).
+		case "execute_command", "execute_command_without_input", "await_outcome", "expect_not_issued":
 			for _, saved := range pending {
 				if invocation > saved.invocation {
 					return fmt.Errorf("extra command precedes complete subject comparison")

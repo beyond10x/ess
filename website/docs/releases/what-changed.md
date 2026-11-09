@@ -9,6 +9,22 @@ What each ESS release is worth to somebody using it: what became possible, how m
 
 This page is generated from the change records kept in the repository. A release with no entry here added nothing somebody using ESS would act on.
 
+## 0.92.0 — 2026-11-09
+
+### React projects register host slots, and the terminal draws them as labelled regions
+
+capability · significant impact · [release notes](https://github.com/beyond10x/ess/releases/tag/0.92.0)
+
+A UI document holding host slots now generates for React: the project exports a registry type with one entry per slot, each component receiving a data adapter narrowed to the slot's declared reads and commands. The terminal draws each slot as a labelled placeholder, and a UI test step that acts inside a slot is refused by one rule in both renderers.
+
+## 0.91.1 — 2026-11-09
+
+### Aggregate measures compute expressions, enums can be ordered, and host slots are checked
+
+capability · significant impact · [release notes](https://github.com/beyond10x/ess/releases/tag/0.91.1)
+
+From format ess/36 an aggregate measure may compute an expression of its source row, sum and avg admit a Duration, and an enum declaring ordered true gives min and max an order. ess ui check holds a host slot's reads and commands to the specification, and a client-paged collection takes a pager. 0.91.0 had no release; 0.91.1 carries its content.
+
 ## 0.90.0 — 2026-11-07
 
 ### UI documents declare host slots, and synthesis witnesses guards over lists of identities

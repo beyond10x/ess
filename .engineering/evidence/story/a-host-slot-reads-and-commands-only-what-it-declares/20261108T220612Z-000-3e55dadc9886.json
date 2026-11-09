@@ -1,0 +1,12 @@
+{
+  "at": "2026-11-08T22:06:12Z",
+  "actor": "human:timo",
+  "artifact": "story:a-host-slot-reads-and-commands-only-what-it-declares",
+  "kind": "story",
+  "revision": 11,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "https://github.com/beyond10x/ess/actions/runs/42522488565 (PR 767 Gate, 0.91.0)"
+  }
+}

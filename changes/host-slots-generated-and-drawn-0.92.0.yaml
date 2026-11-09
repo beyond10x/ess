@@ -1,0 +1,17 @@
+schema: b10x-change/v1
+id: ess/host-slots-generated-and-drawn-0.92.0
+repository: ess
+publishedAt: 2026-11-09T00:00:00Z
+title: React projects register host slots, and the terminal draws them as labelled regions
+summary: >-
+  A UI document holding host slots now generates for React: the project exports a registry type
+  with one entry per slot, each component receiving a data adapter narrowed to the slot's declared
+  reads and commands. The terminal draws each slot as a labelled placeholder, and a UI test step
+  that acts inside a slot is refused by one rule in both renderers.
+kind: capability
+impact: significant
+source:
+  url: https://github.com/beyond10x/ess/releases/tag/0.92.0
+  version: 0.92.0
+journeys: [specify, operate-services]
+affectedSurfaces: [ess/docs]
