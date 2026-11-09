@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- `ess infra infra graph --format dot` renders the infrastructure graph as Graphviz DOT instead of exiting 1 with `the infrastructure graph supports mermaid, json, and yaml`, although `--help` listed `dot`. The DOT text draws the node and edge set the Mermaid rendering draws, one `cluster_<namespace>` subgraph per namespace in name order, a cluster-scoped node outside every cluster, each node identified by its kind prefix and IR key (`"wl:shop/deployment/api"`), and each edge labelled with its relation's name (`reads-key-of`, `owned-by`); `dot -Tsvg` reads it.
+
 ### Changed
 
 - Release: a patch tag (`X.Y.Z`, Z > 0) runs a targeted gate instead of the 20 test shards: `Hotfix checks` (`task ci-lint` and `task ci-smoke`) and `Hotfix tests` (the workspace crates changed since the previous tag and their direct dependents, as `.github/scripts/hotfix-scope.sh` selects them), beside the package builds. A change the script cannot map to crates runs the full gate, and so do a minor or major tag and a backfill.

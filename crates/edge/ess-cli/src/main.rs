@@ -6087,9 +6087,7 @@ fn infra(command: InfraCommand) -> Result<ExitCode> {
                     &infra_analyze::GraphDocument::of(&graph, &ir, namespace.as_deref()),
                     Format::Yaml,
                 )?,
-                GraphFormat::Dot => {
-                    bail!("the infrastructure graph supports mermaid, json, and yaml")
-                }
+                GraphFormat::Dot => print!("{}", graph.dot()),
             }
             Ok(ExitCode::SUCCESS)
         }

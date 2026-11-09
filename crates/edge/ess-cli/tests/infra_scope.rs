@@ -82,6 +82,37 @@ fn both_import_spellings_preserve_scope_through_graph_diff_and_projection_refusa
 }
 
 #[test]
+fn the_infrastructure_graph_renders_as_dot_and_graphviz_parses_it() {
+    let source = root().join("crates/infra/infra-compiler/tests/fixtures/namespace-topology.json");
+    let output = Command::new(env!("CARGO_BIN_EXE_ess"))
+        .args(["infra", "infra", "graph", "--path"])
+        .arg(&source)
+        .args(["--format", "dot"])
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{output:?}");
+    let dot = String::from_utf8(output.stdout).unwrap();
+    assert!(dot.contains("digraph infrastructure {\n"), "{dot}");
+    assert!(dot.contains("subgraph \"cluster_app\" {"), "{dot}");
+
+    let scratch =
+        Path::new(env!("CARGO_TARGET_TMPDIR")).join(format!("infra-dot-{}", std::process::id()));
+    std::fs::create_dir_all(&scratch).unwrap();
+    let file = scratch.join("graph.dot");
+    std::fs::write(&file, &dot).unwrap();
+    match Command::new("dot").arg("-Tsvg").arg(&file).output() {
+        Ok(svg) => {
+            assert!(
+                svg.status.success(),
+                "dot -Tsvg refused the output: {svg:?}"
+            );
+            assert!(String::from_utf8_lossy(&svg.stdout).contains("<svg"));
+        }
+        Err(error) => println!("skip: Graphviz `dot` is not runnable here ({error})"),
+    }
+}
+
+#[test]
 fn importing_a_legacy_ir_writes_no_secret_digest_it_carried() {
     // A persisted `infra-ir/1` still carries the scanner's unsalted `{sha256, length}` per Secret
     // key. Reading it is allowed; writing it again is not: anything this build writes records a

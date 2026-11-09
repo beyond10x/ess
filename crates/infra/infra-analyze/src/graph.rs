@@ -239,6 +239,22 @@ impl EdgeRelation {
             Self::ScheduledOn => "is scheduled on",
         }
     }
+
+    /// The relation's name as the JSON document spells it: `owned-by`, `reads-key-of`.
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::Selects => "selects",
+            Self::RoutesTo => "routes-to",
+            Self::GovernedBy => "governed-by",
+            Self::ReadsKeyOf => "reads-key-of",
+            Self::ImportsAllOf => "imports-all-of",
+            Self::Mounts => "mounts",
+            Self::Claims => "claims",
+            Self::RunsAs => "runs-as",
+            Self::OwnedBy => "owned-by",
+            Self::ScheduledOn => "scheduled-on",
+        }
+    }
 }
 
 impl fmt::Display for EdgeRelation {
@@ -995,11 +1011,7 @@ impl InfraGraph {
     pub fn mermaid(&self) -> String {
         use std::fmt::Write as _;
 
-        let drawn: Vec<&GraphNode> = self
-            .nodes
-            .iter()
-            .filter(|node| MERMAID_KINDS.contains(&node.kind))
-            .collect();
+        let drawn = self.drawn();
 
         // Identifiers are indices into the canonical node order, prefixed by kind so an
         // identifier read out of the diagram says what it is.
@@ -1035,17 +1047,12 @@ impl InfraGraph {
                 label(namespace)
             );
             for node in members {
-                let text = match node.kind {
-                    NodeKind::Workload => {
-                        // The key is `namespace/kind/name`; the label reads `kind name`.
-                        let mut parts = node.key.splitn(3, '/');
-                        let _ = parts.next();
-                        let kind = parts.next().unwrap_or_default();
-                        format!("{kind} {}", parts.next().unwrap_or_default())
-                    }
-                    other => format!("{} {}", other.noun(), node.name()),
-                };
-                let _ = writeln!(out, "        {}[\"{}\"]", ids[*node], label(&text));
+                let _ = writeln!(
+                    out,
+                    "        {}[\"{}\"]",
+                    ids[*node],
+                    label(&node_text(node))
+                );
             }
             out.push_str("    end\n");
         }
@@ -1062,12 +1069,144 @@ impl InfraGraph {
         }
         out
     }
+
+    /// The same topology as Graphviz DOT, ready for `dot -Tsvg`: the nodes and edges the
+    /// Mermaid rendering draws, one `cluster_<namespace>` subgraph per namespace, a
+    /// cluster-scoped node outside every cluster, and each edge labelled with its relation's
+    /// name.
+    ///
+    /// A node's identifier is its kind prefix and IR key (`"wl:shop/deployment/api"`), not an
+    /// index, so one object keeps its identifier whatever else the cluster holds and two
+    /// renderings of related clusters diff line by line.
+    #[must_use]
+    pub fn dot(&self) -> String {
+        use std::fmt::Write as _;
+
+        let drawn = self.drawn();
+        let mut namespaces: BTreeMap<&str, Vec<&GraphNode>> = BTreeMap::new();
+        let mut cluster_scoped: Vec<&GraphNode> = Vec::new();
+        for node in &drawn {
+            match node.namespace() {
+                Some(namespace) => namespaces.entry(namespace).or_default().push(node),
+                None => cluster_scoped.push(node),
+            }
+        }
+        let drawn_set: BTreeSet<&GraphNode> = drawn.iter().copied().collect();
+        let edges: Vec<&EdgeId> = self
+            .edges
+            .keys()
+            .filter(|(from, _, to)| drawn_set.contains(from) && drawn_set.contains(to))
+            .collect();
+
+        let mut out = String::new();
+        let _ = writeln!(
+            out,
+            "// infrastructure graph — {} node(s), {} edge(s)",
+            drawn.len(),
+            edges.len()
+        );
+        if let Some(coverage) = &self.coverage {
+            let _ = writeln!(
+                out,
+                "// namespace {}; {}",
+                dot_line(coverage.namespace()),
+                dot_line(coverage.limitation())
+            );
+        }
+        out.push_str("digraph infrastructure {\n");
+        out.push_str("  rankdir=LR;\n");
+        out.push_str("  node [fontname=\"sans-serif\", shape=box];\n");
+        out.push_str("  edge [fontname=\"sans-serif\"];\n");
+        for (namespace, members) in &namespaces {
+            let _ = writeln!(
+                out,
+                "  subgraph {} {{",
+                dot_string(&format!("cluster_{namespace}"))
+            );
+            let _ = writeln!(
+                out,
+                "    label={};",
+                dot_string(&format!("namespace {namespace}"))
+            );
+            out.push_str("    style=rounded;\n");
+            for node in members {
+                let _ = writeln!(
+                    out,
+                    "    {} [label={}];",
+                    dot_id(node),
+                    dot_string(&node_text(node))
+                );
+            }
+            out.push_str("  }\n");
+        }
+        for node in &cluster_scoped {
+            let _ = writeln!(
+                out,
+                "  {} [label={}];",
+                dot_id(node),
+                dot_string(&node_text(node))
+            );
+        }
+        for (from, relation, to) in edges {
+            let _ = writeln!(
+                out,
+                "  {} -> {} [label={}];",
+                dot_id(from),
+                dot_id(to),
+                dot_string(relation.name())
+            );
+        }
+        out.push_str("}\n");
+        out
+    }
+
+    /// The nodes both diagram renderings draw, in canonical order.
+    fn drawn(&self) -> Vec<&GraphNode> {
+        self.nodes
+            .iter()
+            .filter(|node| MERMAID_KINDS.contains(&node.kind))
+            .collect()
+    }
+}
+
+/// What a node reads as in a diagram: a workload `kind name`, anything else `noun name`.
+fn node_text(node: &GraphNode) -> String {
+    match node.kind {
+        NodeKind::Workload => {
+            // The key is `namespace/kind/name`; the label reads `kind name`.
+            let mut parts = node.key.splitn(3, '/');
+            let _ = parts.next();
+            let kind = parts.next().unwrap_or_default();
+            format!("{kind} {}", parts.next().unwrap_or_default())
+        }
+        other => format!("{} {}", other.noun(), node.name()),
+    }
 }
 
 /// Defuses what would end a quoted Mermaid string early — `ess-gen`'s escaping, kept
 /// identical so the two Mermaid emitters in this workspace cannot disagree about quoting.
 fn label(text: &str) -> String {
     text.replace('"', "#quot;").replace('\n', " ")
+}
+
+/// A node's DOT identifier: its kind prefix and IR key, quoted.
+fn dot_id(node: &GraphNode) -> String {
+    dot_string(&format!("{}:{}", node.kind.mermaid_prefix(), node.key))
+}
+
+/// A quoted DOT string: a backslash or a quote cannot end it early, a newline cannot break it.
+fn dot_string(text: &str) -> String {
+    format!(
+        "\"{}\"",
+        text.replace('\\', "\\\\")
+            .replace('"', "\\\"")
+            .replace('\n', " ")
+    )
+}
+
+/// Text for a `//` comment line: a newline would end the comment and start DOT source.
+fn dot_line(text: &str) -> String {
+    text.replace('\n', " ")
 }
 
 #[cfg(test)]
@@ -1100,6 +1239,112 @@ mod tests {
             None,
             "an empty hash proves nothing"
         );
+    }
+
+    /// Two namespaces, a cluster node and a pod: the runtime layer the diagrams leave out.
+    fn small_graph() -> InfraGraph {
+        let mut graph = InfraGraph {
+            coverage: None,
+            nodes: BTreeSet::new(),
+            edges: BTreeMap::new(),
+            pod_owners: BTreeMap::new(),
+            underived: Vec::new(),
+        };
+        let api = GraphNode::new(NodeKind::Workload, "shop/deployment/shop-api");
+        graph.edge(
+            GraphNode::new(NodeKind::Service, "shop/shop-api"),
+            EdgeRelation::Selects,
+            api.clone(),
+            "selector[app=shop-api]".to_owned(),
+        );
+        graph.edge(
+            api.clone(),
+            EdgeRelation::ReadsKeyOf,
+            GraphNode::new(NodeKind::ConfigMap, "shop/settings"),
+            "containers[api].env[MODE]".to_owned(),
+        );
+        graph.edge(
+            api.clone(),
+            EdgeRelation::ReadsKeyOf,
+            GraphNode::new(NodeKind::ConfigMap, "shop/settings"),
+            "containers[api].env[LEVEL]".to_owned(),
+        );
+        graph.edge(
+            api,
+            EdgeRelation::RunsAs,
+            GraphNode::new(NodeKind::ServiceAccount, "shop/default"),
+            "serviceAccountName".to_owned(),
+        );
+        graph.node(NodeKind::Secret, "billing/db\"creds");
+        graph.edge(
+            GraphNode::new(NodeKind::Pod, "shop/shop-api-0"),
+            EdgeRelation::ScheduledOn,
+            GraphNode::new(NodeKind::Node, "worker-1"),
+            "nodeName".to_owned(),
+        );
+        graph
+    }
+
+    #[test]
+    fn the_dot_rendering_clusters_by_namespace_with_stable_ids_and_relation_labels() {
+        let expected = concat!(
+            "// infrastructure graph — 5 node(s), 3 edge(s)\n",
+            "digraph infrastructure {\n",
+            "  rankdir=LR;\n",
+            "  node [fontname=\"sans-serif\", shape=box];\n",
+            "  edge [fontname=\"sans-serif\"];\n",
+            "  subgraph \"cluster_billing\" {\n",
+            "    label=\"namespace billing\";\n",
+            "    style=rounded;\n",
+            "    \"sec:billing/db\\\"creds\" [label=\"secret db\\\"creds\"];\n",
+            "  }\n",
+            "  subgraph \"cluster_shop\" {\n",
+            "    label=\"namespace shop\";\n",
+            "    style=rounded;\n",
+            "    \"wl:shop/deployment/shop-api\" [label=\"deployment shop-api\"];\n",
+            "    \"svc:shop/shop-api\" [label=\"service shop-api\"];\n",
+            "    \"cm:shop/settings\" [label=\"configmap settings\"];\n",
+            "    \"sa:shop/default\" [label=\"service account default\"];\n",
+            "  }\n",
+            "  \"wl:shop/deployment/shop-api\" -> \"cm:shop/settings\" [label=\"reads-key-of\"];\n",
+            "  \"wl:shop/deployment/shop-api\" -> \"sa:shop/default\" [label=\"runs-as\"];\n",
+            "  \"svc:shop/shop-api\" -> \"wl:shop/deployment/shop-api\" [label=\"selects\"];\n",
+            "}\n",
+        );
+        let graph = small_graph();
+        assert_eq!(graph.dot(), expected);
+        assert_eq!(
+            graph.dot(),
+            small_graph().dot(),
+            "two renderings, one byte string"
+        );
+    }
+
+    #[test]
+    fn the_dot_rendering_draws_the_node_and_edge_set_the_mermaid_rendering_draws() {
+        let graph = small_graph();
+        let mermaid = graph.mermaid();
+        let dot = graph.dot();
+        let mermaid_nodes = mermaid
+            .lines()
+            .filter(|line| line.ends_with("\"]") && !line.contains("subgraph"))
+            .count();
+        let mermaid_edges = mermaid.lines().filter(|line| line.contains("-->")).count();
+        let dot_nodes = dot
+            .lines()
+            .filter(|line| line.contains(" [label=") && !line.contains(" -> "))
+            .count();
+        let dot_edges = dot.lines().filter(|line| line.contains(" -> ")).count();
+        assert_eq!((dot_nodes, dot_edges), (mermaid_nodes, mermaid_edges));
+        assert!(
+            !dot.contains("pod:") && !dot.contains("node:"),
+            "the runtime layer is the JSON document's: {dot}"
+        );
+    }
+
+    #[test]
+    fn a_dot_string_cannot_close_early_or_break_its_line() {
+        assert_eq!(dot_string("a\"b\\c\nd"), "\"a\\\"b\\\\c d\"");
     }
 
     #[test]
