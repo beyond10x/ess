@@ -5,6 +5,7 @@
 ### Fixed
 
 - `ess infra infra graph --format dot` renders the infrastructure graph as Graphviz DOT instead of exiting 1 with `the infrastructure graph supports mermaid, json, and yaml`, although `--help` listed `dot`. The DOT text draws the node and edge set the Mermaid rendering draws, one `cluster_<namespace>` subgraph per namespace in name order, a cluster-scoped node outside every cluster, each node identified by its kind prefix and IR key (`"wl:shop/deployment/api"`), and each edge labelled with its relation's name (`reads-key-of`, `owned-by`); `dot -Tsvg` reads it.
+- `ess infra infra diagnose`: a reference that declares an empty object name, such as an operator-managed StatefulSet's `serviceName: ""`, is reported as `` `serviceName` declares an empty service name; it names no service, so there is nothing to observe `` instead of ``the required service `` was not observed``, which blamed the scan for an empty declaration. The code and severity stay `INFRA-DIAG-002` (`INFRA-DIAG-003` for an optional reference), and a non-empty name the scan did not find keeps the "was not observed" message.
 
 ### Changed
 
