@@ -1,0 +1,6 @@
+type: ess-scenario/1
+domain: gap.demo
+scenario: two
+summary: creates a parent
+timeline:
+  - {at: 2026-11-08T10:00:00Z, command: gap.demo.CreateParent, actor: gap.demo.Anyone, input: {id: p2, name: a}, outcome: created}

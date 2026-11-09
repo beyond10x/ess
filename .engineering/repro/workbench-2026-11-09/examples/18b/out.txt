@@ -1,0 +1,20 @@
+$ ess specify validate --path spec  [exit 1]
+spec was refused:
+  - [unparsable_predicate] command.gap.demo.FinishIfSmall.outcomes.not-small.when_subject.predicate: cannot parse predicate "(n == 1 or n == 2)": left-hand side must be a fact path: invalid fact path identifier "(n": contains disallowed character '('
+  - error[ESS-SPEC-012]: cannot parse predicate "(n == 1 or n == 2)": left-hand side must be a fact path: invalid fact path identifier "(n": contains disallowed character '('
+  `ess-domain` refuses this as `unparsable_predicate`
+  --> demo.yaml:151:7
+
+$ ess conform synthesize --path spec --out suite.json  [exit 1]
+spec was refused:
+  - [unparsable_predicate] command.gap.demo.FinishIfSmall.outcomes.not-small.when_subject.predicate: cannot parse predicate "(n == 1 or n == 2)": left-hand side must be a fact path: invalid fact path identifier "(n": contains disallowed character '('
+  - error[ESS-SPEC-012]: cannot parse predicate "(n == 1 or n == 2)": left-hand side must be a fact path: invalid fact path identifier "(n": contains disallowed character '('
+  `ess-domain` refuses this as `unparsable_predicate`
+  --> demo.yaml:151:7
+
+$ ess generate synthesize --target rust --layout crate --path spec --out rust-out  [exit 1]
+spec was refused:
+  - [unparsable_predicate] command.gap.demo.FinishIfSmall.outcomes.not-small.when_subject.predicate: cannot parse predicate "(n == 1 or n == 2)": left-hand side must be a fact path: invalid fact path identifier "(n": contains disallowed character '('
+  - error[ESS-SPEC-012]: cannot parse predicate "(n == 1 or n == 2)": left-hand side must be a fact path: invalid fact path identifier "(n": contains disallowed character '('
+  `ess-domain` refuses this as `unparsable_predicate`
+  --> demo.yaml:151:7

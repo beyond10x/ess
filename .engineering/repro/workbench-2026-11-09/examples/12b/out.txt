@@ -1,0 +1,38 @@
+$ ess specify validate --path spec  [exit 1]
+spec was refused:
+  - [undeclared_reference] view.gap.demo.Scaled.fields[1].expr: `param.k` is no field of `gap.demo.Item`, the row `gap.demo.Scaled` computes `scaled` from (hint: fields of `gap.demo.Item`: `id`, `title`, `parent_id`, `n`, `tags`, `due`, `note`, `state`)
+  - [unobservable_fact] view.gap.demo.Scaled.params: `gap.demo.Scaled` declares the parameter `k` and no filter reads it, so every value of it returns the same rows (hint: read it in `filter:` as `param.k` in a comparison, or as `{param: k}` under `starts_with`, `ends_with` or `contains`, or drop it — a parameter nothing selects on makes the view look narrower than it is)
+  - error[ESS-VIEW-001]: `param.k` is no field of `gap.demo.Item`, the row `gap.demo.Scaled` computes `scaled` from
+  `ess-domain` refuses this as `undeclared_reference`
+  help: fields of `gap.demo.Item`: `id`, `title`, `parent_id`, `n`, `tags`, `due`, `note`, `state`
+  --> demo.yaml:172:5
+  - error[ESS-VIEW-003]: `gap.demo.Scaled` declares the parameter `k` and no filter reads it, so every value of it returns the same rows
+  `ess-domain` refuses this as `unobservable_fact`
+  help: read it in `filter:` as `param.k` in a comparison, or as `{param: k}` under `starts_with`, `ends_with` or `contains`, or drop it — a parameter nothing selects on makes the view look narrower than it is
+  --> demo.yaml:161:3
+
+$ ess conform synthesize --path spec --out suite.json  [exit 1]
+spec was refused:
+  - [undeclared_reference] view.gap.demo.Scaled.fields[1].expr: `param.k` is no field of `gap.demo.Item`, the row `gap.demo.Scaled` computes `scaled` from (hint: fields of `gap.demo.Item`: `id`, `title`, `parent_id`, `n`, `tags`, `due`, `note`, `state`)
+  - [unobservable_fact] view.gap.demo.Scaled.params: `gap.demo.Scaled` declares the parameter `k` and no filter reads it, so every value of it returns the same rows (hint: read it in `filter:` as `param.k` in a comparison, or as `{param: k}` under `starts_with`, `ends_with` or `contains`, or drop it — a parameter nothing selects on makes the view look narrower than it is)
+  - error[ESS-VIEW-001]: `param.k` is no field of `gap.demo.Item`, the row `gap.demo.Scaled` computes `scaled` from
+  `ess-domain` refuses this as `undeclared_reference`
+  help: fields of `gap.demo.Item`: `id`, `title`, `parent_id`, `n`, `tags`, `due`, `note`, `state`
+  --> demo.yaml:172:5
+  - error[ESS-VIEW-003]: `gap.demo.Scaled` declares the parameter `k` and no filter reads it, so every value of it returns the same rows
+  `ess-domain` refuses this as `unobservable_fact`
+  help: read it in `filter:` as `param.k` in a comparison, or as `{param: k}` under `starts_with`, `ends_with` or `contains`, or drop it — a parameter nothing selects on makes the view look narrower than it is
+  --> demo.yaml:161:3
+
+$ ess generate synthesize --target rust --layout crate --path spec --out rust-out  [exit 1]
+spec was refused:
+  - [undeclared_reference] view.gap.demo.Scaled.fields[1].expr: `param.k` is no field of `gap.demo.Item`, the row `gap.demo.Scaled` computes `scaled` from (hint: fields of `gap.demo.Item`: `id`, `title`, `parent_id`, `n`, `tags`, `due`, `note`, `state`)
+  - [unobservable_fact] view.gap.demo.Scaled.params: `gap.demo.Scaled` declares the parameter `k` and no filter reads it, so every value of it returns the same rows (hint: read it in `filter:` as `param.k` in a comparison, or as `{param: k}` under `starts_with`, `ends_with` or `contains`, or drop it — a parameter nothing selects on makes the view look narrower than it is)
+  - error[ESS-VIEW-001]: `param.k` is no field of `gap.demo.Item`, the row `gap.demo.Scaled` computes `scaled` from
+  `ess-domain` refuses this as `undeclared_reference`
+  help: fields of `gap.demo.Item`: `id`, `title`, `parent_id`, `n`, `tags`, `due`, `note`, `state`
+  --> demo.yaml:172:5
+  - error[ESS-VIEW-003]: `gap.demo.Scaled` declares the parameter `k` and no filter reads it, so every value of it returns the same rows
+  `ess-domain` refuses this as `unobservable_fact`
+  help: read it in `filter:` as `param.k` in a comparison, or as `{param: k}` under `starts_with`, `ends_with` or `contains`, or drop it — a parameter nothing selects on makes the view look narrower than it is
+  --> demo.yaml:161:3

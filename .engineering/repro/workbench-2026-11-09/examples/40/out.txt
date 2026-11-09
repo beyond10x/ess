@@ -1,0 +1,38 @@
+$ ess specify validate --path spec  [exit 1]
+spec was refused:
+  - [unsupported_construct] command.gap.demo.CreateItem.outcomes.created.affects: outcome `created` creates its subject and declares `affects:`; a secondary effect is admitted beside `moves:` and `updates:`, and, from ess/23, `deletes:`, whose subject exists before the outcome (hint: move `affects:` to the branch that moves, updates or deletes an existing row)
+  - [empty_declaration] command.gap.demo.CreateItem.outcomes: `gap.demo.CreateItem` declares no outcomes, so nothing is specified to happen when it is issued (hint: give it at least one outcome that emits an event or names an error)
+  - error[ESS-COMMAND-009]: outcome `created` creates its subject and declares `affects:`; a secondary effect is admitted beside `moves:` and `updates:`, and, from ess/23, `deletes:`, whose subject exists before the outcome
+  `ess-domain` refuses this as `unsupported_construct`
+  help: move `affects:` to the branch that moves, updates or deletes an existing row
+  --> demo.yaml:119:5
+  - error[ESS-COMMAND-007]: `gap.demo.CreateItem` declares no outcomes, so nothing is specified to happen when it is issued
+  `ess-domain` refuses this as `empty_declaration`
+  help: give it at least one outcome that emits an event or names an error
+  --> demo.yaml:87:3
+
+$ ess conform synthesize --path spec --out suite.json  [exit 1]
+spec was refused:
+  - [unsupported_construct] command.gap.demo.CreateItem.outcomes.created.affects: outcome `created` creates its subject and declares `affects:`; a secondary effect is admitted beside `moves:` and `updates:`, and, from ess/23, `deletes:`, whose subject exists before the outcome (hint: move `affects:` to the branch that moves, updates or deletes an existing row)
+  - [empty_declaration] command.gap.demo.CreateItem.outcomes: `gap.demo.CreateItem` declares no outcomes, so nothing is specified to happen when it is issued (hint: give it at least one outcome that emits an event or names an error)
+  - error[ESS-COMMAND-009]: outcome `created` creates its subject and declares `affects:`; a secondary effect is admitted beside `moves:` and `updates:`, and, from ess/23, `deletes:`, whose subject exists before the outcome
+  `ess-domain` refuses this as `unsupported_construct`
+  help: move `affects:` to the branch that moves, updates or deletes an existing row
+  --> demo.yaml:119:5
+  - error[ESS-COMMAND-007]: `gap.demo.CreateItem` declares no outcomes, so nothing is specified to happen when it is issued
+  `ess-domain` refuses this as `empty_declaration`
+  help: give it at least one outcome that emits an event or names an error
+  --> demo.yaml:87:3
+
+$ ess generate synthesize --target rust --layout crate --path spec --out rust-out  [exit 1]
+spec was refused:
+  - [unsupported_construct] command.gap.demo.CreateItem.outcomes.created.affects: outcome `created` creates its subject and declares `affects:`; a secondary effect is admitted beside `moves:` and `updates:`, and, from ess/23, `deletes:`, whose subject exists before the outcome (hint: move `affects:` to the branch that moves, updates or deletes an existing row)
+  - [empty_declaration] command.gap.demo.CreateItem.outcomes: `gap.demo.CreateItem` declares no outcomes, so nothing is specified to happen when it is issued (hint: give it at least one outcome that emits an event or names an error)
+  - error[ESS-COMMAND-009]: outcome `created` creates its subject and declares `affects:`; a secondary effect is admitted beside `moves:` and `updates:`, and, from ess/23, `deletes:`, whose subject exists before the outcome
+  `ess-domain` refuses this as `unsupported_construct`
+  help: move `affects:` to the branch that moves, updates or deletes an existing row
+  --> demo.yaml:119:5
+  - error[ESS-COMMAND-007]: `gap.demo.CreateItem` declares no outcomes, so nothing is specified to happen when it is issued
+  `ess-domain` refuses this as `empty_declaration`
+  help: give it at least one outcome that emits an event or names an error
+  --> demo.yaml:87:3

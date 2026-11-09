@@ -1,0 +1,46 @@
+format: ess-ui/1
+app: gap
+title: Gap
+model: gap
+placement_profile: fat
+fixtures:
+  dir: fixtures
+  views:
+    gap.demo.Items: items.yaml
+theme:
+  default: dark
+themes:
+  light: {}
+  dark: {}
+shells:
+  app:
+    regions:
+      nav:
+        kind: navigation
+      main:
+        kind: page_outlet
+      overlay:
+        kind: overlay_outlet
+navigation:
+  home: items.list
+  sections:
+  - name: main
+    label: Main
+    icon: home
+    pages:
+    - items.list
+pages:
+  items.list:
+    kind: list_page
+    title: Items
+    nav:
+      label: Items
+    sections:
+    - name: list
+      component: collection
+      style: table
+      reads:
+        view: gap.demo.Items
+      columns:
+      - title
+      - n

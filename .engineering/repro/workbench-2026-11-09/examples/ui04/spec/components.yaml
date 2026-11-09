@@ -1,0 +1,18 @@
+components:
+  - component: gap-service
+    summary: serves the gap domain
+    owns:
+      domains:
+        - gap.demo
+    reached_by: network
+    accepts:
+      commands:
+        - gap.demo.CreateParent
+        - gap.demo.CreateItem
+        - gap.demo.FinishItem
+        - gap.demo.ShiftItem
+    publishes:
+      events:
+        - gap.demo.ParentCreated
+        - gap.demo.ItemCreated
+        - gap.demo.ItemFinished

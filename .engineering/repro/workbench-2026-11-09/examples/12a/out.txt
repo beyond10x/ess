@@ -1,0 +1,23 @@
+$ ess specify validate --path spec  [exit 1]
+spec was refused:
+  - [unsupported_construct] view.gap.demo.Waiting.fields[1].expr: `due - now` reads `now` as a value; a value read at the current time has no clock a suite can fix yet, so no scenario could check it (hint: send the instant as an input and compute from it, such as `input.at - input.started_at`; `now` orders a Timestamp in a command's guards)
+  - error[ESS-VIEW-009]: `due - now` reads `now` as a value; a value read at the current time has no clock a suite can fix yet, so no scenario could check it
+  `ess-domain` refuses this as `unsupported_construct`
+  help: send the instant as an input and compute from it, such as `input.at - input.started_at`; `now` orders a Timestamp in a command's guards
+  --> demo.yaml:169:5
+
+$ ess conform synthesize --path spec --out suite.json  [exit 1]
+spec was refused:
+  - [unsupported_construct] view.gap.demo.Waiting.fields[1].expr: `due - now` reads `now` as a value; a value read at the current time has no clock a suite can fix yet, so no scenario could check it (hint: send the instant as an input and compute from it, such as `input.at - input.started_at`; `now` orders a Timestamp in a command's guards)
+  - error[ESS-VIEW-009]: `due - now` reads `now` as a value; a value read at the current time has no clock a suite can fix yet, so no scenario could check it
+  `ess-domain` refuses this as `unsupported_construct`
+  help: send the instant as an input and compute from it, such as `input.at - input.started_at`; `now` orders a Timestamp in a command's guards
+  --> demo.yaml:169:5
+
+$ ess generate synthesize --target rust --layout crate --path spec --out rust-out  [exit 1]
+spec was refused:
+  - [unsupported_construct] view.gap.demo.Waiting.fields[1].expr: `due - now` reads `now` as a value; a value read at the current time has no clock a suite can fix yet, so no scenario could check it (hint: send the instant as an input and compute from it, such as `input.at - input.started_at`; `now` orders a Timestamp in a command's guards)
+  - error[ESS-VIEW-009]: `due - now` reads `now` as a value; a value read at the current time has no clock a suite can fix yet, so no scenario could check it
+  `ess-domain` refuses this as `unsupported_construct`
+  help: send the instant as an input and compute from it, such as `input.at - input.started_at`; `now` orders a Timestamp in a command's guards
+  --> demo.yaml:169:5

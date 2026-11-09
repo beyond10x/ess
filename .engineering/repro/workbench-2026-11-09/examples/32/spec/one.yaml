@@ -1,0 +1,34 @@
+domain: gap.one
+entities:
+  - name: gap.one.Thing
+    identity: {name: id, type: String}
+    fields:
+      - {name: label, type: String}
+    lifecycle: {initial: Open, states: [Open], terminal: [Open]}
+events:
+  - name: gap.one.ThingOpened
+    fields:
+      - {name: id, type: String}
+commands:
+  - name: gap.one.OpenThing
+    input:
+      - {name: id, type: String}
+      - {name: label, type: String}
+    outcomes:
+      - name: opened
+        creates: gap.one.Thing
+        instance: id
+        sets: {label: input.label}
+        emits: [gap.one.ThingOpened]
+        payload:
+          gap.one.ThingOpened: {id: input.id}
+views:
+  - name: gap.one.Things
+    source: gap.one.Thing
+    consistency: read_your_writes
+    fields:
+      - {name: id, type: String}
+      - {name: label, type: String}
+actors:
+  - name: gap.one.Anyone
+    may: [gap.one.OpenThing, gap.one.Things]

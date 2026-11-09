@@ -1,0 +1,7 @@
+components:
+  - component: gap-service
+    summary: serves the gap domain
+    owns:
+      domains:
+        - gap.demo
+    reached_by: network

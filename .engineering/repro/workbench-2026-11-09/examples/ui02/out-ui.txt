@@ -1,0 +1,7 @@
+$ ess ui check --path ui/gap.ui.yaml  [exit 1]
+error document_loads pages/items.list/sections/list/columns/state: unknown field `tone_by`, expected one of `field`, `name`, `label`, `as`, `unit`, `choice`, `sortable`, `visible`, `binds`, `label_from`, `labels`, `suggests`, `note`, `help`
+ui/gap.ui.yaml: 1 error(s), 0 warning(s)
+
+$ ess ui check --path ui/gap.ui.yaml --model spec  [exit 1]
+error document_loads pages/items.list/sections/list/columns/state: unknown field `tone_by`, expected one of `field`, `name`, `label`, `as`, `unit`, `choice`, `sortable`, `visible`, `binds`, `label_from`, `labels`, `suggests`, `note`, `help`
+ui/gap.ui.yaml: 1 error(s), 0 warning(s)

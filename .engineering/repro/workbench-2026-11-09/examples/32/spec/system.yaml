@@ -1,0 +1,7 @@
+format: ess/35
+system: gap
+version: v1
+summary: two contexts share a command name
+domains:
+  - gap.one
+  - gap.two

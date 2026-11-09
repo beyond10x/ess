@@ -1,0 +1,8 @@
+components:
+  - component: gap-service
+    summary: serves both
+    owns:
+      domains:
+        - gap.one
+        - gap.two
+    reached_by: network

@@ -1,0 +1,8 @@
+$ ess ui check --path ui/gap.ui.yaml  [exit 1]
+error filter_expr pages/items.list/sections/list/reads/filter: a filter must parse as a comparison, membership, not, and or or expression
+ui/gap.ui.yaml: 1 error(s), 0 warning(s)
+
+$ ess ui check --path ui/gap.ui.yaml --model spec  [exit 1]
+error filter_expr pages/items.list/sections/list/reads/filter: a filter must parse as a comparison, membership, not, and or or expression
+coverage: 1 covered, 0 host-covered, 3 uncovered of 4 views and commands
+ui/gap.ui.yaml: 1 error(s), 0 warning(s)

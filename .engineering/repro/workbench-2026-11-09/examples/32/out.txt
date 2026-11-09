@@ -1,0 +1,6 @@
+$ ess specify validate --path spec  [exit 0]
+gap v1 — 4 file(s), valid
+
+$ ess generate synthesize --target rust --layout crate --path spec --out rust-out  [exit 1]
+rust target cannot emit this workspace
+gap.one.Things, gap.two.Things: `things` is allocated 2 times in `port methods:gap-service` (view method, view method); give one of them `naming: { code: … }` to choose the identifier it is emitted as, which changes no wire name, no document schema and no qualified name
