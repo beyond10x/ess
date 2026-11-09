@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:the-react-project-registers-each-declared-host-slot
 kind: story
-status: active
+status: implemented
 title: The React project registers each declared host slot with a narrowed adapter
 summary: 'ADR Effect (React): a typed registry, one entry per slot, and tsc fails on a missing, extra or undeclared access'
 tags:
@@ -20,10 +20,11 @@ scope:
   path: crates/ui/ess-ui-react/templates/runtime
 - confidence: cited
   path: crates/ui/ess-ui-react/tests/host_slots.rs
-revision: 11
+revision: 12
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-08T08:54:30Z", actor: "human:timo", revision: 10}
 - {from: "proposed", to: "active", at: "2026-11-08T08:54:30Z", actor: "human:timo", revision: 11}
+- {from: "active", to: "implemented", at: "2026-11-09T05:06:14Z", actor: "human:timo", revision: 12, decided_on: {"recorded":{"test_result":1}}}
 ---
 ## Need
 

@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:the-terminal-draws-a-host-slot-as-a-labelled-region
 kind: story
-status: active
+status: implemented
 title: The terminal draws a host slot as a labelled region
 summary: 'ADR Effect (terminal): a placeholder region that ess-ui-test can address; steps inside it are refused'
 tags:
@@ -26,10 +26,11 @@ scope:
   path: crates/ui/ess-ui-tui/src
 - confidence: cited
   path: crates/ui/ess-ui-tui/tests/host_slots.rs
-revision: 11
+revision: 12
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-08T08:54:31Z", actor: "human:timo", revision: 10}
 - {from: "proposed", to: "active", at: "2026-11-08T08:54:32Z", actor: "human:timo", revision: 11}
+- {from: "active", to: "implemented", at: "2026-11-09T05:06:15Z", actor: "human:timo", revision: 12, decided_on: {"recorded":{"test_result":1}}}
 ---
 ## Need
 
