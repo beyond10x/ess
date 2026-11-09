@@ -1690,7 +1690,7 @@ mod tests {
         let workflow: ess_yaml::Value =
             ess_yaml::from_str(include_str!("../../../../.github/workflows/release.yml")).unwrap();
         let jobs = &workflow["jobs"];
-        for name in ["gate", "wasm", "package"] {
+        for name in ["gate", "hotfix-checks", "hotfix-tests", "wasm", "package"] {
             assert_eq!(jobs[name]["needs"].as_str(), Some("resolve"));
         }
         assert_eq!(
@@ -1703,7 +1703,14 @@ mod tests {
                 .iter()
                 .map(|value| value.as_str().unwrap())
                 .collect::<BTreeSet<_>>(),
-            BTreeSet::from(["resolve", "gate", "wasm", "package"])
+            BTreeSet::from([
+                "resolve",
+                "gate",
+                "hotfix-checks",
+                "hotfix-tests",
+                "wasm",
+                "package"
+            ])
         );
         let condition = jobs["release"]["if"].as_str().unwrap();
         assert!(condition.contains("always()"));

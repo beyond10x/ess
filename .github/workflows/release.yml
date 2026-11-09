@@ -5,7 +5,7 @@
 # repository's `ci.yml`: on the commit itself, or on the queue head it merged, whose pull-request
 # run `ci.yml` runs in full (the `prior-gate` step states the whole condition). The native
 # packages are reused from that head's `package.yml` run when it holds all four.
-# A trusted coordinator publishes the artifact with the organization bot after this workflow.
+# `publish.yml` publishes the artifact with the organization bot once this workflow succeeds.
 # Atlas observes that published release and documentation bundles asynchronously.
 #
 # Tags are the bare version (`0.1.0`, atlas § Naming).
@@ -55,6 +55,8 @@ jobs:
       gate-passed: ${{ steps.prior-gate.outputs.passed }}
       head: ${{ steps.prior-gate.outputs.head }}
       prebuilt-run: ${{ steps.prebuilt.outputs.run }}
+      scope: ${{ steps.scope.outputs.scope }}
+      packages: ${{ steps.scope.outputs.packages }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -82,6 +84,26 @@ jobs:
           fi
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           echo "commit=$commit" >> "$GITHUB_OUTPUT"
+
+      # A hotfix (`X.Y.Z`, Z > 0) runs the targeted gate below instead of the 20 test shards: the
+      # checks, and the tests of the crates it changed since the previous tag and of their direct
+      # dependents. A minor or major release, and a hotfix whose change the script cannot map to
+      # crates, runs the full gate.
+      - name: Decide the gate's scope
+        id: scope
+        shell: bash
+        env:
+          TAG: ${{ steps.release.outputs.tag }}
+          EVENT: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+          # A backfill gates an older tree, which may predate the script: it runs the full gate.
+          if [ "$EVENT" != push ] || [ ! -f .github/scripts/hotfix-scope.sh ]; then
+            echo "scope=full" >> "$GITHUB_OUTPUT"
+            echo "full gate: $EVENT of $TAG"
+            exit 0
+          fi
+          bash .github/scripts/hotfix-scope.sh "$TAG"
 
       # The gate has usually run on these exact bytes already, so the checks the ruleset requires
       # — `Gate` and the two `Output ownership (…)` witnesses — are reused instead of paid for
@@ -278,10 +300,139 @@ jobs:
 
   gate:
     needs: resolve
-    if: ${{ needs.resolve.outputs.gate-passed != 'true' }}
+    if: ${{ needs.resolve.outputs.gate-passed != 'true' && needs.resolve.outputs.scope != 'targeted' }}
     uses: ./.github/workflows/ci.yml
     with:
       checkout-ref: ${{ needs.resolve.outputs.commit }}
+
+  # The targeted gate of a hotfix, in two parallel jobs: the static checks and smoke tests of
+  # `ci.yml`'s `Checks` job, and the tests of the crates `hotfix-scope.sh` selected.
+  hotfix-checks:
+    name: Hotfix checks
+    needs: resolve
+    if: ${{ needs.resolve.outputs.gate-passed != 'true' && needs.resolve.outputs.scope == 'targeted' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS: -C link-arg=-fuse-ld=lld
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ needs.resolve.outputs.commit }}
+          fetch-depth: 0
+          fetch-tags: true
+          persist-credentials: false
+
+      - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable
+        with:
+          toolchain: 1.98.1
+          components: rustfmt, clippy
+          targets: wasm32-unknown-unknown
+
+      # The released binary, checked against the release's own `task_checksums.txt`.
+      - name: Install the pinned task runner
+        id: go-task
+        env:
+          TASK_VERSION: "3.52.0"
+          TASK_SHA256: 02c679ffae53dca791804847d78b31731615894e292948397c971c87ac9e95bd
+        run: |
+          curl --fail --silent --show-error --location --retry 5 --retry-all-errors \
+            --output "$RUNNER_TEMP/task.tar.gz" \
+            "https://github.com/go-task/task/releases/download/v$TASK_VERSION/task_linux_amd64.tar.gz"
+          echo "$TASK_SHA256  $RUNNER_TEMP/task.tar.gz" | sha256sum --check --strict
+          mkdir -p "$RUNNER_TEMP/task-bin"
+          tar -xzf "$RUNNER_TEMP/task.tar.gz" -C "$RUNNER_TEMP/task-bin" task
+          echo "$RUNNER_TEMP/task-bin" >> "$GITHUB_PATH"
+
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: "22"
+
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+        with:
+          key: checks
+          save-if: ${{ github.ref == 'refs/heads/main' && github.event_name != 'workflow_dispatch' || github.event_name == 'pull_request' }}
+
+      - name: Fetch locked dependencies
+        run: |
+          cargo fetch --locked
+          cargo fetch --locked --manifest-path fuzz/Cargo.toml
+
+      - name: Restore the pinned ess-ui
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/ess-ui
+          key: ess-ui-${{ runner.os }}-${{ hashFiles('website/package.json') }}
+
+      - name: Install the pinned ess-ui
+        run: cargo xtask ess-ui
+
+      - name: Lint (fmt, Clippy, rustdoc, release record, action)
+        run: task ci-lint
+
+      - name: Smoke (examples, projections, support matrix, workspace doc-tests)
+        run: task ci-smoke
+
+  hotfix-tests:
+    name: Hotfix tests
+    needs: resolve
+    if: ${{ needs.resolve.outputs.gate-passed != 'true' && needs.resolve.outputs.scope == 'targeted' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS: -C link-arg=-fuse-ld=lld
+      CARGO_PROFILE_DEV_DEBUG: "0"
+      CARGO_PROFILE_TEST_DEBUG: "0"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ needs.resolve.outputs.commit }}
+          fetch-depth: 0
+          fetch-tags: true
+          persist-credentials: false
+
+      - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable
+        with:
+          toolchain: 1.98.1
+          targets: wasm32-unknown-unknown
+
+      # The released binary, checked against the release's own `task_checksums.txt`.
+      - name: Install the pinned task runner
+        id: go-task
+        env:
+          TASK_VERSION: "3.52.0"
+          TASK_SHA256: 02c679ffae53dca791804847d78b31731615894e292948397c971c87ac9e95bd
+        run: |
+          curl --fail --silent --show-error --location --retry 5 --retry-all-errors \
+            --output "$RUNNER_TEMP/task.tar.gz" \
+            "https://github.com/go-task/task/releases/download/v$TASK_VERSION/task_linux_amd64.tar.gz"
+          echo "$TASK_SHA256  $RUNNER_TEMP/task.tar.gz" | sha256sum --check --strict
+          mkdir -p "$RUNNER_TEMP/task-bin"
+          tar -xzf "$RUNNER_TEMP/task.tar.gz" -C "$RUNNER_TEMP/task-bin" task
+          echo "$RUNNER_TEMP/task-bin" >> "$GITHUB_PATH"
+
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: "22"
+
+      - uses: taiki-e/install-action@9983c65e42da123ff25d1f78505eb6de315aa172 # v2.87.20
+        with:
+          tool: cargo-nextest@0.9.143
+
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+        with:
+          key: test-workspace
+          save-if: ${{ github.ref == 'refs/heads/main' && github.event_name != 'workflow_dispatch' || github.event_name == 'pull_request' }}
+
+      - name: Fetch locked dependencies
+        run: cargo fetch --locked
+
+      - name: Test the selected crates
+        env:
+          PACKAGES: ${{ needs.resolve.outputs.packages }}
+        run: |
+          echo "testing: $PACKAGES"
+          task test-packages PACKAGES="$PACKAGES"
 
   wasm:
     name: Verify the WebAssembly realization
@@ -333,8 +484,8 @@ jobs:
 
   release:
     name: Prepare the release artifact
-    needs: [resolve, gate, wasm, package]
-    if: ${{ always() && needs.resolve.result == 'success' && (needs.gate.result == 'success' || (needs.gate.result == 'skipped' && needs.resolve.outputs.gate-passed == 'true')) && needs.wasm.result == 'success' && (needs.package.result == 'success' || (needs.package.result == 'skipped' && needs.resolve.outputs.prebuilt-run != '')) }}
+    needs: [resolve, gate, hotfix-checks, hotfix-tests, wasm, package]
+    if: ${{ always() && needs.resolve.result == 'success' && (needs.gate.result == 'success' || (needs.gate.result == 'skipped' && needs.resolve.outputs.gate-passed == 'true') || (needs.gate.result == 'skipped' && needs.resolve.outputs.scope == 'targeted' && needs.hotfix-checks.result == 'success' && needs.hotfix-tests.result == 'success')) &&needs.wasm.result == 'success' && (needs.package.result == 'success' || (needs.package.result == 'skipped' && needs.resolve.outputs.prebuilt-run != '')) }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -430,7 +581,7 @@ jobs:
           fi
 
       # The artifact name binds the annotated tag and resolved source commit. Publication happens
-      # later from a trusted environment through the organization-bot route described in AGENTS.md.
+      # in `publish.yml`, with the organization bot, once this run succeeds.
       - name: Retain the verified release artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:

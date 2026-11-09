@@ -1912,6 +1912,55 @@ fn release_preparation_has_no_publication_authority_or_command() {
     );
 }
 
+/// `publish.yml` is the one place a release is published: after a successful `Release
+/// preparation` run, with the organization App's token and never the Actions token, refusing to
+/// run without the App's secrets, and reading the release back as the bot's.
+#[test]
+fn a_successful_release_run_is_published_by_the_bot_and_only_by_it() {
+    let publish = yaml(".github/workflows/publish.yml");
+    let run = &publish["on"]["workflow_run"];
+    assert_eq!(
+        run["workflows"]
+            .as_sequence()
+            .map(|names| names.iter().map(text).collect::<Vec<_>>()),
+        Some(vec!["Release preparation"])
+    );
+    assert_eq!(text(&publish["permissions"]["contents"]), "read");
+    let job = &publish["jobs"]["publish"];
+    assert!(
+        text(&job["if"]).contains("github.event.workflow_run.conclusion == 'success'"),
+        "publication runs after an unsuccessful release run"
+    );
+    let steps = job["steps"].as_sequence().expect("publish steps");
+    let index = |name: &str| {
+        steps
+            .iter()
+            .position(|step| text(&step["name"]) == name)
+            .unwrap_or_else(|| panic!("publish.yml has no step `{name}`"))
+    };
+    let token = index("Bot token");
+    assert!(index("Require the bot App secrets") < token);
+    assert!(text(&steps[token]["uses"]).starts_with("actions/create-github-app-token@"));
+    let create = index("Publish as the bot");
+    assert_eq!(
+        text(&steps[create]["env"]["GH_TOKEN"]),
+        "${{ steps.app-token.outputs.token }}",
+        "the release is created with a token besides the bot's"
+    );
+    assert!(text(&steps[create]["run"]).contains("gh release create"));
+    for (position, step) in steps.iter().enumerate() {
+        if position != create {
+            assert!(
+                !text(&step["run"]).contains("gh release create")
+                    && !text(&step["run"]).contains("gh release edit"),
+                "step {position} of publish.yml writes a release"
+            );
+        }
+    }
+    let read_back = text(&steps[index("Read the release back")]["run"]);
+    assert!(read_back.contains("b10x-bot[bot]"));
+}
+
 /// The trusted coordinator consumes one successful artifact, so its name must bind the resolved
 /// tag and commit and its contents must be exactly the checked archives, checksums and notes. The
 /// upload action is the same pinned revision already admitted by `package.yml`.
@@ -2086,6 +2135,10 @@ impl<'a> ExpressionReader<'a> {
             value
         } else if let Some(literal) = token.strip_prefix('\'') {
             ExpressionValue::Text(literal.strip_suffix('\'').unwrap().to_owned())
+        } else if token == "always" {
+            self.expect("(");
+            self.expect(")");
+            ExpressionValue::Flag(true)
         } else if token == "startsWith" {
             self.expect("(");
             let whole = self.or();
@@ -2153,8 +2206,10 @@ fn a_release_runs_its_full_gate_unless_a_full_gate_passed_the_tagged_tree() {
     assert_eq!(needs_of(gate), BTreeSet::from(["resolve".to_owned()]));
     assert_eq!(
         text(&gate["if"]),
-        "${{ needs.resolve.outputs.gate-passed != 'true' }}",
-        "the release gate is skipped on something besides the prior-gate step's answer"
+        "${{ needs.resolve.outputs.gate-passed != 'true' && \
+         needs.resolve.outputs.scope != 'targeted' }}",
+        "the release gate is skipped on something besides the prior-gate step's answer and a \
+         targeted hotfix"
     );
     let passed: BTreeMap<String, String> = gate["with"]
         .as_mapping()
@@ -2249,10 +2304,59 @@ fn a_release_runs_its_full_gate_unless_a_full_gate_passed_the_tagged_tree() {
     assert!(
         publish.contains(
             "(needs.gate.result == 'success' || (needs.gate.result == 'skipped' && \
-             needs.resolve.outputs.gate-passed == 'true'))"
+             needs.resolve.outputs.gate-passed == 'true') || (needs.gate.result == 'skipped' && \
+             needs.resolve.outputs.scope == 'targeted' && needs.hotfix-checks.result == 'success' \
+             && needs.hotfix-tests.result == 'success'))"
         ),
-        "publication accepts a skipped gate without the prior-gate step's `true`: {publish}"
+        "publication accepts a skipped gate without the prior-gate step's `true` or a passed \
+         targeted hotfix gate: {publish}"
     );
+    // A skipped gate is accepted for a targeted hotfix only when both of its jobs passed, and
+    // those jobs run exactly when the full gate does not.
+    let release_needs = needs_of(&jobs["release"]);
+    for job in ["gate", "hotfix-checks", "hotfix-tests"] {
+        assert!(
+            release_needs.contains(job),
+            "the release does not wait for {job}"
+        );
+    }
+    for job in ["hotfix-checks", "hotfix-tests"] {
+        assert_eq!(
+            text(&jobs[job]["if"]),
+            "${{ needs.resolve.outputs.gate-passed != 'true' && \
+             needs.resolve.outputs.scope == 'targeted' }}",
+            "{job} runs on something besides a targeted hotfix without a prior gate"
+        );
+    }
+    let context =
+        |gate: &'static str, scope: &'static str, checks: &'static str, tests: &'static str| {
+            BTreeMap::from([
+                ("needs.resolve.result", "success"),
+                ("needs.gate.result", gate),
+                ("needs.resolve.outputs.gate-passed", "false"),
+                ("needs.resolve.outputs.scope", scope),
+                ("needs.hotfix-checks.result", checks),
+                ("needs.hotfix-tests.result", tests),
+                ("needs.wasm.result", "success"),
+                ("needs.package.result", "success"),
+                ("needs.resolve.outputs.prebuilt-run", ""),
+            ])
+        };
+    let cases = [
+        (context("success", "full", "skipped", "skipped"), true),
+        (context("skipped", "targeted", "success", "success"), true),
+        (context("skipped", "targeted", "success", "failure"), false),
+        (context("skipped", "targeted", "failure", "success"), false),
+        (context("skipped", "full", "success", "success"), false),
+        (context("failure", "full", "skipped", "skipped"), false),
+    ];
+    for (context, expected) in cases {
+        assert_eq!(
+            evaluate(publish, &context).truthy(),
+            expected,
+            "the release job decides {context:?} wrongly under `{publish}`"
+        );
+    }
 
     let builder = lane_invocations(&ci)
         .into_iter()

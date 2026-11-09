@@ -92,6 +92,39 @@ tasks:
       - cargo test --locked {{.FEATURE_OFF_PACKAGES}}
       - task: test-xtask
 
+  # A hotfix release's targeted gate (`.github/workflows/release.yml`): the tests of the crates
+  # `.github/scripts/hotfix-scope.sh` selected, with the harnesses `test` builds. ess-xtask runs
+  # under its own profile, as in `test`.
+  test-packages:
+    desc: Run the tests of the workspace crates PACKAGES names, space-separated.
+    requires:
+      vars: [PACKAGES]
+    env:
+      ESS_INTEGER_SPELLINGS_HARNESS: '{{.INTEGER_SPELLINGS_HARNESS}}'
+      ESS_JSON_BODY_CLOSURE_HARNESS: '{{.JSON_BODY_CLOSURE_HARNESS}}'
+      ESS_JSON_BODY_SECURITY_HARNESS: '{{.JSON_BODY_SECURITY_HARNESS}}'
+      ESS_UI_HTTP_SHELF_SERVER: '{{.UI_HTTP_SHELF_SERVER}}'
+      ESS_UI_HTTP_ITEMS_SERVER: '{{.UI_HTTP_ITEMS_SERVER}}'
+      ESS_CLAP_SHARED_BINARY: '{{.CLAP_SHARED_BINARY}}'
+    cmds:
+      - task: integer-spellings-harness
+      - task: json-body-harnesses
+      - task: ui-http-servers
+      - task: clap-shared-binary
+      - |
+        set -eu
+        args=""
+        for package in {{.PACKAGES}}; do
+          [ "$package" = ess-xtask ] || args="$args --package $package"
+        done
+        if [ -n "$args" ]; then
+          cargo nextest run --locked --no-fail-fast $args
+        fi
+      - |
+        case " {{.PACKAGES}} " in
+          *" ess-xtask "*) task test-xtask ;;
+        esac
+
   # The CI halves of `test`. `.github/workflows/ci.yml` compiles the test binaries once with
   # `test-archive-workspace` and `test-archive-feature-off` and runs them as parallel shards with
   # `test-shard` and `test-feature-off`;
