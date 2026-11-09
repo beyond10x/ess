@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [0.91.2] — 2026-11-09
+
+### Fixed
+
+- Generated Go conformance runner: a suite holding a complete subject comparison around a system-issued command is admitted. For a `system: true` command's refusal synthesis writes `snapshot_complete_subject`, then `expect_not_issued` (or `await_outcome`), then `query_view` and `expect_complete_subject_unchanged`; the Go admission counted only a sent command between the snapshot and the comparison and refused the whole suite with `complete subject comparison lacks its fresh original pair`, so no scenario ran, while the Rust and interpreted runners passed it. Go now counts an awaited or not-issued step as the one command the comparison brackets, as the Rust admission does, and judges each scenario with the Rust runner's verdict, a row changed behind the refusal included. The TypeScript runner already did (story:the-go-and-typescript-runners-admit-and-judge-an-awaited-optional-suite-like-rust).
+
 ## [0.91.1] — 2026-11-09
 
 ### Fixed

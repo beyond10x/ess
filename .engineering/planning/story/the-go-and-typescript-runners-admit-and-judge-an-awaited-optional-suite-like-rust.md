@@ -2,13 +2,17 @@
 format: aep.planning-md/3
 id: story:the-go-and-typescript-runners-admit-and-judge-an-awaited-optional-suite-like-rust
 kind: story
-status: draft
+status: implemented
 title: The Go and TypeScript runners admit and judge a suite with an awaited Optional input the way the Rust runner does
 summary: Go refuses admission (fresh original pair) and TS fails grant/denied on the row 7.1 fixture suite; pre-existing, found in 0.69.0.
 relations:
 - serves: vision:O2
 - decomposes: epic:adopter-gaps-verdicts
-revision: 2
+revision: 5
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-09T01:00:48Z", actor: "human:timo", revision: 3}
+- {from: "proposed", to: "active", at: "2026-11-09T01:00:48Z", actor: "human:timo", revision: 4}
+- {from: "active", to: "implemented", at: "2026-11-09T01:01:05Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"test_result":1}}}
 ---
 ## Need
 
