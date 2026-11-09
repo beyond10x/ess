@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-column-may-show-a-plain-string-row
 kind: story
-status: active
+status: implemented
 title: 'A column or record field may show a plain-string row with field: .'
 summary: 'Gap B4-40 (G-51): field: . names the row itself'
 tags:
@@ -27,10 +27,11 @@ scope:
   path: schemas/ui/ess-ui.schema.yaml
 - confidence: cited
   path: website/docs/reference/ess-ui.md
-revision: 14
+revision: 15
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-06T22:19:02Z", actor: "human:timo", revision: 2}
 - {from: "proposed", to: "active", at: "2026-11-06T22:19:03Z", actor: "human:timo", revision: 3}
+- {from: "active", to: "implemented", at: "2026-11-08T22:10:13Z", actor: "human:timo", revision: 15, decided_on: {"recorded":{"test_result":1}}}
 ---
 ## Need
 

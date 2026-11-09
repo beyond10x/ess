@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-system-issued-awaited-step-honours-its-outcomes-input-guard
 kind: story
-status: active
+status: implemented
 title: An awaited system-issued step honours its outcome input guard
 summary: The rewrite to awaited steps drops the outcome input guard, so a correct target fails; reporter repro system-guard, 2 of 7 fail.
 tags:
@@ -18,10 +18,11 @@ scope:
   path: crates/verify/ess-conformance/src/synthesize/system_issued.rs
 - confidence: inferred
   path: crates/verify/ess-conformance/tests/system_issued_synthesis.rs
-revision: 8
+revision: 9
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-02T20:48:56Z", actor: "human:timo", revision: 6}
 - {from: "proposed", to: "active", at: "2026-11-02T20:48:56Z", actor: "human:timo", revision: 7}
+- {from: "active", to: "implemented", at: "2026-11-08T22:10:15Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"test_result":1}}}
 ---
 ## Problem
 

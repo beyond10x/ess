@@ -3215,7 +3215,11 @@ impl App {
             overlay: target == Target::Overlay,
             ..Ctx::default()
         };
-        let current = fields.get(state.item).map(|field| (*field).clone());
+        // The host draws a field slot's input, so no key edits it here.
+        let current = fields
+            .get(state.item)
+            .filter(|field| field.host.is_none())
+            .map(|field| (*field).clone());
         if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('s') {
             self.submit(target, form, draft);
             return;
@@ -3354,7 +3358,9 @@ impl App {
                 let Some(field) = fields.get(state.item) else {
                     return;
                 };
-                if matches!(field.field_as.as_deref(), Some("toggle" | "choice")) {
+                if field.host.is_some()
+                    || matches!(field.field_as.as_deref(), Some("toggle" | "choice"))
+                {
                     return;
                 }
                 (field.field.clone(), Some(form.clone()))

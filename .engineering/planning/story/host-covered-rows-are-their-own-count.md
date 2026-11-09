@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:host-covered-rows-are-their-own-count
 kind: story
-status: active
+status: implemented
 title: Rows a host slot reaches are counted as host-covered, never as covered
 summary: 'ADR section 2: a third coverage count in the text and JSON reports'
 tags:
@@ -30,10 +30,11 @@ scope:
   path: website/docs/reference/ess-ui.md
 - confidence: inferred
   path: website/docs/reference/formats.md
-revision: 15
+revision: 16
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-06T22:18:56Z", actor: "human:timo", revision: 2}
 - {from: "proposed", to: "active", at: "2026-11-06T22:18:56Z", actor: "human:timo", revision: 3}
+- {from: "active", to: "implemented", at: "2026-11-08T22:10:11Z", actor: "human:timo", revision: 16, decided_on: {"recorded":{"test_result":1}}}
 ---
 ## Need
 
