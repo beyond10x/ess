@@ -912,7 +912,7 @@ impl<'d> Gen<'d> {
             .flatten()
             .map(|tone| ts::string(&tone));
         let tone_by = (!in_form)
-            .then(|| field.tone_by.as_ref())
+            .then_some(field.tone_by.as_ref())
             .flatten()
             .map(|tone_by| ts::literal(&tone_by.map));
         // A field that is a host slot: the host's component in place of the value or input.

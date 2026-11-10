@@ -355,7 +355,10 @@ Sources come in through `ess infra import` and leave through
   the retained source, its SHA-256 and durable accounting. `--format` selects the terminal
   presentation; `--out` always writes the canonical import envelope.
 - `ess infra import kubernetes` turns a sanitized bundle, or an explicitly selected live cluster,
-  into infrastructure IR.
+  into infrastructure IR. `--out` writes the IR as JSON whatever the file extension; `--format`
+  selects only the report printed to stdout. What a full scan reads, and what it leaves out, is
+  listed in
+  [What a full scan observes](../guides/check-infrastructure.md#what-a-full-scan-observes-and-what-it-does-not).
 - [`ess generate project openapi`](#ess-generate-project-openapi) projects a checked import
   envelope (`--ir`) or a native ESS specification (`--path`) to OpenAPI. `--ir` refuses semantic
   gaps, unresolved references or legacy interface-only input before output; reimport the original
@@ -1753,7 +1756,7 @@ ess infra import kubernetes [OPTIONS]
 | `--context` | `<CONTEXT>` | no |  | Live kubeconfig context. Requires `--observation-out` |
 | `--namespace` | `<NAMESPACE>` | no |  | Safe topology of one namespace and its referenced nodes; emits qualified version 2 |
 | `--observation-out` | `<OBSERVATION_OUT>` | no |  | Where a live scan writes its sanitized source bundle |
-| `--out` | `<OUT>` | no |  | Where to write the compiled `infra-ir` document |
+| `--out` | `<OUT>` | no |  | Where to write the compiled `infra-ir` document, always as JSON whatever the file extension; `--format` selects only the report printed to stdout |
 | `--format` | `<FORMAT>` | no | `text` | One of `text`, `yaml`, `json`. |
 
 #### `ess infra import openapi`

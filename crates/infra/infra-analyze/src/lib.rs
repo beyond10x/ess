@@ -9,7 +9,7 @@
 //!
 //! | module | contents |
 //! |---|---|
-//! | [`graph`] | the typed dependency graph: closed edge vocabulary, sites as evidence, exact pod ownership through observed controllers, Mermaid and JSON renderings |
+//! | [`graph`] | the typed dependency graph: closed edge vocabulary, sites as evidence, exact pod ownership through observed controllers, Mermaid, DOT and JSON renderings |
 //! | [`diagnose`](mod@diagnose) | twenty diagnosis rules, each with a stable `INFRA-DIAG-*` code and a registered severity |
 //! | [`code`] | the code registry and the severity taxonomy |
 //! | [`properties`](mod@properties) | per-workload replicas (declared and observed), parsed images, resource envelopes, budget and autoscaler coverage |

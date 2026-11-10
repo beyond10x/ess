@@ -80,6 +80,17 @@ pub enum NodeKind {
     /// A horizontal pod autoscaler. Like the budget, edgeless in this wave: its target is
     /// carried as data and judged by `INFRA-DIAG-017`/`018`.
     HorizontalPodAutoscaler,
+    /// A Gateway API gateway.
+    Gateway,
+    /// A Gateway API HTTP route.
+    HttpRoute,
+    /// A hostname the cluster's edge is reached at, as a gateway's status or a load-balancer
+    /// service's status records it. Not a cluster object: keyed by the hostname itself, and
+    /// cluster-scoped.
+    LoadBalancer,
+    /// A cloud identity a service account assumes, as its role annotation names it. Not a
+    /// cluster object: keyed by the role's ARN, and cluster-scoped.
+    CloudRole,
 }
 
 impl NodeKind {
@@ -101,6 +112,10 @@ impl NodeKind {
             Self::CronJob => "cj",
             Self::PodDisruptionBudget => "pdb",
             Self::HorizontalPodAutoscaler => "hpa",
+            Self::Gateway => "gw",
+            Self::HttpRoute => "rt",
+            Self::LoadBalancer => "lb",
+            Self::CloudRole => "role",
         }
     }
 
@@ -121,12 +136,17 @@ impl NodeKind {
             Self::CronJob => "cronjob",
             Self::PodDisruptionBudget => "pod disruption budget",
             Self::HorizontalPodAutoscaler => "autoscaler",
+            Self::Gateway => "gateway",
+            Self::HttpRoute => "route",
+            Self::LoadBalancer => "load balancer",
+            Self::CloudRole => "cloud role",
         }
     }
 
-    /// Whether objects of this kind live in a namespace. Only cluster nodes do not.
+    /// Whether objects of this kind live in a namespace. Cluster nodes and the external
+    /// addresses of the edge and the cloud roles accounts assume do not.
     fn namespaced(self) -> bool {
-        !matches!(self, Self::Node)
+        !matches!(self, Self::Node | Self::LoadBalancer | Self::CloudRole)
     }
 }
 
@@ -207,11 +227,17 @@ pub enum EdgeRelation {
     OwnedBy,
     /// A pod was scheduled onto a cluster node.
     ScheduledOn,
+    /// An HTTP route attaches to a gateway it names as a parent.
+    AttachedTo,
+    /// A gateway or a load-balancer service is reached at a hostname its status records.
+    ExposedAt,
+    /// A service account assumes the cloud role its annotation names.
+    Assumes,
 }
 
 impl EdgeRelation {
     /// Every relation, so a test can insist each one is minted from a real observation.
-    pub const ALL: [Self; 10] = [
+    pub const ALL: [Self; 13] = [
         Self::Selects,
         Self::RoutesTo,
         Self::GovernedBy,
@@ -222,7 +248,15 @@ impl EdgeRelation {
         Self::RunsAs,
         Self::OwnedBy,
         Self::ScheduledOn,
+        Self::AttachedTo,
+        Self::ExposedAt,
+        Self::Assumes,
     ];
+
+    /// The relations only the cluster's edge and its cloud mint — Gateway API kinds, the
+    /// addresses the edge is reached at, the roles accounts assume — which the committed k3d
+    /// example does not observe.
+    pub const EDGE: [Self; 3] = [Self::AttachedTo, Self::ExposedAt, Self::Assumes];
 
     /// The phrase an edge reads with: `<dependent> <verb> <dependency>`.
     pub const fn verb(self) -> &'static str {
@@ -237,6 +271,28 @@ impl EdgeRelation {
             Self::RunsAs => "runs as",
             Self::OwnedBy => "is owned by",
             Self::ScheduledOn => "is scheduled on",
+            Self::AttachedTo => "is attached to",
+            Self::ExposedAt => "is exposed at",
+            Self::Assumes => "assumes",
+        }
+    }
+
+    /// The relation's name as the JSON document spells it: `owned-by`, `reads-key-of`.
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::Selects => "selects",
+            Self::RoutesTo => "routes-to",
+            Self::GovernedBy => "governed-by",
+            Self::ReadsKeyOf => "reads-key-of",
+            Self::ImportsAllOf => "imports-all-of",
+            Self::Mounts => "mounts",
+            Self::Claims => "claims",
+            Self::RunsAs => "runs-as",
+            Self::OwnedBy => "owned-by",
+            Self::ScheduledOn => "scheduled-on",
+            Self::AttachedTo => "attached-to",
+            Self::ExposedAt => "exposed-at",
+            Self::Assumes => "assumes",
         }
     }
 }
@@ -370,6 +426,8 @@ impl InfraGraph {
         graph.walk_services(ir);
         graph.walk_ingresses(ir);
         graph.walk_controllers(ir);
+        graph.walk_gateway_api(ir);
+        graph.walk_cloud(ir);
         graph.walk_pods(ir);
         graph.underived.sort();
         graph
@@ -707,6 +765,83 @@ impl InfraGraph {
         }
     }
 
+    /// Gateways and their recorded hostnames; routes and what they attach to and route to.
+    ///
+    /// Only resolved references draw an edge: a parent of an unmodelled kind and a reference
+    /// to something unobserved stay facts of the IR, never boxes on this map.
+    fn walk_gateway_api(&mut self, ir: &InfraIr) {
+        if let Some(gateways) = &ir.model().gateways {
+            for (key, gateway) in gateways {
+                let subject = GraphNode::new(NodeKind::Gateway, key);
+                self.nodes.insert(subject.clone());
+                for (index, address) in gateway.addresses.iter().enumerate() {
+                    if address.address_type == "Hostname" {
+                        self.edge(
+                            subject.clone(),
+                            EdgeRelation::ExposedAt,
+                            GraphNode::new(NodeKind::LoadBalancer, &address.value),
+                            format!("status.addresses[{index}]"),
+                        );
+                    }
+                }
+            }
+        }
+        if let Some(routes) = &ir.model().http_routes {
+            for (key, route) in routes {
+                let subject = GraphNode::new(NodeKind::HttpRoute, key);
+                self.nodes.insert(subject.clone());
+                for (index, parent) in route.parents.iter().enumerate() {
+                    if let Some(Reference::Resolved { key: gateway }) = &parent.gateway {
+                        self.edge(
+                            subject.clone(),
+                            EdgeRelation::AttachedTo,
+                            GraphNode::new(NodeKind::Gateway, gateway.key()),
+                            format!("parentRefs[{index}]"),
+                        );
+                    }
+                }
+                for (rule_index, rule) in route.rules.iter().enumerate() {
+                    for (index, backend) in rule.backends.iter().enumerate() {
+                        if let Some(Reference::Resolved { key: service }) = &backend.service {
+                            self.edge(
+                                subject.clone(),
+                                EdgeRelation::RoutesTo,
+                                GraphNode::new(NodeKind::Service, service.key()),
+                                format!("rules[{rule_index}].backendRefs[{index}]"),
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// The roles service accounts assume and the hostnames load-balancer services are reached at.
+    fn walk_cloud(&mut self, ir: &InfraIr) {
+        for (key, account) in &ir.model().service_accounts {
+            if let Some(identity) = &account.cloud_identity {
+                self.edge(
+                    GraphNode::new(NodeKind::ServiceAccount, key),
+                    EdgeRelation::Assumes,
+                    GraphNode::new(NodeKind::CloudRole, &identity.role_arn),
+                    "metadata.annotations[eks.amazonaws.com/role-arn]".to_owned(),
+                );
+            }
+        }
+        for (key, service) in &ir.model().services {
+            if let Some(balancer) = &service.load_balancer {
+                for (index, hostname) in balancer.hostnames.iter().enumerate() {
+                    self.edge(
+                        GraphNode::new(NodeKind::Service, key),
+                        EdgeRelation::ExposedAt,
+                        GraphNode::new(NodeKind::LoadBalancer, hostname),
+                        format!("status.loadBalancer.ingress[{index}]"),
+                    );
+                }
+            }
+        }
+    }
+
     #[allow(clippy::too_many_lines)]
     fn walk_pods(&mut self, ir: &InfraIr) {
         for (key, pod) in &ir.model().pods {
@@ -976,7 +1111,7 @@ impl GraphDocument {
 /// and deliberately not the runtime layer: a real cluster observes a thousand pods, and a
 /// flowchart with a thousand pod boxes is not a rendering anyone reads. The JSON document is
 /// canonical and carries everything; the diagram is the part of it a person looks at.
-const MERMAID_KINDS: [NodeKind; 7] = [
+const MERMAID_KINDS: [NodeKind; 11] = [
     NodeKind::Workload,
     NodeKind::Service,
     NodeKind::Ingress,
@@ -984,6 +1119,10 @@ const MERMAID_KINDS: [NodeKind; 7] = [
     NodeKind::Secret,
     NodeKind::ServiceAccount,
     NodeKind::Claim,
+    NodeKind::Gateway,
+    NodeKind::HttpRoute,
+    NodeKind::LoadBalancer,
+    NodeKind::CloudRole,
 ];
 
 impl InfraGraph {
@@ -995,11 +1134,7 @@ impl InfraGraph {
     pub fn mermaid(&self) -> String {
         use std::fmt::Write as _;
 
-        let drawn: Vec<&GraphNode> = self
-            .nodes
-            .iter()
-            .filter(|node| MERMAID_KINDS.contains(&node.kind))
-            .collect();
+        let drawn = self.drawn();
 
         // Identifiers are indices into the canonical node order, prefixed by kind so an
         // identifier read out of the diagram says what it is.
@@ -1012,11 +1147,12 @@ impl InfraGraph {
         }
 
         let mut namespaces: BTreeMap<&str, Vec<&GraphNode>> = BTreeMap::new();
+        let mut cluster_scoped: Vec<&GraphNode> = Vec::new();
         for node in &drawn {
-            namespaces
-                .entry(node.namespace().unwrap_or_default())
-                .or_default()
-                .push(node);
+            match node.namespace() {
+                Some(namespace) => namespaces.entry(namespace).or_default().push(node),
+                None => cluster_scoped.push(node),
+            }
         }
 
         let mut out = String::from("flowchart TB\n");
@@ -1035,19 +1171,20 @@ impl InfraGraph {
                 label(namespace)
             );
             for node in members {
-                let text = match node.kind {
-                    NodeKind::Workload => {
-                        // The key is `namespace/kind/name`; the label reads `kind name`.
-                        let mut parts = node.key.splitn(3, '/');
-                        let _ = parts.next();
-                        let kind = parts.next().unwrap_or_default();
-                        format!("{kind} {}", parts.next().unwrap_or_default())
-                    }
-                    other => format!("{} {}", other.noun(), node.name()),
-                };
-                let _ = writeln!(out, "        {}[\"{}\"]", ids[*node], label(&text));
+                let _ = writeln!(
+                    out,
+                    "        {}[\"{}\"]",
+                    ids[*node],
+                    label(&node_text(node))
+                );
             }
             out.push_str("    end\n");
+        }
+        // Cluster-scoped kinds that are drawn sit outside every namespace, labelled by key: a
+        // hostname or a role identifier is read whole, not by its last segment.
+        for node in &cluster_scoped {
+            let text = format!("{} {}", node.kind.noun(), node.key);
+            let _ = writeln!(out, "    {}[\"{}\"]", ids[*node], label(&text));
         }
         for ((from, relation, to), sites) in &self.edges {
             let (Some(from_id), Some(to_id)) = (ids.get(from), ids.get(to)) else {
@@ -1062,12 +1199,144 @@ impl InfraGraph {
         }
         out
     }
+
+    /// The same topology as Graphviz DOT, ready for `dot -Tsvg`: the nodes and edges the
+    /// Mermaid rendering draws, one `cluster_<namespace>` subgraph per namespace, a
+    /// cluster-scoped node outside every cluster, and each edge labelled with its relation's
+    /// name.
+    ///
+    /// A node's identifier is its kind prefix and IR key (`"wl:shop/deployment/api"`), not an
+    /// index, so one object keeps its identifier whatever else the cluster holds and two
+    /// renderings of related clusters diff line by line.
+    #[must_use]
+    pub fn dot(&self) -> String {
+        use std::fmt::Write as _;
+
+        let drawn = self.drawn();
+        let mut namespaces: BTreeMap<&str, Vec<&GraphNode>> = BTreeMap::new();
+        let mut cluster_scoped: Vec<&GraphNode> = Vec::new();
+        for node in &drawn {
+            match node.namespace() {
+                Some(namespace) => namespaces.entry(namespace).or_default().push(node),
+                None => cluster_scoped.push(node),
+            }
+        }
+        let drawn_set: BTreeSet<&GraphNode> = drawn.iter().copied().collect();
+        let edges: Vec<&EdgeId> = self
+            .edges
+            .keys()
+            .filter(|(from, _, to)| drawn_set.contains(from) && drawn_set.contains(to))
+            .collect();
+
+        let mut out = String::new();
+        let _ = writeln!(
+            out,
+            "// infrastructure graph — {} node(s), {} edge(s)",
+            drawn.len(),
+            edges.len()
+        );
+        if let Some(coverage) = &self.coverage {
+            let _ = writeln!(
+                out,
+                "// namespace {}; {}",
+                dot_line(coverage.namespace()),
+                dot_line(coverage.limitation())
+            );
+        }
+        out.push_str("digraph infrastructure {\n");
+        out.push_str("  rankdir=LR;\n");
+        out.push_str("  node [fontname=\"sans-serif\", shape=box];\n");
+        out.push_str("  edge [fontname=\"sans-serif\"];\n");
+        for (namespace, members) in &namespaces {
+            let _ = writeln!(
+                out,
+                "  subgraph {} {{",
+                dot_string(&format!("cluster_{namespace}"))
+            );
+            let _ = writeln!(
+                out,
+                "    label={};",
+                dot_string(&format!("namespace {namespace}"))
+            );
+            out.push_str("    style=rounded;\n");
+            for node in members {
+                let _ = writeln!(
+                    out,
+                    "    {} [label={}];",
+                    dot_id(node),
+                    dot_string(&node_text(node))
+                );
+            }
+            out.push_str("  }\n");
+        }
+        for node in &cluster_scoped {
+            let _ = writeln!(
+                out,
+                "  {} [label={}];",
+                dot_id(node),
+                dot_string(&node_text(node))
+            );
+        }
+        for (from, relation, to) in edges {
+            let _ = writeln!(
+                out,
+                "  {} -> {} [label={}];",
+                dot_id(from),
+                dot_id(to),
+                dot_string(relation.name())
+            );
+        }
+        out.push_str("}\n");
+        out
+    }
+
+    /// The nodes both diagram renderings draw, in canonical order.
+    fn drawn(&self) -> Vec<&GraphNode> {
+        self.nodes
+            .iter()
+            .filter(|node| MERMAID_KINDS.contains(&node.kind))
+            .collect()
+    }
+}
+
+/// What a node reads as in a diagram: a workload `kind name`, anything else `noun name`.
+fn node_text(node: &GraphNode) -> String {
+    match node.kind {
+        NodeKind::Workload => {
+            // The key is `namespace/kind/name`; the label reads `kind name`.
+            let mut parts = node.key.splitn(3, '/');
+            let _ = parts.next();
+            let kind = parts.next().unwrap_or_default();
+            format!("{kind} {}", parts.next().unwrap_or_default())
+        }
+        other => format!("{} {}", other.noun(), node.name()),
+    }
 }
 
 /// Defuses what would end a quoted Mermaid string early — `ess-gen`'s escaping, kept
 /// identical so the two Mermaid emitters in this workspace cannot disagree about quoting.
 fn label(text: &str) -> String {
     text.replace('"', "#quot;").replace('\n', " ")
+}
+
+/// A node's DOT identifier: its kind prefix and IR key, quoted.
+fn dot_id(node: &GraphNode) -> String {
+    dot_string(&format!("{}:{}", node.kind.mermaid_prefix(), node.key))
+}
+
+/// A quoted DOT string: a backslash or a quote cannot end it early, a newline cannot break it.
+fn dot_string(text: &str) -> String {
+    format!(
+        "\"{}\"",
+        text.replace('\\', "\\\\")
+            .replace('"', "\\\"")
+            .replace('\n', " ")
+    )
+}
+
+/// Text for a `//` comment line: a newline would end the comment and start DOT source.
+fn dot_line(text: &str) -> String {
+    text.replace('\n', " ")
 }
 
 #[cfg(test)]
@@ -1100,6 +1369,112 @@ mod tests {
             None,
             "an empty hash proves nothing"
         );
+    }
+
+    /// Two namespaces, a cluster node and a pod: the runtime layer the diagrams leave out.
+    fn small_graph() -> InfraGraph {
+        let mut graph = InfraGraph {
+            coverage: None,
+            nodes: BTreeSet::new(),
+            edges: BTreeMap::new(),
+            pod_owners: BTreeMap::new(),
+            underived: Vec::new(),
+        };
+        let api = GraphNode::new(NodeKind::Workload, "shop/deployment/shop-api");
+        graph.edge(
+            GraphNode::new(NodeKind::Service, "shop/shop-api"),
+            EdgeRelation::Selects,
+            api.clone(),
+            "selector[app=shop-api]".to_owned(),
+        );
+        graph.edge(
+            api.clone(),
+            EdgeRelation::ReadsKeyOf,
+            GraphNode::new(NodeKind::ConfigMap, "shop/settings"),
+            "containers[api].env[MODE]".to_owned(),
+        );
+        graph.edge(
+            api.clone(),
+            EdgeRelation::ReadsKeyOf,
+            GraphNode::new(NodeKind::ConfigMap, "shop/settings"),
+            "containers[api].env[LEVEL]".to_owned(),
+        );
+        graph.edge(
+            api,
+            EdgeRelation::RunsAs,
+            GraphNode::new(NodeKind::ServiceAccount, "shop/default"),
+            "serviceAccountName".to_owned(),
+        );
+        graph.node(NodeKind::Secret, "billing/db\"creds");
+        graph.edge(
+            GraphNode::new(NodeKind::Pod, "shop/shop-api-0"),
+            EdgeRelation::ScheduledOn,
+            GraphNode::new(NodeKind::Node, "worker-1"),
+            "nodeName".to_owned(),
+        );
+        graph
+    }
+
+    #[test]
+    fn the_dot_rendering_clusters_by_namespace_with_stable_ids_and_relation_labels() {
+        let expected = concat!(
+            "// infrastructure graph — 5 node(s), 3 edge(s)\n",
+            "digraph infrastructure {\n",
+            "  rankdir=LR;\n",
+            "  node [fontname=\"sans-serif\", shape=box];\n",
+            "  edge [fontname=\"sans-serif\"];\n",
+            "  subgraph \"cluster_billing\" {\n",
+            "    label=\"namespace billing\";\n",
+            "    style=rounded;\n",
+            "    \"sec:billing/db\\\"creds\" [label=\"secret db\\\"creds\"];\n",
+            "  }\n",
+            "  subgraph \"cluster_shop\" {\n",
+            "    label=\"namespace shop\";\n",
+            "    style=rounded;\n",
+            "    \"wl:shop/deployment/shop-api\" [label=\"deployment shop-api\"];\n",
+            "    \"svc:shop/shop-api\" [label=\"service shop-api\"];\n",
+            "    \"cm:shop/settings\" [label=\"configmap settings\"];\n",
+            "    \"sa:shop/default\" [label=\"service account default\"];\n",
+            "  }\n",
+            "  \"wl:shop/deployment/shop-api\" -> \"cm:shop/settings\" [label=\"reads-key-of\"];\n",
+            "  \"wl:shop/deployment/shop-api\" -> \"sa:shop/default\" [label=\"runs-as\"];\n",
+            "  \"svc:shop/shop-api\" -> \"wl:shop/deployment/shop-api\" [label=\"selects\"];\n",
+            "}\n",
+        );
+        let graph = small_graph();
+        assert_eq!(graph.dot(), expected);
+        assert_eq!(
+            graph.dot(),
+            small_graph().dot(),
+            "two renderings, one byte string"
+        );
+    }
+
+    #[test]
+    fn the_dot_rendering_draws_the_node_and_edge_set_the_mermaid_rendering_draws() {
+        let graph = small_graph();
+        let mermaid = graph.mermaid();
+        let dot = graph.dot();
+        let mermaid_nodes = mermaid
+            .lines()
+            .filter(|line| line.ends_with("\"]") && !line.contains("subgraph"))
+            .count();
+        let mermaid_edges = mermaid.lines().filter(|line| line.contains("-->")).count();
+        let dot_nodes = dot
+            .lines()
+            .filter(|line| line.contains(" [label=") && !line.contains(" -> "))
+            .count();
+        let dot_edges = dot.lines().filter(|line| line.contains(" -> ")).count();
+        assert_eq!((dot_nodes, dot_edges), (mermaid_nodes, mermaid_edges));
+        assert!(
+            !dot.contains("pod:") && !dot.contains("node:"),
+            "the runtime layer is the JSON document's: {dot}"
+        );
+    }
+
+    #[test]
+    fn a_dot_string_cannot_close_early_or_break_its_line() {
+        assert_eq!(dot_string("a\"b\\c\nd"), "\"a\\\"b\\\\c d\"");
     }
 
     #[test]
