@@ -4472,7 +4472,14 @@ fn exercise_run_in(
     for event in &emitted {
         let literals = determined_payload(ir, outcome, event, &run.input, &held);
         let mut shape = crate::response::event_shape(ir, event, outcome);
-        absent_by_reference_leaves(ir, outcome, event, &run, &mut shape);
+        absent_payload_leaves(
+            ir,
+            outcome,
+            event,
+            &run.input,
+            &run.before_settled,
+            &mut shape,
+        );
         let mut references = determined_identities(
             ir,
             outcome,
@@ -10039,10 +10046,11 @@ fn determined_fields(
                 if let Some(ScenarioValue::Literal { value }) =
                     expression_value(ir, field, supplied, before)
                 {
-                    // ess/22 (#285): a value read through a reference that may be absent is absent
-                    // where it is, and an absent top-level field may be published left out or as
-                    // `null`, which an exact payload comparison cannot say. The row asserts it.
-                    if value == Node::Null && absent_by_reference(&field.value) {
+                    // ess/22 (#285), #765: a read the arrangement evaluates to an absent value is
+                    // absent where it is, and an absent top-level field may be published left out
+                    // or as `null`, which an exact payload comparison cannot say. The leaf asserts
+                    // it (`absent_payload_leaves`).
+                    if value == Node::Null {
                         continue;
                     }
                     values.insert(field.target.clone(), value);
@@ -10063,30 +10071,31 @@ fn determined_fields(
     values
 }
 
-/// Requires every top-level field of `event` that a `{related: …}` source copies through a
-/// reference this run left absent to be absent — left out or `null`, either spelling (ess/22,
-/// beyond10x/ess#285): its leaf is made to admit no present value. The payload cannot say it — an
-/// exact `null` there would fail an implementation leaving the field out — and the leaf can,
-/// with nothing a runner does not already read.
-fn absent_by_reference_leaves(
+/// Requires every top-level field of `event` whose payload source the arrangement evaluates to an
+/// absent value to be absent — left out or `null`, whichever its declared presence admits
+/// (beyond10x/ess#765, from ess/22 beyond10x/ess#285 and ess/25 beyond10x/ess#531): its leaf is
+/// made to admit no present value. The payload cannot say it — an exact `null` there would fail an
+/// implementation leaving the field out, and is the refused spelling under `omitted_when_absent` —
+/// and the leaf can, with nothing a runner does not already read. One rule for every source: a
+/// `{related: …}` read through an absent reference, a `{changed: …}` read of a field held absent, a
+/// `{subject: <field>}` read of a field the arrangement left absent.
+pub(crate) fn absent_payload_leaves(
     ir: &EssIr,
     outcome: &ResolvedOutcome,
     event: &EventRef,
-    run: &Run,
+    supplied: &BTreeMap<String, ScenarioValue>,
+    before: &BTreeMap<String, Determined>,
     shape: &mut PayloadShape,
 ) {
-    let Some(payload) = outcome
+    for field in outcome
         .payload
         .iter()
-        .find(|payload| EventRef::from(&payload.event) == *event)
-    else {
-        return;
-    };
-    for field in &payload.fields {
-        let absent = absent_by_reference(&field.value)
-            && expression_value(ir, field, &run.input, &run.before_settled)
-                == Some(ScenarioValue::literal(Node::Null));
-        if !absent {
+        .filter(|payload| EventRef::from(&payload.event) == *event)
+        .flat_map(|payload| &payload.fields)
+        .filter(|field| is_absent_readable(&field.value))
+    {
+        if expression_value(ir, field, supplied, before) != Some(ScenarioValue::literal(Node::Null))
+        {
             continue;
         }
         let presence = shape
@@ -10106,12 +10115,24 @@ fn absent_by_reference_leaves(
     }
 }
 
-/// Whether `value` is a `{related: …}` read through a reference that may be absent (ess/22,
-/// beyond10x/ess#285).
-fn absent_by_reference(value: &ResolvedPayloadValue) -> bool {
-    matches!(value, ResolvedPayloadValue::RelatedField { via, through, .. }
-        | ResolvedPayloadValue::RelatedState { via, through, .. }
-        if ess_compiler::ir::related_may_be_absent(via, through))
+/// Whether `value` is a source `determined_payload` evaluates to a value, so an evaluation to
+/// `null` means the arrangement holds what it reads absent (beyond10x/ess#765).
+fn is_absent_readable(value: &ResolvedPayloadValue) -> bool {
+    matches!(
+        value,
+        ResolvedPayloadValue::SubjectField { .. }
+            | ResolvedPayloadValue::SubjectState { .. }
+            | ResolvedPayloadValue::Increment { .. }
+            | ResolvedPayloadValue::InputOrGenerated { .. }
+            | ResolvedPayloadValue::Struct { .. }
+            | ResolvedPayloadValue::RelatedField { .. }
+            | ResolvedPayloadValue::RelatedState { .. }
+            | ResolvedPayloadValue::RelatedSelection { .. }
+            | ResolvedPayloadValue::RelatedHead { .. }
+            | ResolvedPayloadValue::CallerAttribute { .. }
+            | ResolvedPayloadValue::Expression { .. }
+            | ResolvedPayloadValue::ChangedField { .. }
+    )
 }
 
 /// What the specification declares an event carries, flattened to leaves a runner can check (§13).
@@ -17148,6 +17169,8 @@ fn from_source(
         }
     }
     for event in outcome.emits.iter().map(EventRef::from) {
+        let mut shape = crate::response::event_shape(ir, &event, outcome);
+        absent_payload_leaves(ir, outcome, &event, &supplied, &held, &mut shape);
         steps.push(expect_event_step(
             &event,
             determined_payload(ir, outcome, &event, &supplied, &held),
@@ -17159,7 +17182,7 @@ fn from_source(
                 &arrangement.settled,
                 Some(&arrangement.instance),
             ),
-            crate::response::event_shape(ir, &event, outcome),
+            shape,
         ));
     }
     let determined = settled(ir, outcome, &supplied, &held);

@@ -1704,7 +1704,7 @@ fn answer(
                 let identities =
                     super::determined_identities(ir, outcome, event, supplied, &before, None);
                 let mut shape = shape.clone();
-                absent_changed_leaves(ir, outcome, event, supplied, &before, &mut shape);
+                super::absent_payload_leaves(ir, outcome, event, supplied, &before, &mut shape);
                 steps.push(super::expect_event_step(event, literals, identities, shape));
                 published += 1;
             }
@@ -1791,52 +1791,6 @@ fn changed_values(
             },
         )
         .collect()
-}
-
-/// Requires every top-level field of `event` that `{changed: <field>}` reads from an `Optional`
-/// the changed row `before` held absent to be absent — left out or `null`, either spelling
-/// (ess/25, beyond10x/ess#531), as `absent_by_reference_leaves` does for a `{related: …}` read: its
-/// leaf admits no present value, so a target filling it from another row fails `ESS-CF-PAYLOAD`.
-fn absent_changed_leaves(
-    ir: &EssIr,
-    outcome: &ResolvedOutcome,
-    event: &EventRef,
-    supplied: &BTreeMap<String, ScenarioValue>,
-    before: &BTreeMap<String, Determined>,
-    shape: &mut PayloadShape,
-) {
-    for field in outcome
-        .payload
-        .iter()
-        .filter(|payload| EventRef::from(&payload.event) == *event)
-        .flat_map(|payload| &payload.fields)
-        .filter(|field| {
-            matches!(
-                field.value,
-                ess_compiler::ir::ResolvedPayloadValue::ChangedField { .. }
-            )
-        })
-    {
-        if super::expression_value(ir, field, supplied, before)
-            != Some(ScenarioValue::literal(Node::Null))
-        {
-            continue;
-        }
-        let presence = shape
-            .leaves()
-            .get(&field.target)
-            .and_then(|leaf| leaf.presence);
-        shape.insert(
-            field.target.clone(),
-            LeafShape {
-                holds: Holds::Enum {
-                    variants: Vec::new(),
-                },
-                optional: true,
-                presence,
-            },
-        );
-    }
 }
 
 /// What a changed row held before the outcome, for `{changed: …}` to read (ess/25,
