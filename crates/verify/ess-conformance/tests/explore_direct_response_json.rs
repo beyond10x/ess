@@ -21,7 +21,7 @@ use ess_domain::spec::{RawSpecFile, Specification};
 use ess_domain::system::Source;
 use serde_json::{json, Value};
 
-const FIXTURE: &str = r#"# An adversary fixture: a REQUIRED `Json` response member, whose own values include null.
+const FIXTURE: &str = r"# An adversary fixture: a REQUIRED `Json` response member, whose own values include null.
 # (story:go-explorer-compares-direct-response-members).
 #
 # `Mint` returns a token (`minted`, `returns: true`): its response declares `token` and `label`,
@@ -58,7 +58,7 @@ commands:
         error: explorert.keys.TooLong
       - name: minted
         returns: true
-"#;
+";
 
 fn ir() -> EssIr {
     let mut sources = SourceMap::new();

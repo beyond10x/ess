@@ -20,7 +20,8 @@ $ ess infra import kubernetes \
 ```
 
 The importer reports coverage and unresolved references. It does not invent missing ownership,
-policy, or topology semantics.
+policy, or topology semantics. `--out` writes the IR as JSON whatever the file extension;
+`--format` selects only the report printed to stdout.
 
 ## Diagnose and graph the IR
 
@@ -35,6 +36,11 @@ $ ess infra infra graph --path target/cluster.ir.json --format mermaid
 
 Diagnosis is a report, not a deployment gate. Findings carry stable codes and the exact resources
 that established them.
+
+`--format dot` writes the same nodes and edges as Graphviz DOT, one `cluster_<namespace>` subgraph
+per namespace, for `dot -Tsvg`. Both diagrams draw the configuration topology: workloads, services,
+ingresses, configmaps, secrets, service accounts and claims. Pods, replicasets, jobs, cronjobs,
+disruption budgets, autoscalers and cluster nodes are in the `json` and `yaml` documents only.
 
 ## Compare two observations
 
@@ -72,9 +78,59 @@ Live access is outside the offline repository gate. Raw Secret `data`, `stringDa
 last-applied configuration values are sanitized before serialization. A full scan writes
 `infra-observation/3`, where each Secret `data`/`stringData` entry keeps its key name and
 `{"present": true}` and nothing derived from the value, not even a digest or a length; compiling it
-writes `infra-ir/3` with the same marker. Failed reads stop collection;
+writes `infra-ir/3` with the same marker, or `infra-ir/4` when the model holds a Gateway API kind, a
+service account's cloud identity or a service's load balancer. Failed reads stop collection;
 ESS never retries a failed cluster read in the current namespace. Keep the observation output
 for review; do not treat sanitization as authority to publish operational topology.
+
+## What a full scan observes, and what it does not
+
+A full scan (`--context` without `--namespace`) reads 17 kinds, each with one
+`kubectl get <kind> -A -o json`: `namespaces`, `nodes`, `deployments`, `statefulsets`,
+`daemonsets`, `replicasets`, `jobs`, `cronjobs`, `pods`, `services`, `ingresses`, `configmaps`,
+`secrets`, `serviceaccounts`, `persistentvolumeclaims`, `poddisruptionbudgets` and
+`horizontalpodautoscalers`, plus the two Gateway API kinds `gateways.gateway.networking.k8s.io`
+and `httproutes.gateway.networking.k8s.io`. A required kind the API server does not serve fails
+its read, and the scan stops; a Gateway API kind the server does not serve is left out of the
+bundle and printed as `not served`. The scan then calls `kubectl api-resources --verbs=list` once
+and records every served kind of a watched API group that it does not read (network policy,
+Istio, the AWS load balancer controller, cert-manager, external secrets, the secrets store CSI
+driver, autoscaling, KEDA, Karpenter, Argo, the Prometheus operator) as the observation's
+`unobserved_kinds`; the import report lists each under `coverage_gaps` as `served but not read`.
+
+What the two files keep:
+
+- Each Secret `data` and `stringData` value is `{"present": true}` in the observation, and the
+  `kubectl.kubernetes.io/last-applied-configuration` annotation is removed from every Secret.
+- Every other object is written as the API server returned it. ConfigMap values, literal
+  environment values and annotations are in the observation bundle.
+- The IR keeps each ConfigMap key with the SHA-256 and byte length of its value, not the value. A
+  literal environment value stays in the IR as declared.
+- The IR reads two named annotations and one status field as typed fields, and no other: a
+  ServiceAccount's `eks.amazonaws.com/role-arn` as `cloud_identity`, and a `type: LoadBalancer`
+  Service's `status.loadBalancer.ingress[].hostname` and
+  `service.beta.kubernetes.io/aws-load-balancer-scheme` as `load_balancer`. The graph draws the
+  role as a `cloud_role` node (`assumes`) and each hostname as a `load_balancer` node
+  (`exposed-at`). An IR holding either field, or a Gateway API kind, is written as `infra-ir/4`.
+- A `Gateway` and an `HTTPRoute` are resolved against the observed gateways and services: the graph
+  draws `attached-to` (route → gateway) and `routes-to` (route → service), and diagnosis reports an
+  unobserved parent or backend as `INFRA-DIAG-002`.
+
+What the model does not read, so diagnosis, the graph and drift cannot see it:
+
+- **Storage behind a claim.** A PersistentVolumeClaim keeps its storage class name, access modes,
+  requested size and phase. StorageClass and PersistentVolume objects are not scanned.
+- **NetworkPolicy.** Not scanned; the graph says what references what, not what may reach what.
+- **Custom resources.** No custom resource beyond the Gateway API is scanned, such as cert-manager
+  `Certificate`, external-secrets `ExternalSecret`, or AWS Controllers for Kubernetes database
+  kinds; a served one in a watched group is named under `coverage_gaps`.
+- **Other annotations.** The model reads an object's name, namespace, uid, labels and owner
+  references, and the two annotations named above. An external-dns hostname annotation, for one,
+  is not in the IR.
+- **External dependencies.** Container images are kept and parsed into registry, repository, tag
+  and digest for diagnosis (`INFRA-DIAG-006` reports an unpinned image), but a registry is not a
+  node or an edge of the graph. A hostname inside a literal environment value is not surfaced as a
+  dependency.
 
 ## Collect one namespace's topology
 

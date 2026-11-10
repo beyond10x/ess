@@ -295,6 +295,7 @@ fn pinned_subject(
         _ => Some(row.state.clone()),
     };
     let setup = Setup {
+        related_row: BTreeMap::new(),
         steps: row.steps,
         instance: Some(row.instance),
         bound: BTreeMap::new(),

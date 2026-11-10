@@ -1716,6 +1716,7 @@ fn segment(
         None
     };
     let setup = Setup {
+        related_row: BTreeMap::new(),
         steps: arrangement.steps,
         instance: Some(arrangement.instance),
         bound: BTreeMap::new(),

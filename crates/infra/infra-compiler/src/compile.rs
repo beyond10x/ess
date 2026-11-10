@@ -11,11 +11,13 @@ use infra_domain::observation::Observation;
 use infra_domain::workload::{EnvFromSource, EnvSource, VolumeSource, Workload, WorkloadKind};
 
 use crate::ir::{
-    ClaimHandle, ConfigMapHandle, InfraIr, InfraModel, NodeHandle, Provenance, Reference,
-    ResolvedContainer, ResolvedEnvFrom, ResolvedEnvFromSource, ResolvedEnvSource, ResolvedEnvVar,
-    ResolvedIngress, ResolvedIngressBackend, ResolvedIngressPath, ResolvedIngressRule, ResolvedPod,
-    ResolvedVolume, ResolvedVolumeSource, ResolvedWorkload, SecretHandle, ServiceAccountHandle,
-    ServiceHandle, UnresolvedReference, UnresolvedTarget,
+    ClaimHandle, ConfigMapHandle, GatewayHandle, InfraIr, InfraModel, NodeHandle, Provenance,
+    Reference, ResolvedContainer, ResolvedEnvFrom, ResolvedEnvFromSource, ResolvedEnvSource,
+    ResolvedEnvVar, ResolvedHttpRoute, ResolvedHttpRouteRule, ResolvedIngress,
+    ResolvedIngressBackend, ResolvedIngressPath, ResolvedIngressRule, ResolvedPod,
+    ResolvedRouteBackend, ResolvedRouteParent, ResolvedVolume, ResolvedVolumeSource,
+    ResolvedWorkload, SecretHandle, ServiceAccountHandle, ServiceHandle, UnresolvedReference,
+    UnresolvedTarget,
 };
 
 /// The map key of a namespaced object: `namespace/name`.
@@ -275,6 +277,22 @@ pub fn compile(observation: &Observation) -> InfraIr {
         );
     }
 
+    // Gateway API kinds: gateways are plain, routes resolve their parents and backends.
+    let gateways: Option<BTreeMap<String, _>> = observation.gateways.as_ref().map(|all| {
+        all.iter()
+            .map(|item| (scoped_map(&item.identity), item.clone()))
+            .collect()
+    });
+    let http_routes: Option<BTreeMap<String, _>> = observation.http_routes.as_ref().map(|all| {
+        all.iter()
+            .map(|route| {
+                let key = scoped_map(&route.identity);
+                let resolved = resolve_route(route, &key, &services, gateways.as_ref(), &mut facts);
+                (key, resolved)
+            })
+            .collect()
+    });
+
     // A selector that matches nothing is a fact, not an error: the cluster really is in that
     // state, and diagnosis (IW2) is the one to say whether it is a defect.
     for (key, service) in &services {
@@ -395,6 +413,22 @@ pub fn compile(observation: &Observation) -> InfraIr {
                 .map(|(key, entry)| (key.clone(), entry.identity.namespace.clone()))
                 .collect(),
         ),
+        (
+            "gateways",
+            gateways
+                .iter()
+                .flatten()
+                .map(|(key, entry)| (key.clone(), entry.identity.namespace.clone()))
+                .collect(),
+        ),
+        (
+            "http_routes",
+            http_routes
+                .iter()
+                .flatten()
+                .map(|(key, entry)| (key.clone(), entry.identity.namespace.clone()))
+                .collect(),
+        ),
     ] {
         for (key, namespace) in keys_and_namespaces {
             if let Some(namespace) = namespace {
@@ -437,8 +471,115 @@ pub fn compile(observation: &Observation) -> InfraIr {
             cron_jobs,
             pod_disruption_budgets,
             horizontal_pod_autoscalers,
+            gateways,
+            http_routes,
             unresolved: facts,
         },
+    }
+}
+
+/// Resolves one HTTP route's parents and backends.
+///
+/// A reference names its namespace or means the route's own. Only a core `Service` backend
+/// and a `gateway.networking.k8s.io` `Gateway` parent resolve; a reference of another kind is
+/// carried with `None` in place of the handle — by kind, not guessed and not dangling.
+fn resolve_route(
+    route: &infra_domain::network::HttpRoute,
+    key: &str,
+    services: &BTreeMap<String, infra_domain::network::Service>,
+    gateways: Option<&BTreeMap<String, infra_domain::network::Gateway>>,
+    facts: &mut Vec<UnresolvedReference>,
+) -> ResolvedHttpRoute {
+    let own = route.identity.namespace.clone().unwrap_or_default();
+    let from = format!("http_routes/{key}");
+    let parents = route
+        .parents
+        .iter()
+        .enumerate()
+        .map(|(index, parent)| {
+            let namespace = parent.namespace.clone().unwrap_or_else(|| own.clone());
+            let gateway = (parent.group == infra_domain::GATEWAY_API_GROUP
+                && parent.kind == "Gateway")
+                .then(|| {
+                    let target = format!("{namespace}/{}", parent.name);
+                    if gateways.is_some_and(|all| all.contains_key(&target)) {
+                        Reference::Resolved {
+                            key: GatewayHandle::new(target),
+                        }
+                    } else {
+                        facts.push(UnresolvedReference {
+                            from: from.clone(),
+                            site: format!("parentRefs[{index}]"),
+                            target: UnresolvedTarget::Gateway {
+                                name: parent.name.clone(),
+                            },
+                        });
+                        Reference::Unresolved {
+                            name: parent.name.clone(),
+                        }
+                    }
+                });
+            ResolvedRouteParent {
+                group: parent.group.clone(),
+                kind: parent.kind.clone(),
+                name: parent.name.clone(),
+                namespace,
+                section_name: parent.section_name.clone(),
+                gateway,
+            }
+        })
+        .collect();
+    let rules = route
+        .rules
+        .iter()
+        .enumerate()
+        .map(|(rule_index, rule)| ResolvedHttpRouteRule {
+            matches: rule.matches.clone(),
+            backends: rule
+                .backends
+                .iter()
+                .enumerate()
+                .map(|(index, backend)| {
+                    let namespace = backend.namespace.clone().unwrap_or_else(|| own.clone());
+                    let service =
+                        (backend.group.is_empty() && backend.kind == "Service").then(|| {
+                            let target = format!("{namespace}/{}", backend.name);
+                            if services.contains_key(&target) {
+                                Reference::Resolved {
+                                    key: ServiceHandle::new(target),
+                                }
+                            } else {
+                                facts.push(UnresolvedReference {
+                                    from: from.clone(),
+                                    site: format!("rules[{rule_index}].backendRefs[{index}]"),
+                                    target: UnresolvedTarget::Service {
+                                        name: backend.name.clone(),
+                                    },
+                                });
+                                Reference::Unresolved {
+                                    name: backend.name.clone(),
+                                }
+                            }
+                        });
+                    ResolvedRouteBackend {
+                        group: backend.group.clone(),
+                        kind: backend.kind.clone(),
+                        name: backend.name.clone(),
+                        namespace,
+                        port: backend.port,
+                        weight: backend.weight,
+                        service,
+                    }
+                })
+                .collect(),
+        })
+        .collect();
+    ResolvedHttpRoute {
+        identity: route.identity.clone(),
+        labels: route.labels.clone(),
+        hostnames: route.hostnames.clone(),
+        parents,
+        rules,
     }
 }
 

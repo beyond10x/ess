@@ -1000,15 +1000,14 @@ fn assert_stored_guard_beside_input_guard(model: &str, reason: &str) {
         Some(&mode("slow")),
         "the default branch's await states the input no other guard admits: {finished:#?}"
     );
-    for (scenario_id, scenario) in synthesis.suite.scenarios.iter() {
+    for (scenario_id, scenario) in &synthesis.suite.scenarios {
         for step in &scenario.steps {
             if let ScenarioStep::AwaitOutcome { input, .. } = step {
                 if names(step, run) {
                     assert_eq!(
                         input.get("mode"),
                         Some(&mode("slow")),
-                        "`{}` states the input: {input:#?}",
-                        scenario_id
+                        "`{scenario_id}` states the input: {input:#?}"
                     );
                 }
             }
@@ -1085,7 +1084,7 @@ fn a_related_guard_beside_an_input_guard_on_a_system_step_synthesizes() {
 // Adversary cases (uncommitted): the same defect class as the story, on the guard shapes `guard`
 // still does not read, plus a pin for the `RelatedSet` arm no case above reaches.
 
-/// The when_related variant's model, as the unit's own case builds it.
+/// The `when_related` variant's model, as the unit's own case builds it.
 fn adversary_related_model() -> String {
     SYSTEM_STORED_GUARD
         .replace(

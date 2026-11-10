@@ -39,7 +39,7 @@ use std::fmt;
 
 use infra_domain::config::{ConfigMap, Secret};
 use infra_domain::controller::{CronJob, Job, ReplicaSet};
-use infra_domain::network::Service;
+use infra_domain::network::{Gateway, Service};
 use infra_domain::observation::{
     ContainerStatus, Identity, Namespace, Node, OwnerRef, PersistentVolumeClaim, PodPhase,
     ServiceAccount,
@@ -58,11 +58,36 @@ pub const IR_FORMAT: &str = "infra-ir/1";
 /// keeps `/1`, so a cluster without secrets keeps its bytes and its model digest.
 pub const PRESENCE_IR_FORMAT: &str = "infra-ir/3";
 
-/// The format a model implies: `/2` for qualified coverage, `/3` once any Secret key is recorded
-/// as present, `/1` otherwise. A reader refuses a document declaring anything else.
+/// The format of an IR that holds the cluster's edge or its cloud: a Gateway API kind, a service
+/// account's cloud identity or a service's load balancer.
+///
+/// `/3` with new members a `/3` reader's mirrors refuse. A model without any of them has the
+/// same meaning under both and keeps `/3` (or `/1`), its bytes and its digest.
+pub const EDGE_IR_FORMAT: &str = "infra-ir/4";
+
+/// Whether a model holds anything only `infra-ir/4` can carry: a Gateway API kind, a service
+/// account's cloud identity, or a service's load balancer.
+pub(crate) fn holds_edge(model: &InfraModel) -> bool {
+    model.gateways.is_some()
+        || model.http_routes.is_some()
+        || model
+            .service_accounts
+            .values()
+            .any(|account| account.cloud_identity.is_some())
+        || model
+            .services
+            .values()
+            .any(|service| service.load_balancer.is_some())
+}
+
+/// The format a model implies: `/2` for qualified coverage, `/4` once it holds a Gateway API
+/// kind, `/3` once any Secret key is recorded as present, `/1` otherwise. A reader refuses a
+/// document declaring anything else.
 pub(crate) fn implied_format(model: &InfraModel) -> &'static str {
     if model.coverage.is_some() {
         "infra-ir/2"
+    } else if holds_edge(model) {
+        EDGE_IR_FORMAT
     } else if model
         .secrets
         .values()
@@ -152,6 +177,51 @@ handles! {
     ServiceAccountHandle => service_account : ServiceAccount in service_accounts, "service account";
     /// A persistent volume claim that was observed.
     ClaimHandle => claim : PersistentVolumeClaim in claims, "persistent volume claim";
+}
+
+/// A Gateway API gateway that was observed.
+///
+/// Mintable only by [`compile`](crate::compile::compile) and the checked reader, like every
+/// other handle; declared by hand because the map it points into is optional.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize)]
+#[serde(transparent)]
+pub struct GatewayHandle(String);
+
+impl GatewayHandle {
+    /// Records a checked reference. Crate-private: minting is the check.
+    pub(crate) fn new(key: String) -> Self {
+        Self(key)
+    }
+
+    /// The map key it carries.
+    pub fn key(&self) -> &str {
+        &self.0
+    }
+}
+
+impl fmt::Display for GatewayHandle {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl InfraIr {
+    /// The gateway a handle names.
+    ///
+    /// Total for the reason every handle lookup is: a handle exists only where the compiler
+    /// found its key in this IR's gateways.
+    pub fn gateway(&self, handle: &GatewayHandle) -> &Gateway {
+        self.model
+            .gateways
+            .as_ref()
+            .and_then(|gateways| gateways.get(&handle.0))
+            .unwrap_or_else(|| {
+                panic!(
+                    "`{handle}` is not a gateway this IR holds: a handle belongs to the IR \
+                     that minted it"
+                )
+            })
+    }
 }
 
 /// A reference as the IR carries it: checked, and honest about the outcome.
@@ -383,6 +453,68 @@ pub struct ResolvedIngressBackend {
     pub port: Option<String>,
 }
 
+/// A Gateway API HTTP route with its parents and backends checked.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct ResolvedHttpRoute {
+    /// Identity.
+    pub identity: Identity,
+    /// Labels.
+    pub labels: BTreeMap<String, String>,
+    /// The hostnames the route answers for, in declared order.
+    pub hostnames: Vec<String>,
+    /// The parents, in declared order.
+    pub parents: Vec<ResolvedRouteParent>,
+    /// The rules, in declared order.
+    pub rules: Vec<ResolvedHttpRouteRule>,
+}
+
+/// One parent of a route.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct ResolvedRouteParent {
+    /// The parent's API group, as declared or defaulted.
+    pub group: String,
+    /// The parent's kind, as declared or defaulted.
+    pub kind: String,
+    /// The parent's name.
+    pub name: String,
+    /// The namespace the parent is looked up in: the declared one, or the route's own.
+    pub namespace: String,
+    /// The parent's listener, when the route names one.
+    pub section_name: Option<String>,
+    /// The gateway, checked — or `None` when the parent is of a kind the model does not
+    /// resolve, such as a `ListenerSet`: carried by its kind, never guessed to be a gateway.
+    pub gateway: Option<Reference<GatewayHandle>>,
+}
+
+/// One route rule, backends checked.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct ResolvedHttpRouteRule {
+    /// The request matches, as validated.
+    pub matches: Vec<infra_domain::network::HttpRouteMatch>,
+    /// The backends, in declared order.
+    pub backends: Vec<ResolvedRouteBackend>,
+}
+
+/// One backend of a route rule.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct ResolvedRouteBackend {
+    /// The backend's API group, as declared or defaulted.
+    pub group: String,
+    /// The backend's kind, as declared or defaulted.
+    pub kind: String,
+    /// The backend's name.
+    pub name: String,
+    /// The namespace the backend is looked up in: the declared one, or the route's own.
+    pub namespace: String,
+    /// The backend port.
+    pub port: Option<u16>,
+    /// The share of traffic the backend receives.
+    pub weight: Option<u32>,
+    /// The service, checked — or `None` when the backend is of a kind other than a core
+    /// `Service`, carried by its kind and not resolved.
+    pub service: Option<Reference<ServiceHandle>>,
+}
+
 /// A pod with its node assignment checked.
 ///
 /// The owner reference stays plain data, deliberately: deployment pods are owned through
@@ -475,6 +607,11 @@ pub enum UnresolvedTarget {
         /// Its name.
         name: String,
     },
+    /// A Gateway API gateway a route attaches to that was not observed.
+    Gateway {
+        /// Its name.
+        name: String,
+    },
     /// A namespace an object sits in that the scan did not observe.
     Namespace {
         /// Its name.
@@ -536,6 +673,16 @@ pub struct InfraModel {
     /// reason: an autoscaler aimed at something unobserved is a *diagnosis* about the cluster
     /// (`INFRA-DIAG-018`), not a resolution failure of the document.
     pub horizontal_pod_autoscalers: Option<BTreeMap<String, HorizontalPodAutoscaler>>,
+    /// Gateway API gateways, keyed by `namespace/name`; `None` when the observation carried no
+    /// such kind ([`infra_domain::observation::GATEWAY_KINDS`]). Omitted from the persisted
+    /// model when `None`, so a model without it keeps its format, bytes and digest; present,
+    /// even empty, it makes the document `infra-ir/4`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub gateways: Option<BTreeMap<String, Gateway>>,
+    /// Gateway API HTTP routes, keyed by `namespace/name`; `None` when the observation carried
+    /// no such kind. Persisted as [`Self::gateways`] is.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub http_routes: Option<BTreeMap<String, ResolvedHttpRoute>>,
     /// Every dangling reference, sorted — the aggregate of every [`Reference::Unresolved`] in
     /// the maps above, plus the checks that have no site to live at (a selector matching
     /// nothing, a namespace nobody observed).
@@ -666,7 +813,7 @@ pub struct InfraIr {
 /// The persisted form emitted by the ESS infrastructure compiler.
 #[derive(Debug, Clone, Serialize)]
 pub struct InfraIrDocument<'a> {
-    /// The format claim: `infra-ir/1`, `/2` or `/3`, as the model implies.
+    /// The format claim: `infra-ir/1`, `/2`, `/3` or `/4`, as the model implies.
     pub format: &'static str,
     /// Where the observation came from.
     pub provenance: &'a Provenance,

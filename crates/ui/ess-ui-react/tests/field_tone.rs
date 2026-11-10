@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 
 use support::{compile, node};
 
-const DOCUMENT: &str = r#"
+const DOCUMENT: &str = r"
 format: ess-ui/1
 app: t
 model: t.system
@@ -38,7 +38,7 @@ pages:
           - {field: load, as: badge, tone_by: load}
           - {field: owner, tone_by: run_state}
           - {field: title}
-"#;
+";
 
 fn scratch(name: &str) -> PathBuf {
     let dir = Path::new(env!("CARGO_TARGET_TMPDIR"))
@@ -80,8 +80,8 @@ fn column_prop(pages: &str, name: &str, prop: &str) -> String {
         return "undefined".to_owned();
     };
     let literal = &spec[open + prop.len() + 2..];
-    if literal.starts_with('"') {
-        let close = literal[1..].find('"').expect("the string closes") + 2;
+    if let Some(rest) = literal.strip_prefix('"') {
+        let close = rest.find('"').expect("the string closes") + 2;
         return literal[..close].to_owned();
     }
     let mut depth = 0;
