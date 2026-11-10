@@ -242,7 +242,14 @@ fn arranged_for<'a>(
             // against, where that keeps the branch its own guards choose: the row the trigger acts
             // on then stores it, and the event carries it.
             Sent::Creator { step, from } => {
-                steer_creator(ir, before.get_mut(*step)?, from, value)?;
+                let (earlier, later) = before.split_at_mut(step.checked_add(1)?);
+                steer_creator(
+                    ir,
+                    earlier.get_mut(*step)?,
+                    (later, &trigger.invoke),
+                    from,
+                    value,
+                )?;
                 supplied.insert((*field).to_owned(), ScenarioValue::literal(value.clone()));
                 continue;
             }
@@ -289,12 +296,18 @@ fn arranged_for<'a>(
 
 /// The creating `step` sent `value` in its input `from`, where that keeps the branch of the
 /// creating command; `None` where it does not, or `step` does not send a literal there.
-fn steer_creator(ir: &EssIr, step: &mut ScenarioStep, from: &str, value: &Node) -> Option<()> {
+fn steer_creator(
+    ir: &EssIr,
+    step: &mut ScenarioStep,
+    (later, invoke): (&[ScenarioStep], &[ScenarioStep]),
+    from: &str,
+    value: &Node,
+) -> Option<()> {
     let ScenarioStep::ExecuteCommand { command, input, .. } = step else {
         return None;
     };
     let creator = ir.commands().get(command.name())?;
-    input.get(from)?.as_literal()?;
+    let old = input.get(from)?.as_literal()?.clone();
     let literals: BTreeMap<String, Node> = input
         .iter()
         .filter_map(|(name, sent)| sent.as_literal().map(|sent| (name.clone(), sent.clone())))
@@ -304,9 +317,21 @@ fn steer_creator(ir: &EssIr, step: &mut ScenarioStep, from: &str, value: &Node) 
         if !kept || !super::keeps_branch_sent(creator, from, None, kept, false) {
             return None;
         }
+        // A later step sending the value the creator was sent reads the stored field (a trigger
+        // comparing it with an input of its own): it is not steered with the creator, and the
+        // trigger's branch would no longer be the one decided.
+        if later.iter().chain(invoke).any(|step| sends(step, &old)) {
+            return None;
+        }
         input.insert(from.to_owned(), ScenarioValue::literal(value.clone()));
     }
     Some(())
+}
+
+/// Whether `step` sends `value` in any input of a command.
+fn sends(step: &ScenarioStep, value: &Node) -> bool {
+    matches!(step, ScenarioStep::ExecuteCommand { input, .. }
+        if input.values().any(|sent| sent.as_literal() == Some(value)))
 }
 
 /// The trigger as it is, where the rows its own arrangement and its send leave take the invocation

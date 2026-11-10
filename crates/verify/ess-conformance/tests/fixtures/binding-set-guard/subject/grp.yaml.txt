@@ -14,14 +14,14 @@ actors:
   - {name: example.grp.Admin, may: [example.grp.Join, example.grp.Leave]}
 commands:
   - name: example.grp.Join
-    input: [{name: member_id, type: example.grp.MemberRef}, {name: eligible, type: Boolean}]
+    input: [{name: who, type: example.grp.MemberRef}, {name: eligible, type: Boolean}]
     outcomes:
       - name: joined
         creates: example.grp.Membership
         instance: membership_id
         emits: [example.grp.Joined]
         payload: {example.grp.Joined: {membership_id: {generated: true}}}
-        sets: {member_id: input.member_id, eligible: input.eligible}
+        sets: {member_id: input.who, eligible: input.eligible}
   - name: example.grp.Leave
     input: [{name: membership_id, type: example.grp.MembershipId}]
     outcomes:
