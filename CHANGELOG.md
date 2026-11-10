@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Format `ess/37`, suite pair `ess-conformance/64` (ordinary) and `/65` (coverage), and delta `ess-diff/24` are open with no construct of their own: a specification declaring `ess/37` reads exactly as at `ess/36`, every reader (Rust, Go, TypeScript) admits the suite pair wherever it admits `/62` and `/63`, `ess verify diff` reads and writes `ess-diff/24` wherever it does `/23`, and nothing writes `/64`, `/65` or `/24` yet. The Go and TypeScript runners now admit suite versions up to `/65`.
+
 ### Changed
 
 - Release: a patch tag (`X.Y.Z`, Z > 0) runs a targeted gate instead of the 20 test shards: `Hotfix checks` (`task ci-lint` and `task ci-smoke`) and `Hotfix tests` (the workspace crates changed since the previous tag and their direct dependents, as `.github/scripts/hotfix-scope.sh` selects them), beside the package builds. A change the script cannot map to crates runs the full gate, and so do a minor or major tag and a backfill.
