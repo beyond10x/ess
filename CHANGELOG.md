@@ -6,6 +6,7 @@
 
 - Release: a patch tag (`X.Y.Z`, Z > 0) runs a targeted gate instead of the 20 test shards: `Hotfix checks` (`task ci-lint` and `task ci-smoke`) and `Hotfix tests` (the workspace crates changed since the previous tag and their direct dependents, as `.github/scripts/hotfix-scope.sh` selects them), beside the package builds. A change the script cannot map to crates runs the full gate, and so do a minor or major tag and a backfill.
 - Release: `publish.yml` publishes a successful release run's artifact as the organization bot, and marks it latest only when it is the highest published version. It needs the `B10X_BOT_APP_ID` and `B10X_BOT_PRIVATE_KEY` secrets and fails, publishing nothing, without them.
+- A `graph_editor` section draws its nodes in layers (longest path from the nodes no edge enters, a cycle-closing edge ignored for layering) with an SVG line per edge, labelled by `edges.kind_by`, and lists `node_actions` and `edge_actions` in one menu per node or edge instead of on every node. Actions keep their paths; the edge list stays as the drawing's accessible text, and the Playwright export opens the row's menu before choosing an action (beyond10x/ess#723).
 
 ### Fixed
 
