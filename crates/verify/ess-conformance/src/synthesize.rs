@@ -17568,18 +17568,54 @@ fn first_where(
         .collect()
 }
 
+/// The path `child` tests for presence, as `defined(x)`, `not defined(x)` or `missing` write it.
+fn presence_tested(child: &Predicate) -> Option<&FactPath> {
+    match child {
+        Predicate::Defined(path) => Some(path),
+        Predicate::Not(inner) => presence_tested(inner),
+        _ => None,
+    }
+}
+
+/// Whether `predicate` reads `path` or a member under it.
+fn reads_under(predicate: &Predicate, path: &FactPath) -> bool {
+    predicate
+        .fact_paths()
+        .into_iter()
+        .any(|read| read.segments().starts_with(path.segments()))
+}
+
+/// The path the child at `index` is wanted to leave absent: the one it tests for presence, where
+/// `alone` makes the child decide so that the path is not there (beyond10x/ess#729).
+fn left_absent(children: &[Predicate], index: usize, alone: bool) -> Option<&FactPath> {
+    let child = &children[index];
+    let tested = presence_tested(child)?;
+    let negated = matches!(child, Predicate::Not(_));
+    // `defined(x)` is wanted true (x present) when it alone decides true; `not defined(x)` is
+    // wanted true when x is absent.
+    let absent = negated == alone;
+    absent.then_some(tested)
+}
+
 /// Whether exactly the child at `index` decides `alone` and every other child the opposite.
+///
+/// The decision is three-valued (beyond10x/ess#729): where the child at `index` leaves a path
+/// absent, a sibling that reads that path is unknown, neither true nor false for any input, and
+/// does not block the row. Every sibling that can be decided still decides the opposite.
 fn exactly_one(
     facts: &crate::InputFacts<'_>,
     children: &[Predicate],
     index: usize,
     alone: bool,
 ) -> bool {
+    let absent = left_absent(children, index, alone);
     children.iter().enumerate().all(|(other, child)| {
         let satisfied = match facts.decide(child) {
             Decision::Satisfied => true,
             Decision::Refuted(_) => false,
-            Decision::Unevaluable(_) => return false,
+            Decision::Unevaluable(_) => {
+                return other != index && absent.is_some_and(|path| reads_under(child, path));
+            }
         };
         satisfied == ((other == index) == alone)
     })
@@ -17782,9 +17818,16 @@ fn isolating(
     alone: bool,
     swapped: Option<&Predicate>,
 ) -> Predicate {
+    // A sibling that reads the path the child leaves absent is unknown there, so the goal does
+    // not ask it to decide (beyond10x/ess#729): a goal needing the path absent and a read of it
+    // decided is empty, and the row it describes is the one with the path absent.
+    let absent = left_absent(children, index, alone);
     let mut wanted: Vec<Predicate> = children
         .iter()
         .enumerate()
+        .filter(|(other, child)| {
+            *other == index || !absent.is_some_and(|path| reads_under(child, path))
+        })
         .map(|(other, child)| {
             if (other == index) == alone {
                 child.clone()
