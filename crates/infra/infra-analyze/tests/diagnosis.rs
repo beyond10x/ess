@@ -132,6 +132,69 @@ fn a_required_missing_reference_is_an_error_and_an_optional_one_is_info() {
 }
 
 #[test]
+fn an_empty_service_name_is_diagnosed_as_declared_empty_not_as_unobserved() {
+    // An operator-managed statefulset may declare `serviceName: ""`. That names no service, so
+    // "was not observed" would blame the scan for a declaration; a non-empty name the scan did
+    // not find keeps the unobserved wording.
+    let statefulset = |name: &str, service: &str| {
+        serde_json::json!({
+            "metadata": { "name": name, "namespace": "shop", "uid": format!("s-{name}") },
+            "spec": { "replicas": 1, "serviceName": service,
+                      "selector": { "matchLabels": { "app": name } },
+                      "template": { "metadata": { "labels": { "app": name } },
+                                    "spec": { "containers": [
+                                        { "name": "db", "image": "db:1" } ] } } }
+        })
+    };
+    let bundle = serde_json::json!({
+        "format": "infra-observation/1",
+        "context": "empty-service-name",
+        "scanned_at": "2026-11-10T08:00:00Z",
+        "scout_version": "0.1.0",
+        "kinds": {
+            "namespaces": { "items": [ { "metadata": { "name": "shop", "uid": "ns-1" } } ] },
+            "nodes": { "items": [] },
+            "deployments": { "items": [] },
+            "statefulsets": { "items": [
+                statefulset("shop-cache", ""),
+                statefulset("shop-db", "shop-db-headless"),
+            ] },
+            "daemonsets": { "items": [] },
+            "services": { "items": [] }, "ingresses": { "items": [] },
+            "configmaps": { "items": [] }, "secrets": { "items": [] },
+            "serviceaccounts": { "items": [] }, "persistentvolumeclaims": { "items": [] },
+            "pods": { "items": [] }
+        }
+    });
+    let raw: RawBundle = serde_json::from_value(bundle).expect("the bundle parses");
+    let observation = Observation::try_from(raw).expect("the bundle is valid");
+    let diagnosis = diagnose(&infra_compiler::compile(&observation));
+    let at_service_name = |subject: &str| {
+        of_code(&diagnosis, DiagCode::MissingReference)
+            .into_iter()
+            .find(|finding| {
+                finding.subject == subject && finding.site.as_deref() == Some("serviceName")
+            })
+            .unwrap_or_else(|| panic!("{subject} has a serviceName finding: {diagnosis:?}"))
+            .clone()
+    };
+
+    let empty = at_service_name("workloads/shop/statefulset/shop-cache");
+    assert_eq!(
+        empty.message,
+        "`serviceName` declares an empty service name; it names no service, so there is \
+         nothing to observe"
+    );
+    assert!(!empty.message.contains("``"), "{}", empty.message);
+
+    let unobserved = at_service_name("workloads/shop/statefulset/shop-db");
+    assert_eq!(
+        unobserved.message,
+        "the required service `shop-db-headless` was not observed"
+    );
+}
+
+#[test]
 fn a_container_without_bounds_fires_and_the_bounded_coredns_container_does_not() {
     let diagnosis = example_diagnosis();
     assert!(
