@@ -10,11 +10,14 @@ use jsonschema::ValidationOptions;
 
 use crate::realize::normalize::unique_items;
 
-/// Validator options that decide `uniqueItems` the same way at every array length.
+/// Validator options that decide `uniqueItems` the same way at every array length and `date-time`
+/// by RFC 3339 digits only.
 ///
 /// Every validator this crate compiles, emits or checks itself against starts here — including
 /// the crate's own test oracles, which would otherwise hold the code to the behaviour it exists
 /// to replace. This is the crate's only call to the dependency's own constructor.
 pub fn options<'i>() -> ValidationOptions<'i> {
-    jsonschema::options().with_keyword("uniqueItems", unique_items::compile)
+    jsonschema::options()
+        .with_keyword("uniqueItems", unique_items::compile)
+        .with_format("date-time", crate::date_time::is_date_time)
 }
