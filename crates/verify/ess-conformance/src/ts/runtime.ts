@@ -2845,7 +2845,7 @@ export async function runWith(
   }
   const version = suite.provenance.suite_version;
   if ((SUITE_MAJORS[version] ?? 0) >= 8 && config.version !== '2') {
-    throw new Error('suite/8 through /63 require explicit ESS_REPORT_FORMAT=2 before execution');
+    throw new Error('suite/8 through /65 require explicit ESS_REPORT_FORMAT=2 before execution');
   }
   if (
     (version === 'ess-conformance/5' ||
@@ -7175,6 +7175,10 @@ const SUITE_MAJORS: { [version: string]: number } = {
   // the provided-row pair included.
   'ess-conformance/62': 62,
   'ess-conformance/63': 63,
+  // The pair opened for the epic's constructs, with no vocabulary of its own yet. Cumulative over
+  // every major below, the member-path pair included.
+  'ess-conformance/64': 64,
+  'ess-conformance/65': 65,
 };
 
 /** The suite majors that carry a coverage inventory, each beside the ordinary major below it. */
@@ -7184,8 +7188,9 @@ const COVERAGE_MAJORS = new Set([
   // pairs, of the constrained-response and opened-response pairs, of the held-now pair and of the
   // pair carrying wrapped value-invariant observations and awaits, of the view-reference pair and
   // of the pair whose one-time read cells read as their actor, of the exact-Decimal pair, of the
-  // pair whose entity fixtures name a provided row and of the response member-path pair.
-  39, 41, 43, 45, 47, 49, 51, 53, 55, 57, 59, 61, 63,
+  // pair whose entity fixtures name a provided row, of the response member-path pair and of the pair
+  // opened for the epic's constructs.
+  39, 41, 43, 45, 47, 49, 51, 53, 55, 57, 59, 61, 63, 65,
 ]);
 
 /** coverageMajor reports whether a suite major carries a coverage inventory. */
@@ -7224,7 +7229,7 @@ export function admitSuiteDocument(raw: string, explicit: boolean): Suite {
   }
   const carriesCoverage = Object.prototype.hasOwnProperty.call(root, 'coverage');
   if (carriesCoverage !== coverageMajor(major)) {
-    throw new Error('coverage is required exactly for odd suite majors from /5 through /63');
+    throw new Error('coverage is required exactly for odd suite majors from /5 through /65');
   }
   expandCompactSuite(root, major);
   for (const key of ['system', 'specification_version', 'spec_digest', 'contract_digest']) {
