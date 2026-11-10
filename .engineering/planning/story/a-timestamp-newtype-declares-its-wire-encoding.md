@@ -27,11 +27,7 @@ scope:
   path: crates/verify/ess-diff/src/change.rs
 - confidence: inferred
   path: docs/design/value-wire-encodings.md
-- confidence: inferred
-  path: schemas/generated/ess.schema.json
-- confidence: inferred
-  path: website/docs/reference/spec-versions.md
-revision: 4
+revision: 5
 ---
 ## Need
 

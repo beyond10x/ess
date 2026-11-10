@@ -19,11 +19,9 @@ scope:
   path: crates/verify/ess-conformance/src/synthesize.rs
 - confidence: inferred
   path: crates/verify/ess-conformance/src/synthesize/
-- confidence: cited
-  path: crates/verify/ess-conformance/tests/synthesis_suite_bytes_table.rs
 - confidence: inferred
   path: crates/verify/ess-conformance/tests/view_settings.rs
-revision: 4
+revision: 5
 ---
 ## Need
 

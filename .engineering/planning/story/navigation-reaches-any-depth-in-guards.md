@@ -28,11 +28,7 @@ scope:
   path: crates/verify/ess-conformance/src/synthesize/related.rs
 - confidence: inferred
   path: crates/verify/ess-conformance/src/synthesize/related_guard.rs
-- confidence: inferred
-  path: schemas/generated/ess.schema.json
-- confidence: inferred
-  path: website/docs/reference/spec-versions.md
-revision: 4
+revision: 5
 ---
 ## Need
 

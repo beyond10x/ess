@@ -17,20 +17,18 @@ relations:
 - decomposes: epic:zero-open-issues-2026-11
 scope:
 - confidence: inferred
-  path: crates/edge/ess-cli/src/main.rs
-- confidence: inferred
   path: crates/edge/ess-cli/tests/client.rs
-- confidence: cited
-  path: crates/generate/ess-publisher/src/go_natsjs.go.txt
+- confidence: inferred
+  path: crates/generate/ess-publisher/src/go_natscore.go.txt
 - confidence: cited
   path: crates/generate/ess-publisher/src/lib.rs
-- confidence: cited
-  path: crates/generate/ess-publisher/src/rust_nats.rs.txt
+- confidence: inferred
+  path: crates/generate/ess-publisher/src/rust_natscore.rs.txt
 - confidence: inferred
   path: crates/generate/ess-publisher/tests/generated.rs
 - confidence: cited
   path: crates/specify/ess-transport/src/lib.rs
-revision: 5
+revision: 8
 ---
 ## Outcome
 
@@ -75,26 +73,46 @@ $ grep -n JetStream out-rust/nats/lib.rs
 
 `--target go` likewise exits 0 and writes `natsjs/natsjs.go`, which calls `t.JetStream.Publish`.
 
+## Decisions
+
+- **Write the adapter, do not refuse.** The outcome asks for it, the adopter's hand-written
+  adapter is about 20 lines, and the transport document already carries `jetstream`.
+- **The core adapter is `natscore/` in both languages.** `nats/` (Rust) and `natsjs/` (Go) keep
+  their JetStream bytes, and a component whose channels reach a JetStream broker and a core broker
+  gets both adapters side by side.
+- **Checked by content, not by a live broker.** `Cargo.lock` holds no `async-nats` and the Go test
+  runs with `GOPROXY=off`, so the adapters are checked as the JetStream ones are today: the core
+  publisher compiles and behaves offline, and the adapter source is asserted.
+
 ## Acceptance
 
-- For the `jetstream: false` transport above, `ess generate client --target rust` writes a `nats/`
-  adapter that publishes through `async_nats::Client::publish` (no `jetstream::Context`), and
-  `--target go` writes an adapter that publishes through `nats.Conn.Publish` (no `jetstream`
-  import); or both exit non-zero naming broker `events` and `jetstream: false`.
-- For a `jetstream: true` broker the output bytes are unchanged
-  (`crates/edge/ess-cli/tests/client.rs` and `crates/generate/ess-publisher/tests/generated.rs`
-  pins hold).
-- A client test generates both adapters and publishes one event through each against the transport
-  fixture.
+- `cargo test -p ess-cli --locked --test client`, new `a_core_nats_broker_gets_core_nats_adapters`:
+  for the `jetstream: false` transport above, `ess generate client --target rust` exits 0 and writes
+  `natscore/Cargo.toml` and `natscore/lib.rs`; the source holds `async_nats::Client` and calls
+  `.publish(`, contains no `jetstream`, and no `nats/` directory is written.
+- Same test: `--target go` exits 0 and writes `natscore/go.mod` and `natscore/natscore.go`, which
+  imports `github.com/nats-io/nats.go`, calls `t.Conn.Publish` on a `*nats.Conn`, has no
+  `nats.go/jetstream` import, and no `natsjs/` directory is written.
+- Same target, new `a_component_on_both_broker_kinds_gets_both_adapters`: with brokers `events`
+  (`jetstream: false`) and `stream` (`jetstream: true`), each bound by a channel of `producer`, Rust
+  writes `nats/` and `natscore/` and Go writes `natsjs/` and `natscore/`.
+- For a `jetstream: true` broker the output bytes are unchanged:
+  `transport_1_publisher_files_keep_the_released_0_52_0_bytes`
+  (`cargo test -p ess-publisher --locked --test generated`) and
+  `a_rust_and_a_go_publisher_are_written_with_their_adapters_and_report`
+  (`cargo test -p ess-cli --locked --test client`) pass unedited.
+- `cargo test -p ess-publisher --locked --test generated`: `the_rust_publisher_compiles_offline_and_behaves`
+  and `the_go_publisher_compiles_and_behaves` also run on the `jetstream: false` transport and pass.
 
 ## Scope
 
-- cited: crates/generate/ess-publisher/src/lib.rs
-- cited: crates/generate/ess-publisher/src/go_natsjs.go.txt
-- cited: crates/generate/ess-publisher/src/rust_nats.rs.txt
-- cited: crates/specify/ess-transport/src/lib.rs
+- cited: crates/generate/ess-publisher/src/lib.rs (`rust_nats` :665, `go` :681)
+- cited: crates/specify/ess-transport/src/lib.rs (`Broker.jetstream` :551)
+- inferred: crates/generate/ess-publisher/src/rust_natscore.rs.txt (new)
+- inferred: crates/generate/ess-publisher/src/go_natscore.go.txt (new)
 - inferred: crates/generate/ess-publisher/tests/generated.rs
 - inferred: crates/edge/ess-cli/tests/client.rs
-- inferred: crates/edge/ess-cli/src/main.rs
 
 confidence: medium
+
+Shared surfaces: proposes its `CHANGELOG.md` sentence; moves no byte-pin row.

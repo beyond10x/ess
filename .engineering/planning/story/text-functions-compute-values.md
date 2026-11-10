@@ -31,9 +31,7 @@ scope:
   path: website/docs/guides/specify/values-and-views.md
 - confidence: inferred
   path: website/docs/reference/predicates.md
-- confidence: inferred
-  path: website/docs/reference/spec-versions.md
-revision: 4
+revision: 5
 ---
 ## Need
 

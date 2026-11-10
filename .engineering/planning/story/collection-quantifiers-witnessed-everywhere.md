@@ -12,15 +12,15 @@ relations:
 - serves: vision:O2
 - decomposes: epic:zero-open-issues-2026-11
 scope:
-- confidence: inferred
+- confidence: cited
   path: crates/verify/ess-conformance/src/synthesize.rs
 - confidence: cited
   path: crates/verify/ess-conformance/src/synthesize/subject_fact.rs
 - confidence: cited
   path: crates/verify/ess-conformance/src/witness.rs
 - confidence: inferred
-  path: crates/verify/ess-conformance/tests/
-revision: 5
+  path: crates/verify/ess-conformance/tests/input_list_quantifiers.rs
+revision: 9
 ---
 ## Outcome
 
@@ -57,24 +57,38 @@ witnessed.
 
 ## Acceptance
 
-- Over the model above, the synthesized suite holds a scenario where the `blocked` list has two or
-  more elements with `"blocked"` neither first nor last, and one where `unchecked`'s failing `""`
-  sits between non-empty elements; a target reading only the first or only the last element, or
-  `forall` for `exists` (and the reverse), fails a scenario on it.
-- A nested quantifier over a bound element of an input list is witnessed the same way.
-- Where no several-entry row can be built for a stored-collection quantifier (Boolean-keyed map,
-  ordered comparison, collection not written from input), `ess verify conform synthesize` prints a
-  `note:` naming the guard; a test asserts it.
-- The models whose committed suite bytes move are named.
+The model is the reproduction above, kept as a fixture of
+`crates/verify/ess-conformance/tests/input_list_quantifiers.rs`; every bullet is a case of
+`cargo test -p ess-conformance --locked --test input_list_quantifiers`.
+
+- The synthesized suite holds a `FileItem/outcome/blocked` scenario whose `tags` has at least three
+  elements with `"blocked"` neither first nor last.
+- The synthesized suite holds a `FileItem/outcome/unchecked` scenario whose `tags` has at least
+  three elements with the one `""` neither first nor last.
+- Run against that suite, each of three mutated targets fails at least one scenario: one reading
+  only `tags[0]`, one reading only the last element, and one evaluating `forall` for `exists` and
+  `exists` for `forall`.
+- With `blocked` rewritten as a nested quantifier over a member of a bound element (input
+  `lines: List<Line>`, `Line` holding `codes: List<String>`, guard
+  `exists l in input.lines: exists c in l.codes: c == "blocked"`), the `blocked` scenario's
+  deciding `codes` list has at least three elements with `"blocked"` neither first nor last.
+- For a stored-collection quantifier over a `Boolean`-keyed map, `ess verify conform synthesize`
+  prints a `note:` line naming the guard and the fallback to a one-entry row (a new `Note`
+  variant).
+- `cargo test -p ess-conformance --locked --test synthesis_suite_bytes_table` passes, and each row
+  this change re-pins names "input-list quantifiers witnessed with several elements" beside it.
 
 ## Scope
 
 - cited: crates/verify/ess-conformance/src/witness.rs (`Elements`, list building, `member_literals`)
 - cited: crates/verify/ess-conformance/src/synthesize/subject_fact.rs (`arranged_row`, `spread`, `witnesses_elements`)
-- inferred: crates/verify/ess-conformance/src/synthesize.rs (notes)
-- inferred: crates/verify/ess-conformance/tests/
+- cited: crates/verify/ess-conformance/src/synthesize.rs (`Note`, line 285)
+- inferred: crates/verify/ess-conformance/tests/input_list_quantifiers.rs (new)
 
 confidence: medium
+
+Shared surfaces moved: re-pins the suite-bytes rows of models whose input-list quantifiers gain
+elements; proposes its `CHANGELOG.md` sentence; no format row.
 
 ## Origin
 

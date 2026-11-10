@@ -11,6 +11,7 @@ refs:
   reference: beyond10x/ess#754
 relations:
 - decomposes: epic:zero-open-issues-2026-11
+- depends_on: story:a-command-route-takes-a-multipart-request-with-file-parts
 scope:
 - confidence: cited
   path: crates/generate/ess-gen/src/openapi.rs
@@ -26,7 +27,7 @@ scope:
   path: docs/design/http-presentation-binding.md
 - confidence: cited
   path: website/docs/guides/http-routes.md
-revision: 4
+revision: 5
 ---
 ## Need
 
@@ -57,21 +58,31 @@ under its wire name with the flat spelling `query` already uses:
 
 ## Acceptance
 
-- `ess specify http validate` accepts `request.query` beside `encoding: json` or `form` (and
-  `multipart` once `story:a-command-route-takes-a-multipart-request-with-file-parts` lands) on
-  `post`, `put`, `patch` and `delete` (exit 0); `ess specify http compile` writes it in the order
-  written; a binding without it compiles to the same bytes.
-- `ESS-HTTP-020` refuses, at `routes[i].request.query`: `query` beside `encoding: query` or on a
-  `get` command; an entry that is not `input.<field>` naming an input field of the command; a field
-  listed twice, carried by the path, or named by `request.body`. `ESS-HTTP-021` refuses a listed
-  field without a flat spelling, as for `query` encoding.
+- `ess specify http validate` accepts `request.query` beside `encoding: json`, `form` or
+  `multipart` on `post`, `put`, `patch` and `delete` (exit 0), each case a test in
+  `cargo test -p ess-http --locked --test request_encoding`; `ess specify http compile` writes the
+  list in the order written.
+- A binding without `request.query` compiles to the same bytes as before the change
+  (`cargo test -p ess-http --locked --test compile` passes with no fixture rewritten).
+- `ESS-HTTP-020` refuses, at `routes[i].request.query`, each of: `query` beside `encoding: query`;
+  `query` on a `get` command; an entry that is not `input.<field>` naming an input field of the
+  command; a field listed twice; a field carried by the path; a field named by `request.body`. One
+  test per case in `--test request_encoding`, each asserting the code and the location.
+- `ESS-HTTP-021` refuses a listed field without a flat spelling, as for `query` encoding (a test in
+  `--test request_encoding` on a struct-typed field).
 - The bare-body rule reads "the path or `request.query` carries every other input field":
-  `request: {body: input.priorities, query: [input.dry_run]}` compiles.
+  `request: {body: input.priorities, query: [input.dry_run]}` compiles (exit 0, a test in
+  `--test request_body`).
+- The `multipart` route of `story:a-command-route-takes-a-multipart-request-with-file-parts`, with
+  its `query: [input.dry_run]` line, validates (exit 0) and compiles with `dry_run` in
+  `request.query` and not among the parts (a test in `--test request_encoding`).
 - `ess generate --kind openapi --http` writes each listed field as an `in: query` parameter under
   its wire name, with the rules of `encoding: query` (`required` as the field is, a `List` with
-  `style: form`, `explode: true`), and leaves it out of the request body schema.
-- `docs/design/http-presentation-binding.md` § "Request encoding" states the key and drops the
-  sentence that refuses per-field query placement; `website/docs/guides/http-routes.md` shows it.
+  `style: form`, `explode: true`), and leaves it out of the request body schema, for a `json` and a
+  `multipart` route (`cargo test -p ess-gen --locked --test openapi_http_presentation`).
+- `docs/design/http-presentation-binding.md` § "Request encoding" states the `request.query` key
+  and no longer holds the sentence "`ess-http/1` has no per-field query placement beside a JSON
+  body"; `website/docs/guides/http-routes.md` shows a route with `request.query`.
 
 ## Scope
 
@@ -83,6 +94,8 @@ under its wire name with the flat spelling `query` already uses:
 - cited: docs/design/http-presentation-binding.md
 - cited: website/docs/guides/http-routes.md
 confidence: medium
+
+Shared surfaces: proposes its `CHANGELOG.md` sentence; moves no byte-pin row.
 
 ## Fit review
 
@@ -120,6 +133,11 @@ confidence: medium
 **Accept, redesigned.** Kept: chosen inputs go to the query beside a body. Changed: the key is
 `request.query: [input.<field>]` and the query name is the field's wire name; the requester's
 camel-case `dryRun` is the wire name the model declares for `dry_run`.
+
+**Owns `query` beside `multipart`.** This story depends on
+`story:a-command-route-takes-a-multipart-request-with-file-parts`, so it lands second and owns the
+combination: validation, compile and OpenAPI of a `multipart` route with `request.query`; the
+multipart story ships its route without the `query:` line.
 
 ## Source
 

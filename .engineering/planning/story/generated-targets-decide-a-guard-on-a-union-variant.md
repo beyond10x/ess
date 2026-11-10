@@ -16,8 +16,12 @@ relations:
 - depends_on: story:a-guard-reads-a-union-tag-and-a-union-names-its-content-key
 - depends_on: story:synthesis-and-the-interpreter-decide-a-guard-on-a-union-variant
 scope:
+- confidence: cited
+  path: crates/generate/ess-entity-runtime/src/lib.rs
 - confidence: inferred
   path: crates/generate/ess-entity-runtime/src/subset.rs
+- confidence: inferred
+  path: crates/generate/ess-entity-runtime/tests/union_variant_guard.rs
 - confidence: cited
   path: crates/generate/ess-synth/src/determined.rs
 - confidence: inferred
@@ -25,12 +29,18 @@ scope:
 - confidence: inferred
   path: crates/generate/ess-synth/src/rust/behaviour.rs
 - confidence: inferred
+  path: crates/generate/ess-synth/tests/union_variant_guard_behaviour.rs
+- confidence: inferred
   path: crates/verify/ess-conformance/src/go/predicate.go
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/ts/predicate.test.ts
 - confidence: inferred
   path: crates/verify/ess-conformance/src/ts/predicate.ts
 - confidence: inferred
+  path: crates/verify/ess-conformance/tests/union_variant_guard_runtimes.rs
+- confidence: inferred
   path: website/docs/reference/entity-runtime-lowering.md
-revision: 5
+revision: 8
 ---
 ## Need
 
@@ -46,24 +56,40 @@ Minimal model: the parent story's `example.g.Add` over `example.g.Kind`.
 
 ## Acceptance
 
-- The generated Rust and Go behaviour for the minimal model pass `example.g.Add/outcome/fetched`
-  and `/stored` (`ess verify conform run` against each generated target).
-- The Go and TypeScript runtimes evaluate `kind in [web_crawl]` over a union value as the
-  interpreter does, with one test each on both variants.
-- Entity Runtime lowering of the minimal model either lowers the guard or refuses it with a named
-  lowering code that lists `example.g.Add/fetched`. The refusal table in
-  `website/docs/reference/entity-runtime-lowering.md` names it.
+- `cargo test -p ess-synth --locked --test union_variant_guard_behaviour`: the generated Rust
+  behaviour and the generated Go behaviour for the minimal model each pass
+  `example.g.Add/outcome/fetched` and `example.g.Add/outcome/stored` under `ess verify conform run`
+  (exit 0, both scenarios `passed`), and neither scenario is answered as an unmet obligation.
+- `cargo test -p ess-conformance --locked --test union_variant_guard_runtimes`: the Go runtime
+  answers `kind in [web_crawl]` as `True` over `{type: web_crawl, value: {…}}` and `False` over
+  `{type: text}`, as the interpreter's evaluator does; `cargo test -p ess-conformance --locked
+  --test typescript_runtime` runs the same two cases in `src/ts/predicate.test.ts` with the same
+  answers.
+- `cargo test -p ess-entity-runtime --locked --test union_variant_guard`: lowering the minimal
+  model's component returns `Err` whose diagnostics hold `LoweringCode::UnionVariantGuardUnsupported`
+  naming `example.g.Add/fetched`.
+- `cargo test -p ess-entity-runtime --locked --test lowerable_subset` passes with a refused row for
+  the union variant guard under `UnionVariantGuardUnsupported`, rendered into
+  `website/docs/reference/entity-runtime-lowering.md`.
 
 ## Scope
 
-- cited: crates/generate/ess-synth/src/determined.rs
-- inferred: crates/generate/ess-synth/src/rust/behaviour.rs
-- inferred: crates/generate/ess-synth/src/go/behaviour.rs
-- inferred: crates/verify/ess-conformance/src/go/predicate.go
-- inferred: crates/verify/ess-conformance/src/ts/predicate.ts
-- inferred: crates/generate/ess-entity-runtime/src/subset.rs
-- inferred: website/docs/reference/entity-runtime-lowering.md
+- cited: `crates/generate/ess-synth/src/determined.rs`
+- inferred: `crates/generate/ess-synth/src/rust/behaviour.rs`
+- inferred: `crates/generate/ess-synth/src/go/behaviour.rs`
+- inferred: `crates/generate/ess-synth/tests/union_variant_guard_behaviour.rs`
+- inferred: `crates/verify/ess-conformance/src/go/predicate.go`
+- inferred: `crates/verify/ess-conformance/src/ts/predicate.ts`
+- inferred: `crates/verify/ess-conformance/src/ts/predicate.test.ts`
+- inferred: `crates/verify/ess-conformance/tests/union_variant_guard_runtimes.rs`
+- cited: `crates/generate/ess-entity-runtime/src/lib.rs` (`LoweringCode`, the union lowering)
+- inferred: `crates/generate/ess-entity-runtime/src/subset.rs`
+- inferred: `crates/generate/ess-entity-runtime/tests/union_variant_guard.rs`
+- inferred: `website/docs/reference/entity-runtime-lowering.md` (rendered from `subset.rs`)
+
 confidence: low
+
+Moves no shared surface.
 
 ## Fit review
 
@@ -83,6 +109,12 @@ confidence: low
 
 accept as proposed, as the parent story. This story carries the generated targets and the suite
 runtimes.
+
+2026-11-10 (plan-critic round 1): Entity Runtime refuses the guard by name, with a new
+`LoweringCode::UnionVariantGuardUnsupported`, rather than lowering it, because its lowering of a
+union field refuses a unit variant (`UnitVariantUnsupported`, which the minimal model's `text`
+is) and walks a union payload untyped, so no lowered form of the tag comparison is established to
+hold what ESS decides.
 
 ## Source
 

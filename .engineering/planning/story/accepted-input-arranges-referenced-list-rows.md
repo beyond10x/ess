@@ -18,10 +18,8 @@ scope:
 - confidence: inferred
   path: crates/verify/ess-conformance/tests/referenced_list_input.rs
 - confidence: inferred
-  path: docs/design/
-- confidence: inferred
-  path: examples/
-revision: 5
+  path: docs/design/referenced-input-arrangement.md
+revision: 8
 ---
 ## Summary
 
@@ -115,7 +113,8 @@ The same model with `sources` a plain `demo.reg.SourceId` under `cardinality: on
 
 ## Design rule
 
-Decided here, recorded in `docs/design/` beside the related-row arrangement page.
+Decided here, recorded in a new design page `docs/design/referenced-input-arrangement.md` beside
+the related-row arrangement page (`docs/design/related-rows-quantifier.md`).
 
 On any scenario that requires an accepting branch, an input written into a field carrying a
 `references` relation names rows the scenario arranged before the command. Synthesis arranges them
@@ -123,31 +122,47 @@ through the target's creating route, as it does for related rows (`synthesize/re
 none exists, it sends an empty list (`many`), or refuses the scenario by name (`one`, or a
 non-empty list). No format version moves: the scenario uses existing steps.
 
+## Decisions
+
+- Where a creating route exists, the accepted scenario arranges a non-empty list rather than
+  sending an empty one, because an empty list would pass without exercising the reference at all.
+- The refusal case is checked on the `cardinality: one` variant, because a plain reference field
+  has no empty value to fall back to, so the refusal is the only result the design rule admits.
+
 ## Acceptance
 
-1. `crates/verify/ess-conformance/tests/referenced_list_input.rs`,
-   `an_accepted_scenario_arranges_every_referenced_list_member`: for the reproduction, every
-   identity in the accepted scenario's `sources` is created by an earlier `AddSource` step of that
-   scenario, or the list is empty. Red on 0.92.0.
-2. Same file, `an_unarrangeable_reference_target_sends_an_empty_list`: with `AddSource` removed (no
-   route creates a `Source`), the accepted scenario sends `sources: []` when the list type admits
-   empty, and synthesis records a refusal naming the relation when it does not (a list with a
-   declared minimum length).
-3. Same file, `a_one_cardinality_reference_by_input_is_arranged_too`: the `cardinality: one`
-   variant above has an `AddSource` step creating the identity it sends in `sources`. Red on 0.92.0.
-4. `cargo test -p ess-conformance --test referenced_list_input`, `--test unknown_instance` and
-   `--test outcome_shapes` pass, and the committed suites and pinned counts that move are listed in
-   the change.
+1. `cargo test -p ess-conformance --locked --test referenced_list_input
+   an_accepted_scenario_arranges_every_referenced_list_member`: for the reproduction, the
+   accepted scenario `demo.reg.Register/outcome/accepted` sends a non-empty `sources`, and every
+   identity in it is the `id` of an earlier `execute_command demo.reg.AddSource` step of that
+   scenario. Red on 0.92.0.
+2. Same target, `an_unarrangeable_reference_list_sends_an_empty_list`: with `AddSource` removed
+   from the reproduction (no route creates a `Source`), the accepted scenario's
+   `execute_command demo.reg.Register` step sends `sources: []`.
+3. Same target, `an_unarrangeable_one_cardinality_reference_is_refused_by_name`: the
+   `cardinality: one` variant with `AddSource` removed has no `demo.reg.Register/outcome/accepted`
+   scenario, and synthesis records a refusal for it whose reason names the relation
+   `demo.reg.Server.sources`.
+4. Same target, `a_one_cardinality_reference_by_input_is_arranged_too`: the `cardinality: one`
+   variant has an `execute_command demo.reg.AddSource` step creating the identity the accepted
+   scenario sends in `sources`. Red on 0.92.0.
+5. `cargo test -p ess-conformance --locked --test unknown_instance` and `--test outcome_shapes`
+   pass unchanged.
+6. `cargo test -p ess-conformance --locked --test synthesis_suite_bytes_table` passes, with a row
+   re-pinned only where its model writes an input into a field carrying a `references` relation,
+   the cause named beside the pin.
 
 ## Scope
 
 - inferred: crates/verify/ess-conformance/src/synthesize.rs
 - cited: crates/verify/ess-conformance/src/synthesize/related.rs
 - inferred: crates/verify/ess-conformance/tests/referenced_list_input.rs
-- inferred: examples/
-- inferred: docs/design/
+- inferred: docs/design/referenced-input-arrangement.md
 
 confidence: medium
+
+Shared surfaces moved: re-pins suite-bytes rows (`synthesis-suite-bytes-table.tsv`). No example
+under `examples/` declares a `references` relation, so no committed example suite moves.
 
 ## Estimate
 

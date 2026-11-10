@@ -16,12 +16,10 @@ relations:
 - decomposes: epic:zero-open-issues-2026-11
 scope:
 - confidence: cited
-  path: crates/ui/ess-ui-react/templates/runtime/fields.tsx.tmpl
-- confidence: cited
   path: crates/ui/ess-ui-tui/src/view.rs
 - confidence: inferred
-  path: crates/ui/ess-ui-tui/tests/
-revision: 5
+  path: crates/ui/ess-ui-tui/tests/object_tags.rs
+revision: 8
 ---
 ## Need
 
@@ -45,19 +43,30 @@ failed  an object tag is drawn by its label (step 2)
 passed  a string tag is drawn as before
 ```
 
+## Decisions
+
+- An object entry without `label` is drawn as React draws it, its compact JSON (`tagText`:
+  `JSON.stringify`), with keys in document order: the story brings the terminal to React's
+  rendering, so the React template stays as it is.
+
 ## Acceptance
 
-- A record or column field `as: tags` over `[{label: "Alpha", id: 1}, {label: "Beta", id: 2}]`
-  draws the chips `#Alpha #Beta` in the terminal, as React draws `Alpha` and `Beta`.
-- An object entry without `label` draws the same text in both renderers (today React writes
-  `JSON.stringify` of it and the terminal `key: value`; the fix picks one and applies it to both).
-- Plain string entries and null entries are unchanged.
+Tests run with `cargo test -p ess-ui-tui --locked --test object_tags`, over the reproduction's
+collection.
+
+- `an_object_tag_is_drawn_by_its_label`: the row `i-1` with tags
+  `[{label: Alpha, id: 1}, {label: Beta, id: 2}]` draws `#Alpha #Beta`.
+- `an_object_tag_without_a_label_is_drawn_as_react_draws_it`: a row with tags `[{id: 3, kind: x}]`
+  draws `#{"id":3,"kind":"x"}`, the text `tagText` returns for that entry.
+- `string_and_null_tags_are_unchanged`: the row `i-2` with tags `[plain]` draws `#plain`, and a row
+  with tags `[plain, null]` draws `#plain`.
+- `crates/ui/ess-ui-react/templates/runtime/fields.tsx.tmpl` is unchanged.
 
 ## Scope
 
-- cited: `crates/ui/ess-ui-tui/src/view.rs` (the `tags` arm of the value formatter)
-- cited: `crates/ui/ess-ui-react/templates/runtime/fields.tsx.tmpl` (`tagText`, only for the label-less case)
-- inferred: `crates/ui/ess-ui-tui/tests/` or `crates/ui/ess-ui-test/tests/` (the terminal value-format case)
-- inferred: `CHANGELOG.md`
+- cited: `crates/ui/ess-ui-tui/src/view.rs` (the `tags` arm of the value formatter :1588)
+- inferred: `crates/ui/ess-ui-tui/tests/object_tags.rs` (new)
 
 confidence: high
+
+Shared surfaces: proposes its `CHANGELOG.md` sentence; moves no byte-pin row.

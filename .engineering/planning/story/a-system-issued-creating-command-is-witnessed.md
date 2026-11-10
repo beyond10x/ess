@@ -15,26 +15,33 @@ tags:
 relations:
 - serves: vision:O2
 - decomposes: epic:zero-open-issues-2026-11
+- depends_on: story:ess-37-and-conformance-64-65-are-open-for-the-epics-constructs
 scope:
+- confidence: cited
+  path: crates/verify/ess-conformance/src/go/await.go
 - confidence: inferred
   path: crates/verify/ess-conformance/src/go/runtime.go
-- confidence: inferred
-  path: crates/verify/ess-conformance/src/interpret
-- confidence: inferred
+- confidence: cited
+  path: crates/verify/ess-conformance/src/interpret/await_outcome.rs
+- confidence: cited
   path: crates/verify/ess-conformance/src/runner.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/runner/await_outcome.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/scenario.rs
 - confidence: cited
   path: crates/verify/ess-conformance/src/synthesize/system_issued.rs
 - confidence: cited
   path: crates/verify/ess-conformance/src/system_issued.rs
-- confidence: inferred
+- confidence: cited
   path: crates/verify/ess-conformance/src/target.rs
-- confidence: inferred
+- confidence: cited
   path: crates/verify/ess-conformance/src/ts/runtime.ts
-- confidence: inferred
+- confidence: cited
   path: crates/verify/ess-conformance/tests/system_issued_synthesis.rs
 - confidence: cited
   path: docs/design/system-issued-commands.md
-revision: 5
+revision: 8
 ---
 ## Need
 
@@ -88,14 +95,21 @@ no such record before the step (`crates/verify/ess-conformance/src/system_issued
 - cited: docs/design/system-issued-commands.md
 - cited: crates/verify/ess-conformance/src/system_issued.rs
 - cited: crates/verify/ess-conformance/src/synthesize/system_issued.rs
-- inferred: crates/verify/ess-conformance/src/target.rs
-- inferred: crates/verify/ess-conformance/src/runner.rs
-- inferred: crates/verify/ess-conformance/src/interpret
-- inferred: crates/verify/ess-conformance/src/go/runtime.go
-- inferred: crates/verify/ess-conformance/src/ts/runtime.ts
-- inferred: crates/verify/ess-conformance/tests/system_issued_synthesis.rs
+- cited: crates/verify/ess-conformance/src/scenario.rs (`ScenarioStep::AwaitOutcome`, its `instance`)
+- cited: crates/verify/ess-conformance/src/target.rs (`AwaitRequest`, its `instance`)
+- cited: crates/verify/ess-conformance/src/runner.rs (the `AwaitOutcome` step dispatch)
+- cited: crates/verify/ess-conformance/src/runner/await_outcome.rs (`Awaited`, its `instance`)
+- cited: crates/verify/ess-conformance/src/interpret/await_outcome.rs (the awaited instance compared with the identity input)
+- cited: crates/verify/ess-conformance/src/go/await.go (`admitAwaitInstance`, "names no instance")
+- inferred: crates/verify/ess-conformance/src/go/runtime.go (`AwaitTarget`)
+- cited: crates/verify/ess-conformance/src/ts/runtime.ts (`AwaitRequest`, `awaitOutcome`)
+- cited: crates/verify/ess-conformance/tests/system_issued_synthesis.rs
 
 confidence: medium
+
+The story re-pins the suite-bytes rows of models with a system-issued creating command and
+proposes its `CHANGELOG.md` sentence; the instance-less await is a suite shape of
+`ess-conformance/64` (ordinary) and `ess-conformance/65` (coverage).
 
 ## Fit review
 
@@ -115,9 +129,10 @@ confidence: medium
    without one or refuse it by name.
 5. Second adopter: an order service whose scheduler (system actor) opens a monthly invoice record
    with `creates: Invoice`.
-6. Cost: a suite format change, because `await_outcome` gains an instance-less form. That is a new
-   suite major, a target-interface change for Rust, Go and TypeScript adapters (breaking for an
-   adapter that requires `instance`), and a CHANGELOG entry. No `ess/` source format change.
+6. Cost: a suite format change, because `await_outcome` gains an instance-less form. It lands in
+   `ess-conformance/64` (ordinary) and `ess-conformance/65` (coverage), with a target-interface
+   change for Rust, Go and TypeScript adapters (breaking for an adapter that requires `instance`),
+   and a CHANGELOG entry. No `ess/` source format change.
 7. Alternatives: (a) change nothing and keep `ESS-SYNTH-023`, which the help already explains;
    (b) drive the creating step as an ordinary caller, which contradicts the system actor's grant
    (beyond10x/ess#542); (c) an instance-less await that captures the created identity, preferred if
@@ -126,8 +141,8 @@ confidence: medium
 ## Decisions
 
 - defer: the need is real, but it needs a decision on how an await names a record that does not
-  exist yet (alternative c, its suite major and target interface). Record a `decision-blocker` with
-  `blocks:` to this story before it leaves draft.
+  exist yet (alternative c, its suite shape in `ess-conformance/64` and `/65` and the target
+  interface). Record a `decision-blocker` with `blocks:` to this story before it leaves draft.
 - Same gap as `story:a-create-only-the-system-issues-gets-a-synthesized-scenario` (adopter report of
   2026-10-26, no reproduction). Keep this story, which carries the reproduction, and fold the other
   into it.

@@ -15,23 +15,27 @@ tags:
 relations:
 - decomposes: epic:zero-open-issues-2026-11
 scope:
-- confidence: inferred
+- confidence: cited
   path: crates/ui/ess-ui-check/src/model.rs
 - confidence: cited
   path: crates/ui/ess-ui-react/templates/runtime/composites/form.tsx.tmpl
 - confidence: cited
   path: crates/ui/ess-ui-react/templates/runtime/data.ts.tmpl
-- confidence: inferred
+- confidence: cited
   path: crates/ui/ess-ui-test/src/playwright.rs
-- confidence: inferred
+- confidence: cited
   path: crates/ui/ess-ui-test/src/runner.rs
 - confidence: cited
   path: crates/ui/ess-ui-test/src/spec.rs
+- confidence: inferred
+  path: crates/ui/ess-ui-test/tests/required_input.rs
 - confidence: cited
   path: crates/ui/ess-ui-tui/src/app.rs
+- confidence: cited
+  path: crates/ui/ess-ui/src/binding.rs
 - confidence: inferred
   path: website/docs/reference/ess-ui-test.md
-revision: 8
+revision: 12
 ---
 ## Outcome
 
@@ -49,8 +53,9 @@ enforces a command's required inputs in a form:
 - React: the form's `submit` passes the draft to `runCommand` unchecked
   (`crates/ui/ess-ui-react/templates/runtime/composites/form.tsx.tmpl`).
 - Neither renderer receives the command's required inputs. A React command route carries only
-  `body_required` (`templates/runtime/data.ts.tmpl`, `CommandRoute`), and `ess ui test --model`
-  reads the model only for enum options.
+  `body_required` (`templates/runtime/data.ts.tmpl`, `CommandRoute`, built in
+  `crates/ui/ess-ui-check/src/model.rs` from `crates/ui/ess-ui/src/binding.rs`), and
+  `ess ui test --model` reads the model only for enum options.
 - `ess-ui-test/1` has `expect_command` but no step asserting that no command was sent
   (`crates/ui/ess-ui-test/src/spec.rs`, `Step`).
 
@@ -95,32 +100,64 @@ failed  probe shows the sent input (step 4)
 
 ## Acceptance
 
-- In both renderers, submitting a form whose command input is required while the field is empty
-  sends no command, and the field at its path is marked as required. In the terminal, a `text`
-  check at the form finds the mark; in React, the field's input carries `required` or
-  `aria-invalid`.
-- `ess-ui-test/1` gains a step asserting that no command was sent since a named point. The fit
-  review decides whether this is an additive step in `ess-ui-test/1` or a new format version.
-- A script over the document above submits the empty form, asserts that no command was sent,
-  fills `title` and asserts `probe.core.CreateItem {id: i-1, title: <text>}`. It passes with
-  `ess ui test` and in the spec written by `ess ui test --playwright`.
+All bullets run on the document above and its model, in a new test target
+`crates/ui/ess-ui-test/tests/required_input.rs`, with
+`cargo test -p ess-ui-test --locked --test required_input`.
+
+- Terminal: a test that types `i-1` into `id`, runs `act: pages/items.new/sections/form` and then
+  `expect_no_command: probe.core.CreateItem` passes under `ess ui test --path ui.yaml --model spec`,
+  and an `expect: {at: pages/items.new/sections/form/fields/title, text: "Title *"}` step in the
+  same test passes.
+- Terminal: the same steps with `expect_command: probe.core.CreateItem` in place of
+  `expect_no_command` fail at that step with `command probe.core.CreateItem was never sent; sent: []`.
+- `ess-ui-test/1` accepts the new step `expect_no_command: <command>`: it holds when the named
+  command has not been sent in the test so far, and fails with
+  `command <command> was sent with <input>` when it has.
+- The full script (type `i-1` into `id`, submit, `expect_no_command: probe.core.CreateItem`, type
+  `t` into `title`, submit, `expect_command: {command: probe.core.CreateItem, input: {id: i-1,
+  title: t}}`) passes under `ess ui test --path ui.yaml --model spec`.
+- `ess ui test --playwright` over the same script writes
+  `expect(commands.map((sent) => sent.command)).not.toContain("probe.core.CreateItem");` for the
+  `expect_no_command` step, and the generated React project draws the `title` input with
+  `aria-required="true"`; the test asserts both strings in the generated output.
+- An `Optional<String>` input in place of `title` is not required: the empty submit sends
+  `probe.core.CreateItem {id: i-1}` and the field carries no ` *` and no `aria-required`.
+
+## Decisions
+
+- `expect_no_command` is an additive step of `ess-ui-test/1`, not a new format version: the format
+  has taken new steps and checks before without a version (`checked` at a toggle, beyond10x/ess#744
+  in `CHANGELOG.md`), and an existing file never contains the new key.
+- `expect_no_command` checks the whole test so far, not "since a named point": commands accumulate
+  in the runner (`expect_command` in `crates/ui/ess-ui-test/src/runner.rs` reads every sent
+  command), and the empty submit comes before any successful one in the script that needs it.
+- React marks the input with `aria-required="true"`, not the native `required` attribute or
+  `aria-invalid`: it is present before any submit, holds on every control kind the form draws, and
+  does not turn on the browser's own validation.
+- The terminal marks a required field by a trailing ` *` on its label, which a `text` check reads.
+- "Required" comes only from the model's command input (a non-`Optional` input type); fixture runs
+  without `--model` check nothing, because a separate `required:` key on a form field would restate
+  the model's type and could disagree with it.
 
 ## Ambiguities
 
-- `requires-stakeholder-input`: where "required" comes from when no `--model` is given (fixture
-  mode). The options are a `required:` key on a form field, or only the model's command input,
-  which leaves fixture runs unchecked. A format owner decides.
+- `decided`: where "required" comes from when no `--model` is given (fixture mode): only the
+  model's command input, so fixture runs stay unchecked (see Decisions).
 - `inferable`: an `Optional<…>` input is never required (the model's type says so).
 
 ## Scope
 
-- cited: `crates/ui/ess-ui-tui/src/app.rs`
-- cited: `crates/ui/ess-ui-react/templates/runtime/composites/form.tsx.tmpl`
-- cited: `crates/ui/ess-ui-react/templates/runtime/data.ts.tmpl`
-- cited: `crates/ui/ess-ui-test/src/spec.rs`
-- inferred: `crates/ui/ess-ui-test/src/runner.rs`
-- inferred: `crates/ui/ess-ui-test/src/playwright.rs`
-- inferred: `crates/ui/ess-ui-check/src/model.rs`
-- inferred: `website/docs/reference/ess-ui-test.md`
+This story moves only the `CHANGELOG.md` shared surface.
+
+- cited: crates/ui/ess-ui-tui/src/app.rs
+- cited: crates/ui/ess-ui-react/templates/runtime/composites/form.tsx.tmpl
+- cited: crates/ui/ess-ui-react/templates/runtime/data.ts.tmpl
+- cited: crates/ui/ess-ui-test/src/spec.rs
+- cited: crates/ui/ess-ui-test/src/runner.rs
+- cited: crates/ui/ess-ui-test/src/playwright.rs
+- cited: crates/ui/ess-ui-check/src/model.rs
+- cited: crates/ui/ess-ui/src/binding.rs
+- inferred: crates/ui/ess-ui-test/tests/required_input.rs
+- inferred: website/docs/reference/ess-ui-test.md
 
 confidence: medium

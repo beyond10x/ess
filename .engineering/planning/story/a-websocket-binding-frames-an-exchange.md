@@ -19,12 +19,18 @@ relations:
 - depends_on: story:an-http-route-upgrades-to-an-exchange
 - depends_on: story:asyncapi-and-openapi-project-an-exchange
 scope:
+- confidence: cited
+  path: Cargo.toml
 - confidence: inferred
   path: README.md
+- confidence: cited
+  path: crates/edge/ess-cli/Cargo.toml
 - confidence: cited
   path: crates/edge/ess-cli/src/main.rs
 - confidence: inferred
   path: crates/edge/ess-cli/src/websocket.rs
+- confidence: cited
+  path: crates/generate/ess-gen/Cargo.toml
 - confidence: cited
   path: crates/generate/ess-gen/src/asyncapi.rs
 - confidence: inferred
@@ -35,7 +41,7 @@ scope:
   path: crates/specify/ess-websocket/tests/compile.rs
 - confidence: inferred
   path: docs/design/websocket-binding.md
-revision: 5
+revision: 7
 ---
 ## Need
 
@@ -76,21 +82,32 @@ Minimal reproduction: 0.92.0 has no WebSocket binding at all (`ess specify --hel
 - `ess generate --path model --kind asyncapi --websocket ws.yaml` adds the AsyncAPI `ws` binding
   section and the server to the exchange's channel; without `--websocket` the output keeps its
   bytes.
-- `docs/design/websocket-binding.md` (new, status accepted) states the document, the IR and the
-  codes before the crate lands.
-- Tests in `crates/specify/ess-websocket/tests/` (new crate).
+- `docs/design/websocket-binding.md` exists with a status line beginning `Status: accepted` under its title
+  (the form of `docs/design/event-transport-binding.md`), and
+  names the `ess-websocket/1` document, the `ess-websocket-ir/1` shape and every `ESS-WEBSOCKET-NNN`
+  code the crate emits.
+- `cargo test -p ess-websocket --locked --test compile` passes, with one case per refusal above
+  asserting its code and path, and one case asserting the second `compile` of the example is
+  byte-identical to the first.
 
 ## Scope
 
 - inferred: crates/specify/ess-websocket/src/lib.rs (new crate, shaped like crates/specify/ess-transport/src/lib.rs)
 - inferred: crates/specify/ess-websocket/tests/compile.rs (new)
-- inferred: crates/specify/ess-websocket/Cargo.toml (new), Cargo.toml (workspace member)
+- inferred: crates/specify/ess-websocket/Cargo.toml (new)
+- cited: Cargo.toml (workspace member and dependency, beside `ess-transport` at lines 11 and 70)
+- cited: crates/edge/ess-cli/Cargo.toml (the dependency, beside `ess-transport`)
+- cited: crates/generate/ess-gen/Cargo.toml (the dependency, beside `ess-transport`)
 - inferred: crates/edge/ess-cli/src/websocket.rs (new, shaped like crates/edge/ess-cli/src/transport.rs)
 - cited: crates/edge/ess-cli/src/main.rs (`SpecifyCommand` 147, `--transport` flag 284-287, `Beside` 3475-3565)
 - cited: crates/generate/ess-gen/src/asyncapi.rs (`TransportedAsyncApi` is the pattern for a binding-fed document)
 - inferred: docs/design/websocket-binding.md (new)
 - inferred: README.md (crate tree list)
+
 confidence: medium
+
+Shared surfaces: no `ess/37` row and no suite-bytes row (a sibling binding format); it proposes
+its `CHANGELOG.md` sentence.
 
 ## Fit review
 

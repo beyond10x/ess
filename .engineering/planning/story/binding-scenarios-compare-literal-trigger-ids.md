@@ -23,7 +23,7 @@ scope:
   path: crates/verify/ess-conformance/tests/fixtures/binding-arrangement.yaml
 - confidence: inferred
   path: suites/generated/billing/suite.json
-revision: 5
+revision: 6
 ---
 ## Finding
 
@@ -68,10 +68,13 @@ shows the same for `notify-on-invoice-created` (delivery, flow, mapping, on-fail
   `payload: {job_id: <the literal Create was sent>}`; the same holds for the four `billing`
   scenarios and the `toolchain` and `set-effect-binding-causes` bindings.
 - `literal_trigger_id_residue()` is removed and the sweep in `adversary_273_pass1.rs` asserts an
-  empty miss set.
+  empty miss set (`cargo test -p ess-conformance --locked --test adversary_273_pass1`).
 - A test target that publishes the trigger event with a different literal id fails
   `created-starts/binding/flow` on the interpreted target, naming `job_id`.
-- The suites whose bytes move are named in the CHANGELOG entry, including `suites/generated/billing/suite.json`.
+- `suites/generated/billing/suite.json` is byte for byte the output of the billing `synthesize`
+  command in `suites/generated/README.md` run on the change, and its four
+  `notify-on-invoice-created/binding/*` scenarios each hold an `expect_event` whose `payload`
+  carries the literal `account_id` `CreateInvoice` was sent.
 
 ## Scope
 
@@ -82,3 +85,6 @@ shows the same for `notify-on-invoice-created` (delivery, flow, mapping, on-fail
 - inferred: crates/verify/ess-conformance/tests/fixtures/binding-arrangement.yaml
 
 confidence: high
+
+Shared surfaces: re-pins the suite-bytes rows of the four models above and proposes one
+`CHANGELOG.md` sentence naming the suites whose bytes move.

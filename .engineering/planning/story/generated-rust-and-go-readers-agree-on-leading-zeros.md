@@ -19,14 +19,12 @@ scope:
 - confidence: cited
   path: crates/generate/ess-synth/src/go/http/bound.rs
 - confidence: cited
-  path: crates/generate/ess-synth/src/rust/json.rs
-- confidence: cited
   path: crates/generate/ess-synth/tests/http_binding/go.rs
 - confidence: cited
   path: crates/generate/ess-synth/tests/http_binding/shared.rs
 - confidence: cited
   path: crates/generate/ess-synth/tests/http_binding_rust.rs
-revision: 6
+revision: 8
 ---
 ## Outcome
 
@@ -59,31 +57,40 @@ servers refuse or both read; today the unbound pair disagrees and the bound pair
 
 ## Decisions
 
-Open, to settle before implementation, under D135 (a pinned reader is a documented contract):
+Settled under D135 (`approval-record:d135-a-breaking-unit-leaves-the-batch`: a change that breaks
+a consumer or a documented contract takes a non-breaking form first):
 
-- (a) Both refuse a leading zero (other than `0`, `0.x`, `0e..`) as malformed JSON, bound and
-  unbound. Breaks a client that sends `01` to a Rust server today, and moves the pinned
-  `place-leading-zero` answer of the binding tests from `201` to `400`; listed in the CHANGELOG.
-- (b) The unbound Go server reads as Rust does, through the reader the bound server already uses.
-  No Rust client breaks; the servers keep reading text that is not JSON.
+- **Chosen: (b)** the unbound Go server reads as Rust does, through the reader the bound server
+  already uses (`parseJSON`), because it is the non-breaking form D135 asks for: no client that
+  gets an answer today loses it, and the pinned `place-leading-zero` answer stays `201`.
+- Not taken: (a) both refuse a leading zero (other than `0`, `0.x`, `0e..`) as malformed JSON,
+  bound and unbound. It breaks a client that sends `01` to a Rust server today and moves the pinned
+  `place-leading-zero` answer from `201` to `400`, so under D135 it would leave the batch for an
+  operator decision.
+- Cost of (b): the generated servers keep reading number spellings RFC 8259 does not admit.
 
 ## Acceptance
 
-- `generated_servers_agree_on_number_spellings`: a shared spelling table (`0`, `-0`, `0.5`, `0e1`,
-  `01`, `-01`, `01.0`, `007.0e0`, `1`) is sent as an `Integer` input's value to the unbound Rust and
-  Go servers and to the bound pair; each spelling gets the same status and body from every server.
-- Under (a), `01`, `-01`, `01.0` and `007.0e0` are answered `400` naming the body as not JSON;
-  under (b) they run as `1`, `-1`, `1` and `7`.
-- The CHANGELOG names the client that changes answer.
+All tests are in `cargo test -p ess-synth --locked --test http_binding_rust`.
+
+- A new test `generated_servers_agree_on_number_spellings` sends each spelling of the table `0`,
+  `-0`, `0.5`, `0e1`, `01`, `-01`, `01.0`, `007.0e0`, `1` as an `Integer` input's value to the
+  unbound Rust server, the unbound Go server and the bound pair, and asserts that every server
+  answers each spelling with the same status and body.
+- In the same test, the unbound Go server answers `{"n":01}`, `{"n":-01}`, `{"n":01.0}` and
+  `{"n":007.0e0}` with the outcome for `1`, `-1`, `1` and `7`, as the Rust server does.
+- `http_binding::go::a_json_body_is_read_as_the_rust_server_reads_it` still passes, with
+  `place-leading-zero` answered `201`.
 
 ## Scope
 
-- cited: crates/generate/ess-synth/src/rust/json.rs
 - cited: crates/generate/ess-synth/src/go/http.rs
 - cited: crates/generate/ess-synth/src/go/http/bound.rs
 - cited: crates/generate/ess-synth/tests/http_binding/shared.rs
 - cited: crates/generate/ess-synth/tests/http_binding/go.rs
 - cited: crates/generate/ess-synth/tests/http_binding_rust.rs
-- inferred: CHANGELOG.md
-
 confidence: medium
+
+Shared surfaces: proposes its `CHANGELOG.md` sentence (the unbound Go server now reads a leading
+zero as the Rust server does) and re-pins the generated-Go bytes the `ess-synth` `go` pin target
+holds where the unbound `readJSON` helper moves.

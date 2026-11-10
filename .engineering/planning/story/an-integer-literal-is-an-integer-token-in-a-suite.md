@@ -3,7 +3,7 @@ format: aep.planning-md/3
 id: story:an-integer-literal-is-an-integer-token-in-a-suite
 kind: story
 status: draft
-title: A synthesized Integer literal is an integer token from suite /52, not a float
+title: A synthesized Integer literal is an integer token from suite ess-conformance/64, not a float
 tags:
 - adopter-report
 - defect
@@ -16,9 +16,11 @@ relations:
 - decomposes: epic:zero-open-issues-2026-11
 - depends_on: story:ess-37-and-conformance-64-65-are-open-for-the-epics-constructs
 scope:
-- confidence: cited
-  path: crates/specify/ess-primitives/src/facts.rs
 - confidence: inferred
+  path: crates/verify/ess-conformance/src/coverage.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/coverage_build.rs
+- confidence: cited
   path: crates/verify/ess-conformance/src/scenario.rs
 - confidence: cited
   path: crates/verify/ess-conformance/src/witness.rs
@@ -26,14 +28,15 @@ scope:
   path: crates/verify/ess-conformance/tests/integer_literal_token.rs
 - confidence: cited
   path: website/docs/guides/verify/runners.md
-revision: 7
+revision: 12
 ---
 ## Outcome
 
-From the next suite format pair after the newest released one (`ess-conformance/62` ordinary, `/63`
-coverage, at 0.92.0), a synthesized literal for an `Integer`-typed input, field or payload is
-written as a JSON integer token (`1`), not as a binary64-style float (`1.0`). Lower suite formats
-keep their bytes, and the runner guide states the normalisation a runner owes them.
+From the suite pair `ess-conformance/64` (ordinary) and `ess-conformance/65` (coverage), a
+synthesized whole-number literal for an input, field or payload is written as a JSON integer token
+(`1`), not as a binary64-style float (`1.0`). A suite that carries a whole-number literal is written
+at that pair; lower suite formats keep their bytes, and the runner guide states the normalisation a
+runner owes them.
 
 ## Fit review
 
@@ -63,8 +66,8 @@ Finding covered: downstream specification report of 2026-10-19, finding 17.
 4. **Fit.** No authored surface. Every target reads the new token: JSON integer tokens decode into
    float64 in Go and into `number` in TypeScript unchanged.
 5. **Second adopter.** Any typed runner: Rust serde `i64`, a JVM `long`.
-6. **Cost.** Canonical suite bytes change for every suite with an `Integer` literal, so it needs a
-   suite format version (`AGENTS.md`, "Determinism and formats").
+6. **Cost.** Canonical suite bytes change for every suite with a whole-number literal, so it needs a
+   suite format version (`AGENTS.md`, "Determinism and formats"): `ess-conformance/64` and `/65`.
 7. **Alternatives.** (a) Change nothing, document the normalisation only. (b) Integer tokens from a
    new suite pair (chosen), plus the guide note for older suites. (c) A `--integers-as-tokens`
    switch: refused, two spellings of one suite.
@@ -72,7 +75,7 @@ Finding covered: downstream specification report of 2026-10-19, finding 17.
 ## Decisions
 
 Accept, redesigned: integer tokens from a new suite pair, not a switch; lower suites keep their
-bytes; the runner guide documents the normalisation for them. Decimal literals are unchanged.
+bytes; the runner guide documents the normalisation for them.
 
 2026-10-19, left out of the 0.63.0 batch. The store cannot tell an Integer `1` from a Decimal `1.0`
 (`crates/specify/ess-primitives/src/facts.rs`, `Number::serialize` is the writer, not
@@ -85,25 +88,58 @@ The two routes:
 | A | every whole number is an integer token from the new pair | breaks "Decimal literals unchanged" |
 | B | the shared number type carries an integer-token flag | a change under `docs/design/review-primitive-semantics.md` |
 
-Fresh suites start at `/34`: unless an Integer literal itself raises a suite to the new pair, a
-downstream suite keeps writing `1.0`; if it does, every suite-version pin of a model with an
-Integer literal moves. Open until a design pass picks A or B. The pair originally planned for this
-(`/52`,`/53`) shipped with other contents; the pair number is chosen when the design is.
+2026-11-10, decided for this epic:
+
+- **Option A.** It needs no type at write time, so a `/64` suite read back writes the same bytes;
+  it is the first item of "What stage two changes" in `docs/design/review-primitive-semantics.md`
+  (`Serialize` writes `1` for an integral `Number`); and B changes `Number`'s shape, which re-freezes
+  the consumer-coverage baseline (same page, "What this costs the consumer-coverage baseline"). A
+  whole `Decimal` (`1.0`) is therefore written `1` at `/64`; a fractional one (`19.99`) is unchanged,
+  and every typed `Decimal` reader (`f64`, a decimal type) reads an integer token.
+- **The suite writer switches, not `Number`.** `Number::serialize` is unchanged, so reports and every
+  other artifact keep their numbers; the suite writer (`ConformanceSuite::to_canonical_json` and
+  `to_compact_json`, and the coverage writer) writes an integral `Number` (`Number::as_i64` is
+  `Some`) as an integer token when the suite is at `/64` or `/65`.
+- **A whole-number literal raises the suite.** A suite whose values hold a whole number is written at
+  `/64` (coverage `/65`); otherwise the reporter's model stays at `/34` and keeps writing `1.0`. Every
+  suite-version pin of such a model moves, which is the cost of fixing the defect.
+- The pair originally planned for this (`/52`, `/53`) shipped with other contents; this story uses
+  the epic's pair, opened by story:ess-37-and-conformance-64-65-are-open-for-the-epics-constructs.
 
 ## Acceptance
 
-- `an_integer_literal_is_an_integer_token_in_the_new_suite_pair`: for the model above, a suite at
-  the new pair writes `"value": 1` for an `Integer` input; the same model at `/34` (and any lower
-  pair) still writes `1.0`; a `Decimal` literal is written as the chosen option says.
-- A suite at the new pair round-trips byte for byte through the admitted-suite reader.
-- The runner guide states the rule for suites below the new pair.
+- `cargo test -p ess-conformance --locked --test integer_literal_token`,
+  `an_integer_literal_is_an_integer_token_at_suite_64`: synthesizing
+  `.engineering/repro/integer-literal-float/system.yaml` gives `"suite_version":
+  "ess-conformance/64"`, and the literals the `/34` suite wrote as `1.0`, `2.0` and `0.0` are written
+  `1`, `2` and `0`.
+- Same target, `the_coverage_suite_of_an_integer_literal_is_at_65`: the coverage suite of the same
+  model (`--suite-format 5`) is at `ess-conformance/65` and writes the same integer tokens.
+- Same target, `a_whole_decimal_is_an_integer_token_at_64`: in a `/64` suite a `Decimal` witness `1`
+  is written `1` and a `Decimal` literal `19.99` is written `19.99`.
+- Same target, `a_suite_below_64_keeps_its_float_spelling`: a `/34` suite holding `"value": 1.0`, read
+  with `ConformanceSuite::from_json` and written with `to_canonical_json`, still holds `1.0`.
+- Same target, `a_suite_at_64_round_trips_byte_for_byte`: the `/64` suite of the reproduction, read
+  with `ConformanceSuite::from_json` and with `AdmittedSuite::from_json` and written back, gives the
+  same bytes.
+- `cargo test -p ess-conformance --locked --test synthesis_suite_bytes_table` passes, and every row it
+  moves is a model whose suite holds a whole-number value; a row of a model without one keeps its
+  major and digest.
+- `website/docs/guides/verify/runners.md` states that below `ess-conformance/64` (coverage `/65`) a
+  whole number is written `1.0` and a typed runner normalises it to an integer, and that from `/64`
+  it is an integer token; `crates/verify/ess-conformance/src/witness.rs` module doc :121-126 says the
+  same and no longer says the value is an `f64`.
 
 ## Scope
 
-- cited: `crates/specify/ess-primitives/src/facts.rs` (`Number`, `impl Serialize` :173-210)
+- cited: `crates/verify/ess-conformance/src/scenario.rs` (`to_canonical_json`, `to_compact_json` :403-421; the suite-version raise :200-340)
+- cited: `crates/verify/ess-conformance/src/coverage_build.rs` (`coverage_version` :587)
+- inferred: `crates/verify/ess-conformance/src/coverage.rs` (`to_canonical_json` :822)
 - cited: `crates/verify/ess-conformance/src/witness.rs` (module doc :121-126)
 - cited: `website/docs/guides/verify/runners.md`
-- inferred: `crates/verify/ess-conformance/src/scenario.rs` (suite format selection)
 - inferred: `crates/verify/ess-conformance/tests/integer_literal_token.rs` (new)
 
-confidence: medium (blocked on the A/B design decision)
+confidence: medium
+
+Shared surfaces: re-pins the suite-bytes rows of models whose suite holds a whole-number value, and
+proposes its `CHANGELOG.md` sentence.

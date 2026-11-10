@@ -21,7 +21,7 @@ scope:
   path: crates/verify/ess-diff/src/diff.rs
 - confidence: inferred
   path: crates/verify/ess-diff/tests/keep_on_missing.rs
-revision: 4
+revision: 5
 ---
 ## Need
 
@@ -32,20 +32,32 @@ command: what a missing member does to the stored row changes. `ess verify diff`
 
 ## Acceptance
 
-- `ess verify diff` between the reproduction with `sets: {summary: input.summary}` and the same with
-  `{input: summary, missing: unchanged}` reports the command's outcome as breaking, naming the field;
-  removing it is breaking too.
-- Adding or removing `presence: omitted_or_null` on a command input is reported as breaking; adding
-  or removing a `sent()` guard is reported as the existing `outcome-condition-changed`.
-- Two specifications without these differences diff as before (existing tests unchanged).
-- Tests in `crates/verify/ess-diff/tests/keep_on_missing.rs` (new).
+Every bullet runs in `cargo test -p ess-diff --locked --test keep_on_missing` (new), over the
+reproduction of `story:an-input-keeps-missing-and-null-apart`.
+
+- `ess verify diff` from `sets: {summary: input.summary}` to
+  `sets: {summary: {input: summary, missing: unchanged}}` reports one `outcome-sets-changed` change
+  on the command's outcome, naming `summary`, with callers compatibility `breaking`.
+- The same diff in the other direction (removing `missing: unchanged`) reports the same kind,
+  field and `breaking`.
+- Adding `presence: omitted_or_null` to the command input `summary` reports one
+  `input-type-changed` change naming `summary`, with callers compatibility `breaking`; removing it
+  reports the same.
+- Adding a `sent(summary)` guard to an outcome reports one `outcome-condition-changed` change on
+  that outcome, and removing it reports the same; its compatibility is what that kind already
+  answers for the guard.
+- `cargo test -p ess-diff --locked` passes with no existing test file changed: two specifications
+  without these differences diff as before.
 
 ## Scope
 
-- cited: crates/verify/ess-diff/src/diff.rs (presence comparison, near 353)
+This story moves only the `CHANGELOG.md` shared surface.
+
+- cited: crates/verify/ess-diff/src/diff.rs
 - cited: crates/verify/ess-diff/src/change.rs
 - cited: crates/verify/ess-diff/src/compatibility.rs
-- inferred: crates/verify/ess-diff/tests/keep_on_missing.rs (new)
+- inferred: crates/verify/ess-diff/tests/keep_on_missing.rs
+
 confidence: medium
 
 ## Fit review
@@ -62,6 +74,12 @@ confidence: medium
 ## Decisions
 
 **accept as proposed** (ADR `a-missing-input-keeps-and-null-clears`, Effect, "Diff").
+
+- No new change kind: `missing: unchanged` moves the outcome's `sets` in the IR, which
+  `outcome_state_changes` in `crates/verify/ess-diff/src/diff.rs` already reports as
+  `outcome-sets-changed`, and input presence is reported as `input-type-changed` from
+  `command_changes`, so the delta needs no new `ess-diff` format; the story's work is the
+  `breaking` classification of both in `compatibility.rs`.
 
 ## Source
 

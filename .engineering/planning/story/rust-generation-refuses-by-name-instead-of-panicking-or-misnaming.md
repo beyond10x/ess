@@ -16,6 +16,8 @@ relations:
 - serves: vision:O2
 - decomposes: epic:zero-open-issues-2026-11
 scope:
+- confidence: inferred
+  path: crates/generate/ess-synth/src/codec_names.rs
 - confidence: cited
   path: crates/generate/ess-synth/src/go/behaviour.rs
 - confidence: inferred
@@ -24,9 +26,15 @@ scope:
   path: crates/generate/ess-synth/src/rust/behaviour.rs
 - confidence: cited
   path: crates/generate/ess-synth/src/rust/feasibility.rs
-- confidence: inferred
+- confidence: cited
+  path: crates/generate/ess-synth/src/rust/http.rs
+- confidence: cited
   path: crates/generate/ess-synth/src/rust/name.rs
-revision: 5
+- confidence: cited
+  path: crates/generate/ess-synth/src/rust/port.rs
+- confidence: inferred
+  path: crates/generate/ess-synth/tests/generation_by_name.rs
+revision: 9
 ---
 ## Need
 
@@ -88,27 +96,48 @@ Items 28, 29 and 32 of the 2026-11-09 workbench report.
 Accept, redesigned: item 29 is escaped in the Rust allocator rather than refused at validation;
 item 32 follows #415's qualification for view methods; item 28 is fixed in both Rust and Go.
 
+- Item 28 generates rather than being refused: the `when_related` guard reads the subject's own
+  `parent_id`, so the subject row is already held where the guard is decided, and the error
+  payload reads that same row; a refusal would leave a shape both targets can serve owed.
+- Item 29's outcome `self` allocates the Rust variant `Self_`: `Self` is a path keyword with no
+  raw form, and `name.rs` `escape` already gives the path keywords a trailing underscore.
+- Item 32 allocates by `codec_names.rs` rule 2: the views are ordered by the bytes of their
+  qualified names, `gap.one.Things` keeps `things`, and `gap.two.Things` takes `things_2`.
+
 ## Acceptance
 
-- `a_subject_read_in_a_related_guarded_error_payload_generates_or_is_refused_by_name`: example 28's
-  model, `ess generate synthesize --target rust` and `--target go`, exits 0 or 1 with a named
-  refusal, never 101; when it generates, the conformance suite the example synthesizes passes
-  against the generated server.
-- `an_outcome_named_by_a_rust_keyword_generates`: example 29 (`- name: self`) and an outcome named
-  `type` synthesize for Rust with exit 0; the outcome's wire name stays `self`.
-- `two_views_of_one_last_name_in_two_domains_get_distinct_methods`: example 32 synthesizes for
-  Rust with exit 0 and no `naming:`; a model with no collision keeps its bytes.
+- `cargo test -p ess-synth --locked --test generation_by_name`,
+  `a_subject_read_in_a_related_guarded_error_payload_generates`: example 28's model synthesizes
+  with `--target rust` and with `--target go`, each exit 0.
+- The same target, `the_related_guarded_error_suite_passes_on_generated_servers`: the conformance
+  suite synthesized from example 28 passes against the generated Rust server and against the
+  generated Go server, including the `no-parent` and `reserved` scenarios with their `parent_id`
+  payloads.
+- The same target, `an_outcome_named_by_a_rust_keyword_generates`: example 29 (`- name: self`) and
+  a model with an outcome named `type` synthesize for Rust with exit 0; the generated outcome
+  variants are `Self_` and `Type`, and the served wire name of the first stays `self`.
+- The same target, `two_views_of_one_last_name_in_two_domains_get_distinct_methods`: example 32
+  synthesizes for Rust with exit 0 and no `naming:`, and the generated port declares the methods
+  `things` (`gap.one.Things`) and `things_2` (`gap.two.Things`).
+- `cargo test -p ess-synth --locked --test served_codec_names` and
+  `cargo test -p ess-synth --locked --test go` pass with no row moved: a model without a keyword
+  outcome or a view-method collision keeps its bytes.
 
 ## Scope
 
 - cited: crates/generate/ess-synth/src/rust/behaviour.rs
 - cited: crates/generate/ess-synth/src/go/behaviour.rs
 - cited: crates/generate/ess-synth/src/rust/feasibility.rs
-- inferred: crates/generate/ess-synth/src/rust/name.rs
+- cited: crates/generate/ess-synth/src/rust/name.rs
+- cited: crates/generate/ess-synth/src/rust/port.rs
+- cited: crates/generate/ess-synth/src/rust/http.rs
+- inferred: crates/generate/ess-synth/src/codec_names.rs (view-method allocation)
 - inferred: crates/generate/ess-synth/src/plan.rs
-- inferred: CHANGELOG.md
+- inferred: crates/generate/ess-synth/tests/generation_by_name.rs (new)
 
 confidence: medium
+
+Shared surfaces moved: `CHANGELOG.md` only; it moves no byte-pin row.
 
 ## Source
 

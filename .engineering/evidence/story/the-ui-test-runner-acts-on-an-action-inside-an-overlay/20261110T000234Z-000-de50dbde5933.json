@@ -1,0 +1,14 @@
+{
+  "at": "2026-11-10T00:02:34Z",
+  "actor": "human:timo",
+  "artifact": "story:the-ui-test-runner-acts-on-an-action-inside-an-overlay",
+  "kind": "story",
+  "revision": 8,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "review-result:zero-issues-parallel-safety-round-1",
+    "review": "review-result:zero-issues-parallel-safety-round-1",
+    "outcome": "no-op"
+  }
+}

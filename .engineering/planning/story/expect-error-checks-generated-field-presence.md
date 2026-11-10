@@ -14,6 +14,7 @@ relations:
 - decomposes: epic:adopter-gaps-verdicts
 - decomposes: epic:zero-open-issues-2026-11
 - depends_on: story:ess-37-and-conformance-64-65-are-open-for-the-epics-constructs
+- depends_on: story:view-and-error-assertions-carry-their-value-shape
 scope:
 - confidence: inferred
   path: crates/verify/ess-conformance/src/authored.rs
@@ -31,7 +32,9 @@ scope:
   path: crates/verify/ess-conformance/src/synthesize.rs
 - confidence: inferred
   path: crates/verify/ess-conformance/src/ts/runtime.ts
-revision: 12
+- confidence: inferred
+  path: crates/verify/ess-conformance/tests/expect_error_checks_generated_field_presence.rs
+revision: 14
 ---
 ## Outcome
 
@@ -90,17 +93,28 @@ in it requires `iss`, so a refusal carrying only `reason` passes.
 
 ## Acceptance
 
-- Over the model above, `synthesize --target ir` writes `Issue/outcome/rejected` with an
-  `expect_error` that requires `iss` to be present (a shape or presence list, under a new suite
-  major; the current next free ordinary major is 64).
-- A runner test in each of Rust, Go and TypeScript: a target whose `Rejected` omits `iss` fails
-  `Issue/outcome/rejected` with a diagnostic naming `iss`; a target carrying any `String` value for
-  `iss` passes.
-- A suite in an earlier major keeps today's behaviour in all three runners.
-- The byte-pinned generated example suites that move are regenerated and named in the CHANGELOG.
+All cases are in `cargo test -p ess-conformance --locked --test
+expect_error_checks_generated_field_presence`, over the model above.
 
-Overlap: `story:view-and-error-assertions-carry-their-value-shape` also gives `ExpectError` a shape
-under a new suite major; the two should land in one unit or one after the other.
+- `ess verify conform synthesize --target ir` writes an `ess-conformance/64` suite whose
+  `Issue/outcome/rejected` `expect_error` step carries the value shape of
+  story:view-and-error-assertions-carry-their-value-shape with `iss` a `String` leaf that must be
+  present, and still compares `reason` by value.
+- The Rust runner fails `Issue/outcome/rejected` against a target whose `Rejected` omits `iss`,
+  with a mismatch naming `iss`, and passes it against a target carrying any `String` in `iss`.
+- The Go runner gives the same two answers on the same two targets.
+- The TypeScript runner gives the same two answers on the same two targets.
+- The same `expect_error` step in an `ess-conformance/63` suite passes against the target that
+  omits `iss` in each of the three runners.
+
+## Decisions
+
+- The presence check rides on the error shape story:view-and-error-assertions-carry-their-value-shape
+  adds rather than a separate presence list, so `ExpectError` gains one shape under one suite major
+  (`ess-conformance/64`, coverage `65`).
+- This story lands after story:view-and-error-assertions-carry-their-value-shape (`depends_on`)
+  and owns the combination: it marks a `{generated: true}` error field as a present leaf of the
+  shape that story introduces, and changes no comparator that story owns.
 
 ## Scope
 
@@ -112,5 +126,9 @@ under a new suite major; the two should land in one unit or one after the other.
 - inferred: crates/verify/ess-conformance/src/authored.rs
 - inferred: crates/verify/ess-conformance/src/response.rs
 - inferred: crates/verify/ess-conformance/src/go/mod.rs
+- inferred: crates/verify/ess-conformance/tests/expect_error_checks_generated_field_presence.rs
 
 confidence: high
+
+Re-pins the suite-bytes rows whose `expect_error` steps gain a generated field, and proposes the
+`CHANGELOG.md` sentence naming them.

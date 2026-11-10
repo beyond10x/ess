@@ -17,16 +17,14 @@ scope:
 - confidence: cited
   path: crates/verify/ess-conformance/src/authored.rs
 - confidence: cited
-  path: crates/verify/ess-conformance/src/interpret/execute.rs
-- confidence: cited
   path: crates/verify/ess-conformance/src/synthesize.rs
 - confidence: cited
   path: crates/verify/ess-conformance/tests/notfound_after_guarded_move.rs
-- confidence: inferred
+- confidence: cited
   path: docs/design/input-guard-overlap-precedence.md
 - confidence: cited
   path: docs/design/typed-literals-and-unknown-instances.md
-revision: 5
+revision: 8
 ---
 ## Need
 
@@ -77,30 +75,69 @@ interpreter answers, which reads "an identity nobody holds" before step 6 for ac
 author check and the synthesis witness with it. Q-A of `approval-record:ess-0870-wave` kept the precedence order;
 it did not rule on the missing record.
 
+## Decisions
+
+- (b): an identity no record carries is answered by the declared not-found outcome, also where an
+  accepting `when:` branch declared before it claims the input. Why: § 2a's own Rule ("whose
+  `instance:` names no record, is answered with the command's not-found outcome") and G4's order
+  (`docs/design/generic-language-features.md` § G4: the request, then whether the addressed record
+  exists, then acceptance) already say so; the interpreter answers a selected acting branch whose
+  row is missing with the command's unknown-instance answer
+  (`crates/verify/ess-conformance/src/interpret/execute.rs:2286-2289`); and (a) would need a
+  meaning for `moves:` on a record that does not exist, which the model has nowhere.
+- What this reverses: for this shape the 0.87.0 refusal of
+  `story:a-not-found-branch-after-a-guarded-move-is-refused-with-its-repair` (`ESS-SYNTH-003` with
+  the `before_row: true` repair on `not-found`) no longer fires, because a fresh identity now
+  witnesses `not-found`. Its `before_row: true` form stays valid and synthesized. The interpreter
+  does not change.
+
 ## Acceptance
 
-- The decision is recorded in `docs/design/typed-literals-and-unknown-instances.md` § 2a (Witness) and in
-  `docs/design/input-guard-overlap-precedence.md`, and the sentence "The model interpreter does not yet follow that
-  order for this input" is removed.
-- `crates/verify/ess-conformance/tests/notfound_after_guarded_move.rs`, case
-  `a_fresh_identity_under_the_guarded_move_is_answered_alike`: the authored step above, expecting the decided outcome,
-  is admitted by synthesis (no ESS-AUTHOR-041) and passed by the interpreted target; the step expecting the other
-  outcome is refused by synthesis's author check.
-- Existing cases in `notfound_after_guarded_move.rs`, `precedence_order.rs` and `adversary_overlap_precedence_pass2.rs`
-  pass unchanged, and synthesized suite bytes do not move for models without this shape.
+Every test bullet runs `cargo test -p ess-conformance --locked --test notfound_after_guarded_move`
+on `SHELF`.
+
+- `docs/design/typed-literals-and-unknown-instances.md` § 2a (Witness) and
+  `docs/design/input-guard-overlap-precedence.md` (the paragraph ending "does not fire on a cause
+  that lies in the specification") say that a fresh identity is answered by the declared not-found
+  outcome even where an accepting `when:` branch declared before it claims the input. The § 2a
+  sentences "Where an accepting `when:` branch declared before the not-found outcome claims …" and
+  "The model interpreter does not yet follow that order for this input" are gone
+  (`grep -c "does not yet follow that order"` on the file prints `0`).
+- Test `a_fresh_identity_under_the_guarded_move_is_answered_alike`: the authored step above with
+  `outcome: not-found, error: {name: demo.shelf.BinNotFound}` is admitted by synthesis (no
+  `ESS-AUTHOR-041`) and passes on `--target interpreted`; the same step with `outcome: opened` is
+  refused `ESS-AUTHOR-041`, naming `not-found` as the outcome that answers it.
+- Same target: synthesis of `SHELF` writes `demo.shelf.HandleBin/outcome/not-found` with a fresh
+  `bin_id`, `move: Open`, nothing arranged, expecting `not-found`, error `demo.shelf.BinNotFound`
+  and no `demo.shelf.BinOpened`. No refusal names `not-found`. This replaces the assertions of
+  `a_not_found_after_a_guarded_move_is_refused_once_with_its_repair` and the refusal count of
+  `an_error_field_named_like_the_input_builds_no_step_the_precedence_refutes`.
+- Same target: `a_not_found_declared_first_before_the_row_is_synthesized` and
+  `a_reachable_not_found_after_a_guarded_move_is_still_synthesized` pass unchanged.
+- `cargo test -p ess-conformance --locked --test precedence_order` and `--test
+  adversary_overlap_precedence_pass2` pass unchanged. In `--test synthesis_suite_bytes_table`, a
+  row moves only for a model with an accepting `when:` branch declared before a declared not-found
+  outcome that claims the acting input.
 
 ## Scope
 
-- cited: crates/verify/ess-conformance/src/interpret/execute.rs
+Re-pins suite-bytes rows for models of that shape, and proposes its `CHANGELOG.md` sentence (the
+0.87.0 refusal no longer fires for this shape).
+
 - cited: crates/verify/ess-conformance/src/synthesize.rs
+- cited: crates/verify/ess-conformance/src/authored.rs
 - cited: crates/verify/ess-conformance/tests/notfound_after_guarded_move.rs
 - cited: docs/design/typed-literals-and-unknown-instances.md
-- inferred: docs/design/input-guard-overlap-precedence.md
-- cited: crates/verify/ess-conformance/src/authored.rs (the ESS-AUTHOR-041 check at ~:1800, if the decision is (b))
+- cited: docs/design/input-guard-overlap-precedence.md
 
 confidence: medium
+
+`synthesize.rs`: the § 2a witness's exception for a claiming accepting branch, and the
+`ESS-SYNTH-003` repair path near :9131-9210. `authored.rs`: the `ESS-AUTHOR-041` check (~:1800).
+`interpret/execute.rs` leaves the scope: the interpreter's answer is the decided one.
 
 ## Schedule
 
 Backlog finding (from-finding); no wave takes it before every planned wave is delivered unless the orchestrator
 says so.
+

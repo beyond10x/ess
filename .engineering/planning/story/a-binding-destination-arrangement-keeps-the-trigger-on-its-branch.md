@@ -17,8 +17,8 @@ scope:
 - confidence: cited
   path: crates/verify/ess-conformance/src/synthesize/binding_effects.rs
 - confidence: inferred
-  path: crates/verify/ess-conformance/tests/
-revision: 6
+  path: crates/verify/ess-conformance/tests/a_binding_destination_arrangement_keeps_the_trigger_on_its_branch.rs
+revision: 9
 ---
 ## Problem
 
@@ -57,18 +57,33 @@ implementation.
 
 ## Acceptance
 
-- A conformance case named `a_binding_destination_arrangement_keeps_the_trigger_on_its_branch`, on
-  the reproduction's model (or a smaller one with the same shape). Synthesis either keeps the
-  trigger on its branch, so that every binding scenario passes `--target interpreted`, or refuses
-  the binding scenarios with `ESS-SYNTH-010`, naming the trigger's guard (`Announce/announced`'s
-  `when_related`). No binding scenario of that model fails on the interpreted target.
-- A second case with a trigger input guard reading the same input (`when: account_id != …`)
-  behaves the same way, because `keeps_branch_sent` covers both.
-- No model in the suite-bytes tables moves.
+All cases are in `cargo test -p ess-conformance --locked --test
+a_binding_destination_arrangement_keeps_the_trigger_on_its_branch`.
+
+- On the reproduction's model, `ess verify conform synthesize` reports one `ESS-SYNTH-010` refusal
+  for the binding `activate-on-announce` whose message reads "invokes `Activate` on an existing row
+  named by" and gives as its reason that the trigger's branch `Announce/announced` reads the input
+  that names the row; the suite holds no `activate-on-announce/binding/*` scenario.
+- On the same model, `ess verify conform run --target interpreted --report-format 2` over that
+  suite reports `0 failed`.
+- On a second model whose `Announce` branch is guarded by an input guard reading the same input
+  (`when: account_id != "closed"`) in place of the `when_related`, synthesis reports the same
+  `ESS-SYNTH-010` refusal for the binding and the interpreted run reports `0 failed`.
+- `cargo test -p ess-conformance --locked --test synthesis_suite_bytes_table` passes with no row of
+  `synthesis-suite-bytes-table.tsv` changed.
+
+## Decisions
+
+- The binding is refused rather than arranged: on the reproduction's model the trigger publishes
+  only when the row its input names does not exist, while the binding needs that row to exist, so
+  no arrangement keeps the trigger on its branch, and the sibling paths that call
+  `keeps_branch_sent` already keep the gap in that case.
 
 ## Scope
 
-- cited: `crates/verify/ess-conformance/src/synthesize/binding_effects.rs` (`arranged_destination`, `reads_stored`, `keeps_branch_sent`)
-- inferred: `crates/verify/ess-conformance/tests/` (new case beside the binding-effects tests)
+- cited: crates/verify/ess-conformance/src/synthesize/binding_effects.rs
+- inferred: crates/verify/ess-conformance/tests/a_binding_destination_arrangement_keeps_the_trigger_on_its_branch.rs
 
 confidence: high
+
+Moves no shared surface: no suite-bytes row is re-pinned.

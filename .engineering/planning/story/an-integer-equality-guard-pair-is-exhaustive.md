@@ -17,16 +17,18 @@ relations:
 - decomposes: epic:zero-open-issues-2026-11
 scope:
 - confidence: inferred
-  path: crates/generate/ess-synth/
+  path: crates/generate/ess-synth/tests/finite_literal.rs
 - confidence: cited
   path: crates/specify/ess-domain/src/command/finite.rs
 - confidence: inferred
   path: crates/specify/ess-domain/src/command/subject_fact.rs
 - confidence: inferred
-  path: crates/specify/ess-domain/tests/
+  path: crates/specify/ess-domain/tests/finite_literal.rs
+- confidence: cited
+  path: crates/specify/ess-domain/tests/subject_guard_input.rs
 - confidence: cited
   path: docs/design/closed-enum-outcome-coverage.md
-revision: 5
+revision: 9
 ---
 ## Problem
 
@@ -76,8 +78,13 @@ Workaround today: drop the guard from one branch (make it the default).
 
 - cited: crates/specify/ess-domain/src/command/finite.rs
 - cited: docs/design/closed-enum-outcome-coverage.md
+- cited: crates/specify/ess-domain/tests/subject_guard_input.rs (the stored-field case, beside `defined_and_not_defined_over_one_stored_optional_field_are_exhaustive`)
 - inferred: crates/specify/ess-domain/src/command/subject_fact.rs
-- inferred: crates/specify/ess-domain/tests/
-- inferred: crates/generate/ess-synth/ (scenarios per partition cell)
+- inferred: crates/specify/ess-domain/tests/finite_literal.rs (new: the input cases)
+- inferred: crates/generate/ess-synth/tests/finite_literal.rs (new: the partition reaches generated targets, as `tests/finite_presence.rs` does for `defined`)
 
 confidence: medium
+
+Shared surfaces: none; no format row, no byte-pin row. The scenarios per partition cell come from
+`crates/verify/ess-conformance/src/witness.rs`, which reads `finite::analyze` and is expected
+unchanged.

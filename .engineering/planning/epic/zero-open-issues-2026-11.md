@@ -9,7 +9,7 @@ tags:
 - integration
 relations:
 - serves: vision:O2
-revision: 1
+revision: 2
 ---
 ## Outcome
 
@@ -31,9 +31,29 @@ provide 1 single PR to gh. make sure all are below 1 big epic for integration vi
   as an external ref, a `## Fit review` and a `## Decisions`.
 - Every non-terminal story or task whose body describes a defect in shipped behaviour (150 drafts
   classified on 2026-11-09). Each is reproduced on 0.92.0 before it enters a wave; a draft that does
-  not reproduce gets its evidence in its body and leaves this epic.
+  not reproduce gets its evidence in its body and is archived.
 - Order: bugs first (#765, #766), then the synthesis refusals (#705-#740), then the defect drafts,
   then the enhancements.
+
+## Shared surfaces
+
+These files are reconciled by the coordinator when a unit merges into the integration branch, so
+they are not typed scope entries of the stories and `aep plan artifact waves` does not serialise
+every story on them:
+
+- the `ess/37` row of `FORMAT_HISTORY` (`crates/specify/ess-domain/src/system.rs`, opened by
+  story:ess-37-and-conformance-64-65-are-open-for-the-epics-constructs) and `CHANGELOG.md`: each
+  implementor proposes its sentence, and the coordinator writes it at merge;
+- generated outputs that a command rewrites from source: `website/docs/reference/spec-versions.md`
+  (`cargo xtask`) and `schemas/generated/ess.schema.json`; the coordinator regenerates them after
+  each merge;
+- the byte-pin tables AGENTS.md § "A gate of named test targets includes the repository-wide byte
+  pins" names, `crates/verify/ess-conformance/tests/fixtures/synthesis-suite-bytes-table.tsv` first
+  among them: each unit re-pins only the rows its change claims, and after a merge the coordinator
+  reruns the pin targets on the integration branch and keeps a moved row only where a merged story
+  claims it.
+
+A story's other edits to `system.rs` (types, validation) stay typed scope entries.
 
 ## Not in scope
 
@@ -45,3 +65,4 @@ provide 1 single PR to gh. make sure all are below 1 big epic for integration vi
 `gh issue list --repo beyond10x/ess --state open` lists no issue that this epic's stories resolve
 in code; any issue left open has a typed blocker artifact naming why it cannot be resolved in this
 repository. Every story decomposing this epic is `implemented` or `archived` with its evidence.
+

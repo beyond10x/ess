@@ -28,11 +28,7 @@ scope:
   path: crates/verify/ess-diff/src/change.rs
 - confidence: cited
   path: docs/design/view-paging.md
-- confidence: inferred
-  path: schemas/generated/ess.schema.json
-- confidence: inferred
-  path: website/docs/reference/spec-versions.md
-revision: 9
+revision: 10
 ---
 ## Need
 

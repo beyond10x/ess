@@ -23,8 +23,10 @@ relations:
 scope:
 - confidence: inferred
   path: .engineering/planning/design/ui-host-slots.md
+- confidence: cited
+  path: crates/ui/ess-ui-check/src/hosts.rs
 - confidence: inferred
-  path: crates/ui/ess-ui-check/src/
+  path: crates/ui/ess-ui-check/tests/host_slots.rs
 - confidence: inferred
   path: crates/ui/ess-ui-react/src/emit.rs
 - confidence: inferred
@@ -33,7 +35,7 @@ scope:
   path: crates/ui/ess-ui/src/expand.rs
 - confidence: cited
   path: crates/ui/ess-ui/src/path.rs
-revision: 6
+revision: 10
 ---
 ## Need
 
@@ -106,11 +108,14 @@ The same document with page `b` removed passes and lists the slot once.
 
 ## Scope
 
-- cited: `crates/ui/ess-ui/src/path.rs`
-- inferred: `crates/ui/ess-ui/src/expand.rs`
-- inferred: `crates/ui/ess-ui-check/src/`
-- inferred: `crates/ui/ess-ui-react/src/emit.rs`
-- inferred: `crates/ui/ess-ui-tui/src/view.rs`
-- inferred: `.engineering/planning/design/ui-host-slots.md`
+- cited: crates/ui/ess-ui/src/path.rs
+- inferred: crates/ui/ess-ui/src/expand.rs
+- cited: crates/ui/ess-ui-check/src/hosts.rs
+- inferred: crates/ui/ess-ui-check/tests/host_slots.rs
+- inferred: crates/ui/ess-ui-react/src/emit.rs
+- inferred: crates/ui/ess-ui-tui/src/view.rs
+- inferred: .engineering/planning/design/ui-host-slots.md
 
 confidence: medium
+
+Moves no shared surface.

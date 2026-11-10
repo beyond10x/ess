@@ -12,11 +12,17 @@ tags:
 relations:
 - decomposes: epic:zero-open-issues-2026-11
 scope:
+- confidence: inferred
+  path: crates/edge/ess-xtask/src/consumer_coverage/entry-classifications.json
 - confidence: cited
   path: crates/generate/ess-entity-runtime/src/lib.rs
+- confidence: cited
+  path: crates/generate/ess-entity-runtime/src/subset.rs
 - confidence: inferred
-  path: crates/generate/ess-entity-runtime/tests/
-revision: 5
+  path: crates/generate/ess-entity-runtime/tests/component_closure.rs
+- confidence: inferred
+  path: website/docs/reference/entity-runtime-lowering.md
+revision: 9
 ---
 ## Outcome
 
@@ -116,20 +122,36 @@ reached through the library only.
 
 ## Acceptance
 
-- In `crates/generate/ess-entity-runtime/tests/`, a test lowers component `desk` of the model above
-  and gets `Err`, with one diagnostic at path `demo.desk.Relabel` whose code names the case (a new
-  `LoweringCode`, for example `CommandSubjectOutsideClosure`) and whose message names
-  `demo.items.Item` and says it is outside the component's entity closure.
-- A red run first shows today's `Ok` with no `demo.desk.Relabel` operation.
-- Lowering component `items` of the same model is unchanged; existing lowering tests keep their
-  output.
+- `cargo test -p ess-entity-runtime --locked --test component_closure`: lowering component `desk`
+  of the model above returns `Err` with exactly one diagnostic, at path `demo.desk.Relabel`, code
+  `LoweringCode::CommandSubjectOutsideClosure`, whose message names `demo.items.Item` and says it
+  is outside the component's entity closure. On today's tree the same test fails, because lowering
+  returns `Ok` with no `demo.desk.Relabel` operation.
+- Same test target: lowering component `items` of the same model returns `Ok` with the
+  `demo.items.AddItem` operation and no diagnostic.
+- `cargo test -p ess-entity-runtime --locked --test lowerable_subset` passes with
+  `CommandSubjectOutsideClosure` in `LoweringCode::ALL`, a refused row naming the new test, and
+  `website/docs/reference/entity-runtime-lowering.md` re-rendered to that row.
+- `cargo test -p ess-entity-runtime --locked --test lowering` passes with no expected output
+  changed.
 
 ## Scope
 
+Moves no shared surface.
+
 - cited: crates/generate/ess-entity-runtime/src/lib.rs
-- inferred: crates/generate/ess-entity-runtime/tests/ (a new test file with the fixture)
+- cited: crates/generate/ess-entity-runtime/src/subset.rs
+- inferred: crates/generate/ess-entity-runtime/tests/component_closure.rs
+- inferred: website/docs/reference/entity-runtime-lowering.md
+- inferred: crates/edge/ess-xtask/src/consumer_coverage/entry-classifications.json
 
 confidence: high
+
+`lib.rs`: `lower_command` :1974 and the `LoweringCode` enum :433. `subset.rs`: the refused rows,
+`LoweringCode::ALL` and the code's name and sentence; it renders the reference page, which
+`tests/lowerable_subset.rs` holds byte for byte. `entry-classifications.json` classifies every
+`LoweringCode` variant for `task test-xtask`. `tests/component_closure.rs` is new and holds the
+model above.
 
 ## Fit review
 
@@ -152,3 +174,5 @@ Found while implementing beyond10x/ess#231 (2026-10-04); not an adopter request.
 ## Decisions
 
 - Accept as a defect: refuse by name; do not widen the closure in this story.
+- The code is `CommandSubjectOutsideClosure`, named after the closure `entity_closure` computes,
+  beside its siblings `CommandSpansEntities` and `StatelessCommandUnsupported`.

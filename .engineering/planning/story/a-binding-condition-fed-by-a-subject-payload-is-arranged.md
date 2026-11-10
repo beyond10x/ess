@@ -4,13 +4,9 @@ id: story:a-binding-condition-fed-by-a-subject-payload-is-arranged
 kind: story
 status: draft
 title: A binding condition fed by a subject payload is arranged
-tags:
-- zero-open-issues
 refs:
 - provider: github
   reference: beyond10x/ess#705
-relations:
-- decomposes: epic:zero-open-issues-2026-11
 scope:
 - confidence: cited
   path: crates/verify/ess-conformance/src/synthesize/binding_condition.rs
@@ -18,7 +14,7 @@ scope:
   path: crates/verify/ess-conformance/src/synthesize/binding_effects.rs
 - confidence: inferred
   path: crates/verify/ess-conformance/tests/binding_condition_related.rs
-revision: 4
+revision: 5
 ---
 ## Need
 

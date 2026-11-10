@@ -27,7 +27,7 @@ scope:
   path: crates/generate/ess-synth/tests/served_unfinished_committed.rs
 - confidence: inferred
   path: crates/generate/ess-synth/tests/transport_free_entry.rs
-revision: 6
+revision: 7
 ---
 ## Outcome
 
@@ -91,18 +91,29 @@ committed case answers its outcome with `undelivered: [{binding, event}]`; no se
 501 body is made. The breaking change is batched with any other breaking change of the same
 release. Drafted, not scheduled.
 
+- `Refused::Undelivered` and `BridgeError::Undelivered` are removed, not kept: once the committed
+  case answers its outcome neither has a case left to carry, and a kept variant would be a second
+  way to report one fact.
+
 ## Acceptance
 
-- The served answer of a committed command whose delivery failed is its outcome status and body
-  plus `undelivered: [{binding, event}]`, declared in the contract; a served-HTTP test in
-  `crates/generate/ess-synth/tests/served_unfinished_committed.rs` asserts it for the Rust and the
-  Go server.
-- 501 is answered only when the port did not run; `ess generate --kind openapi` writes a 501
-  description that says so and no `committed` member.
-- `Refused::Undelivered` / `BridgeError::Undelivered` are removed or reduced to one breaking change,
-  batched with any other breaking change of the same release.
-- Rust, Go and the web bridge agree; a client retry test shows the committed case is never answered
-  as an error.
+Every bullet but the OpenAPI one is asserted by `cargo test -p ess-synth --locked --test
+served_unfinished_committed`, on its fixture with a binding whose delivery fails.
+
+- The Rust and the Go server answer the committed command whose delivery failed with that
+  outcome's declared status and body plus `undelivered: [{binding, event}]` naming the failed
+  binding and event; neither answers `501` for it.
+- The Rust and the Go server answer a command whose port reported an unmet obligation with `501`
+  and a body `{refused}` that holds no `committed` member.
+- The web bridge answers the same committed command with the same outcome and `undelivered` list.
+- The synthesized Rust entry module and web bridge source hold no `Undelivered` variant (no line
+  matching `Undelivered` in either); the generated Rust entry point returns the committed command's
+  outcome with its `undelivered` list in place of
+  `the_rust_entry_point_refuses_the_committed_case_as_undelivered`.
+- `ess generate --path <fixture> --kind openapi`: the `501` response describes only an unmet
+  obligation with nothing written and its schema has no `committed` property; each command
+  outcome's response schema declares an optional `undelivered` array of `{binding, event}`
+  (`grep -c undelivered` on the document is greater than 0).
 
 ## Scope
 
@@ -115,6 +126,9 @@ release. Drafted, not scheduled.
 - inferred: crates/generate/ess-synth/tests/transport_free_entry.rs
 
 confidence: medium
+
+Proposes its `CHANGELOG.md` sentence (breaking for a Rust shell, a web client and an OpenAPI
+client) and re-pins any byte-pinned generated server rows the `501` and outcome changes move.
 
 ## Origin
 

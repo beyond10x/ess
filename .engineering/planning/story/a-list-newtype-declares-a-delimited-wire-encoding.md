@@ -26,9 +26,7 @@ scope:
   path: crates/verify/ess-diff/src/change.rs
 - confidence: inferred
   path: docs/design/value-wire-encodings.md
-- confidence: inferred
-  path: schemas/generated/ess.schema.json
-revision: 4
+revision: 6
 ---
 ## Need
 
@@ -56,15 +54,15 @@ may send.
   may declare `encoding: {delimited: [",", " "]}`. On the wire the value is one text, the elements
   joined by the first separator; reading splits on any separator and drops empty pieces; an element
   that is empty or holds a separator is not a value of the type.
-- At the new source format, `example.calls.Tokens` (`kind: newtype, of: List<String>, encoding:
-  {delimited: [",", " "]}`) as the type of `q` validates, and so does the reproduction filter over
-  it. `delimited:` on a non-list or a list of non-text elements is `type_mismatch`. An empty
-  separator list, an empty separator, or a separator listed twice is refused naming it. Below the
-  new format the key is refused as `unsupported_format_version` naming it.
+- `cargo test -p ess-domain --locked --test list_encoding`: at `ess/37`, `example.calls.Tokens`
+  (`kind: newtype, of: List<String>, encoding: {delimited: [",", " "]}`) as the type of `q`
+  validates, and so does the reproduction filter over it. `delimited:` on a non-list or a list of
+  non-text elements is `type_mismatch`. An empty separator list, an empty separator, or a separator
+  listed twice is refused naming it. At `ess/36` the key is refused as
+  `unsupported_format_version` naming it.
 - `ess specify compile` writes the encoding on the resolved type, omitted when absent; a model
-  without it keeps its IR bytes; `schemas/generated/ess.schema.json` is regenerated; `ess verify
-  diff` reports a moved separator list as the type's encoding change, the same kind as the
-  `Timestamp` encoding.
+  without it keeps its IR bytes; `ess verify diff` reports a moved separator list as the type's
+  encoding change, the same kind as the `Timestamp` encoding.
 - `ess verify conform synthesize` sends values of the type whose elements are non-empty and hold no
   separator, and an authored literal element holding one is refused as `ESS-AUTHOR-015` naming the
   separator. A model without the key keeps its suite bytes.
@@ -77,8 +75,13 @@ may send.
 - inferred: crates/verify/ess-diff/src/change.rs
 - inferred: crates/verify/ess-conformance/src/synthesize.rs
 - inferred: crates/specify/ess-domain/tests/list_encoding.rs
-- inferred: schemas/generated/ess.schema.json
+
 confidence: medium
+
+The `ess/36` gate on the key lands in `types.rs` beside `ordered_below_format`; `system.rs` changes
+only in its `ess/37` `FORMAT_HISTORY` row, a shared surface. Shared surfaces moved: proposes the
+`ess/37` `FORMAT_HISTORY` and `CHANGELOG.md` sentences; regenerates `ess.schema.json` and
+`spec-versions.md`.
 
 ## Fit review
 
@@ -94,7 +97,7 @@ confidence: medium
 5. **Second adopter.** `ids=1,2,3` on a list read, the comma-delimited form OpenAPI calls `style:
    form`, `explode: false`, common in list APIs; a `scope` value of space-delimited tokens (OAuth 2.0
    `scope`, RFC 6749 § 3.3).
-6. **Cost.** The next open source format; one value shape of `encoding:`. Synthesis bounds the
+6. **Cost.** Source format `ess/37`; one value shape of `encoding:`. Synthesis bounds the
    elements it sends. No suite format: values stay lists.
 7. **Alternatives.** (a) Change nothing. (b) The requester's key on a parameter: refused, one
    position of several. (c) `distinct: true` as part of the wire form: not taken. A filter that

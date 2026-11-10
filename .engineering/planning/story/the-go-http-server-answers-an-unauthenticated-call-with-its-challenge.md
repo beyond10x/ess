@@ -13,13 +13,13 @@ relations:
 - decomposes: epic:zero-open-issues-2026-11
 - depends_on: story:the-rust-http-server-answers-an-unauthenticated-call-with-its-challenge
 scope:
-- confidence: inferred
-  path: crates/generate/ess-synth/src/go/http
 - confidence: cited
   path: crates/generate/ess-synth/src/go/http.rs
+- confidence: cited
+  path: crates/generate/ess-synth/src/go/http/bound.rs
 - confidence: inferred
   path: crates/generate/ess-synth/tests/served_authentication_go.rs
-revision: 4
+revision: 7
 ---
 ## Need
 
@@ -35,19 +35,30 @@ server answer it.
 
 ## Acceptance
 
-- A Go server generated from the model and binding of
-  `story:an-http-binding-declares-how-a-caller-authenticates`, with an `authenticate` returning
-  `nil`, answers `POST /orders` with `401`, `WWW-Authenticate: Bearer` and the same body bytes as
-  the Rust server, and runs no command.
-- An open route and an authenticated caller without the grant are answered as today.
-- A server generated from a binding without `authentication` is byte for byte unchanged.
+All tests are in `crates/generate/ess-synth/tests/served_authentication_go.rs` (new), run with
+`cargo test -p ess-synth --locked --test served_authentication_go`, on the model and binding of
+`story:an-http-binding-declares-how-a-caller-authenticates`.
+
+- `an_unauthenticated_call_gets_the_challenge`: the generated Go server, with an `authenticate`
+  returning `nil`, answers `POST /orders` with `401`, `WWW-Authenticate: Bearer` and the same body
+  bytes as the Rust server, and runs no command.
+- `an_open_route_and_an_ungranted_caller_answer_as_today`: an open route answers as before, and an
+  authenticated caller without the grant gets the standard `403` not-granted refusal.
+- `a_binding_without_authentication_is_unchanged`: the Go server generated from the same binding
+  without `authentication` is byte for byte the one 0.92.0 generates, and
+  `cargo test -p ess-synth --locked --test go` passes with no pinned byte moved.
 
 ## Scope
 
 - cited: crates/generate/ess-synth/src/go/http.rs
-- inferred: crates/generate/ess-synth/src/go/http
+- cited: crates/generate/ess-synth/src/go/http/bound.rs
 - inferred: crates/generate/ess-synth/tests/served_authentication_go.rs
+
 confidence: medium
+
+`go/http.rs` routes a `nil` caller on a route that requires a scheme to the new refusal;
+`go/http/bound.rs` writes it beside `refusalNotGranted` in `refusal_set` and spells its
+`WWW-Authenticate` value with `challenge_text`. Shared surfaces: moves none.
 
 ## Fit review
 

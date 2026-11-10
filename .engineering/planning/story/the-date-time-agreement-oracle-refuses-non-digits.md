@@ -15,17 +15,21 @@ relations:
 - informed_by: review-result:security-w1-gen1-pass-1
 - decomposes: epic:zero-open-issues-2026-11
 scope:
-- confidence: inferred
+- confidence: cited
   path: crates/generate/ess-synth/Cargo.toml
 - confidence: cited
   path: crates/generate/ess-synth/tests/json_body_closure.rs
 - confidence: inferred
-  path: crates/generate/schema-contract/Cargo.toml
+  path: crates/generate/schema-contract/src/date_time.rs
 - confidence: inferred
+  path: crates/generate/schema-contract/src/lib.rs
+- confidence: cited
   path: crates/generate/schema-contract/src/uniqueness.rs
 - confidence: cited
   path: crates/generate/schema-contract/src/validate.rs
-revision: 5
+- confidence: inferred
+  path: crates/generate/schema-contract/tests/date_time_digits.rs
+revision: 9
 ---
 ## Need
 
@@ -59,28 +63,38 @@ Two places take that validator's verdict on `date-time`:
 
 ## Acceptance
 
-- `schema_validate_refuses_a_non_digit_in_a_date_time`: `ess generate schema validate` refuses, exit
-  1 with `invalid_instance` naming the member, each of `202+-10-29T12:00:00Z`,
-  `2026-10-29T1-:00:00Z` and `2026-1.-29T12:00:00Z`, and admits `2026-10-29T12:00:00Z`.
-- The agreement test's `date-time` oracle refuses a non-digit at every digit position, by a
-  validator version that does or by a check beside it, and a seeded case in the test shows it.
+- `cargo test -p schema-contract --locked --test date_time_digits`, case
+  `schema_validate_refuses_a_non_digit_in_a_date_time`: on the reproduction's schema,
+  `ess generate schema validate` exits 1 with `invalid_instance` naming member `at` for each of
+  `202+-10-29T12:00:00Z`, `2026-10-29T1-:00:00Z` and `2026-1.-29T12:00:00Z`, and exits 0 for
+  `2026-10-29T12:00:00Z`.
+- `cargo test -p ess-synth --locked --test json_body_closure`, new case
+  `the_date_time_oracle_refuses_a_non_digit_at_every_digit_position`: the oracle, now built from
+  `schema_contract::uniqueness::options()`, refuses `2026-10-29T12:00:00Z` with each of `+`, `-`,
+  `.` and `x` put at each of its 14 digit positions, and admits the unchanged string.
 
 ## Decisions
 
-Open: upgrade `jsonschema` to a release whose digit check is exact, or keep 0.52.1 and add an
-RFC 3339 `date-time` format checker of ESS's own (`with_format("date-time", …)`) shared by
-`schema-contract` and the test oracle. Either keeps every currently valid timestamp valid.
+Keep `jsonschema` 0.52.1 and add an RFC 3339 `date-time` format checker of ESS's own, registered
+with `with_format("date-time", …)` in `schema_contract::uniqueness::options()` (the crate's one
+constructor, which its own doc comment says every validator and test oracle starts from) and used
+by the agreement test through a `schema-contract` dev-dependency of `ess-synth`: our own checker is
+pinned by our own test, whereas an upgrade depends on an upstream release whose digit check this
+repository cannot hold. It keeps every currently valid timestamp valid.
 
 ## Scope
 
 - cited: crates/generate/schema-contract/src/validate.rs
-- cited: crates/generate/ess-synth/tests/json_body_closure.rs
-- inferred: crates/generate/schema-contract/src/uniqueness.rs
-- inferred: crates/generate/schema-contract/Cargo.toml
-- inferred: crates/generate/ess-synth/Cargo.toml
-- inferred: CHANGELOG.md
+- cited: crates/generate/schema-contract/src/uniqueness.rs (`options`, line 18)
+- inferred: crates/generate/schema-contract/src/date_time.rs (new)
+- inferred: crates/generate/schema-contract/src/lib.rs
+- inferred: crates/generate/schema-contract/tests/date_time_digits.rs (new)
+- cited: crates/generate/ess-synth/tests/json_body_closure.rs (the oracle, line 370)
+- cited: crates/generate/ess-synth/Cargo.toml (dev-dependencies)
 
 confidence: medium
+
+Shared surfaces moved: proposes its `CHANGELOG.md` sentence; no format row, no byte-pin row.
 
 ## Schedule
 

@@ -16,12 +16,14 @@ relations:
 - decomposes: epic:zero-open-issues-2026-11
 scope:
 - confidence: cited
-  path: crates/verify/ess-conformance/src/interpret/bindings.rs
-- confidence: inferred
   path: crates/verify/ess-conformance/src/synthesize.rs
 - confidence: cited
+  path: crates/verify/ess-conformance/src/synthesize/binding_effects.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/witness.rs
+- confidence: cited
   path: crates/verify/ess-conformance/tests/adversary_0710_pass1.rs
-revision: 5
+revision: 9
 ---
 ## Problem
 
@@ -62,21 +64,50 @@ demo v1 against interpreted 0.92.0 — failed
   5 scenarios: 3 passed, 0 failed, 0 error, 2 unsupported
 ```
 
+## Decisions
+
+- **`binding/mapping` is refused, naming the conversion.** Its `ExpectInvocation` asserts the mapped
+  input equals the event field as sent, and what a conversion into a prefixed newtype makes of a
+  value is the implementation's (the reason the flow is refused, `adversary_0710_pass1.rs:224-225`);
+  `binding_effects::mapped_input` already refuses a selection or accessor across a conversion for
+  the same reason.
+- **`CreateMember/outcome/created` runs.** It asserts nothing about the binding, so synthesis sends
+  the trigger input that reaches the mapping a witness the conversion target also admits (the
+  target's prefix in front, `g-…`); the interpreter, which hands a converted value on as sent
+  (`synthesize.rs:9769-9771`), then carries the binding out. The interpreter is unchanged: its check
+  at `bindings.rs:404` is right.
+- Where no value satisfies both types (the source declares a prefix the target's excludes), the
+  trigger's scenario is refused naming the conversion rather than written to fail.
+
 ## Acceptance
 
-- `u4_the_prefixed_model_s_remaining_scenarios_pass_the_interpreter`
-  (`crates/verify/ess-conformance/tests/adversary_0710_pass1.rs`) asserts `assert_sound` in place of
-  today's pin of two `Unsupported`: every scenario synthesis writes for the prefixed model passes the
-  interpreted target, or synthesis refuses the scenario and names the conversion.
-- The reproduction above reports `0 unsupported` from `ess verify conform run --target interpreted`.
-- A model whose conversion joins two unconstrained newtypes keeps its suite bytes
-  (`u4_a_conversion_at_the_trigger_payload_is_followed_and_the_suite_passes` stays green).
+- `cargo test -p ess-conformance --locked --test adversary_0710_pass1`:
+  `u4_the_prefixed_model_s_remaining_scenarios_pass_the_interpreter` asserts `assert_sound` in place
+  of today's pin of two `Unsupported`, and that `demo.x.CreateMember/outcome/created` is `Passed`.
+- Same target, new `u4_the_prefixed_model_s_mapping_is_refused_naming_the_conversion`: the run's
+  refusals hold one for `` `enrol-on-member-created/binding/mapping` `` whose text contains
+  `` `demo.x.GroupRef` -> `demo.x.GroupId` ``.
+- Same target, new `u4_the_prefixed_trigger_is_sent_a_value_the_target_admits`: in
+  `demo.x.CreateMember/outcome/created` the `CreateMember` input `group_ref` starts with `g-`.
+- Same target, new `u4_a_source_prefix_the_target_excludes_is_refused_naming_the_conversion`: with
+  `demo.x.GroupRef` declared `prefix: "r-"` as well, `demo.x.CreateMember/outcome/created` is
+  refused, the refusal naming the conversion, and the run has no `Unsupported` scenario.
+- The reproduction above: `ess verify conform synthesize` reports `4 scenario(s) (0 authored), 4
+  refusal(s)`, and `ess verify conform run --target interpreted` reports `4 scenarios: 4 passed, 0
+  failed, 0 error, 0 unsupported`.
+- `u4_a_conversion_at_the_trigger_payload_is_followed_and_the_suite_passes` and
+  `u4_a_chain_of_two_unchanged_conversions_is_followed_and_the_suite_passes` stay green, and
+  `cargo test -p ess-conformance --locked --test synthesis_suite_bytes_table` moves no row of a model
+  without a conversion into a constrained newtype.
 
 ## Scope
 
 - cited: crates/verify/ess-conformance/tests/adversary_0710_pass1.rs
-- cited: crates/verify/ess-conformance/src/interpret/bindings.rs
-- inferred: crates/verify/ess-conformance/src/synthesize.rs
-- inferred: CHANGELOG.md
+- cited: crates/verify/ess-conformance/src/synthesize.rs (`mapping` :20182)
+- cited: crates/verify/ess-conformance/src/synthesize/binding_effects.rs (`mapped_input` :3407)
+- inferred: crates/verify/ess-conformance/src/witness.rs (the trigger input's witness)
 
 confidence: medium
+
+Shared surfaces: proposes its `CHANGELOG.md` sentence and re-pins only suite-bytes rows of models
+with a conversion into a prefixed newtype.

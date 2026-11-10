@@ -13,10 +13,12 @@ relations:
 - decomposes: epic:zero-open-issues-2026-11
 - depends_on: story:ess-37-and-conformance-64-65-are-open-for-the-epics-constructs
 scope:
-- confidence: inferred
-  path: crates/generate/ess-synth/src/go/behaviour.rs
-- confidence: inferred
-  path: crates/generate/ess-synth/src/rust/behaviour.rs
+- confidence: cited
+  path: crates/generate/ess-entity-runtime/src/lib.rs
+- confidence: cited
+  path: crates/generate/ess-entity-runtime/src/subset.rs
+- confidence: cited
+  path: crates/generate/ess-synth/src/determined.rs
 - confidence: inferred
   path: crates/specify/ess-domain/src/expression.rs
 - confidence: cited
@@ -33,7 +35,7 @@ scope:
   path: docs/design/language-grids.md
 - confidence: cited
   path: website/docs/reference/predicates.md
-revision: 4
+revision: 7
 ---
 ## Need
 
@@ -54,23 +56,25 @@ from_number: {starts_with_ignore_case: t}
 
 ## Acceptance
 
-- At the new source format, `contains_ignore_case`, `starts_with_ignore_case` and
-  `ends_with_ignore_case` validate in every position the three operators validate in (a command
-  guard, `when_subject:`, a `when_related:` predicate, a row-set `where:`, a view `filter:`), with
-  the operands those take: a literal, `{param: …}`, `{input: …}`, and `{fact: …}` once that story
-  lands. `trimmed:` wraps them as it wraps the case-sensitive three. Folding is ASCII only, as
-  `equals_ignore_case` (`docs/design/generic-language-features.md`, "Text"; answer 6). Below the
-  new format each is refused as `unsupported_format_version` naming it.
+- At `ess/37`, `contains_ignore_case`, `starts_with_ignore_case` and `ends_with_ignore_case`
+  validate (`ess specify validate`, exit 0) in every position the three operators validate in (a
+  command guard, `when_subject:`, a `when_related:` predicate, a row-set `where:`, a view `filter:`),
+  with the operands those take: a literal, `{param: …}` and `{input: …}`; the `{fact: …}` operand on them is
+  story:a-text-operator-reads-a-binder-or-a-field-as-its-operand's, which lands after this one. `trimmed:` wraps them as it
+  wraps the case-sensitive three. Folding is ASCII only, as `equals_ignore_case`
+  (`docs/design/generic-language-features.md`, "Text"; answer 6).
+- Below `ess/37` each is refused as `unsupported_format_version` naming `ess/37`.
 - Synthesis witnesses each with the existing fold refutations
   (`crates/verify/ess-conformance/src/witness.rs:3602-3640`): the selected side holds the operand
-  in its other case, and the other side holds it with one character changed. A target that
-  compares case-sensitively fails the first, and a target that ignores the operator fails the
-  second. `ess verify conform run --target interpreted` passes.
+  in its other case, and the other side holds it with one character changed.
+  `ess verify conform run --target interpreted` passes; a target that compares case-sensitively
+  fails the first scenario, and a target that ignores the operator fails the second.
 - `ess verify conform mutate` swaps each with its case-sensitive form, and the witness kills it.
-- The Go and TypeScript predicate runtimes evaluate them. Generated Rust and Go behaviours and view
-  queries implement them as they implement `equals_ignore_case`, or keep the construct an
-  obligation named by it. Entity Runtime lowering refuses them by name where it refuses
-  `equals_ignore_case`.
+- The Go and TypeScript predicate runtimes evaluate them, and the suite passes against each.
+- Generated Rust and Go behaviours and view queries keep a guard or filter carrying one an
+  obligation naming the predicate, as `equals_ignore_case` is kept (`determined.rs:1331`).
+- Entity Runtime lowering refuses them as `CaseFoldUnsupported`, naming the operator, where it
+  refuses `equals_ignore_case`.
 - `website/docs/reference/predicates.md` lists them beside `equals_ignore_case`, and grid O's
   "ignore-case" row in `docs/design/language-grids.md` covers the five operators.
 
@@ -82,11 +86,16 @@ from_number: {starts_with_ignore_case: t}
 - inferred: crates/verify/ess-conformance/src/mutate.rs
 - cited: crates/verify/ess-conformance/src/go/predicate.go
 - cited: crates/verify/ess-conformance/src/ts/predicate.ts
-- inferred: crates/generate/ess-synth/src/rust/behaviour.rs
-- inferred: crates/generate/ess-synth/src/go/behaviour.rs
+- cited: crates/generate/ess-synth/src/determined.rs
+- cited: crates/generate/ess-entity-runtime/src/lib.rs
+- cited: crates/generate/ess-entity-runtime/src/subset.rs
 - cited: website/docs/reference/predicates.md
 - cited: docs/design/language-grids.md
+
 confidence: medium
+
+Moves shared surfaces: proposes its sentence for the `ess/37` `FORMAT_HISTORY` row and for
+`CHANGELOG.md`, and changes the regenerated `ess.schema.json` and spec-versions page.
 
 ## Fit review
 
@@ -105,7 +114,7 @@ confidence: medium
    `contains(lower(a), lower(b))` when it lands, as `equals_ignore_case` will.
 5. **Second adopter.** A customer search over `email` that a server matches with `ilike`; a product
    filter on `sku` prefixes regardless of case.
-6. **Cost.** The next open source format; three operator keywords; no new diagnostic code; one
+6. **Cost.** `ess/37`; three operator keywords; no new diagnostic code; one
    mutation pairing. No suite format beyond what a view expectation carrying a fold operator already
    selects (`ess-conformance/20`, `predicates.md` after the ignore-case examples).
 7. **Alternatives.** (a) Change nothing: the search is unstated. (b) G1's `lower()` in guards
@@ -117,6 +126,10 @@ confidence: medium
 
 accept as proposed. The three operators are taken as named, with the existing ASCII-only folding,
 operands and `trimmed:` composition.
+
+The generated Rust and Go behaviours keep the three an obligation rather than evaluating them,
+because they keep `equals_ignore_case` and `in_ignore_case` one today (`determined.rs:1331`, no
+`FoldMatch` arm in `rust/behaviour.rs` or `go/behaviour.rs`).
 
 ## Source
 

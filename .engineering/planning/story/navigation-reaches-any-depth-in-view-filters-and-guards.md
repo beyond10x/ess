@@ -20,29 +20,19 @@ relations:
 - depends_on: story:ess-37-and-conformance-64-65-are-open-for-the-epics-constructs
 scope:
 - confidence: inferred
-  path: crates/generate/ess-synth/src
-- confidence: inferred
   path: crates/generate/ess-synth/src/view_query.rs
 - confidence: cited
   path: crates/specify/ess-compiler/src/ir.rs
 - confidence: inferred
   path: crates/specify/ess-compiler/src/resolve.rs
 - confidence: inferred
-  path: crates/specify/ess-domain/src/command.rs
-- confidence: inferred
-  path: crates/specify/ess-domain/src/command/related_guard.rs
-- confidence: inferred
   path: crates/specify/ess-domain/src/expression.rs
-- confidence: inferred
-  path: crates/specify/ess-domain/src/system.rs
 - confidence: inferred
   path: crates/specify/ess-domain/src/view.rs
 - confidence: cited
   path: crates/specify/ess-domain/src/view/navigation.rs
 - confidence: inferred
   path: crates/verify/ess-conformance/src/interpret/views.rs
-- confidence: inferred
-  path: crates/verify/ess-conformance/src/synthesize/related.rs
 - confidence: cited
   path: crates/verify/ess-conformance/src/synthesize/view_reference.rs
 - confidence: cited
@@ -50,12 +40,8 @@ scope:
 - confidence: inferred
   path: docs/design/language-grids.md
 - confidence: inferred
-  path: schemas/generated/ess.schema.json
-- confidence: inferred
   path: website/docs/reference/predicates.md
-- confidence: inferred
-  path: website/docs/reference/spec-versions.md
-revision: 11
+revision: 14
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-21T22:07:59Z", actor: "human:timo", revision: 2}
 - {from: "proposed", to: "active", at: "2026-10-21T22:07:59Z", actor: "human:timo", revision: 3}
@@ -91,7 +77,8 @@ exit 1
 
 ## Acceptance
 
-At G2's next source format (the next free `ess/N` when this lands):
+At `ess/37` (G2's next source format, opened by
+story:ess-37-and-conformance-64-65-are-open-for-the-epics-constructs):
 
 - all three views above validate (`ess specify validate`, exit 0); a path through a reference the
   entity does not declare, or past a field that is no reference, is refused as ESS-VIEW-003 naming
@@ -119,14 +106,14 @@ At G2's next source format (the next free `ess/N` when this lands):
 - inferred: crates/verify/ess-conformance/src/interpret/views.rs
 - cited: crates/verify/ess-conformance/src/synthesize/view_reference.rs
 - inferred: crates/generate/ess-synth/src/view_query.rs (obligation naming the path)
-- inferred: crates/specify/ess-domain/src/system.rs (`FORMAT_HISTORY`)
-- inferred: schemas/generated/ess.schema.json
 - cited: docs/design/generic-language-features.md (§ G2, a decided subsection for depth and view expressions, with the IR shape, before code)
 - inferred: docs/design/language-grids.md (grid R rows view field and view filter)
 - inferred: website/docs/reference/predicates.md
-- inferred: website/docs/reference/spec-versions.md
-- inferred: CHANGELOG.md
+
 confidence: medium
+
+Moves shared surfaces: proposes its sentence for the `ess/37` `FORMAT_HISTORY` row and for
+`CHANGELOG.md`, and changes the regenerated `ess.schema.json` and spec-versions page.
 
 ## Fit review
 
@@ -166,7 +153,7 @@ confidence: medium
 
 **Accept, redesigned** (the requester's one-hop shape shipped in `ess/28`; depth and expressions
 follow the binding design). Any finite `via:` chain in view fields and filters, and navigated
-paths inside a view field's `expr:`, from G2's next source format; no transitive closure, no
+paths inside a view field's `expr:`, from `ess/37`; no transitive closure, no
 recursion (answer 8). Guards move to `story:navigation-reaches-any-depth-in-guards`; aggregate
 views to `story:an-aggregate-view-reads-through-a-reference`. Retitle: "Navigation reaches any
 depth in view fields, view filters and view expressions".

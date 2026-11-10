@@ -7,9 +7,6 @@ title: A construct whose projection waits for a later format is named at validat
 tags:
 - defect
 - severity-medium
-- zero-open-issues
-relations:
-- decomposes: epic:zero-open-issues-2026-11
 scope:
 - confidence: cited
   path: crates/edge/ess-cli/tests/openapi_accounting.rs
@@ -19,7 +16,7 @@ scope:
   path: crates/specify/ess-http/src/status.rs
 - confidence: inferred
   path: website/docs/reference/diagnostics.md
-revision: 5
+revision: 6
 ---
 ## Context
 

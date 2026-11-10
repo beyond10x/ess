@@ -18,10 +18,8 @@ scope:
 - confidence: cited
   path: crates/verify/ess-conformance/src/synthesize/refusal_policy.rs
 - confidence: inferred
-  path: crates/verify/ess-conformance/tests/fixtures/synthesis-suite-bytes-table.tsv
-- confidence: inferred
   path: crates/verify/ess-conformance/tests/refusal_policy.rs
-revision: 5
+revision: 7
 ---
 ## Finding
 
@@ -61,20 +59,42 @@ unchanged. The per-refusal witness built through `refusal_policy.rs` `refused_ro
 
 ## Acceptance
 
-- `a_related_refusal_reads_back_the_rewritten_row`: for the model above, each
-  `refresh-on-ticket-moved/binding/refusal/<outcome>` scenario reads the ticket back after the
-  refusal and compares its stored fields with what they were after the trigger (`flag: false`,
-  `note` as sent, `grant_id` as moved). A target whose `Refresh` sets `flag: true` while answering
-  `grant-closed` fails it; the interpreted target passes every scenario.
-- Where no read-your-writes view shows the row by identity, the scenario keeps today's shape and
-  the synthesis notes say the row is not compared.
-- Committed models whose suites move are named, and their bytes pins move with the change.
+- `cargo test -p ess-conformance --locked --test refusal_policy`, test
+  `a_related_refusal_reads_back_the_rewritten_row`: for the model above, each
+  `refresh-on-ticket-moved/binding/refusal/<outcome>` scenario (`grant-missing`, `grant-closed`)
+  holds a `snapshot_subject` of `Tickets` for the ticket after the trigger and an
+  `expect_subject_unchanged` on `Tickets` after the invocation count, so it compares `flag: false`,
+  `note` as sent and `grant_id` as moved; run against `--target interpreted`, every scenario of the
+  suite passes.
+- Mutation check, same test: a target whose `Refresh` sets `flag: true` while answering
+  `grant-closed` fails `refresh-on-ticket-moved/binding/refusal/grant-closed`.
+- Same test target, the model above with the `Tickets` view removed: the two refusal scenarios keep
+  today's steps (no `snapshot_subject`, no `expect_subject_unchanged`), and the synthesis result's
+  `notes` hold a `Note::PartialObservation` for each of them naming the unobserved Ticket fields.
+- `cargo test -p ess-conformance --locked --test synthesis_suite_bytes_table` (and the
+  `synthesis_suite_bytes_table_cli_read`, `adversary_related_values_all_bytes` and
+  `external_beside_held_guard` targets) pass, and every row the change re-pins belongs to a model
+  whose suite holds a `<binding>/binding/refusal/<outcome>` scenario over a `when_related` refusal
+  of a command that `updates` a row, with that cause named beside the pin.
 
 ## Scope
 
-- cited: `crates/verify/ess-conformance/src/synthesize/refusal_policy.rs` (`refused_row` :384, `witness`)
-- cited: `crates/verify/ess-conformance/src/synthesize/binding_effects.rs` (`related_refused` :1629; `dropped` snapshot pattern :3255-3300)
-- inferred: `crates/verify/ess-conformance/tests/refusal_policy.rs` (new case)
-- inferred: `crates/verify/ess-conformance/tests/fixtures/synthesis-suite-bytes-table.tsv` (binding refusal rows)
+Re-pins suite-bytes rows for models with a per-refusal `when_related` policy on an updating
+command.
+
+- cited: crates/verify/ess-conformance/src/synthesize/refusal_policy.rs
+- cited: crates/verify/ess-conformance/src/synthesize/binding_effects.rs
+- inferred: crates/verify/ess-conformance/tests/refusal_policy.rs
 
 confidence: medium
+
+`refusal_policy.rs`: `refused_row` :384, `witness`. `binding_effects.rs`: `related_refused` :1629;
+the `dropped` snapshot pattern :3255-3300 is the one to copy. `tests/refusal_policy.rs` gains the
+new case.
+
+## Decisions
+
+- An unobserved row is reported with the existing `Note::PartialObservation` (`synthesize.rs`
+  :309), whose documented meaning already covers "a refusal that changed it is not checked", so no
+  note variant is added and `synthesize.rs` is not touched.
+

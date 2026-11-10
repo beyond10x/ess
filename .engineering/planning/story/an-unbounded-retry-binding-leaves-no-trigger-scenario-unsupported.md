@@ -20,8 +20,6 @@ relations:
 - decomposes: epic:zero-open-issues-2026-11
 scope:
 - confidence: cited
-  path: crates/verify/ess-conformance/src/interpret/bindings.rs
-- confidence: cited
   path: crates/verify/ess-conformance/src/synthesize.rs
 - confidence: cited
   path: crates/verify/ess-conformance/src/synthesize/binding_effects.rs
@@ -31,7 +29,7 @@ scope:
   path: crates/verify/ess-conformance/tests/adversary_d350_u2_pass1.rs
 - confidence: cited
   path: crates/verify/ess-conformance/tests/binding_arranged_rows.rs
-revision: 12
+revision: 14
 ---
 ## Need
 
@@ -77,25 +75,39 @@ $ ess verify conform run --path . --target interpreted --report-format 2
 The delivery scenario (`synthesize.rs`, `delivery` :20241, `RedeliverEvent` :20263) sends `Lower`,
 then redelivers `Lowered`. The first delivery's `Raise` has already moved the grant to `Active`, so
 every attempt of the redelivered `Raise` answers `not-low`, and the unbounded retry never ends
-(`interpret/bindings.rs:303`).
+(`interpret/bindings.rs:303`, the 65,536-invocation budget).
 
 ## Acceptance
 
-- `a_redelivery_under_unbounded_retry_is_not_sent_unsupported`: on the model above, the synthesized
-  suite has no scenario that is `Unsupported` with "budget exhausted" on `--target interpreted`.
-  Either the delivery scenario is not sent and is refused or noted by name (the redelivered
-  command cannot succeed under an unbounded retry), or it is built so the redelivered attempt
-  succeeds. Before the fix the case reproduces the Unsupported line above.
-- `tests/adversary_d350_u2_pass1.rs` `story6` drops its filter on
-  `{binding}/binding/delivery: Unsupported`.
-- No regression: `binding_arranged_rows.rs`, `bounded_retry.rs` and `refusal_policy.rs` keep their
-  verdicts; suite bytes move only for models whose delivery scenario is dropped or rebuilt.
+- `cargo test -p ess-conformance --locked --test binding_arranged_rows` passes a new test
+  `a_redelivery_under_unbounded_retry_is_not_sent_unsupported`: on the model above, the
+  synthesized suite holds no scenario `raise-on-lowered/binding/delivery`, and the synthesis
+  refusals hold one `ESS-SYNTH-010` for `raise-on-lowered` whose message names `Raise` and its
+  refusal `not-low`. Before the fix the same test fails, because the scenario is in the suite.
+- On the same model, `ess verify conform run --path . --target interpreted --report-format 2`
+  prints `14 scenarios: 14 passed, 0 failed, 0 error, 0 unsupported`.
+- `cargo test -p ess-conformance --locked --test adversary_d350_u2_pass1` passes with `story6`'s
+  filter on `{binding}/binding/delivery: Unsupported` removed.
+- `cargo test -p ess-conformance --locked --test binding_arranged_rows --test bounded_retry --test refusal_policy`
+  passes with no assertion changed.
+
+## Decisions
+
+- The delivery scenario is refused, not rebuilt: after the first delivery the retried command
+  refuses on every redelivered attempt, so a correct implementation retries forever and no
+  arrangement of the same redelivery can make it pass; the refusal is a new `BindingGap` variant
+  reported under `ESS-SYNTH-010`, beside `DeliverySingleAttempt`, and the interpreter's budget is
+  unchanged.
 
 ## Scope
 
-- cited: `crates/verify/ess-conformance/src/synthesize.rs` (`delivery` :20241)
-- cited: `crates/verify/ess-conformance/src/interpret/bindings.rs` (budget :303)
-- inferred: `crates/verify/ess-conformance/src/synthesize/delivery_context.rs` (`RedeliverEvent` :844, the same rule for delivery-context scenarios)
+- cited: `crates/verify/ess-conformance/src/synthesize.rs` (`delivery` :20241, `BindingGap` :2134, its hint, message and catalogue entry)
+- cited: `crates/verify/ess-conformance/src/synthesize/binding_effects.rs` (`Prepared::settled_row` :1318, the row the first delivery leaves)
+- inferred: `crates/verify/ess-conformance/src/synthesize/delivery_context.rs` (`delivery`, `RedeliverEvent` :844, the same rule for delivery-context scenarios)
 - cited: `crates/verify/ess-conformance/tests/adversary_d350_u2_pass1.rs` (`story6` filter)
+- cited: `crates/verify/ess-conformance/tests/binding_arranged_rows.rs`
 
 confidence: medium
+
+The story re-pins the suite-bytes rows of models whose delivery scenario it drops, and proposes
+its `CHANGELOG.md` sentence.

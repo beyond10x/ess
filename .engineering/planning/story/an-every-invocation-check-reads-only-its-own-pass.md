@@ -20,7 +20,7 @@ scope:
   path: crates/verify/ess-conformance/src/synthesize/caller.rs
 - confidence: inferred
   path: crates/verify/ess-conformance/tests/binding_drop_swapped_caller.rs
-revision: 5
+revision: 6
 ---
 ## Problem
 
@@ -68,22 +68,39 @@ right; the suite fails a correct implementation.
 
 ## Acceptance
 
-- `an_every_invocation_check_reads_only_its_own_pass`: the model above, synthesized and run
-  against `--target interpreted`, passes `refresh-on-note-added/binding/on-failure` (every
-  scenario passes except ones unsupported for an unrelated reason). Before the fix the scenario
-  fails with `ESS-CF-INVOCATION` on the second pass.
-- The second pass's `expect_every_invocation` selects only its own occurrence (for example a
-  `selecting` filled from the pass's own trigger payload) or is otherwise confined to the pass;
-  the first pass's step is unchanged.
-- A target whose second-pass invocation carries the first pass's `ticket_id` still fails the
-  scenario (mutation check).
-- `tests/binding_refusal_policy_swapped_caller.rs` keeps its verdicts; suite bytes move only for
-  models whose `drop` cell is appended under a swapped caller.
+- `cargo test -p ess-conformance --locked --test binding_drop_swapped_caller`, test
+  `an_every_invocation_check_reads_only_its_own_pass`: the model above, synthesized and run
+  against `--target interpreted`, reports `10 scenarios: 9 passed, 0 failed, 0 error,
+  1 unsupported`, with `refresh-on-note-added/binding/on-failure` passed. Before the fix the same
+  run reports `8 passed, 1 failed` and the scenario fails with `ESS-CF-INVOCATION` on the second
+  pass.
+- In the same test, the synthesized `refresh-on-note-added/binding/on-failure` scenario holds two
+  `expect_every_invocation` steps: the first has no `selecting`, as today; the second has
+  `selecting` equal to the inputs the binding's `mapping:` fills from the trigger payload
+  (`ticket_id`, `grant_id`), with the swapped pass's values (its `ticket_id` is the
+  `observed-…-swapped` ticket's).
+- Mutation check, same test target: a target whose second-pass invocation carries the first
+  pass's `ticket_id` fails `refresh-on-note-added/binding/on-failure` with `ESS-CF-INVOCATION`.
+- `cargo test -p ess-conformance --locked --test binding_refusal_policy_swapped_caller` passes
+  unchanged; the only suite-bytes rows that move are for models whose `drop` cell is appended
+  under a swapped caller.
 
 ## Scope
 
-- cited: `crates/verify/ess-conformance/src/synthesize/caller.rs` (`append` :1341, `cumulative` :1409)
-- cited: `crates/verify/ess-conformance/src/synthesize/binding_effects.rs` (`dropped`, `ExpectEveryInvocation` :3280)
-- inferred: `crates/verify/ess-conformance/tests/binding_drop_swapped_caller.rs` (new test with the model above)
+Re-pins suite-bytes rows for models whose `drop` cell is appended under a swapped caller.
+
+- cited: crates/verify/ess-conformance/src/synthesize/caller.rs
+- cited: crates/verify/ess-conformance/src/synthesize/binding_effects.rs
+- inferred: crates/verify/ess-conformance/tests/binding_drop_swapped_caller.rs
 
 confidence: high
+
+`caller.rs`: `append` :1341, `cumulative` :1409. `binding_effects.rs`: `dropped`, the
+`ExpectEveryInvocation` push :3280. The test file is new and holds the model above.
+
+## Decisions
+
+- The appended pass confines its check by filling `selecting` from its own trigger payload, in
+  `caller.rs` beside `cumulative`, because `selecting` is the field `ExpectEveryInvocation` already
+  documents for "the inputs that tell the occurrence apart — those its payload fills", so no suite
+  shape changes and the first pass's step stays byte-identical.

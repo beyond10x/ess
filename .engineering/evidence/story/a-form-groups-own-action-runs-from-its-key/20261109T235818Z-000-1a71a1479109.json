@@ -1,0 +1,14 @@
+{
+  "at": "2026-11-09T23:58:18Z",
+  "actor": "human:timo",
+  "artifact": "story:a-form-groups-own-action-runs-from-its-key",
+  "kind": "story",
+  "revision": 5,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "review-result:zero-issues-acceptance-round-1",
+    "review": "review-result:zero-issues-acceptance-round-1",
+    "outcome": "escalated"
+  }
+}

@@ -20,7 +20,7 @@ scope:
   path: crates/generate/ess-gen/src/openapi.rs
 - confidence: inferred
   path: crates/generate/ess-gen/tests/bound_command_input_roots.rs
-revision: 5
+revision: 6
 ---
 ## Finding
 
@@ -71,15 +71,27 @@ Cause: `bound_command_roots` lists `<command>.response` whenever the command dec
 
 ## Acceptance
 
-- Under `--http`, where the bound document publishes `{command}.Result`, the `.response` root's
-  schema equals it byte for byte.
-- Under `--http`, where it publishes none (every outcome on the route answers `response.<field>`,
-  `{member: error}` or `none`), `--root <command>.response` exits 1, refused as `unknown_root` naming
-  the command and saying its route publishes no `Result`; `--all-commands` leaves the root out. The
-  reproduction above is that case.
-- Without `--http` every output keeps its bytes.
-- Tests in `crates/generate/ess-gen/tests/bound_command_input_roots.rs` (or a sibling
-  `bound_command_response_roots.rs`) pin the three cases.
+- `cargo test -p ess-gen --locked --test bound_command_input_roots`:
+  `responses_and_rows_are_unchanged_under_a_binding` passes, so under a binding whose route
+  publishes `demo.notes.Create.Result` the `demo.notes.Create.response` root's schema equals that
+  component byte for byte.
+- In the same target, `a_bound_route_that_publishes_no_result_has_no_response_root`, on the
+  reproduction above: `ModelTypes::select_bound` for the root `tokens.auth.Issue.response` returns
+  an error with rule `unknown_root` whose detail names `tokens.auth.Issue` and says its route
+  publishes no `Result`, and `ModelTypes::bound_command_roots` holds no
+  `tokens.auth.Issue.response`.
+- `cargo test -p ess-cli --locked --test model_type_events`: on the reproduction,
+  `ess generate types --http http.yaml --target typescript --root tokens.auth.Issue.response` exits
+  1 with an `unknown_root` refusal naming `tokens.auth.Issue`.
+- In the same target, `ess generate types --http http.yaml --target typescript --all-commands` on
+  the reproduction exits 0 and writes `TokensAuthIssueInput` and no `TokensAuthIssueResponse`.
+- `without_a_binding_every_root_keeps_its_bytes` in `bound_command_input_roots` passes unchanged.
+
+## Decisions
+
+- The response-root cases go in `bound_command_input_roots.rs` rather than a new sibling file,
+  because its binding helpers (`bound_by`, `published`) and its response case
+  (`responses_and_rows_are_unchanged_under_a_binding`) are already there.
 
 ## Scope
 
@@ -89,3 +101,5 @@ Cause: `bound_command_roots` lists `<command>.response` whenever the command dec
 - inferred: crates/edge/ess-cli/tests/model_type_events.rs
 
 confidence: high
+
+Moves no shared surface.

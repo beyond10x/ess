@@ -19,8 +19,8 @@ scope:
 - confidence: inferred
   path: crates/verify/ess-conformance/src/synthesize/subject_fact.rs
 - confidence: inferred
-  path: crates/verify/ess-conformance/tests/
-revision: 5
+  path: crates/verify/ess-conformance/tests/identity_guard_on_the_row_sent.rs
+revision: 8
 ---
 ## Finding
 
@@ -64,19 +64,42 @@ $ ess verify conform run --path state.yaml --target interpreted --report-format 
   ClosePass(pass_id = "pass_id", reason = "reason") | expected outcome = closed | observed outcome = frozen
 ```
 
+## Decisions
+
+- **Both paths steer the row, none is refused.** `OpenPass` takes `pass_id` as input, so a pass
+  `"frozen"` or `"main"` can be opened and every branch here can be witnessed; the two paths get the
+  steering `identity_steered` already gives the subject-addressed paths (D343 U3), and
+  `ESS-SYNTH-003` stays the answer only where no row the creator can make meets the guard, as it is
+  there.
+- **F2 is not in this story.** It is a different family (the related-boundary run,
+  `synthesize.rs:4068` at the review's commit), inferred and never run, and its acceptance would be
+  "reproduce or close"; it needs its own backlog draft with a reproduction.
+
 ## Acceptance
 
-- Over the two models above, `ess verify conform run --target interpreted` passes every scenario it
-  writes: the `frozen` scenario sends a pass created as `"frozen"`, and the `closed` and `not-open`
-  scenarios (and the lifecycle scenarios) send a pass created as `"main"`; or the branch is refused
-  `ESS-SYNTH-003` naming the guard. A red case per path comes first.
-- F2 is reproduced by a run or closed as not reproducible, with the run named.
+- `cargo test -p ess-conformance --locked --test identity_guard_on_the_row_sent`,
+  `addressed_row_sends_the_row_its_identity_guard_selects`: on the `complete.yaml` model above it
+  fails on the base commit (the evidence records the run); after the change the
+  `demo.passes.ClosePass/outcome/frozen` scenario opens a pass `"frozen"` and sends it, and the
+  interpreted run of the suite has no failed scenario.
+- Same target, `prepare_state_input_sends_the_row_its_identity_guard_selects`: on the `state.yaml`
+  model above it fails on the base commit; after the change the scenarios
+  `demo.passes.ClosePass/outcome/closed`, `demo.passes.ClosePass/outcome/not-open`,
+  `demo.passes.Pass/state/Closed/refuses/demo.passes.ClosePass` and
+  `demo.passes.Pass/transition/close/by/demo.passes.ClosePass/closed` each open a pass `"main"` and
+  send it, and the interpreted run has no failed scenario.
+- `cargo test -p ess-conformance --locked --test synthesis_suite_bytes_table` passes, and every row it
+  moves is a model with an identity guard on a branch reached through `addressed_row` or
+  `prepare_state_input`.
 
 ## Scope
 
-- cited: crates/verify/ess-conformance/src/synthesize.rs (`addressed_row`, `prepare_state_input`, `addressed_held`, `identity_steered`, `reach_in_state`)
-- inferred: crates/verify/ess-conformance/src/synthesize/related_guard.rs (`onto_identity`, `identity_parts`)
-- inferred: crates/verify/ess-conformance/src/synthesize/subject_fact.rs (`search_within`)
-- inferred: crates/verify/ess-conformance/tests/
+- cited: crates/verify/ess-conformance/src/synthesize.rs (`addressed_row` :5589, `addressed_held` :5650, `identity_steered` :5744, `reach_in_state` :8615, `prepare_state_input` :8697)
+- inferred: crates/verify/ess-conformance/src/synthesize/related_guard.rs (`onto_identity` :4984, `identity_parts` :5007)
+- inferred: crates/verify/ess-conformance/src/synthesize/subject_fact.rs (`search_within` :5534)
+- inferred: crates/verify/ess-conformance/tests/identity_guard_on_the_row_sent.rs (new)
 
 confidence: high
+
+Shared surfaces: proposes its `CHANGELOG.md` sentence and re-pins only the suite-bytes rows of models
+with an identity guard on those two paths.

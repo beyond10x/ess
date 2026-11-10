@@ -8,12 +8,10 @@ tags:
 - adopter-report
 - defect
 - severity-medium
-- zero-open-issues
 relations:
 - serves: vision:O2
 - informed_by: release-plan:ess-063-downstream
 - decomposes: epic:adopter-gaps-verdicts
-- decomposes: epic:zero-open-issues-2026-11
 scope:
 - confidence: inferred
   path: .engineering/repro/diff-unknown-verdicts/
@@ -25,7 +23,7 @@ scope:
   path: crates/verify/ess-diff/tests/domain_entry.rs
 - confidence: cited
   path: crates/verify/ess-diff/tests/narrowed_acceptance.rs
-revision: 6
+revision: 7
 ---
 ## Outcome
 

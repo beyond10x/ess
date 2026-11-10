@@ -20,10 +20,10 @@ scope:
 - confidence: cited
   path: crates/specify/ess-composition/tests/adversary_reader_conformance.rs
 - confidence: cited
-  path: website/docs/reference/formats.md
+  path: website/docs/reference/diagnostics.md
 - confidence: cited
-  path: website/docs/reference/spec-versions.md
-revision: 4
+  path: website/docs/reference/formats.md
+revision: 7
 ---
 ## Outcome
 
@@ -52,26 +52,40 @@ composition or the consumer's type can declare a tolerant reader.
 
 ## Acceptance
 
-- `ess specify compose` on an `ess-composition/3`+ document whose `conformances` entry has
-  `reader: true` and a local struct reading a strict subset of the imported struct's fields, where
-  the consumer's type is read through an ESS-generated reader, is refused with a named code naming
-  the local type, the imported type and the omitted imported fields (or warns under the current
-  composition format and refuses from the next).
-- The help text carries the caveat now in the CHANGELOG 0.40.0 entry (CL:943-947 at the review):
-  a consumer reading through ESS-generated closed types must not use `reader` for a field subset.
-- A `reader: true` entry with no field subset (newtype as primitive, enum as `String`, same field
-  set) still composes; `control_reader_admits_a_plain_field_subset` is kept for a consumer declared
-  tolerant, or replaced by the refusal case if the decision is to refuse every subset.
+- `cargo test -p ess-composition --locked --test adversary_reader_conformance` passes a new test
+  `a_closed_reader_of_a_field_subset_is_refused`: an `ess-composition/6` document whose
+  `conformances` entry has `reader: true` and no `tolerant:`, with the local
+  `adv.consumer.read.TaggedSubset` against `adv.owner.wire.Tagged`, is refused with one
+  `reader_subset_closed` diagnostic naming the local type, the imported type and each omitted
+  imported field.
+- The same target passes `a_tolerant_reader_of_a_field_subset_composes`: the same entry with
+  `reader: true` and `tolerant: true` under `ess-composition/6` composes with no diagnostic.
+- The same target passes `control_reader_admits_a_plain_field_subset` unchanged (`ess-composition/3`),
+  and `cargo test -p ess-composition --locked` passes with no `/3`, `/4` or `/5` assertion changed.
+- The same target passes `a_closed_reader_without_a_subset_composes`: an `ess-composition/6`
+  `reader: true` entry with no `tolerant:` and no field subset (a newtype read as its primitive,
+  an enum read as `String`, the same field set) composes with no diagnostic.
+- The same target passes `tolerant_is_refused_before_format_six`: a `tolerant:` key under
+  `ess-composition/5` is refused as an unknown field naming `/6`, and `tolerant: true` without
+  `reader: true` under `/6` is refused when read, the error naming `reader`.
+- The `reader_subset_closed` help text says that a consumer reading through ESS-generated closed
+  types (`additionalProperties: false`, `deny_unknown_fields`) rejects the omitted keys, and that
+  `tolerant: true` asserts a reader that ignores them; `website/docs/reference/diagnostics.md` lists
+  the code with that text, and `website/docs/reference/formats.md` gains the `ess-composition/6`
+  authored and compiled rows.
 
 ## Scope
 
 - cited: crates/specify/ess-composition/src/conformance.rs
-- cited: crates/specify/ess-composition/src/lib.rs
+- cited: crates/specify/ess-composition/src/lib.rs (format constants and `SUPPORTED_COMPOSITION_FORMATS`, `TypeConformance::reader`, `CompositionCode`)
 - cited: crates/specify/ess-composition/tests/adversary_reader_conformance.rs
 - cited: website/docs/reference/formats.md
-- cited: website/docs/reference/spec-versions.md
+- cited: website/docs/reference/diagnostics.md
 
 confidence: medium
+
+The story moves the generated `website/docs/reference/spec-versions.md` (the `ess-composition/6`
+entry) and proposes its `CHANGELOG.md` sentence.
 
 ## Fit review
 
@@ -81,9 +95,15 @@ Class: gap (an assertion validation accepts and generated code breaks).
 
 ## Decisions
 
-None yet. Open: how the composition learns that the consumer reads through ESS-generated closed
-code (a tolerant-reader marker on the entry or the type, or refusing every field subset), and
-whether the refusal waits for the next composition format.
+- The composition learns the consumer's reader from a new entry key `tolerant: true` in a new
+  composition format `ess-composition/6`, and a `/6` `reader: true` field subset without it is
+  refused: refusing every subset would take back #191's fifth widening from a consumer that does
+  read tolerantly, and only a stated marker tells the two apart.
+- The refusal starts at `ess-composition/6` and `/3`-`/5` documents keep their meaning and bytes,
+  because the composition formats refuse a new rule under an earlier marker
+  (`formats.md`, each row's "earlier-format documents keep their meaning and bytes"), and the
+  composition diagnostics carry no warning severity to warn with under `/5`. The composition
+  format family is not one `ess/37` holds, so this story opens `/6` itself.
 
 ## Origin
 

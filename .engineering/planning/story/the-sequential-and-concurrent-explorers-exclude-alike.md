@@ -18,8 +18,10 @@ scope:
 - confidence: cited
   path: crates/verify/ess-conformance/src/ts/explore.ts
 - confidence: inferred
-  path: crates/verify/ess-conformance/tests/
-revision: 5
+  path: crates/verify/ess-conformance/tests/explore.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/tests/explore_stored_rows.rs
+revision: 8
 ---
 ## Outcome
 
@@ -56,20 +58,37 @@ exclusion lists sees two first reasons for one command.
 
 ## Acceptance
 
-- `sequential_and_concurrent_explorers_exclude_alike`: for every fixture model the explorers
-  explore, Go and TypeScript, the two report the same exclusions with the same first reason, except
-  a named list of concurrent-only and sequential-only differences, each with its reason in the
-  runtime source (at least `preserves` and `deletes` on a supplied subject).
-- A stored-row condition is decided by the concurrent explorer against the row each linearization
-  holds, or excluded by both with one reason.
-- Go and TypeScript give the same exclusion list for each fixture in each mode.
-- Tests are modules of existing test binaries; no new `tests/*.rs` file.
+- `cargo test -p ess-conformance --locked --test explore` passes
+  `sequential_and_concurrent_explorers_exclude_alike`: for every fixture model the explorers
+  explore, in Go and in TypeScript, the sequential and the concurrent explorer report the same
+  excluded commands with the same first reason, except the differences a list in the test names,
+  each with its reason in the runtime source (at least `preserves` and `deletes` on a supplied
+  subject).
+- The same test asserts that Go and TypeScript give the same exclusion list, reason for reason, for
+  each fixture in each mode.
+- `cargo test -p ess-conformance --locked --test explore_stored_rows` passes a case in which a
+  command with an `existing_instance` outcome and one with a `subject_state` outcome are in neither
+  mode's exclusion list, and every concurrent history recorded against the correct target is
+  accepted by `ess verify conform check-history` (0 violations, 0 unknown), in Go and in
+  TypeScript.
+- No file under `crates/verify/ess-conformance/tests/` is added with a `.rs` extension
+  (`git diff --stat --diff-filter=A` against the base lists none): the cases are added to the
+  existing `explore` and `explore_stored_rows` binaries.
+
+## Decisions
+
+- The concurrent explorer draws a stored-row condition rather than both explorers excluding it,
+  because `check-history` runs every linearization through the interpreter, which decides the
+  condition against the row that order holds (`crates/verify/ess-conformance/src/linearize.rs`),
+  so the exclusion only loses coverage.
 
 ## Scope
 
 - cited: crates/verify/ess-conformance/src/go/explore.go
 - cited: crates/verify/ess-conformance/src/ts/explore.ts
-- inferred: crates/verify/ess-conformance/tests/
-- inferred: CHANGELOG.md
+- inferred: crates/verify/ess-conformance/tests/explore.rs
+- inferred: crates/verify/ess-conformance/tests/explore_stored_rows.rs
 
 confidence: medium
+
+Shared surfaces: no format row and no byte-pin row; it proposes its `CHANGELOG.md` sentence.

@@ -14,10 +14,16 @@ relations:
 - depends_on: story:an-identity-may-be-a-composite-of-fields
 - depends_on: story:synthesis-witnesses-a-unique-tuple-collision
 scope:
-- confidence: inferred
+- confidence: cited
+  path: crates/generate/ess-entity-runtime/src/lib.rs
+- confidence: cited
   path: crates/generate/ess-entity-runtime/src/subset.rs
 - confidence: inferred
+  path: crates/generate/ess-entity-runtime/tests/unique_tuple.rs
+- confidence: inferred
   path: crates/generate/ess-gen/src/http.rs
+- confidence: inferred
+  path: crates/generate/ess-openapi/tests/unique_tuple.rs
 - confidence: inferred
   path: crates/generate/ess-synth/src/determined.rs
 - confidence: inferred
@@ -25,10 +31,18 @@ scope:
 - confidence: inferred
   path: crates/generate/ess-synth/src/rust/behaviour.rs
 - confidence: inferred
+  path: crates/generate/ess-synth/tests/unique_tuple.rs
+- confidence: inferred
+  path: crates/verify/ess-diff/src/change.rs
+- confidence: inferred
+  path: crates/verify/ess-diff/src/compatibility.rs
+- confidence: inferred
   path: crates/verify/ess-diff/src/delta.rs
 - confidence: inferred
+  path: crates/verify/ess-diff/tests/unique_tuple.rs
+- confidence: inferred
   path: website/docs/reference/entity-runtime-lowering.md
-revision: 3
+revision: 7
 ---
 ## Need
 
@@ -43,24 +57,44 @@ Minimal model: the parent story's `example.g.Grant` with `unique: [account_id, a
 
 ## Acceptance
 
-- Generated Rust and Go servers for the minimal model pass the synthesized
-  `example.g.Bind/outcome/taken` and `/bound` scenarios (`ess verify conform run` against each).
+Every bullet runs on the minimal model.
+
+- Generated Rust and Go servers pass the synthesized `example.g.Bind/outcome/taken` and
+  `/bound` scenarios under `ess verify conform run` against each; tested in
+  `cargo test -p ess-synth --locked --test unique_tuple`.
 - `ess generate openapi` answers the `existing_instance:` refusal of `example.g.Bind` with `409`,
-  as for a duplicate identity, and the generated documentation lists the tuple on the entity.
-- Entity Runtime lowering either lowers the check or refuses the entity with a named lowering code,
-  listed in `website/docs/reference/entity-runtime-lowering.md`.
-- `ess verify diff` between the model with and without `unique:` reports `unique-added` as
-  breaking for callers. The reverse reports `unique-removed` as breaking for readers.
+  as for a duplicate identity; tested in `cargo test -p ess-openapi --locked --test unique_tuple`.
+- The generated documentation lists the tuple `[account_id, app_id]` on `example.g.Grant`; tested in
+  the same target.
+- Entity Runtime lowering refuses `example.g.Grant` under the new lowering code
+  `UniqueTupleUnsupported`, naming the entity's `unique:` path, and
+  `website/docs/reference/entity-runtime-lowering.md` lists the code; tested in
+  `cargo test -p ess-entity-runtime --locked --test unique_tuple` and the existing
+  `lowerable_subset` target.
+- `ess verify diff` from the model without `unique:` to the model with it reports `unique-added`
+  with callers compatibility `breaking`; tested in `cargo test -p ess-diff --locked --test unique_tuple`.
+- The same diff in reverse reports `unique-removed` with readers compatibility `breaking`; tested in
+  the same target.
 
 ## Scope
+
+This story moves only the `CHANGELOG.md` shared surface.
 
 - inferred: crates/generate/ess-synth/src/rust/behaviour.rs
 - inferred: crates/generate/ess-synth/src/go/behaviour.rs
 - inferred: crates/generate/ess-synth/src/determined.rs
 - inferred: crates/generate/ess-gen/src/http.rs
-- inferred: crates/generate/ess-entity-runtime/src/subset.rs
+- cited: crates/generate/ess-entity-runtime/src/subset.rs
+- cited: crates/generate/ess-entity-runtime/src/lib.rs
 - inferred: crates/verify/ess-diff/src/delta.rs
+- inferred: crates/verify/ess-diff/src/change.rs
+- inferred: crates/verify/ess-diff/src/compatibility.rs
 - inferred: website/docs/reference/entity-runtime-lowering.md
+- inferred: crates/generate/ess-synth/tests/unique_tuple.rs
+- inferred: crates/generate/ess-openapi/tests/unique_tuple.rs
+- inferred: crates/generate/ess-entity-runtime/tests/unique_tuple.rs
+- inferred: crates/verify/ess-diff/tests/unique_tuple.rs
+
 confidence: low
 
 ## Fit review
@@ -81,6 +115,11 @@ confidence: low
 
 accept, redesigned, as the parent story. This story carries the generated targets, the projections
 and the diff.
+
+- Entity Runtime refuses `unique:` by name rather than lowering it: the runtime already refuses a
+  branch chosen by whether a record exists (`ExistenceSelectionUnsupported` in
+  `crates/generate/ess-entity-runtime/src/subset.rs`, needing the host's own exists answer), and a
+  tuple check needs the same lookup across records.
 
 ## Source
 

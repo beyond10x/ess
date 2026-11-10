@@ -25,11 +25,9 @@ scope:
   path: crates/verify/ess-conformance/src/synthesize/related_guard.rs
 - confidence: cited
   path: crates/verify/ess-conformance/tests/binding_related_branch.rs
-- confidence: inferred
-  path: crates/verify/ess-conformance/tests/synthesis_suite_bytes_table.rs
 - confidence: cited
   path: website/docs/guides/specify/bindings-and-components.md
-revision: 7
+revision: 8
 ---
 ## Need
 

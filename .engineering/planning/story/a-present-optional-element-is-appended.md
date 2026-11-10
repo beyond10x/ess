@@ -13,13 +13,13 @@ relations:
 - serves: vision:O2
 - decomposes: epic:zero-open-issues-2026-11
 scope:
+- confidence: inferred
+  path: crates/generate/ess-synth/tests/append_set.rs
 - confidence: cited
   path: crates/verify/ess-conformance/src/synthesize.rs
 - confidence: cited
   path: crates/verify/ess-conformance/tests/append_set.rs
-- confidence: inferred
-  path: crates/verify/ess-conformance/tests/fixtures/synthesis-suite-bytes-table.tsv
-revision: 5
+revision: 8
 ---
 ## Finding
 
@@ -46,19 +46,37 @@ expects. The cause is `synthesize.rs` `appended_at` (:11199-11228): an absent or
 over an Optional element type is pushed as `Node::Null`, and nothing picks a present witness for
 the element.
 
+## Decisions
+
+- The present element is the input's ordinary `String` witness, the field's own name (`"label"`),
+  as `OpenJob` already sends `"labels.0"` for its list element: no second witness rule is added.
+
 ## Acceptance
 
-- Where a command appends an `Optional<T>` input element, synthesis sends one scenario with a
-  present element (for the model above, `label: "label"` or the type's witness) and expects that
-  value appended last in the view row, beside the absent case it sends today.
-- A target that always appends `null` fails that scenario (mutation case in
-  `tests/append_set.rs`); the interpreted target and generated Rust and Go pass it.
-- Committed models whose suites move are named in the change, and their suite pins move with it.
+- `cargo test -p ess-conformance --locked --test append_set` passes a case asserting that the suite
+  synthesized from `LABELLED` holds a scenario of `demo.jobs.AddLabel` outcome `labelled` whose
+  `AddLabel` step sends `label: "label"` and whose `Jobs` expectation is
+  `labels: ["labels.0", "label"]`, beside the existing scenario that leaves `label` out and expects
+  `labels: ["labels.0", null]`.
+- The same target runs that suite on the interpreted target for `LABELLED` and every scenario
+  passes.
+- The same target runs that suite on a mutant target (the interpreter with `label` dropped from
+  every `AddLabel` input, so it appends `null` whatever is sent) and the present-element scenario
+  fails.
+- `cargo test -p ess-synth --locked --test append_set` passes a case over `LABELLED` that runs the
+  synthesized suite against the generated Rust server and the generated Go server, and both pass
+  the present-element scenario.
+- `cargo test -p ess-conformance --locked --test synthesis_suite_bytes_table` passes, and every row
+  the change moves is one whose model appends an `Optional` input element.
 
 ## Scope
 
-- cited: `crates/verify/ess-conformance/src/synthesize.rs` (`appended_at` :11199)
-- cited: `crates/verify/ess-conformance/tests/append_set.rs` (`LABELLED` :225, `the_synthesized_suite_appending_an_optional_element_passes_on_the_interpreted_target` :332)
-- inferred: `crates/verify/ess-conformance/tests/fixtures/synthesis-suite-bytes-table.tsv` (rows of models with an Optional append)
+- cited: crates/verify/ess-conformance/src/synthesize.rs (`appended_at` :11199, and the input
+  choice that leaves `label` out)
+- cited: crates/verify/ess-conformance/tests/append_set.rs (`LABELLED` :225,
+  `the_synthesized_suite_appending_an_optional_element_passes_on_the_interpreted_target` :332)
+- inferred: crates/generate/ess-synth/tests/append_set.rs (the generated Rust and Go run)
 
 confidence: medium
+
+Shared surfaces moved: re-pins the suite-bytes rows of models with an `Optional` append.

@@ -15,16 +15,21 @@ relations:
 - serves: vision:O2
 - decomposes: epic:adopter-gaps-synthesis
 - decomposes: epic:zero-open-issues-2026-11
+- depends_on: story:ess-37-and-conformance-64-65-are-open-for-the-epics-constructs
 scope:
+- confidence: cited
+  path: crates/verify/ess-conformance/src/scenario.rs
 - confidence: cited
   path: crates/verify/ess-conformance/src/synthesize.rs
 - confidence: inferred
-  path: crates/verify/ess-conformance/src/synthesize/
+  path: crates/verify/ess-conformance/src/synthesize/value_invariant.rs
 - confidence: inferred
-  path: crates/verify/ess-conformance/tests/
+  path: crates/verify/ess-conformance/tests/input_value_invariants.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/tests/value_invariant_reach.rs
 - confidence: inferred
-  path: docs/design/
-revision: 5
+  path: docs/design/wrapped-value-invariant-observations.md
+revision: 9
 ---
 ## Problem
 
@@ -87,21 +92,38 @@ range and expecting the command's input refusal (an outcome in the `InputRefusal
 
 ## Acceptance
 
-- `an_input_only_type_invariant_names_the_input_route`: for the specification above,
-  ESS-SYNTH-013 says that `probe.net.Port` reaches only command input (naming
+- `an_input_only_type_invariant_names_the_input_route`, in
+  `cargo test -p ess-conformance --locked --test value_invariant_reach`: for the specification
+  above, ESS-SYNTH-013 says that `probe.net.Port` reaches only command input (naming
   `probe.net.CheckPort.port`) and names what would let a scenario check it (an input refusal of the
-  command), and its help does not ask for a view.
-- `an_input_only_type_invariant_is_checked_by_a_refused_input`: where `CheckPort` declares an
-  outcome refusing an invalid input, synthesis writes scenarios sending `port: 0` and
-  `port: 65536` and expecting that refusal, and `port: 1` and `port: 65535` accepted; the run
-  reports 0 refusals and the suite passes `ess verify conform run --target interpreted`.
-- A type a view publishes keeps its current ESS-SYNTH-013 text and suite bytes.
+  command), and its help does not contain the word `view`. The existing
+  `an_invariant_on_a_type_a_command_input_reaches_still_refuses` in that target asserts the new
+  cause in place of `ValueInvariantUnwitnessed { at: None, .. }`.
+- `an_input_only_type_invariant_is_checked_by_a_refused_input`, in
+  `cargo test -p ess-conformance --locked --test input_value_invariants`: where `CheckPort` declares
+  an input-guarded refusal outcome whose guard holds for a `port` outside the invariants, synthesis
+  writes an `ess-conformance/64` suite with scenarios sending `port: 0` and `port: 65536` and
+  expecting that refusal, and `port: 1` and `port: 65535` accepted; the run reports 0 refusals and
+  the suite passes `ess verify conform run --target interpreted`.
+- A type a view publishes keeps its current ESS-SYNTH-013 text and suite bytes: the
+  `wrapped_value_invariants` target and the suite-bytes pin targets pass with no row moved.
+
+## Decisions
+
+- The new input-route scenarios are a new suite shape, so they land in `ess-conformance/64`
+  (ordinary) and `ess-conformance/65` (coverage), opened by
+  story:ess-37-and-conformance-64-65-are-open-for-the-epics-constructs.
 
 ## Scope
 
+This story moves the `CHANGELOG.md` shared surface and re-pins only the suite-bytes rows of
+specifications whose types reach only command input.
+
 - cited: crates/verify/ess-conformance/src/synthesize.rs
-- inferred: crates/verify/ess-conformance/src/synthesize/
-- inferred: crates/verify/ess-conformance/tests/
-- inferred: docs/design/
+- cited: crates/verify/ess-conformance/src/scenario.rs
+- inferred: crates/verify/ess-conformance/src/synthesize/value_invariant.rs
+- cited: crates/verify/ess-conformance/tests/value_invariant_reach.rs
+- inferred: crates/verify/ess-conformance/tests/input_value_invariants.rs
+- inferred: docs/design/wrapped-value-invariant-observations.md
 
 confidence: medium

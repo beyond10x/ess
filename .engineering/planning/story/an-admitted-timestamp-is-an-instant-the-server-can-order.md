@@ -15,19 +15,19 @@ relations:
 - informed_by: review-result:adversary-w1-gen1-pass-1
 - decomposes: epic:zero-open-issues-2026-11
 scope:
-- confidence: inferred
-  path: crates/generate/ess-openapi/src/lib.rs
-- confidence: inferred
-  path: crates/generate/ess-synth/src/go/
 - confidence: cited
-  path: crates/generate/ess-synth/src/rust/behaviour.rs
+  path: crates/generate/ess-synth/src/go/http.rs
 - confidence: cited
   path: crates/generate/ess-synth/src/rust/json.rs
 - confidence: cited
   path: crates/generate/ess-synth/tests/adversary_w1_gen1_adversary.rs
 - confidence: cited
+  path: crates/generate/ess-synth/tests/adversary_w1_gen1_security.rs
+- confidence: cited
+  path: crates/generate/ess-synth/tests/json_body_closure.rs
+- confidence: cited
   path: crates/specify/ess-primitives/tests/vectors/rfc3339-instants.json
-revision: 6
+revision: 9
 ---
 ## Need
 
@@ -49,33 +49,54 @@ component accepting its commands), `ess generate synthesize --target rust` emits
 
 The generator sources are `crates/generate/ess-synth/src/rust/json.rs` (`timestamp_at`, around
 line 839) and `crates/generate/ess-synth/src/rust/behaviour.rs` (`INSTANT_OF`, around line 776).
-`crates/specify/ess-primitives/tests/vectors/rfc3339-instants.json` lists `2020-01-01T00:00:60Z`
-as not valid.
+The Go equivalents are `crates/generate/ess-synth/src/go/http.rs` (`timestampAt`/`dateTime`,
+`second > 60`) and `crates/generate/ess-synth/src/go/behaviour.rs` (`instant`, `second > 59`,
+`width > 9`). `crates/specify/ess-primitives/tests/vectors/rfc3339-instants.json` lists
+`2020-01-01T00:00:60Z` as not valid.
 
 ## Acceptance
 
-- One RFC 3339 grammar is chosen for leap seconds and fractions past nine digits, written in the
-  design page the `rfc3339-instants` vectors cite, and the vectors state it for
-  `2016-12-31T23:59:60Z`, `2020-01-01T00:00:60Z` and `2020-01-01T00:00:00.1234567891Z`.
-- The generated Rust decoder (`timestamp_at`), the generated `instant_of`, the Go equivalents and
-  the served `openapi.json` agree on those vectors: every text the decoder admits, `instant_of`
-  reads as an instant. Either the decoder refuses what the instant grammar cannot read (answered
-  400 naming the path), or the instant grammar reads it (a leap second as the following instant,
-  extra fraction digits truncated or rounded as the design says).
-- `crates/generate/ess-synth/tests/adversary_w1_gen1_adversary.rs` gains the two red cases the W1
-  GEN1 pass wrote (`the_timestamp_decoder_answers_the_trees_rfc3339_instant_vectors`,
-  `every_timestamp_the_decoder_admits_is_an_instant_the_generated_server_can_order`), green.
+- `crates/specify/ess-primitives/tests/vectors/rfc3339-instants.json` gains the `parse` rows
+  `{"text": "2016-12-31T23:59:60Z", "valid": false}` and
+  `{"text": "2020-01-01T00:00:00.1234567891Z", "valid": false}` (beside the existing
+  `2020-01-01T00:00:60Z` row), and `cargo test -p ess-primitives --locked --test instant_comparison`
+  passes over them.
+- The generated Rust `timestamp_at` and the generated Go `timestampAt` refuse each of those three
+  texts with a `DecodeError` at the member's path (answered 400 naming the path), as a value and
+  as a map key, and admit `2016-12-31T23:59:59.123456789Z`.
+- `cargo test -p ess-synth --locked --test adversary_w1_gen1_adversary` passes with the two cases
+  the W1 GEN1 pass wrote (`the_timestamp_decoder_answers_the_trees_rfc3339_instant_vectors`,
+  `every_timestamp_the_decoder_admits_is_an_instant_the_generated_server_can_order`) added, and
+  with `the_timestamp_decoder_admits_exactly_what_the_served_date_time_format_admits` changed to
+  "admits what `format: date-time` admits less a leap second and a fraction past nine digits".
+- `cargo test -p ess-synth --locked --test adversary_w1_gen1_security` passes with
+  `the_emitted_timestamp_reader_admits_exactly_what_format_date_time_admits` held to the same
+  narrowed oracle, and `cargo test -p ess-synth --locked --test json_body_closure` passes with its
+  accepted body's leap-second stamps replaced by `23:59:59` and a refused case added for
+  `2016-12-31T23:59:60Z`.
+
+## Decisions
+
+- The decoders refuse what the instant grammar cannot read, and the instant grammar is unchanged:
+  `docs/design/expression-family-source22.md` final review decision 14 already fixes that grammar
+  (up to nine fraction digits, no leap second) for Rust, Go and TypeScript over one vector file.
+- The served `openapi.json` keeps `type: string, format: date-time` for `Timestamp` (no added
+  `pattern`): a pattern would rewrite every projected `Timestamp` schema, while the decoder's 400
+  already names the path of a refused text.
 
 ## Scope
 
 - cited: crates/generate/ess-synth/src/rust/json.rs
-- cited: crates/generate/ess-synth/src/rust/behaviour.rs
+- cited: crates/generate/ess-synth/src/go/http.rs
 - cited: crates/specify/ess-primitives/tests/vectors/rfc3339-instants.json
 - cited: crates/generate/ess-synth/tests/adversary_w1_gen1_adversary.rs
-- inferred: crates/generate/ess-synth/src/go/ (the Go decoder and instant grammar)
-- inferred: crates/generate/ess-openapi/src/lib.rs (if the served schema narrows `format: date-time` with a pattern)
+- cited: crates/generate/ess-synth/tests/adversary_w1_gen1_security.rs
+- cited: crates/generate/ess-synth/tests/json_body_closure.rs
 
 confidence: medium
+
+The story re-pins any suite-bytes or generated-output byte-pin row that its decoder change moves,
+and proposes its `CHANGELOG.md` sentence.
 
 ## Schedule
 

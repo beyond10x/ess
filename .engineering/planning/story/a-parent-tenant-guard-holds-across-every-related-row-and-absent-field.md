@@ -22,11 +22,11 @@ scope:
   path: crates/verify/ess-conformance/src/synthesize/row_set.rs
 - confidence: cited
   path: crates/verify/ess-conformance/src/synthesize/set_effects.rs
-- confidence: inferred
+- confidence: cited
   path: crates/verify/ess-conformance/src/synthesize/subject_fact.rs
 - confidence: cited
   path: crates/verify/ess-conformance/tests/parent_row_guard.rs
-revision: 10
+revision: 13
 ---
 ## Outcome
 
@@ -76,30 +76,50 @@ absent matching absent). `GetChild` addresses the parent and reads its child thr
 
 ## Acceptance
 
-- Case 1: with the parent guard, `GetChild/found` is synthesized: every related row that the
-  child's creator guards on the input is created under that input's tenant, and the interpreted
-  target passes it. Without the parent guard, no synthesized scenario fails on
-  `--target interpreted` (each is passed, or refused by name).
-- Case 2: with plain `tenant != input.tenant` over Optional tenants, synthesis and the interpreter
-  decide an absent tenant the same way. The `deleted` witness either passes or is not written
-  (refused by name); one test on each side pins the decision.
-- Both models are committed as tests (`tests/parent_row_guard.rs` or a new file), red before the
-  fix; the base model keeps 10 of 10 and its suite bytes.
+All bullets run in `cargo test -p ess-conformance --locked --test parent_row_guard`; each new test
+is red on the base before the fix.
+
+- Case 1, with the parent guard: `GetChild/found` and `DeleteChild/deleted` are synthesized, each
+  related row the child's creator guards on the input (the parent and the folder) is created under
+  that input's tenant, and the interpreted target passes both scenarios.
+- Case 1, without the parent guard: every synthesized scenario passes on `--target interpreted`
+  (0 failed, 0 unsupported); a scenario that cannot be arranged is refused by name instead of
+  written.
+- Case 2, with `predicate: tenant != input.tenant` on both tenant guards: the `DeleteChild/deleted`
+  witness creates the parent with the tenant it sends, and passes on `--target interpreted`
+  (the run reports 0 failed and 0 unsupported).
+- The base model still passes 10 of 10, and its synthesized suite is byte-equal to the suite
+  committed before the change.
 
 ## Scope
 
-- cited: `crates/verify/ess-conformance/src/synthesize/row_set.rs` (`arrange_row` :2321, `held_subject` :2379, `prepare` :3168, `Arranging::HELD_UNDER` :3301)
-- inferred: `crates/verify/ess-conformance/src/synthesize.rs` (`arrange_toward_beside` :13832, `CreatorPass::Beside` :13928-14019, reuse for the held-under path)
-- inferred: `crates/verify/ess-conformance/src/synthesize/related_guard.rs` (`beside_bound` :646, `present_beside` :682)
-- cited: `crates/verify/ess-conformance/src/synthesize/set_effects.rs` (`subject_accepted` :2977)
-- cited: `crates/verify/ess-conformance/src/synthesize/subject_fact.rs` (`guard_truth_with` :497, `unknown_by_absence` :511)
-- cited: `crates/verify/ess-conformance/tests/parent_row_guard.rs`
+- cited: crates/verify/ess-conformance/src/synthesize/row_set.rs
+- inferred: crates/verify/ess-conformance/src/synthesize.rs
+- inferred: crates/verify/ess-conformance/src/synthesize/related_guard.rs
+- cited: crates/verify/ess-conformance/src/synthesize/set_effects.rs
+- cited: crates/verify/ess-conformance/src/synthesize/subject_fact.rs
+- cited: crates/verify/ess-conformance/tests/parent_row_guard.rs
+confidence: medium
 
-confidence: medium (finding 2 medium-high; finding 1 medium)
+Landing points: `row_set.rs` `arrange_row` :2321, `held_subject` :2379, `prepare` :3168,
+`Arranging::HELD_UNDER` :3301; `synthesize.rs` `arrange_toward_beside` :13832,
+`CreatorPass::Beside` :13928-14019 (reuse for the held-under path); `related_guard.rs`
+`beside_bound` :646, `present_beside` :682; `set_effects.rs` `subject_accepted` :2977;
+`subject_fact.rs` `guard_truth_with` :497, `unknown_by_absence` :511. Finding 2 is medium-high,
+finding 1 medium.
+
+Shared surfaces: proposes its `CHANGELOG.md` sentence; re-pins a suite-bytes row only where a
+committed model's tenant-guarded witness moves.
+
+## Decisions
+
+- Case 2's `deleted` witness passes rather than being refused: the tenant binding case 1 needs also
+  creates the parent with the sent tenant, which decides the guard False with both facts present,
+  so no side reads an absence and the base model keeps its `deleted` coverage.
 
 ## Ambiguities
 
 - Finding 2 is close to `story:unknown-by-absence-in-falsified-and-leaves-external` (draft), which
   holds the #234 ruling that Unknown-by-absence counts as false in `falsified`/`leaves_external`.
-  The change here is on the `subject_accepted` path. If it needs the same reversal, it waits for
-  that ruling (`requires-stakeholder-input`, the ESS maintainer).
+  The change here is on the `subject_accepted` path, and the decision above avoids an absent fact
+  instead of reading one, so it does not reverse that ruling and does not wait on it.

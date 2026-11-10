@@ -19,9 +19,7 @@ scope:
   path: crates/specify/ess-domain/src/system.rs
 - confidence: cited
   path: docs/design/review-external-requests-2026-09.md
-- confidence: cited
-  path: website/docs/reference/spec-versions.md
-revision: 5
+revision: 6
 ---
 ## Outcome
 

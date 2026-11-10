@@ -14,15 +14,17 @@ relations:
 - decomposes: epic:adopter-gaps-verdicts
 - decomposes: epic:zero-open-issues-2026-11
 scope:
-- confidence: inferred
+- confidence: cited
   path: crates/edge/ess-cli/src/main.rs
 - confidence: inferred
   path: crates/verify/ess-conformance/src/direct_response.rs
 - confidence: cited
   path: crates/verify/ess-conformance/src/mutate.rs
 - confidence: inferred
-  path: crates/verify/ess-conformance/tests/mutation_unkillable.rs
-revision: 5
+  path: crates/verify/ess-conformance/tests/mutation_response_presence.rs
+- confidence: inferred
+  path: website/docs/reference/formats.md
+revision: 9
 ---
 ## Outcome
 
@@ -66,16 +68,20 @@ carries `expect_direct_response` with `fields: [{name: ticket, type: String}]`.
 
 ## Acceptance
 
-- `ess verify conform mutate --help` lists a `response-presence` class (name to be fixed by the
-  design), and `--class response-presence` over the model above derives a site on
-  `demo.gate.Open/opened` member `ticket`.
-- Its "drop" mutant (the member undeclared, or made `Optional`) is run against
-  `--target interpreted` and scored `killed` by `demo.gate.Open/outcome/opened`, or, where no
-  scenario can tell it apart, `equivalent`/`unwitnessed` with the reason in the text.
-- Where a command declares an `Optional` member, the "add" mutant (the member made required) is
-  derived and scored the same way.
-- `--emit` writes the new class in the manifest and `--collect` scores it; the manifest/report
-  format version moves only if the class name is persisted where an earlier reader refuses it.
+Every bullet is a case in `cargo test -p ess-conformance --locked --test mutation_response_presence`
+over the model above, unless it names another command:
+
+- `ess verify conform mutate --help` lists `response-presence`, and `--class response-presence`
+  over the model derives exactly one site, `demo.gate.Open/opened` member `ticket`.
+- Its drop mutant removes `ticket` from `demo.gate.Open`'s `response:`; run against
+  `--target interpreted`, it is scored `killed` by `demo.gate.Open/outcome/opened`.
+- With `ticket` declared `Optional<String>`, the class derives the add mutant (`ticket` made
+  `String`) and no drop mutant; run against `--target interpreted`, the add mutant is scored
+  `killed` by `demo.gate.Open/outcome/opened`.
+- `--emit` over the model writes a manifest whose `format` is `ess-mutation-manifest/8` and which
+  lists the `response-presence` mutant; `--collect` over it writes `ess-mutation-report/9` scoring
+  it `killed`. The same commands with `--class emit-drop` write the same manifest and report
+  `format` values as 0.92.0 writes for them.
 
 ## Fit review
 
@@ -89,7 +95,8 @@ carries `expect_direct_response` with `fields: [{name: ticket, type: String}]`.
    `response:` members of `returns: true` outcomes; the interpreted, billing and oracle targets and
    `--emit/--collect` all score it.
 5. Second adopter: any command returning a minted token, receipt or page cursor.
-6. Cost: one class, its site walk, a manifest/report entry; possibly a manifest format version.
+6. Cost: one class, its site walk, a manifest/report entry, and one manifest and one report format
+   version (see Decisions).
 7. Considered: change nothing (presence stays unaudited); fold into `emit-drop` (wrong surface,
    events and responses differ). A new class wins.
 
@@ -97,6 +104,18 @@ carries `expect_direct_response` with `fields: [{name: ticket, type: String}]`.
 
 - Response-presence class: accept, redesigned as a "drop"/"add" pair on declared `response:`
   members of `returns: true` outcomes, scored by the existing verdicts.
+- The class is named `response-presence`, after the surface it mutates, as `emit-drop` and
+  `grant-drop` are.
+- The drop mutant removes the member rather than making it `Optional`, because the interpreter
+  answers an `Optional` member with its absent witness (`witness.rs:1154`), so only removal or a
+  required member changes what the closed response schema admits.
+- Both mutants are `killed` on the interpreted target: the drop mutant's suite closes the schema
+  against the `ticket` the target returns, and the add mutant's suite requires the `ticket` the
+  target leaves absent.
+- A manifest or report holding a `response-presence` mutant is `ess-mutation-manifest/8` and
+  `ess-mutation-report/9`, because the class name is persisted and an earlier reader refuses an
+  unknown class, as the grant classes moved `/7` and `/8` (`MutantClass::manifest_format`,
+  `report_format`); a document holding none keeps its format.
 - Contradictory mutants: already delivered, removed from this story. A guard mutant that leaves its
   outcome's guard satisfiable by no input is scored `equivalent` (`ESS-MUTATE-005`) naming the guard
   when no scenario kills it (`Verdict::with_dead_guard`, `unsatisfiable_guard` in `mutate.rs`;
@@ -110,9 +129,14 @@ carries `expect_direct_response` with `fields: [{name: ticket, type: String}]`.
 
 ## Scope
 
-- cited: crates/verify/ess-conformance/src/mutate.rs
+- cited: crates/verify/ess-conformance/src/mutate.rs (`MutantClass` :106, `manifest_format` :189,
+  `report_format` :5887)
+- cited: crates/edge/ess-cli/src/main.rs (the `--class` help text beside `grant-add`, :931)
 - inferred: crates/verify/ess-conformance/src/direct_response.rs
-- inferred: crates/edge/ess-cli/src/main.rs
-- inferred: crates/verify/ess-conformance/tests/mutation_unkillable.rs
+- inferred: crates/verify/ess-conformance/tests/mutation_response_presence.rs (new)
+- inferred: website/docs/reference/formats.md (the two new mutation document versions)
 
 confidence: medium
+
+Shared surfaces: proposes one `CHANGELOG.md` sentence; `website/docs/reference/spec-versions.md` is
+regenerated by the coordinator.

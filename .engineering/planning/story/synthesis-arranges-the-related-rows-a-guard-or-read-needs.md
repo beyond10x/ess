@@ -21,10 +21,8 @@ scope:
 - confidence: cited
   path: crates/verify/ess-conformance/src/synthesize/row_set.rs
 - confidence: inferred
-  path: crates/verify/ess-conformance/tests/fixtures/synthesis-suite-bytes-table.tsv
-- confidence: inferred
   path: crates/verify/ess-conformance/tests/synthesis.rs
-revision: 5
+revision: 7
 ---
 ## Need
 
@@ -89,9 +87,12 @@ rows it counts are not only the scenario's own". That is a deliberate rule
 lift the same rule under `Empty` provenance, since a run starts on an empty namespace
 (`docs/design/aggregate-group-selection.md` § "State-only and other unscoped groups"). The help
 ("give the field a type that has a finite value, or drop it from the command's input") does not fit a
-field compared with a literal. The report's quoted message for 24a ("a refused subject is observed
-through a view of the entity projecting its identity, and none shows this row") is the wrong-state
-refusal of `Switch`, which has no view; its help names the fix and it is not part of this story.
+field compared with a literal: it is the default `NoWitness` help of
+`crates/verify/ess-conformance/src/synthesize.rs:1519`, which the unscoped reason of
+`row_set.rs` `decidable` falls through to. The report's quoted message for 24a ("a refused subject
+is observed through a view of the entity projecting its identity, and none shows this row") is the
+wrong-state refusal of `Switch`, which has no view; its help names the fix and it is not part of
+this story.
 
 ESS-SYNTH-001 appears 27 times and ESS-SYNTH-005 14 times in the reporter's whole model.
 
@@ -118,27 +119,40 @@ ESS-SYNTH-001 appears 27 times and ESS-SYNTH-005 14 times in the reporter's whol
 ## Decisions
 
 - Accept A and B as defects.
-- C needs a decision on lifting the unscoped row-set rule under `Empty` provenance; until then only
-  its help text is in scope (name a literal-compared field and the authored-scenario route).
+- C: this story keeps the unscoped row-set rule and changes only its help, because lifting it under
+  `Empty` provenance is a decision not yet taken and `adversary_463_pass1` pins the rule as
+  deliberate; a lift is a story of its own.
 
 ## Acceptance
 
-- Example `21b` synthesizes `gap.demo.MergeParent/outcome/items-in-flight` with 0 refusals, and the
-  interpreted run passes it: the arranged item names the merged parent.
-- Example `23` synthesizes with 0 refusals; the `CreateItem/outcome/created` scenario reads
-  `HighScores` and expects no row, and a `ScoreItem` scenario with `score: 5` expects the row.
-- Example `24a`: ESS-SYNTH-001 on `CreateItem/halted` either is gone (if C is lifted) or its help no
-  longer suggests a finite type for a field compared with a literal.
-- No pinned suite digest moves except rows whose model has one of these shapes.
+All examples are `.engineering/repro/workbench-2026-11-09/examples/<n>/spec`.
+
+- `ess verify conform synthesize --path <21b>/spec --out suite.yaml` prints `0 refusal(s)`, and
+  `suite.yaml` holds `gap.demo.MergeParent/outcome/items-in-flight`.
+- `ess verify conform run --target interpreted --path <21b>/spec --report-format 2` passes every
+  scenario, and the `items-in-flight` scenario's arranged `Item` carries the `parent_id` of the
+  `Parent` the scenario sends `MergeParent` to.
+- `ess verify conform synthesize --path <23>/spec --out suite.yaml` prints `0 refusal(s)`; its
+  `gap.demo.CreateItem/outcome/created` scenario reads `gap.demo.HighScores` and expects no row, and
+  a `gap.demo.ScoreItem` scenario with `score: 5` reads it and expects the row.
+- `ess verify conform synthesize --path <24a>/spec --out suite.yaml` still refuses
+  `gap.demo.CreateItem/halted` as ESS-SYNTH-001 with the unscoped reason, and its `help:` line no
+  longer contains `give the field a type that has a finite value` and names the field compared with
+  a literal and an authored scenario (`ess-scenario/1`).
+- `cargo test -p ess-conformance --locked --test adversary_463_pass1` passes unchanged.
+- `cargo test -p ess-conformance --locked --test synthesis_suite_bytes_table` passes with no row
+  re-pinned except rows whose model has shape A or B.
 
 ## Scope
 
-- cited: `crates/verify/ess-conformance/src/synthesize/row_set.rs` (related-row arrangement, `decidable`/`scoped`)
-- cited: `crates/verify/ess-conformance/src/synthesize.rs` (view reads, `shows_row` settled fields)
-- inferred: `crates/verify/ess-conformance/tests/synthesis.rs`
-- inferred: `crates/verify/ess-conformance/tests/fixtures/synthesis-suite-bytes-table.tsv`
+- cited: crates/verify/ess-conformance/src/synthesize/row_set.rs (related-row arrangement, `decidable`/`scoped`)
+- cited: crates/verify/ess-conformance/src/synthesize.rs (view reads, `shows_row` settled fields; the `NoWitness` help at 1519)
+- inferred: crates/verify/ess-conformance/tests/synthesis.rs
 
 confidence: medium
+
+Shared surfaces: re-pins suite-bytes rows (`synthesis-suite-bytes-table.tsv`) for models of shape A
+or B only; no format row.
 
 ## Source
 

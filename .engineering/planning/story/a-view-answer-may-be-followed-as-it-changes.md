@@ -13,18 +13,30 @@ relations:
 - decomposes: epic:zero-open-issues-2026-11
 - depends_on: story:an-exchange-is-declared-in-the-specification
 - depends_on: story:an-event-channel-may-be-bound-to-server-sent-events
+- depends_on: story:ess-37-and-conformance-64-65-are-open-for-the-epics-constructs
+- depends_on: story:conformance-synthesizes-exchange-scenarios
 scope:
+- confidence: inferred
+  path: crates/generate/ess-gen/src/openapi.rs
 - confidence: inferred
   path: crates/specify/ess-compiler/src/ir.rs
 - confidence: inferred
   path: crates/specify/ess-domain/src/exchange.rs
+- confidence: inferred
+  path: crates/specify/ess-domain/tests/followed_views.rs
 - confidence: cited
   path: crates/specify/ess-http/src/lib.rs
 - confidence: inferred
+  path: crates/specify/ess-http/tests/followed_view_stream.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/interpret.rs
+- confidence: inferred
   path: crates/verify/ess-conformance/src/synthesize.rs
 - confidence: inferred
+  path: crates/verify/ess-conformance/tests/followed_view_scenarios.rs
+- confidence: inferred
   path: docs/design/message-exchanges.md
-revision: 4
+revision: 6
 ---
 ## Need
 
@@ -58,31 +70,51 @@ What the request also asks, and where it stands:
 
 ## Acceptance
 
-Written for the recommended answer (an exchange may follow a view); rewritten if the decision goes
-the other way.
+The reproduction is extended with one command, `demo.queues.Enqueue`, whose accepting outcome
+changes a row `QueueStats` reads, and one, `demo.queues.Rename`, whose outcome changes no field the
+view reads.
 
-- `exchanges: [{name: demo.queues.StatsFeed, follows: {view: demo.queues.QueueStats}}]` validates
-  and compiles at the exchange's `ess/N`: no `opens`, no `initiator_sends`, no `closes`; the
-  responder's one message is the view's answer. Refused by name: `opens`, `initiator_sends`,
-  `responder_sends`, `closes` or `max_followers` beside `follows: {view}`; a view that does not
-  exist; a paged view.
-- An `ess-http` view route may carry `stream: {exchange: demo.queues.StatsFeed, frames: {answer:
-  default}, keepalive: 30s}`: `GET /stats` answers `200 text/event-stream`, one unnamed `data:`
-  frame with the view's answer on connect and one after each change of its answer, never closing.
-- `ess verify conform synthesize` emits, per followed view: the answer on connect; after a command
-  that changes a row the view reads, a frame equal to a plain read of the view; after one that
-  changes none, no frame within the view's consistency bound; `ess verify conform run --target
-  interpreted` passes them.
-- A specification without a followed view keeps its IR and suite bytes.
+- `cargo test -p ess-domain --locked --test followed_views`:
+  `exchanges: [{name: demo.queues.StatsFeed, follows: {view: demo.queues.QueueStats}}]` at
+  `format: ess/37` validates, and `ess specify compile` writes the exchange with its followed view
+  into the IR, byte-identical across two compiles.
+- Same target: `opens`, `initiator_sends`, `responder_sends`, `closes` or `max_followers` beside
+  `follows: {view}` is refused as `conflicting_declaration` at that key's path; a view name nothing
+  declares as `undeclared_reference`; a paged view as `unsupported_construct`; the same document at
+  `format: ess/36` as `unsupported_format_version` naming `ess/37`.
+- `cargo test -p ess-http --locked --test followed_view_stream`: the view route `GET /stats` with
+  `stream: {exchange: demo.queues.StatsFeed, frames: {answer: default}, keepalive: 30s}` passes
+  `ess specify http validate` (exit 0), where 0.92.0 answers `ESS-HTTP-024`, and
+  `ess specify http compile` writes the `stream` into `ess-http-ir/1`.
+- Same target: `ess generate --kind openapi --http` writes `GET /stats`'s `200` as
+  `text/event-stream` with `x-ess-exchange: demo.queues.StatsFeed` and one unnamed frame whose
+  schema is the view's answer.
+- `cargo test -p ess-conformance --locked --test followed_view_scenarios`: `ess verify conform
+  synthesize` writes an `ess-conformance/64` suite holding three scenarios for
+  `demo.queues.StatsFeed`: one frame equal to a plain read of `QueueStats` on connect; after
+  `Enqueue`, one more frame equal to a plain read; after `Rename`, no frame within the view's
+  consistency bound. `ess verify conform run --target interpreted` reports the three passed (exit
+  0), and an interpreter mutant that sends no frame after `Enqueue` fails one.
+- `cargo test -p ess-conformance --locked --test synthesis_suite_bytes_table` passes with no row
+  moved: a specification without a followed view keeps its IR and suite bytes.
 
 ## Scope
 
-- inferred: crates/specify/ess-domain/src/exchange.rs
-- inferred: crates/specify/ess-compiler/src/ir.rs
-- cited: crates/specify/ess-http/src/lib.rs
-- inferred: crates/verify/ess-conformance/src/synthesize.rs
-- inferred: docs/design/message-exchanges.md
+- inferred: `crates/specify/ess-domain/src/exchange.rs` (new in story:an-exchange-is-declared-in-the-specification)
+- inferred: `crates/specify/ess-domain/tests/followed_views.rs`
+- inferred: `crates/specify/ess-compiler/src/ir.rs`
+- cited: `crates/specify/ess-http/src/lib.rs` (`ESS-HTTP-024`, the view-body check)
+- inferred: `crates/specify/ess-http/tests/followed_view_stream.rs`
+- inferred: `crates/generate/ess-gen/src/openapi.rs`
+- inferred: `crates/verify/ess-conformance/src/synthesize.rs`
+- inferred: `crates/verify/ess-conformance/src/interpret.rs`
+- inferred: `crates/verify/ess-conformance/tests/followed_view_scenarios.rs`
+- inferred: `docs/design/message-exchanges.md` (new in story:an-exchange-is-declared-in-the-specification)
+
 confidence: low
+
+Moves the `ess/37` `FORMAT_HISTORY` row and `CHANGELOG.md` sentence, regenerates
+`schemas/generated/ess.schema.json`, and adds no suite-bytes row.
 
 ## Fit review
 
@@ -108,9 +140,9 @@ confidence: low
    frames carry a declared view's answer, so the suite checks what the reader sees.
 5. **Second adopter.** A trading screen follows `GET /markets/{market_id}/book`, an aggregate view
    of open orders by price, re-sent after every order change.
-6. **Cost.** If an exchange: one more `follows:` form in the exchange's own `ess/N` (no format of its
-   own, policy 2), a synthesized scenario family and an interpreter loop. If a view-route form: an
-   `ess-http` key, and a second stream construct beside the exchange.
+6. **Cost.** If an exchange: one more `follows:` form in `ess/37` (no format of its own, policy 2),
+   a synthesized scenario family in `ess-conformance/64` and an interpreter loop. If a view-route
+   form: an `ess-http` key, and a second stream construct beside the exchange.
 7. **Alternatives.** (a) Change nothing: the stream stays unchecked. (b) The requester's
    `stream: <type>`: a free type the suite can only type-check. (c) `follows: {view}` on the exchange
    (recommended). (d) An `ess-http` view body `stream`, outside the exchange layer.
@@ -131,6 +163,20 @@ recommendation under the operator's standing rule "decide, don't ask; take the r
 exchange with `follows: {view: <name>}`; it adds no second streaming layer beside the exchange, so
 the ADR's rule that a stream is an exchange holds unchanged. Also decided: the per-caller scope is refused (grid R, views read no caller); the
 `loading`/`live` status frames are local policy and stay out; `replay` is not a key.
+
+2026-11-10 (plan-critic round 1): the acceptance is written for (c) alone; the "rewritten if the
+decision goes the other way" line is dropped because the decision above is taken.
+
+- The refusals reuse `conflicting_declaration`, `undeclared_reference` and `unsupported_construct`
+  rather than new codes, because each says what the existing code already means.
+- The route's stream is checked through validate, compile and OpenAPI rather than a served
+  `GET /stats`, because the SSE story has the Rust and Go servers refuse a `stream` route by name
+  and the frames themselves are checked by the interpreted conformance run.
+- This story owns the combination of `stream` with a view route: the SSE story refuses `stream`
+  on a view, and this story admits it where the exchange follows that view.
+- A followed-view scenario needs a frame step no suite has, so the suite format is
+  `ess-conformance/64`; the scenario family extends the exchange scenarios of
+  story:conformance-synthesizes-exchange-scenarios, which lands first.
 
 ## Source
 

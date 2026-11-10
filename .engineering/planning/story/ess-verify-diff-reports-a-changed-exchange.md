@@ -21,7 +21,9 @@ scope:
   path: crates/verify/ess-diff/src/raw.rs
 - confidence: inferred
   path: crates/verify/ess-diff/tests/exchanges.rs
-revision: 4
+- confidence: inferred
+  path: docs/design/message-exchanges.md
+revision: 6
 ---
 ## Need
 
@@ -33,13 +35,17 @@ passes a diff gate silently. Reproduction: an exchange cannot be declared on 0.9
 
 ## Acceptance
 
-- `ess verify diff` between two specifications differing only in an exchange reports, under a
-  `exchange` change kind named on `docs/design/message-exchanges.md`: an added exchange as
-  compatible; a removed exchange, a message removed from a side, a message moved to the other
-  side, or a lowered `max_followers.count` as breaking; a message added to `initiator_sends` as
-  compatible; a changed `closes` as breaking.
-- Two specifications without exchanges diff as before (existing `ess-diff` tests unchanged).
-- Tests in `crates/verify/ess-diff/tests/exchanges.rs` (new).
+- `cargo test -p ess-diff --locked --test exchanges` (new file) passes, with one case per pair of
+  specifications differing only in an exchange, each asserting that `ess verify diff` reports an
+  `exchange` change of this class: an added exchange, compatible; a message added to
+  `initiator_sends`, compatible; a removed exchange, breaking; a message removed from a side,
+  breaking; a message moved to the other side, breaking; a lowered `max_followers.count`,
+  breaking; a changed `closes`, breaking.
+- `cargo test -p ess-diff --locked` passes with no existing file under
+  `crates/verify/ess-diff/tests/` changed (`git diff --stat` against the base lists only
+  `tests/exchanges.rs` there): two specifications without exchanges diff as before.
+- `docs/design/message-exchanges.md` names the `exchange` change kind and the class of each of the
+  seven cases above.
 
 ## Scope
 
@@ -47,7 +53,11 @@ passes a diff gate silently. Reproduction: an exchange cannot be declared on 0.9
 - cited: crates/verify/ess-diff/src/compatibility.rs
 - inferred: crates/verify/ess-diff/src/raw.rs
 - inferred: crates/verify/ess-diff/tests/exchanges.rs (new)
+- inferred: docs/design/message-exchanges.md (written by story:an-exchange-is-declared-in-the-specification; this story adds the change kind)
+
 confidence: medium
+
+Shared surfaces: no format row and no byte-pin row; it proposes its `CHANGELOG.md` sentence.
 
 ## Fit review
 

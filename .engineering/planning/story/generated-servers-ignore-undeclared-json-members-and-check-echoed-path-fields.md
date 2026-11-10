@@ -12,6 +12,7 @@ refs:
 relations:
 - decomposes: epic:zero-open-issues-2026-11
 - depends_on: story:a-json-request-may-ignore-undeclared-members-and-echoed-path-fields
+- depends_on: story:the-go-server-refuses-an-undeclared-member-at-any-depth
 scope:
 - confidence: inferred
   path: crates/generate/ess-synth/src/go/http.rs
@@ -27,7 +28,7 @@ scope:
   path: crates/generate/ess-synth/tests/http_binding/board_routes.rs
 - confidence: cited
   path: crates/generate/ess-synth/tests/http_binding/go.rs
-revision: 4
+revision: 5
 ---
 ## Need
 
@@ -52,17 +53,31 @@ with `request: {encoding: json, unknown: ignore}`:
 
 ## Acceptance
 
+This story lands after `story:the-go-server-refuses-an-undeclared-member-at-any-depth`, which
+closes the Go server's nested struct decoding (`closedInput`, `closedMembers` and the struct arm of
+`type_decoder`) for every binding. This story owns the combination: under `unknown: ignore` it
+opens the top level of the input object only and leaves that nested closedness as the earlier
+story wrote it. Every bullet is asserted by `cargo test -p ess-synth --locked --test
+http_binding_rust` (which holds `tests/http_binding/go.rs`).
+
 - For a route with `request: {encoding: json, unknown: ignore}`, the generated Rust server answers
-  the four requests of the table above as the table says: a member no input field names is dropped
-  before decoding, at the top level of the input object only (a nested struct stays as closed as its
-  declaration); a member the path carries is dropped when its decoded value equals the path's value
-  and is `malformed` otherwise, naming `body.<wire name>`.
+  the four requests of the table above as the table says. A member no input field names is dropped
+  before decoding, at the top level of the input object only. A member the path carries is dropped
+  when its decoded value equals the path's value, and answered `malformed` naming
+  `body.<wire name>` otherwise. The status is the binding's `refusals.malformed` where it declares
+  one, else `400`.
+- On the same route, an undeclared member inside a nested struct (`body.<field>.extra`) is still
+  answered `400` naming its path, by the Rust server and the Go server alike, as
+  `story:the-go-server-refuses-an-undeclared-member-at-any-depth` makes them answer it.
 - For `form` and `query` under `ignore`, a key the path carries follows the same rule (equal value
-  admitted, differing value `malformed`); under `refuse`, every encoding answers exactly as today.
+  admitted, differing value `malformed`).
+- Under `unknown: refuse`, every encoding answers each request of the table with the same status
+  and body as before this change.
 - The generated Go server answers each of these requests with the Rust server's status, headers and
   body bytes (`the_go_and_rust_servers_answer_one_binding_alike` gains the cases).
-- A binding without `unknown: ignore` generates byte-identical server source (existing
-  `crates/generate/ess-synth/tests/http_binding` byte pins pass unmodified).
+- A binding without `unknown: ignore` generates server source byte-identical to the source after
+  `story:the-go-server-refuses-an-undeclared-member-at-any-depth`: the existing `http_binding_rust`
+  byte pins pass unmodified.
 
 ## Scope
 
@@ -73,7 +88,11 @@ with `request: {encoding: json, unknown: ignore}`:
 - cited: crates/generate/ess-synth/tests/http_binding/go.rs
 - inferred: crates/generate/ess-synth/tests/http_binding/board_routes.rs
 - inferred: crates/generate/ess-synth/tests/fixtures/http-binding-shop.routes.yaml
+
 confidence: medium
+
+Moves no shared surface. Shares `go/http.rs`, `go/http/bound.rs` and `tests/http_binding/go.rs`
+with `story:the-go-server-refuses-an-undeclared-member-at-any-depth`, which it depends on.
 
 ## Fit review
 
@@ -102,6 +121,11 @@ confidence: medium
 `story:a-json-request-may-ignore-undeclared-members-and-echoed-path-fields`: the existing
 `request.unknown: ignore` opens to `json`; the servers drop undeclared members silently and admit an
 echoed path member only when it equals the path's value.
+
+- Ordered after `story:the-go-server-refuses-an-undeclared-member-at-any-depth`, which owns nested
+  closedness in the Go server; this story owns how `unknown: ignore` combines with it (top level
+  open, nested levels as that story closed them), so its byte pins are taken over that story's
+  output.
 
 ## Source
 

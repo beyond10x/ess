@@ -20,9 +20,7 @@ scope:
   path: crates/verify/ess-conformance/src/synthesize/subject_fact.rs
 - confidence: inferred
   path: crates/verify/ess-conformance/tests/subject_field_in_input_list.rs
-- confidence: inferred
-  path: crates/verify/ess-conformance/tests/synthesis_suite_bytes_table.rs
-revision: 5
+revision: 7
 ---
 ## Need
 
@@ -73,28 +71,44 @@ so only the plain row (`parties: []`) is left, over which the refusal's predicat
 
 ## Acceptance
 
-Tests in `crates/verify/ess-conformance/tests/subject_field_in_input_list.rs` (or a new
-`tests/stored_list_beside_creation_guard.rs`) on the brand-free fixture above, each failing on 0.92.0:
+Tests in `crates/verify/ess-conformance/tests/subject_field_in_input_list.rs`, run with
+`cargo test -p ess-conformance --locked --test subject_field_in_input_list`, on the brand-free
+fixture above, each failing on 0.92.0:
 
 - `a_stored_list_tied_to_a_creation_input_is_arranged_non_empty`: `synthesize` reports
   `0 refusal(s)`; `example.profile.ReviseProfile/outcome/party-not-a-role` creates a `Profile` with
   a non-empty `parties` whose every element is a role of the `DeclareProfile` input, and sends
   `ReviseProfile` semantics whose roles miss at least one stored party; the interpreted target
   passes every scenario.
-- The same holds for the flat form (`roles: List<String>`, `exists: {in: input.roles, ...}`).
+- `a_stored_list_tied_to_a_flat_creation_input_is_arranged_non_empty`: the same three results for
+  the flat form (`roles: List<String>`, `exists: {in: input.roles, ...}`).
 - `a_creation_guard_no_list_can_pass_still_refuses`: where the creation guard refuses every
   non-empty `parties` (`when: parties.count >= 1` as a refusal), the branch is still refused
   `ESS-SYNTH-003`, with the same text as today.
-- Every synthesis byte pin that moves (`tests/synthesis_suite_bytes_table*.rs`) is re-pinned in the
-  same change, with the reason in its commit.
+- `cargo test -p ess-conformance --locked --test synthesis_suite_bytes_table` passes on the change,
+  and every row of `tests/fixtures/synthesis-suite-bytes-table.tsv` that differs from the base
+  belongs to a model holding a stored list that a creation's input guard ties to another input.
+
+## Decisions
+
+- The tests go in the existing `subject_field_in_input_list.rs`, which already holds the
+  `when_subject` list-membership cases, rather than in a new target.
+
+Accept, redesigned. The arrangement search keeps a creation candidate that writes a stored list a
+later guard reads by grounding the creation's other inputs from its own input guards, so the row is
+reached by commands. The requester's second proposal, declaring seeds in `ess-inputs.yaml`, is
+declined with the idiom: `--synthesis-seed FILE INSTANCE` already combines with `--path`, and the
+seed design rules out a manifest extension. No design page must be written first; the `make_creations`
+doc comment and the CHANGELOG entry record the rule. No format bump.
 
 ## Scope
 
 - cited: crates/verify/ess-conformance/src/synthesize/subject_fact.rs
 - inferred: crates/verify/ess-conformance/tests/subject_field_in_input_list.rs
-- inferred: crates/verify/ess-conformance/tests/synthesis_suite_bytes_table.rs
-- inferred: CHANGELOG.md
+
 confidence: medium
+
+Shared surfaces: re-pins the suite-bytes rows it claims and proposes one `CHANGELOG.md` sentence.
 
 `story:a-forced-external-guard-relating-an-input-list-to-a-stored-list-is-witnessed`
 (beyond10x/ess#727) and `story:per-state-refusals-are-witnessed-when-the-moving-guard-reads-an-input-list`
@@ -142,15 +156,6 @@ implement at the same time.
    see 4. (d) Chosen: in `make_creations`, a hinted or spread candidate the creating branch's input
    guards refuse is grounded against those guards (the grounding `candidates` already does for
    input guards) before it is dropped. It adds no surface.
-
-## Decisions
-
-Accept, redesigned. The arrangement search keeps a creation candidate that writes a stored list a
-later guard reads by grounding the creation's other inputs from its own input guards, so the row is
-reached by commands. The requester's second proposal, declaring seeds in `ess-inputs.yaml`, is
-declined with the idiom: `--synthesis-seed FILE INSTANCE` already combines with `--path`, and the
-seed design rules out a manifest extension. No design page must be written first; the `make_creations`
-doc comment and the CHANGELOG entry record the rule. No format bump.
 
 ## Source
 

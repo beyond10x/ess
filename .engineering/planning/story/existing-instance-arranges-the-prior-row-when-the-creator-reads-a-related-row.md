@@ -23,10 +23,8 @@ scope:
 - confidence: cited
   path: crates/verify/ess-conformance/tests/existing_instance_beside_related_guards.rs
 - confidence: inferred
-  path: crates/verify/ess-conformance/tests/synthesis_suite_bytes_table.rs
-- confidence: inferred
   path: docs/design/outcome-shapes.md
-revision: 5
+revision: 7
 ---
 ## Need
 
@@ -90,18 +88,21 @@ each failing on 0.92.0 first:
 - `existence_refusal_help_names_no_fix_already_present`: where every related creator already sets
   the compared fields from its input, the help line does not ask for `sets: <field>: input.<field>`;
   it names the authored-scenario route only.
-- Every synthesis byte pin that moves (`tests/synthesis_suite_bytes_table*.rs`) is re-pinned in the
-  same change, with the reason in its commit.
+- `cargo test -p ess-conformance --locked --test synthesis_suite_bytes_table` passes on the change,
+  and every row of `tests/fixtures/synthesis-suite-bytes-table.tsv` that differs from the base
+  belongs to a model with an `existing_instance:` branch beside a `when_related:` guard on the
+  same command.
 
 ## Scope
 
 - cited: crates/verify/ess-conformance/src/synthesize/existence.rs
 - cited: crates/verify/ess-conformance/src/synthesize.rs
 - cited: crates/verify/ess-conformance/tests/existing_instance_beside_related_guards.rs
-- inferred: crates/verify/ess-conformance/tests/synthesis_suite_bytes_table.rs
 - inferred: docs/design/outcome-shapes.md
-- inferred: CHANGELOG.md
+
 confidence: medium
+
+Shared surfaces: re-pins the suite-bytes rows it claims and proposes one `CHANGELOG.md` sentence.
 
 ## Fit review
 

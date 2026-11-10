@@ -28,7 +28,7 @@ scope:
   path: crates/verify/ess-conformance/src/linearize.rs
 - confidence: inferred
   path: crates/verify/ess-conformance/tests/linearizability.rs
-revision: 5
+revision: 6
 ---
 ## Outcome
 
@@ -100,17 +100,27 @@ wrong history is judged.
 
 ## Acceptance
 
-- `check-history` over the model and the correct history above exits 0 (linearizable).
-- The same history with `Created` publishing `…bb` while `Close` addresses `…aa` exits 1 and names
-  the `Create` operation in the violation.
-- An operation that records no `events` (an `ess-history/1` or `/2` document) on such a command
-  either takes the identity from `subject_key` and is checked, or is refused with a code naming the
-  response field rather than `check.model-undetermined`.
-- Tests in `crates/edge/ess-cli/tests/check_history.rs` (exit statuses) and
-  `crates/verify/ess-conformance/tests/linearizability.rs` (verdicts).
+- `cargo test -p ess-cli --locked --test check_history` passes a new case: `ess verify conform
+  check-history --path model.yaml --history right.json` over the model and the correct
+  `ess-history/3` history above exits 0 (linearizable).
+- The same target passes a case where `Create` keeps `subject_key` `…aa` and its `Created` event
+  publishes `…bb`: the command exits 1 and the violation names the `Create` operation `…0101`.
+- The same target passes a case over an `ess-history/2` document of the same two operations with
+  no `events`: it exits 0, the created identity taken from `Create`'s `subject_key` `…aa`.
+- `cargo test -p ess-conformance --locked --test linearizability` passes the three histories
+  above as verdicts (linearizable, a violation at `…0101`, linearizable), with no
+  `CheckRefusal::Model`.
 
 Adjacent, not a duplicate: `story:stored-field-equals-returned-response-value` (storing a returned
 value with `sets:`).
+
+## Decisions
+
+- The identity a creating branch reads from a response field is taken from the operation's
+  `subject_key` in every history version, so an `ess-history/1` or `/2` document is checked rather
+  than refused: `subject_key` is "the identity of the subject the command addressed"
+  (`src/history.rs`, `Operation`) in all three versions, and a `/3` operation's events are then
+  judged against it.
 
 ## Scope
 
@@ -123,3 +133,5 @@ value with `sets:`).
 - inferred: crates/edge/ess-cli/tests/check_history.rs
 
 confidence: medium
+
+The story moves no shared surface beyond proposing its `CHANGELOG.md` sentence.

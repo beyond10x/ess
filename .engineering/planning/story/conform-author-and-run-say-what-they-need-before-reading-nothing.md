@@ -11,11 +11,9 @@ tags:
 - ess-0.70.0
 - feature-request
 - severity-medium
-- zero-open-issues
 relations:
 - serves: vision:O2
 - decomposes: epic:adopter-gaps-generated-code
-- decomposes: epic:zero-open-issues-2026-11
 scope:
 - confidence: cited
   path: crates/edge/ess-cli/src/input_discovery.rs
@@ -27,7 +25,7 @@ scope:
   path: crates/edge/ess-cli/tests/conform_report.rs
 - confidence: cited
   path: website/docs/reference/cli.md
-revision: 8
+revision: 9
 ---
 ## Need
 

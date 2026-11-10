@@ -15,15 +15,11 @@ relations:
 - informed_by: review-result:security-w1-gen1-pass-1
 - decomposes: epic:zero-open-issues-2026-11
 scope:
-- confidence: inferred
-  path: crates/generate/ess-gen/src/openapi.rs
-- confidence: inferred
-  path: crates/generate/ess-synth/src/go/http.rs
 - confidence: cited
   path: crates/generate/ess-synth/src/rust/wire.rs
 - confidence: cited
   path: crates/generate/ess-synth/tests/adversary_w1_gen1_security.rs
-revision: 6
+revision: 8
 ---
 ## Need
 
@@ -64,26 +60,40 @@ A body `{"port": 1, "note": null}` is refused by the served schema and admitted 
 
 ## Acceptance
 
-- For an `Optional` member sent as `null`, the generated Rust server and its served `openapi.json`
-  give the same answer: either the request schema of the member admits `null` (`anyOf` with
-  `{"type": "null"}`, or `type: [..., "null"]`), or the server answers `{"port": 1, "note": null}`
-  with `400` (or the binding's `refusals.malformed`) naming the path `note` at decode. The design
-  records which.
-- `an_optional_member_sent_as_null_is_answered_as_the_served_document_answers_it` in
-  `crates/generate/ess-synth/tests/adversary_w1_gen1_security.rs` drives one generated Rust server
-  with that body, compares its answer with the served document, and passes.
-- An absent `Optional` member is still admitted, and the CHANGELOG known-limit line is replaced by
-  the fix.
+All cases are in `cargo test -p ess-synth --locked --test adversary_w1_gen1_security`.
+
+- `an_optional_member_sent_as_null_is_answered_as_the_served_document_answers_it` drives one
+  generated Rust server with `{"port": 1, "note": null}` for an `Optional<String>` member with no
+  `presence:`: the server answers `400` with a `refused` detail starting `body.note: `, and the
+  served document's request schema refuses the same body.
+- The same test sends `{"port": 1}`: the server answers `2xx` and the served document admits it.
+- The same test sends `{"port": 1, "note": null}` for a member declaring
+  `presence: omitted_or_null` (`ess/31`): the server answers `2xx` and the served document, whose
+  property is `anyOf [string, null]`, admits it.
+- `every_closed_position_refuses_its_undeclared_member_as_the_document_does` passes with its
+  `optional-null` request expecting the answer the served document gives.
+
+## Decisions
+
+- The server follows the served document rather than the document admitting `null`: an `Optional`
+  field without a policy is published "optional and not nullable"
+  (`website/docs/guides/specify/wire-names.md`, "Say whether an absent Optional is sent as null"),
+  and `presence: omitted_or_null` is the declared way to admit `null`. A member that a generated
+  page may send as `null` (page state of an `Optional` type starts as `null`,
+  `crates/ui/ess-ui-react/src/types.rs:140`) declares that policy.
+- The generated Go server admits `null` the same way (`optional`,
+  `crates/generate/ess-synth/src/go/http.rs:2320`); it is outside this story, whose finding and
+  test harness are the Rust server's.
 
 ## Scope
 
 - cited: crates/generate/ess-synth/src/rust/wire.rs
 - cited: crates/generate/ess-synth/tests/adversary_w1_gen1_security.rs
-- inferred: crates/generate/ess-gen/src/openapi.rs
-- inferred: crates/generate/ess-synth/src/go/http.rs
-- inferred: CHANGELOG.md
 
 confidence: medium
+
+Proposes the `CHANGELOG.md` sentence that replaces the known-limit line; moves no other shared
+surface.
 
 ## Schedule
 

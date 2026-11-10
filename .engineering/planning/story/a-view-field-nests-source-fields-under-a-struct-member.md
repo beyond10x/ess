@@ -27,11 +27,9 @@ scope:
   path: crates/verify/ess-diff/src/change.rs
 - confidence: inferred
   path: docs/design/value-expressions.md
-- confidence: inferred
-  path: schemas/generated/ess.schema.json
 - confidence: cited
   path: website/docs/guides/specify/values-and-views.md
-revision: 4
+revision: 6
 ---
 ## Need
 
@@ -64,25 +62,31 @@ This story is the model half: the key, validation, IR, diff and the reference.
 
 ## Acceptance
 
-- At the new source format, `{name: metadata, type: example.files.Meta, field: {id: id, name:
-  name}}` validates. `field:` on a struct-typed view field takes a nested mapping, and each member
-  of the struct takes one source: a source field by name, `{related: {via, field}}`, `{expr: …}`,
-  or a nested mapping for a struct member, as `sets:` does.
+The validation bullets run in `cargo test -p ess-domain --locked --test view_nested_field`.
+
+- At `ess/37`, `{name: metadata, type: example.files.Meta, field: {id: id, name: name}}`
+  validates. `field:` on a struct-typed view field takes a nested mapping, and each member of the
+  struct takes one source: a source field by name, `{related: {via, field}}`, `{expr: …}`, or a
+  nested mapping for a struct member, as `sets:` does.
 - Every declared member needs a source, unless it is `Optional`, and then it is absent. A member the
   struct does not declare is `undeclared_reference`. A source of another type is `type_mismatch`
   naming the member. `{related: …}` with a member named `related` reads as the navigation, as in a
-  payload (`values-and-views.md:132`). Below the new format the mapping keeps today's refusal, its
-  hint naming the format.
+  payload (`values-and-views.md:132`). At `ess/36` and below the mapping is refused as
+  `unsupported_format_version` naming `ess/37`.
 - An aggregate view refuses a nested field by name, as it refuses navigation.
 - `ess specify compile` writes the mapping on the view field, omitted when absent; a model without
-  it keeps its IR bytes; `schemas/generated/ess.schema.json` is regenerated. The OpenAPI and JSON
-  Schema projections already write the field as the struct's schema and need no change: a test pins
-  that the reproduction's `metadata` is the `example.files.Meta` object.
+  it keeps its IR bytes. The OpenAPI and JSON Schema projections already write the field as the
+  struct's schema and need no change: a test pins that the reproduction's `metadata` is the
+  `example.files.Meta` object.
 - `ess verify diff` reports a moved member source as the view field's source change, under the kind
   `field: {related}` uses.
 - `website/docs/guides/specify/values-and-views.md` documents the form under views.
 
 ## Scope
+
+This story fills the `ess/37` row of `FORMAT_HISTORY` and moves `CHANGELOG.md`,
+`schemas/generated/ess.schema.json` and `website/docs/reference/spec-versions.md`, all shared
+surfaces the coordinator reconciles.
 
 - cited: crates/specify/ess-domain/src/view.rs
 - cited: crates/specify/ess-domain/src/view/navigation.rs
@@ -92,7 +96,7 @@ This story is the model half: the key, validation, IR, diff and the reference.
 - inferred: crates/specify/ess-domain/tests/view_nested_field.rs
 - cited: website/docs/guides/specify/values-and-views.md
 - inferred: docs/design/value-expressions.md
-- inferred: schemas/generated/ess.schema.json
+
 confidence: medium
 
 ## Fit review
@@ -113,8 +117,8 @@ confidence: medium
 5. **Second adopter.** A user read answering `{"id": …, "address": {"street": …, "city": …}}` from
    a flat `users` record; an order read answering `{"total": {"amount": …, "currency": …}}` from two
    columns.
-6. **Cost.** The next open source format; no new key (`field:` takes one more form); no new
-   diagnostic code; an IR shape on the view field omitted when absent.
+6. **Cost.** Source format `ess/37`; no new key (`field:` takes one more form); no new diagnostic
+   code; an IR shape on the view field omitted when absent.
 7. **Alternatives.** (a) Change nothing: flattened row or a fake stored struct (issue text).
    (b) The requester's `from:`: refused, a second key for a source, and already refused with a
    repair. (c) A struct constructor in `expr:`: refused, the grammar would gain literals that only
@@ -126,6 +130,9 @@ accept, redesigned. The request's `from:` mapping is spelled as the existing nes
 the view field's `field:` key. Conformance and generated code:
 `story:conformance-asserts-a-nested-view-field-member-by-member`,
 `story:generated-rust-and-go-view-queries-answer-a-nested-view-field`.
+
+- The form lands in `ess/37`, the one source format of this epic, opened by
+  story:ess-37-and-conformance-64-65-are-open-for-the-epics-constructs.
 
 ## Source
 

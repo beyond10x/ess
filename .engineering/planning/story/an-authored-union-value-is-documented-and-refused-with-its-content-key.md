@@ -12,13 +12,15 @@ refs:
 relations:
 - decomposes: epic:zero-open-issues-2026-11
 scope:
-- confidence: inferred
+- confidence: cited
   path: crates/verify/ess-conformance/src/authored.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/input.rs
 - confidence: inferred
   path: crates/verify/ess-conformance/tests/authored_union_value.rs
 - confidence: cited
   path: website/docs/guides/verify/author-scenarios.md
-revision: 4
+revision: 7
 ---
 ## Need
 
@@ -41,23 +43,28 @@ input: {actor: {kind: Agent, value: {instance: i-1, kind: worker}}}
 
 ## Acceptance
 
-- `website/docs/guides/verify/author-scenarios.md` gains a short section on writing a union value:
-  the tag, the payload under the content key (`value`; `content` where the tag is `value`; the
-  declared content key once `story:projections-use-a-unions-declared-content-key` lands), a unit
-  variant as the tag alone. A `yaml ess-check` example is checked by the docs gate.
-- `ESS-AUTHOR-015`'s "missing union payload" names the expected form in its hint:
-  `write {kind: Human, value: {…}}`, with the union's tag and content key.
-- `ESS-AUTHOR-047` on a key that is a union's tag, inside a value of that union, adds the same hint.
-- The agent plugin's syntax reference lives in `beyond10x/agentplugins` (`plugins/ess/`,
-  `AGENTS.md` § "Agent plugin"), so its one line is a change there. This story's description names
-  the line to add.
+- `website/docs/guides/verify/author-scenarios.md` has a section "Write a union value" stating the
+  tag, the payload under the union's content key (`value`, or `content` where the tag is named
+  `value`), and a unit variant as the tag alone, with one YAML example; that example, as a fixture
+  in `cargo test -p ess-conformance --locked --test authored_union_value`, compiles with 0
+  refusals.
+- On the input `{actor: {kind: Human, operator: ada}}`, the `ESS-AUTHOR-015` refusal ends with the
+  hint `write {kind: Human, value: {…}}`, its tag and content key those of the union (a test in
+  `--test authored_union_value`).
+- On the input `{actor: {kind: Agent, instance: i-1, kind: worker}}`, where `kind` is the union's
+  tag, the `ESS-AUTHOR-047` refusal ends with the hint `write {kind: Agent, value: {…}}` (a test in
+  `--test authored_union_value`); a repeated key that is no union's tag keeps today's message
+  unchanged (a test in the same target).
 
 ## Scope
 
 - cited: website/docs/guides/verify/author-scenarios.md
-- inferred: crates/verify/ess-conformance/src/authored.rs
+- cited: crates/verify/ess-conformance/src/authored.rs
+- cited: crates/verify/ess-conformance/src/input.rs
 - inferred: crates/verify/ess-conformance/tests/authored_union_value.rs
 confidence: medium
+
+Shared surfaces: proposes its `CHANGELOG.md` sentence; moves no byte-pin row.
 
 ## Fit review
 
@@ -79,7 +86,21 @@ confidence: medium
 accept, redesigned. The requester asked for one line in the plugin's syntax reference. The form
 `{<tag>: <Variant>, <content key>: {…}}` already works (`run.txt`), so nothing is added to the
 language. It is documented in this repository's scenario guide and named in the two refusals an
-author meets, and the plugin line follows in `beyond10x/agentplugins`.
+author meets.
+
+The plugin's syntax reference lives in `beyond10x/agentplugins` (`plugins/ess/`, `AGENTS.md`
+§ "Agent plugin"), outside this repository, so it is not an acceptance bullet here. The line to add
+there: "A union value is its tag and the payload under the content key, `{kind: Agent, value:
+{…}}`; a unit variant is the tag alone."
+
+The hint reads the content key from the same place the reader takes it
+(`crates/verify/ess-conformance/src/input.rs:1050`), so the guide documents today's rule
+(`value`, or `content`) and the hint follows a declared key without a change here if
+`story:projections-use-a-unions-declared-content-key` lands.
+
+The `ess-check` docs gate covers `website/docs/reference/predicates.md` only
+(`crates/edge/ess-cli/tests/predicate_reference_page.rs`), so the guide's example is checked as a
+fixture of this story's test target instead.
 
 ## Source
 

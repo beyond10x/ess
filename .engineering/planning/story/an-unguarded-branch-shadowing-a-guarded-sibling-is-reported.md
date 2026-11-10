@@ -14,15 +14,13 @@ relations:
 - decomposes: epic:adopter-gaps-domain-language
 - decomposes: epic:zero-open-issues-2026-11
 scope:
-- confidence: inferred
-  path: crates/edge/ess-cli/tests/
 - confidence: cited
   path: crates/specify/ess-domain/src/command/precedence.rs
 - confidence: cited
   path: crates/specify/ess-domain/src/command/subject_state.rs
 - confidence: inferred
-  path: crates/specify/ess-domain/tests/
-revision: 5
+  path: crates/specify/ess-domain/tests/shadowed_guarded_branch.rs
+revision: 8
 ---
 ## Problem
 
@@ -67,24 +65,32 @@ story:validate-refuses-a-branch-implied-by-an-earlier-input-refusal (implemented
 
 ## Acceptance
 
-- `ess specify validate` on the reproduction above (`ess/35`) reports `dropped` as unreachable,
-  naming `dropped` and `finished` and the held state `Open`: a refusal under the existing
-  `UnreachableBranch` code, or a warning if the adopter replay shows a specification valid today
-  would be refused (the D186 fallback that the input-guard twin used).
-- With `dropped` declared before `finished`, validate reports nothing about either branch.
+All cases are in `crates/specify/ess-domain/tests/shadowed_guarded_branch.rs`, run with
+`cargo test -p ess-domain --locked --test shadowed_guarded_branch`.
+
+- On the reproduction above (`ess/35`), validation fails with one `UnreachableBranch` error at
+  `outcomes.dropped` whose message names `dropped`, `finished` and the held state `Open`;
+  `ess specify validate` on it exits 1.
+- With `dropped` declared before `finished`, validation reports no error at either branch.
 - A guarded branch that is first reader for at least one (held state, input) case of the
-  partition is not reported.
-- Below `ess/27` the reproduction keeps its ESS-COMMAND-004.
+  partition (`finished` given `when: flag == false`) reports no error.
+- The reproduction re-declared at `ess/26` keeps its single `ESS-COMMAND-004` error and gets no
+  `UnreachableBranch`.
+- No committed example or corpus model is newly refused: `cargo test -p ess-domain --locked` and
+  the diagnostics pins stay green with no pin moved.
 
 ## Scope
 
-- cited: crates/specify/ess-domain/src/command/subject_state.rs
+- cited: crates/specify/ess-domain/src/command/subject_state.rs (`validate_partition`, line 358; `read_first`, line 449)
 - cited: crates/specify/ess-domain/src/command/precedence.rs
-- inferred: crates/specify/ess-domain/tests/
-- inferred: crates/edge/ess-cli/tests/
+- inferred: crates/specify/ess-domain/tests/shadowed_guarded_branch.rs (new)
 
 confidence: medium
 
+Shared surfaces moved: proposes its `CHANGELOG.md` sentence; no format row, no byte-pin row.
+
 ## Decisions
 
-None yet.
+A refusal under the existing `UnreachableBranch` code, not a warning: the input-guard twin refused
+too, and a model that holds the shadowed branch already fails at synthesis (ESS-SYNTH-003), so the
+refusal moves an existing failure earlier rather than breaking a specification that works.

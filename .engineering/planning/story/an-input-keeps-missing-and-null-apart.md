@@ -36,9 +36,7 @@ scope:
   path: docs/design/language-grids.md
 - confidence: cited
   path: docs/design/omitted-or-null-presence.md
-- confidence: inferred
-  path: schemas/generated/ess.schema.json
-revision: 7
+revision: 8
 ---
 ## Need
 

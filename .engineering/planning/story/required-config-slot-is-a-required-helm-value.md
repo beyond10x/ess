@@ -15,13 +15,13 @@ relations:
 scope:
 - confidence: cited
   path: crates/generate/ess-deployment/src/environment.rs
-- confidence: inferred
+- confidence: cited
   path: crates/generate/ess-deployment/tests/deployment.rs
 - confidence: cited
   path: crates/generate/ess-deployment/tests/workload_kinds/mod.rs
 - confidence: inferred
   path: website/docs/concepts/component-delivery.md
-revision: 5
+revision: 8
 ---
 ## Outcome
 
@@ -61,23 +61,35 @@ exit=0
 
 ## Acceptance
 
-Tests in `crates/generate/ess-deployment/tests/deployment.rs` (projection bytes) plus a `helm` run where the binary is
-on `PATH`, skipped by name where it is not:
+All tests are in `cargo test -p ess-deployment --locked --test deployment` (projection bytes, and a `helm` run where
+the binary is on `PATH`, each `helm` test skipped by name where it is not):
 
 - `required_config_slot_unset_fails_helm_template`: `helm template` of the chart above with no values exits non-zero
-  and names `broker-url`; with `--set config.broker-url=x` and both image values set it exits 0.
-- `empty_image_digest_fails_helm_template`: with `broker-url` set and `images.app.digest` left empty, `helm template`
-  exits non-zero naming the image's digest (likewise the repository).
+  and its output names `broker-url`.
+- `required_values_set_render_the_chart`: `helm template` with `--set config.broker-url=x`,
+  `images.app.repository` and `images.app.digest` set exits 0.
+- `empty_image_digest_fails_helm_template`: with `broker-url` and the repository set and `images.app.digest` left
+  empty, `helm template` exits non-zero and its output names the image's digest.
+- `empty_image_repository_fails_helm_template`: with `broker-url` and the digest set and `images.app.repository`
+  left empty, `helm template` exits non-zero and its output names the image's repository.
 - `fresh_chart_still_passes_helm_lint`: `helm lint` on the fresh projection exits 0.
-- Optional slots, literal slots, `Reference` images and set values render byte-identically to today; the chart byte
-  pins (for example `RUNTIME_1_CHART_DIGEST` in `tests/workload_kinds/mod.rs`) move only where a chart has a required
-  slot or a build-output image, and each moved pin is named in the CHANGELOG.
+- Optional slots, literal slots, `Reference` images and set values render byte-identically to today: the chart byte
+  pins of a chart with no required slot and no build-output image keep their values, and the change's diff moves
+  only pins of charts that hold one (`RUNTIME_1_CHART_DIGEST` in `tests/workload_kinds/mod.rs` is one: its process
+  image `app` is a build output).
 
 ## Scope
 
 - cited: crates/generate/ess-deployment/src/environment.rs
 - cited: crates/generate/ess-deployment/tests/workload_kinds/mod.rs
-- inferred: crates/generate/ess-deployment/tests/deployment.rs
+- cited: crates/generate/ess-deployment/tests/deployment.rs
 - inferred: website/docs/concepts/component-delivery.md
-
 confidence: high
+
+Shared surfaces: proposes its `CHANGELOG.md` sentence, naming each chart pin it moves; moves no row of the
+repository-wide byte-pin targets.
+
+## Decisions
+
+- Each moved chart pin is named in the proposed `CHANGELOG.md` sentence rather than in an acceptance bullet, because
+  the changelog is written by the coordinator at merge (epic § Shared surfaces).

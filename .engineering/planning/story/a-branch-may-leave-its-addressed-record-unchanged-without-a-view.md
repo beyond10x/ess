@@ -12,11 +12,9 @@ tags:
 - ess-0.70.0-first
 - gap
 - severity-medium
-- zero-open-issues
 relations:
 - serves: vision:O2
 - decomposes: epic:adopter-gaps-synthesis
-- decomposes: epic:zero-open-issues-2026-11
 scope:
 - confidence: cited
   path: crates/verify/ess-conformance/src/synthesize.rs
@@ -24,7 +22,7 @@ scope:
   path: crates/verify/ess-conformance/src/synthesize/subject_fact.rs
 - confidence: inferred
   path: crates/verify/ess-conformance/tests/preserve_without_view.rs
-revision: 8
+revision: 9
 ---
 ## Need
 

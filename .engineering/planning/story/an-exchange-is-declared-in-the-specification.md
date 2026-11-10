@@ -33,11 +33,7 @@ scope:
   path: crates/specify/ess-domain/tests/exchanges.rs
 - confidence: cited
   path: docs/design/message-exchanges.md
-- confidence: inferred
-  path: schemas/generated/ess.schema.json
-- confidence: inferred
-  path: website/docs/reference/spec-versions.md
-revision: 5
+revision: 6
 ---
 ## Need
 

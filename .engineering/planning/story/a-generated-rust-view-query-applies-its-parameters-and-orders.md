@@ -19,12 +19,24 @@ scope:
 - confidence: inferred
   path: .engineering/repro/workbench-2026-11-09/examples/25
 - confidence: inferred
-  path: crates/generate/ess-synth/src/go/
+  path: .engineering/repro/workbench-2026-11-09/examples/26
 - confidence: inferred
-  path: crates/generate/ess-synth/src/rust/
+  path: .engineering/repro/workbench-2026-11-09/examples/26b
+- confidence: cited
+  path: crates/generate/ess-synth/src/determined.rs
+- confidence: cited
+  path: crates/generate/ess-synth/src/go/behaviour.rs
+- confidence: cited
+  path: crates/generate/ess-synth/src/go/behaviour/query.rs
+- confidence: cited
+  path: crates/generate/ess-synth/src/rust/behaviour.rs
+- confidence: cited
+  path: crates/generate/ess-synth/src/rust/behaviour/query.rs
 - confidence: cited
   path: crates/generate/ess-synth/src/view_query.rs
-revision: 5
+- confidence: cited
+  path: crates/generate/ess-synth/tests/generated_view_queries.rs
+revision: 9
 ---
 ## Need
 
@@ -65,24 +77,52 @@ Minimal reproduction (ess 0.92.0), example `25`: an entity `gap.demo.Item` with 
 
 ## Acceptance
 
-- `ess generate synthesize --target rust --layout crate` on examples `25`, `26` and `26b` reports
-  `0 obligation(s)`; the generated `ByTitle` query returns only rows whose `title` equals the
-  parameter, as the interpreted target does.
-- The generated query orders by an Optional field with absent values placed as the interpreted
-  target places them, and by a `Timestamp` as an instant (two texts of one instant in different
-  offsets rank equal; `2026-01-01T01:00:00+01:00` ranks before `2026-01-01T00:30:00Z`).
-- The conformance suite synthesized for each example passes against the generated Rust server.
-- Go: the same three examples report `0 obligation(s)` with `--target go`, or the Go half is split
-  into its own story named here.
+All examples are `.engineering/repro/workbench-2026-11-09/examples/<n>/spec`.
+
+- `ess generate synthesize --target rust --layout crate --path <example>/spec --out rust-out` on
+  examples `25`, `26` and `26b` prints `0 obligation(s)` in its capabilities line.
+- The same command with `--target go` (the reproduction's Go invocation) on the same three
+  examples prints `0 obligation(s)`.
+- `cargo test -p ess-synth --locked --test generated_view_queries` passes a new case that builds
+  the Rust and the Go servers for example `25` over the harness storage port, holds rows with
+  `title` `a`, `b` and `a`, and asks `ByTitle` with `title=a`: both answer exactly the two rows whose
+  `title` is `a`, the rows the interpreted target answers.
+- The same test target passes a case over example `26`, Rust and Go: with one row lacking `note`
+  and rows with `note` `x` and `y`, `note asc` answers the absent row first; with one row lacking
+  `due` and two rows with `due`, `due desc` answers the absent row last (the interpreted target's
+  `interpret::views::compare` ranks an absent value below every present one).
+- The same test target passes a case over example `26b`, Rust and Go: rows with `created`
+  `2026-01-01T01:00:00+01:00` and `2026-01-01T00:30:00Z` answer under `created desc` with the
+  `00:30:00Z` row first, and two rows whose `created` texts name one instant in different offsets
+  rank equal (they keep the port's order).
+- The conformance suite synthesized for each of the three examples passes against the generated
+  Rust and the generated Go server in that test target (`assert_suite_passes` and `go_suite`).
+
+## Decisions
+
+- Go is in this story, not split off: `view_query.rs` is the one gate the planner and both
+  emitters ask, so admitting these constructs there makes the Go plan generate them too, and the
+  Go query must render them in the same change.
+- An absent value ranks below every present one, because that is what the interpreted target's
+  `compare` does (`Option<&Node>`, `Node::Null` its least variant); the generated queries follow it.
 
 ## Scope
 
 - cited: crates/generate/ess-synth/src/view_query.rs
-- inferred: crates/generate/ess-synth/src/rust/ (the emitted query)
-- inferred: crates/generate/ess-synth/src/go/ (the same obligations on Go)
-- inferred: .engineering/repro/workbench-2026-11-09/examples/25, 26, 26b (fixtures)
+- cited: crates/generate/ess-synth/src/determined.rs
+- cited: crates/generate/ess-synth/src/rust/behaviour/query.rs
+- cited: crates/generate/ess-synth/src/rust/behaviour.rs
+- cited: crates/generate/ess-synth/src/go/behaviour/query.rs
+- cited: crates/generate/ess-synth/src/go/behaviour.rs
+- cited: crates/generate/ess-synth/tests/generated_view_queries.rs
+- inferred: .engineering/repro/workbench-2026-11-09/examples/25
+- inferred: .engineering/repro/workbench-2026-11-09/examples/26
+- inferred: .engineering/repro/workbench-2026-11-09/examples/26b
 
 confidence: medium
+
+Shared surfaces: no format row and no suite-bytes row; it re-pins only the `ess-synth` `go` and
+`served_codec_names` byte-pin rows whose generated query bytes it changes.
 
 ## Fit review
 

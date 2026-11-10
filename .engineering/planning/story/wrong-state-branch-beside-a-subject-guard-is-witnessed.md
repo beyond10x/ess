@@ -21,9 +21,7 @@ scope:
   path: crates/verify/ess-conformance/tests/explore_guards_first.rs
 - confidence: inferred
   path: crates/verify/ess-conformance/tests/wrong_state_beside_subject_guard.rs
-- confidence: inferred
-  path: synthesis
-revision: 5
+revision: 7
 ---
 ## Problem
 
@@ -74,6 +72,10 @@ The interpreter already answers `not-held` on a retired seat
 - cited: crates/verify/ess-conformance/tests/explore_guards_first.rs
 - inferred: crates/verify/ess-conformance/src/synthesize/subject_fact.rs
 - inferred: crates/verify/ess-conformance/tests/wrong_state_beside_subject_guard.rs
-- inferred: synthesis byte pins of fixtures with a subject guard beside `wrong_state:` (suite bytes move)
 
 confidence: medium
+
+The story re-pins the suite-bytes rows of fixtures with a subject guard beside `wrong_state:`
+(`crates/verify/ess-conformance/tests/fixtures/synthesis-suite-bytes-table.tsv`, a shared surface
+the coordinator reconciles), and proposes its `CHANGELOG.md` sentence.
+

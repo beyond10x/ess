@@ -1,0 +1,14 @@
+{
+  "at": "2026-11-10T00:01:02Z",
+  "actor": "human:timo",
+  "artifact": "story:generated-servers-answer-a-view-as-csv-when-its-query-value-selects-it",
+  "kind": "story",
+  "revision": 4,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "review-result:zero-issues-acceptance-round-1",
+    "review": "review-result:zero-issues-acceptance-round-1",
+    "outcome": "escalated"
+  }
+}

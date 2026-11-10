@@ -11,10 +11,8 @@ tags:
 - external-request
 - from-consumer-report
 - severity-low
-- zero-open-issues
 relations:
 - serves: vision:O2
-- decomposes: epic:zero-open-issues-2026-11
 scope:
 - confidence: cited
   path: crates/generate/ess-synth/src/determined.rs
@@ -26,7 +24,7 @@ scope:
   path: crates/generate/ess-synth/src/rust/behaviour.rs
 - confidence: inferred
   path: crates/generate/ess-synth/src/rust/invariant.rs
-revision: 5
+revision: 6
 ---
 ## Need
 

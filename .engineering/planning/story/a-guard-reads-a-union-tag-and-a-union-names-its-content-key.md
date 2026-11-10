@@ -38,12 +38,8 @@ scope:
 - confidence: inferred
   path: docs/design/union-variant-guards-and-content-key.md
 - confidence: inferred
-  path: schemas/generated/ess.schema.json
-- confidence: inferred
   path: website/docs/reference/predicates.md
-- confidence: inferred
-  path: website/docs/reference/spec-versions.md
-revision: 8
+revision: 9
 ---
 ## Need
 

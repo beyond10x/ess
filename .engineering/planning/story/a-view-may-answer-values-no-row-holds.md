@@ -46,9 +46,7 @@ scope:
   path: docs/design/component-setting-reads.md
 - confidence: cited
   path: docs/design/language-grids.md
-- confidence: inferred
-  path: schemas/generated/ess.schema.json
-revision: 7
+revision: 8
 ---
 ## Need
 

@@ -22,7 +22,7 @@ scope:
   path: crates/verify/ess-conformance/tests/system_issued_synthesis.rs
 - confidence: cited
   path: docs/design/system-issued-commands.md
-revision: 5
+revision: 6
 ---
 ## Problem
 
@@ -82,21 +82,35 @@ Two things are going on:
 
 ## Acceptance
 
-- `a_stored_guard_beside_an_input_guard_on_a_system_step_synthesizes`, in
-  `crates/verify/ess-conformance/tests/system_issued_synthesis.rs` with the model above inline:
-  every synthesized scenario passes the interpreted target. The await of `RunJob/outcome/finished`
-  (and of the setup awaits that reach `Done`) states `mode: slow`, or the scenario arranges
-  `paused = false`.
-- `RunJob/outcome/held` stays refused as `ESS-SYNTH-024` naming the input guard beside the
-  stored-field guard.
-- The same holds where the input guard sits beside `when_related:` instead of `when_subject:`.
-- `tests/fixtures/system-guard.yaml` keeps its suite bytes.
+All cases are in `cargo test -p ess-conformance --locked --test system_issued_synthesis`, in
+`a_stored_guard_beside_an_input_guard_on_a_system_step_synthesizes`, with the model above inline.
+
+- `ess verify conform run --target interpreted --report-format 2` over the synthesized suite reports
+  a summary line ending `0 failed, 0 error, 0 unsupported`.
+- The `await_outcome` step of `jobs.run.RunJob/outcome/finished`, and every setup `await_outcome`
+  of `RunJob` that reaches `Done`, states the input `mode: slow`.
+- Synthesis reports `jobs.run.RunJob/held` as one `ESS-SYNTH-024` refusal whose reason reads "an
+  input guard beside the stored-field guard decides it".
+- On the model with `held` guarded by `when_related:` beside `when: mode == fast` in place of
+  `when_subject:`, the interpreted run reports `0 failed`, the `finished` await states
+  `mode: slow`, and `held` is refused as `ESS-SYNTH-024`.
+- `cargo test -p ess-conformance --locked --test synthesis_suite_bytes_table` passes with the
+  `tests/fixtures/system-guard.yaml` row unchanged.
+
+## Decisions
+
+- The await states `mode: slow` rather than the scenario arranging `paused = false`: the existing
+  rule (`guarded_input`, `system_issued.rs:305-357`) already holds a default branch to every other
+  branch's input guard by stating its input, so extending `guard` to the input half of
+  `when_subject:`, `when_related:` and a set guard keeps one rule instead of adding an arrangement
+  path.
 
 ## Scope
 
 - cited: crates/verify/ess-conformance/src/synthesize/system_issued.rs
 - inferred: crates/verify/ess-conformance/tests/system_issued_synthesis.rs
 - cited: docs/design/system-issued-commands.md
-- inferred: CHANGELOG.md
 
 confidence: high
+
+Proposes a `CHANGELOG.md` sentence; re-pins no suite-bytes row.

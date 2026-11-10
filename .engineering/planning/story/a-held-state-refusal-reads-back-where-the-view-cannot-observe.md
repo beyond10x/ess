@@ -20,10 +20,8 @@ scope:
 - confidence: inferred
   path: crates/verify/ess-conformance/tests/a_held_state_refusal_reads_back_where_the_view_cannot_observe.rs
 - confidence: inferred
-  path: crates/verify/ess-conformance/tests/fixtures/synthesis-suite-bytes-table.tsv
-- confidence: inferred
   path: docs/design/outcome-shapes.md
-revision: 5
+revision: 6
 ---
 ## Finding
 

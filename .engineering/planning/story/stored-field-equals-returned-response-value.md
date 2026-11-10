@@ -29,8 +29,6 @@ scope:
   path: crates/specify/ess-domain/src/command/one_time_response.rs
 - confidence: inferred
   path: crates/specify/ess-domain/src/command/set_effects.rs
-- confidence: cited
-  path: crates/specify/ess-domain/src/system.rs
 - confidence: inferred
   path: crates/specify/ess-domain/tests/response_payload.rs
 - confidence: inferred
@@ -41,9 +39,7 @@ scope:
   path: docs/design/minted-value-sources.md
 - confidence: cited
   path: docs/design/typed-response-outcome-payloads.md
-- confidence: inferred
-  path: website/docs/reference/spec-versions.md
-revision: 11
+revision: 14
 ---
 ## Need
 
@@ -93,14 +89,15 @@ obligation. The interpreter, the suite and synthesis follow in
   yes in `sets:` (subject, nested struct leaves), `sets:` under `instances:`/`affects:` and event
   `payload:`, n/a in error `payload:` (an error outcome has no response) and every guard, view and
   binding position; `docs/design/typed-response-outcome-payloads.md:23` points at it.
-- At the next source format (`ess/37`, allocated to this decision when it lands),
-  `ess specify validate` on the reproduction succeeds and `ess specify compile` writes
+- At `format: ess/37` (the epic's one source format, opened by
+  story:ess-37-and-conformance-64-65-are-open-for-the-epics-constructs and shared with the epic's
+  other constructs), `ess specify validate` on the reproduction succeeds and `ess specify compile` writes
   `ResolvedPayloadValue::ResponseField` for `pin` in the outcome's resolved `sets`.
 - Refused as `conflicting_declaration` at the `sets` key, each naming the cause: an outcome without
   `returns: true`; an error outcome (including `compensates: true`); a field not in the command's
   `response:`; a response field whose type is not assignable to the stored field without a
   conversion; a response field listed in `one_time_response:` (the existing refusal kept).
-- Below the new format the reproduction is refused as `unsupported_format_version` naming it, and
+- At `format: ess/36` the reproduction is refused as `unsupported_format_version` naming `ess/37`, and
   the text no longer names generated sources; `{generated: true}` in `sets:` keeps validating.
 - A model without the source compiles to the same IR bytes; generated Rust and Go keep a command
   with the source an obligation named by it; Entity Runtime lowering refuses it by name; `ess
@@ -110,7 +107,6 @@ obligation. The interpreter, the suite and synthesis follow in
 ## Scope
 
 - cited: crates/specify/ess-domain/src/command.rs
-- cited: crates/specify/ess-domain/src/system.rs
 - inferred: crates/specify/ess-domain/src/command/minted_value.rs
 - inferred: crates/specify/ess-domain/src/command/set_effects.rs
 - inferred: crates/specify/ess-domain/src/command/one_time_response.rs
@@ -122,9 +118,10 @@ obligation. The interpreter, the suite and synthesis follow in
 - cited: docs/design/minted-value-sources.md
 - cited: docs/design/language-grids.md
 - cited: docs/design/typed-response-outcome-payloads.md
-- inferred: website/docs/reference/spec-versions.md
-- inferred: CHANGELOG.md
 confidence: medium
+
+Moves the `ess/37` `FORMAT_HISTORY` row, `CHANGELOG.md`, `website/docs/reference/spec-versions.md`
+and `schemas/generated/ess.schema.json` (coordinator-reconciled shared surfaces).
 
 The refusal is `command.rs:5048-5064` (admits `Generated` from `ess/14`, never `ResponseField`);
 the IR variant exists (`crates/specify/ess-compiler/src/ir.rs:1170`); the targets already handle
@@ -165,10 +162,10 @@ the IR variant exists (`crates/specify/ess-compiler/src/ir.rs:1170`); the target
    generated code keep the obligation, Entity Runtime refuses by name, diff renders it.
 5. **Second adopter.** A device-pairing flow: `example.pairing.Start` returns a six-digit code shown
    on screen and stores it; `example.pairing.Complete` refuses when `code != input.code`.
-6. **Cost.** One source format for the decision (the next free, `ess/37`; it waits if another
-   decision opens that format first and its column is not this one, policy 2); no new keyword;
-   new refusal causes under the existing `conflicting_declaration`; no IR type; no migration
-   (models without it keep their bytes). Suite cost is in S3 (one suite format pair).
+6. **Cost.** No format of its own: the source lands in `ess/37`, the one source format every
+   construct of the epic shares (policy 2); no new keyword; new refusal causes under the existing
+   `conflicting_declaration`; no IR type; no migration (models without it keep their bytes). Suite
+   cost is in S3 (`ess-conformance/64` and `ess-conformance/65`).
    Counted as general (one column of grid R opened whole, policy 3).
 7. **Alternatives.** (a) Change nothing: the fact is lost and `Confirm` is never exercised.
    (b) A new `{minted: f}` source shared by `sets:` and the response: a second spelling for an
@@ -183,7 +180,12 @@ Accept, redesigned. The requester's first option is the shape, widened to the wh
 (not `sets:` alone) and limited to `returns: true` outcomes, with the `one_time_response` refusal
 kept, the refusal text corrected, and the conformance half split into its own stories so the
 source never validates unwitnessed in a release. Earlier targets (`ess/24`, `ess/31`, `ess/33`)
-shipped without it; this story targets the next free source format, `ess/37` at 0.92.0.
+shipped without it; this story targets `ess/37` at 0.92.0.
+
+2026-11-10 (plan-critic round 1): `ess/37` is not allocated to this decision. It is the epic's one
+source format (story:ess-37-and-conformance-64-65-are-open-for-the-epics-constructs, coordinator
+decision of 2026-11-09), so this source and story:aggregate-group-keys-are-expressions both land
+in it and neither has to land first; the `depends_on` edge to the format story is the only order.
 
 ## Source
 

@@ -15,10 +15,12 @@ relations:
 - decomposes: epic:zero-open-issues-2026-11
 scope:
 - confidence: inferred
-  path: .engineering/repro/
-- confidence: inferred
+  path: crates/verify/ess-conformance/tests/reported_refusals.rs
+- confidence: cited
+  path: website/docs/guides/verify/mutation-audit.md
+- confidence: cited
   path: website/docs/reference/diagnostics.md
-revision: 4
+revision: 8
 ---
 ## Outcome
 
@@ -79,16 +81,30 @@ Answered by design on `main`, recorded here so the adopter gets one reply:
 
 ## Acceptance
 
-- Items 1 to 3: the adopter, asked once with the shapes above, supplies a specification that
-  reproduces on the current release, and each reproduced item becomes a draft story naming its
-  reproducer; an item still not reproduced is closed with the shapes tried.
-- Item 4 and the three answered rules are cited on `website/docs/reference/diagnostics.md` under
-  ESS-COMMAND-012, ESS-COMMAND-004, ESS-AUTHOR-041 and the `mutate` reference, each with the rule's
-  reason.
+- `cargo test -p ess-conformance --locked --test reported_refusals` (new) passes. It holds the six
+  shapes of attempts 1 and 2 above over the workbench base specification and asserts, for each, the
+  scenario count recorded there (10, 10, 10, 9 and 13, and the 10 of the base `CreateItem` without
+  `example:`) and 0 refusals.
+- The same target holds attempt 3's command and asserts that `mutate` against the interpreted
+  target reports no ESS-COMMAND-005 and both `guard-negate` mutants killed.
+- `website/docs/reference/diagnostics.md` states item 4's rule beside ESS-COMMAND-012 and the
+  ESS-COMMAND-004 and ESS-AUTHOR-041 rules above, each with its reason: `grep -n` for each code on
+  the page finds a line holding that reason.
+- `website/docs/guides/verify/mutation-audit.md` states the `from-drop` precondition (two `from`
+  states and a `wrong_state` sibling): `grep -n from-drop` on the page finds it.
+
+## Decisions
+
+- Items 1 to 3 are closed as not reproduced, with the shapes tried pinned in the `reported_refusals`
+  target, instead of waiting on a reproducer from the adopter: a reply from outside the repository
+  cannot be checked here, and a reproducer that arrives later is filed as its own draft story.
 
 ## Scope
 
-- inferred: `website/docs/reference/diagnostics.md`
-- inferred: `.engineering/repro/` (reproducers, if the adopter supplies them)
+This story moves only the `CHANGELOG.md` shared surface.
 
-confidence: low
+- inferred: crates/verify/ess-conformance/tests/reported_refusals.rs
+- cited: website/docs/reference/diagnostics.md
+- cited: website/docs/guides/verify/mutation-audit.md
+
+confidence: medium

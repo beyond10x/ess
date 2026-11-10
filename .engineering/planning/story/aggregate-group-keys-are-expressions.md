@@ -20,8 +20,6 @@ relations:
 - depends_on: story:ess-37-and-conformance-64-65-are-open-for-the-epics-constructs
 scope:
 - confidence: inferred
-  path: CHANGELOG.md
-- confidence: inferred
   path: crates/generate/ess-synth/src/view_query.rs
 - confidence: inferred
   path: crates/specify/ess-compiler/src/ir.rs
@@ -45,11 +43,7 @@ scope:
   path: docs/design/generic-language-features.md
 - confidence: inferred
   path: docs/design/language-grids.md
-- confidence: inferred
-  path: schemas/generated/ess.schema.json
-- confidence: inferred
-  path: website/docs/reference/spec-versions.md
-revision: 15
+revision: 16
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-21T22:08:02Z", actor: "human:timo", revision: 2}
 - {from: "proposed", to: "active", at: "2026-10-21T22:08:02Z", actor: "human:timo", revision: 3}

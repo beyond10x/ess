@@ -21,8 +21,6 @@ scope:
   path: crates/verify/ess-conformance/src/mutate.rs
 - confidence: cited
   path: crates/verify/ess-conformance/src/synthesize.rs
-- confidence: inferred
-  path: crates/verify/ess-conformance/src/synthesize/related_guard.rs
 - confidence: cited
   path: crates/verify/ess-conformance/src/synthesize/subject_fact.rs
 - confidence: inferred
@@ -35,7 +33,7 @@ scope:
   path: crates/verify/ess-conformance/tests/refusal_pair_overlap.rs
 - confidence: cited
   path: docs/design/input-guard-overlap-precedence.md
-revision: 13
+revision: 15
 ---
 # Story: Two overlapping stored-field refusals of one phase are witnessed where both hold
 
@@ -102,18 +100,29 @@ and input-only pairs, already fixed.
 
 ## Acceptance
 
-- Model A and model B become regression tests in `tests/refusal_pair_overlap.rs`: the overlap send
-  requires the first declared refusal, and `mutate --class precedence-swap --target interpreted`
-  reports the mutant killed, exit 0.
-- Model C: `synthesize` writes, in `Ship/outcome/empty`, a send on a row with `quantity <= 0` and
-  `locked == true` that requires `empty` and error `Empty`; a target answering `locked` there fails
-  that scenario and passes the 0.92.0 suite.
-- Model C: `mutate --class precedence-swap --target interpreted` finds the site
-  `precedence-swap/demo.order.Ship/empty/locked` and reports it killed, exit 0.
-- A model whose two `when_subject` refusals can hold together on no arrangeable row (no creator can
-  store such a row) gets a note naming both branches, and no precedence-swap mutant is scored
-  survived for it.
-- Repository digest tables change only for models with such a same-phase pair, each listed in the PR.
+All cases below run under `cargo test -p ess-conformance --locked --test refusal_pair_overlap`.
+
+- Models A and B (regression, green on 0.92.0): the overlap send `{quantity: 0, discount: -1}`
+  requires `bad-quantity`, and `ess verify conform mutate --target interpreted --class
+  precedence-swap` reports the mutant killed, exit 0.
+- Model C: `ess verify conform synthesize` writes, in `demo.order.Ship/outcome/empty`, a send on a
+  row arranged with `quantity: 0` and `locked: true` that requires outcome `empty` and error
+  `Empty`. Red on 0.92.0.
+- Model C: a target answering `locked` before `empty` fails `demo.order.Ship/outcome/empty` of the
+  new suite and passes every scenario of the 0.92.0 suite.
+- Model C: `ess verify conform mutate --target interpreted --class precedence-swap` lists the site
+  `precedence-swap/demo.order.Ship/empty/locked`, scores it killed, and exits 0 (0.92.0: exit 3,
+  `ESS-MUTATE-003`).
+- Model C with `Place` setting the literal `locked: false` (only `shipped` stores `locked: true`,
+  and only on a row with `quantity > 0`, so no arrangeable row satisfies both predicates):
+  synthesis records a `Note::UnwitnessedOverlap` on `demo.order.Ship/outcome/empty` with
+  `first: empty` and `other: locked`.
+- Same model: `mutate --class precedence-swap --target interpreted` scores no mutant `survived`.
+- `cargo test -p ess-conformance --locked --test external_beside_held_guard`, `--test
+  adversary_244b_window_free_bytes`, `--test synthesis_suite_bytes_table` and `--test
+  mutation_audit` pass, with a row or a `("precedence-swap", N)` pin moved only where its model has
+  two `when_subject` refusals of one phase that one row satisfies together, the cause named beside
+  the pin.
 
 ## Scope
 
@@ -127,6 +136,9 @@ and input-only pairs, already fixed.
 - inferred: docs/design/input-guard-overlap-precedence.md
 
 confidence: medium
+
+Shared surfaces moved: re-pins suite-bytes rows (`synthesis-suite-bytes-table.tsv`) for models
+with a same-phase `when_subject` pair; proposes the `CHANGELOG.md` sentence.
 
 ## Fit review
 

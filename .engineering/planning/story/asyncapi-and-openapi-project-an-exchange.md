@@ -23,10 +23,10 @@ scope:
 - confidence: cited
   path: crates/generate/ess-gen/src/openapi.rs
 - confidence: inferred
-  path: crates/generate/ess-gen/tests/
-- confidence: inferred
   path: crates/generate/ess-gen/tests/asyncapi_exchange.rs
-revision: 5
+- confidence: cited
+  path: crates/generate/ess-gen/tests/openapi_http.rs
+revision: 8
 ---
 ## Need
 
@@ -40,25 +40,32 @@ exchange.
 
 ## Acceptance
 
-- `ess generate --path model --kind asyncapi` on the specification declaring `example.calls.Session`
-  emits one channel for the exchange with `x-ess-exchange: example.calls.Session`, a `receive`
-  operation for `example.calls.HangUp` and a `send` operation for `example.calls.CallEnded`, from
-  the responder's side, and no protocol binding section.
-- `ess generate --path model --kind openapi --http http-upgrade.yaml` emits `GET /calls` whose only
-  success response is `101`, carrying `x-ess-exchange: example.calls.Session`; the messages are not
-  described in OpenAPI.
-- A specification without exchanges, and a binding without `upgrade:`, keep their AsyncAPI and
-  OpenAPI bytes (existing byte tests pass unmodified).
-- Tests in `crates/generate/ess-gen/tests/asyncapi_exchange.rs` (new) and one OpenAPI case beside
-  the existing `ess-http` OpenAPI tests.
+- `cargo test -p ess-gen --locked --test asyncapi_exchange` (new): `ess generate --path model --kind
+  asyncapi` on the specification declaring `example.calls.Session` emits one channel for the
+  exchange with `x-ess-exchange: example.calls.Session`, a `receive` operation for
+  `example.calls.HangUp` and a `send` operation for `example.calls.CallEnded`, from the responder's
+  side, and no protocol binding section.
+- `cargo test -p ess-gen --locked --test openapi_http`, new case
+  `an_upgrade_route_answers_only_101`: `ess generate --path model --kind openapi --http
+  http-upgrade.yaml` emits `GET /calls` whose only success response is `101`, carrying
+  `x-ess-exchange: example.calls.Session`, and no schema in the document names
+  `example.calls.HangUp` or `example.calls.CallEnded`.
+- `cargo test -p ess-gen --locked --test asyncapi --test asyncapi_transport --test openapi --test
+  openapi_http` and `cargo test -p ess-openapi --locked --test adversary_ess_issues_2_u6` pass with
+  no existing case and no file under `crates/generate/ess-gen/tests/fixtures/` edited: a
+  specification without exchanges, and a binding without `upgrade:`, keep their AsyncAPI and
+  OpenAPI bytes.
 
 ## Scope
 
 - cited: crates/generate/ess-gen/src/asyncapi.rs (`documents`, line 228)
 - cited: crates/generate/ess-gen/src/openapi.rs
 - inferred: crates/generate/ess-gen/tests/asyncapi_exchange.rs (new)
-- inferred: crates/generate/ess-gen/tests/ (one OpenAPI upgrade case)
+- cited: crates/generate/ess-gen/tests/openapi_http.rs (one OpenAPI upgrade case)
+
 confidence: medium
+
+Shared surfaces moved: proposes the `CHANGELOG.md` sentence; no byte-pin row moves.
 
 ## Fit review
 

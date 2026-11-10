@@ -15,8 +15,12 @@ scope:
 - confidence: cited
   path: crates/generate/ess-entity-runtime/src/lib.rs
 - confidence: inferred
-  path: crates/generate/ess-entity-runtime/tests/
-revision: 5
+  path: crates/generate/ess-entity-runtime/src/subset.rs
+- confidence: inferred
+  path: crates/generate/ess-entity-runtime/tests/stored_field_orderings.rs
+- confidence: inferred
+  path: website/docs/reference/entity-runtime-lowering.md
+revision: 8
 ---
 ## Finding
 
@@ -80,22 +84,45 @@ components:
 The `Note` definition's field rule for `since` lowers to a `compare` `Gte` over two strings; the
 input is stored, so D343 U2 does not hold it as a precondition.
 
+## Decisions
+
+- A stored field's rule and an entity invariant are lowered typed, as a command input's rule is
+  since D343 U2 (`nominal_condition`'s `input` branch, `Typing::over`): an ordering over a
+  `Timestamp` becomes `after`/`before`, and an ordering over text is refused as
+  `TextOrderingUnsupported`, the code a typed guard over text already carries. One typing for every
+  placement removes the case where the same rule means two things, and entity-core has an instant
+  comparison and no text ordering.
+
 ## Acceptance
 
-- Lowering component `notes` of the model above either emits the `since` rule as entity-core
-  `after`/`before` (an instant comparison), or returns `Err` with a lowering code naming
-  `demo.notes.Note.since` and the ordering; no lowered rule is a `compare` over a `Timestamp` or a
-  text operand.
-- If lowered: writing `{note_id: n1, since: "2026-01-01T00:00:00Z"}` through the lowered
-  definition is admitted and `since: "1999-01-01T00:00:00Z"` is refused by the rule (not answered
-  `Unknown`).
-- The same holds for an entity `invariants:` ordering over a `Timestamp` field.
-- A red case first shows today's `compare` on the Timestamp-ordered stored field.
-- An ordering over an Integer or Decimal field still lowers to `compare` (control).
+Each case is one test in `cargo test -p ess-entity-runtime --locked --test stored_field_orderings`.
+
+- `a_timestamp_ordering_on_a_stored_field_lowers_to_an_instant_comparison`: lowering component
+  `notes` of the model above succeeds, and the `Note` definition's rule for `since` is entity-core
+  `after`/`before`, with no `compare` in it. Failing before: the rule is a `compare` `Gte` over two
+  strings.
+- `a_lowered_stored_timestamp_rule_admits_and_refuses_as_ess_does`: through the lowered definition,
+  `demo.notes.Write {note_id: n1, since: "2026-01-01T00:00:00Z"}` is admitted and
+  `{note_id: n2, since: "1999-01-01T00:00:00Z"}` is refused by the rule (entity-core answers a
+  refusal, not `Unknown`).
+- `a_timestamp_ordering_entity_invariant_lowers_to_an_instant_comparison`: the model with
+  `since: Timestamp` and an entity `invariants: [since >= "2000-01-01T00:00:00Z"]` in place of the
+  newtype lowers to `after`/`before`, and the same two writes are admitted and refused.
+- `a_text_ordering_on_a_stored_field_is_refused_by_name`: the model with `NotBefore` over `String`
+  and `value >= "m"` returns `Err` with `LoweringCode::TextOrderingUnsupported` naming
+  `demo.notes.Note.since`.
+- `a_numeric_ordering_on_a_stored_field_still_lowers_to_compare`: the model with `NotBefore` over
+  `Integer` and `value >= 2000` lowers the rule to `compare` `Gte` (control).
+- `cargo test -p ess-entity-runtime --locked --test lowerable_subset` passes with the subset rows
+  and `website/docs/reference/entity-runtime-lowering.md` naming the new tests as evidence.
 
 ## Scope
 
-- cited: crates/generate/ess-entity-runtime/src/lib.rs
-- inferred: crates/generate/ess-entity-runtime/tests/ (a test beside `adversary_d343_u2_pass1.rs`)
+- cited: `crates/generate/ess-entity-runtime/src/lib.rs` (`nominal_condition`, `entity.invariants`)
+- inferred: `crates/generate/ess-entity-runtime/src/subset.rs`
+- inferred: `crates/generate/ess-entity-runtime/tests/stored_field_orderings.rs`
+- inferred: `website/docs/reference/entity-runtime-lowering.md` (rendered from `subset.rs`)
 
 confidence: high
+
+Moves no shared surface.

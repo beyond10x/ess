@@ -20,15 +20,13 @@ scope:
   path: crates/ui/ess-ui-check/src/rules.rs
 - confidence: inferred
   path: crates/ui/ess-ui-check/tests/checks.rs
-- confidence: cited
-  path: crates/ui/ess-ui-react/templates/runtime/actions.tsx.tmpl
-- confidence: cited
-  path: crates/ui/ess-ui-tui/src/expr.rs
 - confidence: inferred
-  path: crates/ui/ess-ui-tui/tests/
+  path: crates/ui/ess-ui-react/tests/toggle_state.rs
+- confidence: inferred
+  path: crates/ui/ess-ui-tui/tests/toggle_state.rs
 - confidence: cited
   path: crates/ui/ess-ui/src/filter.rs
-revision: 5
+revision: 8
 ---
 ## Need
 
@@ -63,28 +61,40 @@ Reproduction on 0.92.0. Rows `[{id: a, stage: draft}, {id: b, stage: live}]`, to
 
 ## Acceptance
 
-- `ess ui check` refuses, at the action's `bind/<key>` path, a bind value that `toggle_state` reads
-  as a state and that holds a bare word spelled like a display root. The message names the word
-  and asks for it quoted (`'draft'`) or written as a path. Or else both grammars read the bare
-  word one way, and the table above shows `false`/`true` for both renderers.
+- `ess ui check` refuses the reproduction's row action `te`, placed on the `row_actions_page`
+  fixture of `crates/ui/ess-ui-check/tests/checks.rs`, with one finding of code
+  `toggle_bind_bare_root` at `pages/p/sections/list/row_actions/te/bind/off`, whose message names
+  `draft` and asks for it quoted (`'draft'`) or written as a path; a new case in
+  `cargo test -p ess-ui-check --locked --test checks` asserts it with `trips_in`.
+- In the same test, the bind `off: "not (row.stage == 'draft')"` (quoted) and the bind
+  `on: not row.on` raise no `toggle_bind_bare_root` (`clean_at`).
 - With the word quoted, `not (row.stage == 'draft')`, React sends `off: false` on row a and
-  `off: true` on row b (a React test). The terminal sends the same once it evaluates a
-  parenthesised bind value. Today it drops one even when quoted (probe below), which is a separate
-  defect.
-- The same state on the same rows renders the same mark in React and in the terminal. This already
-  holds; a test keeps it.
+  `off: true` on row b: a new case in `cargo test -p ess-ui-react --locked --test toggle_state`.
+- With the word quoted, the terminal and React draw the mark on for row a and off for row b: a new
+  case in `cargo test -p ess-ui-tui --locked --test toggle_state` and one in
+  `cargo test -p ess-ui-react --locked --test toggle_state`. This already holds; the cases keep it.
+
+## Decisions
+
+- The check refuses the bare word instead of unifying the two grammars, because the refusal is the
+  smaller change and unifying would change how every existing bind value reads a bare word.
+- The terminal's dropped parenthesised bind value (below) is not fixed here, so no acceptance bullet
+  reads the input the terminal sends.
 
 ## Scope
 
 - cited: `crates/ui/ess-ui-check/src/rules.rs` (`toggle_state` :1324, beside `checked_unreadable`)
-- cited: `crates/ui/ess-ui/src/filter.rs` (the parser records no quoting; the derived state)
-- cited: `crates/ui/ess-ui-react/templates/runtime/actions.tsx.tmpl` (`bound` :136)
-- cited: `crates/ui/ess-ui-tui/src/expr.rs` (`eval_expr` :47, `None` on `(` at :65)
+- cited: `crates/ui/ess-ui/src/filter.rs` (`tokenize` :234 tells `Token::Word` from
+  `Token::String`, but `Predicate::Literal` records no quoting; the check needs the bare words)
 - inferred: `crates/ui/ess-ui-check/tests/checks.rs` (the refusal)
-- inferred: `crates/ui/ess-ui-tui/tests/` and `crates/ui/ess-ui-react/tests/toggle_state.rs` (the sent input)
+- inferred: `crates/ui/ess-ui-react/tests/toggle_state.rs` (the sent input and the mark)
+- inferred: `crates/ui/ess-ui-tui/tests/toggle_state.rs` (the mark)
 
-confidence: medium — the readings are reproduced; whether to refuse or to unify the grammars is a
-decision. A refusal is the smaller change.
+confidence: medium — the readings are reproduced; the display roots the check compares against are
+the terminal's `ROOTS` (`expr.rs:20`, crate-private), so the check needs its own copy or a list
+moved into `ess-ui`.
+
+Shared surfaces: proposes one `CHANGELOG.md` sentence for the new diagnostic; moves no byte pin.
 
 The terminal drops any parenthesised bind value (`expr.rs:65`), quoted or not. On 0.92.0,
 `off: "not (row.stage == 'draft')"` is sent as `{id: a}`, while `off: "not row.stage == 'draft'"`

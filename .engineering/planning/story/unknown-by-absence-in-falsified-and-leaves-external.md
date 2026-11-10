@@ -3,7 +3,7 @@ format: aep.planning-md/3
 id: story:unknown-by-absence-in-falsified-and-leaves-external
 kind: story
 status: draft
-title: 'Unknown by absence in falsified and leaves_external follows the wrong-state witness, or #234 is restated'
+title: Unknown by absence in falsified and leaves_external follows the wrong-state witness
 tags:
 - defect
 - severity-medium
@@ -20,7 +20,7 @@ scope:
   path: crates/verify/ess-conformance/tests/unknown_by_absence_witnesses.rs
 - confidence: inferred
   path: docs/design/cross-record-and-stored-field-guards.md
-revision: 5
+revision: 7
 ---
 ## Finding
 
@@ -46,20 +46,37 @@ states either rule beside the other (`docs/design` has no #234 text).
 
 Reversing #234 for these two functions is a ruling, not a fix: (a) both follow the D350 rule (Unknown by absence
 stops selection), or (b) #234 stands for them and the design text says why the wrong-state `selection` reads absence
-differently. Until a person decides, this stays a draft.
+differently. This revision takes (a); see `## Decisions`.
 
 ## Acceptance
 
-- (a) A model whose earlier sibling's stored guard reads an `Optional` field no creator writes (`note == "x"`) beside
-  an `external:` branch, and one beside a wrong-state witness: synthesis does not send either witness to that row
-  (it picks another row or refuses by name), and an Entity-Runtime-ordered test target passes the suite. Test:
-  `crates/verify/ess-conformance/tests/unknown_by_absence_witnesses.rs`, cases
-  `an_external_witness_skips_a_row_an_earlier_guard_leaves_unknown_by_absence` and
-  `a_falsified_sibling_is_not_one_left_unknown_by_absence`, red before the change.
-- or (b) The rule is written in `docs/design/cross-record-and-stored-field-guards.md` (§ The precedence order) beside
-  the D350 rule, naming `falsified` and `leaves_external`, and this story is closed with that commit.
-- Either way, every existing case in `adversary_d350_u3_pass1.rs` and `adversary_mixed_guard_pass2.rs` keeps its
-  verdict.
+All cases are in `cargo test -p ess-conformance --locked --test unknown_by_absence_witnesses`, red
+before the change.
+
+- `an_external_witness_skips_a_row_an_earlier_guard_leaves_unknown_by_absence`: on a model whose
+  earlier sibling's stored guard reads an `Optional` field no creator writes (`note == "x"`) before
+  an `external:` branch, synthesis writes no external witness on that row and refuses it as
+  `ESS-SYNTH-003` naming `note == x`.
+- `a_falsified_sibling_is_not_one_left_unknown_by_absence`: on the same guard beside a wrong-state
+  witness, synthesis writes no wrong-state witness on that row and refuses it as `ESS-SYNTH-003`
+  naming `note == x`.
+- On both models, `ess verify conform run --target interpreted --report-format 2` over the
+  synthesized suite reports `0 failed, 0 error`.
+- `cargo test -p ess-conformance --locked --test adversary_d350_u3_pass1` and `--test
+  adversary_mixed_guard_pass2` pass with every existing case unchanged.
+- `docs/design/cross-record-and-stored-field-guards.md` (§ The precedence order) states that a
+  stored guard left Unknown by absence stops selection in `selection`, `falsified` and
+  `leaves_external` alike.
+
+## Decisions
+
+- (a), Unknown by absence stops selection in `falsified` and `leaves_external`: the interpreter
+  (`subject.rs:128`, `Undecidable`), an Entity-Runtime-ordered target and the D350 `selection`
+  closure already stop there, so (a) gives one suite one rule, while (b) would only document the
+  split.
+- A witness is refused rather than moved to another row, because a field no creator writes leaves
+  no row where the guard is decided, and the refusal is the one D350 gives
+  (`adversary_d350_u3_pass1.rs`, `ESS-SYNTH-003` naming the guard).
 
 ## Scope
 
@@ -69,3 +86,6 @@ differently. Until a person decides, this stays a draft.
 - inferred: crates/verify/ess-conformance/tests/unknown_by_absence_witnesses.rs
 
 confidence: medium
+
+Re-pins the suite-bytes rows whose external or wrong-state witnesses this refuses, if any, and
+proposes a `CHANGELOG.md` sentence.

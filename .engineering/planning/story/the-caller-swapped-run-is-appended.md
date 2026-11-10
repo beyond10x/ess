@@ -18,7 +18,7 @@ scope:
   path: crates/verify/ess-conformance/src/synthesize/caller/arranged.rs
 - confidence: cited
   path: crates/verify/ess-conformance/tests/caller_arranged_rows.rs
-revision: 6
+revision: 7
 ---
 ## Outcome
 
@@ -53,18 +53,35 @@ So the loop reaches no `append` that adds steps for this model. Not yet traced w
 
 ## Acceptance
 
-- A test in `crates/verify/ess-conformance/tests/caller_arranged_rows.rs` asserts that a scenario the
-  arranged-callers reading adopts carries a second run under swapped callers (a send of the arranging
-  command as the other caller after the first run's steps), and goes red when the append at
-  `caller.rs:993` is removed.
-- Where the append cannot add steps for a model (an early return in `append`), the suite carries a
-  note naming the scenario and the reason, as `unswapped` does for an exhausted one; if it cannot add
-  steps for any model, the loop is removed and the module docs say so.
+- `cargo test -p ess-conformance --locked --test caller_arranged_rows` passes a new test
+  `the_arranged_callers_reading_appends_its_swapped_run`: in the suite synthesized from `TOKENS`,
+  `RevokeOwned/outcome/revoked` holds, after the first run's two `RevokeOwned` sends, a second run
+  of four `IssueToken` sends, each under the other caller than the first run's send in the same
+  position, followed by its `RevokeOwned` sends.
+- With the `append` call at `caller.rs:993` removed, that test fails (the mutation is run once and
+  reverted; its output is recorded in the story's evidence).
+- The same target passes a new test `a_swapped_run_left_out_is_named`: on a model whose swapped
+  run's `instances:` filter pins a stored field to an input that has no fresh value to draw, so
+  `append` returns before adding steps, the synthesis notes hold one note naming that scenario and
+  the reason the run was left out, as `unswapped` names an exhausted one.
+- `cargo test -p ess-conformance --locked --test caller_arranged_rows` passes every existing test
+  with no assertion changed.
+
+## Decisions
+
+- The swapped loop is kept and made to append, not removed: the outcome asks for the swapped run,
+  `IssueToken/outcome/issued` shows the same swap appending through the ordinary reading, and the
+  leading cause is `append` judging `shared_selection` (`:1366`) on the literals before
+  `identities.drawn` redraws them; the implementor traces the three candidates above first and
+  fixes the one that holds.
 
 ## Scope
 
-- cited: `crates/verify/ess-conformance/src/synthesize/caller.rs`
+- cited: `crates/verify/ess-conformance/src/synthesize/caller.rs` (`arranged_by_callers`, `append`, `shared_selection`, `unswapped`)
 - cited: `crates/verify/ess-conformance/tests/caller_arranged_rows.rs`
 - inferred: `crates/verify/ess-conformance/src/synthesize/caller/arranged.rs`
 
 confidence: medium
+
+The story re-pins the suite-bytes rows of models whose arranged-callers scenarios gain a swapped
+run, and proposes its `CHANGELOG.md` sentence.

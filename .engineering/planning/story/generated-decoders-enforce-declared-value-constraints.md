@@ -18,30 +18,24 @@ relations:
 - decomposes: epic:zero-open-issues-2026-11
 scope:
 - confidence: cited
-  path: CHANGELOG.md
-- confidence: cited
-  path: crates/generate/ess-synth/src/go/http.rs
+  path: crates/edge/ess-cli/src/schema_bundle.rs
 - confidence: inferred
   path: crates/generate/ess-synth/src/go/invariant.rs
-- confidence: cited
-  path: crates/generate/ess-synth/src/go/items.rs
 - confidence: inferred
   path: crates/generate/ess-synth/src/go/runtime/invariant.go
 - confidence: cited
-  path: crates/generate/ess-synth/src/rust/wire.rs
-- confidence: inferred
-  path: crates/generate/ess-synth/tests/invariant_check/value_constraints.rs
-- confidence: inferred
   path: crates/generate/schema-contract/src/realize.rs
-- confidence: inferred
+- confidence: cited
   path: crates/generate/schema-contract/src/realize/go.rs
+- confidence: inferred
+  path: crates/generate/schema-contract/src/realize/go_support.go.txt
 - confidence: cited
   path: crates/generate/schema-contract/src/realize/rust.rs
-- confidence: inferred
+- confidence: cited
   path: crates/generate/schema-contract/src/realize/ts.rs
 - confidence: inferred
   path: crates/generate/schema-contract/tests/model_ergonomics.rs
-revision: 16
+revision: 21
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-16T10:20:19Z", actor: "human:timo", revision: 2}
 - {from: "proposed", to: "active", at: "2026-10-16T10:20:19Z", actor: "human:timo", revision: 3}
@@ -128,41 +122,47 @@ All three exit 0. `types-report.json` obligations:
 Accept, redesigned from "enforce alphabet in two Rust decoders" to "every generated decoder enforces
 every constraint its type publishes, or the generator refuses the type by name".
 
-Open: the TypeScript types target emits declarations only. Either it gains a runtime decoder, or
-`--target typescript` refuses a type with a published constraint by name. Decide before part B.
+- TypeScript: `--target typescript` refuses a type with a published constraint by name instead of
+  gaining a runtime decoder, because the target emits declarations only and already reports "these
+  declarations do not validate runtime JSON" (`typescript_compiler_options`), and issue #579 asks
+  for no TypeScript decoder; the break is listed in the CHANGELOG.
 
 ## Acceptance
 
-- Delivered: `model_decoder_refuses_a_value_outside_the_alphabet`,
-  `rust_refuses_a_value_outside_a_declared_alphabet_or_length`, and the Go server decoder tests of
-  0.91.0.
-- `rust_types_refuse_a_value_outside_a_declared_prefix_or_invariant`: for the reproduction,
+- `cargo test -p schema-contract --locked --test model_ergonomics` passes
+  `rust_types_refuse_a_value_outside_a_declared_prefix_or_invariant`: for the reproduction,
   deserializing `"x-1"` into the Rust `DemoUnitsCode` fails naming the prefix; `"u-1"` decodes; the
   Rust `types-report.json` lists no `pattern` obligation for `Code` and no `model_invariants`
   obligation for `Label`.
-- `go_types_refuse_a_value_outside_a_declared_constraint`: `json.Unmarshal` of `"m s"`, `"µm"` and
-  `""` into the Go `DemoUnitsUnit`, of `"x-1"` into `DemoUnitsCode` and of `""` into
-  `DemoUnitsLabel` returns an error naming the type's schema pointer and the constraint; values
-  inside decode; the Go report lists none of the three obligations.
-- `typescript_types_enforce_or_refuse_a_declared_constraint`: per the open decision, either a
-  generated TypeScript decoder refuses the same values, or `ess generate types --target typescript`
-  exits non-zero naming each constrained type.
-- `every_published_constraint_is_enforced_or_refused`: a corpus test walks every constraint kind the
-  schema projection publishes and requires, per target, an enforcing decoder or a named generation
-  refusal; no target reports `model_alphabet`, `model_invariants` or a prefix `pattern` as an
-  obligation.
+- The same target passes `go_types_refuse_a_value_outside_a_declared_constraint`: `json.Unmarshal`
+  of `"m s"`, `"µm"` and `""` into the Go `DemoUnitsUnit`, of `"x-1"` into `DemoUnitsCode` and of
+  `""` into `DemoUnitsLabel` returns an error naming the type's schema pointer and the constraint;
+  `"ms"`, `"u-1"` and `"a"` decode; the Go report lists none of the three obligations.
+- The same target passes `typescript_types_refuse_a_declared_constraint`: the reproduction's
+  TypeScript realization is `Refused` with one finding each at `/$defs/demo.units.Unit`,
+  `/$defs/demo.units.Code` and `/$defs/demo.units.Label`, each detail naming its constraint; a
+  plan whose newtypes declare no constraint realizes with unchanged bytes. On the reproduction,
+  `ess generate types --path spec --all-types --target typescript --out out-typescript` exits
+  non-zero, prints those three `<pointer>: <rule>: <detail>` lines and writes no `types.ts`.
+- The same target passes `every_published_constraint_is_enforced_or_refused`: a corpus test walks
+  every constraint kind the schema projection publishes and requires, per target, an enforcing
+  decoder or a named generation refusal; no target reports `model_alphabet`, `model_invariants` or
+  a prefix `pattern` as an obligation.
 
 ## Scope
 
-- cited: crates/generate/schema-contract/src/realize.rs
-- cited: crates/generate/schema-contract/src/realize/rust.rs
-- inferred: crates/generate/schema-contract/src/realize/go.rs
-- inferred: crates/generate/schema-contract/src/realize/ts.rs
+- cited: crates/generate/schema-contract/src/realize.rs (`Plan::typescript`, the `model_alphabet`, `model_invariants` and `pattern` obligations)
+- cited: crates/generate/schema-contract/src/realize/rust.rs (`#[serde(transparent)]` newtype, `broken_constraint`)
+- cited: crates/generate/schema-contract/src/realize/go.rs (newtype `UnmarshalJSON`)
+- inferred: crates/generate/schema-contract/src/realize/go_support.go.txt (a shared constraint helper)
+- cited: crates/generate/schema-contract/src/realize/ts.rs (`emit`)
+- cited: crates/edge/ess-cli/src/schema_bundle.rs (`plan.typescript()` call site)
+- inferred: crates/generate/ess-synth/src/go/invariant.rs (the Go predicate emission the Go types leg mirrors)
+- inferred: crates/generate/ess-synth/src/go/runtime/invariant.go
 - inferred: crates/generate/schema-contract/tests/model_ergonomics.rs
-- cited: crates/generate/ess-synth/src/rust/wire.rs
-- cited: CHANGELOG.md
 
 confidence: medium
 
-The Go and Rust legs mirror `broken_constraint`; the TypeScript leg waits on the open decision. A
-newtype with no alphabet, prefix or invariant keeps its exact bytes in every target.
+The Go and Rust legs mirror `broken_constraint`. A newtype with no alphabet, prefix or invariant
+keeps its exact bytes in every target. The story moves `CHANGELOG.md` (its breaking sentence) and
+any generated-types byte-pin rows its constrained fixtures claim.

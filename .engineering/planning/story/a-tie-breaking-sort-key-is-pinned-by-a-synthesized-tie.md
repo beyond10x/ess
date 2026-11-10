@@ -22,11 +22,9 @@ scope:
 - confidence: cited
   path: crates/verify/ess-conformance/src/synthesize/paging.rs
 - confidence: inferred
-  path: crates/verify/ess-conformance/tests/fixtures/
-- confidence: inferred
+  path: crates/verify/ess-conformance/tests/fixtures/mutation-order-tie.yaml
+- confidence: cited
   path: crates/verify/ess-conformance/tests/mutation_audit.rs
-- confidence: inferred
-  path: crates/verify/ess-conformance/tests/synthesis_suite_bytes_table.rs
 - confidence: cited
   path: docs/design/mutation-audit-and-model-runner.md
 - confidence: cited
@@ -35,7 +33,7 @@ scope:
   path: website/docs/guides/verify/mutation-audit.md
 - confidence: inferred
   path: website/docs/reference/diagnostics.md
-revision: 7
+revision: 12
 ---
 ## Need
 
@@ -122,6 +120,9 @@ input, and a tie row the view's filter or owner scope does not show.
 
 ## Acceptance
 
+The reproduction and its two variants are committed as fixtures and run in
+`cargo test -p ess-conformance --locked --test mutation_audit`.
+
 - On the reproduction above, `ess verify conform mutate --path spec --target interpreted --class
   order-flip`, with no `--scenarios`, prints `2 mutant(s), 2 killed, 0 survived` and exits 0.
 - On the same specification, `--emit DIR`, then a run of every emitted suite against the interpreted
@@ -135,12 +136,12 @@ input, and a tie row the view's filter or owner scope does not show.
 - With `order_by: [order_id asc, priority asc]`, `ess verify conform synthesize` lists one refusal
   that stands beside `example.order.PlaceOrder/outcome/placed` and names the view
   `example.order.OrderQueue` and the key `priority`; the scenario is still emitted.
-- A view ranked by one key, and a paged view ranked by one key, keep their suite bytes: the rows of
-  `synthesis_suite_bytes_table` and `synthesis_suite_bytes_table_cli_read` for models with no
-  multi-key ranked view are unchanged. Every row that moves is named in the change and re-pinned on
-  purpose.
-- The suites of the committed models stay green on the interpreted, Rust, Go and TypeScript
-  conformance runs the gate already holds.
+- `cargo test -p ess-conformance --locked --test synthesis_suite_bytes_table` and
+  `--test synthesis_suite_bytes_table_cli_read` pass, and the change's diff of
+  `tests/fixtures/synthesis-suite-bytes-table.tsv` touches only rows whose model holds a view with two or more `order_by` keys: a view ranked by one
+  key, paged or not, keeps its suite bytes.
+- `task test` passes, with the interpreted, Rust, Go and TypeScript conformance runs of the
+  committed models it holds.
 
 ## Scope
 
@@ -149,14 +150,14 @@ input, and a tie row the view's filter or owner scope does not show.
 - cited: crates/verify/ess-conformance/src/synthesize/paging.rs
 - cited: docs/design/mutation-audit-and-model-runner.md
 - cited: docs/design/read-api-view-idioms.md
-- inferred: crates/verify/ess-conformance/tests/mutation_audit.rs
-- inferred: crates/verify/ess-conformance/tests/synthesis_suite_bytes_table.rs
-- inferred: crates/verify/ess-conformance/tests/fixtures/
+- cited: crates/verify/ess-conformance/tests/mutation_audit.rs
+- inferred: crates/verify/ess-conformance/tests/fixtures/mutation-order-tie.yaml
 - inferred: website/docs/guides/verify/mutation-audit.md
 - inferred: website/docs/reference/diagnostics.md
-- inferred: CHANGELOG.md
-
 confidence: medium
+
+Shared surfaces: re-pins the rows of `synthesis-suite-bytes-table.tsv` (read by both pin targets)
+for models with a multi-key ranked view, and proposes its `CHANGELOG.md` sentence.
 
 ## Fit review
 

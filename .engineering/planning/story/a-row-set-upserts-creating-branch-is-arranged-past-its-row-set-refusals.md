@@ -11,6 +11,7 @@ refs:
   reference: beyond10x/ess#642
 relations:
 - decomposes: epic:zero-open-issues-2026-11
+- depends_on: story:when-subject-beside-a-row-set-validates-under-the-g2-format
 scope:
 - confidence: cited
   path: crates/specify/ess-domain/src/command/precedence.rs

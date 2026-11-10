@@ -17,23 +17,27 @@ relations:
 - decomposes: epic:zero-open-issues-2026-11
 - depends_on: story:ess-37-and-conformance-64-65-are-open-for-the-epics-constructs
 scope:
-- confidence: inferred
+- confidence: cited
   path: crates/edge/ess-cli/src/coverage.rs
 - confidence: inferred
+  path: crates/edge/ess-cli/tests/coverage_cli.rs
+- confidence: inferred
   path: crates/specify/ess-domain/src/spec.rs
-- confidence: inferred
+- confidence: cited
   path: crates/verify/ess-conformance/src/authored.rs
-- confidence: inferred
+- confidence: cited
   path: crates/verify/ess-conformance/src/coverage.rs
 - confidence: inferred
   path: crates/verify/ess-conformance/src/coverage_build.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/tests/authored_covers.rs
 - confidence: inferred
   path: docs/design/review-conformance-coverage.md
 - confidence: inferred
   path: website/docs/guides/verify/author-scenarios.md
 - confidence: inferred
   path: website/docs/reference/formats.md
-revision: 5
+revision: 9
 ---
 ## Need
 
@@ -67,34 +71,48 @@ refusal it was written for. The issue's second request, that `synthesize --path`
 
 ## Acceptance
 
-Under the recommended answer to the blocker (an exact, author-declared link):
+The input is the reproduction's specification with `scenarios/confirm-twice.yaml` re-declared as
+`type: ess-scenario/7` and given `covers: [example.review.ConfirmDecision/outcome/already-exists]`.
 
-- An authored scenario declaring that it covers
-  `example.review.ConfirmDecision/outcome/already-exists`, synthesized with `--suite-format 5`,
-  gives a suite whose `coverage.refused` still holds the occurrence, marked covered by
-  `example.review/authored/confirm-decision-already-exists`; the command prints
-  `..., 1 refusal occurrence(s), 1 covered by authored` and exits 0.
-- `ess verify conform run --target interpreted --report-format 2` on that suite reports coverage
-  complete when the covering scenario passes, and inconclusive when it fails or is filtered out.
-- A link naming a scenario id the synthesis did not refuse is refused before output, naming the id
-  (as `known-failures.unknown-scenario` is for known failures).
-- A suite without such a link keeps its format and bytes; the text summary of ordinary
-  (`--suite-format 4`) synthesis is unchanged.
+- `ess verify conform synthesize --path spec --scenarios spec --suite-format 5 --out
+  with-coverage.json` exits 0, its last line reads `11 selected scenario(s), 1 authored source(s),
+  1 refusal occurrence(s), 1 covered by authored`, and `with-coverage.json` has `suite_version`
+  `ess-conformance/65`, `coverage.counts.refused` 1 and `coverage.refused[0].covered_by`
+  `example.review/authored/confirm-decision-already-exists` (`cargo test -p ess-cli --locked
+  --test coverage_cli`).
+- `ess verify conform run --target interpreted --path spec --suite with-coverage.json
+  --report-format 2` reports declared coverage complete when the covering scenario passes
+  (`cargo test -p ess-conformance --locked --test authored_covers`).
+- The same run reports declared coverage inconclusive when the covering scenario fails (its act
+  expecting a different outcome) and when it runs a child suite from `ess verify conform select`
+  that leaves the covering scenario out, in two cases of `authored_covers`.
+- `covers: [example.review.ConfirmDecision/outcome/missing]` (an id the synthesis did not refuse)
+  makes `synthesize` exit 1 with diagnostic `covers.unknown-scenario` naming that id, and no
+  output file is written (`authored_covers`).
+- A `type: ess-scenario/6` document holding `covers:` is refused as an unsupported key naming
+  `ess-scenario/7` (`authored_covers`).
+- Without a `covers:` key, the byte-pin targets AGENTS.md names pass with no row re-pinned, and the
+  text summary of ordinary (`--suite-format 4`) synthesis keeps its last line
+  `11 scenario(s) (1 authored), 1 refusal(s), written to with.json` (`coverage_cli`).
 
 ## Scope
 
 - inferred: docs/design/review-conformance-coverage.md
-- inferred: crates/verify/ess-conformance/src/coverage.rs
+- cited: crates/verify/ess-conformance/src/coverage.rs (`Refusal`, line 282; `Inventory::is_complete`, line 413)
 - inferred: crates/verify/ess-conformance/src/coverage_build.rs
-- inferred: crates/verify/ess-conformance/src/authored.rs
+- cited: crates/verify/ess-conformance/src/authored.rs (`FORMAT`, line 341; the version list, line 2217)
 - inferred: crates/specify/ess-domain/src/spec.rs
-- inferred: crates/edge/ess-cli/src/coverage.rs
+- cited: crates/edge/ess-cli/src/coverage.rs (the text summary, line 129)
+- inferred: crates/verify/ess-conformance/tests/authored_covers.rs (new)
+- inferred: crates/edge/ess-cli/tests/coverage_cli.rs
 - inferred: website/docs/reference/formats.md
 - inferred: website/docs/guides/verify/author-scenarios.md
-confidence: low
+confidence: medium
 
-Split once the blocker is answered: design page; authored document key and its reader; coverage
-record and the Rust reader; the Go and TypeScript coverage readers.
+Shared surfaces moved: proposes its `CHANGELOG.md` sentence; re-pins no suite-bytes row.
+
+Splittable into: design page; authored document key and its reader; coverage record and the Rust
+reader; the Go and TypeScript coverage readers.
 
 ## Fit review
 
@@ -119,8 +137,8 @@ record and the Rust reader; the Go and TypeScript coverage readers.
 5. **Second adopter.** A specification whose view ordering refusal (`OrderUnwitnessed`) is checked
    by an authored scenario such as `examples/billing-scenarios/outstanding-invoices-rank-latest-first.yaml`
    wants the same gate to go green.
-6. **Cost.** An authored link is a new key (an `ess-scenario` version) and a new field in the
-   declared-coverage refusal record (a coverage suite pair); the text summary and report change.
+6. **Cost.** An authored link is a new key (`ess-scenario/7`) and a new field in the
+   declared-coverage refusal record (`ess-conformance/65`); the text summary and report change.
    An inferred link costs no authored key but still the coverage field, and weakens the claim.
 7. **Alternatives.** (a) Change nothing and fix the help line so it no longer promises discharge;
    (b) inferred link by command and outcome; (c) explicit link by exact scenario id, the occurrence
@@ -142,6 +160,11 @@ only when the covering scenario passes in the same run. Nothing is inferred from
 command and outcome. The design page `docs/design/review-conformance-coverage.md` gains the rule
 first, beside the position in `synthesis-seeds.md:17-19`, which this narrows rather than reverses: a
 synthesis refusal still stays a refusal; the covered mark is the author's claim, checked by the run.
+
+The acceptance reads the decided answer only: the key is `covers:`, a list of exact scenario ids, in
+`ess-scenario/7` (the next free scenario format), and the mark is a `covered_by` field of the refusal record in the coverage suite
+`ess-conformance/65`. A synthesize run whose every in-scope refusal is covered exits 0, because the
+claim is checked later by the run, which alone can call coverage complete.
 
 The issue's second request, `synthesize --path` reading the manifest's `scenarios:` list, is declined
 with the idiom: `docs/design/review-authored-discovery.md:253` decides that "omitted `--scenarios`

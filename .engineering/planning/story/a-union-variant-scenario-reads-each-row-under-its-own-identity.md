@@ -17,17 +17,17 @@ relations:
 - decomposes: epic:zero-open-issues-2026-11
 - depends_on: story:ess-37-and-conformance-64-65-are-open-for-the-epics-constructs
 scope:
-- confidence: inferred
-  path: crates/verify/ess-conformance/src/go/mod.rs
 - confidence: cited
   path: crates/verify/ess-conformance/src/go/runtime.go
 - confidence: cited
   path: crates/verify/ess-conformance/src/runner.rs
-- confidence: cited
+- confidence: inferred
   path: crates/verify/ess-conformance/src/synthesize.rs
 - confidence: cited
   path: crates/verify/ess-conformance/src/ts/runtime.ts
-revision: 12
+- confidence: inferred
+  path: crates/verify/ess-conformance/tests/union_variant_row_identity.rs
+revision: 15
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-02T20:48:56Z", actor: "human:timo", revision: 7}
 - {from: "proposed", to: "active", at: "2026-11-02T20:48:56Z", actor: "human:timo", revision: 8}
@@ -48,7 +48,7 @@ Status on 0.92.0:
   further variant run's row and reads it under that capture.
   `crates/verify/ess-conformance/tests/union_variant_row_identity.rs::a_second_variant_row_is_read_under_its_own_identity`
   pins it, and the neutral model of that test synthesizes 1 scenario that passes the interpreted
-  target.
+  target. This story's acceptance does not repeat it.
 - Bullet 2 is open. The runners still resolve `{kind: observed}` to the event's first occurrence
   (`crates/verify/ess-conformance/src/runner.rs:3426-3432`, `.find` over `seen`; the same in
   `src/go/runtime.go` and `src/ts/runtime.ts`), and the 0.91.0 entry says "the runners' reading of
@@ -68,28 +68,48 @@ Status on 0.92.0:
 
 ## Acceptance
 
-- Done (0.91.0): `a_second_variant_row_is_read_under_its_own_identity`. The neutral repro is a
-  fixture, each variant's view expectation names the identity of the event that created that row,
-  and the reference target passes.
-- Open: an observed-identity reference that is ambiguous between two events is resolved to the
-  latest or refused by name; it never silently binds to the first. A test runs the appended suite
-  above through the Rust, Go and TypeScript runners. Each either passes (latest) or reports
-  `ESS-CF-SUITE` naming the `observed` reference and both occurrences. None reports `ESS-CF-VIEW`
-  against the first row.
+All in `crates/verify/ess-conformance/tests/union_variant_row_identity.rs`, run with
+`cargo test -p ess-conformance --locked --test union_variant_row_identity`, on the appended suite
+above (the neutral model of that file plus the view check reading
+`{kind: observed, event: store.box.BoxMade, field: box_id}` after two `BoxMade` events). Each is
+red on 0.92.0.
+
+- `an_ambiguous_observed_reference_is_refused_by_the_rust_runner`: the interpreted target's run
+  reports `ESS-CF-SUITE` for `store.box.MakeBox/outcome/made`, the message names
+  `{kind: observed, event: store.box.BoxMade, field: box_id}` and says the event was observed 2
+  times, and the report holds no `ESS-CF-VIEW` finding.
+- `an_ambiguous_observed_reference_is_refused_by_the_go_runner`: the same suite through the Go
+  runner fails with a line holding `ESS-CF-SUITE`, the same reference and the count 2, and no
+  `ESS-CF-VIEW` line.
+- `an_ambiguous_observed_reference_is_refused_by_the_typescript_runner`: the same through the
+  TypeScript runner, with the same three facts.
+- `cargo test -p ess-conformance --locked --test synthesis_suite_bytes_table` and the
+  `cargo test -p ess-conformance --locked` run pass with no row of
+  `synthesis-suite-bytes-table.tsv` moved: no synthesized suite holds an `observed` reference to
+  an event observed twice before it.
+
+## Decisions
+
+- An ambiguous `observed` reference is refused by name as `ESS-CF-SUITE`, not resolved to the
+  latest occurrence: the report asks for the refusal ("instead of the suite being refused"), and
+  rebinding to the latest would change, without a word, which row an existing suite reads, which
+  needs a new suite major, while a by-name refusal changes no reference that has one meaning.
+- `src/go/mod.rs` leaves the scope: the refusal admits no new suite major
+  (`NEWEST_ADMITTED_SUITE_MAJOR` is unchanged).
 
 ## Scope
 
 - cited: crates/verify/ess-conformance/src/runner.rs
 - cited: crates/verify/ess-conformance/src/go/runtime.go
 - cited: crates/verify/ess-conformance/src/ts/runtime.ts
-- inferred: crates/verify/ess-conformance/src/go/mod.rs
-- inferred: CHANGELOG.md
+- inferred: crates/verify/ess-conformance/src/synthesize.rs
+- inferred: crates/verify/ess-conformance/tests/union_variant_row_identity.rs
 
 confidence: medium
 
-Changing what `observed` means for existing suites needs a new suite major
-(`NEWEST_ADMITTED_SUITE_MAJOR`, `src/go/mod.rs`). A by-name refusal of an ambiguous reference may
-fit inside the current major.
+`synthesize.rs` changes only if a synthesized suite would hold an ambiguous `observed` reference;
+it then captures the row instead. Shared surfaces: proposes a `CHANGELOG.md` sentence; re-pins no
+suite-bytes row.
 
 ## Schedule (D401, 2026-11-02)
 
@@ -97,4 +117,6 @@ Left wave W1 (orchestrator D401). Bullet 2 needs the runners' meaning of `observ
 new suite major; the story joins the W2 suite-major unit beside `story:a-view-read-checks-every-rows-shape`
 (#680), `story:expect-error-checks-generated-field-presence` and
 `story:view-and-error-assertions-carry-their-value-shape`. The SYN1 patch for bullet 1 is parked in
-the coordinator scratch and rides with that unit. Bullet 1 has since landed in 0.91.0.
+the coordinator scratch and rides with that unit. Bullet 1 has since landed in 0.91.0. Revised at
+plan-critic round 1: the open bullet is a by-name refusal, which needs no new suite major (see
+Decisions).

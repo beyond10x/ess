@@ -24,7 +24,7 @@ scope:
   path: crates/specify/ess-compiler/src/expression.rs
 - confidence: cited
   path: docs/design/language-grids.md
-revision: 4
+revision: 5
 ---
 ## Need
 
@@ -65,27 +65,33 @@ attribute.
 
 ## Acceptance
 
-- `ess generate --kind openapi` on the reproduction lists `x-ess-caller: [owner_id]` on `Veto`,
-  `Lock`, `Claim` and `Audit`. `Open` and `Stamp` are unchanged.
-- A test in `crates/generate/ess-gen/tests/caller_values.rs` asserts
-  `caller_attributes(ir, command) == ["owner_id"]` for each of the four commands.
-- `caller_attributes` takes its guard positions from
-  `ess_compiler::expression::predicate_sites` (or a per-command form of it), not from its own
-  match. A guard position added later to that walk then needs no change here. Its value walk
-  destructures `ResolvedOutcome` without `..` over the value-bearing fields (`payload`,
-  `error_payload`, `sets`, `affects`, `instances`), so a new value-bearing field fails to compile
-  until it is walked.
-- `cargo test -p ess-gen` passes, and so does every committed generated `OpenAPI` document
-  (`ess generate --check`) whose model does not read its caller in those four positions.
+- `cargo test -p ess-gen --locked --test caller_values`, new case
+  `every_caller_read_position_is_listed`: on the reproduction, `caller_attributes(ir, command)`
+  is `["owner_id"]` for each of `Veto`, `Lock`, `Claim`, `Audit`, `Open` and `Stamp`. Red on
+  0.92.0 for the first four.
+- Same target, new case `the_openapi_operation_lists_a_caller_read_in_every_position`: `ess
+  generate --kind openapi` on the reproduction writes `x-ess-caller: [owner_id]` on each of the
+  six `/desk/commands/*` operations.
+- Read of `crates/generate/ess-gen/src/http.rs`: `caller_attributes` takes its guard positions from
+  a new public `ess_compiler::expression::command_predicate_sites(ir, command)`, the per-command
+  form of `command_sites`, and its body holds no `_ =>` arm. Its value walk is a `let
+  ResolvedOutcome { … } = outcome;` that names every field and ends without `..`, so a new
+  value-bearing field fails to compile until it is walked.
+- `cargo test -p ess-gen --locked` passes with no existing case edited, and `cargo test -p
+  ess-openapi --locked --test adversary_ess_issues_2_u6` passes with a row re-pinned only where its
+  model reads the caller in one of the four positions.
 
 ## Scope
 
 - cited: crates/generate/ess-gen/src/http.rs (`caller_attributes`, lines 170-247)
-- cited: crates/specify/ess-compiler/src/expression.rs (`predicate_sites` line 261, `command_sites` line 354: expose a per-command walk or filter the whole-IR one by `ConstructRef`)
+- cited: crates/specify/ess-compiler/src/expression.rs (`predicate_sites` line 261, `command_sites` line 354: gains the public `command_predicate_sites`)
 - cited: crates/generate/ess-gen/tests/caller_values.rs (new cases beside `the_openapi_operation_names_the_caller_attributes_it_reads`)
 - cited: docs/design/language-grids.md (grid R: fill the caller cells this triage measured. `when_subject:` and error `payload:` read the caller (yes). A `when_related:` predicate and a row-set `where:` refuse it (no, `ESS-COMMAND-003`))
-- inferred: CHANGELOG.md (Fixed entry)
+
 confidence: high
+
+Shared surfaces moved: proposes the `CHANGELOG.md` Fixed sentence; re-pins `adversary_ess_issues_2_u6`
+rows only where claimed.
 
 ## Fit review
 
@@ -131,6 +137,10 @@ fix is not more match arms: `caller_attributes` takes its guard positions from
 `ess_compiler::expression::predicate_sites`, so this projection and Entity Runtime cannot disagree
 on where a caller is read. No format change. No design page is needed first: `caller-values.md:86`
 already decides it. The same change fills the grid R caller cells in `language-grids.md`.
+
+The per-command walk is a new public `command_predicate_sites` rather than a filter of the
+whole-IR `predicate_sites` by `ConstructRef`, because the projection asks per operation and
+`command_sites` already walks exactly one command.
 
 ## Source
 

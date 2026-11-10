@@ -18,14 +18,54 @@ scope:
 - confidence: cited
   path: crates/generate/ess-synth/src/alias.rs
 - confidence: inferred
-  path: crates/generate/ess-synth/src/go/
+  path: crates/generate/ess-synth/src/go/accessor.rs
 - confidence: inferred
-  path: crates/generate/ess-synth/src/rust/
+  path: crates/generate/ess-synth/src/go/behaviour.rs
+- confidence: inferred
+  path: crates/generate/ess-synth/src/go/behaviour/query.rs
+- confidence: inferred
+  path: crates/generate/ess-synth/src/go/condition.rs
+- confidence: inferred
+  path: crates/generate/ess-synth/src/go/entity.rs
+- confidence: inferred
+  path: crates/generate/ess-synth/src/go/invariant.rs
+- confidence: cited
+  path: crates/generate/ess-synth/src/go/items.rs
+- confidence: cited
+  path: crates/generate/ess-synth/src/go/mod.rs
+- confidence: inferred
+  path: crates/generate/ess-synth/src/go/selection.rs
+- confidence: inferred
+  path: crates/generate/ess-synth/src/go/store/identity.rs
+- confidence: inferred
+  path: crates/generate/ess-synth/src/go/system.rs
+- confidence: inferred
+  path: crates/generate/ess-synth/src/rust/accessor.rs
+- confidence: inferred
+  path: crates/generate/ess-synth/src/rust/behaviour.rs
+- confidence: inferred
+  path: crates/generate/ess-synth/src/rust/behaviour/query.rs
+- confidence: inferred
+  path: crates/generate/ess-synth/src/rust/condition.rs
+- confidence: cited
+  path: crates/generate/ess-synth/src/rust/entity.rs
 - confidence: cited
   path: crates/generate/ess-synth/src/rust/feasibility.rs
 - confidence: inferred
+  path: crates/generate/ess-synth/src/rust/invariant.rs
+- confidence: cited
+  path: crates/generate/ess-synth/src/rust/items.rs
+- confidence: cited
   path: crates/generate/ess-synth/src/rust/name.rs
-revision: 5
+- confidence: inferred
+  path: crates/generate/ess-synth/src/rust/selection.rs
+- confidence: inferred
+  path: crates/generate/ess-synth/src/rust/store/identity.rs
+- confidence: inferred
+  path: crates/generate/ess-synth/src/rust/system.rs
+- confidence: inferred
+  path: crates/generate/ess-synth/src/rust/wire.rs
+revision: 9
 ---
 ## Need
 
@@ -102,11 +142,36 @@ spelling (`{name: foo_bar2, naming: {wire: fooBar}}`), which changes the field's
 
 ## Scope
 
+Rust field identifiers are spelled by `name::value_ident(&field.name)` at every site that declares
+or reads a field; Go field identifiers by `items::field_ident` / `unique_field` (`go/items.rs`,
+`go/mod.rs`) and their callers. Each site below spells a field, input, stored or member identifier
+and reads the field alias from the one lookup beside `code_aliases`. Moves no shared surface.
+
 - cited: crates/generate/ess-synth/src/alias.rs
 - cited: crates/generate/ess-synth/src/rust/feasibility.rs
-- inferred: crates/generate/ess-synth/src/rust/ (field identifier sites)
-- inferred: crates/generate/ess-synth/src/go/ (field identifier sites)
-- inferred: crates/generate/ess-synth/src/rust/name.rs (`value_ident`)
+- cited: crates/generate/ess-synth/src/rust/items.rs
+- cited: crates/generate/ess-synth/src/rust/entity.rs
+- cited: crates/generate/ess-synth/src/rust/name.rs
+- inferred: crates/generate/ess-synth/src/rust/wire.rs
+- inferred: crates/generate/ess-synth/src/rust/behaviour.rs
+- inferred: crates/generate/ess-synth/src/rust/behaviour/query.rs
+- inferred: crates/generate/ess-synth/src/rust/invariant.rs
+- inferred: crates/generate/ess-synth/src/rust/condition.rs
+- inferred: crates/generate/ess-synth/src/rust/selection.rs
+- inferred: crates/generate/ess-synth/src/rust/accessor.rs
+- inferred: crates/generate/ess-synth/src/rust/store/identity.rs
+- inferred: crates/generate/ess-synth/src/rust/system.rs
+- cited: crates/generate/ess-synth/src/go/items.rs
+- cited: crates/generate/ess-synth/src/go/mod.rs
+- inferred: crates/generate/ess-synth/src/go/accessor.rs
+- inferred: crates/generate/ess-synth/src/go/entity.rs
+- inferred: crates/generate/ess-synth/src/go/system.rs
+- inferred: crates/generate/ess-synth/src/go/invariant.rs
+- inferred: crates/generate/ess-synth/src/go/selection.rs
+- inferred: crates/generate/ess-synth/src/go/condition.rs
+- inferred: crates/generate/ess-synth/src/go/store/identity.rs
+- inferred: crates/generate/ess-synth/src/go/behaviour.rs
+- inferred: crates/generate/ess-synth/src/go/behaviour/query.rs
 
 confidence: medium
 
@@ -130,3 +195,5 @@ confidence: medium
 
 - Accept: a field's `naming.code` chooses its identifier in Rust and Go, read in one place beside
   `code_aliases`. Not scheduled in batch 2; scoped before a batch takes it.
+- Scope names files, not the `rust/` and `go/` directories: the files are those whose code spells a
+  field identifier today (`value_ident(&field.name)` in Rust, `field_ident`/`unique_field` in Go).

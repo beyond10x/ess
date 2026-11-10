@@ -18,9 +18,9 @@ scope:
   path: crates/verify/ess-conformance/src/synthesize/related_guard/rewritten.rs
 - confidence: cited
   path: crates/verify/ess-conformance/src/synthesize/subject_fact.rs
-- confidence: inferred
+- confidence: cited
   path: crates/verify/ess-conformance/tests/adversary_d350_u2_pass1.rs
-revision: 5
+revision: 7
 ---
 ## Finding
 
@@ -60,24 +60,44 @@ Two neighbours are not covered, and both are still open on 0.92.0:
   (`related_guard.rs:4064`) and `row_at` arrange decoys without `rewritten::rewriting`. Not
   reproduced by a run.
 
+## Decisions
+
+- `Use/not-flagged` is refused as `ESS-SYNTH-003`, not sent on another row: in this model `flag` is
+  `false` only after `Lower`, which always sets off `raise-on-lowered`, so no row the guard selects
+  survives to the send, and the `when_related:` twin on the same model is refused the same way.
+- A decoy row a binding rewrites is left out at that witness (`decoy` returns no row, as when the
+  stored-row search finds none), not replaced by another search.
+
 ## Acceptance
 
-- `a_subject_guard_row_a_binding_rewrites_is_passed_over`, on the model above: `Use/not-flagged` is
-  sent on a row no binding rewrites, or refused as `ESS-SYNTH-003` naming the step (`Lower`), the
-  binding (`raise-on-lowered`) and the command (`Raise`), as `when_related:` is since 0.81.0. No
-  synthesized scenario fails on the interpreted target. The same holds where the binding moves the
-  subject's state or removes the row.
-- `a_decoy_row_a_binding_rewrites_is_not_used`: a red case first shows the gap on a fixture. Then a
-  decoy row that a binding rewrites is not used as a decoy, and the suite passes the interpreter.
-- Models whose bindings write nothing a subject guard or a decoy reads keep their suite bytes
-  (`synthesis_suite_bytes_table`).
+- `cargo test -p ess-conformance --locked --test adversary_d350_u2_pass1`,
+  `a_subject_guard_row_a_binding_rewrites_is_passed_over`: on the model above, synthesis writes no
+  `demo.d.Use/outcome/not-flagged` and refuses it as `ESS-SYNTH-003`, the text naming `demo.d.Lower`,
+  `raise-on-lowered` and `demo.d.Raise`; the interpreted run of the suite has no failed scenario.
+- Same target, `a_subject_guard_row_a_binding_removes_is_passed_over`: with `demo.d.Raise`'s outcome
+  replaced by one that `deletes: demo.d.Grant`, `Use/outcome/not-flagged` is refused as
+  `ESS-SYNTH-003` naming `demo.d.Lower`, `raise-on-lowered` and `demo.d.Raise`, and the interpreted
+  run has no failed scenario.
+- Same target, `a_subject_guard_row_a_binding_moves_is_passed_over`: with the `Grant` lifecycle given
+  a state `Retired` (transition `retire`), `demo.d.Raise` replaced by an outcome that `moves:
+  demo.d.Grant.retire`, and `Use` given `{name: retired, when_subject_state: Retired, error:
+  demo.d.Refused}` before `not-flagged`, `Use/outcome/not-flagged` is refused as `ESS-SYNTH-003`
+  naming the same step, binding and command, and the interpreted run has no failed scenario.
+- Same target, `a_decoy_row_a_binding_rewrites_is_not_used`, on a fixture whose `when_related:`
+  branch's decoy row is arranged through a step that sets off a binding rewriting a field the guard
+  reads: it fails on the base commit (the evidence records the failing run), and after the change
+  the scenario arranges no decoy at that witness and the interpreted run has no failed scenario.
+- `cargo test -p ess-conformance --locked --test synthesis_suite_bytes_table` passes, and every row
+  it moves is a model with a binding that writes a field a subject guard or a decoy reads.
 
 ## Scope
 
 - cited: crates/verify/ess-conformance/src/synthesize/subject_fact.rs
 - cited: crates/verify/ess-conformance/src/synthesize/related_guard.rs
 - cited: crates/verify/ess-conformance/src/synthesize/related_guard/rewritten.rs
-- inferred: crates/verify/ess-conformance/tests/adversary_d350_u2_pass1.rs
-- inferred: CHANGELOG.md
+- cited: crates/verify/ess-conformance/tests/adversary_d350_u2_pass1.rs
 
 confidence: medium
+
+Shared surfaces: proposes its `CHANGELOG.md` sentence and re-pins only the suite-bytes rows of models
+with such a binding.

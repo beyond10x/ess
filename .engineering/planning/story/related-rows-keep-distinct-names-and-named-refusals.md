@@ -26,7 +26,15 @@ scope:
   path: crates/verify/ess-conformance/tests/fixtures/arrangement-through-writers.yaml
 - confidence: cited
   path: crates/verify/ess-conformance/tests/fixtures/beside-row-once.yaml
-revision: 7
+- confidence: inferred
+  path: crates/verify/ess-conformance/tests/nested_list_membership_arranged.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/tests/one_name_captured_once.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/tests/references_only_relation_arranged.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/tests/unknown_site_on_existing_subject.rs
+revision: 9
 ---
 ## Need
 
@@ -73,16 +81,27 @@ grab-bag of five items and should be split into one story per item before a wave
 
 ## Acceptance
 
-- Synthesizing `arrangement-through-writers.yaml` writes no scenario in which two
-  `capture_instance` steps carry one name; nested related rows get a per-row distinction, and a
-  suite check refuses any scenario that captures one name twice.
-- The references-only variant of `beside-row-once.yaml` above gets a passing scenario on the
-  interpreted target for each of `elsewhere`, `not-alpha` and `tagged`, or each refusal names why no
-  arrangement exists.
-- A test arranges a membership guard over a nested list, or the refusal names the nested path.
-- A test reaches the unknown-site branch on a subject that exists in a wrong state.
-- Each `with_row` call site is either moved to `with_row_where` or the story records why its order
-  is safe.
+Every test below is a target of `cargo test -p ess-conformance --locked --test <name>`.
+
+- `one_name_captured_once`: the suite synthesized from `arrangement-through-writers.yaml` holds no
+  scenario with two `capture_instance` steps carrying one name, and the four scenarios of item 1
+  (`Annotate/annotated`, `Approve/approved`, `Review/transition/approve/by/…/approved`,
+  `Seal/not-approved`) are still in it and pass on the interpreted target.
+- `one_name_captured_once`: a suite built by hand with one name captured twice is refused by the
+  suite check before output, the refusal naming the scenario and the name.
+- `references_only_relation_arranged`: the references-only variant of `beside-row-once.yaml`
+  above synthesizes 22 scenarios with no refusal, and the scenarios for `elsewhere`, `not-alpha` and
+  `tagged` pass on the interpreted target.
+- `nested_list_membership_arranged`: an existence outcome guarded by membership of an input in a
+  list nested inside the related row (`row.lines[].codes`) gets a scenario that passes on the
+  interpreted target.
+- `unknown_site_on_existing_subject`: on a command whose subject row exists and which declares a
+  wrong-state refusal beside an unknown-site branch, the suite holds a scenario answered by the
+  unknown-site branch, and it passes on the interpreted target.
+- The four `with_row` call sites of `related_guard.rs` (`:2034`, `:2122`, `:2648`, `:3638`) call
+  `with_row_where` filtered by the `order` check of `related_guard/stored.rs` (a read shows no
+  `with_row(` call outside its definition), and `stored_order_adversary` stays green.
+- `synthesis_suite_bytes_table` passes, and each row this change re-pins names its item beside it.
 
 ## Closed since
 
@@ -99,5 +118,21 @@ grab-bag of five items and should be split into one story per item before a wave
 - inferred: crates/verify/ess-conformance/src/synthesize/existence.rs
 - cited: crates/verify/ess-conformance/tests/fixtures/arrangement-through-writers.yaml
 - cited: crates/verify/ess-conformance/tests/fixtures/beside-row-once.yaml
+- inferred: crates/verify/ess-conformance/tests/one_name_captured_once.rs (new)
+- inferred: crates/verify/ess-conformance/tests/references_only_relation_arranged.rs (new)
+- inferred: crates/verify/ess-conformance/tests/nested_list_membership_arranged.rs (new)
+- inferred: crates/verify/ess-conformance/tests/unknown_site_on_existing_subject.rs (new)
 
 confidence: medium
+
+Shared surfaces moved: re-pins the suite-bytes rows of `arrangement-through-writers.yaml` and
+`beside-row-once.yaml` where they move; proposes its `CHANGELOG.md` sentence; no format row.
+
+## Decisions
+
+- The references-only `TagMachine` gets scenarios, not named refusals: the model is valid and the
+  `owns` variant of the same rows already arranges all three branches.
+- A nested-list membership guard is arranged, not refused, as `held_in_body` already arranges the
+  top-level list member.
+- Every `with_row` site takes the `order` filter: it replaces only a row no order of the
+  arrangement reaches, so it cannot drop a scenario that passes today.

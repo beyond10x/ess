@@ -20,7 +20,7 @@ scope:
   path: crates/generate/ess-gen/tests/adversary_d350_u1_pass1.rs
 - confidence: inferred
   path: crates/generate/ess-gen/tests/model_types.rs
-revision: 5
+revision: 6
 ---
 ## Problem
 
@@ -64,15 +64,27 @@ and `json_number_precision` at `/$defs/tracker.ops.Reading/oneOf/1/properties/va
 
 ## Acceptance
 
-- `ess generate types --target rust` and `--target go --root tracker.ops.Reading` over the model
-  above exit 0; the generated type decodes both `"x"` and `{"label": "x", "value": 1.5}`.
+Every bullet is a case in `cargo test -p ess-gen --locked --test model_types`, over the model above:
+
+- `ess generate types --target rust` and `--target go --root tracker.ops.Reading` exit 0; the
+  generated type decodes both `"x"` and `{"label": "x", "value": 1.5}`.
 - The TypeScript types-report names the `model_binary64` obligation at
   `/$defs/tracker.ops.Reading/oneOf/1/properties/value`, and every Binary64 location the compiler
-  owns resolves to a numeric node of the published schema.
-- A struct whose shorthand field is itself `Binary64` names its location at `oneOf/0` and realizes,
-  or is refused by name (not as `model_binary64_layout`).
-- `tracker.ops.Plain` and every struct without a shorthand keep their bytes; a test in
-  `crates/generate/ess-gen/tests/binary64_bounds.rs` or `tests/model_types.rs` pins the cases.
+  owns resolves, as a JSON pointer, to a numeric node of the published schema.
+- A struct `tracker.ops.Gauge` whose shorthand field `level` is itself `Binary64` names its
+  locations at `/$defs/tracker.ops.Gauge/oneOf/0` and `/$defs/tracker.ops.Gauge/oneOf/1/properties/level`,
+  and `--target rust` and `--target go` over it exit 0.
+- `tracker.ops.Plain`'s generated Rust, Go and TypeScript files and its types-report are byte for
+  byte those of 0.92.0, and `cargo test -p ess-synth --locked --test served_codec_names --test go`
+  passes unchanged.
+
+## Decisions
+
+- A shorthand field that is itself `Binary64` realizes rather than being refused, because
+  `oneOf/0` is the field's own `type_ref` (`types.rs:999`), a numeric node, so its location
+  resolves like any other.
+- The cases go in `tests/model_types.rs`, beside the existing model-type selection tests, not in
+  `tests/binary64_bounds.rs`.
 
 ## Scope
 
@@ -82,3 +94,5 @@ and `json_number_precision` at `/$defs/tracker.ops.Reading/oneOf/1/properties/va
 - inferred: crates/generate/ess-gen/tests/adversary_d350_u1_pass1.rs
 
 confidence: high
+
+Shared surfaces: proposes one `CHANGELOG.md` sentence; moves no byte pin.

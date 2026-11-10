@@ -16,10 +16,18 @@ relations:
 - serves: vision:O2
 - decomposes: epic:zero-open-issues-2026-11
 scope:
+- confidence: cited
+  path: crates/ui/ess-ui-check/src/filter.rs
 - confidence: inferred
   path: crates/ui/ess-ui-check/src/rules.rs
+- confidence: inferred
+  path: crates/ui/ess-ui-check/tests/filter_membership.rs
 - confidence: cited
   path: crates/ui/ess-ui-react/templates/runtime/expr.ts.tmpl
+- confidence: inferred
+  path: crates/ui/ess-ui-react/tests/filter_membership.rs
+- confidence: inferred
+  path: crates/ui/ess-ui-test/tests/filter_membership.rs
 - confidence: inferred
   path: crates/ui/ess-ui-tui/src/app.rs
 - confidence: cited
@@ -28,7 +36,7 @@ scope:
   path: schemas/ui/ess-ui.schema.yaml
 - confidence: cited
   path: website/docs/reference/ess-ui.md
-revision: 5
+revision: 8
 ---
 ## Need
 
@@ -86,24 +94,37 @@ Item 3 of the 2026-11-09 workbench report; examples `ui03`, `ui03b`.
 
 ## Acceptance
 
-- `ess ui check` accepts `row.id in state.picked` where `picked` is a page state of type
-  `{list: string}`. Over the document above with `picked: [ab]`, `ess ui test` shows rows `[ab]`,
-  and the generated React app keeps the same rows (a test of the React filter evaluator over the
-  same input).
-- `ess ui check` refuses `row.<field> in state.<s>` as `filter_expr`, naming both types, when
-  `<s>` is not a list or its element type differs from the field's type (with `--model`).
-- `<list> contains <value>` with a page-state list on the left is either the same membership test
-  (`picked: [ab]` keeps `[ab]` only) or refused by `ess ui check`, naming `contains` as a text
-  operator. It is never accepted with the text reading.
+All bullets run on the document above, with `picked: [ab]`.
+
+- `ess ui check` over the document with `FILTER = row.id in state.picked` reports
+  `0 error(s)`; tested in `cargo test -p ess-ui-check --locked --test filter_membership`.
+- `ess ui test` opening `{page: items.list, state: {picked: [ab]}}` and expecting
+  `{at: pages/items.list/sections/list, rows: [ab]}` passes; tested in
+  `cargo test -p ess-ui-test --locked --test filter_membership`.
+- The generated React project, compiled with `tsc` and run under `node` against the stand-in
+  `react` (as `crates/ui/ess-ui-react/tests/choice_filter_form.rs` does), keeps rows `[ab]` for the
+  same filter and state; tested in `cargo test -p ess-ui-react --locked --test filter_membership`.
+- `ess ui check --model` refuses `row.id in state.picked` with a `filter_expr` error naming both
+  types when `picked` is `{type: string}` (not a list), and again when it is `{list: integer}`
+  while `row.id` is a string; tested in the `ess-ui-check` `filter_membership` target.
+- `ess ui check` refuses `state.picked contains row.id` with a `filter_expr` error that names
+  `contains` as a text operator and points to `in`; tested in the `ess-ui-check`
+  `filter_membership` target.
 
 ## Scope
 
-- cited: `crates/ui/ess-ui/src/filter.rs`
-- cited: `crates/ui/ess-ui-react/templates/runtime/expr.ts.tmpl`
-- cited: `website/docs/reference/ess-ui.md`
-- inferred: `crates/ui/ess-ui-check/src/rules.rs` (the `filter_expr` rule and typing)
-- inferred: `crates/ui/ess-ui-tui/src/app.rs` (filter call sites)
-- inferred: `schemas/ui/ess-ui.schema.yaml` (the `Reads.filter` note)
+This story moves only the `CHANGELOG.md` shared surface.
+
+- cited: crates/ui/ess-ui/src/filter.rs
+- cited: crates/ui/ess-ui-check/src/filter.rs
+- cited: crates/ui/ess-ui-react/templates/runtime/expr.ts.tmpl
+- cited: website/docs/reference/ess-ui.md
+- inferred: crates/ui/ess-ui-check/src/rules.rs
+- inferred: crates/ui/ess-ui-tui/src/app.rs
+- inferred: schemas/ui/ess-ui.schema.yaml
+- inferred: crates/ui/ess-ui-check/tests/filter_membership.rs
+- inferred: crates/ui/ess-ui-test/tests/filter_membership.rs
+- inferred: crates/ui/ess-ui-react/tests/filter_membership.rs
 
 confidence: medium
 
@@ -127,8 +148,16 @@ confidence: medium
 
 ## Decisions
 
-Pending: accept, redesigned is the likely outcome (widen `in`, refuse `contains` over a list).
-The fit review above is the input; record the decision here before this story leaves draft.
+Accept, redesigned:
+
+- Widen `in` so its right side may be a state path holding a list, in `ess_ui::filter::parse` and
+  in `filterForm`; because `checked` (`crates/ui/ess-ui-check/src/rules.rs`) and the terminal's
+  filters (`crates/ui/ess-ui-tui/src/app.rs`) read the same parser, they take the widening with it.
+- Refuse `contains` with a list on its left instead of redefining it as membership: `contains`
+  keeps one meaning, a text search, everywhere in the grammar, and a document using it over a list
+  today gets substring matches, which is the defect the refusal names.
+- No format version: the grammar widens within `ess-ui/1`, and the refused `contains` spelling
+  never gave the result its author meant.
 
 ## Source
 

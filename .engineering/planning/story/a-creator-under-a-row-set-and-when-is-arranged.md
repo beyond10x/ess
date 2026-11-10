@@ -19,9 +19,7 @@ scope:
   path: crates/verify/ess-conformance/src/synthesize/row_set.rs
 - confidence: inferred
   path: crates/verify/ess-conformance/tests/a_creator_under_a_row_set_is_arranged.rs
-- confidence: inferred
-  path: examples/
-revision: 5
+revision: 7
 ---
 ## Finding
 
@@ -70,22 +68,36 @@ scenarios and refuses none.
 
 ## Acceptance
 
-- `crates/verify/ess-conformance/tests/a_creator_under_a_row_set_is_arranged.rs`,
-  `a_creator_under_a_row_set_and_when_is_arranged`: for the model above, synthesis records no
-  refusal; `Cut/outcome/cut` and `Connect/outcome/source-taken` each create their `Wire` through a
-  `Connect` step whose `priority` holds the `when:`; the interpreted target passes every scenario.
-  Red on 0.92.0.
-- Same file, `a_creator_under_a_row_set_alone_is_arranged`: the same model without the `when:`
-  gives the same result.
-- Where no input can hold the creator's `when:` (a contradictory guard), the refusal is
-  ESS-SYNTH-003 naming the creator's guard, not ESS-SYNTH-004 "which no input reaches".
-- Committed example suites that move are named in the change.
+All tests run with `cargo test -p ess-conformance --locked --test a_creator_under_a_row_set_is_arranged`
+on the model above; each is red on 0.92.0.
+
+- `a_creator_under_a_row_set_and_when_is_arranged`: synthesis records no refusal, and the suite
+  holds all 7 scenarios.
+- Same test: `Cut/outcome/cut` and `Connect/outcome/source-taken` each arrange their `Wire` through
+  a `Connect` step whose `priority` input is `>= 1`.
+- Same test: the interpreted target passes every scenario of the suite.
+- `a_creator_under_a_row_set_alone_is_arranged`: the same model without the `when:` records no
+  refusal and the interpreted target passes every scenario.
+- `a_creator_under_a_row_set_and_contradictory_when_is_refused`: the model with `when: priority >= 1
+  and priority < 1` records a refusal of `Cut/outcome/cut` with code ESS-SYNTH-003 whose message
+  names `wiring.board.Connect/connected`'s guard, and no ESS-SYNTH-004 refusal.
+- `cargo test -p ess-conformance --locked --test synthesis_suite_bytes_table` passes, and every row
+  of `synthesis-suite-bytes-table.tsv` the change re-pins is a model that holds a creator guarded by
+  a row set, with that cause named beside the pin.
+
+## Decisions
+
+- The contradictory-guard case gets its own named test, so the ESS-SYNTH-003 outcome is checked by
+  a run rather than by reading the change.
+- The `examples/` scope entry is dropped: no model under `examples/` uses `when_related`, so no
+  example suite moves; a moved suite is seen only as a re-pinned suite-bytes row.
 
 ## Scope
 
 - cited: crates/verify/ess-conformance/src/synthesize.rs
 - inferred: crates/verify/ess-conformance/src/synthesize/row_set.rs
 - inferred: crates/verify/ess-conformance/tests/a_creator_under_a_row_set_is_arranged.rs
-- inferred: examples/
 
 confidence: medium
+
+Shared surfaces: re-pins suite-bytes rows whose models hold a creator guarded by a row set.

@@ -16,15 +16,17 @@ relations:
 - decomposes: epic:ess-ui-renderer-neutral-ui
 - decomposes: epic:zero-open-issues-2026-11
 scope:
+- confidence: inferred
+  path: crates/ui/ess-ui-test/src/parity.rs
 - confidence: cited
   path: crates/ui/ess-ui-test/src/playwright.rs
-- confidence: inferred
+- confidence: cited
   path: crates/ui/ess-ui-test/src/runner.rs
 - confidence: inferred
   path: crates/ui/ess-ui-test/tests/journey_controls.rs
 - confidence: cited
   path: crates/ui/ess-ui-tui/src/app.rs
-revision: 5
+revision: 9
 ---
 ## Need
 
@@ -102,20 +104,36 @@ $ grep -n submit act.spec.ts
 
 ## Acceptance
 
-- `a_group_on_change_sends_each_change_in_the_terminal`: over the document above, `ess ui test`
-  passes both tests in `t.yaml`. Choosing `audit_on` sends `probe.SaveAudit {audit_on: true}`,
-  the group's own `does`, as a form-level `save: on_change` sends the form's command. A group with
-  `save: on_change` and no `does` sends the form's `does`.
-- `the_browser_spec_does_not_click_a_submit_an_on_change_form_lacks`: the spec written for
-  `t-act.yaml` has no `button[type="submit"]` click for the `on_change` form. Either the step is
-  written without a click, or `ess ui test --playwright` refuses `act` on an `on_change` form,
-  naming the path, and the terminal runner refuses it the same way.
+All three run as `cargo test -p ess-ui-test --locked --test journey_controls <name>` over the
+document above.
+
+- `a_group_on_change_sends_each_change_in_the_terminal`: `ess ui test` passes both tests in
+  `t.yaml`. Choosing `audit_on` sends `probe.SaveAudit {audit_on: true}`, the group's own `does`,
+  as a form-level `save: on_change` sends the form's command.
+- `a_group_on_change_without_does_sends_the_forms_command`: with the group's `does` line removed,
+  choosing `audit_on` sends `probe.Save` with `audit_on: true` in its input.
+- `act_on_an_on_change_form_is_refused_in_both_renderers`: running `t-act.yaml` fails at the `act`
+  step with a reason that starts `pages/prefs/sections/settings:` and says the form saves on change
+  and has no submit; the spec written by `ess ui test --playwright` for `t-act.yaml` holds no
+  `button[type="submit"]` line and holds `test.fixme(true, "<the same reason>")` at that step.
+
+## Decisions
+
+- `act` on a form that saves on change is refused in both renderers, not written as a no-op step,
+  because the React form draws no submit to act on and every other step the renderers draw
+  differently is already refused the same way through `crates/ui/ess-ui-test/src/parity.rs`
+  (terminal error, `test.fixme` with the same reason in the spec).
+- The refusal covers a form whose own `save` is `on_change`; a form whose group alone saves on
+  change keeps its submit for its other fields, so `act` on it still submits.
 
 ## Scope
 
 - cited: `crates/ui/ess-ui-tui/src/app.rs`
 - cited: `crates/ui/ess-ui-test/src/playwright.rs`
-- inferred: `crates/ui/ess-ui-test/src/runner.rs`
+- cited: `crates/ui/ess-ui-test/src/runner.rs`
+- inferred: `crates/ui/ess-ui-test/src/parity.rs`
 - inferred: `crates/ui/ess-ui-test/tests/journey_controls.rs`
 
 confidence: high
+
+Moves no shared surface.

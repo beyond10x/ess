@@ -20,7 +20,7 @@ scope:
   path: crates/verify/ess-conformance/src/mutate.rs
 - confidence: cited
   path: crates/verify/ess-conformance/tests/adversary_w2_mut1_adversary.rs
-revision: 4
+revision: 5
 ---
 ## Need
 
@@ -62,14 +62,23 @@ unmutated error-swap/library.shelf.LendBook/no-such-book (no_compatible_error_al
 
 ## Acceptance
 
-- `error_swap_lists_both_refusals_of_a_single_error_domain` in
-  `crates/verify/ess-conformance/tests/adversary_w2_mut1_adversary.rs` asserts
+- `cargo test -p ess-conformance --locked --test adversary_w2_mut1_adversary
+  error_swap_lists_both_refusals_of_a_single_error_domain` passes with the test asserting
   `accounted(&selection, "error-swap/library.shelf.LendBook/wrong-state")` (today it asserts the
-  opposite) and passes. Both refusals are listed under `unmutated_sites` with
-  `no_compatible_error_alternative`, or with one new reason shared by both.
-- The CLI run above lists 2 sites, and the summary's site count includes both.
-- A model with a second error keeps its error-swap ids, verdicts and report bytes (the existing
-  error-swap tests and the committed mutation-report fixtures are unchanged).
+  opposite) and asserting that `selection.unmutated` holds both
+  `error-swap/library.shelf.LendBook/no-such-book` and `.../wrong-state` with reason
+  `no_compatible_error_alternative`.
+- The CLI run above still exits 3 with ESS-MUTATE-003, its message reads `2 site(s) found and not
+  mutated`, and it lists one `unmutated` line for each of the two refusals.
+- `cargo test -p ess-conformance --locked` passes with every other error-swap test unchanged, and
+  `git diff` shows no change to the committed `mutation-report-*.json` fixtures under
+  `crates/verify/ess-conformance/tests/fixtures/`.
+
+## Decisions
+
+- The payload-less refusal is listed with the existing `no_compatible_error_alternative` reason,
+  not a new one: its cause is the same (no other error of the domain to take), and reusing the
+  reason adds no new spelling to the mutation report.
 
 ## Scope
 
@@ -77,6 +86,8 @@ unmutated error-swap/library.shelf.LendBook/no-such-book (no_compatible_error_al
 - cited: crates/verify/ess-conformance/tests/adversary_w2_mut1_adversary.rs
 
 confidence: high
+
+Shared surfaces: moves none.
 
 ## Schedule
 

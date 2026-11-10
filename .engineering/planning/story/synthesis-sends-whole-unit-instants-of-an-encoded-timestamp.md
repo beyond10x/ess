@@ -12,6 +12,7 @@ refs:
 relations:
 - decomposes: epic:zero-open-issues-2026-11
 - depends_on: story:a-timestamp-newtype-declares-its-wire-encoding
+- depends_on: story:a-value-outside-its-declared-type-is-answered-malformed
 scope:
 - confidence: inferred
   path: crates/verify/ess-conformance/src/authored.rs
@@ -23,7 +24,7 @@ scope:
   path: crates/verify/ess-conformance/src/witness.rs
 - confidence: inferred
   path: crates/verify/ess-conformance/tests/timestamp_encoding.rs
-revision: 4
+revision: 5
 ---
 ## Need
 
@@ -37,17 +38,27 @@ a fraction would break `unix_seconds`.
 
 ## Acceptance
 
-- `ess verify conform synthesize` on the reproduction model (view parameters of
-  `example.calls.EpochInstant`, `encoding: unix_seconds`) writes every value of that type as a
-  whole-second instant, and the filter's boundary scenarios still put one row on each side of each
-  bound (`created_at` equal to `created_from` admitted, equal to `created_to` refused).
-- `ess verify conform run --target interpreted` passes, and the interpreted target refuses a sent
-  value of the type that is not a whole unit as `malformed`, once
-  `story:a-value-outside-its-declared-type-is-answered-malformed` has landed (and as an
-  `ESS-CF-TARGET` error before it).
-- An authored scenario literal of the type that is not a whole unit is refused as `ESS-AUTHOR-015`,
-  naming the encoding.
-- A model with no encoded `Timestamp` keeps its suite bytes.
+The reproduction model is the parent story's: entity `example.calls.Call` (`created_at:
+Timestamp`) and a view filtered `created_at >= param.created_from and created_at <
+param.created_to`, both parameters of `example.calls.EpochInstant` (`kind: newtype, of: Timestamp,
+encoding: unix_seconds`). Tests run with `cargo test -p ess-conformance --locked --test
+timestamp_encoding`.
+
+- `every_encoded_instant_is_a_whole_second`: every value of `example.calls.EpochInstant` in the
+  suite `ess verify conform synthesize` writes for the model has no fractional second.
+- `the_filter_boundaries_keep_a_row_on_each_side`: in the same suite the filter's boundary scenarios
+  hold a row with `created_at` equal to `created_from`, which the view returns, and a row with
+  `created_at` equal to `created_to`, which it does not.
+- `the_suite_passes_the_interpreter`: `ess verify conform run --target interpreted` on that suite
+  passes every scenario.
+- `a_fractional_instant_is_answered_malformed`: the interpreted target sent `created_from =
+  "2026-01-01T00:00:00.5Z"` answers `TargetError::Malformed` (story:a-value-outside-its-declared-type-is-answered-malformed),
+  its path naming `created_from` and its constraint naming `unix_seconds`, and runs no branch.
+- `a_fractional_authored_literal_is_refused`: an authored scenario literal of
+  `example.calls.EpochInstant` with a fractional second is refused as `ESS-AUTHOR-015`, the text
+  naming `unix_seconds`.
+- `cargo test -p ess-conformance --locked --test synthesis_suite_bytes_table` passes with no moved
+  row: no pinned model declares an encoded `Timestamp`.
 
 ## Scope
 
@@ -57,6 +68,8 @@ a fraction would break `unix_seconds`.
 - inferred: crates/verify/ess-conformance/src/authored.rs
 - inferred: crates/verify/ess-conformance/tests/timestamp_encoding.rs
 confidence: low
+
+Shared surfaces: proposes its `CHANGELOG.md` sentence; moves no suite-bytes row.
 
 ## Fit review
 
@@ -77,6 +90,11 @@ confidence: low
 ## Decisions
 
 accept, redesigned, as the parent story.
+
+2026-11-10: the interpreted target answers a fractional instant `malformed` only, after
+story:a-value-outside-its-declared-type-is-answered-malformed (now a `depends_on` edge), because
+an `ESS-CF-TARGET` error in between would be a second answer for one request that a later story
+then replaces.
 
 ## Source
 

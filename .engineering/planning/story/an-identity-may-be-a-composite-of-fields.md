@@ -33,11 +33,7 @@ scope:
   path: docs/design/cross-record-and-stored-field-guards.md
 - confidence: inferred
   path: docs/design/outcome-shapes.md
-- confidence: inferred
-  path: schemas/generated/ess.schema.json
-- confidence: inferred
-  path: website/docs/reference/spec-versions.md
-revision: 10
+revision: 11
 ---
 ## Need
 

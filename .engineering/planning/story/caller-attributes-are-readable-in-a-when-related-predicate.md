@@ -36,12 +36,8 @@ scope:
 - confidence: cited
   path: docs/design/language-grids.md
 - confidence: inferred
-  path: schemas/generated/ess.schema.json
-- confidence: inferred
   path: website/docs/guides/specify/values-and-views.md
-- confidence: inferred
-  path: website/docs/reference/spec-versions.md
-revision: 8
+revision: 9
 ---
 ## Need
 

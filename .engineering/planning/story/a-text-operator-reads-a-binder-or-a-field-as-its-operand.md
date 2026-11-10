@@ -12,6 +12,7 @@ refs:
 relations:
 - decomposes: epic:zero-open-issues-2026-11
 - depends_on: story:ess-37-and-conformance-64-65-are-open-for-the-epics-constructs
+- depends_on: story:text-shape-operators-ignore-case
 scope:
 - confidence: inferred
   path: crates/specify/ess-domain/src/expression.rs
@@ -31,7 +32,7 @@ scope:
   path: docs/design/language-grids.md
 - confidence: cited
   path: website/docs/reference/predicates.md
-revision: 4
+revision: 5
 ---
 ## Need
 
@@ -60,18 +61,18 @@ $ ess verify conform synthesize --path contains --out contains-suite.json
 
 ## Acceptance
 
-- At the new source format, `{contains: {fact: t}}`, `{starts_with: {fact: t}}`, `{ends_with: {fact:
-  t}}` and `{equals_ignore_case: {fact: t}}` (and the operators of
-  `story:text-shape-operators-ignore-case`, in whichever of the two stories lands second) take
-  `{fact: <name>}` naming a binder in scope, a binder's
-  member (`t.label`), or a field the place reads, typed String or a newtype of it; the reproduction
-  with `{fact: t}` validates, and synthesis renders it `from_number contains t`.
-- At the new format, a bare operand of a text operator that spells a binder in scope is refused as
+- At `ess/37`, `{contains: {fact: t}}`, `{starts_with: {fact: t}}`, `{ends_with: {fact: t}}`,
+  `{equals_ignore_case: {fact: t}}` and the three operators of
+  `story:text-shape-operators-ignore-case` (`contains_ignore_case`, `starts_with_ignore_case`,
+  `ends_with_ignore_case`) take `{fact: <name>}` naming a binder in scope, a binder's member
+  (`t.label`), or a field the place reads, typed String or a newtype of it; the reproduction with
+  `{fact: t}` validates, and synthesis renders it `from_number contains t`.
+- At `ess/37`, a bare operand of a text operator that spells a binder in scope is refused as
   `type_mismatch`, naming `{fact: t}` as the repair, as a dotted word naming a parameter in `in` is
-  refused (`predicates.md:615-621`). Below the new format such an operand keeps its meaning and
+  refused (`predicates.md:615-621`). Below `ess/37` such an operand keeps its meaning and
   `ess specify validate` prints a warning naming the repair (exit status unchanged).
-- A `{fact: …}` operand that is not text is `type_mismatch`; below the new format it is
-  `unsupported_format_version` naming it.
+- A `{fact: …}` operand that is not text is `type_mismatch`; below `ess/37` it is
+  `unsupported_format_version` naming `ess/37`.
 - Synthesis witnesses the reproduction view: a row whose `from_number` holds each token of `q`
   (selected), a row missing one token in both fields (not selected), and a decoy whose fields hold
   the letter `t` but not the tokens. `ess verify conform run --target interpreted` passes, and a
@@ -94,6 +95,13 @@ $ ess verify conform synthesize --path contains --out contains-suite.json
 - cited: docs/design/language-grids.md
 confidence: medium
 
+Shared surfaces moved: proposes its sentences for the `ess/37` row of `FORMAT_HISTORY` and
+`CHANGELOG.md`; the schema is regenerated; no suite-bytes row.
+
+This story owns `{fact: …}` on the ignore-case operators: it depends on
+`story:text-shape-operators-ignore-case`, which lands those operators first with the operands
+they take today.
+
 ## Fit review
 
 1. **Need.** A text test against a value bound by a quantifier over a list parameter. Requester's
@@ -114,8 +122,8 @@ confidence: medium
 5. **Second adopter.** A permission check `exists: {in: input.scopes, as: s, that: {granted_scopes_text:
    {contains: {fact: s}}}}`; a tag search `forall: {in: param.prefixes, as: p, that: {sku:
    {starts_with: {fact: p}}}}`.
-6. **Cost.** The next open source format. One operand form on more operators, no new key. One new
-   refusal at the new format, which breaks documents that relied on the literal reading, so it is
+6. **Cost.** Source format `ess/37`. One operand form on more operators, no new key. One new
+   refusal at `ess/37`, which breaks documents that relied on the literal reading, so it is
    only a warning below the format. No suite format: filters are decided at synthesis.
 7. **Alternatives.** (a) Change nothing: the trap stays. (b) Read a bare binder name as the binder:
    refused, it silently changes the meaning of documents that validate today. (c) `{fact: …}` plus

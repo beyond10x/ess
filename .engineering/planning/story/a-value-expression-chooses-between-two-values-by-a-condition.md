@@ -12,7 +12,12 @@ refs:
 relations:
 - decomposes: epic:zero-open-issues-2026-11
 - depends_on: story:ess-37-and-conformance-64-65-are-open-for-the-epics-constructs
+- depends_on: story:text-functions-compute-values
 scope:
+- confidence: inferred
+  path: crates/generate/ess-entity-runtime/tests/expression_values.rs
+- confidence: inferred
+  path: crates/generate/ess-synth/tests/expression_values.rs
 - confidence: inferred
   path: crates/specify/ess-domain/src/expression/value.rs
 - confidence: cited
@@ -29,7 +34,7 @@ scope:
   path: docs/design/language-grids.md
 - confidence: inferred
   path: website/docs/guides/specify/values-and-views.md
-revision: 4
+revision: 6
 ---
 ## Need
 
@@ -48,39 +53,55 @@ expr: 'if secret == "a" then "x" else "y"'
    with paths, literals, `+ - * /`, parentheses and function calls
 ```
 
+This story depends on story:text-functions-compute-values, which adds `len`, `prefix`, `suffix`
+and `repeat`, and on story:ess-37-and-conformance-64-65-are-open-for-the-epics-constructs, which
+opens `ess/37`.
+
 ## Acceptance
 
-- At the new source format, a value expression takes `if <condition> then <a> else <b>`, where the
-  condition is a predicate in the compact grammar over the same roots as the value (`==`, `!=`,
-  `<`, `<=`, `>`, `>=`, `in`, `and`, `or`, `not`, `defined(x)`) and both arms are of one type; it
-  validates as a view field, a `sets:` value and an event payload value. The mask
+- `cargo test -p ess-conformance --locked --test conditional_value` passes, asserting that under
+  `format: ess/37` `ess specify validate` exits 0 on a model with the mask
   `if len(secret) < 12 then "secret:" + repeat("*", 20) else "secret:" + prefix(secret, 4) +
-  repeat("*", 12) + suffix(secret, 4)` validates once the text functions land.
-- Arms of two types, and a condition that is not Boolean, are refused as `type_mismatch` naming
-  both; below the new format `if` is refused as `unsupported_format_version` naming it.
-- The shared evaluator computes it three-valued: an `Unknown` condition makes the value `Unknown`.
-- `ess verify conform synthesize` witnesses each arm, as `{input, else}` already is
-  (`generic-language-features.md`, synthesis cost table, row "presence, `coalesce`, `if`"): on the
-  reproduction it writes the view expectation once for a stored text whose condition is true and
-  once for one whose condition is false, on either side of the comparison's boundary (11 and 12
-  characters for `len(secret) < 12`). A target answering one arm for every row fails one of the two.
-  `ess verify conform run --target interpreted` passes.
-- `ess verify conform mutate` gains the arm-swap class on a conditional value
-  (`generic-language-features.md:193`), and the reproduction's suite kills it.
-- Generated Rust and Go, and Entity Runtime, keep such a command or view an obligation, or refuse
-  it, named by the expression, as for every expression value.
+  repeat("*", 12) + suffix(secret, 4)` as a view field, `if amount >= 1000 then 0 else 5` as a
+  `sets:` value, and the same expression as an event payload value.
+- The same test asserts that arms of two types (`if amount >= 1000 then 0 else "x"`) are refused as
+  `type_mismatch` naming both arm types, and a condition that is not Boolean (`if amount then 0
+  else 5`) as `type_mismatch` naming the condition.
+- The same test asserts that the mask under `format: ess/36` is refused as
+  `unsupported_format_version` naming `if` and `ess/37`.
+- The same test asserts that the shared evaluator (`ess-primitives`) answers `Unknown` for the
+  mask when `secret` is unknown, and the else arm's text for a `secret` of 12 characters.
+- The same test asserts that `ess verify conform synthesize` on the mask's model writes the view
+  expectation once for a stored `secret` of 11 characters (then arm) and once for one of 12
+  characters (else arm), and that `ess verify conform run --target interpreted` passes every
+  scenario.
+- The same test runs the suite on a target answering the then arm for every row and one scenario
+  fails, and runs `ess verify conform mutate` on the model and the suite kills the new `arm-swap`
+  mutant.
+- `cargo test -p ess-synth --locked --test expression_values` passes a case asserting that generated
+  Rust and Go keep the mask's view an obligation whose text names `an expression value
+  (`{expr: "if len(secret) < 12 then …"}`)`.
+- `cargo test -p ess-entity-runtime --locked --test expression_values` passes a case asserting that
+  Entity Runtime lowering refuses the mask's model with the existing expression-value reason
+  (`an expression value (`{expr: …}`, ess/27)`).
 
 ## Scope
 
 - cited: crates/specify/ess-primitives/src/expr.rs
 - inferred: crates/specify/ess-primitives/src/predicate.rs
-- inferred: crates/specify/ess-domain/src/expression/value.rs
+- cited: crates/specify/ess-domain/src/expression/value.rs
 - cited: crates/verify/ess-conformance/src/synthesize.rs
-- inferred: crates/verify/ess-conformance/src/mutate.rs
-- inferred: crates/verify/ess-conformance/tests/conditional_value.rs
+- cited: crates/verify/ess-conformance/src/mutate.rs
+- inferred: crates/verify/ess-conformance/tests/conditional_value.rs (new)
+- inferred: crates/generate/ess-synth/tests/expression_values.rs
+- inferred: crates/generate/ess-entity-runtime/tests/expression_values.rs
 - cited: docs/design/language-grids.md
-- inferred: website/docs/guides/specify/values-and-views.md
+- cited: website/docs/guides/specify/values-and-views.md
+
 confidence: medium
+
+Shared surfaces moved: the `ess/37` `FORMAT_HISTORY` sentence, `CHANGELOG.md`, and the regenerated
+`spec-versions.md` and `ess.schema.json`.
 
 ## Fit review
 
@@ -99,7 +120,7 @@ confidence: medium
 5. **Second adopter.** A catalogue read that answers `availability` as
    `if quantity == 0 then "sold out" else "in stock"`; an invoice event whose `fee` is
    `if amount >= 1000 then 0 else 5`.
-6. **Cost.** The next open source format, counted under G1 (policy 2); one keyword form; no new
+6. **Cost.** Source format `ess/37`, counted under G1 (policy 2); one keyword form; no new
    diagnostic code; one mutation class. IR: the parsed expression, as today.
 7. **Alternatives.** (a) Change nothing: no view can state a value that depends on its row's facts
    by a case split. (b) The requester's `if(c, a, b)` call: refused, G1 decided the keyword
@@ -114,6 +135,11 @@ confidence: medium
 
 accept, redesigned. The request's `if(cond, a, b)` is G1's `if c then a else b`. The declared
 redaction alternative is not taken, for the reason in question 7 (c).
+
+- Generated Rust and Go keep the command or view an obligation, and Entity Runtime refuses it:
+  that is what both already do for every expression value (`ess-synth` `determined.rs`
+  `ResolvedPayloadValue::Expression`, `ess-entity-runtime` `subset.rs` `EXPRESSION`), and this
+  story adds no generated evaluation.
 
 ## Source
 

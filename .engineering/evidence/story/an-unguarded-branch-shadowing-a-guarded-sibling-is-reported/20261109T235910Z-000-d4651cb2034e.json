@@ -1,0 +1,14 @@
+{
+  "at": "2026-11-09T23:59:10Z",
+  "actor": "human:timo",
+  "artifact": "story:an-unguarded-branch-shadowing-a-guarded-sibling-is-reported",
+  "kind": "story",
+  "revision": 8,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "review-result:zero-issues-acceptance-round-1",
+    "review": "review-result:zero-issues-acceptance-round-1",
+    "outcome": "fixed"
+  }
+}

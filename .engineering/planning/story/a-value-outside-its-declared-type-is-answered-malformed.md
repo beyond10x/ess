@@ -13,6 +13,7 @@ relations:
 - decomposes: epic:zero-open-issues-2026-11
 - depends_on: story:a-view-answer-takes-its-protocols-list-shape
 - depends_on: story:ess-37-and-conformance-64-65-are-open-for-the-epics-constructs
+- depends_on: story:conformance-follows-a-views-continuation-to-its-last-page
 scope:
 - confidence: inferred
   path: crates/verify/ess-conformance/src/interpret/execute.rs
@@ -32,7 +33,7 @@ scope:
   path: docs/design/malformed-requests.md
 - confidence: inferred
   path: website/docs/reference/formats.md
-revision: 4
+revision: 5
 ---
 ## Need
 
@@ -51,25 +52,35 @@ reproduction holds no scenario for an out-of-range size (`run.txt` step 5).
 
 ## Acceptance
 
+Every bullet below is asserted by `cargo test -p ess-conformance --locked --test malformed_request`
+unless it names another command.
+
 - `TargetError` gains `Malformed { path, constraint }`, the standard refusal of a request whose
-  value breaks its declared type, answered before any branch runs and changing nothing, as
-  `NotGranted` is answered before the command runs.
-- A new step `expect_malformed` follows a `query_view` or an `execute_command` and requires that
-  answer; every other assertion finds no declared outcome after it, and an `expect_view` after it
-  finds the rows unchanged.
-- `ess verify conform synthesize` on the reproduction model writes `example.log.Recent/malformed/limit`,
-  which reads the view with `limit: 0` and with `limit: 201` and expects `malformed` for each; on a
-  view declaring `cursor: before` it writes `…/malformed/before`, sending a continuation no page
-  answered. For a command input of a constrained type it writes `<command>/malformed/<input>` with
-  one value just outside each declared bound (the boundary ladder of `conf/witness.rs`), unless a
-  declared outcome's guard already claims that value, in which case the outcome scenario stands
-  and no malformed scenario is written.
-- The suite is written at the new `ess-conformance` pair (the one `story:conformance-follows-a-views-continuation-to-its-last-page`
-  opens, if it lands first, else its own); a model with no constrained parameter or input keeps
-  its suite bytes.
-- `ess verify conform run --target interpreted` passes the scenarios: the interpreted target
-  checks each sent value against its declared type and answers `Malformed`. A target that accepts
-  `limit: 201` fails `example.log.Recent/malformed/limit`.
+  value breaks its declared type. On the reproduction model, the interpreted target answers
+  `query_view example.log.Recent {limit: 0}` with `Malformed { path: "limit", … }` and a following
+  `query_view` with a valid `limit` returns the same rows as before it, as `NotGranted` is answered
+  before the command runs and changes nothing.
+- A suite step `expect_malformed` after a `query_view` or an `execute_command` passes on a
+  `Malformed` answer and fails on a declared outcome or a result; after it, an `expect_view` finds
+  the rows unchanged.
+- `ess verify conform synthesize` on the reproduction model writes
+  `example.log.Recent/malformed/limit`, which reads the view with `limit: 0` and with `limit: 201`
+  and expects `malformed` for each.
+- On the reproduction model with `cursor: before` declared on the view, synthesis writes
+  `example.log.Recent/malformed/before`, sending a `before` continuation that no page answered and
+  expecting `malformed`.
+- For a command input of a constrained type with no outcome guard over it, synthesis writes
+  `<command>/malformed/<input>` with one value just outside each declared bound (the boundary
+  ladder of `crates/verify/ess-conformance/src/witness.rs`); where a declared outcome's guard
+  already claims that value, the suite holds that outcome's scenario and no
+  `<command>/malformed/<input>` scenario.
+- The suite holding these scenarios is written at `format: ess-conformance/64` (its coverage
+  document at `ess-conformance/65`); `cargo test -p ess-conformance --locked --test
+  synthesis_suite_bytes_table` passes with no row moved for a model that has no constrained view
+  parameter or command input.
+- `ess verify conform run --path <reproduction> --target interpreted` passes every scenario: the
+  interpreted target checks each sent value against its declared type and answers `Malformed`.
+  A target that accepts `limit: 201` fails `example.log.Recent/malformed/limit`.
 
 ## Scope
 
@@ -82,7 +93,11 @@ reproduction holds no scenario for an out-of-range size (`run.txt` step 5).
 - inferred: crates/verify/ess-conformance/tests/malformed_request.rs
 - inferred: docs/design/malformed-requests.md
 - inferred: website/docs/reference/formats.md
+
 confidence: low
+
+Re-pins suite-bytes rows only for models with a constrained view parameter or command input, and
+proposes its `CHANGELOG.md` sentence.
 
 ## Fit review
 
@@ -119,6 +134,13 @@ confidence: low
 accept, redesigned. The request's "refused with 400" becomes the semantic standard refusal
 `malformed` for every request value outside its declared type, on reads and commands, which the
 HTTP binding maps to its declared status. A design page states it first.
+
+- The suite pair is `ess-conformance/64`/`65`, the one pair of this epic
+  (`story:ess-37-and-conformance-64-65-are-open-for-the-epics-constructs`), so no story opens
+  its own and no landing order decides the number.
+- This story owns the `malformed` answer to a continuation no page minted, and so depends on
+  `story:conformance-follows-a-views-continuation-to-its-last-page`, which adds `cursor:` paging
+  and the continuation the `…/malformed/before` scenario mis-sends.
 
 ## Source
 

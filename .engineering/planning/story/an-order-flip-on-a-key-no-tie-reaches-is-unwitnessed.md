@@ -13,8 +13,8 @@ relations:
 - decomposes: epic:zero-open-issues-2026-11
 - depends_on: story:a-tie-breaking-sort-key-is-pinned-by-a-synthesized-tie
 scope:
-- confidence: inferred
-  path: crates/edge/ess-cli/src/
+- confidence: cited
+  path: crates/edge/ess-cli/src/main.rs
 - confidence: cited
   path: crates/verify/ess-conformance/src/mutate.rs
 - confidence: inferred
@@ -25,9 +25,9 @@ scope:
   path: docs/design/mutation-audit-and-model-runner.md
 - confidence: inferred
   path: website/docs/guides/verify/mutation-audit.md
-- confidence: inferred
+- confidence: cited
   path: website/docs/reference/cli.md
-revision: 4
+revision: 7
 ---
 ## Need
 
@@ -97,12 +97,15 @@ scenario under `--target interpreted --scenarios` that does kill it is reported 
 - cited: docs/design/mutation-audit-and-model-runner.md
 - inferred: crates/verify/ess-conformance/tests/mutation_audit.rs
 - inferred: crates/verify/ess-conformance/tests/mutation_gained_refusals.rs
-- inferred: crates/edge/ess-cli/src/ (the `mutate` help text)
+- cited: crates/edge/ess-cli/src/main.rs
 - inferred: website/docs/guides/verify/mutation-audit.md
-- inferred: website/docs/reference/cli.md
-- inferred: CHANGELOG.md
+- cited: website/docs/reference/cli.md
 
 confidence: medium
+
+The `mutate` help text is the doc comment at `crates/edge/ess-cli/src/main.rs:913-923`, and the
+command reference in `cli.md` (line 1590) is regenerated from it. Shared surfaces moved: proposes
+the `CHANGELOG.md` sentence.
 
 ## Fit review
 

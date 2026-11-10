@@ -18,13 +18,21 @@ scope:
   path: crates/generate/ess-entity-runtime/src/lib.rs
 - confidence: cited
   path: crates/generate/ess-gen/src/types.rs
+- confidence: cited
+  path: crates/generate/ess-synth/src/go/behaviour.rs
+- confidence: cited
+  path: crates/generate/ess-synth/src/go/http.rs
 - confidence: inferred
-  path: crates/generate/ess-synth/src/go/
+  path: crates/generate/ess-synth/src/go/items.rs
+- confidence: cited
+  path: crates/generate/ess-synth/src/go/layout.rs
 - confidence: cited
   path: crates/generate/ess-synth/src/rust/behaviour.rs
+- confidence: inferred
+  path: crates/generate/schema-contract/src/realize/ts.rs
 - confidence: cited
   path: website/docs/reference/entity-runtime-lowering.md
-revision: 4
+revision: 8
 ---
 ## Need
 
@@ -38,7 +46,8 @@ Effect, "Interpretation and generated code"). Entity Runtime must refuse the con
 - For an input declaring `omitted_or_null` that a `missing: unchanged` copy or a `sent()` guard
   reads, the generated Rust, Go and TypeScript input types decode `{}`, `{"summary": null}` and
   `{"summary": "x"}` to three distinct values; inputs no such construct reads keep their generated
-  bytes.
+  bytes (`cargo test -p ess-synth --locked --test go` and `--test served_codec_names` pass with no
+  row re-pinned).
 - Generated Rust and Go behaviour for the reproduction keeps the stored field on missing, clears it
   on `null` and sets it on a value; the synthesized suite of
   `story:conformance-holds-missing-keeps-and-null-clears` passes against the generated Rust and Go
@@ -49,11 +58,20 @@ Effect, "Interpretation and generated code"). Entity Runtime must refuse the con
 ## Scope
 
 - cited: crates/generate/ess-synth/src/rust/behaviour.rs
-- inferred: crates/generate/ess-synth/src/go/
+- cited: crates/generate/ess-synth/src/go/http.rs (`decode_member`, and the generated `optional`
+  helper that reads an absent and a `null` member as one answer)
+- cited: crates/generate/ess-synth/src/go/layout.rs (`go_type`: `Optional` is one pointer today)
+- cited: crates/generate/ess-synth/src/go/behaviour.rs (`input_value`: the copy and `sent()` reads)
+- inferred: crates/generate/ess-synth/src/go/items.rs (input struct members)
 - cited: crates/generate/ess-gen/src/types.rs (input type realization, nullable fields)
+- inferred: crates/generate/schema-contract/src/realize/ts.rs (TypeScript `?:` member from
+  `required`)
 - inferred: crates/generate/ess-entity-runtime/src/lib.rs (lowering refusal)
 - cited: website/docs/reference/entity-runtime-lowering.md
+
 confidence: low
+
+Shared surfaces moved: proposes the `CHANGELOG.md` sentence; no byte-pin row moves.
 
 ## Fit review
 
