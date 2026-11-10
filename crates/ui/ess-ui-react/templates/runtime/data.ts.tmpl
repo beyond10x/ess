@@ -576,6 +576,8 @@ export interface ReadState {
   rows: Json[];
   total?: number;
   error?: string;
+  /** The HTTP status of the failed read, when the failure carried one. */
+  errorStatus?: number;
   params: Record<string, unknown>;
   stale?: boolean;
   newCount?: number;
@@ -690,7 +692,13 @@ export function useRead(
         .catch((error: unknown) => {
           if (live && source === sourceVersion) {
             const status = error instanceof DataError && error.status === 403 ? "forbidden" : "failed";
-            setState({ status, rows: [], error: error instanceof Error ? error.message : String(error), source });
+            setState({
+              status,
+              rows: [],
+              error: error instanceof Error ? error.message : String(error),
+              errorStatus: error instanceof DataError ? error.status : undefined,
+              source,
+            });
           }
         });
     };

@@ -23,6 +23,7 @@ export function MetricView(props: {
   if (props.from !== undefined) {
     value = evaluate(props.from, scope.values);
   }
+  const fromExpression = value !== undefined;
   if (value === undefined && data && props.aggregate) {
     value = aggregateRows(data.rows, props.aggregate, props.field);
   } else if (value === undefined && data) {
@@ -33,8 +34,32 @@ export function MetricView(props: {
         : row.value ?? Object.values(row).find((entry) => typeof entry === "number")
       : row;
   }
+  const path = useUiPath(props["data-ui-path"]);
+  const unanswered = !fromExpression && data !== undefined;
+  if (unanswered && (data.status === "failed" || data.status === "forbidden")) {
+    const status =
+      data.errorStatus !== undefined
+        ? String(data.errorStatus)
+        : /^\d{3}\b/.exec(data.error ?? "")?.[0] ?? (data.status === "forbidden" ? "403" : "Error");
+    return (
+      <div className="ui-metric" data-ui-path={path}>
+        <span className="ui-metric-value ui-state-failed" role="alert">
+          {status}
+        </span>
+        {props.label ? <span className="ui-metric-label">{props.label}</span> : null}
+      </div>
+    );
+  }
+  if (unanswered && (data.status === "loading" || data.status === "idle")) {
+    return (
+      <div className="ui-metric" data-ui-path={path} aria-busy="true">
+        <span className="ui-metric-value ui-state-loading">…</span>
+        {props.label ? <span className="ui-metric-label">{props.label}</span> : null}
+      </div>
+    );
+  }
   return (
-    <div className="ui-metric" data-ui-path={useUiPath(props["data-ui-path"])}>
+    <div className="ui-metric" data-ui-path={path}>
       <span className="ui-metric-value">{value === undefined ? "–" : formatValue(value, props.format)}</span>
       {props.label ? <span className="ui-metric-label">{props.label}</span> : null}
     </div>
