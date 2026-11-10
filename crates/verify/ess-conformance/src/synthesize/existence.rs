@@ -1778,6 +1778,14 @@ fn segment(
     Ok(Some(Segment { steps, source }))
 }
 
+/// The state a creation leaves its row in: the `into:` it names, else the lifecycle's initial.
+fn created_state(ir: &EssIr, subject: &ResolvedSubject) -> ess_domain::entity::StateName {
+    subject
+        .into
+        .clone()
+        .unwrap_or_else(|| ir.entity(&subject.entity).lifecycle.initial.clone())
+}
+
 /// The first call of a [`segment`]: the row created through `driver` with `first`, after the
 /// related `rows` where given, or the refusal naming the instance it needed.
 fn stored_first(
@@ -1794,7 +1802,7 @@ fn stored_first(
         .map_err(|reason| RefusalCause::InstanceRequired {
             entity: EntityRef::from(&subject.entity),
             need: InstanceNeed::InState {
-                state: ir.entity(&subject.entity).lifecycle.initial.clone(),
+                state: created_state(ir, subject),
             },
             reason,
         })?;
@@ -1841,10 +1849,85 @@ fn steered(
     super::created_by(ir, entity, driver, at, None, |bound, steps| {
         super::related_guard::drive_toward(ir, driver, actors, at, (bound, steps), first, &[entity])
     })
+    .or_else(|_| {
+        super::created_by(ir, entity, driver, at, None, |_, _| {
+            own_run(ir, driver, actors, at, first)
+        })
+    })
     .map_err(|_| Unreachable::Unsteered {
         outcome: Box::new(creating),
         related: EntityRef::from(related),
         guards: related_beside(driver.command, driver.outcome),
+        unset: creators_leave_unset(ir, driver.command, related),
+    })
+}
+
+/// The run the creating branch's own scenario is built from: the related row arranged for it
+/// ([`super::related_guard::prepare_at_in`], the arrangement [`super::run_as`] takes), then the
+/// branch sent `first`, whose related reference that arrangement chose. Where the guards need the
+/// related row in a state only a run of other commands reaches, the row is that run's, which the
+/// input searched toward a row resting in its initial state ([`steered`]) cannot name.
+fn own_run(
+    ir: &EssIr,
+    driver: &Driver<'_>,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    at: Distinction,
+    first: &BTreeMap<String, Node>,
+) -> Result<super::Invocation, RefusalCause> {
+    let (setup, _) = super::related_guard::prepare_at_in(
+        &InvocationModels::plain(ir),
+        driver.command,
+        driver.outcome,
+        actors,
+        at,
+        None,
+    )?;
+    let mut sent = super::invoke_with(ir, driver, None, actors, &setup.bound, first);
+    let mut steps = setup.steps;
+    steps.append(&mut sent.steps);
+    sent.steps = steps;
+    sent.source.extend(setup.source);
+    Ok(sent)
+}
+
+/// Whether a creator of `related` leaves a field that the related guards of `command` compare with
+/// an input unset from its own input: where it does, `sets: <field>: input.<field>` is a fix the
+/// refusal can ask for, and where every creator already sets each one it is not. A guard comparing
+/// no field with an input (`state != Stale`) has nothing to set.
+fn creators_leave_unset(ir: &EssIr, command: &ResolvedCommand, related: &EntityHandle) -> bool {
+    let fields = &ir.entity(related).fields;
+    let compared: BTreeSet<&str> = command
+        .outcomes
+        .iter()
+        .filter_map(|outcome| match &outcome.condition {
+            ResolvedCondition::Related {
+                test: ess_compiler::ir::ResolvedRelatedTest::Holds { predicate },
+                ..
+            } => Some(predicate),
+            _ => None,
+        })
+        .filter(|predicate| {
+            predicate
+                .fact_paths()
+                .iter()
+                .any(|path| path.namespace() == ess_domain::command::subject_fact::INPUT_NAMESPACE)
+        })
+        .flat_map(|predicate| predicate.fact_paths())
+        .map(ess_primitives::FactPath::namespace)
+        .filter(|name| fields.iter().any(|field| field.name == *name))
+        .collect();
+    ir.drivers().get(related).is_some_and(|drivers| {
+        drivers
+            .iter()
+            .filter(|creator| matches!(creator.effect, ResolvedEffect::Creates))
+            .any(|creator| {
+                compared.iter().any(|name| {
+                    !creator.outcome.sets.iter().any(|set| {
+                        set.target == *name
+                            && matches!(set.value, ResolvedPayloadValue::InputField { .. })
+                    })
+                })
+            })
     })
 }
 
@@ -2022,7 +2105,7 @@ fn creating_input(
                     RefusalCause::InstanceRequired {
                         entity: EntityRef::from(&subject.entity),
                         need: InstanceNeed::InState {
-                            state: ir.entity(&subject.entity).lifecycle.initial.clone(),
+                            state: created_state(ir, subject),
                         },
                         reason: Unreachable::RelatedUnmet {
                             outcome: Box::new(OutcomeRef::new(
@@ -2031,6 +2114,7 @@ fn creating_input(
                             )),
                             related: EntityRef::from(related),
                             guards: related_beside(command, outcome),
+                            unset: creators_leave_unset(ir, command, related),
                         },
                     }
                 }
