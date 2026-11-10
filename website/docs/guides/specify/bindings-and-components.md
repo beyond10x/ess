@@ -346,6 +346,17 @@ also reads the invoked command's input, or the row is named by a value the imple
 the branch depends on values the scenario does not choose, and the binding's scenarios are still
 refused with `ESS-SYNTH-010`.
 
+The triggering command may choose the branch that publishes the event by a `when_related` predicate
+over that same row (`when_related: {via: input.tier_id, predicate: eligible == true}`). One row then
+decides both commands. The scenario arranges the row for the invoked command's branch, reads the
+trigger's guards on it in declaration order, and keeps the arrangement where the branch the trigger
+takes publishes the event. A refusal of the invoked command is witnessed through whichever
+publishing branch the row it refuses sends the trigger down. Three cases stay refused with
+`ESS-SYNTH-010`: the trigger's predicate also reads an input; the trigger reads a row of another
+entity through the input the binding copies; and the trigger publishes only for rows the invoked
+refusal does not refuse, in which case the refusal's message names the trigger's `when_related`
+predicate.
+
 The row the invoked command acts on may also be named by a stored field of the row the trigger
 acts on. The triggering branch then publishes that field with `{subject: <field>}`:
 

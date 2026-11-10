@@ -25,7 +25,11 @@ fn every_edge_relation_is_minted_from_the_committed_observation() {
     let graph = InfraGraph::of(&example_ir());
     let minted: std::collections::BTreeSet<EdgeRelation> =
         graph.edges().map(|edge| edge.relation).collect();
-    for relation in EdgeRelation::ALL {
+    // The edge relations are held to the same rule against the synthetic edge cluster below.
+    for relation in EdgeRelation::ALL
+        .into_iter()
+        .filter(|relation| !EdgeRelation::EDGE.contains(relation))
+    {
         assert!(
             minted.contains(&relation),
             "no edge in the example graph carries `{}` ({relation:?}); either the fixture \

@@ -473,8 +473,9 @@ Inside a YAML flow mapping, quote the comparison: the comma between the call's a
 otherwise end the entry, as in `when_subject: {predicate: "coalesce(retries, 0) >= 3"}`.
 
 `defined(is_error)` beside the comparison does not do this: `all: [defined(is_error), is_error ==
-false]` is false where `is_error` is absent, but synthesis must also witness each child alone
-deciding the conjunction, and `is_error == false` cannot decide it where `is_error` is absent.
+false]` is false where `is_error` is absent. Synthesis still witnesses `defined(is_error)` by the
+input that leaves `is_error` out: the comparison reads an absent value there, so it is unknown and
+does not block that input (see "What synthesis can witness").
 
 The default has the fact's type (an Integer and a Decimal mix as a Decimal), and the call reads one
 fact; anything else on the left is refused as `type_mismatch`. A call on the left outside a command
@@ -1828,6 +1829,15 @@ such an input, synthesis solves for it directly, so a wide guard, such as an `an
 three-way `all`s, is witnessed at every child too. Where the input orders two `Integer` fields
 against each other, such as `amount <= limit` failing beside `limit > 0` and `amount > 0`, one
 field is placed relative to the other, inside each field's declared range (`limit 1, amount 2`).
+A presence child, `defined(x)` or `not defined(x)`, is witnessed by the input that leaves `x`
+out, even beside a comparison on `x`, as in `all: [kind == Correction, defined(check_status),
+check_status != Verified]`. A comparison that reads an absent `Optional` is unknown, so at that
+input it decides neither way and does not block the row; every sibling that can be decided there
+still decides the opposite. The input goes to the branch the guards select for it, which is an
+earlier branch where that branch takes the absent row.
+This holds for a presence child that is a direct child of the `all`/`any`. Two shapes are still
+refused: a read of `x` beside a presence sibling under `not`, and a presence child nested
+below another connective's child, beside a read of `x`.
 Where those orders and ranges leave no input at all, the child is not refused. Where the search
 finds none and did not try every value of every field, the scenario stands and an `ESS-SYNTH-022`
 refusal beside it names the input it could not build.

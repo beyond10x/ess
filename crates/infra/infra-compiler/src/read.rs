@@ -1,4 +1,4 @@
-//! Reading a persisted `infra-ir/1`, `/2` or `/3` document back into a typed [`InfraIr`].
+//! Reading a persisted `infra-ir/1`, `/2`, `/3` or `/4` document back into a typed [`InfraIr`].
 //!
 //! # Why this is a validation and not a `Deserialize`
 //!
@@ -40,15 +40,16 @@ use infra_domain::workload::{Probe, ProbeHandler, Probes, Resources, VolumeMount
 use serde::Deserialize;
 
 use crate::ir::{
-    digest_of_canonical, ClaimHandle, ConfigMapHandle, InfraIr, InfraModel, NodeHandle, Provenance,
-    Reference, ResolvedContainer, ResolvedEnvFrom, ResolvedEnvFromSource, ResolvedEnvSource,
-    ResolvedEnvVar, ResolvedIngress, ResolvedIngressBackend, ResolvedIngressPath,
-    ResolvedIngressRule, ResolvedPod, ResolvedVolume, ResolvedVolumeSource, ResolvedWorkload,
-    SecretHandle, ServiceAccountHandle, ServiceHandle, UnresolvedReference, UnresolvedTarget,
-    IR_FORMAT, PRESENCE_IR_FORMAT,
+    digest_of_canonical, ClaimHandle, ConfigMapHandle, GatewayHandle, InfraIr, InfraModel,
+    NodeHandle, Provenance, Reference, ResolvedContainer, ResolvedEnvFrom, ResolvedEnvFromSource,
+    ResolvedEnvSource, ResolvedEnvVar, ResolvedHttpRoute, ResolvedHttpRouteRule, ResolvedIngress,
+    ResolvedIngressBackend, ResolvedIngressPath, ResolvedIngressRule, ResolvedPod,
+    ResolvedRouteBackend, ResolvedRouteParent, ResolvedVolume, ResolvedVolumeSource,
+    ResolvedWorkload, SecretHandle, ServiceAccountHandle, ServiceHandle, UnresolvedReference,
+    UnresolvedTarget, EDGE_IR_FORMAT, IR_FORMAT, PRESENCE_IR_FORMAT,
 };
 
-/// Reads a persisted `infra-ir/1`, `/2` or `/3` document back into a typed IR, or refuses it.
+/// Reads a persisted `infra-ir/1`, `/2`, `/3` or `/4` document back into a typed IR, or refuses it.
 ///
 /// One run reports every problem it can still reach: a digest mismatch and every dangling
 /// handle arrive together. A document whose shape does not read as the format at all is refused
@@ -70,6 +71,7 @@ pub fn read_document(value: &serde_json::Value) -> Result<InfraIr, ValidationErr
         Some(IR_FORMAT),
         Some("infra-ir/2"),
         Some(PRESENCE_IR_FORMAT),
+        Some(EDGE_IR_FORMAT),
     ]
     .contains(&declared)
     {
@@ -98,6 +100,10 @@ pub fn read_document(value: &serde_json::Value) -> Result<InfraIr, ValidationErr
             "model.coverage",
             "IR/2 requires coverage; IR/1 forbids it",
         );
+        return Err(errors);
+    }
+
+    if !edge_maps_are_absent_or_maps(&document.model, &mut errors) {
         return Err(errors);
     }
 
@@ -172,6 +178,23 @@ pub fn read_document(value: &serde_json::Value) -> Result<InfraIr, ValidationErr
     }
 }
 
+/// Whether each IR/4 map is absent or a map, refusing `null` otherwise: a writer omits a `None`
+/// map, so `null` was not written by one, and reading it as `None` would change the bytes the
+/// digest covers.
+fn edge_maps_are_absent_or_maps(model: &serde_json::Value, errors: &mut ValidationErrors) -> bool {
+    for kind in ["gateways", "http_routes"] {
+        if model.get(kind).is_some_and(serde_json::Value::is_null) {
+            errors.refuse(
+                InfraCode::IrMalformed,
+                format!("model.{kind}"),
+                "absent or a map, never null",
+            );
+            return false;
+        }
+    }
+    true
+}
+
 /// Whether the declared format is the one the model implies, refusing it otherwise.
 fn declared_format_is_implied(
     declared: Option<&str>,
@@ -180,14 +203,32 @@ fn declared_format_is_implied(
 ) -> bool {
     let implied = crate::ir::implied_format(ir.model());
     if declared == Some(implied) {
+        // IR/4 is IR/3 grown: its Secret keys are recorded as present, never as legacy digests.
+        if implied == EDGE_IR_FORMAT
+            && ir
+                .model()
+                .secrets
+                .values()
+                .flat_map(|secret| secret.keys.values())
+                .any(|value| *value != infra_domain::SecretValue::Present)
+        {
+            errors.refuse(
+                InfraCode::IrMalformed,
+                "model.secrets",
+                "IR/4 records Secret keys as present; a legacy digest in it was not written by a \
+                 compiler",
+            );
+            return false;
+        }
         return true;
     }
     errors.refuse(
         InfraCode::IrMalformed,
         "format",
         format!(
-            "the model is `{implied}`: IR/3 records Secret keys as present, IR/1 as legacy \
-             digests, and a document declaring the other was not written by a compiler"
+            "the model is `{implied}`: IR/4 holds Gateway API kinds, IR/3 records Secret keys as \
+             present, IR/1 as legacy digests, and a document declaring another was not written \
+             by a compiler"
         ),
     );
     false
@@ -220,7 +261,9 @@ fn validate_qualified_model(ir: &InfraIr, errors: &mut ValidationErrors) {
     };
     let namespace = coverage.namespace();
     let value = serde_json::to_value(model).expect("typed model serializes");
-    let mut valid = model.namespaces.len() == 1
+    // The namespace topology profile does not collect Gateway API kinds.
+    let mut valid = !crate::ir::holds_edge(model);
+    valid &= model.namespaces.len() == 1
         && model.namespaces.get(namespace).is_some_and(|object| {
             object.identity.name == namespace && object.identity.namespace.is_none()
         });
@@ -373,7 +416,92 @@ struct ModelMirror {
     cron_jobs: Option<BTreeMap<String, CronJobMirror>>,
     pod_disruption_budgets: Option<BTreeMap<String, PodDisruptionBudgetMirror>>,
     horizontal_pod_autoscalers: Option<BTreeMap<String, HorizontalPodAutoscalerMirror>>,
+    /// IR/4 only; absent, never `null`, everywhere else.
+    #[serde(default)]
+    gateways: Option<BTreeMap<String, GatewayMirror>>,
+    /// IR/4 only; absent, never `null`, everywhere else.
+    #[serde(default)]
+    http_routes: Option<BTreeMap<String, HttpRouteMirror>>,
     unresolved: Vec<UnresolvedMirror>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct GatewayMirror {
+    identity: IdentityMirror,
+    labels: BTreeMap<String, String>,
+    gateway_class: String,
+    listeners: Vec<GatewayListenerMirror>,
+    addresses: Vec<GatewayAddressMirror>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct GatewayListenerMirror {
+    name: String,
+    hostname: Option<String>,
+    port: u16,
+    protocol: String,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct GatewayAddressMirror {
+    address_type: String,
+    value: String,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct HttpRouteMirror {
+    identity: IdentityMirror,
+    labels: BTreeMap<String, String>,
+    hostnames: Vec<String>,
+    parents: Vec<RouteParentMirror>,
+    rules: Vec<HttpRouteRuleMirror>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RouteParentMirror {
+    group: String,
+    kind: String,
+    name: String,
+    namespace: String,
+    section_name: Option<String>,
+    gateway: Option<ReferenceMirror>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct HttpRouteRuleMirror {
+    matches: Vec<HttpRouteMatchMirror>,
+    backends: Vec<RouteBackendMirror>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct HttpRouteMatchMirror {
+    path: Option<HttpPathMatchMirror>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct HttpPathMatchMirror {
+    match_type: String,
+    value: String,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RouteBackendMirror {
+    group: String,
+    kind: String,
+    name: String,
+    namespace: String,
+    port: Option<u16>,
+    weight: Option<u32>,
+    service: Option<ReferenceMirror>,
 }
 
 #[derive(Deserialize)]
@@ -485,6 +613,15 @@ struct ServiceMirror {
     service_type: String,
     selector: BTreeMap<String, String>,
     ports: Vec<ServicePortMirror>,
+    #[serde(default)]
+    load_balancer: Option<LoadBalancerMirror>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct LoadBalancerMirror {
+    hostnames: Vec<String>,
+    scheme: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -566,6 +703,15 @@ fn secret_values_are_one_kind(model: &ModelMirror) -> bool {
 struct ServiceAccountMirror {
     identity: IdentityMirror,
     labels: BTreeMap<String, String>,
+    #[serde(default)]
+    cloud_identity: Option<CloudIdentityMirror>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct CloudIdentityMirror {
+    provider: String,
+    role_arn: String,
 }
 
 #[derive(Deserialize)]
@@ -980,6 +1126,9 @@ enum UnresolvedTargetMirror {
     Node {
         name: String,
     },
+    Gateway {
+        name: String,
+    },
     Namespace {
         name: String,
     },
@@ -1015,6 +1164,7 @@ impl UnresolvedTargetMirror {
             Self::Claim { name } => UnresolvedTarget::Claim { name },
             Self::Service { name } => UnresolvedTarget::Service { name },
             Self::Node { name } => UnresolvedTarget::Node { name },
+            Self::Gateway { name } => UnresolvedTarget::Gateway { name },
             Self::Namespace { name } => UnresolvedTarget::Namespace { name },
             Self::PodsMatchingSelector { selector } => {
                 UnresolvedTarget::PodsMatchingSelector { selector }
@@ -1121,6 +1271,12 @@ impl ModelMirror {
                                 protocol: port.protocol,
                             })
                             .collect(),
+                        load_balancer: mirror.load_balancer.map(|balancer| {
+                            infra_domain::network::LoadBalancer {
+                                hostnames: balancer.hostnames,
+                                scheme: balancer.scheme,
+                            }
+                        }),
                     },
                 )
             })
@@ -1185,6 +1341,12 @@ impl ModelMirror {
                     ServiceAccount {
                         identity: mirror.identity.into_identity(),
                         labels: mirror.labels,
+                        cloud_identity: mirror.cloud_identity.map(|identity| {
+                            infra_domain::observation::CloudIdentity {
+                                provider: identity.provider,
+                                role_arn: identity.role_arn,
+                            }
+                        }),
                     },
                 )
             })
@@ -1498,6 +1660,53 @@ impl ModelMirror {
                     .collect()
             });
 
+        let gateways: Option<BTreeMap<String, infra_domain::network::Gateway>> =
+            self.gateways.map(|mirrors| {
+                mirrors
+                    .into_iter()
+                    .map(|(key, mirror)| {
+                        (
+                            key,
+                            infra_domain::network::Gateway {
+                                identity: mirror.identity.into_identity(),
+                                labels: mirror.labels,
+                                gateway_class: mirror.gateway_class,
+                                listeners: mirror
+                                    .listeners
+                                    .into_iter()
+                                    .map(|listener| infra_domain::network::GatewayListener {
+                                        name: listener.name,
+                                        hostname: listener.hostname,
+                                        port: listener.port,
+                                        protocol: listener.protocol,
+                                    })
+                                    .collect(),
+                                addresses: mirror
+                                    .addresses
+                                    .into_iter()
+                                    .map(|address| infra_domain::network::GatewayAddress {
+                                        address_type: address.address_type,
+                                        value: address.value,
+                                    })
+                                    .collect(),
+                            },
+                        )
+                    })
+                    .collect()
+            });
+        let http_routes: Option<BTreeMap<String, ResolvedHttpRoute>> =
+            self.http_routes.map(|mirrors| {
+                mirrors
+                    .into_iter()
+                    .map(|(key, mirror)| {
+                        let location = format!("model.http_routes[{key}]");
+                        let route =
+                            route_from(mirror, &location, &services, gateways.as_ref(), errors);
+                        (key, route)
+                    })
+                    .collect()
+            });
+
         let unresolved = self
             .unresolved
             .into_iter()
@@ -1533,9 +1742,90 @@ impl ModelMirror {
                 cron_jobs,
                 pod_disruption_budgets,
                 horizontal_pod_autoscalers,
+                gateways,
+                http_routes,
                 unresolved,
             },
         }
+    }
+}
+
+/// Rebuilds one HTTP route, re-minting its gateway and service references.
+fn route_from(
+    mirror: HttpRouteMirror,
+    location: &str,
+    services: &BTreeMap<String, Service>,
+    gateways: Option<&BTreeMap<String, infra_domain::network::Gateway>>,
+    errors: &mut ValidationErrors,
+) -> ResolvedHttpRoute {
+    let parents = mirror
+        .parents
+        .into_iter()
+        .enumerate()
+        .map(|(index, parent)| ResolvedRouteParent {
+            gateway: parent.gateway.map(|gateway| {
+                reference(
+                    gateway,
+                    |key| gateways.is_some_and(|all| all.contains_key(key)),
+                    GatewayHandle::new,
+                    "gateway",
+                    &format!("{location}.parents[{index}]"),
+                    errors,
+                )
+            }),
+            group: parent.group,
+            kind: parent.kind,
+            name: parent.name,
+            namespace: parent.namespace,
+            section_name: parent.section_name,
+        })
+        .collect();
+    let rules = mirror
+        .rules
+        .into_iter()
+        .enumerate()
+        .map(|(rule_index, rule)| ResolvedHttpRouteRule {
+            matches: rule
+                .matches
+                .into_iter()
+                .map(|entry| infra_domain::network::HttpRouteMatch {
+                    path: entry.path.map(|path| infra_domain::network::HttpPathMatch {
+                        match_type: path.match_type,
+                        value: path.value,
+                    }),
+                })
+                .collect(),
+            backends: rule
+                .backends
+                .into_iter()
+                .enumerate()
+                .map(|(index, backend)| ResolvedRouteBackend {
+                    service: backend.service.map(|service| {
+                        reference(
+                            service,
+                            |key| services.contains_key(key),
+                            ServiceHandle::new,
+                            "service",
+                            &format!("{location}.rules[{rule_index}].backends[{index}]"),
+                            errors,
+                        )
+                    }),
+                    group: backend.group,
+                    kind: backend.kind,
+                    name: backend.name,
+                    namespace: backend.namespace,
+                    port: backend.port,
+                    weight: backend.weight,
+                })
+                .collect(),
+        })
+        .collect();
+    ResolvedHttpRoute {
+        identity: mirror.identity.into_identity(),
+        labels: mirror.labels,
+        hostnames: mirror.hostnames,
+        parents,
+        rules,
     }
 }
 
