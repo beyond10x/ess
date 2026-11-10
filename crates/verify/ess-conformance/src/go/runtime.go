@@ -319,12 +319,21 @@ func orderedRefusal(a, b map[string]any) bool {
 	return true
 }
 func checkedRefusal(value any, selection map[string]any, sources map[string]any, survivors map[string]string, owners map[string]string) (map[string]any, error) {
-	r, err := closed(value, "origin scenario subject source code message effect retained scope needs", "")
+	r, err := closed(value, "origin scenario subject source code message effect retained scope needs", "covered_by")
 	if err != nil {
 		return nil, err
 	}
 	if err := nullableID(r["scenario"]); err != nil {
 		return nil, err
+	}
+	if by, present := r["covered_by"]; present {
+		id, ok := by.(string)
+		if !ok || r["origin"] != "generated" || r["scenario"] == nil || survivors[id] != "authored" {
+			return nil, coverageError()
+		}
+		if err := scenarioIdentity(id); err != nil {
+			return nil, err
+		}
 	}
 	if r["subject"] != nil {
 		if err := admitReference(r["subject"]); err != nil {
@@ -561,8 +570,14 @@ func completeCoverage(c map[string]any) bool {
 	if c == nil || c["knowledge"] != "complete_inventory" {
 		return false
 	}
+	authored := map[string]bool{}
+	for _, id := range c["authored"].([]any) {
+		authored[id.(string)] = true
+	}
 	for _, value := range c["refused"].([]any) {
-		if value.(map[string]any)["scope"] == "in_scope" {
+		refusal := value.(map[string]any)
+		by, _ := refusal["covered_by"].(string)
+		if refusal["scope"] == "in_scope" && !authored[by] {
 			return false
 		}
 	}

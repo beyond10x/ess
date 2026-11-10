@@ -1,0 +1,6 @@
+format: ess-inputs/2
+specification:
+  - system.yaml
+  - review.yaml
+scenarios:
+  - scenarios/confirm-twice.yaml

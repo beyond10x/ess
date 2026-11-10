@@ -1187,9 +1187,21 @@ export function checkedRefusal(
   const refusal = closed(
     value,
     'origin scenario subject source code message effect retained scope needs',
-    '',
+    'covered_by',
   );
   nullableID(refusal.scenario);
+  if (Object.prototype.hasOwnProperty.call(refusal, 'covered_by')) {
+    const by = refusal.covered_by;
+    if (
+      typeof by !== 'string' ||
+      refusal.origin !== 'generated' ||
+      isNil(refusal.scenario) ||
+      survivors[by] !== 'authored'
+    ) {
+      throw coverageError();
+    }
+    nullableID(by);
+  }
   if (!isNil(refusal.subject)) {
     admitReference(refusal.subject);
   }
@@ -1432,8 +1444,11 @@ export function completeCoverage(coverage: { [key: string]: Node } | undefined):
   if (coverage === undefined || coverage.knowledge !== 'complete_inventory') {
     return false;
   }
+  const authored = new Set(coverage.authored as string[]);
   for (const value of coverage.refused as Node[]) {
-    if ((value as { [key: string]: Node }).scope === 'in_scope') {
+    const refusal = value as { [key: string]: Node };
+    const by = refusal.covered_by;
+    if (refusal.scope === 'in_scope' && !(typeof by === 'string' && authored.has(by))) {
       return false;
     }
   }
