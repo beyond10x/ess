@@ -179,3 +179,67 @@ fn a_binding_refusal_help_is_one_the_specification_can_follow() {
         Vec::<String>::new()
     );
 }
+
+const SUBJECT_SYSTEM: &str = include_str!("fixtures/binding-set-guard/subject/system.yaml.txt");
+const SUBJECT_COMPONENTS: &str =
+    include_str!("fixtures/binding-set-guard/subject/components.yaml.txt");
+const SUBJECT_GRP: &str = include_str!("fixtures/binding-set-guard/subject/grp.yaml.txt");
+const SUBJECT_RES: &str = include_str!("fixtures/binding-set-guard/subject/res.yaml.txt");
+
+const SUBJECT_BINDING: &str = "reconcile-on-leave";
+
+fn subject_model(grp: &str) -> EssIr {
+    let files = [
+        ("system.yaml", SUBJECT_SYSTEM),
+        ("components.yaml", SUBJECT_COMPONENTS),
+        ("grp.yaml", grp),
+        ("res.yaml", SUBJECT_RES),
+    ];
+    let mut sources = Vec::new();
+    for (label, text) in files {
+        let raw = RawSpecFile::parse(text).unwrap_or_else(|error| panic!("{label}: {error}"));
+        sources.push((Source::new(label), raw));
+    }
+    let spec = Specification::assemble(sources).unwrap_or_else(|error| panic!("{error}"));
+    compile(&spec, &SourceMap::new()).unwrap_or_else(|error| panic!("{error:?}"))
+}
+
+#[test]
+fn a_binding_arranges_the_row_a_set_guard_selects_for_a_subject_payload() {
+    let ir = subject_model(SUBJECT_GRP);
+    let synthesis = synthesize(&ir);
+    assert_eq!(refusals(&synthesis), Vec::<String>::new());
+    assert_eq!(
+        synthesis.suite.scenarios.len(),
+        13,
+        "13 selected, 0 refused"
+    );
+
+    for aspect in ["flow", "delivery", "on-failure"] {
+        steps_of(&synthesis, &format!("{SUBJECT_BINDING}/binding/{aspect}"));
+    }
+    let flow = steps_of(&synthesis, &format!("{SUBJECT_BINDING}/binding/flow"));
+    let eventually: Vec<&str> = flow
+        .iter()
+        .filter(|step| step["step"] == "eventually_event")
+        .filter_map(|step| step["event"].as_str())
+        .collect();
+    assert_eq!(eventually, ["example.res.Kept"]);
+
+    assert_eq!(failing(&ir, &synthesis), BTreeMap::new());
+}
+
+#[test]
+fn a_subject_payload_the_creator_mints_stays_refused() {
+    const STORED: &str = "sets: {member_id: input.member_id, eligible: input.eligible}";
+    assert_eq!(SUBJECT_GRP.matches(STORED).count(), 1);
+    let minted = SUBJECT_GRP.replacen(
+        STORED,
+        "sets: {member_id: {generated: true}, eligible: input.eligible}",
+        1,
+    );
+    let synthesis = synthesize(&subject_model(&minted));
+    let refused = refused_as(&synthesis, &format!("{SUBJECT_BINDING}/binding/flow"));
+    assert_eq!(refused.len(), 1, "{refused:#?}");
+    assert!(refused[0].contains("ESS-SYNTH-010"), "{}", refused[0]);
+}
