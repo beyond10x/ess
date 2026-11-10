@@ -9,7 +9,7 @@ const NODE_WIDTH = 160;
 const NODE_HEIGHT = 64;
 const GAP_X = 72;
 const GAP_Y = 24;
-const MARGIN = 16;
+const MARGIN = 32;
 
 /**
  * The context menu of a node or an edge: one control that lists `actions` when it is opened by a
@@ -66,25 +66,35 @@ function layout(keys: string[], ends: Array<[string, string]>): Map<string, { la
   const known = new Set(keys);
   const next = new Map<string, string[]>(keys.map((key) => [key, []]));
   const before = new Map<string, string[]>(keys.map((key) => [key, []]));
-  const reaches = (from: string, to: string): boolean => {
-    const seen = new Set<string>();
-    const stack = [from];
-    while (stack.length > 0) {
-      const at = stack.pop() as string;
-      if (at === to) {
-        return true;
+  const out = new Map<string, string[]>(keys.map((key) => [key, []]));
+  const entered = new Set<string>();
+  for (const [from, to] of ends) {
+    if (known.has(from) && known.has(to) && from !== to) {
+      out.get(from)?.push(to);
+      entered.add(to);
+    }
+  }
+  // A depth-first walk from the nodes no edge enters, in row order, then from any node left (a
+  // cycle nothing leads into): an edge to a node still on the walk closes a cycle and is left out.
+  const state = new Map<string, "open" | "done">();
+  const walk = (key: string): void => {
+    state.set(key, "open");
+    for (const to of out.get(key) ?? []) {
+      const seen = state.get(to);
+      if (seen === "open") {
+        continue;
       }
-      if (!seen.has(at)) {
-        seen.add(at);
-        stack.push(...(next.get(at) ?? []));
+      next.get(key)?.push(to);
+      before.get(to)?.push(key);
+      if (seen === undefined) {
+        walk(to);
       }
     }
-    return false;
+    state.set(key, "done");
   };
-  for (const [from, to] of ends) {
-    if (known.has(from) && known.has(to) && from !== to && !reaches(to, from)) {
-      next.get(from)?.push(to);
-      before.get(to)?.push(from);
+  for (const key of keys.filter((k) => !entered.has(k)).concat(keys)) {
+    if (!state.has(key)) {
+      walk(key);
     }
   }
   const layers = new Map<string, number>();
@@ -188,7 +198,7 @@ export function GraphEditorView(props: {
       y1 = q.y > p.y ? p.y + NODE_HEIGHT : p.y;
       y2 = q.y > p.y ? q.y : q.y + NODE_HEIGHT;
     }
-    return [{ row, x1, y1, x2, y2 }];
+    return [{ row, x1, y1, x2, y2, again: from === to }];
   });
   return (
     <div className="ui-graph" data-ui-path={useUiPath(props["data-ui-path"])}>
@@ -206,11 +216,27 @@ export function GraphEditorView(props: {
               <path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor" />
             </marker>
           </defs>
-          {lines.map(({ row, x1, y1, x2, y2 }) => (
+          {lines.map(({ row, x1, y1, x2, y2, again }) => (
             <g key={rowKey(row)}>
-              <line x1={x1} y1={y1} x2={x2} y2={y2} stroke="currentColor" strokeWidth={1.5} markerEnd="url(#ui-graph-arrow)" />
+              {again ? (
+                <path
+                  d={`M ${x1 - 16} ${y1 - NODE_HEIGHT / 2} C ${x1 - 28} ${y1 - NODE_HEIGHT / 2 - 18} ${x1 + 28} ${y1 - NODE_HEIGHT / 2 - 18} ${x1 + 16} ${y1 - NODE_HEIGHT / 2}`}
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth={1.5}
+                  markerEnd="url(#ui-graph-arrow)"
+                />
+              ) : (
+                <line x1={x1} y1={y1} x2={x2} y2={y2} stroke="currentColor" strokeWidth={1.5} markerEnd="url(#ui-graph-arrow)" />
+              )}
               {edgeSpec?.kindBy ? (
-                <text x={(x1 + x2) / 2} y={(y1 + y2) / 2 - 4} textAnchor="middle" fontSize={12} fill="currentColor">
+                <text
+                  x={(x1 + x2) / 2}
+                  y={again ? y1 - NODE_HEIGHT / 2 - 22 : (y1 + y2) / 2 - 4}
+                  textAnchor="middle"
+                  fontSize={12}
+                  fill="currentColor"
+                >
                   {String(display(row, edgeSpec.kindBy))}
                 </text>
               ) : null}

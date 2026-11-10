@@ -170,3 +170,55 @@ fn node_actions_are_a_menu() {
 "#,
     );
 }
+
+/// Adversary (beyond10x/ess#723): the cycle-closing edge is the one met last when walking from
+/// the nodes no edge enters, not the one whose row comes last. With a source `S`, edges listed
+/// `B -> A`, `A -> B`, `S -> A`, the longest path from the source is `S -> A -> B`, so `B` is in the
+/// third layer; it is not a first-layer node, since an edge enters it.
+#[test]
+fn adversary_layers_run_from_the_nodes_no_edge_enters_whatever_the_edge_row_order() {
+    run(
+        "adversary-layers",
+        r#"
+  rows.length = 0;
+  rows.push(
+    { id: "S", label: "Source" },
+    { id: "A", label: "Ask" },
+    { id: "B", label: "Branch" },
+    { id: "e1", from_step: "B", to_step: "A", kind: "back" },
+    { id: "e2", from_step: "A", to_step: "B", kind: "next" },
+    { id: "e3", from_step: "S", to_step: "A", kind: "next" },
+  );
+  await settle();
+  const nodes = root.find(has("ui-graph-node"));
+  const at = Object.fromEntries(nodes.map((n) => [n.props["data-ui-path"].split("/").pop(), n.props.style.left]));
+  assert.ok(at.S < at.A && at.A < at.B, `layers run along the longest path from the source S: ${JSON.stringify(at)}`);
+"#,
+    );
+}
+
+/// Adversary (beyond10x/ess#723): an edge from a node to itself (a retry loop) is drawn where it
+/// can be seen: its label does not sit inside its own node's box, which is painted over the
+/// drawing.
+#[test]
+fn adversary_a_self_loop_is_drawn_outside_its_node() {
+    run(
+        "adversary-self-loop",
+        r#"
+  rows.length = 0;
+  rows.push(
+    { id: "s1", label: "Start" },
+    { id: "s2", label: "Poll" },
+    { id: "e1", from_step: "s1", to_step: "s2", kind: "next" },
+    { id: "e2", from_step: "s2", to_step: "s2", kind: "retry" },
+  );
+  await settle();
+  const node = root.find(has("ui-graph-node"))[1].props.style;
+  const label = root.find(tag("text")).find((t) => text(t) === "retry");
+  assert.ok(label, "the self-loop is labelled");
+  const { x, y } = label.props;
+  const inside = x >= node.left && x <= node.left + node.width && y >= node.top && y <= node.top + node.height;
+  assert.ok(!inside, `the self-loop's label at ${x},${y} is hidden under its node ${JSON.stringify(node)}`);
+"#,
+    );
+}
