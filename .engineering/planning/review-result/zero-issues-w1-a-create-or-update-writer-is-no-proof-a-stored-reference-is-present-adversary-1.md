@@ -4,6 +4,8 @@ id: review-result:zero-issues-w1-a-create-or-update-writer-is-no-proof-a-stored-
 kind: review-result
 status: archived
 title: Turn 1 adversary pass 1 on story:a-create-or-update-writer-is-no-proof-a-stored-reference-is-present
+relations:
+- reviews: story:a-create-or-update-writer-is-no-proof-a-stored-reference-is-present
 revision: 3
 transitions:
 - {from: "active", to: "archived", at: "2026-11-10T05:55:40Z", actor: "human:timo", revision: 2}
