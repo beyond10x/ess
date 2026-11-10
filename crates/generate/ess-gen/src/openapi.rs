@@ -2374,17 +2374,7 @@ fn command_schemas<'a>(
             .and_then(|route| route.answer(outcome.name.as_str(), outcome.error.is_some()))
             .map_or(ess_http::Body::Envelope, |listed| listed.body.clone())
     };
-    if command
-        .outcomes
-        .iter()
-        .any(|outcome| match answered(outcome) {
-            ess_http::Body::Envelope => carries_result(ir, outcome),
-            ess_http::Body::Response => true,
-            ess_http::Body::ResponseField(_)
-            | ess_http::Body::Error { .. }
-            | ess_http::Body::None => false,
-        })
-    {
+    if publishes_result(ir, command, route) {
         out.insert(
             format!("{}.Result", command.name),
             embedded(&types::message(&Message::of_response(command))),
@@ -2616,6 +2606,28 @@ fn outcome_schema(
         schema["x-ess-replays"] = json!({"command": command.name, "outcome": replay.origin});
     }
     schema
+}
+
+/// Whether the document publishes `{command}.Result` for `command` under its binding `route`: some
+/// outcome's answer carries the response, in the envelope or bare. One answer for the document and
+/// for the `<command>.response` root of `ModelTypes::select_bound`.
+pub(crate) fn publishes_result(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    route: Option<&ess_http::Route>,
+) -> bool {
+    command.outcomes.iter().any(|outcome| {
+        let body = route
+            .and_then(|route| route.answer(outcome.name.as_str(), outcome.error.is_some()))
+            .map_or(ess_http::Body::Envelope, |listed| listed.body.clone());
+        match body {
+            ess_http::Body::Envelope => carries_result(ir, outcome),
+            ess_http::Body::Response => true,
+            ess_http::Body::ResponseField(_)
+            | ess_http::Body::Error { .. }
+            | ess_http::Body::None => false,
+        }
+    })
 }
 
 /// Whether an outcome's body carries the command's response under `response`: a retained result,

@@ -5,7 +5,9 @@
 //! carries input fields in its path publishes `{command}.Input` without them, so the
 //! `<command>.input` root drops them too; a route that publishes no body (every field in the path,
 //! or a `query` request) has no `<command>.input` root: naming it is refused by the command and the
-//! reason, and [`ModelTypes::bound_command_roots`] leaves it out. Responses and view rows are
+//! reason, and [`ModelTypes::bound_command_roots`] leaves it out. A command whose route publishes no
+//! `{command}.Result` (every outcome answers a field, an error or nothing) has no
+//! `<command>.response` root, refused as `unknown_root`. Other responses and view rows are
 //! published unchanged under a binding, so their roots are unchanged; without a binding every root
 //! keeps its bytes.
 
@@ -262,4 +264,77 @@ fn without_a_binding_every_root_keeps_its_bytes() {
         ModelTypes::bound_command_roots(&ir, None),
         ModelTypes::command_roots(&ir)
     );
+}
+
+/// A command whose only route outcome answers `response.token`, so the bound document publishes
+/// no `tokens.auth.Issue.Result`.
+const TOKENS: &str = "format: ess/27
+system: tokens
+version: v1
+domain: tokens.auth
+actors:
+  - {name: tokens.auth.Client, may: [tokens.auth.Issue]}
+commands:
+  - name: tokens.auth.Issue
+    input: [{name: subject, type: String}]
+    response:
+      - {name: token, type: String}
+      - {name: expires_in, type: Integer}
+    outcomes:
+      - {name: issued, returns: true}
+components:
+  - component: auth
+    owns: {domains: [tokens.auth]}
+    accepts: {commands: [tokens.auth.Issue]}
+    reached_by: network
+";
+
+const TOKEN_ROUTE: &str = "routes:
+  - command: tokens.auth.Issue
+    method: post
+    path: /token
+    outcomes:
+      issued: {status: 200, body: response.token}
+";
+
+#[test]
+fn a_bound_route_that_publishes_no_result_has_no_response_root() {
+    let mut sources = SourceMap::new();
+    sources.insert(Source::DOCUMENT, TOKENS.to_owned());
+    let specification =
+        Specification::assemble([(Source::document(), RawSpecFile::parse(TOKENS).unwrap())])
+            .unwrap();
+    let ir = compile(&specification, &sources).unwrap();
+    let text = format!(
+        "type: ess-http/1\nspecification:\n  system: tokens\n  version: v1\n  source_digest: sha256:{}\n{TOKEN_ROUTE}",
+        ir.source_digest()
+    );
+    let spec = ess_http::HttpSpec::from_yaml(&text).expect("parses");
+    let http = ess_http::compile(&spec, &ir, &derived(&ir))
+        .unwrap_or_else(|diagnostics| panic!("compiles: {diagnostics}"));
+    let binding = Binding::new(http).expect("every route has a path");
+
+    let projected = published(&ir, &binding);
+    assert!(
+        projected.get("tokens.auth.Issue.Result").is_none(),
+        "the bound document publishes a Result"
+    );
+
+    let root = "tokens.auth.Issue.response";
+    let errors = ModelTypes::select_bound(&ir, &roots(&[root]), Some(&binding))
+        .expect_err("a response the route does not publish is refused");
+    assert_eq!(errors.len(), 1, "{errors:?}");
+    assert_eq!(errors[0].name, root);
+    assert_eq!(errors[0].rule, "unknown_root", "{errors:?}");
+    assert!(
+        errors[0].detail.contains("`tokens.auth.Issue`")
+            && errors[0].detail.contains("publishes no `Result`"),
+        "the refusal names the command and why: {}",
+        errors[0].detail
+    );
+    assert_eq!(
+        ModelTypes::bound_command_roots(&ir, Some(&binding)),
+        roots(&["tokens.auth.Issue.input"])
+    );
+    assert!(ModelTypes::bound_command_roots(&ir, None).contains(root));
 }

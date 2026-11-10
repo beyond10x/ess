@@ -180,7 +180,8 @@ impl ModelTypes {
     }
 
     /// [`Self::command_roots`] under `binding`, as [`Self::select_bound`] selects them: a command
-    /// whose route publishes no request body has no `<command>.input`. With `None`, it is
+    /// whose route publishes no request body has no `<command>.input`, and one whose route
+    /// publishes no `Result` has no `<command>.response`. With `None`, it is
     /// [`Self::command_roots`].
     pub fn bound_command_roots(ir: &EssIr, binding: Option<&Binding>) -> BTreeSet<String> {
         ir.commands()
@@ -189,8 +190,9 @@ impl ModelTypes {
                 let input = binding
                     .is_none_or(|binding| bound_input(command, binding).is_ok())
                     .then(|| format!("{}.{INPUT_ROOT}", command.name));
-                let response = (!command.response.is_empty())
-                    .then(|| format!("{}.{RESPONSE_ROOT}", command.name));
+                let response = (!command.response.is_empty()
+                    && binding.is_none_or(|binding| bound_response(ir, command, binding)))
+                .then(|| format!("{}.{RESPONSE_ROOT}", command.name));
                 input.into_iter().chain(response)
             })
             .collect()
@@ -379,6 +381,18 @@ fn body_root<'a>(
                     ),
                 }));
             }
+            if binding.is_some_and(|binding| !bound_response(ir, command, binding)) {
+                return Some(Err(ModelTypeError {
+                    name: root.to_owned(),
+                    rule: "unknown_root",
+                    detail: format!(
+                        "command `{}` has no `.{RESPONSE_ROOT}` root under the HTTP binding: its \
+                         route publishes no `Result`, as every outcome answers a field, an error \
+                         or nothing",
+                        command.name
+                    ),
+                }));
+            }
             (
                 Message::of_response(command),
                 CommandRef::new(command.name.clone()).into(),
@@ -411,6 +425,15 @@ fn body_root<'a>(
         leaves: types::field_leaves(message.fields),
         seed,
     }))
+}
+
+/// Whether the `OpenAPI` document projected under `binding` publishes `{command}.Result`, the
+/// schema the `<command>.response` root equals (`openapi.rs`, `publishes_result`).
+fn bound_response(ir: &EssIr, command: &ResolvedCommand, binding: &Binding) -> bool {
+    let route = binding
+        .ir()
+        .route(&ess_http::Operation::Command(command.name.to_string()));
+    crate::openapi::publishes_result(ir, command, route)
 }
 
 /// `command`'s request body as the `OpenAPI` document projected under `binding` publishes it as
