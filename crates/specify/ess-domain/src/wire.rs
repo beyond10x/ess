@@ -31,6 +31,11 @@ pub(crate) fn validate(spec: &Specification) -> ValidationErrors {
             &format!("command.{}.input", command.name),
             &mut errors,
         );
+        check_fields(
+            &command.response,
+            &format!("command.{}.response", command.name),
+            &mut errors,
+        );
     }
     for event in spec.events().values() {
         check_fields(

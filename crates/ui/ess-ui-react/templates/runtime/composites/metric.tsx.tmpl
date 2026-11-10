@@ -13,6 +13,8 @@ export function MetricView(props: {
   match?: string;
   window?: string;
   format?: "number" | "duration" | "percent" | "bytes";
+  unit?: "ms" | "s" | "m" | "h";
+  scale?: "fraction" | "hundredths";
   label?: string;
   aggregate?: "count" | "sum" | "min" | "max" | "avg";
   field?: string;
@@ -60,7 +62,7 @@ export function MetricView(props: {
   }
   return (
     <div className="ui-metric" data-ui-path={path}>
-      <span className="ui-metric-value">{value === undefined ? "–" : formatValue(value, props.format)}</span>
+      <span className="ui-metric-value">{value === undefined ? "–" : formatValue(value, props.format, undefined, { unit: props.unit, scale: props.scale })}</span>
       {props.label ? <span className="ui-metric-label">{props.label}</span> : null}
     </div>
   );

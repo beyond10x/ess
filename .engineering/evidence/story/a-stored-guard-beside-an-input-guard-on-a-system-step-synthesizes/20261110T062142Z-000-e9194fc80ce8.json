@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-10T06:21:42Z",
+  "actor": "human:timo",
+  "artifact": "story:a-stored-guard-beside-an-input-guard-on-a-system-step-synthesizes",
+  "kind": "story",
+  "revision": 11,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "cargo test -p ess-conformance --locked --test system_issued_synthesis; byte pins",
+    "reference": "a-stored-guard-beside-an-input-guard-on-a-system-step-synthesizes/red-kept.txt (9 passed, 2 failed) vs verify-batch2/c1..c8.txt at 7623ee5ec1 (12 passed; byte pins green)"
+  }
+}

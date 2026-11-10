@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-required-response-member-answered-as-null-fails-exploration
 kind: story
-status: active
+status: implemented
 title: A required response member answered as null fails exploration
 summary: The explorers count a null required response member as present; the suite refuses it (W2 EXP1 review finding, pre-existing, backlog)
 tags:
@@ -24,13 +24,20 @@ scope:
 - confidence: cited
   path: crates/verify/ess-conformance/tests/explore_direct_response.rs
 - confidence: cited
+  path: crates/verify/ess-conformance/tests/explore_direct_response_json.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/tests/fixtures/explore-direct-response-json-target.mjs
+- confidence: cited
   path: crates/verify/ess-conformance/tests/fixtures/explore-direct-response-target.mjs
 - confidence: cited
+  path: crates/verify/ess-conformance/tests/fixtures/explore_direct_response_json_target.go
+- confidence: cited
   path: crates/verify/ess-conformance/tests/fixtures/explore_direct_response_target.go
-revision: 11
+revision: 15
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-10T00:41:26Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":1}}}
 - {from: "proposed", to: "active", at: "2026-11-10T00:41:27Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "active", to: "implemented", at: "2026-11-10T17:53:23Z", actor: "human:timo", revision: 15, decided_on: {"recorded":{"test_result":1,"review_outcome":2,"verification":1}}}
 ---
 ## Need
 
@@ -61,19 +68,19 @@ the required member `token` as `null`; both explorers report no disagreement.
 
 ## Scope
 
-- cited: crates/verify/ess-conformance/src/go/explore.go (the direct-response check at 2690 tests the key only; block around 2679-2694)
-- cited: crates/verify/ess-conformance/src/ts/explore.ts (the same at 2314; block around 2306-2320)
-- cited: crates/verify/ess-conformance/tests/explore_direct_response.rs
-- cited: crates/verify/ess-conformance/tests/fixtures/explore_direct_response_target.go (modes switch at 50-57; gains the null modes)
-- cited: crates/verify/ess-conformance/tests/fixtures/explore-direct-response-target.mjs (modes switch at 39-49; gains the null modes)
+Delivered in turn 1 of the zero-open-issues plan (merge ba749746cd, correction 55e3856e5b). The paths below are the ones
+its commits changed, read from the diff, so every entry is cited.
 
-Read only: `tests/fixtures/explore-direct-response.yaml` (already declares the `Optional` member `note`, lines 29-30; pinned at row 190 of the bytes table, so left as it is); `src/go/mod.rs:149` and `src/ts/mod.rs:149` embed the explorer sources with `include_str!`; `runtime.go:8741-8743` refuses a nil non-Optional value.
+- cited, confirmed: `crates/verify/ess-conformance/src/go/explore.go`
+- cited, confirmed: `crates/verify/ess-conformance/src/ts/explore.ts`
+- cited, confirmed: `crates/verify/ess-conformance/tests/explore_direct_response.rs`
+- cited, confirmed: `crates/verify/ess-conformance/tests/explore_direct_response_json.rs`
+- cited, confirmed: `crates/verify/ess-conformance/tests/fixtures/explore-direct-response-json-target.mjs`
+- cited, confirmed: `crates/verify/ess-conformance/tests/fixtures/explore-direct-response-target.mjs`
+- cited, confirmed: `crates/verify/ess-conformance/tests/fixtures/explore_direct_response_json_target.go`
+- cited, confirmed: `crates/verify/ess-conformance/tests/fixtures/explore_direct_response_target.go`
 
-confidence: high — the story names both defect sites, both read as described, and the test and both targets are the existing harness for this exact check (story-scoper, 2026-11-10)
-
-Correction to the earlier pass: the two target fixtures move from inferred to cited (the story's reproduction names both, and the acceptance needs new modes in them).
-
-Shared surfaces this story moves (epic § Shared surfaces, not scope entries): `CHANGELOG.md`. No byte pin moves while the yaml fixture is unchanged.
+Shared surface written by the coordinator, not a scope entry: `CHANGELOG.md`.
 
 ## Schedule
 

@@ -67,12 +67,25 @@ struct ViewData {
     by_params: Option<Mapping>,
 }
 
+/// How a view is answered: by one answer (the map form of a fixture file), by the first of a list
+/// whose `by_params` all equal the params asked, or by failing.
+#[derive(Debug, Clone, PartialEq)]
+enum Answers {
+    One(ViewData),
+    List(Vec<ViewData>),
+    Fails(String),
+}
+
 /// Answers every read from the fixture files a document names.
 #[derive(Debug, Default)]
 pub struct FixtureAdapter {
     base: PathBuf,
     fixture_dir: Option<(String, PathBuf)>,
-    views: BTreeMap<String, ViewData>,
+    views: BTreeMap<String, Answers>,
+    /// Views a test replaced: a placeholder read of one is answered from it, not from its file.
+    replaced: std::collections::BTreeSet<String>,
+    /// Command to the refusal that answers it: the error's wire code and its payload.
+    refusals: BTreeMap<String, (String, Option<serde_json::Value>)>,
     derived: BTreeMap<String, Value>,
     server: BTreeMap<String, Value>,
     /// Every command run, in order, with its input.
@@ -120,7 +133,7 @@ impl FixtureAdapter {
             let data = view_data(&files[file], view).ok_or_else(|| {
                 TuiError::Fixture(format!("{file} holds no rows for view {view}"))
             })?;
-            adapter.views.insert(view.clone(), data);
+            adapter.views.insert(view.clone(), Answers::One(data));
         }
         adapter.derived = derived;
         let mut loaded = Vec::new();
@@ -131,6 +144,38 @@ impl FixtureAdapter {
             loaded.push(script);
         }
         Ok((adapter, loaded))
+    }
+
+    /// Replaces the answers of `view` (or of a placeholder read of that name) with what a test
+    /// declares: `{rows, total?, by_params?}`, a list of those, or `{fails: <message>}`.
+    pub fn replace_view(&mut self, view: &str, declared: &Value) -> Result<(), String> {
+        let answers = match declared {
+            Value::Sequence(items) => Answers::List(
+                items
+                    .iter()
+                    .map(|item| {
+                        view_data(item, view).ok_or_else(|| "an answer lists `rows`".to_owned())
+                    })
+                    .collect::<Result<_, _>>()?,
+            ),
+            Value::Mapping(map) if map.get("fails").is_some() => Answers::Fails(
+                map.get("fails")
+                    .and_then(Value::as_str)
+                    .ok_or("`fails` is a message")?
+                    .to_owned(),
+            ),
+            other => Answers::One(view_data(other, view).ok_or("a view lists `rows`")?),
+        };
+        self.views.insert(view.to_owned(), answers);
+        self.replaced.insert(view.to_owned());
+        Ok(())
+    }
+
+    /// Answers `command` with the refusal `error` (its wire code) and its `payload`.
+    pub fn refuse(&mut self, command: &str, error: &str, payload: Option<&Value>) {
+        let payload = payload.and_then(|payload| serde_json::to_value(payload).ok());
+        self.refusals
+            .insert(command.to_owned(), (error.to_owned(), payload));
     }
 
     /// The file a placeholder's `fixture:` names: in the fixture directory when the document
@@ -171,8 +216,29 @@ impl FixtureAdapter {
         params: &BTreeMap<String, Value>,
         depth: u8,
     ) -> Result<ViewData, String> {
-        if let Some(data) = self.views.get(view) {
-            return Ok(data.clone());
+        match self.views.get(view) {
+            Some(Answers::One(data)) => return Ok(data.clone()),
+            Some(Answers::Fails(message)) => return Err(message.clone()),
+            Some(Answers::List(answers)) => {
+                let asked = |answer: &&ViewData| {
+                    answer.by_params.as_ref().is_some_and(|wanted| {
+                        wanted.iter().all(|(key, value)| {
+                            params
+                                .get(&display(key))
+                                .is_some_and(|asked| display(asked) == display(value))
+                        })
+                    })
+                };
+                let chosen = answers
+                    .iter()
+                    .find(asked)
+                    .or_else(|| answers.iter().find(|answer| answer.by_params.is_none()));
+                return Ok(chosen.cloned().map_or_else(ViewData::default, |mut data| {
+                    data.by_params = None;
+                    data
+                }));
+            }
+            None => {}
         }
         let missing = || format!("no fixture answers {view}");
         let rule = self.derived.get(view).ok_or_else(missing)?;
@@ -210,7 +276,11 @@ fn without_dot(path: &Path) -> PathBuf {
 
 impl DataAdapter for FixtureAdapter {
     fn read(&self, request: &ReadRequest) -> Result<ReadResult, String> {
-        let data = match &request.fixture {
+        let from_file = request
+            .fixture
+            .as_ref()
+            .filter(|_| !self.replaced.contains(&request.view));
+        let data = match from_file {
             Some(file) => {
                 let path = self.placeholder_file(file);
                 let value = read_yaml(&path).map_err(|error| error.to_string())?;
@@ -275,10 +345,17 @@ impl DataAdapter for FixtureAdapter {
         Ok(ReadResult { rows, total })
     }
 
-    /// Every command is accepted, and logged in [`FixtureAdapter::commands`].
+    /// Every command is logged in [`FixtureAdapter::commands`]; it is accepted unless a test
+    /// declared a refusal for it ([`FixtureAdapter::refuse`]).
     fn run(&mut self, command: &str, input: &BTreeMap<String, Value>) -> Answer {
         self.commands.push((command.to_owned(), input.clone()));
-        Answer::Accepted
+        match self.refusals.get(command) {
+            Some((error, payload)) => Answer::Refused {
+                error: error.clone(),
+                payload: payload.clone(),
+            },
+            None => Answer::Accepted,
+        }
     }
 
     fn load_state(&self, path: &str) -> Option<Value> {
@@ -318,11 +395,11 @@ mod tests {
         let mut adapter = FixtureAdapter::default();
         adapter.views.insert(
             "things.Page".to_owned(),
-            ViewData {
+            Answers::One(ViewData {
                 rows: ess_yaml::from_str(rows).expect("the rows parse"),
                 total: Some(40),
                 by_params: None,
-            },
+            }),
         );
         adapter
     }

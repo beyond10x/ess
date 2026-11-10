@@ -1,0 +1,6 @@
+format: ess/35
+system: example
+version: v1
+summary: A creating command guards on a related row; another command creates the same entity unguarded.
+domains:
+  - example.review
