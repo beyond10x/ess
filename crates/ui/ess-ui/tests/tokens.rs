@@ -196,10 +196,10 @@ fn an_unknown_key_in_tokens_a_theme_theme_or_an_entry_is_refused() {
 
 // ── the built-in table and the merge ─────────────────────────────────────────────────────────
 
-/// The React stylesheet every generated project ships today.
+/// The React stylesheet every generated project shipped before tokens (a pinned copy).
 fn stylesheet() -> String {
     let file = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../ess-ui-react/templates/runtime/styles.css.tmpl");
+        .join("../ess-ui-react/tests/fixtures/styles-0.92.css");
     std::fs::read_to_string(file).expect("the stylesheet reads")
 }
 

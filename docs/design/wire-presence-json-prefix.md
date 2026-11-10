@@ -50,6 +50,11 @@ declaring field itself and under no other `Optional`: under an absent parent eve
 and `reach_into` cannot tell that absence from the field's own. A struct-valued field has no leaf of
 its own and its policy is not carried. Both omissions are weaker, never wrong.
 
+**Interpreted target.** An event field the interpreter determines absent is published as `null` where
+it declares `null_when_absent` and is left out under `omitted_when_absent` or no presence, whatever
+its source (an optional input, a subject read). A history without a `null_when_absent` event field is
+byte-for-byte what it was.
+
 **Witness.** A policy is observable only on an absent value. An optional input, or an optional
 member of one, copied by `input.<field>` into an event field that declares a policy or has a struct
 member that does (walked through newtypes and structs, not through an `Optional`), and read by no

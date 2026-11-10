@@ -6,6 +6,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
 
 use ess_ui::binding::Binding;
+use ess_ui::token_grammar;
+
+use crate::GenerateError;
 
 /// A runtime module: its id (path under `src/` without extension), output file and text.
 struct Module {
@@ -264,4 +267,168 @@ fn html_attribute(text: &str) -> String {
         .replace('"', "&quot;")
         .replace('<', "&lt;")
         .replace('>', "&gt;")
+}
+
+/// Layout lengths the stylesheet needs that no token group holds: renderer-fixed constants, not
+/// document-declared. Each is written into `tokens.css` as `--ui-size-<name>`, named by what it
+/// sizes, so `styles.css` reads `var(--…)` for every length. A document cannot change them.
+const FIXED_SIZES: &[(&str, &str)] = &[
+    ("text-weight-regular", "normal"),
+    ("viewport-height", "100vh"),
+    ("card-min-width", "14rem"),
+    ("chart-height", "10rem"),
+    ("chart-label-room", "1.2rem"),
+    ("dialog-width", "28rem"),
+    ("drawer-width", "32rem"),
+    ("fade-depth", "0.9rem"),
+    ("fade-width", "2.5rem"),
+    ("gap-tight", "0.35rem"),
+    ("gap-wide", "0.75rem"),
+    ("hairline", "1px"),
+    ("hairline-thick", "2px"),
+    ("image-max-height", "3rem"),
+    ("nav-width", "15rem"),
+    ("new-count-offset", "4rem"),
+    ("pad-badge", "0.45rem"),
+    ("pad-cell", "0.4rem"),
+    ("pad-hair", "0.1rem"),
+    ("pad-snug", "0.3rem"),
+    ("row-body-basis", "12rem"),
+    ("spinner-stroke", "3px"),
+    ("swatch", "0.7rem"),
+    ("text-metric", "1.6rem"),
+    ("text-small", "0.75rem"),
+    ("text-subtitle", "0.95rem"),
+    ("text-tiny", "0.7rem"),
+    ("text-title", "1.4rem"),
+];
+
+/// Fixed non-length constants the stylesheet needs (a stroke width, a dash pattern, a unitless
+/// line height, a round radius, the transparent color): renderer-fixed, not document-declared.
+/// Each is written into `tokens.css` as `--ui-fixed-<name>`, so `styles.css` holds no literal.
+const FIXED_CONSTANTS: &[(&str, &str)] = &[
+    ("chart-dash", "2 1"),
+    ("chart-stroke", "0.6"),
+    ("line-height-tight", "1"),
+    ("radius-round", "50%"),
+    ("transparent", "transparent"),
+];
+
+/// One declaration of `tokens.css`, refused when its name or value is not safe to write. `ess ui
+/// check` refuses the same names and values at their key paths (the grammars are
+/// [`ess_ui::token_grammar`]'s), but `generate` does not run the check. `problem` is the grammar
+/// of the value's group.
+fn declare(
+    out: &mut String,
+    path: &str,
+    name: &str,
+    property: &str,
+    value: &str,
+    problem: fn(&str) -> Option<String>,
+) -> Result<(), GenerateError> {
+    if let Some(why) = token_grammar::name_problem(name) {
+        return Err(GenerateError::new(format!("{path}/{name}: {why}")));
+    }
+    if let Some(why) = problem(value) {
+        return Err(GenerateError::new(format!("{path}/{name}: {why}")));
+    }
+    let _ = writeln!(out, "  {property}: {value};");
+    Ok(())
+}
+
+/// `src/runtime/tokens.css`: one `:root` block holding every token of the document's merged
+/// table (the built-in table, then `tokens:`, `type` entries filled), as the custom properties
+/// `styles.css` reads: `--ui-color-<name>`, `--ui-space-<name>`, `--ui-radius-<name>`,
+/// `--ui-type-<style>-family|size|weight` and `--ui-tone-<tone>-text|fill`. The renderer-fixed
+/// `--ui-size-<name>` lengths ([`FIXED_SIZES`]) and `--ui-fixed-<name>` constants
+/// ([`FIXED_CONSTANTS`]) follow the radii. A tone's colors are written as a reference to the color
+/// token they name, so a color override reaches its tones.
+///
+/// A token name or value outside its grammar, or one that could write outside its own custom
+/// property, is refused with an error naming the token.
+pub(crate) fn tokens_css(document: &ess_ui::Document) -> Result<String, GenerateError> {
+    let tokens = document.base_tokens();
+    let mut out = String::from(":root {\n");
+    for (group, entries, problem) in [
+        (
+            "color",
+            &tokens.color,
+            token_grammar::color_value_problem as fn(&str) -> Option<String>,
+        ),
+        ("space", &tokens.space, token_grammar::length_value_problem),
+        (
+            "radius",
+            &tokens.radius,
+            token_grammar::length_value_problem,
+        ),
+    ] {
+        for (name, value) in entries {
+            declare(
+                &mut out,
+                &format!("tokens/{group}"),
+                name,
+                &format!("--ui-{group}-{name}"),
+                &value.0,
+                problem,
+            )?;
+        }
+    }
+    for (name, value) in FIXED_SIZES {
+        let _ = writeln!(out, "  --ui-size-{name}: {value};");
+    }
+    for (name, value) in FIXED_CONSTANTS {
+        let _ = writeln!(out, "  --ui-fixed-{name}: {value};");
+    }
+    for (style, entry) in &tokens.typography {
+        if let Some(why) = token_grammar::name_problem(style) {
+            return Err(GenerateError::new(format!("tokens/type/{style}: {why}")));
+        }
+        for (part, value, problem) in [
+            (
+                "family",
+                entry.family.as_deref(),
+                token_grammar::css_unsafe as fn(&str) -> Option<String>,
+            ),
+            (
+                "size",
+                entry.size.as_ref().map(|value| value.0.as_str()),
+                token_grammar::size_value_problem,
+            ),
+            (
+                "weight",
+                entry.weight.as_ref().map(|value| value.0.as_str()),
+                token_grammar::weight_value_problem,
+            ),
+        ] {
+            if let Some(value) = value {
+                declare(
+                    &mut out,
+                    &format!("tokens/type/{style}"),
+                    part,
+                    &format!("--ui-type-{style}-{part}"),
+                    value,
+                    problem,
+                )?;
+            }
+        }
+    }
+    for (tone, entry) in &tokens.tone {
+        for (role, color) in [("text", &entry.text), ("fill", &entry.fill)] {
+            if let Some(why) = token_grammar::name_problem(color) {
+                return Err(GenerateError::new(format!(
+                    "tokens/tone/{tone}/{role}: {why}"
+                )));
+            }
+            declare(
+                &mut out,
+                &format!("tokens/tone/{tone}"),
+                role,
+                &format!("--ui-tone-{tone}-{role}"),
+                &format!("var(--ui-color-{color})"),
+                token_grammar::css_unsafe,
+            )?;
+        }
+    }
+    out.push_str("}\n");
+    Ok(out)
 }

@@ -1116,3 +1116,83 @@ fn the_interpreter_reads_no_row_for_an_absent_stored_reference() {
         "demo.tasks.CompleteTask/blocker-missing"
     );
 }
+
+// ---- an absent event field is published in its declared presence (beyond10x/ess#765) --------
+
+fn absent_event_field_source(presence: &str) -> String {
+    format!(
+        "format: ess/25
+system: example
+version: v1
+domain: example.token
+types:
+  - {{name: example.token.TokenId, kind: newtype, of: String}}
+entities:
+  - name: example.token.PoolToken
+    identity: {{name: token_id, type: example.token.TokenId}}
+    fields:
+      - {{name: owner, type: String}}
+    lifecycle:
+      initial: Contributed
+      states: [Contributed]
+      terminal: [Contributed]
+events:
+  - name: example.token.TokenContributed
+    fields:
+      - {{name: token_id, type: example.token.TokenId}}
+      - {{name: note, type: 'Optional<String>'{presence}}}
+commands:
+  - name: example.token.ContributeToken
+    input:
+      - {{name: token_id, type: example.token.TokenId}}
+      - {{name: owner, type: String}}
+      - {{name: note, type: 'Optional<String>'}}
+    outcomes:
+      - name: contributed
+        creates: example.token.PoolToken
+        instance: token_id
+        sets: {{owner: input.owner}}
+        emits: [example.token.TokenContributed]
+        payload:
+          example.token.TokenContributed: {{token_id: input.token_id, note: input.note}}
+"
+    )
+}
+
+fn contributed_without_note(presence: &str) -> Option<Node> {
+    let source = absent_event_field_source(presence);
+    let ir = issue_282_model(&source);
+    let input = BTreeMap::from([
+        ("token_id".to_owned(), Node::Text("token-1".to_owned())),
+        ("owner".to_owned(), Node::Text("owner-1".to_owned())),
+    ]);
+    let step = issue_282_step(
+        &ir,
+        &Store::default(),
+        "example.token.ContributeToken",
+        &input,
+    );
+    let event = step
+        .events
+        .iter()
+        .find(|published| published.event.to_string() == "example.token.TokenContributed")
+        .unwrap_or_else(|| panic!("TokenContributed is published: {:?}", step.events));
+    event.payload.get("note").cloned()
+}
+
+#[test]
+fn issue_765_an_absent_event_field_is_null_under_null_when_absent() {
+    assert_eq!(
+        contributed_without_note(", presence: null_when_absent"),
+        Some(Node::Null)
+    );
+}
+
+#[test]
+fn issue_765_an_absent_event_field_is_left_out_otherwise() {
+    assert_eq!(contributed_without_note(""), None);
+    assert_eq!(
+        contributed_without_note(", presence: omitted_when_absent"),
+        None
+    );
+}

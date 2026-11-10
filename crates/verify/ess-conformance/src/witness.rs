@@ -644,6 +644,10 @@ fn search(
 /// the guard-directed search gave up at [`MAX_DIRECTED_STEPS`].
 pub(crate) type Searched = Result<(Vec<BTreeMap<String, Node>>, bool, usize), WitnessGap>;
 
+/// One fill of the literal lists of a guard: the members kept in each list, and the inputs the
+/// fill is laid over.
+type ListFill = (Vec<Vec<Node>>, Vec<BTreeMap<String, Node>>);
+
 /// [`search`], run.
 fn search_uncached(
     ir: &EssIr,
@@ -1054,12 +1058,56 @@ fn search_with(
     // of them, every other leaf at its base: a one-element list holds one at most
     // (beyond10x/ess#761). Tried last, so a branch an earlier candidate witnessed keeps it. Only
     // commands with such a guard get it, so every other suite keeps its bytes.
-    for (list, members) in member_literals(guards) {
+    let member_lists = member_literals(guards);
+    for (list, members) in &member_lists {
         let mut input = builder.input(command, &BTreeMap::new())?;
-        if crate::synthesize::set_at(&mut input, &list.to_string(), Some(Node::Seq(members)))
-            && !inputs.contains(&input)
+        if crate::synthesize::set_at(
+            &mut input,
+            &list.to_string(),
+            Some(Node::Seq(members.clone())),
+        ) && !inputs.contains(&input)
         {
             inputs.push(input);
+        }
+    }
+    // Several such lists are each filled in one candidate, and every candidate so far has them all
+    // filled on top of its other leaves: a guard over two lists, or over a list and another input
+    // whose base value refutes it, is decided by neither alone. Appended after, so a branch an
+    // earlier candidate witnessed keeps it, and bounded by [`MAX_CANDIDATES`]. Then each literal
+    // alone left out of its list, every other list full and every other leaf at its base: the
+    // refuting side of each child of such a guard.
+    if !member_lists.is_empty() {
+        let base = builder.input(command, &BTreeMap::new())?;
+        let mut hosts = vec![base.clone()];
+        hosts.extend(inputs.clone());
+        let mut fills: Vec<ListFill> = Vec::new();
+        let full: Vec<Vec<Node>> = member_lists.iter().map(|(_, m)| m.clone()).collect();
+        fills.push((full.clone(), hosts));
+        for (at, (_, members)) in member_lists.iter().enumerate() {
+            for left_out in 0..members.len() {
+                let mut lists = full.clone();
+                lists[at].remove(left_out);
+                fills.push((lists, vec![base.clone()]));
+            }
+        }
+        let mut added = 0;
+        for (lists, hosts) in fills {
+            for mut input in hosts {
+                let all_set = member_lists
+                    .iter()
+                    .zip(lists.iter())
+                    .all(|((list, _), held)| {
+                        crate::synthesize::set_at(
+                            &mut input,
+                            &list.to_string(),
+                            Some(Node::Seq(held.clone())),
+                        )
+                    });
+                if all_set && !inputs.contains(&input) && added < MAX_CANDIDATES {
+                    inputs.push(input);
+                    added += 1;
+                }
+            }
         }
     }
     // Where the bound cut the walk short, the leaves late in path order never left their first
@@ -2995,7 +3043,7 @@ fn omissions(guards: &[&Predicate], optionals: &BTreeSet<FactPath>) -> Vec<FactP
 
 /// The lists two or more `exists` quantifiers of `guards` walk, each comparing its element with a
 /// text literal by `==` (`exists p in permissions: p == telephony`), with those literals, distinct,
-/// in the order the guards write them (beyond10x/ess#761).
+/// in the order the guards write them (beyond10x/ess#761), under `not` as well as beside it.
 fn member_literals(guards: &[&Predicate]) -> Vec<(FactPath, Vec<Node>)> {
     fn walk(predicate: &Predicate, found: &mut BTreeMap<FactPath, Vec<Node>>) {
         match predicate {
@@ -3004,6 +3052,7 @@ fn member_literals(guards: &[&Predicate]) -> Vec<(FactPath, Vec<Node>)> {
                     walk(child, found);
                 }
             }
+            Predicate::Not(inner) => walk(inner, found),
             Predicate::Exists(quantified) => {
                 let Some(over) = quantified.over.fact() else {
                     return;

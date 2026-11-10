@@ -1678,15 +1678,16 @@ fn cell_value(field: &Field, value: &Value) -> String {
         Some("secret") => "•".repeat(display(value).chars().count()),
         Some("choice") => format!("‹{}›", display(value)),
         Some("toggle") => if truthy(value) { "[x]" } else { "[ ]" }.into(),
-        Some("time") => match instant(value) {
-            Some(at) => format!("{:02}:{:02}", at.hour, at.minute),
-            None => {
+        Some("time") => {
+            if let Some(at) = instant(value) {
+                format!("{:02}:{:02}", at.hour, at.minute)
+            } else {
                 let text = display(value);
                 text.split_once('T').map_or(text.clone(), |(_, time)| {
                     time.trim_end_matches('Z').chars().take(5).collect()
                 })
             }
-        },
+        }
         Some("timestamp") => match instant(value) {
             Some(at) => format!(
                 "{:04}-{:02}-{:02} {:02}:{:02}",

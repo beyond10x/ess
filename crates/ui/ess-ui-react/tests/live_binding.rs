@@ -158,16 +158,24 @@ fn fnv(text: &str) -> u64 {
 /// text colors (`styles.css`); the pinned files above and the document's own page are unchanged.
 /// `data.ts` and the whole-project digest re-pinned for story:metric-error-state-on-failed-read: a
 /// failed read carries its HTTP status (`errorStatus`), which a metric draws.
+/// The entry, `actions.tsx`, `confirm.tsx`, `form.tsx` and the whole-project digest re-pinned for
+/// story:the-react-renderer-draws-the-declared-tokens: `main.tsx` imports the generated
+/// `tokens.css`, button emphasis is the `ui-emphasis-*` class prefix, and the project carries
+/// `src/runtime/tokens.css`; the digest moved again when the stylesheet read every length as
+/// `var(--…)` and `tokens.css` carried the renderer-fixed `--ui-size-*` constants. Re-pinned again for the
+/// generator refusal of unsafe token names and values and the `font-weight` and `min-height`
+/// constants. Re-pinned for the second correction: `tokens.css` carries the `--ui-fixed-*` constants and
+/// `styles.css` reads them for its stroke, line-height, round-radius and transparent literals.
 const PLAIN: [(&str, u64); 7] = [
     ("README.md", 0xdae6_c3b6_7e5c_2d28),
-    ("src/main.tsx", 0x6fd5_ef21_0230_ebac),
-    ("src/runtime/actions.tsx", 0x5412_72cd_e713_733a),
-    ("src/runtime/composites/confirm.tsx", 0xbeef_774c_44b0_0be3),
-    ("src/runtime/composites/form.tsx", 0xa0b0_e430_a6e8_4b79),
+    ("src/main.tsx", 0x939b_2ed0_a001_98c5),
+    ("src/runtime/actions.tsx", 0xf023_5201_8d52_5fcc),
+    ("src/runtime/composites/confirm.tsx", 0xd98b_e5a3_8ad8_4503),
+    ("src/runtime/composites/form.tsx", 0x8925_891d_a8af_c1fb),
     ("src/runtime/data.ts", 0x0e1d_e114_d5fb_6c64),
     ("www/index.html", 0x5972_6d4a_5ee2_5ce2),
 ];
-const PLAIN_PROJECT: u64 = 0x6f77_ca94_266a_db2a;
+const PLAIN_PROJECT: u64 = 0x2e1a_fe4f_080e_c42f;
 
 #[test]
 fn without_a_model_the_project_is_byte_identical() {
@@ -548,7 +556,7 @@ const root = React.__root(jsx(OverlayHost, {{ overlays: {{}}, children: jsx(Scop
   await flush(root);
   root.find((n) => n.tag === "button" && n.props["data-ui-path"] === path)[0].props.onClick();
   await flush(root);
-  const primary = () => root.find((n) => n.tag === "button" && String(n.props.className).includes("ui-tone-danger"));
+  const primary = () => root.find((n) => n.tag === "button" && String(n.props.className).includes("ui-emphasis-danger"));
   primary()[0].props.onClick();
   await flush(root);
   assert.strictEqual(posts().length, 1, "matching command is sent once");

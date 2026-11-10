@@ -423,3 +423,111 @@ fn adversary_u4_swapped_callers_two_literals() {
     let text = swappable(&guarded("all", &telephony_voice()));
     check("swapped, two literals", &text, ALL_OUTCOMES);
 }
+
+/// The command's input gains `field`, after `permissions`.
+fn with_input(text: &str, field: &str) -> String {
+    replaced(
+        text,
+        "      - {name: role_id, type: demo.role.RoleId}\n      - {name: permissions, type: \"List<demo.role.PermissionId>\"}\n    outcomes:\n      - name: unknown-permission\n        when_related: {via: input.permissions, exists: false}\n        error: demo.role.UnknownPermission\n      - name: updated-with-telephony\n",
+        &format!(
+            "      - {{name: role_id, type: demo.role.RoleId}}\n      - {{name: permissions, type: \"List<demo.role.PermissionId>\"}}\n      - {field}\n    outcomes:\n      - name: unknown-permission\n        when_related: {{via: input.permissions, exists: false}}\n        error: demo.role.UnknownPermission\n      - name: updated-with-telephony\n"
+        ),
+        1,
+    )
+}
+
+/// The synthesis records no refusal carrying any of `codes`.
+fn no_refusal_coded(text: &str, codes: &[&str]) {
+    let result = ess_conformance::synthesize::synthesize(&ir(text));
+    let found: Vec<String> = refusals(&result)
+        .into_iter()
+        .filter(|refusal| codes.iter().any(|code| refusal.contains(code)))
+        .collect();
+    assert!(found.is_empty(), "refusals: {found:#?}");
+}
+
+/// The first invocation of the command under test in `scenario`, with the outcome it expects.
+fn invocation(document: &Value, id: &str) -> Option<(Value, String)> {
+    let steps = document["scenarios"][id]["steps"].as_array()?;
+    let at = steps.iter().position(|step| {
+        step["step"] == "execute_command" && step["command"].to_string().contains(UPDATE)
+    })?;
+    let outcome = steps[at + 1..]
+        .iter()
+        .find(|next| next["step"] == "expect_outcome")
+        .map(|next| next["outcome"].to_string())
+        .unwrap_or_default();
+    Some((steps[at]["input"].clone(), outcome))
+}
+
+/// Two literals in each of two lists: one candidate fills every list.
+#[test]
+fn adversary_u4_literals_across_two_lists_are_witnessed() {
+    let text = with_input(
+        &guarded(
+            "all",
+            &[
+                exists(12, "permissions", "telephony"),
+                exists(12, "permissions", "voice"),
+                exists(12, "extras", "telephony"),
+                exists(12, "extras", "voice"),
+            ],
+        ),
+        "{name: extras, type: \"List<String>\"}",
+    );
+    check("two lists", &text, ALL_OUTCOMES);
+    no_refusal_coded(&text, &["ESS-SYNTH-003", "ESS-SYNTH-022"]);
+}
+
+/// Two literals beside a guard on another input whose base value refutes it.
+#[test]
+fn adversary_u4_literals_beside_another_leaf_are_witnessed() {
+    let mut children = telephony_voice();
+    children.push("            - 'level > 3'\n".to_string());
+    let text = with_input(&guarded("all", &children), "{name: level, type: Integer}");
+    check("beside another leaf", &text, ALL_OUTCOMES);
+    let result = ess_conformance::synthesize::synthesize(&ir(&text));
+    let document = document(&result);
+    let id = format!("{UPDATE}/outcome/updated-with-telephony");
+    let (input, _) = invocation(&document, &id).expect("the guarded scenario sends the command");
+    let arranged = document["scenarios"][id.as_str()].to_string();
+    let sent = input["permissions"]["items"].as_array().map_or(0, Vec::len);
+    let level = input["level"]["value"].as_f64().unwrap_or(f64::MIN);
+    assert!(
+        arranged.contains("telephony") && arranged.contains("voice") && sent >= 2 && level > 3.0,
+        "guarded scenario sends both literals and level > 3: {input}"
+    );
+}
+
+/// One literal held and another excluded: some scenario holds both and expects the else branch,
+/// so a target dropping the negated child fails the suite.
+#[test]
+fn adversary_u4_exists_and_not_exists_holds_one_excludes_other() {
+    let negated =
+        "            - not: {exists: {in: input.permissions, as: e, that: 'e == \"voice\"'}}\n"
+            .to_string();
+    let text = guarded("all", &[exists(12, "permissions", "telephony"), negated]);
+    let result = ess_conformance::synthesize::synthesize(&ir(&text));
+    let document = document(&result);
+    let both = document["scenarios"]
+        .as_object()
+        .into_iter()
+        .flatten()
+        .filter_map(|(id, scenario)| {
+            invocation(&document, id).map(|(input, outcome)| (scenario.to_string(), input, outcome))
+        })
+        .any(|(arranged, input, outcome)| {
+            let sent = input["permissions"]["items"].as_array().map_or(0, Vec::len);
+            arranged.contains("telephony")
+                && arranged.contains("voice")
+                && sent >= 2
+                && outcome.contains("updated\"")
+                && !outcome.contains("with-telephony")
+        });
+    assert!(
+        both,
+        "no scenario sends both and expects updated; refusals: {:#?}",
+        refusals(&result)
+    );
+    mutant_caught("negated child dropped", &text, UPDATES);
+}

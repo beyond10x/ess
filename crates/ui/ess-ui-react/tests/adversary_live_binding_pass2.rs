@@ -394,7 +394,7 @@ const app = jsx(ScopeLayer, {
   children: jsx(ConfirmView, { "data-ui-path": "pages/desk/sections/depart", does: "visit.SignOutVisitor", body: "Sign out?" }),
 });
 const root = React.__root(app).settle();
-const confirm = () => root.find((n) => n.tag === "button" && String(n.props.className).includes("ui-tone-danger"))[0];
+const confirm = () => root.find((n) => n.tag === "button" && String(n.props.className).includes("ui-emphasis-danger"))[0];
 confirm().props.onClick();
 root.settle();
 confirm().props.onClick();
