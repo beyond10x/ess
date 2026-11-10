@@ -122,18 +122,11 @@ fn unbalanced(text: &str) -> bool {
     for c in text.chars() {
         match (quote, c) {
             (Some(q), c) if c == q => quote = None,
-            (Some(_), _) => {}
             (None, '"' | '\'') => quote = Some(c),
             (None, '(' | '[') => open.push(c),
-            (None, ')') => {
-                if open.pop() != Some('(') {
-                    return true;
-                }
-            }
-            (None, ']') => {
-                if open.pop() != Some('[') {
-                    return true;
-                }
+            // A closer pops its opener whether or not it matches; a mismatch ends the scan.
+            (None, ')' | ']') if open.pop() != Some(if c == ')' { '(' } else { '[' }) => {
+                return true;
             }
             _ => {}
         }

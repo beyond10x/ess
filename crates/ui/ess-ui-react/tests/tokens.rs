@@ -242,6 +242,101 @@ fn changing_one_token_changes_exactly_that_custom_property() {
     }
 }
 
+/// No declaration of the stylesheet writes a literal a token or a renderer constant should hold.
+fn assert_no_literal(selector: &str, property: &str, value: &str) {
+    assert!(
+        !value.split_whitespace().any(|part| part.starts_with('#')),
+        "{selector} {{ {property}: {value} }} is a color literal"
+    );
+    let bytes = value.as_bytes();
+    for at in 0..bytes.len() {
+        let unit = [b"px".as_slice(), b"rem", b"em"]
+            .iter()
+            .any(|unit| bytes[at..].starts_with(unit));
+        let after = at
+            + if bytes[at..].starts_with(b"rem") {
+                3
+            } else {
+                2
+            };
+        let ends = after >= bytes.len() || !bytes[after].is_ascii_alphanumeric();
+        assert!(
+            !(unit && at > 0 && (bytes[at - 1].is_ascii_digit() || bytes[at - 1] == b'.') && ends),
+            "{selector} {{ {property}: {value} }} is a length literal"
+        );
+    }
+    // Unitless stroke and line-height numbers, a percentage radius and a named color are
+    // literals too: each is a renderer constant (`--ui-fixed-*`).
+    assert!(
+        !["stroke-width", "stroke-dasharray", "line-height"].contains(&property)
+            || value.starts_with("var("),
+        "{selector} {{ {property}: {value} }} is a unitless literal"
+    );
+    assert!(
+        !(property.starts_with("border") && property.contains("radius") && value.contains('%')),
+        "{selector} {{ {property}: {value} }} is a percentage radius literal"
+    );
+    let named = [
+        "transparent",
+        "currentcolor",
+        "black",
+        "white",
+        "red",
+        "green",
+        "blue",
+        "gray",
+        "grey",
+    ];
+    assert!(
+        !value
+            .split(|c: char| !c.is_ascii_alphanumeric() && c != '-')
+            .any(|part| named.contains(&part.to_ascii_lowercase().as_str())),
+        "{selector} {{ {property}: {value} }} is a named color literal"
+    );
+    // A font weight is a token or a renderer constant, never a keyword or a number.
+    assert!(
+        property != "font-weight" || value.starts_with("var("),
+        "{selector} {{ {property}: {value} }} is a weight literal"
+    );
+    // Viewport lengths are renderer constants. A percentage is exempt where it is a share of
+    // the parent (a width, a height, a gradient stop), not a space the document could set.
+    let viewport = ["vh", "vw", "vmin", "vmax"].iter().any(|unit| {
+        value
+            .split(|c: char| !c.is_ascii_alphanumeric() && c != '.')
+            .any(|part| {
+                part.strip_suffix(unit).is_some_and(|digits| {
+                    !digits.is_empty() && digits.chars().all(|c| c.is_ascii_digit() || c == '.')
+                })
+            })
+    });
+    assert!(
+        !viewport,
+        "{selector} {{ {property}: {value} }} is a viewport length literal"
+    );
+    let spacing = [
+        "padding",
+        "margin",
+        "gap",
+        "font-size",
+        "top",
+        "right",
+        "bottom",
+        "left",
+        "inset",
+        "min-height",
+        "min-width",
+        "max-height",
+        "line-height",
+    ];
+    assert!(
+        !(spacing
+            .iter()
+            .any(|name| property == *name || property.starts_with(&format!("{name}-")))
+            && value.contains('%')),
+        "{selector} {{ {property}: {value} }} is a percentage length literal"
+    );
+}
+
 #[test]
 fn the_stylesheet_keeps_no_value_a_token_holds() {
     let files = generate("");
@@ -261,100 +356,7 @@ fn the_stylesheet_keeps_no_value_a_token_holds() {
         held.extend(entry.weight.iter().map(|value| value.0.clone()));
     }
     for (selector, property, value) in declarations(css) {
-        assert!(
-            !value.split_whitespace().any(|part| part.starts_with('#')),
-            "{selector} {{ {property}: {value} }} is a color literal"
-        );
-        let bytes = value.as_bytes();
-        for at in 0..bytes.len() {
-            let unit = [b"px".as_slice(), b"rem", b"em"]
-                .iter()
-                .any(|unit| bytes[at..].starts_with(unit));
-            let after = at
-                + if bytes[at..].starts_with(b"rem") {
-                    3
-                } else {
-                    2
-                };
-            let ends = after >= bytes.len() || !bytes[after].is_ascii_alphanumeric();
-            assert!(
-                !(unit
-                    && at > 0
-                    && (bytes[at - 1].is_ascii_digit() || bytes[at - 1] == b'.')
-                    && ends),
-                "{selector} {{ {property}: {value} }} is a length literal"
-            );
-        }
-        // Unitless stroke and line-height numbers, a percentage radius and a named color are
-        // literals too: each is a renderer constant (`--ui-fixed-*`).
-        assert!(
-            !["stroke-width", "stroke-dasharray", "line-height"].contains(&property.as_str())
-                || value.starts_with("var("),
-            "{selector} {{ {property}: {value} }} is a unitless literal"
-        );
-        assert!(
-            !(property.starts_with("border") && property.contains("radius") && value.contains('%')),
-            "{selector} {{ {property}: {value} }} is a percentage radius literal"
-        );
-        let named = [
-            "transparent",
-            "currentcolor",
-            "black",
-            "white",
-            "red",
-            "green",
-            "blue",
-            "gray",
-            "grey",
-        ];
-        assert!(
-            !value
-                .split(|c: char| !c.is_ascii_alphanumeric() && c != '-')
-                .any(|part| named.contains(&part.to_ascii_lowercase().as_str())),
-            "{selector} {{ {property}: {value} }} is a named color literal"
-        );
-        // A font weight is a token or a renderer constant, never a keyword or a number.
-        assert!(
-            property != "font-weight" || value.starts_with("var("),
-            "{selector} {{ {property}: {value} }} is a weight literal"
-        );
-        // Viewport lengths are renderer constants. A percentage is exempt where it is a share of
-        // the parent (a width, a height, a gradient stop), not a space the document could set.
-        let viewport = ["vh", "vw", "vmin", "vmax"].iter().any(|unit| {
-            value
-                .split(|c: char| !c.is_ascii_alphanumeric() && c != '.')
-                .any(|part| {
-                    part.strip_suffix(unit).is_some_and(|digits| {
-                        !digits.is_empty() && digits.chars().all(|c| c.is_ascii_digit() || c == '.')
-                    })
-                })
-        });
-        assert!(
-            !viewport,
-            "{selector} {{ {property}: {value} }} is a viewport length literal"
-        );
-        let spacing = [
-            "padding",
-            "margin",
-            "gap",
-            "font-size",
-            "top",
-            "right",
-            "bottom",
-            "left",
-            "inset",
-            "min-height",
-            "min-width",
-            "max-height",
-            "line-height",
-        ];
-        assert!(
-            !(spacing
-                .iter()
-                .any(|name| property == *name || property.starts_with(&format!("{name}-")))
-                && value.contains('%')),
-            "{selector} {{ {property}: {value} }} is a percentage length literal"
-        );
+        assert_no_literal(&selector, &property, &value);
         if property == "z-index" {
             continue;
         }

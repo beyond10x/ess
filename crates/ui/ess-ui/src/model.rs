@@ -2589,6 +2589,7 @@ impl PercentScale {
     }
 
     /// The scale, with an unmapped one read as a fraction.
+    #[must_use]
     pub fn known(self) -> Self {
         match self {
             Self::Unmapped(_) => Self::Fraction,
