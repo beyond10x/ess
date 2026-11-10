@@ -1835,6 +1835,9 @@ check_status != Verified]`. A comparison that reads an absent `Optional` is unkn
 input it decides neither way and does not block the row; every sibling that can be decided there
 still decides the opposite. The input goes to the branch the guards select for it, which is an
 earlier branch where that branch takes the absent row.
+This holds for a presence child that is a direct child of the `all`/`any`. Two shapes are still
+refused: a read of `x` beside a presence sibling under `not`, and a presence child nested
+below another connective's child, beside a read of `x`.
 Where those orders and ranges leave no input at all, the child is not refused. Where the search
 finds none and did not try every value of every field, the scenario stands and an `ESS-SYNTH-022`
 refusal beside it names the input it could not build.
