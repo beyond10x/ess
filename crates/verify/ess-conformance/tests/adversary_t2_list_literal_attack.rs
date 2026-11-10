@@ -69,7 +69,9 @@ fn with_inputs(text: &str, fields: &[String]) -> String {
     let mut added =
         String::from("      - {name: permissions, type: \"List<demo.role.PermissionId>\"}\n");
     for field in fields {
-        added.push_str(&format!("      - {field}\n"));
+        added.push_str("      - ");
+        added.push_str(field);
+        added.push('\n');
     }
     added.push_str("    outcomes:\n      - name: unknown-permission\n        when_related: {via: input.permissions, exists: false}\n        error: demo.role.UnknownPermission\n      - name: updated-with-telephony\n");
     replaced(text, anchor, &added, 1)
