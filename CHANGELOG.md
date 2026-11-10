@@ -24,6 +24,7 @@
 - `ess-gen`: `http::caller_attributes` (the `x-ess-caller` of an OpenAPI operation) now lists a caller read in an `external:` branch's `when_subject:` predicate and input guard, in an error payload, through a struct attribute's member, and in the input guard beside `when_related:` (via and row-set), through the new `ess_compiler::expression::command_predicate_sites` (beyond10x/ess#740).
 - the generated Go and TypeScript explorers now count a required `returns: true` response member answered as `null` as absent, so exploration reports a `response` disagreement naming it, as the suite already refuses that answer as `invalid_input`. A member of the plain `Json` primitive is the exception, since null is one of its own values: it passes when answered as `null` and still fails when left out; a newtype over `Json` keeps the null test. An `Optional` member answered as `null` or left out still passes.
 - A default branch on a system-issued step beside a branch guarded by `when_subject:`, `when_related:` or a row-set guard with an input `when:` is awaited stating that input, so a correct target no longer fails its scenario (`ESS-CF-AWAIT`); the guarded branch stays an `ESS-SYNTH-024` refusal.
+- A generated React metric over a view that answers an error (501, 404, 500, 403) now draws an alert naming the status instead of `0`, and draws a loading state (`…`, `aria-busy`) before the first answer; a zero is shown only for an answered, empty view.
 
 ## [0.92.0] — 2026-11-09
 
