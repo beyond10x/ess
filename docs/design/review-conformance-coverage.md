@@ -126,6 +126,7 @@ A Refusal record is exactly **{origin, scenario, subject, source, code, message,
 | retained | null if no selected/outside scenario has that ID; otherwise exactly {origin, source}, naming the surviving scenario's origin and accepted authored source identity, or null source for a generated survivor. It references the same scenario ID; it does not invent an execution result for the rejected candidate or claim that the survivor checks the omitted obligation. |
 | scope | in_scope, outside_component or outside_origin, under the rules below; this is coverage applicability, not execution status. |
 | needs | Sorted/distinct existing EssSemanticRefs establishing other-component requirements when scope is outside_component; empty otherwise. |
+| covered_by | From `ess-conformance/65` only, and written only when present: the ScenarioId of the authored scenario whose `covers:` names this occurrence's scenario (see "An authored scenario covers a generated refusal"). A generated refusal with a known scenario ID may carry it; the named scenario is an accepted authored survivor, selected or outside. Absent below `/65` and absent when no authored scenario covers the occurrence. |
 
 The baseline cause-to-effect mapping is exhaustive, not a code-name heuristic. **ViewUndecidable, OrderUnwitnessed, InvariantUnobservable and RefusalUndeclared** map to check_not_emitted. **NoWitness, GuardUnevaluable, GuardUnsatisfiable, InstanceRequired, NotSynthesisedYet, BindingUnobservable, ValueInvariantUnwitnessed, DuplicateScenario, StrategyWithoutGuard and WitnessRejected** map to candidate_not_emitted. Every authored Cause variant maps to candidate_not_emitted, because authored compilation does not admit a partial file. InvariantUnobservable may have retained null when every invariant was unobservable: holds_after then emits no scenario, while still preserving each missing-check refusal. The effect must not be inferred solely from final ID membership. [S7; synthesize.rs:502–526, 2910–2976; authored.rs:1049–1090, 1416–1483]
 
@@ -144,7 +145,7 @@ The following invariants are binding:
 2. IDs in outside are unique and absent from selected IDs. **Refusal scenario IDs need not be disjoint from either set.** For every nonnull refusal ID, retained is nonnull exactly when the ID is selected or outside, and identifies that surviving scenario and its accepted source. Otherwise retained is null. Null scenario requires null retained. A check_not_emitted with no survivor is valid, including the all-invariants-unobservable case.
 3. refused is a **sorted list with multiplicity, not a set**: emit one array element per actual producer occurrence, including identical records concerning the same ID or source. Do not deduplicate, add an occurrence identity, or fabricate ordinal message suffixes. Sort outside by scenario then origin/reason; sort refused by origin, source, subject, scenario, code, effect, retained.origin, retained.source, scope, needs, message, with null before text and needs compared lexicographically. Equal complete sort keys give identical record bytes, so their relative order cannot change canonical bytes. Preserve full multiplicity whenever an inventory is retained through component/origin selection, explicit filtering, report coverage or parent equality checks. Selected/outside scenario IDs, authored-source map keys and report outcome IDs retain their existing uniqueness rules.
 4. counts.generated + counts.authored equals the selected scenario-map size. A retained selected scenario contributes exactly one terminal execution result regardless of how many refusals name it; a retained outside scenario contributes none. Rejected candidates and missing checks contribute no execution result or outcome category. counts.refused equals the array's occurrence count, including identical records and outside_component/outside_origin occurrences; it is never an additional scenario or failure count.
-5. Complete coverage requires complete_inventory and no refusal occurrence with scope in_scope; the predicate depends on existence, not the number of distinct records. An all-pass selected scenario with an in_scope omitted check or rejected candidate leaves conformance_status inconclusive. Outside scenarios and correctly justified outside-component/origin refusals do not make a complete named selection incomplete; they still prevent its result from satisfying a broader expectation.
+5. Complete coverage requires complete_inventory and no refusal occurrence with scope in_scope; the predicate depends on existence, not the number of distinct records. An all-pass selected scenario with an in_scope omitted check or rejected candidate leaves conformance_status inconclusive. Outside scenarios and correctly justified outside-component/origin refusals do not make a complete named selection incomplete; they still prevent its result from satisfying a broader expectation. A refusal occurrence marked `covered_by` a selected authored scenario does not count against this predicate (see "An authored scenario covers a generated refusal").
 6. Generated-only, authored-only, component, and filtered selections never become whole-system combined coverage merely because their own inventory is complete.
 7. An imported legacy suite cannot acquire complete_inventory from its nonzero scenario count or its provenance. Keep its legacy suite version and use unknown coverage in a diagnostic v2 report; do not manufacture v5 generated/authored origins by conversion. Rebuilding from the source/model inventory creates a new v5 suite and digest. An external v5 producer that knows scenario origins but cannot establish the full inventory must use unknown.
 8. Unknown component, duplicate scenario IDs or JSON object keys, inconsistent inventory/counts/source ownership/retained identity/scope, unrecognized vocabulary, and an explicit filter whose parent/IDs or retained inventory cannot be validated refuse suite admission. Legitimate scenario/refusal coexistence is admitted for diagnostic execution, not refused as malformed. Coverage claims are builder claims; bytes alone cannot prove that a builder enumerated all semantic obligations, preserved every original producer occurrence or justified component exclusion. Qualification additionally requires the caller's approved exact suite/selection.
@@ -152,6 +153,37 @@ The following invariants are binding:
 Repeated source constructs are a concrete multiplicity case: entity conversion retains invariant entries and holds_after pushes one refusal per unobservable invariant; authored Compiler::run visits each assertion and Compiler::refuse appends each refusal. Two identical unobservable invariants or undeclared-view assertions therefore remain two refusal elements with the same record bytes. The known scenario/source identity remains intact and neither occurrence adds an execution result. [ess-domain/src/entity.rs:1566; synthesize.rs:2945–2959; authored.rs:1543–1548, 1600–1602, 1893–1898]
 
 These obligations are owned by story:review-conformance-coverage. Fresh synthesis, authored-only compilation, component filtering, CLI --path merging, Go emission and web emission must each preserve the same inventory. Legacy diagnostic execution retains the legacy suite and makes no inventory claim.
+
+## An authored scenario covers a generated refusal
+
+A synthesis refusal still stays a refusal: `synthesis-seeds.md` records that an authored scenario "does
+not discharge a generated obligation", and that stands for every reader that does not read the mark
+below. What an author may add is a claim, checked by the run, that a scenario of theirs checks what the
+refused obligation would have.
+
+- **The key.** `ess-scenario/7` adds `covers:`, a list of exact ScenarioIds, each a scenario id synthesis
+  refused (`example.review.ConfirmDecision/outcome/already-exists`). Nothing is inferred from the
+  authored act's command and outcome: an authored act that reaches the refused outcome claims nothing
+  the generated scenario checks (row unchanged, no event, every creating path). Below `/7` the key is
+  refused as unsupported, naming `ess-scenario/7`, and an older `ess` refuses the header.
+- **The mark.** The occurrence is kept, with full multiplicity, and gains `covered_by`, the id of the
+  covering authored scenario, in coverage suite `ess-conformance/65`. The writer chooses `/65` exactly
+  when an occurrence carries the mark; a suite without a `covers:` key keeps the bytes it had. A reader
+  of `/65` admits the field only on a generated refusal whose scenario id it has, naming an authored
+  scenario that is selected or outside.
+- **The check at synthesis.** A `covers:` entry naming an id no generated refusal carries is refused as
+  `covers.unknown-scenario`, naming the id, before any output is written. Two scenarios covering one id
+  are refused as `covers.repeated-scenario`. The check runs when the selection includes generated
+  origins; an authored-only selection synthesizes nothing to cover and reads `covers:` as written.
+- **Completeness.** An in_scope refusal with `covered_by` does not leave the inventory incomplete when
+  the named scenario is among the selected authored scenarios. `Inventory::is_complete` is that one
+  predicate, so the text summary of `synthesize` (last line gains `, N covered by authored`, only when
+  N is above zero), its exit status and the report's `conformance_status` all read it. The report
+  qualifies as passed only when every selected scenario passed, the covering one included: a covering
+  scenario that fails fails the run, and a child suite from `select` that leaves it out leaves the
+  occurrence uncovered, so conformance stays inconclusive.
+- **Readers.** The Rust, Go and TypeScript coverage readers admit the
+  optional field only from `/65`, refusing it below as Rust does, and apply the same completeness rule. The browser player's admission reads no `/65` suite and refuses the field.
 
 ## Exact-suite digest and serialization
 

@@ -16,7 +16,7 @@ conformance fixture arrangement, not billions of increments and not a production
 
 Existing typed authored setup (`docs/design/authored-entity-state-arrangement.md`) can establish
 `MAX`, but it is not a synthesis seed: an authored scenario is appended after synthesis and does not
-discharge a generated obligation. Checking `MAX` in a separately authored scenario is expressible;
+discharge a generated obligation (it may claim a generated refusal with `covers:`, `ess-scenario/7`: the refusal stays, marked `covered_by`, and the run checks the claim, `review-conformance-coverage.md`). Checking `MAX` in a separately authored scenario is expressible;
 supplying that state to generated boundary coverage was not. A sequence-number allocator with
 compare-and-swap advancement, signed-maximum exhaustion and no arbitrary reset has the same need.
 
