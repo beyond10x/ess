@@ -4382,16 +4382,24 @@ fn force_beside_unnarrowed(
         .iter()
         .filter_map(|(field, value)| match value {
             ScenarioValue::Literal { value } => Some((field.clone(), value.clone())),
-            // The row the scenario names is no value a guard compares, but the input is read whole:
-            // left out, it leaves every guard over the input undecided (beyond10x/ess#727).
-            ScenarioValue::Instance { instance } => {
-                Some((field.clone(), Node::Text(instance.to_string())))
-            }
             _ => None,
         })
         .collect();
-    let Some(forced) = narrowed.into_iter().find(|branch| {
+    let found = narrowed.into_iter().find(|branch| {
         subject_fact::narrowing(&branch.condition).is_some_and(|predicate| {
+            // An input naming a row the scenario arranged is left unbound, and a guard reading it is
+            // undecided: absent is not false (beyond10x/ess#727).
+            let unbound = |field: &str| {
+                run.input
+                    .get(field)
+                    .is_some_and(|value| !matches!(value, ScenarioValue::Literal { .. }))
+            };
+            if predicate.fact_paths().iter().any(|path| {
+                matches!(path.segments(), [root, field, ..]
+                    if root == ess_domain::command::subject_fact::INPUT_NAMESPACE && unbound(field))
+            }) {
+                return false;
+            }
             subject_fact::guard_truth_with(
                 ir,
                 &subject.entity,
@@ -4402,14 +4410,35 @@ fn force_beside_unnarrowed(
                 Some((command, &input)),
             ) == Truth::False
         })
-    }) else {
-        return;
+    });
+    let (forced, changed) = match found {
+        Some(forced) => (forced, BTreeMap::new()),
+        None => match subject_fact::near_miss(
+            ir,
+            command,
+            outcome,
+            &subject.entity,
+            &run.before_settled,
+            state,
+            &input,
+        ) {
+            Some(near) => near,
+            None => return,
+        },
     };
     let Some(at) = run.invoke.iter().position(|step| {
         matches!(step, ScenarioStep::ExecuteCommand { command: sent, .. } if sent.name() == &command.name)
     }) else {
         return;
     };
+    if let ScenarioStep::ExecuteCommand { input: sent, .. } = &mut run.invoke[at] {
+        for (field, value) in &changed {
+            sent.insert(field.clone(), ScenarioValue::literal(value.clone()));
+        }
+    }
+    for (field, value) in changed {
+        run.input.insert(field, ScenarioValue::literal(value));
+    }
     run.invoke.insert(
         at,
         ScenarioStep::ConfigureExternalOutcome {
@@ -4440,6 +4469,7 @@ fn exercise_run(
     )
 }
 
+#[allow(clippy::too_many_lines)]
 fn exercise_run_in(
     models: &caller::InvocationModels<'_>,
     command: &ResolvedCommand,

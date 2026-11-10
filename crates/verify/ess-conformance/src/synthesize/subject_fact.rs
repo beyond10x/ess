@@ -506,6 +506,79 @@ pub(super) fn guard_truth_with(
     evaluate_row(ir, entity, settled, unwritten, held, predicate, input, true)
 }
 
+/// ess/29, beyond10x/ess#727: where the plain input of a sibling `outcome` that no guard selects
+/// leaves a narrowed external branch's subject guard undecided or true (a quantifier over an empty
+/// list), the fields of `sent` changed to an input the branch's own `when:` admits and its subject
+/// guard refutes, with that branch. The sibling still takes the row, whatever the provider says, so
+/// a target that skips the subject guard answers the forced branch instead and fails. Only a
+/// sibling nothing guards is moved, only a field its payload does not source, and only where every
+/// other branch's input guard stays refuted.
+#[allow(clippy::too_many_arguments)]
+pub(super) fn near_miss<'a>(
+    ir: &EssIr,
+    command: &'a ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    entity: &EntityHandle,
+    settled: &BTreeMap<String, super::Determined>,
+    state: &super::StateName,
+    sent: &BTreeMap<String, Node>,
+) -> Option<(&'a ResolvedOutcome, BTreeMap<String, Node>)> {
+    if !matches!(outcome.condition, ResolvedCondition::Otherwise) {
+        return None;
+    }
+    let branch = command.outcomes.iter().find(|branch| {
+        narrowing(&branch.condition).is_some() && external_input(&branch.condition).is_some()
+    })?;
+    let guard = narrowing(&branch.condition)?;
+    let own = external_input(&branch.condition)?;
+    let sourced = format!("{:?}{:?}", outcome.payload, outcome.error_payload);
+    let others: Vec<&Predicate> = command
+        .outcomes
+        .iter()
+        .filter(|other| other.name != branch.name && other.name != outcome.name)
+        .filter_map(|other| input_guard(&other.condition))
+        .collect();
+    candidates(ir, command, &[own], Distinction::PLAIN)
+        .ok()?
+        .into_iter()
+        .find_map(|candidate| {
+            let changed: BTreeMap<String, Node> = candidate
+                .into_iter()
+                .filter(|(field, value)| {
+                    sent.get(field).is_some_and(|held| held != value)
+                        && !sourced.contains(&format!("\"{field}\""))
+                })
+                .collect();
+            if changed.is_empty() {
+                return None;
+            }
+            let mut input = sent.clone();
+            input.extend(changed.clone());
+            let facts = crate::input::flatten_partial(ir, command, &input).ok()?;
+            if !decides(&facts, &[own], true).ok()? || !decides(&facts, &others, false).ok()? {
+                return None;
+            }
+            // A guard reading an input left unbound stays undecided: absent is not false.
+            let bound = guard.fact_paths().iter().all(|path| {
+                !matches!(path.segments(), [root, field, ..]
+                    if root == ess_domain::command::subject_fact::INPUT_NAMESPACE
+                        && !input.contains_key(field))
+            });
+            (bound
+                && guard_truth_with(
+                    ir,
+                    entity,
+                    settled,
+                    &BTreeSet::new(),
+                    Some(state),
+                    guard,
+                    Some((command, &input)),
+                ) == Truth::False)
+                .then_some(changed)
+        })
+        .map(|changed| (branch, changed))
+}
+
 /// Whether every leaf of `predicate` that `facts` leave `Unknown` reads a fact they hold absent:
 /// a `null` or left-out value under a root they bind, never an `input.` path without an input.
 fn unknown_by_absence(predicate: &Predicate, facts: &RowAndInput<'_>) -> bool {
@@ -640,7 +713,9 @@ fn evaluate_row(
     let row = crate::input::TypedFacts::new(ir, &fields, store);
     let input = match input {
         Some((command, values)) if reads_input(ir, entity, predicate) => {
-            match flatten(ir, command, values) {
+            match flatten(ir, command, values)
+                .or_else(|_| crate::input::flatten_partial(ir, command, values))
+            {
                 Ok(facts) => Some(facts),
                 Err(_) => return Truth::Unknown,
             }

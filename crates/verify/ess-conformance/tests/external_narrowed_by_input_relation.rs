@@ -325,8 +325,10 @@ fn a_narrowed_branch_with_no_own_guard_is_witnessed_on_its_guard() {
 
 #[test]
 fn the_only_branch_reading_the_row_is_checked_against_its_guard() {
-    let (_, suite) = witnessed("List<String>", ONLY_READER);
+    let (model, suite) = witnessed("List<String>", ONLY_READER);
     every_missing_is_required(&suite);
+    let statuses = run(&suite, ignoring_the_narrowing(&model));
+    assert!(!failing(&statuses).is_empty(), "{statuses:#?}");
 }
 
 #[test]
