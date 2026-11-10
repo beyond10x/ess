@@ -33,6 +33,8 @@ pub struct Options {
     pub page_size: usize,
     /// How long a read takes on the virtual clock.
     pub read_latency: Duration,
+    /// How long a read of a named view takes, instead of `read_latency`.
+    pub view_latency: std::collections::BTreeMap<String, Duration>,
 }
 
 impl Options {
@@ -43,6 +45,7 @@ impl Options {
             state_dir,
             page_size: 10,
             read_latency: Duration::ZERO,
+            view_latency: std::collections::BTreeMap::new(),
         }
     }
 }
@@ -1142,8 +1145,14 @@ impl App {
                 .cache
                 .iter()
                 .filter(|(_, entry)| {
+                    let latency = self
+                        .options
+                        .view_latency
+                        .get(&entry.request.view)
+                        .copied()
+                        .unwrap_or(self.options.read_latency);
                     matches!(entry.state, ReadState::Loading { since }
-                        if since + self.options.read_latency <= self.now)
+                        if since + latency <= self.now)
                 })
                 .map(|(key, _)| key.clone())
                 .collect();

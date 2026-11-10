@@ -29,6 +29,8 @@ pub struct Test {
     pub fixtures: Fixtures,
     /// How long every read takes on the virtual clock.
     pub latency: Duration,
+    /// How long a read of a named view takes, when `latency` is a map of view to duration.
+    pub view_latency: BTreeMap<String, Duration>,
     /// Its steps, in order.
     pub steps: Vec<Step>,
 }
@@ -36,8 +38,11 @@ pub struct Test {
 /// Per-test fixtures: view data by view, event scripts by channel.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct Fixtures {
-    /// View name to `{rows, total?, by_params?}`, as a fixture file holds it.
+    /// View name to `{rows, total?, by_params?}` as a fixture file holds it, to a list of those, or
+    /// to `{fails: <message>}`.
     pub views: BTreeMap<String, Value>,
+    /// Command name to `{refuses: <error code>, payload?}`.
+    pub commands: BTreeMap<String, Value>,
     /// Channel name to `{events, loop?, session?}`, as a script file holds it.
     pub scripts: BTreeMap<String, Value>,
 }
@@ -45,7 +50,7 @@ pub struct Fixtures {
 impl Fixtures {
     /// Whether the test replaces nothing.
     pub fn is_empty(&self) -> bool {
-        self.views.is_empty() && self.scripts.is_empty()
+        self.views.is_empty() && self.scripts.is_empty() && self.commands.is_empty()
     }
 }
 
@@ -357,9 +362,20 @@ fn parse_test(value: &Value) -> Result<Test, String> {
         None => Fixtures::default(),
         Some(value) => parse_fixtures(value).map_err(|message| format!("fixtures: {message}"))?,
     };
-    let latency = match test.get("latency") {
-        None => Duration::ZERO,
-        Some(value) => duration(value)?,
+    let (latency, view_latency) = match test.get("latency") {
+        None => (Duration::ZERO, BTreeMap::new()),
+        Some(Value::Mapping(views)) => {
+            let mut by_view = BTreeMap::new();
+            for (view, value) in views {
+                let view = view.as_str().ok_or("a view name is a string")?;
+                by_view.insert(
+                    view.to_owned(),
+                    duration(value).map_err(|message| format!("latency.{view}: {message}"))?,
+                );
+            }
+            (Duration::ZERO, by_view)
+        }
+        Some(value) => (duration(value)?, BTreeMap::new()),
     };
     let steps = test
         .get("steps")
@@ -376,21 +392,54 @@ fn parse_test(value: &Value) -> Result<Test, String> {
         name,
         fixtures,
         latency,
+        view_latency,
         steps,
     })
 }
 
 fn parse_fixtures(value: &Value) -> Result<Fixtures, String> {
-    let map = value.as_mapping().ok_or("a map of `views` and `scripts`")?;
-    known(map, &["views", "scripts"])?;
+    let map = value
+        .as_mapping()
+        .ok_or("a map of `views`, `commands` and `scripts`")?;
+    known(map, &["views", "commands", "scripts"])?;
     let mut fixtures = Fixtures::default();
     if let Some(views) = map.get("views") {
         for (view, data) in views.as_mapping().ok_or("`views` is a map")? {
             let view = view.as_str().ok_or("a view name is a string")?;
-            if data.get("rows").and_then(Value::as_sequence).is_none() {
-                return Err(format!("views.{view} lists `rows`"));
+            let lists_rows =
+                |answer: &Value| answer.get("rows").and_then(Value::as_sequence).is_some();
+            let valid = match data {
+                Value::Sequence(answers) => answers.iter().all(lists_rows),
+                Value::Mapping(fields) if fields.get("fails").is_some() => {
+                    known(fields, &["fails"])
+                        .map_err(|message| format!("views.{view}: {message}"))?;
+                    if fields.get("fails").and_then(Value::as_str).is_none() {
+                        return Err(format!("views.{view}: `fails` is a message"));
+                    }
+                    true
+                }
+                other => lists_rows(other),
+            };
+            if !valid {
+                return Err(format!(
+                    "views.{view} lists `rows`, a list of answers that each list `rows`, or `fails`"
+                ));
             }
             fixtures.views.insert(view.to_owned(), data.clone());
+        }
+    }
+    if let Some(commands) = map.get("commands") {
+        for (command, answer) in commands.as_mapping().ok_or("`commands` is a map")? {
+            let command = command.as_str().ok_or("a command name is a string")?;
+            let fields = answer
+                .as_mapping()
+                .ok_or_else(|| format!("commands.{command} is {{refuses, payload?}}"))?;
+            known(fields, &["refuses", "payload"])
+                .map_err(|message| format!("commands.{command}: {message}"))?;
+            if fields.get("refuses").and_then(Value::as_str).is_none() {
+                return Err(format!("commands.{command} names the error it `refuses`"));
+            }
+            fixtures.commands.insert(command.to_owned(), answer.clone());
         }
     }
     if let Some(scripts) = map.get("scripts") {

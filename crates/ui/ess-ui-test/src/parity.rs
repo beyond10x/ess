@@ -23,6 +23,7 @@
 
 use ess_ui::{ActionAs, Body, Collection, Composite, Document, NodeRef};
 
+use crate::spec::Test;
 use crate::target::Target;
 
 /// What the node at a path holds rows as.
@@ -141,6 +142,41 @@ pub(crate) fn unrendered(document: &Document, target: &Target) -> Option<String>
         )),
         _ => None,
     }
+}
+
+/// Why the Playwright spec marks a test `test.fixme` because it declares how a read or a command
+/// is answered beyond what the generated app's routes answer: a list of answers by params, a
+/// failing view, a refused command, or a latency per view. Read from the test's own keys, so the
+/// terminal runs it and the spec says why the browser does not yet.
+pub(crate) fn answers(test: &Test) -> Option<String> {
+    let lists = test
+        .fixtures
+        .views
+        .values()
+        .any(|answers| answers.as_sequence().is_some());
+    let fails = test
+        .fixtures
+        .views
+        .values()
+        .any(|answers| answers.get("fails").is_some());
+    let used = [
+        (lists, "a list of view answers"),
+        (fails, "a failing view"),
+        (!test.fixtures.commands.is_empty(), "a refused command"),
+        (!test.view_latency.is_empty(), "a latency per view"),
+    ]
+    .iter()
+    .filter(|(on, _)| *on)
+    .map(|(_, what)| *what)
+    .collect::<Vec<_>>();
+    if used.is_empty() {
+        return None;
+    }
+    Some(format!(
+        "declares {}: the generated app's routes answer every read and command alike, so the \
+         terminal runs this test and the browser does not yet",
+        used.join(", ")
+    ))
 }
 
 /// Why any step at `target` is refused because the terminal draws the node but cannot drive or

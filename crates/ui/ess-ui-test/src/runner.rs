@@ -12,13 +12,13 @@ use std::path::Path;
 use std::rc::Rc;
 use std::time::Duration;
 
-use ess_ui::{Action, ActionAs, Body, Composite, Document, FixtureIndex, Form, NodeRef, TabFields};
+use ess_ui::{Action, ActionAs, Body, Composite, Document, Form, NodeRef, TabFields};
 use ess_ui_tui::live::Script;
 use ess_ui_tui::{App, DataAdapter, FixtureAdapter, Lifecycle, Options, ReadRequest, ReadResult};
-use ess_yaml::{Mapping, Value};
+use ess_yaml::Value;
 
 use crate::screen::{Screen, SectionBox};
-use crate::spec::{scalar, Check, Fixtures, Play, SectionState, Step, Test};
+use crate::spec::{scalar, Check, Play, SectionState, Step, Test};
 use crate::target::{self, Row, Target};
 
 /// How many cycles of one looping fixture script a single `advance` (or `play`) may play. A
@@ -57,9 +57,21 @@ impl<'d> Runner<'d> {
     /// Opens `doc` (read from `base`) with `test`'s fixtures, keeping files under `dir`.
     pub fn start(doc: &'d Document, base: &Path, test: &Test, dir: &Path) -> Result<Self, String> {
         std::fs::create_dir_all(dir).map_err(|error| format!("{}: {error}", dir.display()))?;
-        let fixtured = with_fixtures(doc, base, &test.fixtures, dir)?;
-        let (adapter, mut scripts) =
+        let fixtured = doc.clone();
+        let (mut adapter, mut scripts) =
             FixtureAdapter::load(&fixtured, base, None).map_err(|error| error.to_string())?;
+        for (view, answers) in &test.fixtures.views {
+            adapter
+                .replace_view(view, answers)
+                .map_err(|message| format!("fixtures: views.{view}: {message}"))?;
+        }
+        for (command, answer) in &test.fixtures.commands {
+            let error = answer
+                .get("refuses")
+                .and_then(Value::as_str)
+                .ok_or_else(|| format!("fixtures: commands.{command} names its `refuses`"))?;
+            adapter.refuse(command, error, answer.get("payload"));
+        }
         for (channel, value) in &test.fixtures.scripts {
             let script = Script::parse(channel, value)?;
             scripts.retain(|known| known.channel != script.channel);
@@ -68,6 +80,7 @@ impl<'d> Runner<'d> {
         let adapter = Rc::new(RefCell::new(adapter));
         let mut options = Options::new(dir.join("state"));
         options.read_latency = test.latency;
+        options.view_latency.clone_from(&test.view_latency);
         let mut app = App::with_adapter(
             fixtured,
             Box::new(Shared(Rc::clone(&adapter))),
@@ -1557,51 +1570,4 @@ fn form_fields(form: &Form) -> Vec<ess_ui::Field> {
         fields.extend(tab.iter().cloned());
     }
     fields
-}
-
-/// `doc` with `fixtures` replacing its view data: every fixture file is named by absolute path,
-/// and each replaced view points at a file written under `dir`.
-fn with_fixtures(
-    doc: &Document,
-    base: &Path,
-    fixtures: &Fixtures,
-    dir: &Path,
-) -> Result<Document, String> {
-    let mut doc = doc.clone();
-    if fixtures.views.is_empty() {
-        return Ok(doc);
-    }
-    let mut index = doc.fixtures.clone().unwrap_or(FixtureIndex {
-        dir: None,
-        index: None,
-        views: BTreeMap::new(),
-        derived: BTreeMap::new(),
-        scripts: BTreeMap::new(),
-    });
-    let fixture_dir = base.join(index.dir.clone().unwrap_or_default());
-    if let Some(file) = index.index.take() {
-        let path = base.join(&file);
-        let text = std::fs::read_to_string(&path)
-            .map_err(|error| format!("cannot read {}: {error}", path.display()))?;
-        let listed: FixtureIndex =
-            ess_yaml::from_str(&text).map_err(|error| format!("{}: {error}", path.display()))?;
-        index.views.extend(listed.views);
-        index.derived.extend(listed.derived);
-        index.scripts.extend(listed.scripts);
-    }
-    for file in index.views.values_mut().chain(index.scripts.values_mut()) {
-        *file = fixture_dir.join(&*file).display().to_string();
-    }
-    let file = dir.join("views.yaml");
-    let mut views = Mapping::new();
-    for (view, data) in &fixtures.views {
-        views.insert(Value::String(view.clone()), data.clone());
-        index.views.insert(view.clone(), file.display().to_string());
-    }
-    let mut root = Mapping::new();
-    root.insert(Value::String("views".into()), Value::Mapping(views));
-    let text = ess_yaml::to_string(&Value::Mapping(root)).map_err(|error| error.to_string())?;
-    std::fs::write(&file, text).map_err(|error| format!("{}: {error}", file.display()))?;
-    doc.fixtures = Some(index);
-    Ok(doc)
 }
