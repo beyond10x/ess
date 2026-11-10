@@ -159,3 +159,49 @@ fn a_metric_whose_read_is_loading_draws_a_loading_state_not_zero() {
 ",
     );
 }
+
+/// Adversary: the default adapter of a generated project is the fixture adapter, which refuses a
+/// view without a fixture with `DataError("no fixture answers <view>", 404)`. The status is on the
+/// error, not at the start of its message, and the metric must still name it.
+#[test]
+fn adversary_a_metric_over_a_view_without_a_fixture_names_404() {
+    run(
+        "adversary-no-fixture",
+        r"
+  const { fixtureAdapter } = out('runtime/data');
+  setDataAdapter(fixtureAdapter);
+  await settle();
+  const found = alerts(metric('Items on the shelf'));
+  assert.equal(found.length, 1, root.text());
+  assert.ok(textOf(found[0]).includes('404'), `the alert names the status 404: ${textOf(found[0])}`);
+",
+    );
+}
+
+/// Adversary: a refresh after an answer keeps the answered value (no loading flash), and a refresh
+/// that then fails replaces it with the alert, never with 0.
+#[test]
+fn adversary_a_refresh_after_an_answer_keeps_the_value_then_fails_to_an_alert() {
+    run(
+        "adversary-refresh",
+        r"
+  const { invalidate } = out('runtime/data');
+  await settle();
+  assert.ok(textOf(metric('Items on the shelf')).startsWith('2'), root.text());
+  invalidate();
+  root.settle();
+  root.settle();
+  const node = metric('Items on the shelf');
+  assert.notEqual(node.props['aria-busy'], 'true', `a refresh does not flash loading: ${textOf(node)}`);
+  assert.ok(textOf(node).startsWith('2'), `a refresh keeps the answered value: ${textOf(node)}`);
+  await settle();
+  answer = { status: 500, rows: [] };
+  invalidate();
+  await settle();
+  const found = alerts(metric('Items on the shelf'));
+  assert.equal(found.length, 1, root.text());
+  assert.ok(textOf(found[0]).includes('500'), textOf(found[0]));
+  assert.ok(!textOf(metric('Units on the shelf')).startsWith('0'), root.text());
+",
+    );
+}

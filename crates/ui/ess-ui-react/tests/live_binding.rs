@@ -152,17 +152,19 @@ fn fnv(text: &str) -> u64 {
 /// for a client pager, the pager range and `field: .` (`collection.tsx`, `core.tsx`). The
 /// whole-project digest re-pinned for story:the-react-project-registers-each-declared-host-slot:
 /// the page, section and overlay frames take an optional `host` and a field an optional `host`
-/// node (`core.tsx`, `overlays.tsx`, `fields.tsx`).
+/// node (`core.tsx`, `overlays.tsx`, `fields.tsx`). `data.ts` and the whole-project digest
+/// re-pinned for story:metric-error-state-on-failed-read: a failed read carries its HTTP status
+/// (`errorStatus`), which a metric draws.
 const PLAIN: [(&str, u64); 7] = [
     ("README.md", 0xdae6_c3b6_7e5c_2d28),
     ("src/main.tsx", 0x6fd5_ef21_0230_ebac),
     ("src/runtime/actions.tsx", 0x5412_72cd_e713_733a),
     ("src/runtime/composites/confirm.tsx", 0xbeef_774c_44b0_0be3),
     ("src/runtime/composites/form.tsx", 0xa0b0_e430_a6e8_4b79),
-    ("src/runtime/data.ts", 0x400e_ae09_0d5f_e141),
+    ("src/runtime/data.ts", 0x0e1d_e114_d5fb_6c64),
     ("www/index.html", 0x5972_6d4a_5ee2_5ce2),
 ];
-const PLAIN_PROJECT: u64 = 0x0bc4_0592_8955_3713;
+const PLAIN_PROJECT: u64 = 0x7aed_2965_4da8_3b22;
 
 #[test]
 fn without_a_model_the_project_is_byte_identical() {
