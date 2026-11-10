@@ -906,6 +906,15 @@ impl<'d> Gen<'d> {
             .then(|| field.value_labels())
             .filter(|labels| !labels.is_empty())
             .map(|labels| ts::string_map(&labels));
+        // The tone a column or record draws its value in; a form input has no tone.
+        let tone = (!in_form)
+            .then(|| field.tone.as_ref().and_then(variant))
+            .flatten()
+            .map(|tone| ts::string(&tone));
+        let tone_by = (!in_form)
+            .then(|| field.tone_by.as_ref())
+            .flatten()
+            .map(|tone_by| ts::literal(&tone_by.map));
         // A field that is a host slot: the host's component in place of the value or input.
         let host = field
             .host
@@ -931,6 +940,8 @@ impl<'d> Gen<'d> {
             ("binds", expr(field.binds.as_ref())),
             ("labelFrom", label_from),
             ("labels", labels),
+            ("tone", tone),
+            ("toneBy", tone_by),
             ("suggests", suggests),
             ("note", quoted(field.note.as_ref())),
             ("choice", choice),

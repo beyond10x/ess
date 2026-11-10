@@ -152,8 +152,14 @@ fn the_style_keys_of_the_design_page_load_into_the_document() {
             chosen_by: Some(Expr("shell.theme".to_owned())),
         })
     );
-    assert_eq!(document.tone_maps["job_state"]["Failed"], Tone::Danger);
-    assert_eq!(document.tone_maps["deal_stage"]["won"], Tone::Success);
+    assert_eq!(
+        document.tone_maps["job_state"].tone(&Value::from("Failed")),
+        Some(&Tone::Danger)
+    );
+    assert_eq!(
+        document.tone_maps["deal_stage"].tone(&Value::from("won")),
+        Some(&Tone::Success)
+    );
 }
 
 #[test]
@@ -476,5 +482,173 @@ fn tones_naming_no_tone_map_is_refused_at_the_value() {
     assert!(
         none.message().contains("names no entry of `tone_maps`"),
         "{none}"
+    );
+}
+
+// ── a field takes a tone, a tone map may band numbers ────────────────────────────────────────
+
+const TONES: &str = r"tone_maps:
+  job_state: {Done: success, Failed: danger}
+  load: {bands: [{from: 0, tone: success}, {from: 50, tone: warning}, {from: 80, tone: danger}]}
+";
+
+const COLUMNS: &str = r"pages:
+  p:
+    kind: list_page
+    title: P
+    sections:
+      - name: jobs
+        component: collection
+        reads: t.Jobs
+        columns:
+          - {field: state, as: badge, tone: info, tone_by: job_state}
+          - {field: load, tone_by: load}
+          - {field: title}
+";
+
+fn column<'a>(document: &'a Document, name: &str) -> &'a ess_ui::Field {
+    let path = format!("pages/p/sections/jobs/columns/{name}");
+    let located = document
+        .nodes()
+        .into_iter()
+        .find(|located| located.path.to_string() == path)
+        .unwrap_or_else(|| panic!("no node at `{path}`"));
+    let NodeRef::Field(field) = located.node else {
+        panic!("not a field: {path}")
+    };
+    field
+}
+
+#[test]
+fn a_field_names_a_tone_map_and_the_loader_resolves_it() {
+    let document = loaded(&[TONES, COLUMNS]);
+    let state = column(&document, "state");
+    assert_eq!(state.tone, Some(Tone::Info));
+    let tone_by = state.tone_by.as_ref().expect("the field has a tone_by");
+    assert_eq!(tone_by.tones.as_deref(), Some("job_state"));
+    assert_eq!(tone_by.map, yaml("{Done: success, Failed: danger}"));
+    assert_eq!(state.tone_of(&Value::from("Failed")), Some(Tone::Danger));
+    assert_eq!(
+        state.tone_of(&Value::from("Queued")),
+        Some(Tone::Info),
+        "a value the map does not name takes the field's tone"
+    );
+    let title = column(&document, "title");
+    assert!(title.tone.is_none() && title.tone_by.is_none());
+    assert_eq!(title.tone_of(&Value::from("x")), None);
+}
+
+#[test]
+fn a_field_with_only_a_map_falls_back_to_neutral() {
+    let document = loaded(&[TONES, COLUMNS]);
+    let load = column(&document, "load");
+    assert_eq!(load.tone, None);
+    assert_eq!(load.tone_of(&Value::from(10)), Some(Tone::Success));
+    assert_eq!(load.tone_of(&Value::from("n/a")), Some(Tone::Neutral));
+}
+
+#[test]
+fn a_band_map_tones_a_number_by_the_last_band_it_reaches() {
+    let document = loaded(&[TONES, COLUMNS]);
+    let load = column(&document, "load");
+    let tone = |value: Value| load.tone_of(&value);
+    assert_eq!(tone(Value::from(0)), Some(Tone::Success));
+    assert_eq!(tone(Value::from(49.5)), Some(Tone::Success));
+    assert_eq!(tone(Value::from(50)), Some(Tone::Warning));
+    assert_eq!(tone(Value::from(80)), Some(Tone::Danger));
+    assert_eq!(tone(Value::from(9000)), Some(Tone::Danger));
+    assert_eq!(
+        tone(Value::from(-1)),
+        Some(Tone::Neutral),
+        "below the first band takes the node's tone"
+    );
+    assert_eq!(tone(Value::Null), Some(Tone::Neutral));
+    assert_eq!(tone(Value::from("80")), Some(Tone::Neutral), "no number");
+}
+
+#[test]
+fn a_field_naming_no_tone_map_is_refused_at_its_tone_by() {
+    let error = load(&[
+        TONES,
+        &COLUMNS.replacen("tone_by: job_state", "tone_by: ghost", 1),
+    ])
+    .expect_err("`ghost` names no tone map");
+    assert_eq!(
+        error.path().to_string(),
+        "pages/p/sections/jobs/columns/state/tone_by"
+    );
+    assert!(
+        error.message().contains("names no entry of `tone_maps`"),
+        "{error}"
+    );
+}
+
+const WIDGET: &str = r"widgets:
+  chip:
+    summary: A badge whose fallback tone the use chooses.
+    params:
+      status:    {type: string, required: true, note: the status}
+      otherwise: {type: {enum: [neutral, info, success, warning, danger]}, default: neutral, note: the tone of a value no map names}
+    body:
+      - {name: badge, primitive: badge, text: args.status, tone: args.otherwise}
+";
+
+const USES: &str = r"pages:
+  p:
+    kind: detail_page
+    title: P
+    sections:
+      - name: summary
+        reads: t.ById
+        children:
+          - {name: warm, component: chip, args: {status: row.state, otherwise: warning}}
+          - {name: plain, component: chip, args: {status: row.state}}
+";
+
+fn badge_tone(document: &Document, path: &str) -> Option<Tone> {
+    let located = document
+        .nodes()
+        .into_iter()
+        .find(|located| located.path.to_string() == path)
+        .unwrap_or_else(|| panic!("no node at `{path}`"));
+    let NodeRef::Node(node) = located.node else {
+        panic!("not a node: {path}")
+    };
+    match &node.body {
+        Body::Primitive(Primitive::Badge(badge)) => badge.tone.clone(),
+        other => panic!("not a badge: {other:?}"),
+    }
+}
+
+#[test]
+fn a_widget_hands_its_badge_a_tone_through_a_param_typed_as_the_tone_enum() {
+    let document = loaded(&[WIDGET, USES]);
+    assert_eq!(
+        badge_tone(
+            &document,
+            "pages/p/sections/summary/children/warm/body/badge"
+        ),
+        Some(Tone::Warning)
+    );
+    assert_eq!(
+        badge_tone(
+            &document,
+            "pages/p/sections/summary/children/plain/body/badge"
+        ),
+        Some(Tone::Neutral),
+        "the param's default"
+    );
+}
+
+#[test]
+fn a_tone_from_a_param_of_another_type_is_refused() {
+    let widget = WIDGET.replace(
+        "{type: {enum: [neutral, info, success, warning, danger]}, default: neutral, ",
+        "{type: string, default: neutral, ",
+    );
+    let error = load(&[&widget, USES]).expect_err("a string param is no tone");
+    assert!(
+        error.path().to_string().starts_with("widgets/chip"),
+        "refused by path: {error}"
     );
 }

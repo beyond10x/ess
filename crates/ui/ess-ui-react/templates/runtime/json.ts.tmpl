@@ -53,3 +53,28 @@ export function setPath(value: unknown, path: readonly string[], next: unknown):
   base[head] = setPath(base[head], rest, next);
   return base;
 }
+
+/**
+ * The tone a tone map gives `value`, or `fallback`. A map written out names exact values; a band
+ * map, `{ bands: [{ from, tone }] }`, gives a number the tone of the last band whose `from` it
+ * reaches, and a value that is no number, or below the first band, the fallback.
+ */
+export function toneFor(map: unknown, value: unknown, fallback: string): string {
+  if (!isObject(map)) {
+    return fallback;
+  }
+  if (Array.isArray(map.bands)) {
+    if (typeof value !== "number" || Number.isNaN(value)) {
+      return fallback;
+    }
+    let tone = fallback;
+    for (const band of map.bands) {
+      if (isObject(band) && typeof band.from === "number" && typeof band.tone === "string" && value >= band.from) {
+        tone = band.tone;
+      }
+    }
+    return tone;
+  }
+  const key = String(value);
+  return Object.prototype.hasOwnProperty.call(map, key) && typeof map[key] === "string" ? (map[key] as string) : fallback;
+}

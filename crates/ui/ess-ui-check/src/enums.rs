@@ -24,10 +24,12 @@ const CHECKED: &[&str] = &[
     "State.clear_on",
     "State.scope",
     "badge.tone_by.map.*",
+    "badge.tone_by.map.bands.tone",
     "chart.chart",
     "divider.orientation",
     "image.fit",
     "icon.tone_by.map.*",
+    "icon.tone_by.map.bands.tone",
     "input.as",
 ];
 
@@ -118,28 +120,40 @@ fn body(sink: &mut Sink, path: &NodePath, body: &Body) {
             }
         }
         Body::Primitive(Primitive::Badge(badge)) => {
-            let tones = badge
-                .tone_by
-                .as_ref()
-                .and_then(|tone_by| tone_by.map.as_mapping());
-            for tone in tones.into_iter().flatten().map(|(_, tone)| tone) {
-                if let Value::String(tone) = tone {
-                    value(sink, path, "badge.tone_by.map.*", "tone_by.map", tone);
-                }
+            if let Some(tone_by) = &badge.tone_by {
+                map_tones(sink, path, "badge.tone_by.map", &tone_by.map);
             }
         }
         Body::Primitive(Primitive::Icon(icon)) => {
-            let tones = icon
-                .tone_by
-                .as_ref()
-                .and_then(|tone_by| tone_by.map.as_mapping());
-            for tone in tones.into_iter().flatten().map(|(_, tone)| tone) {
-                if let Value::String(tone) = tone {
-                    value(sink, path, "icon.tone_by.map.*", "tone_by.map", tone);
-                }
+            if let Some(tone_by) = &icon.tone_by {
+                map_tones(sink, path, "icon.tone_by.map", &tone_by.map);
             }
         }
         _ => {}
+    }
+}
+
+/// Checks the tones of a `tone_by.map` written out (`field` is the schema's key of that map): the
+/// tone of each value of an exact map, and of each band of a band map.
+fn map_tones(sink: &mut Sink, path: &NodePath, field: &str, map: &Value) {
+    for (key, tone) in map.as_mapping().into_iter().flatten() {
+        match tone {
+            Value::String(tone) => value(sink, path, &format!("{field}.*"), "tone_by.map", tone),
+            Value::Sequence(bands) if key.as_str() == Some("bands") => {
+                for band in bands {
+                    if let Some(Value::String(tone)) = band.get("tone") {
+                        value(
+                            sink,
+                            path,
+                            &format!("{field}.bands.tone"),
+                            "tone_by.map",
+                            tone,
+                        );
+                    }
+                }
+            }
+            _ => {}
+        }
     }
 }
 
@@ -178,6 +192,7 @@ mod tests {
         "Degrades.(capability)",
         "Document.actor",
         "Document.placement_profile",
+        "Field.tone",
         "Field.unit",
         "HostSlot.stands_in_for",
         "Live.effect",
@@ -197,6 +212,7 @@ mod tests {
         "StateClass.(value)",
         "Store.(value)",
         "ToneMap.(value).*",
+        "ToneMap.(value).bands.tone",
         "Widget.arrange",
         "badge.tone",
         "button.tone",

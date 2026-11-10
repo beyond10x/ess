@@ -5,7 +5,7 @@ import { useUiPath } from "./core";
 import { display, formatDuration, formatValue, safeUrl, ScopeLayer, useScope } from "./core";
 import { filterRead, useRead, type ReadSpec } from "./data";
 import { evaluate, truthy } from "./expr";
-import { getPath, isObject, stableKey } from "./json";
+import { getPath, isObject, stableKey, toneFor, type Json } from "./json";
 
 /** A field as the document declares it, with its node path. */
 export interface FieldSpec {
@@ -24,6 +24,10 @@ export interface FieldSpec {
   labelFrom?: LabelFrom;
   /** The text a column or record shows for a value, keyed by the value as text. */
   labels?: Record<string, string>;
+  /** The tone of a value `toneBy` does not name; `neutral` when only `toneBy` is written. */
+  tone?: string;
+  /** The tone map the value is toned by: exact values, or `{ bands: [{ from, tone }] }`. */
+  toneBy?: Json;
   /** The values an `as: tags` input suggests: one per row of `reads`, its `value` field (`name` when
    * absent), or the row itself when it is a plain string. */
   suggests?: { reads: ReadSpec; value?: string };
@@ -135,11 +139,20 @@ export function FieldValue(props: { field: FieldSpec; row: unknown }): ReactNode
     return field.host;
   }
   const value = display(props.row, field.field);
+  // A field with a `tone` or a `tone_by` is drawn in the tone of its value: a badge's own tone,
+  // or the color of the text.
+  const tone =
+    field.tone === undefined && field.toneBy === undefined ? undefined : toneFor(field.toneBy, value, field.tone ?? "neutral");
+  const toned = tone !== undefined && field.as !== "badge" && field.as !== "choice" ? ` ui-field-tone-${tone}` : "";
   let content: ReactNode;
   switch (field.as) {
     case "badge":
     case "choice":
-      content = <span className={`ui-badge ui-badge-${String(value)}`}>{valueLabel(field.labels, value) ?? formatValue(value)}</span>;
+      content = (
+        <span className={`ui-badge ui-badge-${String(value)}${tone === undefined ? "" : ` ui-tone-${tone}`}`}>
+          {valueLabel(field.labels, value) ?? formatValue(value)}
+        </span>
+      );
       break;
     case "tags":
       // A null entry carries no tag, so it draws no chip.
@@ -186,7 +199,7 @@ export function FieldValue(props: { field: FieldSpec; row: unknown }): ReactNode
       content = valueLabel(field.labels, value) ?? formatValue(value, field.as);
   }
   return (
-    <span className={`ui-field ui-field-${field.as ?? "text"}`} data-ui-path={useUiPath(field["data-ui-path"])}>
+    <span className={`ui-field ui-field-${field.as ?? "text"}${toned}`} data-ui-path={useUiPath(field["data-ui-path"])}>
       {content}
     </span>
   );

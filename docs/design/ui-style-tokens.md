@@ -139,6 +139,35 @@ is typed `{ref: tone_map}`.
 The chain is then value → tone (`tone_maps`) → `{text, fill}` (`tokens.tone`) → color values
 (`tokens.color`, per theme). An author colors a state by what it means, once per document.
 
+### A field takes a tone, and a tone map may band numbers
+
+A value shown by a collection column or a record field takes `tone` and `tone_by`, with the same
+meaning as on a badge or icon (story `a-badge-field-takes-a-tone`, decided in
+`approval-record:ess-0870-wave`, G-8 answer a). Written on a field, `tone_by` is the name of a
+`tone_maps` entry, not a `{value, tones}` record: it reads the field's own value. `tone` is the
+tone of a value the map does not name, `neutral` when not written. The loader resolves the name
+as it resolves `tones:`, so after loading `Field.tone_by.map` is the map; a name in no
+`tone_maps` entry is the same refusal (`tone_map_refs`), at the field's `tone_by`. A tone map a
+field names is no longer `tone_map_unused`. A form input ignores both keys.
+
+React draws the value as a badge in that tone when `as: badge` (or `choice`), and as text in
+that tone otherwise (class `ui-field-tone-<tone>`, a text color only). The terminal draws the
+value in the emphasis of the tone (table under Renderers) in a column or a record. A field
+without `tone` and `tone_by` is drawn as before.
+
+A widget body passes a fallback tone on: `tone: args.<param>` is substituted at use when the
+param is typed `{enum: [neutral, info, success, warning, danger]}`; a param of any other type
+there is refused, at the node's path.
+
+A tone map has a second form, `{bands: [{from: <number>, tone: <tone>}, ...]}`. A number takes
+the tone of the last band whose `from` it reaches (`from <= value`); a number below the first
+band, or a value that is no number (a string, a boolean, absent), takes the node's `tone`. `from`
+must strictly ascend: `tone_bands` (error) refuses an entry that does not exceed the one before.
+A band map is a map like the other: `tone_by` names it with `tones:` or writes it as `map:`. It
+does not type the value it bands (`ess ui check` has no model types): a band map named where the
+values are not numbers is not checked, and shows the node's `tone`. `label_maps` do not band: the
+words for a band are domain vocabulary a view publishes.
+
 ## Where a node names a token
 
 A node names a token only through a role: `tone` and `tone_by` on badge and icon (through
@@ -165,7 +194,8 @@ New entries of `CHECKS` (`crates/ui/ess-ui-check/src/lib.rs:107-141`) and of the
 | `theme_tokens` | a theme overrides a group or a name the merged table does not declare, or gives a value of the wrong type | error |
 | `theme_choice` | `theme.default` names no theme; `theme:` without `themes:`; `chosen_by` is not `shell.<name>`, or names a state no shell declares, or one that is not class `preference`, not an enum, or has a variant or `default` that names no theme | error |
 | `tone_map_refs` | `tone_by.tones` on a badge or icon names no entry of `tone_maps`: a loader refusal, which needs its own branch in `classify` (`crates/ui/ess-ui-check/src/classify.rs:51-72`) or it is filed as `document_loads` | error |
-| `tone_map_unused` | a `tone_maps` entry no `tone_by` names | warning |
+| `tone_map_unused` | a `tone_maps` entry no `tone_by` (of a badge, an icon or a field) names | warning |
+| `tone_bands` | a band map whose `from` values do not strictly ascend | error |
 
 An unknown key in `tokens`, a theme, `theme` or a `type` or `tone` entry is refused by the reader
 (`deny_unknown_fields`), as everywhere in the document.
