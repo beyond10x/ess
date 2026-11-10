@@ -3665,6 +3665,7 @@ fn arranged_at(
         observe_read(ir, command, entity, &row, &mut steps, &mut setup.source);
         setup.bound.insert(field.to_owned(), row.instance.clone());
         super::related::settle(ir, outcome, &mut setup, (field, entity), &row);
+        setup.related_row.clone_from(&row.settled);
         input
     };
     // The related rows go ahead of the branch's own arrangement, but for rows filed under an owner

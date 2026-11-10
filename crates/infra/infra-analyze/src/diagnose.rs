@@ -182,36 +182,76 @@ fn rule_dangling_selector(ir: &InfraIr, findings: &mut Vec<Finding>) {
 /// `INFRA-DIAG-002`/`003` — every other unresolved fact the IR carries, split by whether the
 /// reference site declared itself optional. The kinds that cannot declare optionality —
 /// service account, claim, service, node, namespace — are required by construction.
+///
+/// A reference whose declared object name is empty — an operator-managed statefulset's
+/// `serviceName: ""` — names nothing, so its message says the declaration is empty rather than
+/// that a scan missed something; the code and severity stay the reference's.
 fn rule_missing_references(ir: &InfraIr, findings: &mut Vec<Finding>) {
     for fact in &ir.model().unresolved {
-        let (what, name, optional) = match &fact.target {
+        // `noun` and `declared` are the referenced object's kind and name, without any key.
+        let (what, name, optional, noun, declared) = match &fact.target {
             UnresolvedTarget::PodsMatchingSelector { .. } => continue,
             UnresolvedTarget::ConfigMap { name, optional } => {
-                ("configmap", name.clone(), *optional)
+                ("configmap", name.clone(), *optional, "configmap", name)
             }
             UnresolvedTarget::ConfigMapKey {
                 name,
                 key,
                 optional,
-            } => ("configmap key", format!("{name}[{key}]"), *optional),
-            UnresolvedTarget::Secret { name, optional } => ("secret", name.clone(), *optional),
+            } => (
+                "configmap key",
+                format!("{name}[{key}]"),
+                *optional,
+                "configmap",
+                name,
+            ),
+            UnresolvedTarget::Secret { name, optional } => {
+                ("secret", name.clone(), *optional, "secret", name)
+            }
             UnresolvedTarget::SecretKey {
                 name,
                 key,
                 optional,
-            } => ("secret key", format!("{name}[{key}]"), *optional),
-            UnresolvedTarget::ServiceAccount { name } => ("service account", name.clone(), false),
-            UnresolvedTarget::Claim { name } => ("persistent volume claim", name.clone(), false),
-            UnresolvedTarget::Service { name } => ("service", name.clone(), false),
-            UnresolvedTarget::Node { name } => ("node", name.clone(), false),
-            UnresolvedTarget::Namespace { name } => ("namespace", name.clone(), false),
+            } => (
+                "secret key",
+                format!("{name}[{key}]"),
+                *optional,
+                "secret",
+                name,
+            ),
+            UnresolvedTarget::ServiceAccount { name } => (
+                "service account",
+                name.clone(),
+                false,
+                "service account",
+                name,
+            ),
+            UnresolvedTarget::Claim { name } => (
+                "persistent volume claim",
+                name.clone(),
+                false,
+                "persistent volume claim",
+                name,
+            ),
+            UnresolvedTarget::Service { name } => ("service", name.clone(), false, "service", name),
+            UnresolvedTarget::Node { name } => ("node", name.clone(), false, "node", name),
+            UnresolvedTarget::Gateway { name } => ("gateway", name.clone(), false, "gateway", name),
+            UnresolvedTarget::Namespace { name } => {
+                ("namespace", name.clone(), false, "namespace", name)
+            }
         };
         let code = if optional {
             DiagCode::MissingOptionalReference
         } else {
             DiagCode::MissingReference
         };
-        let message = if optional {
+        let message = if declared.is_empty() {
+            format!(
+                "`{}` declares an empty {noun} name; it names no {noun}, so there is nothing to \
+                 observe",
+                fact.site
+            )
+        } else if optional {
             format!("the optional {what} `{name}` was not observed; tolerated, and worth knowing")
         } else {
             format!("the required {what} `{name}` was not observed")

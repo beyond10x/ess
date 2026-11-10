@@ -13,7 +13,7 @@ use serde_json::Value;
 use crate::code::{InfraCode, ValidationErrors};
 use crate::config::{ConfigMap, Secret};
 use crate::controller::{CronJob, Job, ReplicaSet};
-use crate::network::{Ingress, Service};
+use crate::network::{Gateway, HttpRoute, Ingress, Service};
 use crate::policy::{HorizontalPodAutoscaler, PodDisruptionBudget};
 use crate::raw::{
     items, optional_items, RawBundle, RawClaim, RawMeta, RawNamespace, RawNode, RawPod,
@@ -66,6 +66,28 @@ pub const OPTIONAL_KINDS: &[&str] = &[
     "horizontalpodautoscalers",
 ];
 
+/// The optional kinds from API groups a cluster may not serve at all: the Gateway API's
+/// gateways and HTTP routes (`gateway.networking.k8s.io`).
+///
+/// Optional like [`OPTIONAL_KINDS`], for one more reason: a cluster without the Gateway API
+/// installed has no such resource type, and the scanner records the kind as absent — `None`,
+/// "not observable here" — never as an empty list. The namespace topology profile does not
+/// collect them, so a qualified (`infra-observation/2`) bundle carrying one is refused.
+pub const GATEWAY_KINDS: &[&str] = &["gateways", "httproutes"];
+
+/// Refuses a Gateway API kind in a qualified bundle: the topology profile does not collect them.
+fn refuse_gateway_kinds_in_profile(raw: &RawBundle, errors: &mut ValidationErrors) {
+    for kind in GATEWAY_KINDS {
+        if raw.kinds.contains_key(*kind) {
+            errors.refuse(
+                InfraCode::UnsupportedFormat,
+                *kind,
+                "the namespace topology profile does not collect Gateway API kinds",
+            );
+        }
+    }
+}
+
 fn validate_coverage(raw: &RawBundle, errors: &mut ValidationErrors) {
     if (raw.format == SCOPED_OBSERVATION_FORMAT) != raw.coverage.is_some() {
         errors.refuse(
@@ -78,6 +100,7 @@ fn validate_coverage(raw: &RawBundle, errors: &mut ValidationErrors) {
     let Some(coverage) = &raw.coverage else {
         return;
     };
+    refuse_gateway_kinds_in_profile(raw, errors);
     let Ok(coverage) = crate::coverage::CollectionCoverage::try_from(coverage.clone()) else {
         errors.refuse(
             InfraCode::UnsupportedFormat,
@@ -259,13 +282,27 @@ pub struct NodeInfo {
     pub os_image: Option<String>,
 }
 
-/// A service account: pure identity in this subset.
+/// A service account: identity, and the cloud identity it assumes when it declares one.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct ServiceAccount {
     /// Identity.
     pub identity: Identity,
     /// Labels.
     pub labels: BTreeMap<String, String>,
+    /// The cloud role the account's pods assume, read from the one annotation key that declares
+    /// it (`eks.amazonaws.com/role-arn`). Omitted when absent, so an account without one keeps
+    /// its bytes.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cloud_identity: Option<CloudIdentity>,
+}
+
+/// A cloud role a service account assumes.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize)]
+pub struct CloudIdentity {
+    /// The cloud: `aws`, the only provider whose annotation is read.
+    pub provider: String,
+    /// The role, as the annotation states it.
+    pub role_arn: String,
 }
 
 /// A persistent volume claim.
@@ -450,6 +487,10 @@ pub struct Observation {
     pub pod_disruption_budgets: Option<Vec<PodDisruptionBudget>>,
     /// Horizontal pod autoscalers; `None` when the bundle predates the kind.
     pub horizontal_pod_autoscalers: Option<Vec<HorizontalPodAutoscaler>>,
+    /// Gateway API gateways; `None` when the bundle carries no such kind ([`GATEWAY_KINDS`]).
+    pub gateways: Option<Vec<Gateway>>,
+    /// Gateway API HTTP routes; `None` when the bundle carries no such kind.
+    pub http_routes: Option<Vec<HttpRoute>>,
 }
 
 impl TryFrom<RawBundle> for Observation {
@@ -588,6 +629,22 @@ impl TryFrom<RawBundle> for Observation {
                 })
                 .collect()
         });
+        let gateways =
+            optional_items::<crate::raw::RawGateway>(&raw, "gateways", &mut errors).map(|list| {
+                list.into_iter()
+                    .filter_map(|(location, item)| Gateway::from_raw(&item, &location, &mut errors))
+                    .collect()
+            });
+        let http_routes = optional_items::<crate::raw::RawHttpRoute>(
+            &raw,
+            "httproutes",
+            &mut errors,
+        )
+        .map(|list| {
+            list.into_iter()
+                .filter_map(|(location, item)| HttpRoute::from_raw(&item, &location, &mut errors))
+                .collect()
+        });
 
         let observation = Self {
             context: raw.context,
@@ -611,6 +668,8 @@ impl TryFrom<RawBundle> for Observation {
             cron_jobs,
             pod_disruption_budgets,
             horizontal_pod_autoscalers,
+            gateways,
+            http_routes,
         };
         observation.refuse_duplicates(&mut errors);
 
@@ -736,6 +795,20 @@ impl Observation {
             scan(
                 "horizontalpodautoscalers",
                 autoscalers.iter().map(|item| &item.identity),
+                errors,
+            );
+        }
+        if let Some(gateways) = &self.gateways {
+            scan(
+                "gateways",
+                gateways.iter().map(|item| &item.identity),
+                errors,
+            );
+        }
+        if let Some(routes) = &self.http_routes {
+            scan(
+                "httproutes",
+                routes.iter().map(|item| &item.identity),
                 errors,
             );
         }
@@ -909,6 +982,16 @@ impl ServiceAccount {
                 &format!("{location}.metadata.labels"),
                 errors,
             ),
+            cloud_identity: raw
+                .metadata
+                .annotations
+                .aws_role_arn
+                .clone()
+                .filter(|arn| !arn.is_empty())
+                .map(|role_arn| CloudIdentity {
+                    provider: "aws".to_owned(),
+                    role_arn,
+                }),
         })
     }
 }
@@ -1072,6 +1155,32 @@ mod tests {
             errors.contains(InfraCode::MalformedObject),
             "expected INFRA-OBJECT-001, got: {errors}"
         );
+    }
+
+    #[test]
+    fn gateway_kinds_are_absent_when_unserved_and_validated_when_present() {
+        let observation = validate(minimal_bundle()).expect("a bundle without them validates");
+        assert!(observation.gateways.is_none() && observation.http_routes.is_none());
+
+        let mut bundle = minimal_bundle();
+        bundle["kinds"]["gateways"] = serde_json::json!({ "items": [
+            { "metadata": { "name": "edge", "namespace": "gateways", "uid": "g-1" },
+              "spec": { "gatewayClassName": "shared", "listeners": [
+                  { "name": "https", "port": 443, "protocol": "HTTPS" } ] },
+              "status": { "addresses": [ { "type": "Hostname", "value": "edge.example.internal" } ] } }
+        ] });
+        bundle["kinds"]["httproutes"] = serde_json::json!({ "items": [] });
+        let observation = validate(bundle).expect("present gateway kinds validate");
+        let gateways = observation.gateways.expect("scanned");
+        assert_eq!(gateways[0].addresses[0].value, "edge.example.internal");
+        assert_eq!(observation.http_routes, Some(Vec::new()));
+
+        let mut bundle = minimal_bundle();
+        bundle["kinds"]["gateways"] = serde_json::json!({ "items": [
+            { "metadata": { "name": "edge", "namespace": "gateways", "uid": "g-1" } }
+        ] });
+        let errors = validate(bundle).expect_err("a gateway without a class is refused");
+        assert!(errors.contains(InfraCode::MalformedObject), "{errors}");
     }
 
     #[test]

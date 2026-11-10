@@ -49,7 +49,10 @@ legal source. The field's type must be assignable to the target's, or a declared
 cover the pair, exactly as for `input.<field>`.
 
 Synthesis asserts the value where the arrangement determined it: the arranged row's settled value
-for that field. Where the arrangement did not determine it, the payload field is covered by the
+for that field. Where the arranged row holds the field absent (a `{cleared: true}`, or an
+`Optional` input left out), the payload field is claimed absent through its leaf, which admits no
+present value, in whichever spelling its declared presence admits; never as an exact `null`.
+Where the arrangement did not determine it, the payload field is covered by the
 shape (presence and type) and the `sets:` target stops being a claim about the row.
 
 A text literal spelled `subject.<field name>` is refused with `misspelled_reference` in every
