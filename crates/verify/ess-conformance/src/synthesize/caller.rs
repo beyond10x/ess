@@ -48,6 +48,7 @@ use crate::scenario::{
     ConformanceScenario, EntityRef, EventRef, InstanceName, InstantName, ScenarioId, ScenarioStep,
     ScenarioValue, ViewExpectation,
 };
+use crate::value_invariant::{Selector, Witness};
 use crate::witness::{candidates, Distinction, MAX_CANDIDATES};
 
 /// How far the two callers' values sit from the plain witness: past every further instance an
@@ -1946,8 +1947,14 @@ pub(super) fn values_mut(step: &mut ScenarioStep, visit: &mut dyn FnMut(&mut Sce
             | ViewExpectation::Counts { .. }
             | ViewExpectation::Ranked { .. }
             | ViewExpectation::ChangedBy { .. }
-            | ViewExpectation::Page { .. }
-            | ViewExpectation::ValueInvariants(_) => {}
+            | ViewExpectation::Page { .. } => {}
+            ViewExpectation::ValueInvariants(held) => match &mut held.witness {
+                Witness::AnyObservedOccurrence => {}
+                Witness::ArrangedRow { selector } => match selector {
+                    Selector::ProjectedIdentity { expected, .. }
+                    | Selector::IdentityQuery { expected, .. } => tree(expected, visit),
+                },
+            },
         }
     }
     use ScenarioStep as S;
@@ -2046,6 +2053,9 @@ pub(super) fn names_mut(
         S::EstablishEntity { instance: name, .. } | S::CaptureInstance { instance: name, .. } => {
             instance(name);
         }
+        S::CaptureCommandResult { capture } | S::ExpectReplayResult { capture } => {
+            instance(&mut capture.instance);
+        }
         S::MarkInstant { instant: name }
         | S::ExpectNotBefore { instant: name, .. }
         | S::ExpectWithin { instant: name, .. }
@@ -2055,8 +2065,6 @@ pub(super) fn names_mut(
         | S::SnapshotCompleteSubject { .. }
         | S::ExpectCompleteSubjectUnchanged { .. }
         | S::ExpectNoEvents
-        | S::CaptureCommandResult { .. }
-        | S::ExpectReplayResult { .. }
         | S::ExpectResponsePayload { .. }
         | S::ExpectDirectResponse { .. }
         | S::CheckPeriodic { .. }
