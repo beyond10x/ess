@@ -30,6 +30,9 @@ jsonschema = { version = "0.52.1", default-features = false }
 # servers.
 ess-ui.workspace = true
 ess-ui-check.workspace = true
+# Only `tests/json_body_closure.rs`: its agreement oracle starts from the same validator options
+# every contract validator does.
+schema-contract.workspace = true
 # Generated network executables are built offline by served_entry and existing synthesis tests.
 # Admit the same runtime dependencies here so a clean test build populates the Cargo cache.
 clap = { workspace = true, features = ["derive"] }

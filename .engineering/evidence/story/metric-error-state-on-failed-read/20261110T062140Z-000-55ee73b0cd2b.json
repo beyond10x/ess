@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-10T06:21:40Z",
+  "actor": "human:timo",
+  "artifact": "story:metric-error-state-on-failed-read",
+  "kind": "story",
+  "revision": 6,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "cargo test -p ess-ui-react --locked --test metric_states --test live_composites --test live_binding",
+    "reference": "metric-error-state-on-failed-read/red.txt (2 passed, 3 failed) vs verify-batch2/c1..c8.txt at 7623ee5ec1 (7, 9, 11 passed)"
+  }
+}

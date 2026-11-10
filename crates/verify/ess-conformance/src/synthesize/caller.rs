@@ -1914,12 +1914,15 @@ fn replace_observed(step: &mut ScenarioStep, captured: &BTreeMap<(String, String
 /// The match is exhaustive on purpose: a step that gains a field holding values does not compile
 /// until it says here whether that field is walked. A walk over the serialized step could not
 /// tell a value from authored data that happens to share a key (beyond10x/ess#766).
+#[allow(clippy::too_many_lines)]
 pub(super) fn values_mut(step: &mut ScenarioStep, visit: &mut dyn FnMut(&mut ScenarioValue)) {
     fn each(
         values: &mut BTreeMap<String, ScenarioValue>,
         visit: &mut dyn FnMut(&mut ScenarioValue),
     ) {
-        values.values_mut().for_each(|value| tree(value, visit));
+        for value in values.values_mut() {
+            tree(value, visit);
+        }
     }
     fn tree(value: &mut ScenarioValue, visit: &mut dyn FnMut(&mut ScenarioValue)) {
         visit(value);
