@@ -1366,6 +1366,8 @@ impl RefusalCause {
     #[allow(clippy::too_many_lines)]
     pub fn hint(&self) -> &'static str {
         match self {
+            // A later key of a ranked view no tie pins (beyond10x/ess#708).
+            Self::NoWitness(gap) if ordered_head::tie_gap(gap.reason) => ordered_head::TIE_REPAIR,
             // A seed row of a set effect's filtered entity, which no seed serves: the rows the
             // filter selects are what is missing, and the cause before the seed rows says why.
             Self::NoWitness(gap) if gap.reason == set_effects::SEEDS_UNSERVED => {
@@ -10888,8 +10890,138 @@ fn arrange_ranked(
                 }
             }
         }
+        if !unwitnessed.contains(&name) {
+            arrange_ties(
+                beside,
+                view,
+                *admits_subject,
+                (owner, &params),
+                &mut companions,
+                (id, refusals),
+            );
+        }
     }
     (companions, unwitnessed)
+}
+
+/// The further rows a ranked view's later keys need, so that each key after the first decides the
+/// order of two rows of the scenario (beyond10x/ess#708).
+///
+/// `ranked` reads a key only where every key before it is equal, so a pair of rows differing on the
+/// first key never reads the second. For each key `order_by[at]` after the first, a row is arranged
+/// that agrees with the scenario's base row — the subject where the view shows it, otherwise the
+/// first companion it shows — on every key before it, and differs on it: a chain of `n + 1` rows
+/// for `n` keys, each created through the declared creating outcome with its input steered to the
+/// base row's earlier values. Where the key is the identity, two rows always differ on it and
+/// nothing steers it.
+///
+/// A key no tie reaches is a standing gap beside the scenario, named by the view and the key
+/// ([`ordered_head::tie_gap`]); the scenario stays as it was.
+fn arrange_ties(
+    beside: &Beside<'_>,
+    view: &ResolvedView,
+    admits_subject: bool,
+    (owner, params): (Option<&InstanceName>, &BTreeMap<String, ScenarioValue>),
+    companions: &mut Vec<Arrangement>,
+    (id, refusals): (&ScenarioId, &mut Vec<Refusal>),
+) {
+    use ess_primitives::predicate::{CompareKind, CompareOp};
+    let (ir, entity) = (beside.ir, beside.entity);
+    let key_of = |settled: &BTreeMap<String, Determined>, key: &str| -> Option<Node> {
+        settled.get(key)?.value.as_literal().cloned()
+    };
+    let shown = |row: &Arrangement| row.shows(ir, view, params) == Ok(true);
+    let base = if admits_subject {
+        Some(beside.settled.clone())
+    } else {
+        companions
+            .iter()
+            .find(|row| shown(row))
+            .map(|row| row.settled.clone())
+    };
+    let compared = |field: &str, op: CompareOp, value: &Node| {
+        Some(Predicate::Compare {
+            left: Operand::Fact(FactPath::from_segments([field.to_owned()])),
+            op,
+            right: Operand::Literal(fact_value(value)?),
+            kind: CompareKind::Value,
+        })
+    };
+    let filter = paging::with_bound_params(view, params)
+        .and_then(|bound| bound.filter)
+        .or_else(|| view.filter.clone());
+    for at in 1..view.order_by.len() {
+        let key = &view.order_by[at].field;
+        let gap = |reason: &'static str| {
+            Refusal::beside(
+                id,
+                RefusalCause::NoWitness(WitnessGap {
+                    path: format!("{}: `{key}`", view.name),
+                    type_ref: "ranked view".into(),
+                    reason,
+                }),
+            )
+        };
+        if let ordered_head::Tie::Gap(reason) = ordered_head::tie(ir, entity, &view.order_by, at) {
+            refusals.push(gap(reason));
+            continue;
+        }
+        let Some(base) = &base else {
+            continue;
+        };
+        let identity = ordered_head::is_identity(ir, entity, key);
+        let held = key_of(base, key);
+        let pins: Option<Vec<(&str, Node)>> = view.order_by[..at]
+            .iter()
+            .map(|ranking| Some((ranking.field.as_str(), key_of(base, &ranking.field)?)))
+            .collect();
+        let (Some(pins), true) = (pins, identity || held.is_some()) else {
+            refusals.push(gap(ordered_head::TIE_NOT_SHOWN));
+            continue;
+        };
+        let accept = |row: &Arrangement| {
+            shown(row)
+                && pins
+                    .iter()
+                    .all(|(field, value)| key_of(&row.settled, field).as_ref() == Some(value))
+                && (identity
+                    || key_of(&row.settled, key).is_some_and(|value| Some(&value) != held.as_ref()))
+        };
+        if companions.iter().any(accept) {
+            continue;
+        }
+        let pinned: Vec<Predicate> = pins
+            .iter()
+            .filter_map(|(field, value)| compared(field, CompareOp::Eq, value))
+            .collect();
+        let steer = held
+            .as_ref()
+            .filter(|_| !identity)
+            .and_then(|value| compared(key, CompareOp::Gt, value));
+        let goals: Vec<Predicate> = [filter.as_ref(), None]
+            .into_iter()
+            .flat_map(|filter| {
+                [true, false].map(|steered| {
+                    Predicate::All(
+                        filter
+                            .cloned()
+                            .into_iter()
+                            .chain(pinned.iter().cloned())
+                            .chain(steer.clone().filter(|_| steered))
+                            .collect(),
+                    )
+                })
+            })
+            .collect();
+        let found = goals.iter().find_map(|goal| {
+            let distinction = beside.next(companions);
+            arrange_toward_owned(ir, entity, goal, beside.actors, distinction, owner, &accept)
+        });
+        match found {
+            Some(row) => companions.push(row),
+            None => refusals.push(gap(ordered_head::TIE_NOT_SHOWN)),
+        }
+    }
 }
 
 /// Per view, each further row asserted beside the subject's: the fields that name it, and whether

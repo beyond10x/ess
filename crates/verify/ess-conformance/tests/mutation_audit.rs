@@ -951,3 +951,108 @@ fn each_class_changes_exactly_what_its_description_says() {
         assert_eq!(described.get(id).map(String::as_str), Some(change), "{id}: {described:#?}");
     }
 }
+
+// ---- a later key of a ranked view is pinned by a tie ----------------------------------------------
+
+/// The interpreted audit of one fixture, `order-flip` alone.
+fn order_flips(name: &str) -> MutationReport {
+    let (files, texts) = fixture(name);
+    let ir = mutate::compile(files.clone(), &texts).unwrap();
+    mutate::audit(&files, &texts, &[MutantClass::OrderFlip], || {
+        Interpreted::for_model(ir.clone())
+    })
+    .unwrap_or_else(|refusal| panic!("{refusal}"))
+}
+
+fn synthesized(name: &str) -> ess_conformance::synthesize::Synthesis {
+    let (files, texts) = fixture(name);
+    ess_conformance::synthesize::synthesize(&mutate::compile(files, &texts).unwrap())
+}
+
+/// The `region` and `priority` of every `PlaceOrder` the baseline scenario sends, in order.
+fn placed_orders(synthesis: &ess_conformance::synthesize::Synthesis) -> Vec<(String, String)> {
+    let (_, scenario) = synthesis
+        .suite
+        .scenarios
+        .iter()
+        .find(|(id, _)| id.to_string() == "example.order.PlaceOrder/outcome/placed")
+        .expect("the baseline scenario of PlaceOrder");
+    scenario
+        .steps
+        .iter()
+        .filter_map(|step| match step {
+            ess_conformance::scenario::ScenarioStep::ExecuteCommand { command, input, .. }
+                if command.to_string() == "example.order.PlaceOrder" =>
+            {
+                let read = |field: &str| format!("{:?}", input[field].as_literal());
+                Some((read("region"), read("priority")))
+            }
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn a_second_order_key_is_killed_by_a_tie_on_the_first() {
+    let report = order_flips("mutation-order-tie.yaml");
+    pinned_survivors(&report, &[]);
+    assert_eq!(
+        (
+            report.counts.mutants,
+            report.counts.killed,
+            report.counts.survived
+        ),
+        (2, 2, 0),
+        "{}",
+        report.render_text()
+    );
+    let sent = placed_orders(&synthesized("mutation-order-tie.yaml"));
+    assert!(
+        sent.iter()
+            .enumerate()
+            .any(|(at, (region, priority))| sent[at + 1..]
+                .iter()
+                .any(|(other, later)| other == region && later != priority)),
+        "two PlaceOrder commands share a region and differ in priority: {sent:?}"
+    );
+}
+
+#[test]
+fn an_identity_after_two_keys_is_killed_with_the_other_two() {
+    let report = order_flips("mutation-order-tie-identity-last.yaml");
+    assert_eq!(
+        (
+            report.counts.mutants,
+            report.counts.killed,
+            report.counts.survived
+        ),
+        (3, 3, 0),
+        "{}",
+        report.render_text()
+    );
+}
+
+#[test]
+fn a_key_after_the_identity_names_a_gap_and_the_scenario_stands() {
+    let synthesis = synthesized("mutation-order-tie-identity-first.yaml");
+    let gaps: Vec<_> = synthesis
+        .refusals
+        .iter()
+        .filter(|refusal| refusal.stands)
+        .collect();
+    assert_eq!(gaps.len(), 1, "{:#?}", synthesis.refusals);
+    let text = gaps[0].to_string();
+    assert_eq!(
+        gaps[0]
+            .scenario
+            .as_ref()
+            .map(ToString::to_string)
+            .as_deref(),
+        Some("example.order.PlaceOrder/outcome/placed")
+    );
+    assert!(
+        text.contains("example.order.OrderQueue") && text.contains("priority"),
+        "{text}"
+    );
+    assert!(!placed_orders(&synthesis).is_empty());
+}

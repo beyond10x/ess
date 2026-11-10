@@ -1,0 +1,39 @@
+format: ess/32
+system: example
+version: v1
+domain: example.order
+summary: A view ranked by two keys, the second of which only a tie on the first decides.
+types:
+  - {name: example.order.OrderId, kind: newtype, of: Uuid}
+entities:
+  - name: example.order.Order
+    identity: {name: order_id, type: example.order.OrderId}
+    fields:
+      - {name: region, type: String}
+      - {name: priority, type: Integer}
+    lifecycle: {initial: Placed, states: [Placed], terminal: [Placed], transitions: []}
+events:
+  - name: example.order.OrderPlaced
+    fields: [{name: order_id, type: example.order.OrderId}]
+commands:
+  - name: example.order.PlaceOrder
+    input:
+      - {name: region, type: String}
+      - {name: priority, type: Integer}
+    outcomes:
+      - name: placed
+        creates: example.order.Order
+        instance: order_id
+        emits: [example.order.OrderPlaced]
+        payload:
+          example.order.OrderPlaced: {order_id: {generated: true}}
+        sets: {region: input.region, priority: input.priority}
+views:
+  - name: example.order.OrderQueue
+    source: example.order.Order
+    consistency: read_your_writes
+    order_by: [region asc, priority asc, order_id asc]
+    fields:
+      - {name: order_id, type: example.order.OrderId}
+      - {name: region, type: String}
+      - {name: priority, type: Integer}
