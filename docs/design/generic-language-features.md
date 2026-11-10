@@ -314,7 +314,9 @@ specification already holds, with no new key. From `ess/30` the branch may be le
 (1) every branch that creates a row of the subject's entity sets the field, and every branch that
 writes it (`sets:` on the addressed row, on `instances:` rows or in an `affects:` entry) writes
 `{cleared: true}`, the field's own value, or an input its command refuses first with an unguarded
-`exists: false` over the same entity; and (2) no branch deletes a row of the referenced entity
+`exists: false` over the same entity that the precedence rule answers before the writing branch (a
+create-or-update creator, `unknown_instance:`, answers before it and stores the identity, so it is
+no proof); and (2) no branch deletes a row of the referenced entity
 (`deletes:`, `instances:` with `deletes:`, `affects:` with `deletes:`; a binding runs a command, so
 the command is named). Where either fails, the refusal stands and its hint names each branch that
 defeats the proof; below `ess/30` it stands with a hint naming `ess/30` where the proof holds

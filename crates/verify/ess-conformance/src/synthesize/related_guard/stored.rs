@@ -76,19 +76,22 @@ fn unpointed(field: &str, why: &str) -> RefusalCause {
     }
 }
 
-/// Whether `command` refuses, before storing it, an identity no row carries in `input`: it reads
-/// the row that input names through `when_related:` and declares an `exists: false` branch.
-fn checks(command: &ResolvedCommand, input: &str) -> bool {
-    command.outcomes.iter().any(|outcome| {
-        matches!(
-            &outcome.condition,
-            ResolvedCondition::Related {
-                via: ResolvedRelatedVia::Input { field, .. },
-                test: ResolvedRelatedTest::Absent,
-                ..
-            } if field == input
-        )
-    })
+/// Whether `command` refuses, before `writer` stores it, an identity no row carries in `input`: it
+/// reads the row that input names through `when_related:` in an `exists: false` branch the
+/// precedence plan answers before `writer` (a create-or-update creator answers first and stores it).
+fn checks(ir: &EssIr, command: &ResolvedCommand, writer: &ResolvedOutcome, input: &str) -> bool {
+    crate::synthesize::precedence::answers_before(ir.format(), command, writer)
+        .into_iter()
+        .any(|outcome| {
+            matches!(
+                &outcome.condition,
+                ResolvedCondition::Related {
+                    via: ResolvedRelatedVia::Input { field, .. },
+                    test: ResolvedRelatedTest::Absent,
+                    ..
+                } if field == input
+            )
+        })
 }
 
 /// Why no run holds, in `field` of a `subject` row, an identity no `far` row carries — the proof
@@ -136,7 +139,7 @@ fn unreachable(
                     ResolvedPayloadValue::SubjectField { field: read, .. }
                         if own && read == field => {}
                     ResolvedPayloadValue::InputField { field: input, .. }
-                        if set.conversion.is_none() && checks(command, input) =>
+                        if set.conversion.is_none() && checks(ir, command, outcome, input) =>
                     {
                         checked = true;
                     }
@@ -254,7 +257,7 @@ fn relink(
         }
         Link::Row(row) => Some(ScenarioValue::instance((*row).clone())),
         Link::Fresh(far) => {
-            if checks(command, &input) {
+            if checks(ir, command, creating, &input) {
                 return Err(gap(&unreachable(ir, subject, field, far).unwrap_or_else(
                     || {
                         format!(
