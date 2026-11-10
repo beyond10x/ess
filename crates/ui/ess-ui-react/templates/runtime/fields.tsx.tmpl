@@ -15,7 +15,9 @@ export interface FieldSpec {
   label?: string;
   as?: string;
   /** What an `as: duration` value counts; milliseconds when absent. */
-  unit?: "ms" | "s";
+  unit?: "ms" | "s" | "m" | "h";
+  /** What an `as: percent` value is a share of; a fraction when absent. */
+  scale?: "fraction" | "hundredths";
   sortable?: boolean;
   visible?: string;
   binds?: string;
@@ -196,7 +198,7 @@ export function FieldValue(props: { field: FieldSpec; row: unknown }): ReactNode
       content = <input type="checkbox" checked={truthy(value)} disabled aria-label={fieldLabel(field)} />;
       break;
     default:
-      content = valueLabel(field.labels, value) ?? formatValue(value, field.as);
+      content = valueLabel(field.labels, value) ?? formatValue(value, field.as, undefined, { scale: field.scale });
   }
   return (
     <span className={`ui-field ui-field-${field.as ?? "text"}${toned}`} data-ui-path={useUiPath(field["data-ui-path"])}>
@@ -378,6 +380,51 @@ export function FieldInput(props: { field: FieldSpec }): ReactNode {
         />
       );
       break;
+    case "percent": {
+      // The input is in percent: a fraction is shown and written as hundredths of its number.
+      const fraction = field.scale !== "hundredths";
+      const shownPercent = typeof value === "number" ? String(fraction ? Number((value * 100).toPrecision(12)) : value) : text;
+      control = (
+        <input
+          type="number"
+          value={shownPercent}
+          onChange={(event: ChangeEvent<HTMLInputElement>) => {
+            const typed = event.target.value;
+            set(typed === "" ? null : fraction ? Number((Number(typed) / 100).toPrecision(12)) : Number(typed));
+          }}
+        />
+      );
+      break;
+    }
+    case "timestamp": {
+      // An instant, edited and written in UTC.
+      const held = typeof value === "string" || typeof value === "number" ? new Date(value) : undefined;
+      const zoned = typeof value === "string" && /(Z|[+-]\d\d:?\d\d)$/i.test(value);
+      const shownInstant =
+        held !== undefined && !Number.isNaN(held.getTime()) && (zoned || typeof value === "number")
+          ? held.toISOString().slice(0, 16)
+          : text;
+      control = (
+        <input
+          type="datetime-local"
+          value={shownInstant}
+          onChange={(event: ChangeEvent<HTMLInputElement>) => {
+            const typed = event.target.value;
+            if (typed === "") {
+              set(null);
+            } else if (typeof value === "number" && typed === shownInstant) {
+              // Unchanged: the number keeps its seconds.
+              set(value);
+            } else {
+              // The box gives minutes, or seconds when the held value had them; only the zone is added.
+              const instant = /T\d\d:\d\d$/.test(typed) ? `${typed}:00Z` : `${typed}Z`;
+              set(typeof value === "number" ? Date.parse(instant) : instant);
+            }
+          }}
+        />
+      );
+      break;
+    }
     case "date":
     case "time":
       control = (

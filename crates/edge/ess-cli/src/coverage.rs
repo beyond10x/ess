@@ -125,8 +125,14 @@ pub(super) fn generate(
             for outside in &inventory.outside {
                 println!("outside: {} ({:?})", outside.scenario, outside.reason);
             }
+            let covered = inventory.covered_count();
+            let covered = if covered == 0 {
+                String::new()
+            } else {
+                format!(", {covered} covered by authored")
+            };
             println!(
-                "{} selected scenario(s), {} authored source(s), {} refusal occurrence(s)",
+                "{} selected scenario(s), {} authored source(s), {} refusal occurrence(s){covered}",
                 suite.suite().len(),
                 inventory.authored_sources.len(),
                 inventory.refused.len()

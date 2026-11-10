@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-forced-external-guard-relating-an-input-list-to-a-stored-list-is-witnessed
 kind: story
-status: active
+status: implemented
 title: A narrowed external branch is witnessed on a row and input its subject guard holds for
 summary: An external branch whose when_subject relates an input list to a stored list gets no outcome scenario, and every scenario through its state is refused ESS-SYNTH-004 (beyond10x/ess#727)
 tags:
@@ -17,17 +17,22 @@ relations:
 - decomposes: epic:zero-open-issues-2026-11
 scope:
 - confidence: cited
+  path: crates/verify/ess-conformance/src/input.rs
+- confidence: cited
   path: crates/verify/ess-conformance/src/synthesize.rs
 - confidence: cited
   path: crates/verify/ess-conformance/src/synthesize/subject_fact.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/tests/adversary_t1_lane3_narrowed_input_relation.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/tests/adversary_t1_lane3_pass2_near_miss.rs
 - confidence: inferred
   path: crates/verify/ess-conformance/tests/external_narrowed_by_input_relation.rs
-- confidence: inferred
-  path: crates/verify/ess-conformance/tests/fixtures/external-narrowed-by-input-relation.yaml
-revision: 11
+revision: 14
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-10T00:33:51Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":1}}}
 - {from: "proposed", to: "active", at: "2026-11-10T00:33:52Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "active", to: "implemented", at: "2026-11-10T17:53:40Z", actor: "human:timo", revision: 14, decided_on: {"recorded":{"test_result":1,"review_outcome":3}}}
 ---
 ## Need
 
@@ -165,18 +170,21 @@ current main first.
 
 ## Scope
 
-- cited: crates/verify/ess-conformance/src/synthesize/subject_fact.rs (`external_inputs` at 2937-2971, `linked_inputs` at 2945, `grounded(.., &hints(command))` at 2947; `uses` at 50-57; `inputs_for` grounds at 1898-1899; `beside_another` at 1930)
-- cited: crates/verify/ess-conformance/src/synthesize.rs (`unclaimed_external` at 5245, its `uses` gate at 5253-5254)
-- inferred: crates/verify/ess-conformance/tests/external_narrowed_by_input_relation.rs (new)
-- inferred: crates/verify/ess-conformance/tests/fixtures/external-narrowed-by-input-relation.yaml (new; one fixture or two)
+Delivered in turn 1 of the zero-open-issues plan (lane story 3, row-set correction 2104be969b). The paths below are the ones
+its commits changed, read from the diff, so every entry is cited.
 
-confidence: high — the story names both defect sites and they match the tree; only the test file and fixture names are guessed (story-scoper, 2026-11-10)
+- cited, confirmed: `crates/verify/ess-conformance/src/synthesize.rs`
+- cited, confirmed: `crates/verify/ess-conformance/src/synthesize/subject_fact.rs`
+- cited, confirmed: `crates/verify/ess-conformance/tests/external_narrowed_by_input_relation.rs`
+- cited, added: `crates/verify/ess-conformance/src/input.rs`
+- cited, added: `crates/verify/ess-conformance/tests/adversary_t1_lane3_narrowed_input_relation.rs`
+- cited, added: `crates/verify/ess-conformance/tests/adversary_t1_lane3_pass2_near_miss.rs`
 
-Correction to the earlier pass: `tests/external_narrowed_by_subject.rs` was a cited line and is removed: the story cites it only as a regression that passes unchanged (acceptance 6).
+Scoped but not touched:
 
-Safety note (scoper, unproven): widen only the check at `synthesize.rs:5253` (for example by also testing `subject_fact::narrowing(&outcome.condition)`), not `subject_fact::uses`, which six other callers in `synthesize.rs` read.
+- `crates/verify/ess-conformance/tests/fixtures/external-narrowed-by-input-relation.yaml`
 
-Shared surfaces this story moves (epic § Shared surfaces, not scope entries): `CHANGELOG.md`; the byte-pin tables only if a pinned suite moves (`tests/fixtures/external-beside-held-guard-base.tsv` must stay unchanged, acceptance 6).
+Shared surface written by the coordinator, not a scope entry: `CHANGELOG.md`.
 
 ## Fit review
 

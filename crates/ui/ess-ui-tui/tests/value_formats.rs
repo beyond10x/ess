@@ -315,3 +315,112 @@ fn a_held_null_tag_leaves_no_empty_slot_in_the_tags_input() {
     );
     assert!(!edited.contains(", ,"), "no empty slot for null:\n{screen}");
 }
+
+/// Minutes and hours, a timestamp, a time of day and a percent scale, on a collection, a record
+/// and a metric (story:a-declared-field-format-renders-or-is-refused).
+const FORMATS: &str = r"
+format: ess-ui/1
+app: t
+model: t.system
+placement_profile: fat
+fixtures: {dir: data, views: {t.Stats: stats.yaml}}
+shells:
+  app: {regions: {main: {kind: page_outlet}}}
+navigation:
+  home: stats
+  sections: [{name: all, pages: [stats]}]
+pages:
+  stats:
+    kind: list_page
+    title: Stats
+    sections:
+      - name: wait
+        component: metric
+        reads: {view: t.Stats}
+        match: wait
+        format: duration
+        label: Wait
+      - name: wait_min
+        component: metric
+        reads: {view: t.Stats}
+        match: wait_min
+        format: duration
+        unit: m
+        label: WaitMin
+      - name: sla
+        component: metric
+        reads: {view: t.Stats}
+        match: sla
+        format: percent
+        scale: hundredths
+        label: Sla
+      - name: ratio
+        component: metric
+        reads: {view: t.Stats}
+        match: ratio
+        format: percent
+        label: Ratio
+      - name: rows
+        component: collection
+        reads: {view: t.Stats}
+        columns:
+          - {field: title}
+          - {field: minutes, as: duration, unit: m}
+          - {field: hours, as: duration, unit: h}
+          - {field: at, as: timestamp}
+          - {field: at, name: clock, as: time}
+          - {field: sla, as: percent, scale: hundredths}
+          - {field: ratio, as: percent}
+";
+
+const STATS: &str = r"
+views:
+  t.Stats:
+    rows:
+      - {id: s-1, title: first, wait: 73, wait_min: 90, sla: 50, ratio: 0.5, minutes: 90, hours: 26, at: '2026-01-02T03:04:05Z'}
+";
+
+fn formats_screen(test: &str) -> String {
+    let base = dir(test);
+    std::fs::write(base.join("data/stats.yaml"), STATS).expect("the fixture is written");
+    let mut app = App::from_text(FORMATS, &base, Options::new(base.join("state")))
+        .unwrap_or_else(|error| panic!("{error}"));
+    app.open_page("stats", &[]);
+    app.render_text(200, 48)
+}
+
+#[test]
+fn a_duration_counts_minutes_and_hours_in_a_column_and_a_metric() {
+    let screen = formats_screen("minutes-hours");
+    let first = row(&screen, "first");
+    assert!(first.contains("1:30:00"), "90 minutes:\n{screen}");
+    assert!(first.contains("26:00:00"), "26 hours:\n{screen}");
+    assert!(row(&screen, "Wait:").contains("0:01:13"), "{screen}");
+    assert!(row(&screen, "WaitMin").contains("1:30:00"), "{screen}");
+}
+
+#[test]
+fn a_time_shows_the_time_of_day_and_a_timestamp_date_and_time() {
+    let screen = formats_screen("timestamp");
+    let first = row(&screen, "first");
+    assert!(
+        first.contains("2026-01-02 03:04"),
+        "a timestamp in ISO order:\n{screen}"
+    );
+    assert!(
+        !first.contains("2026-01-02T") && !first.contains("03:04:05"),
+        "{screen}"
+    );
+    assert!(
+        first.contains(" 03:04") && first.matches("03:04").count() == 2,
+        "a time is the time of day:\n{screen}"
+    );
+}
+
+#[test]
+fn a_percent_declares_its_scale() {
+    let screen = formats_screen("percent");
+    assert!(row(&screen, "Sla").contains("50%"), "{screen}");
+    assert!(row(&screen, "Ratio").contains("50%"), "{screen}");
+    assert_eq!(row(&screen, "first").matches("50%").count(), 2, "{screen}");
+}

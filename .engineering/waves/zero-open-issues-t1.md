@@ -10,7 +10,7 @@ that edit synthesize.rs run serially in one lane, which goes against no printed 
 colliding stories stay serial; every other story keeps its collisions apart and its dependencies
 earlier. The plan-level record is `approval-record:zero-issues-turn-plan`.
 
-Status: running
+Status: delivered (2026-11-10)
 
 ## Units
 
@@ -89,7 +89,7 @@ no `depends_on` and no `blocked_by`.
 
 ## Stories that left the turn
 
-None at stage 1.
+None.
 
 ## On the way out
 
@@ -126,18 +126,55 @@ Each tree builds into its own `target/` inside the tree; scratch is the turn's s
 
 | id | branch | story | stage | head |
 |---|---|---|---|---|
-| `zi-t1-0` | `lane/t1-synthesize` | lane 1-5 | planned | |
-| `zi-t1-1` | `impl/a-swapped-caller-run-renames-only-the-names-it-binds` | unit 1 | planned | |
-| `zi-t1-2` | `impl/ess-37-and-conformance-64-65-are-open-for-the-epics-constructs` | unit 2 | planned | |
-| `zi-t1-3` | `impl/a-badge-field-takes-a-tone` | unit 3 | planned | |
-| `zi-t1-4` | `impl/caller-attributes-walk-every-caller-read-of-a-command` | unit 4 | planned | |
-| `zi-t1-5` | `impl/metric-error-state-on-failed-read` | unit 5 | planned | |
-| `zi-t1-6` | `impl/a-graph-editor-draws-its-edges-and-a-menu-per-node` | unit 6 | planned | |
-| `zi-t1-7` | `impl/a-create-or-update-writer-is-no-proof-a-stored-reference-is-present` | unit 7 | planned | |
-| `zi-t1-8` | `impl/a-group-named-like-a-top-level-command-of-its-component-is-refused` | unit 8 | planned | |
-| `zi-t1-9` | `impl/a-required-response-member-answered-as-null-fails-exploration` | unit 9 | planned | |
-| `zi-t1-10` | `impl/a-stored-guard-beside-an-input-guard-on-a-system-step-synthesizes` | unit 10 | planned | |
+| `zi-t1-0` | `lane/t1-synthesize` | lane 1-5 | merged, finished, gc | `cc38529cbe` |
+| `zi-t1-1` | `impl/a-swapped-caller-run-renames-only-the-names-it-binds` | unit 1 | merged, finished, gc | `04801c5109` |
+| `zi-t1-2` | `impl/ess-37-and-conformance-64-65-are-open-for-the-epics-constructs` | unit 2 | merged, finished, gc | `4dded413eb` |
+| `zi-t1-3` | `impl/a-badge-field-takes-a-tone` | unit 3 | merged, finished, gc | `b6ab7ebf84` |
+| `zi-t1-4` | `impl/caller-attributes-walk-every-caller-read-of-a-command` | unit 4 | merged, finished, gc | `3a06fd7462` |
+| `zi-t1-5` | `impl/metric-error-state-on-failed-read` | unit 5 | merged, finished, gc | `4b28e6e5b0` |
+| `zi-t1-6` | `impl/a-graph-editor-draws-its-edges-and-a-menu-per-node` | unit 6 | merged, finished, gc | `ab05724768` |
+| `zi-t1-7` | `impl/a-create-or-update-writer-is-no-proof-a-stored-reference-is-present` | unit 7 | merged, finished, gc | `6df796883e` |
+| `zi-t1-8` | `impl/a-group-named-like-a-top-level-command-of-its-component-is-refused` | unit 8 | merged, finished, gc | `75c0e11fd4` |
+| `zi-t1-9` | `impl/a-required-response-member-answered-as-null-fails-exploration` | unit 9 | merged, finished, gc | `ba749746cd` |
+| `zi-t1-10` | `impl/a-stored-guard-beside-an-input-guard-on-a-system-step-synthesizes` | unit 10 | merged, finished, gc | `3c5b54bd12` |
+
+## Gate
+
+One chain on the integration branch, through the turn's build script. Each step's output is kept
+in the turn scratch under `gate/`.
+
+- `fmt-check`: exit 0, run on `045e12f293`.
+- clippy with `-D warnings`, one crate group at a time: every group exit 0 after the lint
+  corrections `24d5cb0f6f`, `55e3856e5b` and `e2a791a54a`.
+- Projections: `cargo xtask docs`, generate, schema, what-changed, cli-reference, diagnostics,
+  format-history, site-data and admonitions, each exit 0.
+- `ess-conformance`: 727 of 728 binaries passed on `2d3c0b929a`. The one failure,
+  `row_set_upsert`, was traced to correction C of lane story 3 and fixed in `2104be969b`. After the
+  fix, `row_set_upsert`, the lane targets and the byte pins all passed (32 binaries).
+- Tests by crate group:
+  - ess-domain, ess-diff and ess-compiler: exit 0.
+  - ess-synth, ess-gen and ess-entity-runtime: 1518 of 1524 passed. The six failures were in
+    `adversary_view_params_pass1` and `adversary_view_params_pass2`, a race on a shared probe
+    directory. Both binaries passed when re-run with one test thread.
+  - ess-cli: 1257 of 1263 passed.
+    - Five failures came from TMPDIR sitting inside the Git checkout, which the CLI refuses. They
+      passed when re-run with TMPDIR outside it.
+    - The a16 input-discovery case fails with "path must be shorter than SUN_LEN". It fails the
+      same way on the base `ab09f5b48d`, so it is filed as a backlog draft.
+  - The UI crates: exit 0.
+  - ess-xtask: `site_navigation` failed because story 5 took a guide page to 408 lines. After the
+    page split in `045e12f293`, 423 tests passed and none failed, and `cargo xtask docs` exited 0.
+- Docs correction `209583be9d`: released formats were still called unreleased. After it,
+  `format-history --check` and `cargo xtask docs` both exited 0.
 
 ## Backlog drafts filed
 
-None yet.
+- `story:a-terminal-metric-shows-a-failed-read`
+- `story:a-failed-list-section-names-its-status`
+- `story:a-null-newtype-over-json-member-is-judged-alike-in-go-and-typescript`
+- `story:caller-synthesis-reads-a-struct-caller-attribute-member`
+- `story:a-system-step-default-states-every-input-its-siblings-read`
+- `story:a-presence-child-beside-a-read-is-witnessed-at-any-depth`
+- `story:an-absent-read-inside-a-struct-payload-field-is-claimed-absent`
+- `story:a-guard-decided-false-beside-an-unbound-identity-read-is-still-forced`
+- `story:the-a16-socket-case-binds-under-any-tmpdir`

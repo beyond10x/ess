@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-create-or-update-writer-is-no-proof-a-stored-reference-is-present
 kind: story
-status: active
+status: implemented
 title: A create-or-update writer is no proof that a stored reference is present
 summary: The ess/30 enforced-reference proof and synthesis count an unknown_instance creator as refusing a missing related row first, although under the one rule it stores one; found by the 0.70.0 unit I adversary
 tags:
@@ -23,10 +23,11 @@ scope:
   path: crates/verify/ess-conformance/tests/adversary_i_create_or_update.rs
 - confidence: inferred
   path: docs/design/generic-language-features.md
-revision: 10
+revision: 12
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-10T00:33:41Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":1}}}
 - {from: "proposed", to: "active", at: "2026-11-10T00:33:41Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "active", to: "implemented", at: "2026-11-10T17:53:33Z", actor: "human:timo", revision: 12, decided_on: {"recorded":{"test_result":1,"review_outcome":2,"verification":1}}}
 ---
 ## Problem
 
@@ -86,15 +87,12 @@ Reproduction: `crates/verify/ess-conformance/tests/fixtures/create-or-update-bes
 
 ## Scope
 
-- cited: crates/specify/ess-domain/src/command/reference_integrity.rs (`checked` at 171-196 treats an input as checked if any branch refuses it with `exists: false`, 186-188; called at 135 and 149; the hint comes out of `unchecked` at 161 and the `(Err, true)` arm of `lift` at 58-63, so no new message code)
-- cited: crates/verify/ess-conformance/src/synthesize/related_guard/stored.rs (`checks` at 81-91, used by `unreachable` at 141, the ESS-SYNTH-003 text at 152, and by `relink` at 257)
-- cited: crates/verify/ess-conformance/tests/adversary_i_create_or_update.rs (`a_later_command_reading_the_stored_agent` at 322 and `a_stored_agent_written_by_the_creator_is_not_proven_present` at 357 wait for the flip)
-- inferred: docs/design/generic-language-features.md (§ G2 "Enforced references", 314-317, needs to say the refusal answers before the writing branch)
+Delivered in turn 1 of the zero-open-issues plan (merge 6df796883e). The paths below are the ones
+its commits changed, read from the diff, so every entry is cited.
 
-Read only: `crates/specify/ess-domain/src/command/precedence.rs` (`Composition::of` 397, `place` 471, `order` 557, `Phase::position` 131, all public); `crates/verify/ess-conformance/src/synthesize/precedence.rs:32` (`answers_before`, `pub(crate)`).
+- cited, confirmed: `crates/specify/ess-domain/src/command/reference_integrity.rs`
+- cited, confirmed: `crates/verify/ess-conformance/src/synthesize/related_guard/stored.rs`
+- cited, confirmed: `crates/verify/ess-conformance/tests/adversary_i_create_or_update.rs`
+- cited, confirmed: `docs/design/generic-language-features.md`
 
-confidence: high — the story names both defect sites and the test file, and all three are where it says (story-scoper, 2026-11-10)
-
-Corrections to the earlier pass: removed `crates/specify/ess-domain/src/command/precedence.rs` (only read); added `docs/design/generic-language-features.md` (inferred).
-
-Shared surfaces this story moves (epic § Shared surfaces, not scope entries): `CHANGELOG.md`; possibly an `ess/37` `stricter:` row of `FORMAT_HISTORY`; the `enforced-reference.yaml` rows of `selection-precedence-table.tsv` (505-509) and of `synthesis-suite-bytes-table.tsv` stay unchanged.
+Shared surface written by the coordinator, not a scope entry: `CHANGELOG.md`.
