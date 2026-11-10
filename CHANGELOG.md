@@ -10,6 +10,7 @@
 ### Fixed
 
 - `ess specify validate` refuses a command group named like a top-level command or view word of its own component (`DuplicateDeclaration` at `component <name>`, naming the group and the command or view). The generated clap tree used to define that word twice. A new `validate_own_first_level_words` in `ess-domain`, called from the specification beside `validate_shared_binary_words`.
+- the `ess/30` enforced-reference proof and synthesis no longer count a create-or-update creator (`unknown_instance:`) as refusing a missing related row first. The `exists: false` branch must answer before the writing branch under the one precedence rule; otherwise the later reading command keeps its `non_exhaustive_branches` refusal naming the writer, and synthesis witnesses its `exists: false` branch instead of calling it unreachable.
 
 ## [0.92.0] — 2026-11-09
 
