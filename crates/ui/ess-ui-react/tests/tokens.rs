@@ -167,7 +167,7 @@ fn every_token_of_the_merged_table_is_a_custom_property() {
     // them and a document cannot change them.
     let sizes: Vec<String> = written
         .keys()
-        .filter(|name| name.starts_with("--ui-size-"))
+        .filter(|name| name.starts_with("--ui-size-") || name.starts_with("--ui-fixed-"))
         .cloned()
         .collect();
     assert!(sizes.len() > 10, "{sizes:?}");
@@ -285,6 +285,34 @@ fn the_stylesheet_keeps_no_value_a_token_holds() {
                 "{selector} {{ {property}: {value} }} is a length literal"
             );
         }
+        // Unitless stroke and line-height numbers, a percentage radius and a named color are
+        // literals too: each is a renderer constant (`--ui-fixed-*`).
+        assert!(
+            !["stroke-width", "stroke-dasharray", "line-height"].contains(&property.as_str())
+                || value.starts_with("var("),
+            "{selector} {{ {property}: {value} }} is a unitless literal"
+        );
+        assert!(
+            !(property.starts_with("border") && property.contains("radius") && value.contains('%')),
+            "{selector} {{ {property}: {value} }} is a percentage radius literal"
+        );
+        let named = [
+            "transparent",
+            "currentcolor",
+            "black",
+            "white",
+            "red",
+            "green",
+            "blue",
+            "gray",
+            "grey",
+        ];
+        assert!(
+            !value
+                .split(|c: char| !c.is_ascii_alphanumeric() && c != '-')
+                .any(|part| named.contains(&part.to_ascii_lowercase().as_str())),
+            "{selector} {{ {property}: {value} }} is a named color literal"
+        );
         // A font weight is a token or a renderer constant, never a keyword or a number.
         assert!(
             property != "font-weight" || value.starts_with("var("),

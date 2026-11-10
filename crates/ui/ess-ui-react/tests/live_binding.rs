@@ -164,7 +164,8 @@ fn fnv(text: &str) -> u64 {
 /// `src/runtime/tokens.css`; the digest moved again when the stylesheet read every length as
 /// `var(--…)` and `tokens.css` carried the renderer-fixed `--ui-size-*` constants. Re-pinned again for the
 /// generator refusal of unsafe token names and values and the `font-weight` and `min-height`
-/// constants.
+/// constants. Re-pinned for the second correction: `tokens.css` carries the `--ui-fixed-*` constants and
+/// `styles.css` reads them for its stroke, line-height, round-radius and transparent literals.
 const PLAIN: [(&str, u64); 7] = [
     ("README.md", 0xdae6_c3b6_7e5c_2d28),
     ("src/main.tsx", 0x939b_2ed0_a001_98c5),
@@ -174,7 +175,7 @@ const PLAIN: [(&str, u64); 7] = [
     ("src/runtime/data.ts", 0x0e1d_e114_d5fb_6c64),
     ("www/index.html", 0x5972_6d4a_5ee2_5ce2),
 ];
-const PLAIN_PROJECT: u64 = 0x0cd0_2663_f1fe_fc44;
+const PLAIN_PROJECT: u64 = 0xe10b_6629_6bb4_e0c3;
 
 #[test]
 fn without_a_model_the_project_is_byte_identical() {

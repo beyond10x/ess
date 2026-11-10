@@ -33,6 +33,7 @@ A field's `type` is one of three things. (1) A lowercase primitive name from `pr
 | `json` | any JSON value |
 | `expr` | a binding expression (see `expressions`); a value, never a type constructor |
 | `name` | a node name; matches NodePath.syntax.segment\_pattern |
+| `token_name` | a token name, written into a CSS custom property name; letters, digits, `_` and `-`; pattern: `"^[A-Za-z0-9_-]+$"`; example: `accent_2` |
 
 **Constructors**
 
@@ -2574,17 +2575,17 @@ What the roles a document names look like: design tokens, themes, the theme pref
 
 Design tokens — the values a renderer draws a document's roles with, in five groups.
 
-A document says what a node means, never how it looks: a badge has a tone, a text a style, a button an emphasis. Tokens say what those roles look like. Each group is a map of name to value. The built-in table below is merged under a document's `tokens:` group by group and name by name, so a document without `tokens:` looks as it always did and one that names three colors changes three. A node never names a token: a tone reaches `tone`, a text style reaches `type`, a button's emphasis reaches `color` through the table on `button`, and space and radius are read by the renderer's own stylesheet. Inside `tone`, a value is the bare name of a color. A `type` entry replaces the entry of its name whole, and a field it leaves out falls back to `body`, then to the built-in `body`. The values follow the grammar below; quote a color, since an unquoted `#` starts a YAML comment. A terminal draws no color: it draws a tone as the emphasis below, which adds no text and never uses reversed video, the mark of the cursor, and it reads no space, type or radius.
+A document says what a node means, never how it looks: a badge has a tone, a text a style, a button an emphasis. Tokens say what those roles look like. Each group is a map of name to value. The built-in table below is merged under a document's `tokens:` group by group and name by name, so a document without `tokens:` looks as it always did and one that names three colors changes three. A node never names a token: a tone reaches `tone`, a text style reaches `type`, a button's emphasis reaches `color` through the table on `button`, and space and radius are read by the renderer's own stylesheet. Inside `tone`, a value is the bare name of a color. A `type` entry replaces the entry of its name whole, and a field it leaves out falls back to `body`, then to the built-in `body`. A name holds letters, digits, `_` and `-` only (`^[A-Za-z0-9_-]+$`), since it is written into a CSS custom property name, and a value holds no `;`, `{`, `}`, `<`, `>` or `\`, no comment and no quote or bracket it leaves open. The values follow the grammar below; quote a color, since an unquoted `#` starts a YAML comment. A terminal draws no color: it draws a tone as the emphasis below, which adds no text and never uses reversed video, the mark of the cursor, and it reads no space, type or radius.
 
 **Properties**
 
 | Property | Type | Required | Default | Note |
 |---|---|---|---|---|
-| `color` | map of `name` → `string` |   |   | color literals by name; see the grammar |
-| `space` | map of `name` → `string` |   |   | lengths by name, read by the renderer's stylesheet |
-| `radius` | map of `name` → `string` |   |   | lengths by name, read by the renderer's stylesheet |
+| `color` | map of `token_name` → `string` |   |   | color literals by name; see the grammar |
+| `space` | map of `token_name` → `string` |   |   | lengths by name, read by the renderer's stylesheet |
+| `radius` | map of `token_name` → `string` |   |   | lengths by name, read by the renderer's stylesheet |
 | `type` | map of (one of: `body` \| `caption` \| `heading` \| `mono`) → record \{ `family`: optional `string`, `size`: optional `string`, `weight`: optional `integer` \} |   |   | family, size and weight per text style |
-| `tone` | map of (one of: `neutral` \| `info` \| `success` \| `warning` \| `danger`) → record \{ `text`: `name`, `fill`: `name` \} |   |   | the color names a tone's text and fill are drawn with |
+| `tone` | map of (one of: `neutral` \| `info` \| `success` \| `warning` \| `danger`) → record \{ `text`: `token_name`, `fill`: `token_name` \} |   |   | the color names a tone's text and fill are drawn with |
 
 **Grammar**
 

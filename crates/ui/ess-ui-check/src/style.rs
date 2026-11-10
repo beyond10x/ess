@@ -13,6 +13,11 @@ use ess_ui::{
     TypeExpr, TypeToken,
 };
 
+use ess_ui::token_grammar::{
+    color_problem as color_text, length_problem as length_text, weight_problem as weight_text,
+};
+use ess_ui::token_grammar::{css_unsafe, name_problem};
+
 use crate::schema;
 use crate::walk::body_of;
 use crate::Sink;
@@ -39,106 +44,16 @@ pub(crate) fn run(document: &Document, sink: &mut Sink) {
 
 // ── grammars ─────────────────────────────────────────────────────────────────────────────────
 
-/// Why `value` is not a color of `Tokens.grammar.color`, or `None` when it is one.
 fn color_problem(value: &TokenValue) -> Option<String> {
-    let text = value.0.as_str();
-    if let Some(digits) = text.strip_prefix('#') {
-        let hex = digits.chars().all(|c| c.is_ascii_hexdigit());
-        return (!(hex && [3, 6, 8].contains(&digits.len()))).then(|| {
-            format!("`{text}` is not a color: a hex color is `#rgb`, `#rrggbb` or `#rrggbbaa`")
-        });
-    }
-    if let Some(inner) = text
-        .strip_prefix("rgb(")
-        .and_then(|rest| rest.strip_suffix(')'))
-    {
-        let parts: Vec<&str> = inner.split_whitespace().collect();
-        let channel =
-            |part: &str| part.parse::<u8>().is_ok() && part.chars().all(|c| c.is_ascii_digit());
-        let alpha = |part: &str| {
-            is_decimal(part)
-                && part
-                    .parse::<f64>()
-                    .is_ok_and(|alpha| (0.0..=1.0).contains(&alpha))
-        };
-        let fits = matches!(parts.as_slice(), [r, g, b, "/", a]
-            if channel(r) && channel(g) && channel(b) && alpha(a));
-        return (!fits).then(|| {
-            format!(
-                "`{text}` is not a color: `rgb(r g b / a)` takes r, g and b from 0 to 255 and a \
-                 from 0 to 1"
-            )
-        });
-    }
-    let shown = if text.is_empty() {
-        "an empty value (an unquoted `#` starts a YAML comment; quote the color)".to_owned()
-    } else {
-        format!("`{text}`")
-    };
-    Some(format!(
-        "{shown} is not a color: a color is `#rgb`, `#rrggbb`, `#rrggbbaa` or `rgb(r g b / a)`, \
-         never `hsl()` or a color name"
-    ))
+    color_text(&value.0)
 }
 
-/// A decimal: digits, optionally with a fraction (`1`, `0.25`, `.5`).
-fn is_decimal(text: &str) -> bool {
-    let (whole, fraction) = text.split_once('.').unwrap_or((text, ""));
-    let digits = |part: &str| part.chars().all(|c| c.is_ascii_digit());
-    let has_fraction = text.contains('.');
-    digits(whole)
-        && digits(fraction)
-        && (!whole.is_empty() || !fraction.is_empty())
-        && (!has_fraction || !fraction.is_empty())
-}
-
-/// Why `value` is not a length of `Tokens.grammar.length`, or `None` when it is one.
 fn length_problem(value: &TokenValue) -> Option<String> {
-    let text = value.0.as_str();
-    if text == "0" {
-        return None;
-    }
-    let fits = ["rem", "px", "em"]
-        .iter()
-        .any(|unit| text.strip_suffix(unit).is_some_and(is_decimal));
-    (!fits).then(|| {
-        format!("`{text}` is not a length: a length is `0`, or a decimal with `px`, `rem` or `em`")
-    })
+    length_text(&value.0)
 }
 
-/// Why `value` is not a weight of `Tokens.grammar.weight`, or `None` when it is one.
 fn weight_problem(value: &TokenValue) -> Option<String> {
-    let text = value.0.as_str();
-    let fits = text.chars().all(|c| c.is_ascii_digit())
-        && text
-            .parse::<u32>()
-            .is_ok_and(|weight| (100..=900).contains(&weight) && weight % 100 == 0);
-    (!fits).then(|| format!("`{text}` is not a weight: a weight is 100 to 900 in steps of 100"))
-}
-
-/// Why `name` cannot be a token name, or `None` when it can: a name is written into a CSS custom
-/// property name (`--ui-color-<name>`), so it is `^[a-z][a-z0-9_-]*$`.
-fn name_problem(name: &str) -> Option<String> {
-    let mut chars = name.chars();
-    let fits = chars.next().is_some_and(|c| c.is_ascii_lowercase())
-        && chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_' || c == '-');
-    (!fits).then(|| {
-        format!("`{name}` is not a token name: a name starts with a lowercase letter and holds only lowercase letters, digits, `_` and `-`")
-    })
-}
-
-/// Why `value` cannot be written into a CSS declaration, or `None` when it can: it holds none of
-/// `; { } < > \ ` and a comment, and no control character.
-fn css_unsafe(value: &TokenValue) -> Option<String> {
-    let text = value.0.as_str();
-    let bad = text
-        .chars()
-        .any(|c| c.is_control() || [';', '{', '}', '<', '>', '\\'].contains(&c))
-        || text.contains("/*")
-        || text.contains("*/");
-    bad.then(|| {
-        format!("`{}` is not a value: it holds a character that would end or open a CSS rule (`; {{ }} < > \\`, a comment or a control character)", text.escape_debug())
-    })
+    weight_text(&value.0)
 }
 
 /// Every value of `tokens` outside its group's grammar, by path.
@@ -173,8 +88,7 @@ fn value_problems(tokens: &Tokens, at: &NodePath) -> Vec<(NodePath, String)> {
             weight,
         } = entry;
         if let Some(family) = family {
-            let family = TokenValue(family.clone());
-            problems.extend(css_unsafe(&family).map(|problem| (here.child("family"), problem)));
+            problems.extend(css_unsafe(family).map(|problem| (here.child("family"), problem)));
         }
         if let Some(size) = size {
             problems.extend(length_problem(size).map(|problem| (here.child("size"), problem)));

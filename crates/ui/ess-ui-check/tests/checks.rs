@@ -846,15 +846,15 @@ fn token_values() {
 fn token_names_and_values_are_css_safe() {
     let text = doc(&[(
         "tokens",
-        "{color: {Bad: '#fff', 'a;b': '#fff', 'x}': '#fff', good_1-x: '#fff'}, \
-         space: {'has space': 1rem, md2: 1rem}, \
+        "{color: {Bad: '#fff', 'a.b': '#fff', 'a;b': '#fff', 'x}': '#fff', good_1-x: '#fff'}, \
+         space: {'has space': 1rem, md2: 1rem, 2xl: 2rem}, \
          type: {body: {family: 'system-ui; --ui-size-nav-width: 0px'}, \
                 heading: {family: 'a /* b */'}, mono: {family: 'ui-monospace, monospace'}, \
                 caption: {family: 'x}y'}}}",
     )]);
     let written = report(&text);
     for path in [
-        "tokens/color/Bad",
+        "tokens/color/a.b",
         "tokens/color/a;b",
         "tokens/color/x}",
         "tokens/space/has space",
@@ -866,10 +866,32 @@ fn token_names_and_values_are_css_safe() {
     }
     for path in [
         "tokens/color/good_1-x",
+        "tokens/color/Bad",
+        "tokens/space/2xl",
         "tokens/space/md2",
         "tokens/type/mono/family",
     ] {
         clean_at(&written, "token_values", path);
+    }
+
+    // An open quote or bracket carries a declaration past its `;`; a balanced one is a family.
+    for (family, open) in [
+        ("'\"Segoe UI, x'", true),
+        ("'local(Menlo, monospace'", true),
+        ("'a]b'", true),
+        ("'\"Segoe UI\", system-ui'", false),
+        ("'local(Menlo), monospace'", false),
+    ] {
+        let text = doc(&[(
+            "tokens",
+            &format!("{{type: {{mono: {{family: {family}}}}}}}"),
+        )]);
+        let written = report(&text);
+        if open {
+            trips_in(&written, "token_values", "tokens/type/mono/family");
+        } else {
+            clean_at(&written, "token_values", "tokens/type/mono/family");
+        }
     }
 }
 
