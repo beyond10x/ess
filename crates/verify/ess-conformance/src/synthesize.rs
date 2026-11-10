@@ -6214,7 +6214,7 @@ fn run_state_refusal(
     let subject = command
         .selection_subject(outcome)
         .expect("validated common selection subject");
-    let arranged = arrange_first(
+    let mut arranged = arrange_first(
         ir,
         &subject.entity,
         std::slice::from_ref(state),
@@ -6227,6 +6227,25 @@ fn run_state_refusal(
         need: InstanceNeed::Updates,
         reason,
     })?;
+    // A refusal declared beside branches that read the stored row is answered only on a row, and
+    // an input, none of them selects first: the row is arranged to falsify them, or the scenario
+    // is refused (beyond10x/ess#732).
+    let input = if subject_fact::uses(command) {
+        let (row, chosen) = subject_fact::refusal_witness(
+            ir,
+            &subject.entity,
+            state,
+            actors,
+            arranged,
+            command,
+            outcome,
+            distinction,
+        )?;
+        arranged = row;
+        chosen
+    } else {
+        input
+    };
     let input = supply(
         ir,
         command,
