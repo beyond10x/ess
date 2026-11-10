@@ -133,3 +133,169 @@ fn the_actor_page_lists_what_the_credential_carries() {
     );
     assert!(docs.contains("`account_id`"), "{docs}");
 }
+
+const DESK: &str = "format: ess/34
+system: example
+version: v1
+summary: Desks an owner relabels and locks.
+domain: example.desk
+types:
+  - {name: example.desk.DeskId, kind: newtype, of: Uuid}
+  - {name: example.desk.OwnerId, kind: newtype, of: Uuid}
+actors:
+  - name: example.desk.Author
+    attributes:
+      - {name: owner_id, type: example.desk.OwnerId}
+    may: [example.desk.Open, example.desk.Veto, example.desk.Lock, example.desk.Stamp, example.desk.Claim, example.desk.Audit]
+entities:
+  - name: example.desk.Desk
+    identity: {name: desk_id, type: example.desk.DeskId}
+    fields:
+      - {name: owner_id, type: Optional<example.desk.OwnerId>}
+      - {name: label, type: String}
+    lifecycle: {initial: Open, states: [Open], terminal: [Open]}
+errors:
+  - {name: example.desk.NoSuchDesk, fields: []}
+  - {name: example.desk.Vetoed, fields: []}
+  - name: example.desk.Locked
+    fields:
+      - {name: by, type: example.desk.OwnerId}
+commands:
+  - name: example.desk.Open
+    input:
+      - {name: desk_id, type: example.desk.DeskId}
+      - {name: label, type: String}
+    outcomes:
+      - name: opened
+        creates: example.desk.Desk
+        instance: desk_id
+        sets:
+          label: input.label
+          owner_id: {caller: owner_id}
+        emits: [example.desk.Opened]
+        payload:
+          example.desk.Opened: {desk_id: input.desk_id}
+  - name: example.desk.Veto
+    input:
+      - {name: desk_id, type: example.desk.DeskId}
+      - {name: label, type: String}
+    outcomes:
+      - {name: no-such-desk, unknown_instance: true, error: example.desk.NoSuchDesk}
+      - name: vetoed
+        external: someone outside the model vetoes a relabel by the owner
+        when_subject: {predicate: owner_id == caller.owner_id}
+        error: example.desk.Vetoed
+      - name: relabelled
+        updates: example.desk.Desk
+        instance: desk_id
+        sets: {label: input.label}
+        emits: [example.desk.Relabelled]
+        payload:
+          example.desk.Relabelled: {desk_id: input.desk_id}
+  - name: example.desk.Lock
+    input:
+      - {name: desk_id, type: example.desk.DeskId}
+    outcomes:
+      - name: locked
+        error: example.desk.Locked
+        payload:
+          example.desk.Locked: {by: {caller: owner_id}}
+  - name: example.desk.Stamp
+    input:
+      - {name: desk_id, type: example.desk.DeskId}
+    outcomes:
+      - name: stamped
+        emits: [example.desk.Stamped]
+        payload:
+          example.desk.Stamped: {by: {caller: owner_id}}
+  - name: example.desk.Claim
+    input:
+      - {name: desk_id, type: example.desk.DeskId}
+      - {name: owner_id, type: example.desk.OwnerId}
+    outcomes:
+      - name: not-yours
+        when: caller.owner_id == input.owner_id
+        when_related: {via: input.desk_id, predicate: label == \"closed\"}
+        error: example.desk.Vetoed
+      - name: no-desk
+        when_related: {via: input.desk_id, exists: false}
+        error: example.desk.NoSuchDesk
+      - name: claimed
+        error: example.desk.Locked
+        payload:
+          example.desk.Locked: {by: input.owner_id}
+  - name: example.desk.Audit
+    input:
+      - {name: desk_id, type: example.desk.DeskId}
+      - {name: owner_id, type: example.desk.OwnerId}
+    outcomes:
+      - name: owns-none
+        when: caller.owner_id == input.owner_id
+        when_related: {entity: example.desk.Desk, where: label == \"closed\", exists: true}
+        error: example.desk.NoSuchDesk
+      - name: audited
+        emits: [example.desk.Stamped]
+        payload:
+          example.desk.Stamped: {by: input.owner_id}
+events:
+  - name: example.desk.Opened
+    fields:
+      - {name: desk_id, type: example.desk.DeskId}
+  - name: example.desk.Relabelled
+    fields:
+      - {name: desk_id, type: example.desk.DeskId}
+  - name: example.desk.Stamped
+    fields:
+      - {name: by, type: example.desk.OwnerId}
+components:
+  - component: example
+    summary: Holds desks.
+    owns:
+      domains: [example.desk]
+    accepts:
+      commands: [example.desk.Open, example.desk.Veto, example.desk.Lock, example.desk.Stamp, example.desk.Claim, example.desk.Audit]
+    publishes:
+      events: [example.desk.Opened, example.desk.Relabelled, example.desk.Stamped]
+    reached_by: in_process
+";
+
+const DESK_COMMANDS: [&str; 6] = ["Veto", "Lock", "Claim", "Audit", "Open", "Stamp"];
+
+fn desk() -> EssIr {
+    let raw = RawSpecFile::parse(DESK).unwrap();
+    let spec = Specification::assemble([(Source::new("desk.yaml"), raw)])
+        .unwrap_or_else(|errors| panic!("{errors}"));
+    compile(&spec, &SourceMap::new()).unwrap()
+}
+
+#[test]
+fn every_caller_read_position_is_listed() {
+    let ir = desk();
+    for name in DESK_COMMANDS {
+        let command = &ir.commands()[&format!("example.desk.{name}").parse().unwrap()];
+        assert_eq!(
+            ess_gen::http::caller_attributes(&ir, command),
+            ["owner_id"],
+            "{name}"
+        );
+    }
+}
+
+#[test]
+fn the_openapi_operation_lists_a_caller_read_in_every_position() {
+    let openapi = artifact(&desk(), "openapi");
+    for name in DESK_COMMANDS {
+        let start = openapi
+            .find(&format!("/desk/commands/{name}:"))
+            .unwrap_or_else(|| panic!("no operation for {name}: {openapi}"));
+        let operation = &openapi[start..];
+        let end = operation[1..]
+            .find("\n  /")
+            .map_or(operation.len(), |at| at + 1);
+        assert!(
+            operation[..end].contains("x-ess-caller:\n      - owner_id"),
+            "{name}: {}",
+            &operation[..end]
+        );
+    }
+}

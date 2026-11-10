@@ -349,6 +349,18 @@ pub fn predicate_sites(ir: &EssIr) -> Vec<PredicateSite<'_>> {
     found
 }
 
+/// [`predicate_sites`] for one command: the predicates its outcomes hold, so a consumer that asks
+/// per command (the caller attributes an operation reads) walks the same positions as one that asks
+/// of the whole IR.
+pub fn command_predicate_sites<'ir>(
+    ir: &'ir EssIr,
+    command: &'ir crate::ir::ResolvedCommand,
+) -> Vec<PredicateSite<'ir>> {
+    let mut found = Vec::new();
+    command_sites(ir, command, &mut found);
+    found
+}
+
 /// The predicates one command's outcomes hold: each input guard, each `when_subject:` predicate over
 /// the subject's stored fields, and each `when_related:` predicate over the related row's (ess/18).
 fn command_sites<'ir>(
