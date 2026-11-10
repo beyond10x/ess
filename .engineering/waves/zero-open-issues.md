@@ -69,7 +69,7 @@ came from (its order inside the turn). A turn's own page is `zero-open-issues-t<
 
 ### Turn 1
 
-Status: running ([turn page](zero-open-issues-t1.md))
+Status: delivered 2026-11-10 ([turn page](zero-open-issues-t1.md)); 9 backlog drafts filed: `story:a-terminal-metric-shows-a-failed-read`, `story:a-failed-list-section-names-its-status`, `story:a-null-newtype-over-json-member-is-judged-alike-in-go-and-typescript`, `story:caller-synthesis-reads-a-struct-caller-attribute-member`, `story:a-system-step-default-states-every-input-its-siblings-read`, `story:a-presence-child-beside-a-read-is-witnessed-at-any-depth`, `story:an-absent-read-inside-a-struct-payload-field-is-claimed-absent`, `story:a-guard-decided-false-beside-an-unbound-identity-read-is-still-forced`, `story:the-a16-socket-case-binds-under-any-tmpdir`
 
 - lane 1: `story:an-absent-payload-read-is-claimed-absent-in-either-spelling-not-as-null` (priority 0, verb wave 18)
 - lane 2: `story:a-connective-child-masked-by-an-earlier-branch-is-not-asked-for` (priority 1, verb wave 2)

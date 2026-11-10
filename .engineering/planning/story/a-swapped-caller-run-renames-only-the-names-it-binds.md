@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-swapped-caller-run-renames-only-the-names-it-binds
 kind: story
-status: active
+status: implemented
 title: A swapped-caller run renames only the instance and instant names it binds
 tags:
 - zero-open-issues
@@ -19,12 +19,13 @@ scope:
   path: crates/verify/ess-conformance/src/synthesize/singleton.rs
 - confidence: inferred
   path: crates/verify/ess-conformance/tests/caller_swap_authored_field_names.rs
-- confidence: inferred
-  path: docs/design/caller-values.md
-revision: 11
+- confidence: cited
+  path: crates/verify/ess-conformance/tests/caller_swap_value_invariant_witness.rs
+revision: 15
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-10T00:41:59Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"review_outcome":1}}}
 - {from: "proposed", to: "active", at: "2026-11-10T00:42:00Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "active", to: "implemented", at: "2026-11-10T17:53:27Z", actor: "human:timo", revision: 15, decided_on: {"recorded":{"test_result":1,"review_outcome":2,"verification":1}}}
 ---
 ## Need
 
@@ -135,16 +136,15 @@ Two sibling walks read authored data as suite structure in the same way and are 
 
 ## Scope
 
-- cited: crates/verify/ess-conformance/src/synthesize/caller.rs (the swapped-run `rename` at 3000-3015, called at 1390; `observed` and `replace_observed` at 1891-1933, called at 1837, 1843 and 1847 inside `recaptured` at 1831; its `mod tests` at 3022)
-- cited: crates/verify/ess-conformance/src/synthesize/singleton.rs (`rename` at 403-422, called at 260; no `mod tests` yet, so the singleton unit test is a new module in this file)
-- inferred: crates/verify/ess-conformance/tests/caller_swap_authored_field_names.rs (new)
-- inferred: docs/design/caller-values.md (line 138 already states the fixed rule; at most one sentence added)
+Delivered in turn 1 of the zero-open-issues plan (merge 04801c5109, correction 55e3856e5b). The paths below are the ones
+its commits changed, read from the diff, so every entry is cited.
 
-confidence: high — the story names the defect site for all three walks and each was found where it says; `synthesize.rs` is not touched (the three walks are private, reached only through `caller::synthesize` and `singleton::withdraw_second_creations`) (story-scoper, 2026-11-10)
+- cited, confirmed: `crates/verify/ess-conformance/src/synthesize/caller.rs`
+- cited, confirmed: `crates/verify/ess-conformance/src/synthesize/singleton.rs`
+- cited, confirmed: `crates/verify/ess-conformance/tests/caller_swap_authored_field_names.rs`
+- cited, confirmed: `crates/verify/ess-conformance/tests/caller_swap_value_invariant_witness.rs`
 
-Coordinator decision, 2026-11-10: the typed walk over the scenario steps is written in `caller.rs` (an exhaustive `match` over the step and value variants there), not as a method in `crates/verify/ess-conformance/src/scenario.rs`, which `story:ess-37-and-conformance-64-65-are-open-for-the-epics-constructs` edits in the same turn (`SUPPORTED_SUITE_FORMATS`); the scoper found either placement works. `scenario.rs` (`InstanceName` at 1547, `InstantName` at 1635) is read only.
-
-Shared surfaces this story moves (epic § Shared surfaces, not scope entries): `CHANGELOG.md`; the byte-pin tables must stay unchanged.
+Shared surface written by the coordinator, not a scope entry: `CHANGELOG.md`.
 
 ## Fit review
 

@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-10T06:05:22Z",
+  "actor": "human:timo",
+  "artifact": "story:a-badge-field-takes-a-tone",
+  "kind": "story",
+  "revision": 14,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "ess-ui-react field_tone+live_binding; ess-ui-check field_tone+lib; ess-ui tokens; ess-ui-tui field_tone; ess-ui-docs reference",
+    "reference": "a-badge-field-takes-a-tone/red-check.txt (1 passed, 4 failed), red-react.txt (0 passed, 5 failed) vs verify-1..6.txt at 671d83a1bc (6, 11, 7+1, 18, 4, 6 passed)"
+  }
+}

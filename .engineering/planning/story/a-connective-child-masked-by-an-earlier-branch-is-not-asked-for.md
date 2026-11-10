@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-connective-child-masked-by-an-earlier-branch-is-not-asked-for
 kind: story
-status: active
+status: implemented
 title: A presence child beside a read of the same optional is witnessed by the absent input and never refused
 summary: ESS-SYNTH-022 asks for a witness of defined(x) beside a comparison on x that an earlier branch already masks, which no input can give (beyond10x/ess#729)
 tags:
@@ -19,15 +19,24 @@ scope:
 - confidence: cited
   path: crates/verify/ess-conformance/src/synthesize.rs
 - confidence: cited
-  path: crates/verify/ess-conformance/src/witness.rs
+  path: crates/verify/ess-conformance/tests/adversary_t1_lane2_presence_child.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/tests/fixtures/mutation-manifest-4-scoped.json
+- confidence: cited
+  path: crates/verify/ess-conformance/tests/fixtures/mutation-report-4-scoped.json
+- confidence: cited
+  path: crates/verify/ess-conformance/tests/fixtures/synthesis-component-suites-table.tsv
+- confidence: cited
+  path: crates/verify/ess-conformance/tests/fixtures/synthesis-suite-bytes-table.tsv
 - confidence: inferred
   path: crates/verify/ess-conformance/tests/presence_child_beside_read.rs
 - confidence: cited
   path: website/docs/reference/predicates.md
-revision: 15
+revision: 18
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-10T00:33:38Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"review_outcome":2}}}
 - {from: "proposed", to: "active", at: "2026-11-10T00:33:39Z", actor: "human:timo", revision: 10, decided_on: {"recorded":{"review_outcome":2}}}
+- {from: "active", to: "implemented", at: "2026-11-10T17:53:38Z", actor: "human:timo", revision: 18, decided_on: {"recorded":{"test_result":1,"review_outcome":3}}}
 ---
 ## Need
 
@@ -118,18 +127,23 @@ Tests in `crates/verify/ess-conformance/tests/`, each over an inline specificati
 
 ## Scope
 
-- cited: crates/verify/ess-conformance/src/synthesize.rs (`exactly_one` :17549, whose `Decision::Unevaluable(_) => return false` at :17559 is the defect; `one_per_child` :17584, refusal pushed at :17651-17660; `isolating` :17755; callers of `one_per_child` at :17899, :17974, :18038)
-- cited: crates/verify/ess-conformance/src/witness.rs (`exhausts` :336, the optional-path early return at :379; `unsatisfiable` :443; the in-file test `a_satisfiable_goal_is_never_read_as_unsatisfiable` :7172 stays unchanged)
-- inferred: crates/verify/ess-conformance/tests/presence_child_beside_read.rs (new, for Acceptance 1-5)
-- cited: website/docs/reference/predicates.md (the limitation paragraph :475-477; "What synthesis can witness" :1800, presence row :1812, refusal rule :1831-1833)
+Delivered in turn 1 of the zero-open-issues plan (lane story 2). The paths below are the ones
+its commits changed, read from the diff, so every entry is cited.
 
-confidence: high — the story names the defect site, and every cited symbol resolves to the file:line above; the only guess is the name of the new test file (story-scoper, 2026-11-10)
+- cited, confirmed: `crates/verify/ess-conformance/src/synthesize.rs`
+- cited, confirmed: `crates/verify/ess-conformance/tests/presence_child_beside_read.rs`
+- cited, confirmed: `website/docs/reference/predicates.md`
+- cited, added: `crates/verify/ess-conformance/tests/adversary_t1_lane2_presence_child.rs`
+- cited, added: `crates/verify/ess-conformance/tests/fixtures/mutation-manifest-4-scoped.json`
+- cited, added: `crates/verify/ess-conformance/tests/fixtures/mutation-report-4-scoped.json`
+- cited, added: `crates/verify/ess-conformance/tests/fixtures/synthesis-component-suites-table.tsv`
+- cited, added: `crates/verify/ess-conformance/tests/fixtures/synthesis-suite-bytes-table.tsv`
 
-Coordinator, 2026-11-10: `docs/design/generic-language-features.md` (row "presence, `coalesce`, `if`" :193) is left out of this scope. The scoper found the row already states the rule and only a stale code reference would change, which no acceptance item asks for; `story:a-create-or-update-writer-is-no-proof-a-stored-reference-is-present` of the same turn edits that page.
+Scoped but not touched:
 
-Not established by the scoper: whether `witness.rs` is edited at all (the emptiness check may stay in `synthesize.rs`), and whether `related_guard.rs:3144` and `subject_fact.rs:7920`, each with its own `isolating`, join the scope.
+- `crates/verify/ess-conformance/src/witness.rs`
 
-Shared surfaces this story moves (epic § Shared surfaces, not scope entries): `CHANGELOG.md`; the byte-pin tables may move for suites with this guard shape.
+Shared surface written by the coordinator, not a scope entry: `CHANGELOG.md`.
 
 ## Fit review
 

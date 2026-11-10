@@ -1,0 +1,14 @@
+{
+  "at": "2026-11-10T06:08:51Z",
+  "actor": "human:timo",
+  "artifact": "story:a-swapped-caller-run-renames-only-the-names-it-binds",
+  "kind": "story",
+  "revision": 11,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "review-result:zi-w1-swap-adv-1",
+    "review": "review-result:zi-w1-swap-adv-1",
+    "outcome": "fixed"
+  }
+}

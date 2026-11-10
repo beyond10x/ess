@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-10T05:28:39Z",
+  "actor": "human:timo",
+  "artifact": "story:a-group-named-like-a-top-level-command-of-its-component-is-refused",
+  "kind": "story",
+  "revision": 11,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "cargo test -p ess-synth --locked --test adversary_w2_gen2_adversary; cargo test -p ess-domain --locked --lib component",
+    "reference": "ab09f5b48d (12 passed, 1 failed) vs 75c0e11fd4 (13 passed; lib component 48 passed)"
+  }
+}

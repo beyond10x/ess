@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:caller-attributes-walk-every-caller-read-of-a-command
 kind: story
-status: active
+status: implemented
 title: caller_attributes walks every caller read of a command
 summary: ess-gen http::caller_attributes misses caller reads in an external branch's when_subject and in an error payload (beyond10x/ess#740)
 tags:
@@ -19,15 +19,18 @@ scope:
 - confidence: cited
   path: crates/generate/ess-gen/src/http.rs
 - confidence: cited
+  path: crates/generate/ess-gen/tests/adversary_caller_attributes.rs
+- confidence: cited
   path: crates/generate/ess-gen/tests/caller_values.rs
 - confidence: cited
   path: crates/specify/ess-compiler/src/expression.rs
 - confidence: cited
   path: docs/design/language-grids.md
-revision: 8
+revision: 11
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-10T00:43:11Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":1}}}
 - {from: "proposed", to: "active", at: "2026-11-10T00:43:12Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "active", to: "implemented", at: "2026-11-10T17:53:25Z", actor: "human:timo", revision: 11, decided_on: {"recorded":{"test_result":1,"review_outcome":2,"verification":1}}}
 ---
 ## Need
 
@@ -86,18 +89,16 @@ attribute.
 
 ## Scope
 
-- cited: crates/generate/ess-gen/src/http.rs (`caller_attributes`: doc comment at 170, fn at 175, guard match ending in `_ => {}` at ~227, value walk over `payload` + `sets` only at ~229-238)
-- cited: crates/specify/ess-compiler/src/expression.rs (`pub fn predicate_sites` at 261, private `fn command_sites` at 354 gains the public `command_predicate_sites`; `input_predicate` at 425; `command_sites` already pushes the `ExternalSubject` `when_subject` predicate at 370-385)
-- cited: crates/generate/ess-gen/tests/caller_values.rs (new cases beside `the_openapi_operation_names_the_caller_attributes_it_reads` at 120)
-- cited: docs/design/language-grids.md (grid R caller column, lines 24-26 and 37)
+Delivered in turn 1 of the zero-open-issues plan (merge 3a06fd7462). The paths below are the ones
+its commits changed, read from the diff, so every entry is cited.
 
-Read only, not changed: `crates/generate/ess-gen/src/openapi.rs:849` (the only caller of `caller_attributes`) and `:3287` (`x-ess-caller`).
+- cited, confirmed: `crates/generate/ess-gen/src/http.rs`
+- cited, confirmed: `crates/generate/ess-gen/tests/caller_values.rs`
+- cited, confirmed: `crates/specify/ess-compiler/src/expression.rs`
+- cited, confirmed: `docs/design/language-grids.md`
+- cited, added: `crates/generate/ess-gen/tests/adversary_caller_attributes.rs`
 
-confidence: high — the story names the defect site, the target function and the test file, and each line checks out against the tree (story-scoper, 2026-11-10)
-
-Noted by the scoper: `story:caller-attributes-are-readable-in-a-when-related-predicate` (a later turn) also lists `docs/design/language-grids.md`.
-
-Shared surfaces this story moves (epic § Shared surfaces, not scope entries): `CHANGELOG.md`; the `ess-openapi` pin `adversary_ess_issues_2_u6` is expected unchanged.
+Shared surface written by the coordinator, not a scope entry: `CHANGELOG.md`.
 
 ## Fit review
 

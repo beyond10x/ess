@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-row-predicate-choosing-the-trigger-branch-is-arranged-for-the-binding
 kind: story
-status: active
+status: implemented
 title: A row predicate choosing the trigger branch is arranged for the binding
 summary: ESS-SYNTH-010 refuses flow, delivery and a policy refusal when one related row decides both the trigger and the invoked command; the refusal contradicts its help (#706)
 tags:
@@ -20,16 +20,35 @@ scope:
   path: crates/verify/ess-conformance/src/synthesize.rs
 - confidence: cited
   path: crates/verify/ess-conformance/src/synthesize/binding_effects.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/synthesize/binding_effects/set_guard.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/synthesize/existence.rs
 - confidence: inferred
   path: crates/verify/ess-conformance/src/synthesize/refusal_policy.rs
-- confidence: inferred
-  path: crates/verify/ess-conformance/tests/binding_related_branch.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/synthesize/related_guard.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/synthesize/set_effects/pinned.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/synthesize/subject_fact.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/tests/adversary_t1_lane5_pass2.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/tests/binding_trigger_row_predicate.rs
+- confidence: cited
+  path: website/docs/guides/specify/binding-conditions.md
+- confidence: cited
+  path: website/docs/guides/specify/binding-stored-state.md
 - confidence: cited
   path: website/docs/guides/specify/bindings-and-components.md
-revision: 13
+- confidence: cited
+  path: website/sidebars.ts
+revision: 16
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-10T00:41:31Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"review_outcome":1}}}
 - {from: "proposed", to: "active", at: "2026-11-10T00:41:32Z", actor: "human:timo", revision: 10, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "active", to: "implemented", at: "2026-11-10T17:53:44Z", actor: "human:timo", revision: 16, decided_on: {"recorded":{"test_result":1,"review_outcome":3}}}
 ---
 ## Need
 
@@ -156,17 +175,29 @@ step 2 where every guard is `Absent`.
 
 ## Scope
 
-- cited: crates/verify/ess-conformance/src/synthesize/binding_effects.rs (`related_arranged` at 1528 gives up at `keeps_branch_sent(sender, &from, Some(entity), false)` at 1561; `keeps_branch_sent` at 1873, the `Absent`-only guard at 1912-1916; `related_decided` 1486, `related_refused` 1629, `related_on_row` 1694)
-- cited: crates/verify/ess-conformance/src/synthesize.rs (`BindingGap::RelatedRefusalUnarranged` at 2238, its help text at 2565-2570, its message at 2697-2700; the flow refusal at 2644-2646; `publishers` at 20454; `Setup.settled` at 6640)
-- inferred: crates/verify/ess-conformance/src/synthesize/refusal_policy.rs (`unarranged` at 528-551 builds the gap from the outcome alone; the kept-case text needs the trigger's `when_related:` predicate)
-- inferred: crates/verify/ess-conformance/tests/binding_related_branch.rs (the story names no file; the previous fix created this one and it already runs the interpreter at 193)
-- cited: website/docs/guides/specify/bindings-and-components.md (the section at 318-347 the Decisions extend)
+Delivered in turn 1 of the zero-open-issues plan (lane story 5, guide-split correction 045e12f293). The paths below are the ones
+its commits changed, read from the diff, so every entry is cited.
 
-confidence: high — the story names the defect site and it was checked in the tree; the two inferred lines are the only uncertainty (story-scoper, 2026-11-10)
+- cited, confirmed: `crates/verify/ess-conformance/src/synthesize.rs`
+- cited, confirmed: `crates/verify/ess-conformance/src/synthesize/binding_effects.rs`
+- cited, confirmed: `crates/verify/ess-conformance/src/synthesize/refusal_policy.rs`
+- cited, confirmed: `website/docs/guides/specify/bindings-and-components.md`
+- cited, added: `crates/verify/ess-conformance/src/synthesize/binding_effects/set_guard.rs`
+- cited, added: `crates/verify/ess-conformance/src/synthesize/existence.rs`
+- cited, added: `crates/verify/ess-conformance/src/synthesize/related_guard.rs`
+- cited, added: `crates/verify/ess-conformance/src/synthesize/set_effects/pinned.rs`
+- cited, added: `crates/verify/ess-conformance/src/synthesize/subject_fact.rs`
+- cited, added: `crates/verify/ess-conformance/tests/adversary_t1_lane5_pass2.rs`
+- cited, added: `crates/verify/ess-conformance/tests/binding_trigger_row_predicate.rs`
+- cited, added: `website/docs/guides/specify/binding-conditions.md`
+- cited, added: `website/docs/guides/specify/binding-stored-state.md`
+- cited, added: `website/sidebars.ts`
 
-Corrections to the earlier pass: `crates/verify/ess-conformance/src/synthesize/related_guard.rs` is removed (`prepare_at_in` at `related_guard.rs:3163` already returns `Setup`, and `subject_fact::row_truth_with` at `subject_fact.rs:474` already evaluates a guard on settled values; neither needs an edit); `tests/binding_related_branch.rs` moves from cited to inferred.
+Scoped but not touched:
 
-Shared surfaces this story moves (epic § Shared surfaces, not scope entries): `CHANGELOG.md`; `tests/synthesis_suite_bytes_table.rs` is only run (acceptance: no row changed).
+- `crates/verify/ess-conformance/tests/binding_related_branch.rs`
+
+Shared surface written by the coordinator, not a scope entry: `CHANGELOG.md`.
 
 ## Fit review
 
