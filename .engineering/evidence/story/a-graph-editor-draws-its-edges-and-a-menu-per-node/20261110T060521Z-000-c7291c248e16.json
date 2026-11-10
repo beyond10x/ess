@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-10T06:05:21Z",
+  "actor": "human:timo",
+  "artifact": "story:a-graph-editor-draws-its-edges-and-a-menu-per-node",
+  "kind": "story",
+  "revision": 10,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "cargo test -p ess-ui-react --locked --test graph_editor --test graph_reads --test live_binding; cargo test -p ess-ui-test --locked --test graph_confirm --test adversary_graph_menu_pass1",
+    "reference": "a-graph-editor-draws-its-edges-and-a-menu-per-node/red (base ab09f5b48d) vs a-badge-field-takes-a-tone/verify-1.txt,verify-2.txt (671d83a1bc: graph_editor 4, graph_reads 1, live_binding 11, graph_confirm 3, menu 1 passed)"
+  }
+}

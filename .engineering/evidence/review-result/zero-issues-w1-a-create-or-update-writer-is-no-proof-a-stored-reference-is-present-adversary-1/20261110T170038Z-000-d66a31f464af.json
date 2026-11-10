@@ -1,0 +1,15 @@
+{
+  "at": "2026-11-10T17:00:38Z",
+  "actor": "human:timo",
+  "artifact": "review-result:zero-issues-w1-a-create-or-update-writer-is-no-proof-a-stored-reference-is-present-adversary-1",
+  "kind": "review-result",
+  "revision": 3,
+  "change": {
+    "change": "redaction",
+    "literal_sha256": "d45ee78e7b19b98e7df5a9a359da866dbe2315eef7cd91cd832ea89f5fc7e710",
+    "literal_chars": 10,
+    "replacement": "~",
+    "count": 2,
+    "reason": "an absolute home path does not belong in a committed page"
+  }
+}

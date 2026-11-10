@@ -53,6 +53,7 @@ const sidebars: SidebarsConfig = {
             'guides/specify/narrowed-inputs',
             'guides/specify/aggregate-views',
             'guides/specify/bindings-and-components',
+            'guides/specify/binding-stored-state',
             'guides/specify/binding-conditions',
             'guides/specify/binding-context',
             'guides/specify/wire-names',

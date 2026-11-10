@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:metric-error-state-on-failed-read
 kind: story
-status: active
+status: implemented
 title: A view answered with an error renders as an error state in a metric, never as 0
 tags:
 - defect
@@ -14,12 +14,17 @@ relations:
 scope:
 - confidence: cited
   path: crates/ui/ess-ui-react/templates/runtime/composites/metric.tsx.tmpl
+- confidence: cited
+  path: crates/ui/ess-ui-react/templates/runtime/data.ts.tmpl
+- confidence: cited
+  path: crates/ui/ess-ui-react/tests/live_binding.rs
 - confidence: inferred
   path: crates/ui/ess-ui-react/tests/metric_states.rs
-revision: 6
+revision: 9
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-10T00:45:04Z", actor: "human:timo", revision: 3}
 - {from: "proposed", to: "active", at: "2026-11-10T00:45:05Z", actor: "human:timo", revision: 4}
+- {from: "active", to: "implemented", at: "2026-11-10T17:53:17Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"test_result":1,"review_outcome":1,"verification":1}}}
 ---
 
 Every claim is marked verified (seen in a run or in the file named) or inferred.
@@ -60,9 +65,12 @@ For a generated React page whose header metric reads a view, when the served vie
 
 ## Scope
 
-- cited: crates/ui/ess-ui-react/templates/runtime/composites/metric.tsx.tmpl (`useData` at 21, `:26-35` reads only `data.rows`, never `data.status` or `data.error`; `:51` returns `rows.length` (0) for `count`, `:57` returns 0 for `sum`; `:38` draws `–` for an undefined value)
-- inferred: crates/ui/ess-ui-react/tests/metric_states.rs (new; follows the `node` and stand-in-react pattern of `tests/live_composites.rs:127-131`)
+Delivered in turn 1 of the zero-open-issues plan (merge 4b28e6e5b0). The paths below are the ones
+its commits changed, read from the diff, so every entry is cited.
 
-confidence: high — the story names the defect site, and the tree shows the fix needs no change outside `MetricView`: the failed read already carries `status` and `error` (`data.ts.tmpl:692-693`), a section already draws its failed state with `.ui-state-failed` (`core.tsx.tmpl:448-458`, `styles.css.tmpl:61-62`), and `emit.rs:1624-1630` already passes `reads` (story-scoper, 2026-11-10)
+- cited, confirmed: `crates/ui/ess-ui-react/templates/runtime/composites/metric.tsx.tmpl`
+- cited, confirmed: `crates/ui/ess-ui-react/tests/metric_states.rs`
+- cited, added: `crates/ui/ess-ui-react/templates/runtime/data.ts.tmpl`
+- cited, added: `crates/ui/ess-ui-react/tests/live_binding.rs`
 
-Shared surfaces this story moves (epic § Shared surfaces, not scope entries): `CHANGELOG.md`. No byte pin moves (`live_binding.rs:156-165` does not hash `metric.tsx`).
+Shared surface written by the coordinator, not a scope entry: `CHANGELOG.md`.
