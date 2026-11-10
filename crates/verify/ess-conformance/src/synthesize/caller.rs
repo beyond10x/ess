@@ -45,7 +45,7 @@ use ess_primitives::predicate::{CompareOp, Operand, Predicate};
 
 use super::{grant, synthesize_plain, Focus, Note, SeedAdmissionError, Synthesis};
 use crate::scenario::{
-    ConformanceScenario, EntityRef, EventRef, InstanceName, ScenarioId, ScenarioStep,
+    ConformanceScenario, EntityRef, EventRef, InstanceName, InstantName, ScenarioId, ScenarioStep,
     ScenarioValue, ViewExpectation,
 };
 use crate::witness::{candidates, Distinction, MAX_CANDIDATES};
@@ -1384,18 +1384,20 @@ fn append(
         Some((command, &command.outcomes[..reached]))
     });
     let drawn = identities.drawn(&scenario.steps, &again.steps, tested)?;
-    let Ok(mut value) = serde_json::to_value(&again.steps) else {
+    let mut renamed = again.steps.clone();
+    rename(&mut renamed);
+    let Ok(mut value) = serde_json::to_value(&renamed) else {
         return Ok(());
     };
-    rename(&mut value);
     redraw(&mut value, &identities.keys, &drawn);
-    let Some(value) = recaptured(ir, value) else {
+    let Ok(steps) = serde_json::from_value::<Vec<ScenarioStep>>(value) else {
         return Ok(());
     };
-    if let Ok(mut steps) = serde_json::from_value::<Vec<ScenarioStep>>(value) {
-        cumulative(&scenario.steps, &mut steps);
-        scenario.steps.extend(steps);
-    }
+    let Some(mut steps) = recaptured(ir, steps) else {
+        return Ok(());
+    };
+    cumulative(&scenario.steps, &mut steps);
+    scenario.steps.extend(steps);
     Ok(())
 }
 
@@ -1828,35 +1830,27 @@ fn names_a_row(fields: &BTreeMap<String, ScenarioValue>, identity: &str) -> bool
 /// the scenario, which in a second run is the first run's. So the second run captures the field
 /// right after the step that first expects the event of its own command, and reads that instead.
 /// `None` where a reference comes before any such step, or the field names no entity to capture.
-fn recaptured(ir: &EssIr, value: serde_json::Value) -> Option<serde_json::Value> {
-    let serde_json::Value::Array(steps) = value else {
-        return None;
-    };
+fn recaptured(ir: &EssIr, mut steps: Vec<ScenarioStep>) -> Option<Vec<ScenarioStep>> {
     let mut wanted: BTreeSet<(String, String)> = BTreeSet::new();
-    for step in &steps {
+    for step in &mut steps {
         observed(step, &mut wanted);
     }
-    let mut captured: BTreeMap<(String, String), String> = BTreeMap::new();
+    let mut captured: BTreeMap<(String, String), InstanceName> = BTreeMap::new();
     let mut out = Vec::with_capacity(steps.len());
     for mut step in steps {
         let mut used = BTreeSet::new();
-        observed(&step, &mut used);
+        observed(&mut step, &mut used);
         if used.iter().any(|pair| !captured.contains_key(pair)) {
             return None;
         }
         replace_observed(&mut step, &captured);
         // Either expectation form: an event carrying a captured identity is expected through
         // `expect_event_values` (beyond10x/ess#273).
-        let expected = matches!(
-            step.get("step").and_then(serde_json::Value::as_str),
-            Some("expect_event" | "expect_event_values")
-        )
-        .then(|| {
-            step.get("event")
-                .and_then(serde_json::Value::as_str)
-                .map(str::to_owned)
-        })
-        .flatten();
+        let expected = match &step {
+            ScenarioStep::ExpectEvent { event, .. }
+            | ScenarioStep::ExpectEventValues { event, .. } => Some(event.to_string()),
+            _ => None,
+        };
         out.push(step);
         let Some(event) = expected else {
             continue;
@@ -1874,62 +1868,230 @@ fn recaptured(ir: &EssIr, value: serde_json::Value) -> Option<serde_json::Value>
                         .values()
                         .find(|entity| entity.fields.iter().any(|held| held.name == *field))
                 })?;
-            let instance = format!("observed-{}-{SWAPPED}", captured.len() + 1);
-            out.push(serde_json::json!({
+            let instance =
+                InstanceName::new(format!("observed-{}-{SWAPPED}", captured.len() + 1)).ok()?;
+            let capture = serde_json::json!({
                 "step": "capture_instance",
                 "instance": instance,
                 "entity": entity.name.to_string(),
                 "event": seen,
                 "field": field,
-            }));
+            });
+            out.push(serde_json::from_value(capture).ok()?);
             captured.insert((seen.clone(), field.clone()), instance);
         }
     }
-    Some(serde_json::Value::Array(out))
+    Some(out)
 }
 
 /// Every `(event, field)` an `observed` reference in `value` reads.
-fn observed(value: &serde_json::Value, found: &mut BTreeSet<(String, String)>) {
-    match value {
-        serde_json::Value::Object(map) => {
-            if map.get("kind").and_then(serde_json::Value::as_str) == Some("observed") {
-                if let (Some(event), Some(field)) = (
-                    map.get("event").and_then(serde_json::Value::as_str),
-                    map.get("field").and_then(serde_json::Value::as_str),
-                ) {
-                    found.insert((event.to_owned(), field.to_owned()));
-                }
-            }
-            map.values().for_each(|inner| observed(inner, found));
+///
+/// Read at the typed value positions of the step only: an authored value, a struct literal whose
+/// own member `kind` holds the text `observed` included, is never a reference.
+fn observed(step: &mut ScenarioStep, found: &mut BTreeSet<(String, String)>) {
+    values_mut(step, &mut |value| {
+        if let ScenarioValue::Observed { event, field } = value {
+            found.insert((event.to_string(), field.clone()));
         }
-        serde_json::Value::Array(items) => items.iter().for_each(|inner| observed(inner, found)),
-        _ => {}
+    });
+}
+
+/// `step` with every `observed` reference `captured` holds read from its captured instance.
+fn replace_observed(step: &mut ScenarioStep, captured: &BTreeMap<(String, String), InstanceName>) {
+    values_mut(step, &mut |value| {
+        if let ScenarioValue::Observed { event, field } = value {
+            if let Some(instance) = captured.get(&(event.to_string(), field.clone())) {
+                *value = ScenarioValue::instance(instance.clone());
+            }
+        }
+    });
+}
+
+/// Every [`ScenarioValue`] a step holds, each element of a list or member of a struct included,
+/// visited where the step's type puts it and nowhere else.
+///
+/// The match is exhaustive on purpose: a step that gains a field holding values does not compile
+/// until it says here whether that field is walked. A walk over the serialized step could not
+/// tell a value from authored data that happens to share a key (beyond10x/ess#766).
+pub(super) fn values_mut(step: &mut ScenarioStep, visit: &mut dyn FnMut(&mut ScenarioValue)) {
+    fn each(
+        values: &mut BTreeMap<String, ScenarioValue>,
+        visit: &mut dyn FnMut(&mut ScenarioValue),
+    ) {
+        values.values_mut().for_each(|value| tree(value, visit));
+    }
+    fn tree(value: &mut ScenarioValue, visit: &mut dyn FnMut(&mut ScenarioValue)) {
+        visit(value);
+        match value {
+            ScenarioValue::List { items } => items.iter_mut().for_each(|item| tree(item, visit)),
+            ScenarioValue::Members { members } => each(members, visit),
+            ScenarioValue::Fixture { .. }
+            | ScenarioValue::ObservedSelection { .. }
+            | ScenarioValue::ObservedAccessor { .. }
+            | ScenarioValue::Literal { .. }
+            | ScenarioValue::Instance { .. }
+            | ScenarioValue::Observed { .. }
+            | ScenarioValue::NowOffset { .. }
+            | ScenarioValue::Awaited { .. } => {}
+        }
+    }
+    fn expectation(expected: &mut ViewExpectation, visit: &mut dyn FnMut(&mut ScenarioValue)) {
+        match expected {
+            ViewExpectation::Contains { fields }
+            | ViewExpectation::Excludes { fields }
+            | ViewExpectation::At { fields, .. } => {
+                each(fields, visit);
+            }
+            ViewExpectation::Satisfies { .. }
+            | ViewExpectation::Counts { .. }
+            | ViewExpectation::Ranked { .. }
+            | ViewExpectation::ChangedBy { .. }
+            | ViewExpectation::Page { .. }
+            | ViewExpectation::ValueInvariants(_) => {}
+        }
+    }
+    use ScenarioStep as S;
+    match step {
+        S::ExpectEventValues {
+            payload: values, ..
+        }
+        | S::SnapshotCompleteSubject {
+            subject: values, ..
+        }
+        | S::SnapshotSubject {
+            subject: values, ..
+        }
+        | S::ExpectSubjectAbsent {
+            subject: values, ..
+        }
+        | S::ExecuteCommand { input: values, .. }
+        | S::ExpectInvocation { input: values, .. }
+        | S::QueryView { params: values, .. }
+        | S::ExpectHalt { params: values, .. }
+        | S::EventuallyHalt { params: values, .. } => each(values, visit),
+        S::AwaitOutcome {
+            instance, input, ..
+        } => {
+            tree(instance, visit);
+            each(input, visit);
+        }
+        S::ExpectNotIssued { instance, .. } => tree(instance, visit),
+        S::ExpectEveryInvocation {
+            selecting, input, ..
+        } => {
+            each(selecting, visit);
+            each(input, visit);
+        }
+        S::ExpectView {
+            expectation: expected,
+            ..
+        } => expectation(expected, visit),
+        S::EventuallyView {
+            params,
+            expectation: expected,
+            ..
+        } => {
+            each(params, visit);
+            expectation(expected, visit);
+        }
+        S::ResolveFixtures { .. }
+        | S::ExpectCompleteSubjectUnchanged { .. }
+        | S::ExpectNoEvents
+        | S::CaptureCommandResult { .. }
+        | S::ExpectReplayResult { .. }
+        | S::ExpectResponsePayload { .. }
+        | S::ExpectDirectResponse { .. }
+        | S::CheckPeriodic { .. }
+        | S::ExpectReadingOrder { .. }
+        | S::EstablishEntity { .. }
+        | S::ConfigureExternalOutcome { .. }
+        | S::ExecuteCommandWithoutInput { .. }
+        | S::ExpectOutcome { .. }
+        | S::ExpectNotGranted { .. }
+        | S::ReadAs { .. }
+        | S::ExpectNoError
+        | S::ExpectSubjectUnchanged { .. }
+        | S::SnapshotView { .. }
+        | S::ExpectViewUnchanged { .. }
+        | S::ExpectError { .. }
+        | S::ExpectEvent { .. }
+        | S::ExpectNoEvent { .. }
+        | S::CaptureInstance { .. }
+        | S::RedeliverEvent { .. }
+        | S::DeliverEvent { .. }
+        | S::ExpectNoInvocation { .. }
+        | S::ExpectNoPublication { .. }
+        | S::ExpectPublicationCount { .. }
+        | S::EventuallyEvent { .. }
+        | S::MarkInstant { .. }
+        | S::HoldNow { .. }
+        | S::ExpectNotBefore { .. }
+        | S::ExpectWithin { .. }
+        | S::ExpectQuiet { .. } => {}
     }
 }
 
-/// `value` with every `observed` reference `captured` holds read from its captured instance.
-fn replace_observed(value: &mut serde_json::Value, captured: &BTreeMap<(String, String), String>) {
-    match value {
-        serde_json::Value::Object(map) => {
-            if map.get("kind").and_then(serde_json::Value::as_str) == Some("observed") {
-                let pair = (
-                    map.get("event").and_then(serde_json::Value::as_str),
-                    map.get("field").and_then(serde_json::Value::as_str),
-                );
-                if let (Some(event), Some(field)) = pair {
-                    if let Some(instance) = captured.get(&(event.to_owned(), field.to_owned())) {
-                        *value = serde_json::json!({"kind": "instance", "instance": instance});
-                        return;
-                    }
-                }
-            }
-            map.values_mut()
-                .for_each(|inner| replace_observed(inner, captured));
+/// Every instance name and every instant name a step binds or reads as a name, at the typed
+/// position that holds it. A [`ScenarioValue::Instance`] is a name too, and is reached through
+/// [`values_mut`].
+///
+/// Exhaustive for the reason [`values_mut`] is.
+pub(super) fn names_mut(
+    step: &mut ScenarioStep,
+    instance: &mut dyn FnMut(&mut InstanceName),
+    instant: &mut dyn FnMut(&mut InstantName),
+) {
+    use ScenarioStep as S;
+    match step {
+        S::EstablishEntity { instance: name, .. } | S::CaptureInstance { instance: name, .. } => {
+            instance(name);
         }
-        serde_json::Value::Array(items) => items
-            .iter_mut()
-            .for_each(|inner| replace_observed(inner, captured)),
-        _ => {}
+        S::MarkInstant { instant: name }
+        | S::ExpectNotBefore { instant: name, .. }
+        | S::ExpectWithin { instant: name, .. }
+        | S::ExpectQuiet { instant: name, .. } => instant(name),
+        S::ResolveFixtures { .. }
+        | S::ExpectEventValues { .. }
+        | S::SnapshotCompleteSubject { .. }
+        | S::ExpectCompleteSubjectUnchanged { .. }
+        | S::ExpectNoEvents
+        | S::CaptureCommandResult { .. }
+        | S::ExpectReplayResult { .. }
+        | S::ExpectResponsePayload { .. }
+        | S::ExpectDirectResponse { .. }
+        | S::CheckPeriodic { .. }
+        | S::ExpectReadingOrder { .. }
+        | S::ConfigureExternalOutcome { .. }
+        | S::ExecuteCommand { .. }
+        | S::ExecuteCommandWithoutInput { .. }
+        | S::AwaitOutcome { .. }
+        | S::ExpectNotIssued { .. }
+        | S::ExpectOutcome { .. }
+        | S::ExpectNotGranted { .. }
+        | S::ReadAs { .. }
+        | S::ExpectNoError
+        | S::SnapshotSubject { .. }
+        | S::ExpectSubjectUnchanged { .. }
+        | S::ExpectSubjectAbsent { .. }
+        | S::SnapshotView { .. }
+        | S::ExpectViewUnchanged { .. }
+        | S::ExpectError { .. }
+        | S::ExpectEvent { .. }
+        | S::ExpectNoEvent { .. }
+        | S::RedeliverEvent { .. }
+        | S::DeliverEvent { .. }
+        | S::ExpectInvocation { .. }
+        | S::ExpectEveryInvocation { .. }
+        | S::ExpectNoInvocation { .. }
+        | S::ExpectNoPublication { .. }
+        | S::ExpectPublicationCount { .. }
+        | S::QueryView { .. }
+        | S::ExpectView { .. }
+        | S::EventuallyEvent { .. }
+        | S::EventuallyView { .. }
+        | S::HoldNow { .. }
+        | S::ExpectHalt { .. }
+        | S::EventuallyHalt { .. } => {}
     }
 }
 
@@ -2997,21 +3159,28 @@ fn redraw_under(
     }
 }
 
-/// Every instance and instant name in a serialized run, suffixed.
-fn rename(value: &mut serde_json::Value) {
-    match value {
-        serde_json::Value::Object(map) => {
-            for (key, inner) in map.iter_mut() {
-                match inner {
-                    serde_json::Value::String(name) if key == "instance" || key == "instant" => {
-                        *name = format!("{name}-{SWAPPED}");
-                    }
-                    _ => rename(inner),
-                }
-            }
+/// Every instance and instant name a run binds or reads, suffixed, at the typed positions that
+/// hold one. Authored data under a field named `instance` or `instant` is left as sent
+/// (beyond10x/ess#766).
+fn rename(steps: &mut [ScenarioStep]) {
+    let suffixed = |name: &str| format!("{name}-{SWAPPED}");
+    let instance = |name: &mut InstanceName| {
+        if let Ok(new) = InstanceName::new(suffixed(name.as_str())) {
+            *name = new;
         }
-        serde_json::Value::Array(items) => items.iter_mut().for_each(rename),
-        _ => {}
+    };
+    let instant = |name: &mut InstantName| {
+        if let Ok(new) = InstantName::new(suffixed(name.as_str())) {
+            *name = new;
+        }
+    };
+    for step in steps {
+        names_mut(step, &mut { instance }, &mut { instant });
+        values_mut(step, &mut |value| {
+            if let ScenarioValue::Instance { instance: name } = value {
+                instance(name);
+            }
+        });
     }
 }
 
@@ -3230,5 +3399,68 @@ views:
             );
             assert_eq!(focused, unfocused);
         }
+    }
+
+    fn steps(value: serde_json::Value) -> Vec<ScenarioStep> {
+        serde_json::from_value(value).unwrap_or_else(|error| panic!("{error}"))
+    }
+
+    /// An authored value is never a name or a reference, whatever it is called or holds
+    /// (beyond10x/ess#766).
+    fn authored() -> serde_json::Value {
+        serde_json::json!([
+            {"step": "expect_event", "event": "demo.notes.Made", "shape": {},
+             "payload": {"instance": "made", "instant": "mark"}},
+            {"step": "execute_command", "command": "demo.notes.Make", "actor": null,
+             "caller": {"instance": "made", "instant": "mark"},
+             "input": {
+                 "instance": {"kind": "literal", "value": "made"},
+                 "pair": {"kind": "literal", "value": {"kind": "observed",
+                     "event": "demo.notes.Made", "field": "id"}},
+             }},
+        ])
+    }
+
+    #[test]
+    fn a_swap_renames_only_the_names_it_binds() {
+        let mut run = steps(serde_json::json!([
+            {"step": "mark_instant", "instant": "mark"},
+            {"step": "capture_instance", "instance": "made", "entity": "demo.notes.Note",
+             "event": "demo.notes.Made", "field": "id"},
+            {"step": "execute_command", "command": "demo.notes.Make", "actor": null,
+             "caller": {"instance": "made"},
+             "input": {
+                 "instance": {"kind": "literal", "value": "made"},
+                 "note": {"kind": "instance", "instance": "made"},
+             }},
+        ]));
+        rename(&mut run);
+        let expected = steps(serde_json::json!([
+            {"step": "mark_instant", "instant": "mark-swapped"},
+            {"step": "capture_instance", "instance": "made-swapped", "entity": "demo.notes.Note",
+             "event": "demo.notes.Made", "field": "id"},
+            {"step": "execute_command", "command": "demo.notes.Make", "actor": null,
+             "caller": {"instance": "made"},
+             "input": {
+                 "instance": {"kind": "literal", "value": "made"},
+                 "note": {"kind": "instance", "instance": "made-swapped"},
+             }},
+        ]));
+        assert_eq!(run, expected);
+    }
+
+    #[test]
+    fn authored_data_is_left_as_sent() {
+        let mut run = steps(authored());
+        rename(&mut run);
+        assert_eq!(run, steps(authored()));
+        let mut found = BTreeSet::new();
+        for step in &mut run {
+            observed(step, &mut found);
+        }
+        assert!(
+            found.is_empty(),
+            "a struct literal holding `observed` is no reference"
+        );
     }
 }

@@ -33,7 +33,7 @@ use ess_domain::types::Primitive;
 use ess_primitives::facts::FactValue;
 use ess_primitives::predicate::{CompareOp, Operand, Predicate};
 
-use crate::scenario::{ConformanceScenario, InstanceName, ScenarioId, ScenarioStep};
+use crate::scenario::{ConformanceScenario, InstanceName, ScenarioId, ScenarioStep, ScenarioValue};
 use crate::witness::WitnessGap;
 
 use super::{RefusalCause, Synthesis};
@@ -255,11 +255,8 @@ fn merge_second_creations(
     while let Some(repeat) = second_creation(ir, &scenario.steps)? {
         scenario.steps.drain(repeat.start..repeat.end);
         if let Some((again, first)) = repeat.renamed {
-            let tail = scenario.steps.split_off(repeat.start);
-            let mut value = serde_json::to_value(&tail).map_err(|_| repeat.cause.clone())?;
-            rename(&mut value, again.as_str(), first.as_str());
-            let tail: Vec<ScenarioStep> =
-                serde_json::from_value(value).map_err(|_| repeat.cause.clone())?;
+            let mut tail = scenario.steps.split_off(repeat.start);
+            rename(&mut tail, &again, &first);
             scenario.steps.extend(tail);
         }
     }
@@ -273,7 +270,6 @@ struct Repeat {
     start: usize,
     end: usize,
     renamed: Option<(InstanceName, InstanceName)>,
-    cause: RefusalCause,
 }
 
 /// The one row of a singleton entity as a scenario made it: the step that sent its creation, the
@@ -372,7 +368,6 @@ fn second_creation(ir: &EssIr, steps: &[ScenarioStep]) -> Result<Option<Repeat>,
                     start: at - 1,
                     end,
                     renamed,
-                    cause: refused,
                 }));
             }
             ResolvedEffect::Deletes => {
@@ -400,24 +395,64 @@ fn expected<'i>(ir: &'i EssIr, step: &ScenarioStep) -> Option<&'i ResolvedOutcom
         .find(|declared| declared.name == outcome.outcome)
 }
 
-/// Every instance name `from` in a serialized run replaced by `to`.
-fn rename(value: &mut serde_json::Value, from: &str, to: &str) {
-    match value {
-        serde_json::Value::Object(map) => {
-            for (key, inner) in map.iter_mut() {
-                match inner {
-                    serde_json::Value::String(name) if key == "instance" && name == from => {
-                        to.clone_into(name);
-                    }
-                    _ => rename(inner, from, to),
-                }
-            }
+/// Every instance name `from` the steps bind or read replaced by `to`, at the typed positions that
+/// hold an instance name. Authored data, whatever field it sits under, is left as sent
+/// (beyond10x/ess#766).
+fn rename(steps: &mut [ScenarioStep], from: &InstanceName, to: &InstanceName) {
+    let replace = |name: &mut InstanceName| {
+        if name == from {
+            name.clone_from(to);
         }
-        serde_json::Value::Array(items) => {
-            for item in items {
-                rename(item, from, to);
+    };
+    for step in steps {
+        super::caller::names_mut(step, &mut { replace }, &mut |_| {});
+        super::caller::values_mut(step, &mut |value| {
+            if let ScenarioValue::Instance { instance } = value {
+                replace(instance);
             }
-        }
-        _ => {}
+        });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn steps(value: serde_json::Value) -> Vec<ScenarioStep> {
+        serde_json::from_value(value).unwrap_or_else(|error| panic!("{error}"))
+    }
+
+    #[test]
+    fn an_authored_value_equal_to_the_replaced_name_is_left_unchanged() {
+        let mut run = steps(serde_json::json!([
+            {"step": "capture_instance", "instance": "made", "entity": "example.order.Order",
+             "event": "example.order.OrderPlaced", "field": "order_id"},
+            {"step": "execute_command", "command": "example.order.PlaceOrder", "actor": null,
+             "caller": {"instance": "made"},
+             "input": {
+                 "instance": {"kind": "literal", "value": "made"},
+                 "order": {"kind": "instance", "instance": "made"},
+                 "pair": {"kind": "members", "members": {
+                     "instance": {"kind": "literal", "value": "made"},
+                 }},
+             }},
+        ]));
+        let from = InstanceName::new("made").unwrap();
+        let to = InstanceName::new("kept").unwrap();
+        rename(&mut run, &from, &to);
+        let expected = steps(serde_json::json!([
+            {"step": "capture_instance", "instance": "kept", "entity": "example.order.Order",
+             "event": "example.order.OrderPlaced", "field": "order_id"},
+            {"step": "execute_command", "command": "example.order.PlaceOrder", "actor": null,
+             "caller": {"instance": "made"},
+             "input": {
+                 "instance": {"kind": "literal", "value": "made"},
+                 "order": {"kind": "instance", "instance": "kept"},
+                 "pair": {"kind": "members", "members": {
+                     "instance": {"kind": "literal", "value": "made"},
+                 }},
+             }},
+        ]));
+        assert_eq!(run, expected);
     }
 }
