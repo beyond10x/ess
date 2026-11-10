@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-10T06:21:38Z",
+  "actor": "human:timo",
+  "artifact": "story:ess-37-and-conformance-64-65-are-open-for-the-epics-constructs",
+  "kind": "story",
+  "revision": 11,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "cargo test -p ess-cli --locked --test epic_formats_open --test adversary_t1_epic_formats; ess-conformance admission, TS parity and byte-pin targets; ess-diff; xtask format-history --check",
+    "reference": "ess-37-and-conformance-64-65-are-open-for-the-epics-constructs/out (red 3 of 3) vs verify-batch2/c1..c8.txt at 7623ee5ec1 (3+1 passed; undeclared_fields 23, TS parity 28, pair 3, admission 2; ess-diff all green; format-history exit 0)"
+  }
+}

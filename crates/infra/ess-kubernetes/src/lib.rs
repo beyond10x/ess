@@ -35,6 +35,39 @@ pub const KINDS: &[&str] = &[
     "horizontalpodautoscalers",
 ];
 
+/// Optional kinds from API groups a cluster may not serve, as `(bundle key, kubectl resource)`.
+///
+/// The resource is fully qualified, so another group's `gateways` (a service mesh's, say) is
+/// never read in the Gateway API's place. A kind the server does not serve is left out of the
+/// bundle — absent, "not observable here" — never written as an empty list.
+pub const GATEWAY_KINDS: &[(&str, &str)] = &[
+    ("gateways", "gateways.gateway.networking.k8s.io"),
+    ("httproutes", "httproutes.gateway.networking.k8s.io"),
+];
+
+/// The API groups whose served kinds a full scan reports when it does not read them: the
+/// cluster's network edge and policy, its certificates and secrets operators, its autoscalers,
+/// delivery and monitoring. A kind of any other group, or of the core group, is not reported.
+pub const WATCHED_GROUPS: &[&str] = &[
+    "networking.k8s.io",
+    "policy",
+    "gateway.networking.k8s.io",
+    "networking.istio.io",
+    "security.istio.io",
+    "elbv2.k8s.aws",
+    "cert-manager.io",
+    "external-secrets.io",
+    "secrets-store.csi.x-k8s.io",
+    "autoscaling.k8s.io",
+    "keda.sh",
+    "karpenter.sh",
+    "argoproj.io",
+    "monitoring.coreos.com",
+];
+
+/// The phrase kubectl prints for a resource type the API server does not serve.
+const UNSERVED_RESOURCE: &[u8] = b"the server doesn't have a resource type";
+
 fn kubectl(operation: &'static str, args: &[&str]) -> Result<Vec<u8>, String> {
     let output = Command::new("kubectl")
         .args(args)
@@ -46,6 +79,31 @@ fn kubectl(operation: &'static str, args: &[&str]) -> Result<Vec<u8>, String> {
         return Err(format!("kubectl {operation} failed: {}", output.status));
     }
     Ok(output.stdout)
+}
+
+/// Runs kubectl; `Ok(None)` when it failed only because the server does not serve the resource.
+///
+/// Stderr is matched against one fixed phrase and never copied: whether it matched is the only
+/// thing that crosses the boundary. Any other failure is refused exactly as [`kubectl`] does.
+fn kubectl_unless_unserved(
+    operation: &'static str,
+    args: &[&str],
+) -> Result<Option<Vec<u8>>, String> {
+    let output = Command::new("kubectl")
+        .args(args)
+        .output()
+        .map_err(|error| format!("kubectl not runnable: {error}"))?;
+    if output.status.success() {
+        return Ok(Some(output.stdout));
+    }
+    if output
+        .stderr
+        .windows(UNSERVED_RESOURCE.len())
+        .any(|window| window == UNSERVED_RESOURCE)
+    {
+        return Ok(None);
+    }
+    Err(format!("kubectl {operation} failed: {}", output.status))
 }
 
 /// Prints the kubeconfig contexts the adapter can target.
@@ -71,43 +129,102 @@ pub fn scan(context: Option<&str>, output_path: &Path) -> Result<(), String> {
     };
 
     let mut kinds = serde_json::Map::new();
-    for (index, kind) in KINDS.iter().enumerate() {
-        eprint!("[{:>2}/{}] {kind:<24}\r", index + 1, KINDS.len());
-        let raw = kubectl(
-            "get resources in all namespaces",
-            &["--context", &context, "get", kind, "-A", "-o", "json"],
-        )?;
+    let total = KINDS.len() + GATEWAY_KINDS.len();
+    let requests = KINDS.iter().map(|kind| (*kind, *kind, true)).chain(
+        GATEWAY_KINDS
+            .iter()
+            .map(|(key, resource)| (*key, *resource, false)),
+    );
+    for (index, (kind, resource, required)) in requests.enumerate() {
+        eprint!("[{:>2}/{total}] {kind:<24}\r", index + 1);
+        let args = ["--context", &context, "get", resource, "-A", "-o", "json"];
+        let raw = if required {
+            kubectl("get resources in all namespaces", &args)?
+        } else if let Some(raw) = kubectl_unless_unserved("get resources in all namespaces", &args)?
+        {
+            raw
+        } else {
+            eprintln!("[{:>2}/{total}] {kind:<24} not served", index + 1);
+            continue;
+        };
         let mut value: serde_json::Value = ess_primitives::json::from_slice(&raw)
             .map_err(|_| format!("kubectl get {kind}: response is not JSON"))?;
-        if *kind == "secrets" {
+        if kind == "secrets" {
             sanitize_secret_list(&mut value)?;
         }
         let count = value
             .get("items")
             .and_then(serde_json::Value::as_array)
             .map_or(0, Vec::len);
-        eprintln!("[{:>2}/{}] {kind:<24} {count:>5}", index + 1, KINDS.len());
-        kinds.insert((*kind).to_owned(), value);
+        eprintln!("[{:>2}/{total}] {kind:<24} {count:>5}", index + 1);
+        kinds.insert(kind.to_owned(), value);
     }
+    let collected = kinds.len();
+    let unobserved = unobserved_kinds(&context);
 
-    let bundle = serde_json::json!({
+    let mut bundle = serde_json::json!({
         "format": infra_domain::PRESENCE_OBSERVATION_FORMAT,
         "context": context,
         "scanned_at": utc_timestamp(),
         "scout_version": env!("CARGO_PKG_VERSION"),
         "kinds": kinds,
     });
+    // Written only when there is one, so a cluster serving nothing unread keeps its bytes.
+    if !unobserved.is_empty() {
+        bundle["unobserved_kinds"] = serde_json::json!(unobserved);
+    }
     let bytes = serde_json::to_vec_pretty(&bundle).map_err(|error| error.to_string())?;
     let digest = hex(&sha2::Sha256::digest(&bytes));
     std::fs::File::create(output_path)
         .and_then(|mut file| file.write_all(&bytes))
         .map_err(|error| format!("writing {}: {error}", output_path.display()))?;
     eprintln!(
-        "wrote {} ({} kinds, sha256 {digest})",
-        output_path.display(),
-        KINDS.len()
+        "wrote {} ({collected} kinds, sha256 {digest})",
+        output_path.display()
     );
     Ok(())
+}
+
+/// The served kinds of [`WATCHED_GROUPS`] this scan does not read, sorted, from one
+/// `kubectl api-resources` call.
+///
+/// Discovery informs the report and never decides the scan: when it fails, nothing is recorded,
+/// a notice says so, and nothing of kubectl's output crosses the boundary. A name that is not
+/// `<plural>.<watched group>` is never recorded.
+fn unobserved_kinds(context: &str) -> Vec<String> {
+    let Ok(names) = kubectl(
+        "discover API resources",
+        &[
+            "--context",
+            context,
+            "api-resources",
+            "--verbs=list",
+            "-o",
+            "name",
+        ],
+    ) else {
+        eprintln!("API discovery failed: unobserved kinds not recorded");
+        return Vec::new();
+    };
+    let read = |name: &str, plural: &str| {
+        KINDS.contains(&plural) || GATEWAY_KINDS.iter().any(|(_, resource)| *resource == name)
+    };
+    let mut unobserved: Vec<String> = String::from_utf8_lossy(&names)
+        .lines()
+        .map(str::trim)
+        .filter_map(|name| {
+            let (plural, group) = name.split_once('.')?;
+            let wellformed = !plural.is_empty()
+                && plural
+                    .bytes()
+                    .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit());
+            (wellformed && WATCHED_GROUPS.contains(&group) && !read(name, plural))
+                .then(|| name.to_owned())
+        })
+        .collect();
+    unobserved.sort();
+    unobserved.dedup();
+    unobserved
 }
 
 /// Replaces every Secret value with `{"present": true}`: the key survives, nothing about the value.

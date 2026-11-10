@@ -113,7 +113,7 @@ infra_codes! {
     /// An ingress path's backend names no service.
     IncompleteBackend => "INFRA-INGRESS-001",
 
-    /// A persisted IR document's `format` is not `infra-ir/1`, `/2` or `/3`.
+    /// A persisted IR document's `format` is not `infra-ir/1`, `/2`, `/3` or `/4`.
     IrUnsupportedFormat => "INFRA-IR-001",
 
     /// A persisted IR document's digest does not match its model — the document was edited

@@ -1,0 +1,14 @@
+{
+  "at": "2026-11-10T05:59:53Z",
+  "actor": "human:timo",
+  "artifact": "story:a-badge-field-takes-a-tone",
+  "kind": "story",
+  "revision": 14,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "review-result:zi-w1-badge-adv-1",
+    "review": "review-result:zi-w1-badge-adv-1",
+    "outcome": "fixed"
+  }
+}

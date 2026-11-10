@@ -1228,7 +1228,8 @@ enum ImportAdapter {
         /// Where a live scan writes its sanitized source bundle.
         #[arg(long, requires = "context")]
         observation_out: Option<PathBuf>,
-        /// Where to write the compiled `infra-ir` document.
+        /// Where to write the compiled `infra-ir` document, always as JSON whatever the file
+        /// extension; `--format` selects only the report printed to stdout.
         #[arg(long)]
         out: Option<PathBuf>,
         #[arg(long, value_enum, default_value_t = Format::Text)]
@@ -5709,6 +5710,7 @@ fn import(adapter: ImportAdapter) -> Result<ExitCode> {
                     "workload",
                     "service",
                     "ingress",
+                    "route",
                     "configuration",
                     "secret-shape",
                     "runtime",
@@ -5717,8 +5719,14 @@ fn import(adapter: ImportAdapter) -> Result<ExitCode> {
                     .model()
                     .coverage
                     .as_ref()
-                    .map(|coverage| vec![coverage.limitation().to_owned()])
-                    .unwrap_or_default(),
+                    .map(|coverage| coverage.limitation().to_owned())
+                    .into_iter()
+                    .chain(
+                        unobserved_kinds(&source)
+                            .into_iter()
+                            .map(|kind| format!("served but not read: {kind}")),
+                    )
+                    .collect(),
                 obligations: Vec::new(),
                 refusals: Vec::new(),
                 unresolved_references: ir.model().unresolved.len(),
@@ -5742,6 +5750,17 @@ fn import(adapter: ImportAdapter) -> Result<ExitCode> {
             import_openapi(&path, out.as_deref(), format)
         }
     }
+}
+
+/// The kinds an observation bundle records as served and not read; none for an IR source.
+///
+/// The source has already been loaded, so a file this cannot read records nothing new.
+fn unobserved_kinds(source: &Path) -> Vec<String> {
+    fs::read(source)
+        .ok()
+        .and_then(|bytes| serde_json::from_slice::<infra_domain::raw::RawBundle>(&bytes).ok())
+        .map(|bundle| bundle.unobserved_kinds)
+        .unwrap_or_default()
 }
 
 fn import_openapi(path: &Path, out: Option<&Path>, format: Format) -> Result<ExitCode> {
@@ -6087,9 +6106,7 @@ fn infra(command: InfraCommand) -> Result<ExitCode> {
                     &infra_analyze::GraphDocument::of(&graph, &ir, namespace.as_deref()),
                     Format::Yaml,
                 )?,
-                GraphFormat::Dot => {
-                    bail!("the infrastructure graph supports mermaid, json, and yaml")
-                }
+                GraphFormat::Dot => print!("{}", graph.dot()),
             }
             Ok(ExitCode::SUCCESS)
         }
