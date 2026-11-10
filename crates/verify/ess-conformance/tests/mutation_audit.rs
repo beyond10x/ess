@@ -1054,5 +1054,5 @@ fn a_key_after_the_identity_names_a_gap_and_the_scenario_stands() {
         text.contains("example.order.OrderQueue") && text.contains("priority"),
         "{text}"
     );
-    assert!(!placed_orders(&synthesis).is_empty());
+    assert_ne!(placed_orders(&synthesis), Vec::<(String, String)>::new());
 }

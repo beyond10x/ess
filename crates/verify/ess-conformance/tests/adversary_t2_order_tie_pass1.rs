@@ -6,6 +6,8 @@
 //! killed, or a standing refusal names the view and the key. A survivor with no such refusal is a
 //! key the suite silently does not pin.
 
+use std::fmt::Write as _;
+
 use ess_compiler::source::SourceMap;
 use ess_conformance::interpret::Interpreted;
 use ess_conformance::mutate::{self, MutantClass, MutationReport, Verdict};
@@ -16,10 +18,10 @@ use ess_domain::system::Source;
 /// A one-domain model: `Order` with `fields`, created by `PlaceOrder` writing `sets`, an optional
 /// `ShipOrder` moving it to `Shipped`, and the view `OrderQueue` declared by `view`.
 fn spec(fields: &[(&str, &str)], sets: &str, view: &str, ship: bool) -> String {
-    let declared: String = fields
-        .iter()
-        .map(|(name, kind)| format!("      - {{name: {name}, type: {kind}}}\n"))
-        .collect();
+    let declared = fields.iter().fold(String::new(), |mut out, (name, kind)| {
+        let _ = writeln!(out, "      - {{name: {name}, type: {kind}}}");
+        out
+    });
     let lifecycle = if ship {
         "{initial: Placed, states: [Placed, Shipped], terminal: [Shipped], transitions: [{name: ship, from: [Placed], to: Shipped}]}"
     } else {
@@ -91,7 +93,7 @@ fn view_fields(fields: &[(&str, &str)]) -> String {
     let mut text =
         String::from("    fields:\n      - {name: order_id, type: example.order.OrderId}\n");
     for (name, kind) in fields {
-        text.push_str(&format!("      - {{name: {name}, type: {kind}}}\n"));
+        let _ = writeln!(text, "      - {{name: {name}, type: {kind}}}");
     }
     text
 }
