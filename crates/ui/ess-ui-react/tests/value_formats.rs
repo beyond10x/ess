@@ -31,6 +31,8 @@ pages:
     title: Calls
     sections:
       - {name: stored, component: metric, reads: t.Usage, format: bytes}
+      - {name: wait, component: metric, reads: t.Usage, format: duration, unit: m}
+      - {name: sla, component: metric, reads: t.Usage, format: percent, scale: hundredths}
       - name: calls
         component: collection
         reads: t.Calls
@@ -43,6 +45,7 @@ pages:
           - {field: size, as: bytes}
           - {field: talk, as: duration}
           - {field: hold, as: duration, unit: s}
+          - {field: rate, as: percent, scale: hundredths}
 ";
 
 fn scratch(name: &str) -> PathBuf {
@@ -138,7 +141,8 @@ const date = shown(column("started", { as: "date" }), { started: ms }).text();
 assert.strictEqual(date, new Date(ms).toLocaleDateString(), "an epoch-ms number is a date");
 assert.notStrictEqual(date, new Intl.NumberFormat().format(ms));
 const time = shown(column("started", { as: "time" }), { started: ms }).text();
-assert.strictEqual(time, new Date(ms).toLocaleString(), "an epoch-ms number is a time");
+const clock = (date) => `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+assert.strictEqual(time, clock(new Date(ms)), "an epoch-ms number is a time of day");
 const iso = "2026-11-04T10:00:00Z";
 assert.strictEqual(shown(column("started", { as: "date" }), { started: iso }).text(), new Date(iso).toLocaleDateString());
 assert.strictEqual(shown(column("started", { as: "date" }), { started: null }).text(), "");
@@ -438,4 +442,98 @@ assert.strictEqual(ms("soon"), "soon", "a value that is no number shows as it is
 assert.strictEqual(shown(column("talk"), { talk: 73000 }).text(), new Intl.NumberFormat().format(73000));
 "#,
     );
+}
+
+/// The metric's value text, from `props` over a state number.
+const METRIC: &str = r#"
+const { MetricView } = out("runtime/composites/metric");
+const metric = (props, value) => {
+  const root = React.__root(jsx(ScopeLayer, { values: { state: { n: value } }, children: jsx(MetricView, { "data-ui-path": "m", from: "state.n", ...props }) })).settle();
+  return root.find((n) => n.tag === "span" && n.props.className === "ui-metric-value")[0].children.join("");
+};
+"#;
+
+#[test]
+fn a_time_shows_the_time_of_day_and_a_timestamp_date_and_time() {
+    let (project, _) = generate("timestamp");
+    render(
+        &project,
+        "timestamp",
+        r#"
+const iso = "2026-01-02T03:04:05Z";
+const at = new Date(iso);
+const clock = `${String(at.getHours()).padStart(2, "0")}:${String(at.getMinutes()).padStart(2, "0")}`;
+assert.strictEqual(shown(column("started", { as: "time" }), { started: iso }).text(), clock, "a time is the time of day");
+const stamp = shown(column("started", { as: "timestamp" }), { started: iso }).text();
+assert.ok(stamp.includes(clock), `a timestamp shows the time ${clock}: ${stamp}`);
+assert.ok(stamp.length > clock.length + 4, `a timestamp shows a date as well: ${stamp}`);
+assert.ok(stamp.startsWith(at.toLocaleDateString(undefined, { year: "numeric", month: "2-digit", day: "2-digit" })), `the date is in the locale's order: ${stamp}`);
+assert.strictEqual(shown(column("started", { as: "timestamp" }), { started: at.getTime() }).text(), stamp, "epoch milliseconds are an instant too");
+assert.strictEqual(shown(column("started", { as: "timestamp" }), { started: null }).text(), "");
+"#,
+    );
+}
+
+#[test]
+fn a_duration_counts_minutes_and_hours() {
+    let (project, _) = generate("duration-mh");
+    render(
+        &project,
+        "duration-mh",
+        &format!(
+            r#"{METRIC}
+const minutes = (value) => shown(column("talk", {{ as: "duration", unit: "m" }}), {{ talk: value }}).text();
+const hours = (value) => shown(column("talk", {{ as: "duration", unit: "h" }}), {{ talk: value }}).text();
+assert.strictEqual(minutes(90), "1:30:00", "90 minutes");
+assert.strictEqual(hours(2), "2:00:00", "2 hours");
+assert.strictEqual(hours(26), "26:00:00", "hours are never folded into days");
+assert.strictEqual(metric({{ format: "duration" }}, 73), "0:01:13", "a metric duration counts seconds");
+assert.strictEqual(metric({{ format: "duration", unit: "s" }}, 73), "0:01:13");
+assert.strictEqual(metric({{ format: "duration", unit: "m" }}, 90), "1:30:00");
+assert.strictEqual(metric({{ format: "duration", unit: "ms" }}, 73000), "0:01:13");
+"#
+        ),
+    );
+}
+
+#[test]
+fn a_percent_declares_its_scale() {
+    let (project, _) = generate("percent");
+    render(
+        &project,
+        "percent",
+        &format!(
+            r#"{METRIC}
+const pct = (extra, value) => shown(column("rate", {{ as: "percent", ...extra }}), {{ rate: value }}).text();
+const half = new Intl.NumberFormat(undefined, {{ style: "percent", maximumFractionDigits: 1 }}).format(0.5);
+assert.strictEqual(pct({{}}, 0.5), half, "a fraction by default");
+assert.strictEqual(pct({{ scale: "fraction" }}, 0.5), half, "scale: fraction");
+assert.strictEqual(pct({{ scale: "hundredths" }}, 50), half, "scale: hundredths");
+assert.strictEqual(metric({{ format: "percent" }}, 0.5), half);
+assert.strictEqual(metric({{ format: "percent", scale: "hundredths" }}, 50), half);
+"#
+        ),
+    );
+}
+
+#[test]
+fn the_page_passes_a_scale() {
+    let (_, pages) = generate("scale");
+    let rate = column(&pages, "rate");
+    assert!(rate.contains(r#"as: "percent""#), "{rate}");
+    assert!(rate.contains(r#"scale: "hundredths""#), "{rate}");
+    let talk = column(&pages, "talk");
+    assert!(
+        !talk.contains("scale:"),
+        "no scale written, none passed: {talk}"
+    );
+}
+
+#[test]
+fn the_page_passes_a_metric_unit_and_scale() {
+    let (_, pages) = generate("metric-props");
+    assert!(pages.contains(r#"unit={"m"}"#), "{pages}");
+    assert!(pages.contains(r#"scale={"hundredths"}"#), "{pages}");
+    assert!(pages.contains(r#"format={"duration"}"#), "{pages}");
+    assert!(pages.contains(r#"format={"percent"}"#), "{pages}");
 }

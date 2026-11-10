@@ -1684,6 +1684,22 @@ fn cell_value(field: &Field, value: &Value) -> String {
                 time.trim_end_matches('Z').chars().take(5).collect()
             })
         }
+        Some("timestamp") => {
+            let text = display(value);
+            text.split_once('T').map_or(text.clone(), |(date, time)| {
+                let clock: String = time.trim_end_matches('Z').chars().take(5).collect();
+                format!("{date} {clock}")
+            })
+        }
+        Some("date") => {
+            let text = display(value);
+            text.split_once('T')
+                .map_or(text.clone(), |(date, _)| date.to_owned())
+        }
+        Some("percent") => value.as_f64().map_or_else(
+            || display(value),
+            |number| percent(number, &field.percent_scale()),
+        ),
         Some("json") => ess_yaml::to_string(value)
             .map(|text| text.replace('\n', " ").trim().to_owned())
             .unwrap_or_default(),
@@ -1705,6 +1721,8 @@ fn duration(count: f64, unit: &ess_ui::DurationUnit) -> String {
     }
     let millis = match unit {
         ess_ui::DurationUnit::S => count * 1000.0,
+        ess_ui::DurationUnit::M => count * 60_000.0,
+        ess_ui::DurationUnit::H => count * 3_600_000.0,
         _ => count,
     };
     #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
@@ -1717,6 +1735,15 @@ fn duration(count: f64, unit: &ess_ui::DurationUnit) -> String {
         seconds / 60 % 60,
         seconds % 60
     )
+}
+
+/// A share on its `scale`, as a whole percent.
+fn percent(number: f64, scale: &ess_ui::PercentScale) -> String {
+    let hundredths = match scale {
+        ess_ui::PercentScale::Hundredths => number,
+        _ => number * 100.0,
+    };
+    format!("{hundredths:.0}%")
 }
 
 /// A byte count scaled to B, KB, MB or GB in 1024 steps, with at most one decimal, as the React
@@ -2141,8 +2168,17 @@ impl App {
         }
         let shown = match (&metric.format, value.as_f64()) {
             (_, None) if value.is_null() => "–".to_owned(),
-            (Some(MetricFormat::Percent), Some(number)) => format!("{:.0}%", number * 100.0),
-            (Some(MetricFormat::Duration), Some(number)) => format!("{number}s"),
+            (Some(MetricFormat::Percent), Some(number)) => percent(
+                number,
+                &metric
+                    .scale
+                    .clone()
+                    .unwrap_or(ess_ui::PercentScale::Fraction),
+            ),
+            (Some(MetricFormat::Duration), Some(number)) => duration(
+                number,
+                metric.unit.as_ref().unwrap_or(&ess_ui::DurationUnit::S),
+            ),
             (Some(MetricFormat::Bytes), Some(number)) => bytes(number),
             _ => display(&value),
         };

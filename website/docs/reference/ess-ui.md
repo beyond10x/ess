@@ -1196,7 +1196,9 @@ For KPI tiles and per-row live numbers. With `from` a metric reads a channel fie
 | `from` | `expr` |   |   | value from a channel field |
 | `match` | `name` |   |   | row field that picks a keyed value |
 | `window` | `duration` |   |   | time window the value covers |
-| `format` | one of: `number` \| `duration` \| `percent` \| `bytes` |   | `number` | display format; `bytes` shows a byte count in B, KB, MB or GB, in 1024 steps |
+| `format` | one of: `number` \| `duration` \| `percent` \| `bytes` |   | `number` | display format; `bytes` shows a byte count in B, KB, MB or GB, in 1024 steps; `duration` shows `h:mm:ss`, counted in its `unit`; `percent` reads its value on its `scale` |
+| `unit` | one of: `ms` \| `s` \| `m` \| `h` |   | `s` | what a `format: duration` value counts: milliseconds, seconds, minutes or hours, and only with that format; `73` s is `0:01:13` |
+| `scale` | one of: `fraction` \| `hundredths` |   | `fraction` | what a `format: percent` value is a share of, and only with that format: `fraction` reads 0.5 as 50%, `hundredths` reads 50 as 50% |
 | `label` | `string` |   |   | caption |
 | `aggregate` | one of: `count` \| `sum` \| `min` \| `max` \| `avg` |   |   | computed over every row of the read instead of read from one; needs `reads` |
 | `field` | `name` |   |   | row field `aggregate` reads; required for every aggregate but count |
@@ -1451,8 +1453,9 @@ Columns and form inputs are fields. `as` is a semantic widget, not a component; 
 | `field` | `name` | yes |   | field of the command input or view row; in a collection column or a record field, `.` names the row itself, so a read whose rows are plain strings shows each string, sorts by it and keys the row by it; on a row that is an object, `.` reads as an absent value, and `ess ui check --model` refuses it on a view of the model, whose rows are entities |
 | `name` | `name` |   | `{from: field}` | node name |
 | `label` | `string` |   | `{from: model.field_label}` | caption |
-| `as` | one of: `text` \| `number` \| `secret` \| `toggle` \| `choice` \| `tags` \| `time` \| `date` \| `date_range` \| `duration` \| `file` \| `rich_text` \| `json` \| `list` \| `map` \| `cron` \| `color` \| `badge` \| `audio` \| `link` \| `metric` \| `bytes` |   | `text` | semantic widget; `bytes` shows a byte count in B, KB, MB or GB, in 1024 steps; `duration` shows `h:mm:ss`, counted in its `unit` |
-| `unit` | one of: `ms` \| `s` |   | `ms` | what an `as: duration` value counts, milliseconds or seconds, and only on such a field; it shows as `h:mm:ss` in whole seconds, the hours unpadded and never folded into days: `73000` ms and `73` s are `0:01:13`, 26 hours `26:00:00` |
+| `as` | one of: `text` \| `number` \| `secret` \| `toggle` \| `choice` \| `tags` \| `time` \| `date` \| `timestamp` \| `date_range` \| `duration` \| `percent` \| `file` \| `rich_text` \| `json` \| `list` \| `map` \| `cron` \| `color` \| `badge` \| `audio` \| `link` \| `bytes` |   | `text` | semantic widget; `bytes` shows a byte count in B, KB, MB or GB, in 1024 steps; `duration` shows `h:mm:ss`, counted in its `unit`; `time` shows the time of day, `date` the date and `timestamp` the date and the time (the locale's order in React, ISO order in the terminal); `percent` reads its value on its `scale`; a metric is a composite, not an `as` |
+| `unit` | one of: `ms` \| `s` \| `m` \| `h` |   | `ms` | what an `as: duration` value counts, milliseconds, seconds, minutes or hours, and only on such a field; it shows as `h:mm:ss` in whole seconds, the hours unpadded and never folded into days: `73000` ms, `73` s and `90` m are `0:01:13` and `1:30:00`, 26 hours `26:00:00` |
+| `scale` | one of: `fraction` \| `hundredths` |   | `fraction` | what an `as: percent` value is a share of, and only on such a field: `fraction` reads 0.5 as 50%, `hundredths` reads 50 as 50% |
 | `choice` | [Node](#node) |   |   | the choice composite for `as: choice` |
 | `sortable` | `boolean` |   | `false` | column can sort |
 | `visible` | `expr` |   |   | shows the field only when true |

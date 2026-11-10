@@ -15,7 +15,9 @@ export interface FieldSpec {
   label?: string;
   as?: string;
   /** What an `as: duration` value counts; milliseconds when absent. */
-  unit?: "ms" | "s";
+  unit?: "ms" | "s" | "m" | "h";
+  /** What an `as: percent` value is a share of; a fraction when absent. */
+  scale?: "fraction" | "hundredths";
   sortable?: boolean;
   visible?: string;
   binds?: string;
@@ -196,7 +198,7 @@ export function FieldValue(props: { field: FieldSpec; row: unknown }): ReactNode
       content = <input type="checkbox" checked={truthy(value)} disabled aria-label={fieldLabel(field)} />;
       break;
     default:
-      content = valueLabel(field.labels, value) ?? formatValue(value, field.as);
+      content = valueLabel(field.labels, value) ?? formatValue(value, field.as, undefined, { scale: field.scale });
   }
   return (
     <span className={`ui-field ui-field-${field.as ?? "text"}${toned}`} data-ui-path={useUiPath(field["data-ui-path"])}>
