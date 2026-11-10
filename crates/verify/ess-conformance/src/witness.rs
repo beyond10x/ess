@@ -644,6 +644,10 @@ fn search(
 /// the guard-directed search gave up at [`MAX_DIRECTED_STEPS`].
 pub(crate) type Searched = Result<(Vec<BTreeMap<String, Node>>, bool, usize), WitnessGap>;
 
+/// One fill of the literal lists of a guard: the members kept in each list, and the inputs the
+/// fill is laid over.
+type ListFill = (Vec<Vec<Node>>, Vec<BTreeMap<String, Node>>);
+
 /// [`search`], run.
 fn search_uncached(
     ir: &EssIr,
@@ -1076,7 +1080,7 @@ fn search_with(
         let base = builder.input(command, &BTreeMap::new())?;
         let mut hosts = vec![base.clone()];
         hosts.extend(inputs.clone());
-        let mut fills: Vec<(Vec<Vec<Node>>, Vec<BTreeMap<String, Node>>)> = Vec::new();
+        let mut fills: Vec<ListFill> = Vec::new();
         let full: Vec<Vec<Node>> = member_lists.iter().map(|(_, m)| m.clone()).collect();
         fills.push((full.clone(), hosts));
         for (at, (_, members)) in member_lists.iter().enumerate() {
