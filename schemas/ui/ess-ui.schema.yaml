@@ -1692,7 +1692,8 @@ constructs:
 
       A map is written in one of two forms. The first names each value: `{lead: neutral, won:
       success}`. The second, `{bands: [{from: 0, tone: success}, {from: 50, tone: warning}]}`,
-      tones a number: it takes the tone of the last band whose `from` it reaches. A number below
+      tones a number: each `from` is a finite number, and a number takes the tone of the last band
+      whose `from` it reaches. A number below
       the first band, and a value that is no number, take the node's own `tone` (`neutral` when it
       has none). The `from` values must strictly ascend (`tone_bands`). A band map names no type
       for the values it bands, so one named where the values are not numbers is not checked, and

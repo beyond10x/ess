@@ -1529,10 +1529,19 @@ impl Tones<'_> {
         match value {
             Value::Mapping(mapping) => {
                 let labelled = holds_labels(mapping);
+                // A field (not a primitive) names its tone map; only a badge or icon writes one.
+                let field = mapping.get("field").is_some_and(Value::is_string)
+                    && !mapping.contains_key("primitive");
                 for (key, child) in mapping.iter_mut() {
                     let key = key_text(key);
                     let here = at.child(&key);
                     if key == "tone_by" {
+                        if field && !child.is_string() {
+                            return Err(LoadError::new(
+                                here.path(),
+                                "a field's `tone_by` is the name of a `tone_maps` entry, not a map",
+                            ));
+                        }
                         self.tone_by(child, &here.path())?;
                     } else if !opaque(&key, labelled) {
                         self.value(child, &here)?;

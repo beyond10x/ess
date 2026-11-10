@@ -144,7 +144,8 @@ The chain is then value → tone (`tone_maps`) → `{text, fill}` (`tokens.tone`
 A value shown by a collection column or a record field takes `tone` and `tone_by`, with the same
 meaning as on a badge or icon (story `a-badge-field-takes-a-tone`, decided in
 `approval-record:ess-0870-wave`, G-8 answer a). Written on a field, `tone_by` is the name of a
-`tone_maps` entry, not a `{value, tones}` record: it reads the field's own value. `tone` is the
+`tone_maps` entry, not a `{value, tones}` record or a map: it reads the field's own value, and the
+loader refuses any other form at the field's `tone_by`. `tone` is the
 tone of a value the map does not name, `neutral` when not written. The loader resolves the name
 as it resolves `tones:`, so after loading `Field.tone_by.map` is the map; a name in no
 `tone_maps` entry is the same refusal (`tone_map_refs`), at the field's `tone_by`. A tone map a
@@ -162,7 +163,7 @@ there is refused, at the node's path.
 A tone map has a second form, `{bands: [{from: <number>, tone: <tone>}, ...]}`. A number takes
 the tone of the last band whose `from` it reaches (`from <= value`); a number below the first
 band, or a value that is no number (a string, a boolean, absent), takes the node's `tone`. `from`
-must strictly ascend: `tone_bands` (error) refuses an entry that does not exceed the one before.
+must be a finite number and strictly ascend: the loader refuses a `from` that is not finite, and `tone_bands` (error) refuses an entry that does not exceed the one before.
 A band map is a map like the other: `tone_by` names it with `tones:` or writes it as `map:`. It
 does not type the value it bands (`ess ui check` has no model types): a band map named where the
 values are not numbers is not checked, and shows the node's `tone`. `label_maps` do not band: the

@@ -409,8 +409,21 @@ fn tone_bands(document: &Document, sink: &mut Sink) {
         let Some(tone_by) = tone_by.filter(|tone_by| tone_by.tones.is_none()) else {
             continue;
         };
+        let at = located.path.child("tone_by").child("map");
         if let Some(map) = ToneMap::from_value(&tone_by.map) {
-            ascending(&map, &located.path.child("tone_by").child("map"), sink);
+            ascending(&map, &at, sink);
+        } else if tone_by
+            .map
+            .get("bands")
+            .is_some_and(ess_yaml::Value::is_sequence)
+        {
+            // A band map written out that does not read as one: a `from` that is no finite
+            // number, or a band without its tone.
+            sink.push(
+                "tone_bands",
+                &at,
+                "the bands do not read: each is `{from: <finite number>, tone: <tone>}`".to_owned(),
+            );
         }
     }
 }

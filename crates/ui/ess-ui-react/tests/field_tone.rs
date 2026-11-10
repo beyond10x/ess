@@ -210,3 +210,20 @@ assert.deepStrictEqual(shown(badge, { state: "failed" }), ["failed", "ui-badge u
 "#,
     );
 }
+
+// ── adversary cases ──────────────────────────────────────────────────────────────────────────
+
+/// A band whose `from` is not a finite number (`-.inf`, `.inf`, `.nan`) is refused at load, so no
+/// renderer is handed a band the other reads differently: the page would emit it as `null`.
+#[test]
+fn adv_a_band_from_that_is_not_finite_is_refused_at_load() {
+    for from in ["-.inf", ".inf", ".nan"] {
+        let text = DOCUMENT.replace(
+            "load: {bands: [{from: 0, tone: success}, {from: 50, tone: warning}, {from: 80, tone: danger}]}",
+            &format!("load: {{bands: [{{from: {from}, tone: danger}}, {{from: 0, tone: success}}]}}"),
+        );
+        assert_ne!(text, DOCUMENT, "the band map was replaced");
+        let error = ess_ui::load_str(&text).expect_err(from);
+        assert!(error.message().contains("finite"), "{from}: {error}");
+    }
+}

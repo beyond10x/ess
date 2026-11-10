@@ -118,3 +118,37 @@ fn ascending_bands_are_clean() {
     );
     assert!(!report.has_errors(), "{:#?}", report.findings);
 }
+
+// ── adversary cases ──────────────────────────────────────────────────────────────────────────
+
+/// A field's `tone_by` is the name of a `tone_maps` entry (schema `{ref: tone_map}`, design page
+/// "not a `{value, tones}` record"). Written as `{map: ...}` it is either refused, or its bands
+/// are held to `tone_bands` as every other band map is.
+#[test]
+fn adv_a_field_tone_by_written_as_a_map_with_descending_bands_is_refused() {
+    let text = document(
+        "",
+        "{field: load, tone_by: {map: {bands: [{from: 80, tone: danger}, {from: 0, tone: success}]}}}",
+    );
+    let report = report(&text);
+    assert!(
+        report.has_errors(),
+        "descending bands on a field's `tone_by: {{map: ...}}` pass `ess ui check`: {:#?}",
+        report.findings
+    );
+}
+
+/// The same form with a tone that is no tone: every other tone map position is enum-checked.
+#[test]
+fn adv_a_field_tone_by_written_as_a_map_with_an_unknown_tone_is_refused() {
+    let text = document(
+        "",
+        "{field: state, as: badge, tone_by: {map: {done: purple}}}",
+    );
+    let report = report(&text);
+    assert!(
+        report.has_errors(),
+        "`purple` in a field's `tone_by: {{map: ...}}` passes `ess ui check`: {:#?}",
+        report.findings
+    );
+}

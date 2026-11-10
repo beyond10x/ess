@@ -3377,9 +3377,15 @@ impl<'de> Deserialize<'de> for ToneMap {
                     "a band map has only `bands`; a map of exact values has no list under `bands`",
                 ));
             }
-            return ess_yaml::from_value(bands.clone())
-                .map(Self::Bands)
-                .map_err(D::Error::custom);
+            let bands: Vec<ToneBand> =
+                ess_yaml::from_value(bands.clone()).map_err(D::Error::custom)?;
+            if let Some(band) = bands.iter().find(|band| !band.from.is_finite()) {
+                return Err(D::Error::custom(format!(
+                    "the `from` of a band is a finite number, not {}",
+                    band.from
+                )));
+            }
+            return Ok(Self::Bands(bands));
         }
         ess_yaml::from_value(value)
             .map(Self::Exact)
