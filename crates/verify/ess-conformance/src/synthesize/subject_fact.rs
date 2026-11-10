@@ -538,6 +538,10 @@ pub(super) fn near_miss<'a>(
         .filter(|other| other.name != branch.name && other.name != outcome.name)
         .filter_map(|other| input_guard(&other.condition))
         .collect();
+    let rivals: Vec<Predicate> = guarded(command)
+        .filter(|other| other.name != branch.name && other.name != outcome.name)
+        .filter_map(|other| stored(&other.condition))
+        .collect();
     candidates(ir, command, &[own], Distinction::PLAIN)
         .ok()?
         .into_iter()
@@ -559,22 +563,26 @@ pub(super) fn near_miss<'a>(
                 return None;
             }
             // A guard reading an input left unbound stays undecided: absent is not false.
-            let bound = guard.fact_paths().iter().all(|path| {
-                !matches!(path.segments(), [root, field, ..]
-                    if root == ess_domain::command::subject_fact::INPUT_NAMESPACE
-                        && !input.contains_key(field))
-            });
-            (bound
-                && guard_truth_with(
-                    ir,
-                    entity,
-                    settled,
-                    &BTreeSet::new(),
-                    Some(state),
-                    guard,
-                    Some((command, &input)),
-                ) == Truth::False)
-                .then_some(changed)
+            let refuted = |predicate: &Predicate| {
+                let bound = predicate.fact_paths().iter().all(|path| {
+                    !matches!(path.segments(), [root, field, ..]
+                        if root == ess_domain::command::subject_fact::INPUT_NAMESPACE
+                            && !input.contains_key(field))
+                });
+                bound
+                    && guard_truth_with(
+                        ir,
+                        entity,
+                        settled,
+                        &BTreeSet::new(),
+                        Some(state),
+                        predicate,
+                        Some((command, &input)),
+                    ) == Truth::False
+            };
+            // Every other guarded branch's whole guard, the row part included, must stay refuted:
+            // an input another branch's subject guard selects is answered by that branch.
+            (refuted(guard) && rivals.iter().all(refuted)).then_some(changed)
         })
         .map(|changed| (branch, changed))
 }
