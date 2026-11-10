@@ -173,7 +173,7 @@ pub fn body_required_without(
 /// What a request has to be authenticated as for the command to mean what the specification says,
 /// which the input does not carry and a reader of the contract cannot otherwise see.
 pub fn caller_attributes(ir: &EssIr, command: &ess_compiler::ir::ResolvedCommand) -> Vec<String> {
-    use ess_compiler::ir::ResolvedPayloadValue;
+    use ess_compiler::ir::{ResolvedOutcome, ResolvedPayloadValue};
     use ess_domain::command::caller_value::CALLER_NAMESPACE;
 
     fn values(value: &ResolvedPayloadValue, found: &mut std::collections::BTreeSet<String>) {
@@ -186,64 +186,80 @@ pub fn caller_attributes(ir: &EssIr, command: &ess_compiler::ir::ResolvedCommand
                     values(&leaf.value, found);
                 }
             }
-            _ => {}
+            ResolvedPayloadValue::ResponseField { .. }
+            | ResolvedPayloadValue::Generated { .. }
+            | ResolvedPayloadValue::Expression { .. }
+            | ResolvedPayloadValue::PayloadRead { .. }
+            | ResolvedPayloadValue::InputField { .. }
+            | ResolvedPayloadValue::Literal { .. }
+            | ResolvedPayloadValue::Cleared
+            | ResolvedPayloadValue::EmptyList
+            | ResolvedPayloadValue::SubjectField { .. }
+            | ResolvedPayloadValue::SubjectState { .. }
+            | ResolvedPayloadValue::Increment { .. }
+            | ResolvedPayloadValue::Append { .. }
+            | ResolvedPayloadValue::InputOrGenerated { .. }
+            | ResolvedPayloadValue::RelatedField { .. }
+            | ResolvedPayloadValue::RelatedState { .. }
+            | ResolvedPayloadValue::MissingElement { .. }
+            | ResolvedPayloadValue::ChangedCount
+            | ResolvedPayloadValue::ChangedField { .. }
+            | ResolvedPayloadValue::ChangedState { .. }
+            | ResolvedPayloadValue::RelatedSelection { .. }
+            | ResolvedPayloadValue::RelatedHead { .. } => {}
         }
     }
     let mut found = std::collections::BTreeSet::new();
-    let mut guard = |predicate: &ess_primitives::predicate::Predicate,
-                     roots: &[ess_compiler::ir::ResolvedField]| {
-        if roots.iter().any(|field| field.name == CALLER_NAMESPACE) {
-            return;
+    for site in ess_compiler::expression::command_predicate_sites(ir, command) {
+        if site
+            .fields
+            .iter()
+            .any(|field| field.name == CALLER_NAMESPACE)
+        {
+            continue;
         }
-        for path in predicate.fact_paths() {
-            if path.namespace() == CALLER_NAMESPACE && path.segments().len() == 2 {
+        for path in site.predicate.fact_paths() {
+            if path.namespace() == CALLER_NAMESPACE && path.segments().len() > 1 {
                 found.insert(path.segments()[1].clone());
             }
         }
-    };
-    for outcome in &command.outcomes {
-        match &outcome.condition {
-            ResolvedCondition::When { predicate }
-            | ResolvedCondition::ExternalWhen { predicate, .. } => {
-                guard(predicate, &command.input);
-            }
-            ResolvedCondition::SubjectField {
-                predicate: Some(predicate),
-                ..
-            }
-            | ResolvedCondition::SubjectState {
-                predicate: Some(predicate),
-                ..
-            }
-            | ResolvedCondition::StateChange {
-                predicate: Some(predicate),
-                ..
-            } => guard(predicate, &command.input),
-            ResolvedCondition::SubjectPredicate { predicate, input } => {
-                if let Some(input) = input {
-                    guard(input, &command.input);
-                }
-                let stored = command
-                    .selection_subject(outcome)
-                    .map(|subject| ir.entity(&subject.entity).fields.clone())
-                    .unwrap_or_default();
-                guard(predicate, &stored);
-            }
-            _ => {}
-        }
     }
-    let mut read = found;
     for outcome in &command.outcomes {
-        for field in outcome
-            .payload
+        let ResolvedOutcome {
+            name: _,
+            condition: _,
+            subject: _,
+            replays: _,
+            retains_result: _,
+            complete_refusal: _,
+            test_strategy: _,
+            emits: _,
+            payload,
+            error: _,
+            error_payload,
+            refuses: _,
+            accepts_nothing: _,
+            returns: _,
+            compensates: _,
+            before_row: _,
+            one_time_response: _,
+            summary: _,
+            refs: _,
+            sets,
+            decided_by_caller: _,
+            instances: _,
+            affects: _,
+        } = outcome;
+        for field in payload
             .iter()
             .flat_map(|payload| &payload.fields)
-            .chain(&outcome.sets)
+            .chain(sets)
+            .chain(error_payload)
         {
-            values(&field.value, &mut read);
+            values(&field.value, &mut found);
         }
     }
-    read.into_iter().collect()
+    found.into_iter().collect()
 }
 
 /// The methods a route is served on.
