@@ -1741,13 +1741,40 @@ fn duration(count: f64, unit: &ess_ui::DurationUnit) -> String {
 
 /// A share on its `scale`, as a whole percent.
 fn percent(number: f64, scale: &ess_ui::PercentScale) -> String {
-    let hundredths = match scale {
-        ess_ui::PercentScale::Hundredths => number,
-        _ => number * 100.0,
+    let shift = match scale {
+        ess_ui::PercentScale::Hundredths => 0,
+        _ => 2,
     };
-    // At most one fraction digit, as the React target shows it.
-    let text = format!("{hundredths:.1}");
-    format!("{}%", text.strip_suffix(".0").unwrap_or(&text))
+    // At most one fraction digit, rounded half away from zero on the value's shortest decimal
+    // form, as the React target's `Intl` shows it.
+    let Some(tenths) = tenths_of(number, shift) else {
+        return format!("{:.1}%", number * 100.0);
+    };
+    let sign = if number < 0.0 && tenths > 0 { "-" } else { "" };
+    if tenths % 10 == 0 {
+        format!("{sign}{}%", tenths / 10)
+    } else {
+        format!("{sign}{}.{}%", tenths / 10, tenths % 10)
+    }
+}
+
+/// `number` times ten to the `shift`, in tenths of the magnitude, rounded half up on the shortest
+/// decimal form of `number`. `None` when that overflows.
+fn tenths_of(number: f64, shift: usize) -> Option<u128> {
+    if !number.is_finite() {
+        return None;
+    }
+    let text = format!("{}", number.abs());
+    let (whole, fraction) = text.split_once('.').unwrap_or((&text, ""));
+    // digits of the shifted value, with at least two places after the point
+    let mut digits = format!("{whole}{fraction}");
+    let point = whole.len() + shift;
+    while digits.len() < point + 2 {
+        digits.push('0');
+    }
+    let tenths: u128 = digits[..=point].parse().ok()?;
+    let next = digits.as_bytes()[point + 1] - b'0';
+    Some(tenths + u128::from(next >= 5))
 }
 
 /// An instant in UTC, to the minute.
@@ -1800,7 +1827,7 @@ fn instant(value: &Value) -> Option<Instant> {
 
 /// The epoch minutes of an ISO date and time text, offset applied.
 fn iso_minutes(text: &str) -> Option<i64> {
-    let (date, rest) = text.split_once(['T', ' '])?;
+    let (date, rest) = text.split_once(['T', ' ']).unwrap_or((text, "00:00"));
     let mut parts = date.splitn(3, '-');
     let year: i64 = parts.next()?.parse().ok()?;
     let month: i64 = parts.next()?.parse().ok()?;

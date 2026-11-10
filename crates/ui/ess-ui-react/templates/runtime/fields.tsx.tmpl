@@ -408,9 +408,19 @@ export function FieldInput(props: { field: FieldSpec }): ReactNode {
         <input
           type="datetime-local"
           value={shownInstant}
-          onChange={(event: ChangeEvent<HTMLInputElement>) =>
-            set(event.target.value === "" ? null : `${event.target.value}:00Z`)
-          }
+          onChange={(event: ChangeEvent<HTMLInputElement>) => {
+            const typed = event.target.value;
+            if (typed === "") {
+              set(null);
+            } else if (typeof value === "number" && typed === shownInstant) {
+              // Unchanged: the number keeps its seconds.
+              set(value);
+            } else {
+              // The box gives minutes, or seconds when the held value had them; only the zone is added.
+              const instant = /T\d\d:\d\d$/.test(typed) ? `${typed}:00Z` : `${typed}Z`;
+              set(typeof value === "number" ? Date.parse(instant) : instant);
+            }
+          }}
         />
       );
       break;
