@@ -5709,6 +5709,7 @@ fn import(adapter: ImportAdapter) -> Result<ExitCode> {
                     "workload",
                     "service",
                     "ingress",
+                    "route",
                     "configuration",
                     "secret-shape",
                     "runtime",

@@ -28,11 +28,12 @@ pub use compile::{
     compile, producer_records_init_containers, FIRST_PRODUCER_RECORDING_INIT_CONTAINERS,
 };
 pub use ir::{
-    digest_of_canonical, ClaimHandle, ConfigMapHandle, InfraIr, InfraIrDocument, InfraModel,
-    NodeHandle, Provenance, Reference, ResolvedContainer, ResolvedEnvFrom, ResolvedEnvFromSource,
-    ResolvedEnvSource, ResolvedEnvVar, ResolvedIngress, ResolvedIngressBackend,
-    ResolvedIngressPath, ResolvedIngressRule, ResolvedPod, ResolvedVolume, ResolvedVolumeSource,
-    ResolvedWorkload, SecretHandle, ServiceAccountHandle, ServiceHandle, UnresolvedReference,
-    UnresolvedTarget, IR_FORMAT, PRESENCE_IR_FORMAT,
+    digest_of_canonical, ClaimHandle, ConfigMapHandle, GatewayHandle, InfraIr, InfraIrDocument,
+    InfraModel, NodeHandle, Provenance, Reference, ResolvedContainer, ResolvedEnvFrom,
+    ResolvedEnvFromSource, ResolvedEnvSource, ResolvedEnvVar, ResolvedHttpRoute,
+    ResolvedHttpRouteRule, ResolvedIngress, ResolvedIngressBackend, ResolvedIngressPath,
+    ResolvedIngressRule, ResolvedPod, ResolvedRouteBackend, ResolvedRouteParent, ResolvedVolume,
+    ResolvedVolumeSource, ResolvedWorkload, SecretHandle, ServiceAccountHandle, ServiceHandle,
+    UnresolvedReference, UnresolvedTarget, EDGE_IR_FORMAT, IR_FORMAT, PRESENCE_IR_FORMAT,
 };
 pub use read::read_document;

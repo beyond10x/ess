@@ -41,6 +41,17 @@ fn main() {
             writeln!(log, "{operation}:all_namespaces={all_namespaces}")
                 .expect("record synthetic operation");
         }
+        if resource
+            && std::env::var("ESS_TEST_UNSERVED_KINDS")
+                .is_ok_and(|kinds| kinds.split(',').any(|kind| kind == operation))
+        {
+            // kubectl's own words for a resource type the API server does not serve, with a
+            // synthetic marker beside them that the adapter must not repeat.
+            eprintln!(
+                "error: the server doesn't have a resource type \"{operation}\" SYNTHETIC-UNSERVED-STDERR"
+            );
+            std::process::exit(1);
+        }
         let failure = std::env::var("ESS_TEST_FAILURE_OPERATION").unwrap_or_default();
         let fail_this_operation = failure == operation || (resource && failure == "all-resources");
         let first_attempt_only = std::env::var_os("ESS_TEST_FAILURE_FIRST_ATTEMPT_ONLY").is_some();

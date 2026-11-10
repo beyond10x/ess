@@ -80,6 +80,14 @@ pub enum NodeKind {
     /// A horizontal pod autoscaler. Like the budget, edgeless in this wave: its target is
     /// carried as data and judged by `INFRA-DIAG-017`/`018`.
     HorizontalPodAutoscaler,
+    /// A Gateway API gateway.
+    Gateway,
+    /// A Gateway API HTTP route.
+    HttpRoute,
+    /// A hostname the cluster's edge is reached at, as a gateway's status or a load-balancer
+    /// service's status records it. Not a cluster object: keyed by the hostname itself, and
+    /// cluster-scoped.
+    LoadBalancer,
 }
 
 impl NodeKind {
@@ -101,6 +109,9 @@ impl NodeKind {
             Self::CronJob => "cj",
             Self::PodDisruptionBudget => "pdb",
             Self::HorizontalPodAutoscaler => "hpa",
+            Self::Gateway => "gw",
+            Self::HttpRoute => "rt",
+            Self::LoadBalancer => "lb",
         }
     }
 
@@ -121,12 +132,16 @@ impl NodeKind {
             Self::CronJob => "cronjob",
             Self::PodDisruptionBudget => "pod disruption budget",
             Self::HorizontalPodAutoscaler => "autoscaler",
+            Self::Gateway => "gateway",
+            Self::HttpRoute => "route",
+            Self::LoadBalancer => "load balancer",
         }
     }
 
-    /// Whether objects of this kind live in a namespace. Only cluster nodes do not.
+    /// Whether objects of this kind live in a namespace. Cluster nodes and the external
+    /// addresses of the edge do not.
     fn namespaced(self) -> bool {
-        !matches!(self, Self::Node)
+        !matches!(self, Self::Node | Self::LoadBalancer)
     }
 }
 
@@ -207,11 +222,15 @@ pub enum EdgeRelation {
     OwnedBy,
     /// A pod was scheduled onto a cluster node.
     ScheduledOn,
+    /// An HTTP route attaches to a gateway it names as a parent.
+    AttachedTo,
+    /// A gateway is reached at a hostname its status records.
+    ExposedAt,
 }
 
 impl EdgeRelation {
     /// Every relation, so a test can insist each one is minted from a real observation.
-    pub const ALL: [Self; 10] = [
+    pub const ALL: [Self; 12] = [
         Self::Selects,
         Self::RoutesTo,
         Self::GovernedBy,
@@ -222,7 +241,13 @@ impl EdgeRelation {
         Self::RunsAs,
         Self::OwnedBy,
         Self::ScheduledOn,
+        Self::AttachedTo,
+        Self::ExposedAt,
     ];
+
+    /// The relations only the cluster's edge mints — Gateway API kinds and the addresses the
+    /// edge is reached at — which the committed k3d example does not observe.
+    pub const EDGE: [Self; 2] = [Self::AttachedTo, Self::ExposedAt];
 
     /// The phrase an edge reads with: `<dependent> <verb> <dependency>`.
     pub const fn verb(self) -> &'static str {
@@ -237,6 +262,8 @@ impl EdgeRelation {
             Self::RunsAs => "runs as",
             Self::OwnedBy => "is owned by",
             Self::ScheduledOn => "is scheduled on",
+            Self::AttachedTo => "is attached to",
+            Self::ExposedAt => "is exposed at",
         }
     }
 }
@@ -370,6 +397,7 @@ impl InfraGraph {
         graph.walk_services(ir);
         graph.walk_ingresses(ir);
         graph.walk_controllers(ir);
+        graph.walk_gateway_api(ir);
         graph.walk_pods(ir);
         graph.underived.sort();
         graph
@@ -707,6 +735,57 @@ impl InfraGraph {
         }
     }
 
+    /// Gateways and their recorded hostnames; routes and what they attach to and route to.
+    ///
+    /// Only resolved references draw an edge: a parent of an unmodelled kind and a reference
+    /// to something unobserved stay facts of the IR, never boxes on this map.
+    fn walk_gateway_api(&mut self, ir: &InfraIr) {
+        if let Some(gateways) = &ir.model().gateways {
+            for (key, gateway) in gateways {
+                let subject = GraphNode::new(NodeKind::Gateway, key);
+                self.nodes.insert(subject.clone());
+                for (index, address) in gateway.addresses.iter().enumerate() {
+                    if address.address_type == "Hostname" {
+                        self.edge(
+                            subject.clone(),
+                            EdgeRelation::ExposedAt,
+                            GraphNode::new(NodeKind::LoadBalancer, &address.value),
+                            format!("status.addresses[{index}]"),
+                        );
+                    }
+                }
+            }
+        }
+        if let Some(routes) = &ir.model().http_routes {
+            for (key, route) in routes {
+                let subject = GraphNode::new(NodeKind::HttpRoute, key);
+                self.nodes.insert(subject.clone());
+                for (index, parent) in route.parents.iter().enumerate() {
+                    if let Some(Reference::Resolved { key: gateway }) = &parent.gateway {
+                        self.edge(
+                            subject.clone(),
+                            EdgeRelation::AttachedTo,
+                            GraphNode::new(NodeKind::Gateway, gateway.key()),
+                            format!("parentRefs[{index}]"),
+                        );
+                    }
+                }
+                for (rule_index, rule) in route.rules.iter().enumerate() {
+                    for (index, backend) in rule.backends.iter().enumerate() {
+                        if let Some(Reference::Resolved { key: service }) = &backend.service {
+                            self.edge(
+                                subject.clone(),
+                                EdgeRelation::RoutesTo,
+                                GraphNode::new(NodeKind::Service, service.key()),
+                                format!("rules[{rule_index}].backendRefs[{index}]"),
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     #[allow(clippy::too_many_lines)]
     fn walk_pods(&mut self, ir: &InfraIr) {
         for (key, pod) in &ir.model().pods {
@@ -976,7 +1055,7 @@ impl GraphDocument {
 /// and deliberately not the runtime layer: a real cluster observes a thousand pods, and a
 /// flowchart with a thousand pod boxes is not a rendering anyone reads. The JSON document is
 /// canonical and carries everything; the diagram is the part of it a person looks at.
-const MERMAID_KINDS: [NodeKind; 7] = [
+const MERMAID_KINDS: [NodeKind; 10] = [
     NodeKind::Workload,
     NodeKind::Service,
     NodeKind::Ingress,
@@ -984,6 +1063,9 @@ const MERMAID_KINDS: [NodeKind; 7] = [
     NodeKind::Secret,
     NodeKind::ServiceAccount,
     NodeKind::Claim,
+    NodeKind::Gateway,
+    NodeKind::HttpRoute,
+    NodeKind::LoadBalancer,
 ];
 
 impl InfraGraph {
@@ -1012,11 +1094,12 @@ impl InfraGraph {
         }
 
         let mut namespaces: BTreeMap<&str, Vec<&GraphNode>> = BTreeMap::new();
+        let mut cluster_scoped: Vec<&GraphNode> = Vec::new();
         for node in &drawn {
-            namespaces
-                .entry(node.namespace().unwrap_or_default())
-                .or_default()
-                .push(node);
+            match node.namespace() {
+                Some(namespace) => namespaces.entry(namespace).or_default().push(node),
+                None => cluster_scoped.push(node),
+            }
         }
 
         let mut out = String::from("flowchart TB\n");
@@ -1048,6 +1131,12 @@ impl InfraGraph {
                 let _ = writeln!(out, "        {}[\"{}\"]", ids[*node], label(&text));
             }
             out.push_str("    end\n");
+        }
+        // Cluster-scoped kinds that are drawn sit outside every namespace, labelled by key: a
+        // hostname or a role identifier is read whole, not by its last segment.
+        for node in &cluster_scoped {
+            let text = format!("{} {}", node.kind.noun(), node.key);
+            let _ = writeln!(out, "    {}[\"{}\"]", ids[*node], label(&text));
         }
         for ((from, relation, to), sites) in &self.edges {
             let (Some(from_id), Some(to_id)) = (ids.get(from), ids.get(to)) else {

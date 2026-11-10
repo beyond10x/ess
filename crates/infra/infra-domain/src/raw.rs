@@ -600,6 +600,165 @@ pub struct RawServiceBackendPort {
     pub number: Option<i64>,
 }
 
+/// A Gateway API gateway, `gateway.networking.k8s.io/v1` shape.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct RawGateway {
+    /// Identity and labels.
+    #[serde(default)]
+    pub metadata: RawMeta,
+    /// The declared class and listeners.
+    #[serde(default)]
+    pub spec: RawGatewaySpec,
+    /// The observed status; only the addresses are read.
+    #[serde(default)]
+    pub status: RawGatewayStatus,
+}
+
+/// The slice of a gateway's spec the model reads.
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+pub struct RawGatewaySpec {
+    /// The gateway class that implements the gateway.
+    #[serde(default, rename = "gatewayClassName")]
+    pub gateway_class_name: Option<String>,
+    /// The listeners.
+    #[serde(default)]
+    pub listeners: Vec<RawGatewayListener>,
+}
+
+/// One gateway listener.
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+pub struct RawGatewayListener {
+    /// The listener's name, unique within the gateway.
+    #[serde(default)]
+    pub name: Option<String>,
+    /// The hostname the listener accepts, when it restricts one.
+    #[serde(default)]
+    pub hostname: Option<String>,
+    /// The port.
+    #[serde(default)]
+    pub port: Option<i64>,
+    /// The protocol, such as `HTTPS`.
+    #[serde(default)]
+    pub protocol: Option<String>,
+}
+
+/// The slice of a gateway's status the model reads.
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+pub struct RawGatewayStatus {
+    /// The addresses the implementation assigned to the gateway.
+    #[serde(default)]
+    pub addresses: Vec<RawGatewayAddress>,
+}
+
+/// One assigned gateway address.
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+pub struct RawGatewayAddress {
+    /// The address type, such as `Hostname` or `IPAddress`.
+    #[serde(default, rename = "type")]
+    pub address_type: Option<String>,
+    /// The address.
+    #[serde(default)]
+    pub value: Option<String>,
+}
+
+/// A Gateway API HTTP route, `gateway.networking.k8s.io/v1` shape.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct RawHttpRoute {
+    /// Identity and labels.
+    #[serde(default)]
+    pub metadata: RawMeta,
+    /// The declared hostnames, parents and rules.
+    #[serde(default)]
+    pub spec: RawHttpRouteSpec,
+}
+
+/// The slice of an HTTP route's spec the model reads.
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+pub struct RawHttpRouteSpec {
+    /// The hostnames the route answers for.
+    #[serde(default)]
+    pub hostnames: Vec<String>,
+    /// The gateways (or other parents) the route attaches to.
+    #[serde(default, rename = "parentRefs")]
+    pub parent_refs: Vec<RawParentRef>,
+    /// The routing rules.
+    #[serde(default)]
+    pub rules: Vec<RawHttpRouteRule>,
+}
+
+/// One `parentRefs` entry.
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+pub struct RawParentRef {
+    /// The parent's API group; `gateway.networking.k8s.io` when absent.
+    #[serde(default)]
+    pub group: Option<String>,
+    /// The parent's kind; `Gateway` when absent.
+    #[serde(default)]
+    pub kind: Option<String>,
+    /// The parent's name.
+    #[serde(default)]
+    pub name: Option<String>,
+    /// The parent's namespace; the route's own when absent.
+    #[serde(default)]
+    pub namespace: Option<String>,
+    /// The listener of the parent the route attaches to.
+    #[serde(default, rename = "sectionName")]
+    pub section_name: Option<String>,
+}
+
+/// One HTTP route rule.
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+pub struct RawHttpRouteRule {
+    /// The request matches.
+    #[serde(default)]
+    pub matches: Vec<RawHttpRouteMatch>,
+    /// Where matching requests go.
+    #[serde(default, rename = "backendRefs")]
+    pub backend_refs: Vec<RawBackendRef>,
+}
+
+/// One HTTP route match; only the path is read.
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+pub struct RawHttpRouteMatch {
+    /// The path match.
+    #[serde(default)]
+    pub path: Option<RawHttpPathMatch>,
+}
+
+/// An HTTP route path match.
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+pub struct RawHttpPathMatch {
+    /// How the path matches, such as `PathPrefix`.
+    #[serde(default, rename = "type")]
+    pub match_type: Option<String>,
+    /// The path.
+    #[serde(default)]
+    pub value: Option<String>,
+}
+
+/// One `backendRefs` entry.
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+pub struct RawBackendRef {
+    /// The backend's API group; the core group `""` when absent.
+    #[serde(default)]
+    pub group: Option<String>,
+    /// The backend's kind; `Service` when absent.
+    #[serde(default)]
+    pub kind: Option<String>,
+    /// The backend's name.
+    #[serde(default)]
+    pub name: Option<String>,
+    /// The backend's namespace; the route's own when absent.
+    #[serde(default)]
+    pub namespace: Option<String>,
+    /// The backend port.
+    #[serde(default)]
+    pub port: Option<i64>,
+    /// The share of traffic this backend receives.
+    #[serde(default)]
+    pub weight: Option<i64>,
+}
+
 /// A configmap.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct RawConfigMap {

@@ -204,6 +204,7 @@ fn rule_missing_references(ir: &InfraIr, findings: &mut Vec<Finding>) {
             UnresolvedTarget::Claim { name } => ("persistent volume claim", name.clone(), false),
             UnresolvedTarget::Service { name } => ("service", name.clone(), false),
             UnresolvedTarget::Node { name } => ("node", name.clone(), false),
+            UnresolvedTarget::Gateway { name } => ("gateway", name.clone(), false),
             UnresolvedTarget::Namespace { name } => ("namespace", name.clone(), false),
         };
         let code = if optional {
