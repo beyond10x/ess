@@ -114,7 +114,7 @@ Status: planned
 - unit: `story:rust-recorder-does-not-lose-a-creation` (priority 2, verb wave 3)
 - unit: `story:generated-decoders-check-struct-invariants` (priority 2, verb wave 4)
 - unit: `story:rust-generation-refuses-by-name-instead-of-panicking-or-misnaming` (priority 2, verb wave 4)
-- unit: `story:an-asyncapi-send-operation-names-every-emitter` (priority 3, verb wave 1)
+- unit: `story:fixture-mode-applies-a-confirmed-commands-effect` (priority 3, added 2026-11-10: a reproduced fixture-mode defect from a consumer UI round; turn 3 is the earliest turn it collides with nothing in, and it takes the place of `story:an-asyncapi-send-operation-names-every-emitter`, which moves to turn 16)
 - unit: `story:an-author-key-named-action-is-not-an-action` (priority 3, verb wave 1)
 
 ### Turn 4
@@ -339,6 +339,7 @@ Status: planned
 - unit: `story:a-timestamp-newtype-declares-its-wire-encoding` (priority 5, verb wave 5)
 - unit: `story:openapi-publishes-a-multipart-request-with-file-parts` (priority 5, verb wave 5)
 - unit: `story:an-external-refusal-before-a-related-row-is-witnessed-at-their-overlap` (priority 5, verb wave 12)
+- unit: `story:an-asyncapi-send-operation-names-every-emitter` (priority 3, verb wave 1; moved from turn 3 on 2026-11-10 for the fixture-mode defect)
 
 ### Turn 17
 

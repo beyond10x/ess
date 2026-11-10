@@ -1,0 +1,60 @@
+$ ess --version
+ess 0.92.0
+
+$ ess validate --path spec
+desk v1 — 3 file(s), valid
+
+$ ess ui check --path ui/desk.ui.yaml --model spec
+coverage: 2 covered, 0 host-covered, 0 uncovered of 2 views and commands
+ui/desk.ui.yaml: 0 error(s), 0 warning(s)
+
+$ ess generate ui --target react --path ui/desk.ui.yaml --out react-out   (no --model: fixture mode)
+31 files written to react-out
+
+--- generated code (file:line)
+$ grep -n "httpAdapter\|setDataAdapter" react-out/src/main.tsx | wc -l   (nothing swaps the fixture adapter out)
+0
+$ grep -n "send(command, input) {" -A2 react-out/src/runtime/data.ts   (the fixture adapter accepts every command and changes nothing)
+135:  send(command, input) {
+136-    return delay({ command, accepted: true, input: input as JsonObject });
+137-  },
+--
+180:    async send(command, input) {
+181-      return answer(
+182-        await fetch(`${base}/commands/${command}`, {
+$ grep -n "let rows = view.rows" react-out/src/runtime/data.ts   (a read serves the generated fixture rows as written)
+118:    let rows = view.rows.filter((row) => matchesParams(row, request.params));
+$ grep -n "await dataAdapter().send" -A4 react-out/src/runtime/actions.tsx   (read again, then toast done)
+54:    await dataAdapter().send(command, input);
+55-    invalidate();
+56-    if (!optimistic) {
+57-      scope.notify(`${command} done`, "success");
+58-    }
+$ grep -c "ApproveRequest\|Approved" react-out/src/fixtures.ts   (the fixtures carry no command effect)
+0
+
+--- terminal renderer, headless (ess-ui-test/1)
+$ ess ui test --path ui/desk.ui.yaml ui/approve.test.yaml
+failed  an approved request leaves the pending list (step 7)
+        expect at pages/requests.inbox/sections/list: expected 1 rows at pages/requests.inbox/sections/list; it shows 2 [r1, r2]
+0 passed, 1 failed
+exit 1
+$ ess ui test --path ui/desk.ui.yaml --model spec ui/approve.test.yaml   (model given, reads still from fixtures)
+failed  an approved request leaves the pending list (step 7)
+        expect at pages/requests.inbox/sections/list: expected 1 rows at pages/requests.inbox/sections/list; it shows 2 [r1, r2]
+0 passed, 1 failed
+exit 1
+
+$ (cd react-out && npm install && npm run build)
+  www/assets/main.js   269.8kb
+  www/assets/main.css   10.2kb
+
+⚡ Done in 155ms
+
+--- headless chrome: approve the first pending request through its confirm
+$ node check.mjs react-out/www $PW_DIR $CHROME
+before: rows ["request-onePendingApprove","request-twoPendingApprove"]
+confirm dialog: data-ui-path pages/requests.inbox/sections/list/rows/r1/row_actions/approve/confirm/overlay
+after confirm: notices ["desk.requests.ApproveRequest done"]
+after confirm: rows ["request-onePendingApprove","request-twoPendingApprove"]
+network requests other than the page and its assets: 0

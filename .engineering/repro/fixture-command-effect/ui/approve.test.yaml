@@ -1,0 +1,13 @@
+format: ess-ui-test/1
+document: desk.ui.yaml
+tests:
+- name: an approved request leaves the pending list
+  steps:
+  - open: requests.inbox
+  - expect: {at: pages/requests.inbox/sections/list, rows: 2}
+  - act: pages/requests.inbox/sections/list/rows/r1/row_actions/approve
+  - act: pages/requests.inbox/sections/list/rows/r1/row_actions/approve/confirm/overlay
+  - expect_command: {command: desk.requests.ApproveRequest, input: {id: r1}}
+  - advance: 2s
+  - expect: {at: pages/requests.inbox/sections/list, rows: 1}
+  - expect: {at: pages/requests.inbox/sections/list, not_text: request-one}
