@@ -5690,6 +5690,7 @@ pub(super) fn search_under<T>(
     let all = ir.drivers();
     let drivers = all.get(entity).map_or(&[][..], Vec::as_slice);
     let mut first: Option<RefusalCause> = None;
+    let mut tried: Vec<(OutcomeRef, RefusalCause)> = Vec::new();
     for creator in drivers
         .iter()
         .filter(|driver| matches!(driver.effect, ResolvedEffect::Creates))
@@ -5710,13 +5711,46 @@ pub(super) fn search_under<T>(
             // The first creator's cause is kept, except that a later search stopped by the counter
             // bound replaces one that was not: a side of a limit one creation could have reached
             // past the bound is refused naming it, not read as a value no run holds (#226).
-            Err(cause) => match &first {
-                Some(kept) if !is_beyond_reach(kept) && is_beyond_reach(&cause) => {
-                    first = Some(cause);
+            Err(cause) => {
+                tried.push((
+                    OutcomeRef::new(
+                        CommandRef::new(creator.command.name.clone()),
+                        creator.outcome.name.clone(),
+                    ),
+                    cause.clone(),
+                ));
+                match &first {
+                    Some(kept) if !is_beyond_reach(kept) && is_beyond_reach(&cause) => {
+                        first = Some(cause);
+                    }
+                    Some(_) => {}
+                    None => first = Some(cause),
                 }
-                Some(_) => {}
-                None => first = Some(cause),
-            },
+            }
+        }
+    }
+    // Creators that each failed to arrange the row, for different causes, are all named, in the
+    // order tried (beyond10x/ess#728).
+    if let Some(RefusalCause::InstanceRequired { entity, need, .. }) = &first {
+        let reasons: Option<Vec<(OutcomeRef, super::Unreachable)>> = tried
+            .iter()
+            .map(|(creator, cause)| match cause {
+                RefusalCause::InstanceRequired {
+                    entity: held,
+                    need: wanted,
+                    reason,
+                } if held == entity && wanted == need && !is_beyond_reach(cause) => {
+                    Some((creator.clone(), reason.clone()))
+                }
+                _ => None,
+            })
+            .collect();
+        if let Some(reason) = reasons.and_then(super::Unreachable::of_creators) {
+            return Err(RefusalCause::InstanceRequired {
+                entity: entity.clone(),
+                need: need.clone(),
+                reason,
+            });
         }
     }
     Err(first.unwrap_or_else(|| RefusalCause::InstanceRequired {

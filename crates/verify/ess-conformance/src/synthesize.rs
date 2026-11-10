@@ -2992,6 +2992,64 @@ pub enum Unreachable {
     /// A provided row (`provided: true`) is read by a guard over its fields: the deployment holds
     /// their values, so no lifecycle state the fixture names decides the branch.
     ProvidedFields,
+    /// Several creating branches were tried and they failed for different causes
+    /// (beyond10x/ess#728): every one, in the order it was tried, with its own cause. Naming only
+    /// the first would send the reader to a command whose cause is not the one to repair.
+    Creators {
+        /// Each creating branch tried and why it did not arrange the row, at least two causes.
+        tried: Vec<(OutcomeRef, Unreachable)>,
+    },
+}
+
+impl Unreachable {
+    /// The causes `tried` creators failed with: the first where there is one or every cause is
+    /// the same, otherwise all of them.
+    fn of_creators(mut tried: Vec<(OutcomeRef, Unreachable)>) -> Option<Unreachable> {
+        if tried.is_empty() {
+            return None;
+        }
+        if tried.iter().all(|(_, cause)| *cause == tried[0].1) {
+            return tried.into_iter().next().map(|(_, cause)| cause);
+        }
+        // A creator that failed for several creators' reasons has them listed once each.
+        let mut flat: Vec<(OutcomeRef, Unreachable)> = Vec::new();
+        for (creator, cause) in tried.drain(..) {
+            match cause {
+                Self::Creators { tried } => {
+                    for entry in tried {
+                        if !flat.contains(&entry) {
+                            flat.push(entry);
+                        }
+                    }
+                }
+                cause => flat.push((creator, cause)),
+            }
+        }
+        Some(Self::Creators { tried: flat })
+    }
+
+    /// The causes the target states failed with: the first, in name order, unless every one is a
+    /// list of creators tried, which are merged so each creator is named once.
+    fn across_targets(failed: Vec<Unreachable>) -> Unreachable {
+        if failed.len() > 1
+            && failed
+                .iter()
+                .all(|cause| matches!(cause, Self::Creators { .. }))
+        {
+            let mut flat: Vec<(OutcomeRef, Unreachable)> = Vec::new();
+            for cause in failed {
+                if let Self::Creators { tried } = cause {
+                    for entry in tried {
+                        if !flat.contains(&entry) {
+                            flat.push(entry);
+                        }
+                    }
+                }
+            }
+            return Self::Creators { tried: flat };
+        }
+        failed.into_iter().next().unwrap_or(Self::NothingCreates)
+    }
 }
 
 /// `guards` as a list in prose, or "the guards beside it" where there are none.
@@ -3055,6 +3113,10 @@ impl Unreachable {
                  input.<field>}` guard reads it; cover this position with an authored scenario \
                  (ess-scenario/1), or give some command outcome `creates:` for this entity"
             }
+            Self::Creators { .. } => {
+                "repair the cause listed for one of the creating branches; each is the reason that \
+                 branch does not arrange the row"
+            }
             Self::ProvidedFields => {
                 "guard a provided row by its existence or its lifecycle state, which the fixture \
                  names, or cover the branch with an authored scenario (ess-scenario/1)"
@@ -3111,6 +3173,16 @@ impl fmt::Display for Unreachable {
                 "the route runs through `{outcome}`, which sets off `{binding}` on the row, and \
                  where the row comes to rest cannot be named: {why}"
             ),
+            Self::Creators { tried } => {
+                f.write_str("no creating branch arranges it: ")?;
+                for (nth, (creator, cause)) in tried.iter().enumerate() {
+                    if nth > 0 {
+                        f.write_str("; ")?;
+                    }
+                    write!(f, "`{creator}`: {cause}")?;
+                }
+                Ok(())
+            }
             Self::Unsteered {
                 outcome,
                 related,
@@ -7133,7 +7205,7 @@ fn arrange_first(
     arranging: &[&EntityHandle],
 ) -> Result<Arrangement, Unreachable> {
     let mut cheapest: Option<Arrangement> = None;
-    let mut first: Option<Unreachable> = None;
+    let mut failed: Vec<Unreachable> = Vec::new();
     for target in targets {
         match arrange(ir, entity, target, actors, distinction, arranging) {
             Ok(arrangement) => {
@@ -7144,12 +7216,10 @@ fn arrange_first(
                     cheapest = Some(arrangement);
                 }
             }
-            Err(reason) => {
-                first.get_or_insert(reason);
-            }
+            Err(reason) => failed.push(reason),
         }
     }
-    cheapest.ok_or(first.unwrap_or(Unreachable::NothingCreates))
+    cheapest.ok_or_else(|| Unreachable::across_targets(failed))
 }
 
 /// Bring one instance of `entity` into existence and drive it to `target`.
@@ -7202,7 +7272,7 @@ fn arrange(
     }
     // Stable: equal lengths keep the drivers' name order.
     routed.sort_by_key(|(_, path)| path.len());
-    let mut first: Option<Unreachable> = None;
+    let mut failed: Vec<(OutcomeRef, Unreachable)> = Vec::new();
     for (creator, route) in routed {
         let arranged = created(ir, entity, creator, actors, distinction, arranging, None).and_then(
             |arrangement| {
@@ -7220,14 +7290,20 @@ fn arrange(
         );
         match arranged {
             Ok(arrangement) => return Ok(arrangement),
-            Err(reason) => {
-                first.get_or_insert(reason);
-            }
+            Err(reason) => failed.push((
+                OutcomeRef::new(
+                    CommandRef::new(creator.command.name.clone()),
+                    creator.outcome.name.clone(),
+                ),
+                reason,
+            )),
         }
     }
-    Err(first.unwrap_or_else(|| Unreachable::NoPath {
-        from: ir.entity(entity).lifecycle.initial.clone(),
-    }))
+    Err(
+        Unreachable::of_creators(failed).unwrap_or_else(|| Unreachable::NoPath {
+            from: ir.entity(entity).lifecycle.initial.clone(),
+        }),
+    )
 }
 
 /// The second half of [`arrange`]: an instance already created, driven along `route` to `target`.
