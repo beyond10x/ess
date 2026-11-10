@@ -3137,6 +3137,12 @@ fn emit(
                         )
                     }
                 };
+                // An absent field is sent as `null` where it declares `null_when_absent`, and left
+                // out otherwise (beyond10x/ess#765, `docs/design/wire-presence-json-prefix.md`).
+                let value = value.or_else(|| {
+                    (field.naming.presence == Some(ess_domain::types::Presence::NullWhenAbsent))
+                        .then_some(Value::Known(Node::Null))
+                });
                 if let Some(value) = value {
                     event = event.with(field.name.clone(), value);
                 }
