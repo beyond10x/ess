@@ -57,9 +57,9 @@ use super::{
     prepare_in, reach, reach_in_state, require, settled, shown, subject_fact, supply, ActorRef,
     Arrangement, AssertionStyle, BTreeMap, BTreeSet, CommandRef, ConformanceScenario,
     ConformanceSuite, Determined, EntityHandle, EntityRef, EssIr, EssSemanticRef, EventRef, Focus,
-    Holds, InstanceName, LeafShape, Node, OutcomeRef, PayloadShape, QualifiedName, Refusal,
-    RefusalCause, ResolvedCommand, ResolvedEffect, ResolvedOutcome, ResolvedView, ScenarioId,
-    ScenarioStep, ScenarioValue, StateName, ViewExpectation, ViewRef,
+    InstanceName, Node, OutcomeRef, QualifiedName, Refusal, RefusalCause, ResolvedCommand,
+    ResolvedEffect, ResolvedOutcome, ResolvedView, ScenarioId, ScenarioStep, ScenarioValue,
+    StateName, ViewExpectation, ViewRef,
 };
 
 /// How many rows the filter must select, so a target that changes one of them is caught.

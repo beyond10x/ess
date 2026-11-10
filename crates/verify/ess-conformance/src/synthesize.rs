@@ -9794,7 +9794,7 @@ fn determined_payload(
         .payload
         .iter()
         .find(|payload| EventRef::from(&payload.event) == *event)
-        .map(|determined| determined_fields(ir, &determined.fields, supplied, before))
+        .map(|determined| determined_fields(ir, &determined.fields, supplied, before, true))
         .unwrap_or_default()
 }
 
@@ -9988,7 +9988,7 @@ fn expect_error(
 ) -> ScenarioStep {
     ScenarioStep::ExpectError {
         error: ErrorRef::from(error),
-        fields: determined_fields(ir, &outcome.error_payload, supplied, before),
+        fields: determined_fields(ir, &outcome.error_payload, supplied, before, false),
     }
 }
 
@@ -9999,6 +9999,9 @@ fn determined_fields(
     fields: &[ess_compiler::ir::ResolvedPayloadField],
     supplied: &BTreeMap<String, ScenarioValue>,
     before: &BTreeMap<String, Determined>,
+    // An event payload leaves an absent read to its shape leaf; an error has none, so it keeps the
+    // claim (`null`, read as absent or null).
+    leaf_asserts_absent: bool,
 ) -> BTreeMap<String, Node> {
     let mut values = BTreeMap::new();
     for field in fields {
@@ -10057,7 +10060,7 @@ fn determined_fields(
                     // absent where it is, and an absent top-level field may be published left out
                     // or as `null`, which an exact payload comparison cannot say. The leaf asserts
                     // it (`absent_payload_leaves`).
-                    if value == Node::Null {
+                    if leaf_asserts_absent && value == Node::Null {
                         continue;
                     }
                     values.insert(field.target.clone(), value);
@@ -10086,7 +10089,7 @@ fn determined_fields(
 /// and the leaf can, with nothing a runner does not already read. One rule for every source: a
 /// `{related: …}` read through an absent reference, a `{changed: …}` read of a field held absent, a
 /// `{subject: <field>}` read of a field the arrangement left absent.
-pub(crate) fn absent_payload_leaves(
+fn absent_payload_leaves(
     ir: &EssIr,
     outcome: &ResolvedOutcome,
     event: &EventRef,
