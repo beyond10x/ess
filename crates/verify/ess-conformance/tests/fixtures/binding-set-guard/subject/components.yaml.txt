@@ -1,0 +1,14 @@
+components:
+  - component: svc
+    summary: One service.
+    owns: {domains: [example.grp, example.res]}
+    accepts: {commands: [example.grp.Join, example.grp.Leave, example.res.Issue, example.res.Reconcile]}
+    publishes: {events: [example.grp.Joined, example.grp.Left, example.res.Issued, example.res.Kept, example.res.Released]}
+bindings:
+  - id: reconcile-on-leave
+    summary: Release the lease when no eligible membership is left.
+    when: {event: example.grp.Left}
+    invoke: {command: example.res.Reconcile}
+    mapping: {member_id: event.member_id}
+    delivery: at_least_once
+    on_failure: retry
