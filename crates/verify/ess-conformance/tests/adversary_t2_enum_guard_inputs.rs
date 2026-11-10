@@ -141,8 +141,10 @@ fn arranged(text: &str) -> String {
         .scenarios
         .iter()
         .find(|(id, _)| id.to_string() == NO_DECISION)
-        .map(|(_, scenario)| scenario)
-        .unwrap_or_else(|| panic!("no scenario {NO_DECISION}"));
+        .map_or_else(
+            || panic!("no scenario {NO_DECISION}"),
+            |(_, scenario)| scenario,
+        );
     let sent: Vec<_> = scenario
         .steps
         .iter()

@@ -131,9 +131,8 @@ fn security_t2_datetime_no_input_panics_and_refusals_only_narrow_the_dependency(
             widened.push(format!("narrowed with digits in place: {text}"));
         }
     }
-    assert_eq!(
+    assert!(
         is_date_time(&cases[cases.len() - 7]),
-        true,
         "a million fractional digits"
     );
     assert!(

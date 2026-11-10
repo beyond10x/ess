@@ -57,7 +57,7 @@ fn run(tests: &str) -> (Vec<ess_ui_test::Outcome>, String) {
 
 fn passes(tests: &str) -> String {
     let (outcomes, spec) = run(tests);
-    assert!(!outcomes.is_empty());
+    assert!(!outcomes.is_empty(), "{outcomes:?}");
     for outcome in &outcomes {
         assert_eq!(outcome.status, Status::Passed, "{outcome:?}");
     }
@@ -114,8 +114,7 @@ fn an_unknown_key_under_a_command_names_file_test_and_key() {
     steps: [{open: orders.draft}]
 ",
     )
-    .err()
-    .expect("an unknown key under a command is refused");
+    .expect_err("an unknown key under a command is refused");
     assert!(error.contains("attack.test.yaml"), "{error}");
     assert!(error.contains("zebra"), "{error}");
     assert!(error.contains("`refuse`"), "{error}");

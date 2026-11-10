@@ -63,7 +63,6 @@ fn open_declarations(css: &str) -> Vec<String> {
         for c in line.chars() {
             match (quote, c) {
                 (Some(q), c) if c == q => quote = None,
-                (Some(_), _) => {}
                 (None, '"' | '\'') => quote = Some(c),
                 (None, '(' | '[') => depth += 1,
                 (None, ')' | ']') => depth -= 1,

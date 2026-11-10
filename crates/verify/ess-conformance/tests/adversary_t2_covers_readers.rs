@@ -147,7 +147,11 @@ fn rust_verdicts(vectors: &BTreeMap<String, String>) -> BTreeMap<String, String>
             };
             let verdict = match admitted {
                 Err(_) => "refused",
-                Ok(suite) if suite.coverage().is_some_and(|c| c.is_complete()) => {
+                Ok(suite)
+                    if suite
+                        .coverage()
+                        .is_some_and(ess_conformance::coverage::Inventory::is_complete) =>
+                {
                     "admitted-complete"
                 }
                 Ok(_) => "admitted-incomplete",
