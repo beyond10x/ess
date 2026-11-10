@@ -876,34 +876,41 @@ fn record_unmapped(mapping: &mut Mapping, key: &str, marker: &Value) {
 /// kept. One that does not, only because a body position holds exactly `args.<param>` for a
 /// param typed as a list, map or record, is read with those positions left out: only a use
 /// site, after substitution, has the value such a position needs, and every use is read in full.
-/// Otherwise the declaration is kept as written and its own error is reported.
+/// A `tone` that holds exactly `args.<param>` for a param typed as the tone enum is left out the
+/// same way; for a param of any other type it is kept, and the declaration's own error is
+/// reported. Otherwise the declaration is kept as written and its own error is reported.
 fn declaration_view(widgets: &mut Mapping) {
     for (_, widget) in widgets.iter_mut() {
-        let structural: Vec<String> = widget
-            .get("params")
-            .and_then(Value::as_mapping)
-            .map(|params| {
-                params
-                    .iter()
-                    .filter(|(_, spec)| {
-                        spec.get("type")
-                            .and_then(Value::as_mapping)
-                            .is_some_and(|ty| {
-                                ["list", "map", "record"]
-                                    .iter()
-                                    .any(|constructor| ty.contains_key(*constructor))
-                            })
-                    })
-                    .map(|(name, _)| format!("args.{}", key_text(name)))
-                    .collect()
-            })
-            .unwrap_or_default();
-        if structural.is_empty() || ess_yaml::from_value::<Widget>(widget.clone()).is_ok() {
+        let params = widget.get("params").and_then(Value::as_mapping);
+        let typed = |wanted: &dyn Fn(&Mapping) -> bool| -> Vec<String> {
+            params
+                .map(|params| {
+                    params
+                        .iter()
+                        .filter(|(_, spec)| {
+                            spec.get("type")
+                                .and_then(Value::as_mapping)
+                                .is_some_and(wanted)
+                        })
+                        .map(|(name, _)| format!("args.{}", key_text(name)))
+                        .collect()
+                })
+                .unwrap_or_default()
+        };
+        let structural = typed(&|ty| {
+            ["list", "map", "record"]
+                .iter()
+                .any(|constructor| ty.contains_key(*constructor))
+        });
+        let tones = typed(&is_tone_enum);
+        if (structural.is_empty() && tones.is_empty())
+            || ess_yaml::from_value::<Widget>(widget.clone()).is_ok()
+        {
             continue;
         }
         let mut stripped = widget.clone();
         if let Some(body) = stripped.get_mut("body") {
-            strip_args(body, &structural);
+            strip_args(body, &structural, &tones);
         }
         if ess_yaml::from_value::<Widget>(stripped.clone()).is_ok() {
             *widget = stripped;
@@ -911,23 +918,38 @@ fn declaration_view(widgets: &mut Mapping) {
     }
 }
 
-fn strip_args(value: &mut Value, structural: &[String]) {
+/// Whether a param type is the tone enum: an `enum` of `Tone` variants only.
+fn is_tone_enum(ty: &Mapping) -> bool {
+    ty.get("enum")
+        .and_then(Value::as_sequence)
+        .is_some_and(|values| {
+            !values.is_empty()
+                && values.iter().all(|value| {
+                    value.as_str().is_some_and(|value| {
+                        ["neutral", "info", "success", "warning", "danger"].contains(&value)
+                    })
+                })
+        })
+}
+
+fn strip_args(value: &mut Value, structural: &[String], tones: &[String]) {
     match value {
         Value::Mapping(mapping) => {
-            mapping.retain(|_, child| {
-                !child
-                    .as_str()
-                    .is_some_and(|text| structural.iter().any(|arg| arg == text))
+            mapping.retain(|key, child| {
+                let text = child.as_str();
+                let tone = key.as_str() == Some("tone")
+                    && text.is_some_and(|text| tones.iter().any(|arg| arg == text));
+                !tone && !text.is_some_and(|text| structural.iter().any(|arg| arg == text))
             });
             for (key, child) in mapping.iter_mut() {
                 if key.as_str() != Some("args") {
-                    strip_args(child, structural);
+                    strip_args(child, structural, tones);
                 }
             }
         }
         Value::Sequence(entries) => {
             for entry in entries {
-                strip_args(entry, structural);
+                strip_args(entry, structural, tones);
             }
         }
         _ => {}
@@ -1507,10 +1529,19 @@ impl Tones<'_> {
         match value {
             Value::Mapping(mapping) => {
                 let labelled = holds_labels(mapping);
+                // A field (not a primitive) names its tone map; only a badge or icon writes one.
+                let field = mapping.get("field").is_some_and(Value::is_string)
+                    && !mapping.contains_key("primitive");
                 for (key, child) in mapping.iter_mut() {
                     let key = key_text(key);
                     let here = at.child(&key);
                     if key == "tone_by" {
+                        if field && !child.is_string() {
+                            return Err(LoadError::new(
+                                here.path(),
+                                "a field's `tone_by` is the name of a `tone_maps` entry, not a map",
+                            ));
+                        }
                         self.tone_by(child, &here.path())?;
                     } else if !opaque(&key, labelled) {
                         self.value(child, &here)?;
@@ -1529,7 +1560,41 @@ impl Tones<'_> {
         }
     }
 
+    /// A field's `tone_by`, written as the name of a tone map (a `tone_by` that is text is a
+    /// field's: the one of a badge or an icon is a map), becomes `{tones: <name>, map: <map>}`.
+    fn field_tone_by(&self, tone_by: &mut Value, at: &NodePath) -> Result<()> {
+        let Value::String(name) = tone_by else {
+            return Ok(());
+        };
+        let name = name.clone();
+        let map = if self.declaration && name.starts_with("args.") {
+            Value::String(name.clone())
+        } else if let Some(map) = self.maps.get(name.as_str()) {
+            map.clone()
+        } else {
+            let declared: Vec<String> = self.maps.keys().map(key_text).collect();
+            let hint = if declared.is_empty() {
+                "the document declares no `tone_maps`".to_owned()
+            } else {
+                format!("the tone maps are {}", declared.join(", "))
+            };
+            return Err(LoadError::new(
+                at.clone(),
+                format!("`{name}` names no entry of `tone_maps`"),
+            )
+            .with_hint(&hint));
+        };
+        let mut resolved = Mapping::new();
+        resolved.insert(Value::from("tones"), Value::String(name));
+        resolved.insert(Value::from("map"), map);
+        *tone_by = Value::Mapping(resolved);
+        Ok(())
+    }
+
     fn tone_by(&self, tone_by: &mut Value, at: &NodePath) -> Result<()> {
+        if tone_by.is_string() {
+            return self.field_tone_by(tone_by, at);
+        }
         let Value::Mapping(tone_by) = tone_by else {
             return Ok(()); // the reader refuses a `tone_by` that is not a map
         };

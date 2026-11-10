@@ -146,6 +146,7 @@ pub const CHECKS: &[Check] = &[
     schema_check("theme_choice", Severity::Error),
     schema_check("tone_map_refs", Severity::Error),
     schema_check("tone_map_unused", Severity::Warning),
+    schema_check("tone_bands", Severity::Error),
     schema_check("label_map_refs", Severity::Error),
     schema_check("label_map_unused", Severity::Warning),
     schema_check("filter_expr", Severity::Error),

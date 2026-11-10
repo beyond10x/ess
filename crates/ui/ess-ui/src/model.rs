@@ -2396,6 +2396,12 @@ pub struct Field {
     pub label_from: Option<LabelFrom>,
     /// The words a column or record shows for a value, in place of the value.
     pub labels: Option<Labels>,
+    /// The tone of a value `tone_by` does not name, and of a value with no map: `neutral` when
+    /// only `tone_by` is written. Only a column or record field is toned.
+    pub tone: Option<Tone>,
+    /// The tone map the field's own value is toned by, written as the name of a `tone_maps`
+    /// entry.
+    pub tone_by: Option<FieldToneBy>,
     /// The values an `as: tags` input suggests; typed values are still kept.
     pub suggests: Option<Suggests>,
     /// Author remark.
@@ -2420,6 +2426,21 @@ impl<'de> Deserialize<'de> for Field {
 impl Field {
     /// The `field` that names the row itself rather than a field of it.
     pub const ROW: &'static str = ".";
+
+    /// The tone `value` is drawn in: the tone its map gives it, else the field's `tone`, else
+    /// `neutral`. `None` when the field has neither `tone` nor `tone_by`, which draws as it
+    /// always did.
+    pub fn tone_of(&self, value: &Value) -> Option<Tone> {
+        if self.tone.is_none() && self.tone_by.is_none() {
+            return None;
+        }
+        let named = self
+            .tone_by
+            .as_ref()
+            .and_then(|tone_by| ToneMap::from_value(&tone_by.map))
+            .and_then(|map| map.tone(value).cloned());
+        Some(named.or_else(|| self.tone.clone()).unwrap_or(Tone::Neutral))
+    }
 
     /// Whether this field names the row itself ([`Field::ROW`]).
     pub fn is_row(&self) -> bool {
@@ -3312,8 +3333,93 @@ pub struct ThemeChoice {
     pub chosen_by: Option<Expr>,
 }
 
-/// A value-to-tone map, declared once in `tone_maps` and named by `tone_by.tones`.
-pub type ToneMap = BTreeMap<String, Tone>;
+/// The tone map a field's value is toned by: the loader resolved the name written on the field.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct FieldToneBy {
+    /// The `tone_maps` entry the field named; the unbound `args.<param>` inside a widget
+    /// declaration, a map once expanded.
+    pub map: Value,
+    /// The name the field wrote. No renderer needs to read it.
+    pub tones: Option<String>,
+}
+
+/// A value-to-tone map, declared once in `tone_maps` and named by `tone_by.tones`: exact values,
+/// or bands over numbers.
+#[derive(Debug, Clone, PartialEq)]
+pub enum ToneMap {
+    /// The tone of each value, keyed as [`Labels::key`] keys a value.
+    Exact(BTreeMap<String, Tone>),
+    /// `{bands: [{from, tone}]}`: a number takes the tone of the last band whose `from` it reaches.
+    Bands(Vec<ToneBand>),
+}
+
+/// One band of a band map.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ToneBand {
+    /// The lowest number the band covers.
+    pub from: f64,
+    /// The tone of a number the band covers.
+    pub tone: Tone,
+}
+
+impl<'de> Deserialize<'de> for ToneMap {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let value = Value::deserialize(deserializer)?;
+        let bands = value
+            .as_mapping()
+            .and_then(|mapping| mapping.get("bands").map(|bands| (mapping, bands)))
+            .filter(|(_, bands)| bands.is_sequence());
+        if let Some((mapping, bands)) = bands {
+            if mapping.len() != 1 {
+                return Err(D::Error::custom(
+                    "a band map has only `bands`; a map of exact values has no list under `bands`",
+                ));
+            }
+            let bands: Vec<ToneBand> =
+                ess_yaml::from_value(bands.clone()).map_err(D::Error::custom)?;
+            if let Some(band) = bands.iter().find(|band| !band.from.is_finite()) {
+                return Err(D::Error::custom(format!(
+                    "the `from` of a band is a finite number, not {}",
+                    band.from
+                )));
+            }
+            return Ok(Self::Bands(bands));
+        }
+        ess_yaml::from_value(value)
+            .map(Self::Exact)
+            .map_err(D::Error::custom)
+    }
+}
+
+impl ToneMap {
+    /// A map read from an expanded `map:` value; `None` when it is not one (an unbound
+    /// `args.<param>` inside a widget declaration).
+    pub fn from_value(value: &Value) -> Option<Self> {
+        ess_yaml::from_value(value.clone()).ok()
+    }
+
+    /// The tone this map gives `value`, or `None` when it gives none and the node's own `tone`
+    /// stands: a value an exact map does not name, a number below the first band, a value that is
+    /// no number where the map has bands.
+    pub fn tone(&self, value: &Value) -> Option<&Tone> {
+        match self {
+            Self::Exact(map) => map.get(&Labels::key(value)?),
+            Self::Bands(bands) => {
+                let Value::Number(number) = value else {
+                    return None;
+                };
+                let number = number.as_f64()?;
+                bands
+                    .iter()
+                    .rev()
+                    .find(|band| number >= band.from)
+                    .map(|band| &band.tone)
+            }
+        }
+    }
+}
 
 /// A value-to-label map, declared once in `label_maps` or written out as `labels:`.
 pub type LabelMap = BTreeMap<String, String>;

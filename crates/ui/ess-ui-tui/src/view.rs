@@ -20,7 +20,7 @@ use ratatui::{Frame, Terminal};
 
 use ess_ui::{
     Body, ChartKind, Composite, Field, Form, HostSlot, MetricFormat, Node, NodePath, Primitive,
-    TabFields, TextFormat, TextStyle,
+    TabFields, TextFormat, TextStyle, Tone,
 };
 
 use crate::app::{
@@ -43,6 +43,63 @@ fn reversed() -> Style {
 
 fn dim() -> Style {
     Style::default().add_modifier(Modifier::DIM)
+}
+
+/// How the terminal draws a tone (`no_color: emphasis`): `neutral` and `success` bold, `info`
+/// italic, `warning` underlined, `danger` bold and underlined. Never reversed, which is the cursor.
+fn emphasis(tone: &Tone) -> Style {
+    let modifier = match tone {
+        Tone::Neutral | Tone::Success => Modifier::BOLD,
+        Tone::Info => Modifier::ITALIC,
+        Tone::Warning => Modifier::UNDERLINED,
+        Tone::Danger => Modifier::BOLD | Modifier::UNDERLINED,
+        Tone::Unmapped(_) => Modifier::empty(),
+    };
+    Style::default().add_modifier(modifier)
+}
+
+/// The emphasis a field's value is drawn in: its tone's, or none when the field has no `tone`
+/// and no `tone_by`.
+fn cell_style(field: &Field, row: &Value) -> Style {
+    if field.host.is_some() {
+        return Style::default();
+    }
+    field
+        .tone_of(&field_path(row, &field.field))
+        .map_or_else(Style::default, |tone| emphasis(&tone))
+}
+
+/// `spans` cut to at most `width` terminal cells, ending in `…` when cut, as [`truncate`] cuts
+/// their text.
+fn truncate_spans(spans: Vec<Span<'static>>, width: usize) -> Vec<Span<'static>> {
+    let whole: String = spans.iter().map(|span| span.content.as_ref()).collect();
+    if whole.width() <= width {
+        return spans;
+    }
+    let mut keep = truncate(&whole, width).chars().count();
+    let ellipsis = width > 0;
+    if ellipsis {
+        keep -= 1;
+    }
+    let mut cut = Vec::new();
+    for span in spans {
+        if keep == 0 {
+            break;
+        }
+        let letters = span.content.chars().count();
+        if letters <= keep {
+            keep -= letters;
+            cut.push(span);
+        } else {
+            let text: String = span.content.chars().take(keep).collect();
+            cut.push(Span::styled(text, span.style));
+            keep = 0;
+        }
+    }
+    if ellipsis {
+        cut.push(Span::raw("…"));
+    }
+    cut
 }
 
 /// Where a body is drawn from: its node path, its interaction state and what it can see.
@@ -848,7 +905,7 @@ impl App {
                 let shown = self.labelled(&record.fields, &row);
                 for field in &record.fields {
                     self.mark_field_slot(field, place, &place.path.child("fields"), lines.len());
-                    lines.push(labelled(field, &cell(field, &shown)));
+                    lines.push(labelled(field, &shown));
                 }
                 let tab = self
                     .ui(place.ui)
@@ -882,7 +939,7 @@ impl App {
                         );
                         for field in fields {
                             self.mark_field_slot(field, place, &at, lines.len());
-                            lines.push(labelled(field, &cell(field, &shown)));
+                            lines.push(labelled(field, &shown));
                         }
                     }
                     // A tab's nested node draws below its fields, as the generated app shows it.
@@ -1388,10 +1445,31 @@ impl App {
                     }
                 }
             }
-            lines.push(Line::styled(
-                truncate(&format!("{mark}{text}"), place.width),
-                style,
-            ));
+            // The row's text, each cell in the emphasis of its field's tone.
+            let mut spans = vec![Span::raw(mark)];
+            if cards {
+                let shown = columns
+                    .iter()
+                    .map(|field| (cell(field, &shown_rows[index]), field))
+                    .filter(|(text, _)| !text.is_empty());
+                for (at, (text, field)) in shown.enumerate() {
+                    if at > 0 {
+                        spans.push(Span::raw(" · "));
+                    }
+                    spans.push(Span::styled(text, cell_style(field, &shown_rows[index])));
+                }
+            } else {
+                for (at, (field, width)) in columns.iter().zip(&widths).enumerate() {
+                    if at > 0 {
+                        spans.push(Span::raw("  "));
+                    }
+                    spans.push(Span::styled(
+                        pad(&cell(field, &shown_rows[index]), *width),
+                        cell_style(field, &shown_rows[index]),
+                    ));
+                }
+            }
+            lines.push(Line::from(truncate_spans(spans, place.width)).style(style));
         }
         if collection.group_by.is_some() && state.page.min(pages - 1) + 1 == pages {
             for name in groups.get(drawn..).unwrap_or_default() {
@@ -2381,10 +2459,11 @@ fn browser_field_label(field: &Field) -> String {
         .unwrap_or_else(|| field.name.replace('_', " "))
 }
 
-fn labelled(field: &Field, value: &str) -> Line<'static> {
+/// A record's line for `field`: its label, then its value in the emphasis of its tone.
+fn labelled(field: &Field, row: &Value) -> Line<'static> {
     Line::from(vec![
         Span::styled(format!("{} ", pad(&label_of(field), 16)), dim()),
-        Span::raw(value.to_owned()),
+        Span::styled(cell(field, row), cell_style(field, row)),
     ])
 }
 

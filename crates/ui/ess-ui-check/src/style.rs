@@ -9,8 +9,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use ess_ui::{
-    Body, Document, NodePath, NodeRef, Primitive, StateClass, TokenValue, Tokens, TypeExpr,
-    TypeToken,
+    Body, Document, NodePath, NodeRef, Primitive, StateClass, TokenValue, Tokens, ToneMap,
+    TypeExpr, TypeToken,
 };
 
 use crate::schema;
@@ -33,6 +33,7 @@ pub(crate) fn run(document: &Document, sink: &mut Sink) {
     }
     theme_choice(document, sink);
     tone_map_unused(document, sink);
+    tone_bands(document, sink);
     label_map_unused(document, sink);
 }
 
@@ -363,12 +364,19 @@ fn enum_values(document: &Document, ty: &TypeExpr, depth: usize) -> Option<Vec<S
 fn tone_map_unused(document: &Document, sink: &mut Sink) {
     let mut named = BTreeSet::new();
     for located in document.nodes() {
-        let tone_by = match body_of(located.node) {
-            Some(Body::Primitive(Primitive::Badge(badge))) => badge.tone_by.as_ref(),
-            Some(Body::Primitive(Primitive::Icon(icon))) => icon.tone_by.as_ref(),
-            _ => None,
+        let tone_by = match located.node {
+            NodeRef::Field(field) => field.tone_by.as_ref().map(|tone_by| &tone_by.tones),
+            node => match body_of(node) {
+                Some(Body::Primitive(Primitive::Badge(badge))) => {
+                    badge.tone_by.as_ref().map(|tone_by| &tone_by.tones)
+                }
+                Some(Body::Primitive(Primitive::Icon(icon))) => {
+                    icon.tone_by.as_ref().map(|tone_by| &tone_by.tones)
+                }
+                _ => None,
+            },
         };
-        named.extend(tone_by.and_then(|tone_by| tone_by.tones.clone()));
+        named.extend(tone_by.and_then(Clone::clone));
     }
     for name in document.tone_maps.keys() {
         if !named.contains(name) {
@@ -378,6 +386,68 @@ fn tone_map_unused(document: &Document, sink: &mut Sink) {
                 format!("no `tone_by` names the tone map `{name}`"),
             );
         }
+    }
+}
+
+// ── tone_bands ───────────────────────────────────────────────────────────────────────────────
+
+/// A band map's `from` values strictly ascend, in a `tone_maps` entry and in a `map:` written out
+/// on a badge or an icon. The values the bands tone are not typed here (no model types), so a
+/// band map named where they are not numbers is not checked.
+fn tone_bands(document: &Document, sink: &mut Sink) {
+    let root = NodePath::root();
+    for (name, map) in &document.tone_maps {
+        ascending(map, &root.child("tone_maps").child(name), sink);
+    }
+    for located in document.nodes() {
+        let tone_by = match body_of(located.node) {
+            Some(Body::Primitive(Primitive::Badge(badge))) => badge.tone_by.as_ref(),
+            Some(Body::Primitive(Primitive::Icon(icon))) => icon.tone_by.as_ref(),
+            _ => None,
+        };
+        // A map the loader resolved from `tones` is the `tone_maps` entry, checked above.
+        let Some(tone_by) = tone_by.filter(|tone_by| tone_by.tones.is_none()) else {
+            continue;
+        };
+        let at = located.path.child("tone_by").child("map");
+        if let Some(map) = ToneMap::from_value(&tone_by.map) {
+            ascending(&map, &at, sink);
+        } else if tone_by
+            .map
+            .get("bands")
+            .is_some_and(ess_yaml::Value::is_sequence)
+        {
+            // A band map written out that does not read as one: a `from` that is no finite
+            // number, or a band without its tone.
+            sink.push(
+                "tone_bands",
+                &at,
+                "the bands do not read: each is `{from: <finite number>, tone: <tone>}`".to_owned(),
+            );
+        }
+    }
+}
+
+fn ascending(map: &ToneMap, at: &NodePath, sink: &mut Sink) {
+    let ToneMap::Bands(bands) = map else {
+        return;
+    };
+    for (index, pair) in bands.windows(2).enumerate() {
+        if pair[1].from > pair[0].from {
+            continue;
+        }
+        sink.push(
+            "tone_bands",
+            at,
+            format!(
+                "the `from` of band {} is {}, which does not exceed the {} before it: bands \
+                 ascend strictly by `from`",
+                index + 1,
+                pair[1].from,
+                pair[0].from
+            ),
+        );
+        return;
     }
 }
 

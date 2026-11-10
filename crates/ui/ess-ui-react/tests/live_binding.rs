@@ -152,7 +152,10 @@ fn fnv(text: &str) -> u64 {
 /// for a client pager, the pager range and `field: .` (`collection.tsx`, `core.tsx`). The
 /// whole-project digest re-pinned for story:the-react-project-registers-each-declared-host-slot:
 /// the page, section and overlay frames take an optional `host` and a field an optional `host`
-/// node (`core.tsx`, `overlays.tsx`, `fields.tsx`).
+/// node (`core.tsx`, `overlays.tsx`, `fields.tsx`). The whole-project digest re-pinned for
+/// story:a-badge-field-takes-a-tone: every project ships the runtime's `toneFor` (`json.ts`), the
+/// field value's tone (`fields.tsx`), the badge's shared tone lookup and the `ui-field-tone-*`
+/// text colors (`styles.css`); the pinned files above and the document's own page are unchanged.
 const PLAIN: [(&str, u64); 7] = [
     ("README.md", 0xdae6_c3b6_7e5c_2d28),
     ("src/main.tsx", 0x6fd5_ef21_0230_ebac),
@@ -162,7 +165,7 @@ const PLAIN: [(&str, u64); 7] = [
     ("src/runtime/data.ts", 0x400e_ae09_0d5f_e141),
     ("www/index.html", 0x5972_6d4a_5ee2_5ce2),
 ];
-const PLAIN_PROJECT: u64 = 0x0bc4_0592_8955_3713;
+const PLAIN_PROJECT: u64 = 0x3467_31f4_0c17_8421;
 
 #[test]
 fn without_a_model_the_project_is_byte_identical() {
