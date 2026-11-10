@@ -3319,10 +3319,22 @@ fn refusal_input_from(
 ) -> Result<(BTreeMap<String, Node>, Vec<Predicate>), RefusalCause> {
     let mut own: Vec<&Predicate> = input_guard(&outcome.condition).into_iter().collect();
     own.extend(also.iter().copied());
+    // A listed-state refusal answers, in declaration order, on any row in a listed state: only the
+    // siblings declared before it can take the row first, so only those are refuted. The default
+    // wrong-state refusal answers last and has every sibling refuted.
+    let declared_before = |other: &ResolvedOutcome| {
+        !matches!(outcome.condition, ResolvedCondition::SubjectState { .. })
+            || command
+                .outcomes
+                .iter()
+                .take_while(|branch| branch.name != outcome.name)
+                .any(|branch| branch.name == other.name)
+    };
     let branches: Vec<&ResolvedOutcome> = command
         .outcomes
         .iter()
         .filter(|other| other.name != outcome.name && !state_default(other))
+        .filter(|other| declared_before(other))
         .filter(|other| input_guard(&other.condition).is_some())
         .collect();
     let siblings: Vec<&Predicate> = branches
@@ -3345,6 +3357,7 @@ fn refusal_input_from(
     };
     let row_only: Vec<&ResolvedOutcome> = guarded(command)
         .filter(|other| other.name != outcome.name && input_guard(&other.condition).is_none())
+        .filter(|other| declared_before(other))
         .filter(|other| stored(&other.condition).is_some() && !answered_by_state(other))
         .collect();
     // What the row must refute, where the input leaves it to the row: every row-only sibling's
