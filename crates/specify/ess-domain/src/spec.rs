@@ -738,6 +738,10 @@ impl Specification {
             &self.components,
             &words,
         ));
+        errors.extend(crate::component::validate_own_first_level_words(
+            &self.components,
+            &words,
+        ));
         errors
     }
 

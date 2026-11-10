@@ -1517,6 +1517,55 @@ pub fn validate_shared_binary_words(
     errors
 }
 
+/// The first level of one component's own tree: a group named like a word placed beside it.
+///
+/// | refused | code |
+/// |---|---|
+/// | a group whose name is the word a top-level command or view of the same component is typed as | [`DuplicateDeclaration`](ValidationCode::DuplicateDeclaration) |
+///
+/// `words` is the word each command and view is typed as, as for [`validate_shared_binary_words`];
+/// only the specification knows it, so this rule is the specification's to call. The generated
+/// tree would define the word twice and one of the two could not be reached
+/// (story:a-group-named-like-a-top-level-command-of-its-component-is-refused).
+pub fn validate_own_first_level_words(
+    components: &BTreeMap<ComponentName, ComponentSpec>,
+    words: &BTreeMap<QualifiedName, String>,
+) -> ValidationErrors {
+    let mut errors = ValidationErrors::new();
+    for (name, component) in components {
+        let Some(cli) = &component.cli else {
+            continue;
+        };
+        for placed_name in cli.commands.iter().chain(&cli.views) {
+            let word = words
+                .get(placed_name)
+                .map_or_else(|| placed_name.local(), String::as_str);
+            for group in cli
+                .groups
+                .iter()
+                .filter(|group| group.name.as_str() == word)
+            {
+                errors.push(
+                    ValidationError::new(
+                        ValidationCode::DuplicateDeclaration,
+                        format!("component {name}"),
+                        format!(
+                            "the group `{}` is named like the top-level word `{word}` of \
+                             `{placed_name}`, so the command tree defines `{word}` twice",
+                            group.name
+                        ),
+                    )
+                    .with_hint(
+                        "a word at the first level has one meaning; rename the group, or give \
+                         the command or view another `naming.wire`",
+                    ),
+                );
+            }
+        }
+    }
+    errors
+}
+
 /// Every binary at least two components declare, with those components in component order.
 fn sharing_binaries(
     components: &BTreeMap<ComponentName, ComponentSpec>,
@@ -2841,5 +2890,70 @@ cli:
                 .any(|error| error.code == ValidationCode::UndeclaredReference),
             "{errors:?}"
         );
+    }
+
+    // ---- a group named like a top-level word of its own component -------------------------
+    //
+    // story:a-group-named-like-a-top-level-command-of-its-component-is-refused.
+
+    fn own_word_component(group: &str, top: &str) -> BTreeMap<ComponentName, ComponentSpec> {
+        catalogue([component(&format!(
+            "\
+component: desk-service
+reached_by: command_line
+accepts:
+  commands:
+    - billing.invoice.CreateInvoice
+    - billing.email.SendEmail
+cli:
+  binary: desk
+  {top}
+  groups:
+    - name: {group}
+      commands:
+        - billing.email.SendEmail
+"
+        ))])
+    }
+
+    #[test]
+    fn a_group_named_like_a_top_level_command_of_its_own_component_is_refused() {
+        let components =
+            own_word_component("issue", "commands:\n    - billing.invoice.CreateInvoice");
+        let errors = validate_own_first_level_words(&components, &words());
+        let refused = duplicates(&errors);
+        assert_eq!(refused.len(), 1, "{errors:?}");
+        let message = &refused[0].message;
+        for named in ["`issue`", "`billing.invoice.CreateInvoice`"] {
+            assert!(message.contains(named), "names {named}: {message}");
+        }
+        assert_eq!(refused[0].location, "component desk-service");
+    }
+
+    #[test]
+    fn a_group_named_like_a_top_level_view_of_its_own_component_is_refused() {
+        let components = own_word_component(
+            "outstanding",
+            "commands:\n    - billing.invoice.CreateInvoice\n  views:\n    - billing.invoice.OutstandingInvoices",
+        );
+        let mut words = words();
+        words.insert(
+            QualifiedName::new("billing.invoice.OutstandingInvoices").expect("a valid name"),
+            "outstanding".to_owned(),
+        );
+        let errors = validate_own_first_level_words(&components, &words);
+        let refused = duplicates(&errors);
+        assert_eq!(refused.len(), 1, "{errors:?}");
+        let message = &refused[0].message;
+        for named in ["`outstanding`", "`billing.invoice.OutstandingInvoices`"] {
+            assert!(message.contains(named), "names {named}: {message}");
+        }
+    }
+
+    #[test]
+    fn a_group_named_unlike_every_top_level_word_of_its_component_is_accepted() {
+        let components =
+            own_word_component("visits", "commands:\n    - billing.invoice.CreateInvoice");
+        assert!(validate_own_first_level_words(&components, &words()).is_empty());
     }
 }
