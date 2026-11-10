@@ -4382,6 +4382,11 @@ fn force_beside_unnarrowed(
         .iter()
         .filter_map(|(field, value)| match value {
             ScenarioValue::Literal { value } => Some((field.clone(), value.clone())),
+            // The row the scenario names is no value a guard compares, but the input is read whole:
+            // left out, it leaves every guard over the input undecided (beyond10x/ess#727).
+            ScenarioValue::Instance { instance } => {
+                Some((field.clone(), Node::Text(instance.to_string())))
+            }
             _ => None,
         })
         .collect();
@@ -5257,7 +5262,7 @@ fn unclaimed_external(
     setup: Setup,
     input: BTreeMap<String, Node>,
 ) -> Result<(Setup, BTreeMap<String, Node>), RefusalCause> {
-    if subject_fact::uses(command) {
+    if subject_fact::uses(command) || subject_fact::narrowing(&outcome.condition).is_some() {
         return subject_fact::external_witness(ir, command, outcome, actors, setup, input);
     }
     if !has_subject_guards(command) {
@@ -7174,7 +7179,9 @@ fn advance(
                     other => other.to_string().into(),
                 },
             })?
-        } else if subject_fact::uses(driver.command) {
+        } else if subject_fact::uses(driver.command)
+            || subject_fact::narrowing(&driver.outcome.condition).is_some()
+        {
             let unwitnessable = || Unreachable::Unwitnessable {
                 outcome: OutcomeRef::new(
                     CommandRef::new(driver.command.name.clone()),

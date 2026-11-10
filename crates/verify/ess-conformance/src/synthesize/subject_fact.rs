@@ -2941,17 +2941,29 @@ fn external_inputs(
     entity: &EntityHandle,
     arrangement: &Arrangement,
 ) -> Result<Vec<BTreeMap<String, Node>>, RefusalCause> {
-    let Some(own) = external_input(&outcome.condition) else {
+    let own = external_input(&outcome.condition);
+    let narrowed = narrowing(&outcome.condition);
+    if own.is_none() && narrowed.is_none() {
         return linked_inputs(ir, command, entity, arrangement);
+    }
+    // ess/29, beyond10x/ess#727: a narrowed branch is witnessed on a row its subject guard selects,
+    // so its comparisons with the input are grounded on the row as a guarded branch's are, a
+    // quantifier over the input included.
+    let mut reads = hints(command);
+    reads.extend(narrowed.cloned());
+    let grounded = grounded(ir, entity, &arrangement.settled, &reads);
+    let over_input = match narrowed {
+        Some(_) => grounded_over_input(ir, entity, &arrangement.settled, &reads),
+        None => Vec::new(),
     };
-    let grounded = grounded(ir, entity, &arrangement.settled, &hints(command));
     let mut guards: Vec<&Predicate> = command
         .outcomes
         .iter()
         .filter_map(|branch| input_guard(&branch.condition))
         .collect();
-    guards.push(own);
+    guards.extend(own);
     guards.extend(grounded.iter());
+    guards.extend(over_input.iter());
     let mut inputs =
         candidates(ir, command, &guards, Distinction::PLAIN).map_err(RefusalCause::NoWitness)?;
     if !grounded.is_empty() {
@@ -5410,6 +5422,11 @@ fn successors(
     }
     if uses(driver.command) {
         return selected_successors(ir, entity, driver, arrangement, actors, hints, follow);
+    }
+    // A narrowed external branch (ess/29) is sent with an input its subject guard holds for on this
+    // row, which a plain witness is not: it is run by `external_step`, where nothing else reaches.
+    if narrowing(&driver.outcome.condition).is_some() {
+        return out;
     }
     let chain: Vec<&EntityHandle> = arranging.iter().copied().chain([entity]).collect();
     if let Ok(invoked) = invoke(
