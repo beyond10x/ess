@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:accepted-input-arranges-referenced-list-rows
 kind: story
-status: draft
+status: active
 title: An accepted scenario arranges the rows a referenced list names
 tags:
 - defect
@@ -10,6 +10,7 @@ tags:
 - zero-open-issues
 relations:
 - decomposes: epic:zero-open-issues-2026-11
+- serves: vision:O2
 scope:
 - confidence: inferred
   path: crates/verify/ess-conformance/src/synthesize.rs
@@ -19,7 +20,10 @@ scope:
   path: crates/verify/ess-conformance/tests/referenced_list_input.rs
 - confidence: inferred
   path: docs/design/referenced-input-arrangement.md
-revision: 8
+revision: 10
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:37:48Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:37:49Z", actor: "human:timo", revision: 10, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Summary
 

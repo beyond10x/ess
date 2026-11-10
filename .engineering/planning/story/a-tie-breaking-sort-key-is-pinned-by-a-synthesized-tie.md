@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-tie-breaking-sort-key-is-pinned-by-a-synthesized-tie
 kind: story
-status: draft
+status: active
 title: A tie-breaking sort key is pinned by a synthesized tie
 summary: 'order-flip on a view''s second order_by key always survives: synthesis never arranges a tie on the first key, and --emit takes no authored scenarios (#708)'
 tags:
@@ -14,6 +14,7 @@ refs:
   reference: beyond10x/ess#708
 relations:
 - decomposes: epic:zero-open-issues-2026-11
+- serves: vision:O2
 scope:
 - confidence: cited
   path: crates/verify/ess-conformance/src/synthesize.rs
@@ -33,7 +34,10 @@ scope:
   path: website/docs/guides/verify/mutation-audit.md
 - confidence: inferred
   path: website/docs/reference/diagnostics.md
-revision: 12
+revision: 14
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:42:10Z", actor: "human:timo", revision: 13, decided_on: {"recorded":{"review_outcome":2}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:42:12Z", actor: "human:timo", revision: 14, decided_on: {"recorded":{"review_outcome":2}}}
 ---
 ## Need
 

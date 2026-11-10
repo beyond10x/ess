@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:synthesis-sends-whole-unit-instants-of-an-encoded-timestamp
 kind: story
-status: draft
+status: active
 title: Synthesis sends whole-unit instants of an encoded Timestamp
 tags:
 - zero-open-issues
@@ -13,6 +13,7 @@ relations:
 - decomposes: epic:zero-open-issues-2026-11
 - depends_on: story:a-timestamp-newtype-declares-its-wire-encoding
 - depends_on: story:a-value-outside-its-declared-type-is-answered-malformed
+- serves: vision:O2
 scope:
 - confidence: inferred
   path: crates/verify/ess-conformance/src/authored.rs
@@ -24,7 +25,10 @@ scope:
   path: crates/verify/ess-conformance/src/witness.rs
 - confidence: inferred
   path: crates/verify/ess-conformance/tests/timestamp_encoding.rs
-revision: 5
+revision: 7
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:46:35Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:46:37Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Need
 

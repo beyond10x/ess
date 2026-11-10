@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:conformance-follows-a-views-continuation-to-its-last-page
 kind: story
-status: draft
+status: active
 title: Conformance follows a view's continuation to its last page
 tags:
 - zero-open-issues
@@ -13,6 +13,7 @@ relations:
 - decomposes: epic:zero-open-issues-2026-11
 - depends_on: story:a-view-answer-takes-its-protocols-list-shape
 - depends_on: story:ess-37-and-conformance-64-65-are-open-for-the-epics-constructs
+- serves: vision:O2
 scope:
 - confidence: cited
   path: crates/verify/ess-conformance/src/interpret/views.rs
@@ -30,7 +31,10 @@ scope:
   path: crates/verify/ess-conformance/tests/view_paging.rs
 - confidence: inferred
   path: website/docs/reference/formats.md
-revision: 4
+revision: 6
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:43:23Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:43:24Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Need
 

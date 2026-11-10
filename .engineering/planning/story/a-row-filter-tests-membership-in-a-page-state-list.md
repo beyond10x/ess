@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-row-filter-tests-membership-in-a-page-state-list
 kind: story
-status: draft
+status: active
 title: A row filter tests membership in a list held in page state
 summary: '`row.id in state.picked` is refused; `in` takes literal lists only (workbench report item 3)'
 tags:
@@ -36,7 +36,10 @@ scope:
   path: schemas/ui/ess-ui.schema.yaml
 - confidence: cited
   path: website/docs/reference/ess-ui.md
-revision: 8
+revision: 10
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:41:28Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:41:29Z", actor: "human:timo", revision: 10, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Need
 

@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:the-terminal-evaluates-every-expression-form-the-schema-defines
 kind: story
-status: draft
+status: active
 title: The terminal evaluates every expression form the schema defines
 tags:
 - zero-open-issues
@@ -11,6 +11,7 @@ refs:
   reference: beyond10x/ess#722
 relations:
 - decomposes: epic:zero-open-issues-2026-11
+- serves: vision:O2
 scope:
 - confidence: inferred
   path: crates/ui/ess-ui-test/tests/journey_visible.rs
@@ -22,7 +23,10 @@ scope:
   path: crates/ui/ess-ui-tui/src/view.rs
 - confidence: inferred
   path: crates/ui/ess-ui-tui/tests/visible.rs
-revision: 4
+revision: 6
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:48:28Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:48:29Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Need
 

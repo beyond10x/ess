@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:existing-instance-arranges-the-prior-row-when-the-creator-reads-a-related-row
 kind: story
-status: draft
+status: active
 title: existing_instance arranges the prior row when the creating branch reads a related row
 summary: 'existing_instance: cannot arrange the prior row when the creating branch guards on a related row, though another command creates it unguarded (beyond10x/ess#733)'
 tags:
@@ -24,7 +24,10 @@ scope:
   path: crates/verify/ess-conformance/tests/existing_instance_beside_related_guards.rs
 - confidence: inferred
   path: docs/design/outcome-shapes.md
-revision: 7
+revision: 9
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:44:03Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"review_outcome":2}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:44:04Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"review_outcome":2}}}
 ---
 ## Need
 

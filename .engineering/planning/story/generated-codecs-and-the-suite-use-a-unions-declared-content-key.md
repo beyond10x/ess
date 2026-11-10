@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:generated-codecs-and-the-suite-use-a-unions-declared-content-key
 kind: story
-status: draft
+status: active
 title: Generated codecs and the suite use a union's declared content key
 tags:
 - zero-open-issues
@@ -13,6 +13,7 @@ relations:
 - decomposes: epic:zero-open-issues-2026-11
 - depends_on: story:projections-use-a-unions-declared-content-key
 - depends_on: story:ess-37-and-conformance-64-65-are-open-for-the-epics-constructs
+- serves: vision:O2
 scope:
 - confidence: cited
   path: crates/generate/ess-synth/src/go/http.rs
@@ -36,7 +37,10 @@ scope:
   path: crates/verify/ess-conformance/src/ts/response.ts
 - confidence: cited
   path: crates/verify/ess-conformance/src/witness.rs
-revision: 4
+revision: 6
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:44:12Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:44:13Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Need
 

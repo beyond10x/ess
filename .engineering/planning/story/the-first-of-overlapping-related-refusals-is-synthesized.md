@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:the-first-of-overlapping-related-refusals-is-synthesized
 kind: story
-status: draft
+status: active
 title: The first of several overlapping related refusals over one row is synthesized
 summary: Synthesis refuses reachable related refusals that share a guard with a later one (ESS-SYNTH-003), as in 0.68.0 (found by the U14 adversary, 2026-10-23).
 tags:
@@ -18,7 +18,10 @@ scope:
   path: crates/verify/ess-conformance/src/synthesize/related_guard.rs
 - confidence: cited
   path: crates/verify/ess-conformance/tests/adversary_u14_pass1.rs
-revision: 5
+revision: 7
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:47:19Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:47:20Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Need
 

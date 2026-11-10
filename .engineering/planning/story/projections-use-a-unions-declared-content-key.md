@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:projections-use-a-unions-declared-content-key
 kind: story
-status: draft
+status: active
 title: Projections use a union's declared content key
 tags:
 - zero-open-issues
@@ -12,6 +12,8 @@ refs:
 relations:
 - decomposes: epic:zero-open-issues-2026-11
 - depends_on: story:a-guard-reads-a-union-tag-and-a-union-names-its-content-key
+- depends_on: story:ess-37-and-conformance-64-65-are-open-for-the-epics-constructs
+- serves: vision:O2
 scope:
 - confidence: cited
   path: crates/generate/ess-gen/src/schema.rs
@@ -23,7 +25,10 @@ scope:
   path: crates/specify/ess-compiler/src/ir.rs
 - confidence: inferred
   path: crates/verify/ess-diff/src/delta.rs
-revision: 4
+revision: 6
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:45:35Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:45:36Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Need
 

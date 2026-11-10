@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-related-row-may-answer-before-input-guards
 kind: story
-status: draft
+status: active
 title: A command may declare that an existing related row answers before its input guards
 summary: 'Adopter report R2: a second initialize answers already-initialized before its payload is read; the precedence rule forbids that order.'
 tags:
@@ -18,7 +18,7 @@ relations:
 - decomposes: epic:zero-open-issues-2026-11
 scope:
 - confidence: inferred
-  path: crates/edge/ess-xtask
+  path: crates/edge/ess-xtask/src/consumer_coverage/macro-guards.json
 - confidence: cited
   path: crates/specify/ess-domain/src/command.rs
 - confidence: cited
@@ -35,7 +35,10 @@ scope:
   path: docs/design/generic-language-features.md
 - confidence: cited
   path: docs/design/input-guard-overlap-precedence.md
-revision: 8
+revision: 13
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:41:19Z", actor: "human:timo", revision: 12, decided_on: {"recorded":{"review_outcome":2}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:41:20Z", actor: "human:timo", revision: 13, decided_on: {"recorded":{"review_outcome":2}}}
 ---
 ## Need
 
@@ -113,7 +116,7 @@ Pinned by `crates/verify/ess-conformance/tests/input_guard_overlap.rs`
 - cited: crates/specify/ess-domain/tests/precedence_classification.rs
 - cited: docs/design/input-guard-overlap-precedence.md (§ "What synthesis does", rule 2)
 - cited: docs/design/generic-language-features.md (§ G4, answer 1 names the idiom)
-- inferred: crates/edge/ess-xtask (typed diagnostic snapshots, hint text)
+- inferred: crates/edge/ess-xtask/src/consumer_coverage/macro-guards.json (typed diagnostic snapshots, hint text)
 - inferred: CHANGELOG.md
 confidence: medium
 
@@ -170,3 +173,4 @@ to `malformed`. The suite sends an existing session with an invalid payload and 
 ## Source
 
 github:beyond10x/ess#554
+

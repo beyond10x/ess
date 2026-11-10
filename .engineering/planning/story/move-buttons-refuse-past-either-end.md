@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:move-buttons-refuse-past-either-end
 kind: story
-status: draft
+status: active
 title: Move buttons refuse a move past either end
 summary: 'The React collection''s degraded move buttons (no_drag: move_buttons) still send a move past the first or last row (0.88.0 collection-controls correction, pre-existing)'
 tags:
@@ -20,7 +20,10 @@ scope:
   path: crates/ui/ess-ui-react/templates/runtime/composites/collection.tsx.tmpl
 - confidence: inferred
   path: crates/ui/ess-ui-react/tests/
-revision: 5
+revision: 7
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:45:07Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:45:08Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Need
 

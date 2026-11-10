@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:unknown-by-absence-in-falsified-and-leaves-external
 kind: story
-status: draft
+status: active
 title: Unknown by absence in falsified and leaves_external follows the wrong-state witness
 tags:
 - defect
@@ -20,7 +20,10 @@ scope:
   path: crates/verify/ess-conformance/tests/unknown_by_absence_witnesses.rs
 - confidence: inferred
   path: docs/design/cross-record-and-stored-field-guards.md
-revision: 7
+revision: 9
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:48:47Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:48:48Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Finding
 

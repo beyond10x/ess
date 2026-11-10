@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:entity-runtime-component-closure
 kind: story
-status: draft
+status: active
 title: Entity Runtime lowering drops a command whose subject is outside the component without a diagnostic
 tags:
 - defect
@@ -11,6 +11,7 @@ tags:
 - zero-open-issues
 relations:
 - decomposes: epic:zero-open-issues-2026-11
+- serves: vision:O2
 scope:
 - confidence: inferred
   path: crates/edge/ess-xtask/src/consumer_coverage/entry-classifications.json
@@ -22,7 +23,10 @@ scope:
   path: crates/generate/ess-entity-runtime/tests/component_closure.rs
 - confidence: inferred
   path: website/docs/reference/entity-runtime-lowering.md
-revision: 9
+revision: 11
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:43:38Z", actor: "human:timo", revision: 10, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:43:39Z", actor: "human:timo", revision: 11, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Outcome
 

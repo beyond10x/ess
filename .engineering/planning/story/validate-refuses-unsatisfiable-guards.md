@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:validate-refuses-unsatisfiable-guards
 kind: story
-status: draft
+status: active
 title: Validation refuses an unsatisfiable guard, a contradictory when and an unanswered held state
 tags:
 - adopter-report
@@ -22,7 +22,10 @@ scope:
   path: crates/specify/ess-domain/tests/
 - confidence: inferred
   path: crates/specify/ess-primitives/src/error.rs
-revision: 5
+revision: 7
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:48:59Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:49:01Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Outcome
 

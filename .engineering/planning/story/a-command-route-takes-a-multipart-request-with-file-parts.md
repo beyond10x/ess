@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-command-route-takes-a-multipart-request-with-file-parts
 kind: story
-status: draft
+status: active
 title: A command route takes a multipart request with file parts
 tags:
 - zero-open-issues
@@ -11,6 +11,7 @@ refs:
   reference: beyond10x/ess#754
 relations:
 - decomposes: epic:zero-open-issues-2026-11
+- serves: vision:O2
 scope:
 - confidence: cited
   path: crates/specify/ess-http/src/lib.rs
@@ -22,7 +23,10 @@ scope:
   path: website/docs/guides/http-routes.md
 - confidence: inferred
   path: website/docs/reference/diagnostics.md
-revision: 4
+revision: 6
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:37:57Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:37:58Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Need
 

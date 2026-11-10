@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-graph-editor-draws-its-edges-and-a-menu-per-node
 kind: story
-status: draft
+status: active
 title: A graph editor draws its edges and a menu per node
 tags:
 - zero-open-issues
@@ -11,6 +11,7 @@ refs:
   reference: beyond10x/ess#723
 relations:
 - decomposes: epic:zero-open-issues-2026-11
+- serves: vision:O2
 scope:
 - confidence: cited
   path: crates/ui/ess-ui-react/templates/runtime/composites/graph_editor.tsx.tmpl
@@ -20,7 +21,10 @@ scope:
   path: crates/ui/ess-ui-react/tests/graph_editor.rs
 - confidence: inferred
   path: crates/ui/ess-ui-test/src/playwright.rs
-revision: 4
+revision: 6
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:38:09Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:38:11Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Need
 

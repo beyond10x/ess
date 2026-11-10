@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:per-state-refusals-are-witnessed-when-the-moving-guard-reads-an-input-list
 kind: story
-status: draft
+status: active
 title: Per-state refusals are witnessed when the moving branch's guard reads an input list
 summary: wrong_state witnesses are refused ESS-SYNTH-003 when the moving branch's when_subject reads an input list, though the outcome scenario solves it (beyond10x/ess#726)
 tags:
@@ -22,7 +22,10 @@ scope:
   path: crates/verify/ess-conformance/tests/wrong_state_own_guard_over_input_list.rs
 - confidence: cited
   path: docs/design/cross-record-and-stored-field-guards.md
-revision: 5
+revision: 7
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:45:31Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:45:32Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Need
 

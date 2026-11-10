@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:view-and-error-assertions-carry-their-value-shape
 kind: story
-status: draft
+status: active
 title: View and error assertions carry their value shape
 summary: Typed shapes on view and error steps, so runners fold null into absent only for struct members and a Map key holding null stays distinct (row 48 follow-up, 0.70.0).
 tags:
@@ -35,7 +35,10 @@ scope:
   path: crates/verify/ess-conformance/src/ts/runtime.ts
 - confidence: cited
   path: crates/verify/ess-conformance/tests/adversary_u28_pass1.rs
-revision: 13
+revision: 15
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:49:07Z", actor: "human:timo", revision: 14, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:49:09Z", actor: "human:timo", revision: 15, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Need
 

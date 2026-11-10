@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-guard-reads-a-union-tag-and-a-union-names-its-content-key
 kind: story
-status: draft
+status: active
 title: Design page, grid O union column, validation and prover for union variant guards and a declared content key
 summary: 'Adopter report G2: A guard cannot read a union''s tag, and a union cannot name its content key (ess#637).'
 tags:
@@ -39,7 +39,10 @@ scope:
   path: docs/design/union-variant-guards-and-content-key.md
 - confidence: inferred
   path: website/docs/reference/predicates.md
-revision: 9
+revision: 12
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:34:15Z", actor: "human:timo", revision: 11, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:34:16Z", actor: "human:timo", revision: 12, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Need
 
@@ -168,7 +171,7 @@ confidence: medium
 
 accept as proposed, for both spellings. The guard compares a union as its variant label, exactly as
 an enum, which opens grid O's union column for comparison and membership. A union may declare
-`content:` beside `tag:`, under the next source format. Follow-ups:
+`content:` beside `tag:`, at `ess/37`. Follow-ups:
 
 - `story:synthesis-and-the-interpreter-decide-a-guard-on-a-union-variant`
 - `story:generated-targets-decide-a-guard-on-a-union-variant`
@@ -178,3 +181,4 @@ an enum, which opens grid O's union column for comparison and membership. A unio
 ## Source
 
 github:beyond10x/ess#637
+

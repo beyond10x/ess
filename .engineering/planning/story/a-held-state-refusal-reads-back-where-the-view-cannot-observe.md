@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-held-state-refusal-reads-back-where-the-view-cannot-observe
 kind: story
-status: draft
+status: active
 title: A held-state refusal reads the record back where the view cannot observe it
 tags:
 - defect
@@ -21,7 +21,10 @@ scope:
   path: crates/verify/ess-conformance/tests/a_held_state_refusal_reads_back_where_the_view_cannot_observe.rs
 - confidence: inferred
   path: docs/design/outcome-shapes.md
-revision: 6
+revision: 9
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:34:19Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"review_outcome":2}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:34:21Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"review_outcome":2}}}
 ---
 ## Finding
 
@@ -70,15 +73,25 @@ branches), in three forms:
   record to another state on the refused send and publishes nothing fails. Red on 0.92.0.
 - Where no read-back has a valid send, the scenario is withdrawn and refused as `ESS-SYNTH-001`
   naming the branches tried, as the no-view case is.
-- Models whose identity view projects `state` (the `state-view` form) and every committed suite under
-  `suites/` keep their bytes; any test-fixture suite that moves is re-pinned and named in the change.
+- In the same test, the `state-view` form (view `{ticket_id, state}`) synthesizes a suite whose
+  SHA-256 equals the digest 0.92.0 gives it, pinned in the test.
+- Every committed suite under `suites/generated/` keeps its bytes:
+  `cargo test -p ess-conformance --locked --test adversary_map_witness_pass1 adv196_every_example_still_synthesizes_to_its_committed_suite`
+  passes with no file under `suites/generated/` changed.
+- `cargo test -p ess-conformance --locked --test synthesis_suite_bytes_table` and
+  `--test synthesis_suite_bytes_table_cli_read` pass. Each row of
+  `synthesis-suite-bytes-table.tsv` that moves is a fixture whose suite, synthesized before and after
+  the change and compared, differs only by read-back steps added after held-state sends of an input
+  refusal; no other row moves.
 
 ## Scope
 
 - cited: crates/verify/ess-conformance/src/synthesize/existence.rs
 - cited: crates/verify/ess-conformance/src/synthesize.rs
 - inferred: crates/verify/ess-conformance/tests/a_held_state_refusal_reads_back_where_the_view_cannot_observe.rs
-- inferred: crates/verify/ess-conformance/tests/fixtures/synthesis-suite-bytes-table.tsv
 - inferred: docs/design/outcome-shapes.md
 
 confidence: high
+
+Shared surfaces moved: re-pins the suite-bytes rows of fixtures that gain a held-state read-back,
+and proposes its `CHANGELOG.md` sentence.

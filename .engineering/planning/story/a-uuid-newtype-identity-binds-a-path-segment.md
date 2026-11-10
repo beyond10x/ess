@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-uuid-newtype-identity-binds-a-path-segment
 kind: story
-status: draft
+status: active
 title: A path segment carries a Uuid and every scalar with one text spelling
 summary: ess-http/1 refuses a Uuid-newtype identity as a path segment (ESS-HTTP-009) (0.77.0)
 tags:
@@ -14,6 +14,7 @@ refs:
   reference: beyond10x/ess#755
 relations:
 - decomposes: epic:zero-open-issues-2026-11
+- serves: vision:O2
 scope:
 - confidence: inferred
   path: crates/generate/ess-gen/tests/openapi_http.rs
@@ -29,7 +30,10 @@ scope:
   path: docs/design/http-presentation-binding.md
 - confidence: cited
   path: website/docs/guides/http-routes.md
-revision: 8
+revision: 10
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:42:21Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:42:22Z", actor: "human:timo", revision: 10, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Need
 

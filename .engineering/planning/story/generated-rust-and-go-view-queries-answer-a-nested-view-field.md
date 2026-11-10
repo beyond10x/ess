@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:generated-rust-and-go-view-queries-answer-a-nested-view-field
 kind: story
-status: draft
+status: active
 title: Generated Rust and Go view queries answer a nested view field
 tags:
 - zero-open-issues
@@ -12,6 +12,7 @@ refs:
 relations:
 - decomposes: epic:zero-open-issues-2026-11
 - depends_on: story:a-view-field-nests-source-fields-under-a-struct-member
+- serves: vision:O2
 scope:
 - confidence: inferred
   path: crates/generate/ess-synth/src/go/behaviour.rs
@@ -21,7 +22,10 @@ scope:
   path: crates/generate/ess-synth/src/view_query.rs
 - confidence: inferred
   path: crates/generate/ess-synth/tests/view_nested_field.rs
-revision: 4
+revision: 6
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:44:26Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:44:27Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Need
 

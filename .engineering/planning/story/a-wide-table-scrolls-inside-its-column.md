@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-wide-table-scrolls-inside-its-column
 kind: story
-status: draft
+status: active
 title: Page columns stack at narrow widths and a wide table scrolls inside its column
 summary: 'A wide table overflows a layout.columns column: .ui-section has no overflow-x and nothing stacks below a breakpoint (0.77.0)'
 tags:
@@ -15,6 +15,7 @@ refs:
   reference: beyond10x/ess#723
 relations:
 - decomposes: epic:zero-open-issues-2026-11
+- serves: vision:O2
 scope:
 - confidence: cited
   path: crates/ui/ess-ui-react/templates/runtime/styles.css.tmpl
@@ -22,7 +23,10 @@ scope:
   path: crates/ui/ess-ui-react/tests/narrow_layout.rs
 - confidence: inferred
   path: website/docs/reference/ess-ui.md
-revision: 8
+revision: 10
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:42:54Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:42:56Z", actor: "human:timo", revision: 10, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Need
 

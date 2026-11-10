@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:synthesis-witnesses-a-unique-tuple-collision
 kind: story
-status: draft
+status: active
 title: Synthesis witnesses a unique tuple collision, a caller member with two callers
 tags:
 - zero-open-issues
@@ -12,6 +12,7 @@ refs:
 relations:
 - decomposes: epic:zero-open-issues-2026-11
 - depends_on: story:an-identity-may-be-a-composite-of-fields
+- serves: vision:O2
 scope:
 - confidence: inferred
   path: crates/verify/ess-conformance/src/interpret/execute/existence.rs
@@ -21,7 +22,10 @@ scope:
   path: crates/verify/ess-conformance/src/synthesize/existence.rs
 - confidence: inferred
   path: crates/verify/ess-conformance/tests/unique_tuple.rs
-revision: 3
+revision: 5
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:46:52Z", actor: "human:timo", revision: 4, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:46:53Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Need
 

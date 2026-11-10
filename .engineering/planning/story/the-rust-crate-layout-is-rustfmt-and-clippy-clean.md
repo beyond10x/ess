@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:the-rust-crate-layout-is-rustfmt-and-clippy-clean
 kind: story
-status: draft
+status: active
 title: The Rust crate layout is rustfmt and clippy clean
 summary: ess generate synthesize --target rust --layout crate writes 327 rustfmt hunks in 18 files and 47 clippy warnings (0.77.0)
 tags:
@@ -13,6 +13,7 @@ tags:
 - zero-open-issues
 relations:
 - decomposes: epic:zero-open-issues-2026-11
+- serves: vision:O2
 scope:
 - confidence: inferred
   path: crates/generate/ess-synth/src/rust/behaviour.rs
@@ -84,7 +85,10 @@ scope:
   path: generated/rust/gatepass/crates/gatepass-types/src/visit.rs
 - confidence: inferred
   path: generated/rust/gatepass/crates/pass-service/src/lib.rs
-revision: 12
+revision: 15
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:48:04Z", actor: "human:timo", revision: 14, decided_on: {"recorded":{"review_outcome":2}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:48:05Z", actor: "human:timo", revision: 15, decided_on: {"recorded":{"review_outcome":2}}}
 ---
 ## Outcome
 
@@ -125,13 +129,14 @@ The two named tests are in a new target, run with
   Rust, `ess generate synthesize --target rust --layout crate` output passes
   `rustfmt --check --edition 2021` on each crate root, exit 0.
 - `the_crate_layout_is_clippy_clean`: the same output passes
-  `cargo clippy --all-features -- -D warnings`, exit 0. A lint the generator cannot meet is allowed
-  by name at the crate root, each with its reason in the generator source.
+  `cargo clippy --all-features -- -D warnings`, exit 0, and its text holds no `#![allow(` attribute
+  and no `allow(clippy::` attribute (count 0); the one rustc `#[allow(dead_code)]` on `MemoryKey`
+  that 0.92.0 already writes is the only `allow` left.
 - The committed workspace layout is clean too: `rustfmt --check --edition 2021` exits 0 on every
   `.rs` file under `generated/rust/`, and the CI comparison of `generated/rust/` with what the
   specifications determine passes on the regenerated tree.
-- `CHANGELOG.md` names the byte change of both layouts' generated Rust under D135 (the coordinator
-  writes the sentence the implementor proposes).
+- `cargo test -p ess-synth --locked --test served_codec_names` and `--test go` pass; a pinned value
+  that moves is one computed over generated Rust text, and no value over generated Go text moves.
 
 ## Decisions
 
@@ -141,10 +146,14 @@ no behaviour, and an opt-in would keep the defect as every adopter's default. Th
 is therefore in scope, by the condition this section set before ("unless the same emitter is
 shared").
 
+- No clippy lint is allowed in the output: an allowed lint hides the warning in code the adopter
+  keeps in its tree instead of fixing it, and an open allow list would let any output pass, so the
+  emitter writes code clippy accepts.
+
 ## Scope
 
-This story moves the `CHANGELOG.md` shared surface and re-pins any byte-pin row over generated
-Rust.
+Shared surfaces moved: proposes the `CHANGELOG.md` sentence naming the byte change of both
+layouts' generated Rust under D135, and re-pins the byte-pin rows computed over generated Rust.
 
 - cited: crates/generate/ess-synth/src/rust/single.rs
 - cited: crates/generate/ess-synth/src/rust/mod.rs

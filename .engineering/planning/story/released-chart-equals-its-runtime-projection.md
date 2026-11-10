@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:released-chart-equals-its-runtime-projection
 kind: story
-status: draft
+status: active
 title: Release verification refuses a chart that is not its runtime's projection
 tags:
 - defect
@@ -25,7 +25,10 @@ scope:
   path: crates/generate/ess-deployment/src/release.rs
 - confidence: inferred
   path: crates/generate/ess-deployment/tests/deployment.rs
-revision: 5
+revision: 7
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:45:46Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:45:47Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Outcome
 

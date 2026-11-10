@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-form-groups-own-action-runs-from-its-key
 kind: story
-status: draft
+status: active
 title: A form group's own action runs from its key in the terminal
 summary: The terminal shows a form group's actions in the hint line but form_key looks up only the form's actions (0.88.0 journey-steps correction, pre-existing)
 tags:
@@ -22,7 +22,10 @@ scope:
   path: crates/ui/ess-ui-tui/src/app.rs
 - confidence: cited
   path: crates/ui/ess-ui-tui/src/view.rs
-revision: 5
+revision: 7
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:33:53Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:33:55Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Need
 

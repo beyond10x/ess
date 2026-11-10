@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:an-unguarded-branch-shadowing-a-guarded-sibling-is-reported
 kind: story
-status: draft
+status: active
 title: A guarded branch an unguarded sibling always shadows is reported
 summary: Validate accepts a held state where an unguarded branch makes a guarded one unreachable
 tags:
@@ -20,7 +20,10 @@ scope:
   path: crates/specify/ess-domain/src/command/subject_state.rs
 - confidence: inferred
   path: crates/specify/ess-domain/tests/shadowed_guarded_branch.rs
-revision: 8
+revision: 10
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:40:53Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:40:54Z", actor: "human:timo", revision: 10, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Problem
 

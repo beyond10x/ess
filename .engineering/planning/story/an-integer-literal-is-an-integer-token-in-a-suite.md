@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:an-integer-literal-is-an-integer-token-in-a-suite
 kind: story
-status: draft
+status: active
 title: A synthesized Integer literal is an integer token from suite ess-conformance/64, not a float
 tags:
 - adopter-report
@@ -28,7 +28,10 @@ scope:
   path: crates/verify/ess-conformance/tests/integer_literal_token.rs
 - confidence: cited
   path: website/docs/guides/verify/runners.md
-revision: 12
+revision: 14
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:40:03Z", actor: "human:timo", revision: 13, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:40:05Z", actor: "human:timo", revision: 14, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Outcome
 

@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:the-go-runtime-checks-a-view-rows-shape
 kind: story
-status: draft
+status: active
 title: The Go runtime checks a view row's declared shape
 tags:
 - zero-open-issues
@@ -13,6 +13,7 @@ relations:
 - decomposes: epic:zero-open-issues-2026-11
 - depends_on: story:a-view-read-checks-every-rows-shape
 - depends_on: story:ess-37-and-conformance-64-65-are-open-for-the-epics-constructs
+- serves: vision:O2
 scope:
 - confidence: cited
   path: crates/verify/ess-conformance/src/go/mod.rs
@@ -20,7 +21,10 @@ scope:
   path: crates/verify/ess-conformance/src/go/runtime.go
 - confidence: inferred
   path: crates/verify/ess-conformance/tests/view_row_shape_go.rs
-revision: 4
+revision: 6
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:47:36Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:47:37Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Need
 

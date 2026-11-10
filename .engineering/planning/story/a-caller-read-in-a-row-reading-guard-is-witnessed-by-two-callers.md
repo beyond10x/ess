@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-caller-read-in-a-row-reading-guard-is-witnessed-by-two-callers
 kind: story
-status: draft
+status: active
 title: A caller read in a row-reading guard is witnessed by two callers
 tags:
 - zero-open-issues
@@ -14,6 +14,7 @@ refs:
 relations:
 - decomposes: epic:zero-open-issues-2026-11
 - depends_on: story:caller-attributes-are-readable-in-a-when-related-predicate
+- serves: vision:O2
 scope:
 - confidence: cited
   path: crates/verify/ess-conformance/src/interpret/execute/row_set.rs
@@ -29,7 +30,10 @@ scope:
   path: crates/verify/ess-conformance/src/synthesize/row_set.rs
 - confidence: inferred
   path: crates/verify/ess-conformance/tests/caller_values.rs
-revision: 5
+revision: 7
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:37:46Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:37:47Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Need
 

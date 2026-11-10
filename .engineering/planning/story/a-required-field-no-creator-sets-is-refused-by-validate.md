@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-required-field-no-creator-sets-is-refused-by-validate
 kind: story
-status: draft
+status: active
 title: Validate refuses a required entity field that no creating command sets
 summary: 'Part b of the unfillable-required-field report (adopter item 5): validate exits 0 for a required field no creator sets; a new ValidationCode refuses it; defect, 0.70.0.'
 tags:
@@ -35,7 +35,10 @@ scope:
   path: docs/design/review-typed-diagnostics.md
 - confidence: inferred
   path: website/docs/reference/diagnostics.md
-revision: 11
+revision: 13
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:41:24Z", actor: "human:timo", revision: 12, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:41:25Z", actor: "human:timo", revision: 13, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Need
 

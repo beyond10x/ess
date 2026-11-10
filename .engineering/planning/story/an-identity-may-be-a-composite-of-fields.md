@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:an-identity-may-be-a-composite-of-fields
 kind: story
-status: draft
+status: active
 title: 'An entity may declare a unique tuple of fields beside its identity (ADR option C), answered by existing_instance:'
 summary: 'A composite identity is refused both as instance: map and as a published struct (a2a wave 1, M1).'
 tags:
@@ -33,7 +33,10 @@ scope:
   path: docs/design/cross-record-and-stored-field-guards.md
 - confidence: inferred
   path: docs/design/outcome-shapes.md
-revision: 11
+revision: 13
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:39:44Z", actor: "human:timo", revision: 12, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:39:46Z", actor: "human:timo", revision: 13, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Need
 

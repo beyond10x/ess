@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-specification-imports-another-specifications-types
 kind: story
-status: draft
+status: active
 title: ess specify vendor generates a checked copy of another specification's type
 summary: 'Adopter report N9: No way to import types across specifications (ess#663).'
 tags:
@@ -30,7 +30,10 @@ scope:
   path: docs/design/composition-type-conformance.md
 - confidence: inferred
   path: website/docs/reference/cli.md
-revision: 8
+revision: 10
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:41:50Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:41:51Z", actor: "human:timo", revision: 10, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Need
 

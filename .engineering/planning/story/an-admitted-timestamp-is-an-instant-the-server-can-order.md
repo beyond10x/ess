@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:an-admitted-timestamp-is-an-instant-the-server-can-order
 kind: story
-status: draft
+status: active
 title: An admitted Timestamp is an instant the generated server can order
 summary: Leap second and long fractions are admitted but unorderable (W1 GEN1 review, backlog)
 tags:
@@ -14,6 +14,7 @@ tags:
 relations:
 - informed_by: review-result:adversary-w1-gen1-pass-1
 - decomposes: epic:zero-open-issues-2026-11
+- serves: vision:O2
 scope:
 - confidence: cited
   path: crates/generate/ess-synth/src/go/http.rs
@@ -27,7 +28,10 @@ scope:
   path: crates/generate/ess-synth/tests/json_body_closure.rs
 - confidence: cited
   path: crates/specify/ess-primitives/tests/vectors/rfc3339-instants.json
-revision: 9
+revision: 11
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:38:36Z", actor: "human:timo", revision: 10, decided_on: {"recorded":{"review_outcome":2}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:38:37Z", actor: "human:timo", revision: 11, decided_on: {"recorded":{"review_outcome":2}}}
 ---
 ## Need
 

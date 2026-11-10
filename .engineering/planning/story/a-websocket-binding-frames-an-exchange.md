@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-websocket-binding-frames-an-exchange
 kind: story
-status: draft
+status: active
 title: A WebSocket binding frames an exchange
 summary: ess-websocket/1, a new sibling binding and crate; size M
 tags:
@@ -41,7 +41,10 @@ scope:
   path: crates/specify/ess-websocket/tests/compile.rs
 - confidence: inferred
   path: docs/design/websocket-binding.md
-revision: 7
+revision: 9
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:42:51Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:42:52Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Need
 

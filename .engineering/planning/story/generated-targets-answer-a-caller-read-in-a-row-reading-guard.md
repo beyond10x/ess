@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:generated-targets-answer-a-caller-read-in-a-row-reading-guard
 kind: story
-status: draft
+status: active
 title: Generated targets answer a caller read in a row-reading guard
 tags:
 - zero-open-issues
@@ -13,6 +13,7 @@ relations:
 - decomposes: epic:zero-open-issues-2026-11
 - depends_on: story:caller-attributes-are-readable-in-a-when-related-predicate
 - depends_on: story:caller-attributes-walk-every-caller-read-of-a-command
+- serves: vision:O2
 scope:
 - confidence: cited
   path: crates/generate/ess-entity-runtime/src/subset.rs
@@ -26,7 +27,10 @@ scope:
   path: crates/generate/ess-synth/src/determined.rs
 - confidence: inferred
   path: crates/generate/ess-synth/tests/caller_values.rs
-revision: 4
+revision: 6
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:44:44Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:44:45Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Need
 

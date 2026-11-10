@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-view-read-checks-every-rows-shape
 kind: story
-status: draft
+status: active
 title: A view read checks every returned row against the view fields
 summary: 'Row shape check on synthesized and authored view reads, split from #680 for 0.70.0; design page first.'
 tags:
@@ -44,7 +44,10 @@ scope:
   path: docs/design/view-row-shape.md
 - confidence: inferred
   path: website/docs/reference/formats.md
-revision: 13
+revision: 15
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:42:43Z", actor: "human:timo", revision: 14, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:42:44Z", actor: "human:timo", revision: 15, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Need
 

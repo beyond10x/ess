@@ -2,18 +2,32 @@
 format: aep.planning-md/3
 id: story:a-list-input-key-conflict-is-refused-after-the-existence-check
 kind: story
-status: draft
+status: active
 title: A list-input key conflict is refused after the existence check, and a same-key-different-value guard is witnessed
 summary: An input refusal always answers before existing_instance:, distinct also refuses equal duplicates, and the nested-exists form validates but gets no scenario (ESS-SYNTH-003) (adopter item 19, 2026-10-22, related to beyond10x/ess#554); same on 0.67.0.
 tags:
 - adopter-report
+- defect
 - ess-0.70.0
 - ess-0.70.0-first
 - gap
+- severity-medium
+- zero-open-issues
 relations:
 - serves: vision:O2
 - decomposes: epic:adopter-gaps-domain-language
-revision: 3
+- decomposes: epic:zero-open-issues-2026-11
+scope:
+- confidence: cited
+  path: crates/specify/ess-domain/src/command.rs
+- confidence: inferred
+  path: crates/specify/ess-domain/src/command/precedence.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/synthesize.rs
+revision: 9
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:38:18Z", actor: "human:timo", revision: 5}
+- {from: "proposed", to: "active", at: "2026-11-10T00:38:19Z", actor: "human:timo", revision: 6}
 ---
 ## Need
 
@@ -56,3 +70,14 @@ refusal) and `stored` (`creates:`). 0.68.0 and 0.67.0 byte-identical outputs and
 
 Not a 0.68.0 regression: byte-identical validation output and suites on 0.67.0. Gap (order) and defect (synthesis witness for a
 pair over one list). Does not block 0.68.0.
+
+
+## Scope
+
+- cited: crates/specify/ess-domain/src/command.rs
+- cited: crates/verify/ess-conformance/src/synthesize.rs
+- inferred: crates/specify/ess-domain/src/command/precedence.rs
+
+confidence: medium (the two refusal sites are cited from this body; the precedence-plan file is a guess the wave scoper confirms)
+
+Shared surfaces it moves: re-pins suite-bytes rows only where a committed model has the nested pair guard.

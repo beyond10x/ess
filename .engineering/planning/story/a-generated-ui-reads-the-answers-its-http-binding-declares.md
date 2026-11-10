@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-generated-ui-reads-the-answers-its-http-binding-declares
 kind: story
-status: draft
+status: active
 title: A generated UI reads the answers its HTTP binding declares, and renews its credential on a 401
 tags:
 - defect
@@ -14,6 +14,7 @@ refs:
 relations:
 - decomposes: epic:zero-open-issues-2026-11
 - depends_on: story:an-answer-may-be-wrapped-in-one-named-member
+- serves: vision:O2
 scope:
 - confidence: cited
   path: crates/edge/ess-cli/tests/generate_ui_http.rs
@@ -39,7 +40,10 @@ scope:
   path: crates/ui/ess-ui/tests/answers.rs
 - confidence: cited
   path: crates/ui/ess-ui/tests/vectors/answers.json
-revision: 3
+revision: 5
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:38:07Z", actor: "human:timo", revision: 4}
+- {from: "proposed", to: "active", at: "2026-11-10T00:38:08Z", actor: "human:timo", revision: 5}
 ---
 ## Outcome
 

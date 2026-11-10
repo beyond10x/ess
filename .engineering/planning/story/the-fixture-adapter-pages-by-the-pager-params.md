@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:the-fixture-adapter-pages-by-the-pager-params
 kind: story
-status: draft
+status: active
 title: The fixture adapter pages a read by the params its pager names
 summary: The fixture adapter slices server-paged reads by the param names page and size, not by the pager (UI-adopter wave 1 U3 review note, pre-existing, backlog)
 tags:
@@ -15,6 +15,7 @@ tags:
 relations:
 - informed_by: review-result:w086-u3-adversary-pass-1
 - decomposes: epic:zero-open-issues-2026-11
+- serves: vision:O2
 scope:
 - confidence: cited
   path: crates/ui/ess-ui-react/src/emit.rs
@@ -24,7 +25,10 @@ scope:
   path: crates/ui/ess-ui-react/templates/runtime/data.ts.tmpl
 - confidence: inferred
   path: crates/ui/ess-ui-react/tests/adversary_w086_u3_pass1.rs
-revision: 5
+revision: 8
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:47:21Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:47:23Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Need
 
@@ -82,4 +86,5 @@ field or the spec) is a choice.
 
 ## Schedule
 
-Backlog: not waved; considered only after every predefined wave is released.
+Waved under epic:zero-open-issues-2026-11 (accepted 2026-11-10).
+

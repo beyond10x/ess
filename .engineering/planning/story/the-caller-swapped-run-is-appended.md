@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:the-caller-swapped-run-is-appended
 kind: story
-status: draft
+status: active
 title: The caller-swapped run of a caller-written set effect is appended, and a test fails without it
 tags:
 - defect
@@ -11,6 +11,7 @@ tags:
 relations:
 - decomposes: epic:adopter-gaps-synthesis
 - decomposes: epic:zero-open-issues-2026-11
+- serves: vision:O2
 scope:
 - confidence: cited
   path: crates/verify/ess-conformance/src/synthesize/caller.rs
@@ -18,7 +19,10 @@ scope:
   path: crates/verify/ess-conformance/src/synthesize/caller/arranged.rs
 - confidence: cited
   path: crates/verify/ess-conformance/tests/caller_arranged_rows.rs
-revision: 7
+revision: 9
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:47:10Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:47:12Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Outcome
 

@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:stored-field-equals-returned-response-value
 kind: story
-status: draft
+status: active
 title: 'Store the value an outcome returns with {response: <field>} in sets:'
 tags:
 - ess-0.71.0
@@ -39,7 +39,10 @@ scope:
   path: docs/design/minted-value-sources.md
 - confidence: cited
   path: docs/design/typed-response-outcome-payloads.md
-revision: 14
+revision: 16
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:46:18Z", actor: "human:timo", revision: 15, decided_on: {"recorded":{"review_outcome":2}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:46:20Z", actor: "human:timo", revision: 16, decided_on: {"recorded":{"review_outcome":2}}}
 ---
 ## Need
 

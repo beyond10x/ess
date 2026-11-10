@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:generated-rust-and-go-answer-a-view-no-row-holds
 kind: story
-status: draft
+status: active
 title: Generated Rust and Go answer a view no row holds
 tags:
 - zero-open-issues
@@ -13,6 +13,7 @@ relations:
 - decomposes: epic:zero-open-issues-2026-11
 - depends_on: story:a-view-may-answer-values-no-row-holds
 - depends_on: story:conformance-reads-a-view-no-row-holds
+- serves: vision:O2
 scope:
 - confidence: inferred
   path: crates/generate/ess-entity-runtime/src/lib.rs
@@ -30,7 +31,10 @@ scope:
   path: crates/generate/ess-synth/tests/generated_view_queries.rs
 - confidence: cited
   path: website/docs/reference/entity-runtime-lowering.md
-revision: 8
+revision: 10
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:44:21Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"review_outcome":2}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:44:22Z", actor: "human:timo", revision: 10, decided_on: {"recorded":{"review_outcome":2}}}
 ---
 ## Need
 

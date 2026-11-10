@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:the-built-in-tones-meet-wcag-aa-for-badge-text
 kind: story
-status: draft
+status: active
 title: The built-in tones meet WCAG AA for badge text
 summary: 'Badge text in the built-in tone table is below WCAG AA: warning 2.68, info 3.04, success 3.18, danger 3.98 to 1 (0.77.0)'
 tags:
@@ -14,6 +14,7 @@ tags:
 - zero-open-issues
 relations:
 - decomposes: epic:zero-open-issues-2026-11
+- serves: vision:O2
 scope:
 - confidence: cited
   path: crates/ui/ess-ui-react/templates/runtime/styles.css.tmpl
@@ -23,7 +24,10 @@ scope:
   path: schemas/ui/ess-ui.schema.yaml
 - confidence: cited
   path: website/docs/reference/ess-ui.md
-revision: 11
+revision: 13
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:47:07Z", actor: "human:timo", revision: 12, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:47:09Z", actor: "human:timo", revision: 13, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Outcome
 

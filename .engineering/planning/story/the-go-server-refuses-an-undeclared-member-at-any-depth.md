@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:the-go-server-refuses-an-undeclared-member-at-any-depth
 kind: story
-status: draft
+status: active
 title: The Go server refuses an undeclared member at any depth of a request body
 summary: Go typed decoder accepts undeclared nested members that Rust refuses (0.89.0 U2 adversary; from-finding)
 tags:
@@ -25,7 +25,10 @@ scope:
   path: crates/generate/ess-synth/tests/http_binding/go.rs
 - confidence: inferred
   path: crates/generate/ess-synth/tests/http_binding/shared.rs
-revision: 5
+revision: 7
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:47:38Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:47:39Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Need
 

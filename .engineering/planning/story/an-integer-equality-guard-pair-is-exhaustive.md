@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:an-integer-equality-guard-pair-is-exhaustive
 kind: story
-status: draft
+status: active
 title: An integer equality guard and its negation are exhaustive
 summary: 'ESS-COMMAND-005: guards == 0 and != 0 over one integer are not proved exhaustive.'
 tags:
@@ -28,7 +28,10 @@ scope:
   path: crates/specify/ess-domain/tests/subject_guard_input.rs
 - confidence: cited
   path: docs/design/closed-enum-outcome-coverage.md
-revision: 9
+revision: 11
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:39:59Z", actor: "human:timo", revision: 10, decided_on: {"recorded":{"review_outcome":2}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:40:00Z", actor: "human:timo", revision: 11, decided_on: {"recorded":{"review_outcome":2}}}
 ---
 ## Problem
 

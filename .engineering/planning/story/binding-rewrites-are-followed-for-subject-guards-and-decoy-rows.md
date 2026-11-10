@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:binding-rewrites-are-followed-for-subject-guards-and-decoy-rows
 kind: story
-status: draft
+status: active
 title: Synthesis follows binding rewrites for when_subject rows and decoy rows
 tags:
 - defect
@@ -20,7 +20,10 @@ scope:
   path: crates/verify/ess-conformance/src/synthesize/subject_fact.rs
 - confidence: cited
   path: crates/verify/ess-conformance/tests/adversary_d350_u2_pass1.rs
-revision: 7
+revision: 9
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:42:57Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:42:58Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Finding
 

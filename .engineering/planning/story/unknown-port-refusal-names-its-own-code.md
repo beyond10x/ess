@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:unknown-port-refusal-names-its-own-code
 kind: story
-status: draft
+status: active
 title: An unknown-port scenario refusal names its own code, not ESS-SYNTH-008
 summary: In enforced_reference_served.rs the unknown-port scenario is refused as ESS-SYNTH-008, the internal-drift code; 0.67.0 prints the same at ess/29. (adversary pass 2026-10-22, F3).
 tags:
@@ -22,7 +22,10 @@ scope:
   path: crates/verify/ess-conformance/src/synthesize/related_guard.rs
 - confidence: inferred
   path: crates/verify/ess-conformance/tests/unknown_identity_beside_related_guard.rs
-revision: 5
+revision: 7
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:48:50Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:48:52Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Problem
 

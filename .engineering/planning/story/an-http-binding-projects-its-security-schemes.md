@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:an-http-binding-projects-its-security-schemes
 kind: story
-status: draft
+status: active
 title: An HTTP binding projects its security schemes
 summary: OpenAPI securitySchemes follow from the authentication port
 tags:
@@ -25,7 +25,10 @@ scope:
   path: crates/generate/ess-gen/tests/openapi_http_presentation.rs
 - confidence: inferred
   path: website/docs/reference/formats.md
-revision: 6
+revision: 8
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:39:38Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:39:40Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Need
 

@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:openapi-and-the-http-binding-serve-a-view-no-row-holds
 kind: story
-status: draft
+status: active
 title: OpenAPI and the HTTP binding serve a view no row holds
 tags:
 - zero-open-issues
@@ -12,6 +12,7 @@ refs:
 relations:
 - decomposes: epic:zero-open-issues-2026-11
 - depends_on: story:a-view-may-answer-values-no-row-holds
+- serves: vision:O2
 scope:
 - confidence: cited
   path: crates/generate/ess-gen/src/openapi.rs
@@ -21,7 +22,10 @@ scope:
   path: crates/specify/ess-http/src/lib.rs
 - confidence: inferred
   path: crates/specify/ess-http/tests/sourceless_view.rs
-revision: 4
+revision: 6
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:45:21Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:45:22Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Need
 

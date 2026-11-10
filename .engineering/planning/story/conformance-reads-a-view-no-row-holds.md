@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:conformance-reads-a-view-no-row-holds
 kind: story
-status: draft
+status: active
 title: Conformance reads a view no row holds
 tags:
 - zero-open-issues
@@ -12,16 +12,18 @@ refs:
 relations:
 - decomposes: epic:zero-open-issues-2026-11
 - depends_on: story:a-view-may-answer-values-no-row-holds
+- serves: vision:O2
 scope:
 - confidence: cited
   path: crates/verify/ess-conformance/src/interpret/views.rs
-- confidence: cited
+- confidence: inferred
   path: crates/verify/ess-conformance/src/synthesize.rs
 - confidence: inferred
-  path: crates/verify/ess-conformance/src/synthesize/
-- confidence: inferred
   path: crates/verify/ess-conformance/tests/view_settings.rs
-revision: 5
+revision: 10
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:43:29Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"review_outcome":2}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:43:30Z", actor: "human:timo", revision: 10, decided_on: {"recorded":{"review_outcome":2}}}
 ---
 ## Need
 
@@ -50,7 +52,7 @@ run 4: the scenario reading it is `AddBook/outcome/added`); a sourceless view ca
 
 - cited: crates/verify/ess-conformance/src/interpret/views.rs
 - cited: crates/verify/ess-conformance/src/synthesize.rs
-- inferred: crates/verify/ess-conformance/src/synthesize/ (a sourceless-view module)
+- inferred: crates/verify/ess-conformance/src/synthesize.rs (a sourceless-view module)
 - cited: crates/verify/ess-conformance/tests/synthesis_suite_bytes_table.rs (unchanged rows)
 - inferred: crates/verify/ess-conformance/tests/view_settings.rs (new)
 confidence: medium
@@ -77,3 +79,4 @@ confidence: medium
 ## Source
 
 github:beyond10x/ess#674
+

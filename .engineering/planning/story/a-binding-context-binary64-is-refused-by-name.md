@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-binding-context-binary64-is-refused-by-name
 kind: story
-status: draft
+status: active
 title: A binding-context Binary64 is refused by name
 summary: A binding's delivery-context field typed Binary64 directly is not walked by owner_uses, so it may be admitted where ESS-AUTHOR-036 should refuse it
 tags:
@@ -12,16 +12,20 @@ tags:
 relations:
 - informed_by: review-result:ess-d335-wave-adversary-u3
 - decomposes: epic:zero-open-issues-2026-11
+- serves: vision:O2
 scope:
 - confidence: cited
   path: crates/specify/ess-compiler/src/binary64.rs
 - confidence: inferred
-  path: crates/specify/ess-compiler/tests/
+  path: crates/specify/ess-compiler/tests/delivery_context_ir.rs
 - confidence: cited
   path: crates/verify/ess-conformance/src/synthesize.rs
 - confidence: inferred
   path: crates/verify/ess-conformance/tests/adversary_d335_u3_pass1.rs
-revision: 5
+revision: 10
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:37:42Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"review_outcome":2}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:37:43Z", actor: "human:timo", revision: 10, decided_on: {"recorded":{"review_outcome":2}}}
 ---
 ## Problem
 
@@ -65,23 +69,43 @@ error: types.demo.inbox.Scale.of: UnsupportedPrimitive: a Binary64 this route do
 
 ## Acceptance
 
-- `ess verify conform synthesize` on the direct model above refuses as the declared-type model
-  does: exit non-zero, a refusal naming `binding.received` (or the equivalent position path) and
-  the field `scale`, with `ESS-AUTHOR-036`'s reason; no suite is written.
-- `binary64::locations`/`uses` list the direct binding position (a unit test in
-  `crates/specify/ess-compiler` with a binding whose context field is `Binary64`, `List<Binary64>`
-  and `Optional<Binary64>`).
-- A binding mapping value is not a field declaration and stays out of scope; a model with no
-  `Binary64` in a binding keeps its suite bytes (an existing suite-bytes test stays green).
+- `ess verify conform synthesize --path direct.yaml --out suite.json` on the direct model above
+  exits 1, writes no `suite.json`, and prints the declared-type model's line at the binding's
+  position: `error: binding.received.context.fields.scale: UnsupportedPrimitive: a Binary64 this
+  route does not carry: …` (`ESS-AUTHOR-036`'s reason, from `admission::model`).
+- On the same model, `ess_conformance::admission::model` returns one issue at
+  `binding.received.context.fields.scale`, and `ess_conformance::synthesize::synthesize` returns an
+  empty suite and one refusal at that path. Test: a case in
+  `crates/verify/ess-conformance/tests/adversary_d335_u3_pass1.rs`, run with
+  `cargo test -p ess-conformance --locked --test adversary_d335_u3_pass1`.
+- `binary64::uses` on a binding `received` whose context fields are `scale: Binary64`,
+  `scales: List<Binary64>` and `maybe: Optional<Binary64>` holds exactly
+  `binding.received.context.fields.scale`, `binding.received.context.fields.scales.of` and
+  `binding.received.context.fields.maybe.of`, each owned by the binding `received`, and
+  `binary64::uncarried_uses` lists the same three. Test: a case in
+  `crates/specify/ess-compiler/tests/delivery_context_ir.rs`, run with
+  `cargo test -p ess-compiler --locked --test delivery_context_ir`.
+- A model with no `Binary64` in a binding keeps its suite bytes:
+  `cargo test -p ess-conformance --locked --test synthesis_suite_bytes_table` passes with no row of
+  `synthesis-suite-bytes-table.tsv` changed.
+
+## Decisions
+
+- The position is spelled `binding.<name>.context.fields.<field>`, the `<kind>.<name>.<member>.<field>`
+  form `owner_uses` already gives view parameters and actor attributes and `resolve.rs` gives
+  `binding.<name>.mapping.<input>`, so the refusal names one fixed path.
+- A binding mapping value is not a field declaration and stays out of scope.
 
 ## Scope
 
-- cited: `crates/specify/ess-compiler/src/binary64.rs` (`owner_uses`, `uncarried_uses`)
-- cited: `crates/verify/ess-conformance/src/synthesize.rs` (refusal at `:3385`, unchanged)
-- inferred: `crates/verify/ess-conformance/tests/adversary_d335_u3_pass1.rs` or a new case beside it
-- inferred: `crates/specify/ess-compiler/tests/` (unit test of the position inventory)
+- cited: crates/specify/ess-compiler/src/binary64.rs (`owner_uses` gains the binding context fields; `uncarried_uses` gains the `binding.<name>.context.` prefix)
+- cited: crates/verify/ess-conformance/src/synthesize.rs (refusal at `:3385`, unchanged)
+- inferred: crates/verify/ess-conformance/tests/adversary_d335_u3_pass1.rs
+- inferred: crates/specify/ess-compiler/tests/delivery_context_ir.rs
 
 confidence: high
+
+Shared surfaces moved: proposes its `CHANGELOG.md` sentence; no byte-pin row moves.
 
 ## Origin
 

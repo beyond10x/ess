@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-duration-member-is-refused-as-its-format-refuses
 kind: story
-status: draft
+status: active
 title: A Duration member is refused as its served format refuses it
 summary: 'Rust reads Duration as any text though format: duration refuses it (W1 GEN1 review, pre-existing, backlog)'
 tags:
@@ -14,6 +14,7 @@ tags:
 relations:
 - informed_by: review-result:adversary-w1-gen1-pass-1
 - decomposes: epic:zero-open-issues-2026-11
+- serves: vision:O2
 scope:
 - confidence: cited
   path: crates/generate/ess-synth/src/go/http.rs
@@ -33,7 +34,10 @@ scope:
   path: crates/verify/ess-conformance/assets/coverage-admission.js
 - confidence: cited
   path: crates/verify/ess-conformance/src/go/runtime.go
-revision: 9
+revision: 11
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:38:02Z", actor: "human:timo", revision: 10, decided_on: {"recorded":{"review_outcome":2}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:38:03Z", actor: "human:timo", revision: 11, decided_on: {"recorded":{"review_outcome":2}}}
 ---
 ## Need
 

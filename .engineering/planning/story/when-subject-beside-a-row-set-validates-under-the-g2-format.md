@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:when-subject-beside-a-row-set-validates-under-the-g2-format
 kind: story
-status: draft
+status: active
 title: when_subject, when_subject_state, when_state_changes and input_absent beside a row set validate at ess/37, ordered by one precedence rule
 summary: ESS-COMMAND-009 refuses when_subject beside a row set at every format; the G2 record lifts it in its own format.
 tags:
@@ -20,6 +20,7 @@ relations:
 - decomposes: epic:zero-open-issues-2026-11
 - depends_on: story:ess-37-and-conformance-64-65-are-open-for-the-epics-constructs
 - depends_on: story:navigation-reaches-any-depth-in-view-filters-and-guards
+- serves: vision:O2
 scope:
 - confidence: cited
   path: crates/specify/ess-domain/src/command/precedence.rs
@@ -31,7 +32,10 @@ scope:
   path: docs/design/language-grids.md
 - confidence: inferred
   path: website/docs/reference/predicates.md
-revision: 11
+revision: 13
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:49:15Z", actor: "human:timo", revision: 12, decided_on: {"recorded":{"review_outcome":2}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:49:19Z", actor: "human:timo", revision: 13, decided_on: {"recorded":{"review_outcome":2}}}
 ---
 ## Need
 

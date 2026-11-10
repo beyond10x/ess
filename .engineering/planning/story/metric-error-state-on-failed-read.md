@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:metric-error-state-on-failed-read
 kind: story
-status: draft
+status: active
 title: A view answered with an error renders as an error state in a metric, never as 0
 tags:
 - defect
@@ -10,10 +10,14 @@ tags:
 - zero-open-issues
 relations:
 - decomposes: epic:zero-open-issues-2026-11
+- serves: vision:O2
 scope:
 - confidence: cited
   path: crates/ui/ess-ui-react/templates/runtime/composites/metric.tsx.tmpl
-revision: 2
+revision: 4
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:45:04Z", actor: "human:timo", revision: 3}
+- {from: "proposed", to: "active", at: "2026-11-10T00:45:05Z", actor: "human:timo", revision: 4}
 ---
 
 Every claim is marked verified (seen in a run or in the file named) or inferred.

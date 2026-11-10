@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:check-history-reads-identity-from-response-field
 kind: story
-status: draft
+status: active
 title: check-history determines a record identity taken from a response field
 tags:
 - adopter-report
@@ -28,7 +28,10 @@ scope:
   path: crates/verify/ess-conformance/src/linearize.rs
 - confidence: inferred
   path: crates/verify/ess-conformance/tests/linearizability.rs
-revision: 6
+revision: 8
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:43:13Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:43:14Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Outcome
 

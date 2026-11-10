@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-page-shows-its-title-total-badge-and-live-status-and-marks-the-current-page
 kind: story
-status: draft
+status: active
 title: A page shows its title, a counted total, a badge and its live status, and marks the current page
 tags:
 - zero-open-issues
@@ -11,6 +11,7 @@ refs:
   reference: beyond10x/ess#723
 relations:
 - decomposes: epic:zero-open-issues-2026-11
+- serves: vision:O2
 scope:
 - confidence: cited
   path: crates/ui/ess-ui-react/src/emit.rs
@@ -32,7 +33,10 @@ scope:
   path: schemas/ui/ess-ui.schema.yaml
 - confidence: inferred
   path: website/docs/reference/ess-ui.md
-revision: 4
+revision: 6
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:41:00Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:41:02Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Need
 

@@ -41,7 +41,7 @@ scope:
   path: docs/design/language-grids.md
 - confidence: inferred
   path: website/docs/reference/predicates.md
-revision: 14
+revision: 15
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-21T22:07:59Z", actor: "human:timo", revision: 2}
 - {from: "proposed", to: "active", at: "2026-10-21T22:07:59Z", actor: "human:timo", revision: 3}
@@ -77,7 +77,7 @@ exit 1
 
 ## Acceptance
 
-At `ess/37` (G2's next source format, opened by
+At `ess/37` (`ess/37`, opened by
 story:ess-37-and-conformance-64-65-are-open-for-the-epics-constructs):
 
 - all three views above validate (`ess specify validate`, exit 0); a path through a reference the
@@ -161,3 +161,4 @@ depth in view fields, view filters and view expressions".
 ## Source
 
 github:beyond10x/ess#564
+

@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:an-arrangement-refusal-names-the-cause-of-every-creator-tried
 kind: story
-status: draft
+status: active
 title: An arrangement refusal names the cause of every creator tried
 tags:
 - zero-open-issues
@@ -11,12 +11,16 @@ refs:
   reference: beyond10x/ess#728
 relations:
 - decomposes: epic:zero-open-issues-2026-11
+- serves: vision:O2
 scope:
 - confidence: cited
   path: crates/verify/ess-conformance/src/synthesize.rs
 - confidence: inferred
   path: crates/verify/ess-conformance/tests/arrangement_refusal_names_every_creator.rs
-revision: 4
+revision: 6
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:38:44Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:38:45Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Need
 

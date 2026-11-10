@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-shorthand-struct-binary64-location-resolves
 kind: story
-status: draft
+status: active
 title: A shorthand struct's Binary64 locations resolve in the published schema
 tags:
 - defect
@@ -20,7 +20,10 @@ scope:
   path: crates/generate/ess-gen/tests/adversary_d350_u1_pass1.rs
 - confidence: inferred
   path: crates/generate/ess-gen/tests/model_types.rs
-revision: 6
+revision: 8
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:41:48Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:41:49Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Problem
 

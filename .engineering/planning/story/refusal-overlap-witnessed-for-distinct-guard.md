@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:refusal-overlap-witnessed-for-distinct-guard
 kind: story
-status: draft
+status: active
 title: Two input refusals are witnessed together when one guard is distinct over a list
 tags:
 - adopter-report
@@ -20,7 +20,10 @@ scope:
   path: crates/verify/ess-conformance/src/witness.rs
 - confidence: cited
   path: crates/verify/ess-conformance/tests/refusal_pair_overlap.rs
-revision: 5
+revision: 7
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:45:41Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:45:42Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Outcome
 

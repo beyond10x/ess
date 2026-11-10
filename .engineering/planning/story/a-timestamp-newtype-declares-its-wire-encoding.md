@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-timestamp-newtype-declares-its-wire-encoding
 kind: story
-status: draft
+status: active
 title: A Timestamp newtype declares its wire encoding (unix_seconds, unix_millis)
 tags:
 - zero-open-issues
@@ -12,6 +12,7 @@ refs:
 relations:
 - decomposes: epic:zero-open-issues-2026-11
 - depends_on: story:ess-37-and-conformance-64-65-are-open-for-the-epics-constructs
+- serves: vision:O2
 scope:
 - confidence: inferred
   path: crates/specify/ess-compiler/src/ir.rs
@@ -27,7 +28,10 @@ scope:
   path: crates/verify/ess-diff/src/change.rs
 - confidence: inferred
   path: docs/design/value-wire-encodings.md
-revision: 5
+revision: 8
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:42:13Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:42:14Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Need
 
@@ -111,7 +115,7 @@ confidence: medium
    `story:synthesis-sends-whole-unit-instants-of-an-encoded-timestamp`.
 5. **Second adopter.** A webhook event whose `occurred_at` is Unix milliseconds
    (`unix_millis`), compared in a binding condition with a stored instant.
-6. **Cost.** The next open source format; one key on newtypes, two values; no new diagnostic code;
+6. **Cost.** `ess/37`; one key on newtypes, two values; no new diagnostic code;
    an IR field omitted when absent; a diff kind if the design page needs one (compatibility:
    breaking for every reader of the type's wire). Generated code and projections change only for a
    model declaring it.
@@ -136,3 +140,4 @@ is declined as local policy.
 ## Source
 
 github:beyond10x/ess#758
+

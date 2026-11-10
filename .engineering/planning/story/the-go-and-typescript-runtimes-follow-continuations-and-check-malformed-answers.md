@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:the-go-and-typescript-runtimes-follow-continuations-and-check-malformed-answers
 kind: story
-status: draft
+status: active
 title: The Go and TypeScript runtimes follow continuations and check malformed answers
 tags:
 - zero-open-issues
@@ -13,6 +13,7 @@ relations:
 - decomposes: epic:zero-open-issues-2026-11
 - depends_on: story:conformance-follows-a-views-continuation-to-its-last-page
 - depends_on: story:a-value-outside-its-declared-type-is-answered-malformed
+- serves: vision:O2
 scope:
 - confidence: inferred
   path: crates/verify/ess-conformance/src/go/mod.rs
@@ -26,7 +27,10 @@ scope:
   path: crates/verify/ess-conformance/src/ts/runtime.ts
 - confidence: inferred
   path: crates/verify/ess-conformance/tests/go_runtime.rs
-revision: 4
+revision: 6
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:47:29Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:47:31Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Need
 

@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:related-rows-keep-distinct-names-and-named-refusals
 kind: story
-status: draft
+status: active
 title: Related rows keep distinct names, existence refusals name their guard, and a references-only relation is arranged
 summary: 'Follow-up to the U6 related-guard stories: a suite-level no-double-capture check after per-row distinctions, the existence-outcome refusal test, and TagMachine on a references-only relation (0.70.0).'
 tags:
@@ -34,7 +34,10 @@ scope:
   path: crates/verify/ess-conformance/tests/references_only_relation_arranged.rs
 - confidence: inferred
   path: crates/verify/ess-conformance/tests/unknown_site_on_existing_subject.rs
-revision: 9
+revision: 11
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:45:43Z", actor: "human:timo", revision: 10, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:45:45Z", actor: "human:timo", revision: 11, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Need
 

@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:caller-attributes-walk-every-caller-read-of-a-command
 kind: story
-status: draft
+status: active
 title: caller_attributes walks every caller read of a command
 summary: ess-gen http::caller_attributes misses caller reads in an external branch's when_subject and in an error payload (beyond10x/ess#740)
 tags:
@@ -24,7 +24,10 @@ scope:
   path: crates/specify/ess-compiler/src/expression.rs
 - confidence: cited
   path: docs/design/language-grids.md
-revision: 5
+revision: 7
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:43:11Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:43:12Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Need
 

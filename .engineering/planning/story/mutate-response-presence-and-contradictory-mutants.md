@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:mutate-response-presence-and-contradictory-mutants
 kind: story
-status: draft
+status: active
 title: mutate gains a response-presence class and scores contradictory mutants equivalent
 tags:
 - adopter-report
@@ -24,7 +24,10 @@ scope:
   path: crates/verify/ess-conformance/tests/mutation_response_presence.rs
 - confidence: inferred
   path: website/docs/reference/formats.md
-revision: 9
+revision: 11
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:45:10Z", actor: "human:timo", revision: 10, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:45:11Z", actor: "human:timo", revision: 11, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Outcome
 

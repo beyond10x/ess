@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:an-event-channel-may-be-bound-to-server-sent-events
 kind: story
-status: draft
+status: active
 title: An HTTP route streams an exchange as server-sent events
 summary: SSE is refused as a broker protocol (a2a wave 1, G1); blocked on the transport and IDL compile-targets ADR.
 tags:
@@ -15,7 +15,6 @@ refs:
   reference: beyond10x/ess#757
 relations:
 - serves: vision:O2
-- depends_on: story:a-response-stream-follows-one-row-until-a-terminal-state
 - informed_by: architecture-decision-record:transport-and-idl-compile-targets
 - informed_by: architecture-decision-record:messages-are-exchanged-independent-of-the-wire
 - decomposes: epic:messages-are-exchanged-independent-of-the-wire
@@ -35,7 +34,10 @@ scope:
   path: crates/specify/ess-http/tests/stream.rs
 - confidence: cited
   path: docs/design/http-presentation-binding.md
-revision: 7
+revision: 9
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:39:12Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:39:13Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 **Blocked on the exchange layer: `story:an-exchange-is-declared-in-the-specification` and
 `story:asyncapi-and-openapi-project-an-exchange` land first.** The relation to

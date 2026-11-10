@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:synthesized-and-authored-view-reads-carry-the-rows-shape
 kind: story
-status: draft
+status: active
 title: Synthesized and authored view reads carry the row's shape
 tags:
 - zero-open-issues
@@ -15,6 +15,7 @@ relations:
 - depends_on: story:the-go-runtime-checks-a-view-rows-shape
 - depends_on: story:the-typescript-runtime-checks-a-view-rows-shape
 - depends_on: story:ess-37-and-conformance-64-65-are-open-for-the-epics-constructs
+- serves: vision:O2
 scope:
 - confidence: cited
   path: crates/verify/ess-conformance/src/authored.rs
@@ -34,7 +35,10 @@ scope:
   path: suites/generated/oracle-fixture/suite.json
 - confidence: inferred
   path: website/data/billing.presentation.json
-revision: 4
+revision: 6
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:46:55Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:46:56Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Need
 

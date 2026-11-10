@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:an-absent-optional-under-false-and-unknown-is-arranged
 kind: story
-status: draft
+status: active
 title: An absent Optional under false-and-unknown is arranged
 summary: Arrangement cannot decide false and unknown over an absent Optional input, and its refusal blames an unrelated creating command (beyond10x/ess#728)
 tags:
@@ -26,7 +26,10 @@ scope:
   path: crates/verify/ess-conformance/src/synthesize/subject_fact.rs
 - confidence: inferred
   path: crates/verify/ess-conformance/tests/arranged_row_beside_absent_optional_guard.rs
-revision: 6
+revision: 8
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:38:29Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:38:30Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Need
 

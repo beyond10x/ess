@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-form-groups-own-on-change-saves-in-every-target
 kind: story
-status: draft
+status: active
 title: A form group's own on_change saves in every target
 summary: 'The terminal ignores a group''s save: on_change, and the exported browser spec clicks a submit an on_change form lacks (0.88.0 adversary pass, out of scope)'
 tags:
@@ -26,7 +26,10 @@ scope:
   path: crates/ui/ess-ui-test/tests/journey_controls.rs
 - confidence: cited
   path: crates/ui/ess-ui-tui/src/app.rs
-revision: 9
+revision: 11
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:33:56Z", actor: "human:timo", revision: 10, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:33:58Z", actor: "human:timo", revision: 11, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Need
 

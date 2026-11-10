@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-guard-comparing-a-stored-list-with-an-input-list-is-arranged
 kind: story
-status: draft
+status: active
 title: A guard comparing a stored list with an input list is arranged
 summary: A when_subject predicate relating a stored list to an input list is refused ESS-SYNTH-003 after one candidate (beyond10x/ess#734)
 tags:
@@ -20,7 +20,10 @@ scope:
   path: crates/verify/ess-conformance/src/synthesize/subject_fact.rs
 - confidence: inferred
   path: crates/verify/ess-conformance/tests/subject_field_in_input_list.rs
-revision: 7
+revision: 9
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:34:12Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"review_outcome":2}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:34:13Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"review_outcome":2}}}
 ---
 ## Need
 

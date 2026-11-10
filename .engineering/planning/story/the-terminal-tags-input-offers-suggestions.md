@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:the-terminal-tags-input-offers-suggestions
 kind: story
-status: draft
+status: active
 title: The terminal tags input offers the suggestions of its read, as React does
 summary: suggests is drawn by React from 0.89.0 and ignored by the terminal
 tags:
@@ -24,7 +24,10 @@ scope:
   path: crates/ui/ess-ui-tui/src/app.rs
 - confidence: inferred
   path: crates/ui/ess-ui-tui/src/view.rs
-revision: 5
+revision: 7
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:48:34Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:48:35Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Need
 

@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:an-unknown-identity-beside-a-related-guard-is-synthesized
 kind: story
-status: draft
+status: active
 title: An unknown identity beside a stored-field pair is synthesized
 summary: ESS-SYNTH-008 refuses an unknown_instance outcome that reads no related row (#554 triage)
 tags:
@@ -23,7 +23,10 @@ scope:
   path: crates/verify/ess-conformance/src/synthesize/subject_fact.rs
 - confidence: cited
   path: crates/verify/ess-conformance/tests/unknown_instance_not_found.rs
-revision: 7
+revision: 9
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:40:56Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:40:57Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Need
 

@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:bound-response-root-follows-the-published-result
 kind: story
-status: draft
+status: active
 title: Under --http a command's response root follows the published Result, or is refused by name
 tags:
 - defect
@@ -20,7 +20,10 @@ scope:
   path: crates/generate/ess-gen/src/openapi.rs
 - confidence: inferred
   path: crates/generate/ess-gen/tests/bound_command_input_roots.rs
-revision: 6
+revision: 8
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:43:06Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:43:07Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Finding
 

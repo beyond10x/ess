@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:an-error-swap-site-without-an-alternative-error-is-listed
 kind: story
-status: draft
+status: active
 title: An error-swap site without an alternative error is listed
 summary: A payload-less refusal in a single-error domain is skipped silently while its payload twin is listed (W2 MUT1 review finding, pre-existing, backlog)
 tags:
@@ -15,12 +15,16 @@ tags:
 relations:
 - informed_by: review-result:adversary-w2-mut1-pass-1
 - decomposes: epic:zero-open-issues-2026-11
+- serves: vision:O2
 scope:
 - confidence: cited
   path: crates/verify/ess-conformance/src/mutate.rs
 - confidence: cited
   path: crates/verify/ess-conformance/tests/adversary_w2_mut1_adversary.rs
-revision: 5
+revision: 8
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:39:05Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:39:07Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Need
 
@@ -91,4 +95,5 @@ Shared surfaces: moves none.
 
 ## Schedule
 
-Backlog: not waved; considered only after every predefined wave is released.
+Waved under epic:zero-open-issues-2026-11 (accepted 2026-11-10).
+

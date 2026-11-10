@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:event-client-publishes-over-core-nats
 kind: story
-status: draft
+status: active
 title: A core-NATS broker gets a core-NATS publisher adapter
 tags:
 - adopter-report
@@ -28,7 +28,10 @@ scope:
   path: crates/generate/ess-publisher/tests/generated.rs
 - confidence: cited
   path: crates/specify/ess-transport/src/lib.rs
-revision: 8
+revision: 10
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:43:57Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:43:59Z", actor: "human:timo", revision: 10, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Outcome
 

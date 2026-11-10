@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:an-enum-value-starting-with-a-digit-keeps-its-name
 kind: story
-status: draft
+status: active
 title: An enum value that starts with a digit keeps its name in Rust and has a TypeScript value object
 summary: 'spindle wave 12: 2xx..5xx become V0..V3 and get no TS value object (ess 0.88.0)'
 tags:
@@ -25,7 +25,10 @@ scope:
   path: crates/generate/schema-contract/src/realize/ts.rs
 - confidence: inferred
   path: website/docs/guides/generate-artifacts.md
-revision: 5
+revision: 7
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:39:02Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:39:04Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Need
 

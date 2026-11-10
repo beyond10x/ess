@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:synthesis-and-the-interpreter-decide-a-guard-on-a-union-variant
 kind: story
-status: draft
+status: active
 title: Synthesis and the interpreter decide a guard on a union variant
 tags:
 - zero-open-issues
@@ -14,6 +14,7 @@ refs:
 relations:
 - decomposes: epic:zero-open-issues-2026-11
 - depends_on: story:a-guard-reads-a-union-tag-and-a-union-names-its-content-key
+- serves: vision:O2
 scope:
 - confidence: inferred
   path: crates/specify/ess-primitives/src/facts.rs
@@ -27,7 +28,10 @@ scope:
   path: crates/verify/ess-conformance/src/witness.rs
 - confidence: inferred
   path: crates/verify/ess-conformance/tests/union_variant_guards.rs
-revision: 4
+revision: 6
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:46:21Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:46:23Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Need
 

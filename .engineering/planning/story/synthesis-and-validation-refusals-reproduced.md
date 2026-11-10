@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:synthesis-and-validation-refusals-reproduced
 kind: story
-status: draft
+status: active
 title: Four reported synthesis and validation refusals are reproduced and answered
 tags:
 - adopter-report
@@ -20,7 +20,10 @@ scope:
   path: website/docs/guides/verify/mutation-audit.md
 - confidence: cited
   path: website/docs/reference/diagnostics.md
-revision: 8
+revision: 10
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:46:26Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:46:27Z", actor: "human:timo", revision: 10, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Outcome
 

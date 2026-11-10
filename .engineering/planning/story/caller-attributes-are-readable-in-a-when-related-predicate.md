@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:caller-attributes-are-readable-in-a-when-related-predicate
 kind: story
-status: draft
+status: active
 title: Caller attributes are readable in every row-reading guard (related predicate, all:, row-set where/forall, set-effect where)
 summary: 'Adopter report G1: A when_related predicate cannot read a caller attribute (ess#636).'
 tags:
@@ -37,7 +37,10 @@ scope:
   path: docs/design/language-grids.md
 - confidence: inferred
   path: website/docs/guides/specify/values-and-views.md
-revision: 9
+revision: 12
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:43:08Z", actor: "human:timo", revision: 11, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:43:09Z", actor: "human:timo", revision: 12, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Need
 
@@ -154,10 +157,11 @@ confidence: medium
 accept, redesigned: the requester's spelling is admitted as written, and the decision opens the
 whole caller column of grid R for the positions that read rows (related-row predicate, `all:`
 elements, row-set `where:`/`forall:`, set-effect `where:`), with the `==`/`!=`-against-a-field rule
-of `ess/16`, under the next source format. Synthesis and the targets follow in
+of `ess/16`, at `ess/37`. Synthesis and the targets follow in
 `story:a-caller-read-in-a-row-reading-guard-is-witnessed-by-two-callers` and
 `story:generated-targets-answer-a-caller-read-in-a-row-reading-guard`.
 
 ## Source
 
 github:beyond10x/ess#636
+

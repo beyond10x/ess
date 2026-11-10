@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-present-optional-element-is-appended
 kind: story
-status: draft
+status: active
 title: A suite appends a present Optional element and expects its value
 tags:
 - defect
@@ -19,7 +19,10 @@ scope:
   path: crates/verify/ess-conformance/src/synthesize.rs
 - confidence: cited
   path: crates/verify/ess-conformance/tests/append_set.rs
-revision: 8
+revision: 10
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:41:08Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:41:09Z", actor: "human:timo", revision: 10, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Finding
 

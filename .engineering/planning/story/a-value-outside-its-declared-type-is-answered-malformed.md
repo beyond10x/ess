@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-value-outside-its-declared-type-is-answered-malformed
 kind: story
-status: draft
+status: active
 title: A read or command sent a value outside its declared type is answered malformed
 tags:
 - zero-open-issues
@@ -14,6 +14,7 @@ relations:
 - depends_on: story:a-view-answer-takes-its-protocols-list-shape
 - depends_on: story:ess-37-and-conformance-64-65-are-open-for-the-epics-constructs
 - depends_on: story:conformance-follows-a-views-continuation-to-its-last-page
+- serves: vision:O2
 scope:
 - confidence: inferred
   path: crates/verify/ess-conformance/src/interpret/execute.rs
@@ -33,7 +34,10 @@ scope:
   path: docs/design/malformed-requests.md
 - confidence: inferred
   path: website/docs/reference/formats.md
-revision: 5
+revision: 7
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:42:26Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:42:27Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Need
 

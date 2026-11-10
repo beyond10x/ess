@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:an-invariant-compares-a-union-field-with-its-variant-labels
 kind: story
-status: draft
+status: active
 title: An invariant compares a union field with its variant labels
 tags:
 - zero-open-issues
@@ -16,6 +16,7 @@ relations:
 - depends_on: story:ess-37-and-conformance-64-65-are-open-for-the-epics-constructs
 - depends_on: story:synthesis-and-the-interpreter-decide-a-guard-on-a-union-variant
 - depends_on: story:generated-targets-decide-a-guard-on-a-union-variant
+- serves: vision:O2
 scope:
 - confidence: cited
   path: crates/generate/ess-entity-runtime/src/subset.rs
@@ -37,7 +38,10 @@ scope:
   path: crates/verify/ess-conformance/src/interpret/facts.rs
 - confidence: inferred
   path: crates/verify/ess-conformance/tests/union_variant_invariants.rs
-revision: 7
+revision: 9
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:40:13Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"review_outcome":2}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:40:15Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"review_outcome":2}}}
 ---
 ## Need
 

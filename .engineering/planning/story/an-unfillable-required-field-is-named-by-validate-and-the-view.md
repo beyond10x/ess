@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:an-unfillable-required-field-is-named-by-validate-and-the-view
 kind: story
-status: draft
+status: active
 title: The interpreted view names the required field it cannot fill
 summary: 71 unsupported scenarios name no view or field when a required field is never set (adopter item 5, beyond10x/a2a); defect, 0.69.0.
 tags:
@@ -22,7 +22,10 @@ scope:
   path: crates/verify/ess-conformance/src/target.rs
 - confidence: cited
   path: crates/verify/ess-conformance/tests/interpreted_views.rs
-revision: 13
+revision: 15
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:40:50Z", actor: "human:timo", revision: 14, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:40:51Z", actor: "human:timo", revision: 15, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Need
 

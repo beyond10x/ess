@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:terminal-header-toggles-show-their-state
 kind: story
-status: draft
+status: active
 title: Terminal header toggles show their state, and toggle row paths are checked
 summary: The terminal draws header toggles without a mark, and checked:/bind row paths are not checked against the view (UI-adopter wave 1 U2 review note, pre-existing, backlog)
 tags:
@@ -15,6 +15,7 @@ tags:
 relations:
 - informed_by: review-result:w086-u2-adversary-pass-1
 - decomposes: epic:zero-open-issues-2026-11
+- serves: vision:O2
 scope:
 - confidence: cited
   path: crates/ui/ess-ui-check/src/names.rs
@@ -24,7 +25,10 @@ scope:
   path: crates/ui/ess-ui-test/tests/
 - confidence: cited
   path: crates/ui/ess-ui-tui/src/view.rs
-revision: 5
+revision: 8
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:46:58Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:47:00Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Need
 
@@ -73,4 +77,5 @@ confidence: high
 
 ## Schedule
 
-Backlog: not waved; considered only after every predefined wave is released.
+Waved under epic:zero-open-issues-2026-11 (accepted 2026-11-10).
+

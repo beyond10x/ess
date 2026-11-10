@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-chart-names-its-axes-and-formats-its-ticks
 kind: story
-status: draft
+status: active
 title: 'A chart''s axes take the field shape: titled, ticks in their format'
 tags:
 - zero-open-issues
@@ -12,6 +12,7 @@ refs:
 relations:
 - decomposes: epic:zero-open-issues-2026-11
 - depends_on: story:a-declared-field-format-renders-or-is-refused
+- serves: vision:O2
 scope:
 - confidence: inferred
   path: crates/ui/ess-ui-react/src/emit.rs
@@ -27,7 +28,10 @@ scope:
   path: schemas/ui/ess-ui.schema.yaml
 - confidence: inferred
   path: website/docs/reference/ess-ui.md
-revision: 4
+revision: 6
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:37:50Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:37:51Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Need
 

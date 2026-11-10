@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-parent-tenant-guard-holds-across-every-related-row-and-absent-field
 kind: story
-status: draft
+status: active
 title: A parent tenant guard holds across every related row and an absent field
 summary: 'U13 adversary: a second related row guarded on tenant still starves found; an absent Optional tenant splits synthesis and interpreter'
 tags:
@@ -13,6 +13,7 @@ tags:
 relations:
 - informed_by: story:a-guard-on-the-input-addressed-parent-row-holds-on-every-command-of-its-children
 - decomposes: epic:zero-open-issues-2026-11
+- serves: vision:O2
 scope:
 - confidence: inferred
   path: crates/verify/ess-conformance/src/synthesize.rs
@@ -26,7 +27,10 @@ scope:
   path: crates/verify/ess-conformance/src/synthesize/subject_fact.rs
 - confidence: cited
   path: crates/verify/ess-conformance/tests/parent_row_guard.rs
-revision: 13
+revision: 16
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:41:03Z", actor: "human:timo", revision: 15, decided_on: {"recorded":{"review_outcome":2}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:41:04Z", actor: "human:timo", revision: 16, decided_on: {"recorded":{"review_outcome":2}}}
 ---
 ## Outcome
 
@@ -82,9 +86,10 @@ is red on the base before the fix.
 - Case 1, with the parent guard: `GetChild/found` and `DeleteChild/deleted` are synthesized, each
   related row the child's creator guards on the input (the parent and the folder) is created under
   that input's tenant, and the interpreted target passes both scenarios.
-- Case 1, without the parent guard: every synthesized scenario passes on `--target interpreted`
-  (0 failed, 0 unsupported); a scenario that cannot be arranged is refused by name instead of
-  written.
+- Case 1, without the parent guard: `CreateChild/created`, `GetChild/found` and
+  `GetChild/child-not-found` are synthesized, each arranging the folder under the tenant the
+  arranged `CreateChild` sends; the synthesis records no refusal for any of the three; and the
+  interpreted run of the whole suite reports 0 failed and 0 unsupported.
 - Case 2, with `predicate: tenant != input.tenant` on both tenant guards: the `DeleteChild/deleted`
   witness creates the parent with the tenant it sends, and passes on `--target interpreted`
   (the run reports 0 failed and 0 unsupported).
@@ -112,6 +117,11 @@ Shared surfaces: proposes its `CHANGELOG.md` sentence; re-pins a suite-bytes row
 committed model's tenant-guarded witness moves.
 
 ## Decisions
+
+- Case 1 without the parent guard arranges `GetChild/found` rather than refusing it: the fix
+  that creates every related row the creator guards on the input under that input's tenant
+  applies to the folder whether or not the parent guard is present, so the folder no longer
+  answers `folder-other-tenant` and nothing is left unarrangeable.
 
 - Case 2's `deleted` witness passes rather than being refused: the tenant binding case 1 needs also
   creates the parent with the sent tenant, which decides the guard False with both facts present,

@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:generated-codecs-read-and-write-a-timestamp-in-its-declared-encoding
 kind: story
-status: draft
+status: active
 title: Generated codecs read and write a Timestamp in its declared encoding
 tags:
 - zero-open-issues
@@ -13,6 +13,7 @@ relations:
 - decomposes: epic:zero-open-issues-2026-11
 - depends_on: story:a-timestamp-newtype-declares-its-wire-encoding
 - depends_on: story:projections-write-a-timestamp-in-its-declared-encoding
+- serves: vision:O2
 scope:
 - confidence: inferred
   path: crates/generate/ess-entity-runtime/src/subset.rs
@@ -28,7 +29,10 @@ scope:
   path: crates/generate/ess-synth/tests/timestamp_encoding.rs
 - confidence: inferred
   path: crates/generate/schema-contract/src/realize.rs
-revision: 4
+revision: 6
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:44:14Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:44:15Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Need
 

@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-list-literal-guard-is-witnessed-beside-other-inputs-and-negation
 kind: story
-status: draft
+status: active
 title: A list-literal guard is witnessed across lists, beside other leaves and under negation
 summary: 'Three U4 adversary cases: two lists, a refuting leaf beside the literals, not exists unchecked (0.90.0; from-finding)'
 tags:
@@ -23,7 +23,10 @@ scope:
   path: crates/verify/ess-conformance/src/witness.rs
 - confidence: cited
   path: crates/verify/ess-conformance/tests/adversary_u4_list_literals.rs
-revision: 6
+revision: 8
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:38:20Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:38:21Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Need
 

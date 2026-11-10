@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:conformance-asserts-a-nested-view-field-member-by-member
 kind: story
-status: draft
+status: active
 title: Conformance asserts a nested view field member by member
 tags:
 - zero-open-issues
@@ -12,6 +12,7 @@ refs:
 relations:
 - decomposes: epic:zero-open-issues-2026-11
 - depends_on: story:a-view-field-nests-source-fields-under-a-struct-member
+- serves: vision:O2
 scope:
 - confidence: cited
   path: crates/verify/ess-conformance/src/interpret/views.rs
@@ -19,7 +20,10 @@ scope:
   path: crates/verify/ess-conformance/src/synthesize.rs
 - confidence: inferred
   path: crates/verify/ess-conformance/tests/view_nested_field.rs
-revision: 4
+revision: 6
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:43:20Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:43:21Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Need
 

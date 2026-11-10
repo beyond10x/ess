@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:required-config-slot-is-a-required-helm-value
 kind: story
-status: draft
+status: active
 title: A projected chart refuses to render without its required settings and image
 tags:
 - defect
@@ -21,7 +21,10 @@ scope:
   path: crates/generate/ess-deployment/tests/workload_kinds/mod.rs
 - confidence: inferred
   path: website/docs/concepts/component-delivery.md
-revision: 8
+revision: 10
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:45:48Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:45:50Z", actor: "human:timo", revision: 10, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Outcome
 

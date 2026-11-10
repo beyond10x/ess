@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-related-selector-compares-a-row-field-with-a-subject-field
 kind: story
-status: draft
+status: active
 title: A related selector that compares a row field with a subject field gets a witness
 tags:
 - defect
@@ -17,7 +17,10 @@ scope:
   path: crates/verify/ess-conformance/src/synthesize/row_set.rs
 - confidence: inferred
   path: crates/verify/ess-conformance/tests/row_sets.rs
-revision: 6
+revision: 8
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:41:22Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:41:23Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Need
 

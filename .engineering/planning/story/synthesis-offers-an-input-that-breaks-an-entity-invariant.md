@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:synthesis-offers-an-input-that-breaks-an-entity-invariant
 kind: story
-status: draft
+status: active
 title: Synthesis names the input that breaks an entity invariant when the model declares no outcome for it
 summary: Synthesis writes invariant scenarios only with inputs inside the invariant, so an implementation that never checks invariants passes (beyond10x/ess#738)
 tags:
@@ -37,7 +37,10 @@ scope:
   path: website/docs/reference/diagnostics.md
 - confidence: cited
   path: website/docs/reference/formats.md
-revision: 6
+revision: 8
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:46:32Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:46:34Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Need
 

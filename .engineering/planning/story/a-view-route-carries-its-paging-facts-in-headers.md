@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-view-route-carries-its-paging-facts-in-headers
 kind: story
-status: draft
+status: active
 title: A view route carries its paging facts in headers, and OpenAPI declares them
 tags:
 - zero-open-issues
@@ -12,6 +12,7 @@ refs:
 relations:
 - decomposes: epic:zero-open-issues-2026-11
 - depends_on: story:a-view-answer-takes-its-protocols-list-shape
+- serves: vision:O2
 scope:
 - confidence: inferred
   path: crates/generate/ess-gen/src/docs.rs
@@ -27,7 +28,10 @@ scope:
   path: docs/design/http-presentation-binding.md
 - confidence: inferred
   path: website/docs/reference/formats.md
-revision: 4
+revision: 6
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:42:48Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:42:49Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Need
 

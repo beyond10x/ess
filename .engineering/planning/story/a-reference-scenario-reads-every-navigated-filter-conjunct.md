@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-reference-scenario-reads-every-navigated-filter-conjunct
 kind: story
-status: draft
+status: active
 title: A reference scenario reads every navigated conjunct of a view filter
 tags:
 - zero-open-issues
@@ -11,6 +11,7 @@ refs:
   reference: beyond10x/ess#564
 relations:
 - decomposes: epic:zero-open-issues-2026-11
+- serves: vision:O2
 scope:
 - confidence: cited
   path: crates/verify/ess-conformance/src/synthesize/view_reference.rs
@@ -18,7 +19,10 @@ scope:
   path: crates/verify/ess-conformance/tests/fixtures/
 - confidence: cited
   path: crates/verify/ess-conformance/tests/row_queries_navigate_a_reference.rs
-revision: 4
+revision: 6
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:41:13Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:41:14Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Need
 

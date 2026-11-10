@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:the-sequential-and-concurrent-explorers-exclude-alike
 kind: story
-status: draft
+status: active
 title: The sequential and concurrent explorers exclude alike
 tags:
 - defect
@@ -21,13 +21,19 @@ scope:
   path: crates/verify/ess-conformance/tests/explore.rs
 - confidence: inferred
   path: crates/verify/ess-conformance/tests/explore_stored_rows.rs
-revision: 8
+revision: 11
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:48:11Z", actor: "human:timo", revision: 10, decided_on: {"recorded":{"review_outcome":2}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:48:12Z", actor: "human:timo", revision: 11, decided_on: {"recorded":{"review_outcome":2}}}
 ---
 ## Outcome
 
 The generated sequential and concurrent explorers exclude a command for the same reason, and report
-the same first reason, except where the concurrent design needs a different answer and names it
-(`preserves`; a delete, whose deleted row a workload drawn before any call runs can still name).
+the same first reason, except where the two modes are judged differently and the runtime source
+names why: the concurrent explorer alone excludes `preserves` and `deletes` on a supplied subject
+(a workload drawn before any call runs can still name the row), and the sequential explorer alone
+excludes what its embedded model does not apply (`affects:`, `instances:`, `replays`, a newtype
+with invariants or an alphabet).
 Measured over the 39 explorer fixtures at 0.60.0, about 25 commands differ: the concurrent
 explorer excludes every condition read from the stored row; only the sequential one excludes "no
 actor may invoke it", `affects:` and `replays`; and the two name a different first reason for the
@@ -61,9 +67,15 @@ exclusion lists sees two first reasons for one command.
 - `cargo test -p ess-conformance --locked --test explore` passes
   `sequential_and_concurrent_explorers_exclude_alike`: for every fixture model the explorers
   explore, in Go and in TypeScript, the sequential and the concurrent explorer report the same
-  excluded commands with the same first reason, except the differences a list in the test names,
-  each with its reason in the runtime source (at least `preserves` and `deletes` on a supplied
-  subject).
+  excluded commands with the same first reason, apart from exactly these six kinds of difference,
+  and the test fails on a difference of any other kind:
+  - excluded only when concurrent: an outcome that `preserves` its subject from `supplied`; an
+    outcome that `deletes` its subject from `supplied`;
+  - excluded only when sequential: an outcome with `affects:`; an outcome with `instances:`; an
+    outcome with `replays`; an input whose newtype has invariants or an alphabet.
+- In that test, a command with a stored-row condition (`existing_instance` or a row kind) is in
+  neither mode's exclusion list, and a command no actor may invoke is in both, with the reason
+  "no actor may invoke it".
 - The same test asserts that Go and TypeScript give the same exclusion list, reason for reason, for
   each fixture in each mode.
 - `cargo test -p ess-conformance --locked --test explore_stored_rows` passes a case in which a
@@ -81,6 +93,16 @@ exclusion lists sees two first reasons for one command.
   because `check-history` runs every linearization through the interpreter, which decides the
   condition against the row that order holds (`crates/verify/ess-conformance/src/linearize.rs`),
   so the exclusion only loses coverage.
+- The four sequential-only exclusions stay, because the sequential explorer judges each answer by
+  its embedded model, which applies none of `affects:`, `instances:`, `replays` or a constrained
+  newtype, while the concurrent explorer is judged by `check-history` (Problem; the
+  `exploreResolveAs` comment in `explore.go`).
+- The two concurrent-only exclusions stay, because a concurrent workload is drawn before any call
+  runs, so a later call can name a row a `deletes` or `preserves` outcome from `supplied` has
+  already acted on (`exploreEffectRefusal`).
+- "No actor may invoke it" is excluded in both modes rather than drawn in both: no client of either
+  mode can make the call, so the concurrent explorer's empty-actor call covers nothing an adopter
+  sends.
 
 ## Scope
 

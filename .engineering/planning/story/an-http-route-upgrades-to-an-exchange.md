@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:an-http-route-upgrades-to-an-exchange
 kind: story
-status: draft
+status: active
 title: An HTTP route upgrades to an exchange
 summary: 'ess-http upgrade: route key carries the handshake and the 101; size M'
 tags:
@@ -27,7 +27,10 @@ scope:
   path: crates/specify/ess-http/tests/upgrade.rs
 - confidence: cited
   path: docs/design/http-presentation-binding.md
-revision: 5
+revision: 7
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:39:41Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:39:42Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Need
 

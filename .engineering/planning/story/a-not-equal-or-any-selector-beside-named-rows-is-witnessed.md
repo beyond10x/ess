@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-not-equal-or-any-selector-beside-named-rows-is-witnessed
 kind: story
-status: draft
+status: active
 title: A not-equal or any selector beside named rows is witnessed
 tags:
 - defect
@@ -21,7 +21,10 @@ scope:
   path: crates/verify/ess-conformance/src/synthesize/row_set.rs
 - confidence: inferred
   path: crates/verify/ess-conformance/tests/adversary_d368_u4_pass1.rs
-revision: 5
+revision: 8
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:40:41Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":2}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:40:43Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"review_outcome":2}}}
 ---
 ## Finding
 
@@ -69,8 +72,13 @@ The `any:` selector gives the same six refusals.
   can reach with no `Wire` row stored.
 - Each `Connect` branch still refused is refused naming the `source-taken` selector expression
   (`from_port != input.from_port`, or the `any:`), not calling the branch itself a `row set`.
-- The unmodified fixture keeps its 7 scenarios and suite bytes; any committed model under
-  `examples/` or `suites/generated/` whose suite moves is listed in the change's CHANGELOG entry.
+- `cargo test -p ess-conformance --locked --test synthesis_suite_bytes_table` passes with no row of
+  `synthesis-suite-bytes-table.tsv` changed: the unmodified fixture keeps its 7 scenarios and its
+  row, and no other fixture the table lists declares a row-set selector without an equality
+  conjunct (the two variants are inputs of `adversary_d368_u4_pass1.rs`, not table rows).
+- `cargo test -p ess-conformance --locked --test adversary_map_witness_pass1 adv196_every_example_still_synthesizes_to_its_committed_suite`
+  passes with no file under `suites/generated/` changed (no model under `examples/` declares
+  `when_related`).
 
 ## Scope
 
@@ -78,6 +86,7 @@ The `any:` selector gives the same six refusals.
 - cited: crates/specify/ess-domain/tests/fixtures/identity-beside-row-set.yaml
 - inferred: crates/verify/ess-conformance/src/synthesize/related_guard.rs
 - inferred: crates/verify/ess-conformance/tests/adversary_d368_u4_pass1.rs
-- inferred: CHANGELOG.md
 
 confidence: medium
+
+Shared surfaces moved: proposes its `CHANGELOG.md` sentence; no byte-pin row moves.

@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:synthesis-witnesses-a-row-addressed-through-a-struct-input-member
 kind: story
-status: draft
+status: active
 title: Synthesis witnesses a row addressed through a struct input member
 tags:
 - zero-open-issues
@@ -12,6 +12,7 @@ refs:
 relations:
 - decomposes: epic:zero-open-issues-2026-11
 - depends_on: story:via-and-instance-may-name-a-member-of-a-struct-input
+- serves: vision:O2
 scope:
 - confidence: inferred
   path: crates/verify/ess-conformance/src/interpret/execute/existence.rs
@@ -27,7 +28,10 @@ scope:
   path: crates/verify/ess-conformance/src/synthesize/set_effects.rs
 - confidence: inferred
   path: crates/verify/ess-conformance/tests/input_path_addressing.rs
-revision: 3
+revision: 5
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:46:49Z", actor: "human:timo", revision: 4, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:46:50Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Need
 

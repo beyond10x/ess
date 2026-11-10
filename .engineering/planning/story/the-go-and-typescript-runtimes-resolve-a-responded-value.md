@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:the-go-and-typescript-runtimes-resolve-a-responded-value
 kind: story
-status: draft
+status: active
 title: The Go and TypeScript runtimes resolve a Responded value
 tags:
 - zero-open-issues
@@ -13,6 +13,7 @@ relations:
 - decomposes: epic:zero-open-issues-2026-11
 - depends_on: story:synthesis-witnesses-a-guard-over-a-stored-response-value
 - depends_on: story:ess-37-and-conformance-64-65-are-open-for-the-epics-constructs
+- serves: vision:O2
 scope:
 - confidence: inferred
   path: crates/verify/ess-conformance/src/go/mod.rs
@@ -28,7 +29,10 @@ scope:
   path: crates/verify/ess-conformance/tests/stored_response_values_go.rs
 - confidence: inferred
   path: crates/verify/ess-conformance/tests/stored_response_values_typescript.rs
-revision: 4
+revision: 6
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:47:32Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:47:33Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Need
 

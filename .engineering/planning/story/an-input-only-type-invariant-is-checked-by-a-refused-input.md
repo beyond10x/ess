@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:an-input-only-type-invariant-is-checked-by-a-refused-input
 kind: story
-status: draft
+status: active
 title: An invariant on a type only command input reaches is checked through a refused input
 summary: ESS-SYNTH-013 refuses a value invariant on a newtype used only in a stateless command input and asks for a view the domain cannot have; correct refusal, misleading message.
 tags:
@@ -29,7 +29,10 @@ scope:
   path: crates/verify/ess-conformance/tests/value_invariant_reach.rs
 - confidence: inferred
   path: docs/design/wrapped-value-invariant-observations.md
-revision: 9
+revision: 11
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:39:56Z", actor: "human:timo", revision: 10, decided_on: {"recorded":{"review_outcome":2}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:39:57Z", actor: "human:timo", revision: 11, decided_on: {"recorded":{"review_outcome":2}}}
 ---
 ## Problem
 

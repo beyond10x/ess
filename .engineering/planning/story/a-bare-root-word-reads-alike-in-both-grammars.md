@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-bare-root-word-reads-alike-in-both-grammars
 kind: story
-status: draft
+status: active
 title: A bare root word reads alike in the filter and display grammars
 summary: 'A bare draft/selection/section in a toggle bind or checked: is text to the filter grammar and a path to React (UI-adopter wave 1 U2 fix-round-2 note, pre-existing, backlog)'
 tags:
@@ -15,6 +15,7 @@ tags:
 relations:
 - informed_by: review-result:w086-u2-adversary-pass-2
 - decomposes: epic:zero-open-issues-2026-11
+- serves: vision:O2
 scope:
 - confidence: cited
   path: crates/ui/ess-ui-check/src/rules.rs
@@ -26,7 +27,10 @@ scope:
   path: crates/ui/ess-ui-tui/tests/toggle_state.rs
 - confidence: cited
   path: crates/ui/ess-ui/src/filter.rs
-revision: 8
+revision: 11
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:37:40Z", actor: "human:timo", revision: 10, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:37:41Z", actor: "human:timo", revision: 11, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Need
 
@@ -103,4 +107,5 @@ here, and it needs its own story.
 
 ## Schedule
 
-Backlog: not waved; considered only after every predefined wave is released.
+Waved under epic:zero-open-issues-2026-11 (accepted 2026-11-10).
+

@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-row-set-upserts-creating-branch-is-arranged-past-its-row-set-refusals
 kind: story
-status: draft
+status: active
 title: A row-set upsert's creating branch is arranged past its row-set refusals
 tags:
 - zero-open-issues
@@ -12,6 +12,7 @@ refs:
 relations:
 - decomposes: epic:zero-open-issues-2026-11
 - depends_on: story:when-subject-beside-a-row-set-validates-under-the-g2-format
+- serves: vision:O2
 scope:
 - confidence: cited
   path: crates/specify/ess-domain/src/command/precedence.rs
@@ -23,7 +24,10 @@ scope:
   path: crates/verify/ess-conformance/src/synthesize/row_set.rs
 - confidence: inferred
   path: crates/verify/ess-conformance/tests/row_set_upsert_arrangement.rs
-revision: 4
+revision: 6
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:41:39Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"review_outcome":2}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:41:40Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":2}}}
 ---
 ## Need
 

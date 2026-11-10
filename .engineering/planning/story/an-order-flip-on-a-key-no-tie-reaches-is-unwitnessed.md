@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:an-order-flip-on-a-key-no-tie-reaches-is-unwitnessed
 kind: story
-status: draft
+status: active
 title: An order-flip on a key no tie reaches is unwitnessed
 tags:
 - zero-open-issues
@@ -12,6 +12,7 @@ refs:
 relations:
 - decomposes: epic:zero-open-issues-2026-11
 - depends_on: story:a-tie-breaking-sort-key-is-pinned-by-a-synthesized-tie
+- serves: vision:O2
 scope:
 - confidence: cited
   path: crates/edge/ess-cli/src/main.rs
@@ -27,7 +28,10 @@ scope:
   path: website/docs/guides/verify/mutation-audit.md
 - confidence: cited
   path: website/docs/reference/cli.md
-revision: 7
+revision: 9
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:40:34Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"review_outcome":2}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:40:36Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"review_outcome":2}}}
 ---
 ## Need
 

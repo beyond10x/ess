@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:both-renderers-tokenize-whitespace-alike
 kind: story
-status: draft
+status: active
 title: Both renderers tokenize whitespace alike
 summary: React splits expressions on ASCII whitespace only while the filter grammar accepts a no-break space (UI-adopter wave 1 U2 pass-4 note, backlog)
 tags:
@@ -15,6 +15,7 @@ tags:
 relations:
 - informed_by: review-result:w086-u2-adversary-pass-4
 - decomposes: epic:zero-open-issues-2026-11
+- serves: vision:O2
 scope:
 - confidence: cited
   path: crates/ui/ess-ui-react/templates/runtime/expr.ts.tmpl
@@ -24,7 +25,10 @@ scope:
   path: crates/ui/ess-ui-tui/tests/
 - confidence: cited
   path: crates/ui/ess-ui/src/filter.rs
-revision: 5
+revision: 8
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:43:04Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:43:05Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Need
 
@@ -82,4 +86,5 @@ confidence: high
 
 ## Schedule
 
-Backlog: not waved; considered only after every predefined wave is released.
+Waved under epic:zero-open-issues-2026-11 (accepted 2026-11-10).
+

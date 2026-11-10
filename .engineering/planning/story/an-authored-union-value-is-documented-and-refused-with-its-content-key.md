@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:an-authored-union-value-is-documented-and-refused-with-its-content-key
 kind: story
-status: draft
+status: active
 title: An authored union value's form is documented, and its refusals name it
 tags:
 - zero-open-issues
@@ -11,6 +11,7 @@ refs:
   reference: beyond10x/ess#764
 relations:
 - decomposes: epic:zero-open-issues-2026-11
+- serves: vision:O2
 scope:
 - confidence: cited
   path: crates/verify/ess-conformance/src/authored.rs
@@ -20,7 +21,10 @@ scope:
   path: crates/verify/ess-conformance/tests/authored_union_value.rs
 - confidence: cited
   path: website/docs/guides/verify/author-scenarios.md
-revision: 7
+revision: 9
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:38:55Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:38:57Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Need
 

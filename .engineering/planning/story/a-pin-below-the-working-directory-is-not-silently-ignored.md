@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-pin-below-the-working-directory-is-not-silently-ignored
 kind: story
-status: draft
+status: active
 title: A requires pin below the working directory is found or named, never silently ignored
 summary: From the repo root ess stays on the installed release though spec/ess-inputs.yaml pins another (downstream report 2026-11-08 item 2)
 tags:
@@ -15,6 +15,7 @@ tags:
 relations:
 - depends_on: story:ess-manages-its-toolchain
 - decomposes: epic:zero-open-issues-2026-11
+- serves: vision:O2
 scope:
 - confidence: cited
   path: crates/edge/ess-cli/src/input_discovery.rs
@@ -28,7 +29,10 @@ scope:
   path: website/docs/guides/specify/layout-and-validation.md
 - confidence: cited
   path: website/docs/reference/cli.md
-revision: 10
+revision: 12
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:41:05Z", actor: "human:timo", revision: 11, decided_on: {"recorded":{"review_outcome":2}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:41:07Z", actor: "human:timo", revision: 12, decided_on: {"recorded":{"review_outcome":2}}}
 ---
 ## Need
 

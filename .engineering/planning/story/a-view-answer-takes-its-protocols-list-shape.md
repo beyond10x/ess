@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-view-answer-takes-its-protocols-list-shape
 kind: story
-status: draft
+status: active
 title: A view pages by an opaque continuation with a declared default size
 tags:
 - adopter-report
@@ -15,6 +15,7 @@ relations:
 - decomposes: epic:adopter-gaps-wire-and-answers
 - decomposes: epic:zero-open-issues-2026-11
 - depends_on: story:ess-37-and-conformance-64-65-are-open-for-the-epics-constructs
+- serves: vision:O2
 scope:
 - confidence: cited
   path: crates/specify/ess-domain/src/system.rs
@@ -28,7 +29,10 @@ scope:
   path: crates/verify/ess-diff/src/change.rs
 - confidence: cited
   path: docs/design/view-paging.md
-revision: 10
+revision: 13
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:42:31Z", actor: "human:timo", revision: 12, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:42:32Z", actor: "human:timo", revision: 13, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Need
 
@@ -167,3 +171,4 @@ Follow-ups:
 ## Source
 
 github:beyond10x/ess#750
+

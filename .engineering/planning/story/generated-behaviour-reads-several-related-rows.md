@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:generated-behaviour-reads-several-related-rows
 kind: story
-status: draft
+status: active
 title: Generated behaviour answers a command that reads several related rows, in the interpreter order
 tags:
 - defect
@@ -22,7 +22,10 @@ scope:
   path: crates/generate/ess-synth/src/rust/behaviour.rs
 - confidence: cited
   path: crates/generate/ess-synth/tests/related_guard_several_rows.rs
-revision: 5
+revision: 7
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:44:10Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:44:11Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Outcome
 

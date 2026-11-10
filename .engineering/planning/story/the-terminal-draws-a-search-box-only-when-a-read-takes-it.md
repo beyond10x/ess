@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:the-terminal-draws-a-search-box-only-when-a-read-takes-it
 kind: story
-status: draft
+status: active
 title: The terminal draws a search box only when a read takes it
 summary: With no read taking a filter bar's search, React draws no box but the terminal draws one (0.88.0 search-box unit, pre-existing)
 tags:
@@ -24,7 +24,10 @@ scope:
   path: crates/ui/ess-ui-tui/src/app.rs
 - confidence: cited
   path: crates/ui/ess-ui-tui/src/view.rs
-revision: 5
+revision: 7
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:48:25Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:48:26Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Need
 

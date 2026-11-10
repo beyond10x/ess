@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-rust-runner-compares-a-decimal-by-exact-value
 kind: story
-status: draft
+status: active
 title: The Rust runner compares a Decimal by exact value
 summary: Rust reads a Decimal through binary64 before the runner sees it, so it compares values Go and TypeScript keep apart; deferred from unit E of 0.70.0.
 tags:
@@ -27,7 +27,10 @@ scope:
   path: docs/design/retained-command-results.md
 - confidence: cited
   path: website/docs/reference/formats.md
-revision: 5
+revision: 7
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:41:42Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:41:43Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Problem
 

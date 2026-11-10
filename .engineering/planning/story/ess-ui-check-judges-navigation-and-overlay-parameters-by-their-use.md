@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:ess-ui-check-judges-navigation-and-overlay-parameters-by-their-use
 kind: story
-status: draft
+status: active
 title: ess ui check judges navigation and overlay parameters by their use
 summary: A nav link to a page needing an id passes; a param bound only into a command is called unread (workbench report items 6, 10)
 tags:
@@ -29,7 +29,10 @@ scope:
   path: schemas/ui/ess-ui.schema.yaml
 - confidence: inferred
   path: website/docs/reference/ess-ui.md
-revision: 5
+revision: 7
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:43:49Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:43:50Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Need
 

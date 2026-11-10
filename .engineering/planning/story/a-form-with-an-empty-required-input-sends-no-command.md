@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-form-with-an-empty-required-input-sends-no-command
 kind: story
-status: draft
+status: active
 title: A form with an empty required input sends no command
 summary: Neither renderer enforces required command inputs, and ess-ui-test has no step asserting that no command was sent (0.77.0)
 tags:
@@ -14,6 +14,7 @@ tags:
 - zero-open-issues
 relations:
 - decomposes: epic:zero-open-issues-2026-11
+- serves: vision:O2
 scope:
 - confidence: cited
   path: crates/ui/ess-ui-check/src/model.rs
@@ -35,7 +36,10 @@ scope:
   path: crates/ui/ess-ui/src/binding.rs
 - confidence: inferred
   path: website/docs/reference/ess-ui-test.md
-revision: 12
+revision: 14
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:38:05Z", actor: "human:timo", revision: 13, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:38:06Z", actor: "human:timo", revision: 14, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Outcome
 

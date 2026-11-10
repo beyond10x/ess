@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:each-row-and-each-waiting-read-draws-what-the-document-declares
 kind: story
-status: draft
+status: active
 title: A row condition is judged per row, a waiting read shows its empty state, a board row without a widget names its kind
 tags:
 - zero-open-issues
@@ -11,6 +11,7 @@ refs:
   reference: beyond10x/ess#723
 relations:
 - decomposes: epic:zero-open-issues-2026-11
+- serves: vision:O2
 scope:
 - confidence: inferred
   path: crates/ui/ess-ui-check/src/rules.rs
@@ -28,7 +29,10 @@ scope:
   path: crates/ui/ess-ui-tui/src/view.rs
 - confidence: inferred
   path: schemas/ui/ess-ui.schema.yaml
-revision: 4
+revision: 6
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:43:36Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:43:37Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Need
 

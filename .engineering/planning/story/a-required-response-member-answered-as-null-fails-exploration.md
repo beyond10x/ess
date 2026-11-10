@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-required-response-member-answered-as-null-fails-exploration
 kind: story
-status: draft
+status: active
 title: A required response member answered as null fails exploration
 summary: The explorers count a null required response member as present; the suite refuses it (W2 EXP1 review finding, pre-existing, backlog)
 tags:
@@ -15,6 +15,7 @@ tags:
 relations:
 - informed_by: review-result:adversary-w2-exp1-pass-1
 - decomposes: epic:zero-open-issues-2026-11
+- serves: vision:O2
 scope:
 - confidence: cited
   path: crates/verify/ess-conformance/src/go/explore.go
@@ -26,7 +27,10 @@ scope:
   path: crates/verify/ess-conformance/tests/fixtures/explore-direct-response-target.mjs
 - confidence: inferred
   path: crates/verify/ess-conformance/tests/fixtures/explore_direct_response_target.go
-revision: 5
+revision: 8
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:41:26Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:41:27Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Need
 
@@ -67,4 +71,5 @@ confidence: high
 
 ## Schedule
 
-Backlog: not waved; considered only after every predefined wave is released.
+Waved under epic:zero-open-issues-2026-11 (accepted 2026-11-10).
+

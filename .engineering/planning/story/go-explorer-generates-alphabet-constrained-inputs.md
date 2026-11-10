@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:go-explorer-generates-alphabet-constrained-inputs
 kind: story
-status: draft
+status: active
 title: The Go explorer generates inputs whose type declares an alphabet
 tags:
 - adopter-report
@@ -20,7 +20,10 @@ scope:
   path: crates/verify/ess-conformance/tests/explore_constrained_inputs.rs
 - confidence: inferred
   path: crates/verify/ess-conformance/tests/fixtures/explore-constrained-inputs.yaml
-revision: 6
+revision: 8
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:44:55Z", actor: "human:timo", revision: 7}
+- {from: "proposed", to: "active", at: "2026-11-10T00:44:56Z", actor: "human:timo", revision: 8}
 ---
 ## Outcome
 

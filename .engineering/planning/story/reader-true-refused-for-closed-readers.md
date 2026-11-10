@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:reader-true-refused-for-closed-readers
 kind: story
-status: draft
+status: active
 title: '`reader: true` is refused where the reader is closed'
 tags:
 - defect
@@ -23,7 +23,10 @@ scope:
   path: website/docs/reference/diagnostics.md
 - confidence: cited
   path: website/docs/reference/formats.md
-revision: 7
+revision: 9
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:45:39Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:45:40Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Outcome
 

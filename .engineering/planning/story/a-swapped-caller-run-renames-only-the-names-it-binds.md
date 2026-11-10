@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-swapped-caller-run-renames-only-the-names-it-binds
 kind: story
-status: draft
+status: active
 title: A swapped-caller run renames only the instance and instant names it binds
 tags:
 - zero-open-issues
@@ -11,6 +11,7 @@ refs:
   reference: beyond10x/ess#766
 relations:
 - decomposes: epic:zero-open-issues-2026-11
+- serves: vision:O2
 scope:
 - confidence: inferred
   path: crates/verify/ess-conformance/src/scenario.rs
@@ -22,7 +23,10 @@ scope:
   path: crates/verify/ess-conformance/tests/caller_swap_authored_field_names.rs
 - confidence: cited
   path: docs/design/caller-values.md
-revision: 4
+revision: 6
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:41:59Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:42:00Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Need
 

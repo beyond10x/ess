@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-guard-compares-fields-of-two-named-rows
 kind: story
-status: draft
+status: active
 title: A guard predicate compares fields of two rows the input names
 tags:
 - adopter-report
@@ -41,7 +41,10 @@ scope:
   path: docs/design/language-grids.md
 - confidence: inferred
   path: website/docs/reference/predicates.md
-revision: 6
+revision: 9
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:34:09Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:34:10Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Need
 
@@ -74,7 +77,7 @@ exit 1
 
 ## Acceptance
 
-At G2's next source format:
+At `ess/37`:
 
 - `ess specify validate --path g2-two-rows-input-path` exits 0: an input whose type is one entity's
   identity navigates to that entity's row (`input.first.environment`), in `when:` and in every
@@ -130,7 +133,7 @@ confidence: low
    interpreter and synthesis; Rust and Go obligations, named; Entity Runtime refusal kept.
 5. **Second adopter.** A transfer only between two accounts of one currency; a merge only of two
    tickets on one queue.
-6. **Cost.** G2's next source format; no new key; one placement rule in the precedence plan (a
+6. **Cost.** `ess/37`; no new key; one placement rule in the precedence plan (a
    `when:` reading rows is step 4); no new diagnostic code.
 7. **Alternatives.** (a) Keep it deferred: the design already decides navigation; deferral has no
    open question to wait on. (b) `E[input.a].x` everywhere: a new lexical form where G2's
@@ -147,3 +150,4 @@ source format, after `story:navigation-reaches-any-depth-in-guards`.
 ## Source
 
 github:beyond10x/ess#564 (downstream finding 11)
+

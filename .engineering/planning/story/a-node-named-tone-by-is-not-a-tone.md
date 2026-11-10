@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-node-named-tone-by-is-not-a-tone
 kind: story
-status: draft
+status: active
 title: A page, state or widget named tone_by is not read as a tone
 summary: The loader reads any key spelled tone_by as the tone construct (UI-adopter wave 1 U1 fix-round note, pre-existing, backlog)
 tags:
@@ -15,12 +15,16 @@ tags:
 relations:
 - informed_by: review-result:w086-u1-adversary-pass-1
 - decomposes: epic:zero-open-issues-2026-11
+- serves: vision:O2
 scope:
 - confidence: cited
   path: crates/ui/ess-ui/src/expand.rs
 - confidence: inferred
   path: crates/ui/ess-ui/tests/
-revision: 5
+revision: 8
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:40:21Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:40:23Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Need
 
@@ -85,4 +89,5 @@ confidence: high
 
 ## Schedule
 
-Backlog: not waved; considered only after every predefined wave is released.
+Waved under epic:zero-open-issues-2026-11 (accepted 2026-11-10).
+

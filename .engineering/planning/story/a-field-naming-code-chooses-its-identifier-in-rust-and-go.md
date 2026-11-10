@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-field-naming-code-chooses-its-identifier-in-rust-and-go
 kind: story
-status: draft
+status: active
 title: A field's naming.code chooses its identifier in Rust and Go
 summary: Code emitters read naming.code for declarations and enum variants but not for fields; split from beyond10x/ess#659.
 tags:
@@ -65,7 +65,10 @@ scope:
   path: crates/generate/ess-synth/src/rust/system.rs
 - confidence: inferred
   path: crates/generate/ess-synth/src/rust/wire.rs
-revision: 9
+revision: 11
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:33:47Z", actor: "human:timo", revision: 10, decided_on: {"recorded":{"review_outcome":2}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:33:48Z", actor: "human:timo", revision: 11, decided_on: {"recorded":{"review_outcome":2}}}
 ---
 ## Need
 

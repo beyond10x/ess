@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-create-or-update-writer-is-no-proof-a-stored-reference-is-present
 kind: story
-status: draft
+status: active
 title: A create-or-update writer is no proof that a stored reference is present
 summary: The ess/30 enforced-reference proof and synthesis count an unknown_instance creator as refusing a missing related row first, although under the one rule it stores one; found by the 0.70.0 unit I adversary
 tags:
@@ -23,7 +23,10 @@ scope:
   path: crates/verify/ess-conformance/src/synthesize/related_guard/stored.rs
 - confidence: cited
   path: crates/verify/ess-conformance/tests/adversary_i_create_or_update.rs
-revision: 5
+revision: 7
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:33:41Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:33:41Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Problem
 

@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-command-binds-to-json-rpc-and-grpc-beside-http
 kind: story
-status: draft
+status: active
 title: A command or view binds to a JSON-RPC 2.0 method beside HTTP
 summary: A JSON-RPC 2.0 binding beside ess-http/1 (#650); gRPC and OpenRPC are split out and not part of this story.
 tags:
@@ -36,7 +36,10 @@ scope:
   path: crates/specify/ess-jsonrpc/tests/refusals.rs
 - confidence: cited
   path: docs/design/rpc-bindings.md
-revision: 11
+revision: 13
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:33:34Z", actor: "human:timo", revision: 12, decided_on: {"recorded":{"review_outcome":2}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:33:35Z", actor: "human:timo", revision: 13, decided_on: {"recorded":{"review_outcome":2}}}
 ---
 ## Need
 

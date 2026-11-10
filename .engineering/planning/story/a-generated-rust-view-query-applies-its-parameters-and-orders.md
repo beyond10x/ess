@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-generated-rust-view-query-applies-its-parameters-and-orders
 kind: story
-status: draft
+status: active
 title: A generated Rust view query applies its parameters and its orders
 summary: 'params: and orders over Optional or Timestamp fields stay obligations in generated queries (workbench report items 25, 26)'
 tags:
@@ -36,7 +36,10 @@ scope:
   path: crates/generate/ess-synth/src/view_query.rs
 - confidence: cited
   path: crates/generate/ess-synth/tests/generated_view_queries.rs
-revision: 9
+revision: 11
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:34:01Z", actor: "human:timo", revision: 10, decided_on: {"recorded":{"review_outcome":2}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:34:03Z", actor: "human:timo", revision: 11, decided_on: {"recorded":{"review_outcome":2}}}
 ---
 ## Need
 

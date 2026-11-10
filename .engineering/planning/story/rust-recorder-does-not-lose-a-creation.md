@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:rust-recorder-does-not-lose-a-creation
 kind: story
-status: draft
+status: active
 title: The Rust recorder does not lose a creation it observed
 tags:
 - defect
@@ -20,7 +20,10 @@ scope:
   path: crates/verify/ess-conformance/src/ts/explore.ts
 - confidence: inferred
   path: crates/verify/ess-conformance/tests/view_consistency.rs
-revision: 6
+revision: 8
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:46:05Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:46:06Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 # Story: the Rust recorder does not lose a creation it observed
 

@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:an-expression-measure-that-skips-absent-rows-is-witnessed
 kind: story
-status: draft
+status: active
 title: 'An expression measure that skips absent values or declares where: is witnessed'
 tags:
 - zero-open-issues
@@ -11,6 +11,7 @@ refs:
   reference: beyond10x/ess#561
 relations:
 - decomposes: epic:zero-open-issues-2026-11
+- serves: vision:O2
 scope:
 - confidence: cited
   path: crates/verify/ess-conformance/src/synthesize/aggregate.rs
@@ -22,7 +23,10 @@ scope:
   path: crates/verify/ess-conformance/tests/fixtures/
 - confidence: cited
   path: docs/design/generic-language-features.md
-revision: 4
+revision: 6
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:39:25Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:39:26Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Need
 

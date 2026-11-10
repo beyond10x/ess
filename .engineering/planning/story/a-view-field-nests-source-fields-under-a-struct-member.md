@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-view-field-nests-source-fields-under-a-struct-member
 kind: story
-status: draft
+status: active
 title: 'A view field nests source fields under a struct member (field: nested mapping)'
 tags:
 - zero-open-issues
@@ -12,6 +12,7 @@ refs:
 relations:
 - decomposes: epic:zero-open-issues-2026-11
 - depends_on: story:ess-37-and-conformance-64-65-are-open-for-the-epics-constructs
+- serves: vision:O2
 scope:
 - confidence: inferred
   path: crates/specify/ess-compiler/src/ir.rs
@@ -29,7 +30,10 @@ scope:
   path: docs/design/value-expressions.md
 - confidence: cited
   path: website/docs/guides/specify/values-and-views.md
-revision: 6
+revision: 8
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:42:34Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":2}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:42:35Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"review_outcome":2}}}
 ---
 ## Need
 

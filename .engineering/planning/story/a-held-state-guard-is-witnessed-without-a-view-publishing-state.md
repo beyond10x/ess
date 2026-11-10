@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-held-state-guard-is-witnessed-without-a-view-publishing-state
 kind: story
-status: draft
+status: active
 title: A held-state guard is witnessed without a view publishing state
 tags:
 - zero-open-issues
@@ -12,6 +12,7 @@ refs:
 relations:
 - decomposes: epic:zero-open-issues-2026-11
 - depends_on: story:a-multi-state-wrong-state-error-branch-is-synthesized
+- serves: vision:O2
 scope:
 - confidence: cited
   path: crates/verify/ess-conformance/src/synthesize.rs
@@ -23,7 +24,10 @@ scope:
   path: crates/verify/ess-conformance/tests/held_state_guard_without_state_view.rs
 - confidence: cited
   path: docs/design/cross-record-and-stored-field-guards.md
-revision: 4
+revision: 6
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:38:14Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:38:15Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Need
 

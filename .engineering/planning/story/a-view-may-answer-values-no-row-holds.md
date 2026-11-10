@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-view-may-answer-values-no-row-holds
 kind: story
-status: draft
+status: active
 title: A view may answer values no row holds
 summary: 'Adopter reports N20, N23: views need a source and stored fields (ess#674); needs an ADR.'
 tags:
@@ -46,7 +46,10 @@ scope:
   path: docs/design/component-setting-reads.md
 - confidence: cited
   path: docs/design/language-grids.md
-revision: 8
+revision: 11
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:42:39Z", actor: "human:timo", revision: 10, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:42:41Z", actor: "human:timo", revision: 11, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Need
 
@@ -82,7 +85,7 @@ The third run also shows a spelling gap in the accepted design: setting names ar
   its spelling, the first cut, the format and every target's treatment; `docs/design/language-grids.md`
   grid R gains the column `setting` with the view field cell open from the new format and the
   remaining cells named with the record that opens them.
-- Under the next source format (`ess/37` unless the open format of the same release takes it), with
+- Under the next source format (`ess/37`), with
   the component above serving the view:
   - `a_view_without_source_validates`: a view with no `source` whose fields are
     `{name: max_tags, type: Integer, expr: setting.max_tags}` and `{name: api_level, type: Integer,
@@ -168,3 +171,4 @@ and the story is split by target (this one: design page, validation, IR, refusal
 ## Source
 
 github:beyond10x/ess#674
+

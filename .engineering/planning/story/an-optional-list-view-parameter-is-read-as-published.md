@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:an-optional-list-view-parameter-is-read-as-published
 kind: story
-status: draft
+status: active
 title: An Optional<List<T>> view parameter is read as the repeated key OpenAPI publishes
 summary: 'spindle wave 12: http::flat answers None for Optional<List<T>> (ess 0.88.0)'
 tags:
@@ -29,7 +29,10 @@ scope:
   path: crates/generate/ess-synth/src/view_query.rs
 - confidence: inferred
   path: crates/generate/ess-synth/tests/adversary_view_params_pass1.rs
-revision: 5
+revision: 7
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:40:26Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:40:28Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Need
 

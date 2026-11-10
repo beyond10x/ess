@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-set-guard-fed-by-a-subject-payload-is-arranged
 kind: story
-status: draft
+status: active
 title: A set guard fed by a subject payload is arranged
 summary: 'ESS-SYNTH-010 refuses a binding whose invoked set guard reads an input the trigger fills from {subject: field}, although arrangeable (#705)'
 tags:
@@ -14,6 +14,7 @@ refs:
   reference: beyond10x/ess#705
 relations:
 - decomposes: epic:zero-open-issues-2026-11
+- serves: vision:O2
 scope:
 - confidence: cited
   path: crates/verify/ess-conformance/src/synthesize/binding_effects.rs
@@ -23,7 +24,10 @@ scope:
   path: crates/verify/ess-conformance/tests/binding_set_guard.rs
 - confidence: inferred
   path: crates/verify/ess-conformance/tests/fixtures/binding-set-guard/
-revision: 7
+revision: 9
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:41:47Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:41:47Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Need
 

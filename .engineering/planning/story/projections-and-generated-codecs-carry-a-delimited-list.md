@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:projections-and-generated-codecs-carry-a-delimited-list
 kind: story
-status: draft
+status: active
 title: Projections and generated codecs carry a delimited list
 tags:
 - zero-open-issues
@@ -12,6 +12,7 @@ refs:
 relations:
 - decomposes: epic:zero-open-issues-2026-11
 - depends_on: story:a-list-newtype-declares-a-delimited-wire-encoding
+- serves: vision:O2
 scope:
 - confidence: inferred
   path: crates/generate/ess-gen/src/http.rs
@@ -25,7 +26,10 @@ scope:
   path: crates/generate/ess-synth/src/rust/http.rs
 - confidence: inferred
   path: crates/generate/ess-synth/tests/list_encoding.rs
-revision: 4
+revision: 6
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:45:33Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:45:34Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Need
 

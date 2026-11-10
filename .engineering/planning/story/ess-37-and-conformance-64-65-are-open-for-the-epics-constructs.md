@@ -2,13 +2,14 @@
 format: aep.planning-md/3
 id: story:ess-37-and-conformance-64-65-are-open-for-the-epics-constructs
 kind: story
-status: draft
+status: active
 title: ess/37 and the ess-conformance/64-65 suite pair are open for the epic's constructs
 tags:
 - zero-open-issues
 relations:
 - decomposes: epic:zero-open-issues-2026-11
 - informed_by: review-result:zero-issues-design-round-1
+- serves: vision:O2
 scope:
 - confidence: cited
   path: crates/specify/ess-domain/src/system.rs
@@ -22,7 +23,10 @@ scope:
   path: schemas/generated/ess.schema.json
 - confidence: inferred
   path: website/docs/reference/spec-versions.md
-revision: 4
+revision: 7
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:43:44Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:43:45Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Need
 
@@ -41,8 +45,11 @@ remainders and the single-request constructs in one format is fewer formats than
 and no construct gets a format of its own. Below `ess/37` every new spelling stays refused as
 `unsupported_format_version` naming `ess/37`, as each story's own acceptance says.
 
-This story opens the two formats, empty of constructs, so the stories that fill them do not race to
-open them.
+Every new `ess verify diff` change kind of this epic lands in **one** new delta version,
+`ess-diff/24`, the same way (review-result:zero-issues-design-round-2).
+
+This story opens the three versions, empty of constructs, so the stories that fill them do not race
+to open them.
 
 ## Acceptance
 
@@ -53,6 +60,9 @@ open them.
   (`ess verify conform run` on a suite whose `suite_version` is rewritten to `/64`, resp. a coverage
   suite at `/65`, gives the same verdicts), and no synthesis writes them yet: a suite's major is still
   chosen by the features its specification uses.
+- `ess verify diff` reads and writes `ess-diff/24` wherever it reads and writes `ess-diff/23`, and no
+  change kind is written at `/24` yet (`cargo test -p ess-diff --locked`, the delta-format tests
+  in `crates/verify/ess-diff/src/change.rs`, with a case for `/24`).
 - `cargo test -p ess-domain --locked` and the format-history check (`cargo xtask format-history
   --check`, through `task projection-check`) pass with the new row.
 

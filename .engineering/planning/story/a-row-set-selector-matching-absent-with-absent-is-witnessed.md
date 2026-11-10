@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-row-set-selector-matching-absent-with-absent-is-witnessed
 kind: story
-status: draft
+status: active
 title: A row-set selector matching absent with absent is witnessed
 summary: A presence disjunction over two Optionals in a row-set where starves found (ESS-SYNTH-001); plain == over the same fields is witnessed.
 tags:
@@ -14,12 +14,16 @@ tags:
 relations:
 - informed_by: story:a-guard-on-the-input-addressed-parent-row-holds-on-every-command-of-its-children
 - decomposes: epic:zero-open-issues-2026-11
+- serves: vision:O2
 scope:
 - confidence: inferred
   path: crates/verify/ess-conformance/src/synthesize/row_set.rs
 - confidence: inferred
   path: crates/verify/ess-conformance/tests/row_sets.rs
-revision: 5
+revision: 7
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:41:37Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:41:38Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Problem
 

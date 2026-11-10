@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:the-ess31-history-states-the-optional-read
 kind: story
-status: draft
+status: active
 title: The ess/31 history sentence states how an Optional read behaves
 tags:
 - defect
@@ -17,7 +17,10 @@ scope:
   path: crates/specify/ess-domain/src/system.rs
 - confidence: cited
   path: crates/specify/ess-domain/tests/format_history.rs
-revision: 8
+revision: 10
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:47:16Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"review_outcome":2}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:47:17Z", actor: "human:timo", revision: 10, decided_on: {"recorded":{"review_outcome":2}}}
 ---
 ## Finding
 

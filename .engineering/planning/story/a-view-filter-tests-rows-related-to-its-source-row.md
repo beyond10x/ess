@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-view-filter-tests-rows-related-to-its-source-row
 kind: story
-status: draft
+status: active
 title: A view filter tests rows related to its source row
 tags:
 - zero-open-issues
@@ -13,6 +13,7 @@ relations:
 - decomposes: epic:zero-open-issues-2026-11
 - depends_on: story:navigation-reaches-any-depth-in-view-filters-and-guards
 - depends_on: story:ess-37-and-conformance-64-65-are-open-for-the-epics-constructs
+- serves: vision:O2
 scope:
 - confidence: inferred
   path: crates/generate/ess-synth/src/view_query.rs
@@ -34,7 +35,10 @@ scope:
   path: docs/design/related-rows-quantifier.md
 - confidence: inferred
   path: website/docs/reference/predicates.md
-revision: 4
+revision: 7
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:42:37Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:42:38Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Need
 
@@ -69,7 +73,7 @@ exit 1
 
 ## Acceptance
 
-At G2's next source format:
+At `ess/37`:
 
 - `ess specify validate --path d-row-set` exits 0; the quantifier is admitted in a view `filter:`
   under the rules it has in a selector (tied to the source row by a top-level
@@ -125,7 +129,7 @@ confidence: medium
    Measure `where:` stays refused: it is a different row of grid R, opened by its own decision.
 5. **Second adopter.** Orders shown only where no open dispute names the same customer; shifts
    shown only where no leave request of the same agent covers the shift's start.
-6. **Cost.** G2's next source format; no new key; no new diagnostic code; synthesis gains view
+6. **Cost.** `ess/37`; no new key; no new diagnostic code; synthesis gains view
    witnesses with arranged related rows (the selector's arrangement, reused).
 7. **Alternatives.** (a) Change nothing. (b) A `source:` list or join: refused by G2 (one source,
    navigation only). (c) A dedicated `excludes_related:` view key: a second spelling of the
@@ -134,10 +138,11 @@ confidence: medium
 ## Decisions
 
 **Accept, redesigned.** The requester's `source:` list stays refused; the need is met by admitting
-the related-rows quantifier in a view `filter:`, from G2's next source format, with
+the related-rows quantifier in a view `filter:`, from `ess/37`, with
 `docs/design/related-rows-quantifier.md` § "Where it stands" amended and grid R's view-filter row
 closed.
 
 ## Source
 
 github:beyond10x/ess#564
+

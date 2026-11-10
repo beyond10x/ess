@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-scenario-beside-a-prefixed-conversion-target-runs-on-the-interpreter
 kind: story
-status: draft
+status: active
 title: A scenario beside a binding into a prefixed conversion target runs on the interpreter
 summary: 'Adversary 0.71.0 F5: with a prefix on the conversion target, the trigger and mapping scenarios are Unsupported on the interpreter, as on 0.70.0.'
 tags:
@@ -23,7 +23,10 @@ scope:
   path: crates/verify/ess-conformance/src/witness.rs
 - confidence: cited
   path: crates/verify/ess-conformance/tests/adversary_0710_pass1.rs
-revision: 9
+revision: 11
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:41:44Z", actor: "human:timo", revision: 10, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:41:44Z", actor: "human:timo", revision: 11, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Problem
 

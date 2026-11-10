@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-view-answer-may-be-followed-as-it-changes
 kind: story
-status: draft
+status: active
 title: A view's answer may be followed as it changes
 tags:
 - zero-open-issues
@@ -15,6 +15,7 @@ relations:
 - depends_on: story:an-event-channel-may-be-bound-to-server-sent-events
 - depends_on: story:ess-37-and-conformance-64-65-are-open-for-the-epics-constructs
 - depends_on: story:conformance-synthesizes-exchange-scenarios
+- serves: vision:O2
 scope:
 - confidence: inferred
   path: crates/generate/ess-gen/src/openapi.rs
@@ -36,7 +37,10 @@ scope:
   path: crates/verify/ess-conformance/tests/followed_view_scenarios.rs
 - confidence: inferred
   path: docs/design/message-exchanges.md
-revision: 6
+revision: 8
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:42:29Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:42:30Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Need
 

@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-command-route-reads-chosen-inputs-from-the-query-beside-its-body
 kind: story
-status: draft
+status: active
 title: A command route reads chosen inputs from the query beside its body
 tags:
 - zero-open-issues
@@ -12,6 +12,7 @@ refs:
 relations:
 - decomposes: epic:zero-open-issues-2026-11
 - depends_on: story:a-command-route-takes-a-multipart-request-with-file-parts
+- serves: vision:O2
 scope:
 - confidence: cited
   path: crates/generate/ess-gen/src/openapi.rs
@@ -27,7 +28,10 @@ scope:
   path: docs/design/http-presentation-binding.md
 - confidence: cited
   path: website/docs/guides/http-routes.md
-revision: 5
+revision: 7
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:37:53Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":2}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:37:55Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":2}}}
 ---
 ## Need
 

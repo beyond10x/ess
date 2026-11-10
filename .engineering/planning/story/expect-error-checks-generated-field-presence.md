@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:expect-error-checks-generated-field-presence
 kind: story
-status: draft
+status: active
 title: expect_error checks that a generated error field is present
 tags:
 - adopter-report
@@ -34,7 +34,10 @@ scope:
   path: crates/verify/ess-conformance/src/ts/runtime.ts
 - confidence: inferred
   path: crates/verify/ess-conformance/tests/expect_error_checks_generated_field_presence.rs
-revision: 14
+revision: 16
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:44:05Z", actor: "human:timo", revision: 15, decided_on: {"recorded":{"review_outcome":2}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:44:06Z", actor: "human:timo", revision: 16, decided_on: {"recorded":{"review_outcome":2}}}
 ---
 ## Outcome
 

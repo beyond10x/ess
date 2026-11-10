@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-record-groups-fields-under-headings-and-a-group-may-start-collapsed
 kind: story
-status: draft
+status: active
 title: A record groups its fields under headings, sections may share one frame, and any headed group may start collapsed
 summary: 'FormGroup gains collapsed:, record gains groups: (UI adopter composition report, P4); a layout column or area may draw its sections in one shared frame (#723 G25).'
 tags:
@@ -39,7 +39,10 @@ scope:
   path: schemas/ui/ess-ui.schema.yaml
 - confidence: inferred
   path: website/docs/reference/ess-ui.md
-revision: 10
+revision: 12
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:41:11Z", actor: "human:timo", revision: 11, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:41:12Z", actor: "human:timo", revision: 12, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Need
 

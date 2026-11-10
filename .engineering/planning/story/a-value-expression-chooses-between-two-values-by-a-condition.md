@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-value-expression-chooses-between-two-values-by-a-condition
 kind: story
-status: draft
+status: active
 title: A value expression chooses between two values by a condition (if c then a else b)
 tags:
 - zero-open-issues
@@ -13,6 +13,7 @@ relations:
 - decomposes: epic:zero-open-issues-2026-11
 - depends_on: story:ess-37-and-conformance-64-65-are-open-for-the-epics-constructs
 - depends_on: story:text-functions-compute-values
+- serves: vision:O2
 scope:
 - confidence: inferred
   path: crates/generate/ess-entity-runtime/tests/expression_values.rs
@@ -34,7 +35,10 @@ scope:
   path: docs/design/language-grids.md
 - confidence: inferred
   path: website/docs/guides/specify/values-and-views.md
-revision: 6
+revision: 8
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:42:24Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":3}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:42:25Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"review_outcome":3}}}
 ---
 ## Need
 

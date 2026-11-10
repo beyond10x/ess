@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-stored-guard-beside-an-input-guard-on-a-system-step-synthesizes
 kind: story
-status: draft
+status: active
 title: A stored-field guard beside an input guard on a system step synthesizes
 summary: 'ESS-SYNTH-024: a stored-field guard beside an input guard on a system-issued step is refused.'
 tags:
@@ -22,7 +22,10 @@ scope:
   path: crates/verify/ess-conformance/tests/system_issued_synthesis.rs
 - confidence: cited
   path: docs/design/system-issued-commands.md
-revision: 6
+revision: 8
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:41:52Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:41:53Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Problem
 

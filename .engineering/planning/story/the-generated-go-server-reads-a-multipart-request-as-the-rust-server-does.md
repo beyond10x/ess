@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:the-generated-go-server-reads-a-multipart-request-as-the-rust-server-does
 kind: story
-status: draft
+status: active
 title: The generated Go server reads a multipart request as the Rust server does
 tags:
 - zero-open-issues
@@ -12,6 +12,7 @@ refs:
 relations:
 - decomposes: epic:zero-open-issues-2026-11
 - depends_on: story:the-generated-rust-server-reads-a-multipart-request
+- serves: vision:O2
 scope:
 - confidence: inferred
   path: crates/generate/ess-synth/src/go/http.rs
@@ -21,7 +22,10 @@ scope:
   path: crates/generate/ess-synth/tests/http_binding/go.rs
 - confidence: cited
   path: docs/design/http-presentation-binding.md
-revision: 4
+revision: 7
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:47:24Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":2}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:47:25Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":2}}}
 ---
 ## Need
 
@@ -35,14 +39,19 @@ reader).
 
 ## Acceptance
 
-- Every request of the Rust story's acceptance, sent to the Go server generated from the same
-  binding, gets the Rust server's status, headers and body bytes; the cases join
+All cases run in `cargo test -p ess-synth --locked --test http_binding_rust` (its `go` module,
+`crates/generate/ess-synth/tests/http_binding/go.rs`).
+
+- Every request of the Rust story's acceptance (the `file`/`format`/`dry_run` request and each
+  `malformed` case), sent to the Go server generated from the same binding, gets the Rust
+  server's status, headers and body bytes, with no exception; the cases join
   `the_go_and_rust_servers_answer_one_binding_alike`.
-- Parts are read with the Go standard library's `mime/multipart`; where it refuses a request the
-  Rust reader admits, or the reverse, the difference is named in
-  `docs/design/http-presentation-binding.md` § "What the servers write (k5, k6)", as the
-  percent-escape difference already is.
-- A route without `multipart` generates byte-identical Go source.
+- `docs/design/http-presentation-binding.md` § "What the servers write (k5, k6)" still lists
+  exactly the two differences it lists today (the malformed percent-escape and the member order of
+  an answer the binding does not write), and says the Go server reads multipart as the Rust
+  server does.
+- A route without `multipart` generates byte-identical Go source: `cargo test -p ess-synth --locked
+  --test go` passes with no pinned row changed.
 
 ## Scope
 
@@ -50,7 +59,10 @@ reader).
 - inferred: crates/generate/ess-synth/src/go/http.rs
 - cited: crates/generate/ess-synth/tests/http_binding/go.rs
 - cited: docs/design/http-presentation-binding.md
+
 confidence: medium
+
+Shared surfaces moved: proposes its `CHANGELOG.md` sentence; no byte-pin row moves.
 
 ## Fit review
 
@@ -69,6 +81,11 @@ confidence: medium
 
 **Accept, redesigned**, as decided in
 `story:a-command-route-takes-a-multipart-request-with-file-parts`.
+
+- No multipart difference between the servers is admitted: k6 requires Go to answer byte for byte
+  as Rust wherever the binding writes the answer, so where `mime/multipart` answers a case of the
+  acceptance differently, the Go server reads that case with a port of the Rust reader
+  (alternative (a)), as it already does for `json`.
 
 ## Source
 

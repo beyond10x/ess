@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-row-predicate-choosing-the-trigger-branch-is-arranged-for-the-binding
 kind: story
-status: draft
+status: active
 title: A row predicate choosing the trigger branch is arranged for the binding
 summary: ESS-SYNTH-010 refuses flow, delivery and a policy refusal when one related row decides both the trigger and the invoked command; the refusal contradicts its help (#706)
 tags:
@@ -14,6 +14,7 @@ refs:
   reference: beyond10x/ess#706
 relations:
 - decomposes: epic:zero-open-issues-2026-11
+- serves: vision:O2
 scope:
 - confidence: cited
   path: crates/verify/ess-conformance/src/synthesize.rs
@@ -27,7 +28,10 @@ scope:
   path: crates/verify/ess-conformance/tests/binding_related_branch.rs
 - confidence: cited
   path: website/docs/guides/specify/bindings-and-components.md
-revision: 8
+revision: 10
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:41:31Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:41:32Z", actor: "human:timo", revision: 10, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Need
 

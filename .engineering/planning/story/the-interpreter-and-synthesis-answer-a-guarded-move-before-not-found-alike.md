@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:the-interpreter-and-synthesis-answer-a-guarded-move-before-not-found-alike
 kind: story
-status: draft
+status: active
 title: The interpreter and synthesis answer a guarded move before a not-found alike
 summary: After 0.87.0 U1, synthesis gives a fresh identity with the guarded move to the accepting branch declared first, while the model interpreter answers not-found (from-finding)
 tags:
@@ -13,6 +13,7 @@ tags:
 - zero-open-issues
 relations:
 - decomposes: epic:zero-open-issues-2026-11
+- serves: vision:O2
 scope:
 - confidence: cited
   path: crates/verify/ess-conformance/src/authored.rs
@@ -24,7 +25,10 @@ scope:
   path: docs/design/input-guard-overlap-precedence.md
 - confidence: cited
   path: docs/design/typed-literals-and-unknown-instances.md
-revision: 8
+revision: 10
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:47:43Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:47:44Z", actor: "human:timo", revision: 10, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Need
 

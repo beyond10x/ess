@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:an-authored-scenario-retires-the-refusal-it-covers
 kind: story
-status: draft
+status: active
 title: An authored scenario retires the refusal it covers
 summary: 'Authored scenarios never retire the refusal they cover, and synthesize --path ignores ess-inputs.yaml scenarios: (beyond10x/ess#735)'
 tags:
@@ -37,7 +37,10 @@ scope:
   path: website/docs/guides/verify/author-scenarios.md
 - confidence: inferred
   path: website/docs/reference/formats.md
-revision: 9
+revision: 11
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:38:49Z", actor: "human:timo", revision: 10, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:38:50Z", actor: "human:timo", revision: 11, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Need
 

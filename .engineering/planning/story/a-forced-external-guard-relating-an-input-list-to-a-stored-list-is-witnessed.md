@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-forced-external-guard-relating-an-input-list-to-a-stored-list-is-witnessed
 kind: story
-status: draft
+status: active
 title: A narrowed external branch is witnessed on a row and input its subject guard holds for
 summary: An external branch whose when_subject relates an input list to a stored list gets no outcome scenario, and every scenario through its state is refused ESS-SYNTH-004 (beyond10x/ess#727)
 tags:
@@ -24,7 +24,10 @@ scope:
   path: crates/verify/ess-conformance/tests/external_narrowed_by_subject.rs
 - confidence: inferred
   path: crates/verify/ess-conformance/tests/fixtures/external-narrowed-by-input-relation.yaml
-revision: 6
+revision: 8
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:33:51Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:33:52Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Need
 

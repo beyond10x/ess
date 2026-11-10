@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:text-functions-compute-values
 kind: story
-status: draft
+status: active
 title: 'Text functions compute values: len, prefix, suffix, repeat, lower, upper, trim, and documented concatenation'
 tags:
 - zero-open-issues
@@ -12,6 +12,7 @@ refs:
 relations:
 - decomposes: epic:zero-open-issues-2026-11
 - depends_on: story:ess-37-and-conformance-64-65-are-open-for-the-epics-constructs
+- serves: vision:O2
 scope:
 - confidence: inferred
   path: crates/specify/ess-domain/src/expression/value.rs
@@ -31,7 +32,10 @@ scope:
   path: website/docs/guides/specify/values-and-views.md
 - confidence: inferred
   path: website/docs/reference/predicates.md
-revision: 5
+revision: 8
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:47:01Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:47:02Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Need
 
@@ -118,7 +122,7 @@ confidence: medium
 5. **Second adopter.** A support tool that shows a card number as `**** **** **** 1234`
    (`repeat("*", 4) + … + suffix(number, 4)`); a list read that answers a 140-character preview of
    a body (`prefix(body, 140)`).
-6. **Cost.** The next open source format (one G1 decision, policy 2). New function names; no new
+6. **Cost.** `ess/37` (one G1 decision, policy 2). New function names; no new
    diagnostic code; IR carries the parsed expression as today. `ess verify diff` compares the
    parsed tree, as for every expression. No generated-code change (obligation by name).
 7. **Alternatives.** (a) Change nothing: the read stays the clear text in the specification.
@@ -136,3 +140,4 @@ The conditional is `story:a-value-expression-chooses-between-two-values-by-a-con
 ## Source
 
 github:beyond10x/ess#756
+

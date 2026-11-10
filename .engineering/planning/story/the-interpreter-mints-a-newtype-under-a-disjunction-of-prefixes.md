@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:the-interpreter-mints-a-newtype-under-a-disjunction-of-prefixes
 kind: story
-status: draft
+status: active
 title: The interpreter mints entity-field and event-payload values of a String newtype that satisfy its positive text invariants
 summary: 'A value minted for an entity field or event payload misses any starts_with, contains or any: of prefixes its base text does not already meet, so the scenario turns Unsupported (adopter item 5); 0.68.0 fixed the response path only (262c66ca8); same on 0.67.0.'
 tags:
@@ -27,7 +27,10 @@ scope:
   path: crates/verify/ess-conformance/src/witness.rs
 - confidence: inferred
   path: crates/verify/ess-conformance/tests/newtype_any_prefix.rs
-revision: 13
+revision: 15
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:47:47Z", actor: "human:timo", revision: 14, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:47:48Z", actor: "human:timo", revision: 15, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Need
 

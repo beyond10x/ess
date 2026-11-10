@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:synthesis-witnesses-a-guard-over-a-stored-response-value
 kind: story
-status: draft
+status: active
 title: Synthesis witnesses a guard over a stored response value
 tags:
 - zero-open-issues
@@ -14,6 +14,7 @@ relations:
 - depends_on: story:stored-field-equals-returned-response-value
 - depends_on: story:the-interpreter-answers-the-response-value-an-outcome-stores
 - depends_on: story:ess-37-and-conformance-64-65-are-open-for-the-epics-constructs
+- serves: vision:O2
 scope:
 - confidence: inferred
   path: crates/verify/ess-conformance/src/admission.rs
@@ -33,7 +34,10 @@ scope:
   path: crates/verify/ess-conformance/tests/stored_response_values.rs
 - confidence: inferred
   path: website/docs/reference/formats.md
-revision: 4
+revision: 6
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:46:45Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:46:47Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Need
 

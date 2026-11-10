@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:review-stale-lines-corrected
 kind: story
-status: draft
+status: active
 title: Stale lines found by the fit review are corrected
 tags:
 - defect
@@ -21,7 +21,10 @@ scope:
   path: website/docs/guides/specify/guards-and-predicates.md
 - confidence: cited
   path: website/docs/guides/specify/selection-effects.md
-revision: 5
+revision: 7
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:45:58Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:45:59Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Outcome
 

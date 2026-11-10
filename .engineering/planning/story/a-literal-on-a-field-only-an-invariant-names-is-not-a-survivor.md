@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-literal-on-a-field-only-an-invariant-names-is-not-a-survivor
 kind: story
-status: draft
+status: active
 title: A literal on a field only an invariant names is not a survivor
 summary: sets-retarget literal on an invariant-only field stays a scored survivor; oracle default exit 3 to 1 since ebed16afd6 (W2 MUT1 finding, D413, backlog)
 tags:
@@ -15,6 +15,7 @@ tags:
 relations:
 - informed_by: review-result:adversary-w2-mut1-pass-1
 - decomposes: epic:zero-open-issues-2026-11
+- serves: vision:O2
 scope:
 - confidence: inferred
   path: crates/edge/ess-cli/src/main.rs
@@ -22,7 +23,10 @@ scope:
   path: crates/verify/ess-conformance/src/mutate.rs
 - confidence: cited
   path: crates/verify/ess-conformance/tests/mutation_audit.rs
-revision: 5
+revision: 8
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:38:25Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:38:26Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Need
 
@@ -76,4 +80,5 @@ confidence: medium
 
 ## Schedule
 
-Backlog: not waved; considered only after every predefined wave is released.
+Waved under epic:zero-open-issues-2026-11 (accepted 2026-11-10).
+

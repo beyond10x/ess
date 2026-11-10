@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:generated-code-decodes-a-missing-member-apart-from-null
 kind: story
-status: draft
+status: active
 title: Generated code decodes a missing member apart from null
 tags:
 - zero-open-issues
@@ -13,6 +13,7 @@ relations:
 - decomposes: epic:zero-open-issues-2026-11
 - depends_on: story:an-input-keeps-missing-and-null-apart
 - depends_on: story:conformance-holds-missing-keeps-and-null-clears
+- serves: vision:O2
 scope:
 - confidence: inferred
   path: crates/generate/ess-entity-runtime/src/lib.rs
@@ -32,7 +33,10 @@ scope:
   path: crates/generate/schema-contract/src/realize/ts.rs
 - confidence: cited
   path: website/docs/reference/entity-runtime-lowering.md
-revision: 8
+revision: 10
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:44:17Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"review_outcome":2}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:44:18Z", actor: "human:timo", revision: 10, decided_on: {"recorded":{"review_outcome":2}}}
 ---
 ## Need
 

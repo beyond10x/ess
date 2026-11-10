@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-connective-child-masked-by-an-earlier-branch-is-not-asked-for
 kind: story
-status: draft
+status: active
 title: A presence child beside a read of the same optional is witnessed by the absent input and never refused
 summary: ESS-SYNTH-022 asks for a witness of defined(x) beside a comparison on x that an earlier branch already masks, which no input can give (beyond10x/ess#729)
 tags:
@@ -16,8 +16,6 @@ relations:
 - decomposes: epic:adopter-gaps-synthesis
 - decomposes: epic:zero-open-issues-2026-11
 scope:
-- confidence: inferred
-  path: committed
 - confidence: cited
   path: crates/verify/ess-conformance/src/synthesize.rs
 - confidence: cited
@@ -28,7 +26,10 @@ scope:
   path: docs/design/generic-language-features.md
 - confidence: cited
   path: website/docs/reference/predicates.md
-revision: 6
+revision: 10
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:33:38Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"review_outcome":2}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:33:39Z", actor: "human:timo", revision: 10, decided_on: {"recorded":{"review_outcome":2}}}
 ---
 ## Need
 
@@ -125,7 +126,6 @@ Tests in `crates/verify/ess-conformance/tests/`, each over an inline specificati
 - cited: website/docs/reference/predicates.md (the paragraph under "From `ess/29`: what an absent value compares as" that states the limitation; "What synthesis can witness")
 - cited: docs/design/generic-language-features.md ("Synthesis cost, per operation family", row "presence, `coalesce`, `if`")
 - cited: CHANGELOG.md
-- inferred: committed suites and golden files of any fixture whose guard has this shape (no specification under `examples/` writes `defined(` or `missing(` in a guard, so none is expected there)
 
 confidence: high
 
@@ -205,3 +205,4 @@ that cell.
 ## Source
 
 github:beyond10x/ess#729
+

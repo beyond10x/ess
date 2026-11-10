@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:generated-servers-ignore-undeclared-json-members-and-check-echoed-path-fields
 kind: story
-status: draft
+status: active
 title: Generated servers ignore undeclared JSON members and check echoed path fields
 tags:
 - zero-open-issues
@@ -13,6 +13,7 @@ relations:
 - decomposes: epic:zero-open-issues-2026-11
 - depends_on: story:a-json-request-may-ignore-undeclared-members-and-echoed-path-fields
 - depends_on: story:the-go-server-refuses-an-undeclared-member-at-any-depth
+- serves: vision:O2
 scope:
 - confidence: inferred
   path: crates/generate/ess-synth/src/go/http.rs
@@ -28,7 +29,10 @@ scope:
   path: crates/generate/ess-synth/tests/http_binding/board_routes.rs
 - confidence: cited
   path: crates/generate/ess-synth/tests/http_binding/go.rs
-revision: 5
+revision: 7
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:44:37Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":2}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:44:38Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":2}}}
 ---
 ## Need
 

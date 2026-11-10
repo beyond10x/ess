@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-system-issued-creating-command-is-witnessed
 kind: story
-status: draft
+status: active
 title: A command a system actor holds that creates its subject is witnessed
 summary: ESS-SYNTH-023 on both outcomes of a system-issued creating command (workbench report item 43)
 tags:
@@ -41,7 +41,10 @@ scope:
   path: crates/verify/ess-conformance/tests/system_issued_synthesis.rs
 - confidence: cited
   path: docs/design/system-issued-commands.md
-revision: 8
+revision: 10
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:42:04Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"review_outcome":2}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:42:05Z", actor: "human:timo", revision: 10, decided_on: {"recorded":{"review_outcome":2}}}
 ---
 ## Need
 

@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-sent-value-may-be-mapped-or-left-out
 kind: story
-status: draft
+status: active
 title: A sent param or input may be left out while a condition does not hold
 summary: no value map for what is sent (constant-name spellings), and a false param is always sent
 tags:
@@ -36,7 +36,10 @@ scope:
   path: schemas/ui/ess-ui.schema.yaml
 - confidence: inferred
   path: website/docs/reference/ess-ui.md
-revision: 6
+revision: 8
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:41:45Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:41:46Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Need
 

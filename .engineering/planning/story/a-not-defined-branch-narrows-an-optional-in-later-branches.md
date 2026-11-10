@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-not-defined-branch-narrows-an-optional-in-later-branches
 kind: story
-status: draft
+status: active
 title: A `not defined` branch narrows an Optional for the branches after it
 summary: A payload after an absent-optional refusal still sees Optional<String> (workbench report item 19)
 tags:
@@ -15,6 +15,8 @@ tags:
 relations:
 - serves: vision:O2
 - decomposes: epic:zero-open-issues-2026-11
+- depends_on: story:ess-37-and-conformance-64-65-are-open-for-the-epics-constructs
+- depends_on: story:format-rule-for-relaxations
 scope:
 - confidence: cited
   path: crates/specify/ess-domain/src/command/narrowing.rs
@@ -26,7 +28,10 @@ scope:
   path: crates/verify/ess-conformance/tests/
 - confidence: inferred
   path: docs/design/optional-input-narrowing.md
-revision: 5
+revision: 7
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:40:38Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":3}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:40:40Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":3}}}
 ---
 ## Need
 

@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:the-terminal-draws-a-bound-form-field-from-its-binding
 kind: story
-status: draft
+status: active
 title: The terminal draws a bound form field from its binding, as React does
 summary: Terminal reads draft.<field>, React reads binds; filter tokenizer whitespace differs (0.89.0 ride-along adversary; from-finding)
 tags:
@@ -25,7 +25,10 @@ scope:
   path: crates/ui/ess-ui-tui/src/view.rs
 - confidence: cited
   path: crates/ui/ess-ui/src/filter.rs
-revision: 5
+revision: 7
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:48:19Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:48:20Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Need
 

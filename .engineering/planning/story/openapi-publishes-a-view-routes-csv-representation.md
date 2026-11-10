@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:openapi-publishes-a-view-routes-csv-representation
 kind: story
-status: draft
+status: active
 title: OpenAPI publishes a view route's CSV representation
 tags:
 - zero-open-issues
@@ -12,6 +12,7 @@ refs:
 relations:
 - decomposes: epic:zero-open-issues-2026-11
 - depends_on: story:a-view-route-answers-a-csv-representation-its-query-value-selects
+- serves: vision:O2
 scope:
 - confidence: cited
   path: crates/generate/ess-gen/src/openapi.rs
@@ -19,7 +20,10 @@ scope:
   path: crates/generate/ess-gen/tests/fixtures/openapi-http/
 - confidence: inferred
   path: crates/generate/ess-gen/tests/openapi_http_presentation.rs
-revision: 4
+revision: 6
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:45:26Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:45:27Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Need
 

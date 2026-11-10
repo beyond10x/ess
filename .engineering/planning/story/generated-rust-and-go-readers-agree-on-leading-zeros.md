@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:generated-rust-and-go-readers-agree-on-leading-zeros
 kind: story
-status: draft
+status: active
 title: Generated Rust and Go readers agree on leading zeros
 summary: The generated Rust JSON reader accepts 01 (and 01.0 since U15); Go refuses it; found by the batch-3 adversary
 tags:
@@ -13,6 +13,7 @@ tags:
 relations:
 - informed_by: story:an-integer-literal-is-written-into-the-suite-as-an-integer
 - decomposes: epic:zero-open-issues-2026-11
+- serves: vision:O2
 scope:
 - confidence: cited
   path: crates/generate/ess-synth/src/go/http.rs
@@ -24,7 +25,10 @@ scope:
   path: crates/generate/ess-synth/tests/http_binding/shared.rs
 - confidence: cited
   path: crates/generate/ess-synth/tests/http_binding_rust.rs
-revision: 8
+revision: 10
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:44:24Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:44:25Z", actor: "human:timo", revision: 10, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Outcome
 

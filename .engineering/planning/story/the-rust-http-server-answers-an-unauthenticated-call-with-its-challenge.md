@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:the-rust-http-server-answers-an-unauthenticated-call-with-its-challenge
 kind: story
-status: draft
+status: active
 title: The Rust HTTP server answers an unauthenticated call with its challenge
 tags:
 - zero-open-issues
@@ -12,6 +12,7 @@ refs:
 relations:
 - decomposes: epic:zero-open-issues-2026-11
 - depends_on: story:an-http-binding-declares-how-a-caller-authenticates
+- serves: vision:O2
 scope:
 - confidence: inferred
   path: crates/generate/ess-gen/src/http.rs
@@ -21,7 +22,10 @@ scope:
   path: crates/generate/ess-synth/src/rust/http/bound.rs
 - confidence: inferred
   path: crates/generate/ess-synth/tests/served_authentication.rs
-revision: 4
+revision: 6
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:48:08Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:48:09Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Need
 

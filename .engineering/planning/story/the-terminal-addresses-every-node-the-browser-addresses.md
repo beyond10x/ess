@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:the-terminal-addresses-every-node-the-browser-addresses
 kind: story
-status: draft
+status: active
 title: The terminal addresses every node the browser addresses
 tags:
 - zero-open-issues
@@ -12,6 +12,7 @@ refs:
 relations:
 - decomposes: epic:zero-open-issues-2026-11
 - depends_on: story:the-ui-test-runner-acts-on-an-action-inside-an-overlay
+- serves: vision:O2
 scope:
 - confidence: inferred
   path: crates/ui/ess-ui-test/src/parity.rs
@@ -25,7 +26,10 @@ scope:
   path: crates/ui/ess-ui-tui/src/view.rs
 - confidence: inferred
   path: website/docs/reference/ess-ui-test.md
-revision: 4
+revision: 6
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:48:16Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:48:17Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Need
 

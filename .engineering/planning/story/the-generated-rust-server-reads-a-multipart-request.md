@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:the-generated-rust-server-reads-a-multipart-request
 kind: story
-status: draft
+status: active
 title: The generated Rust server reads a multipart request
 tags:
 - zero-open-issues
@@ -12,16 +12,20 @@ refs:
 relations:
 - decomposes: epic:zero-open-issues-2026-11
 - depends_on: story:a-command-route-takes-a-multipart-request-with-file-parts
+- serves: vision:O2
 scope:
 - confidence: inferred
   path: crates/generate/ess-synth/src/rust/http.rs
 - confidence: cited
   path: crates/generate/ess-synth/src/rust/http/bound.rs
 - confidence: inferred
-  path: crates/generate/ess-synth/tests/http_binding.rs
-- confidence: inferred
   path: crates/generate/ess-synth/tests/http_binding/multipart.rs
-revision: 4
+- confidence: inferred
+  path: crates/generate/ess-synth/tests/http_binding_rust.rs
+revision: 9
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:47:27Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"review_outcome":2}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:47:28Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"review_outcome":2}}}
 ---
 ## Need
 
@@ -54,7 +58,7 @@ Neutral example: `demo.reports.ImportRows(file: Bytes, file_name: String, format
 - cited: crates/generate/ess-synth/src/rust/http/bound.rs
 - inferred: crates/generate/ess-synth/src/rust/http.rs
 - inferred: crates/generate/ess-synth/tests/http_binding/multipart.rs
-- inferred: crates/generate/ess-synth/tests/http_binding.rs
+- inferred: crates/generate/ess-synth/tests/http_binding_rust.rs
 confidence: medium
 
 ## Fit review
@@ -80,3 +84,4 @@ confidence: medium
 ## Source
 
 github:beyond10x/ess#754
+

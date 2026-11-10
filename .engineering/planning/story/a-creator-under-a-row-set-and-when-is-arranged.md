@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-creator-under-a-row-set-and-when-is-arranged
 kind: story
-status: draft
+status: active
 title: A creator guarded by a row set and a when is arranged
 tags:
 - defect
@@ -19,7 +19,10 @@ scope:
   path: crates/verify/ess-conformance/src/synthesize/row_set.rs
 - confidence: inferred
   path: crates/verify/ess-conformance/tests/a_creator_under_a_row_set_is_arranged.rs
-revision: 7
+revision: 9
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:33:43Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:33:43Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Finding
 

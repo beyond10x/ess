@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:the-published-schema-reads-a-ranking-key-as-a-string
 kind: story
-status: draft
+status: active
 title: The published schema reads a ranking key as the string the parser reads
 tags:
 - defect
@@ -16,7 +16,10 @@ scope:
   path: crates/specify/ess-domain/src/view.rs
 - confidence: cited
   path: crates/specify/ess-domain/tests/published_name_aliases.rs
-revision: 8
+revision: 10
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:47:55Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:47:56Z", actor: "human:timo", revision: 10, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Finding
 

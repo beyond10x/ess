@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:conformance-holds-missing-keeps-and-null-clears
 kind: story
-status: draft
+status: active
 title: Conformance holds missing keeps and null clears
 tags:
 - zero-open-issues
@@ -13,6 +13,7 @@ relations:
 - decomposes: epic:zero-open-issues-2026-11
 - depends_on: story:an-input-keeps-missing-and-null-apart
 - depends_on: story:ess-37-and-conformance-64-65-are-open-for-the-epics-constructs
+- serves: vision:O2
 scope:
 - confidence: cited
   path: crates/verify/ess-conformance/src/go/runtime.go
@@ -26,7 +27,10 @@ scope:
   path: crates/verify/ess-conformance/src/ts/runtime.ts
 - confidence: inferred
   path: crates/verify/ess-conformance/tests/keep_on_missing.rs
-revision: 8
+revision: 10
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:43:25Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"review_outcome":2}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:43:28Z", actor: "human:timo", revision: 10, decided_on: {"recorded":{"review_outcome":2}}}
 ---
 ## Need
 

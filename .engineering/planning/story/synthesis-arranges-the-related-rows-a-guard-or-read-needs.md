@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:synthesis-arranges-the-related-rows-a-guard-or-read-needs
 kind: story
-status: draft
+status: active
 title: Synthesis arranges the related and filtered rows a guard or read needs
 summary: ESS-SYNTH-001 for guards over related row states and counts, ESS-SYNTH-005 for an optional-filtered read (workbench report items 21, 23, 24a)
 tags:
@@ -22,7 +22,10 @@ scope:
   path: crates/verify/ess-conformance/src/synthesize/row_set.rs
 - confidence: inferred
   path: crates/verify/ess-conformance/tests/synthesis.rs
-revision: 7
+revision: 9
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:46:29Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:46:31Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Need
 

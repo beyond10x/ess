@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:an-owner-link-guard-beside-an-owner-existence-guard-is-witnessed
 kind: story
-status: draft
+status: active
 title: A guard comparing an owned row's link with an input is witnessed when the owner input is guarded too
 tags:
 - adopter-report
@@ -20,7 +20,10 @@ scope:
   path: crates/verify/ess-conformance/src/synthesize/subject_fact.rs
 - confidence: inferred
   path: crates/verify/ess-conformance/tests/related_guard_owner_link_beside_owner_guard.rs
-revision: 4
+revision: 6
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:40:44Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:40:46Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Outcome
 

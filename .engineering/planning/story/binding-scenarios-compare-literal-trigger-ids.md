@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:binding-scenarios-compare-literal-trigger-ids
 kind: story
-status: draft
+status: active
 title: Every binding scenario compares the literal trigger ids it sent
 tags:
 - defect
@@ -23,7 +23,10 @@ scope:
   path: crates/verify/ess-conformance/tests/fixtures/binding-arrangement.yaml
 - confidence: inferred
   path: suites/generated/billing/suite.json
-revision: 6
+revision: 8
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:42:59Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:43:00Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Finding
 

@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:wrong-state-branch-beside-a-subject-guard-is-witnessed
 kind: story
-status: draft
+status: active
 title: A wrong-state branch beside a subject guard is witnessed
 summary: 'Synthesis''s wrong-state family skips a command that also has a subject guard: StateBesideWrongState/not-held gets no scenario and no refusal at ess/27 and ess/30, so the suite is silent on a branch the explorer reaches; explore_guards_first.rs pins the gap as expected. On origin/main since 9572af9ba. (adversary pass 2026-10-22, F2).'
 tags:
@@ -21,7 +21,10 @@ scope:
   path: crates/verify/ess-conformance/tests/explore_guards_first.rs
 - confidence: inferred
   path: crates/verify/ess-conformance/tests/wrong_state_beside_subject_guard.rs
-revision: 7
+revision: 10
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:49:22Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"review_outcome":3}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:49:24Z", actor: "human:timo", revision: 10, decided_on: {"recorded":{"review_outcome":3}}}
 ---
 ## Problem
 
@@ -63,8 +66,23 @@ The interpreter already answers `not-held` on a retired seat
 - States a subject guard already answers keep their scenarios unchanged (no new wrong-state scenario where the guard
   selects; `Seat/state/Released/refuses/StateBesideWrongState` bytes unchanged).
 - `explore_guards_first.rs` drops the `beyond` pin: the explorer reaches no branch the scenarios do not expect.
-- Where a held state can be reached by neither the plain wrong-state row nor a guard, a refusal names it instead of
-  silence.
+- A held state that neither the plain wrong-state row nor a guard can reach is refused by name. Model: the corpus
+  with a terminal state `Scrapped` added to `Seat` and a transition `scrap: {from: [Released], to: Scrapped}` that no
+  command moves through, so the lifecycle validates and no arrangement reaches `Scrapped`. Synthesis writes no
+  `demo.pairs.Seat/state/Scrapped/refuses/demo.pairs.StateBesideWrongState` scenario and records one refusal for that
+  id with code `ESS-SYNTH-004`, the code the control `Release` gets for its own `Scrapped` id. Same file, case
+  `an_unreachable_wrong_state_beside_a_subject_guard_is_refused_by_name`, run with
+  `cargo test -p ess-conformance --locked --test wrong_state_beside_subject_guard`.
+- `cargo test -p ess-conformance --locked --test synthesis_suite_bytes_table` passes. Each row of
+  `synthesis-suite-bytes-table.tsv` that moves is a fixture with a subject guard beside `wrong_state:` whose suite,
+  synthesized before and after the change and compared, differs only by added `<entity>/state/<S>/refuses/<command>`
+  scenarios or refusals; no other row moves.
+
+## Decisions
+
+- The unreachable state is refused as `ESS-SYNTH-004`: `refused_here` arranges the row through
+  `refusal_arrangement`, which answers a state no arrangement reaches with `RefusalCause::InstanceRequired` (code 4,
+  `synthesize.rs:1700`), and `wrong_state_scenario` passes that refusal on when no guard answers the state either.
 
 ## Scope
 
@@ -75,7 +93,6 @@ The interpreter already answers `not-held` on a retired seat
 
 confidence: medium
 
-The story re-pins the suite-bytes rows of fixtures with a subject guard beside `wrong_state:`
-(`crates/verify/ess-conformance/tests/fixtures/synthesis-suite-bytes-table.tsv`, a shared surface
-the coordinator reconciles), and proposes its `CHANGELOG.md` sentence.
+Shared surfaces moved: re-pins the suite-bytes rows of fixtures with a subject guard beside `wrong_state:`, and
+proposes its `CHANGELOG.md` sentence.
 

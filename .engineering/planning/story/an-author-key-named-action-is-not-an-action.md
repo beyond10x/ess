@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:an-author-key-named-action-is-not-an-action
 kind: story
-status: draft
+status: active
 title: An author key named action is not read as an action
 summary: A record field or export param keyed action with a map value is read as an Action and misnames the refusal (UI-adopter wave 1 U4 pass-2 note, pre-existing, backlog)
 tags:
@@ -15,12 +15,16 @@ tags:
 relations:
 - informed_by: review-result:w086-u4-adversary-pass-2
 - decomposes: epic:zero-open-issues-2026-11
+- serves: vision:O2
 scope:
 - confidence: cited
   path: crates/ui/ess-ui/src/locate.rs
 - confidence: inferred
   path: crates/ui/ess-ui/tests/
-revision: 5
+revision: 8
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:38:58Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:39:00Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Need
 
@@ -96,4 +100,5 @@ confidence: high
 
 ## Schedule
 
-Backlog: not waved; considered only after every predefined wave is released.
+Waved under epic:zero-open-issues-2026-11 (accepted 2026-11-10).
+

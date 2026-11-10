@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-text-operator-reads-a-binder-or-a-field-as-its-operand
 kind: story
-status: draft
+status: active
 title: 'A text operator reads a binder or a field as its operand ({fact: t}), and a bare word spelling a binder is refused'
 tags:
 - zero-open-issues
@@ -13,6 +13,7 @@ relations:
 - decomposes: epic:zero-open-issues-2026-11
 - depends_on: story:ess-37-and-conformance-64-65-are-open-for-the-epics-constructs
 - depends_on: story:text-shape-operators-ignore-case
+- serves: vision:O2
 scope:
 - confidence: inferred
   path: crates/specify/ess-domain/src/expression.rs
@@ -32,7 +33,10 @@ scope:
   path: docs/design/language-grids.md
 - confidence: cited
   path: website/docs/reference/predicates.md
-revision: 5
+revision: 7
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:42:07Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":3}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:42:08Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":3}}}
 ---
 ## Need
 

@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:response-newtype-witness-lets-prefix-and-suffix-overlap
 kind: story
-status: draft
+status: active
 title: A response newtype witness lets a prefix and a suffix overlap
 summary: The model interpreter's TextRules::candidates (interpret/response.rs, 262c66ca8) never overlaps starts_with and ends_with, so count <= 3, starts_with AB, ends_with BC has the witness ABC and is still interpreted as Unsupported. Never a wrong verdict. (adversary pass 2026-10-22, F1).
 tags:
@@ -17,7 +17,10 @@ scope:
   path: crates/verify/ess-conformance/src/interpret/response.rs
 - confidence: cited
   path: crates/verify/ess-conformance/tests/adversary_e1_reachability.rs
-revision: 4
+revision: 6
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:45:55Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:45:56Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 # Story: a response newtype witness lets a prefix and a suffix overlap
 

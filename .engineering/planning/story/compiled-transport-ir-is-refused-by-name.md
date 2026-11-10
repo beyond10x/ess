@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:compiled-transport-ir-is-refused-by-name
 kind: story
-status: draft
+status: active
 title: Transport consumers refuse the compiled transport IR by name
 tags:
 - defect
@@ -23,7 +23,10 @@ scope:
   path: docs/design/event-transport-binding.md
 - confidence: cited
   path: website/docs/reference/formats.md
-revision: 4
+revision: 6
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:43:18Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:43:19Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Outcome
 

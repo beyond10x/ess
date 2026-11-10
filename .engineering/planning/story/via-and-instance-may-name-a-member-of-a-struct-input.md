@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:via-and-instance-may-name-a-member-of-a-struct-input
 kind: story
-status: draft
+status: active
 title: via:, all:, instance:, each.in and {missing:} accept an input path into a struct input, a List<Id> member included
 summary: 'via: and instance: accept only top-level inputs (ESS-COMMAND-001) (adopter item 3, beyond10x/a2a); gap, needs ess/31.'
 tags:
@@ -43,7 +43,10 @@ scope:
   path: docs/design/expression-family-source22.md
 - confidence: inferred
   path: website/docs/reference/predicates.md
-revision: 9
+revision: 12
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:49:03Z", actor: "human:timo", revision: 11, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:49:05Z", actor: "human:timo", revision: 12, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Need
 
@@ -175,7 +178,7 @@ confidence: medium
 ## Decisions
 
 accept, redesigned. `via:`, `all:` elements, `instance:`, `each: {in:}` and `{missing:}` accept the
-`input.<path>` that `sets:` accepts, a `List<Id>` member included, under the next source format. The
+`input.<path>` that `sets:` accepts, a `List<Id>` member included, at `ess/37`. The
 request named `via:` alone; the closing rule widens it to the whole row. Follow-ups:
 
 - `story:synthesis-witnesses-a-row-addressed-through-a-struct-input-member`
@@ -184,3 +187,4 @@ request named `via:` alone; the closing rule widens it to the whole row. Follow-
 ## Source
 
 github:beyond10x/ess#640
+

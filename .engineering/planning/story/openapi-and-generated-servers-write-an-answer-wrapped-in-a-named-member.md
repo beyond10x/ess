@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:openapi-and-generated-servers-write-an-answer-wrapped-in-a-named-member
 kind: story
-status: draft
+status: active
 title: OpenAPI and generated servers write an answer wrapped in a named member
 tags:
 - zero-open-issues
@@ -12,6 +12,7 @@ refs:
 relations:
 - decomposes: epic:zero-open-issues-2026-11
 - depends_on: story:an-answer-may-be-wrapped-in-one-named-member
+- serves: vision:O2
 scope:
 - confidence: cited
   path: crates/generate/ess-gen/src/openapi.rs
@@ -25,7 +26,10 @@ scope:
   path: crates/generate/ess-synth/tests/http_binding/answer_forms.rs
 - confidence: cited
   path: crates/generate/ess-synth/tests/http_binding/go.rs
-revision: 4
+revision: 6
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:45:18Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:45:20Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Need
 

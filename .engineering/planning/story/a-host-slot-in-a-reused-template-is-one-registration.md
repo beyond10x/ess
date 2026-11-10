@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-host-slot-in-a-reused-template-is-one-registration
 kind: story
-status: draft
+status: active
 title: A host slot in a reused template is one registration with one identity per instance path
 summary: 'Reused template holding a slot is refused declared twice in 0.90.0 (U2 adversary; coordinator: draft for 0.91.0)'
 tags:
@@ -35,7 +35,10 @@ scope:
   path: crates/ui/ess-ui/src/expand.rs
 - confidence: cited
   path: crates/ui/ess-ui/src/path.rs
-revision: 10
+revision: 12
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:34:23Z", actor: "human:timo", revision: 11, decided_on: {"recorded":{"review_outcome":2}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:34:25Z", actor: "human:timo", revision: 12, decided_on: {"recorded":{"review_outcome":2}}}
 ---
 ## Need
 

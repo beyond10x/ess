@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:diff-decides-an-added-subject-guard
 kind: story
-status: draft
+status: active
 title: ess verify diff decides an added when_subject refusal
 summary: An added when_subject refusal that refuses a subject state and input the earlier revision accepted is classified RefusalAdded instead of left undecided.
 tags:
@@ -15,6 +15,7 @@ relations:
 - serves: vision:O2
 - decomposes: epic:adopter-gaps-verdicts
 - decomposes: epic:zero-open-issues-2026-11
+- depends_on: story:ess-37-and-conformance-64-65-are-open-for-the-epics-constructs
 scope:
 - confidence: inferred
   path: crates/verify/ess-conformance/src/mutate.rs
@@ -24,7 +25,10 @@ scope:
   path: crates/verify/ess-diff/tests/narrowed_acceptance.rs
 - confidence: inferred
   path: crates/verify/ess-diff/tests/subject_fact_complete_refusal.rs
-revision: 5
+revision: 7
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:43:34Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:43:35Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Outcome
 

@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:format-rule-for-relaxations
 kind: story
-status: draft
+status: active
 title: A relaxation says which format admits it
 tags:
 - defect
@@ -19,7 +19,10 @@ scope:
   path: crates/specify/ess-domain/src/system.rs
 - confidence: cited
   path: docs/design/review-external-requests-2026-09.md
-revision: 6
+revision: 8
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:44:08Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:44:09Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Outcome
 

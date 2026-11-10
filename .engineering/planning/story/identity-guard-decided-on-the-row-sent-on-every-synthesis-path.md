@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:identity-guard-decided-on-the-row-sent-on-every-synthesis-path
 kind: story
-status: draft
+status: active
 title: Synthesis decides an identity guard on the row sent on the stored-field and addressed-row paths
 tags:
 - defect
@@ -20,7 +20,10 @@ scope:
   path: crates/verify/ess-conformance/src/synthesize/subject_fact.rs
 - confidence: inferred
   path: crates/verify/ess-conformance/tests/identity_guard_on_the_row_sent.rs
-revision: 8
+revision: 10
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:44:58Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:44:59Z", actor: "human:timo", revision: 10, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Finding
 

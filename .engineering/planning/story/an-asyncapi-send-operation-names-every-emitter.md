@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:an-asyncapi-send-operation-names-every-emitter
 kind: story
-status: draft
+status: active
 title: The AsyncAPI send operation names every outcome that emits the event
 summary: The send operation names one emitter of three (a2a wave 1, G7); defect.
 tags:
@@ -26,7 +26,10 @@ scope:
   path: generated/asyncapi/email-service.yaml
 - confidence: inferred
   path: generated/asyncapi/invoice-service.yaml
-revision: 8
+revision: 10
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:38:46Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:38:47Z", actor: "human:timo", revision: 10, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Need
 

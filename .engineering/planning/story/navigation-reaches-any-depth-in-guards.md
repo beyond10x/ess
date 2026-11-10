@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:navigation-reaches-any-depth-in-guards
 kind: story
-status: draft
+status: active
 title: A when_related guard reads a row any number of references away
 tags:
 - zero-open-issues
@@ -13,6 +13,7 @@ relations:
 - decomposes: epic:zero-open-issues-2026-11
 - depends_on: story:navigation-reaches-any-depth-in-view-filters-and-guards
 - depends_on: story:ess-37-and-conformance-64-65-are-open-for-the-epics-constructs
+- serves: vision:O2
 scope:
 - confidence: inferred
   path: crates/specify/ess-compiler/src/ir.rs
@@ -28,7 +29,10 @@ scope:
   path: crates/verify/ess-conformance/src/synthesize/related.rs
 - confidence: inferred
   path: crates/verify/ess-conformance/src/synthesize/related_guard.rs
-revision: 5
+revision: 8
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:45:13Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:45:14Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Need
 
@@ -63,7 +67,7 @@ exit 1
 
 ## Acceptance
 
-At G2's next source format:
+At `ess/37`:
 
 - `ess specify validate --path f-guard-two-hops` exits 0; `exists: false` over a chain answers a
   missing row at any step; a step that is no declared reference is refused as ESS-COMMAND-003
@@ -108,7 +112,7 @@ confidence: medium
    Composes with the precedence rule unchanged (step 4). Targets: interpreter and synthesis; Rust
    and Go obligations, named; Entity Runtime refusal kept by decision.
 5. **Second adopter.** Booking a seat refused while the seat's room's building is closed.
-6. **Cost.** G2's next source format, shared with the view story; no key, no diagnostic code.
+6. **Cost.** `ess/37`, shared with the view story; no key, no diagnostic code.
 7. **Alternatives.** (a) Change nothing. (b) A separate guard per hop: cannot say "the far row of
    this row". (c) Chosen: a `via:` chain, as in values and views.
 
@@ -116,8 +120,9 @@ confidence: medium
 
 **Accept as proposed** (the downstream shape, a guard reading the far row's
 state, is the design's). `when_related: {via: [input.<id>, <ref>, …], exists | predicate}` from
-G2's next source format.
+`ess/37`.
 
 ## Source
 
 github:beyond10x/ess#564 (downstream finding 10)
+

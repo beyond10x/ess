@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:text-shape-operators-ignore-case
 kind: story
-status: draft
+status: active
 title: contains, starts_with and ends_with have ignore-case forms
 tags:
 - zero-open-issues
@@ -12,6 +12,7 @@ refs:
 relations:
 - decomposes: epic:zero-open-issues-2026-11
 - depends_on: story:ess-37-and-conformance-64-65-are-open-for-the-epics-constructs
+- serves: vision:O2
 scope:
 - confidence: cited
   path: crates/generate/ess-entity-runtime/src/lib.rs
@@ -35,7 +36,10 @@ scope:
   path: docs/design/language-grids.md
 - confidence: cited
   path: website/docs/reference/predicates.md
-revision: 7
+revision: 9
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:47:04Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"review_outcome":2}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:47:06Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"review_outcome":2}}}
 ---
 ## Need
 

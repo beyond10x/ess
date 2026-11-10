@@ -2,9 +2,9 @@
 format: aep.planning-md/3
 id: story:synthesis-witnesses-aggregate-conditions-over-optional-and-unset-fields
 kind: story
-status: draft
-title: Synthesis witnesses aggregate conditions over optional and state-filtered fields
-summary: 'ESS-SYNTH-017 for where: on Optional fields and four state-filtered counts in one group (workbench report items 20, 24b); part A, avg over a field only a later command sets, is a backlog draft.'
+status: active
+title: Synthesis witnesses four state-filtered counts in one aggregate group
+summary: 'Workbench report item 24b: four state-filtered counts in one group are witnessed; item 20 is not a defect and item 22 is a backlog draft.'
 tags:
 - backlog
 - defect
@@ -22,7 +22,10 @@ scope:
   path: crates/verify/ess-conformance/src/synthesize/aggregate/contrast.rs
 - confidence: inferred
   path: crates/verify/ess-conformance/tests/conditional_measures_cover_every_state.rs
-revision: 11
+revision: 14
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:46:40Z", actor: "human:timo", revision: 13, decided_on: {"recorded":{"review_outcome":3}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:46:42Z", actor: "human:timo", revision: 14, decided_on: {"recorded":{"review_outcome":3}}}
 ---
 ## Need
 

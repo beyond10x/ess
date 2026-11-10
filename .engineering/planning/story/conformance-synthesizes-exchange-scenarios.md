@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:conformance-synthesizes-exchange-scenarios
 kind: story
-status: draft
+status: active
 title: Conformance synthesizes exchange scenarios
 summary: Open, admitted and refused messages, close, follower bound; interpreted target passes; size L
 tags:
@@ -28,7 +28,10 @@ scope:
   path: crates/verify/ess-conformance/src/synthesize/exchange.rs
 - confidence: inferred
   path: crates/verify/ess-conformance/tests/exchange_scenarios.rs
-revision: 9
+revision: 11
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:43:31Z", actor: "human:timo", revision: 10, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:43:32Z", actor: "human:timo", revision: 11, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Need
 

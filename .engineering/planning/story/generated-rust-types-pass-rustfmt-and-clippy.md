@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:generated-rust-types-pass-rustfmt-and-clippy
 kind: story
-status: draft
+status: active
 title: Generated Rust types pass rustfmt and clippy
 summary: 'spindle wave 12: ess generate types --target rust fails rustfmt and clippy derivable_impls (ess 0.88.0)'
 tags:
@@ -25,7 +25,10 @@ scope:
   path: crates/generate/schema-contract/src/realize/rust_support.rs.txt
 - confidence: inferred
   path: crates/generate/schema-contract/tests/rust_realization.rs
-revision: 9
+revision: 11
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:44:30Z", actor: "human:timo", revision: 10, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:44:31Z", actor: "human:timo", revision: 11, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Need
 

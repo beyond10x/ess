@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:ess-cli-flag-and-repeated-sources
 kind: story
-status: draft
+status: active
 title: ess-cli takes a flag over a required Boolean and repeated over a List
 summary: ess-cli/1 and /2 accept flag over a required Boolean and repeated over List<T>; gap 3 is declined with a refusal that names it (docs/plan/wave-ess-issues-1.md:158)
 tags:
@@ -31,7 +31,10 @@ scope:
   path: docs/design/cli-presentation-binding.md
 - confidence: inferred
   path: website/docs/reference/formats.md
-revision: 6
+revision: 8
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:43:46Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:43:48Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Need
 

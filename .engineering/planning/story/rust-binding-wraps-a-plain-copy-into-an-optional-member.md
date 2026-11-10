@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:rust-binding-wraps-a-plain-copy-into-an-optional-member
 kind: story
-status: draft
+status: active
 title: The Rust target wraps a plain binding copy into an Optional member
 tags:
 - adopter-report
@@ -20,7 +20,10 @@ scope:
   path: crates/generate/ess-synth/src/rust/system.rs
 - confidence: inferred
   path: crates/generate/ess-synth/tests/binding_optional_wrap_go.rs
-revision: 5
+revision: 7
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:46:00Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:46:01Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Outcome
 

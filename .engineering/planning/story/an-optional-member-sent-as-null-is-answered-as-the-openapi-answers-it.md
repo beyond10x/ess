@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:an-optional-member-sent-as-null-is-answered-as-the-openapi-answers-it
 kind: story
-status: draft
+status: active
 title: An Optional member sent as null is answered as the served OpenAPI answers it
 summary: Rust server admits null for an Optional member the served schema refuses (W1 GEN1 review, pre-existing, backlog)
 tags:
@@ -14,12 +14,16 @@ tags:
 relations:
 - informed_by: review-result:security-w1-gen1-pass-1
 - decomposes: epic:zero-open-issues-2026-11
+- serves: vision:O2
 scope:
 - confidence: cited
   path: crates/generate/ess-synth/src/rust/wire.rs
 - confidence: cited
   path: crates/generate/ess-synth/tests/adversary_w1_gen1_security.rs
-revision: 8
+revision: 10
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:40:30Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:40:32Z", actor: "human:timo", revision: 10, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Need
 

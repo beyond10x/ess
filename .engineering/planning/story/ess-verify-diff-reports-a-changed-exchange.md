@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:ess-verify-diff-reports-a-changed-exchange
 kind: story
-status: draft
+status: active
 title: ess verify diff reports a changed exchange
 tags:
 - zero-open-issues
@@ -12,6 +12,8 @@ refs:
 relations:
 - decomposes: epic:zero-open-issues-2026-11
 - depends_on: story:an-exchange-is-declared-in-the-specification
+- depends_on: story:ess-37-and-conformance-64-65-are-open-for-the-epics-constructs
+- serves: vision:O2
 scope:
 - confidence: cited
   path: crates/verify/ess-diff/src/change.rs
@@ -23,7 +25,10 @@ scope:
   path: crates/verify/ess-diff/tests/exchanges.rs
 - confidence: inferred
   path: docs/design/message-exchanges.md
-revision: 6
+revision: 8
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:43:55Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:43:56Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Need
 

@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:generated-targets-decide-a-guard-on-a-union-variant
 kind: story
-status: draft
+status: active
 title: Generated targets decide a guard on a union variant
 tags:
 - zero-open-issues
@@ -15,6 +15,7 @@ relations:
 - decomposes: epic:zero-open-issues-2026-11
 - depends_on: story:a-guard-reads-a-union-tag-and-a-union-names-its-content-key
 - depends_on: story:synthesis-and-the-interpreter-decide-a-guard-on-a-union-variant
+- serves: vision:O2
 scope:
 - confidence: cited
   path: crates/generate/ess-entity-runtime/src/lib.rs
@@ -40,7 +41,10 @@ scope:
   path: crates/verify/ess-conformance/tests/union_variant_guard_runtimes.rs
 - confidence: inferred
   path: website/docs/reference/entity-runtime-lowering.md
-revision: 8
+revision: 10
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:44:47Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:44:48Z", actor: "human:timo", revision: 10, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Need
 

@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-ui-test-declares-how-each-read-and-command-is-answered
 kind: story
-status: draft
+status: active
 title: A ui test declares how each read and command is answered
 tags:
 - zero-open-issues
@@ -11,6 +11,7 @@ refs:
   reference: beyond10x/ess#722
 relations:
 - decomposes: epic:zero-open-issues-2026-11
+- serves: vision:O2
 scope:
 - confidence: inferred
   path: crates/ui/ess-ui-test/src/parity.rs
@@ -26,7 +27,10 @@ scope:
   path: crates/ui/ess-ui-tui/src/data.rs
 - confidence: cited
   path: website/docs/reference/ess-ui-test.md
-revision: 4
+revision: 6
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:42:16Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:42:17Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Need
 

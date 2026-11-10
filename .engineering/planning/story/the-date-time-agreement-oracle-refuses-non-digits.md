@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:the-date-time-agreement-oracle-refuses-non-digits
 kind: story
-status: draft
+status: active
 title: The date-time agreement oracle refuses non-digits at digit positions
 summary: jsonschema 0.52.1 takes + - . for digits in date-time (W1 GEN1 review, pre-existing, backlog)
 tags:
@@ -14,6 +14,7 @@ tags:
 relations:
 - informed_by: review-result:security-w1-gen1-pass-1
 - decomposes: epic:zero-open-issues-2026-11
+- serves: vision:O2
 scope:
 - confidence: cited
   path: crates/generate/ess-synth/Cargo.toml
@@ -29,7 +30,10 @@ scope:
   path: crates/generate/schema-contract/src/validate.rs
 - confidence: inferred
   path: crates/generate/schema-contract/tests/date_time_digits.rs
-revision: 9
+revision: 11
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:47:13Z", actor: "human:timo", revision: 10, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:47:14Z", actor: "human:timo", revision: 11, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Need
 

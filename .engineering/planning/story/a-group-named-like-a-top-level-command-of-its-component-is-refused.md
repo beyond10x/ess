@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-group-named-like-a-top-level-command-of-its-component-is-refused
 kind: story
-status: draft
+status: active
 title: A group named like a top-level command of its own component is refused
 summary: Inside one component a group and a top-level command may share a word and the clap tree defines it twice (W2 GEN2 review finding, pre-existing, backlog)
 tags:
@@ -15,6 +15,7 @@ tags:
 relations:
 - informed_by: review-result:adversary-w2-gen2-pass-1
 - decomposes: epic:zero-open-issues-2026-11
+- serves: vision:O2
 scope:
 - confidence: cited
   path: crates/generate/ess-synth/tests/adversary_w2_gen2_adversary.rs
@@ -22,7 +23,10 @@ scope:
   path: crates/specify/ess-domain/src/component.rs
 - confidence: inferred
   path: crates/specify/ess-domain/tests/
-revision: 5
+revision: 8
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:38:12Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:38:12Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Need
 
@@ -84,4 +88,5 @@ confidence: high
 
 ## Schedule
 
-Backlog: not waved; considered only after every predefined wave is released.
+Waved under epic:zero-open-issues-2026-11 (accepted 2026-11-10).
+

@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:the-terminal-draws-an-object-tag-by-its-label
 kind: story
-status: draft
+status: active
 title: The terminal draws an object tag by its label, as React does
 summary: 'Terminal draws an object tag as key: value, React draws its label (0.90.0 U3 implementor; from-finding)'
 tags:
@@ -19,7 +19,10 @@ scope:
   path: crates/ui/ess-ui-tui/src/view.rs
 - confidence: inferred
   path: crates/ui/ess-ui-tui/tests/object_tags.rs
-revision: 8
+revision: 10
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:48:22Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:48:23Z", actor: "human:timo", revision: 10, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Need
 

@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-declared-field-format-renders-or-is-refused
 kind: story
-status: draft
+status: active
 title: 'Every declared value format renders, or ess ui check refuses it (minutes and hours, metric duration, timestamp, percent scale, as: metric)'
 summary: '`as: metric` renders as text; durations lack minutes and hours; percent scale is undocumented (workbench report items 8, 41)'
 tags:
@@ -37,7 +37,10 @@ scope:
   path: schemas/ui/ess-ui.schema.yaml
 - confidence: inferred
   path: website/docs/reference/ess-ui.md
-revision: 6
+revision: 8
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:33:44Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:33:45Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Need
 

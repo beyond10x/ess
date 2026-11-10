@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-nested-optional-is-refused
 kind: story
-status: draft
+status: active
 title: A nested optional is refused from ess/37
 tags:
 - defect
@@ -24,7 +24,10 @@ scope:
   path: docs/design/binding-mapping-bounded-accessor.md
 - confidence: cited
   path: website/docs/guides/verify/observations.md
-revision: 10
+revision: 12
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:39:09Z", actor: "human:timo", revision: 11, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:39:10Z", actor: "human:timo", revision: 12, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Finding
 

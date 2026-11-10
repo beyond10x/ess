@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:the-interpreted-target-passes-a-related-run-digest-and-a-default-step
 kind: story
-status: draft
+status: active
 title: The interpreted target passes a whole-model related-run digest and default step
 summary: 15 interpreted scenarios fail on DigestMismatch and an await deadline in a whole model (workbench report items 37, 38)
 tags:
@@ -26,7 +26,10 @@ scope:
   path: crates/verify/ess-conformance/tests/related_guard_accepting_arrangement.rs
 - confidence: inferred
   path: crates/verify/ess-conformance/tests/system_issued_unclaimed_send.rs
-revision: 8
+revision: 10
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:47:40Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"review_outcome":2}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:47:40Z", actor: "human:timo", revision: 10, decided_on: {"recorded":{"review_outcome":2}}}
 ---
 ## Need
 

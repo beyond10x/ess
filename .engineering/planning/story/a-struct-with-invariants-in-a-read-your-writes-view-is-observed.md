@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-struct-with-invariants-in-a-read-your-writes-view-is-observed
 kind: story
-status: draft
+status: active
 title: A struct with type invariants in a read_your_writes view is observed as a complete subject
 summary: A struct field with invariants in a read_your_writes view breaks complete-subject observation, and leaving it out is ESS-SYNTH-013 (beyond10x/ess#730)
 tags:
@@ -29,7 +29,10 @@ scope:
   path: docs/design/retained-command-results.md
 - confidence: cited
   path: website/docs/guides/verify/observations.md
-revision: 4
+revision: 6
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:41:55Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:41:56Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Need
 

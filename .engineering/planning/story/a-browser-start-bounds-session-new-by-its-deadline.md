@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-browser-start-bounds-session-new-by-its-deadline
 kind: story
-status: draft
+status: active
 title: A browser start bounds its first session.new by the startup deadline
 tags:
 - defect
@@ -16,7 +16,10 @@ scope:
   path: crates/edge/ess-cli/tests/browser_startup_refusal_boundary.rs
 - confidence: cited
   path: crates/edge/ess-cli/tests/support/browser.rs
-revision: 5
+revision: 7
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:33:28Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:33:29Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Finding
 

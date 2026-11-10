@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:ui-component-diagnostics-cite-their-own-view-and-reader
 kind: story
-status: draft
+status: active
 title: UI component diagnostics cite their own view and reader
 summary: ESS-COMPONENT-005 cites one file:line for every unplaced view; overlay_params flags a parameter only the submission reads (0.77.0)
 tags:
@@ -14,6 +14,7 @@ tags:
 - zero-open-issues
 relations:
 - decomposes: epic:zero-open-issues-2026-11
+- serves: vision:O2
 scope:
 - confidence: inferred
   path: crates/specify/ess-compiler/src/resolve.rs
@@ -25,7 +26,10 @@ scope:
   path: crates/ui/ess-ui-check/src/names.rs
 - confidence: inferred
   path: crates/ui/ess-ui-check/tests/checks.rs
-revision: 9
+revision: 11
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:48:43Z", actor: "human:timo", revision: 10, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:48:45Z", actor: "human:timo", revision: 11, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Outcome
 

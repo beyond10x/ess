@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:the-specification-checks-command-response-wire-names
 kind: story
-status: draft
+status: active
 title: The specification checks command response wire names
 summary: Two response fields of one wire name are refused by the specification pass, so every target is covered, not only Rust and web
 tags:
@@ -22,7 +22,10 @@ scope:
   path: crates/specify/ess-domain/tests/
 - confidence: cited
   path: docs/design/unique-wire-field-identity.md
-revision: 5
+revision: 7
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:48:14Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:48:15Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Problem
 

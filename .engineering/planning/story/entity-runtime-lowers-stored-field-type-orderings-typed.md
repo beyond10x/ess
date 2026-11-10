@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:entity-runtime-lowers-stored-field-type-orderings-typed
 kind: story
-status: draft
+status: active
 title: Entity Runtime lowers a stored field type's ordering invariant typed, or refuses it by name
 tags:
 - defect
@@ -20,7 +20,10 @@ scope:
   path: crates/generate/ess-entity-runtime/tests/stored_field_orderings.rs
 - confidence: inferred
   path: website/docs/reference/entity-runtime-lowering.md
-revision: 8
+revision: 10
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:43:41Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:43:43Z", actor: "human:timo", revision: 10, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Finding
 

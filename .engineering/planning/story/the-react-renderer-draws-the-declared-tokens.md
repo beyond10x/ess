@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:the-react-renderer-draws-the-declared-tokens
 kind: story
-status: draft
+status: active
 title: The React renderer draws the declared tokens
 summary: ess generate ui --target react ignores tokens:; styles.css is unchanged and hard-codes values that have tokens (0.77.0)
 tags:
@@ -15,6 +15,7 @@ refs:
   reference: beyond10x/ess#723
 relations:
 - decomposes: epic:zero-open-issues-2026-11
+- serves: vision:O2
 scope:
 - confidence: cited
   path: crates/ui/ess-ui-react/src/assets.rs
@@ -30,7 +31,10 @@ scope:
   path: crates/ui/ess-ui-react/templates/runtime/styles.css.tmpl
 - confidence: inferred
   path: crates/ui/ess-ui-react/tests/tokens.rs
-revision: 7
+revision: 9
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:47:59Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:48:01Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Need
 

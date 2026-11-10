@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:an-input-guard-on-an-enum-variant-leaves-the-related-row-family-arrangeable
 kind: story
-status: draft
+status: active
 title: An input guard on an enum input's first variant leaves the related-row family arrangeable
 summary: An input guard on the first variant of an enum input blocks the arrange_related_row family with ESS-SYNTH-008 (beyond10x/ess#731)
 tags:
@@ -20,7 +20,10 @@ scope:
   path: crates/verify/ess-conformance/src/synthesize/related_guard.rs
 - confidence: inferred
   path: crates/verify/ess-conformance/tests/missing_related_row_beside_input_refusal.rs
-revision: 5
+revision: 7
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:39:50Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:39:51Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Need
 

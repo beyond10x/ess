@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:two-input-named-related-refusals-beside-a-held-state-branch-validate
 kind: story
-status: draft
+status: active
 title: Two input-named related refusals beside a held-state branch validate
 summary: Validation reports a held seat (already-bound) and an unknown seat (bound) as selected together once a second related refusal over another input joins a create-or-update command; found by the 0.70.0 unit I adversary, no adopter shape yet
 tags:
@@ -21,7 +21,10 @@ scope:
   path: crates/specify/ess-domain/src/command/related_guard.rs
 - confidence: cited
   path: crates/verify/ess-conformance/tests/adversary_i_create_or_update.rs
-revision: 5
+revision: 7
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:48:40Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:48:42Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Problem
 

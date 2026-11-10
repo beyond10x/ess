@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:an-every-invocation-check-reads-only-its-own-pass
 kind: story
-status: draft
+status: active
 title: An every-invocation check in a swapped-caller pass reads only its own pass
 summary: 'Inferred from the 0.72.0 gap Q fix: the forced-outcome cell''s every-invocation check spans both passes of a swapped caller.'
 tags:
@@ -13,6 +13,7 @@ tags:
 relations:
 - informed_by: approval-record:ess-0720-hold-for-gap-q
 - decomposes: epic:zero-open-issues-2026-11
+- serves: vision:O2
 scope:
 - confidence: cited
   path: crates/verify/ess-conformance/src/synthesize/binding_effects.rs
@@ -20,7 +21,10 @@ scope:
   path: crates/verify/ess-conformance/src/synthesize/caller.rs
 - confidence: inferred
   path: crates/verify/ess-conformance/tests/binding_drop_swapped_caller.rs
-revision: 6
+revision: 8
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:39:15Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:39:18Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Problem
 

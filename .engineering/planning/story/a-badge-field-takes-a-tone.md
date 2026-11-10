@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-badge-field-takes-a-tone
 kind: story
-status: draft
+status: active
 title: A field takes a tone, a widget passes its fallback tone, and a tone map may band numbers
 summary: 'tone and tone_by on a Field with as: badge are refused as an unknown field, so tone maps cannot reach status columns (0.77.0)'
 tags:
@@ -15,6 +15,7 @@ refs:
   reference: beyond10x/ess#723
 relations:
 - decomposes: epic:zero-open-issues-2026-11
+- serves: vision:O2
 scope:
 - confidence: inferred
   path: crates/ui/ess-ui-check/src/classify.rs
@@ -36,7 +37,10 @@ scope:
   path: schemas/ui/ess-ui.schema.yaml
 - confidence: inferred
   path: website/docs/reference/ess-ui.md
-revision: 8
+revision: 10
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:37:38Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:37:39Z", actor: "human:timo", revision: 10, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Need
 

@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:an-external-refusal-before-a-related-row-is-witnessed-at-their-overlap
 kind: story
-status: draft
+status: active
 title: An external refusal answered before the row is witnessed beside a related-row refusal
 tags:
 - zero-open-issues
@@ -12,6 +12,7 @@ refs:
 relations:
 - decomposes: epic:zero-open-issues-2026-11
 - depends_on: story:a-related-row-may-answer-before-input-guards
+- serves: vision:O2
 scope:
 - confidence: cited
   path: crates/specify/ess-domain/src/command.rs
@@ -27,7 +28,10 @@ scope:
   path: crates/verify/ess-conformance/tests/explore_before_row.rs
 - confidence: inferred
   path: docs/design/cross-record-and-stored-field-guards.md
-revision: 4
+revision: 6
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:39:32Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:39:34Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Need
 

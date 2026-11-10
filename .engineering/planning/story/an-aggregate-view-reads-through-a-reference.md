@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:an-aggregate-view-reads-through-a-reference
 kind: story
-status: draft
+status: active
 title: An aggregate view reads through a reference
 summary: Aggregate views refuse fields read through a reference; generated queries keep such reads as obligations (workbench report item 13, new on 0.92.0)
 tags:
@@ -42,7 +42,10 @@ scope:
   path: docs/design/generic-language-features.md
 - confidence: inferred
   path: docs/design/language-grids.md
-revision: 6
+revision: 9
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:38:39Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:38:40Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Need
 
@@ -73,7 +76,7 @@ exit 1
 
 ## Acceptance
 
-At G2's next source format:
+At `ess/37`:
 
 - `e-aggregate` validates (exit 0): an aggregate view's `filter:` reads through a reference of its
   source as a row view's does;
@@ -132,7 +135,7 @@ confidence: medium
    Rust and Go obligations, named; Entity Runtime refuses by name.
 5. **Second adopter.** Revenue per customer segment through an order's customer; tickets per
    team through the ticket's queue.
-6. **Cost.** G2's next source format; no new key; no new diagnostic code.
+6. **Cost.** `ess/37`; no new key; no new diagnostic code.
 7. **Alternatives.** (a) Change nothing. (b) A join on arbitrary keys: refused by G2. (c) Chosen:
    the existing navigation shapes admitted in aggregate views, group keys by the group-key rule.
 
@@ -148,3 +151,4 @@ aggregate view reads through a reference".
 ## Source
 
 github:beyond10x/ess#564; `.engineering/repro/workbench-2026-11-09/report.md` item 13
+

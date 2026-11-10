@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-synthesized-binding-scenario-reads-a-left-out-awaited-input-from-the-answer
 kind: story
-status: draft
+status: active
 title: A synthesized binding scenario reads a left-out awaited input from the answer
 summary: The binding scenario for an awaited Optional input passes against a target that leaves it out, without a hand edit.
 tags:
@@ -24,7 +24,10 @@ scope:
   path: crates/verify/ess-conformance/src/ts/runtime.ts
 - confidence: cited
   path: crates/verify/ess-conformance/tests/system_issued_interpreter.rs
-revision: 5
+revision: 7
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:42:03Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:42:03Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Need
 

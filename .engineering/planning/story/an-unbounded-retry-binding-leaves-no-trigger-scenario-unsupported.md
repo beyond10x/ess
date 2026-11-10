@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:an-unbounded-retry-binding-leaves-no-trigger-scenario-unsupported
 kind: story
-status: draft
+status: active
 title: An unbounded retry binding into a possibly missing row leaves no trigger scenario Unsupported
 summary: 'Unbounded on_failure: retry into a command whose target row can be missing leaves the trigger scenario Unsupported (adopter defect 3, 2026-10-22); since 0.65.0.'
 tags:
@@ -29,7 +29,10 @@ scope:
   path: crates/verify/ess-conformance/tests/adversary_d350_u2_pass1.rs
 - confidence: cited
   path: crates/verify/ess-conformance/tests/binding_arranged_rows.rs
-revision: 14
+revision: 16
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:40:47Z", actor: "human:timo", revision: 15, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:40:49Z", actor: "human:timo", revision: 16, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Need
 

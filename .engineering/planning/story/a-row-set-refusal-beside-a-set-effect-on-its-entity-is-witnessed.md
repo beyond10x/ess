@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-row-set-refusal-beside-a-set-effect-on-its-entity-is-witnessed
 kind: story
-status: draft
+status: active
 title: A row-set refusal beside a set effect on its entity is witnessed
 tags:
 - zero-open-issues
@@ -11,6 +11,7 @@ refs:
   reference: beyond10x/ess#638
 relations:
 - decomposes: epic:zero-open-issues-2026-11
+- serves: vision:O2
 scope:
 - confidence: cited
   path: crates/verify/ess-conformance/src/synthesize/row_set.rs
@@ -18,7 +19,10 @@ scope:
   path: crates/verify/ess-conformance/src/synthesize/set_effects.rs
 - confidence: inferred
   path: crates/verify/ess-conformance/tests/row_set_beside_set_effect.rs
-revision: 4
+revision: 6
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:41:35Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:41:36Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Need
 

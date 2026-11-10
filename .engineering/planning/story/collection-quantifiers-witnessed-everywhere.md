@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:collection-quantifiers-witnessed-everywhere
 kind: story
-status: draft
+status: active
 title: Every collection quantifier is witnessed with several elements, or says why not
 tags:
 - defect
@@ -20,7 +20,10 @@ scope:
   path: crates/verify/ess-conformance/src/witness.rs
 - confidence: inferred
   path: crates/verify/ess-conformance/tests/input_list_quantifiers.rs
-revision: 9
+revision: 11
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:43:16Z", actor: "human:timo", revision: 10, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:43:17Z", actor: "human:timo", revision: 11, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Outcome
 

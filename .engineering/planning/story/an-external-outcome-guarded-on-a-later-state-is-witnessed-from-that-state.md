@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:an-external-outcome-guarded-on-a-later-state-is-witnessed-from-that-state
 kind: story
-status: draft
+status: active
 title: An external outcome guarded on a later state is witnessed from that state
 summary: An external outcome with when_subject state == S is witnessed from the initial state, so the model selects wrong-state and every implementation fails it (beyond10x/ess#739)
 tags:
@@ -22,7 +22,10 @@ scope:
   path: crates/verify/ess-conformance/src/synthesize/subject_fact.rs
 - confidence: cited
   path: crates/verify/ess-conformance/tests/external_narrowed_by_subject.rs
-revision: 4
+revision: 7
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:39:28Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":2}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:39:29Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":2}}}
 ---
 ## Need
 
@@ -62,23 +65,33 @@ control).
 
 ## Acceptance
 
-- On the reproduction specification above, `ess verify conform synthesize` writes
+All cases run in `cargo test -p ess-conformance --locked --test external_narrowed_by_subject`.
+
+- On the reproduction specification above, synthesis writes
   `depot.parcel.ShipParcel/outcome/held` with `SealParcel` (`sealed`) before the forced
-  `ShipParcel`. `ess verify conform run --target interpreted` passes all of its scenarios.
-- Where no arrangement reaches a row `P` selects (for example `P` is `state == Sealed` and no
-  transition reaches `Sealed`), the scenario is not written. It is refused with `ESS-SYNTH-003` or
-  `ESS-SYNTH-004`, naming the narrowed branch.
-- No suite changes its bytes except where a narrowed external branch was witnessed on a row its
-  predicate does not select. The existing tests in
-  `crates/verify/ess-conformance/tests/external_narrowed_by_subject.rs` pass unchanged.
+  `ShipParcel`, and the interpreted target passes every scenario of the suite (0 failed,
+  0 unsupported).
+- On the reproduction specification without the `SealParcel` command (the `seal` transition stays
+  declared, so the lifecycle validates, but no command takes it and no arrangement reaches
+  `Sealed`), synthesis writes no `depot.parcel.ShipParcel/outcome/held` scenario and
+  records one refusal for it with code `ESS-SYNTH-003` whose text names `held`.
+- The tests in `external_narrowed_by_subject.rs` before the change pass unchanged.
+- `cargo test -p ess-conformance --locked --test synthesis_suite_bytes_table` and
+  `--test external_beside_held_guard` pass. Each row of `synthesis-suite-bytes-table.tsv` that moves
+  is a fixture whose suite, synthesized before and after the change and compared, differs only in
+  the scenario of an `external:` branch narrowed by `when_subject: {predicate: …}`; no other row
+  moves.
 
 ## Scope
 
 - cited: crates/verify/ess-conformance/src/synthesize.rs (`unclaimed_external`, lines 5245-5254: also route an outcome with `subject_fact::narrowing(&outcome.condition).is_some()` to `external_witness`)
 - cited: crates/verify/ess-conformance/src/synthesize/subject_fact.rs (`uses` line 50, `narrowing` line 99, `external_witness` line 2580, `leaves_external` line 2994: the narrowed search already exists)
-- cited: crates/verify/ess-conformance/tests/external_narrowed_by_subject.rs (new test: the narrowed branch is the command's only stored-row guard)
-- inferred: CHANGELOG.md (Fixed entry)
+- cited: crates/verify/ess-conformance/tests/external_narrowed_by_subject.rs (new tests: the narrowed branch is the command's only stored-row guard, reachable and unreachable)
+
 confidence: high
+
+Shared surfaces moved: re-pins the suite-bytes rows of fixtures with a narrowed external branch
+whose scenario moves, and proposes its `CHANGELOG.md` sentence (Fixed).
 
 ## Fit review
 
@@ -120,6 +133,11 @@ confidence: high
 Accept as proposed. The narrowed external branch is witnessed on a row its predicate selects,
 reached through the lifecycle's transitions, or refused by name where none is reachable. No format
 change. The design section already decides this behaviour, so no design page is needed first.
+
+- The unreachable case is `ESS-SYNTH-003`: `external_witness_searched` tries the reachable `Packed`
+  row, finds no input the branch answers on, and returns `external_claimed`, a
+  `GuardUnsatisfiable` cause (code 3, `synthesize.rs:1696`); `ESS-SYNTH-004` is reached only when
+  no row at all can be arranged, and the initial row always can.
 
 ## Source
 
