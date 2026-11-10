@@ -289,6 +289,8 @@ const FORMAT_RELEASES: &[(&str, u32, Option<&str>)] = &[
     ("infra-ir", 1, Some("0.1.0")),
     ("infra-ir", 2, Some("0.21.0")),
     ("infra-ir", 3, Some("0.33.0")),
+    // The cluster's HTTP edge: Gateway API gateways and HTTP routes.
+    ("infra-ir", 4, None),
     ("infra-drift", 1, Some("0.1.0")),
     ("infra-drift", 2, Some("0.21.0")),
     ("infra-drift", 3, Some("0.33.0")),

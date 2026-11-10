@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:an-absent-payload-read-is-claimed-absent-in-either-spelling-not-as-null
 kind: story
-status: active
+status: implemented
 title: An absent payload read is claimed absent in either spelling, not as null
 tags:
 - zero-open-issues
@@ -14,17 +14,22 @@ relations:
 - serves: vision:O2
 scope:
 - confidence: cited
+  path: crates/verify/ess-conformance/src/runner.rs
+- confidence: cited
   path: crates/verify/ess-conformance/src/synthesize.rs
 - confidence: cited
   path: crates/verify/ess-conformance/src/synthesize/set_effects.rs
 - confidence: inferred
   path: crates/verify/ess-conformance/tests/absent_payload_read.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/tests/adversary_t1_lane1_absent_payload.rs
 - confidence: inferred
   path: docs/design/value-expressions.md
-revision: 7
+revision: 10
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-10T00:38:31Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"review_outcome":1}}}
 - {from: "proposed", to: "active", at: "2026-11-10T00:38:32Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "active", to: "implemented", at: "2026-11-10T17:53:37Z", actor: "human:timo", revision: 10, decided_on: {"recorded":{"test_result":1,"review_outcome":2}}}
 ---
 ## Need
 
@@ -123,14 +128,17 @@ the arrangement evaluates to `null` were left on the exact-value path.
 
 ## Scope
 
-- cited: crates/verify/ess-conformance/src/synthesize.rs (`determined_fields` at 10026-10060, line 10045 skips `null` only when `absent_by_reference` holds; `absent_by_reference_leaves` at 10066-10107 and `absent_by_reference` at 10111-10115; the call site in `exercise_run_in` at 4475; also `from_source` at 17150-17163, which calls `determined_payload` with `held` and applies no absent-leaf narrowing)
-- cited: crates/verify/ess-conformance/src/synthesize/set_effects.rs (`absent_changed_leaves` at 1796-1840 and its call site at 1707, both replaced by the shared rule)
-- inferred: crates/verify/ess-conformance/tests/absent_payload_read.rs (new; model and fake target inline, as `omitted_or_null.rs` does)
-- inferred: docs/design/value-expressions.md (lines 51-53 need the absent-value exception for `{subject: <field>}`)
+Delivered in turn 1 of the zero-open-issues plan (lane story 1). The paths below are the ones
+its commits changed, read from the diff, so every entry is cited.
 
-confidence: high — the story names the defect site and both per-source helpers, and every anchor was checked against the integration checkout (story-scoper, 2026-11-10)
+- cited, confirmed: `crates/verify/ess-conformance/src/synthesize.rs`
+- cited, confirmed: `crates/verify/ess-conformance/src/synthesize/set_effects.rs`
+- cited, confirmed: `crates/verify/ess-conformance/tests/absent_payload_read.rs`
+- cited, confirmed: `docs/design/value-expressions.md`
+- cited, added: `crates/verify/ess-conformance/src/runner.rs`
+- cited, added: `crates/verify/ess-conformance/tests/adversary_t1_lane1_absent_payload.rs`
 
-Shared surfaces this story moves (epic § Shared surfaces, not scope entries): `CHANGELOG.md`. The byte-pin tables are not expected to move: no committed suite under `suites/generated/` has a payload entry equal to `null` (scoper, read-only count).
+Shared surface written by the coordinator, not a scope entry: `CHANGELOG.md`.
 
 ## Fit review
 

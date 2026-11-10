@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-10T17:53:31Z",
+  "actor": "human:timo",
+  "artifact": "story:a-graph-editor-draws-its-edges-and-a-menu-per-node",
+  "kind": "story",
+  "revision": 12,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "turn-1 gate on integration/ess-zero-issues (head 045e12f293): fmt-check 0; clippy -D warnings per crate group 0; projections incl. xtask docs 0; ess-conformance 727/728 at 2d3c0b929a, row_set_upsert + lane + byte-pin targets (32) green after 2104be969b; test groups ess-domain/diff/compiler 0, ess-synth/gen/entity-runtime 1518/1524 (6 race fails pass at --test-threads 1), ess-cli 1257/1263 (5 TMPDIR-in-checkout pass re-run, a16 SUN_LEN fails at base ab09f5b48d too, backlog), UI crates 0, ess-xtask 423/0 after 045e12f293",
+    "reference": "commit:ab05724768"
+  }
+}

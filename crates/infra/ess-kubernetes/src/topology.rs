@@ -7,7 +7,7 @@ use infra_domain::coverage::CollectionCoverage;
 use infra_domain::raw::{
     RawBundle, RawClaim, RawConfigMap, RawCronJob, RawHorizontalPodAutoscaler, RawIngress, RawJob,
     RawNamespace, RawNode, RawPod, RawPodDisruptionBudget, RawPodSpec, RawReplicaSet, RawSecret,
-    RawService, RawServiceAccount, RawWorkload,
+    RawService, RawServiceAccount, RawServiceStatus, RawWorkload,
 };
 use serde::{de::DeserializeOwned, Serialize};
 use serde_json::{json, Map, Value};
@@ -166,7 +166,16 @@ fn selected<T: DeserializeOwned + Serialize>(
     let mut raw: T =
         serde_json::from_value(value).map_err(|_| "resource shape or selector is unsupported")?;
     redact(&mut raw);
-    serde_json::to_value(raw).map_err(|_| "cannot serialize selected resource".to_owned())
+    let mut value =
+        serde_json::to_value(raw).map_err(|_| "cannot serialize selected resource".to_owned())?;
+    // The profile records no annotation, not even the ones the full scan reads (a cloud role, a
+    // load-balancer scheme): those are `infra-ir/4` content and this profile is `/2`.
+    for pointer in ["/metadata", "/spec/template/metadata"] {
+        if let Some(Value::Object(metadata)) = value.pointer_mut(pointer) {
+            metadata.remove("annotations");
+        }
+    }
+    Ok(value)
 }
 
 fn pod_spec(spec: &mut RawPodSpec) {
@@ -204,7 +213,8 @@ fn select(kind: &str, value: Value) -> Result<Value, String> {
             }
         }),
         "pods" => selected::<RawPod>(value, |raw| pod_spec(&mut raw.spec)),
-        "services" => selected::<RawService>(value, |_| {}),
+        // A load balancer's assigned hostnames are `infra-ir/4` content, not this profile's.
+        "services" => selected::<RawService>(value, |raw| raw.status = RawServiceStatus::default()),
         "ingresses" => selected::<RawIngress>(value, |_| {}),
         "configmaps" => selected::<RawConfigMap>(value, |raw| {
             raw.data.clear();

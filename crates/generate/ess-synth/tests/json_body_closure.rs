@@ -353,6 +353,37 @@ fn an_admitted_body_reads_back_unchanged_and_a_refused_one_is_never_stored() {
     assert_eq!(stamps["s1"], sent("stamp-valid"));
 }
 
+/// The validator the agreement test holds the server to.
+fn oracle(schema: &Value) -> jsonschema::Validator {
+    schema_contract::uniqueness::options()
+        .should_validate_formats(true)
+        .build(schema)
+        .unwrap_or_else(|error| panic!("the served document compiles as a schema: {error}"))
+}
+
+/// A `date-time` the oracle admits is one RFC 3339, and the servers' own `timestamp_at`, admit:
+/// `+`, `-`, `.` and `x` at any of its 14 digit positions are refused.
+#[test]
+fn the_date_time_oracle_refuses_a_non_digit_at_every_digit_position() {
+    const STAMP: &str = "2026-10-29T12:00:00Z";
+    let validator = oracle(&json!({"type": "string", "format": "date-time"}));
+    assert!(validator.is_valid(&json!(STAMP)), "{STAMP}");
+    let mut admitted = Vec::new();
+    let mut checked = 0;
+    for position in (0..STAMP.len()).filter(|at| STAMP.as_bytes()[*at].is_ascii_digit()) {
+        for replacement in ["+", "-", ".", "x"] {
+            let mut text = STAMP.to_owned();
+            text.replace_range(position..=position, replacement);
+            checked += 1;
+            if validator.is_valid(&json!(text)) {
+                admitted.push(text);
+            }
+        }
+    }
+    assert_eq!(checked, 14 * 4, "every position and replacement was tried");
+    assert!(admitted.is_empty(), "admitted: {admitted:?}");
+}
+
 /// The server and the document it serves agree on every body: the request schema of the route in
 /// the served `openapi.json`, with `format` asserted, refuses exactly the bodies the server
 /// answers `400`.
@@ -367,10 +398,7 @@ fn the_server_refuses_exactly_what_its_served_openapi_refuses() {
         assert!(at["$ref"].is_string(), "{label}: {at}");
         let mut schema = document.clone();
         schema["$ref"] = at["$ref"].clone();
-        let validator = jsonschema::draft202012::options()
-            .should_validate_formats(true)
-            .build(&schema)
-            .unwrap_or_else(|error| panic!("the served document compiles as a schema: {error}"));
+        let validator = oracle(&schema);
         let value: Value = serde_json::from_str(body).expect("JSON");
         let document_admits = validator.is_valid(&value);
         let server_admits = answered(label).status != 400;

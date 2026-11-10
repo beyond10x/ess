@@ -77,7 +77,7 @@ fn corpus() -> Vec<String> {
 #[test]
 fn the_timestamp_decoder_admits_exactly_what_the_served_date_time_format_admits() {
     let schema = serde_json::json!({"type": "string", "format": "date-time"});
-    let validator = jsonschema::draft202012::options()
+    let validator = schema_contract::uniqueness::options()
         .should_validate_formats(true)
         .build(&schema)
         .expect("the schema compiles");

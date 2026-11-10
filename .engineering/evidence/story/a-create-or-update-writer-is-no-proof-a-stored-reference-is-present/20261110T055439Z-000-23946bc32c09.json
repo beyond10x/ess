@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-10T05:54:39Z",
+  "actor": "human:timo",
+  "artifact": "story:a-create-or-update-writer-is-no-proof-a-stored-reference-is-present",
+  "kind": "story",
+  "revision": 10,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "cargo test -p ess-conformance --locked --test adversary_i_create_or_update; cargo test -p ess-domain --locked --test enforced_reference; byte pins",
+    "reference": "ab09f5b48d (9 passed, 2 failed) vs 6df796883e (13 passed; enforced_reference 8 passed; byte pins green)"
+  }
+}
