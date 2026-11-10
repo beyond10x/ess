@@ -23,10 +23,8 @@ scope:
 - confidence: inferred
   path: crates/verify/ess-conformance/tests/presence_child_beside_read.rs
 - confidence: cited
-  path: docs/design/generic-language-features.md
-- confidence: cited
   path: website/docs/reference/predicates.md
-revision: 10
+revision: 15
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-10T00:33:38Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"review_outcome":2}}}
 - {from: "proposed", to: "active", at: "2026-11-10T00:33:39Z", actor: "human:timo", revision: 10, decided_on: {"recorded":{"review_outcome":2}}}
@@ -120,14 +118,18 @@ Tests in `crates/verify/ess-conformance/tests/`, each over an inline specificati
 
 ## Scope
 
-- cited: crates/verify/ess-conformance/src/synthesize.rs (`one_per_child`, `exactly_one`, `isolating`; the refusal is pushed where `unsatisfiable`, `infeasible` and `exhausts` all answer false)
-- cited: crates/verify/ess-conformance/src/witness.rs (`unsatisfiable`, which reads text literals only; `exhausts`, which answers false for every `Optional` path)
-- inferred: crates/verify/ess-conformance/tests/presence_child_beside_read.rs (new)
-- cited: website/docs/reference/predicates.md (the paragraph under "From `ess/29`: what an absent value compares as" that states the limitation; "What synthesis can witness")
-- cited: docs/design/generic-language-features.md ("Synthesis cost, per operation family", row "presence, `coalesce`, `if`")
-- cited: CHANGELOG.md
+- cited: crates/verify/ess-conformance/src/synthesize.rs (`exactly_one` :17549, whose `Decision::Unevaluable(_) => return false` at :17559 is the defect; `one_per_child` :17584, refusal pushed at :17651-17660; `isolating` :17755; callers of `one_per_child` at :17899, :17974, :18038)
+- cited: crates/verify/ess-conformance/src/witness.rs (`exhausts` :336, the optional-path early return at :379; `unsatisfiable` :443; the in-file test `a_satisfiable_goal_is_never_read_as_unsatisfiable` :7172 stays unchanged)
+- inferred: crates/verify/ess-conformance/tests/presence_child_beside_read.rs (new, for Acceptance 1-5)
+- cited: website/docs/reference/predicates.md (the limitation paragraph :475-477; "What synthesis can witness" :1800, presence row :1812, refusal rule :1831-1833)
 
-confidence: high
+confidence: high — the story names the defect site, and every cited symbol resolves to the file:line above; the only guess is the name of the new test file (story-scoper, 2026-11-10)
+
+Coordinator, 2026-11-10: `docs/design/generic-language-features.md` (row "presence, `coalesce`, `if`" :193) is left out of this scope. The scoper found the row already states the rule and only a stale code reference would change, which no acceptance item asks for; `story:a-create-or-update-writer-is-no-proof-a-stored-reference-is-present` of the same turn edits that page.
+
+Not established by the scoper: whether `witness.rs` is edited at all (the emptiness check may stay in `synthesize.rs`), and whether `related_guard.rs:3144` and `subject_fact.rs:7920`, each with its own `isolating`, join the scope.
+
+Shared surfaces this story moves (epic § Shared surfaces, not scope entries): `CHANGELOG.md`; the byte-pin tables may move for suites with this guard shape.
 
 ## Fit review
 

@@ -18,11 +18,11 @@ relations:
 scope:
 - confidence: cited
   path: crates/verify/ess-conformance/src/synthesize/system_issued.rs
-- confidence: inferred
+- confidence: cited
   path: crates/verify/ess-conformance/tests/system_issued_synthesis.rs
 - confidence: cited
   path: docs/design/system-issued-commands.md
-revision: 8
+revision: 11
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-10T00:41:52Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":1}}}
 - {from: "proposed", to: "active", at: "2026-11-10T00:41:53Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"review_outcome":1}}}
@@ -110,10 +110,16 @@ All cases are in `cargo test -p ess-conformance --locked --test system_issued_sy
 
 ## Scope
 
-- cited: crates/verify/ess-conformance/src/synthesize/system_issued.rs
-- inferred: crates/verify/ess-conformance/tests/system_issued_synthesis.rs
-- cited: docs/design/system-issued-commands.md
+- cited: crates/verify/ess-conformance/src/synthesize/system_issued.rs (`guard` at 361-367 reads only `When` and `ExternalWhen`; `guarded_input` at 320-357, called only at 199; the `SubjectPredicate` claim and its refusal text at 279-284)
+- cited: crates/verify/ess-conformance/tests/system_issued_synthesis.rs (named by the acceptance as `--test system_issued_synthesis`; interpreter helper `run_on_the_interpreter` at 344; model inline)
+- cited: docs/design/system-issued-commands.md (the default-branch rule at 145-157)
 
-confidence: high
+Read only: `crates/specify/ess-compiler/src/ir.rs:629-680` (the `input` fields of `SubjectPredicate`, `Related`, `RelatedSet`); `synthesize.rs:3532` calls `await_system_issued` and its signature does not change.
 
-Proposes a `CHANGELOG.md` sentence; re-pins no suite-bytes row.
+confidence: high — the story names the defect site and the test target; `guard` is private to the file and its only caller is `guarded_input` (story-scoper, 2026-11-10)
+
+Correction to the earlier pass: the test file moves from inferred to cited (it exists and the acceptance names it).
+
+Not established by the scoper: whether synthesis sends `mode: slow` for the default branch once `paused = true` is arranged; that value is chosen in `synthesize.rs`, and if it is wrong the story needs the serial lane.
+
+Shared surfaces this story moves (epic § Shared surfaces, not scope entries): `CHANGELOG.md`; the `system-guard.yaml` row of the bytes table (`tests/fixtures/synthesis-suite-bytes-table.tsv:321`) stays as it is.

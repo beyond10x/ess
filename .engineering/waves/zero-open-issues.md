@@ -59,7 +59,7 @@ page is `zero-open-issues-t<k>.md`.
 
 ### Turn 1
 
-Status: planned
+Status: running ([turn page](zero-open-issues-t1.md))
 
 - lane 1: `story:an-absent-payload-read-is-claimed-absent-in-either-spelling-not-as-null` (priority 0, verb wave 18)
 - lane 2: `story:a-connective-child-masked-by-an-earlier-branch-is-not-asked-for` (priority 1, verb wave 2)

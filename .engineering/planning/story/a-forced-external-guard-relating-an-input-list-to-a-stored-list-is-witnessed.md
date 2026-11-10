@@ -20,11 +20,11 @@ scope:
   path: crates/verify/ess-conformance/src/synthesize.rs
 - confidence: cited
   path: crates/verify/ess-conformance/src/synthesize/subject_fact.rs
-- confidence: cited
-  path: crates/verify/ess-conformance/tests/external_narrowed_by_subject.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/tests/external_narrowed_by_input_relation.rs
 - confidence: inferred
   path: crates/verify/ess-conformance/tests/fixtures/external-narrowed-by-input-relation.yaml
-revision: 8
+revision: 11
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-10T00:33:51Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":1}}}
 - {from: "proposed", to: "active", at: "2026-11-10T00:33:52Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"review_outcome":1}}}
@@ -165,19 +165,18 @@ current main first.
 
 ## Scope
 
-- cited: crates/verify/ess-conformance/src/synthesize/subject_fact.rs
-- cited: crates/verify/ess-conformance/src/synthesize.rs
-- cited: crates/verify/ess-conformance/tests/external_narrowed_by_subject.rs
-- inferred: crates/verify/ess-conformance/tests/fixtures/external-narrowed-by-input-relation.yaml
-- inferred: CHANGELOG.md
+- cited: crates/verify/ess-conformance/src/synthesize/subject_fact.rs (`external_inputs` at 2937-2971, `linked_inputs` at 2945, `grounded(.., &hints(command))` at 2947; `uses` at 50-57; `inputs_for` grounds at 1898-1899; `beside_another` at 1930)
+- cited: crates/verify/ess-conformance/src/synthesize.rs (`unclaimed_external` at 5245, its `uses` gate at 5253-5254)
+- inferred: crates/verify/ess-conformance/tests/external_narrowed_by_input_relation.rs (new)
+- inferred: crates/verify/ess-conformance/tests/fixtures/external-narrowed-by-input-relation.yaml (new; one fixture or two)
 
-confidence: medium
+confidence: high — the story names both defect sites and they match the tree; only the test file and fixture names are guessed (story-scoper, 2026-11-10)
 
-`story:a-guard-comparing-a-stored-list-with-an-input-list-is-arranged` (beyond10x/ess#734) and
-`story:per-state-refusals-are-witnessed-when-the-moving-guard-reads-an-input-list`
-(beyond10x/ess#726) change the same file (`subject_fact.rs`) on other paths (the refusal witness and
-the per-state witness). They do not depend on this story and it does not depend on them; they are
-not safe to implement at the same time.
+Correction to the earlier pass: `tests/external_narrowed_by_subject.rs` was a cited line and is removed: the story cites it only as a regression that passes unchanged (acceptance 6).
+
+Safety note (scoper, unproven): widen only the check at `synthesize.rs:5253` (for example by also testing `subject_fact::narrowing(&outcome.condition)`), not `subject_fact::uses`, which six other callers in `synthesize.rs` read.
+
+Shared surfaces this story moves (epic § Shared surfaces, not scope entries): `CHANGELOG.md`; the byte-pin tables only if a pinned suite moves (`tests/fixtures/external-beside-held-guard-base.tsv` must stay unchanged, acceptance 6).
 
 ## Fit review
 

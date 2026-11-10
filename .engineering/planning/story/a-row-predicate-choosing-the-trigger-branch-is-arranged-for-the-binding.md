@@ -23,12 +23,10 @@ scope:
 - confidence: inferred
   path: crates/verify/ess-conformance/src/synthesize/refusal_policy.rs
 - confidence: inferred
-  path: crates/verify/ess-conformance/src/synthesize/related_guard.rs
-- confidence: cited
   path: crates/verify/ess-conformance/tests/binding_related_branch.rs
 - confidence: cited
   path: website/docs/guides/specify/bindings-and-components.md
-revision: 10
+revision: 13
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-10T00:41:31Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"review_outcome":1}}}
 - {from: "proposed", to: "active", at: "2026-11-10T00:41:32Z", actor: "human:timo", revision: 10, decided_on: {"recorded":{"review_outcome":1}}}
@@ -158,16 +156,17 @@ step 2 where every guard is `Absent`.
 
 ## Scope
 
-- cited: crates/verify/ess-conformance/src/synthesize/binding_effects.rs
-- cited: crates/verify/ess-conformance/src/synthesize.rs
-- inferred: crates/verify/ess-conformance/src/synthesize/refusal_policy.rs
-- inferred: crates/verify/ess-conformance/src/synthesize/related_guard.rs
-- cited: crates/verify/ess-conformance/tests/binding_related_branch.rs
-- inferred: crates/verify/ess-conformance/tests/synthesis_suite_bytes_table.rs
-- cited: website/docs/guides/specify/bindings-and-components.md
-- cited: CHANGELOG.md
+- cited: crates/verify/ess-conformance/src/synthesize/binding_effects.rs (`related_arranged` at 1528 gives up at `keeps_branch_sent(sender, &from, Some(entity), false)` at 1561; `keeps_branch_sent` at 1873, the `Absent`-only guard at 1912-1916; `related_decided` 1486, `related_refused` 1629, `related_on_row` 1694)
+- cited: crates/verify/ess-conformance/src/synthesize.rs (`BindingGap::RelatedRefusalUnarranged` at 2238, its help text at 2565-2570, its message at 2697-2700; the flow refusal at 2644-2646; `publishers` at 20454; `Setup.settled` at 6640)
+- inferred: crates/verify/ess-conformance/src/synthesize/refusal_policy.rs (`unarranged` at 528-551 builds the gap from the outcome alone; the kept-case text needs the trigger's `when_related:` predicate)
+- inferred: crates/verify/ess-conformance/tests/binding_related_branch.rs (the story names no file; the previous fix created this one and it already runs the interpreter at 193)
+- cited: website/docs/guides/specify/bindings-and-components.md (the section at 318-347 the Decisions extend)
 
-confidence: medium
+confidence: high — the story names the defect site and it was checked in the tree; the two inferred lines are the only uncertainty (story-scoper, 2026-11-10)
+
+Corrections to the earlier pass: `crates/verify/ess-conformance/src/synthesize/related_guard.rs` is removed (`prepare_at_in` at `related_guard.rs:3163` already returns `Setup`, and `subject_fact::row_truth_with` at `subject_fact.rs:474` already evaluates a guard on settled values; neither needs an edit); `tests/binding_related_branch.rs` moves from cited to inferred.
+
+Shared surfaces this story moves (epic § Shared surfaces, not scope entries): `CHANGELOG.md`; `tests/synthesis_suite_bytes_table.rs` is only run (acceptance: no row changed).
 
 ## Fit review
 

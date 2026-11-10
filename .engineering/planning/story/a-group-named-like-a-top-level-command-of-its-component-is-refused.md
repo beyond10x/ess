@@ -22,8 +22,8 @@ scope:
 - confidence: cited
   path: crates/specify/ess-domain/src/component.rs
 - confidence: inferred
-  path: crates/specify/ess-domain/tests/
-revision: 8
+  path: crates/specify/ess-domain/src/spec.rs
+revision: 11
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-10T00:38:12Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":1}}}
 - {from: "proposed", to: "active", at: "2026-11-10T00:38:12Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"review_outcome":1}}}
@@ -80,11 +80,17 @@ out/crates/desk-cli/src/tree.rs:24:            ::clap::Command::new("record")
 
 ## Scope
 
-- cited: crates/specify/ess-domain/src/component.rs
-- cited: crates/generate/ess-synth/tests/adversary_w2_gen2_adversary.rs
-- inferred: crates/specify/ess-domain/tests/
+- cited: crates/specify/ess-domain/src/component.rs (`validate_command_placement` at 1043-1118 never compares a group name with a top-level word; `validate_shared_binary_words` at 1478 compares the words only for binaries two components share; unit tests in `mod tests` at 1801, beside the shared-binary cases at 2692-2730)
+- cited: crates/generate/ess-synth/tests/adversary_w2_gen2_adversary.rs (`desk_validation` helper at 455, the cross-component case at 594)
+- inferred: crates/specify/ess-domain/src/spec.rs (the word map is built and `validate_shared_binary_words` called at 725-740; gains a call only if the fix is a new function)
 
-confidence: high
+confidence: high — the story names the defect site and the adversary file, and the cross-component fix it mirrors (acfa41d845) changed only `component.rs` and `spec.rs`; `spec.rs` alone is inferred (story-scoper, 2026-11-10)
+
+Correction to the earlier pass: the bare directory `crates/specify/ess-domain/tests/` is removed: no test file under it covers `cli` groups; the CLI-tree tests live in `component.rs`'s own test module.
+
+No new `ValidationCode` (the refusal reuses `DuplicateDeclaration`). A new literal `ValidationError` in `component.rs` moves the `docs/design/review-typed-diagnostics.md` rows (`:358`, `:211`, and `:396` for a new `"component …"` literal); run `task test-xtask` and `cargo test -p ess-compiler --test typed_diagnostics`.
+
+Shared surfaces this story moves (epic § Shared surfaces, not scope entries): `CHANGELOG.md`; `docs/design/review-typed-diagnostics.md` only in the cases above.
 
 ## Schedule
 

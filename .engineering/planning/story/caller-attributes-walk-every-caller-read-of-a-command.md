@@ -24,7 +24,7 @@ scope:
   path: crates/specify/ess-compiler/src/expression.rs
 - confidence: cited
   path: docs/design/language-grids.md
-revision: 7
+revision: 8
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-10T00:43:11Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":1}}}
 - {from: "proposed", to: "active", at: "2026-11-10T00:43:12Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":1}}}
@@ -86,15 +86,18 @@ attribute.
 
 ## Scope
 
-- cited: crates/generate/ess-gen/src/http.rs (`caller_attributes`, lines 170-247)
-- cited: crates/specify/ess-compiler/src/expression.rs (`predicate_sites` line 261, `command_sites` line 354: gains the public `command_predicate_sites`)
-- cited: crates/generate/ess-gen/tests/caller_values.rs (new cases beside `the_openapi_operation_names_the_caller_attributes_it_reads`)
-- cited: docs/design/language-grids.md (grid R: fill the caller cells this triage measured. `when_subject:` and error `payload:` read the caller (yes). A `when_related:` predicate and a row-set `where:` refuse it (no, `ESS-COMMAND-003`))
+- cited: crates/generate/ess-gen/src/http.rs (`caller_attributes`: doc comment at 170, fn at 175, guard match ending in `_ => {}` at ~227, value walk over `payload` + `sets` only at ~229-238)
+- cited: crates/specify/ess-compiler/src/expression.rs (`pub fn predicate_sites` at 261, private `fn command_sites` at 354 gains the public `command_predicate_sites`; `input_predicate` at 425; `command_sites` already pushes the `ExternalSubject` `when_subject` predicate at 370-385)
+- cited: crates/generate/ess-gen/tests/caller_values.rs (new cases beside `the_openapi_operation_names_the_caller_attributes_it_reads` at 120)
+- cited: docs/design/language-grids.md (grid R caller column, lines 24-26 and 37)
 
-confidence: high
+Read only, not changed: `crates/generate/ess-gen/src/openapi.rs:849` (the only caller of `caller_attributes`) and `:3287` (`x-ess-caller`).
 
-Shared surfaces moved: proposes the `CHANGELOG.md` Fixed sentence; re-pins `adversary_ess_issues_2_u6`
-rows only where claimed.
+confidence: high — the story names the defect site, the target function and the test file, and each line checks out against the tree (story-scoper, 2026-11-10)
+
+Noted by the scoper: `story:caller-attributes-are-readable-in-a-when-related-predicate` (a later turn) also lists `docs/design/language-grids.md`.
+
+Shared surfaces this story moves (epic § Shared surfaces, not scope entries): `CHANGELOG.md`; the `ess-openapi` pin `adversary_ess_issues_2_u6` is expected unchanged.
 
 ## Fit review
 

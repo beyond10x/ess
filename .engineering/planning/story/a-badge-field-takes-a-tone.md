@@ -17,27 +17,39 @@ relations:
 - decomposes: epic:zero-open-issues-2026-11
 - serves: vision:O2
 scope:
+- confidence: cited
+  path: crates/ui/ess-ui-check/src/enums.rs
 - confidence: inferred
-  path: crates/ui/ess-ui-check/src/classify.rs
-- confidence: inferred
-  path: crates/ui/ess-ui-check/src/rules.rs
+  path: crates/ui/ess-ui-check/src/lib.rs
+- confidence: cited
+  path: crates/ui/ess-ui-check/src/style.rs
+- confidence: cited
+  path: crates/ui/ess-ui-check/tests/field_tone.rs
+- confidence: cited
+  path: crates/ui/ess-ui-react/src/emit.rs
 - confidence: cited
   path: crates/ui/ess-ui-react/templates/runtime/fields.tsx.tmpl
-- confidence: inferred
+- confidence: cited
   path: crates/ui/ess-ui-react/templates/runtime/primitives/badge.tsx.tmpl
 - confidence: inferred
+  path: crates/ui/ess-ui-react/templates/runtime/styles.css.tmpl
+- confidence: cited
+  path: crates/ui/ess-ui-react/tests/field_tone.rs
+- confidence: cited
   path: crates/ui/ess-ui-tui/src/view.rs
 - confidence: cited
   path: crates/ui/ess-ui/src/expand.rs
 - confidence: cited
   path: crates/ui/ess-ui/src/model.rs
 - confidence: inferred
+  path: crates/ui/ess-ui/tests/tokens.rs
+- confidence: cited
   path: docs/design/ui-style-tokens.md
 - confidence: cited
   path: schemas/ui/ess-ui.schema.yaml
-- confidence: inferred
+- confidence: cited
   path: website/docs/reference/ess-ui.md
-revision: 10
+revision: 14
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-10T00:37:38Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"review_outcome":1}}}
 - {from: "proposed", to: "active", at: "2026-11-10T00:37:39Z", actor: "human:timo", revision: 10, decided_on: {"recorded":{"review_outcome":1}}}
@@ -79,17 +91,30 @@ toned badge cannot say what a value no map names, or a number in a range, looks 
 
 ## Scope
 
-- cited: `crates/ui/ess-ui/src/model.rs`
-- cited: `crates/ui/ess-ui/src/expand.rs`
-- cited: `schemas/ui/ess-ui.schema.yaml`
-- cited: `crates/ui/ess-ui-react/templates/runtime/fields.tsx.tmpl`
-- inferred: `crates/ui/ess-ui-react/templates/runtime/primitives/badge.tsx.tmpl`
-- inferred: `crates/ui/ess-ui-check/src/rules.rs`
-- inferred: `crates/ui/ess-ui-check/src/classify.rs`
-- inferred: `crates/ui/ess-ui-tui/src/view.rs`
-- inferred: `docs/design/ui-style-tokens.md`
-- inferred: `website/docs/reference/ess-ui.md`
-- confidence: medium
+Re-derived 2026-11-10 by `story-scoper` on the integration tree. Every line is **cited** (read from the story or the tree) or **inferred** (a reading that could be wrong).
+
+- cited: crates/ui/ess-ui/src/model.rs (`Field` has no `tone`/`tone_by` and is `deny_unknown_fields` at 2370-2403; `ToneMap` is an exact-key `BTreeMap<String, Tone>` at 3316)
+- cited: crates/ui/ess-ui/src/expand.rs (`Tones::tone_by` skips a non-mapping `tone_by` at 1532-1535; `declaration_view` reads a widget body with `args.<param>` left in typed positions at 879-905)
+- cited: schemas/ui/ess-ui.schema.yaml (`Field` at 927-958, `ToneMap` at 1673-1686, checks `tone_map_refs`/`tone_map_unused` at 1737-1738)
+- cited: crates/ui/ess-ui-check/src/style.rs (`tone_map_unused` collects only badge and icon `tone_by` at 363-371; the bands-ascending check belongs here)
+- cited: crates/ui/ess-ui-check/src/enums.rs (its unit test fails on a schema enum named in neither `CHECKED` nor `TYPED`, 5-6, 16-31, `TYPED` from 172; `badge.tone_by.map.*` iterates exact keys only at 120-141)
+- cited: crates/ui/ess-ui-react/src/emit.rs (the field spec emits no tone at 905-938)
+- cited: crates/ui/ess-ui-react/templates/runtime/fields.tsx.tmpl (`FieldSpec` at 10-33; `FieldValue` badge has no tone class at 140-143)
+- cited: crates/ui/ess-ui-react/templates/runtime/primitives/badge.tsx.tmpl (exact-key tone lookup that bands must extend at 19-24)
+- cited: crates/ui/ess-ui-tui/src/view.rs (`labelled_cell`/`cell_value` return unstyled text at 1574-1592; a badge is always bold at 2265-2271)
+- cited: docs/design/ui-style-tokens.md (Fit review item 6: the design gains the field tone and the band form before code)
+- cited: website/docs/reference/ess-ui.md (acceptance: a fresh render of the schema)
+- cited: crates/ui/ess-ui-check/tests/field_tone.rs (new, named in Acceptance)
+- cited: crates/ui/ess-ui-react/tests/field_tone.rs (new, named in Acceptance)
+- inferred: crates/ui/ess-ui-check/src/lib.rs (`CHECKS` at 147-150, only if the bands-ascending refusal gets its own check id)
+- inferred: crates/ui/ess-ui-react/templates/runtime/styles.css.tmpl (`.ui-tone-danger` is the button fill at 68 and no tone has a text-only rule at 103-106, so toned text may need CSS)
+- inferred: crates/ui/ess-ui/tests/tokens.rs (loader tests beside the existing `tone_by` tests at 411-470)
+
+confidence: high — every non-test path was read at the cited line; the open points are the three inferred lines and the terminal emphasis table (`ui-style-tokens.md:219-232` is not built in `crates/ui/ess-ui-tui/src`, so `profile.rs` may join)
+
+Corrections to the earlier pass: removed `crates/ui/ess-ui-check/src/rules.rs` (no tone code; the tone-map checks live in `style.rs`) and `crates/ui/ess-ui-check/src/classify.rs` (files `tone_map_refs` by message at `:56`, no edit when the refusal reuses the message at `expand.rs:1570`); added `style.rs`, `enums.rs`, `emit.rs`, the two test files, `lib.rs`, `styles.css.tmpl` and `tests/tokens.rs`; `badge.tsx.tmpl`, `view.rs`, `ui-style-tokens.md` and `ess-ui.md` moved from inferred to cited.
+
+Shared surfaces this story moves (epic § Shared surfaces, not scope entries): `CHANGELOG.md`.
 
 ## Fit review
 

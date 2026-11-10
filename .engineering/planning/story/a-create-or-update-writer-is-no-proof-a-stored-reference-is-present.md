@@ -15,15 +15,15 @@ relations:
 - decomposes: epic:adopter-gaps-domain-language
 - decomposes: epic:zero-open-issues-2026-11
 scope:
-- confidence: inferred
-  path: crates/specify/ess-domain/src/command/precedence.rs
 - confidence: cited
   path: crates/specify/ess-domain/src/command/reference_integrity.rs
 - confidence: cited
   path: crates/verify/ess-conformance/src/synthesize/related_guard/stored.rs
 - confidence: cited
   path: crates/verify/ess-conformance/tests/adversary_i_create_or_update.rs
-revision: 7
+- confidence: inferred
+  path: docs/design/generic-language-features.md
+revision: 10
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-10T00:33:41Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":1}}}
 - {from: "proposed", to: "active", at: "2026-11-10T00:33:41Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":1}}}
@@ -86,9 +86,15 @@ Reproduction: `crates/verify/ess-conformance/tests/fixtures/create-or-update-bes
 
 ## Scope
 
-- cited: crates/specify/ess-domain/src/command/reference_integrity.rs
-- cited: crates/verify/ess-conformance/src/synthesize/related_guard/stored.rs
-- cited: crates/verify/ess-conformance/tests/adversary_i_create_or_update.rs
-- inferred: crates/specify/ess-domain/src/command/precedence.rs
+- cited: crates/specify/ess-domain/src/command/reference_integrity.rs (`checked` at 171-196 treats an input as checked if any branch refuses it with `exists: false`, 186-188; called at 135 and 149; the hint comes out of `unchecked` at 161 and the `(Err, true)` arm of `lift` at 58-63, so no new message code)
+- cited: crates/verify/ess-conformance/src/synthesize/related_guard/stored.rs (`checks` at 81-91, used by `unreachable` at 141, the ESS-SYNTH-003 text at 152, and by `relink` at 257)
+- cited: crates/verify/ess-conformance/tests/adversary_i_create_or_update.rs (`a_later_command_reading_the_stored_agent` at 322 and `a_stored_agent_written_by_the_creator_is_not_proven_present` at 357 wait for the flip)
+- inferred: docs/design/generic-language-features.md (§ G2 "Enforced references", 314-317, needs to say the refusal answers before the writing branch)
 
-confidence: high
+Read only: `crates/specify/ess-domain/src/command/precedence.rs` (`Composition::of` 397, `place` 471, `order` 557, `Phase::position` 131, all public); `crates/verify/ess-conformance/src/synthesize/precedence.rs:32` (`answers_before`, `pub(crate)`).
+
+confidence: high — the story names both defect sites and the test file, and all three are where it says (story-scoper, 2026-11-10)
+
+Corrections to the earlier pass: removed `crates/specify/ess-domain/src/command/precedence.rs` (only read); added `docs/design/generic-language-features.md` (inferred).
+
+Shared surfaces this story moves (epic § Shared surfaces, not scope entries): `CHANGELOG.md`; possibly an `ess/37` `stricter:` row of `FORMAT_HISTORY`; the `enforced-reference.yaml` rows of `selection-precedence-table.tsv` (505-509) and of `synthesis-suite-bytes-table.tsv` stay unchanged.

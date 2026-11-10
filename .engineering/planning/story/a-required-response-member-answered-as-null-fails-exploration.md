@@ -23,11 +23,11 @@ scope:
   path: crates/verify/ess-conformance/src/ts/explore.ts
 - confidence: cited
   path: crates/verify/ess-conformance/tests/explore_direct_response.rs
-- confidence: inferred
+- confidence: cited
   path: crates/verify/ess-conformance/tests/fixtures/explore-direct-response-target.mjs
-- confidence: inferred
+- confidence: cited
   path: crates/verify/ess-conformance/tests/fixtures/explore_direct_response_target.go
-revision: 8
+revision: 11
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-10T00:41:26Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":1}}}
 - {from: "proposed", to: "active", at: "2026-11-10T00:41:27Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"review_outcome":1}}}
@@ -61,13 +61,19 @@ the required member `token` as `null`; both explorers report no disagreement.
 
 ## Scope
 
-- cited: crates/verify/ess-conformance/src/go/explore.go
-- cited: crates/verify/ess-conformance/src/ts/explore.ts
+- cited: crates/verify/ess-conformance/src/go/explore.go (the direct-response check at 2690 tests the key only; block around 2679-2694)
+- cited: crates/verify/ess-conformance/src/ts/explore.ts (the same at 2314; block around 2306-2320)
 - cited: crates/verify/ess-conformance/tests/explore_direct_response.rs
-- inferred: crates/verify/ess-conformance/tests/fixtures/explore_direct_response_target.go
-- inferred: crates/verify/ess-conformance/tests/fixtures/explore-direct-response-target.mjs
+- cited: crates/verify/ess-conformance/tests/fixtures/explore_direct_response_target.go (modes switch at 50-57; gains the null modes)
+- cited: crates/verify/ess-conformance/tests/fixtures/explore-direct-response-target.mjs (modes switch at 39-49; gains the null modes)
 
-confidence: high
+Read only: `tests/fixtures/explore-direct-response.yaml` (already declares the `Optional` member `note`, lines 29-30; pinned at row 190 of the bytes table, so left as it is); `src/go/mod.rs:149` and `src/ts/mod.rs:149` embed the explorer sources with `include_str!`; `runtime.go:8741-8743` refuses a nil non-Optional value.
+
+confidence: high — the story names both defect sites, both read as described, and the test and both targets are the existing harness for this exact check (story-scoper, 2026-11-10)
+
+Correction to the earlier pass: the two target fixtures move from inferred to cited (the story's reproduction names both, and the acceptance needs new modes in them).
+
+Shared surfaces this story moves (epic § Shared surfaces, not scope entries): `CHANGELOG.md`. No byte pin moves while the yaml fixture is unchanged.
 
 ## Schedule
 

@@ -20,7 +20,7 @@ scope:
   path: crates/verify/ess-conformance/src/synthesize.rs
 - confidence: inferred
   path: crates/verify/ess-conformance/tests/listed_state_refusal_tries_its_states.rs
-revision: 7
+revision: 8
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-10T00:38:27Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":1}}}
 - {from: "proposed", to: "active", at: "2026-11-10T00:38:28Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":1}}}
@@ -82,8 +82,10 @@ failure. `prepare_state_input` (line 8697) already narrows to the states the con
 
 - cited: crates/verify/ess-conformance/src/synthesize.rs
 - inferred: crates/verify/ess-conformance/tests/listed_state_refusal_tries_its_states.rs
-- inferred: CHANGELOG.md
-confidence: high
+
+confidence: high — the story names the defect site (the loop at `synthesize.rs:4774` inside `run_as`, keeping the first failure; the "selected in held state" text at `synthesize.rs:8637`), and every cited line matches the tree (story-scoper, 2026-11-10)
+
+Shared surfaces this story moves (epic § Shared surfaces, not scope entries): `CHANGELOG.md`.
 
 ## Fit review
 

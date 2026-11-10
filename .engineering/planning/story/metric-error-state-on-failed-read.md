@@ -14,7 +14,9 @@ relations:
 scope:
 - confidence: cited
   path: crates/ui/ess-ui-react/templates/runtime/composites/metric.tsx.tmpl
-revision: 4
+- confidence: inferred
+  path: crates/ui/ess-ui-react/tests/metric_states.rs
+revision: 6
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-10T00:45:04Z", actor: "human:timo", revision: 3}
 - {from: "proposed", to: "active", at: "2026-11-10T00:45:05Z", actor: "human:timo", revision: 4}
@@ -58,6 +60,9 @@ For a generated React page whose header metric reads a view, when the served vie
 
 ## Scope
 
-- cited: crates/ui/ess-ui-react/templates/runtime/composites/metric.tsx.tmpl
+- cited: crates/ui/ess-ui-react/templates/runtime/composites/metric.tsx.tmpl (`useData` at 21, `:26-35` reads only `data.rows`, never `data.status` or `data.error`; `:51` returns `rows.length` (0) for `count`, `:57` returns 0 for `sum`; `:38` draws `–` for an undefined value)
+- inferred: crates/ui/ess-ui-react/tests/metric_states.rs (new; follows the `node` and stand-in-react pattern of `tests/live_composites.rs:127-131`)
 
-confidence: medium
+confidence: high — the story names the defect site, and the tree shows the fix needs no change outside `MetricView`: the failed read already carries `status` and `error` (`data.ts.tmpl:692-693`), a section already draws its failed state with `.ui-state-failed` (`core.tsx.tmpl:448-458`, `styles.css.tmpl:61-62`), and `emit.rs:1624-1630` already passes `reads` (story-scoper, 2026-11-10)
+
+Shared surfaces this story moves (epic § Shared surfaces, not scope entries): `CHANGELOG.md`. No byte pin moves (`live_binding.rs:156-165` does not hash `metric.tsx`).
