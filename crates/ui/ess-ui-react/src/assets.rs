@@ -265,3 +265,86 @@ fn html_attribute(text: &str) -> String {
         .replace('<', "&lt;")
         .replace('>', "&gt;")
 }
+
+/// Layout lengths the stylesheet needs that no token group holds: renderer-fixed constants, not
+/// document-declared. Each is written into `tokens.css` as `--ui-size-<name>`, named by what it
+/// sizes, so `styles.css` reads `var(--…)` for every length. A document cannot change them.
+const FIXED_SIZES: &[(&str, &str)] = &[
+    ("card-min-width", "14rem"),
+    ("chart-height", "10rem"),
+    ("chart-label-room", "1.2rem"),
+    ("dialog-width", "28rem"),
+    ("drawer-width", "32rem"),
+    ("fade-depth", "0.9rem"),
+    ("fade-width", "2.5rem"),
+    ("gap-tight", "0.35rem"),
+    ("gap-wide", "0.75rem"),
+    ("hairline", "1px"),
+    ("hairline-thick", "2px"),
+    ("image-max-height", "3rem"),
+    ("nav-width", "15rem"),
+    ("new-count-offset", "4rem"),
+    ("pad-badge", "0.45rem"),
+    ("pad-cell", "0.4rem"),
+    ("pad-hair", "0.1rem"),
+    ("pad-snug", "0.3rem"),
+    ("row-body-basis", "12rem"),
+    ("spinner-stroke", "3px"),
+    ("swatch", "0.7rem"),
+    ("text-metric", "1.6rem"),
+    ("text-small", "0.75rem"),
+    ("text-subtitle", "0.95rem"),
+    ("text-tiny", "0.7rem"),
+    ("text-title", "1.4rem"),
+];
+
+/// `src/runtime/tokens.css`: one `:root` block holding every token of the document's merged
+/// table (the built-in table, then `tokens:`, `type` entries filled), as the custom properties
+/// `styles.css` reads: `--ui-color-<name>`, `--ui-space-<name>`, `--ui-radius-<name>`,
+/// `--ui-type-<style>-family|size|weight` and `--ui-tone-<tone>-text|fill`. The renderer-fixed `--ui-size-<name>` lengths
+/// ([`FIXED_SIZES`]) follow the radii. A tone's colors are
+/// written as a reference to the color token they name, so a color override reaches its tones.
+pub(crate) fn tokens_css(document: &ess_ui::Document) -> String {
+    let tokens = document.base_tokens();
+    let mut out = String::from(":root {\n");
+    for (group, entries) in [
+        ("color", &tokens.color),
+        ("space", &tokens.space),
+        ("radius", &tokens.radius),
+    ] {
+        for (name, value) in entries {
+            let _ = writeln!(out, "  --ui-{group}-{name}: {};", value.0);
+        }
+    }
+    for (name, value) in FIXED_SIZES {
+        let _ = writeln!(out, "  --ui-size-{name}: {value};");
+    }
+    for (style, entry) in &tokens.typography {
+        for (part, value) in [
+            ("family", entry.family.as_deref()),
+            ("size", entry.size.as_ref().map(|value| value.0.as_str())),
+            (
+                "weight",
+                entry.weight.as_ref().map(|value| value.0.as_str()),
+            ),
+        ] {
+            if let Some(value) = value {
+                let _ = writeln!(out, "  --ui-type-{style}-{part}: {value};");
+            }
+        }
+    }
+    for (tone, entry) in &tokens.tone {
+        let _ = writeln!(
+            out,
+            "  --ui-tone-{tone}-text: var(--ui-color-{});",
+            entry.text
+        );
+        let _ = writeln!(
+            out,
+            "  --ui-tone-{tone}-fill: var(--ui-color-{});",
+            entry.fill
+        );
+    }
+    out.push_str("}\n");
+    out
+}

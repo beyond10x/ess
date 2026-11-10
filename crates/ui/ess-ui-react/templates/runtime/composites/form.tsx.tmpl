@@ -206,7 +206,7 @@ function FormBody(props: Parameters<typeof FormView>[0]): ReactNode {
       <div className="ui-form-actions">
         {/* The submit first, then the actions in their declared order; a form that saves on change has no submit. */}
         {props.submit?.auto || onChange ? null : (
-          <button type="submit" className="ui-button ui-tone-primary">
+          <button type="submit" className="ui-button ui-emphasis-primary">
             {props.submit?.label ?? "Save"}
           </button>
         )}

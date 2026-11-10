@@ -80,12 +80,12 @@ async function confirmed(action) {
   root.settle();
   click(root.find((n) => n.tag === "button" && n.props["data-ui-path"] === action["data-ui-path"])[0]);
   root.settle();
-  const primary = root.find((n) => n.tag === "button" && /ui-tone-(danger|primary)/.test(n.props.className || ""));
+  const primary = root.find((n) => n.tag === "button" && /ui-emphasis-(danger|primary)/.test(n.props.className || ""));
   assert.strictEqual(primary.length, 1, "the confirm is open");
   click(primary[0]);
   for (let i = 0; i < 10; i += 1) await new Promise((resolve) => setTimeout(resolve, 0));
   root.settle();
-  const still = root.find((n) => n.tag === "button" && /ui-tone-(danger|primary)/.test(n.props.className || ""));
+  const still = root.find((n) => n.tag === "button" && /ui-emphasis-(danger|primary)/.test(n.props.className || ""));
   assert.strictEqual(still.length, 0, "the confirm closes");
   return sent;
 }

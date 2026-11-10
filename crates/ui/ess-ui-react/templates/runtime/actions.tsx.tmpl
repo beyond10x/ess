@@ -335,7 +335,7 @@ export function ActionControl(props: { action: ActionSpec }): ReactNode {
     control = (
       <button
         type="button"
-        className={`ui-button${action.as === "icon" ? " ui-icon-button" : ""}${action.tone ? ` ui-tone-${action.tone}` : ""}`}
+        className={`ui-button${action.as === "icon" ? " ui-icon-button" : ""}${action.tone ? ` ui-emphasis-${action.tone}` : ""}`}
         title={label(action)}
         aria-label={label(action)}
         data-ui-path={useUiPath(path)}

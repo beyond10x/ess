@@ -546,7 +546,7 @@ fn emit_step(
             Kind::Overlay => {
                 let at = selector(at);
                 vec![format!(
-                    "await page.locator('{at} button.ui-tone-danger, {at} button.ui-tone-primary').last().click();"
+                    "await page.locator('{at} button.ui-emphasis-danger, {at} button.ui-emphasis-primary').last().click();"
                 )]
             }
             Kind::Form => vec![format!(
