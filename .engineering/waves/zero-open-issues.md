@@ -39,23 +39,33 @@ the byte-pin tables) are written by the wave's coordinator at merge (epic § Sha
 
 ## The turns: how the plan runs
 
-The operator-side planner (2026-11-10) found 54 waves with 54 gates too slow and reordered the
-plan into turns, keeping its order and its collisions: in each turn the stories that edit
-`crates/verify/ess-conformance/src/synthesize.rs` run serially in ONE lane (one implementor, one
-tree, one commit and one red/green proof per story, up to 5), and up to 10 other stories run in
-parallel beside it, none colliding with another story of the turn or with the lane. The lane goes
-against no printed collision, because colliding stories stay serial; every other story keeps its
-collisions apart and its dependencies in an earlier turn (a lane story may follow an earlier lane
-story of the same turn). The gate runs once per turn on the integration branch. Recorded in
-`approval-record:zero-issues-turn-plan`.
+Turns 1 and 2 ran as the operator-side planner's first reordering (2026-11-10,
+`approval-record:zero-issues-turn-plan`): the stories that edit
+`crates/verify/ess-conformance/src/synthesize.rs` serially in one lane of up to 5, up to 10 other
+stories beside it, one gate per turn on the integration branch.
 
-At those caps the plan is 32 turns: the 54 lane stories fill 9 lanes, and the 218 others, at ten
-per turn and with their dependency chains, set the rest. Turn 1 holds the reproduced bugs first:
-#765 and #766, the #705-#740 group and `story:metric-error-state-on-failed-read`.
+Turn 1 took 12 hours, so from turn 3 on the plan runs as 8 larger turns of about 30 stories
+(`approval-record:zero-issues-larger-turns`, quoting the operator: "each processing a whole wave of
+up to 10 issues (the more the better) - run no expensive gates i the middle, only at the end of the
+wave"). Each new turn is consecutive turns of the 32-turn plan joined in order, so the plan's order,
+dependencies and collisions are kept:
 
-Each line: role (lane position or unit), story, priority, the wave the verb gave it. A turn's own
-page is `zero-open-issues-t<k>.md`.
+- at most 10 implementors run at once in a turn; the rest queue. A story starts only when every
+  story it depends on is merged, and no running story shares a file of its scope with it;
+- the lane's synthesize.rs stories run up to 3 at a time when the symbols their scopes name do not
+  overlap, each in its own tree from the lane head, merging into the lane in the listed order and
+  re-running their package tests on the lane head first; stories with overlapping symbols stay
+  serial, and a pair that conflicts twice falls back to serial;
+- one adversary pass per unit that touches guards, synthesis or emitted bytes; a second pass only
+  after a blocker; findings outside the story's acceptance become backlog drafts;
+- one gate per turn, one chain: fmt, clippy and `cargo xtask docs` first, then tests in crate
+  groups under 25 GB with a clean between, `ess-conformance` in test-name groups, then the xtask and
+  projection steps. Each implementor runs clippy for its own package (and `cargo xtask docs` when it
+  touches `website/docs`) before handing over;
+- turn k+1 implements while turn k's gate runs; only merging and the gate are serial.
 
+Each line: role, story, priority, the wave the verb gave it, and the turn of the 32-turn plan it
+came from (its order inside the turn). A turn's own page is `zero-open-issues-t<k>.md`.
 
 ### Turn 1
 
@@ -99,396 +109,286 @@ Status: planned
 
 ### Turn 3
 
-Status: planned
+30 stories (10 in the lane), turns 3-4 of the 32-turn plan.
 
-- lane 1: `story:a-held-state-guard-is-witnessed-without-a-view-publishing-state` (priority 1, verb wave 33)
-- lane 2: `story:a-struct-with-invariants-in-a-read-your-writes-view-is-observed` (priority 1, verb wave 34)
-- lane 3: `story:synthesis-offers-an-input-that-breaks-an-entity-invariant` (priority 1, verb wave 38)
-- lane 4: `story:a-held-state-refusal-reads-back-where-the-view-cannot-observe` (priority 2, verb wave 5)
-- lane 5: `story:a-parent-tenant-guard-holds-across-every-related-row-and-absent-field` (priority 2, verb wave 8)
-- unit: `story:the-playwright-spec-routes-each-declared-fixture-answer` (priority 1, verb wave 5)
-- unit: `story:a-page-shows-its-title-total-badge-and-live-status-and-marks-the-current-page` (priority 1, verb wave 6)
-- unit: `story:an-order-flip-on-a-key-no-tie-reaches-is-unwitnessed` (priority 1, verb wave 15)
-- unit: `story:a-binding-destination-arrangement-keeps-the-trigger-on-its-branch` (priority 2, verb wave 1)
-- unit: `story:bound-response-root-follows-the-published-result` (priority 2, verb wave 3)
-- unit: `story:rust-recorder-does-not-lose-a-creation` (priority 2, verb wave 3)
-- unit: `story:generated-decoders-check-struct-invariants` (priority 2, verb wave 4)
-- unit: `story:rust-generation-refuses-by-name-instead-of-panicking-or-misnaming` (priority 2, verb wave 4)
-- unit: `story:fixture-mode-applies-a-confirmed-commands-effect` (priority 3, added 2026-11-10: a reproduced fixture-mode defect from a consumer UI round; turn 3 is the earliest turn it collides with nothing in, and it takes the place of `story:an-asyncapi-send-operation-names-every-emitter`, which moves to turn 16)
-- unit: `story:an-author-key-named-action-is-not-an-action` (priority 3, verb wave 1)
+- lane: `story:a-held-state-guard-is-witnessed-without-a-view-publishing-state` (priority 1, verb wave 33, from turn 3)
+- lane: `story:a-struct-with-invariants-in-a-read-your-writes-view-is-observed` (priority 1, verb wave 34, from turn 3)
+- lane: `story:synthesis-offers-an-input-that-breaks-an-entity-invariant` (priority 1, verb wave 38, from turn 3)
+- lane: `story:a-held-state-refusal-reads-back-where-the-view-cannot-observe` (priority 2, verb wave 5, from turn 3)
+- lane: `story:a-parent-tenant-guard-holds-across-every-related-row-and-absent-field` (priority 2, verb wave 8, from turn 3)
+- unit: `story:the-playwright-spec-routes-each-declared-fixture-answer` (priority 1, verb wave 5, from turn 3)
+- unit: `story:a-page-shows-its-title-total-badge-and-live-status-and-marks-the-current-page` (priority 1, verb wave 6, from turn 3)
+- unit: `story:an-order-flip-on-a-key-no-tie-reaches-is-unwitnessed` (priority 1, verb wave 15, from turn 3)
+- unit: `story:a-binding-destination-arrangement-keeps-the-trigger-on-its-branch` (priority 2, verb wave 1, from turn 3)
+- unit: `story:bound-response-root-follows-the-published-result` (priority 2, verb wave 3, from turn 3)
+- unit: `story:rust-recorder-does-not-lose-a-creation` (priority 2, verb wave 3, from turn 3)
+- unit: `story:generated-decoders-check-struct-invariants` (priority 2, verb wave 4, from turn 3)
+- unit: `story:rust-generation-refuses-by-name-instead-of-panicking-or-misnaming` (priority 2, verb wave 4, from turn 3)
+- unit: `story:fixture-mode-applies-a-confirmed-commands-effect` (priority 3, verb wave 0, from turn 3)
+- unit: `story:an-author-key-named-action-is-not-an-action` (priority 3, verb wave 1, from turn 3)
+- lane: `story:a-present-optional-element-is-appended` (priority 2, verb wave 9, from turn 4)
+- lane: `story:a-row-set-command-whose-branches-address-different-rows-passes-its-own-suite` (priority 2, verb wave 12, from turn 4)
+- lane: `story:a-uniqueness-create-read-by-identity-passes-on-the-interpreter` (priority 2, verb wave 15, from turn 4)
+- lane: `story:accepted-input-arranges-referenced-list-rows` (priority 2, verb wave 16, from turn 4)
+- lane: `story:collection-quantifiers-witnessed-everywhere` (priority 2, verb wave 24, from turn 4)
+- unit: `story:a-record-groups-fields-under-headings-and-a-group-may-start-collapsed` (priority 1, verb wave 7, from turn 4)
+- unit: `story:a-related-refusal-compares-the-rewritten-row` (priority 2, verb wave 2, from turn 4)
+- unit: `story:a-rust-runner-compares-a-decimal-by-exact-value` (priority 2, verb wave 2, from turn 4)
+- unit: `story:served-replays-response` (priority 2, verb wave 8, from turn 4)
+- unit: `story:the-interpreted-target-passes-a-related-run-digest-and-a-default-step` (priority 2, verb wave 9, from turn 4)
+- unit: `story:a-copied-related-identity-is-witnessed` (priority 3, verb wave 1, from turn 4)
+- unit: `story:a-form-groups-own-on-change-saves-in-every-target` (priority 3, verb wave 1, from turn 4)
+- unit: `story:a-generated-rust-view-query-applies-its-parameters-and-orders` (priority 3, verb wave 1, from turn 4)
+- unit: `story:a-pin-below-the-working-directory-is-not-silently-ignored` (priority 3, verb wave 1, from turn 4)
+- unit: `story:a-shorthand-struct-binary64-location-resolves` (priority 3, verb wave 1, from turn 4)
 
 ### Turn 4
 
-Status: planned
+30 stories (10 in the lane), turns 5-6 of the 32-turn plan.
 
-- lane 1: `story:a-present-optional-element-is-appended` (priority 2, verb wave 9)
-- lane 2: `story:a-row-set-command-whose-branches-address-different-rows-passes-its-own-suite` (priority 2, verb wave 12)
-- lane 3: `story:a-uniqueness-create-read-by-identity-passes-on-the-interpreter` (priority 2, verb wave 15)
-- lane 4: `story:accepted-input-arranges-referenced-list-rows` (priority 2, verb wave 16)
-- lane 5: `story:collection-quantifiers-witnessed-everywhere` (priority 2, verb wave 24)
-- unit: `story:a-record-groups-fields-under-headings-and-a-group-may-start-collapsed` (priority 1, verb wave 7)
-- unit: `story:a-related-refusal-compares-the-rewritten-row` (priority 2, verb wave 2)
-- unit: `story:a-rust-runner-compares-a-decimal-by-exact-value` (priority 2, verb wave 2)
-- unit: `story:served-replays-response` (priority 2, verb wave 8)
-- unit: `story:the-interpreted-target-passes-a-related-run-digest-and-a-default-step` (priority 2, verb wave 9)
-- unit: `story:a-copied-related-identity-is-witnessed` (priority 3, verb wave 1)
-- unit: `story:a-form-groups-own-on-change-saves-in-every-target` (priority 3, verb wave 1)
-- unit: `story:a-generated-rust-view-query-applies-its-parameters-and-orders` (priority 3, verb wave 1)
-- unit: `story:a-pin-below-the-working-directory-is-not-silently-ignored` (priority 3, verb wave 1)
-- unit: `story:a-shorthand-struct-binary64-location-resolves` (priority 3, verb wave 1)
+- lane: `story:identity-guard-decided-on-the-row-sent-on-every-synthesis-path` (priority 2, verb wave 26, from turn 5)
+- lane: `story:overlap-witnesses-per-phase` (priority 2, verb wave 27, from turn 5)
+- lane: `story:refusal-overlap-witnessed-for-distinct-guard` (priority 2, verb wave 28, from turn 5)
+- lane: `story:wrong-state-branch-beside-a-subject-guard-is-witnessed` (priority 2, verb wave 32, from turn 5)
+- lane: `story:view-and-error-assertions-carry-their-value-shape` (priority 2, verb wave 41, from turn 5)
+- unit: `story:a-wide-table-scrolls-inside-its-column` (priority 1, verb wave 8, from turn 5)
+- unit: `story:each-row-and-each-waiting-read-draws-what-the-document-declares` (priority 1, verb wave 8, from turn 5)
+- unit: `story:light-and-dark-themes-render-differently` (priority 1, verb wave 8, from turn 5)
+- unit: `story:an-inexact-authored-decimal-is-refused` (priority 2, verb wave 3, from turn 5)
+- unit: `story:an-every-invocation-check-reads-only-its-own-pass` (priority 2, verb wave 4, from turn 5)
+- unit: `story:the-go-server-refuses-an-undeclared-member-at-any-depth` (priority 2, verb wave 9, from turn 5)
+- unit: `story:an-enum-value-starting-with-a-digit-keeps-its-name` (priority 3, verb wave 1, from turn 5)
+- unit: `story:an-integer-equality-guard-pair-is-exhaustive` (priority 3, verb wave 1, from turn 5)
+- unit: `story:an-unfillable-required-field-is-named-by-validate-and-the-view` (priority 3, verb wave 1, from turn 5)
+- unit: `story:check-history-reads-identity-from-response-field` (priority 3, verb wave 1, from turn 5)
+- lane: `story:expect-error-checks-generated-field-presence` (priority 2, verb wave 49, from turn 6)
+- lane: `story:a-binding-context-binary64-is-refused-by-name` (priority 3, verb wave 1, from turn 6)
+- lane: `story:a-creator-under-a-row-set-and-when-is-arranged` (priority 3, verb wave 3, from turn 6)
+- lane: `story:a-list-input-key-conflict-is-refused-after-the-existence-check` (priority 3, verb wave 6, from turn 6)
+- lane: `story:a-scenario-beside-a-prefixed-conversion-target-runs-on-the-interpreter` (priority 3, verb wave 13, from turn 6)
+- unit: `story:a-guard-comparing-a-stored-list-with-an-input-list-is-arranged` (priority 1, verb wave 1, from turn 6)
+- unit: `story:an-action-names-its-icon` (priority 1, verb wave 9, from turn 6)
+- unit: `story:a-client-row-filter-keeps-its-rows-without-paging-and-by-path-id` (priority 3, verb wave 1, from turn 6)
+- unit: `story:compiled-transport-ir-is-refused-by-name` (priority 3, verb wave 1, from turn 6)
+- unit: `story:entity-runtime-component-closure` (priority 3, verb wave 1, from turn 6)
+- unit: `story:move-buttons-refuse-past-either-end` (priority 3, verb wave 1, from turn 6)
+- unit: `story:obligation-contracts-state-what-the-suite-checks` (priority 3, verb wave 1, from turn 6)
+- unit: `story:required-config-slot-is-a-required-helm-value` (priority 3, verb wave 1, from turn 6)
+- unit: `story:rust-binding-wraps-a-plain-copy-into-an-optional-member` (priority 3, verb wave 1, from turn 6)
+- unit: `story:synthesis-witnesses-aggregate-conditions-over-optional-and-unset-fields` (priority 3, verb wave 1, from turn 6)
 
 ### Turn 5
 
-Status: planned
+30 stories (10 in the lane), turns 7-8 of the 32-turn plan.
 
-- lane 1: `story:identity-guard-decided-on-the-row-sent-on-every-synthesis-path` (priority 2, verb wave 26)
-- lane 2: `story:overlap-witnesses-per-phase` (priority 2, verb wave 27)
-- lane 3: `story:refusal-overlap-witnessed-for-distinct-guard` (priority 2, verb wave 28)
-- lane 4: `story:wrong-state-branch-beside-a-subject-guard-is-witnessed` (priority 2, verb wave 32)
-- lane 5: `story:view-and-error-assertions-carry-their-value-shape` (priority 2, verb wave 41)
-- unit: `story:a-wide-table-scrolls-inside-its-column` (priority 1, verb wave 8)
-- unit: `story:each-row-and-each-waiting-read-draws-what-the-document-declares` (priority 1, verb wave 8)
-- unit: `story:light-and-dark-themes-render-differently` (priority 1, verb wave 8)
-- unit: `story:an-inexact-authored-decimal-is-refused` (priority 2, verb wave 3)
-- unit: `story:an-every-invocation-check-reads-only-its-own-pass` (priority 2, verb wave 4)
-- unit: `story:the-go-server-refuses-an-undeclared-member-at-any-depth` (priority 2, verb wave 9)
-- unit: `story:an-enum-value-starting-with-a-digit-keeps-its-name` (priority 3, verb wave 1)
-- unit: `story:an-integer-equality-guard-pair-is-exhaustive` (priority 3, verb wave 1)
-- unit: `story:an-unfillable-required-field-is-named-by-validate-and-the-view` (priority 3, verb wave 1)
-- unit: `story:check-history-reads-identity-from-response-field` (priority 3, verb wave 1)
+- lane: `story:an-unbounded-retry-binding-leaves-no-trigger-scenario-unsupported` (priority 3, verb wave 21, from turn 7)
+- lane: `story:state-param-binds-from-post-command-state` (priority 3, verb wave 29, from turn 7)
+- lane: `story:synthesis-arranges-the-related-rows-a-guard-or-read-needs` (priority 3, verb wave 30, from turn 7)
+- lane: `story:the-interpreter-and-synthesis-answer-a-guarded-move-before-not-found-alike` (priority 3, verb wave 31, from turn 7)
+- lane: `story:a-union-variant-scenario-reads-each-row-under-its-own-identity` (priority 3, verb wave 35, from turn 7)
+- unit: `story:per-state-refusals-are-witnessed-when-the-moving-guard-reads-an-input-list` (priority 1, verb wave 2, from turn 7)
+- unit: `story:both-renderers-read-one-binding-expression-grammar` (priority 1, verb wave 10, from turn 7)
+- unit: `story:the-published-schema-reads-a-ranking-key-as-a-string` (priority 3, verb wave 1, from turn 7)
+- unit: `story:a-field-naming-code-chooses-its-identifier-in-rust-and-go` (priority 3, verb wave 2, from turn 7)
+- unit: `story:a-literal-on-a-field-only-an-invariant-names-is-not-a-survivor` (priority 3, verb wave 2, from turn 7)
+- unit: `story:a-nested-optional-is-refused` (priority 3, verb wave 2, from turn 7)
+- unit: `story:a-node-named-like-an-action-position-loads` (priority 3, verb wave 2, from turn 7)
+- unit: `story:an-admitted-timestamp-is-an-instant-the-server-can-order` (priority 3, verb wave 2, from turn 7)
+- unit: `story:an-optional-list-view-parameter-is-read-as-published` (priority 3, verb wave 2, from turn 7)
+- unit: `story:an-unguarded-branch-shadowing-a-guarded-sibling-is-reported` (priority 3, verb wave 2, from turn 7)
+- lane: `story:an-input-only-type-invariant-is-checked-by-a-refused-input` (priority 3, verb wave 37, from turn 8)
+- lane: `story:binding-scenarios-compare-literal-trigger-ids` (priority 4, verb wave 23, from turn 8)
+- lane: `story:a-related-row-may-answer-before-input-guards` (priority 5, verb wave 10, from turn 8)
+- lane: `story:an-unknown-identity-beside-a-related-guard-is-synthesized` (priority 5, verb wave 22, from turn 8)
+- lane: `story:unknown-port-refusal-names-its-own-code` (priority 3, verb wave 40, from turn 8)
+- unit: `story:a-sent-value-may-be-mapped-or-left-out` (priority 1, verb wave 13, from turn 8)
+- unit: `story:the-terminal-evaluates-every-expression-form-the-schema-defines` (priority 1, verb wave 14, from turn 8)
+- unit: `story:a-synthesized-binding-scenario-reads-a-left-out-awaited-input-from-the-answer` (priority 2, verb wave 3, from turn 8)
+- unit: `story:an-authored-success-act-claiming-an-error-is-refused` (priority 3, verb wave 2, from turn 8)
+- unit: `story:entity-runtime-lowers-stored-field-type-orderings-typed` (priority 3, verb wave 2, from turn 8)
+- unit: `story:event-client-publishes-over-core-nats` (priority 3, verb wave 2, from turn 8)
+- unit: `story:go-explorer-generates-alphabet-constrained-inputs` (priority 3, verb wave 2, from turn 8)
+- unit: `story:validate-bundle-enforces-a-string-equality-invariant` (priority 3, verb wave 2, from turn 8)
+- unit: `story:a-node-named-tone-by-is-not-a-tone` (priority 3, verb wave 3, from turn 8)
+- unit: `story:an-optional-member-sent-as-null-is-answered-as-the-openapi-answers-it` (priority 3, verb wave 3, from turn 8)
 
 ### Turn 6
 
-Status: planned
+33 stories (3 in the lane), turns 9-11 of the 32-turn plan.
 
-- lane 1: `story:expect-error-checks-generated-field-presence` (priority 2, verb wave 49)
-- lane 2: `story:a-binding-context-binary64-is-refused-by-name` (priority 3, verb wave 1)
-- lane 3: `story:a-creator-under-a-row-set-and-when-is-arranged` (priority 3, verb wave 3)
-- lane 4: `story:a-list-input-key-conflict-is-refused-after-the-existence-check` (priority 3, verb wave 6)
-- lane 5: `story:a-scenario-beside-a-prefixed-conversion-target-runs-on-the-interpreter` (priority 3, verb wave 13)
-- unit: `story:a-guard-comparing-a-stored-list-with-an-input-list-is-arranged` (priority 1, verb wave 1)
-- unit: `story:an-action-names-its-icon` (priority 1, verb wave 9)
-- unit: `story:a-client-row-filter-keeps-its-rows-without-paging-and-by-path-id` (priority 3, verb wave 1)
-- unit: `story:compiled-transport-ir-is-refused-by-name` (priority 3, verb wave 1)
-- unit: `story:entity-runtime-component-closure` (priority 3, verb wave 1)
-- unit: `story:move-buttons-refuse-past-either-end` (priority 3, verb wave 1)
-- unit: `story:obligation-contracts-state-what-the-suite-checks` (priority 3, verb wave 1)
-- unit: `story:required-config-slot-is-a-required-helm-value` (priority 3, verb wave 1)
-- unit: `story:rust-binding-wraps-a-plain-copy-into-an-optional-member` (priority 3, verb wave 1)
-- unit: `story:synthesis-witnesses-aggregate-conditions-over-optional-and-unset-fields` (priority 3, verb wave 1)
+- lane: `story:a-view-read-checks-every-rows-shape` (priority 5, verb wave 36, from turn 9)
+- lane: `story:text-functions-compute-values` (priority 5, verb wave 39, from turn 9)
+- lane: `story:a-value-expression-chooses-between-two-values-by-a-condition` (priority 5, verb wave 43, from turn 9)
+- unit: `story:the-terminal-pages-a-server-read-through-its-pager-state` (priority 1, verb wave 15, from turn 9)
+- unit: `story:binding-rewrites-are-followed-for-subject-guards-and-decoy-rows` (priority 2, verb wave 6, from turn 9)
+- unit: `story:a-bare-root-word-reads-alike-in-both-grammars` (priority 3, verb wave 2, from turn 9)
+- unit: `story:generated-behaviour-reads-several-related-rows` (priority 3, verb wave 3, from turn 9)
+- unit: `story:generated-decoders-enforce-declared-value-constraints` (priority 3, verb wave 3, from turn 9)
+- unit: `story:the-interpreter-mints-a-newtype-under-a-disjunction-of-prefixes` (priority 3, verb wave 3, from turn 9)
+- unit: `story:two-input-named-related-refusals-beside-a-held-state-branch-validate` (priority 3, verb wave 3, from turn 9)
+- unit: `story:a-related-selector-compares-a-row-field-with-a-subject-field` (priority 3, verb wave 4, from turn 9)
+- unit: `story:every-read-back-of-a-generated-server-answer-ignores-the-intake-depth-limit` (priority 3, verb wave 4, from turn 9)
+- unit: `story:requirement-refs-reach-suite-and-report` (priority 3, verb wave 4, from turn 9)
+- unit: `story:the-ui-test-runner-acts-on-an-action-inside-an-overlay` (priority 1, verb wave 17, from turn 10)
+- unit: `story:a-duration-member-is-refused-as-its-format-refuses` (priority 3, verb wave 1, from turn 10)
+- unit: `story:a-not-equal-or-any-selector-beside-named-rows-is-witnessed` (priority 3, verb wave 2, from turn 10)
+- unit: `story:diff-decides-an-added-subject-guard` (priority 3, verb wave 3, from turn 10)
+- unit: `story:ui-component-diagnostics-cite-their-own-view-and-reader` (priority 3, verb wave 4, from turn 10)
+- unit: `story:an-integer-literal-is-an-integer-token-in-a-suite` (priority 3, verb wave 5, from turn 10)
+- unit: `story:reader-true-refused-for-closed-readers` (priority 3, verb wave 5, from turn 10)
+- unit: `story:released-chart-equals-its-runtime-projection` (priority 3, verb wave 5, from turn 10)
+- unit: `story:unknown-by-absence-in-falsified-and-leaves-external` (priority 3, verb wave 9, from turn 10)
+- unit: `story:the-built-in-tones-meet-wcag-aa-for-badge-text` (priority 3, verb wave 11, from turn 10)
+- unit: `story:a-chart-names-its-axes-and-formats-its-ticks` (priority 1, verb wave 18, from turn 11)
+- unit: `story:a-form-with-an-empty-required-input-sends-no-command` (priority 3, verb wave 3, from turn 11)
+- unit: `story:a-system-issued-creating-command-is-witnessed` (priority 3, verb wave 4, from turn 11)
+- unit: `story:mutate-response-presence-and-contradictory-mutants` (priority 3, verb wave 4, from turn 11)
+- unit: `story:the-first-of-overlapping-related-refusals-is-synthesized` (priority 3, verb wave 4, from turn 11)
+- unit: `story:generated-rust-and-go-readers-agree-on-leading-zeros` (priority 3, verb wave 5, from turn 11)
+- unit: `story:validate-refuses-unsatisfiable-guards` (priority 3, verb wave 5, from turn 11)
+- unit: `story:a-row-set-selector-matching-absent-with-absent-is-witnessed` (priority 3, verb wave 6, from turn 11)
+- unit: `story:synthesis-and-validation-refusals-reproduced` (priority 3, verb wave 7, from turn 11)
+- unit: `story:a-browser-start-bounds-session-new-by-its-deadline` (priority 4, verb wave 1, from turn 11)
 
 ### Turn 7
 
-Status: planned
+30 stories (0 in the lane), turns 12-14 of the 32-turn plan.
 
-- lane 1: `story:an-unbounded-retry-binding-leaves-no-trigger-scenario-unsupported` (priority 3, verb wave 21)
-- lane 2: `story:state-param-binds-from-post-command-state` (priority 3, verb wave 29)
-- lane 3: `story:synthesis-arranges-the-related-rows-a-guard-or-read-needs` (priority 3, verb wave 30)
-- lane 4: `story:the-interpreter-and-synthesis-answer-a-guarded-move-before-not-found-alike` (priority 3, verb wave 31)
-- lane 5: `story:a-union-variant-scenario-reads-each-row-under-its-own-identity` (priority 3, verb wave 35)
-- unit: `story:per-state-refusals-are-witnessed-when-the-moving-guard-reads-an-input-list` (priority 1, verb wave 2)
-- unit: `story:both-renderers-read-one-binding-expression-grammar` (priority 1, verb wave 10)
-- unit: `story:the-published-schema-reads-a-ranking-key-as-a-string` (priority 3, verb wave 1)
-- unit: `story:a-field-naming-code-chooses-its-identifier-in-rust-and-go` (priority 3, verb wave 2)
-- unit: `story:a-literal-on-a-field-only-an-invariant-names-is-not-a-survivor` (priority 3, verb wave 2)
-- unit: `story:a-nested-optional-is-refused` (priority 3, verb wave 2)
-- unit: `story:a-node-named-like-an-action-position-loads` (priority 3, verb wave 2)
-- unit: `story:an-admitted-timestamp-is-an-instant-the-server-can-order` (priority 3, verb wave 2)
-- unit: `story:an-optional-list-view-parameter-is-read-as-published` (priority 3, verb wave 2)
-- unit: `story:an-unguarded-branch-shadowing-a-guarded-sibling-is-reported` (priority 3, verb wave 2)
+- unit: `story:the-terminal-addresses-every-node-the-browser-addresses` (priority 1, verb wave 20, from turn 12)
+- unit: `story:a-row-filter-tests-membership-in-a-page-state-list` (priority 3, verb wave 5, from turn 12)
+- unit: `story:an-owner-link-guard-beside-an-owner-existence-guard-is-witnessed` (priority 3, verb wave 5, from turn 12)
+- unit: `story:served-committed-command-answers-its-outcome` (priority 3, verb wave 7, from turn 12)
+- unit: `story:a-required-field-no-creator-sets-is-refused-by-validate` (priority 3, verb wave 8, from turn 12)
+- unit: `story:an-error-swap-site-without-an-alternative-error-is-listed` (priority 4, verb wave 1, from turn 12)
+- unit: `story:generated-rust-types-pass-rustfmt-and-clippy` (priority 4, verb wave 1, from turn 12)
+- unit: `story:format-rule-for-relaxations` (priority 4, verb wave 2, from turn 12)
+- unit: `story:response-newtype-witness-lets-prefix-and-suffix-overlap` (priority 4, verb wave 2, from turn 12)
+- unit: `story:the-caller-swapped-run-is-appended` (priority 4, verb wave 2, from turn 12)
+- unit: `story:the-terminal-draws-a-bound-form-field-from-its-binding` (priority 2, verb wave 11, from turn 13)
+- unit: `story:a-not-defined-branch-narrows-an-optional-in-later-branches` (priority 3, verb wave 6, from turn 13)
+- unit: `story:related-rows-keep-distinct-names-and-named-refusals` (priority 3, verb wave 7, from turn 13)
+- unit: `story:ess-ui-check-judges-navigation-and-overlay-parameters-by-their-use` (priority 3, verb wave 12, from turn 13)
+- unit: `story:the-fixture-adapter-pages-by-the-pager-params` (priority 4, verb wave 2, from turn 13)
+- unit: `story:the-ess31-history-states-the-optional-read` (priority 4, verb wave 3, from turn 13)
+- unit: `story:review-stale-lines-corrected` (priority 4, verb wave 4, from turn 13)
+- unit: `story:the-sequential-and-concurrent-explorers-exclude-alike` (priority 4, verb wave 4, from turn 13)
+- unit: `story:the-rust-crate-layout-is-rustfmt-and-clippy-clean` (priority 4, verb wave 5, from turn 13)
+- unit: `story:a-command-binds-to-json-rpc-and-grpc-beside-http` (priority 5, verb wave 1, from turn 13)
+- unit: `story:a-form-groups-own-action-runs-from-its-key` (priority 3, verb wave 2, from turn 14)
+- unit: `story:both-renderers-tokenize-whitespace-alike` (priority 4, verb wave 1, from turn 14)
+- unit: `story:web-bridge-answers-like-http` (priority 4, verb wave 10, from turn 14)
+- unit: `story:a-command-route-takes-a-multipart-request-with-file-parts` (priority 5, verb wave 1, from turn 14)
+- unit: `story:a-reference-scenario-reads-every-navigated-filter-conjunct` (priority 5, verb wave 1, from turn 14)
+- unit: `story:an-authored-union-value-is-documented-and-refused-with-its-content-key` (priority 5, verb wave 1, from turn 14)
+- unit: `story:a-view-field-nests-source-fields-under-a-struct-member` (priority 5, verb wave 2, from turn 14)
+- unit: `story:stored-field-equals-returned-response-value` (priority 5, verb wave 2, from turn 14)
+- unit: `story:a-specification-imports-another-specifications-types` (priority 5, verb wave 3, from turn 14)
+- unit: `story:ess-cli-flag-and-repeated-sources` (priority 5, verb wave 3, from turn 14)
 
 ### Turn 8
 
-Status: planned
+29 stories (5 in the lane), turns 15-17 of the 32-turn plan.
 
-- lane 1: `story:an-input-only-type-invariant-is-checked-by-a-refused-input` (priority 3, verb wave 37)
-- lane 2: `story:binding-scenarios-compare-literal-trigger-ids` (priority 4, verb wave 23)
-- lane 3: `story:a-related-row-may-answer-before-input-guards` (priority 5, verb wave 10)
-- lane 4: `story:an-unknown-identity-beside-a-related-guard-is-synthesized` (priority 5, verb wave 22)
-- lane 5: `story:unknown-port-refusal-names-its-own-code` (priority 3, verb wave 40)
-- unit: `story:a-sent-value-may-be-mapped-or-left-out` (priority 1, verb wave 13)
-- unit: `story:the-terminal-evaluates-every-expression-form-the-schema-defines` (priority 1, verb wave 14)
-- unit: `story:a-synthesized-binding-scenario-reads-a-left-out-awaited-input-from-the-answer` (priority 2, verb wave 3)
-- unit: `story:an-authored-success-act-claiming-an-error-is-refused` (priority 3, verb wave 2)
-- unit: `story:entity-runtime-lowers-stored-field-type-orderings-typed` (priority 3, verb wave 2)
-- unit: `story:event-client-publishes-over-core-nats` (priority 3, verb wave 2)
-- unit: `story:go-explorer-generates-alphabet-constrained-inputs` (priority 3, verb wave 2)
-- unit: `story:validate-bundle-enforces-a-string-equality-invariant` (priority 3, verb wave 2)
-- unit: `story:a-node-named-tone-by-is-not-a-tone` (priority 3, verb wave 3)
-- unit: `story:an-optional-member-sent-as-null-is-answered-as-the-openapi-answers-it` (priority 3, verb wave 3)
+- lane: `story:conformance-asserts-a-nested-view-field-member-by-member` (priority 5, verb wave 45, from turn 15)
+- unit: `story:a-host-slot-in-a-reused-template-is-one-registration` (priority 3, verb wave 5, from turn 15)
+- unit: `story:a-json-request-may-ignore-undeclared-members-and-echoed-path-fields` (priority 5, verb wave 2, from turn 15)
+- unit: `story:a-subject-guard-scenario-arranges-the-rows-its-setup-reads` (priority 5, verb wave 3, from turn 15)
+- unit: `story:a-guard-reads-a-union-tag-and-a-union-names-its-content-key` (priority 5, verb wave 4, from turn 15)
+- unit: `story:the-interpreter-answers-the-response-value-an-outcome-stores` (priority 5, verb wave 4, from turn 15)
+- unit: `story:a-row-set-refusal-beside-a-set-effect-on-its-entity-is-witnessed` (priority 5, verb wave 5, from turn 15)
+- unit: `story:generated-rust-and-go-view-queries-answer-a-nested-view-field` (priority 5, verb wave 5, from turn 15)
+- unit: `story:the-generated-rust-server-reads-a-multipart-request` (priority 5, verb wave 9, from turn 15)
+- unit: `story:the-go-runtime-checks-a-view-rows-shape` (priority 5, verb wave 37, from turn 15)
+- unit: `story:the-typescript-runtime-checks-a-view-rows-shape` (priority 5, verb wave 37, from turn 15)
+- lane: `story:synthesis-and-the-interpreter-decide-a-guard-on-a-union-variant` (priority 5, verb wave 50, from turn 16)
+- lane: `story:synthesis-witnesses-a-guard-over-a-stored-response-value` (priority 5, verb wave 51, from turn 16)
+- lane: `story:synthesized-and-authored-view-reads-carry-the-rows-shape` (priority 5, verb wave 52, from turn 16)
+- unit: `story:terminal-header-toggles-show-their-state` (priority 3, verb wave 10, from turn 16)
+- unit: `story:a-uuid-newtype-identity-binds-a-path-segment` (priority 5, verb wave 3, from turn 16)
+- unit: `story:an-expression-measure-that-skips-absent-rows-is-witnessed` (priority 5, verb wave 4, from turn 16)
+- unit: `story:a-timestamp-newtype-declares-its-wire-encoding` (priority 5, verb wave 5, from turn 16)
+- unit: `story:openapi-publishes-a-multipart-request-with-file-parts` (priority 5, verb wave 5, from turn 16)
+- unit: `story:an-external-refusal-before-a-related-row-is-witnessed-at-their-overlap` (priority 5, verb wave 12, from turn 16)
+- unit: `story:an-asyncapi-send-operation-names-every-emitter` (priority 3, verb wave 1, from turn 16)
+- lane: `story:a-list-newtype-declares-a-delimited-wire-encoding` (priority 5, verb wave 42, from turn 17)
+- unit: `story:the-terminal-draws-a-search-box-only-when-a-read-takes-it` (priority 3, verb wave 12, from turn 17)
+- unit: `story:a-view-route-answers-a-csv-representation-its-query-value-selects` (priority 5, verb wave 4, from turn 17)
+- unit: `story:caller-attributes-are-readable-in-a-when-related-predicate` (priority 5, verb wave 8, from turn 17)
+- unit: `story:generated-servers-ignore-undeclared-json-members-and-check-echoed-path-fields` (priority 5, verb wave 12, from turn 17)
+- unit: `story:projections-write-a-timestamp-in-its-declared-encoding` (priority 5, verb wave 14, from turn 17)
+- unit: `story:generated-targets-decide-a-guard-on-a-union-variant` (priority 5, verb wave 51, from turn 17)
+- unit: `story:the-go-and-typescript-runtimes-resolve-a-responded-value` (priority 5, verb wave 52, from turn 17)
 
 ### Turn 9
 
-Status: planned
+30 stories (2 in the lane), turns 18-22 of the 32-turn plan.
 
-- lane 1: `story:a-view-read-checks-every-rows-shape` (priority 5, verb wave 36)
-- lane 2: `story:text-functions-compute-values` (priority 5, verb wave 39)
-- lane 3: `story:a-value-expression-chooses-between-two-values-by-a-condition` (priority 5, verb wave 43)
-- unit: `story:the-terminal-pages-a-server-read-through-its-pager-state` (priority 1, verb wave 15)
-- unit: `story:binding-rewrites-are-followed-for-subject-guards-and-decoy-rows` (priority 2, verb wave 6)
-- unit: `story:a-bare-root-word-reads-alike-in-both-grammars` (priority 3, verb wave 2)
-- unit: `story:generated-behaviour-reads-several-related-rows` (priority 3, verb wave 3)
-- unit: `story:generated-decoders-enforce-declared-value-constraints` (priority 3, verb wave 3)
-- unit: `story:the-interpreter-mints-a-newtype-under-a-disjunction-of-prefixes` (priority 3, verb wave 3)
-- unit: `story:two-input-named-related-refusals-beside-a-held-state-branch-validate` (priority 3, verb wave 3)
-- unit: `story:a-related-selector-compares-a-row-field-with-a-subject-field` (priority 3, verb wave 4)
-- unit: `story:every-read-back-of-a-generated-server-answer-ignores-the-intake-depth-limit` (priority 3, verb wave 4)
-- unit: `story:requirement-refs-reach-suite-and-report` (priority 3, verb wave 4)
+- unit: `story:the-terminal-draws-an-object-tag-by-its-label` (priority 3, verb wave 13, from turn 18)
+- unit: `story:an-answer-may-be-wrapped-in-one-named-member` (priority 5, verb wave 5, from turn 18)
+- unit: `story:a-view-answer-takes-its-protocols-list-shape` (priority 5, verb wave 6, from turn 18)
+- unit: `story:an-exchange-is-declared-in-the-specification` (priority 5, verb wave 6, from turn 18)
+- unit: `story:generated-targets-answer-a-caller-read-in-a-row-reading-guard` (priority 5, verb wave 9, from turn 18)
+- unit: `story:generated-servers-answer-a-view-as-csv-when-its-query-value-selects-it` (priority 5, verb wave 11, from turn 18)
+- unit: `story:openapi-publishes-a-view-routes-csv-representation` (priority 5, verb wave 11, from turn 18)
+- unit: `story:a-caller-read-in-a-row-reading-guard-is-witnessed-by-two-callers` (priority 5, verb wave 13, from turn 18)
+- lane: `story:conformance-synthesizes-exchange-scenarios` (priority 5, verb wave 48, from turn 19)
+- unit: `story:a-generated-ui-reads-the-answers-its-http-binding-declares` (priority 1, verb wave 6, from turn 19)
+- unit: `story:the-terminal-tags-input-offers-suggestions` (priority 3, verb wave 16, from turn 19)
+- unit: `story:an-http-binding-declares-how-a-caller-authenticates` (priority 5, verb wave 6, from turn 19)
+- unit: `story:openapi-and-generated-servers-write-an-answer-wrapped-in-a-named-member` (priority 5, verb wave 6, from turn 19)
+- unit: `story:ess-verify-diff-reports-a-changed-exchange` (priority 5, verb wave 7, from turn 19)
+- unit: `story:projections-use-a-unions-declared-content-key` (priority 5, verb wave 8, from turn 19)
+- unit: `story:text-shape-operators-ignore-case` (priority 5, verb wave 10, from turn 19)
+- unit: `story:a-view-may-answer-values-no-row-holds` (priority 5, verb wave 7, from turn 20)
+- unit: `story:an-http-binding-projects-its-security-schemes` (priority 5, verb wave 10, from turn 20)
+- unit: `story:the-generated-go-server-reads-a-multipart-request-as-the-rust-server-does` (priority 5, verb wave 13, from turn 20)
+- unit: `story:an-invariant-compares-a-union-field-with-its-variant-labels` (priority 5, verb wave 52, from turn 20)
+- lane: `story:conformance-reads-a-view-no-row-holds` (priority 5, verb wave 47, from turn 21)
+- unit: `story:an-http-route-upgrades-to-an-exchange` (priority 5, verb wave 8, from turn 21)
+- unit: `story:a-text-operator-reads-a-binder-or-a-field-as-its-operand` (priority 5, verb wave 11, from turn 21)
+- unit: `story:an-identity-may-be-a-composite-of-fields` (priority 5, verb wave 11, from turn 21)
+- unit: `story:the-rust-http-server-answers-an-unauthenticated-call-with-its-challenge` (priority 5, verb wave 13, from turn 21)
+- unit: `story:conformance-follows-a-views-continuation-to-its-last-page` (priority 5, verb wave 8, from turn 22)
+- unit: `story:a-command-route-reads-chosen-inputs-from-the-query-beside-its-body` (priority 5, verb wave 9, from turn 22)
+- unit: `story:an-input-keeps-missing-and-null-apart` (priority 5, verb wave 13, from turn 22)
+- unit: `story:synthesis-witnesses-a-unique-tuple-collision` (priority 5, verb wave 14, from turn 22)
+- unit: `story:the-go-http-server-answers-an-unauthenticated-call-with-its-challenge` (priority 5, verb wave 14, from turn 22)
 
 ### Turn 10
 
-Status: planned
-
-- unit: `story:the-ui-test-runner-acts-on-an-action-inside-an-overlay` (priority 1, verb wave 17)
-- unit: `story:a-duration-member-is-refused-as-its-format-refuses` (priority 3, verb wave 1)
-- unit: `story:a-not-equal-or-any-selector-beside-named-rows-is-witnessed` (priority 3, verb wave 2)
-- unit: `story:diff-decides-an-added-subject-guard` (priority 3, verb wave 3)
-- unit: `story:ui-component-diagnostics-cite-their-own-view-and-reader` (priority 3, verb wave 4)
-- unit: `story:an-integer-literal-is-an-integer-token-in-a-suite` (priority 3, verb wave 5)
-- unit: `story:reader-true-refused-for-closed-readers` (priority 3, verb wave 5)
-- unit: `story:released-chart-equals-its-runtime-projection` (priority 3, verb wave 5)
-- unit: `story:unknown-by-absence-in-falsified-and-leaves-external` (priority 3, verb wave 9)
-- unit: `story:the-built-in-tones-meet-wcag-aa-for-badge-text` (priority 3, verb wave 11)
-
-### Turn 11
-
-Status: planned
-
-- unit: `story:a-chart-names-its-axes-and-formats-its-ticks` (priority 1, verb wave 18)
-- unit: `story:a-form-with-an-empty-required-input-sends-no-command` (priority 3, verb wave 3)
-- unit: `story:a-system-issued-creating-command-is-witnessed` (priority 3, verb wave 4)
-- unit: `story:mutate-response-presence-and-contradictory-mutants` (priority 3, verb wave 4)
-- unit: `story:the-first-of-overlapping-related-refusals-is-synthesized` (priority 3, verb wave 4)
-- unit: `story:generated-rust-and-go-readers-agree-on-leading-zeros` (priority 3, verb wave 5)
-- unit: `story:validate-refuses-unsatisfiable-guards` (priority 3, verb wave 5)
-- unit: `story:a-row-set-selector-matching-absent-with-absent-is-witnessed` (priority 3, verb wave 6)
-- unit: `story:synthesis-and-validation-refusals-reproduced` (priority 3, verb wave 7)
-- unit: `story:a-browser-start-bounds-session-new-by-its-deadline` (priority 4, verb wave 1)
-
-### Turn 12
-
-Status: planned
-
-- unit: `story:the-terminal-addresses-every-node-the-browser-addresses` (priority 1, verb wave 20)
-- unit: `story:a-row-filter-tests-membership-in-a-page-state-list` (priority 3, verb wave 5)
-- unit: `story:an-owner-link-guard-beside-an-owner-existence-guard-is-witnessed` (priority 3, verb wave 5)
-- unit: `story:served-committed-command-answers-its-outcome` (priority 3, verb wave 7)
-- unit: `story:a-required-field-no-creator-sets-is-refused-by-validate` (priority 3, verb wave 8)
-- unit: `story:an-error-swap-site-without-an-alternative-error-is-listed` (priority 4, verb wave 1)
-- unit: `story:generated-rust-types-pass-rustfmt-and-clippy` (priority 4, verb wave 1)
-- unit: `story:format-rule-for-relaxations` (priority 4, verb wave 2)
-- unit: `story:response-newtype-witness-lets-prefix-and-suffix-overlap` (priority 4, verb wave 2)
-- unit: `story:the-caller-swapped-run-is-appended` (priority 4, verb wave 2)
-
-### Turn 13
-
-Status: planned
-
-- unit: `story:the-terminal-draws-a-bound-form-field-from-its-binding` (priority 2, verb wave 11)
-- unit: `story:a-not-defined-branch-narrows-an-optional-in-later-branches` (priority 3, verb wave 6)
-- unit: `story:related-rows-keep-distinct-names-and-named-refusals` (priority 3, verb wave 7)
-- unit: `story:ess-ui-check-judges-navigation-and-overlay-parameters-by-their-use` (priority 3, verb wave 12)
-- unit: `story:the-fixture-adapter-pages-by-the-pager-params` (priority 4, verb wave 2)
-- unit: `story:the-ess31-history-states-the-optional-read` (priority 4, verb wave 3)
-- unit: `story:review-stale-lines-corrected` (priority 4, verb wave 4)
-- unit: `story:the-sequential-and-concurrent-explorers-exclude-alike` (priority 4, verb wave 4)
-- unit: `story:the-rust-crate-layout-is-rustfmt-and-clippy-clean` (priority 4, verb wave 5)
-- unit: `story:a-command-binds-to-json-rpc-and-grpc-beside-http` (priority 5, verb wave 1)
-
-### Turn 14
-
-Status: planned
-
-- unit: `story:a-form-groups-own-action-runs-from-its-key` (priority 3, verb wave 2)
-- unit: `story:both-renderers-tokenize-whitespace-alike` (priority 4, verb wave 1)
-- unit: `story:web-bridge-answers-like-http` (priority 4, verb wave 10)
-- unit: `story:a-command-route-takes-a-multipart-request-with-file-parts` (priority 5, verb wave 1)
-- unit: `story:a-reference-scenario-reads-every-navigated-filter-conjunct` (priority 5, verb wave 1)
-- unit: `story:an-authored-union-value-is-documented-and-refused-with-its-content-key` (priority 5, verb wave 1)
-- unit: `story:a-view-field-nests-source-fields-under-a-struct-member` (priority 5, verb wave 2)
-- unit: `story:stored-field-equals-returned-response-value` (priority 5, verb wave 2)
-- unit: `story:a-specification-imports-another-specifications-types` (priority 5, verb wave 3)
-- unit: `story:ess-cli-flag-and-repeated-sources` (priority 5, verb wave 3)
-
-### Turn 15
-
-Status: planned
-
-- lane 1: `story:conformance-asserts-a-nested-view-field-member-by-member` (priority 5, verb wave 45)
-- unit: `story:a-host-slot-in-a-reused-template-is-one-registration` (priority 3, verb wave 5)
-- unit: `story:a-json-request-may-ignore-undeclared-members-and-echoed-path-fields` (priority 5, verb wave 2)
-- unit: `story:a-subject-guard-scenario-arranges-the-rows-its-setup-reads` (priority 5, verb wave 3)
-- unit: `story:a-guard-reads-a-union-tag-and-a-union-names-its-content-key` (priority 5, verb wave 4)
-- unit: `story:the-interpreter-answers-the-response-value-an-outcome-stores` (priority 5, verb wave 4)
-- unit: `story:a-row-set-refusal-beside-a-set-effect-on-its-entity-is-witnessed` (priority 5, verb wave 5)
-- unit: `story:generated-rust-and-go-view-queries-answer-a-nested-view-field` (priority 5, verb wave 5)
-- unit: `story:the-generated-rust-server-reads-a-multipart-request` (priority 5, verb wave 9)
-- unit: `story:the-go-runtime-checks-a-view-rows-shape` (priority 5, verb wave 37)
-- unit: `story:the-typescript-runtime-checks-a-view-rows-shape` (priority 5, verb wave 37)
-
-### Turn 16
-
-Status: planned
-
-- lane 1: `story:synthesis-and-the-interpreter-decide-a-guard-on-a-union-variant` (priority 5, verb wave 50)
-- lane 2: `story:synthesis-witnesses-a-guard-over-a-stored-response-value` (priority 5, verb wave 51)
-- lane 3: `story:synthesized-and-authored-view-reads-carry-the-rows-shape` (priority 5, verb wave 52)
-- unit: `story:terminal-header-toggles-show-their-state` (priority 3, verb wave 10)
-- unit: `story:a-uuid-newtype-identity-binds-a-path-segment` (priority 5, verb wave 3)
-- unit: `story:an-expression-measure-that-skips-absent-rows-is-witnessed` (priority 5, verb wave 4)
-- unit: `story:a-timestamp-newtype-declares-its-wire-encoding` (priority 5, verb wave 5)
-- unit: `story:openapi-publishes-a-multipart-request-with-file-parts` (priority 5, verb wave 5)
-- unit: `story:an-external-refusal-before-a-related-row-is-witnessed-at-their-overlap` (priority 5, verb wave 12)
-- unit: `story:an-asyncapi-send-operation-names-every-emitter` (priority 3, verb wave 1; moved from turn 3 on 2026-11-10 for the fixture-mode defect)
-
-### Turn 17
-
-Status: planned
-
-- lane 1: `story:a-list-newtype-declares-a-delimited-wire-encoding` (priority 5, verb wave 42)
-- unit: `story:the-terminal-draws-a-search-box-only-when-a-read-takes-it` (priority 3, verb wave 12)
-- unit: `story:a-view-route-answers-a-csv-representation-its-query-value-selects` (priority 5, verb wave 4)
-- unit: `story:caller-attributes-are-readable-in-a-when-related-predicate` (priority 5, verb wave 8)
-- unit: `story:generated-servers-ignore-undeclared-json-members-and-check-echoed-path-fields` (priority 5, verb wave 12)
-- unit: `story:projections-write-a-timestamp-in-its-declared-encoding` (priority 5, verb wave 14)
-- unit: `story:generated-targets-decide-a-guard-on-a-union-variant` (priority 5, verb wave 51)
-- unit: `story:the-go-and-typescript-runtimes-resolve-a-responded-value` (priority 5, verb wave 52)
-
-### Turn 18
-
-Status: planned
-
-- unit: `story:the-terminal-draws-an-object-tag-by-its-label` (priority 3, verb wave 13)
-- unit: `story:an-answer-may-be-wrapped-in-one-named-member` (priority 5, verb wave 5)
-- unit: `story:a-view-answer-takes-its-protocols-list-shape` (priority 5, verb wave 6)
-- unit: `story:an-exchange-is-declared-in-the-specification` (priority 5, verb wave 6)
-- unit: `story:generated-targets-answer-a-caller-read-in-a-row-reading-guard` (priority 5, verb wave 9)
-- unit: `story:generated-servers-answer-a-view-as-csv-when-its-query-value-selects-it` (priority 5, verb wave 11)
-- unit: `story:openapi-publishes-a-view-routes-csv-representation` (priority 5, verb wave 11)
-- unit: `story:a-caller-read-in-a-row-reading-guard-is-witnessed-by-two-callers` (priority 5, verb wave 13)
-
-### Turn 19
-
-Status: planned
-
-- lane 1: `story:conformance-synthesizes-exchange-scenarios` (priority 5, verb wave 48)
-- unit: `story:a-generated-ui-reads-the-answers-its-http-binding-declares` (priority 1, verb wave 6)
-- unit: `story:the-terminal-tags-input-offers-suggestions` (priority 3, verb wave 16)
-- unit: `story:an-http-binding-declares-how-a-caller-authenticates` (priority 5, verb wave 6)
-- unit: `story:openapi-and-generated-servers-write-an-answer-wrapped-in-a-named-member` (priority 5, verb wave 6)
-- unit: `story:ess-verify-diff-reports-a-changed-exchange` (priority 5, verb wave 7)
-- unit: `story:projections-use-a-unions-declared-content-key` (priority 5, verb wave 8)
-- unit: `story:text-shape-operators-ignore-case` (priority 5, verb wave 10)
-
-### Turn 20
-
-Status: planned
-
-- unit: `story:a-view-may-answer-values-no-row-holds` (priority 5, verb wave 7)
-- unit: `story:an-http-binding-projects-its-security-schemes` (priority 5, verb wave 10)
-- unit: `story:the-generated-go-server-reads-a-multipart-request-as-the-rust-server-does` (priority 5, verb wave 13)
-- unit: `story:an-invariant-compares-a-union-field-with-its-variant-labels` (priority 5, verb wave 52)
-
-### Turn 21
-
-Status: planned
-
-- lane 1: `story:conformance-reads-a-view-no-row-holds` (priority 5, verb wave 47)
-- unit: `story:an-http-route-upgrades-to-an-exchange` (priority 5, verb wave 8)
-- unit: `story:a-text-operator-reads-a-binder-or-a-field-as-its-operand` (priority 5, verb wave 11)
-- unit: `story:an-identity-may-be-a-composite-of-fields` (priority 5, verb wave 11)
-- unit: `story:the-rust-http-server-answers-an-unauthenticated-call-with-its-challenge` (priority 5, verb wave 13)
-
-### Turn 22
-
-Status: planned
-
-- unit: `story:conformance-follows-a-views-continuation-to-its-last-page` (priority 5, verb wave 8)
-- unit: `story:a-command-route-reads-chosen-inputs-from-the-query-beside-its-body` (priority 5, verb wave 9)
-- unit: `story:an-input-keeps-missing-and-null-apart` (priority 5, verb wave 13)
-- unit: `story:synthesis-witnesses-a-unique-tuple-collision` (priority 5, verb wave 14)
-- unit: `story:the-go-http-server-answers-an-unauthenticated-call-with-its-challenge` (priority 5, verb wave 14)
-
-### Turn 23
-
-Status: planned
-
-- lane 1: `story:conformance-holds-missing-keeps-and-null-clears` (priority 5, verb wave 46)
-- unit: `story:aggregate-group-keys-are-expressions` (priority 5, verb wave 9)
-- unit: `story:generated-servers-read-chosen-inputs-from-the-query-beside-the-body` (priority 5, verb wave 10)
-- unit: `story:a-view-route-carries-its-paging-facts-in-headers` (priority 5, verb wave 12)
-- unit: `story:generated-codecs-read-and-write-a-timestamp-in-its-declared-encoding` (priority 5, verb wave 16)
-
-### Turn 24
-
-Status: planned
-
-- unit: `story:navigation-reaches-any-depth-in-view-filters-and-guards` (priority 5, verb wave 12)
-- unit: `story:openapi-and-the-http-binding-serve-a-view-no-row-holds` (priority 5, verb wave 13)
-- unit: `story:ess-verify-diff-classifies-keep-on-missing` (priority 5, verb wave 14)
-- unit: `story:generated-codecs-and-the-suite-use-a-unions-declared-content-key` (priority 5, verb wave 15)
-
-### Turn 25
-
-Status: planned
-
-- lane 1: `story:a-view-filter-tests-rows-related-to-its-source-row` (priority 5, verb wave 44)
-- unit: `story:asyncapi-and-openapi-project-an-exchange` (priority 5, verb wave 15)
-- unit: `story:generated-targets-enforce-a-unique-tuple` (priority 5, verb wave 15)
-
-### Turn 26
-
-Status: planned
-
-- unit: `story:a-value-outside-its-declared-type-is-answered-malformed` (priority 5, verb wave 14)
-- unit: `story:via-and-instance-may-name-a-member-of-a-struct-input` (priority 5, verb wave 14)
-- unit: `story:a-websocket-binding-frames-an-exchange` (priority 5, verb wave 16)
-- unit: `story:an-event-channel-may-be-bound-to-server-sent-events` (priority 5, verb wave 17)
-- unit: `story:generated-rust-and-go-answer-a-view-no-row-holds` (priority 5, verb wave 48)
-
-### Turn 27
-
-Status: planned
-
-- lane 1: `story:synthesis-sends-whole-unit-instants-of-an-encoded-timestamp` (priority 5, verb wave 53)
-- lane 2: `story:a-view-answer-may-be-followed-as-it-changes` (priority 5, verb wave 54)
-- unit: `story:synthesis-witnesses-a-row-addressed-through-a-struct-input-member` (priority 5, verb wave 15)
-- unit: `story:the-go-and-typescript-runtimes-follow-continuations-and-check-malformed-answers` (priority 5, verb wave 16)
-- unit: `story:when-subject-beside-a-row-set-validates-under-the-g2-format` (priority 5, verb wave 17)
-- unit: `story:generated-code-decodes-a-missing-member-apart-from-null` (priority 5, verb wave 47)
-
-### Turn 28
-
-Status: planned
-
-- unit: `story:an-aggregate-view-reads-through-a-reference` (priority 5, verb wave 15)
-- unit: `story:generated-targets-read-a-reference-nested-in-a-struct-input` (priority 5, verb wave 17)
-- unit: `story:a-row-set-upserts-creating-branch-is-arranged-past-its-row-set-refusals` (priority 5, verb wave 19)
-- unit: `story:projections-and-generated-codecs-carry-a-delimited-list` (priority 5, verb wave 43)
-
-### Turn 29
-
-Status: planned
-
-- unit: `story:derived-measures-and-interval-union` (priority 5, verb wave 16)
-
-### Turn 30
-
-Status: planned
-
-- unit: `story:navigation-reaches-any-depth-in-guards` (priority 5, verb wave 17)
-
-### Turn 31
-
-Status: planned
-
-- unit: `story:a-guard-compares-fields-of-two-named-rows` (priority 5, verb wave 18)
-
-### Turn 32
-
-Status: planned
-
-- unit: `story:an-interval-union-measure-is-clipped-to-a-period` (priority 5, verb wave 19)
+31 stories (4 in the lane), turns 23-32 of the 32-turn plan.
+
+- lane: `story:conformance-holds-missing-keeps-and-null-clears` (priority 5, verb wave 46, from turn 23)
+- unit: `story:aggregate-group-keys-are-expressions` (priority 5, verb wave 9, from turn 23)
+- unit: `story:generated-servers-read-chosen-inputs-from-the-query-beside-the-body` (priority 5, verb wave 10, from turn 23)
+- unit: `story:a-view-route-carries-its-paging-facts-in-headers` (priority 5, verb wave 12, from turn 23)
+- unit: `story:generated-codecs-read-and-write-a-timestamp-in-its-declared-encoding` (priority 5, verb wave 16, from turn 23)
+- unit: `story:navigation-reaches-any-depth-in-view-filters-and-guards` (priority 5, verb wave 12, from turn 24)
+- unit: `story:openapi-and-the-http-binding-serve-a-view-no-row-holds` (priority 5, verb wave 13, from turn 24)
+- unit: `story:ess-verify-diff-classifies-keep-on-missing` (priority 5, verb wave 14, from turn 24)
+- unit: `story:generated-codecs-and-the-suite-use-a-unions-declared-content-key` (priority 5, verb wave 15, from turn 24)
+- lane: `story:a-view-filter-tests-rows-related-to-its-source-row` (priority 5, verb wave 44, from turn 25)
+- unit: `story:asyncapi-and-openapi-project-an-exchange` (priority 5, verb wave 15, from turn 25)
+- unit: `story:generated-targets-enforce-a-unique-tuple` (priority 5, verb wave 15, from turn 25)
+- unit: `story:a-value-outside-its-declared-type-is-answered-malformed` (priority 5, verb wave 14, from turn 26)
+- unit: `story:via-and-instance-may-name-a-member-of-a-struct-input` (priority 5, verb wave 14, from turn 26)
+- unit: `story:a-websocket-binding-frames-an-exchange` (priority 5, verb wave 16, from turn 26)
+- unit: `story:an-event-channel-may-be-bound-to-server-sent-events` (priority 5, verb wave 17, from turn 26)
+- unit: `story:generated-rust-and-go-answer-a-view-no-row-holds` (priority 5, verb wave 48, from turn 26)
+- lane: `story:synthesis-sends-whole-unit-instants-of-an-encoded-timestamp` (priority 5, verb wave 53, from turn 27)
+- lane: `story:a-view-answer-may-be-followed-as-it-changes` (priority 5, verb wave 54, from turn 27)
+- unit: `story:synthesis-witnesses-a-row-addressed-through-a-struct-input-member` (priority 5, verb wave 15, from turn 27)
+- unit: `story:the-go-and-typescript-runtimes-follow-continuations-and-check-malformed-answers` (priority 5, verb wave 16, from turn 27)
+- unit: `story:when-subject-beside-a-row-set-validates-under-the-g2-format` (priority 5, verb wave 17, from turn 27)
+- unit: `story:generated-code-decodes-a-missing-member-apart-from-null` (priority 5, verb wave 47, from turn 27)
+- unit: `story:an-aggregate-view-reads-through-a-reference` (priority 5, verb wave 15, from turn 28)
+- unit: `story:generated-targets-read-a-reference-nested-in-a-struct-input` (priority 5, verb wave 17, from turn 28)
+- unit: `story:a-row-set-upserts-creating-branch-is-arranged-past-its-row-set-refusals` (priority 5, verb wave 19, from turn 28)
+- unit: `story:projections-and-generated-codecs-carry-a-delimited-list` (priority 5, verb wave 43, from turn 28)
+- unit: `story:derived-measures-and-interval-union` (priority 5, verb wave 16, from turn 29)
+- unit: `story:navigation-reaches-any-depth-in-guards` (priority 5, verb wave 17, from turn 30)
+- unit: `story:a-guard-compares-fields-of-two-named-rows` (priority 5, verb wave 18, from turn 31)
+- unit: `story:an-interval-union-measure-is-clipped-to-a-period` (priority 5, verb wave 19, from turn 32)
 
 ## The waves (the verb's derivation, kept as the record of the order)
 
