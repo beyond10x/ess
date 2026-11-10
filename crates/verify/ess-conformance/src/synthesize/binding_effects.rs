@@ -1545,15 +1545,25 @@ fn related_arranged(
     let event = binding.cause.event()?;
     let field = mapped_unchanged(ir, binding, via)?;
     // Sent in the trigger's own input, or stored on the trigger's row by the step creating it.
-    let (from, stored, sender) = match payload_followed(ir, published_by, event, field)? {
+    let (from, stored, sender, expected) = match payload_followed(ir, published_by, event, field)? {
         (ResolvedPayloadValue::InputField { field: from, .. }, false)
             if !ess_domain::command::input_path::is_path(from) =>
         {
-            (from.clone(), None, command_of(ir, published_by)?)
+            (
+                from.clone(),
+                None,
+                command_of(ir, published_by)?,
+                published_by.name.clone(),
+            )
         }
         (ResolvedPayloadValue::SubjectField { field: stored, .. }, false) => {
             let (sent, creator, from) = stored_creation(ir, published_by, stored, trigger)?;
-            (from, Some(sent), creator)
+            // The branch of the creator the trigger's setup expects: one of that command, not
+            // of the trigger's.
+            let Some(ScenarioStep::ExpectOutcome { outcome }) = trigger.setup.get(sent + 1) else {
+                return None;
+            };
+            (from, Some(sent), creator, outcome.outcome.clone())
         }
         _ => return None,
     };
@@ -1591,14 +1601,7 @@ fn related_arranged(
     }
     // The trigger's own branch is chosen by that row too: it publishes only where the row sends it
     // down a branch that does.
-    if !trigger_publishes(
-        ir,
-        sender,
-        &from,
-        entity,
-        &arranged.related_row,
-        published_by,
-    ) {
+    if !trigger_publishes(ir, sender, &from, entity, &arranged.related_row, &expected) {
         return None;
     }
     let row = arranged.bound.get(via)?.clone();
@@ -1866,7 +1869,7 @@ fn trigger_publishes(
     from: &str,
     entity: &EntityHandle,
     settled: &BTreeMap<String, super::Determined>,
-    published_by: &ResolvedOutcome,
+    expected: &ess_domain::command::OutcomeName,
 ) -> bool {
     use ess_compiler::ir::{ResolvedRelatedTest, ResolvedRelatedVia};
     use ess_primitives::predicate::Truth;
@@ -1905,7 +1908,7 @@ fn trigger_publishes(
             _ => return false,
         };
         if taken {
-            return outcome.name == published_by.name;
+            return &outcome.name == expected;
         }
     }
     false

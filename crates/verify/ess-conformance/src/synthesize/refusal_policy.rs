@@ -592,23 +592,33 @@ fn unarranged(
     else {
         return None;
     };
-    // The trigger publishes only where a predicate over the same entity's row holds: the row the
-    // refusal refuses is then one it publishes for on no branch (beyond10x/ess#706).
+    // A publisher choosing its branch by predicates over the same entity's row: whichever of its
+    // branches publishes, the row decides it, and no row the refusal refuses may send it down one
+    // that does (beyond10x/ess#706). Only what is true of the command is said: its predicates.
     let trigger = binding.cause.event().and_then(|event| {
         super::publishers(ir, event)
             .into_iter()
-            .find_map(|(command, by)| match &by.condition {
-                ResolvedCondition::Related {
-                    via: ResolvedRelatedVia::Input { .. },
-                    entity: read,
-                    test: ResolvedRelatedTest::Holds { predicate },
-                    ..
-                } if read == entity => Some(format!(
-                    "`{}/{}` publishes the event only where its `when_related:` predicate \
-                     `{predicate}` holds",
-                    command.name, by.name
-                )),
-                _ => None,
+            .find_map(|(command, _)| {
+                let predicates: Vec<String> = command
+                    .outcomes
+                    .iter()
+                    .filter_map(|branch| match &branch.condition {
+                        ResolvedCondition::Related {
+                            via: ResolvedRelatedVia::Input { .. },
+                            entity: read,
+                            test: ResolvedRelatedTest::Holds { predicate },
+                            ..
+                        } if read == entity => Some(format!("`{predicate}`")),
+                        _ => None,
+                    })
+                    .collect();
+                (!predicates.is_empty()).then(|| {
+                    format!(
+                        "`{}` chooses its branch by `when_related:` predicates over that row ({})",
+                        command.name,
+                        predicates.join(", ")
+                    )
+                })
             })
     });
     Some(BindingGap::RelatedRefusalUnarranged {
