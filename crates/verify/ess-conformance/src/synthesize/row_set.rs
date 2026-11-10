@@ -42,7 +42,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use ess_compiler::ir::{
     EntityHandle, EssIr, ResolvedBody, ResolvedCommand, ResolvedCondition, ResolvedEffect,
     ResolvedInstance, ResolvedOutcome, ResolvedPayloadField, ResolvedPayloadValue,
-    ResolvedPublishedRead, ResolvedRowSelection, ResolvedTypeRef, RowMember, Selected,
+    ResolvedPublishedRead, ResolvedRelatedVia, ResolvedRowSelection, ResolvedTypeRef, RowMember,
+    Selected,
 };
 use ess_compiler::ir::{EventHandle, ResolvedBinding};
 use ess_domain::binding::BindingName;
@@ -2370,6 +2371,20 @@ fn arrange_row(
             .iter()
             .find_map(|steer| create(steer, &accept))
             .or_else(|| {
+                // Rows whose creator copies the related row's identity name it through the row it
+                // is sent, which is the linked one.
+                copied::steered_held(
+                    ir,
+                    entity,
+                    goal,
+                    actors,
+                    (distinction, &|_| distinction),
+                    &linked.fields,
+                    (&linked.held, &linked.rows),
+                    &accept,
+                )
+            })
+            .or_else(|| {
                 arrange_then_updated(ir, entity, goal, actors, distinction, &create, &accept)
             });
     }
@@ -3403,6 +3418,10 @@ fn guarded_creator(
     if unarranged.reason != ROWS_UNARRANGED {
         return refused;
     }
+    // A creator copying the related row's identity declares no guard to restate.
+    let Some(guard) = &link.guard else {
+        return refused;
+    };
     let at = format!(
         "{}/{}: `{}` created by `{}`",
         command.name, outcome.name, link.field, link.creator
@@ -3471,7 +3490,7 @@ fn guarded_creator(
         format!(
             "{at}, whose `{}` refuses a missing `{}` (`when_related: {{via: input.{}, exists: \
              false}}`)",
-            link.guard,
+            guard,
             link.entity.name(),
             link.via,
         ),
@@ -3906,10 +3925,10 @@ struct Link {
     field: String,
     entity: EntityHandle,
     /// The creating command, the input of it the guard reads and the branch refusing the row
-    /// missing.
+    /// missing: none where the creator copies the related row's identity and declares no guard.
     creator: QualifiedName,
     via: String,
-    guard: OutcomeName,
+    guard: Option<OutcomeName>,
     /// Every other field the creator sets from an input naming a row its guards read, by that
     /// input (ess/32, beyond10x/ess#554): where the send names such a row too, the rows are
     /// created naming it.
@@ -4005,6 +4024,7 @@ impl Linked {
 }
 
 /// The [`Link`] of `selection`, where it has one.
+#[allow(clippy::too_many_lines)]
 fn related_link(
     ir: &EssIr,
     command: &ResolvedCommand,
@@ -4034,64 +4054,85 @@ fn related_link(
                 .then(|| (field.clone(), input.to_owned()))
         };
         let (field, input) = pair(left, right).or_else(|| pair(right, left))?;
-        let (entity, creator, via, (guard, refusals), (others, creating)) = ir
-            .drivers_of(&selection.entity)
-            .iter()
-            .filter(|driver| matches!(driver.effect, ResolvedEffect::Creates))
-            .find_map(|driver| {
-                let set = driver
-                    .outcome
-                    .sets
-                    .iter()
-                    .find(|set| set.target == field && set.conversion.is_none())?;
-                let ResolvedPayloadValue::InputField { field: from, .. } = &set.value else {
-                    return None;
-                };
-                // From ess/32 a creator reading several rows links through whichever of them the
-                // field is set from (beyond10x/ess#554); below it, through its first alone.
-                let several = super::related_guard::several_present(ir.format());
-                let (via, related) = super::related_guard::reads(driver.command)
-                    .filter(|(via, _)| *via == from.as_str())
-                    .or_else(|| {
-                        several
-                            .then(|| {
-                                super::related_guard::vias(driver.command)
-                                    .into_iter()
-                                    .find(|(via, _)| *via == from.as_str())
-                            })
-                            .flatten()
-                    })?;
-                let others: Vec<(String, String)> = if several {
-                    let vias = super::related_guard::vias(driver.command);
-                    driver
+        let (entity, creator, via, (guard, refusals), (others, creating)) =
+            ir.drivers_of(&selection.entity)
+                .iter()
+                .filter(|driver| matches!(driver.effect, ResolvedEffect::Creates))
+                .find_map(|driver| {
+                    let set = driver
                         .outcome
                         .sets
                         .iter()
-                        .filter(|set| set.target != field && set.conversion.is_none())
-                        .filter_map(|set| match &set.value {
-                            ResolvedPayloadValue::InputField { field: input, .. }
-                                if input.as_str() != via
-                                    && vias.iter().any(|(read, _)| *read == input.as_str()) =>
-                            {
-                                Some((set.target.clone(), input.as_str().to_owned()))
-                            }
-                            _ => None,
-                        })
-                        .collect()
-                } else {
-                    Vec::new()
-                };
-                // A creator reading the row's fields declares the branch refusing it missing,
-                // which validation requires (`non_exhaustive_branches`).
-                let (guard, refusals) = creator_guards(driver.command, via);
-                Some((
-                    related.clone(),
-                    driver.command.name.clone(),
-                    via.to_owned(),
-                    (guard?, refusals),
-                    (others, driver.outcome.name.clone()),
-                ))
-            })?;
+                        .find(|set| set.target == field && set.conversion.is_none())?;
+                    // A creator copying the related row's identity names that row through its input
+                    // and declares no guard over it.
+                    if let ResolvedPayloadValue::RelatedField {
+                        via: ResolvedRelatedVia::Input { field: from, .. },
+                        through,
+                        entity,
+                        field: read,
+                        ..
+                    } = &set.value
+                    {
+                        return (through.is_empty() && *read == ir.entity(entity).identity.name)
+                            .then(|| {
+                                (
+                                    entity.clone(),
+                                    driver.command.name.clone(),
+                                    from.clone(),
+                                    (None, Vec::new()),
+                                    (Vec::new(), driver.outcome.name.clone()),
+                                )
+                            });
+                    }
+                    let ResolvedPayloadValue::InputField { field: from, .. } = &set.value else {
+                        return None;
+                    };
+                    // From ess/32 a creator reading several rows links through whichever of them the
+                    // field is set from (beyond10x/ess#554); below it, through its first alone.
+                    let several = super::related_guard::several_present(ir.format());
+                    let (via, related) = super::related_guard::reads(driver.command)
+                        .filter(|(via, _)| *via == from.as_str())
+                        .or_else(|| {
+                            several
+                                .then(|| {
+                                    super::related_guard::vias(driver.command)
+                                        .into_iter()
+                                        .find(|(via, _)| *via == from.as_str())
+                                })
+                                .flatten()
+                        })?;
+                    let others: Vec<(String, String)> = if several {
+                        let vias = super::related_guard::vias(driver.command);
+                        driver
+                            .outcome
+                            .sets
+                            .iter()
+                            .filter(|set| set.target != field && set.conversion.is_none())
+                            .filter_map(|set| match &set.value {
+                                ResolvedPayloadValue::InputField { field: input, .. }
+                                    if input.as_str() != via
+                                        && vias.iter().any(|(read, _)| *read == input.as_str()) =>
+                                {
+                                    Some((set.target.clone(), input.as_str().to_owned()))
+                                }
+                                _ => None,
+                            })
+                            .collect()
+                    } else {
+                        Vec::new()
+                    };
+                    // A creator reading the row's fields declares the branch refusing it missing,
+                    // which validation requires (`non_exhaustive_branches`).
+                    let (guard, refusals) = creator_guards(driver.command, via);
+                    Some((
+                        related.clone(),
+                        driver.command.name.clone(),
+                        via.to_owned(),
+                        (Some(guard?), refusals),
+                        (others, driver.outcome.name.clone()),
+                    ))
+                })?;
         Some(Link {
             conjunct: conjunct.clone(),
             input,

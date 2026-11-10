@@ -464,6 +464,27 @@ fn referenced_held<'c>(
 ) -> Option<Referenced<'c>> {
     let mut out = BTreeMap::new();
     for (input, (related, wanted)) in toward {
+        // A copy of the related row's identity names a row already arranged: that row, whose steps
+        // the scenario already holds.
+        let identity = &ir.entity(related).identity.name;
+        if let Some((instance, state)) = wanted
+            .get(identity)
+            .and_then(|instance| Some((instance, held.get(instance)?)))
+        {
+            out.insert(
+                *input,
+                Arrangement {
+                    instance: instance.clone(),
+                    state: state.clone(),
+                    steps: Vec::new(),
+                    source: BTreeSet::new(),
+                    settled: rows.get(instance).cloned().unwrap_or_default(),
+                    unwritten: BTreeSet::new(),
+                    unobserved: BTreeSet::new(),
+                },
+            );
+            continue;
+        }
         let holds = |row: &Arrangement| {
             wanted.iter().all(|(field, instance)| {
                 matches!(

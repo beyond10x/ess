@@ -204,3 +204,64 @@ fn the_interpreter_passes_and_a_target_copying_no_tier_fails() {
         "{statuses:#?}"
     );
 }
+
+const IDENTITY: &str = include_str!("fixtures/row-set-related-copy-identity.yaml");
+
+/// A guard over a field the creating branch fills with the related row's identity is witnessed:
+/// the tier `Check` is sent is the one an earlier step defined and an earlier `Issue` was sent
+/// (review 2026-10-19, T3).
+#[test]
+fn a_copied_related_identity_is_witnessed() {
+    let identity = model(IDENTITY);
+    let synthesis = synthesize(&identity);
+    assert!(
+        synthesis.refusals.is_empty(),
+        "nothing is refused: {:#?}",
+        synthesis.refusals
+    );
+    let suite = synthesis.suite;
+    let scenario = suite
+        .scenarios
+        .iter()
+        .find(|(id, _)| id.to_string() == "demo.seats.Check/outcome/qualified")
+        .map(|(_, scenario)| scenario)
+        .expect("demo.seats.Check/outcome/qualified exists");
+    let check = scenario
+        .steps
+        .iter()
+        .position(|step| {
+            matches!(step, ScenarioStep::ExecuteCommand { command, .. }
+                if command.to_string() == "demo.seats.Check")
+        })
+        .expect("the scenario sends Check");
+    let ScenarioStep::ExecuteCommand { input, .. } = &scenario.steps[check] else {
+        unreachable!()
+    };
+    let Some(ScenarioValue::Instance { instance }) = input.get("tier_id") else {
+        panic!("Check is sent a tier instance: {input:?}");
+    };
+    let before = &scenario.steps[..check];
+    assert!(
+        before.iter().any(|step| matches!(step,
+            ScenarioStep::CaptureInstance { instance: name, entity, .. }
+                if name == instance && entity.to_string() == "demo.seats.Tier")),
+        "an earlier step created the tier: {before:#?}"
+    );
+    assert!(
+        before.iter().any(|step| matches!(step,
+            ScenarioStep::ExecuteCommand { command, input, .. }
+                if command.to_string() == "demo.seats.Issue"
+                    && matches!(input.get("tier_id"),
+                        Some(ScenarioValue::Instance { instance: name }) if name == instance))),
+        "an earlier Issue was sent that tier: {before:#?}"
+    );
+    let statuses = run(&suite, &Interpreted::for_model(model(IDENTITY)));
+    assert!(
+        statuses.values().all(|status| *status == Status::Passed),
+        "{statuses:#?}"
+    );
+    assert_eq!(
+        statuses.get("demo.seats.Check/outcome/qualified"),
+        Some(&Status::Passed)
+    );
+}
