@@ -409,7 +409,23 @@ fn parse_fixtures(value: &Value) -> Result<Fixtures, String> {
             let lists_rows =
                 |answer: &Value| answer.get("rows").and_then(Value::as_sequence).is_some();
             let valid = match data {
-                Value::Sequence(answers) => answers.iter().all(lists_rows),
+                Value::Sequence(answers) => {
+                    for (index, answer) in answers.iter().enumerate() {
+                        let at = format!("views.{view}[{index}]");
+                        let fields = answer
+                            .as_mapping()
+                            .ok_or_else(|| format!("{at} is {{by_params?, rows, total?}}"))?;
+                        known(fields, &["by_params", "rows", "total"])
+                            .map_err(|message| format!("{at}: {message}"))?;
+                        if fields
+                            .get("by_params")
+                            .is_some_and(|by| by.as_mapping().is_none())
+                        {
+                            return Err(format!("{at}: `by_params` is a map of param to value"));
+                        }
+                    }
+                    answers.iter().all(lists_rows)
+                }
                 Value::Mapping(fields) if fields.get("fails").is_some() => {
                     known(fields, &["fails"])
                         .map_err(|message| format!("views.{view}: {message}"))?;

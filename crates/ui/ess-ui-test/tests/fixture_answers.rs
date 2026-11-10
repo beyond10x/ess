@@ -179,12 +179,78 @@ fn a_view_fixture_replaces_a_placeholder_read_of_that_name() {
 
 #[test]
 fn an_unknown_fixture_key_is_refused_with_file_test_and_key() {
-    let text = "format: ess-ui-test/1\ndocument: ui.yaml\ntests:\n  - name: odd\n    fixtures: {refuse: x}\n    steps: [{open: orders.draft}]\n";
+    let text = "format: ess-ui-test/1\ndocument: ui.yaml\ntests:\n  - name: strange\n    fixtures: {refuse: x}\n    steps: [{open: orders.draft}]\n";
     let error = ess_ui_test::parse_str(text, Path::new("odd.test.yaml")).unwrap_err();
     let message = error.to_string();
     assert!(message.contains("odd.test.yaml"), "{message}");
-    assert!(message.contains("odd"), "{message}");
+    assert!(message.contains("(strange)"), "{message}");
     assert!(message.contains("`refuse`"), "{message}");
+}
+
+fn fixme_count(fixtures_and_latency: &str) -> usize {
+    let spec = passes(&format!(
+        "  - name: one key
+{fixtures_and_latency}    steps:
+      - open: {{page: orders.detail, params: {{id: o-3}}}}
+"
+    ));
+    spec.matches("test.fixme").count()
+}
+
+#[test]
+fn each_new_key_alone_marks_the_playwright_test_fixme() {
+    let lines = "    fixtures:
+      views:
+        example.order.Page:
+          - {by_params: {order: o-3}, rows: [{id: o-3, customer: Customer 3}]}
+        example.line.Page: {rows: [{id: l-1}]}
+";
+    assert_eq!(fixme_count(lines), 1, "a list of answers");
+    let fails = "    fixtures:
+      views:
+        example.order.Page: {fails: down}
+        example.line.Page: {rows: [{id: l-1}]}
+";
+    assert_eq!(fixme_count(fails), 1, "fails");
+    let commands = "    fixtures:
+      views:
+        example.order.Page: {rows: [{id: o-3, customer: Customer 3}]}
+        example.line.Page: {rows: [{id: l-1}]}
+      commands:
+        example.order.Cancel: {refuses: gone}
+";
+    assert_eq!(fixme_count(commands), 1, "commands");
+    let latency = "    latency: {example.order.Page: 2s}
+    fixtures:
+      views:
+        example.order.Page: {rows: [{id: o-3, customer: Customer 3}]}
+        example.line.Page: {rows: [{id: l-1}]}
+";
+    assert_eq!(fixme_count(latency), 1, "a latency per view");
+    let none = "    fixtures:
+      views:
+        example.order.Page: {rows: [{id: o-3, customer: Customer 3}]}
+        example.line.Page: {rows: [{id: l-1}]}
+";
+    assert_eq!(fixme_count(none), 0, "the map form");
+}
+
+#[test]
+fn a_list_answer_refuses_unknown_keys_and_a_by_params_that_is_no_map() {
+    for (answer, key) in [
+        ("{by_param: {order: o-3}, rows: []}", "`by_param`"),
+        ("{by_params: o-3, rows: []}", "`by_params`"),
+    ] {
+        let text = format!(
+            "format: ess-ui-test/1\ndocument: ui.yaml\ntests:\n  - name: typo\n    fixtures: {{views: {{v.Page: [{answer}]}}}}\n    steps: [{{open: orders.draft}}]\n"
+        );
+        let message = ess_ui_test::parse_str(&text, Path::new("typo.test.yaml"))
+            .unwrap_err()
+            .to_string();
+        assert!(message.contains("typo.test.yaml"), "{message}");
+        assert!(message.contains("(typo)"), "{message}");
+        assert!(message.contains(key), "{message}");
+    }
 }
 
 #[test]
