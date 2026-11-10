@@ -2970,6 +2970,9 @@ pub enum Unreachable {
         related: EntityRef,
         /// The branches reading that row that the send would have to pass over.
         guards: Vec<OutcomeRef>,
+        /// Whether a creator of that entity leaves a field the guards compare with an input unset
+        /// from its own input: the one case `sets: <field>: input.<field>` is a fix still to make.
+        unset: bool,
     },
     /// The branch on the route creates the row and reads a related row (ess/18), and no row of
     /// the related entity the declared commands create, with any input searched beside it, lets
@@ -2982,6 +2985,8 @@ pub enum Unreachable {
         related: EntityRef,
         /// The branches reading that row that the send would have to pass over.
         guards: Vec<OutcomeRef>,
+        /// As [`Self::Unsteered::unset`].
+        unset: bool,
     },
     /// The deployment provides the entity's rows (`provided: true`, ess/33) and no outcome creates
     /// one. Synthesis takes such a row only as the related row a `when_related: {via:
@@ -3103,10 +3108,15 @@ impl Unreachable {
                  end every chain, and declare an unfiltered view showing the row's identity and \
                  state"
             }
-            Self::Unsteered { .. } | Self::RelatedUnmet { .. } => {
+            Self::Unsteered { unset: true, .. } | Self::RelatedUnmet { unset: true, .. } => {
                 "let the command creating the related row set each field those guards compare \
                  from its own input (`sets: <field>: input.<field>`), or cover the state with an \
                  authored scenario (ess-scenario/1)"
+            }
+            Self::Unsteered { .. } | Self::RelatedUnmet { .. } => {
+                "cover the state with an authored scenario (ess-scenario/1); every command \
+                 creating the related row already sets each field those guards compare from its \
+                 own input"
             }
             Self::Provided => {
                 "a provided row is sent as an entity fixture only where a `when_related: {via: \
@@ -3187,6 +3197,7 @@ impl fmt::Display for Unreachable {
                 outcome,
                 related,
                 guards,
+                ..
             } => {
                 write!(
                     f,
@@ -3200,6 +3211,7 @@ impl fmt::Display for Unreachable {
                 outcome,
                 related,
                 guards,
+                ..
             } => {
                 write!(
                     f,

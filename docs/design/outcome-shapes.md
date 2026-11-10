@@ -391,7 +391,13 @@ the format its other steps select (no round-3 suite pair).
   same identity sent again through that branch's input with other field values, then
   `expect_outcome`, `expect_error` for the declared error, `expect_no_event` for every declared
   event, and the row compared with its snapshot. A target that looks for the stored record on one
-  creating path and not another fails it.
+  creating path and not another fails it. Where the creation reads a related row (`when_related:`)
+  the first call is the run the creating branch's own scenario is built from: the related row
+  arranged as that scenario arranges it, in whatever state its guards need, then the creation sent
+  the fresh identity. Where no run reaches the branch the scenario is refused (`ESS-SYNTH-004`),
+  naming the state the creation creates into (`into:`, else the initial state) and asking for
+  `sets: <field>: input.<field>` only where a creator of the related row leaves a compared field
+  unset from its input.
 - Every input-guarded refusal beside either form keeps its own scenario, which sends the refused
   input for an identity nothing stored, and gains a segment of the same shape: a row stored under a
   fresh identity, the refused input sent for that identity, and the refusal required with no
