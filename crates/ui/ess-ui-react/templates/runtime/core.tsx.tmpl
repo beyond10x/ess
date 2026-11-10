@@ -562,15 +562,34 @@ export function HeaderFrame(props: {
 }
 
 /** Formats a value for display. */
-export function formatValue(value: unknown, format?: string, currency?: unknown): string {
+export function formatValue(
+  value: unknown,
+  format?: string,
+  currency?: unknown,
+  count?: { unit?: string; scale?: string },
+): string {
   if (value === undefined || value === null) {
     return "";
   }
-  // A date or time is a text timestamp or a number of epoch milliseconds.
-  if ((typeof value === "string" || typeof value === "number") && (format === "date" || format === "time")) {
-    const date = new Date(value);
+  // A date, time or timestamp is a text timestamp or a number of epoch milliseconds.
+  if (
+    (typeof value === "string" || typeof value === "number") &&
+    (format === "date" || format === "time" || format === "timestamp")
+  ) {
+    // A text with a time and no zone is UTC, as in the terminal; a browser would read it as local.
+    const zoneless = typeof value === "string" && /^\d{4}-\d\d-\d\d[T ]\d\d:\d\d(:\d\d(\.\d+)?)?$/.test(value);
+    const date = new Date(zoneless ? `${value.replace(" ", "T")}Z` : value);
     if (!Number.isNaN(date.getTime())) {
-      return format === "date" ? date.toLocaleDateString() : date.toLocaleString();
+      // A date, time and timestamp are shown in UTC, the zone the terminal shows them in.
+      const clock = { hour: "2-digit", minute: "2-digit", hourCycle: "h23", timeZone: "UTC" } as const;
+      switch (format) {
+        case "date":
+          return date.toLocaleDateString(undefined, { timeZone: "UTC" });
+        case "time":
+          return date.toLocaleTimeString(undefined, clock);
+        default:
+          return date.toLocaleString(undefined, { year: "numeric", month: "2-digit", day: "2-digit", ...clock });
+      }
     }
   }
   if (typeof value === "number") {
@@ -581,9 +600,9 @@ export function formatValue(value: unknown, format?: string, currency?: unknown)
           currency: typeof currency === "string" ? currency : "EUR",
         }).format(value);
       case "percent":
-        return new Intl.NumberFormat(undefined, { style: "percent", maximumFractionDigits: 1 }).format(value);
+        return new Intl.NumberFormat(undefined, { style: "percent", maximumFractionDigits: 1 }).format(count?.scale === "hundredths" ? value / 100 : value);
       case "duration":
-        return `${value}s`;
+        return formatDuration(value, count?.unit ?? "s");
       case "bytes":
         return formatBytes(value);
       default:
@@ -591,7 +610,7 @@ export function formatValue(value: unknown, format?: string, currency?: unknown)
     }
   }
   if (Array.isArray(value)) {
-    return value.map((entry) => formatValue(entry, format, currency)).join(", ");
+    return value.map((entry) => formatValue(entry, format, currency, count)).join(", ");
   }
   if (typeof value === "object") {
     const record = value as Record<string, unknown>;
@@ -611,7 +630,7 @@ export function formatDuration(count: number, unit?: string): string {
   if (!Number.isFinite(count)) {
     return String(count);
   }
-  const millis = unit === "s" ? count * 1000 : count;
+  const millis = count * (unit === "h" ? 3600000 : unit === "m" ? 60000 : unit === "s" ? 1000 : 1);
   const seconds = Math.floor(Math.abs(millis) / 1000);
   const sign = millis <= -1000 ? "-" : "";
   const two = (part: number) => String(part).padStart(2, "0");
