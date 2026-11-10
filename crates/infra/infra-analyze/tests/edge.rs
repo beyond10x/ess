@@ -1,5 +1,6 @@
 //! The cluster's edge on a synthetic cluster: every edge relation minted, the renderings carry
-//! it, and a route to an unobserved service is diagnosed like any other missing reference.
+//! it, and a route to an unobserved service is diagnosed like any other missing reference. Its
+//! cloud too: an account's IRSA role and a load-balancer service's assigned hostname.
 
 use infra_analyze::{diagnose, DiagCode, EdgeRelation, GraphDocument, InfraGraph, NodeKind};
 use infra_compiler::InfraIr;
@@ -26,12 +27,22 @@ fn edge_ir() -> InfraIr {
             "pods": { "items": [] },
             "services": { "items": [
                 { "metadata": { "name": "shop-api", "namespace": "shop", "uid": "sv-1" },
-                  "spec": { "ports": [ { "port": 8080 } ] } }
+                  "spec": { "ports": [ { "port": 8080 } ] } },
+                { "metadata": { "name": "shop-public", "namespace": "shop", "uid": "sv-2",
+                    "annotations": {
+                      "service.beta.kubernetes.io/aws-load-balancer-scheme": "internet-facing" } },
+                  "spec": { "type": "LoadBalancer", "ports": [ { "port": 443 } ] },
+                  "status": { "loadBalancer": { "ingress": [
+                      { "hostname": "shop-public.elb.example.internal" } ] } } }
             ] },
             "ingresses": { "items": [] },
             "configmaps": { "items": [] },
             "secrets": { "items": [] },
-            "serviceaccounts": { "items": [] },
+            "serviceaccounts": { "items": [
+                { "metadata": { "name": "shop-api", "namespace": "shop", "uid": "sa-1",
+                    "annotations": {
+                      "eks.amazonaws.com/role-arn": "arn:aws:iam::000000000000:role/shop-api" } } }
+            ] },
             "persistentvolumeclaims": { "items": [] },
             "gateways": { "items": [
                 { "metadata": { "name": "edge", "namespace": "gateways", "uid": "g-1" },
@@ -79,6 +90,8 @@ fn a_route_attaches_to_its_gateway_routes_to_its_service_and_the_gateway_has_its
         "route shop/shop-api is attached to gateway gateways/edge",
         "route shop/shop-api routes to service shop/shop-api",
         "gateway gateways/edge is exposed at load balancer edge.example.internal",
+        "service account shop/shop-api assumes cloud role arn:aws:iam::000000000000:role/shop-api",
+        "service shop/shop-public is exposed at load balancer shop-public.elb.example.internal",
     ] {
         assert!(
             edges.iter().any(|edge| edge == expected),
@@ -101,6 +114,11 @@ fn a_route_attaches_to_its_gateway_routes_to_its_service_and_the_gateway_has_its
         "a hostname is drawn whole, outside every namespace: {mermaid}"
     );
     assert!(mermaid.contains("|\"is attached to\"|"), "{mermaid}");
+    assert!(
+        mermaid.contains("    role0[\"cloud role arn:aws:iam::000000000000:role/shop-api\"]"),
+        "a role is drawn whole, outside every namespace: {mermaid}"
+    );
+    assert!(mermaid.contains("|\"assumes\"|"), "{mermaid}");
 
     let ir = edge_ir();
     let document: serde_json::Value =
@@ -109,6 +127,15 @@ fn a_route_attaches_to_its_gateway_routes_to_its_service_and_the_gateway_has_its
         .as_array()
         .expect("nodes")
         .contains(&json!({ "kind": "load_balancer", "key": "edge.example.internal" })));
+    assert!(document["nodes"].as_array().expect("nodes").contains(
+        &json!({ "kind": "cloud_role", "key": "arn:aws:iam::000000000000:role/shop-api" })
+    ));
+    assert!(document["edges"]
+        .as_array()
+        .expect("edges")
+        .iter()
+        .any(|edge| edge["relation"] == "assumes"
+            && edge["sites"] == json!(["metadata.annotations[eks.amazonaws.com/role-arn]"])));
     assert!(document["edges"]
         .as_array()
         .expect("edges")

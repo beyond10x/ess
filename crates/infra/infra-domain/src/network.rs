@@ -22,6 +22,21 @@ pub struct Service {
     pub selector: BTreeMap<String, String>,
     /// The declared ports, in declared order.
     pub ports: Vec<ServicePort>,
+    /// The cloud load balancer of a `LoadBalancer` service, when the cluster recorded anything
+    /// about it. Omitted when absent, so a service without one keeps its bytes.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub load_balancer: Option<LoadBalancer>,
+}
+
+/// A service's cloud load balancer: where it is reached, and whether it faces the internet.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct LoadBalancer {
+    /// The DNS names in `status.loadBalancer.ingress[].hostname`, in the order the status lists
+    /// them. Assigned, not declared, and kept anyway: they are the names the service is reached at.
+    pub hostnames: Vec<String>,
+    /// The `service.beta.kubernetes.io/aws-load-balancer-scheme` annotation, such as `internal`
+    /// or `internet-facing`, when the service declares it.
+    pub scheme: Option<String>,
 }
 
 /// One declared service port.
@@ -87,6 +102,11 @@ impl Service {
         errors: &mut ValidationErrors,
     ) -> Option<Self> {
         let identity = identity(&raw.metadata, true, location, errors)?;
+        let service_type = raw
+            .spec
+            .service_type
+            .clone()
+            .unwrap_or_else(|| "ClusterIP".to_owned());
         let mut ports = Vec::with_capacity(raw.spec.ports.len());
         for (index, port) in raw.spec.ports.iter().enumerate() {
             let port_location = format!("{location}.spec.ports[{index}]");
@@ -129,17 +149,31 @@ impl Service {
                 &format!("{location}.metadata.labels"),
                 errors,
             ),
-            service_type: raw
-                .spec
-                .service_type
-                .clone()
-                .unwrap_or_else(|| "ClusterIP".to_owned()),
+            service_type: service_type.clone(),
             selector: string_map(
                 &raw.spec.selector,
                 &format!("{location}.spec.selector"),
                 errors,
             ),
             ports,
+            load_balancer: (service_type == "LoadBalancer")
+                .then(|| LoadBalancer {
+                    hostnames: raw
+                        .status
+                        .load_balancer
+                        .ingress
+                        .iter()
+                        .filter_map(|ingress| ingress.hostname.clone())
+                        .filter(|hostname| !hostname.is_empty())
+                        .collect(),
+                    scheme: raw
+                        .metadata
+                        .annotations
+                        .aws_load_balancer_scheme
+                        .clone()
+                        .filter(|scheme| !scheme.is_empty()),
+                })
+                .filter(|balancer| !balancer.hostnames.is_empty() || balancer.scheme.is_some()),
         })
     }
 }

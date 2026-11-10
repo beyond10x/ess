@@ -613,6 +613,15 @@ struct ServiceMirror {
     service_type: String,
     selector: BTreeMap<String, String>,
     ports: Vec<ServicePortMirror>,
+    #[serde(default)]
+    load_balancer: Option<LoadBalancerMirror>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct LoadBalancerMirror {
+    hostnames: Vec<String>,
+    scheme: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -694,6 +703,15 @@ fn secret_values_are_one_kind(model: &ModelMirror) -> bool {
 struct ServiceAccountMirror {
     identity: IdentityMirror,
     labels: BTreeMap<String, String>,
+    #[serde(default)]
+    cloud_identity: Option<CloudIdentityMirror>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct CloudIdentityMirror {
+    provider: String,
+    role_arn: String,
 }
 
 #[derive(Deserialize)]
@@ -1253,6 +1271,12 @@ impl ModelMirror {
                                 protocol: port.protocol,
                             })
                             .collect(),
+                        load_balancer: mirror.load_balancer.map(|balancer| {
+                            infra_domain::network::LoadBalancer {
+                                hostnames: balancer.hostnames,
+                                scheme: balancer.scheme,
+                            }
+                        }),
                     },
                 )
             })
@@ -1317,6 +1341,12 @@ impl ModelMirror {
                     ServiceAccount {
                         identity: mirror.identity.into_identity(),
                         labels: mirror.labels,
+                        cloud_identity: mirror.cloud_identity.map(|identity| {
+                            infra_domain::observation::CloudIdentity {
+                                provider: identity.provider,
+                                role_arn: identity.role_arn,
+                            }
+                        }),
                     },
                 )
             })

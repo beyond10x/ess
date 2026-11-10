@@ -74,6 +74,36 @@ pub struct RawMeta {
     /// Owner references, read for the controller link on pods.
     #[serde(default, rename = "ownerReferences")]
     pub owner_references: Vec<RawOwnerRef>,
+    /// The annotations the model reads, by exact key; every other annotation is not read.
+    #[serde(default, skip_serializing_if = "RawAnnotations::is_empty")]
+    pub annotations: RawAnnotations,
+}
+
+/// The annotation keys the model reads. An allowlist of named keys, not a bag: an annotation
+/// whose key is not one of these never deserializes into anything.
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+pub struct RawAnnotations {
+    /// The IAM role an EKS service account assumes (IRSA).
+    #[serde(
+        default,
+        rename = "eks.amazonaws.com/role-arn",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub aws_role_arn: Option<String>,
+    /// Whether an AWS load balancer for a service faces the internet or stays internal.
+    #[serde(
+        default,
+        rename = "service.beta.kubernetes.io/aws-load-balancer-scheme",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub aws_load_balancer_scheme: Option<String>,
+}
+
+impl RawAnnotations {
+    /// Whether no read annotation is present.
+    pub fn is_empty(&self) -> bool {
+        self.aws_role_arn.is_none() && self.aws_load_balancer_scheme.is_none()
+    }
 }
 
 /// One entry of `metadata.ownerReferences`.
@@ -482,6 +512,40 @@ pub struct RawService {
     /// The declared spec; type, selector and ports are read.
     #[serde(default)]
     pub spec: RawServiceSpec,
+    /// The observed status; only the load balancer's ingress hostnames are read.
+    #[serde(default, skip_serializing_if = "RawServiceStatus::is_empty")]
+    pub status: RawServiceStatus,
+}
+
+/// The slice of a service's status the model reads.
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+pub struct RawServiceStatus {
+    /// The load balancer the cloud provisioned for the service.
+    #[serde(default, rename = "loadBalancer")]
+    pub load_balancer: RawLoadBalancerStatus,
+}
+
+impl RawServiceStatus {
+    /// Whether no load-balancer ingress is recorded.
+    pub fn is_empty(&self) -> bool {
+        self.load_balancer.ingress.is_empty()
+    }
+}
+
+/// A service's `status.loadBalancer`.
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+pub struct RawLoadBalancerStatus {
+    /// The ingress points.
+    #[serde(default)]
+    pub ingress: Vec<RawLoadBalancerIngress>,
+}
+
+/// One load-balancer ingress point; only the hostname is read.
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+pub struct RawLoadBalancerIngress {
+    /// The DNS name the load balancer is reached at.
+    #[serde(default)]
+    pub hostname: Option<String>,
 }
 
 /// The slice of a service's spec the model reads.

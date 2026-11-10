@@ -88,6 +88,9 @@ pub enum NodeKind {
     /// service's status records it. Not a cluster object: keyed by the hostname itself, and
     /// cluster-scoped.
     LoadBalancer,
+    /// A cloud identity a service account assumes, as its role annotation names it. Not a
+    /// cluster object: keyed by the role's ARN, and cluster-scoped.
+    CloudRole,
 }
 
 impl NodeKind {
@@ -112,6 +115,7 @@ impl NodeKind {
             Self::Gateway => "gw",
             Self::HttpRoute => "rt",
             Self::LoadBalancer => "lb",
+            Self::CloudRole => "role",
         }
     }
 
@@ -135,13 +139,14 @@ impl NodeKind {
             Self::Gateway => "gateway",
             Self::HttpRoute => "route",
             Self::LoadBalancer => "load balancer",
+            Self::CloudRole => "cloud role",
         }
     }
 
     /// Whether objects of this kind live in a namespace. Cluster nodes and the external
-    /// addresses of the edge do not.
+    /// addresses of the edge and the cloud roles accounts assume do not.
     fn namespaced(self) -> bool {
-        !matches!(self, Self::Node | Self::LoadBalancer)
+        !matches!(self, Self::Node | Self::LoadBalancer | Self::CloudRole)
     }
 }
 
@@ -224,13 +229,15 @@ pub enum EdgeRelation {
     ScheduledOn,
     /// An HTTP route attaches to a gateway it names as a parent.
     AttachedTo,
-    /// A gateway is reached at a hostname its status records.
+    /// A gateway or a load-balancer service is reached at a hostname its status records.
     ExposedAt,
+    /// A service account assumes the cloud role its annotation names.
+    Assumes,
 }
 
 impl EdgeRelation {
     /// Every relation, so a test can insist each one is minted from a real observation.
-    pub const ALL: [Self; 12] = [
+    pub const ALL: [Self; 13] = [
         Self::Selects,
         Self::RoutesTo,
         Self::GovernedBy,
@@ -243,11 +250,13 @@ impl EdgeRelation {
         Self::ScheduledOn,
         Self::AttachedTo,
         Self::ExposedAt,
+        Self::Assumes,
     ];
 
-    /// The relations only the cluster's edge mints — Gateway API kinds and the addresses the
-    /// edge is reached at — which the committed k3d example does not observe.
-    pub const EDGE: [Self; 2] = [Self::AttachedTo, Self::ExposedAt];
+    /// The relations only the cluster's edge and its cloud mint — Gateway API kinds, the
+    /// addresses the edge is reached at, the roles accounts assume — which the committed k3d
+    /// example does not observe.
+    pub const EDGE: [Self; 3] = [Self::AttachedTo, Self::ExposedAt, Self::Assumes];
 
     /// The phrase an edge reads with: `<dependent> <verb> <dependency>`.
     pub const fn verb(self) -> &'static str {
@@ -264,6 +273,7 @@ impl EdgeRelation {
             Self::ScheduledOn => "is scheduled on",
             Self::AttachedTo => "is attached to",
             Self::ExposedAt => "is exposed at",
+            Self::Assumes => "assumes",
         }
     }
 }
@@ -398,6 +408,7 @@ impl InfraGraph {
         graph.walk_ingresses(ir);
         graph.walk_controllers(ir);
         graph.walk_gateway_api(ir);
+        graph.walk_cloud(ir);
         graph.walk_pods(ir);
         graph.underived.sort();
         graph
@@ -786,6 +797,32 @@ impl InfraGraph {
         }
     }
 
+    /// The roles service accounts assume and the hostnames load-balancer services are reached at.
+    fn walk_cloud(&mut self, ir: &InfraIr) {
+        for (key, account) in &ir.model().service_accounts {
+            if let Some(identity) = &account.cloud_identity {
+                self.edge(
+                    GraphNode::new(NodeKind::ServiceAccount, key),
+                    EdgeRelation::Assumes,
+                    GraphNode::new(NodeKind::CloudRole, &identity.role_arn),
+                    "metadata.annotations[eks.amazonaws.com/role-arn]".to_owned(),
+                );
+            }
+        }
+        for (key, service) in &ir.model().services {
+            if let Some(balancer) = &service.load_balancer {
+                for (index, hostname) in balancer.hostnames.iter().enumerate() {
+                    self.edge(
+                        GraphNode::new(NodeKind::Service, key),
+                        EdgeRelation::ExposedAt,
+                        GraphNode::new(NodeKind::LoadBalancer, hostname),
+                        format!("status.loadBalancer.ingress[{index}]"),
+                    );
+                }
+            }
+        }
+    }
+
     #[allow(clippy::too_many_lines)]
     fn walk_pods(&mut self, ir: &InfraIr) {
         for (key, pod) in &ir.model().pods {
@@ -1055,7 +1092,7 @@ impl GraphDocument {
 /// and deliberately not the runtime layer: a real cluster observes a thousand pods, and a
 /// flowchart with a thousand pod boxes is not a rendering anyone reads. The JSON document is
 /// canonical and carries everything; the diagram is the part of it a person looks at.
-const MERMAID_KINDS: [NodeKind; 10] = [
+const MERMAID_KINDS: [NodeKind; 11] = [
     NodeKind::Workload,
     NodeKind::Service,
     NodeKind::Ingress,
@@ -1066,6 +1103,7 @@ const MERMAID_KINDS: [NodeKind; 10] = [
     NodeKind::Gateway,
     NodeKind::HttpRoute,
     NodeKind::LoadBalancer,
+    NodeKind::CloudRole,
 ];
 
 impl InfraGraph {

@@ -58,15 +58,26 @@ pub const IR_FORMAT: &str = "infra-ir/1";
 /// keeps `/1`, so a cluster without secrets keeps its bytes and its model digest.
 pub const PRESENCE_IR_FORMAT: &str = "infra-ir/3";
 
-/// The format of an IR that holds the cluster's edge: a Gateway API kind.
+/// The format of an IR that holds the cluster's edge or its cloud: a Gateway API kind, a service
+/// account's cloud identity or a service's load balancer.
 ///
 /// `/3` with new members a `/3` reader's mirrors refuse. A model without any of them has the
 /// same meaning under both and keeps `/3` (or `/1`), its bytes and its digest.
 pub const EDGE_IR_FORMAT: &str = "infra-ir/4";
 
-/// Whether a model holds anything only `infra-ir/4` can carry.
+/// Whether a model holds anything only `infra-ir/4` can carry: a Gateway API kind, a service
+/// account's cloud identity, or a service's load balancer.
 pub(crate) fn holds_edge(model: &InfraModel) -> bool {
-    model.gateways.is_some() || model.http_routes.is_some()
+    model.gateways.is_some()
+        || model.http_routes.is_some()
+        || model
+            .service_accounts
+            .values()
+            .any(|account| account.cloud_identity.is_some())
+        || model
+            .services
+            .values()
+            .any(|service| service.load_balancer.is_some())
 }
 
 /// The format a model implies: `/2` for qualified coverage, `/4` once it holds a Gateway API

@@ -282,13 +282,27 @@ pub struct NodeInfo {
     pub os_image: Option<String>,
 }
 
-/// A service account: pure identity in this subset.
+/// A service account: identity, and the cloud identity it assumes when it declares one.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct ServiceAccount {
     /// Identity.
     pub identity: Identity,
     /// Labels.
     pub labels: BTreeMap<String, String>,
+    /// The cloud role the account's pods assume, read from the one annotation key that declares
+    /// it (`eks.amazonaws.com/role-arn`). Omitted when absent, so an account without one keeps
+    /// its bytes.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cloud_identity: Option<CloudIdentity>,
+}
+
+/// A cloud role a service account assumes.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize)]
+pub struct CloudIdentity {
+    /// The cloud: `aws`, the only provider whose annotation is read.
+    pub provider: String,
+    /// The role, as the annotation states it.
+    pub role_arn: String,
 }
 
 /// A persistent volume claim.
@@ -968,6 +982,16 @@ impl ServiceAccount {
                 &format!("{location}.metadata.labels"),
                 errors,
             ),
+            cloud_identity: raw
+                .metadata
+                .annotations
+                .aws_role_arn
+                .clone()
+                .filter(|arn| !arn.is_empty())
+                .map(|role_arn| CloudIdentity {
+                    provider: "aws".to_owned(),
+                    role_arn,
+                }),
         })
     }
 }

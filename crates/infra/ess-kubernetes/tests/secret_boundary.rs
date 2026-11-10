@@ -27,7 +27,9 @@ fn topology_case(edit: impl FnOnce(&Path), failure: Option<&str>) -> (Output, Pa
     }
     let metadata = |name: &str| {
         json!({"name": name, "namespace": "app", "uid": name,
-        "annotations": {"private": TOPOLOGY_PRIVATE, "kubectl.kubernetes.io/last-applied-configuration": TOPOLOGY_PRIVATE}})
+        "annotations": {"private": TOPOLOGY_PRIVATE, "kubectl.kubernetes.io/last-applied-configuration": TOPOLOGY_PRIVATE,
+            "eks.amazonaws.com/role-arn": TOPOLOGY_PRIVATE,
+            "service.beta.kubernetes.io/aws-load-balancer-scheme": TOPOLOGY_PRIVATE}})
     };
     let resources = [
         (
@@ -61,6 +63,17 @@ fn topology_case(edit: impl FnOnce(&Path), failure: Option<&str>) -> (Output, Pa
         (
             "secrets",
             json!({"items": [{"metadata": metadata("creds"), "data": {"token": TOPOLOGY_PRIVATE}, "stringData": {"private": TOPOLOGY_PRIVATE}}]}),
+        ),
+        // The full scan reads a role and a load balancer into `infra-ir/4`; the `/2` profile
+        // records neither.
+        (
+            "serviceaccounts",
+            json!({"items": [{"metadata": metadata("web")}]}),
+        ),
+        (
+            "services",
+            json!({"items": [{"metadata": metadata("web"), "spec": {"type": "LoadBalancer", "ports": [{"port": 80}]},
+                "status": {"loadBalancer": {"ingress": [{"hostname": TOPOLOGY_PRIVATE}]}}}]}),
         ),
     ];
     for (kind, value) in resources {
