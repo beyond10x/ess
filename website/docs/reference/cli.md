@@ -356,7 +356,9 @@ Sources come in through `ess infra import` and leave through
   presentation; `--out` always writes the canonical import envelope.
 - `ess infra import kubernetes` turns a sanitized bundle, or an explicitly selected live cluster,
   into infrastructure IR. `--out` writes the IR as JSON whatever the file extension; `--format`
-  selects only the report printed to stdout.
+  selects only the report printed to stdout. What a full scan reads, and what it leaves out, is
+  listed in
+  [What a full scan observes](../guides/check-infrastructure.md#what-a-full-scan-observes-and-what-it-does-not).
 - [`ess generate project openapi`](#ess-generate-project-openapi) projects a checked import
   envelope (`--ir`) or a native ESS specification (`--path`) to OpenAPI. `--ir` refuses semantic
   gaps, unresolved references or legacy interface-only input before output; reimport the original

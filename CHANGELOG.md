@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Documentation: the Kubernetes guide gains "What a full scan observes, and what it does not": the 17 kinds a full scan reads, that a Secret value is `{"present": true}` and `last-applied-configuration` is removed from Secrets while every other object (ConfigMap values, literal environment values, annotations) is written as the API server returned it, that the IR keeps a ConfigMap value's SHA-256 and length only, and what the model does not read: Gateway API kinds, StorageClass and PersistentVolume, NetworkPolicy, custom resources, annotations, a Service's `status.loadBalancer`, and registries or hostnames as dependencies. The guide also says what `--format dot` draws, and the CLI reference links the section.
+
 ### Fixed
 
 - `ess infra infra graph --format dot` renders the infrastructure graph as Graphviz DOT instead of exiting 1 with `the infrastructure graph supports mermaid, json, and yaml`, although `--help` listed `dot`. The DOT text draws the node and edge set the Mermaid rendering draws, one `cluster_<namespace>` subgraph per namespace in name order, a cluster-scoped node outside every cluster, each node identified by its kind prefix and IR key (`"wl:shop/deployment/api"`), and each edge labelled with its relation's name (`reads-key-of`, `owned-by`); `dot -Tsvg` reads it.
