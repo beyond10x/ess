@@ -118,7 +118,7 @@ pub fn build(root: &Path, target: Target, system: &str, component: &str, race: b
                     .current_dir(root)
                     .env("GOWORK", "off")
                     .env("GOPROXY", "off")
-                    .env("GOFLAGS", "-mod=mod")
+                    .env("GOFLAGS", "-mod=mod -buildvcs=false")
                     .env("CGO_ENABLED", if cgo { "1" } else { "0" })
                     .output()
                     .expect("go runs");
@@ -233,6 +233,17 @@ pub fn run_with_fixtures(
         .run_admitted(&admitted, &adapter)
         .into_report();
     assert_eq!(report.scenarios.len(), suite.scenarios.len());
+    for scenario in report
+        .scenarios
+        .iter()
+        .filter(|scenario| scenario.status != Status::Passed)
+    {
+        eprintln!(
+            "{} via {}: {scenario:#?}",
+            scenario.scenario,
+            binary.display()
+        );
+    }
     report
         .scenarios
         .into_iter()

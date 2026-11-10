@@ -209,7 +209,7 @@ fn port_struct(
                 out.push('\n');
             }
             first = false;
-            query(out, layout, types, view);
+            query(out, layout, component, types, view);
         }
     }
     out.push_str("}\n");
@@ -256,7 +256,22 @@ fn handler(
 ) {
     let input = types_path(layout, types, &command.name);
     let outcome_type = format!("{input}Outcome");
-    let method = name::value_ident(&layout.type_name(&command.name));
+    let method = layout.port_method(&component.name, &command.name);
+    let call = if layout.port_method_shared(&component.name, &command.name) {
+        // Another declaration of the port has this method name, so two of the traits `B` is
+        // bounded by declare it, and the call names its own.
+        format!(
+            "<B as {types}::{}::obligations::{}Behavior>::{}(&mut self.behaviors, input)",
+            layout.module(layout.owner(&command.name)),
+            layout.type_name(&command.name),
+            name::value_ident(&layout.type_name(&command.name)),
+        )
+    } else {
+        format!(
+            "self.behaviors.{}(input)",
+            name::value_ident(&layout.type_name(&command.name))
+        )
+    };
     let _ = writeln!(
         out,
         "    /// Accepts `{}`: runs the behaviour obligation, then publishes the declared \
@@ -264,7 +279,7 @@ fn handler(
          unmet obligation — never a domain outcome, which always\n    /// arrives as a variant of \
          the outcome type, refusals included.\n    pub fn {method}(&mut self, input: {input}) -> \
          Result<{outcome_type}, {}::obligation::UnmetObligation> {{\n        let outcome = \
-         self.behaviors.{method}(input)?;\n        match &outcome {{",
+         {call}?;\n        match &outcome {{",
         command.name, types
     );
 
@@ -319,19 +334,42 @@ fn handler(
 
 /// One declared view as a query, delegating to the owed projection with the parameters the view
 /// declares, typed (story:served-view-params). A view without parameters keeps its bytes.
-fn query(out: &mut String, layout: &Layout, types: &str, view: &ess_compiler::ir::ResolvedView) {
+fn query(
+    out: &mut String,
+    layout: &Layout,
+    component: &ResolvedComponent,
+    types: &str,
+    view: &ess_compiler::ir::ResolvedView,
+) {
     let row = types_path(layout, types, &view.name);
-    let method = name::value_ident(&layout.type_name(&view.name));
+    let method = layout.port_method(&component.name, &view.name);
     let params = view_params(layout, types, view);
+    let call = if layout.port_method_shared(&component.name, &view.name) {
+        let rest = match arguments(&params).as_str() {
+            "" => String::new(),
+            passed => format!(", {passed}"),
+        };
+        format!(
+            "<B as {types}::{}::obligations::{}Query>::{}(&self.behaviors{rest})",
+            layout.module(layout.owner(&view.name)),
+            layout.type_name(&view.name),
+            name::value_ident(&layout.type_name(&view.name)),
+        )
+    } else {
+        format!(
+            "self.behaviors.{}({})",
+            name::value_ident(&layout.type_name(&view.name)),
+            arguments(&params)
+        )
+    };
     let _ = writeln!(
         out,
         "    /// Serves `{}` at `{}` consistency, from the owed projection.\n    pub fn \
          {method}(&self{}) -> Result<Vec<{row}>, {types}::obligation::UnmetObligation> {{\n        \
-         self.behaviors.{method}({})\n    }}",
+         {call}\n    }}",
         view.name,
         view.consistency.as_str(),
         signature(&params, ""),
-        arguments(&params),
     );
 }
 

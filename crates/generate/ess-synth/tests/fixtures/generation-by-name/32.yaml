@@ -1,0 +1,85 @@
+format: ess/35
+system: gap
+version: v1
+summary: two contexts share a command name and a view name
+domains: [gap.one, gap.two]
+components:
+  - component: gap-service
+    summary: serves both
+    owns:
+      domains: [gap.one, gap.two]
+    accepts:
+      commands: [gap.one.OpenThing, gap.two.OpenThing]
+    publishes:
+      events: [gap.one.ThingOpened, gap.two.ThingOpened]
+    reached_by: network
+---
+domain: gap.one
+entities:
+  - name: gap.one.Thing
+    identity: {name: id, type: String}
+    fields:
+      - {name: label, type: String}
+    lifecycle: {initial: Open, states: [Open], terminal: [Open]}
+events:
+  - name: gap.one.ThingOpened
+    fields:
+      - {name: id, type: String}
+commands:
+  - name: gap.one.OpenThing
+    input:
+      - {name: id, type: String}
+      - {name: label, type: String}
+    outcomes:
+      - name: opened
+        creates: gap.one.Thing
+        instance: id
+        sets: {label: input.label}
+        emits: [gap.one.ThingOpened]
+        payload:
+          gap.one.ThingOpened: {id: input.id}
+views:
+  - name: gap.one.Things
+    source: gap.one.Thing
+    consistency: read_your_writes
+    fields:
+      - {name: id, type: String}
+      - {name: label, type: String}
+actors:
+  - name: gap.one.Anyone
+    may: [gap.one.OpenThing, gap.one.Things]
+---
+domain: gap.two
+entities:
+  - name: gap.two.Thing
+    identity: {name: id, type: String}
+    fields:
+      - {name: label, type: String}
+    lifecycle: {initial: Open, states: [Open], terminal: [Open]}
+events:
+  - name: gap.two.ThingOpened
+    fields:
+      - {name: id, type: String}
+commands:
+  - name: gap.two.OpenThing
+    input:
+      - {name: id, type: String}
+      - {name: label, type: String}
+    outcomes:
+      - name: opened
+        creates: gap.two.Thing
+        instance: id
+        sets: {label: input.label}
+        emits: [gap.two.ThingOpened]
+        payload:
+          gap.two.ThingOpened: {id: input.id}
+views:
+  - name: gap.two.Things
+    source: gap.two.Thing
+    consistency: read_your_writes
+    fields:
+      - {name: id, type: String}
+      - {name: label, type: String}
+actors:
+  - name: gap.two.Anyone
+    may: [gap.two.OpenThing, gap.two.Things]

@@ -24,6 +24,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use ess_compiler::ir::EssIr;
+use ess_domain::component::ComponentName;
 use ess_domain::name::QualifiedName;
 
 /// Every codec stem of one model, for one target's flattening.
@@ -59,6 +60,81 @@ impl CodecNames {
             || panic!("`{declared}` has no codec stem: it was derived from a different IR"),
             String::as_str,
         )
+    }
+}
+
+/// The method one declaration is served by on its component's port.
+struct PortMethod {
+    stem: String,
+    /// Another declaration of the port flattens to the same candidate, so the traits the port is
+    /// bounded by declare one method name twice and a call must name its trait.
+    shared: bool,
+}
+
+/// The method every accepted command and every owned view is served by on its component's port
+/// (`gap.one.Things` and `gap.two.Things`, one component, are `things` and `things_2`).
+///
+/// A port is one `impl` block: a command and a view of the component share one namespace, whatever
+/// bounded context declared them. The rule is the one of the module header, over the family of one
+/// port.
+pub(crate) struct PortMethods {
+    methods: BTreeMap<(ComponentName, QualifiedName), PortMethod>,
+}
+
+impl PortMethods {
+    /// No port at all, the placeholder a layout holds while its methods are allocated from it.
+    pub(crate) fn empty() -> Self {
+        Self {
+            methods: BTreeMap::new(),
+        }
+    }
+
+    /// Allocates every port's methods from `candidate`, the target's spelling of a declaration's
+    /// own method, with no keyword escape: the escape is the caller's, after the suffix.
+    pub(crate) fn of(ir: &EssIr, candidate: impl Fn(&QualifiedName) -> String) -> Self {
+        let mut methods = BTreeMap::new();
+        for component in ir.components().values() {
+            let accepted = component
+                .accepts
+                .iter()
+                .map(ess_compiler::ir::CommandHandle::name);
+            let viewed = ir
+                .views()
+                .values()
+                .filter(|view| component.owns.contains(&view.domain))
+                .map(|view| &view.name);
+            let family: Vec<&QualifiedName> = accepted.chain(viewed).collect();
+            let mut counts: BTreeMap<String, usize> = BTreeMap::new();
+            for declared in &family {
+                *counts.entry(candidate(declared)).or_default() += 1;
+            }
+            for (declared, stem) in allocate(family, &candidate) {
+                let shared = counts[&candidate(&declared)] > 1;
+                methods.insert(
+                    (component.name.clone(), declared),
+                    PortMethod { stem, shared },
+                );
+            }
+        }
+        Self { methods }
+    }
+
+    fn method(&self, component: &ComponentName, declared: &QualifiedName) -> &PortMethod {
+        self.methods
+            .get(&(component.clone(), declared.clone()))
+            .unwrap_or_else(|| {
+                panic!("`{declared}` is no method of port `{component}`: it is not accepted or owned there")
+            })
+    }
+
+    /// The allocated method stem of `declared` on the port of `component`, before the escape.
+    pub(crate) fn stem(&self, component: &ComponentName, declared: &QualifiedName) -> &str {
+        &self.method(component, declared).stem
+    }
+
+    /// Whether another declaration of the port has the same candidate.
+    pub(crate) fn shared(&self, component: &ComponentName, declared: &QualifiedName) -> bool {
+        self.method(component, declared).shared
     }
 }
 

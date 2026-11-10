@@ -1350,7 +1350,7 @@ fn command_handler(
     let ident = wire::ident(layout, &command.name);
     let run = runner_ident(layout, &command.name);
     let field = name::value_ident(&component.name.to_string());
-    let method = name::value_ident(&layout.type_name(&command.name));
+    let method = layout.port_method(&component.name, &command.name);
     let outcome_type = format!(
         "{}Outcome",
         wire::path(
@@ -1623,7 +1623,7 @@ fn view_handler(
     let ident = wire::ident(layout, &view.name);
     let run = runner_ident(layout, &view.name);
     let field = name::value_ident(&component.name.to_string());
-    let method = name::value_ident(&layout.type_name(&view.name));
+    let method = layout.port_method(&component.name, &view.name);
 
     let (decoded, arguments) = if view.params.is_empty() {
         let _ = write!(
