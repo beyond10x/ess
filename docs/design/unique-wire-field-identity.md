@@ -16,7 +16,7 @@ identifier normalization.
 | Named struct | Its fields |
 | Entity | Identity, declared fields, and the synthetic `state` property |
 | Command | Input fields, not outcome names or event mapping expressions |
-| Command response | Response fields, a namespace apart from the input: a response field may share an input field's name |
+| Command response | Response fields, a namespace apart from the input, checked by the specification pass at `command.<name>.response[<index>]`: a response field may share an input field's name |
 | Event or error | Payload fields |
 | View | Output fields (inline or referenced shape) |
 | View parameters | A separate input namespace, never merged with the output row |
@@ -36,9 +36,10 @@ synthetic entity state is reserved first, so a conflict points at the authored i
 or field rather than a generated property. Ordinary noncolliding models retain their
 canonical bytes and projections; there is no persisted format change.
 
-The command response namespace is not yet in that pass. Rust and web synthesis refuse two
-response fields of one effective key as a `wire-collision` before emitting the served response
-encoder (`ess-synth/src/rust/feasibility.rs`, `wire`); the other targets do not check it.
+The command response namespace is in that pass as well, so every target is covered. Rust and web
+synthesis keep their `wire-collision` refusal of two response fields of one effective key before
+emitting the served response encoder (`ess-synth/src/rust/feasibility.rs`, `wire`) as a second line
+of defence.
 
 Keep the accounted model-selection guard as defense in depth, but test that the normal
 specification path now refuses collisions before it can reach that guard. Cover all
