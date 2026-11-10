@@ -719,20 +719,32 @@ fn evaluate_row(
         return Truth::Unknown;
     };
     let row = crate::input::TypedFacts::new(ir, &fields, store);
+    // An input that does not bind whole (an instance identity the scenario names, beyond10x/ess#727)
+    // is bound leaf by leaf from `ess/23`, and a leaf it leaves out is undecided: never read as
+    // absent, so a guard over it is not taken for false. Below `ess/23` such an input leaves the
+    // predicate undecided, so the document keeps the suite it synthesized, refusals included.
+    let mut partial = false;
     let input = match input {
         Some((command, values)) if reads_input(ir, entity, predicate) => {
-            match flatten(ir, command, values)
-                .or_else(|_| crate::input::flatten_partial(ir, command, values))
-            {
+            match flatten(ir, command, values) {
                 Ok(facts) => Some(facts),
-                Err(_) => return Truth::Unknown,
+                Err(_) if !identity_selectors(ir) => return Truth::Unknown,
+                Err(_) => match crate::input::flatten_partial(ir, command, values) {
+                    Ok(facts) => {
+                        partial = true;
+                        Some(facts)
+                    }
+                    Err(_) => return Truth::Unknown,
+                },
             }
         }
         _ => None,
     };
     let facts = RowAndInput { row, input };
     match predicate.evaluate(&facts) {
-        Truth::Unknown if as_guard && unknown_by_absence(predicate, &facts) => Truth::False,
+        Truth::Unknown if as_guard && !partial && unknown_by_absence(predicate, &facts) => {
+            Truth::False
+        }
         truth => truth,
     }
 }

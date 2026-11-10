@@ -70,3 +70,66 @@ fn a_word_the_schema_does_not_list_is_still_refused() {
         "the message lists bytes: {finding:?}"
     );
 }
+
+fn load_findings(report: &Report) -> Vec<&Finding> {
+    report
+        .findings
+        .iter()
+        .filter(|finding| finding.severity == Severity::Error)
+        .collect()
+}
+
+#[test]
+fn the_declared_formats_pass_check() {
+    for column in [
+        "{field: size, as: duration, unit: m}",
+        "{field: size, as: duration, unit: h}",
+        "{field: size, as: timestamp}",
+        "{field: size, as: percent, scale: hundredths}",
+        "{field: size, as: percent, scale: fraction}",
+    ] {
+        let report = report(&document(column));
+        assert!(
+            load_findings(&report).is_empty(),
+            "`{column}` is declared: {:#?}",
+            report.findings
+        );
+    }
+}
+
+#[test]
+fn a_metric_declares_a_unit_and_a_scale() {
+    let text = document("{field: size}").replace(
+        "format: bytes}",
+        "format: duration, unit: m}\n      - {name: rate, component: metric, reads: t.Usage, format: percent, scale: hundredths}",
+    );
+    let report = report(&text);
+    assert!(
+        load_findings(&report).is_empty(),
+        "a metric takes `unit` and `scale`: {:#?}",
+        report.findings
+    );
+}
+
+#[test]
+fn a_field_as_metric_is_refused_at_its_path() {
+    let report = report(&document("{field: size, as: metric}"));
+    let found = enum_findings(&report);
+    let finding = found
+        .iter()
+        .find(|finding| finding.path == "pages/p/sections/files/columns/size")
+        .unwrap_or_else(|| panic!("no `enum_values` at the column: {:#?}", report.findings));
+    assert_eq!(finding.severity, Severity::Error, "{finding:?}");
+}
+
+#[test]
+fn an_unknown_duration_unit_is_still_refused() {
+    let report = report(&document("{field: size, as: duration, unit: d}"));
+    assert!(
+        load_findings(&report)
+            .iter()
+            .any(|finding| finding.message.contains("`d` is no duration unit")),
+        "{:#?}",
+        report.findings
+    );
+}

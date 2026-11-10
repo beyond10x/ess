@@ -127,7 +127,8 @@ fn the_suite_pair_64_and_65_is_read_where_62_and_63_are() {
     assert_eq!(verdict(&ordinary), verdict(&ordinary_64));
     assert_eq!(verdict(&coverage), verdict(&coverage_65));
 
-    // No synthesis writes them yet: the major follows the features the specification uses.
+    // No synthesis without a `covers:` key writes them: the major follows the features the
+    // specification uses, and `/65` is the one an authored `covers:` writes (`authored_covers`).
     for path in [&ordinary, &coverage] {
         let text = fs::read_to_string(path).unwrap();
         assert!(

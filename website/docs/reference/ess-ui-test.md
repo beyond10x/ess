@@ -51,7 +51,7 @@ tests:
 | `tests` | The tests, run in order, each from a freshly opened application. |
 | `tests[].name` | The name the report uses. |
 | `tests[].fixtures` | Optional. Replaces fixture data for this test only (see [Fixtures](#fixtures)). |
-| `tests[].latency` | Optional duration. How long every read takes on the virtual clock; `loading` is visible until it passes. |
+| `tests[].latency` | Optional duration, or a map of view to duration. How long every read (or the named view's) takes on the virtual clock; `loading` is visible until it passes. |
 | `tests[].steps` | The steps. The first step that does not hold fails the test, and later steps do not run. |
 
 The example application's own tests are in `examples/partner-portal/tests/`.
@@ -299,6 +299,40 @@ tests:
       - open: partners.list
       - expect: {at: pages/partners.list/sections/list, rows: 2}
 ```
+
+Each key of `fixtures`:
+
+| Key | Declares |
+|---|---|
+| `views.<view>` | a map `{rows, total?, by_params?}` as above, or a list of such answers: a read is answered by the first whose `by_params` all equal the params asked, else by the one without `by_params`, else with no rows. Also replaces the rows of a `placeholder` read named `<view>`, ahead of its `fixture:` file |
+| `views.<view>: {fails: <message>}` | every read of the view fails: the section reading it is `failed` and shows the message |
+| `commands.<command>: {refuses: <error code>, payload?: {…}}` | the command is answered with that refusal. It is still logged for `expect_command`, and the refusal shows where the user acted, as a served surface's refusal does |
+| `scripts.<channel>` | a channel's event script |
+
+```yaml
+tests:
+  - name: a cancelled order is refused
+    latency: {example.order.Page: 2s}
+    fixtures:
+      views:
+        example.order.Page:
+          - {by_params: {order: o-3}, rows: [{id: o-3, customer: Customer 3}]}
+          - {rows: [{id: o-0, customer: Nobody}]}
+        example.line.Page: {fails: backend is down}
+      commands:
+        example.order.Cancel: {refuses: already_cancelled}
+```
+
+An unknown key under `fixtures` is refused with the file, the test and the key. A test that uses a
+list of view answers, `fails`, `commands` or a latency per view runs in the terminal; the
+Playwright spec marks it `test.fixme` with one reason until its routes answer them.
+
+`tests[].latency` is one duration for every read, or a map of view to duration: a view not named
+answers at once.
+
+The signed-in actor of a fixture run is the first row of the first view the home page's shell
+preloads; with no preload, `actor.account_id` is null. A shell `preload` of the session view
+therefore sets it, and `actor: from_session` signs it in.
 
 ## Time and live events
 

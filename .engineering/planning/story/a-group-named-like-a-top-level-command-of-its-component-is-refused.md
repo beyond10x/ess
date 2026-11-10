@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-group-named-like-a-top-level-command-of-its-component-is-refused
 kind: story
-status: active
+status: implemented
 title: A group named like a top-level command of its own component is refused
 summary: Inside one component a group and a top-level command may share a word and the clap tree defines it twice (W2 GEN2 review finding, pre-existing, backlog)
 tags:
@@ -23,10 +23,13 @@ scope:
   path: crates/specify/ess-domain/src/component.rs
 - confidence: inferred
   path: crates/specify/ess-domain/src/spec.rs
-revision: 11
+- confidence: cited
+  path: docs/design/review-typed-diagnostics.md
+revision: 14
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-10T00:38:12Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":1}}}
 - {from: "proposed", to: "active", at: "2026-11-10T00:38:12Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "active", to: "implemented", at: "2026-11-10T17:53:35Z", actor: "human:timo", revision: 14, decided_on: {"recorded":{"test_result":1,"review_outcome":1,"verification":1}}}
 ---
 ## Need
 
@@ -80,17 +83,15 @@ out/crates/desk-cli/src/tree.rs:24:            ::clap::Command::new("record")
 
 ## Scope
 
-- cited: crates/specify/ess-domain/src/component.rs (`validate_command_placement` at 1043-1118 never compares a group name with a top-level word; `validate_shared_binary_words` at 1478 compares the words only for binaries two components share; unit tests in `mod tests` at 1801, beside the shared-binary cases at 2692-2730)
-- cited: crates/generate/ess-synth/tests/adversary_w2_gen2_adversary.rs (`desk_validation` helper at 455, the cross-component case at 594)
-- inferred: crates/specify/ess-domain/src/spec.rs (the word map is built and `validate_shared_binary_words` called at 725-740; gains a call only if the fix is a new function)
+Delivered in turn 1 of the zero-open-issues plan (merge 75c0e11fd4). The paths below are the ones
+its commits changed, read from the diff, so every entry is cited.
 
-confidence: high — the story names the defect site and the adversary file, and the cross-component fix it mirrors (acfa41d845) changed only `component.rs` and `spec.rs`; `spec.rs` alone is inferred (story-scoper, 2026-11-10)
+- cited, confirmed: `crates/generate/ess-synth/tests/adversary_w2_gen2_adversary.rs`
+- cited, confirmed: `crates/specify/ess-domain/src/component.rs`
+- cited, confirmed: `crates/specify/ess-domain/src/spec.rs`
+- cited, added: `docs/design/review-typed-diagnostics.md`
 
-Correction to the earlier pass: the bare directory `crates/specify/ess-domain/tests/` is removed: no test file under it covers `cli` groups; the CLI-tree tests live in `component.rs`'s own test module.
-
-No new `ValidationCode` (the refusal reuses `DuplicateDeclaration`). A new literal `ValidationError` in `component.rs` moves the `docs/design/review-typed-diagnostics.md` rows (`:358`, `:211`, and `:396` for a new `"component …"` literal); run `task test-xtask` and `cargo test -p ess-compiler --test typed_diagnostics`.
-
-Shared surfaces this story moves (epic § Shared surfaces, not scope entries): `CHANGELOG.md`; `docs/design/review-typed-diagnostics.md` only in the cases above.
+Shared surface written by the coordinator, not a scope entry: `CHANGELOG.md`.
 
 ## Schedule
 

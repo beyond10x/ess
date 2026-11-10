@@ -222,6 +222,19 @@ fn finish_inventory(
             }
         }
     }
+    let covering: Vec<(SourceIdentity, ScenarioId, Vec<ScenarioId>)> = ordered
+        .iter()
+        .filter_map(|(identity, (source, candidate))| {
+            let (id, _) = candidate.as_ref().ok()?;
+            let raw = crate::authored::Source::new(identity.as_str(), &source.text);
+            Some((
+                (*identity).clone(),
+                id.clone(),
+                crate::authored::covers_of(ir, &raw),
+            ))
+        })
+        .filter(|(_, _, covers)| !covers.is_empty())
+        .collect();
     let mut suite = synthesis.suite;
     suite.provenance.component = component.map(|c| c.name.to_string());
     let mut owners: BTreeMap<ScenarioId, Retained> = suite
@@ -265,6 +278,10 @@ fn finish_inventory(
         &mut owners,
     )?;
     append_generated(ir, synthesis.refusals, &suite, &mut inventory, &owners);
+    // An authored-only selection synthesizes nothing, so there is nothing a `covers:` could name.
+    if origins.includes(Origin::Generated) {
+        apply_covers(covering, &owners, &mut inventory)?;
+    }
     partition(
         &mut suite,
         &mut inventory,
@@ -315,8 +332,59 @@ fn append_generated(
             retained: None,
             scope: RefusalScope::InScope,
             needs: Vec::new(),
+            covered_by: None,
         });
     }
+}
+
+/// Marks each generated refusal an accepted authored scenario's `covers:` names (beyond10x/ess#735).
+///
+/// The occurrence is kept with its multiplicity; only `covered_by` is set. An id no generated
+/// refusal carries, and an id two scenarios claim, are refused before anything is written.
+fn apply_covers(
+    covering: Vec<(SourceIdentity, ScenarioId, Vec<ScenarioId>)>,
+    owners: &BTreeMap<ScenarioId, Retained>,
+    inventory: &mut Inventory,
+) -> Result<(), AdmissionError> {
+    let mut claimed: BTreeMap<ScenarioId, ScenarioId> = BTreeMap::new();
+    for (identity, id, covers) in covering {
+        let accepted = owners
+            .get(&id)
+            .and_then(|owner| owner.source.as_ref())
+            .is_some_and(|source| *source == identity);
+        if !accepted {
+            continue;
+        }
+        for target in covers {
+            let mut found = false;
+            for refusal in inventory
+                .refused
+                .iter_mut()
+                .filter(|r| r.origin == Origin::Generated && r.scenario.as_ref() == Some(&target))
+            {
+                refusal.covered_by = Some(id.clone());
+                found = true;
+            }
+            if !found {
+                return Err(AdmissionError::new(
+                    "covers.unknown-scenario",
+                    "$coverage",
+                    format!(
+                        "`{identity}` covers `{target}`, which synthesis did not refuse",
+                        identity = identity.as_str()
+                    ),
+                ));
+            }
+            if let Some(first) = claimed.insert(target.clone(), id.clone()) {
+                return Err(AdmissionError::new(
+                    "covers.repeated-scenario",
+                    "$coverage",
+                    format!("`{target}` is covered by both `{first}` and `{id}`"),
+                ));
+            }
+        }
+    }
+    Ok(())
 }
 
 fn append_authored(
@@ -580,6 +648,7 @@ fn authored_refusal(
         retained: None,
         scope: RefusalScope::InScope,
         needs: Vec::new(),
+        covered_by: None,
     })
 }
 
@@ -632,7 +701,9 @@ fn coverage_version(
     let counted = crate::event_multiplicity::coverage_floor(suite).is_some();
     // A carried `Binary64` (suite/62, `crate::binary64_values`) shares the member-path pair.
     crate::scenario::SuiteFormat::parse(
-        if crate::member_paths::coverage_floor(suite).is_some()
+        if inventory.refused.iter().any(|r| r.covered_by.is_some()) {
+            crate::coverage::COVERED_BY_FORMAT
+        } else if crate::member_paths::coverage_floor(suite).is_some()
             || crate::binary64_values::coverage_floor(ir).is_some()
         {
             "ess-conformance/63"

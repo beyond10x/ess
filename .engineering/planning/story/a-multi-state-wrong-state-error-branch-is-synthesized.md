@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-multi-state-wrong-state-error-branch-is-synthesized
 kind: story
-status: active
+status: implemented
 title: A wrong-state error branch over several states is synthesized in each of them
 summary: 'when_subject_state: [A, B] on an error branch validates, but synthesis refuses it as selected in a held state (beyond10x/ess#732)'
 tags:
@@ -18,12 +18,21 @@ relations:
 scope:
 - confidence: cited
   path: crates/verify/ess-conformance/src/synthesize.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/synthesize/subject_fact.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/tests/adversary_listed_state_refusal_pass1.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/tests/adversary_listed_state_refusal_pass2.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/tests/fixtures/synthesis-suite-bytes-table.tsv
 - confidence: inferred
   path: crates/verify/ess-conformance/tests/listed_state_refusal_tries_its_states.rs
-revision: 8
+revision: 11
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-10T00:38:27Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":1}}}
 - {from: "proposed", to: "active", at: "2026-11-10T00:38:28Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "active", to: "implemented", at: "2026-11-10T17:53:42Z", actor: "human:timo", revision: 11, decided_on: {"recorded":{"test_result":1,"review_outcome":3}}}
 ---
 ## Need
 
@@ -80,12 +89,17 @@ failure. `prepare_state_input` (line 8697) already narrows to the states the con
 
 ## Scope
 
-- cited: crates/verify/ess-conformance/src/synthesize.rs
-- inferred: crates/verify/ess-conformance/tests/listed_state_refusal_tries_its_states.rs
+Delivered in turn 1 of the zero-open-issues plan (lane story 4). The paths below are the ones
+its commits changed, read from the diff, so every entry is cited.
 
-confidence: high — the story names the defect site (the loop at `synthesize.rs:4774` inside `run_as`, keeping the first failure; the "selected in held state" text at `synthesize.rs:8637`), and every cited line matches the tree (story-scoper, 2026-11-10)
+- cited, confirmed: `crates/verify/ess-conformance/src/synthesize.rs`
+- cited, confirmed: `crates/verify/ess-conformance/tests/listed_state_refusal_tries_its_states.rs`
+- cited, added: `crates/verify/ess-conformance/src/synthesize/subject_fact.rs`
+- cited, added: `crates/verify/ess-conformance/tests/adversary_listed_state_refusal_pass1.rs`
+- cited, added: `crates/verify/ess-conformance/tests/adversary_listed_state_refusal_pass2.rs`
+- cited, added: `crates/verify/ess-conformance/tests/fixtures/synthesis-suite-bytes-table.tsv`
 
-Shared surfaces this story moves (epic § Shared surfaces, not scope entries): `CHANGELOG.md`.
+Shared surface written by the coordinator, not a scope entry: `CHANGELOG.md`.
 
 ## Fit review
 
