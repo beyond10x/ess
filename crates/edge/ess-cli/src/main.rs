@@ -1228,7 +1228,8 @@ enum ImportAdapter {
         /// Where a live scan writes its sanitized source bundle.
         #[arg(long, requires = "context")]
         observation_out: Option<PathBuf>,
-        /// Where to write the compiled `infra-ir` document.
+        /// Where to write the compiled `infra-ir` document, always as JSON whatever the file
+        /// extension; `--format` selects only the report printed to stdout.
         #[arg(long)]
         out: Option<PathBuf>,
         #[arg(long, value_enum, default_value_t = Format::Text)]
@@ -6105,9 +6106,7 @@ fn infra(command: InfraCommand) -> Result<ExitCode> {
                     &infra_analyze::GraphDocument::of(&graph, &ir, namespace.as_deref()),
                     Format::Yaml,
                 )?,
-                GraphFormat::Dot => {
-                    bail!("the infrastructure graph supports mermaid, json, and yaml")
-                }
+                GraphFormat::Dot => print!("{}", graph.dot()),
             }
             Ok(ExitCode::SUCCESS)
         }

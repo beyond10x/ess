@@ -86,6 +86,75 @@ fn both_import_spellings_preserve_scope_through_graph_diff_and_projection_refusa
 }
 
 #[test]
+fn the_imported_ir_is_json_whatever_the_out_extension_and_the_help_says_so() {
+    let scratch =
+        Path::new(env!("CARGO_TARGET_TMPDIR")).join(format!("infra-out-{}", std::process::id()));
+    std::fs::create_dir_all(&scratch).unwrap();
+    let source = root().join("crates/infra/infra-compiler/tests/fixtures/namespace-topology.json");
+    let out = scratch.join("cluster.ir.yaml");
+    let output = Command::new(env!("CARGO_BIN_EXE_ess"))
+        .args(["infra", "import", "kubernetes", "--path"])
+        .arg(&source)
+        .arg("--out")
+        .arg(&out)
+        .args(["--format", "yaml"])
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{output:?}");
+    let document: Value = serde_json::from_slice(&std::fs::read(&out).unwrap())
+        .expect("`--out` writes JSON even under a .yaml name");
+    assert_eq!(document["format"], "infra-ir/2");
+
+    let help = Command::new(env!("CARGO_BIN_EXE_ess"))
+        .args(["infra", "import", "kubernetes", "--help"])
+        .output()
+        .unwrap();
+    assert!(help.status.success(), "{help:?}");
+    let help = String::from_utf8(help.stdout).unwrap();
+    let out_line = help
+        .lines()
+        .skip_while(|line| !line.trim_start().starts_with("--out"))
+        .take(3)
+        .collect::<Vec<_>>()
+        .join(" ");
+    assert!(
+        out_line.contains("JSON"),
+        "the --out help names JSON: {help}"
+    );
+}
+
+#[test]
+fn the_infrastructure_graph_renders_as_dot_and_graphviz_parses_it() {
+    let source = root().join("crates/infra/infra-compiler/tests/fixtures/namespace-topology.json");
+    let output = Command::new(env!("CARGO_BIN_EXE_ess"))
+        .args(["infra", "infra", "graph", "--path"])
+        .arg(&source)
+        .args(["--format", "dot"])
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{output:?}");
+    let dot = String::from_utf8(output.stdout).unwrap();
+    assert!(dot.contains("digraph infrastructure {\n"), "{dot}");
+    assert!(dot.contains("subgraph \"cluster_app\" {"), "{dot}");
+
+    let scratch =
+        Path::new(env!("CARGO_TARGET_TMPDIR")).join(format!("infra-dot-{}", std::process::id()));
+    std::fs::create_dir_all(&scratch).unwrap();
+    let file = scratch.join("graph.dot");
+    std::fs::write(&file, &dot).unwrap();
+    match Command::new("dot").arg("-Tsvg").arg(&file).output() {
+        Ok(svg) => {
+            assert!(
+                svg.status.success(),
+                "dot -Tsvg refused the output: {svg:?}"
+            );
+            assert!(String::from_utf8_lossy(&svg.stdout).contains("<svg"));
+        }
+        Err(error) => println!("skip: Graphviz `dot` is not runnable here ({error})"),
+    }
+}
+
+#[test]
 fn importing_a_legacy_ir_writes_no_secret_digest_it_carried() {
     // A persisted `infra-ir/1` still carries the scanner's unsalted `{sha256, length}` per Secret
     // key. Reading it is allowed; writing it again is not: anything this build writes records a
