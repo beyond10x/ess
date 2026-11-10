@@ -150,8 +150,16 @@ fn classify(keys: &[Option<&str>], mapping: &Mapping) -> Option<Expected> {
         key.is_some_and(|key| set.contains(&(key.to_owned(), shape)))
     };
     let is_node = mapping.contains_key("component") || mapping.contains_key("primitive");
-    if held(&positions.actions, from_end(2), Shape::List)
-        || (!is_node && held(&positions.actions, from_end(1), Shape::One))
+    // Under a type expression or a map of expressions every key is author data: a record field or
+    // a param named like an action position is not one.
+    let in_data = keys.split_last().is_some_and(|(_, above)| {
+        above
+            .iter()
+            .any(|key| matches!(key, Some("type" | "params")))
+    });
+    if !in_data
+        && (held(&positions.actions, from_end(2), Shape::List)
+            || (!is_node && held(&positions.actions, from_end(1), Shape::One)))
     {
         return Some(Expected::Action);
     }
