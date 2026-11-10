@@ -48,6 +48,7 @@ A command response whose two fields share a wire name is now refused by `ess spe
 - An input guard on the plain value of an enum input no longer drops the `exists: false` scenario of the related-row family: synthesis searches for an input every input-guarded refusal misses, and where none does the branch is refused ESS-SYNTH-003 naming the refusal that took the input (beyond10x/ess#731).
 - The interpreted target publishes an absent event field in its declared presence: `null` under `null_when_absent`, left out under `omitted_when_absent` or no presence (#765).
 - A guard of several `exists` literals is now witnessed across two lists, beside a leaf whose base value refutes it, and under `not`: synthesis fills every such list in one candidate, leaves each literal out in turn, and a target ignoring a negated literal child fails the suite (`ESS-SYNTH-003`/`ESS-SYNTH-022` no longer recorded for these shapes).
+- A set guard fed by a subject payload is arranged: a binding whose invoked command picks its branch by a row-set guard over an input the trigger fills from {subject: field} now gets its flow, delivery and on-failure scenarios when the trigger's arrangement created the row storing that field from an input, instead of refusing with ESS-SYNTH-010 (#705).
 
 ## [0.92.0] — 2026-11-09
 
