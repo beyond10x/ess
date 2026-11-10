@@ -3586,7 +3586,8 @@ fn carried_at<'a>(payload: &'a BTreeMap<String, Node>, key: &str) -> Option<&'a 
     }
 }
 
-/// The first field that does not carry what was required, rendered for a diagnostic.
+/// The first field that does not carry what was required, rendered for a diagnostic. A required
+/// `null` is met by a field left out as by one carried `null`, as an error payload reads it.
 fn mismatch(
     subject: &str,
     payload: &BTreeMap<String, Node>,
@@ -3597,7 +3598,7 @@ fn mismatch(
         .find_map(|(field, value)| match carried_at(payload, field) {
             Some(observed) if same_value(observed, value) => None,
             Some(observed) => Some(format!("{subject}.{field} = {}", quote(observed))),
-            None if field.contains('.') && matches!(value, Node::Null) => None,
+            None if matches!(value, Node::Null) => None,
             None => Some(format!("{subject} carried no field `{field}`")),
         })
 }

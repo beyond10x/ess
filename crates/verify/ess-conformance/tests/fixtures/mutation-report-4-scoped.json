@@ -1,7 +1,7 @@
 {
   "baseline": {
     "not_scored": [],
-    "refusals": 2,
+    "refusals": 0,
     "scenarios": 9
   },
   "component": "desk-server",
@@ -28,7 +28,7 @@
       "change": "`when: prompt starts_with \"hold \"` becomes `when: not (prompt starts_with \"hold \")`",
       "class": "guard-negate",
       "id": "guard-negate/desk.entry.Check/leading-hold",
-      "refusals": 3,
+      "refusals": 1,
       "scenarios": 8,
       "verdict": "unwitnessed"
     },
@@ -36,7 +36,7 @@
       "change": "`when: prompt ends_with \" hold\"` becomes `when: not (prompt ends_with \" hold\")`",
       "class": "guard-negate",
       "id": "guard-negate/desk.entry.Check/trailing-hold",
-      "refusals": 2,
+      "refusals": 0,
       "scenarios": 9,
       "verdict": "survived"
     },
@@ -44,7 +44,7 @@
       "change": "`when: amount < 20` becomes `when: not (amount < 20)`",
       "class": "guard-negate",
       "id": "guard-negate/desk.entry.Grade/low",
-      "refusals": 2,
+      "refusals": 0,
       "scenarios": 9,
       "verdict": "survived"
     },
@@ -59,7 +59,7 @@
       "change": "`when: amount < 10` becomes `when: not (amount < 10)`",
       "class": "guard-negate",
       "id": "guard-negate/desk.entry.Grade/too-low",
-      "refusals": 3,
+      "refusals": 1,
       "scenarios": 8,
       "verdict": "unwitnessed"
     },
@@ -79,7 +79,7 @@
       "change": "`when: (defined(prompt) and prompt starts_with \"hold \")` becomes `when: not ((defined(prompt) and prompt starts_with \"hold \"))`",
       "class": "guard-negate",
       "id": "guard-negate/desk.entry.Open/leading-hold",
-      "refusals": 3,
+      "refusals": 2,
       "scenarios": 8,
       "verdict": "unwitnessed"
     },
@@ -94,7 +94,7 @@
       "change": "`when: (defined(prompt) and prompt ends_with \" hold\")` becomes `when: not ((defined(prompt) and prompt ends_with \" hold\"))`",
       "class": "guard-negate",
       "id": "guard-negate/desk.entry.Open/trailing-hold",
-      "refusals": 2,
+      "refusals": 1,
       "scenarios": 9,
       "verdict": "unwitnessed"
     }
