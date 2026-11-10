@@ -219,7 +219,7 @@ pub fn caller_attributes(ir: &EssIr, command: &ess_compiler::ir::ResolvedCommand
             continue;
         }
         for path in site.predicate.fact_paths() {
-            if path.namespace() == CALLER_NAMESPACE && path.segments().len() == 2 {
+            if path.namespace() == CALLER_NAMESPACE && path.segments().len() > 1 {
                 found.insert(path.segments()[1].clone());
             }
         }
