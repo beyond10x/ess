@@ -27,7 +27,9 @@ fn topology_case(edit: impl FnOnce(&Path), failure: Option<&str>) -> (Output, Pa
     }
     let metadata = |name: &str| {
         json!({"name": name, "namespace": "app", "uid": name,
-        "annotations": {"private": TOPOLOGY_PRIVATE, "kubectl.kubernetes.io/last-applied-configuration": TOPOLOGY_PRIVATE}})
+        "annotations": {"private": TOPOLOGY_PRIVATE, "kubectl.kubernetes.io/last-applied-configuration": TOPOLOGY_PRIVATE,
+            "eks.amazonaws.com/role-arn": TOPOLOGY_PRIVATE,
+            "service.beta.kubernetes.io/aws-load-balancer-scheme": TOPOLOGY_PRIVATE}})
     };
     let resources = [
         (
@@ -61,6 +63,17 @@ fn topology_case(edit: impl FnOnce(&Path), failure: Option<&str>) -> (Output, Pa
         (
             "secrets",
             json!({"items": [{"metadata": metadata("creds"), "data": {"token": TOPOLOGY_PRIVATE}, "stringData": {"private": TOPOLOGY_PRIVATE}}]}),
+        ),
+        // The full scan reads a role and a load balancer into `infra-ir/4`; the `/2` profile
+        // records neither.
+        (
+            "serviceaccounts",
+            json!({"items": [{"metadata": metadata("web")}]}),
+        ),
+        (
+            "services",
+            json!({"items": [{"metadata": metadata("web"), "spec": {"type": "LoadBalancer", "ports": [{"port": 80}]},
+                "status": {"loadBalancer": {"ingress": [{"hostname": TOPOLOGY_PRIVATE}]}}}]}),
         ),
     ];
     for (kind, value) in resources {
@@ -218,6 +231,8 @@ fn scan(response: &str, preserve_existing: bool) -> (Output, PathBuf) {
         .arg(&destination)
         .env("PATH", root.join("bin"))
         .env("ESS_TEST_SECRET_RESPONSE", response)
+        // A cluster without the Gateway API: its observation keeps the frozen bytes below.
+        .env("ESS_TEST_UNSERVED_KINDS", GATEWAY_RESOURCES.join(","))
         .output()
         .expect("scan against synthetic subprocesses");
     (output, destination)
@@ -603,6 +618,132 @@ fn failed_all_namespace_request_cannot_fall_back_to_current_namespace() {
         assert_eq!(
             std::fs::read_to_string(call_log).expect("recorded retry order"),
             expected
+        );
+    }
+}
+
+const GATEWAY_RESOURCES: [&str; 2] = [
+    "gateways.gateway.networking.k8s.io",
+    "httproutes.gateway.networking.k8s.io",
+];
+
+fn gateway_scan(label: &str, configure: impl FnOnce(&mut Command)) -> (Output, PathBuf) {
+    let root = fixture_root();
+    let destination = root.join(format!("gateway-{label}.json"));
+    let mut command = Command::new(env!("CARGO_BIN_EXE_ess-kubernetes"));
+    command
+        .args(["scan", "--context", "synthetic-context", "--out"])
+        .arg(&destination)
+        .env("PATH", root.join("bin"))
+        .env("ESS_TEST_SECRET_RESPONSE", "{\"items\":[]}");
+    configure(&mut command);
+    (
+        command.output().expect("synthetic gateway scan"),
+        destination,
+    )
+}
+
+#[test]
+fn a_served_gateway_api_is_read_and_an_unserved_one_is_recorded_as_absent_not_empty() {
+    let (served, destination) = gateway_scan("served", |_| {});
+    assert!(served.status.success(), "{served:?}");
+    let observation: Value =
+        serde_json::from_slice(&std::fs::read(&destination).expect("written")).expect("JSON");
+    assert_eq!(observation["kinds"]["gateways"], json!({"items": []}));
+    assert_eq!(observation["kinds"]["httproutes"], json!({"items": []}));
+
+    let (unserved, destination) = gateway_scan("unserved", |command| {
+        command.env("ESS_TEST_UNSERVED_KINDS", GATEWAY_RESOURCES.join(","));
+    });
+    assert!(unserved.status.success(), "{unserved:?}");
+    let observation: Value =
+        serde_json::from_slice(&std::fs::read(&destination).expect("written")).expect("JSON");
+    let kinds = observation["kinds"].as_object().expect("kinds");
+    assert!(
+        !kinds.contains_key("gateways") && !kinds.contains_key("httproutes"),
+        "a kind the server does not serve is absent, never an empty list"
+    );
+    for kind in ess_kubernetes::KINDS {
+        assert!(kinds.contains_key(*kind), "{kind} is still read");
+    }
+    let stderr = String::from_utf8_lossy(&unserved.stderr);
+    assert!(
+        !stderr.contains("SYNTHETIC-UNSERVED-STDERR"),
+        "kubectl's stderr crossed the boundary: {stderr}"
+    );
+    assert!(stderr.contains("not served"), "{stderr}");
+}
+
+/// Served resources in the synthetic API: scanned kinds, unread kinds of watched groups, and
+/// kinds of groups nobody watches.
+const API_RESOURCES: &str = "pods\nnamespaces\nconfigmaps\nendpoints\n\
+ingresses.networking.k8s.io\nnetworkpolicies.networking.k8s.io\n\
+poddisruptionbudgets.policy\ngateways.gateway.networking.k8s.io\n\
+grpcroutes.gateway.networking.k8s.io\ncertificates.cert-manager.io\n\
+widgets.example.internal\n";
+
+#[test]
+fn served_kinds_of_watched_groups_the_scan_does_not_read_are_recorded_as_unobserved() {
+    let (output, destination) = gateway_scan("discovery", |command| {
+        command.env("ESS_TEST_API_RESOURCES", API_RESOURCES);
+    });
+    assert!(output.status.success(), "{output:?}");
+    let observation: Value =
+        serde_json::from_slice(&std::fs::read(&destination).expect("written")).expect("JSON");
+    assert_eq!(
+        observation["unobserved_kinds"],
+        json!([
+            "certificates.cert-manager.io",
+            "grpcroutes.gateway.networking.k8s.io",
+            "networkpolicies.networking.k8s.io"
+        ])
+    );
+    let raw: infra_domain::RawBundle = serde_json::from_value(observation).expect("parses");
+    infra_domain::Observation::try_from(raw).expect("an unobserved kind does not refuse");
+
+    let (quiet, destination) = gateway_scan("discovery-none", |_| {});
+    assert!(quiet.status.success(), "{quiet:?}");
+    let observation: Value =
+        serde_json::from_slice(&std::fs::read(&destination).expect("written")).expect("JSON");
+    assert!(
+        observation.get("unobserved_kinds").is_none(),
+        "nothing unobserved writes no key, so earlier bundles keep their bytes"
+    );
+}
+
+#[test]
+fn a_failed_api_discovery_does_not_refuse_the_scan_and_records_nothing() {
+    let (output, destination) = gateway_scan("discovery-failure", |command| {
+        command
+            .env("ESS_TEST_API_RESOURCES", API_RESOURCES)
+            .env("ESS_TEST_FAILURE_OPERATION", "api-resources")
+            .env("ESS_TEST_FAILURE_DIAGNOSTIC", SENTINEL);
+    });
+    assert!(output.status.success(), "{output:?}");
+    let bytes = std::fs::read(&destination).expect("written");
+    let observation: Value = serde_json::from_slice(&bytes).expect("JSON");
+    assert!(observation.get("unobserved_kinds").is_none());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(!stderr.contains(SENTINEL), "{stderr}");
+    assert!(!String::from_utf8_lossy(&bytes).contains(SENTINEL));
+    assert!(stderr.contains("unobserved kinds not recorded"), "{stderr}");
+}
+
+#[test]
+fn any_other_failure_of_a_gateway_kind_still_refuses_the_scan() {
+    for resource in GATEWAY_RESOURCES {
+        let (output, destination) = gateway_scan(&format!("failure-{resource}"), |command| {
+            command
+                .env("ESS_TEST_FAILURE_OPERATION", resource)
+                .env("ESS_TEST_FAILURE_DIAGNOSTIC", SENTINEL);
+        });
+        assert!(!output.status.success(), "{resource}: {output:?}");
+        assert!(!destination.exists());
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(!stderr.contains(SENTINEL), "{stderr}");
+        assert!(
+            stderr.contains("kubectl get resources in all namespaces failed"),
+            "{stderr}"
         );
     }
 }

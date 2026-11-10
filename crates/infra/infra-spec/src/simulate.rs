@@ -854,6 +854,7 @@ pub(crate) fn is_required(target: &UnresolvedTarget) -> bool {
         | UnresolvedTarget::Claim { .. }
         | UnresolvedTarget::Service { .. }
         | UnresolvedTarget::Node { .. }
+        | UnresolvedTarget::Gateway { .. }
         | UnresolvedTarget::Namespace { .. }
         | UnresolvedTarget::PodsMatchingSelector { .. } => true,
     }
@@ -870,6 +871,7 @@ pub(crate) fn describe_target(target: &UnresolvedTarget) -> String {
         UnresolvedTarget::Claim { name } => format!("claim {name}"),
         UnresolvedTarget::Service { name } => format!("service {name}"),
         UnresolvedTarget::Node { name } => format!("node {name}"),
+        UnresolvedTarget::Gateway { name } => format!("gateway {name}"),
         UnresolvedTarget::Namespace { name } => format!("namespace {name}"),
         UnresolvedTarget::PodsMatchingSelector { selector } => format!(
             "pods matching {}",
