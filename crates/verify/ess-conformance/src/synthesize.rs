@@ -4813,7 +4813,15 @@ fn run_as(
             .selection_subject(outcome)
             .expect("validated common selection subject");
         let mut first = None;
-        for state in &ir.entity(&subject.entity).lifecycle.states {
+        // The states the branch lists, never one it does not name (beyond10x/ess#732); a refusal
+        // that lists none is tried in every state.
+        for state in ir
+            .entity(&subject.entity)
+            .lifecycle
+            .states
+            .iter()
+            .filter(|state| admits_held_state(&outcome.condition, state))
+        {
             match run_state_refusal(ir, command, outcome, state, actors, Distinction::PLAIN) {
                 Ok(mut run) => {
                     models.mark_run(&mut run);
