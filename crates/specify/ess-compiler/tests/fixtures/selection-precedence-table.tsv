@@ -1,4 +1,4 @@
-#	models=375	commands=751
+#	models=382	commands=764
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	ir=d47970055f083eda582673dfe528f0af87f902defa07339aa014f6c8d50be57f:5099
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor.core.Publish	default: accepted
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor.core.Receive	default: accepted
@@ -217,6 +217,9 @@ crates/specify/ess-service-contract/tests/fixtures/system.yaml	ASSEMBLE
 crates/specify/ess-service-contract/tests/selection-conversion-control-fixtures/system.yaml	ASSEMBLE
 crates/specify/ess-service-contract/tests/selection-conversion-fixtures/system.yaml	ASSEMBLE
 crates/ui/ess-ui-check/tests/fixtures/model/system.yaml	ASSEMBLE
+crates/verify/ess-conformance/tests/fixtures/absent-optional-beside-stored-guard.yaml	ir=ce30f5dee85374e1c98ff2fb1df54789ef7ce953502eae811c4d923d1ca7cb4d:12178
+crates/verify/ess-conformance/tests/fixtures/absent-optional-beside-stored-guard.yaml	example.review.Annotate	held_state: not-accepted | default: annotated
+crates/verify/ess-conformance/tests/fixtures/absent-optional-beside-stored-guard.yaml	example.review.Record	input_refusal: incomplete, not-verified | existence: already-exists | default: recorded
 crates/verify/ess-conformance/tests/fixtures/adversary-0710/affects-past-creating-not-found.yaml	ir=91f7a59a3f68896dd4a5c06336882417f0d0912f3734023d87309584f6aeac2d:13316
 crates/verify/ess-conformance/tests/fixtures/adversary-0710/affects-past-creating-not-found.yaml	demo.w.CreateMember	default: created
 crates/verify/ess-conformance/tests/fixtures/adversary-0710/affects-past-creating-not-found.yaml	demo.w.OpenTicket	related_row: walk-in | default: opened
@@ -624,6 +627,14 @@ crates/verify/ess-conformance/tests/fixtures/external-beside-held-guard.yaml	dem
 crates/verify/ess-conformance/tests/fixtures/external-creator-beside-related-guard.yaml	ir=e2bb47b1d79545634b30c95389aa3e9e6c727f984713786a98c9f1b0184df502:15546
 crates/verify/ess-conformance/tests/fixtures/external-creator-beside-related-guard.yaml	demo.studio.LoadPatch	default: loaded
 crates/verify/ess-conformance/tests/fixtures/external-creator-beside-related-guard.yaml	demo.studio.RenderPatch	present_related: no-such-patch | accepting: rendered-limited | default: rendered
+crates/verify/ess-conformance/tests/fixtures/external-narrowed-by-state-only.yaml	ir=9fa78637ac6ae02c3b40e4aa8ce0c8b62b0a22c3da1039adaac662aba85b24ce:11930
+crates/verify/ess-conformance/tests/fixtures/external-narrowed-by-state-only.yaml	depot.parcel.PackParcel	default: packed
+crates/verify/ess-conformance/tests/fixtures/external-narrowed-by-state-only.yaml	depot.parcel.SealParcel	held_state: not-packed | default: sealed
+crates/verify/ess-conformance/tests/fixtures/external-narrowed-by-state-only.yaml	depot.parcel.ShipParcel	held_state: held, wrong-state | default: shipped
+crates/verify/ess-conformance/tests/fixtures/external-narrowed-by-state-unreachable.yaml	ir=adc063bdb0bda1c118e0041addde88e012802dbc23f748945110ebe5be01a5b6:12639
+crates/verify/ess-conformance/tests/fixtures/external-narrowed-by-state-unreachable.yaml	depot.parcel.PackParcel	default: packed
+crates/verify/ess-conformance/tests/fixtures/external-narrowed-by-state-unreachable.yaml	depot.parcel.SealParcel	held_state: not-packed | accepting: sealed | default: refused
+crates/verify/ess-conformance/tests/fixtures/external-narrowed-by-state-unreachable.yaml	depot.parcel.ShipParcel	held_state: held, wrong-state | default: shipped
 crates/verify/ess-conformance/tests/fixtures/external-narrowed-by-subject.yaml	ir=708c1b55eee0a6544cb0010f8ccb140f417d1a17cb7b109044d2f05b882059e1:12437
 crates/verify/ess-conformance/tests/fixtures/external-narrowed-by-subject.yaml	demo.vault.Issue	default: issued
 crates/verify/ess-conformance/tests/fixtures/external-narrowed-by-subject.yaml	demo.vault.Redeem	held_state: hashed-mismatch, redirect-mismatch, plain-mismatch, already-redeemed | default: redeemed
@@ -678,6 +689,9 @@ crates/verify/ess-conformance/tests/fixtures/list-identity-guard-beside-updates.
 crates/verify/ess-conformance/tests/fixtures/list-of-references.yaml	ir=b47cee86cc41230127050eb9ea953b24bbb904c44d7bae85587388388224ae03:12069
 crates/verify/ess-conformance/tests/fixtures/list-of-references.yaml	ledger.desk.AddService	default: added
 crates/verify/ess-conformance/tests/fixtures/list-of-references.yaml	ledger.desk.OpenIncident	present_related: unknown-service | default: opened
+crates/verify/ess-conformance/tests/fixtures/marks-beside-input-refusal.yaml	ir=f89954126fe188b242f8a96512509df0d44db0a03509c9253c77900851f474a8:13157
+crates/verify/ess-conformance/tests/fixtures/marks-beside-input-refusal.yaml	example.marks.RecordDecision	existence: exists | default: recorded
+crates/verify/ess-conformance/tests/fixtures/marks-beside-input-refusal.yaml	example.marks.RecordMark	input_refusal: not-permitted | existence: exists | present_related: no-decision | default: recorded
 crates/verify/ess-conformance/tests/fixtures/minted-value-sources.yaml	ir=afc0a308ae9e5133eb4639e8352fefc67c25edfcc4694cf6bd7149b591ab7a9c:12178
 crates/verify/ess-conformance/tests/fixtures/minted-value-sources.yaml	demo.routing.BridgeEntry	held_state: not-selected | default: bridged
 crates/verify/ess-conformance/tests/fixtures/minted-value-sources.yaml	demo.routing.QueueEntry	default: queued
@@ -701,6 +715,12 @@ crates/verify/ess-conformance/tests/fixtures/mutation-identical-answer.yaml	ir=b
 crates/verify/ess-conformance/tests/fixtures/mutation-identical-answer.yaml	desk.entry.Check	input_refusal: leading-hold, trailing-hold | default: checked
 crates/verify/ess-conformance/tests/fixtures/mutation-identical-answer.yaml	desk.entry.Grade	input_refusal: too-low, low | default: graded
 crates/verify/ess-conformance/tests/fixtures/mutation-identical-answer.yaml	desk.entry.Open	input_refusal: leading-hold, trailing-hold | default: opened
+crates/verify/ess-conformance/tests/fixtures/mutation-order-tie-identity-first.yaml	ir=5d6b9cd06d00e83adf249f7d01c7d606ad4b14528a138de491a6f7938f56d889:6149
+crates/verify/ess-conformance/tests/fixtures/mutation-order-tie-identity-first.yaml	example.order.PlaceOrder	default: placed
+crates/verify/ess-conformance/tests/fixtures/mutation-order-tie-identity-last.yaml	ir=1c89405388c370228c01e37f0f11fb23b806f527a711b400ae2f810fb7312f67:6171
+crates/verify/ess-conformance/tests/fixtures/mutation-order-tie-identity-last.yaml	example.order.PlaceOrder	default: placed
+crates/verify/ess-conformance/tests/fixtures/mutation-order-tie.yaml	ir=b651f78058f27672eeb311efc6d2544ec02daf93ae104e74e910adc798a38fd9:6147
+crates/verify/ess-conformance/tests/fixtures/mutation-order-tie.yaml	example.order.PlaceOrder	default: placed
 crates/verify/ess-conformance/tests/fixtures/mutation-sets-entries.yaml	ir=d0047957730176789ee2ce6e2950593a23502c65d675f9fe5e96bf02d4517f58:13729
 crates/verify/ess-conformance/tests/fixtures/mutation-sets-entries.yaml	demo.keys.Check	held_state: not-owner | default: checked
 crates/verify/ess-conformance/tests/fixtures/mutation-sets-entries.yaml	demo.keys.Issue	default: issued
