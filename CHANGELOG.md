@@ -45,6 +45,7 @@
 - `ess generate schema validate` and every validator built from `schema_contract::uniqueness::options()` now refuse a non-digit at a digit position of a `date-time` (`202+-10-29T12:00:00Z`, `2026-10-29T1-:00:00Z`); `jsonschema` 0.52.1 took `+`, `-` and `.` for digits. ESS now checks RFC 3339 `date-time` itself.
 A command response whose two fields share a wire name is now refused by `ess specify validate` as `duplicate_declaration` / `ESS-COMMAND-006` at `command.<name>.response[<index>]`, so Go and clap synthesis no longer emit a duplicate JSON member. A response may still reuse an input field's wire name.
 - An input guard on the plain value of an enum input no longer drops the `exists: false` scenario of the related-row family: synthesis searches for an input every input-guarded refusal misses, and where none does the branch is refused ESS-SYNTH-003 naming the refusal that took the input (beyond10x/ess#731).
+- The interpreted target publishes an absent event field in its declared presence: `null` under `null_when_absent`, left out under `omitted_when_absent` or no presence (#765).
 
 ## [0.92.0] — 2026-11-09
 
