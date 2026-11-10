@@ -172,10 +172,21 @@ fn witness(
     let tried = matches!((&forced, &alternative, &answered), (Err(_), None, None));
     // The row is arranged for the branch the trigger takes, or for another publisher of the event
     // taking one the row decides (beyond10x/ess#706): that publisher is then the trigger sent.
+    // `blame` says whether every candidate was dropped because the trigger's own branch, chosen by
+    // the arranged row, does not publish.
+    let blame = std::cell::Cell::new(None);
     let (arranged, another) = if tried {
-        match refused_row(ir, binding, invoked, outcome, published_by, trigger, actors) {
+        match refused_row(
+            ir,
+            binding,
+            invoked,
+            outcome,
+            (published_by, trigger),
+            actors,
+            &blame,
+        ) {
             Some(arranged) => (Some(arranged), None),
-            None => another_publisher(ir, binding, invoked, outcome, published_by, actors)
+            None => another_publisher(ir, binding, invoked, outcome, published_by, actors, &blame)
                 .map_or((None, None), |(arranged, run, by)| {
                     (Some(arranged), Some((run, by)))
                 }),
@@ -190,7 +201,9 @@ fn witness(
         }
         // Only an arrangement tried and refused says no row the predicate refuses can be arranged.
         (Err(gap), None, None) if tried => {
-            return Err(unarranged(ir, binding, invoked, outcome).unwrap_or(gap))
+            return Err(
+                unarranged(ir, binding, invoked, outcome, blame.get() == Some(true)).unwrap_or(gap),
+            )
         }
         (Err(gap), None, None) => return Err(gap),
     };
@@ -400,9 +413,9 @@ fn refused_row(
     binding: &ResolvedBinding,
     invoked: &ResolvedCommand,
     outcome: &ess_domain::command::OutcomeName,
-    published_by: &ResolvedOutcome,
-    trigger: &Run,
+    (published_by, trigger): (&ResolvedOutcome, &Run),
     actors: &BTreeMap<QualifiedName, ActorRef>,
+    blame: &std::cell::Cell<Option<bool>>,
 ) -> Option<(
     Vec<ScenarioStep>,
     Vec<ScenarioStep>,
@@ -417,7 +430,8 @@ fn refused_row(
     let ResolvedCondition::Related { entity, .. } = &refusal.condition else {
         return None;
     };
-    super::binding_effects::related_refused(
+    let dropped = std::cell::Cell::new(false);
+    let arranged = super::binding_effects::related_refused(
         ir,
         binding,
         invoked,
@@ -425,8 +439,12 @@ fn refused_row(
         refusal,
         trigger,
         actors,
-    )
-    .filter(|(setup, invoke, _)| {
+        &dropped,
+    );
+    if arranged.is_none() {
+        blame.set(Some(blame.get().unwrap_or(true) && dropped.get()));
+    }
+    arranged.filter(|(setup, invoke, _)| {
         !sets_off(ir, binding, setup)
             && !setup
                 .iter()
@@ -447,6 +465,7 @@ fn another_publisher<'ir>(
     outcome: &ess_domain::command::OutcomeName,
     published_by: &ResolvedOutcome,
     actors: &BTreeMap<QualifiedName, ActorRef>,
+    blame: &std::cell::Cell<Option<bool>>,
 ) -> Option<(
     (
         Vec<ScenarioStep>,
@@ -462,7 +481,7 @@ fn another_publisher<'ir>(
         .filter(|(_, by)| !std::ptr::eq(*by, published_by))
         .find_map(|(command, by)| {
             let run = super::run(ir, command, by, actors).ok()?;
-            let arranged = refused_row(ir, binding, invoked, outcome, by, &run, actors)?;
+            let arranged = refused_row(ir, binding, invoked, outcome, (by, &run), actors, blame)?;
             Some((arranged, run, by))
         })
 }
@@ -576,6 +595,7 @@ fn unarranged(
     binding: &ResolvedBinding,
     invoked: &ResolvedCommand,
     outcome: &ess_domain::command::OutcomeName,
+    blamed: bool,
 ) -> Option<BindingGap> {
     use ess_compiler::ir::{ResolvedCondition, ResolvedRelatedTest, ResolvedRelatedVia};
 
@@ -595,7 +615,7 @@ fn unarranged(
     // A publisher choosing its branch by predicates over the same entity's row: whichever of its
     // branches publishes, the row decides it, and no row the refusal refuses may send it down one
     // that does (beyond10x/ess#706). Only what is true of the command is said: its predicates.
-    let trigger = binding.cause.event().and_then(|event| {
+    let trigger = binding.cause.event().filter(|_| blamed).and_then(|event| {
         super::publishers(ir, event)
             .into_iter()
             .find_map(|(command, _)| {

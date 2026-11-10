@@ -1509,6 +1509,7 @@ fn related_decided<'a>(
         published_by,
         trigger,
         actors,
+        &std::cell::Cell::new(false),
     )?;
     Some(Prepared {
         setup,
@@ -1525,6 +1526,7 @@ fn related_decided<'a>(
 /// through `via` arranged before the trigger so that `branch` is selected, and the trigger sent
 /// naming it; the setup, the trigger's invocation and what the row rests on.
 #[allow(clippy::type_complexity)]
+#[allow(clippy::too_many_arguments)]
 fn related_arranged(
     ir: &EssIr,
     binding: &ResolvedBinding,
@@ -1533,6 +1535,7 @@ fn related_arranged(
     published_by: &ResolvedOutcome,
     trigger: &Run,
     actors: &BTreeMap<QualifiedName, ActorRef>,
+    dropped: &std::cell::Cell<bool>,
 ) -> Option<(
     Vec<ScenarioStep>,
     Vec<ScenarioStep>,
@@ -1602,6 +1605,7 @@ fn related_arranged(
     // The trigger's own branch is chosen by that row too: it publishes only where the row sends it
     // down a branch that does.
     if !trigger_publishes(ir, sender, &from, entity, &arranged.related_row, &expected) {
+        dropped.set(true);
         return None;
     }
     let row = arranged.bound.get(via)?.clone();
@@ -1640,8 +1644,10 @@ fn related_arranged(
 /// the same conditions; an invoked command acting on the trigger's own row is read as its guards
 /// read it there ([`read_on_row`]). The setup, the trigger's invocation and what the row rests on;
 /// `None` where any of that does not hold, or no row the predicate refuses can be arranged, so the
-/// refusal keeps its gap.
+/// refusal keeps its gap. `dropped` is set where the row was arranged and the trigger's own branch
+/// chosen by it does not publish (beyond10x/ess#706).
 #[allow(clippy::type_complexity)]
+#[allow(clippy::too_many_arguments)]
 pub(super) fn related_refused(
     ir: &EssIr,
     binding: &ResolvedBinding,
@@ -1650,6 +1656,7 @@ pub(super) fn related_refused(
     refusal: &ResolvedOutcome,
     trigger: &Run,
     actors: &BTreeMap<QualifiedName, ActorRef>,
+    dropped: &std::cell::Cell<bool>,
 ) -> Option<(
     Vec<ScenarioStep>,
     Vec<ScenarioStep>,
@@ -1697,6 +1704,7 @@ pub(super) fn related_refused(
         published_by,
         trigger,
         actors,
+        dropped,
     )
 }
 
