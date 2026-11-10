@@ -333,18 +333,11 @@ fn a_later_command_reading_the_stored_agent() {
             "views:\n",
             "  - name: demo.desk.Ping\n    input:\n      - {name: seat_id, type: demo.desk.SeatId}\n    outcomes:\n      - name: agent-gone\n        when_related: {via: agent_id, exists: false}\n        error: demo.desk.NoAgent\n      - name: pinged\n        preserves: demo.desk.Binding\n        instance: seat_id\nviews:\n",
         );
-    // Today synthesis calls `agent-gone` unreachable. Once the story lands, replace this with
-    // `every_branch_passes("later stored read", &text, "demo.desk.Ping", &["agent-gone", "pinged"])`.
-    let refused: Vec<String> = synthesize(&ir(&text))
-        .refusals
-        .iter()
-        .map(|refusal| format!("{:?}: {:?}", refusal.scenario, refusal.cause))
-        .collect();
-    assert!(
-        refused.iter().any(|refusal| refusal.contains("agent-gone")),
-        "today synthesis refuses Ping/agent-gone as unreachable, counting the create-or-update \
-         creator as refusing a missing agent first: \
-         story:a-create-or-update-writer-is-no-proof-a-stored-reference-is-present\n{refused:#?}"
+    every_branch_passes(
+        "later stored read",
+        &text,
+        "demo.desk.Ping",
+        &["agent-gone", "pinged"],
     );
 }
 
@@ -368,12 +361,10 @@ fn a_stored_agent_written_by_the_creator_is_not_proven_present() {
         validates(&text.replace("format: ess/31", "format: ess/29")).is_err(),
         "below ess/30 the missing-row refusal stands"
     );
-    // Today ess/31 accepts it; once the story lands this must be `is_err()`.
+    let refused = validates(&text).expect_err("ess/31 must not prove the stored agent present");
     assert!(
-        validates(&text).is_ok(),
-        "today ess/31 proves the stored agent present although `bound` stores one no row \
-         carries; when it refuses, assert `is_err()`: \
-         story:a-create-or-update-writer-is-no-proof-a-stored-reference-is-present"
+        refused.contains("non_exhaustive_branches") && refused.contains("demo.desk.Bind/bound"),
+        "the refusal names `Bind/bound` as the writer storing the reference unchecked: {refused}"
     );
 }
 
