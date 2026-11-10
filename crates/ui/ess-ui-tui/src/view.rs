@@ -1678,24 +1678,26 @@ fn cell_value(field: &Field, value: &Value) -> String {
         Some("secret") => "•".repeat(display(value).chars().count()),
         Some("choice") => format!("‹{}›", display(value)),
         Some("toggle") => if truthy(value) { "[x]" } else { "[ ]" }.into(),
-        Some("time") => {
-            let text = display(value);
-            text.split_once('T').map_or(text.clone(), |(_, time)| {
-                time.trim_end_matches('Z').chars().take(5).collect()
-            })
-        }
-        Some("timestamp") => {
-            let text = display(value);
-            text.split_once('T').map_or(text.clone(), |(date, time)| {
-                let clock: String = time.trim_end_matches('Z').chars().take(5).collect();
-                format!("{date} {clock}")
-            })
-        }
-        Some("date") => {
-            let text = display(value);
-            text.split_once('T')
-                .map_or(text.clone(), |(date, _)| date.to_owned())
-        }
+        Some("time") => match instant(value) {
+            Some(at) => format!("{:02}:{:02}", at.hour, at.minute),
+            None => {
+                let text = display(value);
+                text.split_once('T').map_or(text.clone(), |(_, time)| {
+                    time.trim_end_matches('Z').chars().take(5).collect()
+                })
+            }
+        },
+        Some("timestamp") => match instant(value) {
+            Some(at) => format!(
+                "{:04}-{:02}-{:02} {:02}:{:02}",
+                at.year, at.month, at.day, at.hour, at.minute
+            ),
+            None => display(value),
+        },
+        Some("date") => match instant(value) {
+            Some(at) => format!("{:04}-{:02}-{:02}", at.year, at.month, at.day),
+            None => display(value),
+        },
         Some("percent") => value.as_f64().map_or_else(
             || display(value),
             |number| percent(number, &field.percent_scale()),
@@ -1743,7 +1745,98 @@ fn percent(number: f64, scale: &ess_ui::PercentScale) -> String {
         ess_ui::PercentScale::Hundredths => number,
         _ => number * 100.0,
     };
-    format!("{hundredths:.0}%")
+    // At most one fraction digit, as the React target shows it.
+    let text = format!("{hundredths:.1}");
+    format!("{}%", text.strip_suffix(".0").unwrap_or(&text))
+}
+
+/// An instant in UTC, to the minute.
+struct Instant {
+    year: i64,
+    month: i64,
+    day: i64,
+    hour: i64,
+    minute: i64,
+}
+
+/// The instant `value` holds: epoch milliseconds, or an ISO text (`2026-01-02T03:04:05+02:00`;
+/// no offset reads as UTC), in UTC as the React target shows it. `None` for anything else.
+fn instant(value: &Value) -> Option<Instant> {
+    let minutes = if let Some(millis) = value.as_f64() {
+        if !millis.is_finite() {
+            return None;
+        }
+        #[allow(clippy::cast_possible_truncation)]
+        // finite epoch milliseconds, floored to the minute
+        let minutes = (millis / 60_000.0).floor() as i64;
+        minutes
+    } else {
+        iso_minutes(&display(value))?
+    };
+    let days = minutes.div_euclid(1440);
+    let of_day = minutes.rem_euclid(1440);
+    // days to a civil date: the proleptic Gregorian calendar, March-based years.
+    let z = days + 719_468;
+    let era = z.div_euclid(146_097);
+    let day_of_era = z.rem_euclid(146_097);
+    let year_of_era =
+        (day_of_era - day_of_era / 1460 + day_of_era / 36_524 - day_of_era / 146_096) / 365;
+    let day_of_year = day_of_era - (365 * year_of_era + year_of_era / 4 - year_of_era / 100);
+    let shifted = (5 * day_of_year + 2) / 153;
+    let month = if shifted < 10 {
+        shifted + 3
+    } else {
+        shifted - 9
+    };
+    let year = year_of_era + era * 400 + i64::from(month <= 2);
+    Some(Instant {
+        year,
+        month,
+        day: day_of_year - (153 * shifted + 2) / 5 + 1,
+        hour: of_day / 60,
+        minute: of_day % 60,
+    })
+}
+
+/// The epoch minutes of an ISO date and time text, offset applied.
+fn iso_minutes(text: &str) -> Option<i64> {
+    let (date, rest) = text.split_once(['T', ' '])?;
+    let mut parts = date.splitn(3, '-');
+    let year: i64 = parts.next()?.parse().ok()?;
+    let month: i64 = parts.next()?.parse().ok()?;
+    let day: i64 = parts.next()?.parse().ok()?;
+    if !(1..=12).contains(&month) || !(1..=31).contains(&day) {
+        return None;
+    }
+    let (clock, offset) = match rest.find(['Z', 'z', '+', '-']) {
+        Some(at) => (&rest[..at], &rest[at..]),
+        None => (rest, ""),
+    };
+    let mut parts = clock.splitn(3, ':');
+    let hour: i64 = parts.next()?.parse().ok()?;
+    let minute: i64 = parts.next()?.parse().ok()?;
+    if hour > 23 || minute > 59 {
+        return None;
+    }
+    let offset_minutes = match offset.chars().next() {
+        Some('+' | '-') => {
+            let sign = if offset.starts_with('-') { -1 } else { 1 };
+            let digits: String = offset[1..].chars().filter(char::is_ascii_digit).collect();
+            if digits.len() != 4 {
+                return None;
+            }
+            sign * (digits[..2].parse::<i64>().ok()? * 60 + digits[2..].parse::<i64>().ok()?)
+        }
+        _ => 0,
+    };
+    // a civil date to days: the inverse of the conversion in `instant`.
+    let shifted_year = year - i64::from(month <= 2);
+    let era = shifted_year.div_euclid(400);
+    let year_of_era = shifted_year.rem_euclid(400);
+    let day_of_year = (153 * (if month > 2 { month - 3 } else { month + 9 }) + 2) / 5 + day - 1;
+    let day_of_era = year_of_era * 365 + year_of_era / 4 - year_of_era / 100 + day_of_year;
+    let days = era * 146_097 + day_of_era - 719_468;
+    Some(days * 1440 + hour * 60 + minute - offset_minutes)
 }
 
 /// A byte count scaled to B, KB, MB or GB in 1024 steps, with at most one decimal, as the React

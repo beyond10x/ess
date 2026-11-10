@@ -578,7 +578,8 @@ export function formatValue(
   ) {
     const date = new Date(value);
     if (!Number.isNaN(date.getTime())) {
-      const clock = { hour: "2-digit", minute: "2-digit", hourCycle: "h23" } as const;
+      // A time and a timestamp are shown in UTC, the zone the terminal shows them in.
+      const clock = { hour: "2-digit", minute: "2-digit", hourCycle: "h23", timeZone: "UTC" } as const;
       switch (format) {
         case "date":
           return date.toLocaleDateString();

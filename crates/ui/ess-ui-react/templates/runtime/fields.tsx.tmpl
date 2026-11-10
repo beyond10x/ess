@@ -380,6 +380,41 @@ export function FieldInput(props: { field: FieldSpec }): ReactNode {
         />
       );
       break;
+    case "percent": {
+      // The input is in percent: a fraction is shown and written as hundredths of its number.
+      const fraction = field.scale !== "hundredths";
+      const shownPercent = typeof value === "number" ? String(fraction ? Number((value * 100).toPrecision(12)) : value) : text;
+      control = (
+        <input
+          type="number"
+          value={shownPercent}
+          onChange={(event: ChangeEvent<HTMLInputElement>) => {
+            const typed = event.target.value;
+            set(typed === "" ? null : fraction ? Number((Number(typed) / 100).toPrecision(12)) : Number(typed));
+          }}
+        />
+      );
+      break;
+    }
+    case "timestamp": {
+      // An instant, edited and written in UTC.
+      const held = typeof value === "string" || typeof value === "number" ? new Date(value) : undefined;
+      const zoned = typeof value === "string" && /(Z|[+-]\d\d:?\d\d)$/i.test(value);
+      const shownInstant =
+        held !== undefined && !Number.isNaN(held.getTime()) && (zoned || typeof value === "number")
+          ? held.toISOString().slice(0, 16)
+          : text;
+      control = (
+        <input
+          type="datetime-local"
+          value={shownInstant}
+          onChange={(event: ChangeEvent<HTMLInputElement>) =>
+            set(event.target.value === "" ? null : `${event.target.value}:00Z`)
+          }
+        />
+      );
+      break;
+    }
     case "date":
     case "time":
       control = (

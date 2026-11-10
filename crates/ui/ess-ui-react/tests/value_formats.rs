@@ -141,7 +141,7 @@ const date = shown(column("started", { as: "date" }), { started: ms }).text();
 assert.strictEqual(date, new Date(ms).toLocaleDateString(), "an epoch-ms number is a date");
 assert.notStrictEqual(date, new Intl.NumberFormat().format(ms));
 const time = shown(column("started", { as: "time" }), { started: ms }).text();
-const clock = (date) => `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+const clock = (date) => `${String(date.getUTCHours()).padStart(2, "0")}:${String(date.getUTCMinutes()).padStart(2, "0")}`;
 assert.strictEqual(time, clock(new Date(ms)), "an epoch-ms number is a time of day");
 const iso = "2026-11-04T10:00:00Z";
 assert.strictEqual(shown(column("started", { as: "date" }), { started: iso }).text(), new Date(iso).toLocaleDateString());
@@ -462,12 +462,12 @@ fn a_time_shows_the_time_of_day_and_a_timestamp_date_and_time() {
         r#"
 const iso = "2026-01-02T03:04:05Z";
 const at = new Date(iso);
-const clock = `${String(at.getHours()).padStart(2, "0")}:${String(at.getMinutes()).padStart(2, "0")}`;
+const clock = `${String(at.getUTCHours()).padStart(2, "0")}:${String(at.getUTCMinutes()).padStart(2, "0")}`;
 assert.strictEqual(shown(column("started", { as: "time" }), { started: iso }).text(), clock, "a time is the time of day");
 const stamp = shown(column("started", { as: "timestamp" }), { started: iso }).text();
 assert.ok(stamp.includes(clock), `a timestamp shows the time ${clock}: ${stamp}`);
 assert.ok(stamp.length > clock.length + 4, `a timestamp shows a date as well: ${stamp}`);
-assert.ok(stamp.startsWith(at.toLocaleDateString(undefined, { year: "numeric", month: "2-digit", day: "2-digit" })), `the date is in the locale's order: ${stamp}`);
+assert.ok(stamp.startsWith(at.toLocaleDateString(undefined, { year: "numeric", month: "2-digit", day: "2-digit", timeZone: "UTC" })), `the date is in the locale's order: ${stamp}`);
 assert.strictEqual(shown(column("started", { as: "timestamp" }), { started: at.getTime() }).text(), stamp, "epoch milliseconds are an instant too");
 assert.strictEqual(shown(column("started", { as: "timestamp" }), { started: null }).text(), "");
 "#,
