@@ -3578,7 +3578,14 @@ fn synthesize_invocations(models: &caller::InvocationModels<'_>, focus: Focus<'_
         &mut refusals,
         &mut partial,
     );
-    state_refusals(models, &actors, focus, &mut suite, &mut refusals);
+    state_refusals(
+        models,
+        &actors,
+        focus,
+        &mut suite,
+        &mut refusals,
+        &mut partial,
+    );
     let mut notes = Vec::new();
     unknown_instances(ir, &actors, focus, &mut suite, &mut refusals, &mut notes);
     absent_input::absent_inputs(ir, &actors, focus, &mut suite, &mut refusals);
@@ -5281,7 +5288,19 @@ fn run_as(
         if !subject_fact::uses(command) {
             invoke.push(ScenarioStep::ExpectNoError);
         }
-        let preservation = subject_fact::preservation(ir, outcome, &setup)?;
+        // A held-state command's preserving branch observes what the views publish where none
+        // projects the held state, and names the rest as unobserved (beyond10x/ess#732).
+        let preservation = match subject_fact::preservation(ir, outcome, &setup) {
+            Err(RefusalCause::NoWitness(_)) if has_subject_guards(command) => {
+                let subject = outcome
+                    .subject
+                    .as_ref()
+                    .expect("a preserving branch has one");
+                subject_fact::preserve_selected_subject(ir, subject, &setup)?
+            }
+            other => other?,
+        };
+        unobserved.extend(preservation.unobserved);
         setup.steps.extend(preservation.before);
         invoke.extend(preservation.after);
         setup.source.extend(preservation.source);
@@ -5299,14 +5318,22 @@ fn run_as(
         if let (Some(instance), Some(state)) = (&setup.instance, &setup.after) {
             // A branch naming no subject of its own reads the row its siblings name, as a
             // stored-field refusal beside the held-state guards does under the one rule (ess/27).
-            let (observed, view) = match outcome.subject.as_ref().or(reads) {
-                Some(subject) => {
-                    observe_selection_subject(ir, subject, instance, state, outcome.name.as_str())?
+            // No view need publish the state: it is then named as unobserved (beyond10x/ess#732).
+            match outcome.subject.as_ref().or(reads) {
+                Some(subject) => observe_held_state(
+                    ir,
+                    subject,
+                    instance,
+                    state,
+                    outcome.name.as_str(),
+                    &mut invoke,
+                    &mut source,
+                    &mut unobserved,
+                ),
+                None => {
+                    observe_subject_state(ir, outcome, instance, state)?;
                 }
-                None => observe_subject_state(ir, outcome, instance, state)?,
-            };
-            invoke.extend(observed);
-            source.insert(view.into());
+            }
         }
     }
 
@@ -5494,10 +5521,16 @@ fn unclaimed_external(
         });
         if let Some(instance) = instance {
             let label = outcome.name.to_string();
-            let (observed, view) =
-                observe_selection_subject(ir, subject, &instance, &state, &label)?;
-            setup.steps.extend(observed);
-            setup.source.insert(view.into());
+            observe_held_state(
+                ir,
+                subject,
+                &instance,
+                &state,
+                &label,
+                &mut setup.steps,
+                &mut setup.source,
+                &mut setup.unobserved,
+            );
         }
         // Its writes moved off what the row holds, as every plain witness's are
         // (beyond10x/ess#161), where the moved input still reaches the branch.
@@ -6254,13 +6287,10 @@ fn arranged_plain(
             else {
                 continue;
             };
-            if let (Some(state), Some(instance)) = (&held, &further.instance) {
-                let Ok((observed, view)) = observe_subject_state(ir, outcome, instance, state)
-                else {
+            if let (Some(state), Some(instance)) = (&held, further.instance.clone()) {
+                if observe_held_state_of(ir, outcome, &instance, state, &mut further).is_err() {
                     continue;
-                };
-                further.steps.extend(observed);
-                further.source.insert(view.into());
+                }
             }
             let moved = freshened(
                 ir,
@@ -6384,16 +6414,22 @@ fn run_state_refusal(
         settled: arranged.settled.clone(),
         ..Setup::none()
     };
-    let preservation = subject_fact::preserve_complete_subject(ir, subject, &setup)?;
-    let (observed, view) = observe_selection_subject(
+    // What the views publish is observed and the rest named as unobserved, the held state among it
+    // where none projects it (beyond10x/ess#732).
+    let preservation = subject_fact::preserve_selected_subject(ir, subject, &setup)?;
+    let mut steps = arranged.steps;
+    let mut source = arranged.source;
+    let mut unobserved: BTreeSet<String> = preservation.unobserved.iter().cloned().collect();
+    observe_held_state(
         ir,
         subject,
         &arranged.instance,
         state,
         &outcome.name.to_string(),
-    )?;
-    let mut steps = arranged.steps;
-    steps.extend(observed);
+        &mut steps,
+        &mut source,
+        &mut unobserved,
+    );
     steps.extend(preservation.before);
     let actor = actors.get(&command.name).cloned();
     let mut invoke = vec![
@@ -6409,9 +6445,7 @@ fn run_state_refusal(
         ScenarioStep::ExpectNoEvents,
     ];
     invoke.extend(preservation.after);
-    let mut source = arranged.source;
     source.extend(preservation.source);
-    source.insert(view.into());
     source.insert(
         OutcomeRef::new(CommandRef::new(command.name.clone()), outcome.name.clone()).into(),
     );
@@ -6428,7 +6462,7 @@ fn run_state_refusal(
         before_settled: arranged.settled.clone(),
         refused: Vec::new(),
         unclaimed: Vec::new(),
-        unobserved: BTreeSet::new(),
+        unobserved,
         settled: arranged.settled,
     })
 }
@@ -6446,6 +6480,7 @@ fn state_refusals(
     focus: Focus<'_>,
     suite: &mut ConformanceSuite,
     refusals: &mut Vec<Refusal>,
+    notes: &mut Vec<Note>,
 ) {
     let ir = models.arrangement;
     for command in models.acting.commands().values() {
@@ -6474,6 +6509,7 @@ fn state_refusals(
             let mut source = BTreeSet::new();
             let mut failed = false;
             let mut witnessed = 0;
+            let mut unobserved = BTreeSet::new();
             for outcome in &refusing {
                 let distinction = if witnessed == 0 {
                     Distinction::PLAIN
@@ -6496,6 +6532,7 @@ fn state_refusals(
                             &before,
                         ));
                         source.extend(run.source);
+                        unobserved.extend(run.unobserved);
                     }
                     // No input reaches this refusal in this state: not a refusal of its own, as
                     // before a count guard past the cap was named.
@@ -6511,6 +6548,14 @@ fn state_refusals(
             }
             if steps.is_empty() || failed {
                 continue;
+            }
+            // The subject fields no view lets the rows observe, the held state among them where
+            // none projects it (beyond10x/ess#732).
+            if !unobserved.is_empty() && !suite.scenarios.contains_key(&id) {
+                notes.push(Note::PartialObservation {
+                    scenario: id.clone(),
+                    unobserved: unobserved.into_iter().collect(),
+                });
             }
             insert(
                 suite,
@@ -8944,9 +8989,8 @@ fn prepare_state_input(
                 .ok_or(RefusalCause::StrategyWithoutGuard {
                     strategy: outcome.test_strategy,
                 })?;
-            let (observed, view) = observe_subject_state(ir, outcome, instance, &state)?;
-            setup.steps.extend(observed);
-            setup.source.insert(view.into());
+            let instance = instance.clone();
+            observe_held_state_of(ir, outcome, &instance, &state, &mut setup)?;
             Ok((setup, input))
         }) {
             Ok(pair) => return Ok(pair),
@@ -9016,6 +9060,60 @@ fn observe_selection_subject(
         &mut steps,
     );
     Ok((steps, name))
+}
+
+/// [`observe_selection_subject`], where no view need publish the held state: the row's identity
+/// and state are read through the unfiltered immediate view that projects both where one does,
+/// and otherwise nothing is read and `state` is named as unobserved, so the scenario's outcome,
+/// error and events are its evidence about it, as for a stored field no view publishes
+/// (`docs/design/cross-record-and-stored-field-guards.md`; beyond10x/ess#732).
+#[allow(clippy::too_many_arguments)]
+fn observe_held_state(
+    ir: &EssIr,
+    subject: &ResolvedSubject,
+    instance: &InstanceName,
+    state: &StateName,
+    label: &str,
+    steps: &mut Vec<ScenarioStep>,
+    source: &mut BTreeSet<EssSemanticRef>,
+    unobserved: &mut BTreeSet<String>,
+) {
+    match observe_selection_subject(ir, subject, instance, state, label) {
+        Ok((observed, view)) => {
+            steps.extend(observed);
+            source.insert(view.into());
+        }
+        Err(_) => {
+            unobserved.insert(EntitySpec::STATE.to_owned());
+        }
+    }
+}
+
+/// [`observe_held_state`] for the subject `outcome` names.
+fn observe_held_state_of(
+    ir: &EssIr,
+    outcome: &ResolvedOutcome,
+    instance: &InstanceName,
+    state: &StateName,
+    setup: &mut Setup,
+) -> Result<(), RefusalCause> {
+    let subject = outcome
+        .subject
+        .as_ref()
+        .ok_or(RefusalCause::StrategyWithoutGuard {
+            strategy: outcome.test_strategy,
+        })?;
+    observe_held_state(
+        ir,
+        subject,
+        instance,
+        state,
+        &outcome.name.to_string(),
+        &mut setup.steps,
+        &mut setup.source,
+        &mut setup.unobserved,
+    );
+    Ok(())
 }
 
 fn reach_external(
@@ -12161,9 +12259,7 @@ fn arranged_in_listed_state(
     let input = reach_in_state(ir, command, outcome, held, distinction)?;
     let mut setup = prepare_in(ir, outcome, actors, Some(held), distinction)?;
     let instance = setup.instance.clone().ok_or_else(without)?;
-    let (observed, view) = observe_subject_state(ir, outcome, &instance, held)?;
-    setup.steps.extend(observed);
-    setup.source.insert(view.into());
+    observe_held_state_of(ir, outcome, &instance, held, &mut setup)?;
     Ok((setup, input))
 }
 

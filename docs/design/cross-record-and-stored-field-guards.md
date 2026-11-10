@@ -125,7 +125,12 @@ describe a read surface the system does not have. So where no view publishes a g
 row is still arranged through its creating command and the `sets:` mappings the search chose, the
 observation keeps what the declared views do publish, and the scenario's outcome, error and events
 are its evidence about the rest. `Note::PartialObservation` names the fields no view observes
-(beyond10x/ess#496). An immediate view is read once; where every such
+(beyond10x/ess#496). The held state is one of those fields: `when_subject_state:` is
+`subject.state in [...]` and is observed the same way. A branch selected by the held state, of
+whatever effect, and the per-state `refuses` family read `state` through an unfiltered immediate
+view that publishes the identity and `state` where there is one, and otherwise arrange the row
+through its commands and name `state` in the scenario's `Note::PartialObservation`; no view is
+declared for the witness (beyond10x/ess#732). An immediate view is read once; where every such
 view is `eventual`, the observation waits in an `eventually` block until the view shows the arranged
 row (beyond10x/ess#172). That proves the implementation applied the values the arrangement's last
 step left, and no step writes the row between that observation and the command. It proves nothing
