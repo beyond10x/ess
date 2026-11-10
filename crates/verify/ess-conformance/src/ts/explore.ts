@@ -2311,7 +2311,7 @@ async function perform(
     const response = result.response ?? {};
     for (const field of list(command.node.response)) {
       if (optionalType(ir, field.type_ref)) continue;
-      if (!Object.prototype.hasOwnProperty.call(response, field.name)) {
+      if (!Object.prototype.hasOwnProperty.call(response, field.name) || response[field.name] === null || response[field.name] === undefined) {
         return {
           kind: 'response',
           detail: `the target's response to \`${outcome.name}\` has no \`${field.name}\`, a member the specification requires`,

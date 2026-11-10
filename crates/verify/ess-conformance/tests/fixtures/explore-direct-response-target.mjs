@@ -6,6 +6,8 @@
 //   drops-token  leaves the REQUIRED `token` out
 //   other-label  returns a `label` other than the input's, a value the model does not determine
 //   with-note    returns the Optional `note` too
+//   null-token   answers the REQUIRED `token` as null
+//   null-note    answers the Optional `note` as null
 //
 // `explore_direct_response_target.go` is the same target in Go, line for line.
 
@@ -39,6 +41,12 @@ export function newTarget(mode = '') {
       switch (mode) {
         case 'drops-token':
           delete response.token;
+          break;
+        case 'null-token':
+          response.token = null;
+          break;
+        case 'null-note':
+          response.note = null;
           break;
         case 'other-label':
           response.label = `label-${minted}`;

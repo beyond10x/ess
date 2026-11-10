@@ -2679,7 +2679,8 @@ func explorePerform(s *exploreSession, command *exploreCommand, step *exploreSte
 	// A `returns: true` outcome returns the command's declared response (ess/17): every member it
 	// declares REQUIRED, a type that is not `Optional`, is present. The model determines no
 	// response value, so a member is checked for presence only
-	// (story:go-explorer-compares-direct-response-members).
+	// (story:go-explorer-compares-direct-response-members). A member answered as null is absent:
+	// the suite refuses it as `invalid_input`.
 	if outcome["returns"] == true {
 		for _, item := range exploreList(command.node["response"]) {
 			field := exploreObject(item)
@@ -2687,7 +2688,7 @@ func explorePerform(s *exploreSession, command *exploreCommand, step *exploreSte
 			if exploreOptionalType(ir, exploreObject(field["type_ref"])) {
 				continue
 			}
-			if _, present := result.Response[member]; !present {
+			if value, present := result.Response[member]; !present || value == nil {
 				return &exploreDisagreement{kind: "response", detail: fmt.Sprintf("the target's response to `%s` has no `%s`, a member the specification requires", name, member)}, nil
 			}
 		}
