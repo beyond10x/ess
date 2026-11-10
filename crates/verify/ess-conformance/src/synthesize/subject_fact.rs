@@ -5175,8 +5175,21 @@ fn make_creations(
             inputs.push(input);
         }
     }
+    // A candidate a guard is `Unknown` on only for an `Optional` input it left out is passed over
+    // like a refuted one (beyond10x/ess#728): another candidate, one that supplies the input or
+    // decides the guard `false`, may create the row. The first such cause is the refusal where no
+    // candidate serves; every other `Unknown` still ends the search.
+    let mut left_out: Option<RefusalCause> = None;
     for input in inputs {
-        if input_selects(ir, creator.command, creator.outcome, &input)? {
+        let selected = match input_selects(ir, creator.command, creator.outcome, &input) {
+            Ok(selected) => selected,
+            Err(RefusalCause::GuardUnevaluable(cause)) if cause.fixable_by_another_candidate() => {
+                left_out.get_or_insert(RefusalCause::GuardUnevaluable(cause));
+                continue;
+            }
+            Err(cause) => return Err(cause),
+        };
+        if selected {
             if let Ok(arrangement) = created(
                 ir,
                 entity,
@@ -5189,6 +5202,9 @@ fn make_creations(
                 out.push(arrangement);
             }
         }
+    }
+    if let (1, Some(cause)) = (out.len(), left_out) {
+        return Err(cause);
     }
     if under.is_none() && !super::related_guard::routes(creator.command, creator.outcome) {
         out.extend(copied_creations(

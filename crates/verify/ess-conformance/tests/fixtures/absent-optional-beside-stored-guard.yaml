@@ -1,0 +1,76 @@
+format: ess/34
+system: example
+version: v1
+domain: example.review
+summary: A decision is recorded, refused when an erratum lacks a verified check, and annotated only when accepted.
+types:
+  - {name: example.review.Kind, kind: enum, variants: [Accept, Erratum]}
+  - {name: example.review.Check, kind: enum, variants: [Reported, Verified]}
+entities:
+  - name: example.review.Decision
+    identity: {name: key, type: String}
+    fields:
+      - {name: kind, type: example.review.Kind}
+      - {name: note, type: String}
+    lifecycle: {initial: Open, states: [Open], terminal: [Open]}
+views:
+  - name: example.review.Decisions
+    source: example.review.Decision
+    consistency: read_your_writes
+    fields:
+      - {name: key, type: String}
+      - {name: kind, type: example.review.Kind}
+      - {name: note, type: String}
+actors:
+  - name: example.review.Reviewer
+    may: [example.review.Record, example.review.Annotate]
+errors:
+  - {name: example.review.Incomplete, summary: An erratum names a check., fields: []}
+  - {name: example.review.NotVerified, summary: An erratum is verified., fields: []}
+  - {name: example.review.AlreadyExists, summary: The decision exists., fields: []}
+  - {name: example.review.NotAccepted, summary: Only an accepted decision is annotated., fields: []}
+events:
+  - name: example.review.Recorded
+    fields: [{name: key, type: String}]
+  - name: example.review.Annotated
+    fields: [{name: key, type: String}]
+commands:
+  - name: example.review.Record
+    input:
+      - {name: key, type: String}
+      - {name: kind, type: example.review.Kind}
+      - {name: check, type: "Optional<example.review.Check>", presence: omitted_when_absent}
+      - {name: note, type: String}
+    outcomes:
+      - name: incomplete
+        when:
+          all: ["kind == Erratum", "not defined(check)"]
+        error: example.review.Incomplete
+      - name: not-verified
+        when:
+          all: ["kind == Erratum", "check != Verified"]
+        error: example.review.NotVerified
+      - name: already-exists
+        existing_instance: true
+        error: example.review.AlreadyExists
+      - name: recorded
+        creates: example.review.Decision
+        instance: key
+        sets: {kind: input.kind, note: input.note}
+        emits: [example.review.Recorded]
+        payload: {example.review.Recorded: {key: input.key}}
+  - name: example.review.Annotate
+    input:
+      - {name: key, type: String}
+      - {name: note, type: String}
+    outcomes:
+      - name: not-accepted
+        when_subject:
+          predicate: kind != Accept
+        error: example.review.NotAccepted
+      - name: annotated
+        updates: example.review.Decision
+        instance: key
+        sets: {note: input.note}
+        emits: [example.review.Annotated]
+        payload: {example.review.Annotated: {key: input.key}}

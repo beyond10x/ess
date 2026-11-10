@@ -1,4 +1,4 @@
-#	models=455	lines=455
+#	models=456	lines=456
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	suite=5 db653ea9c5544e50d35f3887c8cd190d016a22708dc4e8f91f4ce9ee59fb5b89:10165	refusals=1 b5dc5cd911698c55cbc7589e1099559889acd211abdd2bc7b1e29b43d04925b5:276	notes=0 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855:0	outside=0 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855:0
 crates/edge/ess-cli/tests/fixtures/coverage-producers/inputs/models/billing/system.yaml	ASSEMBLE
 crates/edge/ess-cli/tests/fixtures/coverage-producers/inputs/models/billing-repeated-gap/system.yaml	ASSEMBLE
@@ -89,6 +89,7 @@ crates/specify/ess-service-contract/tests/fixtures/system.yaml	ASSEMBLE
 crates/specify/ess-service-contract/tests/selection-conversion-control-fixtures/system.yaml	ASSEMBLE
 crates/specify/ess-service-contract/tests/selection-conversion-fixtures/system.yaml	ASSEMBLE
 crates/ui/ess-ui-check/tests/fixtures/model/system.yaml	ASSEMBLE
+crates/verify/ess-conformance/tests/fixtures/absent-optional-beside-stored-guard.yaml	suite=6 969ec2180c1ef9bbd3a1c25afec9b8b3ce72937147f485dd39d40483d3a00830:30632	refusals=0 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855:0	notes=3 6b0a26904ad8291555bf4d08d8680b9dc03d8e0cb8d74a654500f7c69859343c:776	outside=0 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855:0
 crates/verify/ess-conformance/tests/fixtures/adversary-0710/affects-past-creating-not-found.yaml	suite=4 4323d110aab10f59d2918b96e14a394e3b957bb0817ae2fca8e3863506cf4145:20182	refusals=0 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855:0	notes=2 f0193bd109746b0815bf6033e6d3196cae4f79bc75ba017552f280bd99f7e5c5:339	outside=0 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855:0
 crates/verify/ess-conformance/tests/fixtures/adversary-0710/set-update-refuses-the-related-row-it-names.yaml	suite=8 551e2c8e5ed5827195d9e736cada1a49196b47a345a0ff59baa08eba00dc3300:30979	refusals=2 065bda40e8dd116a729706c6664274cd42ae7cbe01bccea973844f1a1d3dd24b:1174	notes=2 83910f2814361637e31c7544b0b8caae676961e3463e25c9c1a3e28960c34ef1:343	outside=0 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855:0
 crates/verify/ess-conformance/tests/fixtures/adversary-0710/set-update-second-creator-copies-another-field.yaml	suite=3 75f5563952da294ccadfa4b4557a371328f8d0efd543086409e7ad017acb9722:11308	refusals=1 75a2ff4a2aa157e90804299d2d07cdb6fb8451b254263438f089a759bff9f441:586	notes=1 623621d77081ae6b0e145e517750a5318a0e7725c7b795854032aa8230873717:180	outside=0 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855:0
