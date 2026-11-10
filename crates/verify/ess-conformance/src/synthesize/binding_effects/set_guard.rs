@@ -221,7 +221,7 @@ fn arranged_for<'a>(
         }
         if literals.get(from) != Some(value) {
             let input_kept = super::super::keeps_branch(ir, publisher, &literals, from, value);
-            if !input_kept || !super::keeps_branch_sent(publisher, from, None, input_kept) {
+            if !input_kept || !super::keeps_branch_sent(publisher, from, None, input_kept, false) {
                 return None;
             }
             literals.insert(from.clone(), value.clone());

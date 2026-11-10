@@ -391,7 +391,7 @@ pub const FORMAT_HISTORY: &[FormatHistoryEntry] = &[
         major: 37,
         release: None,
         added: &[
-            "The next format, open with no construct of its own: a specification declaring it reads and compiles exactly as at `ess/36`, and the constructs of one release are added to it, each refused as `unsupported_format_version` naming `ess/37` below it.",
+            "The next format, open with no construct of its own: a specification declaring it reads and compiles exactly as at the format before it, and the constructs of one release are added to it, each refused as `unsupported_format_version` naming `ess/37` below it.",
         ],
         stricter: &[],
     },

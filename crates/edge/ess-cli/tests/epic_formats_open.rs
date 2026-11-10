@@ -110,7 +110,7 @@ fn verdict(suite: &Path) -> Value {
         "--format",
         "json",
     ]);
-    let mut report: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let report: Value = serde_json::from_slice(&output.stdout).unwrap();
     json!({
         "counts": report["summary"]["counts"],
         "execution_status": report["summary"]["execution_status"],

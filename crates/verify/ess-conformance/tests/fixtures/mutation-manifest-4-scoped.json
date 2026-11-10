@@ -1,22 +1,11 @@
 {
   "baseline": {
     "dir": "baseline",
-    "refusals": 2,
-    "refused": [
-      {
-        "code": "ESS-SYNTH-022",
-        "scenario": "desk.entry.Open/outcome/opened",
-        "subject": "outcome desk.entry.Open/opened"
-      },
-      {
-        "code": "ESS-SYNTH-022",
-        "scenario": "desk.entry.Open/outcome/opened",
-        "subject": "outcome desk.entry.Open/opened"
-      }
-    ],
+    "refusals": 0,
+    "refused": [],
     "scenarios": 9,
     "spec_digest": "1cb94331a7eb88f0edb36938ac2d497952603e04d331bbc448a75d05b44aeca3",
-    "suite_digest": "sha256:79f90b19aa20846bdeb7a123f7c9dac634e8ed4c1cb2210948e0e09879ebc52e"
+    "suite_digest": "sha256:6e86f9b641a9e64bcee6999f47aa214af2a1815c85350a33c726622a62ec9a06"
   },
   "component": "desk-server",
   "format": "ess-mutation-manifest/4",
@@ -26,109 +15,67 @@
       "class": "guard-negate",
       "dir": "guard-negate/desk.entry.Check/leading-hold",
       "id": "guard-negate/desk.entry.Check/leading-hold",
-      "refusals": 3,
+      "refusals": 1,
       "refused": [
         {
           "code": "ESS-SYNTH-003",
           "scenario": "desk.entry.Check/outcome/trailing-hold",
           "subject": "outcome desk.entry.Check/trailing-hold"
-        },
-        {
-          "code": "ESS-SYNTH-022",
-          "scenario": "desk.entry.Open/outcome/opened",
-          "subject": "outcome desk.entry.Open/opened"
-        },
-        {
-          "code": "ESS-SYNTH-022",
-          "scenario": "desk.entry.Open/outcome/opened",
-          "subject": "outcome desk.entry.Open/opened"
         }
       ],
       "scenarios": 8,
       "site": "desk.entry.Check/leading-hold",
       "spec_digest": "13de11f5bed45e3b2b9e127e358a84a26cb31c0fe4a7196a446cfffa6cdac4c5",
-      "suite_digest": "sha256:b6613cdd8bf4ff1f5117cedc13a8cbe669e5f5b83eb89bfae832c396005c2ab8"
+      "suite_digest": "sha256:898789c55abf94dd24e422f0d263bbdee1225f7b6f05f08f99eb3d6607f5cac1"
     },
     {
       "change": "`when: prompt ends_with \" hold\"` becomes `when: not (prompt ends_with \" hold\")`",
       "class": "guard-negate",
       "dir": "guard-negate/desk.entry.Check/trailing-hold",
       "id": "guard-negate/desk.entry.Check/trailing-hold",
-      "refusals": 2,
-      "refused": [
-        {
-          "code": "ESS-SYNTH-022",
-          "scenario": "desk.entry.Open/outcome/opened",
-          "subject": "outcome desk.entry.Open/opened"
-        },
-        {
-          "code": "ESS-SYNTH-022",
-          "scenario": "desk.entry.Open/outcome/opened",
-          "subject": "outcome desk.entry.Open/opened"
-        }
-      ],
+      "refusals": 0,
+      "refused": [],
       "scenarios": 9,
       "site": "desk.entry.Check/trailing-hold",
       "spec_digest": "7e7e9afbbcf7a84048a2fc01aae5b49af01c9a4b94b7cd695df21361059de88c",
-      "suite_digest": "sha256:9baaa5f7a4587123abe937ccb071dc07c3f0cab463cf900d337ce55985a9df17"
+      "suite_digest": "sha256:e1948ffcc9df60ce312b7f67a87e392854e2063047c82e2015d41c033b915011"
     },
     {
       "change": "`when: amount < 20` becomes `when: not (amount < 20)`",
       "class": "guard-negate",
       "dir": "guard-negate/desk.entry.Grade/low",
       "id": "guard-negate/desk.entry.Grade/low",
-      "refusals": 2,
-      "refused": [
-        {
-          "code": "ESS-SYNTH-022",
-          "scenario": "desk.entry.Open/outcome/opened",
-          "subject": "outcome desk.entry.Open/opened"
-        },
-        {
-          "code": "ESS-SYNTH-022",
-          "scenario": "desk.entry.Open/outcome/opened",
-          "subject": "outcome desk.entry.Open/opened"
-        }
-      ],
+      "refusals": 0,
+      "refused": [],
       "scenarios": 9,
       "site": "desk.entry.Grade/low",
       "spec_digest": "a49cd9a79c5501e37392804753517075a9205e46e2af5e1cf4556ad785b04f55",
-      "suite_digest": "sha256:589fd71ed21ea7d43742886fce3f06a4712fae3cb43dc4964a6c9437c18d8d84"
+      "suite_digest": "sha256:daa5ce06533c4f3f2ece337937b6b25c6b9d3e78146a0bb04faa2b635486c071"
     },
     {
       "change": "`when: amount < 10` becomes `when: not (amount < 10)`",
       "class": "guard-negate",
       "dir": "guard-negate/desk.entry.Grade/too-low",
       "id": "guard-negate/desk.entry.Grade/too-low",
-      "refusals": 3,
+      "refusals": 1,
       "refused": [
         {
           "code": "ESS-SYNTH-003",
           "scenario": "desk.entry.Grade/outcome/graded",
           "subject": "outcome desk.entry.Grade/graded"
-        },
-        {
-          "code": "ESS-SYNTH-022",
-          "scenario": "desk.entry.Open/outcome/opened",
-          "subject": "outcome desk.entry.Open/opened"
-        },
-        {
-          "code": "ESS-SYNTH-022",
-          "scenario": "desk.entry.Open/outcome/opened",
-          "subject": "outcome desk.entry.Open/opened"
         }
       ],
       "scenarios": 8,
       "site": "desk.entry.Grade/too-low",
       "spec_digest": "aea0c40b344f436b96c2eeee31263aca600950dd10cb404ba53c36b094cc9537",
-      "suite_digest": "sha256:fdaa17c6e5879fa4bdc90e21afe47c522f611e4627014b2694b1a5281f136b41"
+      "suite_digest": "sha256:371d83fbe99ea2d02ea81e83bf7e9974636e51abd91e64dacffdde446dd8c011"
     },
     {
       "change": "`when: (defined(prompt) and prompt starts_with \"hold \")` becomes `when: not ((defined(prompt) and prompt starts_with \"hold \"))`",
       "class": "guard-negate",
       "dir": "guard-negate/desk.entry.Open/leading-hold",
       "id": "guard-negate/desk.entry.Open/leading-hold",
-      "refusals": 3,
+      "refusals": 2,
       "refused": [
         {
           "code": "ESS-SYNTH-003",
@@ -139,11 +86,6 @@
           "code": "ESS-SYNTH-022",
           "scenario": "desk.entry.Open/outcome/leading-hold",
           "subject": "outcome desk.entry.Open/leading-hold"
-        },
-        {
-          "code": "ESS-SYNTH-022",
-          "scenario": "desk.entry.Open/outcome/opened",
-          "subject": "outcome desk.entry.Open/opened"
         }
       ],
       "scenarios": 8,
@@ -156,13 +98,8 @@
       "class": "guard-negate",
       "dir": "guard-negate/desk.entry.Open/trailing-hold",
       "id": "guard-negate/desk.entry.Open/trailing-hold",
-      "refusals": 2,
+      "refusals": 1,
       "refused": [
-        {
-          "code": "ESS-SYNTH-022",
-          "scenario": "desk.entry.Open/outcome/opened",
-          "subject": "outcome desk.entry.Open/opened"
-        },
         {
           "code": "ESS-SYNTH-022",
           "scenario": "desk.entry.Open/outcome/trailing-hold",

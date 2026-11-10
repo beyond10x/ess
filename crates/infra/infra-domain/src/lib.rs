@@ -72,11 +72,15 @@ pub mod workload;
 pub use code::{InfraCode, ValidationError, ValidationErrors};
 pub use config::{ConfigMap, Secret, SecretValue, ValueDigest};
 pub use controller::{CronJob, Job, ReplicaSet};
-pub use network::{Ingress, IngressBackend, IngressPath, IngressRule, Service, ServicePort};
+pub use network::{
+    Gateway, GatewayAddress, GatewayListener, HttpPathMatch, HttpRoute, HttpRouteMatch,
+    HttpRouteRule, Ingress, IngressBackend, IngressPath, IngressRule, LoadBalancer,
+    RouteBackendRef, RouteParentRef, Service, ServicePort, GATEWAY_API_GROUP,
+};
 pub use observation::{
-    ClaimPhase, ContainerStatus, Identity, Namespace, Node, NodeInfo, Observation, OwnerRef,
-    PersistentVolumeClaim, Pod, PodPhase, ServiceAccount, KINDS, OBSERVATION_FORMAT,
-    OPTIONAL_KINDS, PRESENCE_OBSERVATION_FORMAT,
+    ClaimPhase, CloudIdentity, ContainerStatus, Identity, Namespace, Node, NodeInfo, Observation,
+    OwnerRef, PersistentVolumeClaim, Pod, PodPhase, ServiceAccount, GATEWAY_KINDS, KINDS,
+    OBSERVATION_FORMAT, OPTIONAL_KINDS, PRESENCE_OBSERVATION_FORMAT,
 };
 pub use policy::{HorizontalPodAutoscaler, PodDisruptionBudget, ScaleTarget};
 pub use raw::RawBundle;
