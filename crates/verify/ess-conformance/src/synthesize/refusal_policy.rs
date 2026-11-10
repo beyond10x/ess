@@ -125,6 +125,7 @@ pub(super) fn refuse_all(
 }
 
 #[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_lines)]
 fn witness(
     ir: &EssIr,
     binding: &ResolvedBinding,
@@ -169,10 +170,18 @@ fn witness(
         _ => None,
     };
     let tried = matches!((&forced, &alternative, &answered), (Err(_), None, None));
-    let arranged = if tried {
-        refused_row(ir, binding, invoked, outcome, published_by, trigger, actors)
+    // The row is arranged for the branch the trigger takes, or for another publisher of the event
+    // taking one the row decides (beyond10x/ess#706): that publisher is then the trigger sent.
+    let (arranged, another) = if tried {
+        match refused_row(ir, binding, invoked, outcome, published_by, trigger, actors) {
+            Some(arranged) => (Some(arranged), None),
+            None => another_publisher(ir, binding, invoked, outcome, published_by, actors)
+                .map_or((None, None), |(arranged, run, by)| {
+                    (Some(arranged), Some((run, by)))
+                }),
+        }
     } else {
-        None
+        (None, None)
     };
     let forced_ref = match (forced, &answered, &arranged) {
         (Ok(forced_ref), _, _) => forced_ref,
@@ -180,7 +189,9 @@ fn witness(
             OutcomeRef::new(command.clone(), outcome.clone())
         }
         // Only an arrangement tried and refused says no row the predicate refuses can be arranged.
-        (Err(gap), None, None) if tried => return Err(unarranged(invoked, outcome).unwrap_or(gap)),
+        (Err(gap), None, None) if tried => {
+            return Err(unarranged(ir, binding, invoked, outcome).unwrap_or(gap))
+        }
         (Err(gap), None, None) => return Err(gap),
     };
     let (answered, publisher) = match answered {
@@ -191,9 +202,12 @@ fn witness(
     // which identities the expectation compares, is that branch's, whichever publisher is sent.
     let sent_by: super::Published<'_> = match &publisher {
         Some((run, by, _)) => (*by, run),
-        None => alternative
-            .as_ref()
-            .map_or((published_by, trigger), |(run, by, _)| (*by, run)),
+        None => match &another {
+            Some((run, by)) => (*by, run),
+            None => alternative
+                .as_ref()
+                .map_or((published_by, trigger), |(run, by, _)| (*by, run)),
+        },
     };
     let trigger = sent_by.1;
     let mut source: BTreeSet<EssSemanticRef> = [command.clone().into(), forced_ref.clone().into()]
@@ -421,6 +435,38 @@ fn refused_row(
     })
 }
 
+/// [`refused_row`] for the first other publisher of the binding's event (by command, then branch,
+/// in declaration order) whose own run the arranged row sends down the branch publishing it: the
+/// arrangement, that run, and the branch. A trigger whose publishing branch is chosen by the same
+/// row as the refusal publishes for a refused row only on another branch.
+#[allow(clippy::type_complexity)]
+fn another_publisher<'ir>(
+    ir: &'ir EssIr,
+    binding: &ResolvedBinding,
+    invoked: &ResolvedCommand,
+    outcome: &ess_domain::command::OutcomeName,
+    published_by: &ResolvedOutcome,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+) -> Option<(
+    (
+        Vec<ScenarioStep>,
+        Vec<ScenarioStep>,
+        BTreeSet<EssSemanticRef>,
+    ),
+    Run,
+    &'ir ResolvedOutcome,
+)> {
+    let event = binding.cause.event()?;
+    super::publishers(ir, event)
+        .into_iter()
+        .filter(|(_, by)| !std::ptr::eq(*by, published_by))
+        .find_map(|(command, by)| {
+            let run = super::run(ir, command, by, actors).ok()?;
+            let arranged = refused_row(ir, binding, invoked, outcome, by, &run, actors)?;
+            Some((arranged, run, by))
+        })
+}
+
 /// Whether executing a step of `setup` can publish the binding's event, so the binding would be
 /// invoked before the counted attempts begin.
 fn sets_off(ir: &EssIr, binding: &ResolvedBinding, setup: &[ScenarioStep]) -> bool {
@@ -526,28 +572,49 @@ fn forcible(
 /// where [`refused_row`] was tried and arranged none; an unbounded retry ([`retried`]) never tries
 /// one, and keeps [`BindingGap::RefusalUnforcible`].
 fn unarranged(
+    ir: &EssIr,
+    binding: &ResolvedBinding,
     invoked: &ResolvedCommand,
     outcome: &ess_domain::command::OutcomeName,
 ) -> Option<BindingGap> {
-    use ess_compiler::ir::{ResolvedCondition, ResolvedRelatedTest};
+    use ess_compiler::ir::{ResolvedCondition, ResolvedRelatedTest, ResolvedRelatedVia};
 
-    invoked
+    let refusal = invoked
         .outcomes
         .iter()
         .find(|candidate| &candidate.name == outcome)
-        .filter(|refusal| refusal.test_strategy != TestStrategy::InjectFault)
-        .filter(|refusal| {
-            matches!(
-                &refusal.condition,
+        .filter(|refusal| refusal.test_strategy != TestStrategy::InjectFault)?;
+    let ResolvedCondition::Related {
+        entity,
+        test: ResolvedRelatedTest::Holds { .. },
+        ..
+    } = &refusal.condition
+    else {
+        return None;
+    };
+    // The trigger publishes only where a predicate over the same entity's row holds: the row the
+    // refusal refuses is then one it publishes for on no branch (beyond10x/ess#706).
+    let trigger = binding.cause.event().and_then(|event| {
+        super::publishers(ir, event)
+            .into_iter()
+            .find_map(|(command, by)| match &by.condition {
                 ResolvedCondition::Related {
-                    test: ResolvedRelatedTest::Holds { .. },
+                    via: ResolvedRelatedVia::Input { .. },
+                    entity: read,
+                    test: ResolvedRelatedTest::Holds { predicate },
                     ..
-                }
-            )
-        })
-        .map(|_| BindingGap::RelatedRefusalUnarranged {
-            outcome: OutcomeRef::new(CommandRef::new(invoked.name.clone()), outcome.clone()),
-        })
+                } if read == entity => Some(format!(
+                    "`{}/{}` publishes the event only where its `when_related:` predicate \
+                     `{predicate}` holds",
+                    command.name, by.name
+                )),
+                _ => None,
+            })
+    });
+    Some(BindingGap::RelatedRefusalUnarranged {
+        outcome: OutcomeRef::new(CommandRef::new(invoked.name.clone()), outcome.clone()),
+        trigger,
+    })
 }
 
 /// An unbounded retry of one refusal, witnessed as the universal `retry` is (§18,

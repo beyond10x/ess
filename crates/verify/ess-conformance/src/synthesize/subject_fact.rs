@@ -2883,6 +2883,7 @@ fn external_setup(
         )),
     };
     Setup {
+        related_row: BTreeMap::new(),
         steps: arrangement.steps,
         instance: Some(arrangement.instance),
         bound,
@@ -6467,6 +6468,7 @@ fn refused_writes_apart(
 }
 
 /// Arrange the row the branch under test is selected for, and the input that selects it.
+#[allow(clippy::too_many_lines)]
 pub(super) fn prepare(
     ir: &EssIr,
     command: &ResolvedCommand,
@@ -6583,6 +6585,7 @@ pub(super) fn prepare(
             before: Some(arrangement.state),
             settled: arrangement.settled,
             unobserved: arrangement.unobserved,
+            ..Setup::none()
         },
         input,
     ))
@@ -9177,6 +9180,7 @@ pub(super) fn prepare_seeded(
     };
     Ok(Ok((
         Setup {
+            related_row: BTreeMap::new(),
             steps: arrangement.steps,
             instance: Some(arrangement.instance),
             bound,

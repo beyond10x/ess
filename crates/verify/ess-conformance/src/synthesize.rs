@@ -2238,6 +2238,9 @@ pub enum BindingGap {
     RelatedRefusalUnarranged {
         /// The refusal.
         outcome: OutcomeRef,
+        /// The publishing branch whose own `when_related:` predicate over the same entity's row
+        /// keeps it from publishing for a row the refusal refuses, where there is one.
+        trigger: Option<String>,
     },
     /// Every command that publishes the binding's event needs an arrangement that publishes it
     /// too, so the binding would be invoked before the counted attempts begin.
@@ -2562,6 +2565,13 @@ impl BindingGap {
                 "declare the refusal `external:`, which is what lets a scenario force it, or cover \
                  its policy with an authored scenario (ess-scenario/1)"
             }
+            Self::RelatedRefusalUnarranged {
+                trigger: Some(_), ..
+            } => {
+                "cover its policy with an authored scenario (ess-scenario/1) that arranges a row \
+                 the refusal's `when_related:` predicate refuses and a trigger the binding's event \
+                 is published for"
+            }
             Self::RelatedRefusalUnarranged { .. } => {
                 "cover its policy with an authored scenario (ess-scenario/1) that arranges a row \
                  the refusal's `when_related:` predicate refuses; synthesis arranges one itself \
@@ -2694,7 +2704,15 @@ impl fmt::Display for BindingGap {
                 "selects its failure policy per refusal, and the refusal `{outcome}` cannot be \
                  forced"
             ),
-            Self::RelatedRefusalUnarranged { outcome } => write!(
+            Self::RelatedRefusalUnarranged {
+                outcome,
+                trigger: Some(trigger),
+            } => write!(
+                f,
+                "selects its failure policy per refusal, and no row the predicate of the refusal \
+                 `{outcome}` refuses can be arranged before the trigger: {trigger}"
+            ),
+            Self::RelatedRefusalUnarranged { outcome, .. } => write!(
                 f,
                 "selects its failure policy per refusal, and no row the predicate of the refusal \
                  `{outcome}` refuses can be arranged before the trigger"
@@ -5888,6 +5906,7 @@ fn identity_sent(
         (distinction, input),
     )?;
     let steered = Setup {
+        related_row: BTreeMap::new(),
         steps: row.steps,
         instance: Some(row.instance),
         bound: BTreeMap::new(),
@@ -6710,6 +6729,9 @@ struct Setup {
     /// The stored fields the arrangement selected the row on and no declared view lets it observe
     /// (beyond10x/ess#496): the scenario's [`Note::PartialObservation`] names them.
     unobserved: BTreeSet<String>,
+    /// What the arrangement left in the fields of the related row a `when_related:` guard reads,
+    /// where it arranged one: the values a second command guarded by the same row is decided on.
+    related_row: BTreeMap<String, Determined>,
 }
 
 impl Setup {
@@ -6724,6 +6746,7 @@ impl Setup {
             before: None,
             settled: BTreeMap::new(),
             unobserved: BTreeSet::new(),
+            related_row: BTreeMap::new(),
         }
     }
 }
@@ -6784,6 +6807,7 @@ fn prepare_steered(
         _ => Some(initial.clone()),
     };
     let setup = Setup {
+        related_row: BTreeMap::new(),
         steps: arrangement.steps,
         instance: Some(arrangement.instance),
         bound: BTreeMap::new(),
@@ -6867,6 +6891,7 @@ fn prepare_subject(
                     ..Setup::none()
                 },
                 Some((field, arrangement)) => Setup {
+                    related_row: BTreeMap::new(),
                     steps: arrangement.steps,
                     // Not `instance`: that names the branch's subject, and this arrangement made
                     // the subject's *owner*. The subject does not exist yet.
@@ -6911,6 +6936,7 @@ fn prepare_subject(
             reason,
         })?;
     Ok(Setup {
+        related_row: BTreeMap::new(),
         steps: arrangement.steps,
         instance: Some(arrangement.instance),
         // The branch under test acts on an instance that already exists, so its own input names the

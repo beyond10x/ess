@@ -1558,7 +1558,7 @@ fn related_arranged(
         _ => return None,
     };
     // The command sent naming the arranged row in place of what it was sent keeps its branch.
-    if !keeps_branch_sent(sender, &from, Some(entity), false) {
+    if !keeps_branch_sent(sender, &from, Some(entity), false, true) {
         return None;
     }
 
@@ -1568,7 +1568,8 @@ fn related_arranged(
     // A trigger that refuses the same missing row before it publishes is arranged around rows of
     // that entity itself, at the plain distinction: the related row is arranged past them, at the
     // first further distinction naming none of them (a downstream adopter's report of 2026-10-26).
-    let past = stored.is_none() && refuses_only_missing(sender, &from, entity);
+    let past = stored.is_none()
+        && (refuses_only_missing(sender, &from, entity) || reads_row_predicate(sender, &from));
     let further = (1..=taken.len() + 1)
         .map(Distinction::further)
         .filter(|_| past);
@@ -1586,6 +1587,18 @@ fn related_arranged(
     // Only the related row is the scenario's to choose: anything else the branch's own
     // arrangement binds is a value the event fills.
     if arranged.instance.is_some() || arranged.bound.keys().any(|bound| bound != via) {
+        return None;
+    }
+    // The trigger's own branch is chosen by that row too: it publishes only where the row sends it
+    // down a branch that does.
+    if !trigger_publishes(
+        ir,
+        sender,
+        &from,
+        entity,
+        &arranged.related_row,
+        published_by,
+    ) {
         return None;
     }
     let row = arranged.bound.get(via)?.clone();
@@ -1825,6 +1838,79 @@ fn accepting_branch<'a>(
     accepting
 }
 
+/// Whether a branch of `sender` is chosen by a predicate over the related row its input `from`
+/// names.
+fn reads_row_predicate(sender: &ResolvedCommand, from: &str) -> bool {
+    use ess_compiler::ir::{ResolvedRelatedTest, ResolvedRelatedVia};
+
+    sender.outcomes.iter().any(|outcome| {
+        matches!(&outcome.condition, ResolvedCondition::Related {
+            via: ResolvedRelatedVia::Input { field, .. },
+            test: ResolvedRelatedTest::Holds { .. },
+            ..
+        } if field == from)
+    })
+}
+
+/// Whether the trigger's command `sender`, sent its input `from` naming a row of `entity` whose
+/// fields are `settled`, takes `published_by`, the branch publishing the event (#706).
+///
+/// Its guards over that row are read in declaration order: `exists: false` is false for a row that
+/// exists, a predicate is the truth of it on the settled values, and the first true one is the
+/// branch taken, else the default. A sender without a predicate guard over the row takes its
+/// branch as its own scenario does. A predicate the settled values leave unknown, or any guard
+/// besides those over the row before the branch taken, leaves the branch undecided.
+fn trigger_publishes(
+    ir: &EssIr,
+    sender: &ResolvedCommand,
+    from: &str,
+    entity: &EntityHandle,
+    settled: &BTreeMap<String, super::Determined>,
+    published_by: &ResolvedOutcome,
+) -> bool {
+    use ess_compiler::ir::{ResolvedRelatedTest, ResolvedRelatedVia};
+    use ess_primitives::predicate::Truth;
+
+    let through = |via: &ResolvedRelatedVia| matches!(via, ResolvedRelatedVia::Input { field, .. } if field == from);
+    if !reads_row_predicate(sender, from) {
+        return true;
+    }
+    for outcome in &sender.outcomes {
+        let taken = match &outcome.condition {
+            ResolvedCondition::Related {
+                via,
+                test: ResolvedRelatedTest::Absent,
+                ..
+            } if through(via) => false,
+            ResolvedCondition::Related {
+                via,
+                test: ResolvedRelatedTest::Holds { predicate },
+                ..
+            } if through(via) => {
+                match super::subject_fact::row_truth_with(
+                    ir,
+                    entity,
+                    settled,
+                    &BTreeSet::new(),
+                    None,
+                    predicate,
+                    None,
+                ) {
+                    Truth::True => true,
+                    Truth::False => false,
+                    Truth::Unknown => return false,
+                }
+            }
+            ResolvedCondition::Otherwise => true,
+            _ => return false,
+        };
+        if taken {
+            return outcome.name == published_by.name;
+        }
+    }
+    false
+}
+
 /// Whether `publisher` reads the related row of `entity` its input `from` names, and only to refuse
 /// it missing (`when_related: {via: input.<from>, exists: false}` with an error, reading no further
 /// row): it publishes only while a row of `entity` carries that identity, whichever row it is, so
@@ -1875,6 +1961,7 @@ fn keeps_branch_sent(
     from: &str,
     entity: Option<&EntityHandle>,
     input_kept: bool,
+    row_guards: bool,
 ) -> bool {
     use ess_compiler::ir::{ResolvedRelatedTest, ResolvedRelatedVia};
     use ess_primitives::predicate::Predicate;
@@ -1911,9 +1998,15 @@ fn keeps_branch_sent(
                 } => {
                     let row = if through(via) {
                         entity == Some(read)
-                            && matches!(test, ResolvedRelatedTest::Absent)
                             && also.is_empty()
-                            && outcome.error.is_some()
+                            && match test {
+                                ResolvedRelatedTest::Absent => outcome.error.is_some(),
+                                ResolvedRelatedTest::Holds { predicate } => {
+                                    row_guards
+                                        && input.is_none()
+                                        && super::row_set::input_reads(predicate).next().is_none()
+                                }
+                            }
                     } else {
                         !matches!(test, ResolvedRelatedTest::Holds { predicate } if reads(predicate))
                             && also
@@ -2115,7 +2208,7 @@ fn related_per_row(
         let Some(from) = carried.sent.get(&key.input) else {
             continue;
         };
-        if !keeps_branch_sent(publisher, from, Some(&key.entity), false) {
+        if !keeps_branch_sent(publisher, from, Some(&key.entity), false, false) {
             guarded.get_or_insert_with(|| (CommandRef::new(publisher.name.clone()), from.clone()));
             continue;
         }
@@ -2528,7 +2621,7 @@ fn sent_naming_no_row(
         .filter_map(|(field, value)| Some((field.clone(), value.as_literal()?.clone())))
         .collect();
     let input_kept = super::keeps_branch(ir, publisher, &literals, from, &fresh);
-    if !keeps_branch_sent(publisher, from, None, input_kept) {
+    if !keeps_branch_sent(publisher, from, None, input_kept, false) {
         return None;
     }
     sent.insert(from.to_owned(), ScenarioValue::literal(fresh));
