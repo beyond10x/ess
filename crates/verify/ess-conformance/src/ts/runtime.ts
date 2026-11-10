@@ -1194,6 +1194,7 @@ export function checkedRefusal(
     const by = refusal.covered_by;
     if (
       typeof by !== 'string' ||
+      inventoryMajor < 65 ||
       refusal.origin !== 'generated' ||
       isNil(refusal.scenario) ||
       survivors[by] !== 'authored'

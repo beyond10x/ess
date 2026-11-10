@@ -507,8 +507,7 @@ function inventory(suite) {
   const refusedSources = new Set()
   let previous = null
   for (const r of c.refused) {
-    closed(r, 'origin scenario subject source code message effect retained scope needs', 'covered_by')
-    if (r.covered_by !== undefined) require(r.origin === 'generated' && r.scenario !== null && survivors.get(r.covered_by) === 'authored', 'covered_by names no authored scenario')
+    closed(r, 'origin scenario subject source code message effect retained scope needs')
     oneOf(r.origin, 'authored generated'); nullable(r.scenario, scenarioID); nullable(r.subject, reference); nullable(r.source, sourceIdentity)
     require(trim(text(r.message)) !== '', 'empty refusal cause'); text(r.code)
     oneOf(r.effect, 'candidate_not_emitted check_not_emitted'); oneOf(r.scope, 'in_scope outside_component outside_origin')

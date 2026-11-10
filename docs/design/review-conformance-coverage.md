@@ -182,8 +182,8 @@ refused obligation would have.
   qualifies as passed only when every selected scenario passed, the covering one included: a covering
   scenario that fails fails the run, and a child suite from `select` that leaves it out leaves the
   occurrence uncovered, so conformance stays inconclusive.
-- **Readers.** The Rust, Go and TypeScript coverage readers and the browser player's admission read the
-  optional field and apply the same completeness rule.
+- **Readers.** The Rust, Go and TypeScript coverage readers admit the
+  optional field only from `/65`, refusing it below as Rust does, and apply the same completeness rule. The browser player's admission reads no `/65` suite and refuses the field.
 
 ## Exact-suite digest and serialization
 
