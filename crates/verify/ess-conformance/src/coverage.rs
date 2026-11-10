@@ -475,7 +475,8 @@ impl Inventory {
             "system-issued command refusals require suite/53",
         )
     }
-    pub(crate) fn validate(&self, suite: &ConformanceSuite) -> Result<(), AdmissionError> {
+    /// The refusals a suite version must be new enough to carry.
+    fn version_gated_refusals(&self, suite: &ConformanceSuite) -> Result<(), AdmissionError> {
         require(
             suite.provenance.suite_version.major() >= 7
                 || self.refused.iter().all(|r| r.code != "ESS-SYNTH-015"),
@@ -487,7 +488,10 @@ impl Inventory {
                 || self.refused.iter().all(|r| r.covered_by.is_none()),
             "a covered refusal requires suite/65",
         )?;
-        self.system_issued_refusals(suite)?;
+        self.system_issued_refusals(suite)
+    }
+    pub(crate) fn validate(&self, suite: &ConformanceSuite) -> Result<(), AdmissionError> {
+        self.version_gated_refusals(suite)?;
         let component = match &self.selection.scope {
             Scope::System => None,
             Scope::Component { component } => Some(component.as_str()),
