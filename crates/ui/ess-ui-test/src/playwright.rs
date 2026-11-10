@@ -268,6 +268,11 @@ fn emit_test(
             ),
         );
     }
+    if let Some(reason) = crate::parity::answers(test) {
+        line(out, &fixme(&reason));
+        out.push_str("  });\n");
+        return;
+    }
     if !test.latency.is_zero() {
         line(
             out,
