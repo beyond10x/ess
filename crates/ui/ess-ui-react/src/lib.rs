@@ -110,7 +110,7 @@ pub fn render_bound(
     }
     files.insert(
         "src/runtime/tokens.css".to_owned(),
-        assets::tokens_css(document),
+        assets::tokens_css(document)?,
     );
     files.insert(
         "src/fixtures.ts".to_owned(),

@@ -7,6 +7,8 @@ use std::fmt::Write as _;
 
 use ess_ui::binding::Binding;
 
+use crate::GenerateError;
+
 /// A runtime module: its id (path under `src/` without extension), output file and text.
 struct Module {
     id: &'static str,
@@ -270,6 +272,8 @@ fn html_attribute(text: &str) -> String {
 /// document-declared. Each is written into `tokens.css` as `--ui-size-<name>`, named by what it
 /// sizes, so `styles.css` reads `var(--…)` for every length. A document cannot change them.
 const FIXED_SIZES: &[(&str, &str)] = &[
+    ("text-weight-regular", "normal"),
+    ("viewport-height", "100vh"),
     ("card-min-width", "14rem"),
     ("chart-height", "10rem"),
     ("chart-label-room", "1.2rem"),
@@ -298,13 +302,58 @@ const FIXED_SIZES: &[(&str, &str)] = &[
     ("text-title", "1.4rem"),
 ];
 
+/// Why a token name cannot be written into a custom property name: `^[a-z][a-z0-9_-]*$`.
+fn token_name_ok(name: &str) -> bool {
+    let mut chars = name.chars();
+    chars.next().is_some_and(|c| c.is_ascii_lowercase())
+        && chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_' || c == '-')
+}
+
+/// Whether a token value can be written into one CSS declaration without ending it or its rule:
+/// none of `; { } < > \`, no comment and no control character.
+fn token_value_ok(value: &str) -> bool {
+    !value
+        .chars()
+        .any(|c| c.is_control() || [';', '{', '}', '<', '>', '\\'].contains(&c))
+        && !value.contains("/*")
+        && !value.contains("*/")
+}
+
+/// One declaration of `tokens.css`, refused when its name or value is not safe to write. `ess ui
+/// check` refuses the same names and values at their key paths, but `generate` does not run it.
+fn declare(
+    out: &mut String,
+    group: &str,
+    name: &str,
+    property: &str,
+    value: &str,
+) -> Result<(), GenerateError> {
+    if !token_name_ok(name) {
+        return Err(GenerateError::new(format!(
+            "tokens/{group}/{name}: not a token name (a name is `^[a-z][a-z0-9_-]*$`)"
+        )));
+    }
+    if !token_value_ok(value) {
+        return Err(GenerateError::new(format!(
+            "tokens/{group}/{name}: `{}` cannot be written into a CSS declaration (it holds one of \
+             `; {{ }} < > \\`, a comment or a control character)",
+            value.escape_debug()
+        )));
+    }
+    let _ = writeln!(out, "  {property}: {value};");
+    Ok(())
+}
+
 /// `src/runtime/tokens.css`: one `:root` block holding every token of the document's merged
 /// table (the built-in table, then `tokens:`, `type` entries filled), as the custom properties
 /// `styles.css` reads: `--ui-color-<name>`, `--ui-space-<name>`, `--ui-radius-<name>`,
-/// `--ui-type-<style>-family|size|weight` and `--ui-tone-<tone>-text|fill`. The renderer-fixed `--ui-size-<name>` lengths
-/// ([`FIXED_SIZES`]) follow the radii. A tone's colors are
-/// written as a reference to the color token they name, so a color override reaches its tones.
-pub(crate) fn tokens_css(document: &ess_ui::Document) -> String {
+/// `--ui-type-<style>-family|size|weight` and `--ui-tone-<tone>-text|fill`. The renderer-fixed
+/// `--ui-size-<name>` lengths ([`FIXED_SIZES`]) follow the radii. A tone's colors are written as
+/// a reference to the color token they name, so a color override reaches its tones.
+///
+/// A token name or value that could write outside its own custom property is refused with an
+/// error naming the token.
+pub(crate) fn tokens_css(document: &ess_ui::Document) -> Result<String, GenerateError> {
     let tokens = document.base_tokens();
     let mut out = String::from(":root {\n");
     for (group, entries) in [
@@ -313,7 +362,13 @@ pub(crate) fn tokens_css(document: &ess_ui::Document) -> String {
         ("radius", &tokens.radius),
     ] {
         for (name, value) in entries {
-            let _ = writeln!(out, "  --ui-{group}-{name}: {};", value.0);
+            declare(
+                &mut out,
+                group,
+                name,
+                &format!("--ui-{group}-{name}"),
+                &value.0,
+            )?;
         }
     }
     for (name, value) in FIXED_SIZES {
@@ -329,22 +384,33 @@ pub(crate) fn tokens_css(document: &ess_ui::Document) -> String {
             ),
         ] {
             if let Some(value) = value {
-                let _ = writeln!(out, "  --ui-type-{style}-{part}: {value};");
+                let property = format!("--ui-type-{style}-{part}");
+                declare(&mut out, &format!("type/{style}"), part, &property, value)?;
+                if !token_name_ok(style) {
+                    return Err(GenerateError::new(format!(
+                        "tokens/type/{style}: not a token name (a name is `^[a-z][a-z0-9_-]*$`)"
+                    )));
+                }
             }
         }
     }
     for (tone, entry) in &tokens.tone {
-        let _ = writeln!(
-            out,
-            "  --ui-tone-{tone}-text: var(--ui-color-{});",
-            entry.text
-        );
-        let _ = writeln!(
-            out,
-            "  --ui-tone-{tone}-fill: var(--ui-color-{});",
-            entry.fill
-        );
+        for (role, color) in [("text", &entry.text), ("fill", &entry.fill)] {
+            if !token_name_ok(color) {
+                return Err(GenerateError::new(format!(
+                    "tokens/tone/{tone}/{role}: `{color}` is not a token name"
+                )));
+            }
+            let property = format!("--ui-tone-{tone}-{role}");
+            declare(
+                &mut out,
+                "tone",
+                tone,
+                &property,
+                &format!("var(--ui-color-{color})"),
+            )?;
+        }
     }
     out.push_str("}\n");
-    out
+    Ok(out)
 }

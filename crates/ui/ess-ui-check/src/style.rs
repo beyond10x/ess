@@ -116,9 +116,44 @@ fn weight_problem(value: &TokenValue) -> Option<String> {
     (!fits).then(|| format!("`{text}` is not a weight: a weight is 100 to 900 in steps of 100"))
 }
 
+/// Why `name` cannot be a token name, or `None` when it can: a name is written into a CSS custom
+/// property name (`--ui-color-<name>`), so it is `^[a-z][a-z0-9_-]*$`.
+fn name_problem(name: &str) -> Option<String> {
+    let mut chars = name.chars();
+    let fits = chars.next().is_some_and(|c| c.is_ascii_lowercase())
+        && chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_' || c == '-');
+    (!fits).then(|| {
+        format!("`{name}` is not a token name: a name starts with a lowercase letter and holds only lowercase letters, digits, `_` and `-`")
+    })
+}
+
+/// Why `value` cannot be written into a CSS declaration, or `None` when it can: it holds none of
+/// `; { } < > \ ` and a comment, and no control character.
+fn css_unsafe(value: &TokenValue) -> Option<String> {
+    let text = value.0.as_str();
+    let bad = text
+        .chars()
+        .any(|c| c.is_control() || [';', '{', '}', '<', '>', '\\'].contains(&c))
+        || text.contains("/*")
+        || text.contains("*/");
+    bad.then(|| {
+        format!("`{}` is not a value: it holds a character that would end or open a CSS rule (`; {{ }} < > \\`, a comment or a control character)", text.escape_debug())
+    })
+}
+
 /// Every value of `tokens` outside its group's grammar, by path.
 fn value_problems(tokens: &Tokens, at: &NodePath) -> Vec<(NodePath, String)> {
     let mut problems = Vec::new();
+    for (group, names) in [
+        ("color", tokens.color.keys().collect::<Vec<_>>()),
+        ("space", tokens.space.keys().collect()),
+        ("radius", tokens.radius.keys().collect()),
+    ] {
+        for name in names {
+            problems
+                .extend(name_problem(name).map(|problem| (at.child(group).child(name), problem)));
+        }
+    }
     for (name, value) in &tokens.color {
         problems
             .extend(color_problem(value).map(|problem| (at.child("color").child(name), problem)));
@@ -132,7 +167,15 @@ fn value_problems(tokens: &Tokens, at: &NodePath) -> Vec<(NodePath, String)> {
     }
     for (style, entry) in &tokens.typography {
         let here = at.child("type").child(style);
-        let TypeToken { size, weight, .. } = entry;
+        let TypeToken {
+            family,
+            size,
+            weight,
+        } = entry;
+        if let Some(family) = family {
+            let family = TokenValue(family.clone());
+            problems.extend(css_unsafe(&family).map(|problem| (here.child("family"), problem)));
+        }
         if let Some(size) = size {
             problems.extend(length_problem(size).map(|problem| (here.child("size"), problem)));
         }

@@ -843,6 +843,37 @@ fn token_values() {
 }
 
 #[test]
+fn token_names_and_values_are_css_safe() {
+    let text = doc(&[(
+        "tokens",
+        "{color: {Bad: '#fff', 'a;b': '#fff', 'x}': '#fff', good_1-x: '#fff'}, \
+         space: {'has space': 1rem, md2: 1rem}, \
+         type: {body: {family: 'system-ui; --ui-size-nav-width: 0px'}, \
+                heading: {family: 'a /* b */'}, mono: {family: 'ui-monospace, monospace'}, \
+                caption: {family: 'x}y'}}}",
+    )]);
+    let written = report(&text);
+    for path in [
+        "tokens/color/Bad",
+        "tokens/color/a;b",
+        "tokens/color/x}",
+        "tokens/space/has space",
+        "tokens/type/body/family",
+        "tokens/type/heading/family",
+        "tokens/type/caption/family",
+    ] {
+        trips_in(&written, "token_values", path);
+    }
+    for path in [
+        "tokens/color/good_1-x",
+        "tokens/space/md2",
+        "tokens/type/mono/family",
+    ] {
+        clean_at(&written, "token_values", path);
+    }
+}
+
+#[test]
 fn token_names() {
     let text = doc(&[(
         "tokens",

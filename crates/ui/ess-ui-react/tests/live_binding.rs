@@ -162,7 +162,9 @@ fn fnv(text: &str) -> u64 {
 /// story:the-react-renderer-draws-the-declared-tokens: `main.tsx` imports the generated
 /// `tokens.css`, button emphasis is the `ui-emphasis-*` class prefix, and the project carries
 /// `src/runtime/tokens.css`; the digest moved again when the stylesheet read every length as
-/// `var(--…)` and `tokens.css` carried the renderer-fixed `--ui-size-*` constants.
+/// `var(--…)` and `tokens.css` carried the renderer-fixed `--ui-size-*` constants. Re-pinned again for the
+/// generator refusal of unsafe token names and values and the `font-weight` and `min-height`
+/// constants.
 const PLAIN: [(&str, u64); 7] = [
     ("README.md", 0xdae6_c3b6_7e5c_2d28),
     ("src/main.tsx", 0x939b_2ed0_a001_98c5),
@@ -172,7 +174,7 @@ const PLAIN: [(&str, u64); 7] = [
     ("src/runtime/data.ts", 0x0e1d_e114_d5fb_6c64),
     ("www/index.html", 0x5972_6d4a_5ee2_5ce2),
 ];
-const PLAIN_PROJECT: u64 = 0xfc37_ecf1_36cb_39c8;
+const PLAIN_PROJECT: u64 = 0x0cd0_2663_f1fe_fc44;
 
 #[test]
 fn without_a_model_the_project_is_byte_identical() {

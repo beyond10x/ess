@@ -285,6 +285,48 @@ fn the_stylesheet_keeps_no_value_a_token_holds() {
                 "{selector} {{ {property}: {value} }} is a length literal"
             );
         }
+        // A font weight is a token or a renderer constant, never a keyword or a number.
+        assert!(
+            property != "font-weight" || value.starts_with("var("),
+            "{selector} {{ {property}: {value} }} is a weight literal"
+        );
+        // Viewport lengths are renderer constants. A percentage is exempt where it is a share of
+        // the parent (a width, a height, a gradient stop), not a space the document could set.
+        let viewport = ["vh", "vw", "vmin", "vmax"].iter().any(|unit| {
+            value
+                .split(|c: char| !c.is_ascii_alphanumeric() && c != '.')
+                .any(|part| {
+                    part.strip_suffix(unit).is_some_and(|digits| {
+                        !digits.is_empty() && digits.chars().all(|c| c.is_ascii_digit() || c == '.')
+                    })
+                })
+        });
+        assert!(
+            !viewport,
+            "{selector} {{ {property}: {value} }} is a viewport length literal"
+        );
+        let spacing = [
+            "padding",
+            "margin",
+            "gap",
+            "font-size",
+            "top",
+            "right",
+            "bottom",
+            "left",
+            "inset",
+            "min-height",
+            "min-width",
+            "max-height",
+            "line-height",
+        ];
+        assert!(
+            !(spacing
+                .iter()
+                .any(|name| property == *name || property.starts_with(&format!("{name}-")))
+                && value.contains('%')),
+            "{selector} {{ {property}: {value} }} is a percentage length literal"
+        );
         if property == "z-index" {
             continue;
         }
