@@ -205,7 +205,14 @@ fn refused_before(
     input: &str,
 ) -> bool {
     let shapes: Vec<BranchShape> = command.outcomes.iter().map(BranchShape::of).collect();
-    let composition = Composition::of(command, spec.system().format);
+    // Below `ess/30` the hint promises what `ess/30` would do, so the order is the `ess/30` one.
+    let format = spec.system().format;
+    let format = if format.major() < FormatVersion::V30.major() {
+        FormatVersion::V30
+    } else {
+        format
+    };
+    let composition = Composition::of(command, format);
     let answering: Vec<usize> = precedence::order(&shapes, &composition)
         .into_iter()
         .flat_map(|(_, held)| held)
