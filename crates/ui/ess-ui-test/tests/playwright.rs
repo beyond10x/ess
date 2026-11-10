@@ -55,7 +55,7 @@ fn steps_select_by_node_path_and_open_pages_by_route() {
         // act on a row action, addressed under its row.
         "await page.locator('[data-ui-path=\"pages/partners.list/sections/list/rows/pt-003/row_actions/delete\"]').click();",
         // act on an overlay: its primary button.
-        "await page.locator('[data-ui-path=\"pages/partners.list/overlays/delete\"] button.ui-tone-danger, [data-ui-path=\"pages/partners.list/overlays/delete\"] button.ui-tone-primary').last().click();",
+        "await page.locator('[data-ui-path=\"pages/partners.list/overlays/delete\"] button.ui-emphasis-danger, [data-ui-path=\"pages/partners.list/overlays/delete\"] button.ui-emphasis-primary').last().click();",
         // expect text.
         "await expect(page.locator('[data-ui-path=\"pages/partners.list/sections/list/rows/pt-003\"]')).toContainText(\"Cedar Partners\");",
         // expect rows, by key and in order.

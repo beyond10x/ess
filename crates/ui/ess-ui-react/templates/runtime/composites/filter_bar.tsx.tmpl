@@ -74,7 +74,7 @@ export function FilterBar(props: {
       {props.reset && props.binds.length > 0 ? (
         <button
           type="button"
-          className="ui-button ui-tone-ghost"
+          className="ui-button ui-emphasis-ghost"
           onClick={() => props.binds.forEach((bind) => scope.set(bind, null))}
         >
           {props.reset.label ?? "Reset"}
