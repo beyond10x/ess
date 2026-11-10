@@ -5187,8 +5187,21 @@ fn make_creations(
             inputs.push(input);
         }
     }
+    // A candidate a guard is `Unknown` on only for an `Optional` input it left out is passed over
+    // like a refuted one (beyond10x/ess#728): another candidate, one that supplies the input or
+    // decides the guard `false`, may create the row. The first such cause is the refusal where no
+    // candidate serves; every other `Unknown` still ends the search.
+    let mut left_out: Option<RefusalCause> = None;
     for input in inputs {
-        if input_selects(ir, creator.command, creator.outcome, &input)? {
+        let selected = match input_selects(ir, creator.command, creator.outcome, &input) {
+            Ok(selected) => selected,
+            Err(RefusalCause::GuardUnevaluable(cause)) if cause.fixable_by_another_candidate() => {
+                left_out.get_or_insert(RefusalCause::GuardUnevaluable(cause));
+                continue;
+            }
+            Err(cause) => return Err(cause),
+        };
+        if selected {
             if let Ok(arrangement) = created(
                 ir,
                 entity,
@@ -5201,6 +5214,9 @@ fn make_creations(
                 out.push(arrangement);
             }
         }
+    }
+    if let (1, Some(cause)) = (out.len(), left_out) {
+        return Err(cause);
     }
     if under.is_none() && !super::related_guard::routes(creator.command, creator.outcome) {
         out.extend(copied_creations(
@@ -5702,6 +5718,7 @@ pub(super) fn search_under<T>(
     let all = ir.drivers();
     let drivers = all.get(entity).map_or(&[][..], Vec::as_slice);
     let mut first: Option<RefusalCause> = None;
+    let mut tried: Vec<(OutcomeRef, RefusalCause)> = Vec::new();
     for creator in drivers
         .iter()
         .filter(|driver| matches!(driver.effect, ResolvedEffect::Creates))
@@ -5722,13 +5739,46 @@ pub(super) fn search_under<T>(
             // The first creator's cause is kept, except that a later search stopped by the counter
             // bound replaces one that was not: a side of a limit one creation could have reached
             // past the bound is refused naming it, not read as a value no run holds (#226).
-            Err(cause) => match &first {
-                Some(kept) if !is_beyond_reach(kept) && is_beyond_reach(&cause) => {
-                    first = Some(cause);
+            Err(cause) => {
+                tried.push((
+                    OutcomeRef::new(
+                        CommandRef::new(creator.command.name.clone()),
+                        creator.outcome.name.clone(),
+                    ),
+                    cause.clone(),
+                ));
+                match &first {
+                    Some(kept) if !is_beyond_reach(kept) && is_beyond_reach(&cause) => {
+                        first = Some(cause);
+                    }
+                    Some(_) => {}
+                    None => first = Some(cause),
                 }
-                Some(_) => {}
-                None => first = Some(cause),
-            },
+            }
+        }
+    }
+    // Creators that each failed to arrange the row, for different causes, are all named, in the
+    // order tried (beyond10x/ess#728).
+    if let Some(RefusalCause::InstanceRequired { entity, need, .. }) = &first {
+        let reasons: Option<Vec<(OutcomeRef, super::Unreachable)>> = tried
+            .iter()
+            .map(|(creator, cause)| match cause {
+                RefusalCause::InstanceRequired {
+                    entity: held,
+                    need: wanted,
+                    reason,
+                } if held == entity && wanted == need && !is_beyond_reach(cause) => {
+                    Some((creator.clone(), reason.clone()))
+                }
+                _ => None,
+            })
+            .collect();
+        if let Some(reason) = reasons.and_then(super::Unreachable::of_creators) {
+            return Err(RefusalCause::InstanceRequired {
+                entity: entity.clone(),
+                need: need.clone(),
+                reason,
+            });
         }
     }
     Err(first.unwrap_or_else(|| RefusalCause::InstanceRequired {

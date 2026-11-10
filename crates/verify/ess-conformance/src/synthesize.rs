@@ -841,6 +841,21 @@ impl fmt::Display for Refusal {
                     self.subject
                 )
             }
+            // The scenario exists; a later key of a view's order is not pinned by a tie in it
+            // (beyond10x/ess#708).
+            Some(id)
+                if self.stands
+                    && matches!(&self.cause, RefusalCause::NoWitness(gap)
+                        if ordered_head::tie_gap(gap.reason)) =>
+            {
+                writeln!(
+                    f,
+                    "refusal[{}]: {} has a scenario `{id}` that leaves a key of a view's order \
+                     unpinned by a tie",
+                    self.code(),
+                    self.subject
+                )
+            }
             // The scenario exists; a held state its refusal claims has no row in it (ess/23,
             // beyond10x/ess#461).
             Some(id) if self.stands => writeln!(
@@ -1366,6 +1381,8 @@ impl RefusalCause {
     #[allow(clippy::too_many_lines)]
     pub fn hint(&self) -> &'static str {
         match self {
+            // A later key of a ranked view no tie pins (beyond10x/ess#708).
+            Self::NoWitness(gap) if ordered_head::tie_gap(gap.reason) => ordered_head::TIE_REPAIR,
             // A seed row of a set effect's filtered entity, which no seed serves: the rows the
             // filter selects are what is missing, and the cause before the seed rows says why.
             Self::NoWitness(gap) if gap.reason == set_effects::SEEDS_UNSERVED => {
@@ -1849,6 +1866,10 @@ impl fmt::Display for RefusalCause {
             }
             Self::NoWitness(gap) if gap.type_ref == self_admission::SELF_ADMISSION => {
                 f.write_str(&self_admission::line(&gap.path))
+            }
+            Self::NoWitness(gap) if ordered_head::tie_gap(gap.reason) => {
+                let (view, key) = gap.path.split_once(": ").unwrap_or((&gap.path, ""));
+                write!(f, "the order of `{view}` by `{key}` {}", gap.reason)
             }
             Self::NoWitness(gap) => write!(f, "no witness: {gap}"),
             Self::GuardUnevaluable(refusal) => write!(f, "{refusal}"),
@@ -2968,6 +2989,9 @@ pub enum Unreachable {
         related: EntityRef,
         /// The branches reading that row that the send would have to pass over.
         guards: Vec<OutcomeRef>,
+        /// Whether a creator of that entity leaves a field the guards compare with an input unset
+        /// from its own input: the one case `sets: <field>: input.<field>` is a fix still to make.
+        unset: bool,
     },
     /// The branch on the route creates the row and reads a related row (ess/18), and no row of
     /// the related entity the declared commands create, with any input searched beside it, lets
@@ -2980,6 +3004,8 @@ pub enum Unreachable {
         related: EntityRef,
         /// The branches reading that row that the send would have to pass over.
         guards: Vec<OutcomeRef>,
+        /// As [`Self::Unsteered::unset`].
+        unset: bool,
     },
     /// The deployment provides the entity's rows (`provided: true`, ess/33) and no outcome creates
     /// one. Synthesis takes such a row only as the related row a `when_related: {via:
@@ -2990,6 +3016,64 @@ pub enum Unreachable {
     /// A provided row (`provided: true`) is read by a guard over its fields: the deployment holds
     /// their values, so no lifecycle state the fixture names decides the branch.
     ProvidedFields,
+    /// Several creating branches were tried and they failed for different causes
+    /// (beyond10x/ess#728): every one, in the order it was tried, with its own cause. Naming only
+    /// the first would send the reader to a command whose cause is not the one to repair.
+    Creators {
+        /// Each creating branch tried and why it did not arrange the row, at least two causes.
+        tried: Vec<(OutcomeRef, Unreachable)>,
+    },
+}
+
+impl Unreachable {
+    /// The causes `tried` creators failed with: the first where there is one or every cause is
+    /// the same, otherwise all of them.
+    fn of_creators(mut tried: Vec<(OutcomeRef, Unreachable)>) -> Option<Unreachable> {
+        if tried.is_empty() {
+            return None;
+        }
+        if tried.iter().all(|(_, cause)| *cause == tried[0].1) {
+            return tried.into_iter().next().map(|(_, cause)| cause);
+        }
+        // A creator that failed for several creators' reasons has them listed once each.
+        let mut flat: Vec<(OutcomeRef, Unreachable)> = Vec::new();
+        for (creator, cause) in tried.drain(..) {
+            match cause {
+                Self::Creators { tried } => {
+                    for entry in tried {
+                        if !flat.contains(&entry) {
+                            flat.push(entry);
+                        }
+                    }
+                }
+                cause => flat.push((creator, cause)),
+            }
+        }
+        Some(Self::Creators { tried: flat })
+    }
+
+    /// The causes the target states failed with: the first, in name order, unless every one is a
+    /// list of creators tried, which are merged so each creator is named once.
+    fn across_targets(failed: Vec<Unreachable>) -> Unreachable {
+        if failed.len() > 1
+            && failed
+                .iter()
+                .all(|cause| matches!(cause, Self::Creators { .. }))
+        {
+            let mut flat: Vec<(OutcomeRef, Unreachable)> = Vec::new();
+            for cause in failed {
+                if let Self::Creators { tried } = cause {
+                    for entry in tried {
+                        if !flat.contains(&entry) {
+                            flat.push(entry);
+                        }
+                    }
+                }
+            }
+            return Self::Creators { tried: flat };
+        }
+        failed.into_iter().next().unwrap_or(Self::NothingCreates)
+    }
 }
 
 /// `guards` as a list in prose, or "the guards beside it" where there are none.
@@ -3043,15 +3127,24 @@ impl Unreachable {
                  end every chain, and declare an unfiltered view showing the row's identity and \
                  state"
             }
-            Self::Unsteered { .. } | Self::RelatedUnmet { .. } => {
+            Self::Unsteered { unset: true, .. } | Self::RelatedUnmet { unset: true, .. } => {
                 "let the command creating the related row set each field those guards compare \
                  from its own input (`sets: <field>: input.<field>`), or cover the state with an \
                  authored scenario (ess-scenario/1)"
+            }
+            Self::Unsteered { .. } | Self::RelatedUnmet { .. } => {
+                "cover the state with an authored scenario (ess-scenario/1); every command \
+                 creating the related row already sets each field those guards compare from its \
+                 own input"
             }
             Self::Provided => {
                 "a provided row is sent as an entity fixture only where a `when_related: {via: \
                  input.<field>}` guard reads it; cover this position with an authored scenario \
                  (ess-scenario/1), or give some command outcome `creates:` for this entity"
+            }
+            Self::Creators { .. } => {
+                "repair the cause listed for one of the creating branches; each is the reason that \
+                 branch does not arrange the row"
             }
             Self::ProvidedFields => {
                 "guard a provided row by its existence or its lifecycle state, which the fixture \
@@ -3109,10 +3202,21 @@ impl fmt::Display for Unreachable {
                 "the route runs through `{outcome}`, which sets off `{binding}` on the row, and \
                  where the row comes to rest cannot be named: {why}"
             ),
+            Self::Creators { tried } => {
+                f.write_str("no creating branch arranges it: ")?;
+                for (nth, (creator, cause)) in tried.iter().enumerate() {
+                    if nth > 0 {
+                        f.write_str("; ")?;
+                    }
+                    write!(f, "`{creator}`: {cause}")?;
+                }
+                Ok(())
+            }
             Self::Unsteered {
                 outcome,
                 related,
                 guards,
+                ..
             } => {
                 write!(
                     f,
@@ -3126,6 +3230,7 @@ impl fmt::Display for Unreachable {
                 outcome,
                 related,
                 guards,
+                ..
             } => {
                 write!(
                     f,
@@ -7131,7 +7236,7 @@ fn arrange_first(
     arranging: &[&EntityHandle],
 ) -> Result<Arrangement, Unreachable> {
     let mut cheapest: Option<Arrangement> = None;
-    let mut first: Option<Unreachable> = None;
+    let mut failed: Vec<Unreachable> = Vec::new();
     for target in targets {
         match arrange(ir, entity, target, actors, distinction, arranging) {
             Ok(arrangement) => {
@@ -7142,12 +7247,10 @@ fn arrange_first(
                     cheapest = Some(arrangement);
                 }
             }
-            Err(reason) => {
-                first.get_or_insert(reason);
-            }
+            Err(reason) => failed.push(reason),
         }
     }
-    cheapest.ok_or(first.unwrap_or(Unreachable::NothingCreates))
+    cheapest.ok_or_else(|| Unreachable::across_targets(failed))
 }
 
 /// Bring one instance of `entity` into existence and drive it to `target`.
@@ -7200,7 +7303,7 @@ fn arrange(
     }
     // Stable: equal lengths keep the drivers' name order.
     routed.sort_by_key(|(_, path)| path.len());
-    let mut first: Option<Unreachable> = None;
+    let mut failed: Vec<(OutcomeRef, Unreachable)> = Vec::new();
     for (creator, route) in routed {
         let arranged = created(ir, entity, creator, actors, distinction, arranging, None).and_then(
             |arrangement| {
@@ -7218,14 +7321,20 @@ fn arrange(
         );
         match arranged {
             Ok(arrangement) => return Ok(arrangement),
-            Err(reason) => {
-                first.get_or_insert(reason);
-            }
+            Err(reason) => failed.push((
+                OutcomeRef::new(
+                    CommandRef::new(creator.command.name.clone()),
+                    creator.outcome.name.clone(),
+                ),
+                reason,
+            )),
         }
     }
-    Err(first.unwrap_or_else(|| Unreachable::NoPath {
-        from: ir.entity(entity).lifecycle.initial.clone(),
-    }))
+    Err(
+        Unreachable::of_creators(failed).unwrap_or_else(|| Unreachable::NoPath {
+            from: ir.entity(entity).lifecycle.initial.clone(),
+        }),
+    )
 }
 
 /// The second half of [`arrange`]: an instance already created, driven along `route` to `target`.
@@ -10888,8 +10997,143 @@ fn arrange_ranked(
                 }
             }
         }
+        if !unwitnessed.contains(&name) {
+            arrange_ties(
+                beside,
+                view,
+                *admits_subject,
+                (owner, &params),
+                &mut companions,
+                (id, refusals),
+            );
+        }
     }
     (companions, unwitnessed)
+}
+
+/// The further rows a ranked view's later keys need, so that each key after the first decides the
+/// order of two rows of the scenario (beyond10x/ess#708).
+///
+/// `ranked` reads a key only where every key before it is equal, so a pair of rows differing on the
+/// first key never reads the second. For each key `order_by[at]` after the first, a row is arranged
+/// that agrees with the scenario's base row — the subject where the view shows it, otherwise the
+/// first companion it shows — on every key before it, and differs on it: a chain of `n + 1` rows
+/// for `n` keys, each created through the declared creating outcome with its input steered to the
+/// base row's earlier values. Where the key is the identity, two rows always differ on it and
+/// nothing steers it.
+///
+/// A key no tie reaches is a standing gap beside the scenario, named by the view and the key
+/// ([`ordered_head::tie_gap`]); the scenario stays as it was.
+#[allow(clippy::too_many_lines)]
+fn arrange_ties(
+    beside: &Beside<'_>,
+    view: &ResolvedView,
+    admits_subject: bool,
+    (owner, params): (Option<&InstanceName>, &BTreeMap<String, ScenarioValue>),
+    companions: &mut Vec<Arrangement>,
+    (id, refusals): (&ScenarioId, &mut Vec<Refusal>),
+) {
+    use ess_primitives::predicate::{CompareKind, CompareOp};
+    let (ir, entity) = (beside.ir, beside.entity);
+    let key_of = |settled: &BTreeMap<String, Determined>, key: &str| -> Option<Node> {
+        settled.get(key)?.value.as_literal().cloned()
+    };
+    let shown = |row: &Arrangement| row.shows(ir, view, params) == Ok(true);
+    let base_row = if admits_subject {
+        None
+    } else {
+        companions.iter().find(|row| shown(row))
+    };
+    let base_instance = base_row.map(|row| row.instance.clone());
+    let base = if admits_subject {
+        Some(beside.settled.clone())
+    } else {
+        base_row.map(|row| row.settled.clone())
+    };
+    let compared = |field: &str, op: CompareOp, value: &Node| {
+        Some(Predicate::Compare {
+            left: Operand::Fact(FactPath::from_segments([field.to_owned()])),
+            op,
+            right: Operand::Literal(fact_value(value)?),
+            kind: CompareKind::Value,
+        })
+    };
+    let filter = paging::with_bound_params(view, params)
+        .and_then(|bound| bound.filter)
+        .or_else(|| view.filter.clone());
+    for at in 1..view.order_by.len() {
+        let key = &view.order_by[at].field;
+        let gap = |reason: &'static str| {
+            Refusal::beside(
+                id,
+                RefusalCause::NoWitness(WitnessGap {
+                    path: format!("{}: {key}", view.name),
+                    type_ref: "ranked view".into(),
+                    reason,
+                }),
+            )
+        };
+        if let ordered_head::Tie::Gap(reason) = ordered_head::tie(ir, entity, &view.order_by, at) {
+            refusals.push(gap(reason));
+            continue;
+        }
+        let Some(base) = &base else {
+            continue;
+        };
+        let identity = ordered_head::is_identity(ir, entity, key);
+        let held = key_of(base, key);
+        let pins: Option<Vec<(&str, Node)>> = view.order_by[..at]
+            .iter()
+            .map(|ranking| Some((ranking.field.as_str(), key_of(base, &ranking.field)?)))
+            .collect();
+        let (Some(pins), true) = (pins, identity || held.is_some()) else {
+            refusals.push(gap(ordered_head::TIE_NOT_SHOWN));
+            continue;
+        };
+        let accept = |row: &Arrangement| {
+            shown(row)
+                && base_instance.as_ref() != Some(&row.instance)
+                && pins
+                    .iter()
+                    .all(|(field, value)| key_of(&row.settled, field).as_ref() == Some(value))
+                && (identity
+                    || key_of(&row.settled, key).is_some_and(|value| Some(&value) != held.as_ref()))
+        };
+        if companions.iter().any(accept) {
+            continue;
+        }
+        let pinned: Vec<Predicate> = pins
+            .iter()
+            .filter_map(|(field, value)| compared(field, CompareOp::Eq, value))
+            .collect();
+        let steer = held
+            .as_ref()
+            .filter(|_| !identity)
+            .and_then(|value| compared(key, CompareOp::Gt, value));
+        let goals: Vec<Predicate> = [filter.as_ref(), None]
+            .into_iter()
+            .flat_map(|filter| {
+                [true, false].map(|steered| {
+                    Predicate::All(
+                        filter
+                            .cloned()
+                            .into_iter()
+                            .chain(pinned.iter().cloned())
+                            .chain(steer.clone().filter(|_| steered))
+                            .collect(),
+                    )
+                })
+            })
+            .collect();
+        let found = goals.iter().find_map(|goal| {
+            let distinction = beside.next(companions);
+            arrange_toward_owned(ir, entity, goal, beside.actors, distinction, owner, &accept)
+        });
+        match found {
+            Some(row) => companions.push(row),
+            None => refusals.push(gap(ordered_head::TIE_NOT_SHOWN)),
+        }
+    }
 }
 
 /// Per view, each further row asserted beside the subject's: the fields that name it, and whether

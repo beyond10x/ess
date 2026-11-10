@@ -1,0 +1,84 @@
+format: ess/29
+system: depot
+version: v1
+domain: depot.parcel
+summary: A parcel is packed, sealed and shipped; an outside service may hold a sealed parcel.
+types:
+  - {name: depot.parcel.ParcelId, kind: newtype, of: Uuid}
+entities:
+  - name: depot.parcel.Parcel
+    identity: {name: parcel_id, type: depot.parcel.ParcelId}
+    fields:
+      - {name: label, type: String}
+    lifecycle:
+      initial: Packed
+      states: [Packed, Sealed, Shipped]
+      terminal: [Shipped]
+      transitions:
+        - {name: seal, from: [Packed], to: Sealed}
+        - {name: ship, from: [Sealed], to: Shipped}
+actors:
+  - name: depot.parcel.Clerk
+    may: [depot.parcel.PackParcel, depot.parcel.SealParcel, depot.parcel.ShipParcel]
+commands:
+  - name: depot.parcel.PackParcel
+    input:
+      - {name: label, type: String}
+    outcomes:
+      - name: packed
+        creates: depot.parcel.Parcel
+        instance: parcel_id
+        sets: {label: input.label}
+        emits: [depot.parcel.Packed]
+        payload:
+          depot.parcel.Packed: {parcel_id: {generated: true}}
+  - name: depot.parcel.SealParcel
+    input:
+      - {name: parcel_id, type: depot.parcel.ParcelId}
+    outcomes:
+      - name: sealed
+        moves: depot.parcel.Parcel.seal
+        instance: parcel_id
+        emits: [depot.parcel.Sealed]
+        payload:
+          depot.parcel.Sealed: {parcel_id: input.parcel_id}
+      - name: not-packed
+        wrong_state: true
+        error: depot.parcel.NotPacked
+  - name: depot.parcel.ShipParcel
+    input:
+      - {name: parcel_id, type: depot.parcel.ParcelId}
+    outcomes:
+      - name: held
+        external: the outside service holds the parcel
+        when_subject:
+          predicate: state == Sealed
+        error: depot.parcel.ShipmentHeld
+      - name: shipped
+        moves: depot.parcel.Parcel.ship
+        instance: parcel_id
+        emits: [depot.parcel.Shipped]
+        payload:
+          depot.parcel.Shipped: {parcel_id: input.parcel_id}
+      - name: wrong-state
+        wrong_state: true
+        error: depot.parcel.NotSealed
+events:
+  - name: depot.parcel.Packed
+    fields: [{name: parcel_id, type: depot.parcel.ParcelId}]
+  - name: depot.parcel.Sealed
+    fields: [{name: parcel_id, type: depot.parcel.ParcelId}]
+  - name: depot.parcel.Shipped
+    fields: [{name: parcel_id, type: depot.parcel.ParcelId}]
+errors:
+  - name: depot.parcel.NotPacked
+  - name: depot.parcel.ShipmentHeld
+  - name: depot.parcel.NotSealed
+views:
+  - name: depot.parcel.Parcels
+    source: depot.parcel.Parcel
+    consistency: read_your_writes
+    fields:
+      - {name: parcel_id, type: depot.parcel.ParcelId}
+      - {name: label, type: String}
+      - {name: state, type: depot.parcel.Parcel.State}

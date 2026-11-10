@@ -223,3 +223,68 @@ pub(super) fn steerable(ir: &EssIr, entity: &EntityHandle, name: &str) -> bool {
             })
     })
 }
+
+/// The reason a later key of a ranked view is not pinned by a tie where no creating command writes
+/// an earlier key from its input: no scenario arranges two rows that agree on it.
+pub(super) const TIE_EARLIER_UNSTEERED: &str =
+    "is not pinned by a tie: no creating command writes \
+     an earlier key of the view's order from its input, so no scenario arranges two rows that \
+     agree on it";
+/// The reason where an earlier key is the identity: two rows never agree on it.
+pub(super) const TIE_EARLIER_IDENTITY: &str = "is not pinned by a tie: an earlier key of the \
+     view's order is the identity, which no two rows share, so no later key decides the order of \
+     any two rows";
+/// The reason where no creating command writes the key itself from its input.
+pub(super) const TIE_KEY_UNSTEERED: &str = "is not pinned by a tie: no creating command writes \
+     this key from its input, so no scenario arranges two rows that differ on it";
+/// The reason where no row tied on the earlier keys and differing on the key is one the view shows.
+pub(super) const TIE_NOT_SHOWN: &str = "is not pinned by a tie: no row that agrees with another \
+     on the earlier keys and differs on this one is shown by the view's filter or owner scope";
+/// The repair for a later key no tie pins: the scenario stands, without that key's order claim.
+pub(super) const TIE_REPAIR: &str = "write every key before this one, and this key, from the \
+     creating command's input, so two rows can agree on the earlier keys and differ on it, and \
+     let the view show both; or cover the order with an authored scenario (ess-scenario/1) that \
+     ties the earlier keys";
+
+/// Whether `reason` names a later key no tie pins, for which [`TIE_REPAIR`] is the repair.
+pub(super) fn tie_gap(reason: &str) -> bool {
+    [
+        TIE_EARLIER_UNSTEERED,
+        TIE_EARLIER_IDENTITY,
+        TIE_KEY_UNSTEERED,
+        TIE_NOT_SHOWN,
+    ]
+    .contains(&reason)
+}
+
+/// What the key `order_by[at]` needs, for a scenario to pin its direction.
+pub(super) enum Tie {
+    /// Two rows agreeing on every key before it, and differing on it: with no steering where it
+    /// is the identity, which two rows always differ on.
+    Row,
+    /// No such pair is arranged, and why.
+    Gap(&'static str),
+}
+
+/// What the key `order_by[at]` (`at` above zero) needs, from what the declared creations write.
+pub(super) fn tie(ir: &EssIr, entity: &EntityHandle, order_by: &[Ranking], at: usize) -> Tie {
+    let earlier = &order_by[..at];
+    if earlier
+        .iter()
+        .any(|ranking| is_identity(ir, entity, &ranking.field))
+    {
+        return Tie::Gap(TIE_EARLIER_IDENTITY);
+    }
+    if earlier
+        .iter()
+        .any(|ranking| !steerable(ir, entity, &ranking.field))
+    {
+        return Tie::Gap(TIE_EARLIER_UNSTEERED);
+    }
+    let key = &order_by[at].field;
+    if is_identity(ir, entity, key) || steerable(ir, entity, key) {
+        Tie::Row
+    } else {
+        Tie::Gap(TIE_KEY_UNSTEERED)
+    }
+}
