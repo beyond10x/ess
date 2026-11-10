@@ -1081,3 +1081,93 @@ fn a_related_guard_beside_an_input_guard_on_a_system_step_synthesizes() {
         "a `when_related:` guard over the rows its input names decides it",
     );
 }
+
+// Adversary cases (uncommitted): the same defect class as the story, on the guard shapes `guard`
+// still does not read, plus a pin for the `RelatedSet` arm no case above reaches.
+
+/// The when_related variant's model, as the unit's own case builds it.
+fn adversary_related_model() -> String {
+    SYSTEM_STORED_GUARD
+        .replace(
+            "      - {name: mode, type: jobs.run.Mode}\n",
+            "      - {name: mode, type: jobs.run.Mode}\n      - {name: owner_id, type: jobs.run.OwnerId}\n",
+        )
+        .replace(
+            "        when_subject: {predicate: paused == true}\n",
+            "        when_related: {via: input.owner_id, predicate: banned == true}\n",
+        )
+        .replace(
+            "      - name: finished\n",
+            "      - {name: missing, when_related: {via: input.owner_id, exists: false}, error: jobs.run.JobClosed}\n      - name: finished\n",
+        )
+        .replace(
+            "    may: [jobs.run.OpenJob]\n",
+            "    may: [jobs.run.OpenJob, jobs.run.OpenOwner]\n",
+        )
+        .replace(
+            "      commands: [jobs.run.OpenJob, jobs.run.RunJob]\n",
+            "      commands: [jobs.run.OpenJob, jobs.run.RunJob, jobs.run.OpenOwner]\n",
+        )
+        .replace(
+            "      events: [jobs.run.JobOpened, jobs.run.JobFinished]\n",
+            "      events: [jobs.run.JobOpened, jobs.run.JobFinished, jobs.run.OwnerOpened]\n",
+        )
+        .replace(
+            "events:\n",
+            "events:\n  - name: jobs.run.OwnerOpened\n    fields:\n      - {name: owner_id, type: jobs.run.OwnerId}\n",
+        )
+        .replace(
+            "commands:\n",
+            "commands:\n  - name: jobs.run.OpenOwner\n    input:\n      - {name: banned, type: Boolean}\n    outcomes:\n      - name: opened\n        creates: jobs.run.Owner\n        instance: owner_id\n        sets: {banned: input.banned}\n        emits: [jobs.run.OwnerOpened]\n        payload:\n          jobs.run.OwnerOpened: {owner_id: {generated: true}}\n",
+        )
+}
+
+/// A row-set guard beside an input guard: the `RelatedSet` arm of `guard`, which no other case
+/// reaches (dropping that arm leaves the suite green).
+#[test]
+fn adversary_a_row_set_guard_beside_an_input_guard_states_the_input() {
+    let model = adversary_related_model()
+        .replace(
+            "      - {name: mode, type: jobs.run.Mode}\n",
+            "      - {name: mode, type: jobs.run.Mode}\n      - {name: tag, type: String}\n",
+        )
+        .replace(
+            "      - {name: banned, type: Boolean}\n",
+            "      - {name: banned, type: Boolean}\n      - {name: tag, type: String}\n",
+        )
+        .replace(
+            "sets: {banned: input.banned}",
+            "sets: {banned: input.banned, tag: input.tag}",
+        )
+        .replace(
+            "        when_related: {via: input.owner_id, predicate: banned == true}\n",
+            "        when_related: {entity: jobs.run.Owner, where: {all: [tag == input.tag, banned == true]}, exists: true}\n",
+        )
+        .replace(
+            "      - {name: missing, when_related: {via: input.owner_id, exists: false}, error: jobs.run.JobClosed}\n",
+            "",
+        );
+    // Synthesis refutes `held` here by its row half and sends `mode: fast`, so the await states the
+    // value sent rather than `slow`; what the arm owes is that `mode` is stated at all.
+    let ir = ir_of(&model);
+    let synthesis = synthesize(&ir);
+    assert_never_driven(&ir, &synthesis);
+    let run = "jobs.run.RunJob";
+    let finished = stated(&synthesis, &format!("{run}/outcome/finished"), run);
+    assert!(
+        finished.contains_key("mode"),
+        "the default branch states the input the row-set branch's input guard reads: {finished:#?}"
+    );
+    let held = id(&format!("{run}/outcome/held"));
+    assert!(synthesis.suite.scenario(&held).is_none());
+    assert!(
+        synthesis
+            .refusals
+            .iter()
+            .any(|refusal| refusal.scenario.as_ref() == Some(&held)
+                && refusal.code().to_string() == "ESS-SYNTH-024"),
+        "{:#?}",
+        synthesis.refusals
+    );
+    run_on_the_interpreter(ir, &synthesis);
+}
