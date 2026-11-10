@@ -357,11 +357,16 @@ fn guarded_input(
     Ok(stated)
 }
 
-/// The `when:` guard of a branch selected by one: its own, or an `external:` branch's eligibility.
+/// The input guard of a branch: its `when:`, an `external:` branch's eligibility, or the input
+/// half of a `when_subject:`, `when_related:` or row-set guard
+/// (story:a-stored-guard-beside-an-input-guard-on-a-system-step-synthesizes).
 fn guard(condition: &ResolvedCondition) -> Option<&ess_primitives::predicate::Predicate> {
     match condition {
         ResolvedCondition::When { predicate }
         | ResolvedCondition::ExternalWhen { predicate, .. } => Some(predicate),
+        ResolvedCondition::SubjectPredicate { input, .. }
+        | ResolvedCondition::Related { input, .. }
+        | ResolvedCondition::RelatedSet { input, .. } => input.as_ref(),
         _ => None,
     }
 }

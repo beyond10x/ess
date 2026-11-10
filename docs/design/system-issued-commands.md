@@ -147,7 +147,8 @@ not drive them.
   the value synthesis sent for it, which the guard admits: `RecordCheck/outcome/rejected`, guarded
   `when: verdict == Refused`, is awaited with `input: {verdict: Refused}`. The guards read are the
   claimed branch's own (an `external:` branch's eligibility `when:` included) and, for a default
-  branch, every other branch's `when:`, which the default is taken by refuting. Each such input is
+  branch, every other branch's `when:` and the input half of its `when_subject:`, `when_related:`
+  or row-set guard, which the default is taken by refuting. Each such input is
   stated top-level and whole; the identity input is the instance and is never stated. Without it
   the await is answered by whichever branch the system's choice selects, and a scenario claiming
   one of two branches an input guard tells apart fails a correct target that took the other (an
