@@ -150,3 +150,50 @@ fn importing_a_legacy_ir_writes_no_secret_digest_it_carried() {
         );
     }
 }
+
+#[test]
+fn served_kinds_the_scan_did_not_read_are_coverage_gaps_of_the_import_report() {
+    let scratch = Path::new(env!("CARGO_TARGET_TMPDIR"))
+        .join(format!("infra-unobserved-{}", std::process::id()));
+    std::fs::create_dir_all(&scratch).unwrap();
+    let empty = serde_json::json!({ "items": [] });
+    let mut kinds = serde_json::Map::new();
+    for kind in [
+        "namespaces",
+        "nodes",
+        "deployments",
+        "statefulsets",
+        "daemonsets",
+        "pods",
+        "services",
+        "ingresses",
+        "configmaps",
+        "secrets",
+        "serviceaccounts",
+        "persistentvolumeclaims",
+    ] {
+        kinds.insert(kind.to_owned(), empty.clone());
+    }
+    let bundle = serde_json::json!({
+        "format": "infra-observation/3", "context": "synthetic",
+        "scanned_at": "2026-11-10T00:00:00Z", "scout_version": "0.92.0", "kinds": kinds,
+        "unobserved_kinds": ["certificates.cert-manager.io", "networkpolicies.networking.k8s.io"],
+    });
+    let source = scratch.join("observation.json");
+    std::fs::write(&source, bundle.to_string()).unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_ess"))
+        .args(["infra", "import", "kubernetes", "--path"])
+        .arg(&source)
+        .args(["--format", "json"])
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{output:?}");
+    let report: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(
+        report["coverage_gaps"],
+        serde_json::json!([
+            "served but not read: certificates.cert-manager.io",
+            "served but not read: networkpolicies.networking.k8s.io"
+        ])
+    );
+}

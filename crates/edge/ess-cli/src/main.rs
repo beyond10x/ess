@@ -5718,8 +5718,14 @@ fn import(adapter: ImportAdapter) -> Result<ExitCode> {
                     .model()
                     .coverage
                     .as_ref()
-                    .map(|coverage| vec![coverage.limitation().to_owned()])
-                    .unwrap_or_default(),
+                    .map(|coverage| coverage.limitation().to_owned())
+                    .into_iter()
+                    .chain(
+                        unobserved_kinds(&source)
+                            .into_iter()
+                            .map(|kind| format!("served but not read: {kind}")),
+                    )
+                    .collect(),
                 obligations: Vec::new(),
                 refusals: Vec::new(),
                 unresolved_references: ir.model().unresolved.len(),
@@ -5743,6 +5749,17 @@ fn import(adapter: ImportAdapter) -> Result<ExitCode> {
             import_openapi(&path, out.as_deref(), format)
         }
     }
+}
+
+/// The kinds an observation bundle records as served and not read; none for an IR source.
+///
+/// The source has already been loaded, so a file this cannot read records nothing new.
+fn unobserved_kinds(source: &Path) -> Vec<String> {
+    fs::read(source)
+        .ok()
+        .and_then(|bytes| serde_json::from_slice::<infra_domain::raw::RawBundle>(&bytes).ok())
+        .map(|bundle| bundle.unobserved_kinds)
+        .unwrap_or_default()
 }
 
 fn import_openapi(path: &Path, out: Option<&Path>, format: Format) -> Result<ExitCode> {

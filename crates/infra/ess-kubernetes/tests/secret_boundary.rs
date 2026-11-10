@@ -674,6 +674,61 @@ fn a_served_gateway_api_is_read_and_an_unserved_one_is_recorded_as_absent_not_em
     assert!(stderr.contains("not served"), "{stderr}");
 }
 
+/// Served resources in the synthetic API: scanned kinds, unread kinds of watched groups, and
+/// kinds of groups nobody watches.
+const API_RESOURCES: &str = "pods\nnamespaces\nconfigmaps\nendpoints\n\
+ingresses.networking.k8s.io\nnetworkpolicies.networking.k8s.io\n\
+poddisruptionbudgets.policy\ngateways.gateway.networking.k8s.io\n\
+grpcroutes.gateway.networking.k8s.io\ncertificates.cert-manager.io\n\
+widgets.example.internal\n";
+
+#[test]
+fn served_kinds_of_watched_groups_the_scan_does_not_read_are_recorded_as_unobserved() {
+    let (output, destination) = gateway_scan("discovery", |command| {
+        command.env("ESS_TEST_API_RESOURCES", API_RESOURCES);
+    });
+    assert!(output.status.success(), "{output:?}");
+    let observation: Value =
+        serde_json::from_slice(&std::fs::read(&destination).expect("written")).expect("JSON");
+    assert_eq!(
+        observation["unobserved_kinds"],
+        json!([
+            "certificates.cert-manager.io",
+            "grpcroutes.gateway.networking.k8s.io",
+            "networkpolicies.networking.k8s.io"
+        ])
+    );
+    let raw: infra_domain::RawBundle = serde_json::from_value(observation).expect("parses");
+    infra_domain::Observation::try_from(raw).expect("an unobserved kind does not refuse");
+
+    let (quiet, destination) = gateway_scan("discovery-none", |_| {});
+    assert!(quiet.status.success(), "{quiet:?}");
+    let observation: Value =
+        serde_json::from_slice(&std::fs::read(&destination).expect("written")).expect("JSON");
+    assert!(
+        observation.get("unobserved_kinds").is_none(),
+        "nothing unobserved writes no key, so earlier bundles keep their bytes"
+    );
+}
+
+#[test]
+fn a_failed_api_discovery_does_not_refuse_the_scan_and_records_nothing() {
+    let (output, destination) = gateway_scan("discovery-failure", |command| {
+        command
+            .env("ESS_TEST_API_RESOURCES", API_RESOURCES)
+            .env("ESS_TEST_FAILURE_OPERATION", "api-resources")
+            .env("ESS_TEST_FAILURE_DIAGNOSTIC", SENTINEL);
+    });
+    assert!(output.status.success(), "{output:?}");
+    let bytes = std::fs::read(&destination).expect("written");
+    let observation: Value = serde_json::from_slice(&bytes).expect("JSON");
+    assert!(observation.get("unobserved_kinds").is_none());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(!stderr.contains(SENTINEL), "{stderr}");
+    assert!(!String::from_utf8_lossy(&bytes).contains(SENTINEL));
+    assert!(stderr.contains("unobserved kinds not recorded"), "{stderr}");
+}
+
 #[test]
 fn any_other_failure_of_a_gateway_kind_still_refuses_the_scan() {
     for resource in GATEWAY_RESOURCES {

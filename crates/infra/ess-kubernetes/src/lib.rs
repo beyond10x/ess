@@ -45,6 +45,26 @@ pub const GATEWAY_KINDS: &[(&str, &str)] = &[
     ("httproutes", "httproutes.gateway.networking.k8s.io"),
 ];
 
+/// The API groups whose served kinds a full scan reports when it does not read them: the
+/// cluster's network edge and policy, its certificates and secrets operators, its autoscalers,
+/// delivery and monitoring. A kind of any other group, or of the core group, is not reported.
+pub const WATCHED_GROUPS: &[&str] = &[
+    "networking.k8s.io",
+    "policy",
+    "gateway.networking.k8s.io",
+    "networking.istio.io",
+    "security.istio.io",
+    "elbv2.k8s.aws",
+    "cert-manager.io",
+    "external-secrets.io",
+    "secrets-store.csi.x-k8s.io",
+    "autoscaling.k8s.io",
+    "keda.sh",
+    "karpenter.sh",
+    "argoproj.io",
+    "monitoring.coreos.com",
+];
+
 /// The phrase kubectl prints for a resource type the API server does not serve.
 const UNSERVED_RESOURCE: &[u8] = b"the server doesn't have a resource type";
 
@@ -140,14 +160,19 @@ pub fn scan(context: Option<&str>, output_path: &Path) -> Result<(), String> {
         kinds.insert(kind.to_owned(), value);
     }
     let collected = kinds.len();
+    let unobserved = unobserved_kinds(&context);
 
-    let bundle = serde_json::json!({
+    let mut bundle = serde_json::json!({
         "format": infra_domain::PRESENCE_OBSERVATION_FORMAT,
         "context": context,
         "scanned_at": utc_timestamp(),
         "scout_version": env!("CARGO_PKG_VERSION"),
         "kinds": kinds,
     });
+    // Written only when there is one, so a cluster serving nothing unread keeps its bytes.
+    if !unobserved.is_empty() {
+        bundle["unobserved_kinds"] = serde_json::json!(unobserved);
+    }
     let bytes = serde_json::to_vec_pretty(&bundle).map_err(|error| error.to_string())?;
     let digest = hex(&sha2::Sha256::digest(&bytes));
     std::fs::File::create(output_path)
@@ -158,6 +183,48 @@ pub fn scan(context: Option<&str>, output_path: &Path) -> Result<(), String> {
         output_path.display()
     );
     Ok(())
+}
+
+/// The served kinds of [`WATCHED_GROUPS`] this scan does not read, sorted, from one
+/// `kubectl api-resources` call.
+///
+/// Discovery informs the report and never decides the scan: when it fails, nothing is recorded,
+/// a notice says so, and nothing of kubectl's output crosses the boundary. A name that is not
+/// `<plural>.<watched group>` is never recorded.
+fn unobserved_kinds(context: &str) -> Vec<String> {
+    let Ok(names) = kubectl(
+        "discover API resources",
+        &[
+            "--context",
+            context,
+            "api-resources",
+            "--verbs=list",
+            "-o",
+            "name",
+        ],
+    ) else {
+        eprintln!("API discovery failed: unobserved kinds not recorded");
+        return Vec::new();
+    };
+    let read = |name: &str, plural: &str| {
+        KINDS.contains(&plural) || GATEWAY_KINDS.iter().any(|(_, resource)| *resource == name)
+    };
+    let mut unobserved: Vec<String> = String::from_utf8_lossy(&names)
+        .lines()
+        .map(str::trim)
+        .filter_map(|name| {
+            let (plural, group) = name.split_once('.')?;
+            let wellformed = !plural.is_empty()
+                && plural
+                    .bytes()
+                    .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit());
+            (wellformed && WATCHED_GROUPS.contains(&group) && !read(name, plural))
+                .then(|| name.to_owned())
+        })
+        .collect();
+    unobserved.sort();
+    unobserved.dedup();
+    unobserved
 }
 
 /// Replaces every Secret value with `{"present": true}`: the key survives, nothing about the value.

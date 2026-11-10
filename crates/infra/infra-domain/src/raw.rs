@@ -43,6 +43,10 @@ pub struct RawBundle {
     /// [`crate::code::InfraCode::MissingKind`] depends on.
     #[serde(default)]
     pub kinds: BTreeMap<String, Value>,
+    /// Kinds of watched API groups the cluster served and the scan did not read, as
+    /// `<plural>.<group>`. Optional: absent on every bundle with none, and on earlier ones.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub unobserved_kinds: Vec<String>,
 }
 
 /// Unvalidated collection scope, admitted through the domain's coverage conversion.

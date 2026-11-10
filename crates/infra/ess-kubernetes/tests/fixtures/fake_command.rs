@@ -26,6 +26,10 @@ fn main() {
                 assert_eq!(*context, expected_context);
                 (*kind, true, true)
             }
+            ["--context", context, "api-resources", "--verbs=list", "-o", "name"] => {
+                assert_eq!(*context, expected_context);
+                ("api-resources", false, false)
+            }
             ["--context", context, "get", kind, "-o", "json"] => {
                 assert_eq!(*context, expected_context);
                 (*kind, true, false)
@@ -104,6 +108,11 @@ fn main() {
                 "synthetic-context\nsecond-context\n".to_owned()
             }
             ["config", "current-context"] => format!("{expected_context}\n"),
+            // The resource names the API server serves for `list`; none beyond the scanned
+            // kinds unless a test names them.
+            ["--context", _, "api-resources", "--verbs=list", "-o", "name"] => {
+                std::env::var("ESS_TEST_API_RESOURCES").unwrap_or_default()
+            }
             ["--context", _, "get", kind, "-A", "-o", "json"]
             | ["--context", _, "get", kind, "-o", "json"] => {
                 if *kind == "secrets" {
