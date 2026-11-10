@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-10T06:21:41Z",
+  "actor": "human:timo",
+  "artifact": "story:a-required-response-member-answered-as-null-fails-exploration",
+  "kind": "story",
+  "revision": 11,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "cargo test -p ess-conformance --locked --test explore_direct_response --test explore_direct_response_json; --lib",
+    "reference": "a-required-response-member-answered-as-null-fails-exploration/red.txt (4 passed, 1 failed) vs verify-batch2/c1..c8.txt at 7623ee5ec1 (5+3 passed; lib 175)"
+  }
+}

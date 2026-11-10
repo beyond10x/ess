@@ -97,4 +97,4 @@ same way, `item.held == false`. Below `ess/27` both are refused, naming `ess/27`
 A condition reads only the event. A flag stored on another entity, such as an eligibility flag on
 the role a user was assigned, is not in the payload. Read it in the invoked command with a
 `when_related` guard over the row the event names, and let that command choose to do the work or
-to skip it. See [read stored state in the command a binding invokes](bindings-and-components.md#read-stored-state-in-the-command-a-binding-invokes).
+to skip it. See [read stored state in the command a binding invokes](binding-stored-state.md).

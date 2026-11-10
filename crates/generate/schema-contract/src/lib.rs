@@ -5,6 +5,7 @@
 //! reaches a network, reads a clock, or treats generated output as a second contract.
 
 pub mod bundle;
+pub mod date_time;
 pub mod realize;
 pub mod typescript;
 pub mod validate;

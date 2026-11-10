@@ -753,6 +753,7 @@ dependencies = [
  "ess-ui",
  "ess-ui-check",
  "jsonschema",
+ "schema-contract",
  "serde",
  "serde_json",
  "time",

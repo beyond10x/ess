@@ -11,7 +11,7 @@ use ratatui::buffer::Buffer;
 use ratatui::style::Modifier;
 use ratatui::Terminal;
 
-const DOC: &str = r#"
+const DOC: &str = r"
 format: ess-ui/1
 app: t
 model: t.system
@@ -47,7 +47,7 @@ pages:
         fields:
           - {field: state, as: badge, tone_by: run_state}
           - {field: title}
-"#;
+";
 
 const DATA: &str = r"
 views:
