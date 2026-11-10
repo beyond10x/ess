@@ -9,8 +9,8 @@ use std::fmt;
 
 use crate::model::{
     Action, ActionConfirm, Body, Columns, Composite, Document, Field, FormGroup, Guard, Header,
-    Help, HostSlot, LayoutColumn, NavSection, Node, Overlay, Page, PageKind, PageLayout, Primitive,
-    Reads, Region, Section, Shell, State, Tab, TabFields, TabForm, Widget,
+    Help, HostSlot, LayoutColumn, Metric, MetricFormat, NavSection, Node, Overlay, Page, PageKind,
+    PageLayout, Primitive, Reads, Region, Section, Shell, State, Tab, TabFields, TabForm, Widget,
 };
 use crate::LoadError;
 
@@ -436,6 +436,7 @@ pub(crate) fn check(document: &Document) -> Result<(), LoadError> {
             }
             NodeRef::Field(field) => {
                 check_unit(&located.path, field)?;
+                check_scale(&located.path, field)?;
                 None
             }
             NodeRef::Section(section) => Some(&section.body),
@@ -444,6 +445,9 @@ pub(crate) fn check(document: &Document) -> Result<(), LoadError> {
             _ => None,
         };
         if let Some(Body::Composite(composite)) = body {
+            if let Composite::Metric(metric) = composite {
+                check_metric_format(&located.path, metric)?;
+            }
             if let Some((key, reads)) = composite_reads(composite) {
                 check_reads(&located.path.child(key), reads)?;
             }
@@ -494,6 +498,61 @@ fn check_unit(path: &NodePath, field: &Field) -> Result<(), LoadError> {
             ),
         )),
     }
+}
+
+/// A `scale` is what an `as: percent` value is a share of, so a field that is no percent refuses
+/// one, as [`check_unit`] does a unit. An `UNMAPPED:` `as` keeps it.
+fn check_scale(path: &NodePath, field: &Field) -> Result<(), LoadError> {
+    let Some(scale) = &field.scale else {
+        return Ok(());
+    };
+    match field.field_as.as_deref() {
+        Some("percent") => Ok(()),
+        Some(marker) if marker.starts_with("UNMAPPED: ") => Ok(()),
+        other => Err(LoadError::new(
+            path.child("scale"),
+            format!(
+                "`scale: {}` is what the value of an `as: percent` field is a share of, and this \
+                 field is `as: {}`",
+                scale.as_str(),
+                other.unwrap_or("text")
+            ),
+        )),
+    }
+}
+
+/// A metric's `unit` counts a `format: duration` value and its `scale` a `format: percent`
+/// one; with another format they refuse. An unmapped format keeps them.
+fn check_metric_format(path: &NodePath, metric: &Metric) -> Result<(), LoadError> {
+    let refuse =
+        |key: &str, written: &str, wants: &str| {
+            Err(LoadError::new(
+                path.child(key),
+                format!(
+                "`{key}: {written}` is only for a metric with `format: {wants}`, and this metric \
+                 is `format: {}`",
+                metric.format.as_ref().map_or("number", |format| match format {
+                    MetricFormat::Number => "number",
+                    MetricFormat::Duration => "duration",
+                    MetricFormat::Percent => "percent",
+                    MetricFormat::Bytes => "bytes",
+                    MetricFormat::Unmapped(marker) => marker.0.as_str(),
+                })
+            ),
+            ))
+        };
+    let unmapped = matches!(metric.format, Some(MetricFormat::Unmapped(_)));
+    if let Some(unit) = &metric.unit {
+        if !unmapped && metric.format != Some(MetricFormat::Duration) {
+            return refuse("unit", unit.as_str(), "duration");
+        }
+    }
+    if let Some(scale) = &metric.scale {
+        if !unmapped && metric.format != Some(MetricFormat::Percent) {
+            return refuse("scale", scale.as_str(), "percent");
+        }
+    }
+    Ok(())
 }
 
 /// `NodePath.syntax.segment_pattern`; `tests/schema.rs` holds this text to the schema's.

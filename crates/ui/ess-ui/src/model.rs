@@ -1857,6 +1857,10 @@ pub struct Metric {
     pub window: Option<String>,
     /// Display format.
     pub format: Option<MetricFormat>,
+    /// What a `format: duration` value counts; seconds when not written.
+    pub unit: Option<DurationUnit>,
+    /// What a `format: percent` value is a share of; a fraction when not written.
+    pub scale: Option<PercentScale>,
     /// Caption.
     pub label: Option<String>,
     /// Computes the value over every row of the read instead of reading one.
@@ -2383,6 +2387,8 @@ pub struct Field {
     pub field_as: Option<String>,
     /// What an `as: duration` value counts; milliseconds when not written.
     pub unit: Option<DurationUnit>,
+    /// What an `as: percent` value is a share of; a fraction when not written.
+    pub scale: Option<PercentScale>,
     /// The choice composite for `as: choice`.
     pub choice: Option<Box<Node>>,
     /// Column can sort.
@@ -2452,8 +2458,16 @@ impl Field {
     pub fn duration_unit(&self) -> DurationUnit {
         match self.unit {
             Some(DurationUnit::S) => DurationUnit::S,
+            Some(DurationUnit::M) => DurationUnit::M,
+            Some(DurationUnit::H) => DurationUnit::H,
             _ => DurationUnit::Ms,
         }
+    }
+
+    /// The scale an `as: percent` value has: its `scale`, else a fraction. An unmapped scale is
+    /// treated as absent.
+    pub fn percent_scale(&self) -> PercentScale {
+        self.scale.clone().unwrap_or(PercentScale::Fraction).known()
     }
 
     /// The label a column or record shows for `value`: the field's own `labels` first, then the
@@ -2501,6 +2515,10 @@ pub enum DurationUnit {
     Ms,
     /// Seconds.
     S,
+    /// Minutes.
+    M,
+    /// Hours.
+    H,
     /// A value a retrofit could not determine (`unmapped_marker`).
     Unmapped(UnmappedMarker),
 }
@@ -2511,6 +2529,8 @@ impl DurationUnit {
         match self {
             Self::Ms => "ms",
             Self::S => "s",
+            Self::M => "m",
+            Self::H => "h",
             Self::Unmapped(marker) => &marker.0,
         }
     }
@@ -2523,25 +2543,86 @@ impl<'de> Deserialize<'de> for DurationUnit {
             type Value = DurationUnit;
 
             fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                formatter.write_str("a duration unit: `ms` or `s`")
+                formatter.write_str("a duration unit: `ms`, `s`, `m` or `h`")
             }
 
             fn visit_str<E: serde::de::Error>(self, text: &str) -> Result<DurationUnit, E> {
                 match text {
                     "ms" => Ok(DurationUnit::Ms),
                     "s" => Ok(DurationUnit::S),
+                    "m" => Ok(DurationUnit::M),
+                    "h" => Ok(DurationUnit::H),
                     _ => match text.strip_prefix(UNMAPPED_PREFIX) {
                         Some(reason) if !reason.is_empty() => {
                             Ok(DurationUnit::Unmapped(UnmappedMarker(text.to_owned())))
                         }
                         _ => Err(E::custom(format!(
-                            "`{text}` is no duration unit: `unit` is `ms` or `s`"
+                            "`{text}` is no duration unit: `unit` is `ms`, `s`, `m` or `h`"
                         ))),
                     },
                 }
             }
         }
         deserializer.deserialize_str(Unit)
+    }
+}
+
+/// What a `percent` value is a share of (`scale` on a field or a metric).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PercentScale {
+    /// A fraction of one: 0.5 is 50%.
+    Fraction,
+    /// Hundredths: 50 is 50%.
+    Hundredths,
+    /// A value a retrofit could not determine (`unmapped_marker`).
+    Unmapped(UnmappedMarker),
+}
+
+impl PercentScale {
+    /// The scale as the document spells it.
+    pub fn as_str(&self) -> &str {
+        match self {
+            Self::Fraction => "fraction",
+            Self::Hundredths => "hundredths",
+            Self::Unmapped(marker) => &marker.0,
+        }
+    }
+
+    /// The scale, with an unmapped one read as a fraction.
+    pub fn known(self) -> Self {
+        match self {
+            Self::Unmapped(_) => Self::Fraction,
+            other => other,
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for PercentScale {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct Scale;
+        impl serde::de::Visitor<'_> for Scale {
+            type Value = PercentScale;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                formatter.write_str("a percent scale: `fraction` or `hundredths`")
+            }
+
+            fn visit_str<E: serde::de::Error>(self, text: &str) -> Result<PercentScale, E> {
+                match text {
+                    "fraction" => Ok(PercentScale::Fraction),
+                    "hundredths" => Ok(PercentScale::Hundredths),
+                    _ => match text.strip_prefix(UNMAPPED_PREFIX) {
+                        Some(reason) if !reason.is_empty() => {
+                            Ok(PercentScale::Unmapped(UnmappedMarker(text.to_owned())))
+                        }
+                        _ => Err(E::custom(format!(
+                            "`{text}` is no percent scale: `scale` is `fraction` or `hundredths`"
+                        ))),
+                    },
+                }
+            }
+        }
+        deserializer.deserialize_str(Scale)
     }
 }
 
