@@ -191,6 +191,7 @@ impl AdmittedSuite {
 const ROOT_OPTIONAL: [&str; 3] = ["coverage", "events", "one_time_response"];
 const SCENARIO_OPTIONAL: [&str; 3] = ["one_time_response", "absent_events", "unpublished_events"];
 
+#[allow(clippy::too_many_lines)]
 fn validate_suite(value: &Json) -> Result<(), AdmissionError> {
     let root = value.closed(&["provenance", "scenarios"], &ROOT_OPTIONAL)?;
     let p = root["provenance"].closed(

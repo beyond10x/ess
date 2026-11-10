@@ -68,10 +68,10 @@ fn ir(text: &str) -> EssIr {
 }
 
 fn witness_of(step: &ScenarioStep) -> Option<ScenarioValue> {
-    let expectation = match step {
-        ScenarioStep::ExpectView { expectation, .. }
-        | ScenarioStep::EventuallyView { expectation, .. } => expectation,
-        _ => return None,
+    let (ScenarioStep::ExpectView { expectation, .. }
+    | ScenarioStep::EventuallyView { expectation, .. }) = step
+    else {
+        return None;
     };
     let ViewExpectation::ValueInvariants(observed) = expectation else {
         return None;
