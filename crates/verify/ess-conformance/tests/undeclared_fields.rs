@@ -612,7 +612,8 @@ fn a_reader_of_48_refuses_a_later_major_by_version() {
     // wrapped value-invariant and await major above that (beyond10x/ess#542), `/54` the view-reference
     // major above that (beyond10x/ess#564), `/56` the one-time reader major above that
     // (beyond10x/ess#614), `/58` the exact-Decimal major above that, `/60` the provided-row major
-    // above that, `/62` the response member-path major above that; `/64` is the first no reader
+    // above that, `/62` the response member-path major above that, `/64` the pair opened for the
+    // epic's constructs above that; `/66` is the first no reader
     // implements.
     assert!(AdmittedSuite::from_json(&relabelled(&suite, 50)).is_ok());
     assert!(AdmittedSuite::from_json(&relabelled(&suite, 52)).is_ok());
@@ -621,8 +622,9 @@ fn a_reader_of_48_refuses_a_later_major_by_version() {
     assert!(AdmittedSuite::from_json(&relabelled(&suite, 58)).is_ok());
     assert!(AdmittedSuite::from_json(&relabelled(&suite, 60)).is_ok());
     assert!(AdmittedSuite::from_json(&relabelled(&suite, 62)).is_ok());
-    let Err(error) = AdmittedSuite::from_json(&relabelled(&suite, 64)) else {
-        panic!("no reader implements suite/64");
+    assert!(AdmittedSuite::from_json(&relabelled(&suite, 64)).is_ok());
+    let Err(error) = AdmittedSuite::from_json(&relabelled(&suite, 66)) else {
+        panic!("no reader implements suite/66");
     };
     assert!(
         error
@@ -760,13 +762,13 @@ fn an_older_go_reader_refuses_a_suite_48_by_version() {
     let runtime = directory.join("essconform/runtime.go");
     let text = std::fs::read_to_string(&runtime).unwrap();
     assert!(
-        text.contains("const newestSuiteMajor = 63\n"),
+        text.contains("const newestSuiteMajor = 65\n"),
         "the runtime reads /53"
     );
     std::fs::write(
         &runtime,
         text.replace(
-            "const newestSuiteMajor = 63\n",
+            "const newestSuiteMajor = 65\n",
             "const newestSuiteMajor = 47\n",
         ),
     )
