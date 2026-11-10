@@ -76,7 +76,7 @@ export function ConfirmView(props: {
         </button>
         <button
           type="button"
-          className={`ui-button ${props.danger === false ? "ui-tone-primary" : "ui-tone-danger"}`}
+          className={`ui-button ${props.danger === false ? "ui-emphasis-primary" : "ui-emphasis-danger"}`}
           disabled={blocked}
           onClick={() => {
             // The action that opened this confirm runs, once; the confirm's own `does` runs too

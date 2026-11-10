@@ -97,7 +97,7 @@ fn an_inline_confirm_is_addressed_under_its_row_and_confirming_runs_the_action()
     let at = format!("[data-ui-path=\"{CONFIRM}\"]");
     for wanted in [
         format!("await expect(page.locator('{at}')).toContainText(\"Remove thing\");"),
-        format!("await page.locator('{at} button.ui-tone-danger, {at} button.ui-tone-primary').last().click();"),
+        format!("await page.locator('{at} button.ui-emphasis-danger, {at} button.ui-emphasis-primary').last().click();"),
     ] {
         assert!(spec.contains(&wanted), "{wanted}\n\n{spec}");
     }
