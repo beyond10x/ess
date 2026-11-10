@@ -841,6 +841,21 @@ impl fmt::Display for Refusal {
                     self.subject
                 )
             }
+            // The scenario exists; a later key of a view's order is not pinned by a tie in it
+            // (beyond10x/ess#708).
+            Some(id)
+                if self.stands
+                    && matches!(&self.cause, RefusalCause::NoWitness(gap)
+                        if ordered_head::tie_gap(gap.reason)) =>
+            {
+                writeln!(
+                    f,
+                    "refusal[{}]: {} has a scenario `{id}` that leaves a key of a view's order \
+                     unpinned by a tie",
+                    self.code(),
+                    self.subject
+                )
+            }
             // The scenario exists; a held state its refusal claims has no row in it (ess/23,
             // beyond10x/ess#461).
             Some(id) if self.stands => writeln!(
@@ -1851,6 +1866,10 @@ impl fmt::Display for RefusalCause {
             }
             Self::NoWitness(gap) if gap.type_ref == self_admission::SELF_ADMISSION => {
                 f.write_str(&self_admission::line(&gap.path))
+            }
+            Self::NoWitness(gap) if ordered_head::tie_gap(gap.reason) => {
+                let (view, key) = gap.path.split_once(": ").unwrap_or((&gap.path, ""));
+                write!(f, "the order of `{view}` by `{key}` {}", gap.reason)
             }
             Self::NoWitness(gap) => write!(f, "no witness: {gap}"),
             Self::GuardUnevaluable(refusal) => write!(f, "{refusal}"),
@@ -10917,6 +10936,7 @@ fn arrange_ranked(
 ///
 /// A key no tie reaches is a standing gap beside the scenario, named by the view and the key
 /// ([`ordered_head::tie_gap`]); the scenario stays as it was.
+#[allow(clippy::too_many_lines)]
 fn arrange_ties(
     beside: &Beside<'_>,
     view: &ResolvedView,
@@ -10931,13 +10951,16 @@ fn arrange_ties(
         settled.get(key)?.value.as_literal().cloned()
     };
     let shown = |row: &Arrangement| row.shows(ir, view, params) == Ok(true);
+    let base_row = if admits_subject {
+        None
+    } else {
+        companions.iter().find(|row| shown(row))
+    };
+    let base_instance = base_row.map(|row| row.instance.clone());
     let base = if admits_subject {
         Some(beside.settled.clone())
     } else {
-        companions
-            .iter()
-            .find(|row| shown(row))
-            .map(|row| row.settled.clone())
+        base_row.map(|row| row.settled.clone())
     };
     let compared = |field: &str, op: CompareOp, value: &Node| {
         Some(Predicate::Compare {
@@ -10956,7 +10979,7 @@ fn arrange_ties(
             Refusal::beside(
                 id,
                 RefusalCause::NoWitness(WitnessGap {
-                    path: format!("{}: `{key}`", view.name),
+                    path: format!("{}: {key}", view.name),
                     type_ref: "ranked view".into(),
                     reason,
                 }),
@@ -10981,6 +11004,7 @@ fn arrange_ties(
         };
         let accept = |row: &Arrangement| {
             shown(row)
+                && base_instance.as_ref() != Some(&row.instance)
                 && pins
                     .iter()
                     .all(|(field, value)| key_of(&row.settled, field).as_ref() == Some(value))
