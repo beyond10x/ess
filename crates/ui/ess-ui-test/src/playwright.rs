@@ -557,7 +557,18 @@ fn emit_step(
                 "await page.locator('{} button.ui-sort').click();",
                 selector(at)
             )],
-            _ => vec![format!("await {}.click();", locator(at))],
+            _ => match graph_menu_row(at) {
+                // A graph editor's node or edge action lives in the menu of its row: open the menu
+                // unless it is open, then choose.
+                Some((class, row)) => vec![
+                    format!(
+                        "{{ const menu = page.locator('.{class}{} .ui-graph-menu').first(); if ((await menu.getAttribute(\"aria-expanded\")) !== \"true\") {{ await menu.click(); }} }}",
+                        selector(&row)
+                    ),
+                    format!("await {}.click();", locator(at)),
+                ],
+                None => vec![format!("await {}.click();", locator(at))],
+            },
         },
         Step::Page { at, to } => {
             // `to` is absolute: back to page 1 from wherever the pager is, then forward. Each click
@@ -769,6 +780,18 @@ fn node_kind(document: &Document, at: &str) -> Kind {
             NodeRef::Overlay(_) => Kind::Overlay,
             _ => Kind::Other,
         })
+}
+
+/// The row path of a graph editor action path, `<editor>/rows/<key>/node_actions/<name>` or
+/// `…/edge_actions/<name>`: the row whose menu lists the action. `None` for any other path.
+fn graph_menu_row(at: &str) -> Option<(&'static str, String)> {
+    let segments: Vec<&str> = at.split('/').collect();
+    let index = segments.iter().position(|segment| *segment == "rows")?;
+    match segments.get(index + 2..)? {
+        ["node_actions", _] => Some(("ui-graph-node", segments[..index + 2].join("/"))),
+        ["edge_actions", _] => Some(("ui-graph-edge", segments[..index + 2].join("/"))),
+        _ => None,
+    }
 }
 
 /// The collection and the row path of a path inside a row: `<collection>/rows/<key>/…`.

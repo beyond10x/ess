@@ -1,9 +1,122 @@
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { useUiPath } from "../core";
 import { ActionControl, type ActionSpec } from "../actions";
 import { RowPath, ScopeLayer, display, rowKey, useData, useFramePath, useScope } from "../core";
 import { filterRead, useRead, type ReadSpec } from "../data";
 import { isObject, type Json } from "../json";
+
+const NODE_WIDTH = 160;
+const NODE_HEIGHT = 64;
+const GAP_X = 72;
+const GAP_Y = 24;
+const MARGIN = 32;
+
+/**
+ * The context menu of a node or an edge: one control that lists `actions` when it is opened by a
+ * click or by the context-menu key. A closed menu draws none of them. An item keeps the path of
+ * its action, so a step addresses it as it addresses the action elsewhere.
+ */
+function ActionMenu(props: { actions: ActionSpec[] }): ReactNode {
+  const [open, setOpen] = useState(false);
+  if (props.actions.length === 0) {
+    return null;
+  }
+  return (
+    <span
+      style={{ position: "relative" }}
+      onKeyDown={(event: { key: string }) => {
+        if (event.key === "Escape") {
+          setOpen(false);
+        }
+      }}
+    >
+      <button
+        type="button"
+        className="ui-button ui-icon-button ui-graph-menu"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label="Actions"
+        title="Actions"
+        onClick={() => setOpen(!open)}
+        onContextMenu={(event: { preventDefault(): void }) => {
+          event.preventDefault();
+          setOpen(!open);
+        }}
+      >
+        {"⋯"}
+      </button>
+      {open ? (
+        <ul className="ui-menu" role="menu">
+          {props.actions.map((action) => (
+            <li key={action.name} role="none">
+              <ActionControl action={action.as === undefined || action.as === "button" ? { ...action, as: "menu_item" } : action} />
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </span>
+  );
+}
+
+/**
+ * Layers by the longest path from the nodes no edge enters, an edge that closes a cycle (taken in
+ * row order) left out. Each layer lists its nodes in row order, so the same rows give the same place.
+ */
+function layout(keys: string[], ends: Array<[string, string]>): Map<string, { layer: number; slot: number }> {
+  const known = new Set(keys);
+  const next = new Map<string, string[]>(keys.map((key) => [key, []]));
+  const before = new Map<string, string[]>(keys.map((key) => [key, []]));
+  const out = new Map<string, string[]>(keys.map((key) => [key, []]));
+  const entered = new Set<string>();
+  for (const [from, to] of ends) {
+    if (known.has(from) && known.has(to) && from !== to) {
+      out.get(from)?.push(to);
+      entered.add(to);
+    }
+  }
+  // A depth-first walk from the nodes no edge enters, in row order, then from any node left (a
+  // cycle nothing leads into): an edge to a node still on the walk closes a cycle and is left out.
+  const state = new Map<string, "open" | "done">();
+  const walk = (key: string): void => {
+    state.set(key, "open");
+    for (const to of out.get(key) ?? []) {
+      const seen = state.get(to);
+      if (seen === "open") {
+        continue;
+      }
+      next.get(key)?.push(to);
+      before.get(to)?.push(key);
+      if (seen === undefined) {
+        walk(to);
+      }
+    }
+    state.set(key, "done");
+  };
+  for (const key of keys.filter((k) => !entered.has(k)).concat(keys)) {
+    if (!state.has(key)) {
+      walk(key);
+    }
+  }
+  const layers = new Map<string, number>();
+  const layerOf = (key: string): number => {
+    const found = layers.get(key);
+    if (found !== undefined) {
+      return found;
+    }
+    const layer = Math.max(-1, ...(before.get(key) ?? []).map(layerOf)) + 1;
+    layers.set(key, layer);
+    return layer;
+  };
+  const filled = new Map<number, number>();
+  const placed = new Map<string, { layer: number; slot: number }>();
+  for (const key of keys) {
+    const layer = layerOf(key);
+    const slot = filled.get(layer) ?? 0;
+    filled.set(layer, slot + 1);
+    placed.set(key, { layer, slot });
+  }
+  return placed;
+}
 
 /**
  * A graph of nodes and edges, edited as a whole. The nodes are the rows of `reads`; the edges
@@ -50,39 +163,122 @@ export function GraphEditorView(props: {
     const found = byKey.get(key);
     return found === undefined ? key : label(found);
   };
+  const keys = nodes.map(nodeKey);
+  const endKeys = (row: Json): [string, string] => [
+    String(display(row, edgeSpec?.from ?? "from")),
+    String(display(row, edgeSpec?.to ?? "to")),
+  ];
+  const placed = layout(keys, edges.map(endKeys));
+  const place = (key: string) => {
+    const at = placed.get(key) ?? { layer: 0, slot: 0 };
+    return { x: MARGIN + at.layer * (NODE_WIDTH + GAP_X), y: MARGIN + at.slot * (NODE_HEIGHT + GAP_Y), layer: at.layer };
+  };
+  const layerCount = Math.max(0, ...[...placed.values()].map((at) => at.layer + 1));
+  const slotCount = Math.max(0, ...[...placed.values()].map((at) => at.slot + 1));
+  const width = 2 * MARGIN + layerCount * NODE_WIDTH + Math.max(0, layerCount - 1) * GAP_X;
+  const height = 2 * MARGIN + slotCount * NODE_HEIGHT + Math.max(0, slotCount - 1) * GAP_Y;
+  const lines = edges.flatMap((row) => {
+    const [from, to] = endKeys(row);
+    if (!placed.has(from) || !placed.has(to)) {
+      return [];
+    }
+    const p = place(from);
+    const q = place(to);
+    let x1 = p.x + NODE_WIDTH / 2;
+    let x2 = q.x + NODE_WIDTH / 2;
+    let y1 = p.y + NODE_HEIGHT / 2;
+    let y2 = q.y + NODE_HEIGHT / 2;
+    if (q.layer > p.layer) {
+      x1 = p.x + NODE_WIDTH;
+      x2 = q.x;
+    } else if (q.layer < p.layer) {
+      x1 = p.x;
+      x2 = q.x + NODE_WIDTH;
+    } else {
+      y1 = q.y > p.y ? p.y + NODE_HEIGHT : p.y;
+      y2 = q.y > p.y ? q.y : q.y + NODE_HEIGHT;
+    }
+    return [{ row, x1, y1, x2, y2, again: from === to }];
+  });
   return (
     <div className="ui-graph" data-ui-path={useUiPath(props["data-ui-path"])}>
       {props.toolbar ? <div className="ui-toolbar">{props.toolbar}</div> : null}
-      <ul className="ui-graph-nodes">
-        {nodes.map((row) => (
-          <ScopeLayer key={nodeKey(row)} values={{ row }}>
-            <RowPath container={container ?? ""} rowKey={nodeKey(row)}>
-            <li
-              data-ui-path={rowPath(nodeKey(row))}
-              className={`ui-graph-node ui-kind-${String(display(row, kindField))}`}
-              onDoubleClick={() => props.nodes?.opens && scope.open(props.nodes.opens, isObject(row) ? { ...row } : {})}
-            >
-              <strong>{label(row)}</strong>
-              {props.nodes?.kindBy !== undefined || props.nodes === undefined ? <span className="ui-note">{String(display(row, kindField))}</span> : null}
-              {(props.nodeActions ?? []).map((action) => (
-                <ActionControl key={action.name} action={action} />
-              ))}
-            </li>
-            </RowPath>
-          </ScopeLayer>
-        ))}
-      </ul>
+      <div className="ui-graph-canvas" style={{ position: "relative", width, height, maxWidth: "100%", overflow: "auto" }}>
+        <svg
+          className="ui-graph-lines"
+          aria-hidden="true"
+          width={width}
+          height={height}
+          style={{ position: "absolute", left: 0, top: 0, pointerEvents: "none" }}
+        >
+          <defs>
+            <marker id="ui-graph-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+              <path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor" />
+            </marker>
+          </defs>
+          {lines.map(({ row, x1, y1, x2, y2, again }) => (
+            <g key={rowKey(row)}>
+              {again ? (
+                <path
+                  d={`M ${x1 - 16} ${y1 - NODE_HEIGHT / 2} C ${x1 - 28} ${y1 - NODE_HEIGHT / 2 - 18} ${x1 + 28} ${y1 - NODE_HEIGHT / 2 - 18} ${x1 + 16} ${y1 - NODE_HEIGHT / 2}`}
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth={1.5}
+                  markerEnd="url(#ui-graph-arrow)"
+                />
+              ) : (
+                <line x1={x1} y1={y1} x2={x2} y2={y2} stroke="currentColor" strokeWidth={1.5} markerEnd="url(#ui-graph-arrow)" />
+              )}
+              {edgeSpec?.kindBy ? (
+                <text
+                  x={(x1 + x2) / 2}
+                  y={again ? y1 - NODE_HEIGHT / 2 - 22 : (y1 + y2) / 2 - 4}
+                  textAnchor="middle"
+                  fontSize={12}
+                  fill="currentColor"
+                >
+                  {String(display(row, edgeSpec.kindBy))}
+                </text>
+              ) : null}
+            </g>
+          ))}
+        </svg>
+        <ul className="ui-graph-nodes" style={{ position: "relative", display: "block", margin: 0, padding: 0, width, height }}>
+          {nodes.map((row) => (
+            <ScopeLayer key={nodeKey(row)} values={{ row }}>
+              <RowPath container={container ?? ""} rowKey={nodeKey(row)}>
+                <li
+                  data-ui-path={rowPath(nodeKey(row))}
+                  className={`ui-graph-node ui-kind-${String(display(row, kindField))}`}
+                  style={{
+                    position: "absolute",
+                    left: place(nodeKey(row)).x,
+                    top: place(nodeKey(row)).y,
+                    width: NODE_WIDTH,
+                    height: NODE_HEIGHT,
+                    boxSizing: "border-box",
+                    background: "var(--ui-surface)",
+                  }}
+                  onDoubleClick={() => props.nodes?.opens && scope.open(props.nodes.opens, isObject(row) ? { ...row } : {})}
+                >
+                  <strong>{label(row)}</strong>
+                  {props.nodes?.kindBy !== undefined || props.nodes === undefined ? <span className="ui-note">{String(display(row, kindField))}</span> : null}
+                  <ActionMenu actions={props.nodeActions ?? []} />
+                </li>
+              </RowPath>
+            </ScopeLayer>
+          ))}
+        </ul>
+      </div>
       <ul className="ui-graph-edges">
         {edges.map((row) => (
           <ScopeLayer key={rowKey(row)} values={{ row }}>
             <RowPath container={container ?? ""} rowKey={rowKey(row)}>
-            <li className="ui-graph-edge" data-ui-path={rowPath(rowKey(row))}>
-              {end(row, edgeSpec?.from ?? "from")} → {end(row, edgeSpec?.to ?? "to")}
-              {edgeSpec?.kindBy ? <span className="ui-badge">{String(display(row, edgeSpec.kindBy))}</span> : null}
-              {(props.edgeActions ?? []).map((action) => (
-                <ActionControl key={action.name} action={action} />
-              ))}
-            </li>
+              <li className="ui-graph-edge" data-ui-path={rowPath(rowKey(row))}>
+                {end(row, edgeSpec?.from ?? "from")} → {end(row, edgeSpec?.to ?? "to")}
+                {edgeSpec?.kindBy ? <span className="ui-badge">{String(display(row, edgeSpec.kindBy))}</span> : null}
+                <ActionMenu actions={props.edgeActions ?? []} />
+              </li>
             </RowPath>
           </ScopeLayer>
         ))}

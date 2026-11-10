@@ -98,6 +98,11 @@ fn a_node_actions_confirm_is_addressed_under_its_node_and_confirming_runs_the_ac
         "{spec}"
     );
     assert!(!spec.contains("test.fixme"), "{spec}");
+    let row = "[data-ui-path=\"pages/steps.map/sections/editor/rows/s-2\"] .ui-graph-menu";
+    assert!(
+        spec.contains(row),
+        "the node's menu is opened before its action is chosen:\n{spec}"
+    );
 }
 
 #[test]
