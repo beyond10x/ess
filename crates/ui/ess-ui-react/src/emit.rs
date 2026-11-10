@@ -935,6 +935,14 @@ impl<'d> Gen<'d> {
                     .filter(|unit| !matches!(unit, ess_ui::DurationUnit::Unmapped(_)))
                     .map(|unit| ts::string(unit.as_str())),
             ),
+            (
+                "scale",
+                field
+                    .scale
+                    .as_ref()
+                    .filter(|scale| !matches!(scale, ess_ui::PercentScale::Unmapped(_)))
+                    .map(|scale| ts::string(scale.as_str())),
+            ),
             ("sortable", field.sortable.then(|| "true".to_owned())),
             ("visible", expr(field.visible.as_ref())),
             ("binds", expr(field.binds.as_ref())),
@@ -1643,6 +1651,20 @@ impl<'d> Gen<'d> {
                     .opt(
                         "format",
                         m.format.as_ref().and_then(variant).map(|f| ts::string(&f)),
+                    )
+                    .opt(
+                        "unit",
+                        m.unit
+                            .as_ref()
+                            .filter(|unit| !matches!(unit, ess_ui::DurationUnit::Unmapped(_)))
+                            .map(|unit| ts::string(unit.as_str())),
+                    )
+                    .opt(
+                        "scale",
+                        m.scale
+                            .as_ref()
+                            .filter(|scale| !matches!(scale, ess_ui::PercentScale::Unmapped(_)))
+                            .map(|scale| ts::string(scale.as_str())),
                     )
                     .opt("label", quoted(m.label.as_ref()))
                     .opt(

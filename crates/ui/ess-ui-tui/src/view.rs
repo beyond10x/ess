@@ -1678,12 +1678,30 @@ fn cell_value(field: &Field, value: &Value) -> String {
         Some("secret") => "•".repeat(display(value).chars().count()),
         Some("choice") => format!("‹{}›", display(value)),
         Some("toggle") => if truthy(value) { "[x]" } else { "[ ]" }.into(),
-        Some("time") => {
-            let text = display(value);
-            text.split_once('T').map_or(text.clone(), |(_, time)| {
-                time.trim_end_matches('Z').chars().take(5).collect()
-            })
-        }
+        Some("time") => match instant(value) {
+            Some(at) => format!("{:02}:{:02}", at.hour, at.minute),
+            None => {
+                let text = display(value);
+                text.split_once('T').map_or(text.clone(), |(_, time)| {
+                    time.trim_end_matches('Z').chars().take(5).collect()
+                })
+            }
+        },
+        Some("timestamp") => match instant(value) {
+            Some(at) => format!(
+                "{:04}-{:02}-{:02} {:02}:{:02}",
+                at.year, at.month, at.day, at.hour, at.minute
+            ),
+            None => display(value),
+        },
+        Some("date") => match instant(value) {
+            Some(at) => format!("{:04}-{:02}-{:02}", at.year, at.month, at.day),
+            None => display(value),
+        },
+        Some("percent") => value.as_f64().map_or_else(
+            || display(value),
+            |number| percent(number, &field.percent_scale()),
+        ),
         Some("json") => ess_yaml::to_string(value)
             .map(|text| text.replace('\n', " ").trim().to_owned())
             .unwrap_or_default(),
@@ -1705,6 +1723,8 @@ fn duration(count: f64, unit: &ess_ui::DurationUnit) -> String {
     }
     let millis = match unit {
         ess_ui::DurationUnit::S => count * 1000.0,
+        ess_ui::DurationUnit::M => count * 60_000.0,
+        ess_ui::DurationUnit::H => count * 3_600_000.0,
         _ => count,
     };
     #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
@@ -1717,6 +1737,133 @@ fn duration(count: f64, unit: &ess_ui::DurationUnit) -> String {
         seconds / 60 % 60,
         seconds % 60
     )
+}
+
+/// A share on its `scale`, as a whole percent.
+fn percent(number: f64, scale: &ess_ui::PercentScale) -> String {
+    let shift = match scale {
+        ess_ui::PercentScale::Hundredths => 0,
+        _ => 2,
+    };
+    // At most one fraction digit, rounded half away from zero on the value's shortest decimal
+    // form, as the React target's `Intl` shows it.
+    let Some(tenths) = tenths_of(number, shift) else {
+        return format!("{:.1}%", number * 100.0);
+    };
+    let sign = if number < 0.0 && tenths > 0 { "-" } else { "" };
+    if tenths % 10 == 0 {
+        format!("{sign}{}%", tenths / 10)
+    } else {
+        format!("{sign}{}.{}%", tenths / 10, tenths % 10)
+    }
+}
+
+/// `number` times ten to the `shift`, in tenths of the magnitude, rounded half up on the shortest
+/// decimal form of `number`. `None` when that overflows.
+fn tenths_of(number: f64, shift: usize) -> Option<u128> {
+    if !number.is_finite() {
+        return None;
+    }
+    let text = format!("{}", number.abs());
+    let (whole, fraction) = text.split_once('.').unwrap_or((&text, ""));
+    // digits of the shifted value, with at least two places after the point
+    let mut digits = format!("{whole}{fraction}");
+    let point = whole.len() + shift;
+    while digits.len() < point + 2 {
+        digits.push('0');
+    }
+    let tenths: u128 = digits[..=point].parse().ok()?;
+    let next = digits.as_bytes()[point + 1] - b'0';
+    Some(tenths + u128::from(next >= 5))
+}
+
+/// An instant in UTC, to the minute.
+struct Instant {
+    year: i64,
+    month: i64,
+    day: i64,
+    hour: i64,
+    minute: i64,
+}
+
+/// The instant `value` holds: epoch milliseconds, or an ISO text (`2026-01-02T03:04:05+02:00`;
+/// no offset reads as UTC), in UTC as the React target shows it. `None` for anything else.
+fn instant(value: &Value) -> Option<Instant> {
+    let minutes = if let Some(millis) = value.as_f64() {
+        if !millis.is_finite() {
+            return None;
+        }
+        #[allow(clippy::cast_possible_truncation)]
+        // finite epoch milliseconds, floored to the minute
+        let minutes = (millis / 60_000.0).floor() as i64;
+        minutes
+    } else {
+        iso_minutes(&display(value))?
+    };
+    let days = minutes.div_euclid(1440);
+    let of_day = minutes.rem_euclid(1440);
+    // days to a civil date: the proleptic Gregorian calendar, March-based years.
+    let z = days + 719_468;
+    let era = z.div_euclid(146_097);
+    let day_of_era = z.rem_euclid(146_097);
+    let year_of_era =
+        (day_of_era - day_of_era / 1460 + day_of_era / 36_524 - day_of_era / 146_096) / 365;
+    let day_of_year = day_of_era - (365 * year_of_era + year_of_era / 4 - year_of_era / 100);
+    let shifted = (5 * day_of_year + 2) / 153;
+    let month = if shifted < 10 {
+        shifted + 3
+    } else {
+        shifted - 9
+    };
+    let year = year_of_era + era * 400 + i64::from(month <= 2);
+    Some(Instant {
+        year,
+        month,
+        day: day_of_year - (153 * shifted + 2) / 5 + 1,
+        hour: of_day / 60,
+        minute: of_day % 60,
+    })
+}
+
+/// The epoch minutes of an ISO date and time text, offset applied.
+fn iso_minutes(text: &str) -> Option<i64> {
+    let (date, rest) = text.split_once(['T', ' ']).unwrap_or((text, "00:00"));
+    let mut parts = date.splitn(3, '-');
+    let year: i64 = parts.next()?.parse().ok()?;
+    let month: i64 = parts.next()?.parse().ok()?;
+    let day: i64 = parts.next()?.parse().ok()?;
+    if !(1..=12).contains(&month) || !(1..=31).contains(&day) {
+        return None;
+    }
+    let (clock, offset) = match rest.find(['Z', 'z', '+', '-']) {
+        Some(at) => (&rest[..at], &rest[at..]),
+        None => (rest, ""),
+    };
+    let mut parts = clock.splitn(3, ':');
+    let hour: i64 = parts.next()?.parse().ok()?;
+    let minute: i64 = parts.next()?.parse().ok()?;
+    if hour > 23 || minute > 59 {
+        return None;
+    }
+    let offset_minutes = match offset.chars().next() {
+        Some('+' | '-') => {
+            let sign = if offset.starts_with('-') { -1 } else { 1 };
+            let digits: String = offset[1..].chars().filter(char::is_ascii_digit).collect();
+            if digits.len() != 4 {
+                return None;
+            }
+            sign * (digits[..2].parse::<i64>().ok()? * 60 + digits[2..].parse::<i64>().ok()?)
+        }
+        _ => 0,
+    };
+    // a civil date to days: the inverse of the conversion in `instant`.
+    let shifted_year = year - i64::from(month <= 2);
+    let era = shifted_year.div_euclid(400);
+    let year_of_era = shifted_year.rem_euclid(400);
+    let day_of_year = (153 * (if month > 2 { month - 3 } else { month + 9 }) + 2) / 5 + day - 1;
+    let day_of_era = year_of_era * 365 + year_of_era / 4 - year_of_era / 100 + day_of_year;
+    let days = era * 146_097 + day_of_era - 719_468;
+    Some(days * 1440 + hour * 60 + minute - offset_minutes)
 }
 
 /// A byte count scaled to B, KB, MB or GB in 1024 steps, with at most one decimal, as the React
@@ -2141,8 +2288,17 @@ impl App {
         }
         let shown = match (&metric.format, value.as_f64()) {
             (_, None) if value.is_null() => "–".to_owned(),
-            (Some(MetricFormat::Percent), Some(number)) => format!("{:.0}%", number * 100.0),
-            (Some(MetricFormat::Duration), Some(number)) => format!("{number}s"),
+            (Some(MetricFormat::Percent), Some(number)) => percent(
+                number,
+                &metric
+                    .scale
+                    .clone()
+                    .unwrap_or(ess_ui::PercentScale::Fraction),
+            ),
+            (Some(MetricFormat::Duration), Some(number)) => duration(
+                number,
+                metric.unit.as_ref().unwrap_or(&ess_ui::DurationUnit::S),
+            ),
             (Some(MetricFormat::Bytes), Some(number)) => bytes(number),
             _ => display(&value),
         };

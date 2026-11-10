@@ -1,0 +1,106 @@
+domain: example.review
+
+summary: A decision is recorded, goes stale, and a new decision confirms a stale one.
+
+types:
+  - {name: example.review.DecisionId, kind: newtype, of: String}
+
+entities:
+  - name: example.review.Decision
+    identity: {name: decision_id, type: example.review.DecisionId}
+    fields:
+      - {name: item, type: String}
+    lifecycle:
+      initial: Current
+      states: [Current, Stale]
+      terminal: [Stale]
+      transitions:
+        - {name: expire, from: [Current], to: Stale}
+
+actors:
+  - name: example.review.Reviewer
+    attributes: []
+    may:
+      - example.review.RecordDecision
+      - example.review.ExpireDecision
+      - example.review.ConfirmDecision
+      - example.review.Decisions
+    naming: {display: Reviewer}
+
+errors:
+  - {name: example.review.AlreadyExists, summary: A decision of that id exists already., fields: []}
+  - {name: example.review.UnknownDecision, summary: No decision of that id., fields: []}
+  - {name: example.review.NotCurrent, summary: The decision is not current., fields: []}
+  - {name: example.review.Missing, summary: The confirmed decision does not exist., fields: []}
+  - {name: example.review.OtherItem, summary: The confirmed decision is about another item., fields: []}
+  - {name: example.review.NotStale, summary: The confirmed decision is not stale., fields: []}
+
+commands:
+  - name: example.review.RecordDecision
+    input:
+      - {name: decision_id, type: example.review.DecisionId}
+      - {name: item, type: String}
+    outcomes:
+      - {name: already-exists, existing_instance: true, error: example.review.AlreadyExists}
+      - name: recorded
+        creates: example.review.Decision
+        instance: decision_id
+        sets:
+          item: input.item
+        emits: [example.review.DecisionRecorded]
+        payload:
+          example.review.DecisionRecorded: {decision_id: input.decision_id}
+
+  - name: example.review.ExpireDecision
+    input:
+      - {name: decision_id, type: example.review.DecisionId}
+    outcomes:
+      - {name: unknown, unknown_instance: true, error: example.review.UnknownDecision}
+      - {name: not-current, wrong_state: true, error: example.review.NotCurrent}
+      - name: expired
+        moves: example.review.Decision.expire
+        instance: decision_id
+        emits: [example.review.DecisionExpired]
+        payload:
+          example.review.DecisionExpired: {decision_id: input.decision_id}
+
+  - name: example.review.ConfirmDecision
+    input:
+      - {name: decision_id, type: example.review.DecisionId}
+      - {name: confirms, type: example.review.DecisionId}
+      - {name: item, type: String}
+    outcomes:
+      - {name: already-exists, existing_instance: true, error: example.review.AlreadyExists}
+      - name: missing
+        when_related: {via: input.confirms, exists: false}
+        error: example.review.Missing
+      - name: other-item
+        when_related: {via: input.confirms, predicate: item != input.item}
+        error: example.review.OtherItem
+      - name: not-stale
+        when_related: {via: input.confirms, predicate: state != Stale}
+        error: example.review.NotStale
+      - name: confirmed
+        creates: example.review.Decision
+        instance: decision_id
+        sets:
+          item: input.item
+        emits: [example.review.DecisionRecorded]
+        payload:
+          example.review.DecisionRecorded: {decision_id: input.decision_id}
+
+events:
+  - name: example.review.DecisionRecorded
+    fields:
+      - {name: decision_id, type: example.review.DecisionId}
+  - name: example.review.DecisionExpired
+    fields:
+      - {name: decision_id, type: example.review.DecisionId}
+
+views:
+  - name: example.review.Decisions
+    source: example.review.Decision
+    consistency: read_your_writes
+    fields:
+      - {name: decision_id, type: example.review.DecisionId}
+      - {name: item, type: String}

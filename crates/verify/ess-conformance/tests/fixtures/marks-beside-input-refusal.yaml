@@ -1,0 +1,80 @@
+format: ess/29
+system: example
+version: v1
+domain: example.marks
+summary: A mark is recorded against a decision that must already exist, and one kind of mark is not permitted.
+types:
+  - {name: example.marks.MarkId, kind: newtype, of: Uuid}
+  - {name: example.marks.DecisionId, kind: newtype, of: Uuid}
+  - name: example.marks.Kind
+    kind: enum
+    variants:
+      - {name: Satisfied, wire: satisfied}
+      - {name: Unsupported, wire: unsupported}
+entities:
+  - name: example.marks.Decision
+    identity: {name: decision_id, type: example.marks.DecisionId}
+    fields: []
+    lifecycle: {initial: Live, states: [Live], terminal: [Live], transitions: []}
+  - name: example.marks.Mark
+    identity: {name: mark_id, type: example.marks.MarkId}
+    fields:
+      - {name: kind, type: example.marks.Kind}
+      - {name: decision, type: example.marks.DecisionId}
+    lifecycle: {initial: Live, states: [Live], terminal: [Live], transitions: []}
+    relations:
+      - {name: decided_by, kind: references, target: example.marks.Decision, cardinality: one, via: decision}
+errors:
+  - {name: example.marks.NotPermitted, summary: This kind of mark is not permitted., fields: []}
+  - {name: example.marks.Exists, summary: The row already exists., fields: []}
+  - {name: example.marks.NoDecision, summary: No such decision., fields: []}
+events:
+  - name: example.marks.DecisionRecorded
+    fields: [{name: decision_id, type: example.marks.DecisionId}]
+  - name: example.marks.MarkRecorded
+    fields: [{name: mark_id, type: example.marks.MarkId}]
+actors:
+  - name: example.marks.Clerk
+    may: [example.marks.RecordDecision, example.marks.RecordMark]
+commands:
+  - name: example.marks.RecordDecision
+    input:
+      - {name: decision_id, type: example.marks.DecisionId}
+    outcomes:
+      - {name: exists, existing_instance: true, error: example.marks.Exists}
+      - name: recorded
+        creates: example.marks.Decision
+        instance: decision_id
+        emits: [example.marks.DecisionRecorded]
+        payload: {example.marks.DecisionRecorded: {decision_id: input.decision_id}}
+  - name: example.marks.RecordMark
+    input:
+      - {name: mark_id, type: example.marks.MarkId}
+      - {name: kind, type: example.marks.Kind}
+      - {name: decision, type: example.marks.DecisionId}
+    outcomes:
+      - name: not-permitted
+        when: kind == Satisfied
+        error: example.marks.NotPermitted
+      - {name: exists, existing_instance: true, error: example.marks.Exists}
+      - name: no-decision
+        when_related: {via: input.decision, exists: false}
+        error: example.marks.NoDecision
+      - name: recorded
+        creates: example.marks.Mark
+        instance: mark_id
+        emits: [example.marks.MarkRecorded]
+        payload: {example.marks.MarkRecorded: {mark_id: input.mark_id}}
+        sets: {kind: input.kind, decision: input.decision}
+views:
+  - name: example.marks.Marks
+    source: example.marks.Mark
+    consistency: read_your_writes
+    fields:
+      - {name: mark_id, type: example.marks.MarkId}
+      - {name: kind, type: example.marks.Kind}
+  - name: example.marks.Decisions
+    source: example.marks.Decision
+    consistency: read_your_writes
+    fields:
+      - {name: decision_id, type: example.marks.DecisionId}
