@@ -31,7 +31,7 @@ use ess_domain::name::QualifiedName;
 use ess_primitives::node::Node;
 
 use super::super::{captured, row_set, BindingGap, Run};
-use super::{command_of, mapped_unchanged, payload_followed, Prepared};
+use super::{command_of, mapped_unchanged, payload_followed, stored_creation, Prepared};
 use crate::scenario::{ActorRef, CommandRef, InstanceName, ScenarioStep, ScenarioValue};
 
 /// The selections whose set guards decide `invoked`'s branch, where they alone decide it: every
@@ -85,7 +85,7 @@ pub(super) fn decided<'a>(
             outcome.error.is_none() && outcome.test_strategy != TestStrategy::InjectFault
         })
     };
-    let arranged = read_through(ir, binding, published_by, &selections).and_then(|read| {
+    let arranged = read_through(ir, binding, published_by, &selections, trigger).and_then(|read| {
         accepting()
             .find_map(|accepting| {
                 arranged_for(
@@ -114,18 +114,44 @@ pub(super) fn decided<'a>(
     }))
 }
 
-/// Each input the selectors read, with the trigger's input it is filled from: mapped from an event
-/// field the trigger fills from an input of its own, each step unconverted or across a conversion
-/// that hands the value on as it is. `None` where any is filled another way, or a selector reads
-/// a value of the invoked command's own payload.
+/// Where the value an input the selectors read is sent: an input of the trigger's own send, or an
+/// input of the step of the trigger's arrangement that created the trigger's row, which stores the
+/// field the event carries as `{subject: field}`.
+#[derive(Clone, Debug)]
+enum Sent {
+    Trigger(String),
+    Creator { step: usize, from: String },
+}
+
+impl Sent {
+    fn input(&self) -> &str {
+        match self {
+            Self::Trigger(from) | Self::Creator { from, .. } => from,
+        }
+    }
+
+    fn step(&self) -> Option<usize> {
+        match self {
+            Self::Trigger(_) => None,
+            Self::Creator { step, .. } => Some(*step),
+        }
+    }
+}
+
+/// Each input the selectors read, with where its value is sent: mapped from an event field the
+/// trigger fills from an input of its own, or from a stored field of its own row that the step
+/// creating that row copies from an input ([`stored_creation`]), each step unconverted or across a
+/// conversion that hands the value on as it is. `None` where any is filled another way, or a
+/// selector reads a value of the invoked command's own payload.
 fn read_through<'s>(
     ir: &EssIr,
     binding: &ResolvedBinding,
     published_by: &ResolvedOutcome,
     selections: &[&'s ResolvedRowSelection],
-) -> Option<Vec<(&'s str, String)>> {
+    trigger: &Run,
+) -> Option<Vec<(&'s str, Sent)>> {
     let event = binding.cause.event()?;
-    let mut read: Vec<(&str, String)> = Vec::new();
+    let mut read: Vec<(&str, Sent)> = Vec::new();
     for selection in selections {
         if !selection.reads.is_empty() {
             return None;
@@ -139,7 +165,11 @@ fn read_through<'s>(
                 (ResolvedPayloadValue::InputField { field: from, .. }, false)
                     if !ess_domain::command::input_path::is_path(from) =>
                 {
-                    read.push((field, from.clone()));
+                    read.push((field, Sent::Trigger(from.clone())));
+                }
+                (ResolvedPayloadValue::SubjectField { field: stored, .. }, false) => {
+                    let (step, _, from) = stored_creation(ir, published_by, stored, trigger)?;
+                    read.push((field, Sent::Creator { step, from }));
                 }
                 _ => return None,
             }
@@ -154,7 +184,7 @@ fn arranged_for<'a>(
     ir: &EssIr,
     (invoked, accepting): (&ResolvedCommand, &'a ResolvedOutcome),
     published_by: &ResolvedOutcome,
-    read: &[(&str, String)],
+    read: &[(&str, Sent)],
     trigger: &Run,
     actors: &BTreeMap<QualifiedName, ActorRef>,
 ) -> Option<Prepared<'a>> {
@@ -193,18 +223,37 @@ fn arranged_for<'a>(
         })
         .collect();
     let mut supplied = BTreeMap::new();
-    let mut steered: BTreeMap<&str, &Node> = BTreeMap::new();
+    let mut steered: BTreeMap<(Option<usize>, &str), &Node> = BTreeMap::new();
     let mut arranged = setup.steps;
+    let mut before = trigger.setup.clone();
     let bound_before = captured_in(&trigger.setup);
-    for (field, from) in read {
+    for (field, origin) in read {
         let value = input.get(*field)?;
-        // Two inputs filled from one input of the trigger carry one value.
+        // Two inputs filled from one input carry one value.
         if steered
-            .insert(from, value)
+            .insert((origin.step(), origin.input()), value)
             .is_some_and(|other| other != value)
         {
             return None;
         }
+        let from = match origin {
+            Sent::Trigger(from) => from,
+            // The step creating the trigger's row is sent the value the rows were arranged
+            // against, where that keeps the branch its own guards choose: the row the trigger acts
+            // on then stores it, and the event carries it.
+            Sent::Creator { step, from } => {
+                let (earlier, later) = before.split_at_mut(step.checked_add(1)?);
+                steer_creator(
+                    ir,
+                    earlier.get_mut(*step)?,
+                    (later, &trigger.invoke),
+                    from,
+                    value,
+                )?;
+                supplied.insert((*field).to_owned(), ScenarioValue::literal(value.clone()));
+                continue;
+            }
+        };
         match sent.get(from) {
             // An identity the trigger names, captured by its own arrangement, is never replaced: a
             // guard of the trigger may read the row it names. The rows are arranged naming it.
@@ -230,7 +279,6 @@ fn arranged_for<'a>(
         supplied.insert((*field).to_owned(), ScenarioValue::literal(value.clone()));
     }
 
-    let mut before = trigger.setup.clone();
     before.extend(arranged);
     let mut steps = before.clone();
     steps.extend(invoke.iter().cloned());
@@ -246,6 +294,46 @@ fn arranged_for<'a>(
     })
 }
 
+/// The creating `step` sent `value` in its input `from`, where that keeps the branch of the
+/// creating command; `None` where it does not, or `step` does not send a literal there.
+fn steer_creator(
+    ir: &EssIr,
+    step: &mut ScenarioStep,
+    (later, invoke): (&[ScenarioStep], &[ScenarioStep]),
+    from: &str,
+    value: &Node,
+) -> Option<()> {
+    let ScenarioStep::ExecuteCommand { command, input, .. } = step else {
+        return None;
+    };
+    let creator = ir.commands().get(command.name())?;
+    let old = input.get(from)?.as_literal()?.clone();
+    let literals: BTreeMap<String, Node> = input
+        .iter()
+        .filter_map(|(name, sent)| sent.as_literal().map(|sent| (name.clone(), sent.clone())))
+        .collect();
+    if literals.get(from) != Some(value) {
+        let kept = super::super::keeps_branch(ir, creator, &literals, from, value);
+        if !kept || !super::keeps_branch_sent(creator, from, None, kept, false) {
+            return None;
+        }
+        // A later step sending the value the creator was sent reads the stored field (a trigger
+        // comparing it with an input of its own): it is not steered with the creator, and the
+        // trigger's branch would no longer be the one decided.
+        if later.iter().chain(invoke).any(|step| sends(step, &old)) {
+            return None;
+        }
+        input.insert(from.to_owned(), ScenarioValue::literal(value.clone()));
+    }
+    Some(())
+}
+
+/// Whether `step` sends `value` in any input of a command.
+fn sends(step: &ScenarioStep, value: &Node) -> bool {
+    matches!(step, ScenarioStep::ExecuteCommand { input, .. }
+        if input.values().any(|sent| sent.as_literal() == Some(value)))
+}
+
 /// The trigger as it is, where the rows its own arrangement and its send leave take the invocation
 /// to `accepting`, sent the values the trigger sends: a trigger that itself creates the row a set
 /// guard selects needs no row arranged before it (a downstream adopter's report of 2026-10-26).
@@ -253,7 +341,7 @@ fn alone<'a>(
     ir: &EssIr,
     (invoked, accepting): (&ResolvedCommand, &'a ResolvedOutcome),
     published_by: &ResolvedOutcome,
-    read: &[(&str, String)],
+    read: &[(&str, Sent)],
     trigger: &Run,
 ) -> Option<Prepared<'a>> {
     let publisher = command_of(ir, published_by)?;
@@ -267,7 +355,16 @@ fn alone<'a>(
     })?;
     let supplied = read
         .iter()
-        .map(|(field, from)| Some(((*field).to_owned(), sent.get(from)?.clone())))
+        .map(|(field, origin)| {
+            let value = match origin.step() {
+                None => sent.get(origin.input())?,
+                Some(step) => match trigger.setup.get(step)? {
+                    ScenarioStep::ExecuteCommand { input, .. } => input.get(origin.input())?,
+                    _ => return None,
+                },
+            };
+            Some(((*field).to_owned(), value.clone()))
+        })
         .collect::<Option<BTreeMap<_, _>>>()?;
     let mut steps = trigger.setup.clone();
     steps.extend(trigger.invoke.iter().cloned());

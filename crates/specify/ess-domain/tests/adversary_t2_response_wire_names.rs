@@ -124,4 +124,3 @@ fn a_repeated_response_name_is_reported_as_often_as_a_repeated_input_name() {
     let input = duplicates(&model(repeated, "      - {name: r, type: String}")).len();
     assert_eq!(response, input, "response {response}, input {input}");
 }
-

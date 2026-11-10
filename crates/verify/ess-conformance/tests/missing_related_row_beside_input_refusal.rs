@@ -50,7 +50,10 @@ fn missing_decision_is_sent_the_kind_no_refusal_takes() {
         .scenarios
         .iter()
         .find(|(id, _)| id.to_string() == NO_DECISION)
-        .map_or_else(|| panic!("no scenario {NO_DECISION}"), |(_, scenario)| scenario);
+        .map_or_else(
+            || panic!("no scenario {NO_DECISION}"),
+            |(_, scenario)| scenario,
+        );
     let sent: Vec<_> = scenario
         .steps
         .iter()
