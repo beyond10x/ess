@@ -1,0 +1,15 @@
+format: ess-ui-test/1
+document: desk.ui.yaml
+tests:
+- name: an approved request enters the approved list
+  steps:
+  - open: requests.inbox
+  - act: pages/requests.inbox/sections/list/rows/r1/row_actions/approve
+  - act: pages/requests.inbox/sections/list/rows/r1/row_actions/approve/confirm/overlay
+  - expect_command: {command: desk.requests.ApproveRequest, input: {id: r1}}
+  - advance: 2s
+  - expect: {at: pages/requests.inbox/sections/list, rows: 1}
+  - open: requests.approved
+  - advance: 2s
+  - expect: {at: pages/requests.approved/sections/list, rows: 2}
+  - expect: {at: pages/requests.approved/sections/list, text: request-one}

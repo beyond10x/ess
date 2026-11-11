@@ -2152,14 +2152,22 @@ fn command_effect(ir: &EssIr, command: &ResolvedCommand) -> Option<CommandEffect
         return Some(not_applied("its success changes other rows (`affects:`)"));
     }
     let subject = outcome.subject.as_ref()?;
-    let (to, delete) = match &subject.effect {
+    let (from, to, delete) = match &subject.effect {
         ResolvedEffect::Creates => {
             return Some(not_applied("its success creates a row (`creates:`)"))
         }
         ResolvedEffect::Preserves => return None,
-        ResolvedEffect::Moves { transition } => (Some(transition.to.as_str().to_owned()), false),
-        ResolvedEffect::Updates => (None, false),
-        ResolvedEffect::Deletes => (None, true),
+        ResolvedEffect::Moves { transition } => (
+            transition
+                .from
+                .iter()
+                .map(|state| state.as_str().to_owned())
+                .collect(),
+            Some(transition.to.as_str().to_owned()),
+            false,
+        ),
+        ResolvedEffect::Updates => (Vec::new(), None, false),
+        ResolvedEffect::Deletes => (Vec::new(), None, true),
     };
     let ResolvedInstance::Supplied { field } = &subject.instance else {
         return Some(not_applied("its success names no instance in its input"));
@@ -2185,6 +2193,7 @@ fn command_effect(ir: &EssIr, command: &ResolvedCommand) -> Option<CommandEffect
     Some(CommandEffect::Applies(RowChange {
         entity: subject.entity.name().to_string(),
         instance: field.name.clone(),
+        from,
         to,
         sets,
         delete,

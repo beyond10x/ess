@@ -4954,7 +4954,7 @@ pages:
         assert_eq!(
             status(None),
             "things.Remove done in fixture mode; its effect was not applied: no model was given \
-             (run `ess ui test --model`)"
+             to read its effect from"
         );
         let mut effects = FixtureEffects::default();
         effects.commands.insert(

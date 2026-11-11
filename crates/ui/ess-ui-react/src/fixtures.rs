@@ -294,6 +294,7 @@ fn emit_effect_types(w: &mut Writer) {
         "  | {",
         "      entity: string;",
         "      instance: string;",
+        "      from?: string[];",
         "      to?: string;",
         "      sets?: Record<string, { input: string } | { value: Json }>;",
         "      delete?: boolean;",

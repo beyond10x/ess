@@ -1,0 +1,6 @@
+view: desk.requests.AllRequests
+rows:
+  - {id: r1, title: request-one, state: Pending}
+  - {id: r2, title: request-two, state: Pending}
+  - {id: r3, title: request-three, state: Approved}
+  - {id: r4, title: request-four, state: Pending}

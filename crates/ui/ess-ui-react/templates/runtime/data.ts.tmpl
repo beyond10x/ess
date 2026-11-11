@@ -142,6 +142,14 @@ function applyEffect(effect: CommandEffect, input: JsonObject): void {
       if (effect.delete) {
         continue;
       }
+      if (effect.from !== undefined && effect.from.length > 0) {
+        const state = row[shape.state];
+        if (state === undefined || !effect.from.includes(String(state))) {
+          throw new Unapplied(
+            `the row is ${state === undefined ? "without a state" : `\`${String(state)}\``}, and its lifecycle moves a row only from ${effect.from.map((from) => `\`${from}\``).join(", ")}`,
+          );
+        }
+      }
       const patched: JsonObject = { ...row };
       if (effect.to !== undefined) {
         patched[shape.state] = effect.to;

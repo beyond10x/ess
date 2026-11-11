@@ -141,6 +141,27 @@ fn place(
         if change.delete {
             continue;
         }
+        if !change.from.is_empty() {
+            let state = row.get(shape.state.as_str()).map(display);
+            if !state
+                .as_ref()
+                .is_some_and(|state| change.from.contains(state))
+            {
+                return Err(format!(
+                    "the row is {}, and its lifecycle moves a row only from {}",
+                    state.map_or_else(
+                        || "without a state".to_owned(),
+                        |state| format!("`{state}`")
+                    ),
+                    change
+                        .from
+                        .iter()
+                        .map(|state| format!("`{state}`"))
+                        .collect::<Vec<_>>()
+                        .join(", "),
+                ));
+            }
+        }
         let mut patched = row.clone();
         let Some(entries) = patched.as_mapping_mut() else {
             placed.push(patched);
@@ -178,13 +199,13 @@ fn place(
 fn listed(filter: &RowFilter, row: &Value) -> Result<bool, String> {
     let have = |field: &str| {
         row.get(field)
-            .map(display)
             .ok_or_else(|| format!("its view filters on `{field}`, which the row does not carry"))
     };
-    let text = |value: &serde_json::Value| {
-        ess_yaml::to_value(value)
-            .map(|value| display(&value))
-            .unwrap_or_default()
+    let same = |have: &Value, value: &serde_json::Value| {
+        ess_yaml::to_value(value).is_ok_and(|value| match (have, &value) {
+            (Value::Number(have), Value::Number(value)) => have.as_f64() == value.as_f64(),
+            _ => display(have) == display(&value),
+        })
     };
     Ok(match filter {
         RowFilter::All { of } => {
@@ -202,15 +223,15 @@ fn listed(filter: &RowFilter, row: &Value) -> Result<bool, String> {
             any
         }
         RowFilter::Not { of } => !listed(of, row)?,
-        RowFilter::Eq { field, value } => have(field)? == text(value),
-        RowFilter::Ne { field, value } => have(field)? != text(value),
+        RowFilter::Eq { field, value } => same(have(field)?, value),
+        RowFilter::Ne { field, value } => !same(have(field)?, value),
         RowFilter::In { field, values } => {
             let have = have(field)?;
-            values.iter().any(|value| text(value) == have)
+            values.iter().any(|value| same(have, value))
         }
         RowFilter::NotIn { field, values } => {
             let have = have(field)?;
-            !values.iter().any(|value| text(value) == have)
+            !values.iter().any(|value| same(have, value))
         }
     })
 }
@@ -306,7 +327,7 @@ impl FixtureAdapter {
         let effects = self
             .effects
             .as_ref()
-            .ok_or_else(|| "no model was given (run `ess ui test --model`)".to_owned())?;
+            .ok_or_else(|| "no model was given to read its effect from".to_owned())?;
         let change = match effects.commands.get(command) {
             None => return Ok(false),
             Some(CommandEffect::NotApplied { unapplied }) => return Err(unapplied.clone()),

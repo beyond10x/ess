@@ -1,0 +1,12 @@
+format: ess-ui-test/1
+document: desk.ui.yaml
+tests:
+- name: rejecting an approved request does not move it
+  steps:
+  - open: requests.all
+  - expect: {at: pages/requests.all/sections/list, not_text: Rejected}
+  - act: pages/requests.all/sections/list/rows/r3/row_actions/reject
+  - act: pages/requests.all/sections/list/rows/r3/row_actions/reject/confirm/overlay
+  - expect_command: {command: desk.requests.RejectRequest, input: {id: r3}}
+  - advance: 2s
+  - expect: {at: pages/requests.all/sections/list, not_text: Rejected}

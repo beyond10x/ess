@@ -149,6 +149,9 @@ pub struct RowChange {
     pub entity: String,
     /// The input field naming the instance.
     pub instance: String,
+    /// The states a `moves:` may start in; empty when the row's state is not checked.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub from: Vec<String>,
     /// The state a `moves:` ends in.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub to: Option<String>,

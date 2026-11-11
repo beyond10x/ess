@@ -1,0 +1,122 @@
+format: ess-ui/1
+app: desk
+title: Desk
+model: desk
+placement_profile: fat
+fixtures:
+  dir: fixtures
+  views:
+    desk.requests.PendingRequests: pending.yaml
+    desk.requests.ApprovedRequests: approved.yaml
+    desk.requests.UrgentRequests: urgent.yaml
+    desk.requests.AllRequests: all.yaml
+  derived:
+    desk.requests.RequestById: {by_id_from: desk.requests.PendingRequests, key: id}
+theme:
+  default: dark
+themes:
+  light: {}
+  dark: {}
+shells:
+  app:
+    regions:
+      nav:
+        kind: navigation
+      main:
+        kind: page_outlet
+      toasts:
+        kind: notifications
+      overlay:
+        kind: overlay_outlet
+navigation:
+  home: requests.inbox
+  sections:
+  - name: main
+    label: Main
+    icon: home
+    pages:
+    - requests.inbox
+    - requests.approved
+    - requests.urgent
+    - requests.all
+pages:
+  requests.inbox:
+    kind: list_page
+    title: Pending requests
+    nav:
+      label: Inbox
+    sections:
+    - name: list
+      component: collection
+      style: table
+      reads:
+        view: desk.requests.PendingRequests
+      columns:
+      - title
+      - state
+      row_actions:
+      - name: approve
+        does: desk.requests.ApproveRequest
+        bind:
+          id: row.id
+        label: Approve
+        confirm:
+          title: Approve request
+  requests.approved:
+    kind: list_page
+    title: Approved requests
+    nav:
+      label: Approved
+    sections:
+    - name: list
+      component: collection
+      style: table
+      reads:
+        view: desk.requests.ApprovedRequests
+      columns:
+      - title
+      - state
+  requests.urgent:
+    kind: list_page
+    title: Urgent requests
+    nav:
+      label: Urgent
+    sections:
+    - name: list
+      component: collection
+      style: table
+      reads:
+        view: desk.requests.UrgentRequests
+      columns:
+      - title
+      - state
+      row_actions:
+      - name: approve
+        does: desk.requests.ApproveRequest
+        bind:
+          id: row.id
+        label: Approve
+        confirm:
+          title: Approve request
+  requests.all:
+    kind: list_page
+    title: All requests
+    nav:
+      label: All
+    sections:
+    - name: list
+      component: collection
+      style: table
+      reads:
+        view: desk.requests.AllRequests
+      columns:
+      - title
+      - state
+      row_actions:
+      - name: reject
+        does: desk.requests.RejectRequest
+        bind:
+          id: row.id
+        label: Reject
+        confirm:
+          title: Reject request
