@@ -166,9 +166,12 @@ fn the_interpreted_target_passes_every_scenario() {
     }
 }
 
+/// The interpreter, with `range.end` changed in every row it returns from the second `Confirm` on.
+/// `other-range` runs `Confirm` first as an unknown-instance probe, before the row exists, so a
+/// change from the first `Confirm` would already be in the complete-subject snapshot.
 struct ChangesRangeEnd {
     inner: ess_conformance::interpret::Interpreted,
-    changed: Cell<bool>,
+    confirms: Cell<usize>,
 }
 
 impl ConformanceTarget for ChangesRangeEnd {
@@ -176,7 +179,7 @@ impl ConformanceTarget for ChangesRangeEnd {
         self.inner.identity()
     }
     fn begin_scenario(&self, scenario: &ScenarioContext) -> Result<(), TargetError> {
-        self.changed.set(false);
+        self.confirms.set(0);
         self.inner.begin_scenario(scenario)
     }
     fn end_scenario(&self, scenario: &ScenarioContext) -> Result<(), TargetError> {
@@ -187,13 +190,13 @@ impl ConformanceTarget for ChangesRangeEnd {
         request: SemanticCommandRequest,
     ) -> Result<SemanticCommandResult, TargetError> {
         if request.command.to_string() == "example.span.Confirm" {
-            self.changed.set(true);
+            self.confirms.set(self.confirms.get() + 1);
         }
         self.inner.execute_command(request)
     }
     fn query_view(&self, request: SemanticViewRequest) -> Result<SemanticViewResult, TargetError> {
         let mut result = self.inner.query_view(request)?;
-        if self.changed.get() {
+        if self.confirms.get() >= 2 {
             for row in &mut result.rows {
                 if let Some(Node::Map(range)) = row.get_mut("range") {
                     range.insert("end".into(), Node::Number(9_999_i64.into()));
@@ -226,7 +229,7 @@ fn a_target_that_changes_the_stored_range_fails_the_refusal_scenario() {
     let admitted = AdmittedSuite::from_suite(&suite).unwrap();
     let target = ChangesRangeEnd {
         inner: ess_conformance::interpret::Interpreted::for_model(model),
-        changed: Cell::new(false),
+        confirms: Cell::new(0),
     };
     let report = Runner::for_suite(admitted.suite())
         .run_admitted(&admitted, &target)
