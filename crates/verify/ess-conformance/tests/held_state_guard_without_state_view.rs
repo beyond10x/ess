@@ -277,13 +277,10 @@ fn a_state_view_keeps_its_suite_bytes_against_the_base() {
         .suite
         .to_canonical_json()
         .expect("a canonical suite");
-    let refusals: String = synthesis
-        .refusals
-        .iter()
-        .fold(String::new(), |mut out, r| {
-            writeln!(out, "{r}").expect("writing to a String");
-            out
-        });
+    let refusals: String = synthesis.refusals.iter().fold(String::new(), |mut out, r| {
+        writeln!(out, "{r}").expect("writing to a String");
+        out
+    });
     let (suite, refusals) = (digest(&suite), digest(&refusals));
     if let Ok(path) = std::env::var("HELD_STATE_B_WRITE") {
         std::fs::write(path, format!("{suite}\n{refusals}\n")).unwrap();

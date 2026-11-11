@@ -439,9 +439,7 @@ const ORDER_TIE: &str = "crates/verify/ess-conformance/tests/fixtures/mutation-o
 /// exits 3, names the baseline's refusal, and `--report-out` and `--emit`/`--collect` agree.
 #[test]
 fn an_order_flip_on_a_key_no_tie_reaches_exits_three_unwitnessed() {
-    let directory = std::env::temp_dir().join(format!("mutate-cli-708-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&directory);
-    std::fs::create_dir_all(&directory).expect("a scratch directory");
+    let directory = scratch("order-tie-708");
     let report = directory.join("report.json");
     let args = [
         "--path",

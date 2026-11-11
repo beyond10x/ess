@@ -20,6 +20,8 @@ use ess_compiler::{resolve::compile, source::SourceMap, EssIr};
 use ess_domain::{spec::RawSpecFile, system::Source, Specification};
 use ess_synth::{synthesize_for, Synthesis, Target};
 
+use super::cargo;
+
 const MODEL: &str = "format: ess/22
 system: probe
 version: v1
@@ -425,22 +427,4 @@ fn write(synthesis: &Synthesis, directory: &Path) {
         std::fs::create_dir_all(destination.parent().unwrap()).unwrap();
         std::fs::write(&destination, &artifact.contents).unwrap();
     }
-}
-
-fn cargo(directory: &Path, arguments: &[&str]) -> Output {
-    let output = Command::new(std::env::var_os("CARGO").expect("Cargo supplies its executable"))
-        .args(arguments)
-        .current_dir(directory)
-        .env_remove("CARGO_TARGET_DIR")
-        .env_remove("CARGO_ENCODED_RUSTFLAGS")
-        .env("RUSTFLAGS", "-D warnings")
-        .output()
-        .expect("cargo runs");
-    eprintln!(
-        "cargo {arguments:?} in {}\n{}{}",
-        directory.display(),
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
-    );
-    output
 }

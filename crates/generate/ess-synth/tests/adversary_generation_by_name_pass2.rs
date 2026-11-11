@@ -78,7 +78,10 @@ fn a_domain_named_self_keeps_its_actor_and_event_variants() {
          `SelfThingOpened`):\n{}",
         bad.join("\n")
     );
-    assert!(items.contains("SelfAnyone"), "the actor variant stays `SelfAnyone`");
+    assert!(
+        items.contains("SelfAnyone"),
+        "the actor variant stays `SelfAnyone`"
+    );
     assert!(
         items.contains("SelfThingOpened"),
         "the event variant stays `SelfThingOpened`"
