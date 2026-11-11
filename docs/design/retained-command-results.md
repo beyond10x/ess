@@ -230,16 +230,20 @@ pairs/views/identity binding and new steps mislabeled as an old suite. The exact
 complete-subject profile shares retained-result resource and finite structural type bounds;
 Reading observers refuse synthesis recursively, naming the field; a Decimal is
 compared by value from suite/58 or /59 and a Binary64 by its nearest binary64 from
-suite/62 or /63, as above. A complete subject identity is never a Binary64. Newtype wrappers in a
-complete subject may carry source invariants: this observation compares their actual represented
-values exactly and checks their structural type, without claiming to evaluate those invariants.
-Other constrained declarations still refuse. Retained-result response observations retain their
-separate stricter profile and refuse constrained declarations, including newtypes, recursively.
-Observe lifecycle state at its declared enum type where projected.
+suite/62 or /63, as above. A complete subject identity is never a Binary64. Newtype wrappers and
+structs in a complete subject may carry source invariants: this observation compares their actual
+represented values exactly and checks their structural type, without claiming to evaluate those
+invariants. A type with a `reading:`, or a struct that declares `undeclared_fields: ignored`,
+still refuses; the refusal's help names three repairs: drop the field from the view, give it a
+type the exact observer compares, or move it to a second view of the entity that is not
+`read_your_writes`. Retained-result response observations retain their
+separate stricter profile and refuse constrained declarations, including newtypes and structs,
+recursively. Observe lifecycle state at its declared enum type where projected.
 
-This subject-only admission uses the existing `Declaration::Newtype { of }` descriptor unchanged,
-including nested wrappers and Optional fields. That descriptor has always described structural
-representation and carries no invariant authority. Existing readers already admit and compare
+This subject-only admission uses the existing `Declaration::Newtype { of }` and
+`Declaration::Struct { fields }` descriptors unchanged, including nested wrappers and Optional
+fields. Those descriptors have always described structural
+representation and carry no invariant authority. Existing readers already admit and compare
 these values; no field, step, suite meaning or format version changes. A source invariant remains
 a separate obligation and is not established by a passing complete-subject equality check.
 

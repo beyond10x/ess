@@ -1678,8 +1678,9 @@ pub(crate) const SUBJECT_GAP: &str = "complete subject observation";
 /// wrong place.
 const SUBJECT_REPAIR: &str =
     "a complete subject compares every field the view publishes, exactly, \
-     and the line above names what it cannot compare; drop that field from the view, or give it \
-     a type the exact observer compares";
+     and the line above names what it cannot compare; drop that field from the view, give it \
+     a type the exact observer compares, or move it to a second view of the entity that is \
+     not `read_your_writes`";
 
 /// The repair for a response field no runner can check (beyond10x/ess#499): the input field's
 /// "drop it from the command's input" names the wrong side of the command.
