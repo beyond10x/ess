@@ -813,3 +813,43 @@ fn a_related_row_predicate_on_a_further_widget_keeps_its_branch() {
     }
     passes_on_the_interpreter(TAGGED, &result, result.suite.scenarios.len());
 }
+
+/// A create under a uniqueness check, read by identity, with no input examples: the scenario
+/// creates a further widget before its subject, and the `WidgetById` read names the subject by the
+/// instance it captured. Before, the read sent `{kind: observed}` for `WidgetCreated`, which the
+/// runners resolve to the event's first occurrence, the further widget's, so the view was
+/// expected to hold the subject's values and held the further widget's.
+#[test]
+fn a_uniqueness_create_read_by_identity_passes_on_the_interpreter() {
+    let control = without_examples(UNIQUE);
+    let result = synthesized(&control);
+    let mut read = 0;
+    for (id, scenario) in &result.suite.scenarios {
+        let mut published = false;
+        for step in &scenario.steps {
+            match step {
+                ScenarioStep::CaptureInstance { .. } => published = true,
+                ScenarioStep::QueryView { view, params }
+                    if view.to_string() == "demo.widget.WidgetById" =>
+                {
+                    read += 1;
+                    let sent = params.get("widget_id");
+                    if id.to_string().ends_with("CreateWidget/outcome/created") {
+                        assert!(
+                            matches!(sent, Some(ScenarioValue::Instance { instance })
+                                if instance.to_string() == "widget"),
+                            "{id}: the read sends the subject as the captured instance: {sent:?}"
+                        );
+                    }
+                    assert!(
+                        !(published && matches!(sent, Some(ScenarioValue::Observed { .. }))),
+                        "{id}: an observed reference after an instance was published: {sent:?}"
+                    );
+                }
+                _ => {}
+            }
+        }
+    }
+    assert!(read >= 1, "a scenario reads WidgetById");
+    passes_on_the_interpreter(&control, &result, result.suite.scenarios.len());
+}

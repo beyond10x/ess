@@ -10719,6 +10719,17 @@ fn view_expectations(
         (Some(captured), ResolvedInstance::Observed { .. }) if absent_run(captured) => {
             Some(ScenarioValue::instance(captured.clone()))
         }
+        // A further instance of the entity was created before the subject: the runners resolve an
+        // observed reference to the event's first occurrence, which is that instance's, so the
+        // subject is read by the instance the scenario captured.
+        (Some(captured), ResolvedInstance::Observed { event, .. })
+            if run.setup.iter().any(|step| {
+                matches!(step, ScenarioStep::CaptureInstance { instance: other, event: published, .. }
+                    if other != captured && *published == EventRef::from(event))
+            }) =>
+        {
+            Some(ScenarioValue::instance(captured.clone()))
+        }
         _ => identity_of(subject, instance),
     };
     let identity = identity.as_ref();
