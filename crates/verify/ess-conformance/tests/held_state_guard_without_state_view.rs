@@ -7,6 +7,7 @@
 //!   run passes the suite.
 //! * With a `state` view the suite carries no such note and observes the state through the view.
 use std::collections::BTreeMap;
+use std::fmt::Write as _;
 
 use ess_compiler::{ir::EssIr, resolve::compile, source::SourceMap};
 use ess_conformance::interpret::Interpreted;
@@ -213,8 +214,8 @@ fn every_held_state_branch_is_witnessed_without_a_state_view() {
     let ids: Vec<String> = synthesis
         .suite
         .scenarios
-        .iter()
-        .map(|(id, _)| id.to_string())
+        .keys()
+        .map(ToString::to_string)
         .collect();
     for scenario in SCENARIOS {
         assert!(
@@ -279,8 +280,10 @@ fn a_state_view_keeps_its_suite_bytes_against_the_base() {
     let refusals: String = synthesis
         .refusals
         .iter()
-        .map(|r| format!("{r}\n"))
-        .collect();
+        .fold(String::new(), |mut out, r| {
+            writeln!(out, "{r}").expect("writing to a String");
+            out
+        });
     let (suite, refusals) = (digest(&suite), digest(&refusals));
     if let Ok(path) = std::env::var("HELD_STATE_B_WRITE") {
         std::fs::write(path, format!("{suite}\n{refusals}\n")).unwrap();

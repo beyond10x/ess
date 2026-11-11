@@ -166,8 +166,8 @@ fn a_listed_state_refusal_is_never_reported_against_a_state_it_does_not_list() {
     let ids: Vec<String> = synthesis
         .suite
         .scenarios
-        .iter()
-        .map(|(id, _)| id.to_string())
+        .keys()
+        .map(ToString::to_string)
         .collect();
     for scenario in [
         WRONG_STATE,
