@@ -9,6 +9,14 @@ What each ESS release is worth to somebody using it: what became possible, how m
 
 This page is generated from the change records kept in the repository. A release with no entry here added nothing somebody using ESS would act on.
 
+## 0.93.0 — 2026-11-11
+
+### Kubernetes scans read the Gateway API, UI values take tones, and an authored scenario retires a refusal
+
+capability · significant impact · [release notes](https://github.com/beyond10x/ess/releases/tag/0.93.0)
+
+A full Kubernetes scan reads Gateway API gateways and routes into `infra-ir/4`. UI columns and fields take a tone, React draws the declared tokens, and a UI test declares how each read and command is answered. An authored `ess-scenario/7` scenario can retire the refusal it covers. Format `ess/37` opens.
+
 ## 0.92.0 — 2026-11-09
 
 ### React projects register host slots, and the terminal draws them as labelled regions

@@ -1,0 +1,17 @@
+schema: b10x-change/v1
+id: ess/gateway-api-scan-ui-tones-and-covered-refusals-0.93.0
+repository: ess
+publishedAt: 2026-11-11T00:00:00Z
+title: Kubernetes scans read the Gateway API, UI values take tones, and an authored scenario retires a refusal
+summary: >-
+  A full Kubernetes scan reads Gateway API gateways and routes into `infra-ir/4`. UI columns and
+  fields take a tone, React draws the declared tokens, and a UI test declares how each read and
+  command is answered. An authored `ess-scenario/7` scenario can retire the refusal it covers.
+  Format `ess/37` opens.
+kind: capability
+impact: significant
+source:
+  url: https://github.com/beyond10x/ess/releases/tag/0.93.0
+  version: 0.93.0
+journeys: [specify, operate-services]
+affectedSurfaces: [ess/docs]
