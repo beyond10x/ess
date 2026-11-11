@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-10T19:13:26Z",
+  "actor": "human:timo",
+  "artifact": "story:the-interpreted-target-publishes-an-absent-event-field-in-its-declared-presence",
+  "kind": "story",
+  "revision": 6,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "ess-conformance interpreted_command_execution, absent_payload_read, adversary_t2_interp_presence_pass1 and the synthesis byte pins",
+    "reference": "the-interpreted-target-publishes-an-absent-event-field-in-its-declared-presence/red.txt (19 passed, 1 failed) vs verify-h-1.txt at e0f89fde71 (52 passed, 3 ignored for backlog)"
+  }
+}

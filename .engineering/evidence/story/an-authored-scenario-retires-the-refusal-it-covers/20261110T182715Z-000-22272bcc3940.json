@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-10T18:27:15Z",
+  "actor": "human:timo",
+  "artifact": "story:an-authored-scenario-retires-the-refusal-it-covers",
+  "kind": "story",
+  "revision": 11,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "ess-conformance authored_covers, authored, coverage_admission, coverage_refusal_catalogue, synthesis byte pins; ess-cli coverage_cli, epic_formats_open",
+    "reference": "an-authored-scenario-retires-the-refusal-it-covers/red-cli.txt (6 passed, 3 failed), red-conformance.txt (does not compile) vs verify-h2-1.txt, verify-h2-2.txt at 5f7231b076 (103, 12 passed)"
+  }
+}

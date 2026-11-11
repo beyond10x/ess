@@ -89,7 +89,7 @@ Status: delivered 2026-11-10 ([turn page](zero-open-issues-t1.md)); 9 backlog dr
 
 ### Turn 2
 
-Status: planned
+Status: delivered 2026-11-11 ([turn page](zero-open-issues-t2.md)); shipped with turn 1 in one PR to `main` (operator, 2026-11-11); 9 backlog drafts filed: `story:the-security-oracle-checks-date-time-as-ess-does`, `story:the-terminal-shows-the-time-of-an-http-date`, `story:a-partial-type-style-keeps-the-built-in-fields-of-its-name`, `story:a-negated-list-literal-is-witnessed-beside-any-other-leaf`, `story:an-interpreted-struct-member-follows-its-declared-presence`, `story:a-binding-mapping-of-an-absent-optional-event-field-passes`, `story:a-binding-flow-awaits-the-event-its-trigger-causes`, `story:a-subject-route-refusal-names-every-creator-whatever-its-cause`, `story:a-left-out-optional-stays-named-when-another-row-is-built`
 
 - lane 1: `story:a-tie-breaking-sort-key-is-pinned-by-a-synthesized-tie` (priority 1, verb wave 14)
 - lane 2: `story:an-absent-optional-under-false-and-unknown-is-arranged` (priority 1, verb wave 17)

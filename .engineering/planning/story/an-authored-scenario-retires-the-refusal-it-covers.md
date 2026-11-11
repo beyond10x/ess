@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:an-authored-scenario-retires-the-refusal-it-covers
 kind: story
-status: active
+status: implemented
 title: An authored scenario retires the refusal it covers
 summary: 'Authored scenarios never retire the refusal they cover, and synthesize --path ignores ess-inputs.yaml scenarios: (beyond10x/ess#735)'
 tags:
@@ -19,28 +19,47 @@ relations:
 scope:
 - confidence: cited
   path: crates/edge/ess-cli/src/coverage.rs
-- confidence: inferred
+- confidence: cited
   path: crates/edge/ess-cli/tests/coverage_cli.rs
-- confidence: inferred
-  path: crates/specify/ess-domain/src/spec.rs
+- confidence: cited
+  path: crates/edge/ess-cli/tests/epic_formats_open.rs
 - confidence: cited
   path: crates/verify/ess-conformance/src/authored.rs
 - confidence: cited
   path: crates/verify/ess-conformance/src/coverage.rs
-- confidence: inferred
+- confidence: cited
   path: crates/verify/ess-conformance/src/coverage_build.rs
-- confidence: inferred
+- confidence: cited
+  path: crates/verify/ess-conformance/src/go/runtime.go
+- confidence: cited
+  path: crates/verify/ess-conformance/src/ts/runtime.ts
+- confidence: cited
+  path: crates/verify/ess-conformance/tests/adversary_t2_covers_readers.rs
+- confidence: cited
   path: crates/verify/ess-conformance/tests/authored_covers.rs
-- confidence: inferred
+- confidence: cited
+  path: crates/verify/ess-conformance/tests/fixtures/authored-covers/ess-inputs.yaml.in
+- confidence: cited
+  path: crates/verify/ess-conformance/tests/fixtures/authored-covers/review.yaml.in
+- confidence: cited
+  path: crates/verify/ess-conformance/tests/fixtures/authored-covers/scenarios/confirm-twice.yaml.in
+- confidence: cited
+  path: crates/verify/ess-conformance/tests/fixtures/authored-covers/system.yaml.in
+- confidence: cited
   path: docs/design/review-conformance-coverage.md
-- confidence: inferred
+- confidence: cited
+  path: docs/design/synthesis-seeds.md
+- confidence: cited
   path: website/docs/guides/verify/author-scenarios.md
-- confidence: inferred
+- confidence: cited
+  path: website/docs/reference/diagnostics.md
+- confidence: cited
   path: website/docs/reference/formats.md
-revision: 11
+revision: 16
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-10T00:38:49Z", actor: "human:timo", revision: 10, decided_on: {"recorded":{"review_outcome":1}}}
 - {from: "proposed", to: "active", at: "2026-11-10T00:38:50Z", actor: "human:timo", revision: 11, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "active", to: "implemented", at: "2026-11-11T00:47:34Z", actor: "human:timo", revision: 16, decided_on: {"recorded":{"test_result":1,"review_outcome":2,"verification":1}}}
 ---
 ## Need
 
@@ -100,22 +119,27 @@ The input is the reproduction's specification with `scenarios/confirm-twice.yaml
 
 ## Scope
 
-- inferred: docs/design/review-conformance-coverage.md
-- cited: crates/verify/ess-conformance/src/coverage.rs (`Refusal`, line 282; `Inventory::is_complete`, line 413)
-- inferred: crates/verify/ess-conformance/src/coverage_build.rs
-- cited: crates/verify/ess-conformance/src/authored.rs (`FORMAT`, line 341; the version list, line 2217)
-- inferred: crates/specify/ess-domain/src/spec.rs
-- cited: crates/edge/ess-cli/src/coverage.rs (the text summary, line 129)
-- inferred: crates/verify/ess-conformance/tests/authored_covers.rs (new)
-- inferred: crates/edge/ess-cli/tests/coverage_cli.rs
-- inferred: website/docs/reference/formats.md
-- inferred: website/docs/guides/verify/author-scenarios.md
-confidence: medium
+- cited: crates/edge/ess-cli/src/coverage.rs
+- cited: crates/edge/ess-cli/tests/coverage_cli.rs
+- cited: crates/edge/ess-cli/tests/epic_formats_open.rs
+- cited: crates/verify/ess-conformance/src/authored.rs
+- cited: crates/verify/ess-conformance/src/coverage.rs
+- cited: crates/verify/ess-conformance/src/coverage_build.rs
+- cited: crates/verify/ess-conformance/src/go/runtime.go
+- cited: crates/verify/ess-conformance/src/ts/runtime.ts
+- cited: crates/verify/ess-conformance/tests/adversary_t2_covers_readers.rs
+- cited: crates/verify/ess-conformance/tests/authored_covers.rs
+- cited: crates/verify/ess-conformance/tests/fixtures/authored-covers/ess-inputs.yaml.in
+- cited: crates/verify/ess-conformance/tests/fixtures/authored-covers/review.yaml.in
+- cited: crates/verify/ess-conformance/tests/fixtures/authored-covers/scenarios/confirm-twice.yaml.in
+- cited: crates/verify/ess-conformance/tests/fixtures/authored-covers/system.yaml.in
+- cited: docs/design/review-conformance-coverage.md
+- cited: docs/design/synthesis-seeds.md
+- cited: website/docs/guides/verify/author-scenarios.md
+- cited: website/docs/reference/diagnostics.md
+- cited: website/docs/reference/formats.md
 
-Shared surfaces moved: proposes its `CHANGELOG.md` sentence; re-pins no suite-bytes row.
-
-Splittable into: design page; authored document key and its reader; coverage record and the Rust
-reader; the Go and TypeScript coverage readers.
+Rewritten at the turn-2 close from the merged change (`dc5e6c9e6e`); shared surfaces (CHANGELOG.md, the byte-pin tables, generated references) are left out.
 
 ## Fit review
 

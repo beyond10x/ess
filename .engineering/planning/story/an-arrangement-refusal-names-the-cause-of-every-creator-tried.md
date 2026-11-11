@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:an-arrangement-refusal-names-the-cause-of-every-creator-tried
 kind: story
-status: active
+status: implemented
 title: An arrangement refusal names the cause of every creator tried
 tags:
 - zero-open-issues
@@ -15,12 +15,15 @@ relations:
 scope:
 - confidence: cited
   path: crates/verify/ess-conformance/src/synthesize.rs
-- confidence: inferred
+- confidence: cited
+  path: crates/verify/ess-conformance/src/synthesize/subject_fact.rs
+- confidence: cited
   path: crates/verify/ess-conformance/tests/arrangement_refusal_names_every_creator.rs
-revision: 6
+revision: 11
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-10T00:38:44Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"review_outcome":1}}}
 - {from: "proposed", to: "active", at: "2026-11-10T00:38:45Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "active", to: "implemented", at: "2026-11-11T00:47:14Z", actor: "human:timo", revision: 11, decided_on: {"recorded":{"test_result":1,"review_outcome":2,"verification":1}}}
 ---
 ## Need
 
@@ -78,9 +81,10 @@ creator in route-length then name order and keeps `first`, the first creator's `
 ## Scope
 
 - cited: crates/verify/ess-conformance/src/synthesize.rs
-- inferred: crates/verify/ess-conformance/tests/arrangement_refusal_names_every_creator.rs
-- inferred: CHANGELOG.md
-confidence: medium
+- cited: crates/verify/ess-conformance/src/synthesize/subject_fact.rs
+- cited: crates/verify/ess-conformance/tests/arrangement_refusal_names_every_creator.rs
+
+Rewritten at the turn-2 close from the merged change (`a7cee9c8d8`); shared surfaces (CHANGELOG.md, the byte-pin tables, generated references) are left out.
 
 ## Fit review
 

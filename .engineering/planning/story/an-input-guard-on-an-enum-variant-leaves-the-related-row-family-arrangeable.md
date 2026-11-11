@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:an-input-guard-on-an-enum-variant-leaves-the-related-row-family-arrangeable
 kind: story
-status: active
+status: implemented
 title: An input guard on an enum input's first variant leaves the related-row family arrangeable
 summary: An input guard on the first variant of an enum input blocks the arrange_related_row family with ESS-SYNTH-008 (beyond10x/ess#731)
 tags:
@@ -18,12 +18,17 @@ relations:
 scope:
 - confidence: cited
   path: crates/verify/ess-conformance/src/synthesize/related_guard.rs
-- confidence: inferred
+- confidence: cited
+  path: crates/verify/ess-conformance/tests/adversary_t2_enum_guard_inputs.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/tests/fixtures/marks-beside-input-refusal.yaml
+- confidence: cited
   path: crates/verify/ess-conformance/tests/missing_related_row_beside_input_refusal.rs
-revision: 7
+revision: 12
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-10T00:39:50Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":1}}}
 - {from: "proposed", to: "active", at: "2026-11-10T00:39:51Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "active", to: "implemented", at: "2026-11-11T00:47:22Z", actor: "human:timo", revision: 12, decided_on: {"recorded":{"test_result":1,"review_outcome":2,"verification":1}}}
 ---
 ## Need
 
@@ -89,9 +94,11 @@ which are chosen to be *taken* by each input guard, all failed.
 ## Scope
 
 - cited: crates/verify/ess-conformance/src/synthesize/related_guard.rs
-- inferred: crates/verify/ess-conformance/tests/missing_related_row_beside_input_refusal.rs
-- inferred: CHANGELOG.md
-confidence: high
+- cited: crates/verify/ess-conformance/tests/adversary_t2_enum_guard_inputs.rs
+- cited: crates/verify/ess-conformance/tests/fixtures/marks-beside-input-refusal.yaml
+- cited: crates/verify/ess-conformance/tests/missing_related_row_beside_input_refusal.rs
+
+Rewritten at the turn-2 close from the merged change (`12f434e632`); shared surfaces (CHANGELOG.md, the byte-pin tables, generated references) are left out.
 
 ## Fit review
 

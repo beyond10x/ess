@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:the-date-time-agreement-oracle-refuses-non-digits
 kind: story
-status: active
+status: implemented
 title: The date-time agreement oracle refuses non-digits at digit positions
 summary: jsonschema 0.52.1 takes + - . for digits in date-time (W1 GEN1 review, pre-existing, backlog)
 tags:
@@ -19,21 +19,26 @@ scope:
 - confidence: cited
   path: crates/generate/ess-synth/Cargo.toml
 - confidence: cited
+  path: crates/generate/ess-synth/tests/adversary_w1_gen1_adversary.rs
+- confidence: cited
   path: crates/generate/ess-synth/tests/json_body_closure.rs
-- confidence: inferred
+- confidence: cited
+  path: crates/generate/ess-synth/tests/security_t2_datetime_conformance.rs
+- confidence: cited
   path: crates/generate/schema-contract/src/date_time.rs
-- confidence: inferred
+- confidence: cited
   path: crates/generate/schema-contract/src/lib.rs
 - confidence: cited
   path: crates/generate/schema-contract/src/uniqueness.rs
 - confidence: cited
-  path: crates/generate/schema-contract/src/validate.rs
-- confidence: inferred
+  path: crates/generate/schema-contract/tests/adversary_t2_datetime_rfc3339.rs
+- confidence: cited
   path: crates/generate/schema-contract/tests/date_time_digits.rs
-revision: 11
+revision: 16
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-10T00:47:13Z", actor: "human:timo", revision: 10, decided_on: {"recorded":{"review_outcome":1}}}
 - {from: "proposed", to: "active", at: "2026-11-10T00:47:14Z", actor: "human:timo", revision: 11, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "active", to: "implemented", at: "2026-11-11T00:47:37Z", actor: "human:timo", revision: 16, decided_on: {"recorded":{"test_result":1,"review_outcome":3,"verification":1}}}
 ---
 ## Need
 
@@ -88,17 +93,17 @@ repository cannot hold. It keeps every currently valid timestamp valid.
 
 ## Scope
 
-- cited: crates/generate/schema-contract/src/validate.rs
-- cited: crates/generate/schema-contract/src/uniqueness.rs (`options`, line 18)
-- inferred: crates/generate/schema-contract/src/date_time.rs (new)
-- inferred: crates/generate/schema-contract/src/lib.rs
-- inferred: crates/generate/schema-contract/tests/date_time_digits.rs (new)
-- cited: crates/generate/ess-synth/tests/json_body_closure.rs (the oracle, line 370)
-- cited: crates/generate/ess-synth/Cargo.toml (dev-dependencies)
+- cited: crates/generate/ess-synth/Cargo.toml
+- cited: crates/generate/ess-synth/tests/adversary_w1_gen1_adversary.rs
+- cited: crates/generate/ess-synth/tests/json_body_closure.rs
+- cited: crates/generate/ess-synth/tests/security_t2_datetime_conformance.rs
+- cited: crates/generate/schema-contract/src/date_time.rs
+- cited: crates/generate/schema-contract/src/lib.rs
+- cited: crates/generate/schema-contract/src/uniqueness.rs
+- cited: crates/generate/schema-contract/tests/adversary_t2_datetime_rfc3339.rs
+- cited: crates/generate/schema-contract/tests/date_time_digits.rs
 
-confidence: medium
-
-Shared surfaces moved: proposes its `CHANGELOG.md` sentence; no format row, no byte-pin row.
+Rewritten at the turn-2 close from the merged change (`ce1bbd0c0f`); shared surfaces (CHANGELOG.md, the byte-pin tables, generated references) are left out.
 
 ## Schedule
 

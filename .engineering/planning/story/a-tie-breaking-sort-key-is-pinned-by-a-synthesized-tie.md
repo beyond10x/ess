@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-tie-breaking-sort-key-is-pinned-by-a-synthesized-tie
 kind: story
-status: active
+status: implemented
 title: A tie-breaking sort key is pinned by a synthesized tie
 summary: 'order-flip on a view''s second order_by key always survives: synthesis never arranges a tie on the first key, and --emit takes no authored scenarios (#708)'
 tags:
@@ -17,27 +17,40 @@ relations:
 - serves: vision:O2
 scope:
 - confidence: cited
+  path: crates/edge/ess-cli/tests/adversary_t2_order_tie_emit.rs
+- confidence: cited
   path: crates/verify/ess-conformance/src/synthesize.rs
 - confidence: cited
   path: crates/verify/ess-conformance/src/synthesize/ordered_head.rs
 - confidence: cited
-  path: crates/verify/ess-conformance/src/synthesize/paging.rs
-- confidence: inferred
+  path: crates/verify/ess-conformance/tests/adversary_t2_order_tie_pass1.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/tests/fixtures/adversary-285-base-digests.tsv
+- confidence: cited
+  path: crates/verify/ess-conformance/tests/fixtures/external-beside-held-guard-base.tsv
+- confidence: cited
+  path: crates/verify/ess-conformance/tests/fixtures/mutation-order-tie-identity-first.yaml
+- confidence: cited
+  path: crates/verify/ess-conformance/tests/fixtures/mutation-order-tie-identity-last.yaml
+- confidence: cited
   path: crates/verify/ess-conformance/tests/fixtures/mutation-order-tie.yaml
+- confidence: cited
+  path: crates/verify/ess-conformance/tests/fixtures/synthesis-component-suites-table.tsv
 - confidence: cited
   path: crates/verify/ess-conformance/tests/mutation_audit.rs
 - confidence: cited
   path: docs/design/mutation-audit-and-model-runner.md
 - confidence: cited
   path: docs/design/read-api-view-idioms.md
-- confidence: inferred
+- confidence: cited
   path: website/docs/guides/verify/mutation-audit.md
-- confidence: inferred
+- confidence: cited
   path: website/docs/reference/diagnostics.md
-revision: 14
+revision: 19
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-10T00:42:10Z", actor: "human:timo", revision: 13, decided_on: {"recorded":{"review_outcome":2}}}
 - {from: "proposed", to: "active", at: "2026-11-10T00:42:12Z", actor: "human:timo", revision: 14, decided_on: {"recorded":{"review_outcome":2}}}
+- {from: "active", to: "implemented", at: "2026-11-11T00:47:08Z", actor: "human:timo", revision: 19, decided_on: {"recorded":{"test_result":1,"review_outcome":3,"verification":1}}}
 ---
 ## Need
 
@@ -149,19 +162,23 @@ The reproduction and its two variants are committed as fixtures and run in
 
 ## Scope
 
+- cited: crates/edge/ess-cli/tests/adversary_t2_order_tie_emit.rs
 - cited: crates/verify/ess-conformance/src/synthesize.rs
 - cited: crates/verify/ess-conformance/src/synthesize/ordered_head.rs
-- cited: crates/verify/ess-conformance/src/synthesize/paging.rs
+- cited: crates/verify/ess-conformance/tests/adversary_t2_order_tie_pass1.rs
+- cited: crates/verify/ess-conformance/tests/fixtures/adversary-285-base-digests.tsv
+- cited: crates/verify/ess-conformance/tests/fixtures/external-beside-held-guard-base.tsv
+- cited: crates/verify/ess-conformance/tests/fixtures/mutation-order-tie-identity-first.yaml
+- cited: crates/verify/ess-conformance/tests/fixtures/mutation-order-tie-identity-last.yaml
+- cited: crates/verify/ess-conformance/tests/fixtures/mutation-order-tie.yaml
+- cited: crates/verify/ess-conformance/tests/fixtures/synthesis-component-suites-table.tsv
+- cited: crates/verify/ess-conformance/tests/mutation_audit.rs
 - cited: docs/design/mutation-audit-and-model-runner.md
 - cited: docs/design/read-api-view-idioms.md
-- cited: crates/verify/ess-conformance/tests/mutation_audit.rs
-- inferred: crates/verify/ess-conformance/tests/fixtures/mutation-order-tie.yaml
-- inferred: website/docs/guides/verify/mutation-audit.md
-- inferred: website/docs/reference/diagnostics.md
-confidence: medium
+- cited: website/docs/guides/verify/mutation-audit.md
+- cited: website/docs/reference/diagnostics.md
 
-Shared surfaces: re-pins the rows of `synthesis-suite-bytes-table.tsv` (read by both pin targets)
-for models with a multi-key ranked view, and proposes its `CHANGELOG.md` sentence.
+Rewritten at the turn-2 close from the merged change (`93ec319d3e`, `43ab7c1f75`); shared surfaces (CHANGELOG.md, the byte-pin tables, generated references) are left out.
 
 ## Fit review
 

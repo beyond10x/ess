@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-set-guard-fed-by-a-subject-payload-is-arranged
 kind: story
-status: active
+status: implemented
 title: A set guard fed by a subject payload is arranged
 summary: 'ESS-SYNTH-010 refuses a binding whose invoked set guard reads an input the trigger fills from {subject: field}, although arrangeable (#705)'
 tags:
@@ -17,17 +17,24 @@ relations:
 - serves: vision:O2
 scope:
 - confidence: cited
-  path: crates/verify/ess-conformance/src/synthesize/binding_effects.rs
-- confidence: cited
   path: crates/verify/ess-conformance/src/synthesize/binding_effects/set_guard.rs
 - confidence: cited
+  path: crates/verify/ess-conformance/tests/adv_set_guard_subject_payload.rs
+- confidence: cited
   path: crates/verify/ess-conformance/tests/binding_set_guard.rs
-- confidence: inferred
-  path: crates/verify/ess-conformance/tests/fixtures/binding-set-guard/
-revision: 9
+- confidence: cited
+  path: crates/verify/ess-conformance/tests/fixtures/binding-set-guard/subject/components.yaml.txt
+- confidence: cited
+  path: crates/verify/ess-conformance/tests/fixtures/binding-set-guard/subject/grp.yaml.txt
+- confidence: cited
+  path: crates/verify/ess-conformance/tests/fixtures/binding-set-guard/subject/res.yaml.txt
+- confidence: cited
+  path: crates/verify/ess-conformance/tests/fixtures/binding-set-guard/subject/system.yaml.txt
+revision: 12
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-10T00:41:47Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"review_outcome":1}}}
 - {from: "proposed", to: "active", at: "2026-11-10T00:41:47Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "active", to: "implemented", at: "2026-11-11T00:47:28Z", actor: "human:timo", revision: 12, decided_on: {"recorded":{"test_result":1,"review_outcome":3,"verification":1}}}
 ---
 ## Need
 
@@ -214,12 +221,14 @@ branch again over the rows that remain. No authored surface, no new diagnostic, 
 ## Scope
 
 - cited: crates/verify/ess-conformance/src/synthesize/binding_effects/set_guard.rs
-- cited: crates/verify/ess-conformance/src/synthesize/binding_effects.rs
+- cited: crates/verify/ess-conformance/tests/adv_set_guard_subject_payload.rs
 - cited: crates/verify/ess-conformance/tests/binding_set_guard.rs
-- inferred: crates/verify/ess-conformance/tests/fixtures/binding-set-guard/
-- inferred: CHANGELOG.md
+- cited: crates/verify/ess-conformance/tests/fixtures/binding-set-guard/subject/components.yaml.txt
+- cited: crates/verify/ess-conformance/tests/fixtures/binding-set-guard/subject/grp.yaml.txt
+- cited: crates/verify/ess-conformance/tests/fixtures/binding-set-guard/subject/res.yaml.txt
+- cited: crates/verify/ess-conformance/tests/fixtures/binding-set-guard/subject/system.yaml.txt
 
-confidence: high
+Rewritten at the turn-2 close from the merged change (`2723ee70a8`); shared surfaces (CHANGELOG.md, the byte-pin tables, generated references) are left out.
 
 ## Fit review
 

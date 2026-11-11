@@ -1,0 +1,14 @@
+{
+  "at": "2026-11-10T18:14:06Z",
+  "actor": "human:timo",
+  "artifact": "story:the-react-renderer-draws-the-declared-tokens",
+  "kind": "story",
+  "revision": 9,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "review-result:zi-t2-tokens-adv-1",
+    "review": "review-result:zi-t2-tokens-adv-1",
+    "outcome": "fixed"
+  }
+}

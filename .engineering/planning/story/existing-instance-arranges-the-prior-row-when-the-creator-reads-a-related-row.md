@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:existing-instance-arranges-the-prior-row-when-the-creator-reads-a-related-row
 kind: story
-status: active
+status: implemented
 title: existing_instance arranges the prior row when the creating branch reads a related row
 summary: 'existing_instance: cannot arrange the prior row when the creating branch guards on a related row, though another command creates it unguarded (beyond10x/ess#733)'
 tags:
@@ -21,13 +21,16 @@ scope:
 - confidence: cited
   path: crates/verify/ess-conformance/src/synthesize/existence.rs
 - confidence: cited
+  path: crates/verify/ess-conformance/tests/adv_existing_instance_own_run.rs
+- confidence: cited
   path: crates/verify/ess-conformance/tests/existing_instance_beside_related_guards.rs
-- confidence: inferred
+- confidence: cited
   path: docs/design/outcome-shapes.md
-revision: 9
+revision: 14
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-10T00:44:03Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"review_outcome":2}}}
 - {from: "proposed", to: "active", at: "2026-11-10T00:44:04Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"review_outcome":2}}}
+- {from: "active", to: "implemented", at: "2026-11-11T00:47:18Z", actor: "human:timo", revision: 14, decided_on: {"recorded":{"test_result":1,"review_outcome":3,"verification":1}}}
 ---
 ## Need
 
@@ -98,14 +101,13 @@ each failing on 0.92.0 first:
 
 ## Scope
 
-- cited: crates/verify/ess-conformance/src/synthesize/existence.rs
 - cited: crates/verify/ess-conformance/src/synthesize.rs
+- cited: crates/verify/ess-conformance/src/synthesize/existence.rs
+- cited: crates/verify/ess-conformance/tests/adv_existing_instance_own_run.rs
 - cited: crates/verify/ess-conformance/tests/existing_instance_beside_related_guards.rs
-- inferred: docs/design/outcome-shapes.md
+- cited: docs/design/outcome-shapes.md
 
-confidence: medium
-
-Shared surfaces: re-pins the suite-bytes rows it claims and proposes one `CHANGELOG.md` sentence.
+Rewritten at the turn-2 close from the merged change (`1ddccb0f83`, `acc5129912`); shared surfaces (CHANGELOG.md, the byte-pin tables, generated references) are left out.
 
 ## Fit review
 

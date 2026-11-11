@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:an-external-outcome-guarded-on-a-later-state-is-witnessed-from-that-state
 kind: story
-status: active
+status: implemented
 title: An external outcome guarded on a later state is witnessed from that state
 summary: An external outcome with when_subject state == S is witnessed from the initial state, so the model selects wrong-state and every implementation fails it (beyond10x/ess#739)
 tags:
@@ -17,15 +17,16 @@ relations:
 - decomposes: epic:zero-open-issues-2026-11
 scope:
 - confidence: cited
-  path: crates/verify/ess-conformance/src/synthesize.rs
-- confidence: cited
-  path: crates/verify/ess-conformance/src/synthesize/subject_fact.rs
-- confidence: cited
   path: crates/verify/ess-conformance/tests/external_narrowed_by_subject.rs
-revision: 7
+- confidence: cited
+  path: crates/verify/ess-conformance/tests/fixtures/external-narrowed-by-state-only.yaml
+- confidence: cited
+  path: crates/verify/ess-conformance/tests/fixtures/external-narrowed-by-state-unreachable.yaml
+revision: 10
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-10T00:39:28Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":2}}}
 - {from: "proposed", to: "active", at: "2026-11-10T00:39:29Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":2}}}
+- {from: "active", to: "implemented", at: "2026-11-11T00:47:16Z", actor: "human:timo", revision: 10, decided_on: {"recorded":{"test_result":1,"review_outcome":2,"verification":1}}}
 ---
 ## Need
 
@@ -84,14 +85,11 @@ All cases run in `cargo test -p ess-conformance --locked --test external_narrowe
 
 ## Scope
 
-- cited: crates/verify/ess-conformance/src/synthesize.rs (`unclaimed_external`, lines 5245-5254: also route an outcome with `subject_fact::narrowing(&outcome.condition).is_some()` to `external_witness`)
-- cited: crates/verify/ess-conformance/src/synthesize/subject_fact.rs (`uses` line 50, `narrowing` line 99, `external_witness` line 2580, `leaves_external` line 2994: the narrowed search already exists)
-- cited: crates/verify/ess-conformance/tests/external_narrowed_by_subject.rs (new tests: the narrowed branch is the command's only stored-row guard, reachable and unreachable)
+- cited: crates/verify/ess-conformance/tests/external_narrowed_by_subject.rs
+- cited: crates/verify/ess-conformance/tests/fixtures/external-narrowed-by-state-only.yaml
+- cited: crates/verify/ess-conformance/tests/fixtures/external-narrowed-by-state-unreachable.yaml
 
-confidence: high
-
-Shared surfaces moved: re-pins the suite-bytes rows of fixtures with a narrowed external branch
-whose scenario moves, and proposes its `CHANGELOG.md` sentence (Fixed).
+Rewritten at the turn-2 close from the merged change (`35bf5f55c2`); shared surfaces (CHANGELOG.md, the byte-pin tables, generated references) are left out.
 
 ## Fit review
 

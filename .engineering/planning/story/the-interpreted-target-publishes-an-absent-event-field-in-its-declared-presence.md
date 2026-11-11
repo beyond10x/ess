@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:the-interpreted-target-publishes-an-absent-event-field-in-its-declared-presence
 kind: story
-status: active
+status: implemented
 title: The interpreted target publishes an absent event field in its declared presence
 tags:
 - zero-open-issues
@@ -16,14 +16,17 @@ relations:
 scope:
 - confidence: cited
   path: crates/verify/ess-conformance/src/interpret/execute.rs
-- confidence: inferred
+- confidence: cited
+  path: crates/verify/ess-conformance/tests/adversary_t2_interp_presence_pass1.rs
+- confidence: cited
   path: crates/verify/ess-conformance/tests/interpreted_command_execution.rs
-- confidence: inferred
+- confidence: cited
   path: docs/design/wire-presence-json-prefix.md
-revision: 6
+revision: 11
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-10T00:47:41Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"review_outcome":1}}}
 - {from: "proposed", to: "active", at: "2026-11-10T00:47:42Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "active", to: "implemented", at: "2026-11-11T00:47:20Z", actor: "human:timo", revision: 11, decided_on: {"recorded":{"test_result":1,"review_outcome":2,"verification":1}}}
 ---
 ## Need
 
@@ -94,11 +97,11 @@ against its policy.
 ## Scope
 
 - cited: crates/verify/ess-conformance/src/interpret/execute.rs
-- inferred: crates/verify/ess-conformance/tests/interpreted_command_execution.rs
-- inferred: docs/design/wire-presence-json-prefix.md
-- inferred: CHANGELOG.md
+- cited: crates/verify/ess-conformance/tests/adversary_t2_interp_presence_pass1.rs
+- cited: crates/verify/ess-conformance/tests/interpreted_command_execution.rs
+- cited: docs/design/wire-presence-json-prefix.md
 
-confidence: medium
+Rewritten at the turn-2 close from the merged change (`15647d1b24`); shared surfaces (CHANGELOG.md, the byte-pin tables, generated references) are left out.
 
 ## Fit review
 

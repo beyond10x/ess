@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-ui-test-declares-how-each-read-and-command-is-answered
 kind: story
-status: active
+status: implemented
 title: A ui test declares how each read and command is answered
 tags:
 - zero-open-issues
@@ -13,24 +13,29 @@ relations:
 - decomposes: epic:zero-open-issues-2026-11
 - serves: vision:O2
 scope:
-- confidence: inferred
+- confidence: cited
   path: crates/ui/ess-ui-test/src/parity.rs
-- confidence: inferred
+- confidence: cited
   path: crates/ui/ess-ui-test/src/playwright.rs
 - confidence: cited
   path: crates/ui/ess-ui-test/src/runner.rs
 - confidence: cited
   path: crates/ui/ess-ui-test/src/spec.rs
-- confidence: inferred
+- confidence: cited
+  path: crates/ui/ess-ui-test/tests/adversary_t2_fixture_answers_attack.rs
+- confidence: cited
   path: crates/ui/ess-ui-test/tests/fixture_answers.rs
+- confidence: cited
+  path: crates/ui/ess-ui-tui/src/app.rs
 - confidence: cited
   path: crates/ui/ess-ui-tui/src/data.rs
 - confidence: cited
   path: website/docs/reference/ess-ui-test.md
-revision: 6
+revision: 11
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-10T00:42:16Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"review_outcome":1}}}
 - {from: "proposed", to: "active", at: "2026-11-10T00:42:17Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "active", to: "implemented", at: "2026-11-11T00:47:32Z", actor: "human:timo", revision: 11, decided_on: {"recorded":{"test_result":1,"review_outcome":2,"verification":1}}}
 ---
 ## Need
 
@@ -98,15 +103,17 @@ Tests in `crates/ui/ess-ui-test/tests/`, each red on 0.92.0:
 
 ## Scope
 
-- cited: crates/ui/ess-ui-test/src/spec.rs
+- cited: crates/ui/ess-ui-test/src/parity.rs
+- cited: crates/ui/ess-ui-test/src/playwright.rs
 - cited: crates/ui/ess-ui-test/src/runner.rs
+- cited: crates/ui/ess-ui-test/src/spec.rs
+- cited: crates/ui/ess-ui-test/tests/adversary_t2_fixture_answers_attack.rs
+- cited: crates/ui/ess-ui-test/tests/fixture_answers.rs
+- cited: crates/ui/ess-ui-tui/src/app.rs
 - cited: crates/ui/ess-ui-tui/src/data.rs
-- inferred: crates/ui/ess-ui-test/src/parity.rs
-- inferred: crates/ui/ess-ui-test/src/playwright.rs
-- inferred: crates/ui/ess-ui-test/tests/fixture_answers.rs
 - cited: website/docs/reference/ess-ui-test.md
-- inferred: CHANGELOG.md
-confidence: medium
+
+Rewritten at the turn-2 close from the merged change (`61e4f7dce6`); shared surfaces (CHANGELOG.md, the byte-pin tables, generated references) are left out.
 
 ## Fit review
 

@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:the-specification-checks-command-response-wire-names
 kind: story
-status: active
+status: implemented
 title: The specification checks command response wire names
 summary: Two response fields of one wire name are refused by the specification pass, so every target is covered, not only Rust and web
 tags:
@@ -14,18 +14,19 @@ relations:
 - decomposes: epic:adopter-gaps-domain-language
 - decomposes: epic:zero-open-issues-2026-11
 scope:
-- confidence: inferred
-  path: crates/generate/ess-synth/tests/adversary_ess_issues_2_u8.rs
 - confidence: cited
   path: crates/specify/ess-domain/src/wire.rs
-- confidence: inferred
-  path: crates/specify/ess-domain/tests/
+- confidence: cited
+  path: crates/specify/ess-domain/tests/adversary_t2_response_wire_names.rs
+- confidence: cited
+  path: crates/specify/ess-domain/tests/response_wire_names.rs
 - confidence: cited
   path: docs/design/unique-wire-field-identity.md
-revision: 7
+revision: 10
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-10T00:48:14Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":1}}}
 - {from: "proposed", to: "active", at: "2026-11-10T00:48:15Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "active", to: "implemented", at: "2026-11-11T00:47:38Z", actor: "human:timo", revision: 10, decided_on: {"recorded":{"test_result":1,"review_outcome":2,"verification":1}}}
 ---
 ## Problem
 
@@ -94,11 +95,11 @@ components:
 ## Scope
 
 - cited: crates/specify/ess-domain/src/wire.rs
+- cited: crates/specify/ess-domain/tests/adversary_t2_response_wire_names.rs
+- cited: crates/specify/ess-domain/tests/response_wire_names.rs
 - cited: docs/design/unique-wire-field-identity.md
-- inferred: crates/specify/ess-domain/tests/ (a wire-namespace test beside the input case)
-- inferred: crates/generate/ess-synth/tests/adversary_ess_issues_2_u8.rs (`two_response_fields_of_one_wire_name_do_not_reach_the_codec` then takes its refused-before-synthesis arm)
 
-confidence: high
+Rewritten at the turn-2 close from the merged change (`6aa9e99a1d`); shared surfaces (CHANGELOG.md, the byte-pin tables, generated references) are left out.
 
 ## Fit review
 

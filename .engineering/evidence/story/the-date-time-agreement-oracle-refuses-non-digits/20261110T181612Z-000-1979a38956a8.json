@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-10T18:16:12Z",
+  "actor": "human:timo",
+  "artifact": "story:the-date-time-agreement-oracle-refuses-non-digits",
+  "kind": "story",
+  "revision": 11,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "schema-contract date-time agreement; ess-synth json_body_closure and adversary_w1_gen1 targets",
+    "reference": "the-date-time-agreement-oracle-refuses-non-digits/red2-final.txt (0 passed, 1 failed) vs g1.txt, g2.txt, corr-2.txt, corr-3.txt at 68a97671a3 (52, 1, 31, 8 passed)"
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-10T18:34:03Z",
+  "actor": "human:timo",
+  "artifact": "story:a-ui-test-declares-how-each-read-and-command-is-answered",
+  "kind": "story",
+  "revision": 6,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "ess-ui-test fixture_answers, steps, playwright, parity, docs, examples; ess-ui-tui lib",
+    "reference": "a-ui-test-declares-how-each-read-and-command-is-answered/red.txt (2 passed, 7 failed) vs verify-h2-1.txt, verify-h2-2.txt at 86c3dc2670 (38, 14 passed)"
+  }
+}

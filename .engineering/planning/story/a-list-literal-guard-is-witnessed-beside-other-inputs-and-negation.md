@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-list-literal-guard-is-witnessed-beside-other-inputs-and-negation
 kind: story
-status: active
+status: implemented
 title: A list-literal guard is witnessed across lists, beside other leaves and under negation
 summary: 'Three U4 adversary cases: two lists, a refuting leaf beside the literals, not exists unchecked (0.90.0; from-finding)'
 tags:
@@ -17,16 +17,17 @@ relations:
 - serves: vision:O2
 - decomposes: epic:zero-open-issues-2026-11
 scope:
-- confidence: inferred
-  path: crates/verify/ess-conformance/src/synthesize/related_list.rs
 - confidence: cited
   path: crates/verify/ess-conformance/src/witness.rs
 - confidence: cited
+  path: crates/verify/ess-conformance/tests/adversary_t2_list_literal_attack.rs
+- confidence: cited
   path: crates/verify/ess-conformance/tests/adversary_u4_list_literals.rs
-revision: 8
+revision: 11
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-10T00:38:20Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":1}}}
 - {from: "proposed", to: "active", at: "2026-11-10T00:38:21Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "active", to: "implemented", at: "2026-11-11T00:47:35Z", actor: "human:timo", revision: 11, decided_on: {"recorded":{"test_result":1,"review_outcome":3,"verification":1}}}
 ---
 ## Need
 
@@ -82,7 +83,7 @@ and `exists` helpers:
 ## Scope
 
 - cited: crates/verify/ess-conformance/src/witness.rs
-- inferred: crates/verify/ess-conformance/src/synthesize/related_list.rs
+- cited: crates/verify/ess-conformance/tests/adversary_t2_list_literal_attack.rs
 - cited: crates/verify/ess-conformance/tests/adversary_u4_list_literals.rs
 
-confidence: high
+Rewritten at the turn-2 close from the merged change (`05e22e01fd`); shared surfaces (CHANGELOG.md, the byte-pin tables, generated references) are left out.

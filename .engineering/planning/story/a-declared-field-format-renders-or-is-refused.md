@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-declared-field-format-renders-or-is-refused
 kind: story
-status: active
+status: implemented
 title: 'Every declared value format renders, or ess ui check refuses it (minutes and hours, metric duration, timestamp, percent scale, as: metric)'
 summary: '`as: metric` renders as text; durations lack minutes and hours; percent scale is undocumented (workbench report items 8, 41)'
 tags:
@@ -17,30 +17,53 @@ relations:
 - serves: vision:O2
 - decomposes: epic:zero-open-issues-2026-11
 scope:
-- confidence: inferred
-  path: crates/ui/ess-ui-check/src/rules.rs
+- confidence: cited
+  path: crates/ui/ess-ui-check/src/enums.rs
+- confidence: cited
+  path: crates/ui/ess-ui-check/tests/adversary_t2_value_formats_check.rs
+- confidence: cited
+  path: crates/ui/ess-ui-check/tests/adversary_t2_value_formats_p2_check.rs
+- confidence: cited
+  path: crates/ui/ess-ui-check/tests/value_formats.rs
+- confidence: cited
+  path: crates/ui/ess-ui-react/src/emit.rs
 - confidence: cited
   path: crates/ui/ess-ui-react/templates/runtime/composites/metric.tsx.tmpl
 - confidence: cited
   path: crates/ui/ess-ui-react/templates/runtime/core.tsx.tmpl
 - confidence: cited
   path: crates/ui/ess-ui-react/templates/runtime/fields.tsx.tmpl
-- confidence: inferred
+- confidence: cited
+  path: crates/ui/ess-ui-react/tests/adversary_t2_value_formats_p2_react.rs
+- confidence: cited
+  path: crates/ui/ess-ui-react/tests/adversary_t2_value_formats_react.rs
+- confidence: cited
+  path: crates/ui/ess-ui-react/tests/live_binding.rs
+- confidence: cited
   path: crates/ui/ess-ui-react/tests/value_formats.rs
 - confidence: cited
+  path: crates/ui/ess-ui-tui/src/app.rs
+- confidence: cited
   path: crates/ui/ess-ui-tui/src/view.rs
-- confidence: inferred
+- confidence: cited
+  path: crates/ui/ess-ui-tui/tests/adversary_t2_value_formats_p2_tui.rs
+- confidence: cited
+  path: crates/ui/ess-ui-tui/tests/adversary_t2_value_formats_tui.rs
+- confidence: cited
   path: crates/ui/ess-ui-tui/tests/value_formats.rs
 - confidence: cited
   path: crates/ui/ess-ui/src/model.rs
 - confidence: cited
+  path: crates/ui/ess-ui/src/path.rs
+- confidence: cited
   path: schemas/ui/ess-ui.schema.yaml
-- confidence: inferred
+- confidence: cited
   path: website/docs/reference/ess-ui.md
-revision: 8
+revision: 13
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-10T00:33:44Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":1}}}
 - {from: "proposed", to: "active", at: "2026-11-10T00:33:45Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "active", to: "implemented", at: "2026-11-11T00:47:25Z", actor: "human:timo", revision: 13, decided_on: {"recorded":{"test_result":1,"review_outcome":3,"verification":1}}}
 ---
 ## Need
 
@@ -92,17 +115,29 @@ columns:
 
 ## Scope
 
-- cited: `crates/ui/ess-ui-react/templates/runtime/fields.tsx.tmpl`
-- cited: `crates/ui/ess-ui-react/templates/runtime/core.tsx.tmpl`
-- cited: `crates/ui/ess-ui-react/templates/runtime/composites/metric.tsx.tmpl`
-- cited: `crates/ui/ess-ui-tui/src/view.rs`
-- cited: `crates/ui/ess-ui/src/model.rs`
-- cited: `schemas/ui/ess-ui.schema.yaml`
-- inferred: `crates/ui/ess-ui-check/src/rules.rs`
-- inferred: `crates/ui/ess-ui-react/tests/value_formats.rs`
-- inferred: `crates/ui/ess-ui-tui/tests/value_formats.rs`
-- inferred: `website/docs/reference/ess-ui.md`
-- confidence: high
+- cited: crates/ui/ess-ui-check/src/enums.rs
+- cited: crates/ui/ess-ui-check/tests/adversary_t2_value_formats_check.rs
+- cited: crates/ui/ess-ui-check/tests/adversary_t2_value_formats_p2_check.rs
+- cited: crates/ui/ess-ui-check/tests/value_formats.rs
+- cited: crates/ui/ess-ui-react/src/emit.rs
+- cited: crates/ui/ess-ui-react/templates/runtime/composites/metric.tsx.tmpl
+- cited: crates/ui/ess-ui-react/templates/runtime/core.tsx.tmpl
+- cited: crates/ui/ess-ui-react/templates/runtime/fields.tsx.tmpl
+- cited: crates/ui/ess-ui-react/tests/adversary_t2_value_formats_p2_react.rs
+- cited: crates/ui/ess-ui-react/tests/adversary_t2_value_formats_react.rs
+- cited: crates/ui/ess-ui-react/tests/live_binding.rs
+- cited: crates/ui/ess-ui-react/tests/value_formats.rs
+- cited: crates/ui/ess-ui-tui/src/app.rs
+- cited: crates/ui/ess-ui-tui/src/view.rs
+- cited: crates/ui/ess-ui-tui/tests/adversary_t2_value_formats_p2_tui.rs
+- cited: crates/ui/ess-ui-tui/tests/adversary_t2_value_formats_tui.rs
+- cited: crates/ui/ess-ui-tui/tests/value_formats.rs
+- cited: crates/ui/ess-ui/src/model.rs
+- cited: crates/ui/ess-ui/src/path.rs
+- cited: schemas/ui/ess-ui.schema.yaml
+- cited: website/docs/reference/ess-ui.md
+
+Rewritten at the turn-2 close from the merged change (`2aef845b57`); shared surfaces (CHANGELOG.md, the byte-pin tables, generated references) are left out.
 
 ## Fit review
 

@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:the-react-renderer-draws-the-declared-tokens
 kind: story
-status: active
+status: implemented
 title: The React renderer draws the declared tokens
 summary: ess generate ui --target react ignores tokens:; styles.css is unchanged and hard-codes values that have tokens (0.77.0)
 tags:
@@ -18,23 +18,64 @@ relations:
 - serves: vision:O2
 scope:
 - confidence: cited
+  path: crates/ui/ess-ui-check/src/style.rs
+- confidence: cited
+  path: crates/ui/ess-ui-check/tests/checks.rs
+- confidence: cited
   path: crates/ui/ess-ui-react/src/assets.rs
-- confidence: inferred
-  path: crates/ui/ess-ui-react/src/emit.rs
-- confidence: inferred
+- confidence: cited
+  path: crates/ui/ess-ui-react/src/lib.rs
+- confidence: cited
   path: crates/ui/ess-ui-react/templates/project/main.tsx.tmpl
-- confidence: inferred
-  path: crates/ui/ess-ui-react/templates/runtime/primitives/badge.tsx.tmpl
-- confidence: inferred
-  path: crates/ui/ess-ui-react/templates/runtime/primitives/button.tsx.tmpl
+- confidence: cited
+  path: crates/ui/ess-ui-react/templates/runtime/actions.tsx.tmpl
+- confidence: cited
+  path: crates/ui/ess-ui-react/templates/runtime/composites/confirm.tsx.tmpl
+- confidence: cited
+  path: crates/ui/ess-ui-react/templates/runtime/composites/filter_bar.tsx.tmpl
+- confidence: cited
+  path: crates/ui/ess-ui-react/templates/runtime/composites/form.tsx.tmpl
 - confidence: cited
   path: crates/ui/ess-ui-react/templates/runtime/styles.css.tmpl
-- confidence: inferred
+- confidence: cited
+  path: crates/ui/ess-ui-react/tests/adversary_live_binding_pass2.rs
+- confidence: cited
+  path: crates/ui/ess-ui-react/tests/adversary_t2_tokens_css.rs
+- confidence: cited
+  path: crates/ui/ess-ui-react/tests/adversary_t2_tokens_p2_css.rs
+- confidence: cited
+  path: crates/ui/ess-ui-react/tests/confirm.rs
+- confidence: cited
+  path: crates/ui/ess-ui-react/tests/fixtures/styles-0.92.css
+- confidence: cited
+  path: crates/ui/ess-ui-react/tests/live_binding.rs
+- confidence: cited
   path: crates/ui/ess-ui-react/tests/tokens.rs
-revision: 9
+- confidence: cited
+  path: crates/ui/ess-ui-test/src/playwright.rs
+- confidence: cited
+  path: crates/ui/ess-ui-test/tests/confirm.rs
+- confidence: cited
+  path: crates/ui/ess-ui-test/tests/playwright.rs
+- confidence: cited
+  path: crates/ui/ess-ui-tui/src/view.rs
+- confidence: cited
+  path: crates/ui/ess-ui/src/lib.rs
+- confidence: cited
+  path: crates/ui/ess-ui/src/model.rs
+- confidence: cited
+  path: crates/ui/ess-ui/src/token_grammar.rs
+- confidence: cited
+  path: crates/ui/ess-ui/tests/tokens.rs
+- confidence: cited
+  path: schemas/ui/ess-ui.schema.yaml
+- confidence: cited
+  path: website/docs/reference/ess-ui.md
+revision: 14
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-10T00:47:59Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"review_outcome":1}}}
 - {from: "proposed", to: "active", at: "2026-11-10T00:48:01Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "active", to: "implemented", at: "2026-11-11T00:47:30Z", actor: "human:timo", revision: 14, decided_on: {"recorded":{"test_result":1,"review_outcome":3,"verification":1}}}
 ---
 ## Need
 
@@ -66,14 +107,35 @@ As `docs/design/ui-style-tokens.md` § Renderers, step 2 of its implementation n
 
 ## Scope
 
-- cited: `crates/ui/ess-ui-react/src/assets.rs`
-- cited: `crates/ui/ess-ui-react/templates/runtime/styles.css.tmpl`
-- inferred: `crates/ui/ess-ui-react/src/emit.rs`
-- inferred: `crates/ui/ess-ui-react/templates/project/main.tsx.tmpl`
-- inferred: `crates/ui/ess-ui-react/templates/runtime/primitives/badge.tsx.tmpl`
-- inferred: `crates/ui/ess-ui-react/templates/runtime/primitives/button.tsx.tmpl`
-- inferred: `crates/ui/ess-ui-react/tests/tokens.rs`
-- confidence: high
+- cited: crates/ui/ess-ui-check/src/style.rs
+- cited: crates/ui/ess-ui-check/tests/checks.rs
+- cited: crates/ui/ess-ui-react/src/assets.rs
+- cited: crates/ui/ess-ui-react/src/lib.rs
+- cited: crates/ui/ess-ui-react/templates/project/main.tsx.tmpl
+- cited: crates/ui/ess-ui-react/templates/runtime/actions.tsx.tmpl
+- cited: crates/ui/ess-ui-react/templates/runtime/composites/confirm.tsx.tmpl
+- cited: crates/ui/ess-ui-react/templates/runtime/composites/filter_bar.tsx.tmpl
+- cited: crates/ui/ess-ui-react/templates/runtime/composites/form.tsx.tmpl
+- cited: crates/ui/ess-ui-react/templates/runtime/styles.css.tmpl
+- cited: crates/ui/ess-ui-react/tests/adversary_live_binding_pass2.rs
+- cited: crates/ui/ess-ui-react/tests/adversary_t2_tokens_css.rs
+- cited: crates/ui/ess-ui-react/tests/adversary_t2_tokens_p2_css.rs
+- cited: crates/ui/ess-ui-react/tests/confirm.rs
+- cited: crates/ui/ess-ui-react/tests/fixtures/styles-0.92.css
+- cited: crates/ui/ess-ui-react/tests/live_binding.rs
+- cited: crates/ui/ess-ui-react/tests/tokens.rs
+- cited: crates/ui/ess-ui-test/src/playwright.rs
+- cited: crates/ui/ess-ui-test/tests/confirm.rs
+- cited: crates/ui/ess-ui-test/tests/playwright.rs
+- cited: crates/ui/ess-ui-tui/src/view.rs
+- cited: crates/ui/ess-ui/src/lib.rs
+- cited: crates/ui/ess-ui/src/model.rs
+- cited: crates/ui/ess-ui/src/token_grammar.rs
+- cited: crates/ui/ess-ui/tests/tokens.rs
+- cited: schemas/ui/ess-ui.schema.yaml
+- cited: website/docs/reference/ess-ui.md
+
+Rewritten at the turn-2 close from the merged change (`bb691ed760`); shared surfaces (CHANGELOG.md, the byte-pin tables, generated references) are left out.
 
 ## Fit review
 

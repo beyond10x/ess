@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:an-absent-optional-under-false-and-unknown-is-arranged
 kind: story
-status: active
+status: implemented
 title: An absent Optional under false-and-unknown is arranged
 summary: Arrangement cannot decide false and unknown over an absent Optional input, and its refusal blames an unrelated creating command (beyond10x/ess#728)
 tags:
@@ -17,19 +17,16 @@ relations:
 - decomposes: epic:zero-open-issues-2026-11
 scope:
 - confidence: cited
-  path: crates/verify/ess-conformance/src/decision.rs
-- confidence: cited
-  path: crates/verify/ess-conformance/src/lib.rs
-- confidence: cited
-  path: crates/verify/ess-conformance/src/synthesize.rs
-- confidence: cited
   path: crates/verify/ess-conformance/src/synthesize/subject_fact.rs
-- confidence: inferred
+- confidence: cited
   path: crates/verify/ess-conformance/tests/arranged_row_beside_absent_optional_guard.rs
-revision: 8
+- confidence: cited
+  path: crates/verify/ess-conformance/tests/fixtures/absent-optional-beside-stored-guard.yaml
+revision: 13
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-10T00:38:29Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":1}}}
 - {from: "proposed", to: "active", at: "2026-11-10T00:38:30Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "active", to: "implemented", at: "2026-11-11T00:47:12Z", actor: "human:timo", revision: 13, decided_on: {"recorded":{"test_result":1,"review_outcome":2,"verification":1}}}
 ---
 ## Need
 
@@ -100,13 +97,11 @@ but no search acts on it.
 
 ## Scope
 
-- cited: crates/verify/ess-conformance/src/synthesize.rs
 - cited: crates/verify/ess-conformance/src/synthesize/subject_fact.rs
-- cited: crates/verify/ess-conformance/src/decision.rs
-- cited: crates/verify/ess-conformance/src/lib.rs
-- inferred: crates/verify/ess-conformance/tests/arranged_row_beside_absent_optional_guard.rs
-- inferred: CHANGELOG.md
-confidence: medium
+- cited: crates/verify/ess-conformance/tests/arranged_row_beside_absent_optional_guard.rs
+- cited: crates/verify/ess-conformance/tests/fixtures/absent-optional-beside-stored-guard.yaml
+
+Rewritten at the turn-2 close from the merged change (`e7d7777aeb`); shared surfaces (CHANGELOG.md, the byte-pin tables, generated references) are left out.
 
 ## Fit review
 
