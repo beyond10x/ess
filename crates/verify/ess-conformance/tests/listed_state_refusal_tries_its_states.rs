@@ -151,13 +151,33 @@ fn about_wrong_state(synthesis: &Synthesis) -> Vec<String> {
 #[test]
 fn a_listed_state_refusal_is_never_reported_against_a_state_it_does_not_list() {
     let (_, synthesis) = synthesized("");
-    for refusal in about_wrong_state(&synthesis) {
+    let refusals = about_wrong_state(&synthesis);
+    for refusal in &refusals {
         for unlisted in ["Extracted", "Accepted"] {
             assert!(
                 !refusal.contains(&format!("held state {unlisted}")),
                 "{refusal}"
             );
         }
+    }
+    // Where no view publishes the state nothing is refused, so the loop above has nothing to
+    // check: the scenarios the refusals used to stand for must be there instead.
+    assert!(refusals.is_empty(), "{refusals:#?}");
+    let ids: Vec<String> = synthesis
+        .suite
+        .scenarios
+        .iter()
+        .map(|(id, _)| id.to_string())
+        .collect();
+    for scenario in [
+        WRONG_STATE,
+        "example.catalogue.Item/state/Rejected/refuses/example.catalogue.SetLevel",
+        "example.catalogue.Item/state/Stale/refuses/example.catalogue.SetLevel",
+    ] {
+        assert!(
+            ids.iter().any(|id| id == scenario),
+            "no {scenario}: {ids:#?}"
+        );
     }
 }
 

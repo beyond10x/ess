@@ -248,6 +248,51 @@ fn the_interpreted_run_passes_every_scenario_without_a_state_view() {
     assert!(failing.is_empty(), "{failing:#?}");
 }
 
+/// The suite and refusals of the specification whose view publishes `state` (`b`), as the base
+/// revision `c19171522d` synthesizes them: sha256 of the canonical suite JSON and of the refusals'
+/// text, with their lengths. Written by this test run with `HELD_STATE_B_WRITE=<path>` in an export
+/// of that revision.
+const BASE_B_SUITE: &str =
+    "0a1c04947c1b19b43ee6dd4837a5a7d6c44bf3831c05154a7ceef41e5c51e4e9:102624";
+const BASE_B_REFUSALS: &str =
+    "a5432dc085ca729a9dc8937e45bc6c66512f0babaea139977d556676b9e16952:4853";
+
+fn digest(text: &str) -> String {
+    use sha2::{Digest, Sha256};
+    use std::fmt::Write as _;
+    let hex = Sha256::digest(text.as_bytes())
+        .iter()
+        .fold(String::new(), |mut hex, byte| {
+            write!(hex, "{byte:02x}").unwrap();
+            hex
+        });
+    format!("{hex}:{}", text.len())
+}
+
+#[test]
+fn a_state_view_keeps_its_suite_bytes_against_the_base() {
+    let (_, synthesis) = synthesized(true);
+    let suite = synthesis
+        .suite
+        .to_canonical_json()
+        .expect("a canonical suite");
+    let refusals: String = synthesis
+        .refusals
+        .iter()
+        .map(|r| format!("{r}\n"))
+        .collect();
+    let (suite, refusals) = (digest(&suite), digest(&refusals));
+    if let Ok(path) = std::env::var("HELD_STATE_B_WRITE") {
+        std::fs::write(path, format!("{suite}\n{refusals}\n")).unwrap();
+        return;
+    }
+    assert_eq!(
+        suite, BASE_B_SUITE,
+        "the suite of a model with a state view moved"
+    );
+    assert_eq!(refusals, BASE_B_REFUSALS, "its refusals moved");
+}
+
 #[test]
 fn a_state_view_keeps_the_observation_through_it() {
     let (model, synthesis) = synthesized(true);

@@ -457,11 +457,11 @@ const INTENDED: &[(&str, &str)] = &[
     ),
     (
         "crates/verify/ess-conformance/tests/fixtures/occurrence-clock-offers.yaml",
-        "ir=100a4d422734bdd51af9:14053 suite=4b8a770fbb6241c13f00:30533 refusals=4fd558db28f2b7a105b0:2473 mutants=9ef6a40600673b199930:1609",
+        "ir=100a4d422734bdd51af9:14053 suite=6ccfa83de26d53820995:40697 refusals=d06af6ab6484900922bb:977 mutants=9ef6a40600673b199930:1609",
     ),
     (
         "crates/verify/ess-conformance/tests/fixtures/occurrence-clock-offers.yaml@ess22",
-        "ir=100a4d422734bdd51af9:14053 suite=4b8a770fbb6241c13f00:30533 refusals=4fd558db28f2b7a105b0:2473 mutants=9ef6a40600673b199930:1609",
+        "ir=100a4d422734bdd51af9:14053 suite=6ccfa83de26d53820995:40697 refusals=d06af6ab6484900922bb:977 mutants=9ef6a40600673b199930:1609",
     ),
     (
         "crates/verify/ess-conformance/tests/fixtures/one-time-coverage/model.yaml",
@@ -705,11 +705,11 @@ const INTENDED: &[(&str, &str)] = &[
     ),
     (
         "crates/verify/ess-conformance/tests/fixtures/occurrence-clock-claims.yaml",
-        "ir=538865d7e0452497e18a:6968 suite=3901ea3654aa94d71e41:1665 refusals=b8c7e355f81df698f2a5:1946 mutants=dad70f76a7982e62b7e1:474",
+        "ir=538865d7e0452497e18a:6968 suite=a55a2b67c1bd021f9927:10364 refusals=53ffd8c0a6cfd63d6b8c:481 mutants=dad70f76a7982e62b7e1:474",
     ),
     (
         "crates/verify/ess-conformance/tests/fixtures/occurrence-clock-claims.yaml@ess22",
-        "ir=538865d7e0452497e18a:6968 suite=3901ea3654aa94d71e41:1665 refusals=b8c7e355f81df698f2a5:1946 mutants=dad70f76a7982e62b7e1:474",
+        "ir=538865d7e0452497e18a:6968 suite=a55a2b67c1bd021f9927:10364 refusals=53ffd8c0a6cfd63d6b8c:481 mutants=dad70f76a7982e62b7e1:474",
     ),
     (
         "crates/verify/ess-conformance/tests/fixtures/optional-input-narrowed.yaml",
