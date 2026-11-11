@@ -166,7 +166,7 @@ fn witnessed() -> String {
 }
 
 #[test]
-fn the_related_guarded_error_suite_passes_on_generated_servers() {
+fn the_related_guarded_error_servers_build_and_the_reported_suite_passes() {
     assert!(served::go_available(), "Go is required");
     for (target, label) in [(Target::Rust, "rust"), (Target::Go, "go")] {
         // The example as reported: every scenario a socket can drive passes.

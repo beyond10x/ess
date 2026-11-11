@@ -1534,7 +1534,7 @@ fn delivery_arm(
     let ident = name::value_ident(&source);
     let pascal = name::pascal(&source);
     let acceptor = name::value_ident(&delivery.acceptor.name.to_string());
-    let method = name::value_ident(&layout.type_name(binding.command.name()));
+    let method = layout.port_method(&delivery.acceptor.name, binding.command.name());
     let outcome_type = format!(
         "{}Outcome",
         types_path(layout, types, binding.command.name())

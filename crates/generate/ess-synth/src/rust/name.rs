@@ -45,7 +45,7 @@ pub fn pascal(word: &str) -> String {
     spelled
 }
 
-fn spell(word: &str) -> String {
+pub(crate) fn spell(word: &str) -> String {
     let mut out = String::new();
     let mut boundary = true;
     for character in word.chars() {
@@ -70,7 +70,7 @@ fn spell(word: &str) -> String {
 pub fn type_fragment(text: &str) -> String {
     text.split(|character: char| !character.is_alphanumeric())
         .filter(|word| !word.is_empty())
-        .map(pascal)
+        .map(spell)
         .collect()
 }
 
