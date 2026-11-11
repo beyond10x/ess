@@ -66,7 +66,7 @@ commands:
     outcomes:
 "#;
 
-const TAIL: &str = r#"      - name: already-exists
+const TAIL: &str = r"      - name: already-exists
         existing_instance: true
         error: example.review.AlreadyExists
       - name: recorded
@@ -90,7 +90,7 @@ const TAIL: &str = r#"      - name: already-exists
         sets: {note: input.note}
         emits: [example.review.Annotated]
         payload: {example.review.Annotated: {key: input.key}}
-"#;
+";
 
 const NOT_ACCEPTED: &str = "example.review.Annotate/outcome/not-accepted";
 const ANNOTATED: &str = "example.review.Annotate/outcome/annotated";
