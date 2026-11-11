@@ -21,12 +21,16 @@ use ess_compiler::ir::EssIr;
 use ess_compiler::resolve::compile;
 use ess_compiler::source::SourceMap;
 use ess_conformance::faulty;
+use ess_conformance::history::Completion;
 use ess_conformance::history::{self, History, HistoryRefusal, Operation, Verdict};
 use ess_conformance::linearize::{self, Anomaly, DEFAULT_BUDGET, DEFAULT_SETTLE};
-use ess_conformance::record::{Atomic, Call, Subject};
+use ess_conformance::record::{Atomic, Call, Interleaved, Subject};
 use ess_conformance::reference::Billing;
 use ess_conformance::scenario::SuiteProvenance;
 use ess_conformance::sessions::{self, Act};
+use ess_conformance::target::{
+    ConformanceTarget, SemanticCommandRequest, SemanticCommandResult, TargetError,
+};
 use ess_domain::spec::{RawSpecFile, Specification};
 use ess_domain::system::Source;
 use ess_primitives::facts::Number;
@@ -1148,4 +1152,118 @@ mod adversary_m5_pass1 {
              {answer:?}"
         );
     }
+}
+
+// ---- a creation the target executed and then lost the answer of ---------------------------------
+
+const LOST_EMAIL: &str = "lost@example.com";
+
+/// A target that executes every command, and for a creation addressed to [`LOST_EMAIL`] answers
+/// with an error after executing it, `executions` times over.
+struct LosesTheAnswer<'t> {
+    inner: &'t Billing,
+    executions: usize,
+}
+
+impl Interleaved for LosesTheAnswer<'_> {
+    type Pending = SemanticCommandRequest;
+
+    fn invoke(&self, request: SemanticCommandRequest) -> Self::Pending {
+        request
+    }
+
+    fn complete(&self, pending: Self::Pending) -> Result<SemanticCommandResult, TargetError> {
+        let lost = pending.input.get("customer_email").and_then(Node::as_text) == Some(LOST_EMAIL);
+        if !lost {
+            return self.inner.execute_command(pending);
+        }
+        for _ in 0..self.executions {
+            let _ = self.inner.execute_command(pending.clone());
+        }
+        Err(TargetError::unavailable(
+            "CreateInvoice",
+            "the answer was lost after the call executed",
+        ))
+    }
+}
+
+fn lost_creation() -> Call {
+    let mut call = create();
+    call.input.insert(
+        "customer_email".to_owned(),
+        Node::Text(LOST_EMAIL.to_owned()),
+    );
+    call
+}
+
+/// One client creates and never hears the answer; another reads the invoices.
+fn lost_creation_workload() -> sessions::Workload {
+    sessions::Workload {
+        prefix: Vec::new(),
+        clients: vec![
+            vec![Act::Call(lost_creation())],
+            vec![Act::Read(INVOICE_BY_ID.to_owned())],
+        ],
+    }
+}
+
+fn record_losing(executions: usize, seed: u64) -> (EssIr, History) {
+    let model = billing_model();
+    let reference = Billing::with_lag(0);
+    let target = LosesTheAnswer {
+        inner: &reference,
+        executions,
+    };
+    let recorded = sessions::record(&model, &target, &reference, &lost_creation_workload(), seed)
+        .expect("recorded");
+    let history = through_the_reader(&model, &recorded);
+    (model, history)
+}
+
+#[test]
+fn a_read_that_shows_the_row_of_a_creation_whose_answer_was_lost_is_not_a_future_read() {
+    let mut showed = 0;
+    for seed in 0..32 {
+        let (model, history) = record_losing(1, seed);
+        let creation = history
+            .operations
+            .iter()
+            .find(|operation| operation.command.as_str().ends_with("CreateInvoice"))
+            .expect("the creation");
+        assert_eq!(creation.completion, Completion::Indeterminate);
+        assert_eq!(creation.subject_key, "");
+        let read = reads_of(&history, INVOICE_BY_ID)[0];
+        let rows = read.rows.as_ref().expect("rows");
+        let lost_row_shown = creation.invoked_at < read.returned_at.expect("answered");
+        showed += usize::from(lost_row_shown && rows.is_empty());
+        let checked = linearize::check(&model, &history, DEFAULT_BUDGET).expect("checked");
+        assert_ne!(
+            checked.read.as_ref().map(|violation| violation.anomaly),
+            Some(Anomaly::FutureRead),
+            "seed {seed}: {checked:?}"
+        );
+    }
+    assert!(
+        showed > 0,
+        "no seed wrote the lost creation's row out, so the case says nothing"
+    );
+}
+
+#[test]
+fn a_row_no_operation_and_no_lost_creation_accounts_for_is_still_a_future_read() {
+    let mut reported = 0;
+    for seed in 0..32 {
+        let (model, history) = record_losing(2, seed);
+        let read = reads_of(&history, INVOICE_BY_ID)[0];
+        if read.rows.as_ref().is_some_and(|rows| !rows.is_empty()) {
+            let checked = linearize::check(&model, &history, DEFAULT_BUDGET).expect("checked");
+            let violation = checked.read.expect("the second row is a future read");
+            assert_eq!(violation.anomaly, Anomaly::FutureRead, "seed {seed}");
+            reported += 1;
+        }
+    }
+    assert!(
+        reported > 0,
+        "no seed showed a row, so the case says nothing"
+    );
 }
