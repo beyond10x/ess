@@ -256,6 +256,12 @@ impl<T: Interleaved, V: ConformanceTarget> Recording<'_, T, V> {
         index
     }
 
+    /// Leaves the rows of creations whose answer was lost out of the recorded reads
+    /// ([`leave_out_lost_rows`]).
+    fn leave_out_lost_rows(&mut self) {
+        leave_out_lost_rows(&mut self.operations, &self.creates, &self.sources);
+    }
+
     /// Records the entity the command creates, where one of its outcomes creates one.
     fn note_creation(&mut self, index: usize, command: &str) {
         let created = ModelName::new(command)
@@ -265,8 +271,7 @@ impl<T: Interleaved, V: ConformanceTarget> Recording<'_, T, V> {
                 spec.outcomes
                     .iter()
                     .filter_map(|outcome| outcome.subject.as_ref())
-                    .filter(|subject| matches!(subject.effect, ResolvedEffect::Creates))
-                    .last()
+                    .rfind(|subject| matches!(subject.effect, ResolvedEffect::Creates))
             })
             .map(|subject| subject.entity.clone());
         if let Some(entity) = created {
@@ -755,11 +760,7 @@ pub fn record_with<T: Interleaved, V: ConformanceTarget>(
         }
     }
 
-    leave_out_lost_rows(
-        &mut recording.operations,
-        &recording.creates,
-        &recording.sources,
-    );
+    recording.leave_out_lost_rows();
     Ok(Recorded {
         history: History {
             format: HistoryFormat::for_operations(&recording.operations),
