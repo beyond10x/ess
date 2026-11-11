@@ -5259,6 +5259,54 @@ fn reachable(command: &ResolvedCommand, facts: &crate::InputFacts<'_>) -> Vec<us
     reached
 }
 
+/// Whether the model answers `facts` with a refusal selected by the held state, whatever state the
+/// row `outcome` updates or moves rests in: for each state the branch can be taken from, a refusal
+/// the precedence plan reads before `outcome`, whose `when_subject_state:` (or
+/// `when_state_changes:`) admits that state and whose input guard, where it has one, the input
+/// meets. A branch that creates its row has no held state to answer at.
+fn answered_by_held_refusal(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    outcome: &ess_compiler::ir::ResolvedOutcome,
+    entity: &EntityHandle,
+    facts: &crate::InputFacts<'_>,
+) -> bool {
+    use ess_compiler::ir::{ResolvedCondition, ResolvedEffect};
+    let Some(subject) = &outcome.subject else {
+        return false;
+    };
+    if matches!(subject.effect, ResolvedEffect::Creates) {
+        return false;
+    }
+    let before = crate::synthesize::precedence::answers_before(ir.format(), command, outcome);
+    let mut starts = ir
+        .entity(entity)
+        .lifecycle
+        .states
+        .iter()
+        .filter(|state| {
+            crate::synthesize::admits_held_state(&outcome.condition, state)
+                && subject
+                    .effect
+                    .transition()
+                    .is_none_or(|transition| transition.from.contains(state))
+        })
+        .peekable();
+    starts.peek().is_some()
+        && starts.all(|state| {
+            before.iter().any(|branch| {
+                let guard = match &branch.condition {
+                    ResolvedCondition::SubjectState { predicate, .. }
+                    | ResolvedCondition::StateChange { predicate, .. } => predicate.as_ref(),
+                    _ => return false,
+                };
+                branch.error.is_some()
+                    && crate::synthesize::admits_held_state(&branch.condition, state)
+                    && guard.is_none_or(|guard| matches!(facts.decide(guard), Decision::Satisfied))
+            })
+        })
+}
+
 /// The first entity invariant of a branch `input` can reach that `input` refutes, or `None`. An
 /// input that does not flatten is [`admitted_inputs`]'s to refuse.
 fn broken<'h>(
@@ -5615,7 +5663,9 @@ pub(crate) fn outside_invariant(
         if guard.is_some_and(|guard| !matches!(facts.decide(guard), Decision::Satisfied)) {
             continue;
         }
-        if !reachable(command, &facts).contains(&index) {
+        if !reachable(command, &facts).contains(&index)
+            || answered_by_held_refusal(ir, command, outcome, entity, &facts)
+        {
             continue;
         }
         let Some(broken) = owed

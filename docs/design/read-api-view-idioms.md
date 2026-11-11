@@ -23,7 +23,10 @@ ess verify conform run --target interpreted --report-format 2 \
 Synthesis refuses three views of the example, each on purpose: `idioms.fold.NonZeroTotalByLabel` and
 `idioms.fold.NonZeroTotalBySession` (`ESS-SYNTH-017`, see the per-key total section) and
 `idioms.ratio.LongCalls` (`ESS-SYNTH-017`: its parameter is read other than by `field ==
-param.name`).
+param.name`). It also names one input, with `ESS-SYNTH-025`: `idioms.fold.RecordEnd` copies
+`duration` into `SessionEnd` without guarding the invariant `duration >= 0`, and the example
+declares no refusal for a negative one. The example is about views, so the command stays minimal;
+a model that records durations guards the branch or declares that refusal.
 
 ## Derived values over aggregates are the consumer's
 

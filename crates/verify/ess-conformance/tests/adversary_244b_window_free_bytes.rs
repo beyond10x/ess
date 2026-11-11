@@ -233,11 +233,11 @@ const INTENDED: &[(&str, &str)] = &[
     ),
     (
         "crates/specify/ess-domain/tests/fixtures/text-length-positions.yaml",
-        "ir=64397198ca8b3f008517:12944 suite=4396e0632c2955f3febf:26366 refusals=09a7f9efe74b5bfe99fd:1604 mutants=1b060c619d9481a75e3a:679",
+        "ir=64397198ca8b3f008517:12944 suite=4396e0632c2955f3febf:26366 refusals=174a2d93da6b11243fd1:2104 mutants=1b060c619d9481a75e3a:679",
     ),
     (
         "crates/specify/ess-domain/tests/fixtures/text-length-positions.yaml@ess22",
-        "ir=64397198ca8b3f008517:12944 suite=4396e0632c2955f3febf:26366 refusals=09a7f9efe74b5bfe99fd:1604 mutants=1b060c619d9481a75e3a:679",
+        "ir=64397198ca8b3f008517:12944 suite=4396e0632c2955f3febf:26366 refusals=174a2d93da6b11243fd1:2104 mutants=1b060c619d9481a75e3a:679",
     ),
     (
         "crates/verify/ess-conformance/tests/fixtures/aggregate-stored-guarded-move.yaml",
