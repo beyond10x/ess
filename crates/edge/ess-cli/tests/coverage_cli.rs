@@ -504,7 +504,7 @@ fn covers_specification(directory: &Path) -> PathBuf {
         "ess-inputs.yaml",
         "system.yaml",
         "review.yaml",
-        "scenarios/confirm-twice.yaml",
+        "scenarios/too-many-tags.yaml",
     ] {
         fs::copy(from.join(format!("{name}.in")), spec.join(name)).unwrap();
     }
@@ -547,14 +547,14 @@ fn a_covered_refusal_is_marked_and_the_synthesis_exits_zero() {
     );
     assert_eq!(
         last_line(&output),
-        "11 selected scenario(s), 1 authored source(s), 1 refusal occurrence(s), 1 covered by authored"
+        "14 selected scenario(s), 1 authored source(s), 1 refusal occurrence(s), 1 covered by authored"
     );
     let suite: Value = serde_json::from_str(&fs::read_to_string(&out).unwrap()).unwrap();
     assert_eq!(suite["provenance"]["suite_version"], "ess-conformance/65");
     assert_eq!(suite["coverage"]["counts"]["refused"], 1);
     assert_eq!(
         suite["coverage"]["refused"][0]["covered_by"],
-        "example.review/authored/confirm-decision-already-exists"
+        "example.review/authored/a-note-with-too-many-tags"
     );
 }
 
@@ -562,14 +562,13 @@ fn a_covered_refusal_is_marked_and_the_synthesis_exits_zero() {
 fn a_cover_of_an_unrefused_id_exits_one_and_writes_nothing() {
     let dir = directory("covers-unknown");
     let spec = covers_specification(&dir);
-    let file = spec.join("scenarios/confirm-twice.yaml");
+    let file = spec.join("scenarios/too-many-tags.yaml");
     let missing = "example.review.ConfirmDecision/outcome/missing";
     fs::write(
         &file,
-        fs::read_to_string(&file).unwrap().replace(
-            "example.review.ConfirmDecision/outcome/already-exists",
-            missing,
-        ),
+        fs::read_to_string(&file)
+            .unwrap()
+            .replace("example.review.TakeNote/outcome/too-many-tags", missing),
     )
     .unwrap();
     let out = dir.join("with-coverage.json");
@@ -591,7 +590,7 @@ fn ordinary_synthesis_keeps_its_summary_with_a_covers_key_present() {
     assert_eq!(
         last_line(&output),
         format!(
-            "11 scenario(s) (1 authored), 1 refusal(s), written to {}",
+            "14 scenario(s) (1 authored), 1 refusal(s), written to {}",
             out.display()
         )
     );

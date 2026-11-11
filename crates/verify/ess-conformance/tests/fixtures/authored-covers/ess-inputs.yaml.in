@@ -3,4 +3,4 @@ specification:
   - system.yaml
   - review.yaml
 scenarios:
-  - scenarios/confirm-twice.yaml
+  - scenarios/too-many-tags.yaml

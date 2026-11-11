@@ -25,7 +25,7 @@ use serde_json::{json, Value};
 
 const SCENARIO: &str = "example.domain/authored/created";
 const REFUSED: &str = "example.domain.Make/outcome/already-exists";
-const COVERING: &str = "example.review/authored/confirm-decision-already-exists";
+const COVERING: &str = "example.review/authored/a-note-with-too-many-tags";
 const EFFECTS: [&str; 2] = ["candidate_not_emitted", "check_not_emitted"];
 
 fn document(major: u32, refusal: &Value) -> Value {
@@ -82,8 +82,8 @@ fn model() -> EssIr {
 /// The suite the unit's own fixture synthesizes: one refusal covered by the authored scenario.
 fn synthesized() -> (String, String) {
     let ir = model();
-    let text = std::fs::read_to_string(fixture().join("scenarios/confirm-twice.yaml.in")).unwrap();
-    let source = CoverageSource::new("scenarios/confirm-twice.yaml", &text).unwrap();
+    let text = std::fs::read_to_string(fixture().join("scenarios/too-many-tags.yaml.in")).unwrap();
+    let source = CoverageSource::new("scenarios/too-many-tags.yaml", &text).unwrap();
     let input = coverage_build::build(&ir, &[source], Scope::System, Origins::GeneratedAndAuthored)
         .unwrap();
     let kept: Vec<ScenarioId> = input

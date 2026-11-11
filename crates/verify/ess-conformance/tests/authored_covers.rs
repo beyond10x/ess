@@ -1,7 +1,9 @@
 //! An authored scenario retires the refusal it covers (beyond10x/ess#735).
 //!
-//! The specification is the reproduction of the report: `ConfirmDecision` has an `already-exists`
-//! outcome synthesis refuses to witness (`ESS-SYNTH-004`), and an authored scenario reaches it.
+//! The specification has a refusal synthesis cannot witness: `TakeNote` refuses a note of more
+//! than 2000 tags, past the 1024 elements synthesis builds (`ESS-SYNTH-018`), and an authored
+//! scenario sending 2001 tags reaches it. (The report's own `ConfirmDecision/already-exists` is
+//! witnessed by synthesis since the existing-instance arrangement reads the creator's related row.)
 //! `covers:` (`ess-scenario/7`) names the refusal's scenario id; the occurrence stays in the suite,
 //! carries a `covered_by` mark (`ess-conformance/65`), and declared coverage counts it complete only
 //! when the covering scenario is selected and passes in the same run.
@@ -22,8 +24,8 @@ use std::{
     path::{Path, PathBuf},
 };
 
-const REFUSED: &str = "example.review.ConfirmDecision/outcome/already-exists";
-const COVERING: &str = "example.review/authored/confirm-decision-already-exists";
+const REFUSED: &str = "example.review.TakeNote/outcome/too-many-tags";
+const COVERING: &str = "example.review/authored/a-note-with-too-many-tags";
 
 /// The specification and scenario are stored as `*.in` so the repository-model walkers
 /// (`synthesis_suite_bytes_table`) do not pin them as models.
@@ -44,11 +46,11 @@ fn model() -> EssIr {
 }
 
 fn scenario() -> String {
-    fs::read_to_string(fixture().join("scenarios/confirm-twice.yaml.in")).unwrap()
+    fs::read_to_string(fixture().join("scenarios/too-many-tags.yaml.in")).unwrap()
 }
 
 fn build(ir: &EssIr, text: &str) -> Result<AdmittedInput, ess_conformance::AdmissionError> {
-    let source = CoverageSource::new("scenarios/confirm-twice.yaml", text).unwrap();
+    let source = CoverageSource::new("scenarios/too-many-tags.yaml", text).unwrap();
     coverage_build::build(ir, &[source], Scope::System, Origins::GeneratedAndAuthored)
 }
 
@@ -90,7 +92,7 @@ fn a_passing_covering_scenario_completes_declared_coverage() {
 #[test]
 fn a_failing_covering_scenario_does_not_complete_declared_coverage() {
     let ir = model();
-    let failing = scenario().replace("outcome: already-exists", "outcome: confirmed");
+    let failing = scenario().replace("outcome: taken", "outcome: note-exists");
     let input = build(&ir, &failing).unwrap();
     let report = report(&ir, &input);
     assert_eq!(report.execution_status(), CountStatus::Failed);
@@ -151,7 +153,7 @@ fn covers_is_an_unsupported_key_below_scenario_format_7() {
 fn without_covers_the_suite_keeps_its_format_and_its_refusal_bytes() {
     let ir = model();
     let text = scenario().replace(
-        "ess-scenario/7\ncovers:\n  - example.review.ConfirmDecision/outcome/already-exists",
+        "ess-scenario/7\ncovers:\n  - example.review.TakeNote/outcome/too-many-tags",
         "ess-scenario/6",
     );
     let input = build(&ir, &text).unwrap();

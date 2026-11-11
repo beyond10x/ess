@@ -16,6 +16,11 @@ entities:
       terminal: [Stale]
       transitions:
         - {name: expire, from: [Current], to: Stale}
+  - name: example.review.Note
+    identity: {name: note_id, type: String}
+    fields:
+      - {name: tags, type: List<String>}
+    lifecycle: {initial: Open, states: [Open], terminal: [Open]}
 
 actors:
   - name: example.review.Reviewer
@@ -25,6 +30,8 @@ actors:
       - example.review.ExpireDecision
       - example.review.ConfirmDecision
       - example.review.Decisions
+      - example.review.TakeNote
+      - example.review.Notes
     naming: {display: Reviewer}
 
 errors:
@@ -34,6 +41,8 @@ errors:
   - {name: example.review.Missing, summary: The confirmed decision does not exist., fields: []}
   - {name: example.review.OtherItem, summary: The confirmed decision is about another item., fields: []}
   - {name: example.review.NotStale, summary: The confirmed decision is not stale., fields: []}
+  - {name: example.review.TooManyTags, summary: A note carries at most 2000 tags., fields: []}
+  - {name: example.review.NoteExists, summary: A note of that id exists already., fields: []}
 
 commands:
   - name: example.review.RecordDecision
@@ -89,7 +98,28 @@ commands:
         payload:
           example.review.DecisionRecorded: {decision_id: input.decision_id}
 
+  - name: example.review.TakeNote
+    input:
+      - {name: note_id, type: String}
+      - {name: tags, type: List<String>}
+    outcomes:
+      - name: too-many-tags
+        when: "tags.count > 2000"
+        error: example.review.TooManyTags
+      - {name: note-exists, existing_instance: true, error: example.review.NoteExists}
+      - name: taken
+        creates: example.review.Note
+        instance: note_id
+        sets:
+          tags: input.tags
+        emits: [example.review.NoteTaken]
+        payload:
+          example.review.NoteTaken: {note_id: input.note_id}
+
 events:
+  - name: example.review.NoteTaken
+    fields:
+      - {name: note_id, type: String}
   - name: example.review.DecisionRecorded
     fields:
       - {name: decision_id, type: example.review.DecisionId}
@@ -104,3 +134,8 @@ views:
     fields:
       - {name: decision_id, type: example.review.DecisionId}
       - {name: item, type: String}
+  - name: example.review.Notes
+    source: example.review.Note
+    consistency: read_your_writes
+    fields:
+      - {name: note_id, type: String}

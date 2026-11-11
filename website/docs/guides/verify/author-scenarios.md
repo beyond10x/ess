@@ -266,7 +266,7 @@ to `expected` under `ess-conformance/62`, which an older reader refuses by its v
 
 ## Cover a refusal synthesis could not witness
 
-A synthesis refusal such as `ESS-SYNTH-004` leaves the declared coverage incomplete: the suite says it
+A synthesis refusal such as `ESS-SYNTH-018` leaves the declared coverage incomplete: the suite says it
 could not witness an outcome, and `ess verify conform synthesize --suite-format 5` exits 1 until
 something answers it. An authored scenario that reaches the refused outcome answers it when it says so.
 From `type: ess-scenario/7` a document lists the scenario ids it covers:
@@ -274,10 +274,10 @@ From `type: ess-scenario/7` a document lists the scenario ids it covers:
 ```yaml
 type: ess-scenario/7
 covers:
-  - example.review.ConfirmDecision/outcome/already-exists
+  - example.review.TakeNote/outcome/too-many-tags
 domain: example.review
-scenario: confirm-decision-already-exists
-summary: A confirmation sent twice for one identity takes already-exists the second time.
+scenario: a-note-with-too-many-tags
+summary: A note sent with 2001 tags, one past the 2000 a note carries, is refused before the note of that id is found.
 timeline: [...]
 ```
 
