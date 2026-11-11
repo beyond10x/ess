@@ -5549,6 +5549,96 @@ pub(crate) fn invariant_broken_by(
         .map(Held::describe)
 }
 
+/// An input `outcome` answers that leaves its entity breaking an invariant the model declares no
+/// outcome for (beyond10x/ess#738): [`candidates`]' walk over the invariants the branch holds its
+/// input to, kept where [`within_invariants`] would drop them.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct Outside {
+    /// The invariant as the author wrote it.
+    pub(crate) statement: String,
+    /// The input the invariant reads, by path, as sent.
+    pub(crate) input: Vec<(String, Node)>,
+}
+
+/// The first input of the bounded walk that `outcome` answers and that refutes an invariant of
+/// `entity`, or `None` (beyond10x/ess#738).
+///
+/// An invariant is one the branch holds its input to ([`outcome_constraints`]): every read lands on
+/// an input the branch copies into the entity. The walk is [`candidates`]' with the invariants as
+/// its guards beside the branch's own input guard, and [`Admission::Raw`], so the inputs the
+/// invariants exclude are not dropped. An input counts where the branch's input guard is decided
+/// satisfied, no input-guarded refusal answers it first ([`reachable`]), every field's declared
+/// type admits it and some invariant is refuted. One neighbour per comparison, as everywhere in
+/// this module: no invariant solver, so a hole the walk does not reach is not reported.
+///
+/// # Errors
+///
+/// [`WitnessGap`] when some field of the input has no safe value at all.
+pub(crate) fn outside_invariant(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    outcome: &ess_compiler::ir::ResolvedOutcome,
+    entity: &EntityHandle,
+) -> Result<Option<Outside>, WitnessGap> {
+    let Some(index) = command
+        .outcomes
+        .iter()
+        .position(|branch| branch.name == outcome.name)
+    else {
+        return Ok(None);
+    };
+    let declared = ir.entity(entity).name.to_string();
+    let constrained = outcome_constraints(ir, command);
+    let owed: Vec<&Held> = constrained[index]
+        .iter()
+        .filter(|held| held.entity == declared)
+        .collect();
+    if owed.is_empty() {
+        return Ok(None);
+    }
+    let guard = input_guard(outcome);
+    let mut guards: Vec<&Predicate> = owed.iter().map(|held| &held.predicate).collect();
+    guards.extend(guard);
+    let (inputs, _, _) = search_with(
+        ir,
+        command,
+        &guards,
+        Distinction::PLAIN,
+        false,
+        Goals::Every,
+        Admission::Raw,
+    )?;
+    for input in inputs {
+        let Ok(facts) = crate::input::flatten(ir, command, &input) else {
+            continue;
+        };
+        if guard.is_some_and(|guard| !matches!(facts.decide(guard), Decision::Satisfied)) {
+            continue;
+        }
+        if !reachable(command, &facts).contains(&index) {
+            continue;
+        }
+        let Some(broken) = owed
+            .iter()
+            .find(|held| matches!(facts.decide(&held.predicate), Decision::Refuted(_)))
+        else {
+            continue;
+        };
+        if admitted_inputs(ir, command, vec![input.clone()]).is_empty() {
+            continue;
+        }
+        let sent = read_paths(&[&broken.predicate])
+            .into_iter()
+            .filter_map(|path| node_at(&input, &path).map(|node| (path.to_string(), node.clone())))
+            .collect();
+        return Ok(Some(Outside {
+            statement: broken.statement.clone(),
+            input: sent,
+        }));
+    }
+    Ok(None)
+}
+
 /// The choices that make the base satisfy `constraints` ([`repair`]), with every leaf in `frozen`
 /// kept at its base: empty where the base already does, `None` where no candidate of the bounded
 /// walk does; and how many candidates were tried.

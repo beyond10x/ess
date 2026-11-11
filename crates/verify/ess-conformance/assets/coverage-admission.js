@@ -470,7 +470,7 @@ const refusalKey = value => [value.origin, value.source ?? '', referenceKey(valu
 // The last entries of the ESS-SYNTH and ESS-AUTHOR catalogues an inventory may name, and the
 // generated codes recorded as check_not_emitted (ess_conformance's synthesize::CHECK_NOT_EMITTED).
 // tests/coverage_refusal_catalogue.rs holds all three to the Rust catalogues, vector by vector.
-const NEWEST_GENERATED_REFUSAL = 24
+const NEWEST_GENERATED_REFUSAL = 25
 const NEWEST_AUTHORED_REFUSAL = 47
 const CHECK_NOT_EMITTED = [5, 11, 12, 14, 16, 17, 20, 21, 22]
 function inventory(suite) {
@@ -518,6 +518,7 @@ function inventory(suite) {
       require(number !== 15 || major >= 7, 'accessor observation refusals require suite/7')
       require(![16, 17].includes(number) || major >= 17, 'aggregate view refusals require suite/17')
       require(![23, 24].includes(number) || major >= 53, 'system-issued command refusals require suite/53')
+      require(number !== 25 || major >= 65, 'invariant input refusals require suite/65')
       require(r.effect === (CHECK_NOT_EMITTED.includes(number) ? 'check_not_emitted' : 'candidate_not_emitted'), 'refusal effect differs from code')
     } else {
       require(Array.from({ length: NEWEST_AUTHORED_REFUSAL }, (_, i) => `ESS-AUTHOR-${String(i + 1).padStart(3, '0')}`).filter(c => c !== 'ESS-AUTHOR-036').includes(r.code) && r.effect === 'candidate_not_emitted', 'invalid authored refusal')

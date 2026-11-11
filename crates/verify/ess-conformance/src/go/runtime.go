@@ -58,7 +58,7 @@ import (
 // whose effect is check_not_emitted (ess_conformance's synthesize::CHECK_NOT_EMITTED).
 // tests/coverage_refusal_catalogue.rs holds all three to the Rust catalogues, vector by vector.
 const (
-	newestGeneratedRefusal = 24
+	newestGeneratedRefusal = 25
 	newestAuthoredRefusal  = 47
 )
 
@@ -4932,6 +4932,10 @@ func admitSuiteDocument(raw string, explicit bool) (Suite, error) {
 				// A refusal of a system-issued command (beyond10x/ess#542).
 				if row, ok := item.(map[string]any); ok && (row["code"] == "ESS-SYNTH-023" || row["code"] == "ESS-SYNTH-024") && major < 53 {
 					return suite, fmt.Errorf("system-issued command refusals require suite/53")
+				}
+				// An input that breaks an entity invariant (beyond10x/ess#738).
+				if row, ok := item.(map[string]any); ok && row["code"] == "ESS-SYNTH-025" && major < 65 {
+					return suite, fmt.Errorf("invariant input refusals require suite/65")
 				}
 			}
 		}

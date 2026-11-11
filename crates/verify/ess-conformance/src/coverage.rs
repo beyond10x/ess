@@ -488,7 +488,18 @@ impl Inventory {
                 || self.refused.iter().all(|r| r.covered_by.is_none()),
             "a covered refusal requires suite/65",
         )?;
-        self.system_issued_refusals(suite)
+        self.system_issued_refusals(suite)?;
+        require(
+            suite.provenance.suite_version.major() >= COVERED_BY_MAJOR
+                || self.refused.iter().all(|r| {
+                    r.code
+                        != format!(
+                            "ESS-SYNTH-{:03}",
+                            crate::synthesize::INVARIANT_INPUT_UNANSWERED
+                        )
+                }),
+            "invariant input refusals require suite/65",
+        )
     }
     pub(crate) fn validate(&self, suite: &ConformanceSuite) -> Result<(), AdmissionError> {
         self.version_gated_refusals(suite)?;

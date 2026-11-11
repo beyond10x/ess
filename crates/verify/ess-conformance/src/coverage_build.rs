@@ -575,7 +575,8 @@ fn decided_effect(cause: &crate::RefusalCause) -> Effect {
         | RefusalCause::BindingUnobservable { .. }
         | RefusalCause::ValueInvariantUnwitnessed { .. }
         | RefusalCause::SystemIssuedUnaddressed { .. }
-        | RefusalCause::SystemDecidedRefusal { .. } => Effect::CandidateNotEmitted,
+        | RefusalCause::SystemDecidedRefusal { .. }
+        | RefusalCause::InvariantInputUnanswered { .. } => Effect::CandidateNotEmitted,
     }
 }
 fn authored_refusal(
@@ -701,7 +702,14 @@ fn coverage_version(
     let counted = crate::event_multiplicity::coverage_floor(suite).is_some();
     // A carried `Binary64` (suite/62, `crate::binary64_values`) shares the member-path pair.
     crate::scenario::SuiteFormat::parse(
-        if inventory.refused.iter().any(|r| r.covered_by.is_some()) {
+        if inventory.refused.iter().any(|r| {
+            r.covered_by.is_some()
+                || r.code
+                    == format!(
+                        "ESS-SYNTH-{:03}",
+                        crate::synthesize::INVARIANT_INPUT_UNANSWERED
+                    )
+        }) {
             crate::coverage::COVERED_BY_FORMAT
         } else if crate::member_paths::coverage_floor(suite).is_some()
             || crate::binary64_values::coverage_floor(ir).is_some()

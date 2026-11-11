@@ -71,13 +71,13 @@ fn authored(number: u16) -> Value {
 }
 
 /// Every vector, by file name: each generated code of the catalogue and one past it under both
-/// effects, and each file refusal code, `036` and one past the catalogue, at suites /35 and /53.
+/// effects, and each file refusal code, `036` and one past the catalogue, at suites /35, /53 and /65.
 fn vectors() -> BTreeMap<String, String> {
     let synth: Vec<u16> = RefusalCause::CATALOGUE.iter().map(|e| e.key).collect();
     let author: Vec<u16> = Cause::CATALOGUE.iter().map(|e| e.key).collect();
     let past = |keys: &[u16]| keys.iter().max().unwrap() + 1;
     let mut vectors = BTreeMap::new();
-    for major in [35, 53] {
+    for major in [35, 53, 65] {
         for number in synth.iter().copied().chain([past(&synth)]) {
             for effect in EFFECTS {
                 vectors.insert(
@@ -137,14 +137,21 @@ fn the_rust_reader_admits_every_catalogued_refusal_code_and_nothing_past_it() {
             .count()
     };
     let gated = |number: u16| ess_conformance::system_issued::REFUSALS.contains(&number);
+    let newest = ess_conformance::synthesize::INVARIANT_INPUT_UNANSWERED;
     for entry in RefusalCause::CATALOGUE {
         assert_eq!(
-            effects(53, entry.key),
+            effects(65, entry.key),
             1,
+            "ESS-SYNTH-{:03} at /65",
+            entry.key
+        );
+        assert_eq!(
+            effects(53, entry.key),
+            usize::from(entry.key != newest),
             "ESS-SYNTH-{:03} at /53",
             entry.key
         );
-        let at_35 = usize::from(!gated(entry.key));
+        let at_35 = usize::from(!gated(entry.key) && entry.key != newest);
         assert_eq!(
             effects(35, entry.key),
             at_35,
