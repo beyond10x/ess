@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.94.0] — 2026-11-11
+
 ### Changed
 
 - `ess verify conform mutate`: an `order-flip` on a view key whose tie synthesis cannot arrange (a key after the identity, or behind a key no creating command writes from its input) is now `unwitnessed` (`ESS-MUTATE-004`, exit 3) and lists the baseline's standing refusal under `baseline_refusals`, instead of `survived` (exit 1); a scenario that kills it still wins. No format changes (`ess-mutation-report` and `ess-mutation-manifest` carry the refusal already) (beyond10x/ess#708).
