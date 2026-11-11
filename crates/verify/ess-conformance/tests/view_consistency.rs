@@ -14,8 +14,12 @@
 //!
 //! The fault-matrix row (`Fault::StaleReadUnderReadYourWrites`) is in `tests/faults.rs`.
 
+mod support_scratch;
+
+use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 
 use ess_compiler::ir::EssIr;
 use ess_compiler::resolve::compile;
@@ -29,12 +33,15 @@ use ess_conformance::reference::Billing;
 use ess_conformance::scenario::SuiteProvenance;
 use ess_conformance::sessions::{self, Act};
 use ess_conformance::target::{
-    ConformanceTarget, SemanticCommandRequest, SemanticCommandResult, TargetError,
+    ConformanceTarget, EventObservationRequest, ExternalOutcomeControl, ImplementationIdentity,
+    ObservedEvent, RedeliveryRequest, ScenarioContext, SemanticCommandRequest,
+    SemanticCommandResult, SemanticViewRequest, SemanticViewResult, TargetError,
 };
 use ess_domain::spec::{RawSpecFile, Specification};
 use ess_domain::system::Source;
 use ess_primitives::facts::Number;
 use ess_primitives::node::Node;
+use serde_json::{json, Value};
 
 const INVOICE_BY_ID: &str = "billing.invoice.InvoiceById";
 const OUTSTANDING: &str = "billing.invoice.OutstandingInvoices";
@@ -1207,45 +1214,129 @@ fn lost_creation_workload() -> sessions::Workload {
     }
 }
 
-fn record_losing(executions: usize, seed: u64) -> (EssIr, History) {
+/// The reference's views, remembering each `InvoiceById` answer as the identities it listed, before
+/// the recorder writes the read.
+struct Observing<'t> {
+    inner: &'t Billing,
+    answered: RefCell<Vec<Vec<String>>>,
+}
+
+impl ConformanceTarget for Observing<'_> {
+    fn identity(&self) -> Result<ImplementationIdentity, TargetError> {
+        Ok(ImplementationIdentity::new("observing-views", "1"))
+    }
+    fn begin_scenario(&self, scenario: &ScenarioContext) -> Result<(), TargetError> {
+        self.inner.begin_scenario(scenario)
+    }
+    fn end_scenario(&self, scenario: &ScenarioContext) -> Result<(), TargetError> {
+        self.inner.end_scenario(scenario)
+    }
+    fn execute_command(
+        &self,
+        request: SemanticCommandRequest,
+    ) -> Result<SemanticCommandResult, TargetError> {
+        self.inner.execute_command(request)
+    }
+    fn query_view(&self, request: SemanticViewRequest) -> Result<SemanticViewResult, TargetError> {
+        let result = self.inner.query_view(request)?;
+        self.answered.borrow_mut().push(
+            result
+                .rows
+                .iter()
+                .filter_map(|row| row.get("invoice_id").and_then(Node::as_text))
+                .map(str::to_owned)
+                .collect(),
+        );
+        Ok(result)
+    }
+    fn observe_events(
+        &self,
+        request: EventObservationRequest,
+    ) -> Result<Vec<ObservedEvent>, TargetError> {
+        self.inner.observe_events(request)
+    }
+    fn configure_external_outcome(
+        &self,
+        request: ExternalOutcomeControl,
+    ) -> Result<(), TargetError> {
+        self.inner.configure_external_outcome(request)
+    }
+    fn redeliver_event(&self, request: RedeliveryRequest) -> Result<(), TargetError> {
+        self.inner.redeliver_event(request)
+    }
+}
+
+/// One seed of the lost-creation workload: the model, the history as the reader admits it, and the
+/// identities the view answered the one read with, before the recorder left any out.
+struct LostCreationRun {
+    model: EssIr,
+    history: History,
+    answered: Vec<String>,
+}
+
+fn record_losing(executions: usize, seed: u64) -> LostCreationRun {
     let model = billing_model();
     let reference = Billing::with_lag(0);
     let target = LosesTheAnswer {
         inner: &reference,
         executions,
     };
-    let recorded = sessions::record(&model, &target, &reference, &lost_creation_workload(), seed)
+    let views = Observing {
+        inner: &reference,
+        answered: RefCell::new(Vec::new()),
+    };
+    let recorded = sessions::record(&model, &target, &views, &lost_creation_workload(), seed)
         .expect("recorded");
     let history = through_the_reader(&model, &recorded);
-    (model, history)
+    let mut answers = views.answered.into_inner();
+    assert_eq!(answers.len(), 1, "the workload has one read");
+    LostCreationRun {
+        model,
+        history,
+        answered: answers.remove(0),
+    }
+}
+
+fn written_rows(run: &LostCreationRun) -> Vec<String> {
+    reads_of(&run.history, INVOICE_BY_ID)[0]
+        .rows
+        .clone()
+        .expect("rows")
 }
 
 #[test]
 fn a_read_that_shows_the_row_of_a_creation_whose_answer_was_lost_is_not_a_future_read() {
     let mut showed = 0;
     for seed in 0..32 {
-        let (model, history) = record_losing(1, seed);
-        let creation = history
+        let run = record_losing(1, seed);
+        let creation = run
+            .history
             .operations
             .iter()
             .find(|operation| operation.command.as_str().ends_with("CreateInvoice"))
             .expect("the creation");
         assert_eq!(creation.completion, Completion::Indeterminate);
         assert_eq!(creation.subject_key, "");
-        let read = reads_of(&history, INVOICE_BY_ID)[0];
-        let rows = read.rows.as_ref().expect("rows");
-        let lost_row_shown = creation.invoked_at < read.returned_at.expect("answered");
-        showed += usize::from(lost_row_shown && rows.is_empty());
-        let checked = linearize::check(&model, &history, DEFAULT_BUDGET).expect("checked");
-        assert_ne!(
-            checked.read.as_ref().map(|violation| violation.anomaly),
-            Some(Anomaly::FutureRead),
+        let read = reads_of(&run.history, INVOICE_BY_ID)[0];
+        assert!(
+            creation.invoked_at < read.returned_at.expect("answered") || run.answered.is_empty(),
+            "seed {seed}: the view showed a row before its creation was invoked"
+        );
+        if run.answered.len() == 1 {
+            showed += 1;
+            assert_eq!(written_rows(&run), Vec::<String>::new(), "seed {seed}");
+        }
+        let checked = linearize::check(&run.model, &run.history, DEFAULT_BUDGET).expect("checked");
+        assert_eq!(
+            checked.verdict,
+            Verdict::Linearizable,
             "seed {seed}: {checked:?}"
         );
+        assert!(checked.read.is_none(), "seed {seed}: {checked:?}");
     }
     assert!(
         showed > 0,
-        "no seed wrote the lost creation's row out, so the case says nothing"
+        "no seed's read showed the lost creation's row, so the case says nothing"
     );
 }
 
@@ -1253,10 +1344,11 @@ fn a_read_that_shows_the_row_of_a_creation_whose_answer_was_lost_is_not_a_future
 fn a_row_no_operation_and_no_lost_creation_accounts_for_is_still_a_future_read() {
     let mut reported = 0;
     for seed in 0..32 {
-        let (model, history) = record_losing(2, seed);
-        let read = reads_of(&history, INVOICE_BY_ID)[0];
+        let run = record_losing(2, seed);
+        let read = reads_of(&run.history, INVOICE_BY_ID)[0];
         if read.rows.as_ref().is_some_and(|rows| !rows.is_empty()) {
-            let checked = linearize::check(&model, &history, DEFAULT_BUDGET).expect("checked");
+            let checked =
+                linearize::check(&run.model, &run.history, DEFAULT_BUDGET).expect("checked");
             let violation = checked.read.expect("the second row is a future read");
             assert_eq!(violation.anomaly, Anomaly::FutureRead, "seed {seed}");
             reported += 1;
@@ -1266,4 +1358,184 @@ fn a_row_no_operation_and_no_lost_creation_accounts_for_is_still_a_future_read()
         reported > 0,
         "no seed showed a row, so the case says nothing"
     );
+}
+
+// ---- one history shape, written by the Go explorer, the TypeScript explorer and the recorder ------
+
+const PARITY_GO: &str = r#"package essconform
+
+import (
+	"encoding/json"
+	"os"
+	"testing"
+)
+
+type parityCase struct {
+	Name string   `json:"name"`
+	Rows []string `json:"rows"`
+}
+
+func TestLostCreationParity(t *testing.T) {
+	raw, err := os.ReadFile("parity-cases.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cases []parityCase
+	if err := json.Unmarshal(raw, &cases); err != nil {
+		t.Fatal(err)
+	}
+	written := map[string]json.RawMessage{}
+	for _, c := range cases {
+		operations := []exploreOperation{
+			{client: 0, command: "billing.invoice.CreateInvoice", invokedAt: 1, creates: "billing.invoice.Invoice"},
+			{client: 1, command: "billing.invoice.InvoiceById", invokedAt: 2, returnedAt: 3, returned: true, outcome: "read", source: "billing.invoice.Invoice", rows: c.Rows},
+		}
+		written[c.Name] = json.RawMessage(exploreHistoryBytes("digest", 1, 2, operations))
+	}
+	out, err := json.Marshal(written)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile("parity-go.json", out, 0600); err != nil {
+		t.Fatal(err)
+	}
+}
+"#;
+
+const PARITY_TS: &str = r"
+import { historyText } from './dist/explore.js';
+import fs from 'node:fs';
+const cases = JSON.parse(fs.readFileSync('parity-cases.json', 'utf8'));
+const written = {};
+for (const c of cases) {
+  written[c.name] = JSON.parse(historyText('digest', 1, 2, [
+    { client: 0, command: 'billing.invoice.CreateInvoice', subjectKey: '', invokedAt: 1, retryOf: 0, creates: 'billing.invoice.Invoice', source: '' },
+    { client: 1, command: 'billing.invoice.InvoiceById', subjectKey: '', invokedAt: 2, returnedAt: 3, outcome: 'read', retryOf: 0, creates: '', source: 'billing.invoice.Invoice', rows: c.rows },
+  ]));
+}
+fs.writeFileSync('parity-ts.json', JSON.stringify(written));
+";
+
+fn run_tool(command: &mut Command) {
+    let output = command
+        .output()
+        .expect("a required runtime tool (go, tsc, node) is installed");
+    assert!(
+        output.status.success(),
+        "{command:?}\n{}\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+fn write_file(root: &Path, path: &str, bytes: impl AsRef<[u8]>) {
+    let file = root.join(path);
+    std::fs::create_dir_all(file.parent().expect("a parent")).expect("a directory");
+    std::fs::write(file, bytes).expect("writable");
+}
+
+/// What a history written by an explorer holds as the one read's `rows`.
+fn rows_of_written(history: &Value) -> Vec<String> {
+    let reads: Vec<&Value> = history["operations"]
+        .as_array()
+        .expect("operations")
+        .iter()
+        .filter(|operation| operation["command"] == INVOICE_BY_ID)
+        .collect();
+    assert_eq!(reads.len(), 1, "{history}");
+    serde_json::from_value(reads[0]["rows"].clone()).expect("the read is written with rows")
+}
+
+/// The Go explorer's and the TypeScript explorer's own history writers are given the operations
+/// of the shape: a creation of the view's entity invoked before a read returned and never
+/// answered, and that read, answering what the recorder's own view answered. The recorder writes
+/// the same shape from a target that executes the creation and loses its answer.
+///
+/// Both emitted packages are built, so a missing `go`, `tsc` or `node` fails here and never
+/// skips: a skipped case proves nothing.
+#[test]
+fn the_go_explorer_the_typescript_explorer_and_the_recorder_write_equal_rows_for_a_lost_creation() {
+    let mut cases = Vec::new();
+    let mut recorded = BTreeMap::new();
+    for (name, executions) in [("one-row", 1_usize), ("two-rows", 2)] {
+        let run = (0..64)
+            .map(|seed| record_losing(executions, seed))
+            .find(|run| run.answered.len() == executions)
+            .unwrap_or_else(|| panic!("{name}: no seed's read showed {executions} row(s)"));
+        cases.push(json!({"name": name, "rows": run.answered}));
+        recorded.insert(name, (run.answered.clone(), written_rows(&run)));
+    }
+    let model = billing_model();
+    let suite = ess_conformance::synthesize(&model).suite;
+    let root = support_scratch::Scratch::adopt(
+        std::env::temp_dir().join(format!("ess-lost-creation-parity-{}", std::process::id())),
+    );
+    let _ = std::fs::remove_dir_all(&root);
+    let go = root.join("go");
+    let ts = root.join("ts");
+    for artifact in ess_conformance::go::emit_with_model(&suite, &model).expect("a Go package") {
+        write_file(&go, &artifact.path, artifact.contents);
+    }
+    for artifact in
+        ess_conformance::ts::emit_with_model(&suite, &model).expect("a TypeScript package")
+    {
+        write_file(&ts, &artifact.path, artifact.contents);
+    }
+    let cases = serde_json::to_vec(&cases).expect("cases");
+    write_file(&go, "go.mod", "module example.invalid/parity\n\ngo 1.24\n");
+    write_file(&go, "essconform/parity_test.go", PARITY_GO);
+    write_file(&go, "essconform/parity-cases.json", &cases);
+    run_tool(
+        Command::new("go")
+            .args([
+                "test",
+                "./essconform",
+                "-run",
+                "^TestLostCreationParity$",
+                "-count=1",
+            ])
+            .env("GOWORK", "off")
+            .current_dir(&go),
+    );
+    let package = ts.join("essconform");
+    write_file(&package, "parity-cases.json", &cases);
+    write_file(&package, "parity.mjs", PARITY_TS);
+    write_file(
+        &package,
+        "parity.tsconfig.json",
+        r#"{"extends":"./tsconfig.json","compilerOptions":{"types":[],"noCheck":true}}"#,
+    );
+    run_tool(
+        Command::new("tsc")
+            .args(["--project", "parity.tsconfig.json"])
+            .current_dir(&package),
+    );
+    run_tool(Command::new("node").arg("parity.mjs").current_dir(&package));
+    let read = |path: PathBuf| -> Value {
+        serde_json::from_slice(
+            &std::fs::read(&path).unwrap_or_else(|error| panic!("{}: {error}", path.display())),
+        )
+        .expect("JSON")
+    };
+    let from_go = read(go.join("essconform/parity-go.json"));
+    let from_ts = read(package.join("parity-ts.json"));
+    for (name, (answered, from_recorder)) in recorded {
+        let go_rows = rows_of_written(&from_go[name]);
+        let ts_rows = rows_of_written(&from_ts[name]);
+        assert_eq!(go_rows, ts_rows, "{name}: Go and TypeScript");
+        assert_eq!(
+            go_rows, from_recorder,
+            "{name}: the explorers and the recorder"
+        );
+        assert_eq!(
+            go_rows,
+            answered[1..].to_vec(),
+            "{name}: the first row in answer order is the one left out"
+        );
+        assert_eq!(
+            go_rows.len() + 1,
+            answered.len(),
+            "{name}: one row per lost creation is left out"
+        );
+    }
 }
