@@ -101,9 +101,7 @@ struct Dec {
 impl Dec {
     /// `digits` as written, with the point `point` places from its start, normalised.
     fn of_parts(negative: bool, digits: &str, point: i64) -> Self {
-        let trimmed = digits.trim_start_matches('0');
-        let point = point - i64::try_from(digits.len() - trimmed.len()).unwrap_or(i64::MAX);
-        let trimmed = trimmed.trim_end_matches('0');
+        let trimmed = digits.trim_start_matches('0').trim_end_matches('0');
         if trimmed.is_empty() {
             return Self {
                 negative: false,
@@ -111,6 +109,9 @@ impl Dec {
                 point: 0,
             };
         }
+        // Saturating: `point` may be an exponent saturated at `±i64::MAX`.
+        let leading = digits.len() - digits.trim_start_matches('0').len();
+        let point = point.saturating_sub(i64::try_from(leading).unwrap_or(i64::MAX));
         Self {
             negative,
             digits: trimmed.to_owned(),
@@ -138,6 +139,21 @@ impl Dec {
 
     fn is_zero(&self) -> bool {
         self.digits.is_empty()
+    }
+
+    /// The integer this is, when it is one that fits an `i64`: an `Observed` spelt `1e18` or
+    /// `9007199254740993.0` answers as the `Exact` integer it equals.
+    fn as_i64(&self) -> Option<i64> {
+        let length = i64::try_from(self.digits.len()).ok()?;
+        // At most 19 digits before the point hold an `i64`, so nothing longer is built.
+        if self.is_zero() || self.point < length || self.point > 19 {
+            return self.is_zero().then_some(0);
+        }
+        let zeros = usize::try_from(self.point - length).ok()?;
+        let magnitude: i128 = format!("{}{}", self.digits, "0".repeat(zeros))
+            .parse()
+            .ok()?;
+        i64::try_from(if self.negative { -magnitude } else { magnitude }).ok()
     }
 
     fn compare(&self, other: &Self) -> Ordering {
@@ -441,6 +457,7 @@ impl Number {
             Repr::Exact {
                 units, scale: 0, ..
             } => i64::try_from(units).ok(),
+            Repr::Observed { value, .. } => value.as_i64(),
             _ => None,
         }
     }
