@@ -470,7 +470,7 @@ fn an_identity_only_view_held_state_refusal_without_a_valid_send_is_withdrawn_na
             && line.contains("demo.ticket.Annotate.already-closed")
             && line.contains("demo.ticket.Hold.held")
             && line.contains("demo.ticket.Close.closed")
-            && line.contains("no identity view shows that record")),
+            && line.contains("no view observes that record in its state")),
         "{REFUSED_NOTE} withdrawn without naming the branches it could not read the record back \
          through (story:a-held-state-refusal-reads-back-where-the-view-cannot-observe): {lines:#?}"
     );

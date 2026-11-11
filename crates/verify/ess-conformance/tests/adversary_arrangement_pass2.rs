@@ -604,7 +604,7 @@ fn issue_209_no_view_arranged_half_without_a_valid_send_is_withdrawn_naming_the_
                 && line.contains(&id)
                 && line.contains("`New, Configured`")
                 && line.contains("no send synthesis can make tells apart")
-                && line.contains("no identity view shows that record")),
+                && line.contains("no view observes that record in its state")),
             "{id} withdrawn without naming the states `rejected`, its one valid send, cannot tell \
              apart (story:a-no-view-probe-tells-from-states-apart, fix round 1, which replaced \
              the branch-naming cause of story:a-no-view-arranged-half-probes-the-row-through-the-command \

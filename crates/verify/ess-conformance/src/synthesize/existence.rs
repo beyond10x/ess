@@ -1213,22 +1213,22 @@ fn reads_related(outcome: &ResolvedOutcome) -> bool {
         .any(|field| related(&field.value))
 }
 
-/// Why an input refusal's arranged or held-state half is withdrawn where no identity view shows
-/// the record and no branch tried has a valid send from the state the record was left in.
+/// Why an input refusal's arranged or held-state half is withdrawn where no view observes
+/// the record in its state and no branch tried has a valid send from the state the record was left in.
 const UNPROBED: &str = "has no valid send for the record an input refusal was sent for, from the \
-                        state that record was arranged in, and no identity view shows that \
-                        record, so nothing would show a target that changes on refusal what the \
+                        state that record was arranged in, and no view observes that \
+                        record in its state, so nothing would show a target that changes on refusal what the \
                         command answers for it";
 
-/// Why an input refusal's arranged or held-state half is withdrawn where no identity view shows
-/// the record and the sends [`probe`] tried leave states it cannot tell apart from the one the
+/// Why an input refusal's arranged or held-state half is withdrawn where no view observes
+/// the record in its state and the sends [`probe`] tried leave states it cannot tell apart from the one the
 /// record was left in: after the best sequence its bounded search found, extended one send at a
 /// time, or after none where valid sends exist but none tells a state apart. The path names that
 /// state first, then those.
 const UNTOLD: &str = "names first the state the record an input refusal was sent for was arranged \
                       in, then the states left untold from it once the sends synthesis tried have \
                       told apart all they could, after which no send synthesis can make tells \
-                      apart from it any of those, and no identity view shows that record, so a \
+                      apart from it any of those, and no view observes that record in its state, so a \
                       target that moved it on refusal into one of those would not be seen";
 
 /// Every input-guarded refusal naming no subject beside branches that read the held state, sent
@@ -1255,7 +1255,7 @@ const UNTOLD: &str = "names first the state the record an input refusal was sent
 /// Where a sibling that runs in a state also reads the input, the refused input is sent there
 /// again at their overlap, refuting every other input refusal: a target that tries the sibling
 /// first takes it. Where no arrangement reaches a state, the scenario is withdrawn and refused
-/// with the arrangement's cause, never left without that state's witness; with no identity view,
+/// with the arrangement's cause, never left without that state's witness;
 /// likewise where no view observes the held state and no send from it has a valid input, naming
 /// every branch tried, or where the sends leave a state they cannot tell apart from it, naming
 /// the states.
