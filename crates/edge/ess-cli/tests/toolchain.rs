@@ -827,3 +827,160 @@ fn toolchain_which_refuses_two_disagreeing_pins_below() {
         assert!(text.contains(needle), "{needle}: {text}");
     }
 }
+
+/// The `reason: ` line of a `toolchain which` run from the project.
+fn which_reason(fixture: &Fixture) -> String {
+    let output = fixture.ess(&fixture.project, &["toolchain", "which"]);
+    assert_eq!(output.status.code(), Some(0), "{}", err(&output));
+    let text = out(&output);
+    text.lines()
+        .find(|line| line.starts_with("reason: "))
+        .unwrap_or_else(|| panic!("{text}"))
+        .to_owned()
+}
+
+#[test]
+fn adversary_an_exact_pin_of_this_release_below_is_not_refused() {
+    let fixture = Fixture::new();
+    fixture.pin_in("spec", &format!("ess {THIS}"));
+    let output = fixture.ess(&fixture.project, VALIDATE_SPEC);
+    let text = err(&output);
+    assert!(!text.contains("did not switch"), "{text}");
+    assert!(!text.contains("ESS_TOOLCHAIN="), "{text}");
+    let reason = which_reason(&fixture);
+    assert!(reason.contains("spec/ess-inputs.yaml"), "{reason}");
+    assert!(
+        reason.contains(&format!("ESS_TOOLCHAIN={THIS}")),
+        "{reason}"
+    );
+}
+
+#[test]
+fn adversary_two_pins_below_of_one_release_are_named_not_refused() {
+    let fixture = Fixture::new();
+    let release = other_release(true);
+    fixture.pin_in("a", &format!("ess {release}"));
+    fixture.pin_in("b", &format!("ess {release}"));
+    let reason = which_reason(&fixture);
+    for needle in ["a/ess-inputs.yaml", "b/ess-inputs.yaml", "cd a"] {
+        assert!(reason.contains(needle), "{needle}: {reason}");
+    }
+}
+
+#[test]
+fn adversary_which_looks_six_directories_down_and_not_seven() {
+    let release = other_release(true);
+    let six = Fixture::new();
+    six.pin_in("a/b/c/d/e/f", &format!("ess {release}"));
+    let reason = which_reason(&six);
+    assert!(reason.contains("a/b/c/d/e/f/ess-inputs.yaml"), "{reason}");
+
+    let seven = Fixture::new();
+    seven.pin_in("a/b/c/d/e/f/g", &format!("ess {release}"));
+    let reason = which_reason(&seven);
+    assert!(reason.contains("no ess-inputs.yaml in"), "{reason}");
+}
+
+#[test]
+fn adversary_which_skips_hidden_target_node_modules_and_symlinked_directories() {
+    let fixture = Fixture::new();
+    let release = other_release(true);
+    for directory in [".hidden", "target", "node_modules", "spec/target"] {
+        fixture.pin_in(directory, &format!("ess {release}"));
+    }
+    let outside = fixture.project.parent().unwrap().join("outside/sub");
+    fs::create_dir_all(&outside).unwrap();
+    fs::write(
+        outside.join("ess-inputs.yaml"),
+        format!(
+            "format: ess-inputs/2\nrequires: ess {release}\nspecification: [system.yaml]\n\
+             scenarios: []\n"
+        ),
+    )
+    .unwrap();
+    std::os::unix::fs::symlink(&outside, fixture.project.join("link")).unwrap();
+    std::os::unix::fs::symlink(".", fixture.project.join("loop")).unwrap();
+    let reason = which_reason(&fixture);
+    assert!(reason.contains("no ess-inputs.yaml in"), "{reason}");
+}
+
+#[test]
+fn adversary_which_output_stays_three_lines_each_with_its_field() {
+    let fixture = Fixture::new();
+    fixture.pin_in("spec", &format!("ess {}", other_release(false)));
+    let output = fixture.ess(&fixture.project, &["toolchain", "which"]);
+    assert_eq!(output.status.code(), Some(0), "{}", err(&output));
+    let text = out(&output);
+    let lines: Vec<&str> = text.lines().collect();
+    assert_eq!(lines.len(), 3, "{text}");
+    assert_eq!(lines[0], format!("ess {THIS}"), "{text}");
+    assert_eq!(lines[0].split_whitespace().last(), Some(THIS), "{text}");
+    assert!(lines[1].starts_with("reason: self: "), "{text}");
+    assert!(
+        lines[2].starts_with("binary: ") && lines[2].ends_with("(this ess)"),
+        "{text}"
+    );
+}
+
+#[test]
+fn adversary_a_delegated_run_keeps_the_existing_checks_below() {
+    let fixture = Fixture::new();
+    fixture.pin_in("spec", &format!("ess {}", other_release(true)));
+    let output = fixture
+        .command(&fixture.project, VALIDATE_SPEC)
+        .env("ESS_TOOLCHAIN_DELEGATED", "1")
+        .output()
+        .unwrap();
+    let text = err(&output);
+    assert_eq!(output.status.code(), Some(1), "{text}");
+    assert!(text.contains("b10x upgrade"), "{text}");
+    assert!(!text.contains("did not switch"), "{text}");
+}
+
+#[test]
+fn adversary_a_manifest_outside_the_working_directory_keeps_the_existing_checks() {
+    let fixture = Fixture::new();
+    fixture.pin_in("spec", &format!("ess {}", other_release(true)));
+    let other = fixture.project.join("other");
+    fs::create_dir_all(&other).unwrap();
+    let output = fixture.ess(&other, &["specify", "validate", "--path", "../spec"]);
+    let text = err(&output);
+    assert_eq!(output.status.code(), Some(1), "{text}");
+    assert!(text.contains("b10x upgrade"), "{text}");
+    assert!(!text.contains("did not switch"), "{text}");
+}
+
+#[test]
+fn adversary_a_roundabout_or_absolute_path_into_the_pin_still_names_cd_spec() {
+    let fixture = Fixture::new();
+    let release = other_release(false);
+    fixture.pin_in("spec", &format!("ess {release}"));
+    let absolute = fixture.project.join("spec");
+    for path in ["./spec/deeper/..", absolute.to_str().unwrap()] {
+        let output = fixture.ess(&fixture.project, &["specify", "validate", "--path", path]);
+        let text = err(&output);
+        assert_eq!(output.status.code(), Some(1), "{path}: {text}");
+        assert!(text.contains("cd spec"), "{path}: {text}");
+        assert!(
+            text.contains(&format!("ESS_TOOLCHAIN={release}")),
+            "{path}: {text}"
+        );
+    }
+}
+
+#[test]
+fn adversary_an_unpinned_manifest_above_does_not_hide_a_pin_below() {
+    let fixture = Fixture::new();
+    fs::write(
+        fixture.project.join("ess-inputs.yaml"),
+        "format: ess-inputs/2\nspecification: [system.yaml]\nscenarios: []\n",
+    )
+    .unwrap();
+    let release = other_release(false);
+    fixture.pin_in("spec", &format!("ess {release}"));
+    let output = fixture.ess(&fixture.project, VALIDATE_SPEC);
+    let text = err(&output);
+    assert_eq!(output.status.code(), Some(1), "{text}");
+    assert!(text.contains(&format!("ESS_TOOLCHAIN={release}")), "{text}");
+    assert!(text.contains("cd spec"), "{text}");
+}

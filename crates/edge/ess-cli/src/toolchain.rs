@@ -186,14 +186,27 @@ fn enter(from: &Path, manifest: &Path) -> String {
     format!("cd {}", directory.display())
 }
 
-/// `toolchain which`: `choose`, and when no manifest is at or above the working directory, the
+/// Whether the nearest manifest at or above `from` names an exact release: only such a pin chooses
+/// the release that runs there, so only it makes a pin below irrelevant.
+fn exact_pin_at_or_above(from: &Path) -> bool {
+    input_discovery::nearest_pin(from).is_some_and(
+        |pin| matches!(pin.requires, Ok(Some(ref requires)) if requires::exact(requires).is_some()),
+    )
+}
+
+/// `toolchain which`: `choose`, and when no exact pin is at or above the working directory, the
 /// exact pins below it. They do not change the release (nothing delegates because of a pin below,
 /// see `unfollowed_pin`); one is named, and pins that name different releases are refused.
 fn choose_to_explain() -> Result<Choice> {
     let mut choice = choose()?;
-    let Reason::NoManifest { from } = &choice.reason else {
-        return Ok(choice);
+    let from = match &choice.reason {
+        Reason::NoManifest { from } => from.clone(),
+        Reason::Unpinned { .. } => {
+            std::env::current_dir().context("reading the working directory")?
+        }
+        _ => return Ok(choice),
     };
+    let from = &from;
     let mut pins: Vec<(PathBuf, Release)> = input_discovery::pins_below(from)
         .into_iter()
         .filter_map(|pin| {
@@ -215,7 +228,7 @@ fn choose_to_explain() -> Result<Choice> {
             })
             .collect();
         bail!(
-            "refused: the manifests below {} pin different releases ({}); no manifest at or above \
+            "refused: the manifests below {} pin different releases ({}); no exact pin at or above \
              it decides, so run ess from the directory of one, or name a release with \
              `{OVERRIDE}={release}` or `{OVERRIDE}={other}`",
             from.display(),
@@ -232,7 +245,8 @@ fn choose_to_explain() -> Result<Choice> {
 }
 
 /// The refusal for an exact `requires` of another release than this one, read from `manifest` by a
-/// command given a path below the working directory, where no manifest at or above it pins a release.
+/// command given a path below the working directory, where no manifest at or above it pins an
+/// exact release.
 ///
 /// Delegation is chosen before the command line is parsed, so the release the manifest names is
 /// not the one running, and warning or telling the user to upgrade would leave them believing it
@@ -248,7 +262,7 @@ pub(crate) fn unfollowed_pin(
         return None;
     }
     let from = std::env::current_dir().ok()?.canonicalize().ok()?;
-    if input_discovery::nearest_pin(&from).is_some() {
+    if exact_pin_at_or_above(&from) {
         return None;
     }
     let manifest_here = manifest.canonicalize().ok()?;
@@ -258,7 +272,7 @@ pub(crate) fn unfollowed_pin(
     let release = Release::from(pinned);
     Some(format!(
         "{} requires {requires} and this is ess {}, and no ess-inputs.yaml at or above the \
-         working directory pins a release, so ess did not switch to it; `{}` and run ess there, \
+         working directory pins an exact release, so ess did not switch to it; `{}` and run ess there, \
          or run it as `{OVERRIDE}={release} ess …`, to use ess {release}",
         manifest.display(),
         this(),
