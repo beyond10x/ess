@@ -7,6 +7,7 @@
 - `ess-ui`: a record field or an export param keyed `action` is author data and is no longer read as an Action, so its refusal names the real node and no false Action refusal hides a later one.
 - `ess ui test --playwright` routes the per-test fixture answers instead of marking the test `test.fixme`: a list of view answers is one handler choosing by `by_params`, `fails` is status 500 with its message, a refused command is the refusal body the HTTP data adapter reads as refused (status 422), and a latency per view holds that view's route on the page clock (beyond10x/ess#722). A test using none of these emits the same spec as before.
 - The Rust session recorder no longer writes a read that shows the row of a creation whose answer was lost. A creation the target executed and then answered with an error has no operation naming its row, so a correct target was reported as a `FutureRead` violation. The recorder now leaves out of each read one unnamed row per such creation of the view's entity, as the Go and TypeScript explorers do; a row nothing accounts for is still written and still reported.
+- `ess generate types --http <binding>`: a command's `.response` root follows the published `{command}.Result`. A command whose route answers every outcome with `response.<field>`, `{member: error}` or `none` publishes no `Result`, so naming its `.response` root is refused as `unknown_root` (naming the command and that its route publishes no `Result`) and `--all-commands` leaves it out. Without `--http` every root keeps its bytes.
 
 ## [0.93.0] — 2026-11-11
 
