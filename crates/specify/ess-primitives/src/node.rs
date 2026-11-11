@@ -95,9 +95,16 @@ impl Node {
     /// sees it. Each number is read by [`Number::from_json_token`] and so writes as it always
     /// wrote; the keys and the other values read as they do through `Deserialize`.
     ///
+    /// It is for the exact observers, a complete subject and a retained result. A number it keeps
+    /// exactly makes `Number ==` tell `0.1` from `0.10000000000000001` wherever the `Node` is
+    /// compared, so do not use it for a view row compared as a `Binary64`, which is compared by
+    /// its nearest binary64.
+    ///
     /// # Errors
     ///
-    /// When `text` is not one JSON value, holds a number past binary64, or nests past 128 levels.
+    /// When `text` is not one JSON value, nests past 128 levels, or holds a number
+    /// [`Number::from_json_token`] refuses: past binary64, a token over 512 characters, or an
+    /// exponent past ±512. Go and TypeScript refuse the same numbers.
     pub fn from_json_exact(text: &str) -> Result<Self, String> {
         let raw: &serde_json::value::RawValue =
             serde_json::from_str(text).map_err(|e| e.to_string())?;
@@ -298,6 +305,17 @@ mod tests {
             ("0", "-0.0", true),
             ("1E2", "100", true),
             ("9007199254740993", "9007199254740992", false),
+            (
+                "0.10000000000000001",
+                "0.100000000000000010000000000000000000000000",
+                true,
+            ),
+            ("0.1", "0.100000000000000010000000000000000000000000", false),
+            ("1", "1.0000000000000000000000000000000000000001", false),
+            ("0", "1e-400", false),
+            ("1e-300", "1.00000000000000000001e-300", false),
+            ("1e300", "1.00000000000000000001e300", false),
+            ("-1e-400", "1e-400", false),
         ] {
             let (left, right) = (
                 Node::from_json_exact(left).unwrap(),
@@ -310,6 +328,12 @@ mod tests {
             "-0.0"
         );
         assert!(Node::from_json_exact("1e400").is_err());
+        for refused in ["1e513", "1e-513", "01", "+1", "-01", "00", "+0", ".5", "5."] {
+            assert!(Number::from_json_token(refused).is_none(), "{refused}");
+        }
+        assert!(Number::from_json_token("1e-512").is_some());
+        assert!(Number::from_json_token(&format!("1.{}", "0".repeat(511))).is_none());
+        assert!(Number::from_json_token(&format!("1.{}", "0".repeat(510))).is_some());
         assert!(Node::from_json_exact("[1,").is_err());
         assert!(
             Node::from_json_exact(&format!("{}1{}", "[".repeat(200), "]".repeat(200))).is_err()

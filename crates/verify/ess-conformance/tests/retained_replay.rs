@@ -3073,3 +3073,124 @@ fn adversary_e_decimal_coverage_is_written_at_59() {
     assert_eq!(majors[0], ("Decimal", 59), "{majors:?}");
     assert!(majors[1].1 < 58, "{majors:?}");
 }
+
+// ---- adversary, story:a-rust-runner-compares-a-decimal-by-exact-value --------------------------
+
+/// Trailing zeroes do not change a value: Go (`big.Rat`) and TypeScript (`compareExact`) compare
+/// `0.10000000000000001` and the same digits padded past an `i128` as one value, and `0.1` against
+/// the padded spelling as two. The docs now say all three runners compare the token's exact value.
+#[test]
+fn adv_t3_trailing_zeroes_past_an_i128_do_not_change_the_decimal() {
+    let admitted = adversary_e_decimal_suite();
+    let padded = "0.100000000000000010000000000000000000000000";
+    let mut wrong = Vec::new();
+    for (original, retry, status) in [
+        ("0.10000000000000001", padded, Status::Passed),
+        ("0.1", padded, Status::Failed),
+    ] {
+        let actual = adversary_e_retry(&admitted, original, retry);
+        if actual != status {
+            wrong.push(format!(
+                "{original} then {retry}: {actual:?}, want {status:?}"
+            ));
+        }
+    }
+    assert!(wrong.is_empty(), "{wrong:#?}");
+}
+
+/// Two different decimals outside `(i128, scale <= 255)` are still two values under Go and
+/// TypeScript (`BigInt`, exponent within +-512; TypeScript: "`1e-400` is a value and zero is a
+/// different one"), so each retry changed the retained result and must end Failed.
+#[test]
+fn adv_t3_two_decimals_outside_the_i128_range_replay_unequal() {
+    let admitted = adversary_e_decimal_suite();
+    let mut not_failed = Vec::new();
+    for (original, retry) in [
+        ("1", "1.0000000000000000000000000000000000000001"),
+        ("0", "1e-400"),
+        ("1e-300", "1.00000000000000000001e-300"),
+    ] {
+        let actual = adversary_e_retry(&admitted, original, retry);
+        if actual != Status::Failed {
+            not_failed.push(format!("{original} then {retry}: {actual:?}"));
+        }
+    }
+    assert!(not_failed.is_empty(), "{not_failed:#?}");
+}
+
+/// A zero with a large exponent is read as promptly as any other token: a target response is
+/// untrusted input, and Go and TypeScript refuse an exponent past 512 outright.
+#[test]
+fn adv_t3_a_zero_with_a_giant_exponent_reads_promptly() {
+    use ess_primitives::facts::Number;
+    let started = std::time::Instant::now();
+    let read = Number::from_json_token("0e2147483647");
+    let elapsed = started.elapsed();
+    assert!(
+        elapsed < std::time::Duration::from_millis(250),
+        "from_json_token(\"0e2147483647\") took {elapsed:?}"
+    );
+    assert_eq!(read, Some(Number::from(0_i64)));
+}
+
+/// `from_json_token` is documented `None` when the token is not a JSON number; JSON has no leading
+/// `+` and no leading zero (TypeScript `NUMBER_TOKEN` refuses both).
+#[test]
+fn adv_t3_from_json_token_refuses_what_json_refuses() {
+    use ess_primitives::facts::Number;
+    let admitted: Vec<_> = ["01", "+1", "-01", "00", "+0"]
+        .into_iter()
+        .filter(|token| Number::from_json_token(token).is_some())
+        .collect();
+    assert!(admitted.is_empty(), "admitted as numbers: {admitted:?}");
+}
+
+/// Pin: the order stays total and value-consistent across exact, observed and binary64-only
+/// numbers.
+#[test]
+fn adv_t3_observed_numbers_order_with_every_other_number() {
+    use ess_primitives::facts::Number;
+    let ascending = [
+        "-1e300",
+        "-0.10000000000000001",
+        "-0.1",
+        "0",
+        "1e-300",
+        "1e-200",
+        "1.00000000000000001e-200",
+        "0.09999999999999999999",
+        "0.1",
+        "0.10000000000000001",
+        "1",
+        "1.0000000000000000001",
+        "123456789012345678901234567890",
+        "123456789012345678901234567891",
+        "1e300",
+    ]
+    .map(|token| (token, Number::from_json_token(token).unwrap()));
+    for (i, (left_token, left)) in ascending.iter().enumerate() {
+        for (j, (right_token, right)) in ascending.iter().enumerate() {
+            assert_eq!(
+                left.cmp(right),
+                i.cmp(&j),
+                "{left_token} against {right_token}"
+            );
+            assert_eq!(left.partial_cmp(right), Some(i.cmp(&j)));
+        }
+    }
+    assert_eq!(
+        Number::from_json_token("-0.0"),
+        Number::from_json_token("0")
+    );
+}
+
+/// Pin: the documented bound, 128 levels read and 129 refused, for arrays and objects.
+#[test]
+fn adv_t3_exact_json_reads_128_levels_and_refuses_129() {
+    let arrays = |n: usize| format!("{}1.5{}", "[".repeat(n), "]".repeat(n));
+    let objects = |n: usize| format!("{}1.5{}", "{\"a\":".repeat(n), "}".repeat(n));
+    assert!(Node::from_json_exact(&arrays(128)).is_ok());
+    assert!(Node::from_json_exact(&arrays(129)).is_err());
+    assert!(Node::from_json_exact(&objects(128)).is_ok());
+    assert!(Node::from_json_exact(&objects(129)).is_err());
+}
