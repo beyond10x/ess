@@ -2515,11 +2515,6 @@ impl<'d> Gen<'d> {
                 }
             }))
         });
-        let total_label = header
-            .total
-            .as_ref()
-            .and_then(|total| page.sections.iter().find(|section| &section.name == total))
-            .and_then(|section| section.title.as_ref());
         let badge = header.badge.as_ref().map(|badge| {
             ts::object([
                 ("text", Some(ts::string(&badge.text.0))),
@@ -2560,7 +2555,6 @@ impl<'d> Gen<'d> {
             .opt("title", quoted(header.title.as_ref()))
             .opt("titleFrom", title_from)
             .opt("total", quoted(header.total.as_ref()))
-            .opt("totalLabel", quoted(total_label))
             .opt("badge", badge)
             .opt("filters", quoted(header.filters.as_ref()))
             .opt("switchTo", switch_to)

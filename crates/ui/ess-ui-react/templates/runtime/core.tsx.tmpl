@@ -172,6 +172,8 @@ export interface SectionInfo {
   total?: number;
   params?: Record<string, unknown>;
   selection?: unknown;
+  /** The section's title: what a header's count counts. */
+  title?: string;
   /** The first row, reported by the section a header title reads its record from. */
   row?: unknown;
 }
@@ -433,7 +435,7 @@ export function SectionFrame(props: {
     observer.observe(ref.current);
     return () => observer.disconnect();
   }, [load, active, onActivate]);
-  useReport(props.name, { total: data?.total, params: data?.params, row: props.reportsRow ? data?.rows[0] : undefined });
+  useReport(props.name, { total: data?.total, params: data?.params, title: props.title, row: props.reportsRow ? data?.rows[0] : undefined });
   const mark = data?.stale ? states.stale?.mark ?? "badge" : undefined;
   let body: ReactNode = props.children;
   if (load === "on_demand" && !active) {
@@ -512,7 +514,7 @@ export function HeaderFrame(props: {
   /** A field of the record a section holds, shown in place of `title` once present. */
   titleFrom?: { section: string; field: string };
   total?: string;
-  /** The title of the section `total` names: what the count counts. */
+  /** Overrides the title of the section `total` names, which the count is named by. */
   totalLabel?: string;
   badge?: HeaderBadgeSpec;
   filters?: string;
@@ -537,13 +539,13 @@ export function HeaderFrame(props: {
           <span className={`ui-badge ui-tone-${props.badge.tone ?? "neutral"}`}>{formatValue(evaluate(props.badge.text, scope.values))}</span>
         ) : null}
         {total !== undefined ? (
-          <span className="ui-count ui-total" aria-label={`${total} ${props.totalLabel ?? "rows"}`}>
+          <span className="ui-count ui-total" role="img" aria-label={`${total} ${props.totalLabel ?? (props.total ? sections[props.total]?.title : undefined) ?? "rows"}`}>
             {new Intl.NumberFormat().format(total)}
           </span>
         ) : null}
         {(props.live ?? []).map((channel) => {
           const lifecycle = String(getPath(scope.values.channel, [channel, "lifecycle"]) ?? "connecting");
-          const words: Record<string, string> = { live: "Live", connecting: "Connecting", reconnecting: "Reconnecting", stale: "Stale", closed: "Closed" };
+          const words: Record<string, string> = { live: "Live", connecting: "Connecting", loading: "Loading", reconnecting: "Reconnecting", stale: "Stale", closed: "Closed" };
           return (
             <span key={channel} className="ui-live" title={channel} data-lifecycle={lifecycle}>
               {words[lifecycle] ?? lifecycle}

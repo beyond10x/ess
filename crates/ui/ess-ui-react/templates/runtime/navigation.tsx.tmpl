@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useState, type ChangeEvent, type ReactNode } from "react";
 import { Link, useLocation } from "./router";
-import { hrefFor } from "../routes";
+import { hrefFor, matchPage } from "../routes";
 import { useScope } from "./core";
 import { useRead } from "./data";
 import { evaluate, keeps, truthy } from "./expr";
@@ -42,14 +42,26 @@ function matchesQuery(query: string, link: { label: string; synonyms: string[] }
   return [link.label, ...link.synonyms].some((text) => text.toLowerCase().includes(needle));
 }
 
-/** Whether `href` is the page the browser shows: the same path, and the query the link names. */
-function isCurrent(href: string, location: { pathname: string; search: string }): boolean {
-  const target = new URL(href, "http://page.invalid");
-  if (target.pathname !== location.pathname) {
+/**
+ * Whether a link is the page the browser shows: the page the router routes the path to (so a
+ * trailing slash, another case or an alias still counts), the path params the link names, and the
+ * query it names.
+ */
+function isCurrent(
+  link: { page: string; params?: Record<string, unknown> },
+  href: string,
+  location: { pathname: string; search: string },
+): boolean {
+  const shown = matchPage(location.pathname);
+  if (!shown || shown.page !== link.page) {
     return false;
   }
-  const shown = new URLSearchParams(location.search);
-  return [...target.searchParams].every(([key, value]) => shown.get(key) === value);
+  const params = link.params ?? {};
+  if (!Object.entries(params).every(([key, value]) => !(key in shown.params) || shown.params[key] === String(value))) {
+    return false;
+  }
+  const search = new URLSearchParams(location.search);
+  return [...new URL(href, "http://page.invalid").searchParams].every(([key, value]) => search.get(key) === value);
 }
 
 /** The navigation region. */
@@ -127,7 +139,7 @@ export function NavSection(props: {
           const href = hrefFor(link.page, link.params ?? {});
           return (
             <li key={href}>
-              <Link to={href} aria-current={isCurrent(href, location) ? "page" : undefined}>
+              <Link to={href} aria-current={isCurrent(link, href, location) ? "page" : undefined}>
                 {link.label}
               </Link>
             </li>

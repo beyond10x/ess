@@ -160,7 +160,8 @@ fn fnv(text: &str) -> u64 {
 /// story:a-page-shows-its-title-total-badge-and-live-status-and-marks-the-current-page: the header
 /// frame draws a count, a lifecycle word, a badge and a segmented switch, a page without a header
 /// draws its title, and navigation and `Link` mark the current page (`core.tsx`, `router.tsx`,
-/// `styles.css`).
+/// `styles.css`); re-pinned again when the count reads its name from the section title the runtime
+/// reports (no page file carries it) and a `loading` channel has a word.
 /// `data.ts` and the whole-project digest re-pinned for story:metric-error-state-on-failed-read: a
 /// failed read carries its HTTP status (`errorStatus`), which a metric draws.
 /// The entry, `actions.tsx`, `confirm.tsx`, `form.tsx` and the whole-project digest re-pinned for
@@ -174,7 +175,10 @@ fn fnv(text: &str) -> u64 {
 /// `actions.tsx`, `data.ts` and the whole-project digest re-pinned for
 /// story:fixture-mode-applies-a-confirmed-commands-effect: a fixture project applies a confirmed
 /// command's model effect to its rows (`data.ts`) and says where the user acted when it could not
-/// (`actions.tsx`).
+/// (`actions.tsx`). The whole-project digest re-pinned for
+/// story:a-page-shows-its-title-total-badge-and-live-status-and-marks-the-current-page: the header
+/// names its count from the section title, marks the current page and draws a badge (`core.tsx`,
+/// `navigation.tsx`, `router.tsx`, `styles.css`).
 const PLAIN: [(&str, u64); 7] = [
     ("README.md", 0xdae6_c3b6_7e5c_2d28),
     ("src/main.tsx", 0x939b_2ed0_a001_98c5),

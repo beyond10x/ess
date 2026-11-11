@@ -81,23 +81,30 @@ fn a_total_reads_as_a_count() {
         "the total is not grouped by the locale:\n{header}"
     );
     assert!(
-        header.contains("aria-label")
-            && header.contains("totalLabel")
+        header.contains("role=\"img\"")
+            && header.contains("aria-label")
+            && header.contains(".title")
             && header.contains("\"rows\""),
         "the count has no accessible name `<total> <section title, else rows>`:\n{header}"
     );
     let files = files();
-    let page = &files.files["src/pages/OrdersList.tsx"];
+    let frame = {
+        let core = &files.files["src/runtime/core.tsx"];
+        let start = core
+            .find("export function SectionFrame")
+            .expect("SectionFrame");
+        core[start..].to_owned()
+    };
     assert!(
-        page.contains("totalLabel=\"Open orders\"")
-            || page.contains("totalLabel={\"Open orders\"}"),
-        "the header is not given the section's title:\n{page}"
+        frame.contains("title: props.title"),
+        "the section does not report its title to the header:\n{frame}"
     );
-    let plain = &files.files["src/pages/Plain.tsx"];
-    assert!(
-        !plain.contains("totalLabel"),
-        "a section without a title gives the header no label:\n{plain}"
-    );
+    for (name, page) in &files.files {
+        assert!(
+            !name.starts_with("src/pages/") || !page.contains("totalLabel"),
+            "{name}: a page file carries the section title the runtime reads:\n{page}"
+        );
+    }
 }
 
 #[test]
