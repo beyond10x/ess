@@ -64,6 +64,22 @@ enum Repr {
     },
     /// A value outside the exact range, held as it always was.
     Binary64(f64),
+    /// The exact value of a number token a target reported ([`Number::from_json_token`]), where
+    /// the write cannot give it back.
+    ///
+    /// Compared by `units × 10^-scale` like [`Exact`](Repr::Exact), and written as `binary`, the
+    /// binary64 every run-time number has always been written as: the run-time writer half of
+    /// decimal serialization is not built, so no byte moves. Built only by
+    /// [`Repr::observed`], which keeps the second postcondition of [`Repr::exact`]: it exists only
+    /// where [`canonical_decimal`] has an answer for `binary`.
+    Observed {
+        /// The scaled integer, normalised as for [`Exact`](Repr::Exact).
+        units: i128,
+        /// The number of decimal places.
+        scale: u8,
+        /// What this value is written as.
+        binary: f64,
+    },
 }
 
 /// The magnitude below which an integral binary64 is carried as the integer it is.
@@ -226,7 +242,9 @@ impl Number {
     /// index or a sign from it. [`as_i64`](Self::as_i64) is the exact answer.
     pub const fn get(self) -> f64 {
         match self.0 {
-            Repr::Exact { binary, .. } | Repr::Binary64(binary) => binary,
+            Repr::Exact { binary, .. } | Repr::Observed { binary, .. } | Repr::Binary64(binary) => {
+                binary
+            }
         }
     }
 
@@ -259,7 +277,9 @@ impl Number {
     /// This is the grammar `ess-gen`'s `DECIMAL_PATTERN` publishes for `Primitive::Decimal`.
     pub fn exact_text(self) -> String {
         match self.0 {
-            Repr::Exact { units, scale, .. } => exact_text(units, scale),
+            Repr::Exact { units, scale, .. } | Repr::Observed { units, scale, .. } => {
+                exact_text(units, scale)
+            }
             Repr::Binary64(value) => format!("{value}"),
         }
     }
@@ -272,7 +292,9 @@ impl Number {
     /// The exact value as `(units, scale)`, when there is one.
     const fn exact(self) -> Option<(i128, u8)> {
         match self.0 {
-            Repr::Exact { units, scale, .. } => Some((units, scale)),
+            Repr::Exact { units, scale, .. } | Repr::Observed { units, scale, .. } => {
+                Some((units, scale))
+            }
             Repr::Binary64(_) => None,
         }
     }
@@ -352,6 +374,38 @@ impl Number {
             None => Repr::of_binary64(binary),
         }))
     }
+
+    /// Reads a JSON number token as the exact value it spells, for a target to report.
+    ///
+    /// A number a target hands the runner is compared by value, so `0.1` and
+    /// `0.10000000000000001`, `1` and `1.0000000000000000001`, and two 30-digit integers one apart
+    /// are different values, as the Go and TypeScript runners compare them. A `Number` read
+    /// through `serde` cannot be: `serde_json` parses the token to a binary64 before any visitor
+    /// sees it. This is the door that keeps the digits, for every token whose digits fit an `i128`
+    /// at a scale under 256; anything else is the binary64 it always was.
+    ///
+    /// **Nothing else moves.** An integer in 64 bits and a spelling of a binary64's own canonical
+    /// decimal read as they always did. A token the write would collapse compares by its digits
+    /// and still writes as its binary64: the run-time writer half of decimal serialization is not
+    /// built.
+    ///
+    /// `None` when `token` is not a JSON number or is past binary64.
+    pub fn from_json_token(token: &str) -> Option<Self> {
+        let json = crate::json::number(token).ok()?;
+        if let Some(value) = json.as_i64() {
+            return Some(Self::from(value));
+        }
+        if let Some(value) = json.as_u64() {
+            return Some(Self::from_integer(i128::from(value)));
+        }
+        let binary = json.as_f64().filter(|value| value.is_finite())?;
+        Some(Self(match exact_of_decimal_text(token) {
+            Some(authored) if Some(authored) != canonical_decimal(binary) => {
+                Repr::observed(authored.0, authored.1, binary)
+            }
+            _ => Repr::of_binary64(binary),
+        }))
+    }
 }
 
 impl Repr {
@@ -373,6 +427,21 @@ impl Repr {
             return Self::Binary64(binary);
         }
         Self::Exact {
+            units,
+            scale,
+            binary,
+        }
+    }
+
+    /// **The only place an [`Observed`](Repr::Observed) is built.** The second postcondition of
+    /// [`Repr::exact`] holds here too: with no canonical decimal for `binary` the value is the
+    /// [`Binary64`](Repr::Binary64), so the variant stays a function of the carried binary64 for
+    /// every pair [`Number::cmp`] sends to `total_cmp`.
+    fn observed(units: i128, scale: u8, binary: f64) -> Self {
+        if canonical_decimal(binary).is_none() {
+            return Self::Binary64(binary);
+        }
+        Self::Observed {
             units,
             scale,
             binary,

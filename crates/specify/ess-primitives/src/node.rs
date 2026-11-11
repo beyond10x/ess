@@ -82,7 +82,59 @@ impl Node {
     }
 }
 
+/// The deepest [`Node::from_json_exact`] descends.
+const EXACT_DEPTH: usize = 128;
+
 impl Node {
+    /// Reads one JSON document keeping the exact value of every number token.
+    ///
+    /// What a target adapter calls to hand the conformance runner a response it decoded from JSON:
+    /// the runner compares a `Decimal` by exact value, so `0.1` and `0.10000000000000001` are two
+    /// values there, as in the Go and TypeScript runners. [`Deserialize`](serde::Deserialize) reads
+    /// every non-integer through binary64 because `serde_json` has parsed the token before ESS
+    /// sees it. Each number is read by [`Number::from_json_token`] and so writes as it always
+    /// wrote; the keys and the other values read as they do through `Deserialize`.
+    ///
+    /// # Errors
+    ///
+    /// When `text` is not one JSON value, holds a number past binary64, or nests past 128 levels.
+    pub fn from_json_exact(text: &str) -> Result<Self, String> {
+        let raw: &serde_json::value::RawValue =
+            serde_json::from_str(text).map_err(|e| e.to_string())?;
+        Self::from_raw(raw, 0)
+    }
+
+    fn from_raw(raw: &serde_json::value::RawValue, depth: usize) -> Result<Self, String> {
+        if depth > EXACT_DEPTH {
+            return Err("JSON nests too deeply".to_owned());
+        }
+        let text = raw.get().trim();
+        let invalid = |e: serde_json::Error| e.to_string();
+        match text.as_bytes().first() {
+            Some(b'[') => serde_json::from_str::<Vec<&serde_json::value::RawValue>>(text)
+                .map_err(invalid)?
+                .into_iter()
+                .map(|item| Self::from_raw(item, depth + 1))
+                .collect::<Result<Vec<_>, _>>()
+                .map(Self::Seq),
+            Some(b'{') => {
+                serde_json::from_str::<BTreeMap<String, &serde_json::value::RawValue>>(text)
+                    .map_err(invalid)?
+                    .into_iter()
+                    .map(|(key, item)| Self::from_raw(item, depth + 1).map(|item| (key, item)))
+                    .collect::<Result<BTreeMap<_, _>, _>>()
+                    .map(Self::Map)
+            }
+            Some(b'"') => serde_json::from_str(text).map(Self::Text).map_err(invalid),
+            Some(b'n') => Ok(Self::Null),
+            Some(b't') => Ok(Self::Bool(true)),
+            Some(b'f') => Ok(Self::Bool(false)),
+            _ => Number::from_json_token(text)
+                .map(Self::Number)
+                .ok_or_else(|| format!("number `{text}` does not fit the domain number")),
+        }
+    }
+
     /// The name of this node's shape, for error messages.
     pub fn type_name(&self) -> &'static str {
         match self {
@@ -227,5 +279,40 @@ mod tests {
         let fields = node.as_map().expect("a map");
         assert!(matches!(fields.get("amount"), Some(Node::Number(_))));
         assert!(matches!(fields.get("count"), Some(Node::Number(_))));
+    }
+
+    /// A token keeps its digits through [`Node::from_json_exact`], and a spelling of one value
+    /// stays one value.
+    #[test]
+    fn an_exact_node_compares_by_the_digits_of_its_tokens() {
+        for (left, right, equal) in [
+            ("0.1", "0.10000000000000001", false),
+            ("1", "1.0000000000000000001", false),
+            (
+                "123456789012345678901234567890",
+                "123456789012345678901234567891",
+                false,
+            ),
+            ("-9223372036854775809", "-9223372036854775810", false),
+            ("1.5e0", "1.50", true),
+            ("0", "-0.0", true),
+            ("1E2", "100", true),
+            ("9007199254740993", "9007199254740992", false),
+        ] {
+            let (left, right) = (
+                Node::from_json_exact(left).unwrap(),
+                Node::from_json_exact(right).unwrap(),
+            );
+            assert_eq!(left == right, equal, "{left:?} {right:?}");
+        }
+        assert_eq!(
+            serde_json::to_string(&Node::from_json_exact("-0.0").unwrap()).unwrap(),
+            "-0.0"
+        );
+        assert!(Node::from_json_exact("1e400").is_err());
+        assert!(Node::from_json_exact("[1,").is_err());
+        assert!(
+            Node::from_json_exact(&format!("{}1{}", "[".repeat(200), "]".repeat(200))).is_err()
+        );
     }
 }

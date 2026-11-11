@@ -2048,7 +2048,7 @@ impl ConformanceTarget for DecimalBackend {
         }];
         let mut result = self.inner.execute_command(request)?;
         if let Some(response) = result.response.as_mut() {
-            response.insert("number".into(), serde_json::from_str(value).unwrap());
+            response.insert("number".into(), Node::from_json_exact(value).unwrap());
         }
         Ok(result)
     }
@@ -2889,13 +2889,13 @@ fn adversary_e_decimal_spellings_of_one_value_replay_equal() {
 /// `docs/design/retained-command-results.md` and the CHANGELOG: "the Rust reader compares exactly
 /// within its exact decimal range". Each pair is two different decimals whose digits fit an `i128`
 /// at a scale under 256 (`ess_primitives::facts::Number`'s exact range), so the retry changed the
-/// retained result and must fail. The TypeScript runner fails each (`compareExact`). Today the Rust
-/// runner reads each pair through binary64 and replays it as one value; this asserts that state
-/// until the story lands, then every pair must fail.
+/// retained result and must fail, under the Rust runner as under Go and TypeScript
+/// (`compareExact`). The target hands each number over as its token
+/// (`ess_primitives::node::Node::from_json_exact`), so the runner sees the digits it was given.
 #[test]
 fn adversary_e_two_decimals_inside_the_exact_range_replay_unequal() {
     let admitted = adversary_e_decimal_suite();
-    let mut unequal = Vec::new();
+    let mut not_failed = Vec::new();
     for (original, retry) in [
         ("0.1", "0.10000000000000001"),
         ("1", "1.0000000000000000001"),
@@ -2905,15 +2905,36 @@ fn adversary_e_two_decimals_inside_the_exact_range_replay_unequal() {
         ),
     ] {
         let actual = adversary_e_retry(&admitted, original, retry);
-        if actual == Status::Failed {
-            unequal.push(format!("{original} then {retry}: {actual:?}"));
+        if actual != Status::Failed {
+            not_failed.push(format!("{original} then {retry}: {actual:?}"));
         }
     }
     assert!(
-        unequal.is_empty(),
-        "today Rust reads a Decimal through binary64 and replays these pairs as one value; once \
-         a pair fails, assert that every pair fails: \
-         story:a-rust-runner-compares-a-decimal-by-exact-value\n{unequal:#?}"
+        not_failed.is_empty(),
+        "each pair is two decimals and must end Failed: \
+         story:a-rust-runner-compares-a-decimal-by-exact-value\n{not_failed:#?}"
+    );
+}
+
+/// An exact decimal compares by its digits and still writes as the binary64 every run-time number
+/// has always been written as, so the run-time bytes do not move.
+#[test]
+fn adversary_e_an_exact_decimal_still_writes_as_its_binary64() {
+    for (token, written) in [
+        ("0.10000000000000001", "0.1"),
+        ("1.0000000000000000001", "1.0"),
+        ("123456789012345678901234567890", "1.2345678901234568e+29"),
+    ] {
+        let node = Node::from_json_exact(token).unwrap();
+        assert_eq!(serde_json::to_string(&node).unwrap(), written, "{token}");
+    }
+    assert_ne!(
+        Node::from_json_exact("0.1").unwrap(),
+        Node::from_json_exact("0.10000000000000001").unwrap()
+    );
+    assert_eq!(
+        Node::from_json_exact("[1.5, {\"a\": 2}]").unwrap(),
+        Node::from_json_exact("[1.50, {\"a\": 2.0}]").unwrap()
     );
 }
 

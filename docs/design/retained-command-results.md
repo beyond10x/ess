@@ -110,12 +110,16 @@ refused by name.
 From `ess-conformance/58` (ordinary) and `/59` (declared coverage) a Decimal is
 admitted and compared by numeric value: `1.5` and `1.50` are one value and `1.25`
 another. A suite labelled below 58 that carries a Decimal in a retained result or
-a complete subject is refused by version. The Go and TypeScript runtimes compare
-the exact value of the number token. The Rust runner holds a target's number as
-`ess_primitives::facts::Number` holds every number: a non-integer, and an integer
-past 64 bits, is read through binary64, so two decimals that round to one
-binary64, such as `0.1` and `0.10000000000000001`, compare as one value there. Do not change existing
-response-to-event semantics.
+a complete subject is refused by version. All three runners compare the exact
+value of the number token the target reports, so `0.1` and `0.10000000000000001`,
+`1` and `1.0000000000000000001`, and two 30-digit integers one apart are different
+values. A Rust target adapter reports a token with
+`ess_primitives::node::Node::from_json_exact` (or `Number::from_json_token`):
+`Deserialize` reads a non-integer through binary64 before ESS sees its digits, so
+a `Node` built that way is the binary64 it was read as. An exact number is
+compared by its digits and written as the binary64 a run-time number has always
+been written as, so no byte moves. Do not change existing response-to-event
+semantics.
 
 After closed typed admission, compare Integer as the exact admitted i64 value,
 Boolean exactly, and String/Timestamp/Duration/Uuid/Bytes as exact admitted text.
