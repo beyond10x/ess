@@ -5,6 +5,17 @@
 ### Changed
 
 - `ess verify conform mutate`: an `order-flip` on a view key whose tie synthesis cannot arrange (a key after the identity, or behind a key no creating command writes from its input) is now `unwitnessed` (`ESS-MUTATE-004`, exit 3) and lists the baseline's standing refusal under `baseline_refusals`, instead of `survived` (exit 1); a scenario that kills it still wins. No format changes (`ess-mutation-report` and `ess-mutation-manifest` carry the refusal already) (beyond10x/ess#708).
+- In fixture mode a confirmed command now changes the fixture rows the way the model says it does:
+  a row moved out of a filtered view's state leaves that view, and every section and page that
+  reads the entity shows the change, with no reload. `ess generate ui --target react --model
+  <spec> --fixtures` carries the model's effects into the fixture project, and `ess ui test
+  --model` applies them in the terminal renderer. A command whose effect fixture mode cannot
+  apply (no model, more than one success outcome, `creates:`, `affects:`, `instances:`, a move
+  from a state the lifecycle does not leave, a view filter it does not evaluate) leaves the rows
+  as they were and says `<command> done in fixture mode; its effect was not applied: <reason>`
+  where the user acted, and React logs the same line with `console.warn`. A bound build
+  (`--model` without `--fixtures`) generates the same files. A row a command changes does not yet
+  enter a view that did not list it.
 
 ### Fixed
 
