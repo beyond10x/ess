@@ -5,6 +5,7 @@
 ### Fixed
 
 - `ess-ui`: a record field or an export param keyed `action` is author data and is no longer read as an Action, so its refusal names the real node and no false Action refusal hides a later one.
+- `ess ui test --playwright` routes the per-test fixture answers instead of marking the test `test.fixme`: a list of view answers is one handler choosing by `by_params`, `fails` is status 500 with its message, a refused command is the refusal body the HTTP data adapter reads as refused (status 422), and a latency per view holds that view's route on the page clock (beyond10x/ess#722). A test using none of these emits the same spec as before.
 
 ## [0.93.0] — 2026-11-11
 
