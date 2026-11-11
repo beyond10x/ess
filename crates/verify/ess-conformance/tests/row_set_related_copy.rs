@@ -265,3 +265,224 @@ fn a_copied_related_identity_is_witnessed() {
         Some(&Status::Passed)
     );
 }
+
+// ---- adversary pass 1 ---------------------------------------------------------------------------
+
+/// `text` with `part`, which it holds exactly once, replaced by `with`.
+fn adversary_replaced(text: &str, part: &str, with: &str) -> String {
+    assert_eq!(text.matches(part).count(), 1, "written once: {part}");
+    text.replacen(part, with, 1)
+}
+
+/// Every refusal of `text`'s synthesis that names `name`.
+fn adversary_refusals_naming(text: &str, name: &str) -> (ConformanceSuite, Vec<String>) {
+    let synthesis = synthesize(&model(text));
+    let named = synthesis
+        .refusals
+        .iter()
+        .map(ToString::to_string)
+        .filter(|refusal| refusal.contains(name))
+        .collect();
+    (synthesis.suite, named)
+}
+
+const ADVERSARY_SYSTEM: &str = "format: ess/25
+system: demo
+version: v1
+domains:
+  - demo.a
+components:
+  - component: svc
+    owns:
+      domains: [demo.a]
+    accepts:
+      commands: [demo.a.DefineTier, demo.a.OpenSeat, demo.a.Requalify, demo.a.Check]
+bindings:
+  - id: check-on-requalified
+    when:
+      event: demo.a.Requalified
+    invoke:
+      command: demo.a.Check
+    mapping:
+      holder_id: event.holder_id
+    delivery: at_least_once
+    on_failure: retry
+";
+
+/// Seats open not qualifying; only `Requalify`, an update, copies a tier's `qualifies` onto one.
+/// A binding on `Requalified` invokes `Check`, whose first branch is a set guard over that field.
+const ADVERSARY_DOMAIN: &str = "domain: demo.a
+types:
+  - {name: demo.a.SeatId, kind: newtype, of: Uuid}
+  - {name: demo.a.HolderId, kind: newtype, of: Uuid}
+  - {name: demo.a.TierId, kind: newtype, of: Uuid}
+entities:
+  - name: demo.a.Tier
+    identity: {name: tier_id, type: demo.a.TierId}
+    fields:
+      - {name: qualifies, type: Boolean}
+    lifecycle: {initial: Open, states: [Open], terminal: [Open]}
+  - name: demo.a.Seat
+    identity: {name: seat_id, type: demo.a.SeatId}
+    fields:
+      - {name: holder_id, type: demo.a.HolderId}
+      - {name: qualifies, type: Boolean}
+    lifecycle: {initial: Open, states: [Open], terminal: [Open]}
+commands:
+  - name: demo.a.DefineTier
+    input:
+      - {name: qualifies, type: Boolean}
+    outcomes:
+      - name: defined
+        creates: demo.a.Tier
+        instance: tier_id
+        sets: {qualifies: input.qualifies}
+        emits: [demo.a.TierDefined]
+        payload:
+          demo.a.TierDefined: {tier_id: {generated: true}}
+  - name: demo.a.OpenSeat
+    input:
+      - {name: holder_id, type: demo.a.HolderId}
+    outcomes:
+      - name: opened
+        creates: demo.a.Seat
+        instance: seat_id
+        sets: {holder_id: input.holder_id, qualifies: false}
+        emits: [demo.a.SeatOpened]
+        payload:
+          demo.a.SeatOpened: {seat_id: {generated: true}}
+  - name: demo.a.Requalify
+    input:
+      - {name: seat_id, type: demo.a.SeatId}
+      - {name: tier_id, type: demo.a.TierId}
+      - {name: holder_id, type: demo.a.HolderId}
+    outcomes:
+      - name: requalified
+        updates: demo.a.Seat
+        instance: seat_id
+        sets: {qualifies: {related: {via: input.tier_id, field: qualifies}}}
+        emits: [demo.a.Requalified]
+        payload:
+          demo.a.Requalified: {seat_id: input.seat_id, holder_id: input.holder_id}
+  - name: demo.a.Check
+    input:
+      - {name: holder_id, type: demo.a.HolderId}
+    outcomes:
+      - name: unavailable
+        external: the store cannot be written to
+        error: demo.a.Unavailable
+      - name: quiet
+        when_related: {entity: demo.a.Seat, where: qualifies == true, exists: false}
+        emits: [demo.a.Quiet]
+        payload:
+          demo.a.Quiet: {holder_id: input.holder_id}
+      - name: noticed
+        emits: [demo.a.Noticed]
+        payload:
+          demo.a.Noticed: {holder_id: input.holder_id}
+errors:
+  - name: demo.a.Unavailable
+events:
+  - name: demo.a.TierDefined
+    fields:
+      - {name: tier_id, type: demo.a.TierId}
+  - name: demo.a.SeatOpened
+    fields:
+      - {name: seat_id, type: demo.a.SeatId}
+  - name: demo.a.Requalified
+    fields:
+      - {name: seat_id, type: demo.a.SeatId}
+      - {name: holder_id, type: demo.a.HolderId}
+  - name: demo.a.Quiet
+    fields:
+      - {name: holder_id, type: demo.a.HolderId}
+  - name: demo.a.Noticed
+    fields:
+      - {name: holder_id, type: demo.a.HolderId}
+views:
+  - name: demo.a.Seats
+    source: demo.a.Seat
+    consistency: read_your_writes
+    fields:
+      - {name: seat_id, type: demo.a.SeatId}
+      - {name: holder_id, type: demo.a.HolderId}
+      - {name: qualifies, type: Boolean}
+";
+
+fn adversary_bound_model() -> EssIr {
+    let mut sources = Vec::new();
+    for (label, text) in [
+        ("system.yaml", ADVERSARY_SYSTEM),
+        ("a.yaml", ADVERSARY_DOMAIN),
+    ] {
+        let raw = RawSpecFile::parse(text).unwrap_or_else(|error| panic!("{label}: {error}"));
+        sources.push((Source::new(label), raw));
+    }
+    let spec = Specification::assemble(sources).unwrap_or_else(|errors| panic!("{errors}"));
+    compile(&spec, &SourceMap::new()).unwrap_or_else(|error| panic!("{error:?}"))
+}
+
+/// A copy written by an update that a later set guard reads: the binding `Requalified` sets off
+/// decides `Check`'s branch over the rows the trigger leaves, the requalified seat among them, so
+/// the walk over the steps has to carry the value the update copied (`before.extend(read)` in the
+/// update arm of `apply`, `row_set.rs`). Without it the seat's `qualifies` is unknown, no branch
+/// is decided, and the binding is refused.
+#[test]
+fn adversary_a_set_guard_after_an_update_copy_is_decided() {
+    let ir = adversary_bound_model();
+    let synthesis = synthesize(&ir);
+    let refused: Vec<String> = synthesis
+        .refusals
+        .iter()
+        .map(ToString::to_string)
+        .filter(|refusal| refusal.contains("check-on-requalified"))
+        .collect();
+    assert_eq!(refused, Vec::<String>::new());
+    let flow = synthesis
+        .suite
+        .scenarios
+        .iter()
+        .find(|(id, _)| id.to_string() == "check-on-requalified/binding/flow")
+        .map(|(_, scenario)| scenario)
+        .unwrap_or_else(|| {
+            panic!(
+                "the binding's flow is synthesized: {:#?}",
+                synthesis.suite.scenarios.keys().collect::<Vec<_>>()
+            )
+        });
+    assert!(
+        flow.steps.iter().any(|step| matches!(step,
+            ScenarioStep::ExecuteCommand { command, .. }
+                if command.to_string() == "demo.a.Requalify")),
+        "the trigger is sent: {:#?}",
+        flow.steps
+    );
+    let statuses = run(&synthesis.suite, &Interpreted::for_model(ir.clone()));
+    assert!(
+        statuses.values().all(|status| *status == Status::Passed),
+        "{statuses:#?}"
+    );
+}
+
+/// [`IDENTITY`] with `Issue` refusing a missing tier alone, the guard a creator copying a related
+/// identity most often declares: the row-set guard is still witnessed.
+#[test]
+fn adversary_split_an_identity_copy_refusing_a_missing_tier_is_witnessed() {
+    let text = adversary_replaced(
+        IDENTITY,
+        "\nevents:\n",
+        "\nerrors:\n  - {name: demo.seats.NoTier, summary: No tier carries that identity., fields: []}\nevents:\n",
+    );
+    let text = adversary_replaced(
+        &text,
+        "      - {name: tier_id, type: demo.seats.TierId}\n    outcomes:\n      - name: issued\n",
+        "      - {name: tier_id, type: demo.seats.TierId}\n    outcomes:\n      - name: no-tier\n        when_related: {via: input.tier_id, exists: false}\n        error: demo.seats.NoTier\n      - name: issued\n",
+    );
+    let (suite, refusals) = adversary_refusals_naming(&text, "demo.seats.Check");
+    assert_eq!(refusals, Vec::<String>::new());
+    let statuses = run(&suite, &Interpreted::for_model(model(&text)));
+    assert!(
+        statuses.values().all(|status| *status == Status::Passed),
+        "{statuses:#?}"
+    );
+}
