@@ -11,9 +11,11 @@
 //! | `external:`, refusal or not | the same: the system issued it, and the provider's answer is the outcome reached |
 //! | decided by the addressed record: `wrong_state:`, `unknown_instance:`, a held-state or stored-field guard with no input guard | [`ExpectNotIssued`](ScenarioStep::ExpectNotIssued); the steps that read the result nobody produced are dropped, the subject checks stay |
 //! | decided by the input or the rows it names: `when:`, `when_related:`, a refusing default, `input_absent:`, an input guard beside a held state | the scenario is withdrawn, `ESS-SYNTH-024` naming the branch |
+//! | none: no `expect_outcome` of the command follows the send before the next send | the send is dropped, and the checks after it stay: there is no branch for an await to witness, and an `expect_not_issued` without `await_within` would hold the scenario for the runner's whole deadline |
 //!
-//! A command whose outcome addresses no existing record ([`Unaddressed`]) withdraws every scenario
-//! that needs a step of it, `ESS-SYNTH-023`. A grant refusal — the send followed directly by
+//! A command whose outcome addresses no existing record
+//! ([`Unaddressed`](crate::system_issued::Unaddressed)) withdraws every scenario that needs a step
+//! of it, `ESS-SYNTH-023`. A grant refusal — the send followed directly by
 //! [`ExpectNotGranted`](ScenarioStep::ExpectNotGranted) — stays driven: an outside caller must not
 //! be able to issue the system's step.
 //!
@@ -47,7 +49,7 @@ use super::{
     ConformanceSuite, EssSemanticRef, EventRef, OutcomeRef, PayloadShape, RefusalCause, ScenarioId,
     ScenarioStep, ScenarioValue, ViewExpectation,
 };
-use crate::system_issued::{identity_input, Unaddressed};
+use crate::system_issued::identity_input;
 
 /// Every scenario that needs a step of a system-issued command, rewritten to await it; those that
 /// cannot be, withdrawn from `suite` and returned with why. A model with no system-issued command
@@ -158,19 +160,16 @@ fn rewritten<'ir>(
                 command: command_ref.clone(),
                 reason,
             })?;
-        let outcome = claimed(command, &steps[at + 1..]);
-        let claim = outcome.map_or(Claim::Reached, claim_of);
-        let refused = |decided_by| {
-            outcome.map_or(
-                RefusalCause::SystemIssuedUnaddressed {
-                    command: command_ref.clone(),
-                    reason: Unaddressed::NoInstance,
-                },
-                |outcome| RefusalCause::SystemDecidedRefusal {
-                    outcome: OutcomeRef::new(command_ref.clone(), outcome.name.clone()),
-                    decided_by,
-                },
-            )
+        // A send that claims no branch has none for an await to witness: it is dropped, and the
+        // checks after it stay (what they read of the dropped send's result goes with it).
+        let Some(outcome) = claimed(command, &steps[at + 1..]) else {
+            current = Current::Nothing;
+            continue;
+        };
+        let claim = claim_of(outcome);
+        let refused = |decided_by| RefusalCause::SystemDecidedRefusal {
+            outcome: OutcomeRef::new(command_ref.clone(), outcome.name.clone()),
+            decided_by,
         };
         if let Claim::Unclaimable(decided_by) = claim {
             return Err(refused(decided_by));
@@ -200,7 +199,7 @@ fn rewritten<'ir>(
             shape: input_shape(ir, command),
         });
         awaits.push(Awaited {
-            outcome,
+            outcome: Some(outcome),
             identity,
             instance,
             invented: input
@@ -319,13 +318,10 @@ const ABSENT_GUARDED_INPUT: &str = "an await of a system-issued step whose branc
 /// each input it names, and cannot state an absence.
 fn guarded_input(
     command: &ResolvedCommand,
-    outcome: Option<&ResolvedOutcome>,
+    outcome: &ResolvedOutcome,
     identity: &str,
     sent: Option<&BTreeMap<String, ScenarioValue>>,
 ) -> Result<BTreeMap<String, ScenarioValue>, RefusalCause> {
-    let Some(outcome) = outcome else {
-        return Ok(BTreeMap::new());
-    };
     let guards: Vec<_> = match &outcome.condition {
         ResolvedCondition::Otherwise => command
             .outcomes
