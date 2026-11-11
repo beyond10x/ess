@@ -795,6 +795,7 @@ ess generate ui [OPTIONS] --target <TARGET> --path <PATH> --out <OUT>
 | `--path` | `<PATH>` | yes |  | The `ess-ui/1` document |
 | `--out` | `<OUT>` | yes |  | Directory the project is written to |
 | `--model` | `<MODEL>` | no |  | The ESS specification the document's `model:` names (a directory, its `ess-inputs.yaml`, or one file): the app is bound to the HTTP surface the specification's `reached_by: network` components serve, instead of answering from fixtures |
+| `--fixtures` |  | no |  | With `--model`: keep the app on its fixtures, as without it, and apply what the model says a confirmed command does to the fixture rows, in memory, so every view that reads them shows the change |
 | `--http` | `<HTTP>` | no |  | The `ess-http/1` binding the server was synthesized with (`ess generate synthesize --http`): the UI calls the methods and paths it declares, each path variable filled from the field it carries. Every view and command the document names must be routed there |
 | `--refines` | `<REFINES>` | no |  | The `ess-http/1` binding `--http` refines, whose bytes its `refines:` digest pins |
 
@@ -1853,6 +1854,6 @@ ess ui test [OPTIONS] --path <PATH> <TESTS>...
 | `--path` | `<PATH>` | yes |  | The `ess-ui/1` document under test; every test file must name it |
 | `--format` | `<FORMAT>` | no | `text` | Report format. One of `text`, `json`. |
 | `--playwright` | `<OUT>` | no |  | Write the tests as a Playwright spec for the generated React project to this file, instead of running them |
-| `--model` | `<MODEL>` | no |  | The ESS specification the document's `model:` names (a directory, its `ess-inputs.yaml`, or one file): a choice's `options` naming one of its enums list that enum's variants. Reads still come from the fixtures |
+| `--model` | `<MODEL>` | no |  | The ESS specification the document's `model:` names (a directory, its `ess-inputs.yaml`, or one file): a choice's `options` naming one of its enums list that enum's variants. Reads still come from the fixtures, and a confirmed command changes them the way the model says it does |
 
 [ess-cli-end]: #

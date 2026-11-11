@@ -55,14 +55,20 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::path::{Path, PathBuf};
 
-use ess_compiler::ir::{DomainHandle, ResolvedBody, ResolvedTypeRef, ResolvedView};
+use ess_compiler::ir::{
+    DomainHandle, ResolvedBody, ResolvedCommand, ResolvedEffect, ResolvedInstance, ResolvedOutcome,
+    ResolvedPayloadValue, ResolvedTypeRef, ResolvedView,
+};
 use ess_compiler::source::SourceMap;
 use ess_compiler::EssIr;
 use ess_domain::component::Reach;
 use ess_domain::types::Primitive;
 use ess_gen::http::{self, Served};
+use ess_primitives::facts::{FactPath, FactValue};
+use ess_primitives::predicate::{CompareKind, CompareOp, Operand, Predicate};
 use ess_ui::binding::{
-    Binding, CommandRoute, EnumLookup, EnumVariant, ErrorRoute, ModelEnums, QueryParam, ViewRoute,
+    Binding, CommandEffect, CommandRoute, EnumLookup, EnumVariant, ErrorRoute, FixtureEffects,
+    ModelEnums, QueryParam, RowChange, RowFilter, SetValue, ViewRoute, ViewShape,
 };
 use ess_ui::{
     Action, ActorSource, Body, Carries, Channel, Composite, Document, ExportParams, Expr, HostSlot,
@@ -107,6 +113,9 @@ pub struct Model {
     /// derived `ess-http/1` binding: what [`binding`] routes. A name the model declares outside
     /// it is refused here as the binding refuses it.
     served: BTreeSet<String>,
+    /// What each command does to the rows of the views of its entity, by qualified name: what
+    /// fixture mode applies ([`ModelEnums::fixture_effects`]).
+    effects: FixtureEffects,
 }
 
 /// One view of the model: the bounded context that owns it and the parameters it declares.
@@ -268,6 +277,7 @@ impl Model {
             .collect();
         Self {
             served,
+            effects: fixture_effects_of(ir),
             system: ir.system().to_string(),
             views: ir
                 .views()
@@ -2063,6 +2073,217 @@ impl ModelEnums for Model {
             },
             many => EnumLookup::Ambiguous(many.to_vec()),
         }
+    }
+
+    fn fixture_effects(&self, document: &Document) -> Option<FixtureEffects> {
+        let mut out = FixtureEffects::default();
+        for named in names(document) {
+            match named.kind {
+                Kind::Command(name) => {
+                    let effect = self
+                        .command(name)
+                        .and_then(|qualified| self.effects.commands.get(&qualified));
+                    if let Some(effect) = effect {
+                        out.commands.insert(name.to_owned(), effect.clone());
+                    }
+                }
+                Kind::View { name, .. } => {
+                    let shape = self
+                        .view(name)
+                        .and_then(|(qualified, _)| self.effects.views.get(&qualified));
+                    if let Some(shape) = shape {
+                        out.views.insert(name.to_owned(), shape.clone());
+                    }
+                }
+                Kind::Event(_) => {}
+            }
+        }
+        Some(out)
+    }
+}
+
+/// What each command of the model does to a fixture row, and how each view places one, by
+/// qualified name: the table fixture mode applies in memory.
+fn fixture_effects_of(ir: &EssIr) -> FixtureEffects {
+    let mut out = FixtureEffects::default();
+    for (name, command) in ir.commands() {
+        if let Some(effect) = command_effect(ir, command) {
+            out.commands.insert(name.to_string(), effect);
+        }
+    }
+    for (name, view) in ir.views() {
+        if let Some(shape) = view_shape(ir, &name.to_string(), view) {
+            out.views.insert(name.to_string(), shape);
+        }
+    }
+    out
+}
+
+fn not_applied(reason: impl Into<String>) -> CommandEffect {
+    CommandEffect::NotApplied {
+        unapplied: reason.into(),
+    }
+}
+
+/// What the one success outcome of `command` does to a row, when it does; the reason fixture mode
+/// cannot apply it otherwise. A command whose success changes no row has none.
+fn command_effect(ir: &EssIr, command: &ResolvedCommand) -> Option<CommandEffect> {
+    let successes: Vec<&ResolvedOutcome> = command
+        .outcomes
+        .iter()
+        .filter(|outcome| outcome.error.is_none())
+        .collect();
+    let changes = |outcome: &ResolvedOutcome| {
+        outcome.subject.is_some() || outcome.instances.is_some() || !outcome.affects.is_empty()
+    };
+    let [outcome] = successes.as_slice() else {
+        return successes.iter().any(|outcome| changes(outcome)).then(|| {
+            CommandEffect::NotApplied {
+                unapplied: "it has more than one success outcome".to_owned(),
+            }
+        });
+    };
+    if outcome.instances.is_some() {
+        return Some(not_applied(
+            "its success changes the rows a filter selects (`instances:`)",
+        ));
+    }
+    if !outcome.affects.is_empty() {
+        return Some(not_applied("its success changes other rows (`affects:`)"));
+    }
+    let subject = outcome.subject.as_ref()?;
+    let (to, delete) = match &subject.effect {
+        ResolvedEffect::Creates => {
+            return Some(not_applied("its success creates a row (`creates:`)"))
+        }
+        ResolvedEffect::Preserves => return None,
+        ResolvedEffect::Moves { transition } => (Some(transition.to.as_str().to_owned()), false),
+        ResolvedEffect::Updates => (None, false),
+        ResolvedEffect::Deletes => (None, true),
+    };
+    let ResolvedInstance::Supplied { field } = &subject.instance else {
+        return Some(not_applied("its success names no instance in its input"));
+    };
+    let mut sets = BTreeMap::new();
+    for set in &outcome.sets {
+        let value = match &set.value {
+            ResolvedPayloadValue::InputField { field, .. } if !field.contains('.') => {
+                SetValue::Input(field.clone())
+            }
+            ResolvedPayloadValue::Literal { value } => {
+                SetValue::Value(literal(scalar(ir, &set.target_type), value))
+            }
+            _ => {
+                return Some(not_applied(format!(
+                    "its success sets `{}` from a value fixture mode does not compute",
+                    set.target
+                )));
+            }
+        };
+        sets.insert(set.target.clone(), value);
+    }
+    Some(CommandEffect::Applies(RowChange {
+        entity: subject.entity.name().to_string(),
+        instance: field.name.clone(),
+        to,
+        sets,
+        delete,
+    }))
+}
+
+/// A value written in an outcome, as the row holds it: a number or a boolean where the field is
+/// not text and the text reads as one.
+fn literal(scalar: Option<&str>, text: &str) -> serde_json::Value {
+    let text_value = || serde_json::Value::String(text.to_owned());
+    if scalar == Some("String") {
+        return text_value();
+    }
+    serde_json::from_str::<serde_json::Value>(text)
+        .ok()
+        .filter(|value| value.is_number() || value.is_boolean())
+        .unwrap_or_else(text_value)
+}
+
+/// How `view` places a changed row of its entity: none for a view whose rows are not one per
+/// entity, or that does not show the identity.
+fn view_shape(ir: &EssIr, name: &str, view: &ResolvedView) -> Option<ViewShape> {
+    let identity = identity_of(ir, view)?;
+    let wires: BTreeMap<String, String> = view
+        .fields
+        .iter()
+        .filter_map(|field| {
+            let wire = field.naming.wire.as_ref()?;
+            (wire != &field.name).then(|| (field.name.clone(), wire.clone()))
+        })
+        .collect();
+    let key = |field: &str| wires.get(field).map_or(field, String::as_str).to_owned();
+    let (filter, unapplied) = match &view.filter {
+        None | Some(Predicate::Always) => (None, None),
+        Some(predicate) => match row_filter(predicate, &key) {
+            Some(filter) => (Some(filter), None),
+            None => (
+                None,
+                Some(format!(
+                    "the filter of `{name}` (`{predicate}`) is not one fixture mode evaluates"
+                )),
+            ),
+        },
+    };
+    Some(ViewShape {
+        entity: view.source.name().to_string(),
+        identity,
+        state: key("state"),
+        wires,
+        filter,
+        unapplied,
+    })
+}
+
+/// `predicate` over row keys, when it is built of comparisons of one field with literals.
+fn row_filter(predicate: &Predicate, key: &dyn Fn(&str) -> String) -> Option<RowFilter> {
+    let field = |path: &FactPath| match path.segments() {
+        [one] => Some(key(one)),
+        _ => None,
+    };
+    let value = |fact: &FactValue| serde_json::to_value(fact).ok();
+    let parts = |all: &[Predicate]| {
+        all.iter()
+            .map(|part| row_filter(part, key))
+            .collect::<Option<Vec<_>>>()
+    };
+    match predicate {
+        Predicate::All(all) => Some(RowFilter::All { of: parts(all)? }),
+        Predicate::Any(any) => Some(RowFilter::Any { of: parts(any)? }),
+        Predicate::Not(inner) => Some(RowFilter::Not {
+            of: Box::new(row_filter(inner, key)?),
+        }),
+        Predicate::Compare {
+            left,
+            op,
+            right,
+            kind: CompareKind::Value,
+        } => {
+            let ((Operand::Fact(path), Operand::Literal(literal))
+            | (Operand::Literal(literal), Operand::Fact(path))) = (left, right)
+            else {
+                return None;
+            };
+            let (field, value) = (field(path)?, value(literal)?);
+            match op {
+                CompareOp::Eq => Some(RowFilter::Eq { field, value }),
+                CompareOp::Ne => Some(RowFilter::Ne { field, value }),
+                _ => None,
+            }
+        }
+        Predicate::AnyOf { path, values } => Some(RowFilter::In {
+            field: field(path)?,
+            values: values.iter().map(value).collect::<Option<_>>()?,
+        }),
+        Predicate::NoneOf { path, values } => Some(RowFilter::NotIn {
+            field: field(path)?,
+            values: values.iter().map(value).collect::<Option<_>>()?,
+        }),
+        _ => None,
     }
 }
 

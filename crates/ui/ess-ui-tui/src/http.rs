@@ -460,7 +460,10 @@ impl DataAdapter for HttpAdapter {
 /// declared error's display text from the binding, else what the surface's own refusals mean.
 pub fn shown(binding: Option<&Binding>, command: &str, answer: &Answer) -> String {
     match answer {
-        Answer::Accepted => format!("{command} accepted"),
+        Answer::Accepted | Answer::FixtureApplied => format!("{command} accepted"),
+        Answer::FixtureNotApplied { reason } => {
+            format!("{command} done in fixture mode; its effect was not applied: {reason}")
+        }
         Answer::Refused { error, .. } => binding
             .and_then(|binding| route(binding, command))
             .and_then(|route| route.errors.get(error))

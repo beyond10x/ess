@@ -141,7 +141,8 @@ pub struct TestArgs {
     pub playwright: Option<PathBuf>,
     /// The ESS specification the document's `model:` names (a directory, its `ess-inputs.yaml`,
     /// or one file): a choice's `options` naming one of its enums list that enum's variants.
-    /// Reads still come from the fixtures.
+    /// Reads still come from the fixtures, and a confirmed command changes them the way the
+    /// model says it does.
     #[arg(long)]
     pub model: Option<PathBuf>,
 }
@@ -212,13 +213,18 @@ pub fn execute_with(
         .prefix("ess-ui-test-")
         .tempdir()
         .map_err(|error| TestError(format!("cannot create a run directory: {error}")))?;
-    let mut tests = Vec::new();
-    for file in files {
-        for test in &file.tests {
-            let here = dir.path().join(tests.len().to_string());
-            tests.push(run_test(&doc, &base, test, &here, &unlisted));
+    // With the model, a confirmed command changes the fixture rows the way the model says.
+    let effects = model.and_then(|model| model.fixture_effects(&doc));
+    let tests = ess_ui_tui::with_fixture_effects(effects, || {
+        let mut tests = Vec::new();
+        for file in files {
+            for test in &file.tests {
+                let here = dir.path().join(tests.len().to_string());
+                tests.push(run_test(&doc, &base, test, &here, &unlisted));
+            }
         }
-    }
+        tests
+    });
     dir.close()
         .map_err(|error| TestError(format!("cannot remove the run directory: {error}")))?;
     Ok(Report {

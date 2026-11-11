@@ -1,0 +1,56 @@
+format: ess-ui/1
+app: desk
+title: Desk
+model: desk
+placement_profile: fat
+fixtures:
+  dir: fixtures
+  views:
+    desk.requests.PendingRequests: pending.yaml
+theme:
+  default: dark
+themes:
+  light: {}
+  dark: {}
+shells:
+  app:
+    regions:
+      nav:
+        kind: navigation
+      main:
+        kind: page_outlet
+      toasts:
+        kind: notifications
+      overlay:
+        kind: overlay_outlet
+navigation:
+  home: requests.inbox
+  sections:
+  - name: main
+    label: Main
+    icon: home
+    pages:
+    - requests.inbox
+pages:
+  requests.inbox:
+    kind: list_page
+    title: Pending requests
+    nav:
+      label: Inbox
+    sections:
+    - name: list
+      component: collection
+      style: table
+      reads:
+        view: desk.requests.PendingRequests
+      columns:
+      - title
+      - state
+      row_actions:
+      - name: approve
+        does: desk.requests.ApproveRequest
+        bind:
+          id: row.id
+        label: Approve
+        confirm:
+          title: Approve request

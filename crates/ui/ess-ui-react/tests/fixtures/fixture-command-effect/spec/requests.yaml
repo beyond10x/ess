@@ -1,0 +1,85 @@
+domain: desk.requests
+entities:
+- name: desk.requests.Request
+  identity:
+    name: id
+    type: String
+  fields:
+  - name: title
+    type: String
+  lifecycle:
+    initial: Pending
+    states:
+    - Pending
+    - Approved
+    terminal:
+    - Approved
+    transitions:
+    - name: approve
+      from:
+      - Pending
+      to: Approved
+events:
+- name: desk.requests.RequestApproved
+  fields:
+  - name: id
+    type: String
+errors:
+- name: desk.requests.NoSuchRequest
+  fields:
+  - name: id
+    type: String
+commands:
+- name: desk.requests.ApproveRequest
+  input:
+  - name: id
+    type: String
+  outcomes:
+  - name: approved
+    moves: desk.requests.Request.approve
+    instance: id
+    emits:
+    - desk.requests.RequestApproved
+    payload:
+      desk.requests.RequestApproved:
+        id: input.id
+  - name: unknown
+    unknown_instance: true
+    error: desk.requests.NoSuchRequest
+    payload:
+      desk.requests.NoSuchRequest:
+        id: input.id
+  - name: wrong-state
+    wrong_state: true
+    error: desk.requests.NoSuchRequest
+    payload:
+      desk.requests.NoSuchRequest:
+        id: input.id
+views:
+- name: desk.requests.PendingRequests
+  source: desk.requests.Request
+  consistency: read_your_writes
+  filter: state == Pending
+  fields:
+  - name: id
+    type: String
+  - name: title
+    type: String
+  - name: state
+    type: desk.requests.Request.State
+- name: desk.requests.AllRequests
+  source: desk.requests.Request
+  consistency: read_your_writes
+  fields:
+  - name: id
+    type: String
+  - name: title
+    type: String
+  - name: state
+    type: desk.requests.Request.State
+actors:
+- name: desk.requests.Anyone
+  may:
+  - desk.requests.ApproveRequest
+  - desk.requests.PendingRequests
+  - desk.requests.AllRequests

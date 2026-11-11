@@ -457,6 +457,7 @@ fn the_command_entry_point_writes_the_project() {
             path: example_file(),
             out: out.clone(),
             model: None,
+            fixtures: false,
         },
         None,
     )

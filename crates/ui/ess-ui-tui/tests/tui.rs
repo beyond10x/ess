@@ -509,7 +509,7 @@ fn collections_page_sort_and_run_row_actions_through_confirms() {
     app.keys("y");
     let done = screen(&mut app);
     assert!(
-        done.contains("invoices.SendReminder accepted (fixture): invoice_id=in-03"),
+        done.contains("invoices.SendReminder done in fixture mode; its effect was not applied"),
         "{done}"
     );
 }

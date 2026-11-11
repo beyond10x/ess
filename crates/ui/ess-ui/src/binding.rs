@@ -108,6 +108,135 @@ pub trait ModelEnums {
         let _ = at;
         self.lookup(name)
     }
+    /// What the commands `document` names do to the fixture rows of the views it names, when the
+    /// model can say (`ess ui test --model`, `ess generate ui --model --fixtures`). `None` for a
+    /// holder of no compiled model, as a [`Binding`].
+    fn fixture_effects(&self, document: &crate::Document) -> Option<FixtureEffects> {
+        let _ = document;
+        None
+    }
+}
+
+/// What a confirmed command does to the fixture rows the views read, computed from the compiled
+/// model and keyed by the names the document writes. Fixture mode applies it in memory.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+pub struct FixtureEffects {
+    /// Each command the document names whose success changes a row, or whose change fixture mode
+    /// cannot apply.
+    pub commands: BTreeMap<String, CommandEffect>,
+    /// Each view the document names that lists one row per entity, with what it takes to place a
+    /// changed row in it.
+    pub views: BTreeMap<String, ViewShape>,
+}
+
+/// What one command does to a fixture row.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum CommandEffect {
+    /// Fixture mode cannot apply it: the reason, shown where the user acted.
+    NotApplied {
+        /// Why the effect is not applied.
+        unapplied: String,
+    },
+    /// The row the input names changes as the success outcome says.
+    Applies(RowChange),
+}
+
+/// The change a command's one success outcome makes to a row of its entity.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RowChange {
+    /// The entity, qualified.
+    pub entity: String,
+    /// The input field naming the instance.
+    pub instance: String,
+    /// The state a `moves:` ends in.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub to: Option<String>,
+    /// Each entity field the outcome sets, by name, and where its value comes from.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub sets: BTreeMap<String, SetValue>,
+    /// Whether the row is removed (`deletes:`).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub delete: bool,
+}
+
+/// Where a `sets:` value comes from.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SetValue {
+    /// The command's input field of this name.
+    Input(String),
+    /// A value written in the outcome.
+    Value(serde_json::Value),
+}
+
+/// How a view places a changed row.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ViewShape {
+    /// The entity it lists, qualified.
+    pub entity: String,
+    /// The row key carrying the identity.
+    pub identity: String,
+    /// The row key carrying the lifecycle state.
+    pub state: String,
+    /// Each entity field to the row key it is carried under, where that is another name.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub wires: BTreeMap<String, String>,
+    /// What a row must hold to be listed, by row key; absent for a view that lists every row.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub filter: Option<RowFilter>,
+    /// Why a changed row cannot be placed in it: its filter is not one fixture mode evaluates.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub unapplied: Option<String>,
+}
+
+/// A view's `filter:` over row keys, in the forms fixture mode evaluates.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "op", rename_all = "snake_case")]
+pub enum RowFilter {
+    /// Every part holds.
+    All {
+        /// The parts.
+        of: Vec<RowFilter>,
+    },
+    /// Some part holds.
+    Any {
+        /// The parts.
+        of: Vec<RowFilter>,
+    },
+    /// The part does not hold.
+    Not {
+        /// The part.
+        of: Box<RowFilter>,
+    },
+    /// The field equals the value.
+    Eq {
+        /// The row key.
+        field: String,
+        /// The value.
+        value: serde_json::Value,
+    },
+    /// The field differs from the value.
+    Ne {
+        /// The row key.
+        field: String,
+        /// The value.
+        value: serde_json::Value,
+    },
+    /// The field equals one of the values.
+    In {
+        /// The row key.
+        field: String,
+        /// The values.
+        values: Vec<serde_json::Value>,
+    },
+    /// The field equals none of the values.
+    NotIn {
+        /// The row key.
+        field: String,
+        /// The values.
+        values: Vec<serde_json::Value>,
+    },
 }
 
 impl ModelEnums for Binding {
@@ -238,6 +367,15 @@ pub enum Answer {
         /// The error's fields, when it declares any.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         payload: Option<serde_json::Value>,
+    },
+    /// Accepted in fixture mode, and the command's effect was applied to the fixture rows: the
+    /// views read again.
+    FixtureApplied,
+    /// Accepted in fixture mode, which could not apply the command's effect: the rows are as they
+    /// were, and the reason is shown where the user acted.
+    FixtureNotApplied {
+        /// Why the effect was not applied.
+        reason: String,
     },
     /// The standard refusal for a caller no grant admits: the actor the request was
     /// authenticated as, or `None` when it was authenticated as nobody.

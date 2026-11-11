@@ -64,6 +64,9 @@ fn kind(status: u16, answer: &Answer) -> String {
         Answer::Malformed { .. } => "malformed".to_owned(),
         Answer::Unfinished { committed } => format!("unfinished committed={committed}"),
         Answer::Transport => "transport".to_owned(),
+        Answer::FixtureApplied | Answer::FixtureNotApplied { .. } => {
+            unreachable!("only a fixture adapter gives it; `classify` never does")
+        }
     };
     format!("{status} {kind}")
 }
