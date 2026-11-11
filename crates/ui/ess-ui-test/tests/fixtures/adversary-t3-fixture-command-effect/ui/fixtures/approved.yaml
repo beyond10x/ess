@@ -1,0 +1,3 @@
+view: desk.requests.ApprovedRequests
+rows:
+  - {id: r3, title: request-three, state: Approved}

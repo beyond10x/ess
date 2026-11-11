@@ -329,7 +329,7 @@ fn run_method(out: &mut String, bridge: &Bridge<'_>) {
             continue;
         }
         let field = name::value_ident(&component.to_string());
-        let method = name::value_ident(&bridge.layout.rust().type_name(&command.name));
+        let method = bridge.layout.rust().port_method(component, &command.name);
         let ident = ident(bridge.layout.rust(), &command.name);
         let _ = write!(
             out,
@@ -511,7 +511,7 @@ fn projected_method(out: &mut String, bridge: &Bridge<'_>) {
             continue;
         }
         let field = name::value_ident(&component.to_string());
-        let method = name::value_ident(&bridge.layout.rust().type_name(&view.name));
+        let method = bridge.layout.rust().port_method(component, &view.name);
         let _ = write!(
             out,
             "        json::member(&mut out, {:?});\n        match self.{field}.{method}() \

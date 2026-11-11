@@ -96,7 +96,20 @@ fn structure(
         declared.name
     );
     summary_doc(out, declared.naming.summary.as_deref());
-    invariant_doc(out, invariants);
+    if invariants.is_empty() {
+        invariant_doc(out, invariants);
+    } else {
+        out.push_str("///\n");
+        for invariant in invariants {
+            let _ = writeln!(
+                out,
+                "/// Every value satisfies `{}` — checked by [`{}::broken_constraint`]; the \
+                 generated decoder refuses a value that breaks it.",
+                super::doc_text(&invariant.statement, "///"),
+                emit.layout.type_name(&declared.name)
+            );
+        }
+    }
     let _ = writeln!(
         out,
         "#[derive(Debug, Clone, PartialEq, Eq)]\npub struct {} {{",
@@ -106,6 +119,7 @@ fn structure(
         field_line(out, emit, field);
     }
     out.push_str("}\n");
+    super::invariant::newtype_check(out, emit, declared);
 }
 
 /// A closed set of names. The synthesised state enums arrive here too, and get the doc that says
@@ -260,7 +274,7 @@ pub(super) fn command_contract(out: &mut String, emit: &Emit<'_>, command: &Reso
 /// The Rust variant answering a command's `wrong_state` branch for an instance no record carries:
 /// that branch's own variant name, followed by `UnknownInstance`.
 pub(crate) fn unknown_instance_variant(declared: &ResolvedOutcome) -> String {
-    format!("{}UnknownInstance", name::pascal(declared.name.as_str()))
+    format!("{}UnknownInstance", name::spell(declared.name.as_str()))
 }
 
 /// One emitted event's field on an outcome's enum variant: the field identifier and the event it

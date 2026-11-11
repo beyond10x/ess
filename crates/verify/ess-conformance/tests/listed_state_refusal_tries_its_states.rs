@@ -151,7 +151,8 @@ fn about_wrong_state(synthesis: &Synthesis) -> Vec<String> {
 #[test]
 fn a_listed_state_refusal_is_never_reported_against_a_state_it_does_not_list() {
     let (_, synthesis) = synthesized("");
-    for refusal in about_wrong_state(&synthesis) {
+    let refusals = about_wrong_state(&synthesis);
+    for refusal in &refusals {
         for unlisted in ["Extracted", "Accepted"] {
             assert!(
                 !refusal.contains(&format!("held state {unlisted}")),
@@ -159,18 +160,44 @@ fn a_listed_state_refusal_is_never_reported_against_a_state_it_does_not_list() {
             );
         }
     }
+    // Where no view publishes the state nothing is refused, so the loop above has nothing to
+    // check: the scenarios the refusals used to stand for must be there instead.
+    assert!(refusals.is_empty(), "{refusals:#?}");
+    let ids: Vec<String> = synthesis
+        .suite
+        .scenarios
+        .keys()
+        .map(ToString::to_string)
+        .collect();
+    for scenario in [
+        WRONG_STATE,
+        "example.catalogue.Item/state/Rejected/refuses/example.catalogue.SetLevel",
+        "example.catalogue.Item/state/Stale/refuses/example.catalogue.SetLevel",
+    ] {
+        assert!(
+            ids.iter().any(|id| id == scenario),
+            "no {scenario}: {ids:#?}"
+        );
+    }
 }
 
 #[test]
-fn a_listed_state_refusal_names_the_cause_the_listed_state_meets() {
+fn a_listed_state_refusal_is_witnessed_where_no_view_publishes_the_state() {
+    // No view publishes `state`: the held state is arranged through the commands and noted as
+    // unobserved, not refused (story:a-held-state-guard-is-witnessed-without-a-view-publishing-state).
     let (_, synthesis) = synthesized("");
-    let refusals = about_wrong_state(&synthesis);
-    assert!(!refusals.is_empty(), "{:#?}", synthesis.refusals);
     assert!(
-        refusals
+        about_wrong_state(&synthesis).is_empty(),
+        "{:#?}",
+        synthesis.refusals
+    );
+    assert!(
+        synthesis
+            .suite
+            .scenarios
             .iter()
-            .all(|refusal| refusal.contains("`example.catalogue.Item.state`")),
-        "{refusals:#?}"
+            .any(|(id, _)| id.to_string() == WRONG_STATE),
+        "no scenario {WRONG_STATE}"
     );
 }
 

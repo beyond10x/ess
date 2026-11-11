@@ -91,7 +91,7 @@ pub fn encode_gatepass_visit_deposit(value: &gatepass_types::visit::Deposit, out
 /// [`json::DecodeError`] naming the path and what the declaration says belongs there.
 pub fn decode_gatepass_visit_deposit(value: &json::Value, at: &str) -> Result<gatepass_types::visit::Deposit, json::DecodeError> {
     json::closed_at(value, at, &["amount", "currency"])?;
-    Ok(gatepass_types::visit::Deposit {
+    let decoded = gatepass_types::visit::Deposit {
         amount: {
             let at0 = json::nested(at, "amount");
             let member0 = json::member_at(value, at, "amount")?;
@@ -102,7 +102,11 @@ pub fn decode_gatepass_visit_deposit(value: &json::Value, at: &str) -> Result<ga
             let member1 = json::member_at(value, at, "currency")?;
             json::text_at(member1, &at1, "a string")?.to_owned()
         },
-    })
+    };
+    match decoded.broken_constraint() {
+        Some(expected) => Err(json::DecodeError::of(at, expected, value)),
+        None => Ok(decoded),
+    }
 }
 
 /// Writes `gatepass.visit.EmployeeId` as JSON.

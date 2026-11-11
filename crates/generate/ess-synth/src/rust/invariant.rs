@@ -17,7 +17,9 @@
 
 use std::fmt::Write as _;
 
-use ess_compiler::ir::{EssIr, ResolvedBody, ResolvedEntity, ResolvedType, ResolvedTypeRef};
+use ess_compiler::ir::{
+    EssIr, ResolvedBody, ResolvedEntity, ResolvedField, ResolvedType, ResolvedTypeRef,
+};
 use ess_domain::entity::Invariant;
 use ess_domain::Primitive;
 use ess_primitives::facts::{FactPath, FactValue};
@@ -39,12 +41,11 @@ pub(super) fn used(ir: &EssIr) -> bool {
     ir.entities()
         .values()
         .any(|entity| !entity.invariants.is_empty())
-        || ir.types().values().any(|declared| {
-            if let ResolvedBody::Newtype { invariants, .. } = &declared.body {
+        || ir.types().values().any(|declared| match &declared.body {
+            ResolvedBody::Newtype { invariants, .. } | ResolvedBody::Struct { invariants, .. } => {
                 !invariants.is_empty()
-            } else {
-                false
             }
+            _ => false,
         })
 }
 
@@ -129,6 +130,24 @@ fn newtype_checks(
     emit: &Emit<'_>,
     declared: &ResolvedType,
 ) -> Result<Vec<(String, String)>, (String, String)> {
+    if let ResolvedBody::Struct { fields, invariants } = &declared.body {
+        let mut checks = Vec::new();
+        for (index, invariant) in invariants.iter().enumerate() {
+            let expression = Check::rooted(emit, Root::Struct(fields))
+                .invariant(invariant)
+                .map_err(|reason| {
+                    (
+                        format!("invariants.{index}"),
+                        format!("`{}`: {reason}", invariant.statement),
+                    )
+                })?;
+            checks.push((
+                format!("a value satisfying `{}`", invariant.statement),
+                format!("iv::broken({expression})"),
+            ));
+        }
+        return Ok(checks);
+    }
     let ResolvedBody::Newtype {
         of,
         alphabet,
@@ -220,16 +239,23 @@ pub(super) fn newtype_check(out: &mut String, emit: &Emit<'_>, declared: &Resolv
         return;
     }
     let invariants = checks.iter().any(|(_, check)| check.starts_with("iv::"));
-    let _ = writeln!(
-        out,
-        "\nimpl {} {{\n    /// The first constraint `{}` declares that this value breaks — its alphabet, its \
+    let doc = if matches!(declared.body, ResolvedBody::Struct { .. }) {
+        "/// The first invariant `{}` declares that this value breaks, as what a decoder expected\n    \
+         /// instead, or `None` when it breaks none.\n    ///\n    /// An invariant is broken only \
+         when it is false of this value, as the conformance\n    /// interpreter reads it. A \
+         member's own constraints are its own type's to check."
+    } else {
+        "/// The first constraint `{}` declares that this value breaks — its alphabet, its \
          prefix,\n    /// then each invariant — as what a decoder expected instead, or `None` when \
          it breaks none.\n    ///\n    /// An invariant is broken only when it is false of this \
          value, as the conformance\n    /// interpreter reads it. A wrapped newtype's own \
-         constraints are its own to check.\n    pub fn broken_constraint(&self) -> \
-         Option<&'static str> {{",
+         constraints are its own to check."
+    };
+    let doc = doc.replace("{}", &declared.name.to_string());
+    let _ = writeln!(
+        out,
+        "\nimpl {} {{\n    {doc}\n    pub fn broken_constraint(&self) -> Option<&'static str> {{",
         emit.layout.type_name(&declared.name),
-        declared.name
     );
     if invariants {
         out.push_str("        use crate::primitives::invariant as iv;\n");
@@ -397,6 +423,8 @@ enum Root<'a> {
     Entity(&'a ResolvedEntity),
     /// A newtype's `value`: the representation it wraps, as `self.0`.
     Newtype(&'a ResolvedTypeRef),
+    /// A struct's fields, as `self.<field>`.
+    Struct(&'a [ResolvedField]),
 }
 
 /// Renders one invariant of one entity or newtype.
@@ -712,43 +740,58 @@ impl<'a> Check<'a> {
         }
     }
 
+    /// Where a path starts — a binder, or a name its root holds — as what it reaches and its type;
+    /// `None` for `state`, which an entity's data does not hold.
+    fn start(&self, path: &FactPath) -> Result<Option<(Reach, ResolvedTypeRef)>, String> {
+        let root = path.namespace();
+        if let Some(binder) = self.binders.iter().rev().find(|binder| binder.name == root) {
+            return Ok(Some((
+                Reach::Ref(binder.variable.clone()),
+                binder.element.clone(),
+            )));
+        }
+        let place = |field: &ResolvedField| {
+            Some((
+                Reach::Place(format!("self.{}", name::value_ident(&field.name))),
+                field.type_ref.clone(),
+            ))
+        };
+        match self.root {
+            Root::Entity(entity) => {
+                if let Some(field) = std::iter::once(&entity.identity)
+                    .chain(&entity.fields)
+                    .find(|field| field.name == root)
+                {
+                    Ok(place(field))
+                } else if root == ess_domain::entity::EntitySpec::STATE {
+                    Ok(None)
+                } else {
+                    Err(format!(
+                        "`{path}` reads `{root}`, which this entity does not hold"
+                    ))
+                }
+            }
+            Root::Struct(fields) => fields
+                .iter()
+                .find(|field| field.name == root)
+                .map(place)
+                .ok_or_else(|| format!("`{path}` reads `{root}`, which this struct does not hold")),
+            Root::Newtype(of) if root == "value" => {
+                Ok(Some((Reach::Place("self.0".to_owned()), of.clone())))
+            }
+            Root::Newtype(_) => Err(format!(
+                "`{path}` reads `{root}`, which this newtype does not hold"
+            )),
+        }
+    }
+
     /// Walks a path from its root — a binder, the identity or a field — through every newtype and
     /// `Optional`, member, list position and `.count`, the way the compiler resolves it.
     fn walk(&self, path: &FactPath) -> Result<Walked, String> {
         let segments = path.segments();
-        let root = path.namespace();
-        let (mut reach, mut current) =
-            if let Some(binder) = self.binders.iter().rev().find(|binder| binder.name == root) {
-                (Reach::Ref(binder.variable.clone()), binder.element.clone())
-            } else {
-                match self.root {
-                    Root::Entity(entity) => {
-                        if let Some(field) = std::iter::once(&entity.identity)
-                            .chain(&entity.fields)
-                            .find(|field| field.name == root)
-                        {
-                            (
-                                Reach::Place(format!("self.{}", name::value_ident(&field.name))),
-                                field.type_ref.clone(),
-                            )
-                        } else if root == ess_domain::entity::EntitySpec::STATE {
-                            return Ok(Walked::Absent);
-                        } else {
-                            return Err(format!(
-                                "`{path}` reads `{root}`, which this entity does not hold"
-                            ));
-                        }
-                    }
-                    Root::Newtype(of) if root == "value" => {
-                        (Reach::Place("self.0".to_owned()), of.clone())
-                    }
-                    Root::Newtype(_) => {
-                        return Err(format!(
-                            "`{path}` reads `{root}`, which this newtype does not hold"
-                        ));
-                    }
-                }
-            };
+        let Some((mut reach, mut current)) = self.start(path)? else {
+            return Ok(Walked::Absent);
+        };
         let mut position = 1;
         for _ in 0..MAX_STEPS {
             match current {

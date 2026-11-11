@@ -14,8 +14,8 @@ pub struct SubjectShape {
     pub identity_field: String,
     /// All declared fields of this projection, including state where projected.
     pub fields: Vec<Field>,
-    /// Exactly the reachable finite nominal structural declarations. Newtype invariants are
-    /// not observation authority: admission checks representation, not invariant satisfaction.
+    /// Exactly the reachable finite nominal structural declarations. Newtype and struct invariants
+    /// are not observation authority: admission checks representation, not invariant satisfaction.
     pub declarations: BTreeMap<QualifiedName, Declaration>,
 }
 #[derive(serde::Deserialize)]

@@ -47,7 +47,10 @@ comparison. Declared Integer values must reach the adapter without rounding.
 A Decimal response or complete-row position is compared by numeric value from
 suite `ess-conformance/58` (or `/59` with declared coverage): `1.5` and `1.50`
 are one value. A Binary64 position is outside this observation profile and
-refuses, naming the field.
+refuses, naming the field. A newtype or struct that declares invariants is compared by
+its declared fields, exactly, without evaluating those invariants; a type with a `reading:`
+or a struct that declares `undeclared_fields: ignored` refuses, and moving that field to a
+second view that is not `read_your_writes` clears the refusal.
 
 Source `ess/7` uses the same complete observations for ordinary `wrong_state`
 refusal witnesses. Existing independent snapshot steps remain available with

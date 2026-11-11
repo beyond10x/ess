@@ -1186,6 +1186,19 @@ enum Held {
     WrongState,
 }
 
+/// Where the row is held for a related branch: a branch reading a stored reference answers after
+/// the addressed row was read as `held`, which its refusal's `{subject: …}` payload reads; one
+/// reading an input's row holds none.
+fn stored_row(outcome: &ResolvedOutcome) -> Held {
+    match outcome.condition {
+        ResolvedCondition::Related {
+            via: ResolvedRelatedVia::Subject { .. },
+            ..
+        } => Held::Selected,
+        _ => Held::None,
+    }
+}
+
 /// Whether a branch selects by the addressed row: `when_subject`, `when_subject_state`,
 /// `when_state_changes`, and an `external:` branch `when_subject:` narrows (ess/29).
 fn selects_by_row(outcome: &ResolvedOutcome) -> bool {
@@ -1576,7 +1589,8 @@ impl<'a> Writer<'a> {
                         out.push_str(&self.stored_read(outcome));
                     }
                     let guard = self.related_guard(outcome);
-                    let taken = self.take(outcome, Held::None);
+                    let held = stored_row(outcome);
+                    let taken = self.take(outcome, held);
                     let _ = writeln!(
                         out,
                         "        // `{}`: a present related row's refusal, before every accepting \
@@ -1854,7 +1868,8 @@ impl<'a> Writer<'a> {
     /// The answer of [`Self::related_read`]: `absent` taken where `reference` names an identity no
     /// row carries.
     fn missing_answer(&mut self, absent: &ResolvedOutcome) -> String {
-        let taken = self.take(absent, Held::None);
+        let held = stored_row(absent);
+        let taken = self.take(absent, held);
         format!(
             "        // `{}`: the reference names an identity no row carries.\n        if \
              reference.is_some() && related.is_none() {{\n{taken}        }}\n",
@@ -2619,6 +2634,7 @@ impl<'a> Writer<'a> {
             } else {
                 let entity = match held {
                     Held::Selected => determined::selection_subject(command)
+                        .or_else(|| determined::addressed_subject(command))
                         .map(|subject| self.ir.entity(&subject.entity)),
                     Held::WrongState => determined::wrong_state_entity(self.ir, command),
                     Held::None => None,

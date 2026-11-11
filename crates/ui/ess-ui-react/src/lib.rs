@@ -40,7 +40,7 @@ use std::collections::BTreeMap;
 use std::fmt;
 use std::path::{Path, PathBuf};
 
-use ess_ui::binding::Binding;
+use ess_ui::binding::{Binding, FixtureEffects};
 use ess_ui::Document;
 
 pub use emit::route_pattern;
@@ -88,6 +88,21 @@ pub fn render_bound(
     source_dir: &Path,
     binding: Option<&Binding>,
 ) -> Result<GeneratedFiles, GenerateError> {
+    render_with(document, source_dir, binding, None)
+}
+
+/// [`render_bound`], and with `effects` a fixture project (no binding) that applies a confirmed
+/// command's effect to its fixture rows in memory (`ess generate ui --model --fixtures`): the
+/// table [`ess_ui::binding::ModelEnums::fixture_effects`] computes is carried in
+/// `src/fixtures.ts`. A fixture project says where the user acted when it could not apply an
+/// effect; a bound project ignores `effects` and keeps its bytes.
+pub fn render_with(
+    document: &Document,
+    source_dir: &Path,
+    binding: Option<&Binding>,
+    effects: Option<&FixtureEffects>,
+) -> Result<GeneratedFiles, GenerateError> {
+    let effects = effects.filter(|_| binding.is_none());
     let mut files = BTreeMap::new();
     let title = document
         .title
@@ -114,7 +129,7 @@ pub fn render_bound(
     );
     files.insert(
         "src/fixtures.ts".to_owned(),
-        fixtures::emit(document, source_dir)?,
+        fixtures::emit(document, source_dir, effects)?,
     );
     if let Some(binding) = binding {
         files.insert("src/binding.ts".to_owned(), assets::binding(binding));
@@ -146,6 +161,7 @@ pub fn render_bound(
         &gen.used,
         binding.is_some(),
         binding.is_some_and(Binding::routed),
+        effects.is_some(),
     ));
     if files.contains_key("src/runtime/live.ts") {
         files.insert("src/channels.ts".to_owned(), gen.channels());
@@ -169,7 +185,18 @@ pub fn generate_bound(
     out: &Path,
     binding: Option<&Binding>,
 ) -> Result<GeneratedFiles, GenerateError> {
-    let files = render_bound(document, source_dir, binding)?;
+    generate_with(document, source_dir, out, binding, None)
+}
+
+/// [`render_with`], written under `out` as [`generate`] writes.
+pub fn generate_with(
+    document: &Document,
+    source_dir: &Path,
+    out: &Path,
+    binding: Option<&Binding>,
+    effects: Option<&FixtureEffects>,
+) -> Result<GeneratedFiles, GenerateError> {
+    let files = render_with(document, source_dir, binding, effects)?;
     for (path, text) in &files.files {
         let target = out.join(path);
         if let Some(parent) = target.parent() {
@@ -206,6 +233,11 @@ pub struct ReactArgs {
     /// network` components serve, instead of answering from fixtures.
     #[arg(long)]
     pub model: Option<PathBuf>,
+    /// With `--model`: keep the app on its fixtures, as without it, and apply what the model says
+    /// a confirmed command does to the fixture rows, in memory, so every view that reads them
+    /// shows the change.
+    #[arg(long, requires = "model", conflicts_with = "http")]
+    pub fixtures: bool,
 }
 
 /// The entry point an `ess generate ui --target react` command wraps; returns a one-line summary.
@@ -214,6 +246,11 @@ pub struct ReactArgs {
 /// computes: this crate reads a binding and never compiles a model. `--model` without one is
 /// refused.
 pub fn run(args: &ReactArgs, binding: Option<&Binding>) -> Result<String, GenerateError> {
+    if args.fixtures {
+        return Err(GenerateError::new(
+            "--fixtures: no model was compiled for it".to_owned(),
+        ));
+    }
     if let (Some(model), None) = (&args.model, binding) {
         return Err(GenerateError::new(format!(
             "--model {}: no binding was computed for it",
@@ -232,6 +269,28 @@ pub fn run(args: &ReactArgs, binding: Option<&Binding>) -> Result<String, Genera
         .map(Path::to_path_buf)
         .unwrap_or_default();
     let files = generate_bound(&loaded, &dir, &args.out, binding)?;
+    Ok(format!(
+        "{} files written to {}",
+        files.files.len(),
+        args.out.display()
+    ))
+}
+
+/// [`run`] for `--model --fixtures`: the project answers from its fixtures and applies the effects
+/// `model` says its commands have. The caller compiles the model, as for a binding.
+pub fn run_fixtures(
+    args: &ReactArgs,
+    model: &dyn ess_ui::binding::ModelEnums,
+) -> Result<String, GenerateError> {
+    let loaded = ess_ui::load_path_with(&args.path, model)
+        .map_err(|error| GenerateError::new(error.to_string()))?;
+    let effects = model.fixture_effects(&loaded);
+    let dir = args
+        .path
+        .parent()
+        .map(Path::to_path_buf)
+        .unwrap_or_default();
+    let files = generate_with(&loaded, &dir, &args.out, None, effects.as_ref())?;
     Ok(format!(
         "{} files written to {}",
         files.files.len(),

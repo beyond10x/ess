@@ -230,7 +230,7 @@ pub fn encode_billing_invoice_money(value: &billing_types::invoice::Money, out: 
 /// [`json::DecodeError`] naming the path and what the declaration says belongs there.
 pub fn decode_billing_invoice_money(value: &json::Value, at: &str) -> Result<billing_types::invoice::Money, json::DecodeError> {
     json::closed_at(value, at, &["amount", "currency"])?;
-    Ok(billing_types::invoice::Money {
+    let decoded = billing_types::invoice::Money {
         amount: {
             let at0 = json::nested(at, "amount");
             let member0 = json::member_at(value, at, "amount")?;
@@ -241,7 +241,11 @@ pub fn decode_billing_invoice_money(value: &json::Value, at: &str) -> Result<bil
             let member1 = json::member_at(value, at, "currency")?;
             json::text_at(member1, &at1, "a string")?.to_owned()
         },
-    })
+    };
+    match decoded.broken_constraint() {
+        Some(expected) => Err(json::DecodeError::of(at, expected, value)),
+        None => Ok(decoded),
+    }
 }
 
 /// Writes `billing.invoice.Payee` as JSON.

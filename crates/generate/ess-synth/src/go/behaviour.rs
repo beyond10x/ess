@@ -1690,6 +1690,19 @@ enum Held {
     WrongState,
 }
 
+/// Where the row is held for a related branch: a branch reading a stored reference answers after
+/// the addressed row was read as `held`, which its refusal's `{subject: …}` payload reads; one
+/// reading an input's row holds none.
+fn stored_row(outcome: &ResolvedOutcome) -> Held {
+    match outcome.condition {
+        ResolvedCondition::Related {
+            via: ResolvedRelatedVia::Subject { .. },
+            ..
+        } => Held::Selected,
+        _ => Held::None,
+    }
+}
+
 /// The comment above an input-guarded refusal's block (step 2), as the Rust target writes it.
 const INPUT_REFUSAL: &str = "an input-guarded refusal, before the addressed subject is loaded";
 
@@ -1789,6 +1802,9 @@ struct Writer<'a> {
     /// order of the `if` blocks [`Self::body`] and [`Self::precheck`] write.
     plan: PrecedencePlan<'a>,
     next: usize,
+    /// Whether the held-state phase already read the addressed row into `held` and `found`
+    /// at the method's top level, so a later read of the same row declares nothing new.
+    row_read: bool,
 }
 
 impl<'a> Writer<'a> {
@@ -1814,6 +1830,7 @@ impl<'a> Writer<'a> {
             locals: Locals::new(reserved),
             plan: PrecedencePlan::new(command, emit.ir.format()),
             next: 0,
+            row_read: false,
         }
     }
 
@@ -2055,6 +2072,7 @@ impl<'a> Writer<'a> {
             self.unknown_arm();
             self.lines.close("}");
             self.lines.push(&format!("_ = {}", self.locals.held));
+            self.row_read = true;
             Some(entity)
         } else {
             None
@@ -2198,7 +2216,7 @@ impl<'a> Writer<'a> {
                     let related = self.locals.related.clone();
                     self.lines.open(&format!("if {related} != nil {{"));
                     let truth = self.related_guard(outcome);
-                    self.decided(&truth, |writer| writer.take(outcome, Held::None));
+                    self.decided(&truth, |writer| writer.take(outcome, stored_row(outcome)));
                     self.lines.close("}");
                 }
                 // A re-key's collision refusal (ess/23, beyond10x/ess#429): the Go target refuses
@@ -2243,10 +2261,12 @@ impl<'a> Writer<'a> {
         self.lines.push(&format!(
             "// The addressed row, whose stored `{field}` names the related row."
         ));
-        self.get(addressed, &identity);
-        self.lines.open(&format!("if !{} {{", self.locals.found));
-        self.unknown_arm();
-        self.lines.close("}");
+        if !self.row_read {
+            self.get(addressed, &identity);
+            self.lines.open(&format!("if !{} {{", self.locals.found));
+            self.unknown_arm();
+            self.lines.close("}");
+        }
         self.precheck(false);
         let member = format!(
             "{}.Data.{}",
@@ -2671,7 +2691,7 @@ impl<'a> Writer<'a> {
         ));
         self.lines
             .open(&format!("if {local} != nil && {related} == nil {{"));
-        self.take(absent, Held::None);
+        self.take(absent, stored_row(absent));
         self.lines.close("}");
     }
 
@@ -3457,6 +3477,7 @@ impl<'a> Writer<'a> {
             } else {
                 let entity = match held {
                     Held::Selected => determined::selection_subject(command)
+                        .or_else(|| determined::addressed_subject(command))
                         .map(|subject| self.ir.entity(&subject.entity)),
                     Held::WrongState => determined::wrong_state_entity(self.ir, command),
                     Held::None => None,

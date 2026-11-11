@@ -2,6 +2,33 @@
 
 ## [Unreleased]
 
+### Changed
+
+- `ess verify conform mutate`: an `order-flip` on a view key whose tie synthesis cannot arrange (a key after the identity, or behind a key no creating command writes from its input) is now `unwitnessed` (`ESS-MUTATE-004`, exit 3) and lists the baseline's standing refusal under `baseline_refusals`, instead of `survived` (exit 1); a scenario that kills it still wins. No format changes (`ess-mutation-report` and `ess-mutation-manifest` carry the refusal already) (beyond10x/ess#708).
+- In fixture mode a confirmed command now changes the fixture rows the way the model says it does:
+  a row moved out of a filtered view's state leaves that view, and every section and page that
+  reads the entity shows the change, with no reload. `ess generate ui --target react --model
+  <spec> --fixtures` carries the model's effects into the fixture project, and `ess ui test
+  --model` applies them in the terminal renderer. A command whose effect fixture mode cannot
+  apply (no model, more than one success outcome, `creates:`, `affects:`, `instances:`, a move
+  from a state the lifecycle does not leave, a view filter it does not evaluate) leaves the rows
+  as they were and says `<command> done in fixture mode; its effect was not applied: <reason>`
+  where the user acted, and React logs the same line with `console.warn`. A bound build
+  (`--model` without `--fixtures`) generates the same files. A row a command changes does not yet
+  enter a view that did not list it.
+
+### Fixed
+
+- `ess-ui`: a record field or an export param keyed `action` is author data and is no longer read as an Action, so its refusal names the real node and no false Action refusal hides a later one.
+- `ess ui test --playwright` routes the per-test fixture answers instead of marking the test `test.fixme`: a list of view answers is one handler choosing by `by_params`, `fails` is status 500 with its message, a refused command is the refusal body the HTTP data adapter reads as refused (status 422), and a latency per view holds that view's route on the page clock (beyond10x/ess#722). A test using none of these emits the same spec as before.
+- The Rust session recorder no longer writes a read that shows the row of a creation whose answer was lost. A creation the target executed and then answered with an error has no operation naming its row, so a correct target was reported as a `FutureRead` violation. The recorder now leaves out of each read one unnamed row per such creation of the view's entity, as the Go and TypeScript explorers do; a row nothing accounts for is still written and still reported.
+- `ess generate types --http <binding>`: a command's `.response` root follows the published `{command}.Result`. A command whose route answers every outcome with `response.<field>`, `{member: error}` or `none` publishes no `Result`, so naming its `.response` root is refused as `unknown_root` (naming the command and that its route publishes no `Result`) and `--all-commands` leaves it out. Without `--http` every root keeps its bytes.
+- Synthesis witnesses a row-set guard over a field a creating branch fills with a `{related:}` copy of the related row identity: the rows are created naming the related row the send names, and the guard is no longer refused with `ESS-SYNTH-001`.
+- Generated Go and Rust decoders check a struct's declared invariants: a request whose struct breaks one is answered 400 with a decode error at the struct's path naming the invariant, in the words a newtype's constraint check uses. A struct that declares none keeps its bytes. The committed example snapshots under `generated/{rust,go,web}` for billing and gatepass move (their structs declare invariants) and are regenerated.
+- Synthesis: three specifications `ess specify validate` accepts no longer stop code generation. A command whose `when_related:` error outcomes (`exists: false` or a `predicate`) read the subject in their payload (`parent_id: {subject: parent_id}`), beside an outcome that `moves:` the subject, generated as a panic in both targets (`the plan admits {subject:} only where a row is held`); the refusal now reads the row the stored reference was taken from. An outcome named `self` allocated the invalid Rust variant `Self`; it is now `Self_` and its served wire name stays `self`. Two bounded contexts each declaring a view (or an accepted command) of one last name, served by one component, were refused as `` `things` is allocated 2 times in `port methods:…` ``; the port now serves `gap.one.Things` as `things` and `gap.two.Things` as `things_2` (rule 2 of `codec_names.rs`, the bytes of the qualified names order them) and calls each owed behaviour through its own trait. No source or suite format changes, and every model that generated before keeps its bytes.
+- Synthesis witnesses a held-state guard (`when_subject_state:`) where no view publishes the entity's `state`: the row is arranged through its commands, the held state is read through an unfiltered immediate view where one projects it and otherwise named in the scenario's `PartialObservation` note, as the equivalent stored-field predicate already was. Its outcome, error and events are the evidence about the unobserved state. Suites with a `state` view keep their bytes; `occurrence-clock-claims.yaml` and `occurrence-clock-offers.yaml` gain scenarios and notes and lose refusals (beyond10x/ess#732).
+- A struct with type `invariants:` published by a `read_your_writes` view no longer makes every scenario that snapshots the complete subject unsynthesizable (beyond10x/ess#730): the complete-subject observation compares it by its declared fields, as it already did a constrained newtype, and its invariants stay the obligation of the value-invariant scenarios. The retained-result profile is unchanged. A type with a `reading:` or a struct declaring `undeclared_fields: ignored` still refuses, and the refusal's help now also names moving the field to a second view that is not `read_your_writes`. No source or suite format changes.
+
 ## [0.93.0] — 2026-11-11
 
 ### Added

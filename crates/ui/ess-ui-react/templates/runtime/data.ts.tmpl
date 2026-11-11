@@ -11,6 +11,9 @@
 
 import { useEffect, useRef, useState } from "react";
 import { fixtures, type FixtureView } from "../fixtures";
+//+effects
+import type { CommandEffect, EffectFilter } from "../fixtures";
+//-effects
 import { evaluate, keeps } from "./expr";
 import { getPath, isObject, stableKey, type Json, type JsonObject } from "./json";
 //+bound
@@ -70,10 +73,151 @@ function delay<T>(value: T): Promise<T> {
   return new Promise((resolve) => setTimeout(() => resolve(value), LATENCY_MS));
 }
 
+//+plain
+//+effects
+/** The rows a command changed, by view; a reload starts from the fixtures as written. */
+const changedRows = new Map<string, Json[]>();
+
+/** A command's effect fixture mode cannot apply: the rows stay as they were. */
+class Unapplied extends Error {}
+
+function held(view: string, written: FixtureView): FixtureView {
+  const rows = changedRows.get(view);
+  return rows === undefined ? written : { ...written, rows, total: undefined };
+}
+
+function listed(filter: EffectFilter, row: JsonObject): boolean {
+  switch (filter.op) {
+    case "all":
+      return filter.of.every((part) => listed(part, row));
+    case "any":
+      return filter.of.some((part) => listed(part, row));
+    case "not":
+      return !listed(filter.of, row);
+    default: {
+      if (!(filter.field in row)) {
+        throw new Unapplied(`its view filters on \`${filter.field}\`, which the row does not carry`);
+      }
+      const have = String(row[filter.field]);
+      switch (filter.op) {
+        case "eq":
+          return have === String(filter.value);
+        case "ne":
+          return have !== String(filter.value);
+        case "in":
+          return filter.values.some((value) => String(value) === have);
+        default:
+          return !filter.values.some((value) => String(value) === have);
+      }
+    }
+  }
+}
+
+/** Applies a command's declared effect to the fixture rows of every view of its entity. */
+function applyEffect(effect: CommandEffect, input: JsonObject): void {
+  if ("unapplied" in effect) {
+    throw new Unapplied(effect.unapplied);
+  }
+  const wanted = input[effect.instance];
+  if (wanted === undefined) {
+    throw new Unapplied(`its input carries no \`${effect.instance}\``);
+  }
+  const changes: Array<[string, Json[]]> = [];
+  for (const [name, shape] of Object.entries(fixtures.effects.views)) {
+    const written = fixtures.views[name];
+    if (shape.entity !== effect.entity || written === undefined) {
+      continue;
+    }
+    if (shape.unapplied !== undefined) {
+      throw new Unapplied(shape.unapplied);
+    }
+    const next: Json[] = [];
+    let changed = false;
+    for (const row of held(name, written).rows) {
+      if (!isObject(row) || String(row[shape.identity]) !== String(wanted)) {
+        next.push(row);
+        continue;
+      }
+      changed = true;
+      if (effect.delete) {
+        continue;
+      }
+      if (effect.from !== undefined && effect.from.length > 0) {
+        const state = row[shape.state];
+        if (state === undefined || !effect.from.includes(String(state))) {
+          throw new Unapplied(
+            `the row is ${state === undefined ? "without a state" : `\`${String(state)}\``}, and its lifecycle moves a row only from ${effect.from.map((from) => `\`${from}\``).join(", ")}`,
+          );
+        }
+      }
+      const patched: JsonObject = { ...row };
+      if (effect.to !== undefined) {
+        patched[shape.state] = effect.to;
+      }
+      for (const [field, source] of Object.entries(effect.sets ?? {})) {
+        const value = "input" in source ? input[source.input] : source.value;
+        if (value === undefined) {
+          throw new Unapplied(`its input carries no \`${"input" in source ? source.input : field}\``);
+        }
+        patched[shape.wires?.[field] ?? field] = value as Json;
+      }
+      if (shape.filter === undefined || listed(shape.filter, patched)) {
+        next.push(patched);
+      }
+    }
+    if (changed) {
+      changes.push([name, next]);
+    }
+  }
+  for (const [name, rows] of changes) {
+    changedRows.set(name, rows);
+  }
+}
+
+function fixtureSend(command: string, input: JsonObject): Json {
+  const answer: JsonObject = { command, accepted: true, input };
+  const effect = fixtures.effects.commands[command];
+  if (effect === undefined) {
+    return answer;
+  }
+  try {
+    applyEffect(effect, input);
+  } catch (error) {
+    if (error instanceof Unapplied) {
+      return { ...answer, unapplied: error.message };
+    }
+    throw error;
+  }
+  return answer;
+}
+
+//-effects
+//+noeffects
+function fixtureSend(command: string, input: JsonObject): Json {
+  return {
+    command,
+    accepted: true,
+    input,
+    unapplied: "no model was given (generate with `--model <specification> --fixtures`)",
+  };
+}
+
+//-noeffects
+//-plain
 function fixtureView(view: string, params: Record<string, unknown>, depth = 0): FixtureView | undefined {
   const direct = fixtures.views[view];
   if (direct !== undefined) {
+//+bound
     return direct;
+//-bound
+//+plain
+//+effects
+    return held(view, direct);
+//-effects
+//+noeffects
+    return direct;
+//-noeffects
+//-plain
   }
   const derived = fixtures.derived[view];
   if (derived === undefined || depth > 8) {
@@ -147,7 +291,12 @@ export const fixtureAdapter: DataAdapter = {
     return delay({ rows, total: view.total ?? total });
   },
   send(command, input) {
+//+bound
     return delay({ command, accepted: true, input: input as JsonObject });
+//-bound
+//+plain
+    return delay(fixtureSend(command, input as JsonObject));
+//-plain
   },
   loadState(store, key) {
     return delay(memoryState.get(`${store}:${key}`));

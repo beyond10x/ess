@@ -1,0 +1,13 @@
+format: ess-ui-test/1
+document: desk.ui.yaml
+tests:
+- name: an approved urgent request stays in the urgent list
+  steps:
+  - open: requests.urgent
+  - expect: {at: pages/requests.urgent/sections/list, rows: 2}
+  - act: pages/requests.urgent/sections/list/rows/r1/row_actions/approve
+  - act: pages/requests.urgent/sections/list/rows/r1/row_actions/approve/confirm/overlay
+  - expect_command: {command: desk.requests.ApproveRequest, input: {id: r1}}
+  - advance: 2s
+  - expect: {at: pages/requests.urgent/sections/list, rows: 2}
+  - expect: {at: pages/requests.urgent/sections/list, text: Approved}

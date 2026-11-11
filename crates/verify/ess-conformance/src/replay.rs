@@ -217,9 +217,14 @@ pub(crate) fn declarations_for(
                 profile.label()
             ));
         }
-        let structural_newtype = profile == DeclarationProfile::CompleteSubject
-            && matches!(ty.body, ResolvedBody::Newtype { .. });
-        if ty.reading.is_some() || (ty.body.is_constrained() && !structural_newtype) {
+        // A complete subject compares a constrained newtype or struct by its declared
+        // representation; the invariants stay the value-invariant scenarios' obligation.
+        let structural_constrained = profile == DeclarationProfile::CompleteSubject
+            && matches!(
+                ty.body,
+                ResolvedBody::Newtype { .. } | ResolvedBody::Struct { .. }
+            );
+        if ty.reading.is_some() || (ty.body.is_constrained() && !structural_constrained) {
             return Err("replay response invariant/reading observer is unsupported".into());
         }
         let body = match &ty.body {

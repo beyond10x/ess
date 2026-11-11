@@ -49,9 +49,9 @@
 //! history it recorded before injection existed. [`Injected`] counts what was injected and names
 //! the declared branches the injected calls reached.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
-use ess_compiler::ir::{EssIr, ResolvedCondition};
+use ess_compiler::ir::{EntityHandle, EssIr, ResolvedCondition, ResolvedEffect};
 use ess_domain::binding::Delivery;
 use ess_domain::name::QualifiedName as ModelName;
 use ess_domain::view::Consistency;
@@ -205,6 +205,10 @@ struct Recording<'a, T: Interleaved, V> {
     clock: u64,
     operations: Vec<Operation>,
     created: Vec<Option<String>>,
+    /// The entity each creating operation's command creates, by operation index.
+    creates: BTreeMap<usize, EntityHandle>,
+    /// The entity each read's view projects, by operation index.
+    sources: BTreeMap<usize, EntityHandle>,
     /// Each client's last consistency token.
     tokens: Vec<Option<ConsistencyToken>>,
     /// The injections' own sequence, present only under [`FaultInjection::Declared`].
@@ -252,6 +256,29 @@ impl<T: Interleaved, V: ConformanceTarget> Recording<'_, T, V> {
         index
     }
 
+    /// Leaves the rows of creations whose answer was lost out of the recorded reads
+    /// ([`leave_out_lost_rows`]).
+    fn leave_out_lost_rows(&mut self) {
+        leave_out_lost_rows(&mut self.operations, &self.creates, &self.sources);
+    }
+
+    /// Records the entity the command creates, where one of its outcomes creates one.
+    fn note_creation(&mut self, index: usize, command: &str) {
+        let created = ModelName::new(command)
+            .ok()
+            .and_then(|name| self.ir.commands().get(&name))
+            .and_then(|spec| {
+                spec.outcomes
+                    .iter()
+                    .filter_map(|outcome| outcome.subject.as_ref())
+                    .rfind(|subject| matches!(subject.effect, ResolvedEffect::Creates))
+            })
+            .map(|subject| subject.entity.clone());
+        if let Some(entity) = created {
+            self.creates.insert(index, entity);
+        }
+    }
+
     /// Whether the command declares a `replays:` branch, which a client retry exercises.
     fn replays(&self, command: &str) -> bool {
         ModelName::new(command)
@@ -294,6 +321,7 @@ impl<T: Interleaved, V: ConformanceTarget> Recording<'_, T, V> {
             correlation(self.operations.len() + 1),
         )?;
         let index = self.reserve(client, &call.command);
+        self.note_creation(index, &call.command);
         let mut timeout = None;
         if !self.arranging && self.inject.is_some() {
             if self.retries[client].is_none() && self.replays(&call.command) {
@@ -336,6 +364,7 @@ impl<T: Interleaved, V: ConformanceTarget> Recording<'_, T, V> {
         original: usize,
     ) -> InFlight<T::Pending> {
         let index = self.reserve(client, command);
+        self.note_creation(index, command);
         self.operations[index].retry_of = Some(self.operations[original].operation_id.clone());
         count(&mut self.injected.retries, command);
         InFlight {
@@ -373,6 +402,7 @@ impl<T: Interleaved, V: ConformanceTarget> Recording<'_, T, V> {
             deadline: Deadline::at(Timestamp::from_epoch_millis(u64::MAX)),
         };
         let index = self.reserve(client, view);
+        self.sources.insert(index, spec.source.clone());
         Ok(InFlight {
             pending: Pending::Read { request, identity },
             client,
@@ -518,6 +548,49 @@ fn answered(operation: &mut Operation, returned_at: u64, outcome: &str) {
     );
 }
 
+/// Leaves out of each read's rows one row no operation names for each creation of the view's
+/// entity that was invoked before the read returned and never answered, the first in answer order.
+///
+/// Such a row may be the instance that creation made: the target executed it and lost the answer,
+/// so no operation names it and the checker could only read it as shown before anyone asked for
+/// it. A named row is always kept, and an unnamed row no unanswered creation can account for is
+/// kept and is the future read it looks like. The Go and TypeScript explorers write the same.
+fn leave_out_lost_rows(
+    operations: &mut [Operation],
+    creates: &BTreeMap<usize, EntityHandle>,
+    sources: &BTreeMap<usize, EntityHandle>,
+) {
+    let named: BTreeSet<String> = operations
+        .iter()
+        .filter(|operation| !operation.subject_key.is_empty())
+        .map(|operation| operation.subject_key.clone())
+        .collect();
+    for (read, source) in sources {
+        let Some(returned_at) = operations[*read].returned_at else {
+            continue;
+        };
+        let mut lost = operations
+            .iter()
+            .enumerate()
+            .filter(|(index, operation)| {
+                operation.returned_at.is_none()
+                    && operation.subject_key.is_empty()
+                    && creates.get(index) == Some(source)
+                    && operation.invoked_at < returned_at
+            })
+            .count();
+        if let Some(rows) = operations[*read].rows.as_mut() {
+            rows.retain(|row| {
+                if lost > 0 && !named.contains(row) {
+                    lost -= 1;
+                    return false;
+                }
+                true
+            });
+        }
+    }
+}
+
 /// The identity of every row, or `None` where one of them does not carry it as text.
 fn rows(result: &SemanticViewResult, identity: &str) -> Option<Vec<String>> {
     result
@@ -613,6 +686,8 @@ pub fn record_with<T: Interleaved, V: ConformanceTarget>(
         clock: 0,
         operations: Vec::new(),
         created: Vec::new(),
+        creates: BTreeMap::new(),
+        sources: BTreeMap::new(),
         tokens: vec![None; clients],
         inject: (injection == FaultInjection::Declared).then_some(Draw(seed ^ INJECTION_STREAM)),
         arranging: true,
@@ -685,6 +760,7 @@ pub fn record_with<T: Interleaved, V: ConformanceTarget>(
         }
     }
 
+    recording.leave_out_lost_rows();
     Ok(Recorded {
         history: History {
             format: HistoryFormat::for_operations(&recording.operations),

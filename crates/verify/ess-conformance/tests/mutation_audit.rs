@@ -1056,3 +1056,145 @@ fn a_key_after_the_identity_names_a_gap_and_the_scenario_stands() {
     );
     assert_ne!(placed_orders(&synthesis), Vec::<(String, String)>::new());
 }
+
+// ---- a flip of a key no tie reaches is unwitnessed, not survived -----------------------------------
+
+const UNREACHED: &str = "order-flip/example.order.OrderQueue/priority";
+const PLACED: &str = "example.order.PlaceOrder/outcome/placed";
+
+fn unreached(report: &MutationReport) -> &MutantEntry {
+    report
+        .mutants
+        .iter()
+        .find(|entry| entry.id == UNREACHED)
+        .expect("the flip of `priority` is a mutant")
+}
+
+/// The refusal the baseline holds for the view and the key, as the entry names it.
+fn names_the_gap(entry: &MutantEntry) {
+    let held = entry.baseline_refusals.as_deref().unwrap_or_default();
+    assert_eq!(held.len(), 1, "{entry:?}");
+    assert_eq!(held[0].scenario.as_deref(), Some(PLACED), "{entry:?}");
+    let subject = held[0].subject.as_deref().unwrap_or_default();
+    assert!(
+        subject.contains("example.order.OrderQueue") && subject.contains("priority"),
+        "{entry:?}"
+    );
+}
+
+/// A fixture through `--emit`, a run of each suite on the interpreter of the unmutated model, and
+/// `--collect`; `edit` may rewrite the manifest first.
+fn collected_order_flips(name: &str, edit: impl Fn(&mut serde_json::Value)) -> MutationReport {
+    let (files, texts) = fixture(name);
+    let ir = mutate::compile(files.clone(), &texts).unwrap();
+    let emission = mutate::emit(&files, &texts, &[MutantClass::OrderFlip]).expect("emits");
+    let mut written = emission.files.clone();
+    let mut dirs = vec![mutate::BASELINE_DIR.to_owned()];
+    dirs.extend(
+        emission
+            .manifest
+            .mutants
+            .iter()
+            .filter_map(|it| it.dir.clone()),
+    );
+    for dir in dirs {
+        let admitted =
+            AdmittedSuite::from_json(&emission.files[&format!("{dir}/{}", mutate::SUITE_FILE)])
+                .expect("an emitted suite is admitted");
+        let run = Runner::for_suite(admitted.suite())
+            .run_admitted(&admitted, &Interpreted::for_model(ir.clone()));
+        let report = ess_conformance::CountReport::from_run(&run, &admitted)
+            .unwrap()
+            .to_canonical_json()
+            .unwrap();
+        written.insert(format!("{dir}/{}", mutate::REPORT_FILE), report);
+    }
+    let mut manifest: serde_json::Value =
+        serde_json::from_str(&written[mutate::MANIFEST_FILE]).unwrap();
+    edit(&mut manifest);
+    written.insert(
+        mutate::MANIFEST_FILE.to_owned(),
+        serde_json::to_string_pretty(&manifest).unwrap(),
+    );
+    mutate::collect(|path| written.get(path).cloned()).unwrap_or_else(|refusal| panic!("{refusal}"))
+}
+
+#[test]
+fn a_flip_of_a_key_after_the_identity_is_unwitnessed_and_names_the_gap() {
+    let report = order_flips("mutation-order-tie-identity-first.yaml");
+    assert_eq!(
+        (
+            report.counts.mutants,
+            report.counts.killed,
+            report.counts.survived,
+            report.counts.unwitnessed
+        ),
+        (2, 1, 0, 1),
+        "{}",
+        report.render_text()
+    );
+    let entry = unreached(&report);
+    assert_eq!(entry.verdict, Verdict::Unwitnessed, "{entry:?}");
+    names_the_gap(entry);
+    let text = report.render_text();
+    let line = text
+        .lines()
+        .find(|line| line.contains(UNREACHED))
+        .expect("a line");
+    assert!(
+        line.contains("ESS-MUTATE-004") && line.contains("ESS-SYNTH-001"),
+        "{line}"
+    );
+}
+
+#[test]
+fn the_collected_flip_of_a_key_after_the_identity_is_unwitnessed_too() {
+    let direct = order_flips("mutation-order-tie-identity-first.yaml");
+    let collected = collected_order_flips("mutation-order-tie-identity-first.yaml", |_| {});
+    let entries = |report: &MutationReport| {
+        let text = report.render_text();
+        text.split_once('\n').map(|(_, rest)| rest.to_owned())
+    };
+    assert_eq!(entries(&collected), entries(&direct));
+    assert_eq!(
+        (
+            collected.counts.mutants,
+            collected.counts.killed,
+            collected.counts.survived,
+            collected.counts.unwitnessed
+        ),
+        (2, 1, 0, 1),
+        "{}",
+        collected.render_text()
+    );
+    assert_eq!(unreached(&collected).verdict, Verdict::Unwitnessed);
+    names_the_gap(unreached(&collected));
+}
+
+#[test]
+fn a_manifest_without_the_refusal_key_leaves_the_flip_survived() {
+    let report = collected_order_flips("mutation-order-tie-identity-first.yaml", |manifest| {
+        manifest["format"] = mutate::MANIFEST_FORMAT_1.into();
+        manifest["baseline"]
+            .as_object_mut()
+            .unwrap()
+            .remove("refused");
+        for mutant in manifest["mutants"].as_array_mut().unwrap() {
+            let mutant = mutant.as_object_mut().unwrap();
+            mutant.remove("refused");
+            mutant.remove("unsatisfiable_guard");
+        }
+    });
+    assert_eq!(unreached(&report).verdict, Verdict::Survived);
+    assert_eq!(unreached(&report).baseline_refusals, None);
+}
+
+#[test]
+fn where_every_tie_is_arranged_no_flip_is_unwitnessed() {
+    let report = order_flips("mutation-order-tie.yaml");
+    assert_eq!(report.counts.unwitnessed, 0, "{}", report.render_text());
+    assert!(report
+        .mutants
+        .iter()
+        .all(|entry| entry.baseline_refusals.is_none()));
+}

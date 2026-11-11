@@ -41,7 +41,7 @@ scope:
   path: crates/verify/ess-conformance/tests/system_issued_synthesis.rs
 - confidence: cited
   path: docs/design/system-issued-commands.md
-revision: 10
+revision: 11
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-10T00:42:04Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"review_outcome":2}}}
 - {from: "proposed", to: "active", at: "2026-11-10T00:42:05Z", actor: "human:timo", revision: 10, decided_on: {"recorded":{"review_outcome":2}}}
@@ -149,3 +149,8 @@ proposes its `CHANGELOG.md` sentence; the instance-less await is a suite shape o
 - Same gap as `story:a-create-only-the-system-issues-gets-a-synthesized-scenario` (adopter report of
   2026-10-26, no reproduction). Keep this story, which carries the reproduction, and fold the other
   into it.
+
+- Another downstream adopter (report against 0.90.0, 2026-11-11) needs the same thing for an
+  authored scenario: a step that sends a system-issued command which can create a record is refused
+  with `ESS-AUTHOR-045`. The case is "the second call is refused": the first call creates the
+  record and a second call with the same input answers a refusal. No separate story.

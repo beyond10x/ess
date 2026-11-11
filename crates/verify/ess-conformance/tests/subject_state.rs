@@ -299,13 +299,33 @@ fn same_ringing_input_has_different_established_state_and_no_fault_injection() {
     );
 }
 
+/// Until `story:a-held-state-guard-is-witnessed-without-a-view-publishing-state` this model was
+/// refused for having no view projecting identity and lifecycle state. Its held-state branches
+/// are now witnessed, and the scenario of each held-state outcome says `state` is unobserved.
 #[test]
-fn subject_state_without_an_observable_identity_state_pair_refuses_synthesis() {
+fn subject_state_without_a_state_view_is_witnessed_and_names_state_unobserved() {
+    use ess_conformance::synthesize::Note;
     let ir = ir(&MODEL.replace("      - {name: state, type: calls.core.Call.State}\n", ""));
     let result = ess_conformance::synthesize::synthesize(&ir);
-    assert!(result.refusals.iter().any(|refusal| refusal
-        .to_string()
-        .contains("projecting identity and lifecycle state")));
+    assert!(result.refusals.is_empty(), "{:?}", result.refusals);
+    let noted: Vec<String> = result
+        .notes
+        .iter()
+        .filter_map(|note| match note {
+            Note::PartialObservation {
+                scenario,
+                unobserved,
+            } if unobserved.iter().any(|field| field == "state") => Some(scenario.to_string()),
+            _ => None,
+        })
+        .collect();
+    for outcome in ["ringing", "refreshed", "preserved"] {
+        let scenario = format!("calls.core.Report/outcome/{outcome}");
+        assert!(
+            noted.contains(&scenario),
+            "no PartialObservation naming `state` for {scenario}: {noted:#?}"
+        );
+    }
 }
 
 #[test]

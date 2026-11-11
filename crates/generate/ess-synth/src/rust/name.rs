@@ -18,17 +18,34 @@
 /// `billing.invoice` is `Money`, and the synthesised `billing.invoice.Invoice.State` is
 /// `InvoiceState` — one identifier, because Rust has no dotted type names and a nested module per
 /// entity would put the state enum somewhere no other projection files it.
+///
+/// A type named `Self` stays `Self`, which the feasibility inventory refuses as an
+/// `invalid-identifier`: a type's name is the one the author wrote into every document that
+/// refers to it, unlike an outcome variant, which [`pascal`] derives from a wire word.
 pub fn type_name(name: &ess_domain::name::QualifiedName, domain_segments: usize) -> String {
     let mut out = String::new();
     for segment in name.segments().iter().skip(domain_segments) {
-        out.push_str(&pascal(segment));
+        out.push_str(&spell(segment));
     }
     out
 }
 
 /// A Rust variant name for a specification word: `wrong-state` is `WrongState`, `person` is
 /// `Person`, `Draft` stays `Draft`.
+///
+/// `self` is the one word whose pascal case is a path keyword with no raw form, so it takes the
+/// trailing underscore [`escape`] gives the lower-case ones: the variant `Self_`. Everything a
+/// variant is named from goes through here, so the wire name, which is the word itself, is not
+/// touched.
 pub fn pascal(word: &str) -> String {
+    let spelled = spell(word);
+    if spelled == "Self" {
+        return "Self_".to_owned();
+    }
+    spelled
+}
+
+pub(crate) fn spell(word: &str) -> String {
     let mut out = String::new();
     let mut boundary = true;
     for character in word.chars() {
@@ -53,7 +70,7 @@ pub fn pascal(word: &str) -> String {
 pub fn type_fragment(text: &str) -> String {
     text.split(|character: char| !character.is_alphanumeric())
         .filter(|word| !word.is_empty())
-        .map(pascal)
+        .map(spell)
         .collect()
 }
 

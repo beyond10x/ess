@@ -1,5 +1,5 @@
 //! Adversary cases for the per-test answers of a ui test: `by_params` lists, `fails`, `refuses`,
-//! a latency per view, and the Playwright spec's `test.fixme` for each key on its own.
+//! a latency per view, and the Playwright spec routing each key on its own.
 use std::path::Path;
 
 use ess_ui_test::Status;
@@ -215,17 +215,17 @@ fn latency_by_view_holds_through_a_partial_advance() {
     );
 }
 
-fn fixme_once(tests: &str, reason: &str) {
+fn routed_once(tests: &str, wanted: &str) {
     let spec = passes(tests);
-    assert_eq!(spec.matches("test.fixme").count(), 1, "{spec}");
-    assert!(spec.contains(reason), "{spec}");
+    assert_eq!(spec.matches("test.fixme").count(), 0, "{spec}");
+    assert!(spec.contains(wanted), "{spec}");
 }
 
-/// Each key alone marks the test `test.fixme` (the unit's own case combines a list and a
+/// Each key alone is routed, never `test.fixme` (the unit's own case combines a list and a
 /// command, so dropping any single detection survives it).
 #[test]
-fn each_key_alone_marks_the_spec_fixme() {
-    fixme_once(
+fn each_key_alone_is_routed_not_fixme() {
+    routed_once(
         "  - name: fails only
     fixtures:
       views:
@@ -233,9 +233,9 @@ fn each_key_alone_marks_the_spec_fixme() {
     steps:
       - open: orders.draft
 ",
-        "a failing view",
+        "status: 500",
     );
-    fixme_once(
+    routed_once(
         "  - name: list only
     fixtures:
       views:
@@ -244,17 +244,17 @@ fn each_key_alone_marks_the_spec_fixme() {
     steps:
       - open: orders.draft
 ",
-        "a list of view answers",
+        "answers.find",
     );
-    fixme_once(
+    routed_once(
         "  - name: latency only
     latency: {example.order.Page: 2s}
     steps:
       - open: orders.draft
 ",
-        "a latency per view",
+        "setTimeout(resolve, ms)",
     );
-    fixme_once(
+    routed_once(
         "  - name: command only
     fixtures:
       commands:
@@ -262,6 +262,6 @@ fn each_key_alone_marks_the_spec_fixme() {
     steps:
       - open: orders.draft
 ",
-        "a refused command",
+        "\"error\":\"nope\"",
     );
 }

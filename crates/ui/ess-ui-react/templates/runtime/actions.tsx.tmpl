@@ -97,8 +97,22 @@ export async function runCommand(
 //+bound
     refused?.(undefined);
 //-bound
+//+bound
     await dataAdapter().send(command, input);
+//-bound
+//+plain
+    const sent = await dataAdapter().send(command, input);
+//-plain
     invalidate();
+//+plain
+    const unapplied = isObject(sent) && typeof sent.unapplied === "string" ? sent.unapplied : undefined;
+    if (unapplied !== undefined) {
+      const line = `${command} done in fixture mode; its effect was not applied: ${unapplied}`;
+      console.warn(line);
+      scope.notify(line);
+      return true;
+    }
+//-plain
     if (!optimistic) {
       scope.notify(`${command} done`, "success");
     }

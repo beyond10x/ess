@@ -166,16 +166,20 @@ fn fnv(text: &str) -> u64 {
 /// generator refusal of unsafe token names and values and the `font-weight` and `min-height`
 /// constants. Re-pinned for the second correction: `tokens.css` carries the `--ui-fixed-*` constants and
 /// `styles.css` reads them for its stroke, line-height, round-radius and transparent literals.
+/// `actions.tsx`, `data.ts` and the whole-project digest re-pinned for
+/// story:fixture-mode-applies-a-confirmed-commands-effect: a fixture project applies a confirmed
+/// command's model effect to its rows (`data.ts`) and says where the user acted when it could not
+/// (`actions.tsx`).
 const PLAIN: [(&str, u64); 7] = [
     ("README.md", 0xdae6_c3b6_7e5c_2d28),
     ("src/main.tsx", 0x939b_2ed0_a001_98c5),
-    ("src/runtime/actions.tsx", 0xf023_5201_8d52_5fcc),
+    ("src/runtime/actions.tsx", 0xdbb3_5348_126e_75bb),
     ("src/runtime/composites/confirm.tsx", 0xd98b_e5a3_8ad8_4503),
     ("src/runtime/composites/form.tsx", 0x8925_891d_a8af_c1fb),
-    ("src/runtime/data.ts", 0x0e1d_e114_d5fb_6c64),
+    ("src/runtime/data.ts", 0x4371_a4b4_7789_84a7),
     ("www/index.html", 0x5972_6d4a_5ee2_5ce2),
 ];
-const PLAIN_PROJECT: u64 = 0x2e1a_fe4f_080e_c42f;
+const PLAIN_PROJECT: u64 = 0xf384_719d_bb38_e263;
 
 #[test]
 fn without_a_model_the_project_is_byte_identical() {
@@ -184,14 +188,6 @@ fn without_a_model_the_project_is_byte_identical() {
     let unbound = ess_ui_react::render_bound(&document, &root(), None)
         .unwrap_or_else(|error| panic!("{error}"));
     assert_eq!(plain, unbound, "render is render_bound without a binding");
-    for (path, digest) in PLAIN {
-        assert_eq!(
-            fnv(file(&plain, path)),
-            digest,
-            "{path} differs from the consolidated unbound projection:\n{}",
-            file(&plain, path)
-        );
-    }
     let mut whole = String::new();
     for (path, text) in &plain.files {
         whole.push_str(path);
@@ -199,12 +195,17 @@ fn without_a_model_the_project_is_byte_identical() {
         whole.push_str(text);
         whole.push('\0');
     }
-    assert_eq!(
-        fnv(&whole),
-        PLAIN_PROJECT,
-        "the project (digest {:#x}) differs from the consolidated unbound projection: {:?}",
-        fnv(&whole),
-        plain.files.keys()
+    let moved: Vec<String> = PLAIN
+        .iter()
+        .map(|&(path, digest)| (path, digest, fnv(file(&plain, path))))
+        .chain([("<whole project>", PLAIN_PROJECT, fnv(&whole))])
+        .filter(|&(_, pinned, now)| pinned != now)
+        .map(|(path, pinned, now)| format!("{path}: pinned {pinned:#x}, now {now:#x}"))
+        .collect();
+    assert!(
+        moved.is_empty(),
+        "the unbound projection moved from its pins (re-pin only for a story that claims it):\n{}",
+        moved.join("\n")
     );
     for absent in ["src/binding.ts", "src/runtime/answer.ts"] {
         assert!(!plain.files.contains_key(absent), "{absent} is generated");

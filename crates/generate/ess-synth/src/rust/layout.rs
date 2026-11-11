@@ -50,6 +50,8 @@ pub struct Layout {
     boxed_structs: BTreeSet<QualifiedName>,
     /// The stem every codec and served handler of a declaration is named by.
     codecs: crate::codec_names::CodecNames,
+    /// The method each accepted command and owned view is served by on its component's port.
+    port_methods: crate::codec_names::PortMethods,
 }
 
 impl Layout {
@@ -105,7 +107,7 @@ impl Layout {
         let codecs = crate::codec_names::CodecNames::of(ir, |declared| {
             name::value_ident(&name::type_fragment(&declared.to_string()))
         });
-        Self {
+        let mut layout = Self {
             package,
             system_package,
             server_package,
@@ -117,7 +119,14 @@ impl Layout {
             component_packages,
             boxed_structs,
             codecs,
-        }
+            port_methods: crate::codec_names::PortMethods::empty(),
+        };
+        let methods = crate::codec_names::PortMethods::of(ir, |declared| {
+            let method = name::value_ident(&layout.type_name(declared));
+            method.strip_prefix("r#").unwrap_or(&method).to_owned()
+        });
+        layout.port_methods = methods;
+        layout
     }
 
     /// The package name of the types crate.
@@ -255,6 +264,27 @@ impl Layout {
     /// identifier (`crate::codec_names`).
     pub(crate) fn codec(&self, declared: &QualifiedName) -> &str {
         self.codecs.stem(declared)
+    }
+
+    /// The method `declared`, a command the component accepts or a view it owns, is served by on
+    /// the component's port: its own name, suffixed only where another declaration of the port has
+    /// the same one (`crate::codec_names`).
+    pub(crate) fn port_method(
+        &self,
+        component: &ComponentName,
+        declared: &QualifiedName,
+    ) -> String {
+        name::value_ident(self.port_methods.stem(component, declared))
+    }
+
+    /// Whether another declaration of the component's port has the same method name, so the traits
+    /// its bounds name declare it twice and a call has to say which trait it calls.
+    pub(crate) fn port_method_shared(
+        &self,
+        component: &ComponentName,
+        declared: &QualifiedName,
+    ) -> bool {
+        self.port_methods.shared(component, declared)
     }
 
     /// Whether a named type's use sites carry indirection. Declaration paths stay unboxed.

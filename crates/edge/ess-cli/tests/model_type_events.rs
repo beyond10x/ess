@@ -816,6 +816,83 @@ mod command_and_view_roots {
         );
     }
 
+    const TOKENS: &str = "format: ess/27
+system: tokens
+version: v1
+domain: tokens.auth
+actors:
+  - {name: tokens.auth.Client, may: [tokens.auth.Issue]}
+commands:
+  - name: tokens.auth.Issue
+    input: [{name: subject, type: String}]
+    response:
+      - {name: token, type: String}
+      - {name: expires_in, type: Integer}
+    outcomes:
+      - {name: issued, returns: true}
+components:
+  - component: auth
+    owns: {domains: [tokens.auth]}
+    accepts: {commands: [tokens.auth.Issue]}
+    reached_by: network
+";
+
+    #[test]
+    fn a_bound_route_that_publishes_no_result_refuses_its_response_root_and_all_commands_leaves_it_out(
+    ) {
+        let fixture = Fixture::new();
+        fs::write(fixture.0.join("model/system.yaml"), TOKENS).unwrap();
+        let output = fixture.run(&[
+            "--root",
+            "tokens.auth.Issue.input",
+            "--target",
+            "typescript",
+            "--out",
+            "digest",
+        ]);
+        assert!(output.status.success(), "{output:?}");
+        let source: serde_json::Value =
+            serde_json::from_str(&fixture.read("digest/source.schema.json")).unwrap();
+        let digest = source["x-ess-provenance"]["source_digest"]
+            .as_str()
+            .unwrap_or_else(|| panic!("no source digest in {source}"))
+            .to_owned();
+        fs::write(
+            fixture.0.join("http.yaml"),
+            format!(
+                "type: ess-http/1\nspecification:\n  system: tokens\n  version: v1\n  source_digest: sha256:{digest}\nroutes:\n  - command: tokens.auth.Issue\n    method: post\n    path: /token\n    outcomes:\n      issued: {{status: 200, body: response.token}}\n"
+            ),
+        )
+        .unwrap();
+
+        let output = generate(
+            &fixture,
+            &[
+                "--http",
+                "http.yaml",
+                "--root",
+                "tokens.auth.Issue.response",
+            ],
+            "typescript",
+        );
+        assert_eq!(output.status.code(), Some(1), "{output:?}");
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            stderr.contains("unknown_root") && stderr.contains("`tokens.auth.Issue`"),
+            "{stderr}"
+        );
+
+        let output = generate(
+            &fixture,
+            &["--http", "http.yaml", "--all-commands"],
+            "typescript",
+        );
+        assert!(output.status.success(), "{output:?}");
+        let types = fixture.read("typescript/types.ts");
+        assert!(types.contains("TokensAuthIssueInput"), "{types}");
+        assert!(!types.contains("TokensAuthIssueResponse"), "{types}");
+    }
+
     #[test]
     fn refines_requires_http() {
         let fixture = notes();

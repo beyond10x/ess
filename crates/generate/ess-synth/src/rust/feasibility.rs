@@ -844,7 +844,7 @@ fn component_scopes(inventory: &mut Inventory, ir: &EssIr, layout: &Layout) {
         for command in &component.accepts {
             inventory.symbol(
                 &methods,
-                &name::value_ident(&layout.type_name(command.name())),
+                &layout.port_method(&component.name, command.name()),
                 &command.to_string(),
                 "command method",
             );
@@ -856,7 +856,7 @@ fn component_scopes(inventory: &mut Inventory, ir: &EssIr, layout: &Layout) {
         {
             inventory.symbol(
                 &methods,
-                &name::value_ident(&layout.type_name(&view.name)),
+                &layout.port_method(&component.name, &view.name),
                 &view.name.to_string(),
                 "view method",
             );

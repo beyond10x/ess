@@ -117,8 +117,9 @@ fn imports(id: &str, text: &str) -> Vec<String> {
 /// `//-unrouted` the lines they replace (beyond10x/ess#713). The marker lines themselves are never
 /// emitted, so a plain project is the template with every bound block removed, and an unrouted one
 /// the template with every routed block removed — each byte for byte what it was before the
-/// blocks were written.
-pub(crate) fn select(text: &str, bound: bool, routed: bool) -> String {
+/// blocks were written. `//+effects` … `//-effects` hold the lines of a fixture project generated
+/// with the effects of its model, and `//+noeffects` … `//-noeffects` those of one without.
+pub(crate) fn select(text: &str, bound: bool, routed: bool, effects: bool) -> String {
     let mut out = String::with_capacity(text.len());
     // Whether each open block is kept; a line is emitted when every one is.
     let mut open: Vec<bool> = Vec::new();
@@ -128,7 +129,10 @@ pub(crate) fn select(text: &str, bound: bool, routed: bool) -> String {
             "//+plain" => open.push(!bound),
             "//+routed" => open.push(routed),
             "//+unrouted" => open.push(!routed),
-            "//-bound" | "//-plain" | "//-routed" | "//-unrouted" => {
+            "//+effects" => open.push(effects),
+            "//+noeffects" => open.push(!effects),
+            "//-bound" | "//-plain" | "//-routed" | "//-unrouted" | "//-effects"
+            | "//-noeffects" => {
                 open.pop();
             }
             _ if open.iter().all(|kept| *kept) => out.push_str(line),
@@ -143,10 +147,16 @@ pub(crate) fn runtime(
     used: &BTreeSet<String>,
     bound: bool,
     routed: bool,
+    effects: bool,
 ) -> BTreeMap<String, String> {
     let table: BTreeMap<&str, (&Module, String)> = RUNTIME
         .iter()
-        .map(|module| (module.id, (module, select(module.text, bound, routed))))
+        .map(|module| {
+            (
+                module.id,
+                (module, select(module.text, bound, routed, effects)),
+            )
+        })
         .collect();
     let mut wanted: BTreeSet<String> = used.clone();
     wanted.extend(ALWAYS.iter().map(|id| (*id).to_owned()));
@@ -194,6 +204,7 @@ pub(crate) fn project(
             text,
             binding.is_some(),
             binding.is_some_and(Binding::routed),
+            false,
         )
         .replace("{{app}}", app)
         .replace("{{title}}", title)

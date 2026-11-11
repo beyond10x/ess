@@ -4,7 +4,9 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use ess_ui::binding::Answer;
+use ess_ui::binding::{
+    Answer, CommandEffect, FixtureEffects, RowChange, RowFilter, SetValue, ViewShape,
+};
 use ess_ui::Document;
 use ess_yaml::{Mapping, Value};
 
@@ -88,8 +90,150 @@ pub struct FixtureAdapter {
     refusals: BTreeMap<String, (String, Option<serde_json::Value>)>,
     derived: BTreeMap<String, Value>,
     server: BTreeMap<String, Value>,
+    /// What a command does to the rows the views read, from the model; none without one.
+    effects: Option<FixtureEffects>,
     /// Every command run, in order, with its input.
     pub commands: Vec<(String, BTreeMap<String, Value>)>,
+}
+
+thread_local! {
+    static RUN_EFFECTS: std::cell::RefCell<Option<FixtureEffects>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// Restores the effects a run replaced, also when the run panics.
+struct Restore(Option<FixtureEffects>);
+
+impl Drop for Restore {
+    fn drop(&mut self) {
+        RUN_EFFECTS.with(|slot| *slot.borrow_mut() = self.0.take());
+    }
+}
+
+/// Runs `run`, during which every [`FixtureAdapter`] loaded on this thread applies `effects`, the
+/// table `ess_ui::binding::ModelEnums::fixture_effects` computes, to its rows when a command runs.
+/// It is how a headless test run, which loads its adapter itself, carries the model's effects.
+pub fn with_fixture_effects<T>(effects: Option<FixtureEffects>, run: impl FnOnce() -> T) -> T {
+    let _restore = Restore(RUN_EFFECTS.with(|slot| slot.replace(effects)));
+    run()
+}
+
+/// The `moves:` and `sets:` of a command's success on the rows of one view: the rows after the
+/// change, or `None` when no row of it is the one the command names.
+fn place(
+    rows: &[Value],
+    shape: &ViewShape,
+    change: &RowChange,
+    input: &BTreeMap<String, Value>,
+    wanted: &str,
+) -> Result<Option<Vec<Value>>, String> {
+    let mut placed = Vec::with_capacity(rows.len());
+    let mut changed = false;
+    for row in rows {
+        let named = row
+            .get(shape.identity.as_str())
+            .is_some_and(|identity| display(identity) == wanted);
+        if !named {
+            placed.push(row.clone());
+            continue;
+        }
+        changed = true;
+        if change.delete {
+            continue;
+        }
+        if !change.from.is_empty() {
+            let state = row.get(shape.state.as_str()).map(display);
+            if !state
+                .as_ref()
+                .is_some_and(|state| change.from.contains(state))
+            {
+                return Err(format!(
+                    "the row is {}, and its lifecycle moves a row only from {}",
+                    state.map_or_else(
+                        || "without a state".to_owned(),
+                        |state| format!("`{state}`")
+                    ),
+                    change
+                        .from
+                        .iter()
+                        .map(|state| format!("`{state}`"))
+                        .collect::<Vec<_>>()
+                        .join(", "),
+                ));
+            }
+        }
+        let mut patched = row.clone();
+        let Some(entries) = patched.as_mapping_mut() else {
+            placed.push(patched);
+            continue;
+        };
+        if let Some(to) = &change.to {
+            entries.insert(
+                Value::String(shape.state.clone()),
+                Value::String(to.clone()),
+            );
+        }
+        for (field, source) in &change.sets {
+            let value = match source {
+                SetValue::Input(name) => input
+                    .get(name)
+                    .cloned()
+                    .ok_or_else(|| format!("its input carries no `{name}`"))?,
+                SetValue::Value(value) => ess_yaml::to_value(value).map_err(|e| e.to_string())?,
+            };
+            let key = shape.wires.get(field).unwrap_or(field);
+            entries.insert(Value::String(key.clone()), value);
+        }
+        if shape
+            .filter
+            .as_ref()
+            .map_or(Ok(true), |filter| listed(filter, &patched))?
+        {
+            placed.push(patched);
+        }
+    }
+    Ok(changed.then_some(placed))
+}
+
+/// Whether `row` is listed by a view's filter; an error when the row lacks a field it reads.
+fn listed(filter: &RowFilter, row: &Value) -> Result<bool, String> {
+    let have = |field: &str| {
+        row.get(field)
+            .ok_or_else(|| format!("its view filters on `{field}`, which the row does not carry"))
+    };
+    let same = |have: &Value, value: &serde_json::Value| {
+        ess_yaml::to_value(value).is_ok_and(|value| match (have, &value) {
+            (Value::Number(have), Value::Number(value)) => have.as_f64() == value.as_f64(),
+            _ => display(have) == display(&value),
+        })
+    };
+    Ok(match filter {
+        RowFilter::All { of } => {
+            let mut every = true;
+            for part in of {
+                every &= listed(part, row)?;
+            }
+            every
+        }
+        RowFilter::Any { of } => {
+            let mut any = false;
+            for part in of {
+                any |= listed(part, row)?;
+            }
+            any
+        }
+        RowFilter::Not { of } => !listed(of, row)?,
+        RowFilter::Eq { field, value } => same(have(field)?, value),
+        RowFilter::Ne { field, value } => !same(have(field)?, value),
+        RowFilter::In { field, values } => {
+            let have = have(field)?;
+            values.iter().any(|value| same(have, value))
+        }
+        RowFilter::NotIn { field, values } => {
+            let have = have(field)?;
+            !values.iter().any(|value| same(have, value))
+        }
+    })
 }
 
 impl FixtureAdapter {
@@ -102,6 +246,7 @@ impl FixtureAdapter {
     ) -> Result<(Self, Vec<Script>), TuiError> {
         let mut adapter = Self {
             base: base.to_path_buf(),
+            effects: RUN_EFFECTS.with(|slot| slot.borrow().clone()),
             ..Self::default()
         };
         let Some(index) = &document.fixtures else {
@@ -169,6 +314,76 @@ impl FixtureAdapter {
         self.views.insert(view.to_owned(), answers);
         self.replaced.insert(view.to_owned());
         Ok(())
+    }
+
+    /// Applies what the model says `command` does to the rows the views read: `Ok(true)` when a
+    /// row changed, `Ok(false)` when the command changes none, and the reason when its effect
+    /// cannot be applied, leaving every row as it was.
+    fn apply_effect(
+        &mut self,
+        command: &str,
+        input: &BTreeMap<String, Value>,
+    ) -> Result<bool, String> {
+        let effects = self
+            .effects
+            .as_ref()
+            .ok_or_else(|| "no model was given to read its effect from".to_owned())?;
+        let change = match effects.commands.get(command) {
+            None => return Ok(false),
+            Some(CommandEffect::NotApplied { unapplied }) => return Err(unapplied.clone()),
+            Some(CommandEffect::Applies(change)) => change,
+        };
+        let wanted = input
+            .get(&change.instance)
+            .map(display)
+            .ok_or_else(|| format!("its input carries no `{}`", change.instance))?;
+        let mut placed: Vec<(&String, Answers)> = Vec::new();
+        for (view, shape) in &effects.views {
+            if shape.entity != change.entity {
+                continue;
+            }
+            let Some(answers) = self.views.get(view) else {
+                continue;
+            };
+            if let Some(reason) = &shape.unapplied {
+                return Err(reason.clone());
+            }
+            let rewrite = |data: &ViewData| -> Result<Option<ViewData>, String> {
+                Ok(
+                    place(&data.rows, shape, change, input, &wanted)?.map(|rows| ViewData {
+                        rows,
+                        total: None,
+                        by_params: data.by_params.clone(),
+                    }),
+                )
+            };
+            let next = match answers {
+                Answers::One(data) => rewrite(data)?.map(Answers::One),
+                Answers::List(list) => {
+                    let mut changed = false;
+                    let mut next = Vec::with_capacity(list.len());
+                    for data in list {
+                        match rewrite(data)? {
+                            Some(data) => {
+                                changed = true;
+                                next.push(data);
+                            }
+                            None => next.push(data.clone()),
+                        }
+                    }
+                    changed.then_some(Answers::List(next))
+                }
+                Answers::Fails(_) => None,
+            };
+            placed.extend(next.map(|next| (view, next)));
+        }
+        let changed = !placed.is_empty();
+        let placed: Vec<(String, Answers)> = placed
+            .into_iter()
+            .map(|(view, answers)| (view.clone(), answers))
+            .collect();
+        self.views.extend(placed);
+        Ok(changed)
     }
 
     /// Answers `command` with the refusal `error` (its wire code) and its `payload`.
@@ -349,12 +564,16 @@ impl DataAdapter for FixtureAdapter {
     /// declared a refusal for it ([`FixtureAdapter::refuse`]).
     fn run(&mut self, command: &str, input: &BTreeMap<String, Value>) -> Answer {
         self.commands.push((command.to_owned(), input.clone()));
-        match self.refusals.get(command) {
-            Some((error, payload)) => Answer::Refused {
+        if let Some((error, payload)) = self.refusals.get(command) {
+            return Answer::Refused {
                 error: error.clone(),
                 payload: payload.clone(),
-            },
-            None => Answer::Accepted,
+            };
+        }
+        match self.apply_effect(command, input) {
+            Ok(true) => Answer::FixtureApplied,
+            Ok(false) => Answer::Accepted,
+            Err(reason) => Answer::FixtureNotApplied { reason },
         }
     }
 

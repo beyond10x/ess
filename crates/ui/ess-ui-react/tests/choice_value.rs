@@ -425,6 +425,7 @@ fn a_bound_project_lists_a_model_enums_variants() {
         path: path.clone(),
         out: dir.join("app"),
         model: Some(dir.join("model")),
+        fixtures: false,
     };
     ess_ui_react::run(&args, Some(&binding)).unwrap_or_else(|error| panic!("{error}"));
     let page = std::fs::read_to_string(dir.join("app/src/pages/ReleasesNew.tsx"))
@@ -437,6 +438,7 @@ fn a_bound_project_lists_a_model_enums_variants() {
         path,
         out: dir.join("unbound"),
         model: None,
+        fixtures: false,
     };
     let refused = ess_ui_react::run(&unbound, None).expect_err("no model, no enum");
     assert!(

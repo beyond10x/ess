@@ -3654,6 +3654,20 @@ impl App {
     fn run_command(&mut self, command: &str, input: &BTreeMap<String, Value>) -> Option<Refused> {
         self.commands_sent += 1;
         let answer = self.adapter.run(command, input);
+        // Fixture mode: the effect the model declares was applied to the rows, which are read
+        // again, or it could not be, and the status line says so where the user acted.
+        let unapplied = match &answer {
+            Answer::FixtureApplied => {
+                self.invalidate();
+                None
+            }
+            Answer::FixtureNotApplied { reason } => Some(reason.clone()),
+            _ => None,
+        };
+        let answer = match answer {
+            Answer::FixtureApplied | Answer::FixtureNotApplied { .. } => Answer::Accepted,
+            other => other,
+        };
         if answer != Answer::Accepted {
             // What was read is out of date when the answer says the state moved (a declared
             // `409`) or that the effect was committed though not delivered: read it again.
@@ -3679,6 +3693,8 @@ impl App {
         let message = if self.bound.is_some() {
             self.invalidate();
             format!("{command} accepted")
+        } else if let Some(reason) = unapplied {
+            format!("{command} done in fixture mode; its effect was not applied: {reason}")
         } else {
             let shown: Vec<String> = input
                 .iter()
@@ -4885,4 +4901,81 @@ pub(crate) fn choice_binds(
         .iter()
         .any(|binds| binds.0 == wanted)
         .then_some(wanted)
+}
+
+#[cfg(test)]
+mod tests {
+    use ess_ui::binding::{CommandEffect, FixtureEffects};
+
+    use super::*;
+    use crate::data::with_fixture_effects;
+
+    const DOCUMENT: &str = r"
+format: ess-ui/1
+app: probe
+model: probe.system
+placement_profile: fat
+shells:
+  app: {regions: {main: {kind: page_outlet}}}
+navigation:
+  home: things.list
+  sections: [{name: all, pages: [things.list]}]
+pages:
+  things.list:
+    kind: detail_page
+    title: Things
+    sections:
+      - {name: list, component: collection, reads: {placeholder: things.All, fixture: all.yaml}, columns: [title]}
+";
+
+    /// The status line after `things.Remove` ran in a fixture session holding `effects`.
+    fn status(effects: Option<FixtureEffects>) -> String {
+        let document = ess_ui::load_str(DOCUMENT).expect("the document loads");
+        let (adapter, scripts) = with_fixture_effects(effects, || {
+            FixtureAdapter::load(&document, Path::new("."), None).expect("the adapter loads")
+        });
+        let state_dir = std::env::temp_dir().join("ess-ui-tui-unit-status");
+        let mut app = App::with_adapter(
+            document,
+            Box::new(adapter),
+            scripts,
+            Options::new(state_dir),
+        )
+        .expect("the document runs");
+        let input = BTreeMap::from([("thing".to_owned(), Value::String("th-2".to_owned()))]);
+        assert!(app.run_command("things.Remove", &input).is_none());
+        app.notifications.last().cloned().expect("a status line")
+    }
+
+    /// A command whose effect fixture mode cannot apply says so where the user acted, never just
+    /// that it was done.
+    #[test]
+    fn an_effect_fixture_mode_cannot_apply_is_said_in_the_status_line() {
+        assert_eq!(
+            status(None),
+            "things.Remove done in fixture mode; its effect was not applied: no model was given \
+             to read its effect from"
+        );
+        let mut effects = FixtureEffects::default();
+        effects.commands.insert(
+            "things.Remove".to_owned(),
+            CommandEffect::NotApplied {
+                unapplied: "its success creates a row (`creates:`)".to_owned(),
+            },
+        );
+        assert_eq!(
+            status(Some(effects)),
+            "things.Remove done in fixture mode; its effect was not applied: its success \
+             creates a row (`creates:`)"
+        );
+    }
+
+    /// With a model, a command that changes no row is accepted as it was.
+    #[test]
+    fn a_command_that_changes_no_row_is_accepted() {
+        assert_eq!(
+            status(Some(FixtureEffects::default())),
+            "things.Remove accepted (fixture): thing=th-2"
+        );
+    }
 }

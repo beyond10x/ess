@@ -1,0 +1,17 @@
+format: ess-ui-test/1
+document: desk.ui.yaml
+tests:
+- name: a refused approve leaves the request pending
+  fixtures:
+    commands:
+      desk.requests.ApproveRequest: {refuses: wrong_state}
+  steps:
+  - open: requests.inbox
+  - act: pages/requests.inbox/sections/list/rows/r1/row_actions/approve
+  - act: pages/requests.inbox/sections/list/rows/r1/row_actions/approve/confirm/overlay
+  - expect_command: {command: desk.requests.ApproveRequest, input: {id: r1}}
+  - advance: 2s
+  - open: requests.all
+  - advance: 2s
+  - expect: {at: pages/requests.all/sections/list, rows: 4}
+  - expect: {at: pages/requests.all/sections/list, text: request-one    Pending}

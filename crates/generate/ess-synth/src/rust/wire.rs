@@ -336,7 +336,9 @@ fn struct_body(
                 .collect::<Vec<_>>(),
         );
     }
-    let _ = writeln!(out, "    Ok({path} {{");
+    let constrained = declared.body.is_constrained();
+    let opening = if constrained { "let decoded = " } else { "Ok(" };
+    let _ = writeln!(out, "    {opening}{path} {{");
     for (position, field) in fields.iter().enumerate() {
         let _ = writeln!(
             out,
@@ -345,7 +347,16 @@ fn struct_body(
             decode_member(surface, field, position)
         );
     }
-    out.push_str("    })\n");
+    if constrained {
+        // The declared invariants are held here, because this decoder is what a served route
+        // reads a request with.
+        out.push_str(
+            "    };\n    match decoded.broken_constraint() {\n        Some(expected) => \
+             Err(json::DecodeError::of(at, expected, value)),\n        None => Ok(decoded),\n    }\n",
+        );
+    } else {
+        out.push_str("    })\n");
+    }
 }
 
 /// The set of legal spellings, as one phrase a refusal can carry.

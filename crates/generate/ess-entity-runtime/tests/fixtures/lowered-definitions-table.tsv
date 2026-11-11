@@ -1,4 +1,4 @@
-#	models=459	lines=627
+#	models=469	lines=638
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	components=1
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor-service	REFUSED	95eb461796949834a9d78ef0c04afcab1acfa13dbf2dfd6da3af2f3c93549630:687
 crates/edge/ess-cli/tests/fixtures/coverage-producers/inputs/models/billing/system.yaml	ASSEMBLE
@@ -41,6 +41,9 @@ crates/generate/ess-synth/tests/fixtures/declared-behaviour/system.yaml	ASSEMBLE
 crates/generate/ess-synth/tests/fixtures/declared-behaviour-kept/head.yaml	components=0
 crates/generate/ess-synth/tests/fixtures/generated-views.yaml	components=1
 crates/generate/ess-synth/tests/fixtures/generated-views.yaml	ledger-service	REFUSED	6a2dc4fbcc57c8074b8b144efac23bf07dd73169ffee34f9727925b8c701ca27:209
+crates/generate/ess-synth/tests/fixtures/generation-by-name/28.yaml	components=0
+crates/generate/ess-synth/tests/fixtures/generation-by-name/29.yaml	components=0
+crates/generate/ess-synth/tests/fixtures/generation-by-name/32.yaml	PARSE
 crates/generate/ess-synth/tests/fixtures/http-binding-shop.yaml	components=1
 crates/generate/ess-synth/tests/fixtures/http-binding-shop.yaml	shop-service	REFUSED	195e49f410a2ac8c31ad22f10737b24dd74e251237f76b7c04308ba8bf76a791:3034
 crates/generate/ess-synth/tests/fixtures/response-echoes-input.yaml	components=1
@@ -114,6 +117,9 @@ crates/specify/ess-service-contract/tests/fixtures/system.yaml	ASSEMBLE
 crates/specify/ess-service-contract/tests/selection-conversion-control-fixtures/system.yaml	ASSEMBLE
 crates/specify/ess-service-contract/tests/selection-conversion-fixtures/system.yaml	ASSEMBLE
 crates/ui/ess-ui-check/tests/fixtures/model/system.yaml	ASSEMBLE
+crates/ui/ess-ui-react/tests/fixtures/fixture-command-effect/spec/system.yaml	ASSEMBLE
+crates/ui/ess-ui-test/tests/fixtures/adversary-t3-fixture-command-effect/spec/system.yaml	ASSEMBLE
+crates/ui/ess-ui-test/tests/fixtures/fixture-command-effect/spec/system.yaml	ASSEMBLE
 crates/verify/ess-conformance/tests/fixtures/absent-optional-beside-stored-guard.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/adversary-0710/affects-past-creating-not-found.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/adversary-0710/set-update-refuses-the-related-row-it-names.yaml	components=0
@@ -338,6 +344,7 @@ crates/verify/ess-conformance/tests/fixtures/restart.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/retained-commit.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/retained-replay.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/row-set-creator-predicate-guard.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/row-set-related-copy-identity.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/row-set-related-copy.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/row-set-struct-identity.yaml	components=1
 crates/verify/ess-conformance/tests/fixtures/row-set-struct-identity.yaml	vault-lib	REFUSED	bccabb45b72adc4e53e56a40e11f47886c7a6388102c64b527ae8406928bd29d:563
@@ -518,6 +525,10 @@ system-dir:crates/ui/ess-ui-check/tests/fixtures/model	shop-service	shop.audit.E
 system-dir:crates/ui/ess-ui-check/tests/fixtures/model	shop-service	shop.audit.Entry	create	recorded
 system-dir:crates/ui/ess-ui-check/tests/fixtures/model	shop-service	shop.stock.Item	definition=725e4586268c9587e1311f7c3323d207fa1528309e4d7e18ea68d927330e6dbe:2073
 system-dir:crates/ui/ess-ui-check/tests/fixtures/model	shop-service	shop.stock.Item	create	added
+system-dir:crates/ui/ess-ui-react/tests/fixtures/fixture-command-effect/spec	PARSE
+system-dir:crates/ui/ess-ui-test/tests/fixtures/adversary-t3-fixture-command-effect/spec	components=1
+system-dir:crates/ui/ess-ui-test/tests/fixtures/adversary-t3-fixture-command-effect/spec	request-service	REFUSED	10c1ccddaf5eda7397844f1480a0db19ea500f0c7dd682fefcb0382bbe933ebc:420
+system-dir:crates/ui/ess-ui-test/tests/fixtures/fixture-command-effect/spec	PARSE
 system-dir:crates/verify/ess-conformance/tests/fixtures/adversary-0750/applied-elsewhere	components=1
 system-dir:crates/verify/ess-conformance/tests/fixtures/adversary-0750/applied-elsewhere	svc	REFUSED	50068dc89bec3004a4f50df302829dd8f90208baa673aa0086c3dfe94fef19b8:570
 system-dir:crates/verify/ess-conformance/tests/fixtures/adversary-0750/arrives-only	components=1

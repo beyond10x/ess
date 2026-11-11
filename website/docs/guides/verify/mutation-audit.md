@@ -34,7 +34,8 @@ weakening it: a mutant that only says less could never be killed by a correct ta
 - `order-flip` flips one key of a view's `order_by:`. The suite kills the flip of a key after the
   first because synthesis arranges, for that key, two rows equal on every key before it and
   different on it. Where it cannot (an earlier key is the identity, or no creating command writes a
-  key from its input), synthesis lists a refusal naming the view and the key, and the flip survives.
+  key from its input), synthesis lists a refusal naming the view and the key, and the flip is
+  *unwitnessed* (`ESS-MUTATE-004`, that refusal under `baseline_refusals`) unless a scenario kills it.
 - `guard-boundary`, `guard-negate` and `guard-connective` edit the predicate of a `when_subject:`
   over the stored subject, and the predicate of a `when_related:` over the row an input identity
   names, as they edit a `when:`. Such a mutant's id names the key after the outcome:
@@ -214,8 +215,7 @@ model's, so against the unchanged target it runs identically in every mutant's s
 | 3 | `ESS-MUTATE-001` (a baseline scenario failed or ended `error`), nothing scored (the baseline executed no scenario), `ESS-MUTATE-003` (no site), or no survivor and at least one mutant unwitnessed or inconclusive or a selected site unavailable, or every mutant stillborn or equivalent, or, under `--fail-on-unmutated`, any stillborn mutant or unmutated site. |
 
 Unmutated sites and stillborn mutants do not change the exit status by default. `--fail-on-unmutated`
-makes each one block exit 0, as an unavailable `emit-swap` site does; it applies to `--target` and
-`--collect`.
+makes each one block exit 0, as an unavailable `emit-swap` site does; it applies to `--target` and `--collect`.
 
 ### Run your authored scenarios against each mutant
 

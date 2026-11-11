@@ -1,0 +1,13 @@
+components:
+  - component: request-service
+    summary: serves the request domain
+    owns:
+      domains:
+        - desk.requests
+    accepts:
+      commands:
+        - desk.requests.ApproveRequest
+    publishes:
+      events:
+        - desk.requests.RequestApproved
+    reached_by: network

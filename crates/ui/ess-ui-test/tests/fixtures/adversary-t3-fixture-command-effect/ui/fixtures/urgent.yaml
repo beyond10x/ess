@@ -1,0 +1,4 @@
+view: desk.requests.UrgentRequests
+rows:
+  - {id: r1, title: request-one, state: Pending, priority: 1}
+  - {id: r4, title: request-four, state: Pending, priority: 1}

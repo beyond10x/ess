@@ -177,3 +177,84 @@ fn the_documents_load_without_the_refused_key() {
         }
     }
 }
+
+/// The brief's record probe: a page-state record with one field named `key`, and a section `rec`
+/// that carries `tail`.
+fn record_probe(key: &str, ty: &str, tail: &str) -> String {
+    format!(
+        "format: ess-ui/1
+app: probe
+model: probe.system
+placement_profile: fat
+shells:
+  app:
+    regions:
+      main: {{kind: page_outlet}}
+navigation:
+  home: a
+  sections: [{{name: all, pages: [a]}}]
+pages:
+  a:
+    kind: list_page
+    title: A
+    state:
+      pick:
+        class: page_state
+        type:
+          record:
+            {key}: {{list: {ty}}}
+    sections:
+      - {{name: rec, component: record, reads: {{view: probe.Items}}, fields: [title]{tail}}}
+"
+    )
+}
+
+/// An author key named `action` in a type's record is a field, not an Action: a refused type is
+/// reported as the same refusal, at the same place, as under any other name.
+#[test]
+fn a_record_field_named_action_is_refused_as_any_other_field() {
+    let other = refused(&record_probe("other", "42", ""));
+    let action = refused(&record_probe("action", "42", ""));
+    assert_eq!(other.path().to_string(), "pages/a", "{other}");
+    assert_eq!(
+        action.path().to_string(),
+        other.path().to_string(),
+        "{action}"
+    );
+    assert_eq!(action.message(), other.message());
+    assert!(
+        !action.message().contains("expected one of `name`"),
+        "{action}"
+    );
+}
+
+/// A valid record field named `action` hides no refusal elsewhere in the document.
+#[test]
+fn a_valid_record_field_named_action_hides_no_later_refusal() {
+    let text = record_probe("action", "string", ", bogus_key: 1");
+    let error = refused(&text);
+    assert_eq!(error.path().to_string(), "pages/a/sections/rec", "{error}");
+    assert!(error.message().contains("`bogus_key`"), "{error}");
+    let other = refused(&record_probe("other", "string", ", bogus_key: 1"));
+    assert_eq!(error.message(), other.message());
+}
+
+/// A nested map keyed `action` under an export's `params` is refused with the params' message.
+#[test]
+fn a_nested_export_param_named_action_is_refused_with_the_params_message() {
+    let with = |key: &str| {
+        let tail = format!(
+            ", bulk_actions: [{{name: download, label: Download, export: {{reads: desk.Bundle, \
+             as: zip, params: {{p: {{{key}: {{x: 1}}}}}}}}}}]"
+        );
+        refused(&document("action", &tail))
+    };
+    let other = with("other");
+    let action = with("action");
+    assert_eq!(
+        action.path().to_string(),
+        other.path().to_string(),
+        "{action}"
+    );
+    assert_eq!(action.message(), other.message());
+}

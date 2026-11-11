@@ -430,3 +430,89 @@ fn every_mutate_code_is_named_in_the_formats_reference() {
     }
     assert!(page.contains("ess-mutation-report/3"));
 }
+
+const ORDER_TIE_IDENTITY_FIRST: &str =
+    "crates/verify/ess-conformance/tests/fixtures/mutation-order-tie-identity-first.yaml";
+const ORDER_TIE: &str = "crates/verify/ess-conformance/tests/fixtures/mutation-order-tie.yaml";
+
+/// A key after the identity, which no tie reaches, is unwitnessed (beyond10x/ess#708): the audit
+/// exits 3, names the baseline's refusal, and `--report-out` and `--emit`/`--collect` agree.
+#[test]
+fn an_order_flip_on_a_key_no_tie_reaches_exits_three_unwitnessed() {
+    let directory = scratch("order-tie-708");
+    let report = directory.join("report.json");
+    let args = [
+        "--path",
+        ORDER_TIE_IDENTITY_FIRST,
+        "--target",
+        "interpreted",
+        "--class",
+        "order-flip",
+    ];
+    let mut direct = args.to_vec();
+    direct.extend(["--report-out", report.to_str().unwrap()]);
+    let output = mutate(&direct);
+    let stdout = text(&output.stdout);
+    assert_eq!(
+        output.status.code(),
+        Some(3),
+        "{stdout}{}",
+        text(&output.stderr)
+    );
+    assert!(
+        stdout.contains(
+            "2 mutant(s), 1 killed, 0 survived, 0 inconclusive, 0 stillborn, 1 unwitnessed"
+        ),
+        "{stdout}"
+    );
+    let line = stdout
+        .lines()
+        .find(|line| line.contains("order-flip/example.order.OrderQueue/priority"))
+        .expect("the line of the flip of `priority`");
+    assert!(
+        line.starts_with("unwitnessed ")
+            && line.contains("ESS-MUTATE-004")
+            && line.contains("ESS-SYNTH-001"),
+        "{line}"
+    );
+    let written: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&report).expect("--report-out is written")).unwrap();
+    let mutant = written["mutants"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|mutant| mutant["id"] == "order-flip/example.order.OrderQueue/priority")
+        .expect("the mutant");
+    let held = mutant["baseline_refusals"].as_array().expect("refusals");
+    assert_eq!(held.len(), 1, "{mutant}");
+    assert_eq!(
+        held[0]["scenario"],
+        "example.order.PlaceOrder/outcome/placed"
+    );
+    let subject = held[0]["subject"].as_str().unwrap();
+    assert!(
+        subject.contains("example.order.OrderQueue") && subject.contains("priority"),
+        "{subject}"
+    );
+}
+
+/// Where every tie is arranged, no flip is unwitnessed and the audit exits 0.
+#[test]
+fn an_order_flip_on_a_key_every_tie_reaches_exits_zero() {
+    let output = mutate(&[
+        "--path",
+        ORDER_TIE,
+        "--target",
+        "interpreted",
+        "--class",
+        "order-flip",
+    ]);
+    let stdout = text(&output.stdout);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "{stdout}{}",
+        text(&output.stderr)
+    );
+    assert!(stdout.contains(" 0 unwitnessed, "), "{stdout}");
+}

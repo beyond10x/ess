@@ -1,0 +1,6 @@
+format: ess/35
+system: desk
+version: v1
+summary: minimal request desk
+domains:
+  - desk.requests

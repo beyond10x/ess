@@ -89,7 +89,9 @@ pub(crate) struct Generate {
 #[derive(Debug, Clone, Copy, ValueEnum)]
 enum Target {
     /// A React + TypeScript project: react and react-dom only, generated routing, built with esbuild;
-    /// with `--model`, bound to the HTTP surface the specification serves.
+    /// with `--model`, bound to the HTTP surface the specification serves, or with `--model
+    /// --fixtures` answering from its fixtures and applying what the model says a command does to
+    /// them.
     React,
     /// A Rust terminal application crate: a clap command line over `ess-ui-tui`, fetched by the
     /// Git tag of this ESS version, bound to the HTTP surface the specification serves (`--model`
@@ -166,6 +168,18 @@ pub(crate) fn generate(arguments: &Generate) -> ExitCode {
     match arguments.target {
         Target::React => {
             let react = &arguments.project;
+            if react.fixtures {
+                let Some(path) = react.model.as_deref() else {
+                    return refusal("--fixtures needs --model");
+                };
+                return match model(path) {
+                    Ok(model) => match ess_ui_react::run_fixtures(react, &model) {
+                        Ok(summary) => success(&summary),
+                        Err(error) => refusal(&error.to_string()),
+                    },
+                    Err(error) => refusal(&format!("{error:#}")),
+                };
+            }
             let binding = match react
                 .model
                 .as_deref()
