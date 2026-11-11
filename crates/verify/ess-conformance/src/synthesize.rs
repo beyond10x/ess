@@ -197,6 +197,7 @@ mod paging;
 pub(crate) mod precedence;
 mod provided;
 mod reference_integrity;
+mod referenced_input;
 mod refusal_policy;
 mod related;
 mod related_guard;
@@ -5275,6 +5276,14 @@ fn run_as(
     if let Some(list) = listed {
         supplied.insert(list.field, list.value);
         listed_after = list.after;
+    }
+    // An input written into a field carrying a `references` relation names rows the scenario
+    // arranged (`docs/design/referenced-input-arrangement.md`).
+    // A command guarded by a related row, a list of references or a row set names its own rows.
+    if !related_guard::uses(command) && !related_list::uses(command) && !row_set::uses(command) {
+        supplied.extend(referenced_input::arrange(
+            ir, command, outcome, actors, witness, &mut setup, &input,
+        )?);
     }
     invoke.push(ScenarioStep::ExecuteCommand {
         caller: std::collections::BTreeMap::new(),
