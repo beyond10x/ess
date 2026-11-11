@@ -733,55 +733,58 @@ impl<'a> Check<'a> {
         }
     }
 
+    /// Where a path starts — a binder, or a name its root holds — as what it reaches and its type;
+    /// `None` for `state`, which an entity's data does not hold.
+    fn start(&self, path: &FactPath) -> Result<Option<(Reach, ResolvedTypeRef)>, String> {
+        let root = path.namespace();
+        if let Some(binder) = self.binders.iter().rev().find(|binder| binder.name == root) {
+            return Ok(Some((
+                Reach::Ref(binder.variable.clone()),
+                binder.element.clone(),
+            )));
+        }
+        let place = |field: &ResolvedField| {
+            Some((
+                Reach::Place(format!("self.{}", name::value_ident(&field.name))),
+                field.type_ref.clone(),
+            ))
+        };
+        match self.root {
+            Root::Entity(entity) => {
+                if let Some(field) = std::iter::once(&entity.identity)
+                    .chain(&entity.fields)
+                    .find(|field| field.name == root)
+                {
+                    Ok(place(field))
+                } else if root == ess_domain::entity::EntitySpec::STATE {
+                    Ok(None)
+                } else {
+                    Err(format!(
+                        "`{path}` reads `{root}`, which this entity does not hold"
+                    ))
+                }
+            }
+            Root::Struct(fields) => fields
+                .iter()
+                .find(|field| field.name == root)
+                .map(place)
+                .ok_or_else(|| format!("`{path}` reads `{root}`, which this struct does not hold")),
+            Root::Newtype(of) if root == "value" => {
+                Ok(Some((Reach::Place("self.0".to_owned()), of.clone())))
+            }
+            Root::Newtype(_) => Err(format!(
+                "`{path}` reads `{root}`, which this newtype does not hold"
+            )),
+        }
+    }
+
     /// Walks a path from its root — a binder, the identity or a field — through every newtype and
     /// `Optional`, member, list position and `.count`, the way the compiler resolves it.
     fn walk(&self, path: &FactPath) -> Result<Walked, String> {
         let segments = path.segments();
-        let root = path.namespace();
-        let (mut reach, mut current) =
-            if let Some(binder) = self.binders.iter().rev().find(|binder| binder.name == root) {
-                (Reach::Ref(binder.variable.clone()), binder.element.clone())
-            } else {
-                match self.root {
-                    Root::Entity(entity) => {
-                        if let Some(field) = std::iter::once(&entity.identity)
-                            .chain(&entity.fields)
-                            .find(|field| field.name == root)
-                        {
-                            (
-                                Reach::Place(format!("self.{}", name::value_ident(&field.name))),
-                                field.type_ref.clone(),
-                            )
-                        } else if root == ess_domain::entity::EntitySpec::STATE {
-                            return Ok(Walked::Absent);
-                        } else {
-                            return Err(format!(
-                                "`{path}` reads `{root}`, which this entity does not hold"
-                            ));
-                        }
-                    }
-                    Root::Struct(fields) => {
-                        if let Some(field) = fields.iter().find(|field| field.name == root) {
-                            (
-                                Reach::Place(format!("self.{}", name::value_ident(&field.name))),
-                                field.type_ref.clone(),
-                            )
-                        } else {
-                            return Err(format!(
-                                "`{path}` reads `{root}`, which this struct does not hold"
-                            ));
-                        }
-                    }
-                    Root::Newtype(of) if root == "value" => {
-                        (Reach::Place("self.0".to_owned()), of.clone())
-                    }
-                    Root::Newtype(_) => {
-                        return Err(format!(
-                            "`{path}` reads `{root}`, which this newtype does not hold"
-                        ));
-                    }
-                }
-            };
+        let Some((mut reach, mut current)) = self.start(path)? else {
+            return Ok(Walked::Absent);
+        };
         let mut position = 1;
         for _ in 0..MAX_STEPS {
             match current {
