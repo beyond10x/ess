@@ -1247,3 +1247,271 @@ fn a_refusal_policy_scenario_is_not_set_up_through_a_trigger_that_needs_the_row(
     assert!(!statuses.is_empty());
     assert_eq!(not_passed(&statuses), Vec::<&str>::new());
 }
+
+// ---- a related refusal reads back the row the refused command rewrites ---------------------------
+
+/// `Refresh` updates the `Ticket` its input names, and the binding `refresh-on-ticket-moved`
+/// drops its `grant-missing` and `grant-closed` refusals, both `when_related:` over a `Grant`.
+const REWRITTEN: &str = r"
+format: ess/36
+system: demo
+version: v1
+domain: demo.b
+types:
+  - {name: demo.b.GrantId, kind: newtype, of: Uuid}
+  - {name: demo.b.TicketId, kind: newtype, of: Uuid}
+entities:
+  - name: demo.b.Grant
+    identity: {name: grant_id, type: demo.b.GrantId}
+    fields:
+      - {name: open, type: Boolean}
+    lifecycle: {initial: Held, states: [Held], terminal: [Held]}
+  - name: demo.b.Ticket
+    identity: {name: ticket_id, type: demo.b.TicketId}
+    fields:
+      - {name: grant_id, type: demo.b.GrantId}
+      - {name: flag, type: Boolean}
+      - {name: note, type: String}
+    lifecycle: {initial: Open, states: [Open], terminal: [Open]}
+errors:
+  - {name: demo.b.GrantUnavailable, summary: The grant is missing or closed.}
+actors:
+  - name: demo.b.Clerk
+    may: [demo.b.DefineGrant, demo.b.OpenTicket, demo.b.MoveTicket, demo.b.Refresh]
+events:
+  - name: demo.b.GrantDefined
+    fields: [{name: grant_id, type: demo.b.GrantId}]
+  - name: demo.b.TicketOpened
+    fields: [{name: ticket_id, type: demo.b.TicketId}]
+  - name: demo.b.TicketMoved
+    fields: [{name: ticket_id, type: demo.b.TicketId}, {name: grant_id, type: demo.b.GrantId}]
+  - name: demo.b.TicketRefreshed
+    fields: [{name: ticket_id, type: demo.b.TicketId}]
+commands:
+  - name: demo.b.DefineGrant
+    input:
+      - {name: open, type: Boolean}
+    outcomes:
+      - name: defined
+        creates: demo.b.Grant
+        instance: grant_id
+        emits: [demo.b.GrantDefined]
+        payload: {demo.b.GrantDefined: {grant_id: {generated: true}}}
+        sets: {open: input.open}
+  - name: demo.b.OpenTicket
+    input:
+      - {name: grant_id, type: demo.b.GrantId}
+      - {name: note, type: String}
+    outcomes:
+      - name: opened
+        creates: demo.b.Ticket
+        instance: ticket_id
+        emits: [demo.b.TicketOpened]
+        payload: {demo.b.TicketOpened: {ticket_id: {generated: true}}}
+        sets: {grant_id: input.grant_id, flag: false, note: input.note}
+  - name: demo.b.MoveTicket
+    input:
+      - {name: ticket_id, type: demo.b.TicketId}
+      - {name: grant_id, type: demo.b.GrantId}
+    outcomes:
+      - name: moved
+        updates: demo.b.Ticket
+        instance: ticket_id
+        emits: [demo.b.TicketMoved]
+        payload: {demo.b.TicketMoved: {ticket_id: input.ticket_id, grant_id: input.grant_id}}
+        sets: {grant_id: input.grant_id}
+  - name: demo.b.Refresh
+    input:
+      - {name: ticket_id, type: demo.b.TicketId}
+      - {name: grant_id, type: demo.b.GrantId}
+    outcomes:
+      - name: grant-missing
+        when_related: {via: input.grant_id, exists: false}
+        error: demo.b.GrantUnavailable
+      - name: grant-closed
+        when_related: {via: input.grant_id, predicate: open == false}
+        error: demo.b.GrantUnavailable
+      - name: refreshed
+        updates: demo.b.Ticket
+        instance: ticket_id
+        emits: [demo.b.TicketRefreshed]
+        payload: {demo.b.TicketRefreshed: {ticket_id: input.ticket_id}}
+        sets: {flag: true}
+views:
+  - name: demo.b.Tickets
+    source: demo.b.Ticket
+    consistency: read_your_writes
+    fields:
+      - {name: ticket_id, type: demo.b.TicketId}
+      - {name: state, type: demo.b.Ticket.State}
+      - {name: grant_id, type: demo.b.GrantId}
+      - {name: flag, type: Boolean}
+      - {name: note, type: String}
+bindings:
+  - id: refresh-on-ticket-moved
+    when: {event: demo.b.TicketMoved}
+    invoke: {command: demo.b.Refresh}
+    mapping: {ticket_id: event.ticket_id, grant_id: event.grant_id}
+    delivery: at_least_once
+    on_failure:
+      drop: [grant-missing, grant-closed]
+      retry: {except: [grant-missing, grant-closed]}
+";
+const REFRESH_REFUSALS: [&str; 2] = ["grant-missing", "grant-closed"];
+const TICKETS: &str = "demo.b.Tickets";
+
+fn refresh_id(outcome: &str) -> String {
+    format!("refresh-on-ticket-moved/binding/refusal/{outcome}")
+}
+
+fn rewritten_without_view() -> String {
+    let (before, rest) = REWRITTEN
+        .split_once("views:\n")
+        .expect("the fixture declares its views");
+    let (_, after) = rest
+        .split_once("bindings:\n")
+        .expect("the fixture declares its bindings after the views");
+    format!("{before}bindings:\n{after}")
+}
+
+fn index_of(steps: &[ScenarioStep], what: &str, found: impl Fn(&ScenarioStep) -> bool) -> usize {
+    steps
+        .iter()
+        .position(found)
+        .unwrap_or_else(|| panic!("no {what} in {steps:#?}"))
+}
+
+#[test]
+fn a_related_refusal_reads_back_the_rewritten_row() {
+    let ir = ir_of(REWRITTEN);
+    let synthesis = ess_conformance::synthesize::synthesize(&ir);
+    assert_eq!(
+        synthesis
+            .refusals
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>(),
+        Vec::<String>::new()
+    );
+    for outcome in REFRESH_REFUSALS {
+        let steps = &scenario(&synthesis.suite, &refresh_id(outcome)).steps;
+        let moved = steps
+            .iter()
+            .rposition(|step| {
+                matches!(step, ScenarioStep::ExecuteCommand { command, .. }
+                    if command.to_string() == "demo.b.MoveTicket")
+            })
+            .unwrap_or_else(|| panic!("{outcome} sends no MoveTicket: {steps:#?}"));
+        let snapshot = index_of(steps, "snapshot_subject", |step| {
+            matches!(step, ScenarioStep::SnapshotSubject { view, subject }
+                if view.to_string() == TICKETS && subject.keys().eq(["ticket_id"]))
+        });
+        let counted = index_of(steps, "expect_invocation", |step| {
+            matches!(step, ScenarioStep::ExpectInvocation { .. })
+        });
+        let unchanged = index_of(steps, "expect_subject_unchanged", |step| {
+            matches!(step, ScenarioStep::ExpectSubjectUnchanged { view }
+                if view.to_string() == TICKETS)
+        });
+        assert!(
+            moved < snapshot && snapshot < counted && counted < unchanged,
+            "{outcome}: the row is read after the trigger and again after the count: {steps:#?}"
+        );
+        for read in [snapshot - 1, unchanged - 1] {
+            assert!(
+                matches!(&steps[read], ScenarioStep::QueryView { view, .. }
+                    if view.to_string() == TICKETS),
+                "{outcome}: a query of the view precedes each read: {steps:#?}"
+            );
+        }
+    }
+    let statuses = run(&synthesis.suite, &Interpreted::for_model(ir));
+    for outcome in REFRESH_REFUSALS {
+        assert_eq!(
+            statuses[&refresh_id(outcome)],
+            Status::Passed,
+            "{outcome}: {statuses:#?}"
+        );
+    }
+    assert_eq!(not_passed(&statuses), Vec::<&str>::new(), "{statuses:#?}");
+
+    // Mutation: a target whose `Refresh` runs its writing branch where it should answer
+    // `grant-closed`, so `flag` is set. The read of the row fails that scenario; without it the
+    // scenario compares the refusal and the count, and the target passes.
+    let mutated = REWRITTEN.replacen(
+        "      - name: grant-closed\n        when_related: {via: input.grant_id, predicate: open == false}\n        error: demo.b.GrantUnavailable\n",
+        "",
+        1,
+    )
+    .replace(", grant-closed]", "]");
+    assert_ne!(
+        mutated, REWRITTEN,
+        "the fixture carries the branch to mutate"
+    );
+    let closed = refresh_id("grant-closed");
+    let statuses = run(&synthesis.suite, &Interpreted::for_model(ir_of(&mutated)));
+    assert_ne!(statuses[&closed], Status::Passed, "{statuses:#?}");
+    assert_eq!(statuses[&refresh_id("grant-missing")], Status::Passed);
+    let mut unread = synthesis.suite.clone();
+    let steps = &mut unread
+        .scenarios
+        .iter_mut()
+        .find(|(key, _)| key.to_string() == closed)
+        .expect("the scenario is in the suite")
+        .1
+        .steps;
+    steps.retain(|step| {
+        !matches!(
+            step,
+            ScenarioStep::QueryView { .. }
+                | ScenarioStep::SnapshotSubject { .. }
+                | ScenarioStep::ExpectSubjectUnchanged { .. }
+                | ScenarioStep::ExpectView { .. }
+        )
+    });
+    let statuses = run(&unread, &Interpreted::for_model(ir_of(&mutated)));
+    assert_eq!(
+        statuses[&closed],
+        Status::Passed,
+        "without the read the mutant passes: {statuses:#?}"
+    );
+}
+
+#[test]
+fn a_related_refusal_without_a_view_of_the_row_names_what_it_leaves_unobserved() {
+    let text = rewritten_without_view();
+    let ir = ir_of(&text);
+    let synthesis = ess_conformance::synthesize::synthesize(&ir);
+    for outcome in REFRESH_REFUSALS {
+        let id = refresh_id(outcome);
+        let steps = &scenario(&synthesis.suite, &id).steps;
+        assert!(
+            !steps.iter().any(|step| matches!(
+                step,
+                ScenarioStep::SnapshotSubject { .. } | ScenarioStep::ExpectSubjectUnchanged { .. }
+            )),
+            "{outcome}: no view shows the row: {steps:#?}"
+        );
+        let noted: Vec<&Vec<String>> = synthesis
+            .notes
+            .iter()
+            .filter_map(|note| match note {
+                ess_conformance::synthesize::Note::PartialObservation {
+                    scenario,
+                    unobserved,
+                } if scenario.to_string() == id => Some(unobserved),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            noted,
+            [&vec!["flag".to_owned(), "grant_id".into(), "note".into()]],
+            "{outcome}: {:#?}",
+            synthesis.notes
+        );
+    }
+    let statuses = run(&synthesis.suite, &Interpreted::for_model(ir));
+    for outcome in REFRESH_REFUSALS {
+        assert_eq!(statuses[&refresh_id(outcome)], Status::Passed, "{outcome}");
+    }
+}

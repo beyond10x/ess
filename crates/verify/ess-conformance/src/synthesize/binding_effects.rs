@@ -3497,6 +3497,170 @@ pub(super) fn dropped(
     Ok((steps, clipped(&text), source))
 }
 
+/// What a related refusal's scenario reads of the row the refused command rewrites
+/// (story:a-related-refusal-compares-the-rewritten-row).
+pub(super) struct RewrittenRead {
+    /// The row snapshotted, after the trigger and before the invocations are counted.
+    pub(super) before: Vec<ScenarioStep>,
+    /// The row required unchanged, and to hold what the trigger left in it, after the invocations
+    /// are counted.
+    pub(super) after: Vec<ScenarioStep>,
+    /// The view and the entity the read rests on.
+    pub(super) source: BTreeSet<EssSemanticRef>,
+    /// The stored fields no view publishes, so a refusal that changed them is not checked.
+    pub(super) unobserved: Vec<String>,
+}
+
+/// The read-back of a `when_related:` refusal of `invoked`, where `invoked` also rewrites a row —
+/// `updates:`, `moves:`, `preserves:` or `deletes:` the row the trigger itself acted on and the
+/// binding addresses. A refusal changes nothing, so the row the trigger left is the row the refusal
+/// leaves, as [`dropped`] requires of it; but the trigger rewrites that row too, so it is read
+/// after the trigger rather than before it. `None` where the invoked command addresses no row, the
+/// refusal is not decided by a related row, the row is not the trigger's own (arranged by no step
+/// of the refusal scenario), the trigger creates it (no instance of it is named before), or another
+/// binding the trigger sets off acts on it too, which the honest system lets change it.
+///
+/// Where an unfiltered read-your-writes view shows the row, it is read through that view and what
+/// it does not publish is returned as unobserved; with no such view nothing is read and every
+/// stored field is.
+pub(super) fn rewritten_read(
+    ir: &EssIr,
+    binding: &ResolvedBinding,
+    outcome: &ess_domain::command::OutcomeName,
+    invoked: &ResolvedCommand,
+    (published_by, trigger): super::Published<'_>,
+    invoke: &[ScenarioStep],
+) -> Option<RewrittenRead> {
+    let refusal = invoked
+        .outcomes
+        .iter()
+        .find(|candidate| &candidate.name == outcome)?;
+    if !matches!(refusal.condition, ResolvedCondition::Related { .. }) {
+        return None;
+    }
+    let Destination::SameRow { entity } = destination(ir, binding, published_by) else {
+        return None;
+    };
+    let instance = trigger.instance.clone()?;
+    if fan_out(ir, published_by, &Destination::SameRow { entity })
+        .iter()
+        .any(|other| other.name != binding.name)
+    {
+        return None;
+    }
+    let declared = ir.entity(entity);
+    let view = snapshot_view(ir, entity);
+    let unobserved = declared
+        .fields
+        .iter()
+        .filter(|field| {
+            view.is_none_or(|view| {
+                view.field(&field.name)
+                    .is_none_or(|shown| shown.type_ref != field.type_ref)
+            })
+        })
+        .map(|field| field.name.clone())
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect();
+    let Some(view) = view else {
+        return Some(RewrittenRead {
+            before: Vec::new(),
+            after: Vec::new(),
+            source: BTreeSet::new(),
+            unobserved,
+        });
+    };
+    let name = ViewRef::new(view.name.clone());
+    let read = || ScenarioStep::QueryView {
+        view: name.clone(),
+        params: BTreeMap::new(),
+    };
+    let mut after = vec![
+        read(),
+        ScenarioStep::ExpectSubjectUnchanged { view: name.clone() },
+    ];
+    // A target that runs the binding while it handles the trigger has written the row by the time
+    // the snapshot above is read, and "unchanged" holds for what it wrote. So the row is also
+    // required to hold what the arrangement and the trigger left in it.
+    after.push(ScenarioStep::ExpectView {
+        view: name.clone(),
+        expectation: ViewExpectation::Contains {
+            fields: left_by_trigger(
+                ir,
+                (entity, view),
+                (published_by, trigger),
+                invoke,
+                ScenarioValue::instance(instance.clone()),
+            ),
+        },
+    });
+    Some(RewrittenRead {
+        before: vec![
+            read(),
+            ScenarioStep::SnapshotSubject {
+                view: name.clone(),
+                subject: [(
+                    declared.identity.name.clone(),
+                    ScenarioValue::instance(instance),
+                )]
+                .into_iter()
+                .collect(),
+            },
+        ],
+        after,
+        source: [name.into(), EntityRef::from(entity).into()]
+            .into_iter()
+            .collect(),
+        unobserved,
+    })
+}
+
+/// What `view` shows of the row `trigger` acted on once it has run, where the scenario determined
+/// it: its identity, its state, the fields the trigger does not write as the arrangement held them,
+/// and the ones it writes from an input as `invoke` sent them.
+fn left_by_trigger(
+    ir: &EssIr,
+    (entity, view): (&EntityHandle, &ResolvedView),
+    (published_by, trigger): super::Published<'_>,
+    invoke: &[ScenarioStep],
+    identity: ScenarioValue,
+) -> BTreeMap<String, ScenarioValue> {
+    let sent = invoke.iter().rev().find_map(|step| match step {
+        ScenarioStep::ExecuteCommand { input, .. } => Some(input),
+        _ => None,
+    });
+    let mut left = trigger.before_settled.clone();
+    for set in &published_by.sets {
+        left.remove(&set.target);
+        let sent_as = match (&set.value, &set.conversion) {
+            (ResolvedPayloadValue::InputField { field, .. }, None) => {
+                sent.and_then(|input| super::supplied_at(input, field))
+            }
+            _ => None,
+        };
+        if let Some(value) = sent_as {
+            left.insert(
+                set.target.clone(),
+                super::Determined {
+                    value,
+                    type_ref: set.target_type.clone(),
+                },
+            );
+        }
+    }
+    let mut row = BTreeMap::from([(ir.entity(entity).identity.name.clone(), identity)]);
+    row.extend(
+        trigger
+            .after
+            .as_ref()
+            .and_then(|state| super::lifecycle_state(ir, entity, view, state)),
+    );
+    let mut row = super::shown(view, row, &left);
+    row.retain(|_, value| !matches!(value, ScenarioValue::Literal { value: Node::Null }));
+    row
+}
+
 /// What the drop scenario requires of the row besides one refused attempt, where another binding
 /// the trigger sets off acts on it too (adversary pass 1, F1): `None` where none does, so the row
 /// stays exactly as the pre-trigger snapshot showed it; otherwise the eventual read of the row where
