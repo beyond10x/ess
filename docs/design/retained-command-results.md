@@ -117,8 +117,10 @@ values. A Rust target adapter reports a token with
 `ess_primitives::node::Node::from_json_exact` (or `Number::from_json_token`):
 `Deserialize` reads a non-integer through binary64 before ESS sees its digits, so
 a `Node` built that way is the binary64 it was read as. An exact number is
-compared by its digits, of any size within the bound, and written as the binary64
-a run-time number has always been written as, so no byte moves. The bound is the
+compared by its digits, of any size within the bound. An integer within an `i64`
+is that integer, written as the integer token; any other exact number is written
+as the binary64 a run-time number has always been written as, so no byte of an
+existing suite, report or document moves. The bound is the
 one Go and TypeScript put on a returned number: a token of at most 512
 characters, in the JSON grammar, with an exponent within ±512 and a magnitude
 within binary64. `Number::from_json_token` is `None` for anything else and

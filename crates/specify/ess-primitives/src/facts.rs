@@ -581,10 +581,11 @@ impl Number {
     /// `1` and `1.0000000000000000000000000000000000000001`, and `0` and `1e-400`, are two values
     /// too, and trailing zeroes never change one.
     ///
-    /// **Nothing else moves.** An integer in 64 bits and a spelling of a binary64's own shortest
-    /// decimal read as they always did. A token the write would collapse compares by its digits
-    /// and still writes as its binary64: the run-time writer half of decimal serialization is not
-    /// built.
+    /// **Nothing else moves.** A spelling of a binary64's own shortest decimal reads as it always
+    /// did. An integer within an `i64` is that integer whatever its spelling (`9007199254740993.0`,
+    /// `9.223372036854775807e18`): it writes as the integer token and reads back as itself. Any
+    /// other token the write would collapse compares by its digits and still writes as its
+    /// binary64: the run-time writer half of decimal serialization is not built.
     ///
     /// **The bound is the Go and TypeScript bound.** A token is the JSON number grammar and no
     /// other (no leading `+`, no leading zero), at most 512 characters, with an exponent within
@@ -620,6 +621,14 @@ impl Number {
             || Dec::of_binary64(binary),
             |(units, scale)| Dec::of_exact(units, scale),
         );
+        // An integer within an `i64` is that integer, which writes as the integer token and reads
+        // back as itself, so `is_integral` holds on both sides of the write: an `Observed` would
+        // answer as the integer and write a binary64 that is another one.
+        if spelled != carried {
+            if let Some(integer) = spelled.as_i64() {
+                return Some(Self::from(integer));
+            }
+        }
         Some(Self(if spelled == carried {
             Repr::of_binary64(binary)
         } else {

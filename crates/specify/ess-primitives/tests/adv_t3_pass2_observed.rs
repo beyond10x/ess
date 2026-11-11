@@ -107,3 +107,105 @@ fn adv_t3p2_order_holds_at_the_binary64_edges() {
     assert!(wrong.is_empty(), "{wrong:#?}");
     assert!(Number::from_json_token("1.79769313486231581e308").is_none());
 }
+
+/// Pass 3. `as_i64` / `is_integral` at both ends of `i64`, one past each, negative and zero, for
+/// tokens a target may spell with a fraction or an exponent: the answers Go (`big.Rat` `IsInt &&
+/// IsInt64`) and TypeScript (`exactInteger`) give, and `==` with the `Exact` integer.
+#[test]
+fn adv_t3p3_observed_integers_at_the_i64_edges_answer_as_go_and_typescript() {
+    let cases: [(&str, Option<i64>); 20] = [
+        ("9223372036854775807.0", Some(i64::MAX)),
+        ("9223372036854775807e0", Some(i64::MAX)),
+        ("922337203685477580.7e1", Some(i64::MAX)),
+        ("0.9223372036854775807e19", Some(i64::MAX)),
+        ("9223372036854775808.0", None),
+        ("9223372036854775806.5", None),
+        ("-9223372036854775808.0", Some(i64::MIN)),
+        ("-9223372036854775808e0", Some(i64::MIN)),
+        ("-9223372036854775807.0", Some(i64::MIN + 1)),
+        ("-9223372036854775809.0", None),
+        ("-9007199254740993.0", Some(-9_007_199_254_740_993)),
+        ("-9.007199254740993e15", Some(-9_007_199_254_740_993)),
+        ("-0.0", Some(0)),
+        ("-0e5", Some(0)),
+        ("1e18", Some(1_000_000_000_000_000_000)),
+        ("1000000000000000000.5", None),
+        ("1.0000000000000000001e18", None),
+        ("10000000000000000000.0", None),
+        ("1e-400", None),
+        ("-1e-400", None),
+    ];
+    let mut wrong = Vec::new();
+    for (token, expected) in cases {
+        let Some(read) = Number::from_json_token(token) else {
+            wrong.push(format!("{token}: refused"));
+            continue;
+        };
+        if read.as_i64() != expected || read.is_integral() != expected.is_some() {
+            wrong.push(format!(
+                "{token}: as_i64 = {:?}, is_integral = {}, expected {expected:?}",
+                read.as_i64(),
+                read.is_integral()
+            ));
+        }
+        if let Some(integer) = expected {
+            if read != Number::from(integer) {
+                wrong.push(format!("{token}: not equal to {integer}"));
+            }
+        }
+    }
+    assert!(wrong.is_empty(), "{wrong:#?}");
+}
+
+/// Pass 3. The admission half of the round-trip law (`docs/design/review-primitive-semantics.md`,
+/// "the one with teeth"): `is_integral(read(write(n))) == is_integral(n)`. Since pass 2 an
+/// `Observed` `9223372036854775807.0` is `is_integral` (admitted as a `Primitive::Integer`), and
+/// it still writes its binary64, `2^63`, which reads back as `2^63`: not an `i64`, refused. The
+/// failure the `Deserialize` doc names ("admitted, written, and then refused").
+#[test]
+fn adv_t3p3_an_admitted_observed_integer_is_still_admitted_after_its_write() {
+    let mut wrong = Vec::new();
+    for token in [
+        "9223372036854775807.0",
+        "9223372036854775807e0",
+        "0.9223372036854775807e19",
+    ] {
+        let read = Number::from_json_token(token).unwrap();
+        let written = serde_json::to_string(&read).unwrap();
+        let back: Number = serde_json::from_str(&written).unwrap();
+        if back.is_integral() != read.is_integral() {
+            wrong.push(format!(
+                "{token}: is_integral {} (as_i64 {:?}), written {written}, read back is_integral {}",
+                read.is_integral(),
+                read.as_i64(),
+                back.is_integral()
+            ));
+        }
+    }
+    assert!(wrong.is_empty(), "{wrong:#?}");
+}
+
+/// Pass 3. The value half for the integer row of the round-trip law: "an integer binary64 does
+/// not carry (`i64::MAX`, `2^53 + 1`) | the integer token | the same integer". An `Observed`
+/// integer now answers `as_i64` as that integer, and writes a different one.
+#[test]
+fn adv_t3p3_an_observed_integer_writes_the_integer_it_answers() {
+    let mut wrong = Vec::new();
+    for token in [
+        "9007199254740993.0",
+        "-9007199254740993.0",
+        "9223372036854775807.0",
+    ] {
+        let read = Number::from_json_token(token).unwrap();
+        let written = serde_json::to_string(&read).unwrap();
+        let back: Number = serde_json::from_str(&written).unwrap();
+        if back != read || back.as_i64() != read.as_i64() {
+            wrong.push(format!(
+                "{token}: as_i64 {:?}, written {written}, read back as_i64 {:?}",
+                read.as_i64(),
+                back.as_i64()
+            ));
+        }
+    }
+    assert!(wrong.is_empty(), "{wrong:#?}");
+}
