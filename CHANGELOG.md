@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- A page header takes an optional `badge: {text, tone}` (additive in `ess-ui/1`). The generated React header draws the total as a locale-grouped count named `<total> <section title, else rows>`, each `live` channel as a status word (`Live`, `Connecting`, `Reconnecting`, `Stale`, `Closed`) titled with the channel, and the switch as one segmented control that lists the current page and marks it `aria-current="page"`. Navigation links mark the current page, and a page without a header draws its title. The terminal draws the badge after the title, `● <lifecycle>` for live channels, and marks the current switch entry with `▸`. A refused header or badge is reported at its own path.
+
 ### Changed
 
 - `ess verify conform mutate`: an `order-flip` on a view key whose tie synthesis cannot arrange (a key after the identity, or behind a key no creating command writes from its input) is now `unwitnessed` (`ESS-MUTATE-004`, exit 3) and lists the baseline's standing refusal under `baseline_refusals`, instead of `survived` (exit 1); a scenario that kills it still wins. No format changes (`ess-mutation-report` and `ess-mutation-manifest` carry the refusal already) (beyond10x/ess#708).
