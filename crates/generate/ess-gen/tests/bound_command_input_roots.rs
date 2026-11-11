@@ -338,3 +338,137 @@ fn a_bound_route_that_publishes_no_result_has_no_response_root() {
     );
     assert!(ModelTypes::bound_command_roots(&ir, None).contains(root));
 }
+
+// Adversary pass 1 (story:bound-response-root-follows-the-published-result): a command the binding
+// leaves answered by the envelope, whose outcome carries no result, is published by the bound
+// document exactly as by the unbound one.
+
+/// `tokens.auth.Issue` as in [`TOKENS`], and `tokens.auth.Revoke`, which declares a response
+/// whose only outcome neither returns nor is replayed: no document publishes
+/// `tokens.auth.Revoke.Result`, bound or not.
+const TOKENS_AND_REVOKE: &str = "format: ess/27
+system: tokens
+version: v1
+domain: tokens.auth
+actors:
+  - {name: tokens.auth.Client, may: [tokens.auth.Issue, tokens.auth.Revoke]}
+commands:
+  - name: tokens.auth.Issue
+    input: [{name: subject, type: String}]
+    response:
+      - {name: token, type: String}
+      - {name: expires_in, type: Integer}
+    outcomes:
+      - {name: issued, returns: true}
+  - name: tokens.auth.Revoke
+    input: [{name: token, type: String}]
+    response:
+      - {name: revoked, type: Boolean}
+    outcomes:
+      - name: revoked
+        emits: [tokens.auth.Revoked]
+        payload:
+          tokens.auth.Revoked: {token: input.token}
+events:
+  - name: tokens.auth.Revoked
+    fields:
+      - {name: token, type: String}
+components:
+  - component: auth
+    owns: {domains: [tokens.auth]}
+    accepts: {commands: [tokens.auth.Issue, tokens.auth.Revoke]}
+    publishes: {events: [tokens.auth.Revoked]}
+    reached_by: network
+";
+
+/// `tokens.auth.Revoke` routed with no answer listed: every outcome keeps the envelope.
+const REVOKE_ROUTE_NO_ANSWERS: &str = "  - command: tokens.auth.Revoke
+    method: post
+    path: /revoke
+";
+
+fn tokens_and_revoke() -> EssIr {
+    let mut sources = SourceMap::new();
+    sources.insert(Source::DOCUMENT, TOKENS_AND_REVOKE.to_owned());
+    let specification = Specification::assemble([(
+        Source::document(),
+        RawSpecFile::parse(TOKENS_AND_REVOKE).unwrap(),
+    )])
+    .unwrap();
+    compile(&specification, &sources).unwrap()
+}
+
+fn tokens_binding(ir: &EssIr, routes: &str) -> Binding {
+    let text = format!(
+        "type: ess-http/1\nspecification:\n  system: tokens\n  version: v1\n  source_digest: sha256:{}\n{routes}",
+        ir.source_digest()
+    );
+    let spec = ess_http::HttpSpec::from_yaml(&text).expect("parses");
+    let http = ess_http::compile(&spec, ir, &derived(ir))
+        .unwrap_or_else(|diagnostics| panic!("compiles: {diagnostics}"));
+    Binding::new(http).expect("every route has a path")
+}
+
+fn unbound_published(ir: &EssIr) -> Value {
+    let component = ir.components().values().next().expect("one component");
+    let document: Value =
+        serde_json::from_str(&ess_gen::openapi::bound_json(ir, component, None)).expect("JSON");
+    document["components"]["schemas"].clone()
+}
+
+/// The bindings under which `tokens.auth.Revoke` is answered as without one: not routed, and
+/// routed with no answer listed.
+fn envelope_bindings(ir: &EssIr) -> [(&'static str, Binding); 2] {
+    [
+        ("unrouted", tokens_binding(ir, TOKEN_ROUTE)),
+        (
+            "routed, no answer listed",
+            tokens_binding(ir, &format!("{TOKEN_ROUTE}{REVOKE_ROUTE_NO_ANSWERS}")),
+        ),
+    ]
+}
+
+#[test]
+fn adversary_a_command_answered_by_the_envelope_keeps_its_response_root_under_a_binding() {
+    let ir = tokens_and_revoke();
+    let root = "tokens.auth.Revoke.response";
+    let schema = "tokens.auth.Revoke.Result";
+    assert!(
+        ModelTypes::bound_command_roots(&ir, None).contains(root),
+        "without a binding the root is offered"
+    );
+    let unbound = ModelTypes::select(&ir, &roots(&[root])).expect("selects unbound");
+    for (case, binding) in envelope_bindings(&ir) {
+        assert_eq!(
+            published(&ir, &binding).get(schema).is_some(),
+            unbound_published(&ir).get(schema).is_some(),
+            "{case}: the binding changed whether {schema} is published"
+        );
+        assert!(
+            ModelTypes::bound_command_roots(&ir, Some(&binding)).contains(root),
+            "{case}: the bound document publishes {root}'s command as the unbound one does, yet \
+             --all-commands --http drops the root that --all-commands offers"
+        );
+        let bound = ModelTypes::select_bound(&ir, &roots(&[root]), Some(&binding))
+            .unwrap_or_else(|errors| panic!("{case}: refused: {errors:?}"));
+        assert_eq!(bound.to_json(), unbound.to_json(), "{case}");
+    }
+}
+
+#[test]
+fn adversary_a_refused_response_root_does_not_blame_answers_the_route_never_lists() {
+    let ir = tokens_and_revoke();
+    let root = "tokens.auth.Revoke.response";
+    for (case, binding) in envelope_bindings(&ir) {
+        if let Err(errors) = ModelTypes::select_bound(&ir, &roots(&[root]), Some(&binding)) {
+            assert!(
+                !errors[0]
+                    .detail
+                    .contains("every outcome answers a field, an error or nothing"),
+                "{case}: tokens.auth.Revoke's only outcome is answered by the envelope, yet the \
+                 refusal says: {}",
+                errors[0].detail
+            );
+        }
+    }
+}

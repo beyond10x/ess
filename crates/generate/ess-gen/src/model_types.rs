@@ -427,13 +427,16 @@ fn body_root<'a>(
     }))
 }
 
-/// Whether the `OpenAPI` document projected under `binding` publishes `{command}.Result`, the
-/// schema the `<command>.response` root equals (`openapi.rs`, `publishes_result`).
+/// Whether the `<command>.response` root stands under `binding`: refused only where the route's
+/// listed answers remove a `{command}.Result` the unbound document publishes (`openapi.rs`,
+/// `publishes_result`). A command whose response no outcome carries keeps its root, as without a
+/// binding.
 fn bound_response(ir: &EssIr, command: &ResolvedCommand, binding: &Binding) -> bool {
     let route = binding
         .ir()
         .route(&ess_http::Operation::Command(command.name.to_string()));
     crate::openapi::publishes_result(ir, command, route)
+        || !crate::openapi::publishes_result(ir, command, None)
 }
 
 /// `command`'s request body as the `OpenAPI` document projected under `binding` publishes it as
