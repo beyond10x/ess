@@ -65,7 +65,7 @@ pub(crate) fn view(ir: &EssIr, view: &ResolvedView) -> Result<(), String> {
                  that a generated view query does not read, in `filter:`"
             ));
         }
-        determined::supported(ir, &Env::Row(entity), filter)
+        determined::supported(ir, &Env::Row(entity, &view.params), filter)
             .map_err(|construct| format!("{construct}, in `filter:`"))?;
     }
     view.aggregation.as_ref().map_or_else(
@@ -75,10 +75,12 @@ pub(crate) fn view(ir: &EssIr, view: &ResolvedView) -> Result<(), String> {
 }
 
 /// `Ok` where the query applies every parameter the view declares: a view without one, or one each
-/// of whose parameters is a `String`, or a newtype of one, `Optional` admitted, that its row-level
-/// `filter:` reads as a string operator's operand, `{param: <name>}` (beyond10x/ess#200, final
-/// review decision 3). The route decodes the query string into the arguments the query takes, so
-/// a parameter read any other way — an equality, a measure's condition — keeps the query owed.
+/// of whose parameters its row-level `filter:` reads either as a string operator's operand,
+/// `{param: <name>}`, of a `String` or a newtype of one, `Optional` admitted (beyond10x/ess#200,
+/// final review decision 3), or as a comparison operand, `<field> == param.<name>`, of a required
+/// scalar the query string carries. The route decodes the query string into the arguments the
+/// query takes, so a parameter read any other way — a measure's condition, a paged view's page —
+/// keeps the query owed.
 fn params(ir: &EssIr, view: &ResolvedView) -> Result<(), String> {
     if view.params.is_empty() {
         return Ok(());
@@ -91,10 +93,25 @@ fn params(ir: &EssIr, view: &ResolvedView) -> Result<(), String> {
     if view.aggregation.is_some() {
         return Err(unapplied());
     }
+    let paths = filter.fact_paths();
     for param in &view.params {
-        if !filter.reads_text_parameter(&param.name)
-            || leaf(ir, &param.type_ref) != Some(Primitive::String)
-        {
+        let applied = if filter.reads_text_parameter(&param.name) {
+            leaf(ir, &param.type_ref) == Some(Primitive::String)
+        } else {
+            // A comparison with a stored field, read as the field is, of a type one query value
+            // carries. A required parameter only: `determined::resolve` refuses an optional one,
+            // which the interpreted target refuses a read that leaves out.
+            query_scalar(ir, &param.type_ref).is_some()
+                && paths.iter().any(|path| {
+                    matches!(
+                        path.segments(),
+                        [namespace, name, ..]
+                            if namespace == ess_domain::view::ViewSpec::PARAM
+                                && *name == param.name
+                    )
+                })
+        };
+        if !applied {
             return Err(unapplied());
         }
     }
@@ -131,7 +148,7 @@ fn aggregated(
             .map_err(|construct| format!("{construct}, in the field `{name}`"))?;
         // A measure's condition (beyond10x/ess#363) is rendered as a filter is, over one stored row.
         if let Some(condition) = &aggregate.r#where {
-            determined::supported(ir, &Env::Row(entity), condition).map_err(|construct| {
+            determined::supported(ir, &Env::Row(entity, &[]), condition).map_err(|construct| {
                 format!("{construct}, in the condition of the field `{name}`")
             })?;
         }
@@ -151,14 +168,7 @@ fn projected(ir: &EssIr, view: &ResolvedView, entity: &ResolvedEntity) -> Result
         }
     }
     for ranking in &view.order_by {
-        let field = view_field(view, &ranking.field)?;
-        if field.type_ref.is_optional() {
-            return Err(format!(
-                "an order over the optional field `{}`, which has no order against a \
-                     present value",
-                ranking.field
-            ));
-        }
+        view_field(view, &ranking.field)?;
         order(ir, entity, &ranking.field)?;
     }
     Ok(())
@@ -323,7 +333,7 @@ fn source_field(entity: &ResolvedEntity, name: &str) -> Result<ResolvedTypeRef, 
 /// One field of a stored row, resolved as a filter reads it.
 pub(crate) fn resolve(ir: &EssIr, entity: &ResolvedEntity, name: &str) -> Result<Resolved, String> {
     let path = FactPath::new(name).map_err(|error| error.to_string())?;
-    determined::resolve(ir, &Env::Row(entity), &path)
+    determined::resolve(ir, &Env::Row(entity, &[]), &path)
 }
 
 /// How the values an aggregate or an order reads compare.
@@ -365,8 +375,8 @@ pub(crate) fn leaf(ir: &EssIr, type_ref: &ResolvedTypeRef) -> Option<Primitive> 
 }
 
 /// `Ok` where the order key `name` ranks as the runner compares the rendered rows: a number by its
-/// value, text, an identity, an enum or `state` by the text it is rendered as, a `Boolean` false
-/// first.
+/// value, a `Timestamp` by the instant it names, text, an identity, an enum or `state` by the text
+/// it is rendered as, a `Boolean` false first; an absent value ranks below every present one.
 fn order(ir: &EssIr, entity: &ResolvedEntity, name: &str) -> Result<(), String> {
     let resolved = resolve(ir, entity, name)?;
     // A lifecycle state (`ess/32`) is a variant of `<Entity>.State`, the type at the root, and
@@ -394,11 +404,7 @@ fn order(ir: &EssIr, entity: &ResolvedEntity, name: &str) -> Result<(), String> 
         }
     }
     match values(ir, entity, name) {
-        Some(Values::Numeric | Values::Text | Values::Other) => Ok(()),
-        Some(Values::Instant) => Err(format!(
-            "an order over the `Timestamp` field `{name}`, which the suite ranks by its instant \
-             and a generated query does not"
-        )),
+        Some(Values::Numeric | Values::Text | Values::Instant | Values::Other) => Ok(()),
         None => Err(format!(
             "an order over the field `{name}`, a value the generated query does not rank"
         )),

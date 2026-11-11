@@ -99,11 +99,20 @@ fn t200_every_query_and_behaviour_is_generated_for_rust_and_go() {
 }
 
 #[test]
-fn t200_a_parameter_read_another_way_keeps_the_query_owed() {
-    let owed = MODEL.replace(
-        "filter: {name: {starts_with: {param: q}}}",
-        "filter: {all: [{name: {starts_with: {param: q}}}, name == param.q]}",
-    );
+fn t200_an_optional_parameter_read_another_way_keeps_the_query_owed() {
+    // A parameter the read leaves out hides no row where a string operator tests it, and refuses
+    // the read where an equality compares with it, as the interpreted target does: the equality
+    // keeps the query owed, while a required parameter an equality reads too is applied
+    // (`generated_view_queries.rs`).
+    let owed = MODEL
+        .replace(
+            "filter: {name: {starts_with: {param: q}}}",
+            "filter: {all: [{name: {starts_with: {param: q}}}, name == param.q]}",
+        )
+        .replace(
+            "params: [{name: q, type: String}]",
+            "params: [{name: q, type: Optional<String>}]",
+        );
     assert_ne!(owed, MODEL);
     let ir = compile_text(&owed);
     for target in [Target::Rust, Target::Go] {
@@ -115,7 +124,7 @@ fn t200_a_parameter_read_another_way_keeps_the_query_owed() {
                     .disposition_of(CapabilityKind::ViewQuery, "directory.people.ByName"),
                 Some(SynthesisDisposition::Obligation { .. })
             ),
-            "{target:?}: an equality with a parameter is not applied by a generated query"
+            "{target:?}: an equality with an optional parameter is not applied by a generated query"
         );
         assert_eq!(
             synthesis

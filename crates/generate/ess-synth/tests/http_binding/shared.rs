@@ -400,6 +400,9 @@ impl ItemStorage for Ports {
     fn delete(&mut self, identity: &items::ItemId) {
         self.items.retain(|row| &row.data.item_id != identity);
     }
+    fn list(&self) -> Vec<items::ItemSnapshot> {
+        self.items.clone()
+    }
 }
 
 impl PlaceBehavior for Ports {

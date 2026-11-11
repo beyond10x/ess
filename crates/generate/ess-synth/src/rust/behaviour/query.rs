@@ -17,7 +17,7 @@ use ess_domain::name::QualifiedName;
 use ess_domain::view::{AggregateFunction, Direction};
 
 use super::{declared_path, snapshot_path, Bounds, Guards, Layout, Uses};
-use crate::determined::{Env, Kind};
+use crate::determined::{Env, Kind, Step};
 use crate::view_query::{self, Values};
 
 /// The query's whole impl block.
@@ -103,7 +103,9 @@ impl Query<'_> {
         let mut out = format!("        let {mutable}{listed} = {storage}::list(&self.ports);\n");
         if let Some(filter) = &view.filter {
             let entity = self.entity;
-            let truth = self.guards("held").predicate(&Env::Row(entity), filter);
+            let truth = self
+                .guards("held")
+                .predicate(&Env::Row(entity, &view.params), filter);
             let _ = writeln!(
                 out,
                 "        // `filter:` shows a row where it holds; false or unknown hides it.\n        \
@@ -132,24 +134,65 @@ impl Query<'_> {
         for ranking in &self.view.order_by {
             let resolved = view_query::resolve(self.ir, self.entity, &ranking.field)
                 .expect("the plan admitted only keys that resolve");
-            let left = self.guards("left").read(&resolved);
-            let right = self.guards("right").read(&resolved);
-            let compared = match view_query::values(self.ir, self.entity, &ranking.field) {
+            let optional = resolved
+                .steps
+                .iter()
+                .any(|step| matches!(step, Step::Optional));
+            let values = view_query::values(self.ir, self.entity, &ranking.field);
+            let (left, right) = if values == Some(Values::Instant) {
+                (
+                    self.guards("left").text(&resolved),
+                    self.guards("right").text(&resolved),
+                )
+            } else {
+                (
+                    self.guards("left").read(&resolved),
+                    self.guards("right").read(&resolved),
+                )
+            };
+            // An absent value ranks below every present one, as `Option` orders; two present ones
+            // by the helper.
+            let present = |helper: &str| {
+                format!(
+                    "(match ({left}, {right}) {{ (Some(left), Some(right)) => {helper}(&left, \
+                     &right), (left, right) => left.is_some().cmp(&right.is_some()) }})"
+                )
+            };
+            let compared = match values {
+                Some(Values::Numeric) if optional => {
+                    self.uses.helpers.insert("number_order");
+                    present("number_order")
+                }
                 Some(Values::Numeric) => {
                     self.uses.helpers.insert("number_order");
                     format!(
                         "number_order(&{left}.unwrap_or_default(), &{right}.unwrap_or_default())"
                     )
                 }
+                Some(Values::Instant) => {
+                    self.uses.helpers.insert("instant_order");
+                    self.uses.helpers.insert("instant");
+                    present("instant_order")
+                }
                 _ => format!("{left}.cmp(&{right})"),
             };
-            keys.push(match ranking.direction {
-                Direction::Ascending => compared,
-                Direction::Descending => format!("{compared}.reverse()"),
+            let matched = matches!(
+                (values, optional),
+                (Some(Values::Instant), _) | (Some(Values::Numeric), true)
+            );
+            // A `match` key stands bare as a closure body, which a parenthesis would only
+            // clutter (`unused_parens`), and is parenthesized where a method follows it.
+            keys.push(match (ranking.direction, matched) {
+                (Direction::Ascending, true) => (compared[1..compared.len() - 1].to_owned(), true),
+                (Direction::Ascending, false) => (compared, false),
+                (Direction::Descending, _) => (format!("{compared}.reverse()"), false),
             });
         }
-        let mut ordering = keys.remove(0);
-        for key in keys {
+        let (mut ordering, bare) = keys.remove(0);
+        if bare && !keys.is_empty() {
+            ordering = format!("({ordering})");
+        }
+        for (key, _) in keys {
             let _ = write!(ordering, ".then_with(|| {key})");
         }
         ordering
@@ -291,7 +334,9 @@ impl Query<'_> {
         self.uses.helpers.insert("unrepresentable");
         let source = self.view.name.to_string();
         let entity = self.entity;
-        let truth = self.guards("held").predicate(&Env::Row(entity), condition);
+        let truth = self
+            .guards("held")
+            .predicate(&Env::Row(entity, &[]), condition);
         format!(
             "{{\n{indent}    // `where:`: this measure reads only the rows its condition holds for.\n{indent}    \
              let mut selected = Vec::new();\n{indent}    for held in members.iter() {{\n{indent}        \

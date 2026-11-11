@@ -315,14 +315,17 @@ A view whose rows the specification fully determines gets a generated query in t
 and `state`, a `filter:`, an `order_by:`, and an aggregation with `group_by`, `count`,
 `count_distinct`, `sum`, `min`, `max` and `avg`. It reads through the storage port's `list`, which
 answers every stored row in the order the store keeps them; that is the order an unordered view
-answers in. A filter keeps a row where it holds and drops it where it is false or unknown. An
-aggregation follows the conformance suite: an absent group key is one group, a `skip_absent`
+answers in. A filter keeps a row where it holds and drops it where it is false or unknown; a
+parameter the filter compares with a stored field (`title == param.title`) is applied as the
+interpreted target applies it, and an order ranks an absent value below every present one and a
+`Timestamp` by the instant it names. An aggregation follows the conformance suite: an absent group key is one group, a `skip_absent`
 aggregate skips absent values, and `avg` is rounded half-even to six fractional digits.
 
 A view's query stays an obligation, and the plan names the construct as the reason, when the view
-reads a parameter or pages; when its `filter:` uses a guard a command's behaviour could not; when a
-field is not one its source holds at that type; when it orders by an optional field, a `Timestamp`,
-an enum whose wire spellings are not its variant names, or a value with no order; or when a group
+reads a parameter any other way than a comparison with a stored field, or compares with an
+optional one, or pages; when its `filter:` uses a guard a command's behaviour could not; when a
+field is not one its source holds at that type; when it orders by an enum whose wire spellings are
+not its variant names, or a value with no order; or when a group
 key or an aggregate reads a value the query does not compare, or an aggregate is declared at
 another type than it computes. The Go target generates the same queries on its `Generated`, over
 the storage interface's `List`, with exact decimal sums and means. See the

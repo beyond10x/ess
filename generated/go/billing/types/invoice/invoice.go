@@ -877,16 +877,15 @@ type InvoiceByIdQuery interface {
 	InvoiceById() ([]InvoiceById, *obligation.UnmetObligation)
 }
 
-// OutstandingInvoicesQuery is the query `billing.invoice.OutstandingInvoices` — an implementation obligation.
+// OutstandingInvoicesQuery is the query `billing.invoice.OutstandingInvoices` — generated.
 //
-// Why it is not generated: kept an obligation by an order over the optional field `issued_at`, which has no order against a present value.
-//
-// Contract: a query answering `billing.invoice.OutstandingInvoices` with rows projected from `billing.invoice.Invoice` at `read_your_writes` consistency, containing instances where `state == Issued`.
+// The specification fully determines it: `behaviour.Generated` implements it over the
+// storage and context ports. Implement it yourself to replace that behaviour.
 type OutstandingInvoicesQuery interface {
 	// OutstandingInvoices serves `billing.invoice.OutstandingInvoices` rows at the view's declared consistency.
 	//
-	// The second result is the typed refusal of an obligation nothing has satisfied; a
-	// satisfying implementation never returns one.
+	// The second result is the typed refusal of a request the model declares no outcome
+	// for.
 	OutstandingInvoices() ([]OutstandingInvoices, *obligation.UnmetObligation)
 }
 
@@ -905,9 +904,4 @@ func (Unimplemented) CreateInvoice(input CreateInvoice) (CreateInvoiceOutcome, *
 // PayInvoice refuses: the behaviour `billing.invoice.PayInvoice` — an implementation obligation.
 func (Unimplemented) PayInvoice(input PayInvoice) (PayInvoiceOutcome, *obligation.UnmetObligation) {
 	return nil, &obligation.UnmetObligation{Capability: "command behaviour", Source: "billing.invoice.PayInvoice"}
-}
-
-// OutstandingInvoices refuses: the query `billing.invoice.OutstandingInvoices` — an implementation obligation.
-func (Unimplemented) OutstandingInvoices() ([]OutstandingInvoices, *obligation.UnmetObligation) {
-	return nil, &obligation.UnmetObligation{Capability: "view query", Source: "billing.invoice.OutstandingInvoices"}
 }

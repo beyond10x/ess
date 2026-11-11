@@ -60,6 +60,10 @@ func (p *ports) Put(snapshot items.ItemSnapshot) {
 	p.rows = append(p.rows, snapshot)
 }
 
+func (p *ports) List() []items.ItemSnapshot {
+	return append([]items.ItemSnapshot(nil), p.rows...)
+}
+
 func (p *ports) Delete(identity items.ItemId) {
 	kept := p.rows[:0]
 	for _, row := range p.rows {

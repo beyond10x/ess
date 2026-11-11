@@ -21,7 +21,7 @@ use ess_compiler::ir::EssIr;
 use ess_compiler::resolve::compile_locating;
 use ess_compiler::source::SourceMap;
 use ess_conformance::report::Status;
-use ess_conformance::scenario::{CommandRef, ErrorRef, EventRef, OutcomeRef};
+use ess_conformance::scenario::{ActorRef, CommandRef, ErrorRef, EventRef, OutcomeRef};
 use ess_conformance::target::{
     ConformanceTarget, DeclaredErrorValue, EventObservationRequest, ExternalOutcomeControl,
     ImplementationIdentity, ObservedEvent, RedeliveryRequest, ScenarioContext,
@@ -130,24 +130,26 @@ fn with_view(view: &str) -> String {
 fn a_view_construct_the_generated_query_does_not_reproduce_keeps_the_query_owed() {
     let cases = [
         Kept {
-            view: "  - name: ledger.work.ForOwner
+            view: "  - name: ledger.work.KindsFor
     source: ledger.work.Task
     params: [{name: owner, type: String}]
     filter: owner == param.owner
+    group_by: [kind]
     fields:
-      - {name: task_id, type: ledger.work.TaskId}
+      - {name: kind, type: ledger.work.Kind}
+      - {name: tasks, type: Integer, aggregate: {count: {}}}
 ",
             names: "a view parameter (`params:`)",
         },
         Kept {
-            view: "  - name: ledger.work.ByHours
+            view: "  - name: ledger.work.ForOwner
     source: ledger.work.Task
-    order_by: [hours]
+    params: [{name: owner, type: Optional<String>}]
+    filter: owner == param.owner
     fields:
       - {name: task_id, type: ledger.work.TaskId}
-      - {name: hours, type: Optional<Integer>}
 ",
-            names: "an order over the optional field `hours`",
+            names: "a comparison with the optional view parameter `owner`",
         },
         Kept {
             view: "  - name: ledger.work.LateOwners
@@ -674,6 +676,420 @@ fn a_measure_condition_the_generated_query_does_not_reproduce_keeps_the_query_ow
     }
 }
 
+// ---- view parameters and orders over absent and instant values (workbench items 25 and 26) -----
+
+/// One of the workbench report's examples: the files of its specification, and the views whose
+/// queries a generated server must answer.
+struct Example {
+    label: &'static str,
+    files: Vec<(String, String)>,
+    views: &'static [&'static str],
+    /// What the example's own views must answer over the rows `behave` stores.
+    behave: fn(&Harnessed),
+}
+
+/// One example's files, as `.engineering/repro/workbench-2026-11-09/examples/<n>/spec` holds them.
+fn workbench_files(example: &str) -> Vec<(String, String)> {
+    let spec = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../../.engineering/repro/workbench-2026-11-09/examples")
+        .join(example)
+        .join("spec");
+    ["system.yaml", "components.yaml", "demo.yaml"]
+        .into_iter()
+        .map(|name| {
+            let text = std::fs::read_to_string(spec.join(name))
+                .unwrap_or_else(|error| panic!("`{}` reads: {error}", spec.join(name).display()));
+            (name.to_owned(), text)
+        })
+        .collect()
+}
+
+/// `files` with their component accepting the commands and publishing the events of the examples'
+/// domain, so the generated surface serves a command a scenario stores its rows through. The
+/// examples as filed accept none.
+fn accepting_commands(files: &[(String, String)]) -> Vec<(String, String)> {
+    files
+        .iter()
+        .map(|(name, text)| {
+            let text = if name == "components.yaml" {
+                text.replace(
+                    "    reached_by: network",
+                    "    accepts:\n      commands:\n        - gap.demo.CreateParent\n        - gap.demo.CreateItem\n        - gap.demo.FinishItem\n    publishes:\n      events:\n        - gap.demo.ParentCreated\n        - gap.demo.ItemCreated\n        - gap.demo.ItemFinished\n    reached_by: network",
+                )
+            } else {
+                text.clone()
+            };
+            (name.clone(), text)
+        })
+        .collect()
+}
+
+/// A specification of several files, compiled.
+fn compile_files(files: &[(String, String)]) -> EssIr {
+    let mut sources = SourceMap::new();
+    let mut labels = Vec::new();
+    let mut parsed = Vec::new();
+    for (label, text) in files {
+        let raw = RawSpecFile::parse(text)
+            .unwrap_or_else(|error| panic!("`{label}` is well formed: {error}"));
+        sources.insert(label.clone(), text.clone());
+        labels.push(label.clone());
+        parsed.push((Source::new(label.clone()), raw));
+    }
+    let specification =
+        Specification::assemble(parsed).unwrap_or_else(|errors| panic!("validates:\n{errors}"));
+    compile_locating(&specification, &sources, &labels)
+        .unwrap_or_else(|diagnostics| panic!("resolves:\n{diagnostics}"))
+}
+
+/// Example `26` with one more field, `m`, an `Optional<Integer>`, and two views ordered by it, so
+/// the order over an absent number is run as well as planned.
+fn example_with_an_optional_number() -> Vec<(String, String)> {
+    let mut files = workbench_files("26");
+    let demo = &mut files
+        .iter_mut()
+        .find(|(name, _)| name == "demo.yaml")
+        .expect("the example has its demo file")
+        .1;
+    for (from, to) in [
+        (
+            "  - name: note\n    type: Optional<String>\n  relations:",
+            "  - name: note\n    type: Optional<String>\n  - name: m\n    type: Optional<Integer>\n  relations:",
+        ),
+        (
+            "  - name: note\n    type: Optional<String>\n  outcomes:",
+            "  - name: note\n    type: Optional<String>\n  - name: m\n    type: Optional<Integer>\n  outcomes:",
+        ),
+        (
+            "      note: input.note\n    emits:",
+            "      note: input.note\n      m: input.m\n    emits:",
+        ),
+        (
+            "actors:\n",
+            "- name: gap.demo.ByMost\n  source: gap.demo.Item\n  consistency: read_your_writes\n  order_by:\n  - m desc\n  fields:\n  - name: id\n    type: String\n  - name: m\n    type: Optional<Integer>\n- name: gap.demo.ByLeast\n  source: gap.demo.Item\n  consistency: read_your_writes\n  order_by:\n  - m asc\n  fields:\n  - name: id\n    type: String\n  - name: m\n    type: Optional<Integer>\nactors:\n",
+        ),
+        (
+            "  - gap.demo.ByNote\n",
+            "  - gap.demo.ByNote\n  - gap.demo.ByMost\n  - gap.demo.ByLeast\n",
+        ),
+    ] {
+        assert_eq!(demo.matches(from).count(), 1, "`{from}` is in the example");
+        *demo = demo.replacen(from, to, 1);
+    }
+    files
+}
+
+#[allow(clippy::too_many_lines)]
+fn examples() -> Vec<Example> {
+    vec![
+        Example {
+            label: "25",
+            files: workbench_files("25"),
+            views: &["gap.demo.Items", "gap.demo.ByTitle"],
+            behave: |target| {
+                for (id, title) in [("i1", "a"), ("i2", "b"), ("i3", "a")] {
+                    create_item(target, id, serde_json::json!({"title": title}));
+                }
+                assert_eq!(
+                    read_ids(target, "gap.demo.ByTitle", "title=a"),
+                    ["i1", "i3"],
+                    "`ByTitle` with `title=a` answers the two rows whose title is `a`"
+                );
+                assert_eq!(read_ids(target, "gap.demo.ByTitle", "title=b"), ["i2"]);
+                assert_eq!(
+                    read_ids(target, "gap.demo.ByTitle", "title=c"),
+                    Vec::<String>::new()
+                );
+            },
+        },
+        Example {
+            label: "26",
+            files: workbench_files("26"),
+            views: &["gap.demo.Items", "gap.demo.ByDue", "gap.demo.ByNote"],
+            behave: |target| {
+                create_item(target, "p1", serde_json::json!({"note": "x"}));
+                create_item(
+                    target,
+                    "p2",
+                    serde_json::json!({"due": "2026-01-01T00:00:00Z"}),
+                );
+                create_item(
+                    target,
+                    "p3",
+                    serde_json::json!({"note": "y", "due": "2026-02-01T00:00:00Z"}),
+                );
+                assert_eq!(
+                    read_ids(target, "gap.demo.ByNote", ""),
+                    ["p2", "p1", "p3"],
+                    "`note asc` answers the row lacking a note first"
+                );
+                assert_eq!(
+                    read_ids(target, "gap.demo.ByDue", ""),
+                    ["p3", "p2", "p1"],
+                    "`due desc` answers the row lacking a due last"
+                );
+            },
+        },
+        Example {
+            label: "26b",
+            files: workbench_files("26b"),
+            views: &["gap.demo.Items", "gap.demo.Newest"],
+            behave: |target| {
+                // `q1` and `q3` name one instant in two offsets, and the text order disagrees with
+                // the instant order on every pair.
+                for (id, created) in [
+                    ("q3", "2026-01-01T00:00:00Z"),
+                    ("q1", "2026-01-01T01:00:00+01:00"),
+                    ("q2", "2026-01-01T00:30:00Z"),
+                ] {
+                    create_item(target, id, serde_json::json!({"created": created}));
+                }
+                assert_eq!(
+                    read_ids(target, "gap.demo.Newest", ""),
+                    ["q2", "q3", "q1"],
+                    "`created desc` ranks by instant, and equal instants keep the port's order"
+                );
+            },
+        },
+        Example {
+            label: "26-number",
+            files: example_with_an_optional_number(),
+            views: &[
+                "gap.demo.Items",
+                "gap.demo.ByDue",
+                "gap.demo.ByNote",
+                "gap.demo.ByMost",
+                "gap.demo.ByLeast",
+            ],
+            behave: |target| {
+                for (id, m) in [
+                    ("r1", Some(5)),
+                    ("r2", None),
+                    ("r3", Some(-3)),
+                    ("r4", Some(12)),
+                ] {
+                    create_item(
+                        target,
+                        id,
+                        m.map_or_else(|| serde_json::json!({}), |m| serde_json::json!({"m": m})),
+                    );
+                }
+                assert_eq!(
+                    read_ids(target, "gap.demo.ByMost", ""),
+                    ["r4", "r1", "r3", "r2"]
+                );
+                assert_eq!(
+                    read_ids(target, "gap.demo.ByLeast", ""),
+                    ["r2", "r3", "r1", "r4"]
+                );
+            },
+        },
+    ]
+}
+
+/// Stores one `gap.demo.Item` through the generated surface, `fields` over a row of plain defaults.
+#[allow(clippy::needless_pass_by_value)]
+fn create_item(target: &Harnessed, id: &str, fields: serde_json::Value) {
+    let mut input = serde_json::json!({
+        "id": id,
+        "title": "t",
+        "parent_id": "p",
+        "n": 1,
+        "tags": [],
+    });
+    for (name, value) in fields.as_object().expect("fields are an object") {
+        input[name] = value.clone();
+    }
+    let answer = target.ask(&serde_json::json!({
+        "op": "command",
+        "command": "gap.demo.CreateItem",
+        "body": input.to_string(),
+        "input": input,
+        "actor": ANYONE,
+    }));
+    assert_eq!(answer["outcome"], "created", "{answer}");
+}
+
+/// The identities one view answers, in order, for the query string `query`.
+fn read_ids(target: &Harnessed, view: &str, query: &str) -> Vec<String> {
+    let answer = target.ask(&serde_json::json!({
+        "op": "view", "view": view, "query": query, "actor": ANYONE,
+    }));
+    answer["rows"]
+        .as_array()
+        .unwrap_or_else(|| panic!("`{view}` answers rows: {answer}"))
+        .iter()
+        .map(|row| row["id"].as_str().unwrap_or_default().to_owned())
+        .collect()
+}
+
+#[test]
+fn every_query_of_the_workbench_views_is_generated_for_rust_and_go() {
+    for example in examples() {
+        let ir = compile_files(&example.files);
+        for target in [Target::Rust, Target::Go] {
+            let synthesis = synthesize_for(&ir, target).expect("the example synthesizes");
+            for view in example.views {
+                assert_eq!(
+                    synthesis
+                        .plan
+                        .disposition_of(CapabilityKind::ViewQuery, view),
+                    Some(&SynthesisDisposition::Generated),
+                    "example {}, {target:?}: `{view}`",
+                    example.label
+                );
+            }
+            let owed: Vec<String> = synthesis
+                .plan
+                .obligations()
+                .map(|(capability, obligation)| {
+                    format!("{}: {}", capability.source, obligation.reason.describes())
+                })
+                .collect();
+            assert!(
+                owed.is_empty(),
+                "example {}, {target:?} owes nothing:\n{}",
+                example.label,
+                owed.join("\n")
+            );
+        }
+    }
+}
+
+/// The route table of the model's components, as `name method path` triples.
+fn route_table(ir: &EssIr) -> Vec<String> {
+    let mut routes = Vec::new();
+    for component in ir.components().values() {
+        for route in ess_gen::http::routes(ir, component) {
+            let name = match route.serves {
+                ess_gen::http::Served::Command(handle) => ir.command(handle).name.to_string(),
+                ess_gen::http::Served::View(handle) => ir.view(handle).name.to_string(),
+            };
+            routes.extend([name, route.method.as_str().to_owned(), route.path]);
+        }
+    }
+    routes
+}
+
+/// The Rust harness's dependencies for the examples' workspace: four of its crates, by path.
+const EXAMPLE_DEPENDENCIES: &str = "gap-types = { path = \"../gap/crates/gap-types\" }
+gap-server = { path = \"../gap/crates/gap-server\" }
+gap-service = { path = \"../gap/crates/gap-service\" }
+gap-system = { path = \"../gap/crates/gap-system\" }
+";
+
+#[test]
+fn the_rust_servers_of_the_workbench_views_answer_their_parameters_and_orders() {
+    for example in examples() {
+        let ir = compile_files(&accepting_commands(&example.files));
+        let synthesis = synthesize_for(&ir, Target::Rust).expect("the example synthesizes");
+        let scratch = Scratch(Path::new(env!("CARGO_TARGET_TMPDIR")).join(format!(
+            "workbench-{}-rust-{}",
+            example.label,
+            std::process::id()
+        )));
+        let _ = std::fs::remove_dir_all(&scratch.0);
+        let tree = scratch.0.join("gap");
+        write_tree(&tree, &synthesis);
+        let harness = scratch.0.join("harness");
+        std::fs::create_dir_all(harness.join("src")).expect("mkdir");
+        std::fs::write(
+            harness.join("Cargo.toml"),
+            format!("{HARNESS_MANIFEST}{EXAMPLE_DEPENDENCIES}"),
+        )
+        .expect("write");
+        std::fs::copy(
+            Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("tests/fixtures/workbench-views-harness/main.rs"),
+            harness.join("src/main.rs"),
+        )
+        .expect("the harness copies");
+        let target = scratch.0.join("target");
+        let (built, log) = cargo(&tree, &target, &["check", "--workspace", "--all-targets"]);
+        assert!(
+            built,
+            "example {}: the generated workspace builds with -D warnings:\n{log}",
+            example.label
+        );
+        let (built, log) = cargo(&harness, &target, &["build"]);
+        assert!(
+            built,
+            "example {}: the harness builds against the generated ports:\n{log}",
+            example.label
+        );
+        let binary = target.join("debug/harness");
+        let routes = route_table(&ir);
+        assert_suite_passes(&ir, &binary, &routes, example.views);
+        let served = Harnessed::start(&binary, &routes, &ir);
+        (example.behave)(&served);
+        drop(served);
+        drop(scratch);
+    }
+}
+
+#[test]
+fn the_go_servers_of_the_workbench_views_answer_their_parameters_and_orders() {
+    let Some(go) = go() else {
+        eprintln!("no Go toolchain on this machine; the generated Go queries are unchecked here");
+        return;
+    };
+    for example in examples() {
+        let ir = compile_files(&accepting_commands(&example.files));
+        let synthesis = synthesize_for(&ir, Target::Go).expect("the example synthesizes to Go");
+        let scratch = Scratch(Path::new(env!("CARGO_TARGET_TMPDIR")).join(format!(
+            "workbench-{}-go-{}",
+            example.label,
+            std::process::id()
+        )));
+        let _ = std::fs::remove_dir_all(&scratch.0);
+        let tree = scratch.0.join("gap");
+        write_tree(&tree, &synthesis);
+        let harness = scratch.0.join("harness");
+        std::fs::create_dir_all(&harness).expect("mkdir");
+        std::fs::write(
+            harness.join("go.mod"),
+            "module gapharness\n\ngo 1.21\n\nrequire example.invalid/gap v0.0.0\n\nreplace \
+             example.invalid/gap => ../gap\n",
+        )
+        .expect("write");
+        std::fs::copy(
+            Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("tests/fixtures/workbench-views-go-harness/main.go"),
+            harness.join("main.go"),
+        )
+        .expect("the harness copies");
+        let (formatted, unformatted) = go_tool(&tree, "gofmt", &["-d", "."]);
+        assert!(
+            formatted && unformatted.trim().is_empty(),
+            "example {}: the generated Go is gofmt-clean:\n{unformatted}",
+            example.label
+        );
+        let (vetted, log) = go_tool(&tree, &go, &["vet", "./..."]);
+        assert!(
+            vetted,
+            "example {}: the generated Go is vet clean:\n{log}",
+            example.label
+        );
+        let binary = scratch.0.join("harness-bin");
+        let (built, log) = go_tool(
+            &harness,
+            &go,
+            &["build", "-o", binary.to_str().expect("a UTF-8 path"), "."],
+        );
+        assert!(
+            built,
+            "example {}: the harness builds against the generated ports:\n{log}",
+            example.label
+        );
+        let routes = route_table(&ir);
+        assert_suite_passes(&ir, &binary, &routes, example.views);
+        let served = Harnessed::start(&binary, &routes, &ir);
+        (example.behave)(&served);
+        drop(served);
+        drop(scratch);
+    }
+}
+
 /// Where Go is, or `None` when this machine has none — said out loud, never passed silently.
 fn go() -> Option<String> {
     let output = Command::new("go").arg("version").output().ok()?;
@@ -685,7 +1101,7 @@ fn go_tool(directory: &Path, tool: &str, arguments: &[&str]) -> (bool, String) {
     let output = Command::new(tool)
         .args(arguments)
         .current_dir(directory)
-        .env("GOFLAGS", "-mod=mod")
+        .env("GOFLAGS", "-mod=mod -buildvcs=false")
         .env("GOPROXY", "off")
         .env("GOWORK", "off")
         .output()
@@ -810,7 +1226,7 @@ impl Harnessed {
         if std::env::var_os("GENERATED_VIEWS_TRACE").is_some() {
             eprintln!("> {request}\n< {}", line.trim_end());
         }
-        serde_json::from_str(&line).unwrap_or_else(|error| panic!("`{line}`: {error}"))
+        served(serde_json::from_str(&line).unwrap_or_else(|error| panic!("`{line}`: {error}")))
     }
 
     fn tick(&self) -> u64 {
@@ -849,6 +1265,55 @@ fn json_of(node: &Node) -> serde_json::Value {
 /// A wire value as a suite value.
 fn node_of(value: &serde_json::Value) -> Node {
     serde_json::from_value(value.clone()).expect("the wire writes JSON a node reads")
+}
+
+/// An answer a harness wrote as the served status and body, `{"status":…,"body":…}`, read as the
+/// answer the line protocol carries: a reset is `{"ok":true}`, an unserved command
+/// `{"undeclared":…}`, a command's declared error is its `refusal`, and a view's body is its
+/// rows. Any other answer is the protocol's own.
+fn served(answer: serde_json::Value) -> serde_json::Value {
+    let (Some(status), Some(body)) = (answer["status"].as_u64(), answer.get("body")) else {
+        return answer;
+    };
+    if status == 0 {
+        return serde_json::json!({"ok": true});
+    }
+    if status == 501 {
+        return serde_json::json!({"undeclared": body["refused"]});
+    }
+    let mut read = body.clone();
+    if let Some(error) = body.get("error") {
+        read["refusal"] = serde_json::json!({"error": error, "payload": body["payload"]});
+    }
+    read
+}
+
+/// One query-string component, form-encoded: unreserved bytes as they are, every other byte as
+/// `%XX`.
+fn form_encoded(text: &str) -> String {
+    text.bytes()
+        .map(|byte| match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                char::from(byte).to_string()
+            }
+            other => format!("%{other:02X}"),
+        })
+        .collect()
+}
+
+/// The query string a view read carries its parameters in; empty for a view without any.
+fn query_string(params: &BTreeMap<String, Node>) -> String {
+    params
+        .iter()
+        .map(|(name, value)| {
+            let text = match value {
+                Node::Text(text) => text.clone(),
+                other => json_of(other).to_string(),
+            };
+            format!("{}={}", form_encoded(name), form_encoded(&text))
+        })
+        .collect::<Vec<_>>()
+        .join("&")
 }
 
 fn failure(observation: &str, answer: &serde_json::Value) -> TargetError {
@@ -896,8 +1361,13 @@ impl ConformanceTarget for Harnessed {
         let answer = self.ask(&serde_json::json!({
             "op": "command",
             "command": request.command.to_string(),
+            "body": serde_json::Value::Object(input.clone()).to_string(),
             "input": input,
+            "actor": request.actor.as_ref().map_or(ANYONE.to_owned(), ToString::to_string),
         }));
+        if answer["refused"] == "not granted" {
+            return Err(TargetError::not_granted(answer["actor"].as_str()));
+        }
         if answer.get("undeclared").is_some() {
             return Ok(SemanticCommandResult::undeclared());
         }
@@ -916,7 +1386,15 @@ impl ConformanceTarget for Harnessed {
                     .as_str()
                     .and_then(|name| name.parse().ok())
                     .ok_or_else(|| failure(&observation, &answer))?;
-                Some(DeclaredErrorValue::new(name))
+                let mut declared = DeclaredErrorValue::new(name);
+                if let Some(serde_json::Value::Object(payload)) = refusal.get("payload") {
+                    for (field, value) in payload {
+                        if !value.is_null() {
+                            declared = declared.with(field.clone(), node_of(value));
+                        }
+                    }
+                }
+                Some(declared)
             }
             None => None,
         };
@@ -959,42 +1437,22 @@ impl ConformanceTarget for Harnessed {
     }
 
     fn query_view(&self, request: SemanticViewRequest) -> Result<SemanticViewResult, TargetError> {
-        let observation = format!("reading `{}`", request.view);
-        let answer = self.ask(&serde_json::json!({"op": "view", "view": request.view.to_string()}));
-        let Some(rows) = answer["rows"].as_array() else {
-            return Err(failure(&observation, &answer));
-        };
-        let optional = self
-            .optional_fields
-            .get(&request.view.to_string())
-            .cloned()
-            .unwrap_or_default();
-        let decimal = self
-            .decimal_fields
-            .get(&request.view.to_string())
-            .cloned()
-            .unwrap_or_default();
-        Ok(SemanticViewResult::of(rows.iter().map(|row| {
-            // The wire leaves an absent optional field out; the row holds it as `null`.
-            let mut read: ViewRow = row
-                .as_object()
-                .into_iter()
-                .flatten()
-                .map(|(field, value)| match value {
-                    serde_json::Value::String(text) if decimal.contains(field) => {
-                        match FactValue::parse_literal(text) {
-                            FactValue::Number(number) => (field.clone(), Node::Number(number)),
-                            _ => (field.clone(), node_of(value)),
-                        }
-                    }
-                    _ => (field.clone(), node_of(value)),
-                })
-                .collect();
-            for field in &optional {
-                read.entry(field.clone()).or_insert(Node::Null);
-            }
-            read
-        })))
+        self.read(&request, &serde_json::json!(ANYONE))
+    }
+
+    fn query_view_as(
+        &self,
+        request: SemanticViewRequest,
+        reader: &ActorRef,
+    ) -> Result<SemanticViewResult, TargetError> {
+        self.read(&request, &serde_json::json!(reader.to_string()))
+    }
+
+    fn query_view_anonymous(
+        &self,
+        request: SemanticViewRequest,
+    ) -> Result<SemanticViewResult, TargetError> {
+        self.read(&request, &serde_json::Value::Null)
     }
 
     fn observe_events(
@@ -1030,5 +1488,63 @@ impl ConformanceTarget for Harnessed {
     fn end_scenario(&self, _scenario: &ScenarioContext) -> Result<(), TargetError> {
         self.published.borrow_mut().clear();
         Ok(())
+    }
+}
+
+/// The actor the examples declare, and the one every read the suite does not send as another is
+/// sent as.
+const ANYONE: &str = "gap.demo.Anyone";
+
+impl Harnessed {
+    /// One view read as `actor`: a name, or `null` for a request with no caller.
+    fn read(
+        &self,
+        request: &SemanticViewRequest,
+        actor: &serde_json::Value,
+    ) -> Result<SemanticViewResult, TargetError> {
+        let observation = format!("reading `{}`", request.view);
+        let answer = self.ask(&serde_json::json!({
+            "op": "view",
+            "view": request.view.to_string(),
+            "query": query_string(&request.params),
+            "actor": actor.clone(),
+        }));
+        if answer["refused"] == "not granted" {
+            return Err(TargetError::not_granted(answer["actor"].as_str()));
+        }
+        let Some(rows) = answer["rows"].as_array() else {
+            return Err(failure(&observation, &answer));
+        };
+        let optional = self
+            .optional_fields
+            .get(&request.view.to_string())
+            .cloned()
+            .unwrap_or_default();
+        let decimal = self
+            .decimal_fields
+            .get(&request.view.to_string())
+            .cloned()
+            .unwrap_or_default();
+        Ok(SemanticViewResult::of(rows.iter().map(|row| {
+            // The wire leaves an absent optional field out; the row holds it as `null`.
+            let mut read: ViewRow = row
+                .as_object()
+                .into_iter()
+                .flatten()
+                .map(|(field, value)| match value {
+                    serde_json::Value::String(text) if decimal.contains(field) => {
+                        match FactValue::parse_literal(text) {
+                            FactValue::Number(number) => (field.clone(), Node::Number(number)),
+                            _ => (field.clone(), node_of(value)),
+                        }
+                    }
+                    _ => (field.clone(), node_of(value)),
+                })
+                .collect();
+            for field in &optional {
+                read.entry(field.clone()).or_insert(Node::Null);
+            }
+            read
+        })))
     }
 }
