@@ -7,6 +7,7 @@ package server
 import (
 	"encoding/base64"
 	"encoding/json"
+	"example.invalid/gatepass/types/invariant"
 	"example.invalid/gatepass/types/primitives"
 	"example.invalid/gatepass/types/visit"
 	"fmt"
@@ -544,6 +545,11 @@ func decodeGatepassVisitDeposit(value any, at string) (visit.Deposit, error) {
 		return out, err
 	}
 	out.Currency = held3
+	{
+		if invariant.Broken(invariant.Compare(invariant.NumberOf(out.Amount.Value()), invariant.Ge, invariant.NumberOf("0"), false, true)) {
+			return out, DecodeError{At: at, Expected: "a value satisfying `amount >= 0`", Found: describes(value)}
+		}
+	}
 	return out, nil
 }
 
