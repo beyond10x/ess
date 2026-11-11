@@ -129,7 +129,7 @@ fn a_latency_map_delays_each_named_views_route_on_the_page_clock() {
     let delay = |ms: u32| format!("setTimeout(resolve, ms)), {ms});");
     assert!(spec.contains(&delay(2000)), "{spec}");
     assert!(spec.contains(&delay(500)), "{spec}");
-    assert!(spec.contains("route.continue()"), "{spec}");
+    assert!(spec.contains("route.fallback()"), "{spec}");
     assert!(
         spec.find("page.route").unwrap() < spec.find("page.clock.install").unwrap(),
         "{spec}"

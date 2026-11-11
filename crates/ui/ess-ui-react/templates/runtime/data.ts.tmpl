@@ -317,6 +317,22 @@ async function answer(response: Response): Promise<Json> {
   return (await response.json()) as Json;
 }
 
+/**
+ * A failed command answer as a refusal when its body declares one (`{outcome, error}`): the error
+ * code is the message, as the terminal shows it. Any other body is the generic `answer` failure.
+ */
+async function refusalOf(response: Response): Promise<DataError | undefined> {
+  try {
+    const body: unknown = JSON.parse(await response.text());
+    if (isObject(body) && typeof body.outcome === "string" && typeof body.error === "string") {
+      return new DataError(body.error, response.status);
+    }
+  } catch {
+    // Not JSON: the generic failure below.
+  }
+  return undefined;
+}
+
 /** An adapter for a backend serving `GET /views/<view>`, `POST /commands/<command>` and `/state`. */
 export function httpAdapter(base: string): DataAdapter {
   const viewUrl = (request: ReadRequest) => {
@@ -342,13 +358,18 @@ export function httpAdapter(base: string): DataAdapter {
       return response.blob();
     },
     async send(command, input) {
-      return answer(
-        await fetch(`${base}/commands/${command}`, {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify(input),
-        }),
-      );
+      const response = await fetch(`${base}/commands/${command}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(input),
+      });
+      if (!response.ok) {
+        const refused = await refusalOf(response);
+        if (refused !== undefined) {
+          throw refused;
+        }
+      }
+      return answer(response);
     },
     async loadState(store, key) {
       const response = await fetch(`${base}/state/${store}/${encodeURIComponent(key)}`);

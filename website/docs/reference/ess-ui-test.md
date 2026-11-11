@@ -327,9 +327,12 @@ An unknown key under `fixtures` is refused with the file, the test and the key. 
 spec the same keys are routes: a list of view answers is one handler that answers the first entry
 whose `by_params` equal the request's params, else the entry without `by_params`, else no rows;
 `fails` is status 500 with the message; a refused command is a 422 answer with
-`{outcome: refused, published: [], error, payload?}`, the body the HTTP data adapter reads as a
-refusal (the command is still captured for `expect_command`); a latency per view holds that view's
-route for its duration on the page clock. None of these marks a test `test.fixme`.
+`{outcome: refused, published: [], error, payload?}`, the body both HTTP data adapters read as a
+refusal (the command is still captured for `expect_command`). The plain adapter of an unbound
+build shows the error code in the failed-command notice (`<command> failed: <error code>`; it has
+no refusal note), the bound adapter the binding's display text beside the action; the payload is
+shown only bound. A latency per view holds that view's route for its duration on the page clock.
+None of these marks a test `test.fixme`.
 
 `tests[].latency` is one duration for every read, or a map of view to duration: a view not named
 answers at once.
