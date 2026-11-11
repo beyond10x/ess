@@ -500,7 +500,8 @@ fn command_encoder(out: &mut String, surface: &dyn Surface, command: &ResolvedCo
 }
 
 /// The pattern [`outcome_encoder`] matches one variant with: its bindings, and `..` for the
-/// `response` a branch that answers with it carries and this encoder does not write.
+/// `response` a variant carries ([`super::items::carries_response`]) and this encoder does not
+/// write.
 fn outcome_pattern(variant: &str, bindings: &[String], carries_response: bool) -> String {
     match (bindings.is_empty(), carries_response) {
         (true, false) => variant.to_owned(),
@@ -515,14 +516,14 @@ pub(crate) fn response_encoder_name(layout: &RustLayout, command: &QualifiedName
     format!("encode_response_{}", ident(layout, command))
 }
 
-/// A command's declared response, for the `response` member of a branch that answers with it
-/// (`returns: true`, from `ess/22`, beyond10x/ess#423). Only for a command with such a branch, so
-/// every other module keeps its bytes.
+/// A command's declared response, for the `response` member of a branch whose answer carries it:
+/// one that answers with it (`returns: true`, from `ess/22`, beyond10x/ess#423) or retains it
+/// (`replays:`). Only for a command with such a branch, so every other module keeps its bytes.
 fn response_encoder(out: &mut String, surface: &dyn Surface, command: &ResolvedCommand) {
     let answers = command
         .outcomes
         .iter()
-        .any(|outcome| ess_gen::http::answers_with_response(surface.ir(), outcome));
+        .any(|outcome| ess_gen::openapi::carries_result(surface.ir(), outcome));
     if !answers {
         return;
     }
@@ -632,7 +633,7 @@ fn outcome_encoder(out: &mut String, surface: &dyn Surface, command: &ResolvedCo
         let pattern = outcome_pattern(
             &format!("{path}Outcome::{variant}"),
             &bindings,
-            ess_gen::http::answers_with_response(surface.ir(), outcome),
+            super::items::carries_response(surface.ir(), outcome),
         );
         let _ = writeln!(out, "        {pattern} => {{");
         let _ = writeln!(

@@ -2632,7 +2632,10 @@ pub(crate) fn publishes_result(
 
 /// Whether an outcome's body carries the command's response under `response`: a retained result,
 /// or a branch that [answers with it](http::answers_with_response) (beyond10x/ess#423).
-fn carries_result(ir: &EssIr, outcome: &ResolvedOutcome) -> bool {
+///
+/// The one answer for the document and for the servers synthesized from it: a served answer writes
+/// `response` exactly where the document requires it.
+pub fn carries_result(ir: &EssIr, outcome: &ResolvedOutcome) -> bool {
     outcome.retains_result || http::answers_with_response(ir, outcome)
 }
 
