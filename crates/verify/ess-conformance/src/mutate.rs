@@ -5289,6 +5289,9 @@ impl Ruler {
     /// is witnessed or not refused, where no outcome performs the transition, where the model's
     /// transitions were not read, and where the baseline's refusals are known only by count.
     fn unwitnessed_outcome(&self, class: MutantClass, id: &str) -> Option<Vec<RefusalKey>> {
+        if class == MutantClass::OrderFlip {
+            return self.unwitnessed_order(id);
+        }
         let outcomes: Vec<(&str, &str)> = match class {
             MutantClass::FromDrop | MutantClass::TransitionTo => {
                 let transition = id
@@ -5325,6 +5328,35 @@ impl Ruler {
         refused.sort();
         refused.dedup();
         (!refused.is_empty()).then_some(refused)
+    }
+
+    /// The baseline's standing refusals of the (view, key) an `order-flip` mutant `id` flips: the
+    /// `ESS-SYNTH-001` gap synthesis records beside a ranked view's scenario for a key after the
+    /// first that no tie reaches (beyond10x/ess#708), whose subject names the view and the key as
+    /// ``at `<view>: <key>` ``. `None` where the baseline holds none, and where its refusals are
+    /// known only by count.
+    fn unwitnessed_order(&self, id: &str) -> Option<Vec<RefusalKey>> {
+        let mut parts = id.strip_prefix("order-flip/")?.splitn(2, '/');
+        let (view, key) = (parts.next()?, parts.next()?);
+        let named = format!("at `{view}: {key}`");
+        let mut held: Vec<RefusalKey> = self
+            .refused
+            .keys
+            .as_ref()?
+            .iter()
+            .filter(|refusal| {
+                refusal.code == "ESS-SYNTH-001"
+                    && refusal.scenario.is_some()
+                    && refusal
+                        .subject
+                        .as_deref()
+                        .is_some_and(|subject| subject.ends_with(&named))
+            })
+            .cloned()
+            .collect();
+        held.sort();
+        held.dedup();
+        (!held.is_empty()).then_some(held)
     }
 
     /// Scores one mutant's run into its entry: a scenario the baseline did not execute is excluded,
