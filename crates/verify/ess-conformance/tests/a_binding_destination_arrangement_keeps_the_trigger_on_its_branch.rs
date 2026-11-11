@@ -89,3 +89,96 @@ fn a_binding_destination_arrangement_keeps_the_trigger_on_its_branch() {
 fn an_input_guard_reading_the_destination_input_refuses_the_binding() {
     refused_and_passing(GUARDED);
 }
+
+fn replaced(text: &str, from: &str, to: &str) -> String {
+    assert!(text.contains(from), "the fixture holds {from:?}");
+    text.replacen(from, to, 1)
+}
+
+// Adversary: `Announce` publishes `Announced` on its default branch, which reads nothing; only a
+// branch beside it that publishes no `Announced` reads `exists: false` through `account_id`. Sent
+// naming the arranged (existing) account, the trigger takes the publishing default, so the
+// arrangement keeps the trigger on its branch and the binding must not be refused.
+#[test]
+fn adversary_an_existence_branch_beside_the_publishing_default_keeps_the_binding() {
+    let text = replaced(
+        RELATED,
+        "      - name: announced\n        when_related: {via: input.account_id, exists: false}\n",
+        "      - name: orphaned\n        when_related: {via: input.account_id, exists: false}\n        \
+         creates: demo.acct.Note\n        instance: note_id\n        sets: {account_id: input.account_id}\n        \
+         emits: [demo.acct.Orphaned]\n        payload: {demo.acct.Orphaned: {note_id: input.note_id}}\n      \
+         - name: announced\n",
+    );
+    let text = replaced(&text, "      - {name: taken, error: demo.acct.Taken}\n", "");
+    let text = replaced(
+        &text,
+        "  - {name: demo.acct.Taken, summary: The account exists.}\n",
+        "",
+    );
+    let text = replaced(
+        &text,
+        "  - name: demo.acct.Activated\n",
+        "  - name: demo.acct.Orphaned\n    fields: [{name: note_id, type: demo.acct.NoteId}]\n  \
+         - name: demo.acct.Activated\n",
+    );
+    let ir = model(&text);
+    let synthesis = synthesize(&ir);
+    let refusals: Vec<String> = synthesis
+        .refusals
+        .iter()
+        .map(ToString::to_string)
+        .filter(|refusal| refusal.contains("activate-on-announce"))
+        .collect();
+    assert_eq!(
+        refusals,
+        Vec::<String>::new(),
+        "the arranged account keeps `Announce` on its publishing default"
+    );
+    let ids = scenario_ids(&synthesis);
+    for aspect in ["flow", "delivery", "mapping"] {
+        let id = format!("activate-on-announce/binding/{aspect}");
+        assert!(ids.contains(&id), "{id} in {ids:#?}");
+    }
+    let admitted = AdmittedSuite::from_suite(&synthesis.suite).expect("the suite is admitted");
+    let report = Runner::for_suite(admitted.suite())
+        .run_admitted(&admitted, &Interpreted::for_model(ir))
+        .into_report();
+    let failed: Vec<String> = report
+        .scenarios
+        .iter()
+        .filter(|scenario| scenario.status != Status::Passed)
+        .map(|scenario| format!("{} {:?}", scenario.scenario, scenario.status))
+        .collect();
+    assert_eq!(failed, Vec::<String>::new());
+}
+
+// Adversary: the input guard reads `account_id` on the refusing branch `closed`, not on the
+// publishing default `announced`. Whatever the binding's fate, a refusal must not say the
+// publishing branch reads the input when it reads nothing.
+#[test]
+fn adversary_a_refusal_names_the_branch_that_reads_the_input() {
+    let text = replaced(
+        GUARDED,
+        "      - name: announced\n        when: account_id != \"closed\"\n",
+        "      - {name: closed, when: account_id == \"closed\", error: demo.acct.Closed}\n      \
+         - name: announced\n",
+    );
+    let text = replaced(
+        &text,
+        "      - {name: closed, error: demo.acct.Closed}\n",
+        "",
+    );
+    let ir = model(&text);
+    let synthesis = synthesize(&ir);
+    let misnamed: Vec<String> = synthesis
+        .refusals
+        .iter()
+        .map(ToString::to_string)
+        .filter(|refusal| {
+            refusal.contains(
+                "the trigger's branch `demo.acct.Announce/announced` reads the input that names the row",
+            )
+        })
+        .collect();
+    assert_eq!(misnamed, Vec::<String>::new());
+}
