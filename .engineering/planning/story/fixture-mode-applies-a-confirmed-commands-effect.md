@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:fixture-mode-applies-a-confirmed-commands-effect
 kind: story
-status: active
+status: implemented
 title: Fixture mode applies a confirmed command's declared effect to the rows its views read
 tags:
 - defect
@@ -36,10 +36,11 @@ scope:
   path: crates/ui/ess-ui-tui/src/data.rs
 - confidence: cited
   path: crates/ui/ess-ui/src/binding.rs
-revision: 5
+revision: 6
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-10T01:51:06Z", actor: "human:timo", revision: 4}
 - {from: "proposed", to: "active", at: "2026-11-10T01:51:07Z", actor: "human:timo", revision: 5}
+- {from: "active", to: "implemented", at: "2026-11-11T17:04:23Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"test_result":1}}}
 ---
 ## Outcome
 

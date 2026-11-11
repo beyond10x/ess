@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-held-state-guard-is-witnessed-without-a-view-publishing-state
 kind: story
-status: active
+status: implemented
 title: A held-state guard is witnessed without a view publishing state
 tags:
 - zero-open-issues
@@ -24,10 +24,11 @@ scope:
   path: crates/verify/ess-conformance/tests/held_state_guard_without_state_view.rs
 - confidence: cited
   path: docs/design/cross-record-and-stored-field-guards.md
-revision: 6
+revision: 7
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-10T00:38:14Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"review_outcome":1}}}
 - {from: "proposed", to: "active", at: "2026-11-10T00:38:15Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "active", to: "implemented", at: "2026-11-11T17:04:24Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"test_result":1,"review_outcome":1}}}
 ---
 ## Need
 

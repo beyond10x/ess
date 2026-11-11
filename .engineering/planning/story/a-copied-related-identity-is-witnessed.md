@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-copied-related-identity-is-witnessed
 kind: story
-status: active
+status: implemented
 title: A row-set guard over a copied related identity is witnessed or refused by name
 tags:
 - defect
@@ -21,10 +21,11 @@ scope:
   path: crates/verify/ess-conformance/tests/fixtures/row-set-related-copy-identity.yaml
 - confidence: cited
   path: crates/verify/ess-conformance/tests/row_set_related_copy.rs
-revision: 8
+revision: 9
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-10T00:37:59Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":1}}}
 - {from: "proposed", to: "active", at: "2026-11-10T00:38:00Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "active", to: "implemented", at: "2026-11-11T17:04:30Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"test_result":1,"review_outcome":1}}}
 ---
 ## Outcome
 
