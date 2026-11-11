@@ -678,6 +678,9 @@ fn type_decoder(out: &mut String, emit: &Emit<'_>, declared: &ResolvedType) {
                     &mut slot,
                 );
             }
+            // The declared invariants are held here, because this decoder is what a served route
+            // reads a request with.
+            super::invariant::struct_decoder_check(out, emit, declared);
             out.push_str("\treturn out, nil\n");
         }
         ResolvedBody::Enum { variants } => {

@@ -106,6 +106,7 @@ fn structure(
         field_line(out, emit, field);
     }
     out.push_str("}\n");
+    super::invariant::newtype_check(out, emit, declared);
 }
 
 /// A closed set of names. The synthesised state enums arrive here too, and get the doc that says

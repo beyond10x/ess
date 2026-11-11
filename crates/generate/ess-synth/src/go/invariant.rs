@@ -44,7 +44,9 @@ pub(super) fn used(ir: &EssIr) -> bool {
         .values()
         .any(|entity| !entity.invariants.is_empty())
         || ir.types().values().any(|declared| match &declared.body {
-            ResolvedBody::Newtype { invariants, .. } => !invariants.is_empty(),
+            ResolvedBody::Newtype { invariants, .. } | ResolvedBody::Struct { invariants, .. } => {
+                !invariants.is_empty()
+            }
             _ => false,
         })
 }
@@ -209,6 +211,16 @@ fn newtype_checks(
     emit: &Emit<'_>,
     declared: &ess_compiler::ir::ResolvedType,
 ) -> Result<Vec<Constraint>, (String, String)> {
+    if let ResolvedBody::Struct { fields, invariants } = &declared.body {
+        let mut check = Check::rooted(
+            emit,
+            Subject::Struct(fields),
+            struct_reserved(emit),
+            STRUCT_RECEIVER,
+        );
+        check.depth = 2;
+        return invariant_checks(&mut check, invariants);
+    }
     let ResolvedBody::Newtype {
         of,
         alphabet,
@@ -266,6 +278,27 @@ fn newtype_checks(
             });
         }
     }
+    checks.extend(invariant_checks(&mut check, invariants)?);
+    Ok(checks)
+}
+
+/// The receiver a struct's invariants are read from in its decoder: the value being decoded.
+const STRUCT_RECEIVER: &str = "out";
+
+/// Names no local of a struct's check may take: the packages the file imports, and the decoder's
+/// own parameters and locals.
+fn struct_reserved(emit: &Emit<'_>) -> BTreeSet<String> {
+    let mut reserved = emit.layout.package_names();
+    reserved.extend(["value", "at", "err"].map(str::to_owned));
+    reserved
+}
+
+/// Each of `invariants` as a [`Constraint`], in order.
+fn invariant_checks(
+    check: &mut Check<'_>,
+    invariants: &[ess_domain::entity::Invariant],
+) -> Result<Vec<Constraint>, (String, String)> {
+    let mut checks = Vec::new();
     for (index, invariant) in invariants.iter().enumerate() {
         let truth = check.predicate(&invariant.predicate).map_err(|reason| {
             (
@@ -280,6 +313,48 @@ fn newtype_checks(
         });
     }
     Ok(checks)
+}
+
+/// The statements a struct's decoder runs once it has read every member: a block, so the
+/// temporaries the checks bind leave no name behind, refusing at the path the struct was reached
+/// at with the first declared invariant the value breaks. Nothing for a struct that declares none.
+///
+/// The check is inline in the decoder rather than a method of the type: a Go struct has one
+/// namespace for its fields and its methods, and a field may export to any name.
+///
+/// # Panics
+///
+/// If an invariant cannot be rendered — [`preflight`] refuses such a model before any rendering
+/// starts, so reaching it is a defect in this crate.
+pub(super) fn struct_decoder_check(
+    out: &mut String,
+    emit: &Emit<'_>,
+    declared: &ess_compiler::ir::ResolvedType,
+) {
+    let checks = newtype_checks(emit, declared).unwrap_or_else(|(at, reason)| {
+        panic!(
+            "preflight admitted `{}.{at}`, which cannot be rendered: {reason}",
+            declared.name
+        )
+    });
+    if checks.is_empty() {
+        return;
+    }
+    out.push_str("\t{\n");
+    for constraint in checks {
+        for line in constraint.prelude {
+            out.push_str(&line);
+            out.push('\n');
+        }
+        let _ = writeln!(
+            out,
+            "\t\tif {} {{\n\t\t\treturn out, DecodeError{{At: at, Expected: {}, Found: \
+             describes(value)}}\n\t\t}}",
+            constraint.broken,
+            go_string(&constraint.expected)
+        );
+    }
+    out.push_str("\t}\n");
 }
 
 /// `func (v <Newtype>) BrokenConstraint() (string, bool)`, for a newtype that declares an
@@ -445,6 +520,8 @@ enum Subject<'a> {
     Entity(&'a ResolvedEntity),
     /// A newtype's `value`: the representation it wraps, as the receiver's unexported field.
     Newtype(&'a ResolvedTypeRef),
+    /// A struct's fields, as members of the receiver.
+    Struct(&'a [ResolvedField]),
 }
 
 /// Renders the invariants of one entity or newtype into statements and `invariant.Truth`
@@ -919,6 +996,21 @@ impl<'a> Check<'a> {
         }
         let entity = match self.subject {
             Subject::Entity(entity) => entity,
+            Subject::Struct(fields) => {
+                return match fields.iter().find(|field| field.name == root) {
+                    Some(field) => Ok(Some((
+                        format!(
+                            "{}.{}",
+                            self.receiver,
+                            items::member_ident(fields, &field.name)
+                        ),
+                        field.type_ref.clone(),
+                    ))),
+                    None => Err(format!(
+                        "`{path}` reads `{root}`, which this struct does not hold"
+                    )),
+                };
+            }
             Subject::Newtype(of) if root == "value" => {
                 return Ok(Some((format!("{}.value", self.receiver), of.clone())));
             }

@@ -17,6 +17,8 @@ use ess_compiler::{resolve::compile, source::SourceMap, EssIr};
 use ess_domain::{spec::RawSpecFile, system::Source, Specification};
 use ess_synth::{synthesize_for, Synthesis, Target};
 
+#[path = "invariant_check/struct_invariants.rs"]
+mod struct_invariants;
 #[path = "invariant_check/value_constraints.rs"]
 mod value_constraints;
 

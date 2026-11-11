@@ -17,7 +17,9 @@
 
 use std::fmt::Write as _;
 
-use ess_compiler::ir::{EssIr, ResolvedBody, ResolvedEntity, ResolvedType, ResolvedTypeRef};
+use ess_compiler::ir::{
+    EssIr, ResolvedBody, ResolvedEntity, ResolvedField, ResolvedType, ResolvedTypeRef,
+};
 use ess_domain::entity::Invariant;
 use ess_domain::Primitive;
 use ess_primitives::facts::{FactPath, FactValue};
@@ -39,12 +41,11 @@ pub(super) fn used(ir: &EssIr) -> bool {
     ir.entities()
         .values()
         .any(|entity| !entity.invariants.is_empty())
-        || ir.types().values().any(|declared| {
-            if let ResolvedBody::Newtype { invariants, .. } = &declared.body {
+        || ir.types().values().any(|declared| match &declared.body {
+            ResolvedBody::Newtype { invariants, .. } | ResolvedBody::Struct { invariants, .. } => {
                 !invariants.is_empty()
-            } else {
-                false
             }
+            _ => false,
         })
 }
 
@@ -129,6 +130,24 @@ fn newtype_checks(
     emit: &Emit<'_>,
     declared: &ResolvedType,
 ) -> Result<Vec<(String, String)>, (String, String)> {
+    if let ResolvedBody::Struct { fields, invariants } = &declared.body {
+        let mut checks = Vec::new();
+        for (index, invariant) in invariants.iter().enumerate() {
+            let expression = Check::rooted(emit, Root::Struct(fields))
+                .invariant(invariant)
+                .map_err(|reason| {
+                    (
+                        format!("invariants.{index}"),
+                        format!("`{}`: {reason}", invariant.statement),
+                    )
+                })?;
+            checks.push((
+                format!("a value satisfying `{}`", invariant.statement),
+                format!("iv::broken({expression})"),
+            ));
+        }
+        return Ok(checks);
+    }
     let ResolvedBody::Newtype {
         of,
         alphabet,
@@ -397,6 +416,8 @@ enum Root<'a> {
     Entity(&'a ResolvedEntity),
     /// A newtype's `value`: the representation it wraps, as `self.0`.
     Newtype(&'a ResolvedTypeRef),
+    /// A struct's fields, as `self.<field>`.
+    Struct(&'a [ResolvedField]),
 }
 
 /// Renders one invariant of one entity or newtype.
@@ -736,6 +757,18 @@ impl<'a> Check<'a> {
                         } else {
                             return Err(format!(
                                 "`{path}` reads `{root}`, which this entity does not hold"
+                            ));
+                        }
+                    }
+                    Root::Struct(fields) => {
+                        if let Some(field) = fields.iter().find(|field| field.name == root) {
+                            (
+                                Reach::Place(format!("self.{}", name::value_ident(&field.name))),
+                                field.type_ref.clone(),
+                            )
+                        } else {
+                            return Err(format!(
+                                "`{path}` reads `{root}`, which this struct does not hold"
                             ));
                         }
                     }
