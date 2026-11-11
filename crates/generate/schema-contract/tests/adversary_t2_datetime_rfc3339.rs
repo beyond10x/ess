@@ -68,7 +68,10 @@ fn reference(text: &str) -> bool {
         30,
         31,
     ];
-    if !(1..=12).contains(&month) || day < 1 || day > month_days[(month - 1) as usize] {
+    if !(1..=12).contains(&month)
+        || day < 1
+        || day > month_days[usize::try_from(month - 1).unwrap_or_default()]
+    {
         return false;
     }
     if hour > 23 || minute > 59 || second > 60 {
