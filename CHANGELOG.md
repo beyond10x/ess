@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- `ess-ui`: a record field or an export param keyed `action` is author data and is no longer read as an Action, so its refusal names the real node and no false Action refusal hides a later one.
+
 ## [0.93.0] — 2026-11-11
 
 ### Added
