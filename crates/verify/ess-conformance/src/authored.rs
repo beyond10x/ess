@@ -348,7 +348,7 @@ pub const TYPED_INPUTS_FORMAT: &str = crate::member_paths::SCENARIO_FORMAT;
 
 /// The first scenario format that reads `covers:`, the exact ids of the generated synthesis
 /// refusals the scenario covers (beyond10x/ess#735). A newer format reads everything an older one
-/// does, so a feature gated on a format is gated on [`format_at_least`].
+/// does, so a feature gated on a format is gated on `format_at_least`.
 pub const COVERS_FORMAT: &str = "ess-scenario/7";
 
 /// Whether `format` is `ess-scenario/<n>` for an `n` of at least `minimum`.
