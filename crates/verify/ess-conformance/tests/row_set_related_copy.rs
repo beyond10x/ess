@@ -443,13 +443,15 @@ fn adversary_a_set_guard_after_an_update_copy_is_decided() {
         .scenarios
         .iter()
         .find(|(id, _)| id.to_string() == "check-on-requalified/binding/flow")
-        .map(|(_, scenario)| scenario)
-        .unwrap_or_else(|| {
-            panic!(
-                "the binding's flow is synthesized: {:#?}",
-                synthesis.suite.scenarios.keys().collect::<Vec<_>>()
-            )
-        });
+        .map_or_else(
+            || {
+                panic!(
+                    "the binding's flow is synthesized: {:#?}",
+                    synthesis.suite.scenarios.keys().collect::<Vec<_>>()
+                )
+            },
+            |(_, scenario)| scenario,
+        );
     assert!(
         flow.steps.iter().any(|step| matches!(step,
             ScenarioStep::ExecuteCommand { command, .. }
