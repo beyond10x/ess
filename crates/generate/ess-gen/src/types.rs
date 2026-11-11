@@ -770,6 +770,18 @@ pub(crate) fn is_nullable(declared: &ResolvedField) -> bool {
     )
 }
 
+/// The field a struct's shorthand (`ess/27`) names, when it declares one: the struct is published
+/// as `oneOf [that field's value, the object]`, so every location under its properties sits under
+/// `oneOf/1`.
+pub(crate) fn shorthand_field<'a>(
+    ir: &EssIr,
+    declared: &QualifiedName,
+    fields: &'a [ResolvedField],
+) -> Option<&'a ResolvedField> {
+    ir.shorthand(declared)
+        .and_then(|name| fields.iter().find(|field| field.name == name))
+}
+
 /// The type a field's property in [`object`] projects: the `Optional` whole for a nullable field
 /// ([`nullable_field`]), the value it holds otherwise ([`field`]). A schema location under the
 /// property is reached through this type, not through the stripped one.
@@ -992,10 +1004,7 @@ pub(crate) fn body(ir: &EssIr, declared: &ResolvedType) -> Node {
             distinct_items(ir, &mut node, fields, invariants);
             // A struct with a shorthand (`ess/27`) is either its one field's value or the object:
             // the two differ by JSON type, a scalar against an object, so exactly one branch matches.
-            if let Some(short) = ir
-                .shorthand(&declared.name)
-                .and_then(|name| fields.iter().find(|field| field.name == name))
-            {
+            if let Some(short) = shorthand_field(ir, &declared.name, fields) {
                 node = Node {
                     one_of: vec![type_ref(short.type_ref.required()), node],
                     ess_shorthand: Some(wire_name(short).to_owned()),

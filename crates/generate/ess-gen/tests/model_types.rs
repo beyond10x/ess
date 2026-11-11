@@ -164,3 +164,78 @@ fn model_types_record_declared_field_order() {
             });
     assert_eq!(digest, DECLARATION_ORDER_DEFS, "{json}");
 }
+
+const SHORTHAND: &str = "format: ess/27
+system: tracker
+version: v1
+domain: tracker.ops
+types:
+  - name: tracker.ops.Reading
+    kind: struct
+    shorthand: label
+    fields:
+      - {name: label, type: String}
+      - {name: value, type: Optional<Binary64>}
+  - name: tracker.ops.Gauge
+    kind: struct
+    shorthand: level
+    fields:
+      - {name: level, type: Binary64}
+      - {name: unit, type: Optional<String>}
+  - name: tracker.ops.Plain
+    kind: struct
+    fields:
+      - {name: label, type: String}
+      - {name: value, type: Optional<Binary64>}
+";
+
+fn shorthand_selection(root: &str) -> (ModelTypes, Value) {
+    let roots = BTreeSet::from([root.to_owned()]);
+    let selected = ModelTypes::select(&compiled(SHORTHAND), &roots).unwrap();
+    let schema: Value = serde_json::from_str(&selected.to_json()).unwrap();
+    (selected, schema)
+}
+
+/// Every Binary64 location the compiler owns is a JSON pointer to a numeric node of the schema.
+fn assert_locations_resolve(selected: &ModelTypes, schema: &Value) {
+    assert!(!selected.binary64_locations().is_empty());
+    for at in selected.binary64_locations() {
+        let node = schema
+            .pointer(at)
+            .unwrap_or_else(|| panic!("{at} does not resolve in {schema:#}"));
+        assert_eq!(node["type"], "number", "{at}: {node}");
+    }
+}
+
+#[test]
+fn a_shorthand_structs_binary64_locations_resolve_in_the_published_schema() {
+    let (selected, schema) = shorthand_selection("tracker.ops.Reading");
+    assert_eq!(
+        selected.binary64_locations(),
+        &BTreeSet::from(["/$defs/tracker.ops.Reading/oneOf/1/properties/value".to_owned()])
+    );
+    assert_locations_resolve(&selected, &schema);
+}
+
+#[test]
+fn a_shorthand_field_that_is_itself_binary64_names_both_branches() {
+    let (selected, schema) = shorthand_selection("tracker.ops.Gauge");
+    assert_eq!(
+        selected.binary64_locations(),
+        &BTreeSet::from([
+            "/$defs/tracker.ops.Gauge/oneOf/0".to_owned(),
+            "/$defs/tracker.ops.Gauge/oneOf/1/properties/level".to_owned(),
+        ])
+    );
+    assert_locations_resolve(&selected, &schema);
+}
+
+#[test]
+fn a_struct_without_a_shorthand_keeps_its_locations() {
+    let (selected, schema) = shorthand_selection("tracker.ops.Plain");
+    assert_eq!(
+        selected.binary64_locations(),
+        &BTreeSet::from(["/$defs/tracker.ops.Plain/properties/value".to_owned()])
+    );
+    assert_locations_resolve(&selected, &schema);
+}
