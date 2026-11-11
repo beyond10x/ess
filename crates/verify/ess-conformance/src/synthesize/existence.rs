@@ -1244,8 +1244,10 @@ const UNTOLD: &str = "names first the state the record an input refusal was sent
 /// state first answers a sibling in each and fails there, and a target that checks the input in
 /// every state but one fails in that one.
 ///
-/// Where no identity view shows the record, nothing observes it in its state or compares it
-/// unchanged, so after each refused send the commands read it back instead ([`probe`]): sends
+/// Where no view observes the record in its state (none shows it, or those that do project the
+/// identity but not `state`, or are filtered, paged or not `expect`-style), nothing observes it in
+/// its state or compares it unchanged, so after each refused send the commands read it back
+/// instead ([`probe`]): sends
 /// from that held state whose required answers tell it apart from every other state, the
 /// command's own branches that run there first, its held-state refusals among them. A target that
 /// moved the record on refusal, into any state, answers one with another branch and fails.
@@ -1254,8 +1256,9 @@ const UNTOLD: &str = "names first the state the record an input refusal was sent
 /// again at their overlap, refuting every other input refusal: a target that tries the sibling
 /// first takes it. Where no arrangement reaches a state, the scenario is withdrawn and refused
 /// with the arrangement's cause, never left without that state's witness; with no identity view,
-/// likewise where no send from a held state has a valid input, naming every branch tried, or
-/// where the sends leave a state they cannot tell apart from it, naming the states.
+/// likewise where no view observes the held state and no send from it has a valid input, naming
+/// every branch tried, or where the sends leave a state they cannot tell apart from it, naming
+/// the states.
 fn refusals_in_each_held_state(
     models: &InvocationModels<'_>,
     command: &ResolvedCommand,
@@ -1340,9 +1343,10 @@ fn held_state_refusals(
             part.source.extend(arrangement.source);
             // Observed in the state it was arranged in, where a view shows it; the held-state
             // siblings need that view themselves, so its absence is theirs to refuse. Where no
-            // identity view shows the record at all, the commands read it back after the refusal
-            // instead ([`probe`]), as the arranged half of a command without held-state branches
-            // does; a model with such a view keeps its sends.
+            // view observes the record in its state (none, or one projecting the identity but
+            // not `state`, or one filtered, paged or not `expect`-style), the commands read it
+            // back after the refusal instead ([`probe`]), as the arranged half of a command
+            // without held-state branches does.
             let mut read_back = None;
             let preservation = if let Ok((observed, view)) = super::observe_selection_subject(
                 ir,
@@ -1355,15 +1359,13 @@ fn held_state_refusals(
                 part.source.insert(view.into());
                 subject_fact::preserve_refused_subject(ir, subject, &setup)?
             } else {
-                if identity_views(ir, subject).next().is_none() {
-                    let record = Record {
-                        instance: Some(&arrangement.instance),
-                        bound: &BTreeMap::new(),
-                        held: Some(state),
-                        arranged: false,
-                    };
-                    read_back = Some(probe(ir, command, &subject.entity, actors, &record)?);
-                }
+                let record = Record {
+                    instance: Some(&arrangement.instance),
+                    bound: &BTreeMap::new(),
+                    held: Some(state),
+                    arranged: false,
+                };
+                read_back = Some(probe(ir, command, &subject.entity, actors, &record)?);
                 unobserved()
             };
             part.steps.extend(preservation.before);
