@@ -107,7 +107,7 @@ fn field(document: &ess_ui::Document, name: &str) -> Field {
 }
 
 #[test]
-fn the_schema_declares_a_duration_unit_of_ms_or_s_defaulting_to_ms() {
+fn the_schema_declares_a_duration_unit_of_ms_s_m_or_h_defaulting_to_ms() {
     let schema: Value = ess_yaml::from_str(ess_ui::SCHEMA).expect("the schema is YAML");
     let unit = &schema["constructs"]["Field"]["fields"]["unit"];
     let values: Vec<&str> = unit["type"]["enum"]
@@ -116,7 +116,7 @@ fn the_schema_declares_a_duration_unit_of_ms_or_s_defaulting_to_ms() {
         .iter()
         .map(|value| value.as_str().expect("an enum value is text"))
         .collect();
-    assert_eq!(values, ["ms", "s"]);
+    assert_eq!(values, ["ms", "s", "m", "h"]);
     assert_eq!(unit["default"].as_str(), Some("ms"), "{unit:?}");
     let note = unit["note"].as_str().expect("Field.unit has a note");
     assert!(note.contains("h:mm:ss"), "the note says the form: {note}");
@@ -139,8 +139,8 @@ fn a_duration_field_reads_its_unit_and_defaults_to_milliseconds() {
 }
 
 #[test]
-fn a_duration_unit_other_than_ms_or_s_is_refused_at_the_field() {
-    for unit in ["min", "h", "seconds", "MS", "1"] {
+fn a_duration_unit_other_than_ms_s_m_or_h_is_refused_at_the_field() {
+    for unit in ["min", "hours", "seconds", "MS", "1"] {
         let error = ess_ui::load_str(&durations(&format!(
             "          - {{field: talk, as: duration, unit: {unit}}}\n"
         )))
