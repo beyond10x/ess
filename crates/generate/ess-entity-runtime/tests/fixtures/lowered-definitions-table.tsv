@@ -1,4 +1,7 @@
-#	models=469	lines=638
+#	models=471	lines=642
+crates/edge/ess-cli/tests/fixtures/adversary-shorthand-binary64/spec.yaml	components=1
+crates/edge/ess-cli/tests/fixtures/adversary-shorthand-binary64/spec.yaml	tracker-service	tracker.ops.Sample	definition=6994335e6a9e9266f5f0ce33a640350814ba12cce3c4ce7439fe61643a3a9cdb:5797
+crates/edge/ess-cli/tests/fixtures/adversary-shorthand-binary64/spec.yaml	tracker-service	tracker.ops.Sample	create	recorded
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	components=1
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor-service	REFUSED	95eb461796949834a9d78ef0c04afcab1acfa13dbf2dfd6da3af2f3c93549630:687
 crates/edge/ess-cli/tests/fixtures/coverage-producers/inputs/models/billing/system.yaml	ASSEMBLE
@@ -12,6 +15,7 @@ crates/edge/ess-cli/tests/fixtures/parse-refusals/two-unparsable-compact.yaml	AS
 crates/edge/ess-cli/tests/fixtures/parse-refusals/two-unparsable-filters.yaml	ASSEMBLE
 crates/edge/ess-cli/tests/fixtures/room-booking/flat.yaml	ASSEMBLE
 crates/edge/ess-cli/tests/fixtures/room-booking/window.yaml	components=0
+crates/edge/ess-cli/tests/fixtures/shorthand-binary64/spec.yaml	components=0
 crates/edge/ess-cli/tests/fixtures/stored-rules/fold.yaml	components=1
 crates/edge/ess-cli/tests/fixtures/stored-rules/fold.yaml	rules	REFUSED	e9d38759ae44128176ac9d5beac7f7bbe941eb1cdb9cbf5cc4479f6e05ca506b:1125
 crates/edge/ess-cli/tests/fixtures/stored-rules/model.yaml	components=1
