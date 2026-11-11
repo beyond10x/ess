@@ -176,7 +176,7 @@ fn variants(ir: &EssIr) -> BTreeMap<&QualifiedName, String> {
                     .get(prefix..)
                     .unwrap_or(segments)
                     .iter()
-                    .map(|segment| name::pascal(segment))
+                    .map(|segment| name::spell(segment))
                     .collect();
                 (actor, guard(full))
             })
