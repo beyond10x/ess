@@ -710,3 +710,120 @@ fn a_stale_cache_entry_is_not_cached_and_install_replaces_it() {
         assert_eq!(mode & 0o111, 0o111, "{stale}");
     }
 }
+
+/// `THIS` with its patch moved by one: a release that is not this one, either side of it.
+fn other_release(newer: bool) -> String {
+    let mut parts = THIS.split(['.', '-', '+']).map(str::parse::<u64>);
+    let (major, minor, patch) = (
+        parts.next().unwrap().unwrap(),
+        parts.next().unwrap().unwrap(),
+        parts.next().unwrap().unwrap(),
+    );
+    match (newer, patch) {
+        (true, _) => format!("{major}.{minor}.{}", patch + 1),
+        (false, 1..) => format!("{major}.{minor}.{}", patch - 1),
+        (false, 0) => format!("{major}.{}.0", minor - 1),
+    }
+}
+
+impl Fixture {
+    /// A manifest in `directory` of the project, pinning `requires`.
+    fn pin_in(&self, directory: &str, requires: &str) {
+        let directory = self.project.join(directory);
+        fs::create_dir_all(&directory).unwrap();
+        fs::write(
+            directory.join("ess-inputs.yaml"),
+            format!(
+                "format: ess-inputs/2\nrequires: {requires}\nspecification: [system.yaml]\n\
+                 scenarios: []\n"
+            ),
+        )
+        .unwrap();
+    }
+}
+
+const VALIDATE_SPEC: &[&str] = &["specify", "validate", "--path", "spec"];
+
+fn assert_names_the_way_to_the_pin(text: &str, release: &str) {
+    assert!(text.contains("spec/ess-inputs.yaml"), "{text}");
+    assert!(text.contains(&format!("ESS_TOOLCHAIN={release}")), "{text}");
+    assert!(text.contains("cd spec"), "{text}");
+    assert!(!text.contains("b10x upgrade"), "{text}");
+}
+
+#[test]
+fn a_pin_below_newer_than_this_ess_is_refused_by_name() {
+    let fixture = Fixture::new();
+    let release = other_release(true);
+    fixture.pin_in("spec", &format!("ess {release}"));
+    let output = fixture.ess(&fixture.project, VALIDATE_SPEC);
+    assert_eq!(output.status.code(), Some(1), "{}", err(&output));
+    assert_names_the_way_to_the_pin(&err(&output), &release);
+}
+
+#[test]
+fn a_pin_below_older_than_this_ess_is_refused_by_name() {
+    let fixture = Fixture::new();
+    let release = other_release(false);
+    fixture.pin_in("spec", &format!("ess {release}"));
+    let output = fixture.ess(&fixture.project, VALIDATE_SPEC);
+    assert_eq!(output.status.code(), Some(1), "{}", err(&output));
+    assert_names_the_way_to_the_pin(&err(&output), &release);
+}
+
+#[test]
+fn a_minor_line_pin_or_an_override_keeps_the_existing_checks_below() {
+    let fixture = Fixture::new();
+    fixture.pin_in("spec", "ess 99.0");
+    let output = fixture.ess(&fixture.project, VALIDATE_SPEC);
+    assert_eq!(output.status.code(), Some(1), "{}", err(&output));
+    assert!(err(&output).contains("b10x upgrade"), "{}", err(&output));
+
+    let release = other_release(true);
+    fixture.pin_in("spec", &format!("ess {release}"));
+    let output = fixture
+        .command(&fixture.project, VALIDATE_SPEC)
+        .env("ESS_TOOLCHAIN", THIS)
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(1), "{}", err(&output));
+    assert!(err(&output).contains("b10x upgrade"), "{}", err(&output));
+}
+
+#[test]
+fn toolchain_which_names_a_single_pin_below() {
+    let fixture = Fixture::new();
+    let release = other_release(false);
+    fixture.pin_in("spec", &format!("ess {release}"));
+    let output = fixture.ess(&fixture.project, &["toolchain", "which"]);
+    assert_eq!(output.status.code(), Some(0), "{}", err(&output));
+    let text = out(&output);
+    assert!(text.starts_with(&format!("ess {THIS}\n")), "{text}");
+    let reason = text
+        .lines()
+        .find(|line| line.starts_with("reason: "))
+        .unwrap_or_else(|| panic!("{text}"));
+    assert!(reason.contains("spec/ess-inputs.yaml"), "{reason}");
+    assert!(
+        reason.contains(&format!("requires: ess {release}")),
+        "{reason}"
+    );
+    assert!(
+        reason.contains(&format!("ESS_TOOLCHAIN={release}")),
+        "{reason}"
+    );
+}
+
+#[test]
+fn toolchain_which_refuses_two_disagreeing_pins_below() {
+    let fixture = Fixture::new();
+    let (older, newer) = (other_release(false), other_release(true));
+    fixture.pin_in("a", &format!("ess {older}"));
+    fixture.pin_in("b", &format!("ess {newer}"));
+    let output = fixture.ess(&fixture.project, &["toolchain", "which"]);
+    assert_eq!(output.status.code(), Some(1), "{}", err(&output));
+    let text = err(&output);
+    for needle in ["a/ess-inputs.yaml", "b/ess-inputs.yaml", &older, &newer] {
+        assert!(text.contains(needle), "{needle}: {text}");
+    }
+}

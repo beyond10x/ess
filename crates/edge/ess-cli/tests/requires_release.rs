@@ -91,8 +91,12 @@ impl Fixture {
         .unwrap();
     }
 
+    /// Runs under `ESS_TOOLCHAIN` naming this release: the manifests sit below the working
+    /// directory, where an exact pin of another release is refused by name (`tests/toolchain.rs`)
+    /// instead of being compared. These cases are about that comparison.
     fn ess(&self, args: &[&str]) -> Output {
         Command::new(env!("CARGO_BIN_EXE_ess"))
+            .env("ESS_TOOLCHAIN", THIS)
             .current_dir(&self.0)
             .args(args)
             .output()
