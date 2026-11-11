@@ -1,0 +1,84 @@
+format: ess/30
+system: demo
+version: v1
+domain: demo.acct
+summary: A binding activates the account an announcement names, and the announcement publishes only for an account id other than a closed one.
+types:
+  - {name: demo.acct.AccountId, kind: newtype, of: String}
+  - {name: demo.acct.NoteId, kind: newtype, of: Uuid}
+entities:
+  - name: demo.acct.Account
+    identity: {name: account_id, type: demo.acct.AccountId}
+    fields: []
+    lifecycle:
+      initial: Pending
+      states: [Pending, Active]
+      terminal: [Active]
+      transitions:
+        - {name: activate, from: [Pending], to: Active}
+  - name: demo.acct.Note
+    identity: {name: note_id, type: demo.acct.NoteId}
+    fields:
+      - {name: account_id, type: demo.acct.AccountId}
+    lifecycle: {initial: Posted, states: [Posted], terminal: [Posted]}
+errors:
+  - {name: demo.acct.Closed, summary: The account id is closed.}
+  - {name: demo.acct.AccountStateConflict, summary: The account is not in a state this command accepts.}
+  - {name: demo.acct.AccountNotFound, summary: No account has this identity.}
+  - {name: demo.acct.Unavailable, summary: The activation service is unavailable.}
+events:
+  - name: demo.acct.Opened
+    fields: [{name: account_id, type: demo.acct.AccountId}]
+  - name: demo.acct.Announced
+    fields: [{name: note_id, type: demo.acct.NoteId}, {name: account_id, type: demo.acct.AccountId}]
+  - name: demo.acct.Activated
+    fields: [{name: account_id, type: demo.acct.AccountId}]
+commands:
+  - name: demo.acct.Open
+    input:
+      - {name: account_id, type: demo.acct.AccountId}
+    outcomes:
+      - name: opened
+        creates: demo.acct.Account
+        instance: account_id
+        emits: [demo.acct.Opened]
+        payload: {demo.acct.Opened: {account_id: input.account_id}}
+  - name: demo.acct.Announce
+    input:
+      - {name: note_id, type: demo.acct.NoteId}
+      - {name: account_id, type: demo.acct.AccountId}
+    outcomes:
+      - name: announced
+        when: account_id != "closed"
+        creates: demo.acct.Note
+        instance: note_id
+        sets: {account_id: input.account_id}
+        emits: [demo.acct.Announced]
+        payload: {demo.acct.Announced: {note_id: input.note_id, account_id: input.account_id}}
+      - {name: closed, error: demo.acct.Closed}
+  - name: demo.acct.Activate
+    input:
+      - {name: account_id, type: demo.acct.AccountId}
+    outcomes:
+      - name: activated
+        moves: demo.acct.Account.activate
+        instance: account_id
+        emits: [demo.acct.Activated]
+        payload: {demo.acct.Activated: {account_id: input.account_id}}
+      - {name: unavailable, external: the activation service has no capacity right now, error: demo.acct.Unavailable}
+      - {name: wrong-state, wrong_state: true, error: demo.acct.AccountStateConflict}
+      - {name: not-found, unknown_instance: true, error: demo.acct.AccountNotFound}
+bindings:
+  - id: activate-on-announce
+    when: {event: demo.acct.Announced}
+    invoke: {command: demo.acct.Activate}
+    mapping: {account_id: event.account_id}
+    delivery: at_least_once
+    on_failure: drop
+views:
+  - name: demo.acct.Accounts
+    source: demo.acct.Account
+    consistency: read_your_writes
+    fields:
+      - {name: account_id, type: demo.acct.AccountId}
+      - {name: state, type: demo.acct.Account.State}

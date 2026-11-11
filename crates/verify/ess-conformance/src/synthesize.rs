@@ -1797,6 +1797,7 @@ crate::authored::diagnostic_catalogue! {
                 | BindingGap::RelatedRefusalUnarranged { .. }
                 | BindingGap::ArrangementSetsOff { .. }
                 | BindingGap::DestinationIdentityUnavailable { .. }
+                | BindingGap::DestinationBranchRead { .. }
                 | BindingGap::DestinationIneligible { .. }
                 | BindingGap::DestinationUnreachable { .. }
                 | BindingGap::UnchangedUnobservable { .. }
@@ -2338,6 +2339,17 @@ pub enum BindingGap {
         /// Why that identity is not knowable beforehand.
         why: &'static str,
     },
+    /// The invoked command acts on the existing row the trigger's own input names, and the
+    /// trigger, sent naming that row, no longer takes the branch that publishes the binding's
+    /// event: the branch reads the input that names the row.
+    DestinationBranchRead {
+        /// The invoked command.
+        command: CommandRef,
+        /// Its input naming the row.
+        input: String,
+        /// The trigger's branch that publishes the event.
+        trigger: OutcomeRef,
+    },
     /// The trigger leaves the row it acts on in a state no accepting branch of the invoked command
     /// admits, so the binding can only be refused there.
     DestinationIneligible {
@@ -2664,6 +2676,10 @@ impl BindingGap {
                 "map the row's identity from an event field the trigger fills from its own input or \
                  from the row it acts on, so a scenario can arrange that row before the trigger"
             }
+            Self::DestinationBranchRead { .. } => {
+                "let the trigger's branch not read the input that names the row, or cover the \
+                 binding with an authored scenario (ess-scenario/1)"
+            }
             Self::DestinationIneligible { .. } => {
                 "let the trigger leave the row in a state the invoked command accepts, or cover the \
                  binding with an authored scenario (ess-scenario/1)"
@@ -2807,6 +2823,16 @@ impl fmt::Display for BindingGap {
                 f,
                 "invokes `{command}` on an existing row named by `{input}`, and no identity for it \
                  is knowable before the trigger: {why}"
+            ),
+            Self::DestinationBranchRead {
+                command,
+                input,
+                trigger,
+            } => write!(
+                f,
+                "invokes `{command}` on an existing row named by `{input}`, and no arrangement \
+                 keeps the trigger on its branch: the trigger's branch `{trigger}` reads the \
+                 input that names the row"
             ),
             Self::DestinationIneligible { command, state } => write!(
                 f,

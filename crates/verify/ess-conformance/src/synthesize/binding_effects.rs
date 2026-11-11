@@ -2782,6 +2782,21 @@ fn arranged_destination<'a>(
                   arrangement leaves that row in cannot be followed",
         });
     }
+    // Naming the arranged row in the trigger must leave it on the branch that publishes the
+    // event, as the sibling paths keep it ([`keeps_branch_sent`]); an input guard reading the
+    // value is taken to answer otherwise for it.
+    if let Some(publisher) = command_of(ir, published_by) {
+        if !keeps_branch_sent(publisher, field, Some(entity), false, false) {
+            return Err(BindingGap::DestinationBranchRead {
+                command: command(),
+                input: field_name(invoked),
+                trigger: OutcomeRef::new(
+                    CommandRef::new(publisher.name.clone()),
+                    published_by.name.clone(),
+                ),
+            });
+        }
+    }
     let (arrangement, reached) = eligible_row(ir, invoked, entity, trigger, actors)?;
     let identity = arrangement.identity();
     let mut invoke = trigger.invoke.clone();
