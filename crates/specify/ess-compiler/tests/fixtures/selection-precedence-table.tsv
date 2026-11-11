@@ -1,4 +1,4 @@
-#	models=391	commands=775
+#	models=393	commands=781
 crates/edge/ess-cli/tests/fixtures/adversary-shorthand-binary64/spec.yaml	ir=c87449d062a2da60a227a5a4fe21bf6e78c1108f81fca3463834272ed4c44788:14663
 crates/edge/ess-cli/tests/fixtures/adversary-shorthand-binary64/spec.yaml	tracker.ops.Record	default: recorded
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	ir=d47970055f083eda582673dfe528f0af87f902defa07339aa014f6c8d50be57f:5099
@@ -389,6 +389,14 @@ crates/verify/ess-conformance/tests/fixtures/binding-condition.yaml	ir=55b03bf14
 crates/verify/ess-conformance/tests/fixtures/binding-condition.yaml	demo.messages.LogMessage	default: logged
 crates/verify/ess-conformance/tests/fixtures/binding-condition.yaml	demo.messages.MessageEvent	accepting: unavailable | default: messaged
 crates/verify/ess-conformance/tests/fixtures/binding-condition.yaml	demo.messages.ReceiveMessage	default: received
+crates/verify/ess-conformance/tests/fixtures/binding-destination-trigger-branch-guard.yaml	ir=cc1bc765d58e6151bd84c23a06f63ad3bf86e00faf139bb4fd02d3cddcdd7c6e:14552
+crates/verify/ess-conformance/tests/fixtures/binding-destination-trigger-branch-guard.yaml	demo.acct.Activate	existence: not-found | held_state: wrong-state | accepting: unavailable | default: activated
+crates/verify/ess-conformance/tests/fixtures/binding-destination-trigger-branch-guard.yaml	demo.acct.Announce	accepting: announced | default: closed
+crates/verify/ess-conformance/tests/fixtures/binding-destination-trigger-branch-guard.yaml	demo.acct.Open	default: opened
+crates/verify/ess-conformance/tests/fixtures/binding-destination-trigger-branch.yaml	ir=1f287ae31b98f356cfe2be8ede6b6fc3bf81a6b32d4fc9f788cfb55ce0696353:14784
+crates/verify/ess-conformance/tests/fixtures/binding-destination-trigger-branch.yaml	demo.acct.Activate	existence: not-found | held_state: wrong-state | accepting: unavailable | default: activated
+crates/verify/ess-conformance/tests/fixtures/binding-destination-trigger-branch.yaml	demo.acct.Announce	present_related: announced | default: taken
+crates/verify/ess-conformance/tests/fixtures/binding-destination-trigger-branch.yaml	demo.acct.Open	default: opened
 crates/verify/ess-conformance/tests/fixtures/binding-every-publisher/system.yaml	ASSEMBLE
 crates/verify/ess-conformance/tests/fixtures/binding-every-publisher-renamed/system.yaml	ASSEMBLE
 crates/verify/ess-conformance/tests/fixtures/binding-input-through-conversion/system.yaml	ASSEMBLE

@@ -1,4 +1,4 @@
-#	models=471	lines=642
+#	models=473	lines=644
 crates/edge/ess-cli/tests/fixtures/adversary-shorthand-binary64/spec.yaml	components=1
 crates/edge/ess-cli/tests/fixtures/adversary-shorthand-binary64/spec.yaml	tracker-service	tracker.ops.Sample	definition=6994335e6a9e9266f5f0ce33a640350814ba12cce3c4ce7439fe61643a3a9cdb:5797
 crates/edge/ess-cli/tests/fixtures/adversary-shorthand-binary64/spec.yaml	tracker-service	tracker.ops.Sample	create	recorded
@@ -168,6 +168,8 @@ crates/verify/ess-conformance/tests/fixtures/beside-row-once.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/binding-arrangement.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/binding-condition-selected.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/binding-condition.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/binding-destination-trigger-branch-guard.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/binding-destination-trigger-branch.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/binding-every-publisher/system.yaml	ASSEMBLE
 crates/verify/ess-conformance/tests/fixtures/binding-every-publisher-renamed/system.yaml	ASSEMBLE
 crates/verify/ess-conformance/tests/fixtures/binding-input-through-conversion/system.yaml	ASSEMBLE
