@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:an-author-key-named-action-is-not-an-action
 kind: story
-status: active
+status: implemented
 title: An author key named action is not read as an action
 summary: A record field or export param keyed action with a map value is read as an Action and misnames the refusal (UI-adopter wave 1 U4 pass-2 note, pre-existing, backlog)
 tags:
@@ -21,10 +21,11 @@ scope:
   path: crates/ui/ess-ui/src/locate.rs
 - confidence: inferred
   path: crates/ui/ess-ui/tests/
-revision: 8
+revision: 9
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-10T00:38:58Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":1}}}
 - {from: "proposed", to: "active", at: "2026-11-10T00:39:00Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "active", to: "implemented", at: "2026-11-11T17:04:46Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"test_result":1,"review_outcome":1}}}
 ---
 ## Need
 

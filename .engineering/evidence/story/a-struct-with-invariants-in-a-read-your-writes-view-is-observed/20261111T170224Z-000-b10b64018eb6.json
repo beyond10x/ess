@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-11T17:02:24Z",
+  "actor": "human:timo",
+  "artifact": "story:a-struct-with-invariants-in-a-read-your-writes-view-is-observed",
+  "kind": "story",
+  "revision": 6,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "PR 780 CI on bc2035531f (20 test shards, Checks, Gate)",
+    "reference": "https://github.com/beyond10x/ess/actions/runs/43048813537"
+  }
+}

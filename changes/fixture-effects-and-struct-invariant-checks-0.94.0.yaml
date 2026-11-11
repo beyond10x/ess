@@ -1,0 +1,17 @@
+schema: b10x-change/v1
+id: ess/fixture-effects-and-struct-invariant-checks-0.94.0
+repository: ess
+publishedAt: 2026-11-11T00:00:00Z
+title: Fixture mode applies a command's effect, and generated decoders check struct invariants
+summary: >-
+  In fixture mode a confirmed command now changes the fixture rows as the model says, in the
+  generated React project and in `ess ui test --model`. Generated Go and Rust decoders answer 400
+  for a struct that breaks a declared invariant. Synthesis witnesses a held-state guard without a
+  view publishing `state`.
+kind: capability
+impact: notable
+source:
+  url: https://github.com/beyond10x/ess/releases/tag/0.94.0
+  version: 0.94.0
+journeys: [specify, operate-services]
+affectedSurfaces: [ess/docs]

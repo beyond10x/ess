@@ -9,6 +9,14 @@ What each ESS release is worth to somebody using it: what became possible, how m
 
 This page is generated from the change records kept in the repository. A release with no entry here added nothing somebody using ESS would act on.
 
+## 0.94.0 — 2026-11-11
+
+### Fixture mode applies a command's effect, and generated decoders check struct invariants
+
+capability · notable impact · [release notes](https://github.com/beyond10x/ess/releases/tag/0.94.0)
+
+In fixture mode a confirmed command now changes the fixture rows as the model says, in the generated React project and in `ess ui test --model`. Generated Go and Rust decoders answer 400 for a struct that breaks a declared invariant. Synthesis witnesses a held-state guard without a view publishing `state`.
+
 ## 0.93.0 — 2026-11-11
 
 ### Kubernetes scans read the Gateway API, UI values take tones, and an authored scenario retires a refusal
