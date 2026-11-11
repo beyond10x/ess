@@ -2487,31 +2487,51 @@ impl<'d> Gen<'d> {
 
     fn header(&mut self, at: &NodePath, name: &str, page: &Page, header: &Header) -> String {
         let frame = self.import("runtime/core", "HeaderFrame");
+        let page_name = name.to_owned();
         let mut switch: Vec<&String> = header.switch.iter().collect();
         for target in &page.switch_to {
             if !switch.contains(&target) {
                 switch.push(target);
             }
         }
+        // The switch names the current page too, first when it is not declared in the switch.
+        if !switch.is_empty() && !switch.iter().any(|target| target.as_str() == name) {
+            switch.insert(0, &page_name);
+        }
         let switch_to = (!switch.is_empty()).then(|| {
             let href = self.import("routes", "hrefFor");
-            ts::array(
-                switch
-                    .iter()
-                    .filter(|target| target.as_str() != name)
-                    .map(|target| {
-                        ts::object([
-                            (
-                                "label",
-                                Some(ts::string(&nav_label(target, self.doc.pages.get(*target)))),
-                            ),
-                            (
-                                "href",
-                                Some(format!("{href}({}, __params)", ts::string(target))),
-                            ),
-                        ])
-                    }),
-            )
+            ts::array(switch.iter().map(|target| {
+                let label = ts::string(&nav_label(target, self.doc.pages.get(*target)));
+                if target.as_str() == name {
+                    ts::object([("label", Some(label)), ("current", Some("true".to_owned()))])
+                } else {
+                    ts::object([
+                        ("label", Some(label)),
+                        (
+                            "href",
+                            Some(format!("{href}({}, __params)", ts::string(target))),
+                        ),
+                    ])
+                }
+            }))
+        });
+        let total_label = header
+            .total
+            .as_ref()
+            .and_then(|total| page.sections.iter().find(|section| &section.name == total))
+            .and_then(|section| section.title.as_ref());
+        let badge = header.badge.as_ref().map(|badge| {
+            ts::object([
+                ("text", Some(ts::string(&badge.text.0))),
+                (
+                    "tone",
+                    badge
+                        .tone
+                        .as_ref()
+                        .and_then(variant)
+                        .map(|tone| ts::string(&tone)),
+                ),
+            ])
         });
         let actions: Vec<String> = header
             .actions
@@ -2540,6 +2560,8 @@ impl<'d> Gen<'d> {
             .opt("title", quoted(header.title.as_ref()))
             .opt("titleFrom", title_from)
             .opt("total", quoted(header.total.as_ref()))
+            .opt("totalLabel", quoted(total_label))
+            .opt("badge", badge)
             .opt("filters", quoted(header.filters.as_ref()))
             .opt("switchTo", switch_to)
             // A bound project holds no channel open, so its header shows no live state.

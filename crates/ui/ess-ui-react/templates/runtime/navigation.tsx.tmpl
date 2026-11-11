@@ -1,7 +1,7 @@
 // The navigation region: sections of page links, searchable, filtered by restrictions.
 
 import { createContext, useContext, useState, type ChangeEvent, type ReactNode } from "react";
-import { Link } from "./router";
+import { Link, useLocation } from "./router";
 import { hrefFor } from "../routes";
 import { useScope } from "./core";
 import { useRead } from "./data";
@@ -40,6 +40,16 @@ function matchesQuery(query: string, link: { label: string; synonyms: string[] }
   }
   const needle = query.toLowerCase();
   return [link.label, ...link.synonyms].some((text) => text.toLowerCase().includes(needle));
+}
+
+/** Whether `href` is the page the browser shows: the same path, and the query the link names. */
+function isCurrent(href: string, location: { pathname: string; search: string }): boolean {
+  const target = new URL(href, "http://page.invalid");
+  if (target.pathname !== location.pathname) {
+    return false;
+  }
+  const shown = new URLSearchParams(location.search);
+  return [...target.searchParams].every(([key, value]) => shown.get(key) === value);
 }
 
 /** The navigation region. */
@@ -84,6 +94,7 @@ export function NavSection(props: {
   dynamic?: DynamicEntries;
 }): ReactNode {
   const { query, allowed } = useContext(SearchContext);
+  const location = useLocation();
   const scope = useScope();
   const read = useRead(props.dynamic ? { view: props.dynamic.fromView } : undefined, scope.values);
   if (allowed && !allowed.includes(props.name)) {
@@ -116,7 +127,9 @@ export function NavSection(props: {
           const href = hrefFor(link.page, link.params ?? {});
           return (
             <li key={href}>
-              <Link to={href}>{link.label}</Link>
+              <Link to={href} aria-current={isCurrent(href, location) ? "page" : undefined}>
+                {link.label}
+              </Link>
             </li>
           );
         })}

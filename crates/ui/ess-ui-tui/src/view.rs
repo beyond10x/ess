@@ -435,6 +435,7 @@ impl App {
         }
     }
 
+    #[allow(clippy::too_many_lines)] // title, badge, total, live, switch, metrics, actions, help
     fn header_lines(&self, width: usize) -> Vec<Line<'static>> {
         let page = self.page_def();
         let Some(header) = &page.header else {
@@ -457,19 +458,47 @@ impl App {
                 .unwrap_or_else(|| self.page.clone()),
             bold(),
         )];
+        if let Some(badge) = &header.badge {
+            let text = self
+                .eval(&badge.text.0, &Ctx::default())
+                .map_or_else(|| badge.text.0.clone(), |value| display(&value));
+            let tone = badge.tone.clone().unwrap_or(Tone::Neutral);
+            title.push(Span::raw(" "));
+            title.push(Span::styled(format!("[{text}]"), emphasis(&tone)));
+        }
         if let Some(total) = &header.total {
             if let Some(count) = self.total(total) {
                 title.push(Span::raw(format!(" ({count})")));
             }
         }
-        let switch: Vec<String> = header
+        // A bound run holds no channel open, so its header shows no live state.
+        if self.bound.is_none() {
+            for channel in &header.live {
+                let status = self.channel_status(channel);
+                title.push(Span::styled(format!("  ● {status}"), dim()));
+            }
+        }
+        let mut switch: Vec<String> = header
             .switch
             .iter()
             .chain(page.switch_to.iter())
             .cloned()
             .collect();
+        if !switch.is_empty() && !switch.contains(&self.page) {
+            switch.insert(0, self.page.clone());
+        }
         if !switch.is_empty() {
-            title.push(Span::styled(format!("  ⇄ {}", switch.join(", ")), dim()));
+            let entries: Vec<String> = switch
+                .iter()
+                .map(|name| {
+                    if *name == self.page {
+                        format!("▸ {name}")
+                    } else {
+                        name.clone()
+                    }
+                })
+                .collect();
+            title.push(Span::styled(format!("  ⇄ {}", entries.join(", ")), dim()));
         }
         let mut lines = vec![Line::from(title)];
         if !header.metrics.is_empty() {

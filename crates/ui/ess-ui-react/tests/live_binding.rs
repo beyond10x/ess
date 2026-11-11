@@ -156,6 +156,11 @@ fn fnv(text: &str) -> u64 {
 /// story:a-badge-field-takes-a-tone: every project ships the runtime's `toneFor` (`json.ts`), the
 /// field value's tone (`fields.tsx`), the badge's shared tone lookup and the `ui-field-tone-*`
 /// text colors (`styles.css`); the pinned files above and the document's own page are unchanged.
+/// The whole-project digest re-pinned for
+/// story:a-page-shows-its-title-total-badge-and-live-status-and-marks-the-current-page: the header
+/// frame draws a count, a lifecycle word, a badge and a segmented switch, a page without a header
+/// draws its title, and navigation and `Link` mark the current page (`core.tsx`, `router.tsx`,
+/// `styles.css`).
 /// `data.ts` and the whole-project digest re-pinned for story:metric-error-state-on-failed-read: a
 /// failed read carries its HTTP status (`errorStatus`), which a metric draws.
 /// The entry, `actions.tsx`, `confirm.tsx`, `form.tsx` and the whole-project digest re-pinned for
@@ -179,7 +184,7 @@ const PLAIN: [(&str, u64); 7] = [
     ("src/runtime/data.ts", 0x4371_a4b4_7789_84a7),
     ("www/index.html", 0x5972_6d4a_5ee2_5ce2),
 ];
-const PLAIN_PROJECT: u64 = 0xf384_719d_bb38_e263;
+const PLAIN_PROJECT: u64 = 0x0278_29ed_4c8c_f835;
 
 #[test]
 fn without_a_model_the_project_is_byte_identical() {

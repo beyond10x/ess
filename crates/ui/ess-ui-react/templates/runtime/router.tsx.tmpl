@@ -84,7 +84,13 @@ export function useSearchParams(): [URLSearchParams, SetURLSearchParams] {
  * any other click is left to the browser (a new tab, a new window, a download). A link to the
  * location the browser is already on replaces the entry, so Back is not a no-op.
  */
-export function Link(props: { to: string; children?: ReactNode; className?: string; title?: string }): ReactNode {
+export function Link(props: {
+  to: string;
+  children?: ReactNode;
+  className?: string;
+  title?: string;
+  "aria-current"?: "page";
+}): ReactNode {
   const { location, navigate } = useContext(RouterContext);
   const current = `${location.pathname}${location.search}${location.hash}`;
   const onClick = (event: MouseEvent<HTMLAnchorElement>) => {
@@ -102,7 +108,7 @@ export function Link(props: { to: string; children?: ReactNode; className?: stri
     navigate(props.to, { replace: props.to === current });
   };
   return (
-    <a href={props.to} className={props.className} title={props.title} onClick={onClick}>
+    <a href={props.to} className={props.className} title={props.title} aria-current={props["aria-current"]} onClick={onClick}>
       {props.children}
     </a>
   );
