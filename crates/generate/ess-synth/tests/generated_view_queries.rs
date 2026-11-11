@@ -1548,3 +1548,513 @@ impl Harnessed {
         })))
     }
 }
+
+// ---- adversary: typed parameters, comparisons other than `==`, and mixed orders -----------------
+//
+// The generated queries are driven through the same requests as the interpreted target and must
+// answer what it answers: the same rows in the same order, or a refusal where it refuses.
+
+/// The views the adversary probes, beside example `26b`'s own.
+const ADVERSARY_VIEWS: &str = "- name: gap.demo.TitleIs
+  source: gap.demo.Item
+  consistency: read_your_writes
+  params:
+  - name: title
+    type: String
+  filter: title == param.title
+  fields:
+  - name: id
+    type: String
+- name: gap.demo.TitleIsNot
+  source: gap.demo.Item
+  consistency: read_your_writes
+  params:
+  - name: title
+    type: String
+  filter: title != param.title
+  fields:
+  - name: id
+    type: String
+- name: gap.demo.NIs
+  source: gap.demo.Item
+  consistency: read_your_writes
+  params:
+  - name: k
+    type: Integer
+  filter: n == param.k
+  fields:
+  - name: id
+    type: String
+- name: gap.demo.NBelow
+  source: gap.demo.Item
+  consistency: read_your_writes
+  params:
+  - name: k
+    type: Integer
+  filter: n < param.k
+  fields:
+  - name: id
+    type: String
+- name: gap.demo.CreatedAt
+  source: gap.demo.Item
+  consistency: read_your_writes
+  params:
+  - name: at
+    type: Timestamp
+  filter: created == param.at
+  fields:
+  - name: id
+    type: String
+- name: gap.demo.CreatedBefore
+  source: gap.demo.Item
+  consistency: read_your_writes
+  params:
+  - name: at
+    type: Timestamp
+  filter: created < param.at
+  fields:
+  - name: id
+    type: String
+- name: gap.demo.NoteIs
+  source: gap.demo.Item
+  consistency: read_your_writes
+  params:
+  - name: note
+    type: String
+  filter: note == param.note
+  fields:
+  - name: id
+    type: String
+- name: gap.demo.NoteDesc
+  source: gap.demo.Item
+  consistency: read_your_writes
+  order_by:
+  - note desc
+  - created asc
+  fields:
+  - name: id
+    type: String
+  - name: note
+    type: Optional<String>
+  - name: created
+    type: Timestamp
+- name: gap.demo.DueAsc
+  source: gap.demo.Item
+  consistency: read_your_writes
+  order_by:
+  - due asc
+  - title desc
+  fields:
+  - name: id
+    type: String
+  - name: due
+    type: Optional<Timestamp>
+  - name: title
+    type: String
+- name: gap.demo.CreatedAsc
+  source: gap.demo.Item
+  consistency: read_your_writes
+  order_by:
+  - created asc
+  fields:
+  - name: id
+    type: String
+  - name: created
+    type: Timestamp
+- name: gap.demo.NoteIsX
+  source: gap.demo.Item
+  consistency: read_your_writes
+  filter: note == \"x\"
+  fields:
+  - name: id
+    type: String
+";
+
+/// The probed views, by name.
+const ADVERSARY_VIEW_NAMES: [&str; 11] = [
+    "gap.demo.NoteIsX",
+    "gap.demo.TitleIs",
+    "gap.demo.TitleIsNot",
+    "gap.demo.NIs",
+    "gap.demo.NBelow",
+    "gap.demo.CreatedAt",
+    "gap.demo.CreatedBefore",
+    "gap.demo.NoteIs",
+    "gap.demo.NoteDesc",
+    "gap.demo.DueAsc",
+    "gap.demo.CreatedAsc",
+];
+
+/// Example `26b` accepting its commands, with the probed views.
+fn adversary_files() -> Vec<(String, String)> {
+    let mut files = accepting_commands(&workbench_files("26b"));
+    let demo = &mut files
+        .iter_mut()
+        .find(|(name, _)| name == "demo.yaml")
+        .expect("the example has its demo file")
+        .1;
+    let grants = ADVERSARY_VIEW_NAMES.join("\n  - ");
+    let grants = format!("  - {grants}\n");
+    for (from, to) in [
+        (
+            "actors:\n".to_owned(),
+            format!("{ADVERSARY_VIEWS}actors:\n"),
+        ),
+        (
+            "  - gap.demo.Newest\n".to_owned(),
+            format!("  - gap.demo.Newest\n{grants}"),
+        ),
+    ] {
+        assert_eq!(demo.matches(&from).count(), 1, "`{from}` is in the example");
+        *demo = demo.replacen(&from, &to, 1);
+    }
+    files
+}
+
+/// The rows stored: identity, title, `n`, `created`, `note`, `due`. `a1`, `a2` and `a5` name one
+/// instant in three spellings; `a4`'s `due` is earlier than `a5`'s by instant and later by text.
+#[allow(clippy::type_complexity)]
+const ADVERSARY_ROWS: [(&str, &str, i64, &str, Option<&str>, Option<&str>); 6] = [
+    (
+        "a1",
+        "a",
+        5,
+        "2026-01-01T00:00:00Z",
+        Some("x"),
+        Some("2026-03-01T00:00:00Z"),
+    ),
+    ("a2", "a b", -2, "2026-01-01T01:00:00+01:00", None, None),
+    ("a3", "", 12, "2026-01-01T00:30:00Z", Some("y"), None),
+    (
+        "a4",
+        "a&b=c+d%",
+        5,
+        "2025-12-31T23:59:59.5-00:30",
+        Some("x"),
+        Some("2026-02-01T04:00:00+05:00"),
+    ),
+    (
+        "a5",
+        "é",
+        0,
+        "2026-01-01T00:00:00.000Z",
+        None,
+        Some("2026-02-01T00:00:00Z"),
+    ),
+    ("a6", "a", 7, "2026-01-01T00:00:00.5Z", None, None),
+];
+
+/// The reads: a view and its parameters, each value as JSON. `NoteIs` and `NoteIsX` (a comparison
+/// with an optional stored field) are not read: the interpreted target refuses that read while the
+/// generated query answers it, a gap older than this probe that the backlog holds
+/// (story:a-filter-on-an-optional-stored-field-is-owed-or-answered-as-the-interpreted-target).
+const ADVERSARY_READS: [(&str, &[(&str, &str)]); 21] = [
+    ("gap.demo.TitleIs", &[("title", "\"a\"")]),
+    ("gap.demo.TitleIs", &[("title", "\"a b\"")]),
+    ("gap.demo.TitleIs", &[("title", "\"\"")]),
+    ("gap.demo.TitleIs", &[("title", "\"a&b=c+d%\"")]),
+    ("gap.demo.TitleIs", &[("title", "\"é\"")]),
+    ("gap.demo.TitleIs", &[("title", "\"zzz\"")]),
+    ("gap.demo.TitleIsNot", &[("title", "\"a\"")]),
+    ("gap.demo.NIs", &[("k", "5")]),
+    ("gap.demo.NIs", &[("k", "-2")]),
+    ("gap.demo.NIs", &[("k", "99")]),
+    ("gap.demo.NBelow", &[("k", "5")]),
+    ("gap.demo.NBelow", &[("k", "0")]),
+    ("gap.demo.NBelow", &[("k", "-100")]),
+    (
+        "gap.demo.CreatedAt",
+        &[("at", "\"2026-01-01T00:00:00+00:00\"")],
+    ),
+    (
+        "gap.demo.CreatedAt",
+        &[("at", "\"2026-01-01T00:29:59.500Z\"")],
+    ),
+    (
+        "gap.demo.CreatedBefore",
+        &[("at", "\"2026-01-01T00:30:00+00:00\"")],
+    ),
+    ("gap.demo.NoteDesc", &[]),
+    ("gap.demo.DueAsc", &[]),
+    ("gap.demo.CreatedAsc", &[]),
+    ("gap.demo.Newest", &[]),
+    (
+        "gap.demo.CreatedAt",
+        &[("at", "\"2026-01-01T00:00:00.5+00:00\"")],
+    ),
+];
+
+/// What `target` answers to the probe: per step, what it is, what is compared, and the detail.
+fn adversary_transcript<T: ConformanceTarget>(target: &T) -> Vec<(String, String, String)> {
+    let correlation =
+        ess_primitives::ids::CorrelationId::new("adversary-probe").expect("a correlation");
+    let context = ScenarioContext::new(
+        "gap.demo/authored/adversary-probe"
+            .parse()
+            .expect("a scenario id"),
+        correlation.clone(),
+    );
+    let actor: ActorRef = ANYONE.parse().expect("an actor");
+    let mut lines = Vec::new();
+    if let Err(error) = target.begin_scenario(&context) {
+        return vec![("begin".into(), "refused".into(), error.to_string())];
+    }
+    let mut commands = vec![(
+        "gap.demo.CreateParent",
+        serde_json::json!({"id": "p", "name": "p"}),
+    )];
+    for (id, title, n, created, note, due) in ADVERSARY_ROWS {
+        let mut input = serde_json::json!({
+            "id": id, "title": title, "parent_id": "p", "n": n, "tags": [], "created": created,
+        });
+        if let Some(note) = note {
+            input["note"] = note.into();
+        }
+        if let Some(due) = due {
+            input["due"] = due.into();
+        }
+        commands.push(("gap.demo.CreateItem", input));
+    }
+    for (command, input) in commands {
+        let input: BTreeMap<String, Node> = input
+            .as_object()
+            .expect("an object")
+            .iter()
+            .map(|(name, value)| (name.clone(), node_of(value)))
+            .collect();
+        let answer = target.execute_command(SemanticCommandRequest {
+            command: command.parse().expect("a command"),
+            actor: Some(actor.clone()),
+            caller: None,
+            input: input.clone(),
+            correlation: correlation.clone(),
+        });
+        let (compared, detail) = match answer {
+            Ok(result) => {
+                let outcome = format!("{:?}", result.outcome.map(|outcome| outcome.to_string()));
+                (outcome.clone(), outcome)
+            }
+            Err(error) => ("refused".to_owned(), error.to_string()),
+        };
+        lines.push((format!("{command} {input:?}"), compared, detail));
+    }
+    for (view, params) in ADVERSARY_READS {
+        let params: BTreeMap<String, Node> = params
+            .iter()
+            .map(|(name, value)| {
+                (
+                    (*name).to_owned(),
+                    node_of(&serde_json::from_str(value).expect("JSON")),
+                )
+            })
+            .collect();
+        let request = SemanticViewRequest {
+            view: view.parse().expect("a view"),
+            params: params.clone(),
+            consistency: ess_primitives::consistency::QueryConsistency::Current,
+            correlation: correlation.clone(),
+            deadline: ess_conformance::target::Deadline::at(
+                ess_primitives::time::Timestamp::from_epoch_millis(4_102_444_800_000),
+            ),
+        };
+        let (compared, detail) = match target.query_view_as(request, &actor) {
+            Ok(result) => {
+                let ids: Vec<&str> = result
+                    .rows
+                    .iter()
+                    .map(|row| row.get("id").and_then(Node::as_text).unwrap_or("?"))
+                    .collect();
+                let ids = format!("{ids:?}");
+                (ids.clone(), ids)
+            }
+            Err(error) => ("refused".to_owned(), error.to_string()),
+        };
+        lines.push((format!("{view} {params:?}"), compared, detail));
+    }
+    lines
+}
+
+/// `served` answers every probe as the interpreted target answers it.
+fn assert_agrees_with_the_interpreted_target(served: &Harnessed, owed: &[String], label: &str) {
+    let interpreted =
+        ess_conformance::interpret::Interpreted::for_model(compile_files(&adversary_files()));
+    let expected = adversary_transcript(&interpreted);
+    let observed = adversary_transcript(served);
+    assert_eq!(
+        expected.len(),
+        observed.len(),
+        "{label}: one answer per probe"
+    );
+    eprintln!("{label} transcript (step | interpreted | generated):");
+    for (expected, observed) in expected.iter().zip(&observed) {
+        eprintln!("  {} | {} | {}", expected.0, expected.2, observed.2);
+    }
+    let differences: Vec<String> = expected
+        .iter()
+        .zip(&observed)
+        .filter(|(expected, observed)| expected.1 != observed.1)
+        .map(|(expected, observed)| {
+            format!(
+                "{}: interpreted {} | {label} {}",
+                expected.0, expected.2, observed.2
+            )
+        })
+        .collect();
+    assert!(
+        differences.is_empty(),
+        "{label} answers {} of {} probes as the interpreted target does not (owed: {owed:?}):\n{}",
+        differences.len(),
+        expected.len(),
+        differences.join("\n")
+    );
+}
+
+#[test]
+fn adversary_an_optional_parameter_any_comparison_reads_keeps_the_query_owed() {
+    let variants = [
+        ("Optional<Integer>", "n < param.k"),
+        ("Optional<Integer>", "param.k == n"),
+        ("Optional<Integer>", "n != param.k"),
+        ("Optional<Integer>", "{any: [n == param.k, title == \"a\"]}"),
+        ("Optional<Timestamp>", "created >= param.k"),
+        (
+            "Optional<String>",
+            "{all: [{title: {starts_with: {param: k}}}, title != param.k]}",
+        ),
+    ];
+    let mut generated = Vec::new();
+    for (type_name, filter) in variants {
+        let mut files = adversary_files();
+        let demo = &mut files
+            .iter_mut()
+            .find(|(name, _)| name == "demo.yaml")
+            .expect("the example has its demo file")
+            .1;
+        *demo = demo.replacen(
+            "actors:\n",
+            &format!(
+                "- name: gap.demo.OptionalProbe\n  source: gap.demo.Item\n  consistency: \
+                 read_your_writes\n  params:\n  - name: k\n    type: {type_name}\n  filter: \
+                 {filter}\n  fields:\n  - name: id\n    type: String\nactors:\n"
+            ),
+            1,
+        );
+        *demo = demo.replacen(
+            "  - gap.demo.Newest\n",
+            "  - gap.demo.Newest\n  - gap.demo.OptionalProbe\n",
+            1,
+        );
+        let ir = compile_files(&files);
+        for target in [Target::Rust, Target::Go] {
+            let synthesis = synthesize_for(&ir, target).expect("the probe synthesizes");
+            if !matches!(
+                synthesis
+                    .plan
+                    .disposition_of(CapabilityKind::ViewQuery, "gap.demo.OptionalProbe"),
+                Some(SynthesisDisposition::Obligation { .. })
+            ) {
+                generated.push(format!(
+                    "{target:?}: `{filter}` over a `{type_name}` parameter"
+                ));
+            }
+        }
+    }
+    assert!(
+        generated.is_empty(),
+        "an optional parameter a comparison reads is generated:\n{}",
+        generated.join("\n")
+    );
+}
+
+/// The probed views each plan owes, with why.
+fn adversary_owed(synthesis: &ess_synth::Synthesis) -> Vec<String> {
+    synthesis
+        .plan
+        .obligations()
+        .map(|(capability, obligation)| {
+            format!("{}: {}", capability.source, obligation.reason.describes())
+        })
+        .collect()
+}
+
+#[test]
+fn adversary_rust_typed_parameters_and_orders_answer_as_the_interpreted_target() {
+    let ir = compile_files(&adversary_files());
+    let synthesis = synthesize_for(&ir, Target::Rust).expect("the probe synthesizes");
+    let owed = adversary_owed(&synthesis);
+    let scratch = Scratch(
+        Path::new(env!("CARGO_TARGET_TMPDIR"))
+            .join(format!("adversary-rust-{}", std::process::id())),
+    );
+    let _ = std::fs::remove_dir_all(&scratch.0);
+    let tree = scratch.0.join("gap");
+    write_tree(&tree, &synthesis);
+    let harness = scratch.0.join("harness");
+    std::fs::create_dir_all(harness.join("src")).expect("mkdir");
+    std::fs::write(
+        harness.join("Cargo.toml"),
+        format!("{HARNESS_MANIFEST}{EXAMPLE_DEPENDENCIES}"),
+    )
+    .expect("write");
+    std::fs::copy(
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/workbench-views-harness/main.rs"),
+        harness.join("src/main.rs"),
+    )
+    .expect("the harness copies");
+    let target = scratch.0.join("target");
+    let (built, log) = cargo(&harness, &target, &["build"]);
+    assert!(
+        built,
+        "the harness builds against the generated ports:\n{log}"
+    );
+    let served = Harnessed::start(&target.join("debug/harness"), &route_table(&ir), &ir);
+    assert_agrees_with_the_interpreted_target(&served, &owed, "rust");
+    drop(served);
+    drop(scratch);
+}
+
+#[test]
+fn adversary_go_typed_parameters_and_orders_answer_as_the_interpreted_target() {
+    let Some(go) = go() else {
+        eprintln!("no Go toolchain on this machine; the generated Go queries are unchecked here");
+        return;
+    };
+    let ir = compile_files(&adversary_files());
+    let synthesis = synthesize_for(&ir, Target::Go).expect("the probe synthesizes to Go");
+    let owed = adversary_owed(&synthesis);
+    let scratch = Scratch(
+        Path::new(env!("CARGO_TARGET_TMPDIR")).join(format!("adversary-go-{}", std::process::id())),
+    );
+    let _ = std::fs::remove_dir_all(&scratch.0);
+    let tree = scratch.0.join("gap");
+    write_tree(&tree, &synthesis);
+    let harness = scratch.0.join("harness");
+    std::fs::create_dir_all(&harness).expect("mkdir");
+    std::fs::write(
+        harness.join("go.mod"),
+        "module gapharness\n\ngo 1.21\n\nrequire example.invalid/gap v0.0.0\n\nreplace \
+         example.invalid/gap => ../gap\n",
+    )
+    .expect("write");
+    std::fs::copy(
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/workbench-views-go-harness/main.go"),
+        harness.join("main.go"),
+    )
+    .expect("the harness copies");
+    let binary = scratch.0.join("harness-bin");
+    let (built, log) = go_tool(
+        &harness,
+        &go,
+        &["build", "-o", binary.to_str().expect("a UTF-8 path"), "."],
+    );
+    assert!(
+        built,
+        "the harness builds against the generated ports:\n{log}"
+    );
+    let served = Harnessed::start(&binary, &route_table(&ir), &ir);
+    assert_agrees_with_the_interpreted_target(&served, &owed, "go");
+    drop(served);
+    drop(scratch);
+}
