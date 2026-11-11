@@ -2,9 +2,11 @@
 
 ## [Unreleased]
 
+## [0.93.0] — 2026-11-11
+
 ### Added
 
-- Format `ess/37`, suite pair `ess-conformance/64` (ordinary) and `/65` (coverage), and delta `ess-diff/24` are open with no construct of their own: a specification declaring `ess/37` reads exactly as at `ess/36`, every reader (Rust, Go, TypeScript) admits the suite pair wherever it admits `/62` and `/63`, `ess verify diff` reads and writes `ess-diff/24` wherever it does `/23`, and nothing writes `/64`, `/65` or `/24` yet. The Go and TypeScript runners now admit suite versions up to `/65`.
+- Format `ess/37`, suite pair `ess-conformance/64` (ordinary) and `/65` (coverage), and delta `ess-diff/24` are open with no construct of their own: a specification declaring `ess/37` reads exactly as at `ess/36`, every reader (Rust, Go, TypeScript) admits the suite pair wherever it admits `/62` and `/63`, `ess verify diff` reads and writes `ess-diff/24` wherever it does `/23`, and nothing writes `/64`, `/65` or `/24` yet. The Go and TypeScript runners now admit suite versions up to `/65`. Counted one-to-one: the spelling `format: ess/37` is admitted and opens no cell of grid R or grid O.
 - `ess-ui/1`: a collection column or record field takes `tone` and `tone_by`. `tone_by: <tone map name>` reads the field's own value and `tone` is the tone of a value the map does not name (`neutral` when not written). React draws the value as a badge in that tone when `as: badge` or `as: choice`, and as text in the tone's color otherwise; the terminal draws the tone's emphasis (`neutral` and `success` bold, `info` italic, `warning` underlined, `danger` bold and underlined). A `tone_by` naming no map is `tone_map_refs` at the field, and a map a field names is no longer `tone_map_unused`. A document without the keys loads and renders as before; an older reader refuses the keys as unknown fields.
 - `ess-ui/1`: in a widget body, `tone: args.<param>` hands a badge a tone the use chooses, for a param typed `{enum: [neutral, info, success, warning, danger]}`; a param of any other type there is refused at its path.
 - `ess-ui/1`: a tone map may be written as bands, `{bands: [{from: 0, tone: success}, {from: 50, tone: warning}, {from: 80, tone: danger}]}`, in `tone_maps` or as a `tone_by.map`. A number takes the tone of the last band whose `from` it reaches; a number below the first band, or a value that is no number, takes the node's `tone`. the loader refuses a `from` that is not a finite number, and a field's `tone_by` that is not a map name; `ess ui check` refuses bands whose `from` do not strictly ascend (`tone_bands`) and does not check a band map named where the values are not numbers.
@@ -53,6 +55,8 @@ A command response whose two fields share a wire name is now refused by `ess spe
 - Synthesis arranges a row through a creating command whose sibling refusals read an `Optional` input (beyond10x/ess#728). A candidate on which a guard is `Unknown` only because the candidate left that input out is passed over like a refuted one, so a candidate that supplies the input, or decides the guard `false`, creates the row; a command with a stored-field guard no longer loses its scenarios to `ESS-SYNTH-002` for it. Every other `Unknown` still ends the search, and where no candidate serves the refusal is the first such `ESS-SYNTH-002`. Suites that did not refuse keep their bytes.
 - An ESS-SYNTH-004 refusal about an entity several commands create names every creator tried, each with its own cause and in the order tried, instead of only the first creator (beyond10x/ess#728). A refusal with one creator, or where every creator fails for the same cause, keeps its text.
 - Synthesis witnesses an `existing_instance:` branch beside a `when_related:` guard on the same command: the scenario's first call is now the run the creating branch's own scenario is built from, so a related row that has to rest in a state only other commands reach is arranged, and `ESS-SYNTH-004` no longer refuses it (beyond10x/ess#733). Where no run reaches the creating branch, the refusal names the state the creation creates into (`into:`, else the initial state) and asks for `sets: <field>: input.<field>` only where a creator of the related row leaves a compared field unset from its input.
+
+Language: 0 general, 1 one-to-one, 0 part (general share 0%; cumulative 17%).
 
 ## [0.92.0] — 2026-11-09
 

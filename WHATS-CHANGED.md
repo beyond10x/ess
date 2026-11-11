@@ -6,6 +6,7 @@ Generated from `changes/*.yaml` by `cargo xtask whats-changed`. Edit a fragment,
 
 | Release | Change | Kind | Impact |
 |---|---|---|---|
+| [0.93.0](#kubernetes-scans-read-the-gateway-api-ui-values-take-tones-and-an-authored-scenario-retires-a-refusal) | Kubernetes scans read the Gateway API, UI values take tones, and an authored scenario retires a refusal | capability | significant |
 | [0.92.0](#react-projects-register-host-slots-and-the-terminal-draws-them-as-labelled-regions) | React projects register host slots, and the terminal draws them as labelled regions | capability | significant |
 | [0.91.1](#aggregate-measures-compute-expressions-enums-can-be-ordered-and-host-slots-are-checked) | Aggregate measures compute expressions, enums can be ordered, and host slots are checked | capability | significant |
 | [0.90.0](#ui-documents-declare-host-slots-and-synthesis-witnesses-guards-over-lists-of-identities) | UI documents declare host slots, and synthesis witnesses guards over lists of identities | capability | notable |
@@ -103,6 +104,14 @@ Generated from `changes/*.yaml` by `cargo xtask whats-changed`. Edit a fragment,
 | [0.16.0](#an-authored-scenario-can-claim-a-length-of-time-and-a-target-has-to-answer-for-it) | An authored scenario can claim a length of time, and a target has to answer for it | capability | significant |
 | [0.14.0](#a-component-can-declare-a-command-line-surface-and-ess-synthesizes-its-parser) | A component can declare a command-line surface, and ESS synthesizes its parser | capability | significant |
 | [0.1.0](#ess-becomes-a-standalone-executable-specification-toolchain) | ESS becomes a standalone executable specification toolchain | migration | significant |
+
+## 0.93.0 — 2026-11-11
+
+### Kubernetes scans read the Gateway API, UI values take tones, and an authored scenario retires a refusal
+
+capability · significant impact · [release notes](https://github.com/beyond10x/ess/releases/tag/0.93.0)
+
+A full Kubernetes scan reads Gateway API gateways and routes into `infra-ir/4`. UI columns and fields take a tone, React draws the declared tokens, and a UI test declares how each read and command is answered. An authored `ess-scenario/7` scenario can retire the refusal it covers. Format `ess/37` opens.
 
 ## 0.92.0 — 2026-11-09
 

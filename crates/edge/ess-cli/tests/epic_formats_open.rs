@@ -45,7 +45,7 @@ fn ledger_at(directory: &Path, label: &str, format: &str) -> PathBuf {
 }
 
 #[test]
-fn ess_37_is_listed_unreleased_and_reads_as_ess_36() {
+fn ess_37_is_listed_as_added_in_0_93_0_and_reads_as_ess_36() {
     let listed = good(&["specify", "formats", "--format", "json"]);
     let rows: Value = serde_json::from_slice(&listed.stdout).unwrap();
     let row = rows
@@ -54,7 +54,7 @@ fn ess_37_is_listed_unreleased_and_reads_as_ess_36() {
         .iter()
         .find(|row| row["format"] == "ess/37")
         .unwrap_or_else(|| panic!("ess/37 is not listed: {rows}"));
-    assert_eq!(row["release"], Value::Null, "{row}");
+    assert_eq!(row["release"], json!("0.93.0"), "{row}");
     assert_eq!(row["newest"], json!(true), "{row}");
 
     let directory = TemporaryDirectory::create("ess-epic-formats-source").unwrap();
