@@ -183,7 +183,7 @@ type LineItem struct {
 
 // Money is Money — `billing.invoice.Money`.
 //
-// Every value satisfies `amount >= 0` — declared here, enforced by whatever behaviour constructs one.
+// Every value satisfies `amount >= 0` — the generated decoder refuses a value that breaks it.
 type Money struct {
 	// Amount is `amount` — `Decimal`.
 	Amount primitives.Decimal

@@ -341,6 +341,12 @@ pub(super) fn struct_decoder_check(
         return;
     }
     out.push_str("\t{\n");
+    // A package of the layout named `out` moves the receiver off that name; the decoder's own
+    // local keeps it, so the receiver is bound to the value being decoded.
+    let receiver = fresh(&struct_reserved(emit), STRUCT_RECEIVER);
+    if receiver != STRUCT_RECEIVER {
+        let _ = writeln!(out, "\t\t{receiver} := out\n\t\t_ = {receiver}");
+    }
     for constraint in checks {
         for line in constraint.prelude {
             out.push_str(&line);

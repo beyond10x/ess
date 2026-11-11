@@ -234,7 +234,19 @@ fn structure(
         declared.name
     );
     summary_doc(out, declared.naming.summary.as_deref());
-    invariant_doc(out, invariants);
+    if invariants.is_empty() {
+        invariant_doc(out, invariants);
+    } else {
+        out.push_str("//\n");
+        for invariant in invariants {
+            let _ = writeln!(
+                out,
+                "// Every value satisfies `{}` — the generated decoder refuses a value that \
+                 breaks it.",
+                invariant.statement
+            );
+        }
+    }
     struct_body(out, emit, type_name, fields);
 }
 

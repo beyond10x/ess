@@ -96,7 +96,20 @@ fn structure(
         declared.name
     );
     summary_doc(out, declared.naming.summary.as_deref());
-    invariant_doc(out, invariants);
+    if invariants.is_empty() {
+        invariant_doc(out, invariants);
+    } else {
+        out.push_str("///\n");
+        for invariant in invariants {
+            let _ = writeln!(
+                out,
+                "/// Every value satisfies `{}` — checked by [`{}::broken_constraint`]; the \
+                 generated decoder refuses a value that breaks it.",
+                super::doc_text(&invariant.statement, "///"),
+                emit.layout.type_name(&declared.name)
+            );
+        }
+    }
     let _ = writeln!(
         out,
         "#[derive(Debug, Clone, PartialEq, Eq)]\npub struct {} {{",

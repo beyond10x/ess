@@ -32,7 +32,7 @@ pub enum Building {
 
 /// Deposit — `gatepass.visit.Deposit`.
 ///
-/// Every value satisfies `amount >= 0` — declared here, enforced by whatever behaviour constructs one.
+/// Every value satisfies `amount >= 0` — checked by [`Deposit::broken_constraint`]; the generated decoder refuses a value that breaks it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Deposit {
     /// `amount` — `Decimal`.
@@ -42,11 +42,11 @@ pub struct Deposit {
 }
 
 impl Deposit {
-    /// The first constraint `gatepass.visit.Deposit` declares that this value breaks — its alphabet, its prefix,
-    /// then each invariant — as what a decoder expected instead, or `None` when it breaks none.
+    /// The first invariant `gatepass.visit.Deposit` declares that this value breaks, as what a decoder expected
+    /// instead, or `None` when it breaks none.
     ///
     /// An invariant is broken only when it is false of this value, as the conformance
-    /// interpreter reads it. A wrapped newtype's own constraints are its own to check.
+    /// interpreter reads it. A member's own constraints are its own type's to check.
     pub fn broken_constraint(&self) -> Option<&'static str> {
         use crate::primitives::invariant as iv;
         if iv::broken(iv::compare(iv::Fact::number(&self.amount.0), iv::Op::Ge, iv::Fact::number("0"), false, true)) {

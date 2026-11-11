@@ -239,16 +239,23 @@ pub(super) fn newtype_check(out: &mut String, emit: &Emit<'_>, declared: &Resolv
         return;
     }
     let invariants = checks.iter().any(|(_, check)| check.starts_with("iv::"));
-    let _ = writeln!(
-        out,
-        "\nimpl {} {{\n    /// The first constraint `{}` declares that this value breaks — its alphabet, its \
+    let doc = if matches!(declared.body, ResolvedBody::Struct { .. }) {
+        "/// The first invariant `{}` declares that this value breaks, as what a decoder expected\n    \
+         /// instead, or `None` when it breaks none.\n    ///\n    /// An invariant is broken only \
+         when it is false of this value, as the conformance\n    /// interpreter reads it. A \
+         member's own constraints are its own type's to check."
+    } else {
+        "/// The first constraint `{}` declares that this value breaks — its alphabet, its \
          prefix,\n    /// then each invariant — as what a decoder expected instead, or `None` when \
          it breaks none.\n    ///\n    /// An invariant is broken only when it is false of this \
          value, as the conformance\n    /// interpreter reads it. A wrapped newtype's own \
-         constraints are its own to check.\n    pub fn broken_constraint(&self) -> \
-         Option<&'static str> {{",
+         constraints are its own to check."
+    };
+    let doc = doc.replace("{}", &declared.name.to_string());
+    let _ = writeln!(
+        out,
+        "\nimpl {} {{\n    {doc}\n    pub fn broken_constraint(&self) -> Option<&'static str> {{",
         emit.layout.type_name(&declared.name),
-        declared.name
     );
     if invariants {
         out.push_str("        use crate::primitives::invariant as iv;\n");
