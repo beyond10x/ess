@@ -10719,18 +10719,7 @@ fn view_expectations(
         (Some(captured), ResolvedInstance::Observed { .. }) if absent_run(captured) => {
             Some(ScenarioValue::instance(captured.clone()))
         }
-        // A further instance of the entity was created before the subject: the runners resolve an
-        // observed reference to the event's first occurrence, which is that instance's, so the
-        // subject is read by the instance the scenario captured.
-        (Some(captured), ResolvedInstance::Observed { event, .. })
-            if run.setup.iter().any(|step| {
-                matches!(step, ScenarioStep::CaptureInstance { instance: other, event: published, .. }
-                    if other != captured && *published == EventRef::from(event))
-            }) =>
-        {
-            Some(ScenarioValue::instance(captured.clone()))
-        }
-        _ => identity_of(subject, instance),
+        _ => run_identity(subject, run),
     };
     let identity = identity.as_ref();
     // What names the row in each view: the identity written, for a re-key.
@@ -14983,6 +14972,25 @@ fn identity_of(
             field.name.clone(),
         )),
     }
+}
+
+/// [`identity_of`] for the subject of `run`: where the scenario's setup captured a further
+/// instance of the entity before the subject, the subject is named by the instance it captured.
+/// The runners resolve an observed reference to the event's first occurrence, which is the further
+/// instance's.
+fn run_identity(subject: &ResolvedSubject, run: &Run) -> Option<ScenarioValue> {
+    if let (Some(captured), ResolvedInstance::Observed { event, .. }) =
+        (run.instance.as_ref(), &subject.instance)
+    {
+        let further = run.setup.iter().any(|step| {
+            matches!(step, ScenarioStep::CaptureInstance { instance: other, event: published, .. }
+                if other != captured && *published == EventRef::from(event))
+        });
+        if further {
+            return Some(ScenarioValue::instance(captured.clone()));
+        }
+    }
+    identity_of(subject, run.instance.as_ref())
 }
 
 /// What this scenario supplies for each parameter the view declares.
@@ -19665,7 +19673,7 @@ fn holds_after(
     // The state the branch leaves the instance in, which is what decides whether a filtered view
     // holds a row to read the invariant off. A branch with a subject always has one.
     let state = run.after.clone()?;
-    let known = identity_of(subject, run.instance.as_ref());
+    let known = run_identity(subject, &run);
     let views = projections
         .get(&subject.entity)
         .map(Vec::as_slice)
@@ -20076,7 +20084,7 @@ fn holds_at(
             let Some(state) = run.after.clone() else {
                 continue;
             };
-            let known = identity_of(subject, run.instance.as_ref());
+            let known = run_identity(subject, &run);
             let params = bound(ir, view, &run.settled, known.as_ref());
             if !matches!(
                 shows_row(ir, view, &state, &run.settled, known.as_ref(), &params),

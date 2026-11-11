@@ -853,3 +853,525 @@ fn a_uniqueness_create_read_by_identity_passes_on_the_interpreter() {
     assert!(read >= 1, "a scenario reads WidgetById");
     passes_on_the_interpreter(&control, &result, result.suite.scenarios.len());
 }
+
+/// Adversary: every read of `view` made once the scenario captured its `subject` and, before it,
+/// another instance of `event` (so the event's first occurrence is not the subject's), and the
+/// ones among them sending `param` as an `observed` reference, which the runners resolve to that
+/// first occurrence rather than to the row the scenario is about.
+fn adv_observed_after_two_captures(
+    result: &Synthesis,
+    view: &str,
+    param: &str,
+    event: &str,
+    subject: &str,
+) -> (Vec<String>, Vec<String>) {
+    let mut reached = Vec::new();
+    let mut wrong = Vec::new();
+    for (id, scenario) in &result.suite.scenarios {
+        let mut captured = Vec::new();
+        for step in &scenario.steps {
+            match step {
+                ScenarioStep::CaptureInstance {
+                    instance,
+                    event: published,
+                    ..
+                } if published.to_string() == event => {
+                    captured.push(instance.to_string());
+                }
+                ScenarioStep::QueryView { view: read, params }
+                    if read.to_string() == view
+                        && captured.iter().any(|name| name == subject)
+                        && captured.first().is_some_and(|first| first != subject) =>
+                {
+                    reached.push(id.to_string());
+                    if let Some(sent @ ScenarioValue::Observed { .. }) = params.get(param) {
+                        wrong.push(format!(
+                            "{id}: {sent:?} after capturing, in order, {captured:?}"
+                        ));
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+    (reached, wrong)
+}
+
+/// Adversary: `without_examples(UNIQUE)` with an entity invariant every row satisfies (`rev` is
+/// set to 0), so `invariant/after` reads it off `WidgetById` after the same run, a further widget
+/// created before the subject. The invariant witness is a read by identity like the created
+/// scenario's, and it is bound by `identity_of` (synthesize.rs `holds_after`), not by the arm this
+/// unit added: it sends `{kind: observed}` and reads the further widget's row.
+#[test]
+fn adv_an_invariant_read_after_a_further_widget_names_the_subject() {
+    let text = without_examples(UNIQUE);
+    let text = with(
+        &text,
+        "      - {name: config, type: \"Optional<Map<String, Json>>\"}\n    lifecycle:",
+        "      - {name: config, type: \"Optional<Map<String, Json>>\"}\n      \
+         - {name: rev, type: Integer}\n    invariants:\n      - rev >= 0\n    lifecycle:",
+    );
+    let text = with(
+        &text,
+        "          config: input.config\n",
+        "          config: input.config\n          rev: 0\n",
+    );
+    let text = with(
+        &text,
+        "    filter: widget_id == param.widget_id\n    fields:\n",
+        "    filter: widget_id == param.widget_id\n    fields:\n      - {name: rev, type: Integer}\n",
+    );
+    let text = with(
+        &text,
+        "    consistency: read_your_writes\n    fields:\n",
+        "    consistency: read_your_writes\n    fields:\n      - {name: rev, type: Integer}\n",
+    );
+    let result = synthesize(&ir(&text));
+    let ids: Vec<String> = result
+        .suite
+        .scenarios
+        .keys()
+        .map(ToString::to_string)
+        .collect();
+    assert!(
+        ids.iter().any(|id| id.contains("invariant")),
+        "an invariant scenario: {ids:?}, refusals {:?}",
+        result.refusals
+    );
+    // Every row satisfies the invariant, so the honest interpreter passes whichever row is read.
+    passes_on_the_interpreter(&text, &result, result.suite.scenarios.len());
+    let (reached, wrong) = adv_observed_after_two_captures(
+        &result,
+        "demo.widget.WidgetById",
+        "widget_id",
+        "demo.widget.WidgetCreated",
+        "widget",
+    );
+    assert!(
+        reached.iter().any(|id| id.contains("invariant")),
+        "the invariant scenario reads WidgetById after a further widget preceded the subject: \
+         {reached:?}"
+    );
+    assert!(
+        wrong.is_empty(),
+        "an observed widget_id after a further widget was published reads that widget: {wrong:#?}"
+    );
+}
+
+/// Adversary: two uniqueness checks (`name`, `code`), so the created scenario may arrange more
+/// than one further widget of the same event before its subject. The read still names the subject
+/// by its capture, and the suite passes on the interpreter.
+#[test]
+fn adv_two_uniqueness_checks_read_the_subject_by_its_capture() {
+    let text = without_examples(UNIQUE);
+    let text = with(
+        &text,
+        "      - {name: widget_id, type: demo.widget.WidgetId}\n      - {name: name, type: String}\n      - name: config",
+        "      - {name: widget_id, type: demo.widget.WidgetId}\n      - {name: name, type: String}\n      \
+         - {name: code, type: String}\n      - name: config",
+    );
+    let text = with(
+        &text,
+        "      - {name: config, type: \"Optional<Map<String, Json>>\"}\n    lifecycle:",
+        "      - {name: config, type: \"Optional<Map<String, Json>>\"}\n      \
+         - {name: code, type: String}\n    lifecycle:",
+    );
+    let text = with(
+        &text,
+        "    summary: A widget of that name exists already.\n    fields: []\n",
+        "    summary: A widget of that name exists already.\n    fields: []\n  \
+         - name: demo.widget.CodeTaken\n    summary: A widget of that code exists already.\n    \
+         fields: []\n",
+    );
+    let text = with(
+        &text,
+        "        error: demo.widget.NameTaken\n",
+        "        error: demo.widget.NameTaken\n      - name: code-taken\n        \
+         when_related: {entity: demo.widget.Widget, where: code == input.code, exists: true}\n        \
+         error: demo.widget.CodeTaken\n",
+    );
+    let text = with(
+        &text,
+        "          config: input.config\n",
+        "          config: input.config\n          code: input.code\n",
+    );
+    let text = with(
+        &text,
+        "    filter: widget_id == param.widget_id\n    fields:\n",
+        "    filter: widget_id == param.widget_id\n    fields:\n      - {name: code, type: String}\n",
+    );
+    let result = synthesize(&ir(&text));
+    assert!(
+        result
+            .suite
+            .scenarios
+            .keys()
+            .any(|id| id.to_string().ends_with("CreateWidget/outcome/created")),
+        "the created scenario: {:?}",
+        result.refusals
+    );
+    let (reached, wrong) = adv_observed_after_two_captures(
+        &result,
+        "demo.widget.WidgetById",
+        "widget_id",
+        "demo.widget.WidgetCreated",
+        "widget",
+    );
+    assert!(!reached.is_empty(), "a read after two widgets");
+    assert!(wrong.is_empty(), "{wrong:#?}");
+    passes_on_the_interpreter(&text, &result, result.suite.scenarios.len());
+}
+
+/// Adversary: a further instance of the same event that is not a uniqueness competitor but the
+/// row the created one requires: a child folder is created only where the folder `parent_id`
+/// names exists (a related-row guard through the input, ess/18), and roots and children publish
+/// the same `FolderCreated`, a generated `Uuid` identity.
+#[test]
+fn adv_a_child_folder_is_read_by_its_capture_not_the_parent() {
+    const FOLDER: &str = "format: ess/33
+system: demo
+version: v1
+domain: demo.f
+types:
+  - {name: demo.f.FolderId, kind: newtype, of: Uuid}
+entities:
+  - name: demo.f.Folder
+    identity: {name: folder_id, type: demo.f.FolderId}
+    fields:
+      - {name: label, type: String}
+    lifecycle: {initial: Live, states: [Live], terminal: [Live]}
+actors:
+  - name: demo.f.User
+    attributes: []
+    may: [demo.f.CreateRoot, demo.f.CreateChild, demo.f.FolderById]
+    naming: {display: User}
+errors:
+  - name: demo.f.UnknownParent
+    summary: No folder of that id.
+    fields: []
+commands:
+  - name: demo.f.CreateRoot
+    input:
+      - {name: label, type: String}
+    outcomes:
+      - name: created
+        creates: demo.f.Folder
+        instance: folder_id
+        sets: {label: input.label}
+        emits: [demo.f.FolderCreated]
+        payload:
+          demo.f.FolderCreated: {folder_id: {generated: true}}
+  - name: demo.f.CreateChild
+    input:
+      - {name: parent_id, type: demo.f.FolderId}
+      - {name: label, type: String}
+    outcomes:
+      - name: unknown-parent
+        when_related: {via: input.parent_id, exists: false}
+        error: demo.f.UnknownParent
+      - name: created
+        creates: demo.f.Folder
+        instance: folder_id
+        sets: {label: input.label}
+        emits: [demo.f.FolderCreated]
+        payload:
+          demo.f.FolderCreated: {folder_id: {generated: true}}
+events:
+  - name: demo.f.FolderCreated
+    fields:
+      - {name: folder_id, type: demo.f.FolderId}
+views:
+  - name: demo.f.FolderById
+    source: demo.f.Folder
+    consistency: read_your_writes
+    params:
+      - {name: folder_id, type: demo.f.FolderId}
+    filter: folder_id == param.folder_id
+    fields:
+      - {name: folder_id, type: demo.f.FolderId}
+      - {name: label, type: String}
+";
+    let result = synthesize(&ir(FOLDER));
+    assert!(
+        result
+            .suite
+            .scenarios
+            .keys()
+            .any(|id| id.to_string().ends_with("CreateChild/outcome/created")),
+        "the child's created scenario: {:?}",
+        result.refusals
+    );
+    passes_on_the_interpreter(FOLDER, &result, result.suite.scenarios.len());
+    let (_, wrong) = adv_observed_after_two_captures(
+        &result,
+        "demo.f.FolderById",
+        "folder_id",
+        "demo.f.FolderCreated",
+        "folder",
+    );
+    assert!(wrong.is_empty(), "{wrong:#?}");
+}
+
+/// Adversary: the repository's key-unique-across-callers model with a read by identity added: a
+/// generated `Uuid` identity under a uniqueness check, and a caller-swapped second half that
+/// renames the captured instances. Every scenario passes on the interpreter.
+#[test]
+fn adv_a_key_unique_across_callers_read_by_identity_passes_the_swap() {
+    const CLAIMS: &str = "format: ess/25
+system: repro
+version: v1
+domain: repro.names
+summary: A name unique across callers.
+types:
+  - {name: repro.names.CallerId, kind: newtype, of: String}
+entities:
+  - name: repro.names.Claim
+    identity: {name: claim_id, type: Uuid}
+    fields:
+      - {name: name, type: String}
+      - {name: holder, type: repro.names.CallerId}
+    lifecycle:
+      initial: Held
+      states: [Held]
+      terminal: [Held]
+actors:
+  - name: repro.names.Alice
+    attributes:
+      - {name: id, type: repro.names.CallerId}
+    may: [repro.names.TakeName]
+  - name: repro.names.Bob
+    attributes:
+      - {name: id, type: repro.names.CallerId}
+    may: [repro.names.TakeName]
+errors:
+  - name: repro.names.Taken
+    fields:
+      - {name: name, type: String}
+commands:
+  - name: repro.names.TakeName
+    input:
+      - {name: name, type: String}
+    outcomes:
+      - name: taken
+        when_related: {entity: repro.names.Claim, where: name == input.name, exists: true}
+        error: repro.names.Taken
+        payload:
+          repro.names.Taken: {name: input.name}
+      - name: took
+        creates: repro.names.Claim
+        instance: claim_id
+        sets: {name: input.name, holder: {caller: id}}
+        emits: [repro.names.NameTaken]
+        payload:
+          repro.names.NameTaken: {claim_id: {generated: true}, name: input.name, holder: {caller: id}}
+events:
+  - name: repro.names.NameTaken
+    fields:
+      - {name: claim_id, type: Uuid}
+      - {name: name, type: String}
+      - {name: holder, type: repro.names.CallerId}
+views:
+  - name: repro.names.ClaimById
+    source: repro.names.Claim
+    consistency: read_your_writes
+    params:
+      - {name: claim_id, type: Uuid}
+    filter: claim_id == param.claim_id
+    fields:
+      - {name: claim_id, type: Uuid}
+      - {name: name, type: String}
+      - {name: holder, type: repro.names.CallerId}
+";
+    let result = synthesize(&ir(CLAIMS));
+    assert!(
+        result
+            .suite
+            .scenarios
+            .keys()
+            .any(|id| id.to_string().ends_with("TakeName/outcome/took")),
+        "the took scenario: {:?}",
+        result.refusals
+    );
+    let (_, wrong) = adv_observed_after_two_captures(
+        &result,
+        "repro.names.ClaimById",
+        "claim_id",
+        "repro.names.NameTaken",
+        "claim",
+    );
+    assert!(wrong.is_empty(), "{wrong:#?}");
+    passes_on_the_interpreter(CLAIMS, &result, result.suite.scenarios.len());
+}
+
+/// Adversary: the widget's create also requires a gadget, whose identity field has the same name
+/// (`id`) and is published by another event (`GadgetCreated`). The setup captures that gadget and
+/// a further widget; only the further widget is an earlier occurrence of `WidgetCreated`.
+#[test]
+#[allow(clippy::too_many_lines)]
+fn adv_a_capture_of_another_event_with_the_same_field_name_keeps_the_read() {
+    const GADGET: &str = "format: ess/33
+system: demo
+version: v1
+domain: demo.g
+types:
+  - {name: demo.g.GadgetId, kind: newtype, of: String}
+  - {name: demo.g.WidgetId, kind: newtype, of: String}
+entities:
+  - name: demo.g.Gadget
+    identity: {name: id, type: demo.g.GadgetId}
+    fields: []
+    lifecycle: {initial: Live, states: [Live], terminal: [Live]}
+  - name: demo.g.Widget
+    identity: {name: id, type: demo.g.WidgetId}
+    fields:
+      - {name: gadget_id, type: demo.g.GadgetId}
+      - {name: name, type: String}
+    relations:
+      - {name: gadget, kind: references, target: demo.g.Gadget, cardinality: one, via: gadget_id}
+    lifecycle: {initial: Live, states: [Live], terminal: [Live]}
+actors:
+  - name: demo.g.User
+    attributes: []
+    may: [demo.g.CreateGadget, demo.g.CreateWidget, demo.g.WidgetById]
+    naming: {display: User}
+errors:
+  - name: demo.g.WidgetExists
+    summary: A widget of that id exists already.
+    fields: []
+  - name: demo.g.UnknownGadget
+    summary: No gadget of that id.
+    fields: []
+  - name: demo.g.NameTaken
+    summary: A widget of that name exists already.
+    fields: []
+commands:
+  - name: demo.g.CreateGadget
+    input:
+      - {name: id, type: demo.g.GadgetId}
+    outcomes:
+      - name: created
+        creates: demo.g.Gadget
+        instance: id
+        emits: [demo.g.GadgetCreated]
+        payload:
+          demo.g.GadgetCreated: {id: input.id}
+  - name: demo.g.CreateWidget
+    input:
+      - {name: id, type: demo.g.WidgetId}
+      - {name: gadget_id, type: demo.g.GadgetId}
+      - {name: name, type: String}
+    outcomes:
+      - name: exists
+        existing_instance: true
+        error: demo.g.WidgetExists
+      - name: unknown-gadget
+        when_related: {via: input.gadget_id, exists: false}
+        error: demo.g.UnknownGadget
+      - name: name-taken
+        when_related: {entity: demo.g.Widget, where: name == input.name, exists: true}
+        error: demo.g.NameTaken
+      - name: created
+        creates: demo.g.Widget
+        instance: id
+        sets: {gadget_id: input.gadget_id, name: input.name}
+        emits: [demo.g.WidgetCreated]
+        payload:
+          demo.g.WidgetCreated: {id: input.id}
+events:
+  - name: demo.g.GadgetCreated
+    fields:
+      - {name: id, type: demo.g.GadgetId}
+  - name: demo.g.WidgetCreated
+    fields:
+      - {name: id, type: demo.g.WidgetId}
+views:
+  - name: demo.g.WidgetById
+    source: demo.g.Widget
+    consistency: read_your_writes
+    params:
+      - {name: id, type: demo.g.WidgetId}
+    filter: id == param.id
+    fields:
+      - {name: id, type: demo.g.WidgetId}
+      - {name: name, type: String}
+      - {name: gadget_id, type: demo.g.GadgetId}
+";
+    let result = synthesize(&ir(GADGET));
+    assert!(
+        result
+            .suite
+            .scenarios
+            .keys()
+            .any(|id| id.to_string().ends_with("CreateWidget/outcome/created")),
+        "the created scenario: {:?}",
+        result.refusals
+    );
+    let (_, wrong) = adv_observed_after_two_captures(
+        &result,
+        "demo.g.WidgetById",
+        "id",
+        "demo.g.WidgetCreated",
+        "widget",
+    );
+    assert!(wrong.is_empty(), "{wrong:#?}");
+    passes_on_the_interpreter(GADGET, &result, result.suite.scenarios.len());
+}
+
+/// A value type's invariant (`Rev`, `value >= 0`) read off `WidgetById` by the scenario that arranges
+/// a widget into the view (`holds_at`), a further widget created before the subject. The read names
+/// the subject by its capture, as the created scenario's does.
+#[test]
+fn a_value_invariant_read_after_a_further_widget_names_the_subject() {
+    let text = without_examples(UNIQUE);
+    let text = with(
+        &text,
+        "types:\n",
+        "types:\n  - {name: demo.widget.Rev, kind: newtype, of: Integer, invariants: ['value >= 0']}\n",
+    );
+    let text = with(
+        &text,
+        "      - {name: config, type: \"Optional<Map<String, Json>>\"}\n    lifecycle:",
+        "      - {name: config, type: \"Optional<Map<String, Json>>\"}\n      \
+         - {name: rev, type: demo.widget.Rev}\n    lifecycle:",
+    );
+    let text = with(
+        &text,
+        "          config: input.config\n",
+        "          config: input.config\n          rev: 0\n",
+    );
+    let text = with(
+        &text,
+        "    filter: widget_id == param.widget_id\n    fields:\n",
+        "    filter: widget_id == param.widget_id\n    fields:\n      \
+         - {name: rev, type: demo.widget.Rev}\n",
+    );
+    let result = synthesize(&ir(&text));
+    let ids: Vec<String> = result
+        .suite
+        .scenarios
+        .keys()
+        .map(ToString::to_string)
+        .collect();
+    assert!(
+        ids.iter().any(|id| id.contains("Rev")),
+        "a value invariant scenario: {ids:?}, refusals {:?}",
+        result.refusals
+    );
+    passes_on_the_interpreter(&text, &result, result.suite.scenarios.len());
+    let (reached, wrong) = adv_observed_after_two_captures(
+        &result,
+        "demo.widget.WidgetById",
+        "widget_id",
+        "demo.widget.WidgetCreated",
+        "widget",
+    );
+    assert!(
+        reached.iter().any(|id| id.contains("Rev")),
+        "the value invariant scenario reads WidgetById after a further widget preceded the \
+         subject: {reached:?}"
+    );
+    assert!(
+        wrong.is_empty(),
+        "an observed widget_id after a further widget was published reads that widget: {wrong:#?}"
+    );
+}
