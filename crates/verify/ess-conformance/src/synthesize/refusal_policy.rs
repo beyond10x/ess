@@ -285,8 +285,14 @@ fn witness(
     // The row the refused command rewrites, as the trigger left it, read again once the attempts
     // are counted and what the refusal owes is published: a refusal changes nothing
     // (story:a-related-refusal-compares-the-rewritten-row).
-    let read =
-        super::binding_effects::rewritten_read(ir, binding, outcome, invoked, sent_by, &invoke);
+    let read = super::binding_effects::rewritten_read(
+        ir,
+        binding,
+        outcome,
+        invoked,
+        sent_by,
+        (&setup, &invoke),
+    );
     steps.extend(
         read.as_ref()
             .map(|read| read.before.clone())

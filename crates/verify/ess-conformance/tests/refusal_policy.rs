@@ -1515,3 +1515,117 @@ fn a_related_refusal_without_a_view_of_the_row_names_what_it_leaves_unobserved()
         assert_eq!(statuses[&refresh_id(outcome)], Status::Passed, "{outcome}");
     }
 }
+
+// ---- adversary: the rewritten-row read against other triggers and views --------------------------
+
+const MOVE_TICKET: &str =
+    "        payload: {demo.b.TicketMoved: {ticket_id: input.ticket_id, grant_id: input.grant_id}}
+        sets: {grant_id: input.grant_id}
+";
+
+fn steps_of(suite: &ConformanceSuite, id: &str) -> String {
+    format!("{:#?}", scenario(suite, id).steps)
+}
+
+/// The trigger publishes the grant the ticket was opened with (`{subject: grant_id}`), so the
+/// refused grant is arranged first and `OpenTicket` is sent naming it. The honest interpreted run
+/// passes every scenario: the row holds the grant the arrangement was rewritten to name.
+#[test]
+fn adversary_a_related_refusal_over_a_stored_grant_passes_the_honest_target() {
+    let text = REWRITTEN
+        .replacen(
+            "      - {name: grant_id, type: demo.b.GrantId}\n    outcomes:\n      - name: moved\n",
+            "      - {name: note, type: String}\n    outcomes:\n      - name: moved\n",
+            1,
+        )
+        .replacen(
+            MOVE_TICKET,
+            "        payload: {demo.b.TicketMoved: {ticket_id: input.ticket_id, grant_id: {subject: grant_id}}}
+        sets: {note: input.note}
+",
+            1,
+        );
+    assert!(!text.contains(MOVE_TICKET), "the trigger was rewritten");
+    let ir = ir_of(&text);
+    let synthesis = ess_conformance::synthesize::synthesize(&ir);
+    let closed = refresh_id("grant-closed");
+    let steps = steps_of(&synthesis.suite, &closed);
+    let statuses = run(&synthesis.suite, &Interpreted::for_model(ir));
+    assert_eq!(
+        not_passed(&statuses),
+        Vec::<&str>::new(),
+        "{statuses:#?}\n{closed}: {steps}"
+    );
+}
+
+/// The trigger resets `flag` to a literal as it moves the ticket. A target whose `Refresh` runs
+/// its writing branch where it should answer `grant-closed` sets `flag: true`, and the read of the
+/// row is there to catch exactly that write.
+#[test]
+fn adversary_a_refused_write_over_a_field_the_trigger_sets_literally_is_caught() {
+    let text = REWRITTEN.replacen(
+        "        sets: {grant_id: input.grant_id}\n",
+        "        sets: {grant_id: input.grant_id, flag: false}\n",
+        1,
+    );
+    assert_ne!(text, REWRITTEN);
+    let ir = ir_of(&text);
+    let synthesis = ess_conformance::synthesize::synthesize(&ir);
+    let statuses = run(&synthesis.suite, &Interpreted::for_model(ir));
+    assert_eq!(not_passed(&statuses), Vec::<&str>::new(), "{statuses:#?}");
+    let mutated = text
+        .replacen(
+            "      - name: grant-closed\n        when_related: {via: input.grant_id, predicate: open == false}\n        error: demo.b.GrantUnavailable\n",
+            "",
+            1,
+        )
+        .replace(", grant-closed]", "]");
+    assert_ne!(mutated, text);
+    let closed = refresh_id("grant-closed");
+    let statuses = run(&synthesis.suite, &Interpreted::for_model(ir_of(&mutated)));
+    assert_ne!(
+        statuses[&closed],
+        Status::Passed,
+        "the refused write of flag passes: {}",
+        steps_of(&synthesis.suite, &closed)
+    );
+}
+
+/// A view that leaves `note` out still reads the row back, and the suite names `note` as what the
+/// refusal scenarios leave unobserved.
+#[test]
+fn adversary_a_view_without_note_reads_the_row_and_names_note_unobserved() {
+    let text = REWRITTEN.replacen(
+        "      - {name: note, type: String}\nbindings:",
+        "bindings:",
+        1,
+    );
+    assert_ne!(text, REWRITTEN);
+    let ir = ir_of(&text);
+    let synthesis = ess_conformance::synthesize::synthesize(&ir);
+    for outcome in REFRESH_REFUSALS {
+        let id = refresh_id(outcome);
+        let steps = &scenario(&synthesis.suite, &id).steps;
+        assert!(
+            steps
+                .iter()
+                .any(|step| matches!(step, ScenarioStep::ExpectView { view, .. }
+                if view.to_string() == TICKETS)),
+            "{outcome}: {steps:#?}"
+        );
+        let noted: Vec<&Vec<String>> = synthesis
+            .notes
+            .iter()
+            .filter_map(|note| match note {
+                ess_conformance::synthesize::Note::PartialObservation {
+                    scenario,
+                    unobserved,
+                } if scenario.to_string() == id => Some(unobserved),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(noted, [&vec!["note".to_owned()]], "{outcome}");
+    }
+    let statuses = run(&synthesis.suite, &Interpreted::for_model(ir));
+    assert_eq!(not_passed(&statuses), Vec::<&str>::new(), "{statuses:#?}");
+}

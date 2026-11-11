@@ -3529,7 +3529,7 @@ pub(super) fn rewritten_read(
     outcome: &ess_domain::command::OutcomeName,
     invoked: &ResolvedCommand,
     (published_by, trigger): super::Published<'_>,
-    invoke: &[ScenarioStep],
+    (setup, invoke): (&[ScenarioStep], &[ScenarioStep]),
 ) -> Option<RewrittenRead> {
     let refusal = invoked
         .outcomes
@@ -3549,28 +3549,28 @@ pub(super) fn rewritten_read(
         return None;
     }
     let declared = ir.entity(entity);
-    let view = snapshot_view(ir, entity);
-    let unobserved = declared
-        .fields
-        .iter()
-        .filter(|field| {
-            view.is_none_or(|view| {
-                view.field(&field.name)
-                    .is_none_or(|shown| shown.type_ref != field.type_ref)
-            })
-        })
-        .map(|field| field.name.clone())
-        .collect::<BTreeSet<_>>()
-        .into_iter()
-        .collect();
-    let Some(view) = view else {
+    let names = || declared.fields.iter().map(|field| field.name.clone());
+    let Some(view) = snapshot_view(ir, entity) else {
         return Some(RewrittenRead {
             before: Vec::new(),
             after: Vec::new(),
             source: BTreeSet::new(),
-            unobserved,
+            unobserved: names().collect::<BTreeSet<_>>().into_iter().collect(),
         });
     };
+    let fields = left_by_trigger(
+        ir,
+        (entity, view),
+        (published_by, trigger),
+        (setup, invoke),
+        ScenarioValue::instance(instance.clone()),
+    );
+    // Whatever the row is not required to hold is a field a refusal may have changed unseen.
+    let unobserved = names()
+        .filter(|name| !fields.contains_key(name))
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect();
     let name = ViewRef::new(view.name.clone());
     let read = || ScenarioStep::QueryView {
         view: name.clone(),
@@ -3585,15 +3585,7 @@ pub(super) fn rewritten_read(
     // required to hold what the arrangement and the trigger left in it.
     after.push(ScenarioStep::ExpectView {
         view: name.clone(),
-        expectation: ViewExpectation::Contains {
-            fields: left_by_trigger(
-                ir,
-                (entity, view),
-                (published_by, trigger),
-                invoke,
-                ScenarioValue::instance(instance.clone()),
-            ),
-        },
+        expectation: ViewExpectation::Contains { fields },
     });
     Some(RewrittenRead {
         before: vec![
@@ -3618,12 +3610,16 @@ pub(super) fn rewritten_read(
 
 /// What `view` shows of the row `trigger` acted on once it has run, where the scenario determined
 /// it: its identity, its state, the fields the trigger does not write as the arrangement held them,
-/// and the ones it writes from an input as `invoke` sent them.
+/// and the ones it writes as `invoke` sent them from an input or as it writes a literal. A field
+/// whose value is not determined is left out: one the trigger writes from a generated value, an
+/// expression or a conversion, and one an arrangement step of `setup` writes from an input the
+/// scenario rewrote to name the refused row ([`rewritten_inputs`]), where `trigger.before_settled`
+/// holds what the plain arrangement wrote.
 fn left_by_trigger(
     ir: &EssIr,
     (entity, view): (&EntityHandle, &ResolvedView),
     (published_by, trigger): super::Published<'_>,
-    invoke: &[ScenarioStep],
+    (setup, invoke): (&[ScenarioStep], &[ScenarioStep]),
     identity: ScenarioValue,
 ) -> BTreeMap<String, ScenarioValue> {
     let sent = invoke.iter().rev().find_map(|step| match step {
@@ -3631,11 +3627,17 @@ fn left_by_trigger(
         _ => None,
     });
     let mut left = trigger.before_settled.clone();
+    for target in rewritten_inputs(ir, entity, trigger, setup) {
+        left.remove(&target);
+    }
     for set in &published_by.sets {
         left.remove(&set.target);
         let sent_as = match (&set.value, &set.conversion) {
             (ResolvedPayloadValue::InputField { field, .. }, None) => {
                 sent.and_then(|input| super::supplied_at(input, field))
+            }
+            (ResolvedPayloadValue::Literal { value }, None) => {
+                super::literal_value(ir, &set.target_type, value, 0).map(ScenarioValue::literal)
             }
             _ => None,
         };
@@ -3659,6 +3661,63 @@ fn left_by_trigger(
     let mut row = super::shown(view, row, &left);
     row.retain(|_, value| !matches!(value, ScenarioValue::Literal { value: Node::Null }));
     row
+}
+
+/// The stored fields of `entity` that a step of `setup` writes from an input the refusal scenario
+/// rewrote: a step of the trigger's own arrangement sent again, with an input naming the arranged
+/// related row ([`related_arranged`]), against the step of `trigger.setup` it was copied from.
+fn rewritten_inputs(
+    ir: &EssIr,
+    entity: &EntityHandle,
+    trigger: &Run,
+    setup: &[ScenarioStep],
+) -> BTreeSet<String> {
+    let mut targets = BTreeSet::new();
+    for step in setup {
+        let ScenarioStep::ExecuteCommand { command, input, .. } = step else {
+            continue;
+        };
+        if trigger.setup.contains(step) {
+            continue;
+        }
+        let Some(original) = trigger.setup.iter().find_map(|earlier| match earlier {
+            ScenarioStep::ExecuteCommand {
+                command: was,
+                input: sent,
+                ..
+            } if was == command && sent.keys().eq(input.keys()) => Some(sent),
+            _ => None,
+        }) else {
+            continue;
+        };
+        let changed: BTreeSet<&String> = input
+            .iter()
+            .filter(|(field, value)| original.get(*field) != Some(*value))
+            .map(|(field, _)| field)
+            .collect();
+        let Some(declared) = ir.commands().get(command.name()) else {
+            continue;
+        };
+        for outcome in &declared.outcomes {
+            if outcome
+                .subject
+                .as_ref()
+                .is_none_or(|subject| &subject.entity != entity)
+            {
+                continue;
+            }
+            for set in &outcome.sets {
+                if let ResolvedPayloadValue::InputField { field, .. } = &set.value {
+                    // A path reads inside the input it starts at.
+                    let root = field.split('.').next().unwrap_or(field);
+                    if changed.contains(&root.to_owned()) {
+                        targets.insert(set.target.clone());
+                    }
+                }
+            }
+        }
+    }
+    targets
 }
 
 /// What the drop scenario requires of the row besides one refused attempt, where another binding
