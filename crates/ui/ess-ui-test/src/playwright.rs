@@ -187,7 +187,7 @@ fn command_name<'a>(command: &'a str, binding: Option<&'a Binding>) -> &'a str {
 
 /// Records every command the app sends and answers it: on `/commands/**` unbound, on each bound
 /// command's path as an accepted declared branch otherwise.
-fn command_routes(out: &mut String, binding: Option<&Binding>) {
+fn command_routes(out: &mut String, test: &Test, binding: Option<&Binding>) {
     let line = |out: &mut String, text: &str| {
         let _ = writeln!(out, "    {text}");
     };
@@ -196,6 +196,21 @@ fn command_routes(out: &mut String, binding: Option<&Binding>) {
         "const commands: { command: string; input: unknown }[] = [];",
     );
     let Some(binding) = binding else {
+        let refusals: BTreeMap<&String, serde_json::Value> = test
+            .fixtures
+            .commands
+            .iter()
+            .filter_map(|(command, answer)| Some((command, refusal_body(answer)?)))
+            .collect();
+        if !refusals.is_empty() {
+            line(
+                out,
+                &format!(
+                    "const refusals: Record<string, unknown> = {};",
+                    json(&refusals)
+                ),
+            );
+        }
         line(
             out,
             "await page.route(\"**/commands/**\", async (route) => {",
@@ -205,6 +220,16 @@ fn command_routes(out: &mut String, binding: Option<&Binding>) {
             out,
             "  commands.push({ command: decodeURIComponent(url.pathname.split(\"/commands/\")[1] ?? \"\"), input: route.request().postDataJSON() });",
         );
+        if !refusals.is_empty() {
+            line(
+                out,
+                "  const refusal = refusals[commands[commands.length - 1].command];",
+            );
+            line(
+                out,
+                "  if (refusal) { await route.fulfill({ status: 422, json: refusal }); return; }",
+            );
+        }
         line(out, "  await route.fulfill({ json: { accepted: true } });");
         line(out, "});");
         return;
@@ -229,12 +254,38 @@ fn command_routes(out: &mut String, binding: Option<&Binding>) {
                 string(command)
             ),
         );
-        line(
-            out,
-            "  await route.fulfill({ status: 202, json: { outcome: \"accepted\", published: [] } });",
-        );
+        let refusal = test
+            .fixtures
+            .commands
+            .iter()
+            .find(|(named, _)| command_name(named, Some(binding)) == command.as_str())
+            .and_then(|(_, answer)| refusal_body(answer));
+        match refusal {
+            Some(body) => line(
+                out,
+                &format!(
+                    "  await route.fulfill({{ status: 422, json: {} }});",
+                    json(&body)
+                ),
+            ),
+            None => line(
+                out,
+                "  await route.fulfill({ status: 202, json: { outcome: \"accepted\", published: [] } });",
+            ),
+        }
         line(out, "});");
     }
+}
+
+/// The body a served command answers a declared refusal with, as the HTTP data adapter classifies
+/// it `Answer::Refused`: `{outcome, published, error, payload?}`.
+fn refusal_body(answer: &Value) -> Option<serde_json::Value> {
+    let error = answer.get("refuses")?.as_str()?;
+    let mut body = serde_json::json!({"outcome": "refused", "published": [], "error": error});
+    if let Some(payload) = answer.get("payload") {
+        body["payload"] = serde_json::to_value(payload).ok()?;
+    }
+    Some(body)
 }
 
 fn emit_test(
@@ -268,11 +319,6 @@ fn emit_test(
             ),
         );
     }
-    if let Some(reason) = crate::parity::answers(test) {
-        line(out, &fixme(&reason));
-        out.push_str("  });\n");
-        return;
-    }
     if !test.latency.is_zero() {
         line(
             out,
@@ -282,12 +328,13 @@ fn emit_test(
             ),
         );
     }
-    if test
-        .steps
-        .iter()
-        .any(|step| matches!(step, Step::ExpectCommand { .. }))
+    if !test.fixtures.commands.is_empty()
+        || test
+            .steps
+            .iter()
+            .any(|step| matches!(step, Step::ExpectCommand { .. }))
     {
-        command_routes(out, binding);
+        command_routes(out, test, binding);
     }
     view_routes(out, test, fixtured, binding);
     line(out, "await page.clock.install({ time: 0 });");
@@ -309,7 +356,76 @@ fn emit_test(
     out.push_str("  });\n");
 }
 
-/// Routes every view the test replaces, and every view derived from one, at its path.
+/// The route handler answering `data` for `view`: the replaced rows, a list of answers chosen by
+/// the params asked, or a failure; narrowed by `keys` for a view derived by id; held back by the
+/// view's latency on the page clock. A plain replacement without latency or keys keeps its
+/// one-line handler.
+fn answer_route(
+    route: &str,
+    view: &str,
+    data: &Value,
+    keys: &[String],
+    latency: Option<Duration>,
+    binding: Option<&Binding>,
+) -> String {
+    let list = data.as_sequence().is_some();
+    let fails = data.get("fails").and_then(Value::as_str);
+    if !list && fails.is_none() && latency.is_none() {
+        if keys.is_empty() {
+            return format!(
+                "await page.route({route}, (route) => route.fulfill({{ json: {} }}));",
+                json(data)
+            );
+        }
+        return format!(
+            "await page.route({route}, (route) => {{ {} const source = {}; const rows = (Array.isArray(source) ? source : source.rows ?? []).filter((row) => {}.every((key) => String(row[key]) === String(params[key] ?? params.id))); return route.fulfill({{ json: {{ rows }} }}); }});",
+            params_of(view, binding),
+            json(data),
+            json(&keys)
+        );
+    }
+    let mut body = String::new();
+    if let Some(latency) = latency {
+        let _ = write!(
+            body,
+            "await page.evaluate((ms) => new Promise((resolve) => setTimeout(resolve, ms)), {}); ",
+            latency.as_millis()
+        );
+    }
+    if let Some(message) = fails {
+        let _ = write!(
+            body,
+            "return route.fulfill({{ status: 500, contentType: \"text/plain\", body: {} }});",
+            string(message)
+        );
+    } else {
+        if list || !keys.is_empty() {
+            let _ = write!(body, "{} ", params_of(view, binding));
+        }
+        if list {
+            let _ = write!(
+                body,
+                "const answers = {}; const hit = answers.find((answer) => answer.by_params && Object.entries(answer.by_params).every(([key, value]) => key in params && String(params[key]) === String(value))) ?? answers.find((answer) => !answer.by_params); const source = {{ ...(hit ?? {{ rows: [] }}) }}; delete source.by_params; ",
+                json(data)
+            );
+        } else {
+            let _ = write!(body, "const source = {}; ", json(data));
+        }
+        if keys.is_empty() {
+            body.push_str("return route.fulfill({ json: source });");
+        } else {
+            let _ = write!(
+                body,
+                "const rows = (source.rows ?? []).filter((row) => {}.every((key) => String(row[key]) === String(params[key] ?? params.id))); return route.fulfill({{ json: {{ rows }} }});",
+                json(&keys)
+            );
+        }
+    }
+    format!("await page.route({route}, async (route) => {{ {body} }});")
+}
+
+/// Routes every view the test replaces, every view derived from one, and every view it delays, at
+/// its path.
 fn view_routes(out: &mut String, test: &Test, fixtured: &Fixtured, binding: Option<&Binding>) {
     let line = |out: &mut String, text: &str| {
         let _ = writeln!(out, "    {text}");
@@ -324,15 +440,14 @@ fn view_routes(out: &mut String, test: &Test, fixtured: &Fixtured, binding: Opti
             );
             continue;
         };
+        let latency = test.view_latency.get(view).copied();
         line(
             out,
-            &format!(
-                "await page.route({route}, (route) => route.fulfill({{ json: {} }}));",
-                json(data)
-            ),
+            &answer_route(&route, view, data, &[], latency, binding),
         );
     }
     // Views derived from a replaced view follow it, as they do in the terminal.
+    let mut routed: Vec<&String> = test.fixtures.views.keys().collect();
     for view in fixtured.derived.keys() {
         if test.fixtures.views.contains_key(view) {
             continue;
@@ -344,23 +459,26 @@ fn view_routes(out: &mut String, test: &Test, fixtured: &Fixtured, binding: Opti
         let Some(route) = route_of(view, binding) else {
             continue;
         };
-        if keys.is_empty() {
-            line(
-                out,
-                &format!(
-                    "await page.route({route}, (route) => route.fulfill({{ json: {} }}));",
-                    json(data)
-                ),
-            );
+        routed.push(view);
+        let latency = test.view_latency.get(view).copied();
+        line(
+            out,
+            &answer_route(&route, view, data, &keys, latency, binding),
+        );
+    }
+    // A view only delayed is answered by the app's own read, after its latency.
+    for (view, latency) in &test.view_latency {
+        if routed.contains(&view) {
             continue;
         }
+        let Some(route) = route_of(view, binding) else {
+            continue;
+        };
         line(
             out,
             &format!(
-                "await page.route({route}, (route) => {{ {} const source = {}; const rows = (Array.isArray(source) ? source : source.rows ?? []).filter((row) => {}.every((key) => String(row[key]) === String(params[key] ?? params.id))); return route.fulfill({{ json: {{ rows }} }}); }});",
-                params_of(view, binding),
-                json(data),
-                json(&keys)
+                "await page.route({route}, async (route) => {{ await page.evaluate((ms) => new Promise((resolve) => setTimeout(resolve, ms)), {}); await route.continue(); }});",
+                latency.as_millis()
             ),
         );
     }

@@ -198,20 +198,20 @@ fn fixme_count(fixtures_and_latency: &str) -> usize {
 }
 
 #[test]
-fn each_new_key_alone_marks_the_playwright_test_fixme() {
+fn each_new_key_alone_leaves_the_playwright_test_routed() {
     let lines = "    fixtures:
       views:
         example.order.Page:
           - {by_params: {order: o-3}, rows: [{id: o-3, customer: Customer 3}]}
         example.line.Page: {rows: [{id: l-1}]}
 ";
-    assert_eq!(fixme_count(lines), 1, "a list of answers");
+    assert_eq!(fixme_count(lines), 0, "a list of answers");
     let fails = "    fixtures:
       views:
         example.order.Page: {fails: down}
         example.line.Page: {rows: [{id: l-1}]}
 ";
-    assert_eq!(fixme_count(fails), 1, "fails");
+    assert_eq!(fixme_count(fails), 0, "fails");
     let commands = "    fixtures:
       views:
         example.order.Page: {rows: [{id: o-3, customer: Customer 3}]}
@@ -219,14 +219,14 @@ fn each_new_key_alone_marks_the_playwright_test_fixme() {
       commands:
         example.order.Cancel: {refuses: gone}
 ";
-    assert_eq!(fixme_count(commands), 1, "commands");
+    assert_eq!(fixme_count(commands), 0, "commands");
     let latency = "    latency: {example.order.Page: 2s}
     fixtures:
       views:
         example.order.Page: {rows: [{id: o-3, customer: Customer 3}]}
         example.line.Page: {rows: [{id: l-1}]}
 ";
-    assert_eq!(fixme_count(latency), 1, "a latency per view");
+    assert_eq!(fixme_count(latency), 0, "a latency per view");
     let none = "    fixtures:
       views:
         example.order.Page: {rows: [{id: o-3, customer: Customer 3}]}
@@ -254,7 +254,7 @@ fn a_list_answer_refuses_unknown_keys_and_a_by_params_that_is_no_map() {
 }
 
 #[test]
-fn the_playwright_spec_marks_a_test_with_these_keys_fixme_once() {
+fn the_playwright_spec_marks_no_test_with_these_keys_fixme() {
     let spec = passes(&format!(
         "  - name: refuses
     fixtures:
@@ -271,5 +271,5 @@ fn the_playwright_spec_marks_a_test_with_these_keys_fixme_once() {
       - open: orders.draft
 "
     ));
-    assert_eq!(spec.matches("test.fixme").count(), 1, "{spec}");
+    assert_eq!(spec.matches("test.fixme").count(), 0, "{spec}");
 }

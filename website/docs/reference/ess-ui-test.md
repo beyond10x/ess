@@ -323,9 +323,13 @@ tests:
         example.order.Cancel: {refuses: already_cancelled}
 ```
 
-An unknown key under `fixtures` is refused with the file, the test and the key. A test that uses a
-list of view answers, `fails`, `commands` or a latency per view runs in the terminal; the
-Playwright spec marks it `test.fixme` with one reason until its routes answer them.
+An unknown key under `fixtures` is refused with the file, the test and the key. In the Playwright
+spec the same keys are routes: a list of view answers is one handler that answers the first entry
+whose `by_params` equal the request's params, else the entry without `by_params`, else no rows;
+`fails` is status 500 with the message; a refused command is a 422 answer with
+`{outcome: refused, published: [], error, payload?}`, the body the HTTP data adapter reads as a
+refusal (the command is still captured for `expect_command`); a latency per view holds that view's
+route for its duration on the page clock. None of these marks a test `test.fixme`.
 
 `tests[].latency` is one duration for every read, or a map of view to duration: a view not named
 answers at once.
