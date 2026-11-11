@@ -147,7 +147,7 @@ timelime: []
         refused.to_string(),
         "refusal[ESS-AUTHOR-001]: scenario.yaml\n  \
          unreadable: unknown field `timelime`, expected one of `type`, `domain`, `scenario`, \
-         `summary`, `fixtures`, `arrange`, `timeline`, `assert` at line 5 column 1\n  \
+         `summary`, `fixtures`, `arrange`, `timeline`, `assert`, `covers` at line 5 column 1\n  \
          help: the document is YAML with the keys `type`, `domain`, `scenario` and `summary`; a \
          key it does not know is refused rather than ignored"
     );
