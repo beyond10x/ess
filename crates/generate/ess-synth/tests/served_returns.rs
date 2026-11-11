@@ -650,3 +650,500 @@ fn below_ess_22_a_returns_branch_keeps_its_variant_and_202() {
         assert!(!text.contains("200, body)") && !text.contains("            200\n"));
     }
 }
+
+/// `RETAINED` with a response of every shape: a declared struct, a list of it, an empty list of
+/// scalars, an integer, a boolean and an absent optional.
+fn retained_shapes() -> String {
+    let typed = RETAINED.replace(
+        "  display: Ledger\n",
+        "  display: Ledger\ntypes:\n  - name: retained.ledger.Entry\n    kind: struct\n    \
+         fields:\n      - {name: label, type: String}\n      - {name: count, type: Integer}\n",
+    );
+    let shaped = typed.replace(
+        "    response:\n      - name: revision_id\n        type: Uuid\n      - name: stamp\n        \
+         type: Timestamp\n",
+        "    response:\n      - {name: entry, type: retained.ledger.Entry}\n      - {name: entries, \
+         type: 'List<retained.ledger.Entry>'}\n      - {name: tags, type: 'List<String>'}\n      \
+         - {name: total, type: Integer}\n      - {name: done, type: Boolean}\n      - {name: \
+         note, type: 'Optional<String>'}\n",
+    );
+    assert!(
+        typed != RETAINED && shaped != typed,
+        "the replacements apply"
+    );
+    shaped
+}
+
+const SHAPES_RUST_HARNESS: &str = r##"use retained_server::http;
+use retained_server::retained_service as surface;
+use retained_types::actor::{Actor, Caller};
+use retained_types::ledger::obligations::SeedBehavior;
+use retained_types::ledger::{Entry, Seed, SeedOutcome, SeedResponse, Seeded};
+use retained_types::obligation::UnmetObligation;
+use retained_types::primitives::Uuid;
+
+struct Ledger {
+    calls: u32,
+}
+
+impl SeedBehavior for Ledger {
+    fn seed(&mut self, _input: Seed) -> Result<SeedOutcome, UnmetObligation> {
+        self.calls += 1;
+        let response = SeedResponse {
+            entry: Entry { label: "a".to_owned(), count: 3 },
+            entries: vec![Entry { label: "b".to_owned(), count: 1 }],
+            tags: Vec::new(),
+            total: 9,
+            done: true,
+            note: None,
+        };
+        Ok(if self.calls == 1 {
+            SeedOutcome::Seeded {
+                response,
+                seeded: Seeded { record_id: Uuid("00000000-0000-4000-8000-000000000002".to_owned()) },
+            }
+        } else {
+            SeedOutcome::Replayed { response }
+        })
+    }
+}
+
+fn main() {
+    let path = std::env::args().nth(1).expect("the route");
+    let mut system = retained_system::System::new(retained_service::RetainedService::new(Ledger { calls: 0 }));
+    let caller = Caller { actor: Actor::ALL[0] };
+    for _ in 0..2 {
+        let request = http::Request {
+            method: "POST".to_owned(),
+            path: path.clone(),
+            query: String::new(),
+            headers: Vec::new(),
+            body: br#"{"document":"one"}"#.to_vec(),
+        };
+        let answered = surface::dispatch(&mut system, Some(&caller), &request);
+        println!("answer\t{}\t{}", answered.status, answered.body.replace('\n', " "));
+    }
+}
+"##;
+
+const SHAPES_GO_HARNESS: &str = r#"package server
+
+import (
+	"fmt"
+	"net/http/httptest"
+	"strings"
+	"testing"
+
+	"example.invalid/retained/components/retainedservice"
+	"example.invalid/retained/system"
+	"example.invalid/retained/types/ledger"
+	"example.invalid/retained/types/obligation"
+	"example.invalid/retained/types/primitives"
+)
+
+type shapesBehaviour struct{ calls int }
+
+func (l *shapesBehaviour) Seed(input ledger.Seed) (ledger.SeedOutcome, *obligation.UnmetObligation) {
+	l.calls++
+	response := ledger.SeedResponse{
+		Entry:   ledger.Entry{Label: "a", Count: 3},
+		Entries: []ledger.Entry{{Label: "b", Count: 1}},
+		Tags:    nil,
+		Total:   9,
+		Done:    true,
+	}
+	if l.calls == 1 {
+		return ledger.SeedOutcomeSeeded{
+			Response: response,
+			Seeded:   ledger.Seeded{RecordId: primitives.NewUuid("00000000-0000-4000-8000-000000000002")},
+		}, nil
+	}
+	return ledger.SeedOutcomeReplayed{Response: response}, nil
+}
+
+func TestServedShapes(t *testing.T) {
+	s := system.NewSystem(retainedservice.New(&shapesBehaviour{}))
+	for i := 0; i < 2; i++ {
+		request := httptest.NewRequest("POST", "/ledger/commands/seed", strings.NewReader(`{"document":"one"}`))
+		answer := dispatchRetainedService(s, &Caller{Actor: ActorRetainedLedgerWriter}, request)
+		fmt.Printf("answer\t%d\t%s\n", answer.status, strings.ReplaceAll(answer.body, "\n", " "))
+	}
+}
+"#;
+
+/// Adversary: a retained response of every shape is answered with the same `response`, as a
+/// literal, by both servers, on the creating and on the replaying branch, and the replayed
+/// `response` equals the created one.
+#[test]
+fn adversary_a_retained_response_of_every_shape_is_answered_alike() {
+    let source = retained_shapes();
+    let ir = compiled(&source);
+    let response = json!({
+        "entry": {"label": "a", "count": 3},
+        "entries": [{"label": "b", "count": 1}],
+        "tags": [],
+        "total": 9,
+        "done": true,
+    });
+    let expected = [
+        json!({
+            "outcome": "seeded",
+            "published": [{
+                "event": "retained.ledger.Seeded",
+                "payload": {"record_id": "00000000-0000-4000-8000-000000000002"},
+            }],
+            "response": response,
+        }),
+        json!({"outcome": "replayed", "published": [], "response": response}),
+    ];
+    let mut failures = Vec::new();
+    let mut bodies = Vec::new();
+    for target in [Target::Rust, Target::Go] {
+        let run = std::panic::catch_unwind(|| match target {
+            Target::Rust => run_rust(
+                &compiled(&retained_shapes()),
+                "adv-shapes-rust",
+                "retained",
+                [
+                    "retained-server",
+                    "retained-system",
+                    "retained-service",
+                    "retained-types",
+                ],
+                SHAPES_RUST_HARNESS,
+            ),
+            _ => run_go(
+                &compiled(&retained_shapes()),
+                "adv-shapes-go",
+                SHAPES_GO_HARNESS,
+                "TestServedShapes",
+            ),
+        });
+        let Ok(stdout) = run else {
+            failures.push(format!("{target:?}: the harness did not build and run"));
+            continue;
+        };
+        let answered = answers(&stdout);
+        if answered.len() != 2 {
+            failures.push(format!("{target:?}: answered {answered:?}"));
+            continue;
+        }
+        if answered[0].1["response"] != answered[1].1["response"] {
+            failures.push(format!("{target:?}: the replay answers another response"));
+        }
+        for ((status, body), expected) in answered.iter().zip(expected.iter()) {
+            if *status != 202 || body != expected {
+                failures.push(format!(
+                    "{target:?}: answered {status} {body}, not {expected}"
+                ));
+            }
+            if let Err(error) = validate(&ir, *status, body) {
+                failures.push(format!("{target:?}: the document refuses {body}: {error}"));
+            }
+        }
+        bodies.push(answered);
+    }
+    if bodies.len() == 2 && bodies[0] != bodies[1] {
+        failures.push(format!(
+            "Rust and Go disagree: {:?} / {:?}",
+            bodies[0], bodies[1]
+        ));
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+/// A replay of a `moves` origin, guarded by the subject's state: the command the reproduction
+/// does not cover, from `ess-conformance`'s `retained-commit.yaml`, with a component serving it.
+const RETAINED_MOVE: &str = "format: ess/7
+system: retained
+version: v1
+domain: retained.core
+naming:
+  wire: core
+  display: Core
+entities:
+  - name: retained.core.Transaction
+    identity: {name: transaction_id, type: Uuid}
+    fields: [{name: note, type: String}]
+    lifecycle:
+      initial: Proposed
+      states: [Proposed, Committed]
+      terminal: [Committed]
+      transitions:
+        - {name: commit, from: [Proposed], to: Committed}
+events:
+  - name: retained.core.Proposed
+    fields: [{name: transaction_id, type: Uuid}]
+  - name: retained.core.Changed
+    fields: []
+errors:
+  - name: retained.core.TransactionStateConflict
+    naming:
+      wire: conflict
+    fields: []
+commands:
+  - name: retained.core.Propose
+    naming:
+      wire: propose
+      display: Propose
+    input: [{name: note, type: String}]
+    outcomes:
+      - name: proposed
+        creates: retained.core.Transaction
+        instance: transaction_id
+        emits: [retained.core.Proposed]
+        payload:
+          retained.core.Proposed:
+            transaction_id: {generated: true}
+        sets: {note: input.note}
+  - name: retained.core.Commit
+    naming:
+      wire: commit
+      display: Commit
+    input: [{name: transaction_id, type: Uuid}]
+    response: [{name: revision, type: Integer}]
+    outcomes:
+      - name: committed
+        when_subject_state: Proposed
+        moves: retained.core.Transaction.commit
+        instance: transaction_id
+        emits: [retained.core.Changed]
+      - name: replayed
+        when_subject_state: Committed
+        replays: committed
+      - name: refused
+        error: retained.core.TransactionStateConflict
+actors:
+  - name: retained.core.Clerk
+    may:
+      - retained.core.Propose
+      - retained.core.Commit
+components:
+  - component: retained-service
+    summary: Commits transactions once.
+    owns:
+      domains:
+        - retained.core
+    accepts:
+      commands:
+        - retained.core.Propose
+        - retained.core.Commit
+    publishes:
+      events:
+        - retained.core.Proposed
+        - retained.core.Changed
+    reached_by: network
+";
+
+/// Adversary: the generated Rust server and the Go server package for a state-guarded replay of a
+/// `moves` origin compile (the story's outcome: "the generated Rust server for such a command
+/// compiles").
+#[test]
+fn adversary_a_replayed_move_compiles_in_both_servers() {
+    let mut failures = Vec::new();
+    let rust = std::panic::catch_unwind(|| {
+        run_rust(
+            &compiled(RETAINED_MOVE),
+            "adv-move-rust",
+            "retained",
+            [
+                "retained-server",
+                "retained-system",
+                "retained-service",
+                "retained-types",
+            ],
+            "fn main() {}\n",
+        )
+    });
+    if rust.is_err() {
+        failures.push("Rust: the server for a replayed move does not build".to_owned());
+    }
+    let go = std::panic::catch_unwind(|| {
+        run_go(
+            &compiled(RETAINED_MOVE),
+            "adv-move-go",
+            "package server\n\nimport \"testing\"\n\nfunc TestReplayedMoveBuilds(t *testing.T) {}\n",
+            "TestReplayedMoveBuilds",
+        )
+    });
+    if go.is_err() {
+        failures.push("Go: the server for a replayed move does not build".to_owned());
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+/// A command without `replays:` and without `returns: true` whose event reads its response: the
+/// variant carries `response`, the document requires none.
+const MAPPED: &str = "format: ess/7
+system: mapped
+version: v1
+domain: mapped.desk
+naming:
+  wire: desk
+  display: Desk
+entities:
+  - name: mapped.desk.Sheet
+    identity:
+      name: sheet_id
+      type: Uuid
+    fields:
+      - name: text
+        type: String
+    lifecycle:
+      initial: Open
+      states: [Open]
+      terminal: [Open]
+events:
+  - name: mapped.desk.Noted
+    fields:
+      - name: revision
+        type: Integer
+commands:
+  - name: mapped.desk.Note
+    naming:
+      wire: note
+      display: Note
+    input:
+      - name: text
+        type: String
+    response:
+      - name: revision
+        type: Integer
+    outcomes:
+      - name: noted
+        emits:
+          - mapped.desk.Noted
+        payload:
+          mapped.desk.Noted:
+            revision: {response: revision}
+actors:
+  - name: mapped.desk.Writer
+    may:
+      - mapped.desk.Note
+components:
+  - component: mapped-desk
+    summary: Takes notes.
+    owns:
+      domains:
+        - mapped.desk
+    accepts:
+      commands:
+        - mapped.desk.Note
+    publishes:
+      events:
+        - mapped.desk.Noted
+    reached_by: network
+";
+
+const MAPPED_RUST_HARNESS: &str = r##"use mapped_server::http;
+use mapped_server::mapped_desk as surface;
+use mapped_types::actor::{Actor, Caller};
+use mapped_types::desk::obligations::NoteBehavior;
+use mapped_types::desk::{Note, NoteOutcome, NoteResponse, Noted};
+use mapped_types::obligation::UnmetObligation;
+
+struct Desk;
+
+impl NoteBehavior for Desk {
+    fn note(&mut self, _input: Note) -> Result<NoteOutcome, UnmetObligation> {
+        Ok(NoteOutcome::Noted { response: NoteResponse { revision: 7 }, noted: Noted { revision: 7 } })
+    }
+}
+
+fn main() {
+    let path = std::env::args().nth(1).expect("the route");
+    let mut system = mapped_system::System::new(mapped_desk::MappedDesk::new(Desk));
+    let caller = Caller { actor: Actor::ALL[0] };
+    let request = http::Request {
+        method: "POST".to_owned(),
+        path,
+        query: String::new(),
+        headers: Vec::new(),
+        body: br#"{"text":"one"}"#.to_vec(),
+    };
+    let answered = surface::dispatch(&mut system, Some(&caller), &request);
+    println!("answer\t{}\t{}", answered.status, answered.body.replace('\n', " "));
+}
+"##;
+
+const MAPPED_GO_HARNESS: &str = r#"package server
+
+import (
+	"fmt"
+	"net/http/httptest"
+	"strings"
+	"testing"
+
+	"example.invalid/mapped/components/mappeddesk"
+	"example.invalid/mapped/system"
+	"example.invalid/mapped/types/desk"
+	"example.invalid/mapped/types/obligation"
+)
+
+type deskBehaviour struct{}
+
+func (d *deskBehaviour) Note(input desk.Note) (desk.NoteOutcome, *obligation.UnmetObligation) {
+	return desk.NoteOutcomeNoted{
+		Response: desk.NoteResponse{Revision: 7},
+		Noted:    desk.Noted{Revision: 7},
+	}, nil
+}
+
+func TestServedMapped(t *testing.T) {
+	s := system.NewSystem(mappeddesk.New(&deskBehaviour{}))
+	request := httptest.NewRequest("POST", "/desk/commands/note", strings.NewReader(`{"text":"one"}`))
+	answer := dispatchMappedDesk(s, &Caller{Actor: ActorMappedDeskWriter}, request)
+	fmt.Printf("answer\t%d\t%s\n", answer.status, strings.ReplaceAll(answer.body, "\n", " "))
+}
+"#;
+
+/// Adversary: a command whose variant carries `response` only because an event reads it, with
+/// neither `replays:` nor `returns: true`, is served by both servers without `response`, as its
+/// document (`additionalProperties: false`) requires; kills a `carries_response` in place of
+/// `carries_result` in either server's `direct_response`, and needs the Rust outcome encoder's
+/// `..` for the carried `response`.
+#[test]
+fn adversary_a_response_read_into_an_event_is_not_answered() {
+    let ir = compiled(MAPPED);
+    let expected = json!({
+        "outcome": "noted",
+        "published": [{"event": "mapped.desk.Noted", "payload": {"revision": 7}}],
+    });
+    let mut failures = Vec::new();
+    for target in [Target::Rust, Target::Go] {
+        let run = std::panic::catch_unwind(|| match target {
+            Target::Rust => run_rust(
+                &compiled(MAPPED),
+                "adv-mapped-rust",
+                "mapped",
+                [
+                    "mapped-server",
+                    "mapped-system",
+                    "mapped-desk",
+                    "mapped-types",
+                ],
+                MAPPED_RUST_HARNESS,
+            ),
+            _ => run_go(
+                &compiled(MAPPED),
+                "adv-mapped-go",
+                MAPPED_GO_HARNESS,
+                "TestServedMapped",
+            ),
+        });
+        let Ok(stdout) = run else {
+            failures.push(format!("{target:?}: the harness did not build and run"));
+            continue;
+        };
+        let (status, body) = answer(&stdout);
+        if status != 202 || body != expected {
+            failures.push(format!(
+                "{target:?}: answered {status} {body}, not {expected}"
+            ));
+        }
+        if let Err(error) = validate(&ir, status, &body) {
+            failures.push(format!("{target:?}: the document refuses {body}: {error}"));
+        }
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
