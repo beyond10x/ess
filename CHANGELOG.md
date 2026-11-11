@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Changed
+
+- `ess verify conform mutate`: an `order-flip` on a view key whose tie synthesis cannot arrange (a key after the identity, or behind a key no creating command writes from its input) is now `unwitnessed` (`ESS-MUTATE-004`, exit 3) and lists the baseline's standing refusal under `baseline_refusals`, instead of `survived` (exit 1); a scenario that kills it still wins. No format changes (`ess-mutation-report` and `ess-mutation-manifest` carry the refusal already) (beyond10x/ess#708).
+
 ### Fixed
 
 - `ess-ui`: a record field or an export param keyed `action` is author data and is no longer read as an Action, so its refusal names the real node and no false Action refusal hides a later one.
