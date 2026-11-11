@@ -8,17 +8,22 @@ use ess_domain::spec::RawSpecFile;
 use ess_domain::system::Source;
 use ess_domain::Specification;
 
-const GUIDE: &str = "website/docs/guides/specify/bindings-and-components.md";
-const HEADING: &str = "## Read stored state in the command a binding invokes";
+const GUIDE: &str = "website/docs/guides/specify/binding-stored-state.md";
+const BINDINGS: &str = "website/docs/guides/specify/bindings-and-components.md";
+const HEADING: &str = "# Read stored state in the command a binding invokes";
 
-fn guide() -> String {
+fn read(relative: &str) -> String {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../../..")
-        .join(GUIDE);
-    std::fs::read_to_string(&path).unwrap_or_else(|error| panic!("read {GUIDE}: {error}"))
+        .join(relative);
+    std::fs::read_to_string(&path).unwrap_or_else(|error| panic!("read {relative}: {error}"))
 }
 
-/// The section under `HEADING`, up to the next `## ` heading.
+fn guide() -> String {
+    read(GUIDE)
+}
+
+/// The page body under its `HEADING`, up to the next `## ` heading.
 fn section(page: &str) -> Option<&str> {
     let start = page.find(&format!("\n{HEADING}\n"))? + 1;
     let body = &page[start + HEADING.len()..];
@@ -54,12 +59,20 @@ fn binding_stored_read_guide_section_states_the_idiom() {
             "the section `{HEADING}` does not contain {phrase:?}:\n{section}"
         );
     }
-    let envelope = page
+    let bindings = read(BINDINGS);
+    let envelope = bindings
         .find("\n## Read a field inside an event envelope\n")
-        .expect("the guide keeps its envelope section");
+        .expect("the bindings page keeps its envelope section");
+    let pointer = bindings
+        .find(&format!("\n#{HEADING}\n"))
+        .unwrap_or_else(|| panic!("{BINDINGS} keeps the heading `#{HEADING}` for old links"));
     assert!(
-        page.find(&format!("\n{HEADING}\n")).unwrap() > envelope,
-        "`{HEADING}` comes after `## Read a field inside an event envelope`"
+        pointer > envelope,
+        "`#{HEADING}` comes after `## Read a field inside an event envelope`"
+    );
+    assert!(
+        bindings[pointer..].contains("(binding-stored-state.md)"),
+        "{BINDINGS} points the old heading at {GUIDE}"
     );
     let model = fenced_model(section)
         .unwrap_or_else(|| panic!("the section `{HEADING}` has no fenced yaml model"));

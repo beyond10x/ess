@@ -7,28 +7,35 @@ title: Every generated decoder enforces the value constraints its type publishes
 tags:
 - adopter-report
 - defect
+- severity-medium
+- zero-open-issues
 refs:
 - provider: github
   reference: beyond10x/ess#579
 relations:
 - serves: vision:O2
 - decomposes: epic:adopter-gaps-generated-code
+- decomposes: epic:zero-open-issues-2026-11
 scope:
 - confidence: cited
-  path: CHANGELOG.md
-- confidence: cited
-  path: crates/generate/ess-synth/src/go/http.rs
+  path: crates/edge/ess-cli/src/schema_bundle.rs
 - confidence: inferred
   path: crates/generate/ess-synth/src/go/invariant.rs
-- confidence: cited
-  path: crates/generate/ess-synth/src/go/items.rs
 - confidence: inferred
   path: crates/generate/ess-synth/src/go/runtime/invariant.go
-- confidence: inferred
-  path: crates/generate/ess-synth/tests/invariant_check/value_constraints.rs
-- confidence: inferred
+- confidence: cited
   path: crates/generate/schema-contract/src/realize.rs
-revision: 12
+- confidence: cited
+  path: crates/generate/schema-contract/src/realize/go.rs
+- confidence: inferred
+  path: crates/generate/schema-contract/src/realize/go_support.go.txt
+- confidence: cited
+  path: crates/generate/schema-contract/src/realize/rust.rs
+- confidence: cited
+  path: crates/generate/schema-contract/src/realize/ts.rs
+- confidence: inferred
+  path: crates/generate/schema-contract/tests/model_ergonomics.rs
+revision: 21
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-16T10:20:19Z", actor: "human:timo", revision: 2}
 - {from: "proposed", to: "active", at: "2026-10-16T10:20:19Z", actor: "human:timo", revision: 3}
@@ -36,46 +43,78 @@ transitions:
 ## Outcome
 
 Every generated decoder refuses a value outside the constraints its type declares, naming the
-path: the Rust model crate's wire decoder, the Rust types target's serde path, and the Go and
-TypeScript decoders. Where a constraint is published (`x-ess-alphabet`, a length, a bound, a prefix,
-an invariant the predicate language evaluates) it is enforced at the decoder, or the generator
-refuses the type by name. A published constraint is never left to the application.
+path: the Rust model crate's wire decoder, the generated Go server decoder, and the Rust, Go and
+TypeScript `ess generate types` targets. Where a constraint is published (`x-ess-alphabet`, a
+length, a bound, a prefix, an invariant the predicate language evaluates) it is enforced at the
+decoder, or the generator refuses the type by name. A published constraint is never left to the
+application.
 
 Findings covered: https://github.com/beyond10x/ess/issues/579, part 2 (a downstream adversarial
 review on ess 0.60.0, `ess/25`).
 
+## Problem
+
+Delivered so far:
+
+- Rust model decoder (0.62.0, `453bde9ad`), test `model_decoder_refuses_a_value_outside_the_alphabet`.
+- Rust types target alphabet and length (0.62.0, `1d94e6977`), test
+  `rust_refuses_a_value_outside_a_declared_alphabet_or_length`.
+- Generated Go server decoder: alphabet, prefix and invariants through `BrokenConstraint()`
+  (0.91.0, CHANGELOG "Breaking for a client that sends a value outside a declared constraint").
+
+Still open on 0.92.0, the `ess generate types` targets. Reproduction (`format: ess/15`):
+
+```yaml
+types:
+  - {name: demo.units.Unit,  kind: newtype, of: String, alphabet: "abcdefghijklmnopqrstuvwxyz"}
+  - {name: demo.units.Code,  kind: newtype, of: String, prefix: "u-"}
+  - {name: demo.units.Label, kind: newtype, of: String, invariants: ["value.count >= 1"]}
+```
+
+```
+ess generate types --path spec --all-types --target rust --package demo_units --out out-rust
+ess generate types --path spec --all-types --target go --package demo_units --module example.com/demo --out out-go
+ess generate types --path spec --all-types --target typescript --out out-typescript
+```
+
+All three exit 0. `types-report.json` obligations:
+
+- rust: `pattern /$defs/demo.units.Code/pattern`, `model_invariants /$defs/demo.units.Label/x-ess-invariants`
+  (the prefix is not checked: `DemoUnitsCode` is `#[serde(transparent)]` over `String`; the Label
+  invariant is checked by `broken_constraint` yet still reported as an obligation).
+- go: `pattern` (Code), `model_invariants` (Label), `model_alphabet` (Unit); every
+  `UnmarshalJSON` only decodes a string and assigns it.
+- typescript: the same three, beside `typescript_nominal_identity`; the target emits declarations
+  only.
+
 ## Fit review
 
-1. **Need.** A String newtype declares `alphabet:`; the projected schema publishes it, but the
-   generated model decoder only checks that the value is a string and the types target is
-   `#[serde(transparent)]` over `String`. A value with a space, a control character, a non-ASCII
-   character or the empty string reaches the application through a generated route. Minimal
-   reproduction to write first: `demo.units.Unit`, newtype of String with `alphabet:` of printable
-   ASCII without space and `length: {min: 1}`, a command `Record {unit}` and a served component;
-   decode `"m s"`, `"\u007f"`, `"µm"` and `""`.
-   Requester's expectation (theirs): both decoders refuse a value outside `alphabet` and `length`,
+1. **Need.** A String newtype declares `alphabet:`; the projected schema publishes it, but a
+   generated decoder that only checks that the value is a string lets a value with a space, a
+   control character, a non-ASCII character or the empty string reach the application.
+   Requester's expectation (theirs): every decoder refuses a value outside `alphabet` and `length`,
    naming the path.
-2. **Class.** Defect: the projection publishes a constraint the generated code does not hold, and
-   the decoder sits behind the generated `POST` routes. The constraint was designed to be a type
-   fact (`story:string-newtype-declares-its-alphabet`, implemented).
+2. **Class.** Defect: the projection publishes a constraint the generated code does not hold. The
+   constraint was designed to be a type fact (`story:string-newtype-declares-its-alphabet`,
+   implemented).
 3. **Already expressible?** The constraint is expressible today; its enforcement is not, and the
    consumer cannot fix generated code.
 4. **Fit.** One rule for every decoder and every constraint kind, not an alphabet patch in one
    target. The same constraints are already evaluated by the conformance observers
-   (`story:response-string-newtype-constraints-checked-not-refused`, active) and by Entity Runtime
-   lowering for alphabet and text count (`story:entity-runtime-lowers-alphabet-and-text-count`,
-   implemented); `story:entity-runtime-lowering-enforces-input-type-invariants` and
-   `story:cli-type-invariants` ask the same of two other edges. This story is the generated-code
-   edge, sharing the one predicate evaluator each runtime already carries.
+   (`story:response-string-newtype-constraints-checked-not-refused`) and by Entity Runtime
+   lowering (`story:entity-runtime-lowers-alphabet-and-text-count`);
+   `story:entity-runtime-lowering-enforces-input-type-invariants` and `story:cli-type-invariants`
+   ask the same of two other edges. This story is the generated-code edge, sharing the one
+   predicate evaluator each runtime already carries.
 5. **Second adopter.** A currency code newtype (`alphabet: A-Z`, length 3) on a payment API; a slug
-   newtype on a content API. Both publish the rule and expect the generated server to hold it.
+   newtype on a content API. Both publish the rule and expect the generated code to hold it.
 6. **Cost.** Generated Rust, Go and TypeScript code changes; a client that sends a value outside
-   the declared alphabet starts receiving a decode refusal (breaking for that client, listed in the
-   CHANGELOG). No source or suite format change. A constraint a target cannot evaluate is refused at
-   generation by name.
+   the declared constraint starts receiving a decode refusal (breaking for that client, listed in
+   the CHANGELOG). No source or suite format change. A constraint a target cannot evaluate is
+   refused at generation by name.
 7. **Alternatives.** (a) Change nothing and document that decoders check shape only: the schema
-   keeps promising what the server does not hold. (b) Alphabet only, Rust only: the request as
-   filed, one cell of the grid. (c) Every declared constraint in every generated decoder, or a named
+   keeps promising what the code does not hold. (b) Alphabet only, Rust only: the request as filed,
+   one cell of the grid. (c) Every declared constraint in every generated decoder, or a named
    refusal (chosen).
 
 ## Decisions
@@ -83,63 +122,47 @@ review on ess 0.60.0, `ess/25`).
 Accept, redesigned from "enforce alphabet in two Rust decoders" to "every generated decoder enforces
 every constraint its type publishes, or the generator refuses the type by name".
 
+- TypeScript: `--target typescript` refuses a type with a published constraint by name instead of
+  gaining a runtime decoder, because the target emits declarations only and already reports "these
+  declarations do not validate runtime JSON" (`typescript_compiler_options`), and issue #579 asks
+  for no TypeScript decoder; the break is listed in the CHANGELOG.
+
 ## Acceptance
 
-- `model_decoder_refuses_a_value_outside_the_alphabet`: the reproduction's Rust model decoder
-  refuses each of the four values with a decode error naming the path; a value inside the alphabet
-  decodes.
-- `types_target_refuses_a_value_outside_the_alphabet`: deserializing the same values into the
-  `generate types --target rust` newtype fails, naming the constraint.
-- `go_and_typescript_decoders_agree`: the Go and TypeScript decoders give the same verdict on the
-  same values.
-- `every_published_constraint_is_enforced_or_refused`: a corpus test walks every constraint kind the
-  schema projection publishes and requires, per target, an enforcing decoder or a named generation
-  refusal.
-
-## Scope (inferred)
-
-`crates/generate/ess-synth/src/rust/` (wire decoders), `crates/generate/ess-gen/src/types.rs`
-(Rust types target), `crates/generate/ess-synth/src/go/`, the TypeScript generator, CHANGELOG.
-
-## State
-
-2026-11-02 (store hygiene H0 of wave W1, reconcile roadmap section 2d; decision D9 option A, kept active with a dated note): Rust half done; Go and TypeScript half remains; scheduled W3.
+- `cargo test -p schema-contract --locked --test model_ergonomics` passes
+  `rust_types_refuse_a_value_outside_a_declared_prefix_or_invariant`: for the reproduction,
+  deserializing `"x-1"` into the Rust `DemoUnitsCode` fails naming the prefix; `"u-1"` decodes; the
+  Rust `types-report.json` lists no `pattern` obligation for `Code` and no `model_invariants`
+  obligation for `Label`.
+- The same target passes `go_types_refuse_a_value_outside_a_declared_constraint`: `json.Unmarshal`
+  of `"m s"`, `"µm"` and `""` into the Go `DemoUnitsUnit`, of `"x-1"` into `DemoUnitsCode` and of
+  `""` into `DemoUnitsLabel` returns an error naming the type's schema pointer and the constraint;
+  `"ms"`, `"u-1"` and `"a"` decode; the Go report lists none of the three obligations.
+- The same target passes `typescript_types_refuse_a_declared_constraint`: the reproduction's
+  TypeScript realization is `Refused` with one finding each at `/$defs/demo.units.Unit`,
+  `/$defs/demo.units.Code` and `/$defs/demo.units.Label`, each detail naming its constraint; a
+  plan whose newtypes declare no constraint realizes with unchanged bytes. On the reproduction,
+  `ess generate types --path spec --all-types --target typescript --out out-typescript` exits
+  non-zero, prints those three `<pointer>: <rule>: <detail>` lines and writes no `types.ts`.
+- The same target passes `every_published_constraint_is_enforced_or_refused`: a corpus test walks
+  every constraint kind the schema projection publishes and requires, per target, an enforcing
+  decoder or a named generation refusal; no target reports `model_alphabet`, `model_invariants` or
+  a prefix `pattern` as an obligation.
 
 ## Scope
 
-Derived 2026-11-07 by `story-scoper`. Every line is **cited** (read from the story or the tree) or
-**inferred** (a reading that could be wrong).
+- cited: crates/generate/schema-contract/src/realize.rs (`Plan::typescript`, the `model_alphabet`, `model_invariants` and `pattern` obligations)
+- cited: crates/generate/schema-contract/src/realize/rust.rs (`#[serde(transparent)]` newtype, `broken_constraint`)
+- cited: crates/generate/schema-contract/src/realize/go.rs (newtype `UnmarshalJSON`)
+- inferred: crates/generate/schema-contract/src/realize/go_support.go.txt (a shared constraint helper)
+- cited: crates/generate/schema-contract/src/realize/ts.rs (`emit`)
+- cited: crates/edge/ess-cli/src/schema_bundle.rs (`plan.typescript()` call site)
+- inferred: crates/generate/ess-synth/src/go/invariant.rs (the Go predicate emission the Go types leg mirrors)
+- inferred: crates/generate/ess-synth/src/go/runtime/invariant.go
+- inferred: crates/generate/schema-contract/tests/model_ergonomics.rs
 
-- **Already delivered (0.62.0, beyond10x/ess#579):**
-  - the Rust model decoder (`453bde9ad`), acceptance test
-    `model_decoder_refuses_a_value_outside_the_alphabet`;
-  - Rust types alphabet and length (`1d94e6977`), acceptance test
-    `rust_refuses_a_value_outside_a_declared_alphabet_or_length`.
+confidence: medium
 
-  Both are cited.
-- **Primary surface, remaining part A:** the generated Go server decoder in
-  `crates/generate/ess-synth/src/go/` — cited.
-  - `go/http.rs` (`decode<Type>` for `ResolvedBody::Newtype` returns the ctor with no constraint
-    check) — cited.
-  - `go/items.rs` (`newtype`, `alphabet_doc`, `prefix_doc`: documented "and does not check it") —
-    cited.
-  - `go/invariant.rs` (`preflight`, entity invariants only today) and
-    `go/runtime/invariant.go` — inferred.
-- **Remaining part B:**
-  - the Go and TypeScript types targets, and Rust prefix and invariants:
-    `crates/generate/schema-contract/src/realize.rs` (the `model_invariants` and `model_alphabet`
-    obligations) and `realize/{go,ts,rust}.rs` — cited.
-  - The TypeScript types target emits declarations only, so "enforce it or refuse the type" there
-    is a design decision: a new runtime decoder, or refusing every constrained type.
-- **Symbols:** `broken_constraint`, the Rust shape to mirror, in `ess-synth/src/rust/wire.rs` and
-  `rust/items.rs` — cited.
-- **Tests:** `crates/generate/ess-synth/tests/invariant_check/value_constraints.rs` and
-  `crates/generate/schema-contract/tests/model_ergonomics.rs` — inferred.
-- **Documents:** `CHANGELOG.md`, breaking for a client that sends a value outside a declared
-  constraint — cited.
-- **Confidence:** medium. The Go decoder site is pinned by the tree; the TypeScript leg is a design
-  reading.
-- **Safety fact:** a newtype with no alphabet, prefix or invariant keeps its exact Go and
-  types-target bytes; the check is emitted only where a constraint is declared (unproven).
-- **Split:** part A, the Go server decoder, is one unit. Part B waits on the TypeScript decision.
-  `every_published_constraint_is_enforced_or_refused` lands with or after part B.
+The Go and Rust legs mirror `broken_constraint`. A newtype with no alphabet, prefix or invariant
+keeps its exact bytes in every target. The story moves `CHANGELOG.md` (its breaking sentence) and
+any generated-types byte-pin rows its constrained fixtures claim.

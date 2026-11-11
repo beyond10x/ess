@@ -2,11 +2,30 @@
 format: aep.planning-md/3
 id: story:generated-behaviour-reads-several-related-rows
 kind: story
-status: draft
+status: active
 title: Generated behaviour answers a command that reads several related rows, in the interpreter order
+tags:
+- defect
+- severity-medium
+- zero-open-issues
 relations:
 - serves: vision:O2
-revision: 2
+- decomposes: epic:zero-open-issues-2026-11
+scope:
+- confidence: cited
+  path: crates/generate/ess-synth/src/determined.rs
+- confidence: cited
+  path: crates/generate/ess-synth/src/go/behaviour.rs
+- confidence: cited
+  path: crates/generate/ess-synth/src/plan.rs
+- confidence: cited
+  path: crates/generate/ess-synth/src/rust/behaviour.rs
+- confidence: cited
+  path: crates/generate/ess-synth/tests/related_guard_several_rows.rs
+revision: 7
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:44:10Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:44:11Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Outcome
 
@@ -16,15 +35,29 @@ instead of leaving it an `obligation` of class `undetermined`. The generated cod
 the interpreter applies: missing rows in the declaration order of their `exists: false` branches
 before anything else, then the first declared present-related predicate refusal, before every
 accepting branch. Today `related_composition` refuses it whenever `several_rows` holds
-(`crates/generate/ess-synth/src/determined.rs:1482`, `:1555-1561`), and the reason text cites
+(`crates/generate/ess-synth/src/determined.rs:1672` `several_rows`, `:1697-1708`
+`related_composition`), and the reason text cites
 https://github.com/beyond10x/ess/issues/283, which closed on 2026-10-05 when the language and the
 interpreter gained the construct, so a reader is sent to a finished issue.
 
-Requested by an adopter on 2026-10-08: a queue-assignment command refuses `repository-not-found`
-(`when_related: {via: input.repository_id, exists: false}`) beside two goal guards addressed by
-`input.goal_id`. Synthesis writes 204 scenarios with 0 refusals; generation reports
+Requested by an adopter on 2026-10-08: a command refuses a missing record named by one input id
+(`when_related: {via: input.<a>_id, exists: false}`) beside two guards addressed by another input
+id. Synthesis writes 204 scenarios with 0 refusals; generation reports
 `136 capabilities: 135 generated, 1 obligation(s)` (ess 0.56.0, `ess/22`), and the adopter's
-generator admits only fully generated behaviour. Reproduction kept outside the store.
+generator admits only fully generated behaviour.
+
+Reproduction on 0.92.0 with the committed fixture
+`crates/verify/ess-conformance/tests/fixtures/related-guard-multiple.yaml` (`demo.run.StartRun`
+guards `input.switch` and `input.capability`, each with `exists: false` and a state predicate):
+
+```text
+$ ess generate synthesize --path spec --target rust --out out-rust
+41 capabilities: 38 generated, 3 obligation(s), 0 refused
+$ grep StartRun out-rust/PLAN.md
+| command behaviour | `demo.run.StartRun` | kept an obligation by `when_related:` reading several related rows in one command (beyond10x/ess#283) | ...
+```
+
+`--target go` gives the same counts and the same row.
 
 ## Fit review
 
@@ -51,15 +84,26 @@ generator admits only fully generated behaviour. Reproduction kept outside the s
 
 ## Acceptance
 
-- The `related-guard-multiple.yaml` fixture's `StartRun` is generated for Rust and Go, and its
-  synthesized suite passes against both generated crates.
-- A generated crate for two missing rows answers the first declared `exists: false` refusal.
-- No obligation reason or contract text cites a closed issue.
+- `ess generate synthesize --target rust` and `--target go` on
+  `crates/verify/ess-conformance/tests/fixtures/related-guard-multiple.yaml` report
+  `41 capabilities: 39 generated, 2 obligation(s), 0 refused`, with no `demo.run.StartRun` row under
+  `## Obligations` in `PLAN.md`, and its synthesized suite passes against both generated crates.
+- A generated crate sent `StartRun` with neither the switch nor the capability stored answers
+  `demo.run.NoSuchSwitch` (the first declared `exists: false` refusal).
+- No obligation reason or contract text in `PLAN.md` or `plan.json` cites a closed issue
+  (`beyond10x/ess#283`).
+- `crates/generate/ess-synth/tests/related_guard_several_rows.rs` asserts the generated disposition
+  instead of "stays owed".
 
 ## Scope
 
-- `crates/generate/ess-synth/src/determined.rs` (`several_rows` :1482, `related_composition`
-  :1550-1575), `src/rust/behaviour.rs`, `src/go/behaviour.rs`, `src/plan.rs`.
-- `crates/generate/ess-synth/tests/related_guard_several_rows.rs`.
-- Held files: none (`ess-conformance/src/interpret/**` and `synthesize/related_guard*` are read,
-  not edited).
+- cited: crates/generate/ess-synth/src/determined.rs
+- cited: crates/generate/ess-synth/src/rust/behaviour.rs
+- cited: crates/generate/ess-synth/src/go/behaviour.rs
+- cited: crates/generate/ess-synth/src/plan.rs
+- cited: crates/generate/ess-synth/tests/related_guard_several_rows.rs
+
+confidence: medium
+
+Held files: none (`ess-conformance/src/interpret/**` and `synthesize/related_guard*` are read, not
+edited).

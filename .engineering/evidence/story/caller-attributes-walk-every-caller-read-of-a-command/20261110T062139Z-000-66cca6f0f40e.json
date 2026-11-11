@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-10T06:21:39Z",
+  "actor": "human:timo",
+  "artifact": "story:caller-attributes-walk-every-caller-read-of-a-command",
+  "kind": "story",
+  "revision": 8,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "cargo test -p ess-gen --locked --test caller_values --test adversary_caller_attributes; cargo test -p ess-openapi --locked --test adversary_ess_issues_2_u6",
+    "reference": "caller-attributes-walk-every-caller-read-of-a-command/red.txt (3 passed, 2 failed) vs verify-batch2/c1..c8.txt at 7623ee5ec1 (5+3 passed; openapi pin 7)"
+  }
+}

@@ -4,22 +4,50 @@ id: story:format-gated-construct-is-named-at-validation
 kind: story
 status: draft
 title: A construct whose projection waits for a later format is named at validation
-revision: 1
+tags:
+- defect
+- severity-medium
+scope:
+- confidence: cited
+  path: crates/edge/ess-cli/tests/openapi_accounting.rs
+- confidence: inferred
+  path: crates/specify/ess-domain/src/command.rs
+- confidence: cited
+  path: crates/specify/ess-http/src/status.rs
+- confidence: inferred
+  path: website/docs/reference/diagnostics.md
+revision: 6
 ---
 ## Context
 
-`returns: true` on an outcome puts the command's `response:` into the OpenAPI success body only from
-format `ess/22` (`crates/generate/ess-gen/src/openapi.rs`, the status table; beyond10x/ess#424).
-Below `ess/22` the projection keeps the earlier `202` body by design. `ess specify validate`
-accepts `returns: true` at `ess/17` to `ess/21` without a word, so an author on an older format
-believes the response is on the wire when it is not. This came up as a reported regression of
-#423 that was only an old format.
+From format `ess/22`, `returns: true` on an outcome puts the command's `response:` into the OpenAPI
+success body (`200`, the response under `response`). Below `ess/22` the projection keeps the
+earlier `202` body by design (`crates/specify/ess-http/src/status.rs:114-121`,
+`answers_with_response`: `ir.format().major() >= DIRECT_ANSWER_FORMAT`; the status table in
+`crates/generate/ess-gen/src/openapi.rs:47`; beyond10x/ess#424). `ess specify validate` accepts
+`returns: true` at `ess/17` to `ess/21` and says nothing, so an author on an older format believes
+the response is on the wire when it is not. This came up as a reported regression of
+beyond10x/ess#423 that turned out to be only an old format.
+
+## Problem
+
+Reproduction on 0.92.0: one command `shop.orders.PlaceOrder` with `response: [{name: order_ref,
+type: String}]` and one outcome `placed` with `returns: true`, owned by one component.
+
+```text
+$ ess specify validate --path v17/system.yaml          # format: ess/17
+shop v1 — 1 file(s), valid                             # exit 0, no note; --format json carries none either
+$ ess generate --path v17/system.yaml --kind openapi --out out
+        '202':  Outcome `placed`: the branch the specification declares for this input. ...
+$ ess generate --path v22/system.yaml --kind openapi --out out     # same model, format: ess/22
+        '200':  Outcome `placed`: ... the body carries the command's response under `response`. ...
+```
 
 ## Outcome
 
-A construct whose projection depends on a later format than the one a system declares is named at
-validation. The note says which construct, which format changes it and what the projection does
-meanwhile, and the document stays valid.
+Validation names any construct whose projection depends on a later format than the one the system
+declares. The note says which construct it is, which format changes it and what the projection does
+until then. The document stays valid. `returns: true` below `ess/22` is the first such construct.
 
 ## Acceptance
 
@@ -28,5 +56,40 @@ meanwhile, and the document stays valid.
   below `ess/22`". Test: a case in `crates/edge/ess-cli/tests/openapi_accounting.rs` (an existing
   binary).
 - At `ess/22` or later there is no such note.
-- The note is a structured diagnostic with a stable code, so `--format json` carries it.
+- The note is a structured diagnostic with a stable code, listed in
+  `website/docs/reference/diagnostics.md`, so `--format json` carries it.
+- The note's condition is `answers_with_response`'s format test itself, not a copy, so the note and
+  the projection cannot disagree.
 - No new `tests/*.rs` file.
+
+## Scope
+
+- cited: `crates/specify/ess-http/src/status.rs` (`DIRECT_ANSWER_FORMAT`, `answers_with_response`)
+- cited: `crates/edge/ess-cli/tests/openapi_accounting.rs`
+- inferred: `crates/specify/ess-domain/src/command.rs` or the validate path in `crates/edge/ess-cli/src/main.rs` (where the note is raised)
+- inferred: `website/docs/reference/diagnostics.md`
+
+confidence: medium (the site that raises the note is not settled)
+
+## Fit review
+
+1. **Need.** An author on an older format must learn that a construct they wrote has no effect on
+   the projection until a later format. Brand-free reproduction above. No syntax was proposed.
+2. **Class: gap.** The behaviour below `ess/22` is documented
+   (`website/docs/reference/spec-versions.md:64`: "below `ess/22` it keeps `202` and no `response`
+   member"), so this is not a defect. What is missing is a diagnostic.
+3. **Already expressible?** The author can read spec-versions.md. Nothing in the tool says it.
+4. **Fit.** It adds no authored surface, only a note-level diagnostic of the kind validation
+   already prints (`warning[ESS-ENTITY-019]`, `implied_relation`, "legal and compiles as written").
+   It is general across siblings: any construct gated by a projection format gets the same note,
+   not one note just for `returns:`.
+5. **Second adopter.** Any author who keeps an older `format:` header and adds a construct whose
+   projection changed in a later format.
+6. **Cost.** One diagnostic code. No format version, no change in generated bytes.
+7. **Alternatives.** (a) Change nothing: the regression report shows the cost. (b) Refuse
+   `returns: true` below `ess/22`: that breaks documents that are valid today. (c) Chosen: a note.
+
+## Decisions
+
+**accept, redesigned.** A generic note for format-gated projections, raised from the same predicate
+the projection reads. Not a refusal, and not one rule just for `returns: true`.

@@ -10,12 +10,13 @@ use ess_conformance::report::Status;
 use ess_conformance::{AdmittedSuite, Runner};
 use ess_domain::{spec::RawSpecFile, system::Source, Specification};
 
-const HEADING: &str = "## Read stored state in the command a binding invokes";
+const HEADING: &str = "# Read stored state in the command a binding invokes";
 
-/// The first fenced `yaml` block under `HEADING` in the binding guide.
+/// The first fenced `yaml` block under `HEADING`, the title of the guide page the binding guide
+/// moved the idiom to.
 fn guide_model() -> String {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../../website/docs/guides/specify/bindings-and-components.md");
+        .join("../../../website/docs/guides/specify/binding-stored-state.md");
     let page = std::fs::read_to_string(&path).expect("the binding guide");
     let start = page
         .find(&format!("\n{HEADING}\n"))

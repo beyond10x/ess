@@ -33,6 +33,7 @@ A field's `type` is one of three things. (1) A lowercase primitive name from `pr
 | `json` | any JSON value |
 | `expr` | a binding expression (see `expressions`); a value, never a type constructor |
 | `name` | a node name; matches NodePath.syntax.segment\_pattern |
+| `token_name` | a token name, written into a CSS custom property name; letters, digits, `_` and `-`; pattern: `"^[A-Za-z0-9_-]+$"`; example: `accent_2` |
 
 **Constructors**
 
@@ -1196,7 +1197,9 @@ For KPI tiles and per-row live numbers. With `from` a metric reads a channel fie
 | `from` | `expr` |   |   | value from a channel field |
 | `match` | `name` |   |   | row field that picks a keyed value |
 | `window` | `duration` |   |   | time window the value covers |
-| `format` | one of: `number` \| `duration` \| `percent` \| `bytes` |   | `number` | display format; `bytes` shows a byte count in B, KB, MB or GB, in 1024 steps |
+| `format` | one of: `number` \| `duration` \| `percent` \| `bytes` |   | `number` | display format; `bytes` shows a byte count in B, KB, MB or GB, in 1024 steps; `duration` shows `h:mm:ss`, counted in its `unit`; `percent` reads its value on its `scale` |
+| `unit` | one of: `ms` \| `s` \| `m` \| `h` |   | `s` | what a `format: duration` value counts: milliseconds, seconds, minutes or hours, and only with that format; `73` s is `0:01:13` |
+| `scale` | one of: `fraction` \| `hundredths` |   | `fraction` | what a `format: percent` value is a share of, and only with that format: `fraction` reads 0.5 as 50%, `hundredths` reads 50 as 50% |
 | `label` | `string` |   |   | caption |
 | `aggregate` | one of: `count` \| `sum` \| `min` \| `max` \| `avg` |   |   | computed over every row of the read instead of read from one; needs `reads` |
 | `field` | `name` |   |   | row field `aggregate` reads; required for every aggregate but count |
@@ -1442,7 +1445,7 @@ action: {name: send, does: tickets.PostReply}
 
 One input of a form or one column of a collection.
 
-Columns and form inputs are fields. `as` is a semantic widget, not a component; a bare name is enough when the defaults fit. `labels` gives the words a column or record shows for a value, written out or naming an entry of the document's `label_maps`; a boolean is keyed `"true"` and `"false"`, and a value the map does not name shows as it is. A badge keeps the raw value in its class. A choice column shows the label of the fixed option its value matches, under any `labels` of its own. A form input is unchanged.
+Columns and form inputs are fields. `as` is a semantic widget, not a component; a bare name is enough when the defaults fit. `labels` gives the words a column or record shows for a value, written out or naming an entry of the document's `label_maps`; a boolean is keyed `"true"` and `"false"`, and a value the map does not name shows as it is. A badge keeps the raw value in its class. A choice column shows the label of the fixed option its value matches, under any `labels` of its own. `tone_by` names a tone map that colors the value by what it means, and `tone` is the tone of a value the map does not name: a status column follows the same map as the badge showing it elsewhere, and a number is toned by a map of bands. A form input is unchanged.
 
 **Properties**
 
@@ -1451,14 +1454,17 @@ Columns and form inputs are fields. `as` is a semantic widget, not a component; 
 | `field` | `name` | yes |   | field of the command input or view row; in a collection column or a record field, `.` names the row itself, so a read whose rows are plain strings shows each string, sorts by it and keys the row by it; on a row that is an object, `.` reads as an absent value, and `ess ui check --model` refuses it on a view of the model, whose rows are entities |
 | `name` | `name` |   | `{from: field}` | node name |
 | `label` | `string` |   | `{from: model.field_label}` | caption |
-| `as` | one of: `text` \| `number` \| `secret` \| `toggle` \| `choice` \| `tags` \| `time` \| `date` \| `date_range` \| `duration` \| `file` \| `rich_text` \| `json` \| `list` \| `map` \| `cron` \| `color` \| `badge` \| `audio` \| `link` \| `metric` \| `bytes` |   | `text` | semantic widget; `bytes` shows a byte count in B, KB, MB or GB, in 1024 steps; `duration` shows `h:mm:ss`, counted in its `unit` |
-| `unit` | one of: `ms` \| `s` |   | `ms` | what an `as: duration` value counts, milliseconds or seconds, and only on such a field; it shows as `h:mm:ss` in whole seconds, the hours unpadded and never folded into days: `73000` ms and `73` s are `0:01:13`, 26 hours `26:00:00` |
+| `as` | one of: `text` \| `number` \| `secret` \| `toggle` \| `choice` \| `tags` \| `time` \| `date` \| `timestamp` \| `date_range` \| `duration` \| `percent` \| `file` \| `rich_text` \| `json` \| `list` \| `map` \| `cron` \| `color` \| `badge` \| `audio` \| `link` \| `bytes` |   | `text` | semantic widget; `bytes` shows a byte count in B, KB, MB or GB, in 1024 steps; `duration` shows `h:mm:ss`, counted in its `unit`; `time` shows the time of day and `timestamp` the date and the time, both in UTC (the locale's order in React, ISO order in the terminal), `date` the date; a form field `timestamp` edits an instant in UTC and `percent` edits a number; `percent` reads its value on its `scale`; a metric is a composite, not an `as` |
+| `unit` | one of: `ms` \| `s` \| `m` \| `h` |   | `ms` | what an `as: duration` value counts, milliseconds, seconds, minutes or hours, and only on such a field; it shows as `h:mm:ss` in whole seconds, the hours unpadded and never folded into days: `73000` ms, `73` s and `90` m are `0:01:13` and `1:30:00`, 26 hours `26:00:00` |
+| `scale` | one of: `fraction` \| `hundredths` |   | `fraction` | what an `as: percent` value is a share of, and only on such a field: `fraction` reads 0.5 as 50%, `hundredths` reads 50 as 50% |
 | `choice` | [Node](#node) |   |   | the choice composite for `as: choice` |
 | `sortable` | `boolean` |   | `false` | column can sort |
 | `visible` | `expr` |   |   | shows the field only when true |
 | `binds` | `expr` |   |   | bind to UI state instead of the command input |
 | `label_from` | record \{ `view`: name of an ESS `view`, `field`: `name`, `key`: optional `name` \} |   |   | show a field of a related view instead of the value: the row of `view` whose `key` (default `id`) equals the value; the view is read once, without params |
 | `labels` | one of: map of `string` → `string` \| `name` |   |   | the text shown for a value: a map written out, or the name of an entry of `label_maps` |
+| `tone` | one of: `neutral` \| `info` \| `success` \| `warning` \| `danger` |   | `neutral` | the tone of a value `tone_by` does not name, and of the value when there is no `tone_by`; a column or record field only |
+| `tone_by` | name of a [ToneMap](#tonemap) |   |   | the name of a `tone_maps` entry that tones the field's own value; a column or record field only. A column with `as: badge` or `as: choice` is a badge in the tone, any other a text in the tone's color; the terminal draws the tone's emphasis |
 | `suggests` | record \{ `reads`: [Reads](#reads), `value`: optional `name` \} |   |   | the values an `as: tags` input suggests, one per row of `reads`: its `value` field (default `name`), or the row itself when it is a plain string; a value the input holds is not suggested, and a typed value is kept whether or not a row holds it, so no create command is needed. Only on an `as: tags` field |
 | `note` | `string` |   |   | author remark |
 | `help` | record \{ `text`: optional `string`, `link`: optional `string` \} |   |   | help text or link shown with the input; on a column, with its header |
@@ -1710,7 +1716,7 @@ currency: args.value.currency
 
 A short value in a toned pill.
 
-For statuses and tiers. `tone` is fixed; `tone_by` picks a tone from the value, through a map written out (`map`) or the name of an entry of the document's `tone_maps` (`tones`), exactly one of the two. The loader resolves `tones` to its map, so a renderer only reads `map`. A value the map does not name takes `tone`. What a tone looks like is the tone's entry of `Tokens.tone`. `labels` gives the text shown for a value, written out or naming an entry of `label_maps`, as on a field; the tone is still chosen by the raw value.
+For statuses and tiers. `tone` is fixed; `tone_by` picks a tone from the value, through a map written out (`map`) or the name of an entry of the document's `tone_maps` (`tones`), exactly one of the two. The loader resolves `tones` to its map, so a renderer only reads `map`. A value the map does not name takes `tone`. What a tone looks like is the tone's entry of `Tokens.tone`. `labels` gives the text shown for a value, written out or naming an entry of `label_maps`, as on a field; the tone is still chosen by the raw value. In a widget body, `tone: args.<param>` hands the badge a tone the use chooses, for a param typed as the tone enum, `{enum: [neutral, info, success, warning, danger]}`; a param of any other type there is refused.
 
 **Properties**
 
@@ -1719,7 +1725,7 @@ For statuses and tiers. `tone` is fixed; `tone_by` picks a tone from the value, 
 | `text` | `expr` |   |   | literal or expression |
 | `field` | `name` |   |   | row field shown |
 | `tone` | one of: `neutral` \| `info` \| `success` \| `warning` \| `danger` |   | `neutral` | fixed tone, and the tone of a value `tone_by` does not map |
-| `tone_by` | record \{ `value`: `expr`, `map`: optional map of `string` → (one of: `neutral` \| `info` \| `success` \| `warning` \| `danger`), `tones`: optional name of a [ToneMap](#tonemap) \} |   |   | tone per value: `map` written out, or `tones` naming an entry of `tone_maps`; exactly one of the two |
+| `tone_by` | record \{ `value`: `expr`, `map`: optional (one of: map of `string` → (one of: `neutral` \| `info` \| `success` \| `warning` \| `danger`) \| record \{ `bands`: list of record \{ `from`: `number`, `tone`: (one of: `neutral` \| `info` \| `success` \| `warning` \| `danger`) \} \}), `tones`: optional name of a [ToneMap](#tonemap) \} |   |   | tone per value: `map` written out (exact values, or `bands`), or `tones` naming an entry of `tone_maps`; exactly one of the two |
 | `labels` | one of: map of `string` → `string` \| `name` |   |   | the text shown for a value: a map written out, or the name of an entry of `label_maps` |
 
 **Exactly one of**
@@ -1739,7 +1745,8 @@ tone_by: {value: args.status, tones: args.tones}
 
 | Check | Subject | Rule | Severity |
 |---|---|---|---|
-| `tone_map_refs` | `**.tone_by.tones` | `{must_resolve: {ref: tone_map}}` | error |
+| `tone_map_refs` | `**.tone_by.tones`, `**.field.tone_by` | `{must_resolve: {ref: tone_map}}` | error |
+| `tone_bands` | `tone_maps.*.bands`, `**.tone_by.map.bands` | `{must: ascend_strictly_by_from}` | error |
 | `label_map_refs` | `**.labels naming a label map` | `{must_resolve: {ref: label_map}}` | error |
 
 ### icon
@@ -1754,7 +1761,7 @@ The renderer maps the semantic name to its icon set; a TUI shows a glyph or the 
 |---|---|---|---|---|
 | `icon` | `string` | yes |   | semantic icon name |
 | `tone` | one of: `neutral` \| `info` \| `success` \| `warning` \| `danger` |   | `neutral` | colour role, and the tone of a value `tone_by` does not map |
-| `tone_by` | record \{ `value`: `expr`, `map`: optional map of `string` → (one of: `neutral` \| `info` \| `success` \| `warning` \| `danger`), `tones`: optional name of a [ToneMap](#tonemap) \} |   |   | tone per value: `map` written out, or `tones` naming an entry of `tone_maps`; exactly one of the two |
+| `tone_by` | record \{ `value`: `expr`, `map`: optional (one of: map of `string` → (one of: `neutral` \| `info` \| `success` \| `warning` \| `danger`) \| record \{ `bands`: list of record \{ `from`: `number`, `tone`: (one of: `neutral` \| `info` \| `success` \| `warning` \| `danger`) \} \}), `tones`: optional name of a [ToneMap](#tonemap) \} |   |   | tone per value: `map` written out (exact values, or `bands`), or `tones` naming an entry of `tone_maps`; exactly one of the two |
 | `label` | `string` | yes |   | accessible text |
 
 **Example**
@@ -1772,7 +1779,8 @@ visible: channel.ticket_chat.typing
 
 | Check | Subject | Rule | Severity |
 |---|---|---|---|
-| `tone_map_refs` | `**.tone_by.tones` | `{must_resolve: {ref: tone_map}}` | error |
+| `tone_map_refs` | `**.tone_by.tones`, `**.field.tone_by` | `{must_resolve: {ref: tone_map}}` | error |
+| `tone_bands` | `tone_maps.*.bands`, `**.tone_by.map.bands` | `{must: ascend_strictly_by_from}` | error |
 
 ### button
 
@@ -2570,17 +2578,17 @@ What the roles a document names look like: design tokens, themes, the theme pref
 
 Design tokens — the values a renderer draws a document's roles with, in five groups.
 
-A document says what a node means, never how it looks: a badge has a tone, a text a style, a button an emphasis. Tokens say what those roles look like. Each group is a map of name to value. The built-in table below is merged under a document's `tokens:` group by group and name by name, so a document without `tokens:` looks as it always did and one that names three colors changes three. A node never names a token: a tone reaches `tone`, a text style reaches `type`, a button's emphasis reaches `color` through the table on `button`, and space and radius are read by the renderer's own stylesheet. Inside `tone`, a value is the bare name of a color. A `type` entry replaces the entry of its name whole, and a field it leaves out falls back to `body`, then to the built-in `body`. The values follow the grammar below; quote a color, since an unquoted `#` starts a YAML comment. A terminal draws no color: it draws a tone as the emphasis below, which adds no text and never uses reversed video, the mark of the cursor, and it reads no space, type or radius.
+A document says what a node means, never how it looks: a badge has a tone, a text a style, a button an emphasis. Tokens say what those roles look like. Each group is a map of name to value. The built-in table below is merged under a document's `tokens:` group by group and name by name, so a document without `tokens:` looks as it always did and one that names three colors changes three. A node never names a token: a tone reaches `tone`, a text style reaches `type`, a button's emphasis reaches `color` through the table on `button`, and space and radius are read by the renderer's own stylesheet. Inside `tone`, a value is the bare name of a color. A `type` entry replaces the entry of its name whole, and a field it leaves out falls back to `body`, then to the built-in `body`. A name holds letters, digits, `_` and `-` only (`^[A-Za-z0-9_-]+$`), since it is written into a CSS custom property name, and a value holds no `;`, `{`, `}`, `<`, `>` or backslash, no comment and no quote or bracket it leaves open. The values follow the grammar below; quote a color, since an unquoted `#` starts a YAML comment. A terminal draws no color: it draws a tone as the emphasis below, which adds no text and never uses reversed video, the mark of the cursor, and it reads no space, type or radius.
 
 **Properties**
 
 | Property | Type | Required | Default | Note |
 |---|---|---|---|---|
-| `color` | map of `name` → `string` |   |   | color literals by name; see the grammar |
-| `space` | map of `name` → `string` |   |   | lengths by name, read by the renderer's stylesheet |
-| `radius` | map of `name` → `string` |   |   | lengths by name, read by the renderer's stylesheet |
+| `color` | map of `token_name` → `string` |   |   | color literals by name; see the grammar |
+| `space` | map of `token_name` → `string` |   |   | lengths by name, read by the renderer's stylesheet |
+| `radius` | map of `token_name` → `string` |   |   | lengths by name, read by the renderer's stylesheet |
 | `type` | map of (one of: `body` \| `caption` \| `heading` \| `mono`) → record \{ `family`: optional `string`, `size`: optional `string`, `weight`: optional `integer` \} |   |   | family, size and weight per text style |
-| `tone` | map of (one of: `neutral` \| `info` \| `success` \| `warning` \| `danger`) → record \{ `text`: `name`, `fill`: `name` \} |   |   | the color names a tone's text and fill are drawn with |
+| `tone` | map of (one of: `neutral` \| `info` \| `success` \| `warning` \| `danger`) → record \{ `text`: `token_name`, `fill`: `token_name` \} |   |   | the color names a tone's text and fill are drawn with |
 
 **Grammar**
 
@@ -2705,13 +2713,13 @@ chosen_by: shell.theme
 
 A value-to-tone map, declared once and named by every `tone_by` that colors by it.
 
-A status written by hand at every badge can be colored two ways in two places. A tone map names it once: `tone_by: {value: row.stage, tones: deal_stage}` on a badge or an icon is resolved by the loader to that map. A widget parameter that carries a map name is typed `{ref: tone_map}`. The chain is value to tone (`tone_maps`), tone to text and fill (`Tokens.tone`), and those to color values (`Tokens.color`, per theme).
+A status written by hand at every badge can be colored two ways in two places. A tone map names it once: `tone_by: {value: row.stage, tones: deal_stage}` on a badge or an icon is resolved by the loader to that map. A widget parameter that carries a map name is typed `{ref: tone_map}`. The chain is value to tone (`tone_maps`), tone to text and fill (`Tokens.tone`), and those to color values (`Tokens.color`, per theme). A field, a badge and an icon take a tone map the same way. A map is written in one of two forms. The first names each value: `{lead: neutral, won: success}`. The second, `{bands: [{from: 0, tone: success}, {from: 50, tone: warning}]}`, tones a number: each `from` is a finite number, and a number takes the tone of the last band whose `from` it reaches. A number below the first band, and a value that is no number, take the node's own `tone` (`neutral` when it has none). The `from` values must strictly ascend (`tone_bands`). A band map names no type for the values it bands, so one named where the values are not numbers is not checked, and shows the node's `tone`.
 
 **Properties**
 
 | Property | Type | Required | Default | Note |
 |---|---|---|---|---|
-| (value) | map of `string` → (one of: `neutral` \| `info` \| `success` \| `warning` \| `danger`) |   |   | tone per value |
+| (value) | one of: map of `string` → (one of: `neutral` \| `info` \| `success` \| `warning` \| `danger`) \| record \{ `bands`: list of record \{ `from`: `number`, `tone`: (one of: `neutral` \| `info` \| `success` \| `warning` \| `danger`) \} \} |   |   | tone per value, or a list of bands over numbers |
 
 **Example**
 
@@ -2760,8 +2768,9 @@ What a validator checks in a document, and the construct each check applies to. 
 | `token_refs` | [Tokens](#tokens) | `tokens.tone.*` | `{must_resolve_in: [Tokens.builtins.color, tokens.color]}` | error |
 | `theme_tokens` | [Theme](#theme) | `themes.*` | `{must: [override_a_declared_token, match_Tokens.grammar, tone_names_a_color_of_the_theme]}` | error |
 | `theme_choice` | [ThemeChoice](#themechoice) | `theme` | `{must: [default_names_a_theme, themes_declared, chosen_by_names_a_shell_preference_enum_whose_variants_and_default_name_themes]}` | error |
-| `tone_map_refs` | [badge](#badge), [icon](#icon) | `**.tone_by.tones` | `{must_resolve: {ref: tone_map}}` | error |
+| `tone_map_refs` | [badge](#badge), [icon](#icon) | `**.tone_by.tones`, `**.field.tone_by` | `{must_resolve: {ref: tone_map}}` | error |
 | `tone_map_unused` | [ToneMap](#tonemap) | `tone_maps.*` | `{must: be_named_by_a_tone_by}` | warning |
+| `tone_bands` | [badge](#badge), [icon](#icon) | `tone_maps.*.bands`, `**.tone_by.map.bands` | `{must: ascend_strictly_by_from}` | error |
 | `label_map_refs` | [Field](#field), [badge](#badge) | `**.labels naming a label map` | `{must_resolve: {ref: label_map}}` | error |
 | `label_map_unused` | [Document](#document) | `label_maps.*` | `{must: be_named_by_the_labels_of_a_field_or_badge}` | warning |
 | `filter_expr` | [Reads](#reads) | `reads.filter and dynamic menu filter` | `{must: parse_as_boolean_predicate}` | error |

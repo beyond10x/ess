@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-10T19:30:37Z",
+  "actor": "human:timo",
+  "artifact": "story:the-react-renderer-draws-the-declared-tokens",
+  "kind": "story",
+  "revision": 9,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "ess-ui-react tokens, field_tone, bundle, live_binding, document_model, value_formats, metric_states; ess-ui-test playwright, fixture_answers, docs, examples; ess-ui-tui; ess-ui-check; ess-ui lib; ess-ui-docs reference; clippy on the six UI crates",
+    "reference": "the-react-renderer-draws-the-declared-tokens/red.txt (1 passed, 4 failed) vs verify-f-1..7.txt at 3457c8d0aa (50, 24, 19, 6, 2, 6 passed; clippy exit 0)"
+  }
+}

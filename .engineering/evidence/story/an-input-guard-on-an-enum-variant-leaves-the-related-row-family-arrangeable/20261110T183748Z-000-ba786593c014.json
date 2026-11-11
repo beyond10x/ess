@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-10T18:37:48Z",
+  "actor": "human:timo",
+  "artifact": "story:an-input-guard-on-an-enum-variant-leaves-the-related-row-family-arrangeable",
+  "kind": "story",
+  "revision": 7,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "ess-conformance missing_related_row_beside_input_refusal and the synthesis byte pins (bytes_table, cli_read, related_values_all_bytes, external_beside_held_guard); clippy",
+    "reference": "an-input-guard-on-an-enum-variant-leaves-the-related-row-family-arrangeable/red-final.txt (0 passed, 2 failed) vs verify-h2-1.txt at ae334cd57e (23 passed), verify-h3-1.txt (clippy exit 0), verify-h3-2.txt (2 passed)"
+  }
+}

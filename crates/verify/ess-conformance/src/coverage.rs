@@ -47,8 +47,14 @@ fn is_coverage_version(version: &str) -> bool {
             | "ess-conformance/59"
             | "ess-conformance/61"
             | "ess-conformance/63"
+            | "ess-conformance/65"
     )
 }
+/// The first coverage suite major whose refusal record may carry `covered_by`.
+pub const COVERED_BY_MAJOR: u32 = 65;
+
+/// The coverage suite format a covered refusal is written in.
+pub const COVERED_BY_FORMAT: &str = "ess-conformance/65";
 /// Carrier retaining exact selected and parent documents.
 pub const SUITE_INPUT_FORMAT: &str = "ess-conformance-input/1";
 
@@ -300,6 +306,10 @@ pub struct Refusal {
     pub scope: RefusalScope,
     /// Proof dependencies only for outside-component classification.
     pub needs: Vec<EssSemanticRef>,
+    /// The authored scenario whose `covers:` names this occurrence's scenario
+    /// (`ess-conformance/65`); absent from the document when no scenario covers it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub covered_by: Option<ScenarioId>,
 }
 /// Final authored candidate disposition after merging.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -409,13 +419,25 @@ fn refusal_cmp(a: &Refusal, b: &Refusal) -> std::cmp::Ordering {
 }
 
 impl Inventory {
-    /// Whether this declared inventory is known and has no in-scope omissions.
+    /// Whether a refusal occurrence is marked covered by an authored scenario this inventory
+    /// selects: a scenario a filter moved outside covers nothing.
+    pub fn covers(&self, refusal: &Refusal) -> bool {
+        refusal
+            .covered_by
+            .as_ref()
+            .is_some_and(|id| self.authored.binary_search(id).is_ok())
+    }
+    /// How many refusal occurrences a selected authored scenario covers.
+    pub fn covered_count(&self) -> usize {
+        self.refused.iter().filter(|r| self.covers(r)).count()
+    }
+    /// Whether this declared inventory is known and has no in-scope omission left uncovered.
     pub fn is_complete(&self) -> bool {
         self.knowledge == Knowledge::CompleteInventory
             && !self
                 .refused
                 .iter()
-                .any(|r| r.scope == RefusalScope::InScope)
+                .any(|r| r.scope == RefusalScope::InScope && !self.covers(r))
     }
     pub(crate) fn sort_and_count(&mut self) -> Result<(), AdmissionError> {
         self.generated.sort();
@@ -453,14 +475,23 @@ impl Inventory {
             "system-issued command refusals require suite/53",
         )
     }
-    pub(crate) fn validate(&self, suite: &ConformanceSuite) -> Result<(), AdmissionError> {
+    /// The refusals a suite version must be new enough to carry.
+    fn version_gated_refusals(&self, suite: &ConformanceSuite) -> Result<(), AdmissionError> {
         require(
             suite.provenance.suite_version.major() >= 7
                 || self.refused.iter().all(|r| r.code != "ESS-SYNTH-015"),
             "accessor observation refusals require suite/7",
         )?;
         self.aggregate_refusals(suite)?;
-        self.system_issued_refusals(suite)?;
+        require(
+            suite.provenance.suite_version.major() >= COVERED_BY_MAJOR
+                || self.refused.iter().all(|r| r.covered_by.is_none()),
+            "a covered refusal requires suite/65",
+        )?;
+        self.system_issued_refusals(suite)
+    }
+    pub(crate) fn validate(&self, suite: &ConformanceSuite) -> Result<(), AdmissionError> {
+        self.version_gated_refusals(suite)?;
         let component = match &self.selection.scope {
             Scope::System => None,
             Scope::Component { component } => Some(component.as_str()),
@@ -608,6 +639,16 @@ impl Inventory {
         owners: &BTreeMap<&ScenarioId, &SourceIdentity>,
     ) -> Result<(), AdmissionError> {
         require(!r.message.trim().is_empty(), "empty refusal cause text")?;
+        if let Some(by) = &r.covered_by {
+            require(
+                r.origin == Origin::Generated && r.scenario.is_some(),
+                "only a generated refusal of a known scenario can be covered",
+            )?;
+            require(
+                survivors.get(by) == Some(&Origin::Authored),
+                "covered_by must name an authored scenario of this inventory",
+            )?;
+        }
         match r.origin {
             Origin::Generated => {
                 require(
@@ -757,7 +798,7 @@ fn validate_refusals_json(value: &Json) -> Result<(), AdmissionError> {
                 "origin", "scenario", "subject", "source", "code", "message", "effect", "retained",
                 "scope", "needs",
             ],
-            &[],
+            &["covered_by"],
         )?;
         if !r["retained"].null() {
             r["retained"].closed(&["origin", "source"], &[])?;

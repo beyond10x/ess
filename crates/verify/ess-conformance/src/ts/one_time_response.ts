@@ -691,6 +691,9 @@ const READER_VERSIONS = [
   // Cumulative: the pair whose response observations name a member by its path.
   'ess-conformance/62',
   'ess-conformance/63',
+  // Cumulative: the pair opened for the epic's constructs.
+  'ess-conformance/64',
+  'ess-conformance/65',
 ];
 
 export function admitDisclosureId(

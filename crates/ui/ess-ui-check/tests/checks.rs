@@ -843,6 +843,59 @@ fn token_values() {
 }
 
 #[test]
+fn token_names_and_values_are_css_safe() {
+    let text = doc(&[(
+        "tokens",
+        "{color: {Bad: '#fff', 'a.b': '#fff', 'a;b': '#fff', 'x}': '#fff', good_1-x: '#fff'}, \
+         space: {'has space': 1rem, md2: 1rem, 2xl: 2rem}, \
+         type: {body: {family: 'system-ui; --ui-size-nav-width: 0px'}, \
+                heading: {family: 'a /* b */'}, mono: {family: 'ui-monospace, monospace'}, \
+                caption: {family: 'x}y'}}}",
+    )]);
+    let written = report(&text);
+    for path in [
+        "tokens/color/a.b",
+        "tokens/color/a;b",
+        "tokens/color/x}",
+        "tokens/space/has space",
+        "tokens/type/body/family",
+        "tokens/type/heading/family",
+        "tokens/type/caption/family",
+    ] {
+        trips_in(&written, "token_values", path);
+    }
+    for path in [
+        "tokens/color/good_1-x",
+        "tokens/color/Bad",
+        "tokens/space/2xl",
+        "tokens/space/md2",
+        "tokens/type/mono/family",
+    ] {
+        clean_at(&written, "token_values", path);
+    }
+
+    // An open quote or bracket carries a declaration past its `;`; a balanced one is a family.
+    for (family, open) in [
+        ("'\"Segoe UI, x'", true),
+        ("'local(Menlo, monospace'", true),
+        ("'a]b'", true),
+        ("'\"Segoe UI\", system-ui'", false),
+        ("'local(Menlo), monospace'", false),
+    ] {
+        let text = doc(&[(
+            "tokens",
+            &format!("{{type: {{mono: {{family: {family}}}}}}}"),
+        )]);
+        let written = report(&text);
+        if open {
+            trips_in(&written, "token_values", "tokens/type/mono/family");
+        } else {
+            clean_at(&written, "token_values", "tokens/type/mono/family");
+        }
+    }
+}
+
+#[test]
 fn token_names() {
     let text = doc(&[(
         "tokens",
@@ -1016,6 +1069,61 @@ fn tone_map_unused() {
     trips_in(&report, "tone_map_unused", "tone_maps/deal_stage");
     clean_at(&report, "tone_map_unused", "tone_maps/job_state");
     assert!(!report.has_errors(), "{:#?}", report.findings);
+}
+
+#[test]
+fn tone_bands() {
+    // A `tone_maps` entry whose `from` values do not strictly ascend.
+    let text = doc(&[
+        (
+            "tone_maps",
+            "{load: {bands: [{from: 0, tone: success}, {from: 50, tone: warning}, \
+             {from: 50, tone: danger}]}}",
+        ),
+        ("pages", &badge_page("{value: row.state, tones: load}")),
+    ]);
+    let finding = trips(&text, "tone_bands", "tone_maps/load");
+    assert!(finding.message.contains("band 2"), "{finding:?}");
+    // A band map written out on the badge itself, descending.
+    let text = doc(&[(
+        "pages",
+        &badge_page(
+            "{value: row.state, map: {bands: [{from: 10, tone: success}, {from: 5, tone: danger}]}}",
+        ),
+    )]);
+    let finding = trips(
+        &text,
+        "tone_bands",
+        "pages/p/sections/summary/children/state/tone_by/map",
+    );
+    assert!(finding.message.contains("band 1"), "{finding:?}");
+    // Strictly ascending bands, in either place, are clean.
+    let fine = doc(&[
+        (
+            "tone_maps",
+            "{load: {bands: [{from: 0, tone: success}, {from: 50, tone: warning}, \
+             {from: 80, tone: danger}]}}",
+        ),
+        ("pages", &badge_page("{value: row.state, tones: load}")),
+    ]);
+    let named = report(&fine);
+    assert!(
+        tripped(&named, "tone_bands").is_empty(),
+        "{:#?}",
+        named.findings
+    );
+    let fine = doc(&[(
+        "pages",
+        &badge_page(
+            "{value: row.state, map: {bands: [{from: 5, tone: success}, {from: 10, tone: danger}]}}",
+        ),
+    )]);
+    let inline = report(&fine);
+    assert!(
+        tripped(&inline, "tone_bands").is_empty(),
+        "{:#?}",
+        inline.findings
+    );
 }
 
 /// The base page with a badge whose value is shown through `labels`.

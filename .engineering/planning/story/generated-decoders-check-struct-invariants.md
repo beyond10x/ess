@@ -2,30 +2,120 @@
 format: aep.planning-md/3
 id: story:generated-decoders-check-struct-invariants
 kind: story
-status: draft
+status: active
 title: Generated Go and Rust decoders check a struct's declared invariants
 summary: The struct branch of the Go and Rust decoders admits an input breaking its invariants; enforce them or refuse the type by name
 tags:
 - backlog
+- defect
+- severity-high
+- zero-open-issues
 relations:
 - informed_by: story:generated-decoders-enforce-declared-value-constraints
 - serves: vision:O2
-revision: 1
+- decomposes: epic:zero-open-issues-2026-11
+scope:
+- confidence: cited
+  path: crates/generate/ess-synth/src/go/http.rs
+- confidence: inferred
+  path: crates/generate/ess-synth/src/go/invariant.rs
+- confidence: inferred
+  path: crates/generate/ess-synth/src/go/items.rs
+- confidence: inferred
+  path: crates/generate/ess-synth/src/rust/items.rs
+- confidence: cited
+  path: crates/generate/ess-synth/src/rust/wire.rs
+- confidence: inferred
+  path: crates/generate/ess-synth/tests/invariant_check/value_constraints.rs
+revision: 7
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:44:19Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:44:20Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Need
 
 A struct may declare `invariants:`; the compiler counts such a struct as constrained and publishes
-them under `x-ess-invariants`. The generated Go server decoder (`crates/generate/ess-synth/src/go/http.rs`,
-the struct branch of `type_decoder`) and the generated Rust model decoder (`struct_body` in
-`rust/wire.rs`) check none of them, and neither target refuses the type: a served command whose
-input is `{"window":{"low":-1,"high":1}}` against `invariants: [low >= 0]` is admitted. Found by the
-adversary of story:generated-decoders-enforce-declared-value-constraints part A (pre-existing at
-e70317198; that story's Outcome reads "enforced at the decoder, or the generator refuses the type
-by name").
+them under `x-ess-invariants`, and lowers an Integer comparison to a schema bound (`minimum`). The
+generated Go server decoder (`crates/generate/ess-synth/src/go/http.rs:637`, the
+`ResolvedBody::Struct` arm of `type_decoder`, which reads the members and returns) and the generated
+Rust model decoder (`struct_body`, `crates/generate/ess-synth/src/rust/wire.rs:315`) check none of
+them, and neither target refuses the type. The Newtype arm beside it does check
+(`BrokenConstraint`, beyond10x/ess#579). Found by the adversary of
+story:generated-decoders-enforce-declared-value-constraints part A (pre-existing at e70317198; that
+story's Outcome reads "enforced at the decoder, or the generator refuses the type by name", and its
+acceptance and scope cover newtypes only).
+
+Reproduction on 0.92.0:
+
+```yaml
+format: ess/22
+system: probe
+version: v1
+domain: probe.range
+types:
+  - name: probe.range.Window
+    kind: struct
+    fields:
+      - {name: low, type: Integer}
+      - {name: high, type: Integer}
+    invariants:
+      - low >= 0
+events:
+  - name: probe.range.WindowSet
+    fields: [{name: note, type: String}]
+commands:
+  - name: probe.range.SetWindow
+    input:
+      - {name: window, type: probe.range.Window}
+      - {name: note, type: String}
+    outcomes:
+      - name: set
+        emits: [probe.range.WindowSet]
+        payload:
+          probe.range.WindowSet: {note: input.note}
+components:
+  - component: ranger
+    owns: {domains: [probe.range]}
+    accepts: {commands: [probe.range.SetWindow]}
+    publishes: {events: [probe.range.WindowSet]}
+    reached_by: network
+```
+
+```text
+$ ess generate synthesize --path spec --target rust --out out-rust
+6 capabilities: 6 generated, 0 obligation(s), 0 refused
+# out-rust/crates/probe-server/src/ranger.openapi.json: "low": {"type": "integer", "minimum": 0}, "x-ess-invariants": ["low >= 0"]
+# out-rust/crates/probe-server/src/wire.rs
+pub fn decode_probe_range_window(value: &json::Value, at: &str) -> Result<probe_types::range::Window, json::DecodeError> {
+    json::closed_at(value, at, &["low", "high"])?;
+    Ok(probe_types::range::Window { low: ...integer_at..., high: ...integer_at... })
+}
+$ ess generate synthesize --path spec --target go --out out-go
+6 capabilities: 6 generated, 0 obligation(s), 0 refused
+# out-go/server/wire.go: decodeProbeRangeWindow reads low and high and returns out, nil
+```
+
+The generated types say "Every value satisfies `low >= 0` — declared here, enforced by whatever
+behaviour constructs one". A served command with input `{"window":{"low":-1,"high":1},"note":"x"}`
+is admitted although the served schema refuses it.
 
 ## Acceptance
 
-- A generated Go server and a generated Rust model decoder answer a struct input that breaks a
-  declared invariant with a decode error naming the path, in the words the newtype checks use.
-- A struct invariant either target cannot check fails generation by name.
-- A struct without invariants keeps its exact generated bytes.
+- For the specification above, the generated Rust server and the generated Go server answer
+  `{"window":{"low":-1,"high":1},"note":"x"}` with `400` and a decode error at path `window`, in
+  the words the newtype checks use; `{"window":{"low":0,"high":1},"note":"x"}` is admitted.
+- A struct invariant either target cannot check fails `ess generate synthesize` for that target,
+  naming the struct and the invariant.
+- A struct without invariants keeps its exact generated bytes in both targets.
+
+## Scope
+
+- cited: crates/generate/ess-synth/src/go/http.rs
+- cited: crates/generate/ess-synth/src/rust/wire.rs
+- inferred: crates/generate/ess-synth/src/rust/items.rs
+- inferred: crates/generate/ess-synth/src/go/items.rs
+- inferred: crates/generate/ess-synth/src/go/invariant.rs
+- inferred: crates/generate/ess-synth/tests/invariant_check/value_constraints.rs
+- inferred: CHANGELOG.md
+
+confidence: medium

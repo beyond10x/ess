@@ -2,15 +2,20 @@
 format: aep.planning-md/3
 id: story:refusal-witness-sends-echoed-optional-input
 kind: story
-status: draft
+status: archived
 title: A refusal's witness sends the Optional input its error payload echoes
 tags:
 - adopter-report
+- already-fixed
 - defect
+- zero-open-issues
 relations:
 - serves: vision:O2
 - decomposes: epic:adopter-gaps-synthesis
-revision: 3
+- decomposes: epic:zero-open-issues-2026-11
+revision: 6
+transitions:
+- {from: "draft", to: "archived", at: "2026-11-09T23:06:53Z", actor: "human:timo", revision: 6}
 ---
 ## Outcome
 
@@ -61,3 +66,21 @@ for a success outcome's event as for a refusal's error payload.
 - On the fixture above, at least the synthesized scenario that reaches `issued` sends `state`
   and expects `CodeIssued.state` equal to it.
 - A mutant implementation that drops `state` from `CodeIssued` fails a synthesized scenario.
+
+
+## Verification on 0.92.0 (2026-11-09)
+
+Result: **already-fixed**. Checked against main at 4ab2ea1449 and the 0.92.0 release binary by the
+zero-open-issues run (epic `epic:zero-open-issues-2026-11`); this draft leaves the plan as archived.
+
+Proof: verify/refusal-witness-sends-echoed-optional-input/repro/run.txt; CHANGELOG.md:1029-1032 (0.62.0, beyond10x/ess#546); tests/unread_optional_inputs.rs
+
+Not reproducible on 0.92.0 with both reported shapes (adopters were on 0.56.0). refusal-echo: the refusal
+witness sends `state` and `expect_error.fields.state` equals it. four-optionals (the second report's
+Authorize shape: prompt/nonce/max_age/state, success event `CodeIssued.state: input.state`, refusal
+payloads echoing `state`): every synthesized send carries `state`; every expect_error and the
+`CodeIssued` expect_event assert it; same without any `example:`. Interpreted runs pass all.
+A target that drops the echo fails: `mismatch` reports "error carried no field `state`"
+(src/runner.rs:3590-3602). Fix: 0.62.0 #546, an Optional input is sent when a branch copies it.
+Gap left: no test pins the error-payload echo specifically; the reproduction here could become one
+if the story is closed with a regression test rather than archived.

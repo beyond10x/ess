@@ -1,0 +1,14 @@
+{
+  "at": "2026-11-10T19:49:52Z",
+  "actor": "human:timo",
+  "artifact": "story:an-arrangement-refusal-names-the-cause-of-every-creator-tried",
+  "kind": "story",
+  "revision": 6,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "review-result:zi-t2-lane3-adv-1",
+    "review": "review-result:zi-t2-lane3-adv-1",
+    "outcome": "escalated"
+  }
+}

@@ -179,3 +179,123 @@ fn a_binding_refusal_help_is_one_the_specification_can_follow() {
         Vec::<String>::new()
     );
 }
+
+const SUBJECT_SYSTEM: &str = include_str!("fixtures/binding-set-guard/subject/system.yaml.txt");
+const SUBJECT_COMPONENTS: &str =
+    include_str!("fixtures/binding-set-guard/subject/components.yaml.txt");
+const SUBJECT_GRP: &str = include_str!("fixtures/binding-set-guard/subject/grp.yaml.txt");
+const SUBJECT_RES: &str = include_str!("fixtures/binding-set-guard/subject/res.yaml.txt");
+
+const SUBJECT_BINDING: &str = "reconcile-on-leave";
+
+fn subject_model(grp: &str) -> EssIr {
+    let files = [
+        ("system.yaml", SUBJECT_SYSTEM),
+        ("components.yaml", SUBJECT_COMPONENTS),
+        ("grp.yaml", grp),
+        ("res.yaml", SUBJECT_RES),
+    ];
+    let mut sources = Vec::new();
+    for (label, text) in files {
+        let raw = RawSpecFile::parse(text).unwrap_or_else(|error| panic!("{label}: {error}"));
+        sources.push((Source::new(label), raw));
+    }
+    let spec = Specification::assemble(sources).unwrap_or_else(|error| panic!("{error}"));
+    compile(&spec, &SourceMap::new()).unwrap_or_else(|error| panic!("{error:?}"))
+}
+
+#[test]
+fn a_binding_arranges_the_row_a_set_guard_selects_for_a_subject_payload() {
+    let ir = subject_model(SUBJECT_GRP);
+    let synthesis = synthesize(&ir);
+    assert_eq!(refusals(&synthesis), Vec::<String>::new());
+    assert_eq!(
+        synthesis.suite.scenarios.len(),
+        13,
+        "13 selected, 0 refused"
+    );
+
+    for aspect in ["flow", "delivery", "on-failure"] {
+        steps_of(&synthesis, &format!("{SUBJECT_BINDING}/binding/{aspect}"));
+    }
+    let flow = steps_of(&synthesis, &format!("{SUBJECT_BINDING}/binding/flow"));
+    let eventually: Vec<&str> = flow
+        .iter()
+        .filter(|step| step["step"] == "eventually_event")
+        .filter_map(|step| step["event"].as_str())
+        .collect();
+    assert_eq!(eventually, ["example.res.Kept"]);
+
+    assert_eq!(failing(&ir, &synthesis), BTreeMap::new());
+}
+
+#[test]
+fn a_subject_payload_the_creator_mints_stays_refused() {
+    const STORED: &str = "sets: {member_id: input.who, eligible: input.eligible}";
+    assert_eq!(SUBJECT_GRP.matches(STORED).count(), 1);
+    let minted = SUBJECT_GRP.replacen(
+        STORED,
+        "sets: {member_id: {generated: true}, eligible: input.eligible}",
+        1,
+    );
+    let synthesis = synthesize(&subject_model(&minted));
+    let refused = refused_as(&synthesis, &format!("{SUBJECT_BINDING}/binding/flow"));
+    assert_eq!(refused.len(), 1, "{refused:#?}");
+    assert!(refused[0].contains("ESS-SYNTH-010"), "{}", refused[0]);
+}
+
+// The creating command's input is named `who`, not as the invoked command's own: a UUID witness
+// is hashed from its fact path, so with one name the creator's unsteered value and the steered one
+// would coincide and nothing would be steered.
+
+fn joined_who(steps: &[Value]) -> Vec<Value> {
+    steps
+        .iter()
+        .filter(|step| step["step"] == "execute_command" && step["command"] == "example.grp.Join")
+        .map(|step| step["input"]["who"].clone())
+        .collect()
+}
+
+#[test]
+fn the_creator_is_sent_the_value_the_rows_were_arranged_against() {
+    let ir = subject_model(SUBJECT_GRP);
+    let synthesis = synthesize(&ir);
+    assert_eq!(refusals(&synthesis), Vec::<String>::new());
+    assert_eq!(failing(&ir, &synthesis), BTreeMap::new());
+
+    let flow = steps_of(&synthesis, &format!("{SUBJECT_BINDING}/binding/flow"));
+    let unsteered = joined_who(&steps_of(&synthesis, "example.grp.Leave/outcome/removed"));
+    let sent = joined_who(&flow);
+    // The first membership created is the trigger's own row. It is sent a value other than the
+    // one it is sent where nothing is steered, and a later row, the one the set guard selects,
+    // holds that value.
+    let (creator, arranged) = sent.split_first().expect("the creator is sent");
+    assert_ne!(
+        creator, &unsteered[0],
+        "the creator is steered off the value it is sent alone: {flow:#?}"
+    );
+    assert!(
+        arranged.contains(creator),
+        "a row the guard selects holds the steered value: {flow:#?}"
+    );
+}
+
+#[test]
+fn a_trigger_comparing_the_stored_field_with_its_own_input_is_not_steered() {
+    // The trigger refuses unless the row stores the member it is sent: steering the creator alone
+    // would send it down its refusal. Every scenario synthesis emits passes the interpreter.
+    let grp = SUBJECT_GRP
+        .replacen(
+            "input: [{name: membership_id, type: example.grp.MembershipId}]",
+            "input: [{name: membership_id, type: example.grp.MembershipId}, {name: member_id, type: example.grp.MemberRef}]",
+            1,
+        )
+        .replacen(
+            "    outcomes:\n      - name: removed\n",
+            "    outcomes:\n      - {name: not-theirs, when_subject: {predicate: member_id != input.member_id}, error: example.grp.Conflict}\n      - name: removed\n",
+            1,
+        );
+    let ir = subject_model(&grp);
+    let synthesis = synthesize(&ir);
+    assert_eq!(failing(&ir, &synthesis), BTreeMap::new());
+}

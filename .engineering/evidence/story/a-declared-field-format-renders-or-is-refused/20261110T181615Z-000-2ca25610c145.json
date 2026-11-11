@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-10T18:16:15Z",
+  "actor": "human:timo",
+  "artifact": "story:a-declared-field-format-renders-or-is-refused",
+  "kind": "story",
+  "revision": 8,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "ess-ui-react, ess-ui-tui, ess-ui-check value_formats; ess-ui lib; ess-ui-docs reference; metric_states, live_binding, live_composites",
+    "reference": "a-declared-field-format-renders-or-is-refused/red-check.txt (4 passed, 2 failed), red-react.txt (11 passed, 4 failed), red-tui.txt (does not compile) vs verify-1..5-catchup.txt at 97efdfa6c1 (33, 43, 25, 12, 6 passed)"
+  }
+}

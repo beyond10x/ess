@@ -31,6 +31,10 @@ weakening it: a mutant that only says less could never be killed by a correct ta
   it moves the integer literal of a `>=` or `<=` one step outward (`amount >= 10` becomes
   `amount >= 9`), the direction the swap does not take; and it flips `==`↔`!=` on a comparison that
   is not the whole guard, which `guard-negate` already covers.
+- `order-flip` flips one key of a view's `order_by:`. The suite kills the flip of a key after the
+  first because synthesis arranges, for that key, two rows equal on every key before it and
+  different on it. Where it cannot (an earlier key is the identity, or no creating command writes a
+  key from its input), synthesis lists a refusal naming the view and the key, and the flip survives.
 - `guard-boundary`, `guard-negate` and `guard-connective` edit the predicate of a `when_subject:`
   over the stored subject, and the predicate of a `when_related:` over the row an input identity
   names, as they edit a `when:`. Such a mutant's id names the key after the outcome:

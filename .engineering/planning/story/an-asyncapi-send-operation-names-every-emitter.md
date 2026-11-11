@@ -2,53 +2,73 @@
 format: aep.planning-md/3
 id: story:an-asyncapi-send-operation-names-every-emitter
 kind: story
-status: draft
+status: active
 title: The AsyncAPI send operation names every outcome that emits the event
 summary: The send operation names one emitter of three (a2a wave 1, G7); defect.
 tags:
 - adopter-report
 - defect
 - ess-0.70.0
+- severity-medium
+- zero-open-issues
 relations:
 - serves: vision:O2
 - decomposes: epic:adopter-gaps-wire-and-answers
+- decomposes: epic:zero-open-issues-2026-11
 scope:
 - confidence: cited
   path: crates/generate/ess-gen/src/asyncapi.rs
 - confidence: cited
   path: crates/generate/ess-gen/tests/asyncapi.rs
 - confidence: inferred
+  path: crates/generate/ess-gen/tests/asyncapi_transport.rs
+- confidence: inferred
   path: generated/asyncapi/email-service.yaml
 - confidence: inferred
   path: generated/asyncapi/invoice-service.yaml
-revision: 5
+revision: 10
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:38:46Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:38:47Z", actor: "human:timo", revision: 10, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Need
 
-Reported by the adopter session specifying A2A in beyond10x/a2a, in the a2a wave-1 gaps the
-orchestrator relayed on 2026-10-22 (ESS 0.67.0, a2a main 3a18050).
+Reported by a downstream specification on 2026-10-22 against ESS 0.67.0 (finding G7 of its wave-1
+gaps): the generated AsyncAPI send operation for an event names only one emitter (the creating
+outcome) and omits the others that emit the same event without changing an entity.
 
-- **G7** (a2a wave-1 gaps list, line 16): the generated AsyncAPI send operation for an event names
-  only one emitter (the task-created outcome) and omits the others that emit the same event
-  (continued, direct-message). Seen in the adopter's generated AsyncAPI document for its agent
-  component, line 92.
+Reproduced on 0.92.0. Model: `demo.tasks.TaskUpdated` is emitted by `Create/created` (creates
+`demo.tasks.Task`), `Continue/continued` (no subject) and `Message/direct` (no subject), all accepted
+by one component `task-service`.
+
+```
+$ ess generate --path spec.yaml --kind asyncapi --out out
+$ sed -n '/^operations:/,/^components:/p' out/asyncapi/task-service.yaml
+operations:
+  send.demo.tasks.TaskUpdated:
+    ...
+    description: |-
+      Nothing in this specification reacts to `demo.tasks.TaskUpdated`.
+      `demo.tasks.Create` emits it on `created`, which creates a `demo.tasks.Task` in `Open`. It carries the new instance's identity in `task_id`.
+```
+
+`Continue/continued` and `Message/direct` are not named.
 
 ## Where it lives
 
 - `crates/generate/ess-gen/src/asyncapi.rs:1169` (`send`): the operation's description is the
   consumers plus `state_changes(ir, event)` (`:1226`).
-- `asyncapi.rs:1232-1234`: `state_changes` skips every emitting outcome without a subject
+- `asyncapi.rs:1233-1235`: `state_changes` skips every emitting outcome without a subject
   (`let Some(subject) = &outcome.subject else { continue; }`), and further down speaks only where
   the event is the one that publishes the subject's identity. An outcome that emits the event
-  without changing an entity is never named: the adopter's two missing emitters are of that kind
-  (inferred from the doc comment at `:1222-1225` and the skip; the adopter's model was not run).
+  without changing an entity is never named.
 
 ## Fit review
 
 2026-10-22, assessed with `.agents/skills/assessing-external-requests/SKILL.md`.
 
 1. **Need.** A reader of the AsyncAPI document must see every outcome that sends the event, so a
-   consumer knows every situation it arrives in. The adopter proposed no syntax.
+   consumer knows every situation it arrives in. The reporter proposed no syntax.
 2. **Class: defect.** The model declares three emitters and the document names one.
 3. **Already expressible?** No authored spelling changes what the projection lists.
 4. **Fit.** No authored surface. The send operation names every command outcome that emits the
@@ -80,7 +100,7 @@ Fixture, written by the test: an event `demo.tasks.TaskUpdated` emitted by `Crea
   `Continue/continued`, `Create/created`, `Message/direct`. Test:
   `crates/generate/ess-gen/tests/asyncapi.rs`, case `a_send_operation_names_every_emitting_outcome`.
   Failing before: the case finds one emitter on the current tree. Mutation check: restoring the
-  subject-less skip at `asyncapi.rs:1232-1234` for emitter naming fails the case.
+  subject-less skip at `asyncapi.rs:1233-1235` for emitter naming fails the case.
 - **Order is fixed.** Transition: the same fixture with commands declared in reverse order. After:
   byte-identical output. Same file, case `emitters_are_ordered_by_command_then_outcome`.
 - **Subject-only events keep their bytes.** Transition: projection of an event whose emitters all
@@ -88,6 +108,16 @@ Fixture, written by the test: an event `demo.tasks.TaskUpdated` emitted by `Crea
   `an_event_whose_emitters_all_have_a_subject_keeps_its_bytes`; every existing case in
   `tests/asyncapi.rs` and `tests/asyncapi_transport.rs` keeps its verdict or is named as re-pinned
   because its event has a subject-less emitter.
+
+## Scope
+
+- cited: crates/generate/ess-gen/src/asyncapi.rs
+- cited: crates/generate/ess-gen/tests/asyncapi.rs
+- inferred: crates/generate/ess-gen/tests/asyncapi_transport.rs
+- inferred: generated/asyncapi/email-service.yaml
+- inferred: generated/asyncapi/invoice-service.yaml
+
+confidence: high
 
 ## Schedule
 

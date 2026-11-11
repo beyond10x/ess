@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-10T06:21:38Z",
+  "actor": "human:timo",
+  "artifact": "story:a-swapped-caller-run-renames-only-the-names-it-binds",
+  "kind": "story",
+  "revision": 11,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "cargo test -p ess-conformance --locked --test caller_swap_authored_field_names --test caller_swap_value_invariant_witness --test interpreted_caller; --lib; byte pins",
+    "reference": "a-swapped-caller-run-renames-only-the-names-it-binds/red.kept.txt (0 passed, 2 failed) vs verify-batch2/c1..c8.txt at 7623ee5ec1 (2+1+3 passed; lib 175; byte pins green)"
+  }
+}

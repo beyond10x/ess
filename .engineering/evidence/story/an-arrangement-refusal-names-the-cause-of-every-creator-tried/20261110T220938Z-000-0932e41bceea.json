@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-10T22:09:38Z",
+  "actor": "human:timo",
+  "artifact": "story:an-arrangement-refusal-names-the-cause-of-every-creator-tried",
+  "kind": "story",
+  "revision": 10,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "ess-conformance arrangement_refusal_names_every_creator and the existing ESS-SYNTH-004 targets with the byte pins",
+    "reference": "an-arrangement-refusal-names-the-cause-of-every-creator-tried/red-kept.txt (1 passed, 1 failed) vs lane/verify-lane-final-1.txt (18 named ess-conformance targets, 126 passed), verify-lane-final-2.txt (clippy exit 0), verify-lane-final-3.txt (ess-cli adversary_t2_order_tie_emit, 2 passed), verify-lane-final-4.txt (cargo xtask docs exit 0) at d715ff1fdc"
+  }
+}

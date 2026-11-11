@@ -1857,6 +1857,10 @@ pub struct Metric {
     pub window: Option<String>,
     /// Display format.
     pub format: Option<MetricFormat>,
+    /// What a `format: duration` value counts; seconds when not written.
+    pub unit: Option<DurationUnit>,
+    /// What a `format: percent` value is a share of; a fraction when not written.
+    pub scale: Option<PercentScale>,
     /// Caption.
     pub label: Option<String>,
     /// Computes the value over every row of the read instead of reading one.
@@ -2383,6 +2387,8 @@ pub struct Field {
     pub field_as: Option<String>,
     /// What an `as: duration` value counts; milliseconds when not written.
     pub unit: Option<DurationUnit>,
+    /// What an `as: percent` value is a share of; a fraction when not written.
+    pub scale: Option<PercentScale>,
     /// The choice composite for `as: choice`.
     pub choice: Option<Box<Node>>,
     /// Column can sort.
@@ -2396,6 +2402,12 @@ pub struct Field {
     pub label_from: Option<LabelFrom>,
     /// The words a column or record shows for a value, in place of the value.
     pub labels: Option<Labels>,
+    /// The tone of a value `tone_by` does not name, and of a value with no map: `neutral` when
+    /// only `tone_by` is written. Only a column or record field is toned.
+    pub tone: Option<Tone>,
+    /// The tone map the field's own value is toned by, written as the name of a `tone_maps`
+    /// entry.
+    pub tone_by: Option<FieldToneBy>,
     /// The values an `as: tags` input suggests; typed values are still kept.
     pub suggests: Option<Suggests>,
     /// Author remark.
@@ -2421,6 +2433,21 @@ impl Field {
     /// The `field` that names the row itself rather than a field of it.
     pub const ROW: &'static str = ".";
 
+    /// The tone `value` is drawn in: the tone its map gives it, else the field's `tone`, else
+    /// `neutral`. `None` when the field has neither `tone` nor `tone_by`, which draws as it
+    /// always did.
+    pub fn tone_of(&self, value: &Value) -> Option<Tone> {
+        if self.tone.is_none() && self.tone_by.is_none() {
+            return None;
+        }
+        let named = self
+            .tone_by
+            .as_ref()
+            .and_then(|tone_by| ToneMap::from_value(&tone_by.map))
+            .and_then(|map| map.tone(value).cloned());
+        Some(named.or_else(|| self.tone.clone()).unwrap_or(Tone::Neutral))
+    }
+
     /// Whether this field names the row itself ([`Field::ROW`]).
     pub fn is_row(&self) -> bool {
         self.field == Self::ROW
@@ -2431,8 +2458,16 @@ impl Field {
     pub fn duration_unit(&self) -> DurationUnit {
         match self.unit {
             Some(DurationUnit::S) => DurationUnit::S,
+            Some(DurationUnit::M) => DurationUnit::M,
+            Some(DurationUnit::H) => DurationUnit::H,
             _ => DurationUnit::Ms,
         }
+    }
+
+    /// The scale an `as: percent` value has: its `scale`, else a fraction. An unmapped scale is
+    /// treated as absent.
+    pub fn percent_scale(&self) -> PercentScale {
+        self.scale.clone().unwrap_or(PercentScale::Fraction).known()
     }
 
     /// The label a column or record shows for `value`: the field's own `labels` first, then the
@@ -2480,6 +2515,10 @@ pub enum DurationUnit {
     Ms,
     /// Seconds.
     S,
+    /// Minutes.
+    M,
+    /// Hours.
+    H,
     /// A value a retrofit could not determine (`unmapped_marker`).
     Unmapped(UnmappedMarker),
 }
@@ -2490,6 +2529,8 @@ impl DurationUnit {
         match self {
             Self::Ms => "ms",
             Self::S => "s",
+            Self::M => "m",
+            Self::H => "h",
             Self::Unmapped(marker) => &marker.0,
         }
     }
@@ -2502,25 +2543,87 @@ impl<'de> Deserialize<'de> for DurationUnit {
             type Value = DurationUnit;
 
             fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                formatter.write_str("a duration unit: `ms` or `s`")
+                formatter.write_str("a duration unit: `ms`, `s`, `m` or `h`")
             }
 
             fn visit_str<E: serde::de::Error>(self, text: &str) -> Result<DurationUnit, E> {
                 match text {
                     "ms" => Ok(DurationUnit::Ms),
                     "s" => Ok(DurationUnit::S),
+                    "m" => Ok(DurationUnit::M),
+                    "h" => Ok(DurationUnit::H),
                     _ => match text.strip_prefix(UNMAPPED_PREFIX) {
                         Some(reason) if !reason.is_empty() => {
                             Ok(DurationUnit::Unmapped(UnmappedMarker(text.to_owned())))
                         }
                         _ => Err(E::custom(format!(
-                            "`{text}` is no duration unit: `unit` is `ms` or `s`"
+                            "`{text}` is no duration unit: `unit` is `ms`, `s`, `m` or `h`"
                         ))),
                     },
                 }
             }
         }
         deserializer.deserialize_str(Unit)
+    }
+}
+
+/// What a `percent` value is a share of (`scale` on a field or a metric).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PercentScale {
+    /// A fraction of one: 0.5 is 50%.
+    Fraction,
+    /// Hundredths: 50 is 50%.
+    Hundredths,
+    /// A value a retrofit could not determine (`unmapped_marker`).
+    Unmapped(UnmappedMarker),
+}
+
+impl PercentScale {
+    /// The scale as the document spells it.
+    pub fn as_str(&self) -> &str {
+        match self {
+            Self::Fraction => "fraction",
+            Self::Hundredths => "hundredths",
+            Self::Unmapped(marker) => &marker.0,
+        }
+    }
+
+    /// The scale, with an unmapped one read as a fraction.
+    #[must_use]
+    pub fn known(self) -> Self {
+        match self {
+            Self::Unmapped(_) => Self::Fraction,
+            other => other,
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for PercentScale {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct Scale;
+        impl serde::de::Visitor<'_> for Scale {
+            type Value = PercentScale;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                formatter.write_str("a percent scale: `fraction` or `hundredths`")
+            }
+
+            fn visit_str<E: serde::de::Error>(self, text: &str) -> Result<PercentScale, E> {
+                match text {
+                    "fraction" => Ok(PercentScale::Fraction),
+                    "hundredths" => Ok(PercentScale::Hundredths),
+                    _ => match text.strip_prefix(UNMAPPED_PREFIX) {
+                        Some(reason) if !reason.is_empty() => {
+                            Ok(PercentScale::Unmapped(UnmappedMarker(text.to_owned())))
+                        }
+                        _ => Err(E::custom(format!(
+                            "`{text}` is no percent scale: `scale` is `fraction` or `hundredths`"
+                        ))),
+                    },
+                }
+            }
+        }
+        deserializer.deserialize_str(Scale)
     }
 }
 
@@ -3312,8 +3415,93 @@ pub struct ThemeChoice {
     pub chosen_by: Option<Expr>,
 }
 
-/// A value-to-tone map, declared once in `tone_maps` and named by `tone_by.tones`.
-pub type ToneMap = BTreeMap<String, Tone>;
+/// The tone map a field's value is toned by: the loader resolved the name written on the field.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct FieldToneBy {
+    /// The `tone_maps` entry the field named; the unbound `args.<param>` inside a widget
+    /// declaration, a map once expanded.
+    pub map: Value,
+    /// The name the field wrote. No renderer needs to read it.
+    pub tones: Option<String>,
+}
+
+/// A value-to-tone map, declared once in `tone_maps` and named by `tone_by.tones`: exact values,
+/// or bands over numbers.
+#[derive(Debug, Clone, PartialEq)]
+pub enum ToneMap {
+    /// The tone of each value, keyed as [`Labels::key`] keys a value.
+    Exact(BTreeMap<String, Tone>),
+    /// `{bands: [{from, tone}]}`: a number takes the tone of the last band whose `from` it reaches.
+    Bands(Vec<ToneBand>),
+}
+
+/// One band of a band map.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ToneBand {
+    /// The lowest number the band covers.
+    pub from: f64,
+    /// The tone of a number the band covers.
+    pub tone: Tone,
+}
+
+impl<'de> Deserialize<'de> for ToneMap {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let value = Value::deserialize(deserializer)?;
+        let bands = value
+            .as_mapping()
+            .and_then(|mapping| mapping.get("bands").map(|bands| (mapping, bands)))
+            .filter(|(_, bands)| bands.is_sequence());
+        if let Some((mapping, bands)) = bands {
+            if mapping.len() != 1 {
+                return Err(D::Error::custom(
+                    "a band map has only `bands`; a map of exact values has no list under `bands`",
+                ));
+            }
+            let bands: Vec<ToneBand> =
+                ess_yaml::from_value(bands.clone()).map_err(D::Error::custom)?;
+            if let Some(band) = bands.iter().find(|band| !band.from.is_finite()) {
+                return Err(D::Error::custom(format!(
+                    "the `from` of a band is a finite number, not {}",
+                    band.from
+                )));
+            }
+            return Ok(Self::Bands(bands));
+        }
+        ess_yaml::from_value(value)
+            .map(Self::Exact)
+            .map_err(D::Error::custom)
+    }
+}
+
+impl ToneMap {
+    /// A map read from an expanded `map:` value; `None` when it is not one (an unbound
+    /// `args.<param>` inside a widget declaration).
+    pub fn from_value(value: &Value) -> Option<Self> {
+        ess_yaml::from_value(value.clone()).ok()
+    }
+
+    /// The tone this map gives `value`, or `None` when it gives none and the node's own `tone`
+    /// stands: a value an exact map does not name, a number below the first band, a value that is
+    /// no number where the map has bands.
+    pub fn tone(&self, value: &Value) -> Option<&Tone> {
+        match self {
+            Self::Exact(map) => map.get(&Labels::key(value)?),
+            Self::Bands(bands) => {
+                let Value::Number(number) = value else {
+                    return None;
+                };
+                let number = number.as_f64()?;
+                bands
+                    .iter()
+                    .rev()
+                    .find(|band| number >= band.from)
+                    .map(|band| &band.tone)
+            }
+        }
+    }
+}
 
 /// A value-to-label map, declared once in `label_maps` or written out as `labels:`.
 pub type LabelMap = BTreeMap<String, String>;

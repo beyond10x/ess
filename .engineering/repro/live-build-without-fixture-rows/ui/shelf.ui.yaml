@@ -1,0 +1,50 @@
+format: ess-ui/1
+app: shelf
+title: Shelf
+model: store
+placement_profile: fat
+fixtures:
+  dir: fixtures
+  views:
+    store.shelf.Items: items.yaml
+theme:
+  default: dark
+themes:
+  light: {}
+  dark: {}
+shells:
+  app:
+    regions:
+      nav:
+        kind: navigation
+      main:
+        kind: page_outlet
+      overlay:
+        kind: overlay_outlet
+navigation:
+  home: items.list
+  sections:
+  - name: main
+    label: Main
+    icon: home
+    pages:
+    - items.list
+pages:
+  items.list:
+    kind: list_page
+    title: Items
+    nav:
+      label: Items
+    header:
+      title: from_page
+      metrics:
+      - {name: stored, component: metric, reads: {view: store.shelf.Items}, aggregate: count, label: Items on the shelf}
+    sections:
+    - name: list
+      component: collection
+      style: table
+      reads:
+        view: store.shelf.Items
+      columns:
+      - title
+      - qty

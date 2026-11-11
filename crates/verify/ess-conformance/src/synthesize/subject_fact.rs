@@ -506,6 +506,87 @@ pub(super) fn guard_truth_with(
     evaluate_row(ir, entity, settled, unwritten, held, predicate, input, true)
 }
 
+/// ess/29, beyond10x/ess#727: where the plain input of a sibling `outcome` that no guard selects
+/// leaves a narrowed external branch's subject guard undecided or true (a quantifier over an empty
+/// list), the fields of `sent` changed to an input the branch's own `when:` admits and its subject
+/// guard refutes, with that branch. The sibling still takes the row, whatever the provider says, so
+/// a target that skips the subject guard answers the forced branch instead and fails. Only a
+/// sibling nothing guards is moved, only a field its payload does not source, and only where every
+/// other branch's input guard stays refuted.
+#[allow(clippy::too_many_arguments)]
+pub(super) fn near_miss<'a>(
+    ir: &EssIr,
+    command: &'a ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    entity: &EntityHandle,
+    settled: &BTreeMap<String, super::Determined>,
+    state: &super::StateName,
+    sent: &BTreeMap<String, Node>,
+) -> Option<(&'a ResolvedOutcome, BTreeMap<String, Node>)> {
+    if !matches!(outcome.condition, ResolvedCondition::Otherwise) {
+        return None;
+    }
+    let branch = command.outcomes.iter().find(|branch| {
+        narrowing(&branch.condition).is_some() && external_input(&branch.condition).is_some()
+    })?;
+    let guard = narrowing(&branch.condition)?;
+    let own = external_input(&branch.condition)?;
+    let sourced = format!("{:?}{:?}", outcome.payload, outcome.error_payload);
+    let others: Vec<&Predicate> = command
+        .outcomes
+        .iter()
+        .filter(|other| other.name != branch.name && other.name != outcome.name)
+        .filter_map(|other| input_guard(&other.condition))
+        .collect();
+    let rivals: Vec<Predicate> = guarded(command)
+        .filter(|other| other.name != branch.name && other.name != outcome.name)
+        .filter_map(|other| stored(&other.condition))
+        .collect();
+    candidates(ir, command, &[own], Distinction::PLAIN)
+        .ok()?
+        .into_iter()
+        .find_map(|candidate| {
+            let changed: BTreeMap<String, Node> = candidate
+                .into_iter()
+                .filter(|(field, value)| {
+                    sent.get(field).is_some_and(|held| held != value)
+                        && !sourced.contains(&format!("\"{field}\""))
+                })
+                .collect();
+            if changed.is_empty() {
+                return None;
+            }
+            let mut input = sent.clone();
+            input.extend(changed.clone());
+            let facts = crate::input::flatten_partial(ir, command, &input).ok()?;
+            if !decides(&facts, &[own], true).ok()? || !decides(&facts, &others, false).ok()? {
+                return None;
+            }
+            // A guard reading an input left unbound stays undecided: absent is not false.
+            let refuted = |predicate: &Predicate| {
+                let bound = predicate.fact_paths().iter().all(|path| {
+                    !matches!(path.segments(), [root, field, ..]
+                        if root == ess_domain::command::subject_fact::INPUT_NAMESPACE
+                            && !input.contains_key(field))
+                });
+                bound
+                    && guard_truth_with(
+                        ir,
+                        entity,
+                        settled,
+                        &BTreeSet::new(),
+                        Some(state),
+                        predicate,
+                        Some((command, &input)),
+                    ) == Truth::False
+            };
+            // Every other guarded branch's whole guard, the row part included, must stay refuted:
+            // an input another branch's subject guard selects is answered by that branch.
+            (refuted(guard) && rivals.iter().all(refuted)).then_some(changed)
+        })
+        .map(|changed| (branch, changed))
+}
+
 /// Whether every leaf of `predicate` that `facts` leave `Unknown` reads a fact they hold absent:
 /// a `null` or left-out value under a root they bind, never an `input.` path without an input.
 fn unknown_by_absence(predicate: &Predicate, facts: &RowAndInput<'_>) -> bool {
@@ -638,18 +719,32 @@ fn evaluate_row(
         return Truth::Unknown;
     };
     let row = crate::input::TypedFacts::new(ir, &fields, store);
+    // An input that does not bind whole (an instance identity the scenario names, beyond10x/ess#727)
+    // is bound leaf by leaf from `ess/23`, and a leaf it leaves out is undecided: never read as
+    // absent, so a guard over it is not taken for false. Below `ess/23` such an input leaves the
+    // predicate undecided, so the document keeps the suite it synthesized, refusals included.
+    let mut partial = false;
     let input = match input {
         Some((command, values)) if reads_input(ir, entity, predicate) => {
             match flatten(ir, command, values) {
                 Ok(facts) => Some(facts),
-                Err(_) => return Truth::Unknown,
+                Err(_) if !identity_selectors(ir) => return Truth::Unknown,
+                Err(_) => match crate::input::flatten_partial(ir, command, values) {
+                    Ok(facts) => {
+                        partial = true;
+                        Some(facts)
+                    }
+                    Err(_) => return Truth::Unknown,
+                },
             }
         }
         _ => None,
     };
     let facts = RowAndInput { row, input };
     match predicate.evaluate(&facts) {
-        Truth::Unknown if as_guard && unknown_by_absence(predicate, &facts) => Truth::False,
+        Truth::Unknown if as_guard && !partial && unknown_by_absence(predicate, &facts) => {
+            Truth::False
+        }
         truth => truth,
     }
 }
@@ -2800,6 +2895,7 @@ fn external_setup(
         )),
     };
     Setup {
+        related_row: BTreeMap::new(),
         steps: arrangement.steps,
         instance: Some(arrangement.instance),
         bound,
@@ -2941,17 +3037,29 @@ fn external_inputs(
     entity: &EntityHandle,
     arrangement: &Arrangement,
 ) -> Result<Vec<BTreeMap<String, Node>>, RefusalCause> {
-    let Some(own) = external_input(&outcome.condition) else {
+    let own = external_input(&outcome.condition);
+    let narrowed = narrowing(&outcome.condition);
+    if own.is_none() && narrowed.is_none() {
         return linked_inputs(ir, command, entity, arrangement);
+    }
+    // ess/29, beyond10x/ess#727: a narrowed branch is witnessed on a row its subject guard selects,
+    // so its comparisons with the input are grounded on the row as a guarded branch's are, a
+    // quantifier over the input included.
+    let mut reads = hints(command);
+    reads.extend(narrowed.cloned());
+    let grounded = grounded(ir, entity, &arrangement.settled, &reads);
+    let over_input = match narrowed {
+        Some(_) => grounded_over_input(ir, entity, &arrangement.settled, &reads),
+        None => Vec::new(),
     };
-    let grounded = grounded(ir, entity, &arrangement.settled, &hints(command));
     let mut guards: Vec<&Predicate> = command
         .outcomes
         .iter()
         .filter_map(|branch| input_guard(&branch.condition))
         .collect();
-    guards.push(own);
+    guards.extend(own);
     guards.extend(grounded.iter());
+    guards.extend(over_input.iter());
     let mut inputs =
         candidates(ir, command, &guards, Distinction::PLAIN).map_err(RefusalCause::NoWitness)?;
     if !grounded.is_empty() {
@@ -3223,10 +3331,22 @@ fn refusal_input_from(
 ) -> Result<(BTreeMap<String, Node>, Vec<Predicate>), RefusalCause> {
     let mut own: Vec<&Predicate> = input_guard(&outcome.condition).into_iter().collect();
     own.extend(also.iter().copied());
+    // A listed-state refusal answers, in declaration order, on any row in a listed state: only the
+    // siblings declared before it can take the row first, so only those are refuted. The default
+    // wrong-state refusal answers last and has every sibling refuted.
+    let declared_before = |other: &ResolvedOutcome| {
+        !matches!(outcome.condition, ResolvedCondition::SubjectState { .. })
+            || command
+                .outcomes
+                .iter()
+                .take_while(|branch| branch.name != outcome.name)
+                .any(|branch| branch.name == other.name)
+    };
     let branches: Vec<&ResolvedOutcome> = command
         .outcomes
         .iter()
         .filter(|other| other.name != outcome.name && !state_default(other))
+        .filter(|other| declared_before(other))
         .filter(|other| input_guard(&other.condition).is_some())
         .collect();
     let siblings: Vec<&Predicate> = branches
@@ -3249,6 +3369,7 @@ fn refusal_input_from(
     };
     let row_only: Vec<&ResolvedOutcome> = guarded(command)
         .filter(|other| other.name != outcome.name && input_guard(&other.condition).is_none())
+        .filter(|other| declared_before(other))
         .filter(|other| stored(&other.condition).is_some() && !answered_by_state(other))
         .collect();
     // What the row must refute, where the input leaves it to the row: every row-only sibling's
@@ -5066,8 +5187,21 @@ fn make_creations(
             inputs.push(input);
         }
     }
+    // A candidate a guard is `Unknown` on only for an `Optional` input it left out is passed over
+    // like a refuted one (beyond10x/ess#728): another candidate, one that supplies the input or
+    // decides the guard `false`, may create the row. The first such cause is the refusal where no
+    // candidate serves; every other `Unknown` still ends the search.
+    let mut left_out: Option<RefusalCause> = None;
     for input in inputs {
-        if input_selects(ir, creator.command, creator.outcome, &input)? {
+        let selected = match input_selects(ir, creator.command, creator.outcome, &input) {
+            Ok(selected) => selected,
+            Err(RefusalCause::GuardUnevaluable(cause)) if cause.fixable_by_another_candidate() => {
+                left_out.get_or_insert(RefusalCause::GuardUnevaluable(cause));
+                continue;
+            }
+            Err(cause) => return Err(cause),
+        };
+        if selected {
             if let Ok(arrangement) = created(
                 ir,
                 entity,
@@ -5080,6 +5214,9 @@ fn make_creations(
                 out.push(arrangement);
             }
         }
+    }
+    if let (1, Some(cause)) = (out.len(), left_out) {
+        return Err(cause);
     }
     if under.is_none() && !super::related_guard::routes(creator.command, creator.outcome) {
         out.extend(copied_creations(
@@ -5411,6 +5548,11 @@ fn successors(
     if uses(driver.command) {
         return selected_successors(ir, entity, driver, arrangement, actors, hints, follow);
     }
+    // A narrowed external branch (ess/29) is sent with an input its subject guard holds for on this
+    // row, which a plain witness is not: it is run by `external_step`, where nothing else reaches.
+    if narrowing(&driver.outcome.condition).is_some() {
+        return out;
+    }
     let chain: Vec<&EntityHandle> = arranging.iter().copied().chain([entity]).collect();
     if let Ok(invoked) = invoke(
         ir,
@@ -5576,6 +5718,7 @@ pub(super) fn search_under<T>(
     let all = ir.drivers();
     let drivers = all.get(entity).map_or(&[][..], Vec::as_slice);
     let mut first: Option<RefusalCause> = None;
+    let mut tried: Vec<(OutcomeRef, RefusalCause)> = Vec::new();
     for creator in drivers
         .iter()
         .filter(|driver| matches!(driver.effect, ResolvedEffect::Creates))
@@ -5596,13 +5739,46 @@ pub(super) fn search_under<T>(
             // The first creator's cause is kept, except that a later search stopped by the counter
             // bound replaces one that was not: a side of a limit one creation could have reached
             // past the bound is refused naming it, not read as a value no run holds (#226).
-            Err(cause) => match &first {
-                Some(kept) if !is_beyond_reach(kept) && is_beyond_reach(&cause) => {
-                    first = Some(cause);
+            Err(cause) => {
+                tried.push((
+                    OutcomeRef::new(
+                        CommandRef::new(creator.command.name.clone()),
+                        creator.outcome.name.clone(),
+                    ),
+                    cause.clone(),
+                ));
+                match &first {
+                    Some(kept) if !is_beyond_reach(kept) && is_beyond_reach(&cause) => {
+                        first = Some(cause);
+                    }
+                    Some(_) => {}
+                    None => first = Some(cause),
                 }
-                Some(_) => {}
-                None => first = Some(cause),
-            },
+            }
+        }
+    }
+    // Creators that each failed to arrange the row, for different causes, are all named, in the
+    // order tried (beyond10x/ess#728).
+    if let Some(RefusalCause::InstanceRequired { entity, need, .. }) = &first {
+        let reasons: Option<Vec<(OutcomeRef, super::Unreachable)>> = tried
+            .iter()
+            .map(|(creator, cause)| match cause {
+                RefusalCause::InstanceRequired {
+                    entity: held,
+                    need: wanted,
+                    reason,
+                } if held == entity && wanted == need && !is_beyond_reach(cause) => {
+                    Some((creator.clone(), reason.clone()))
+                }
+                _ => None,
+            })
+            .collect();
+        if let Some(reason) = reasons.and_then(super::Unreachable::of_creators) {
+            return Err(RefusalCause::InstanceRequired {
+                entity: entity.clone(),
+                need: need.clone(),
+                reason,
+            });
         }
     }
     Err(first.unwrap_or_else(|| RefusalCause::InstanceRequired {
@@ -6367,6 +6543,7 @@ fn refused_writes_apart(
 }
 
 /// Arrange the row the branch under test is selected for, and the input that selects it.
+#[allow(clippy::too_many_lines)]
 pub(super) fn prepare(
     ir: &EssIr,
     command: &ResolvedCommand,
@@ -6483,6 +6660,7 @@ pub(super) fn prepare(
             before: Some(arrangement.state),
             settled: arrangement.settled,
             unobserved: arrangement.unobserved,
+            ..Setup::none()
         },
         input,
     ))
@@ -9077,6 +9255,7 @@ pub(super) fn prepare_seeded(
     };
     Ok(Ok((
         Setup {
+            related_row: BTreeMap::new(),
             steps: arrangement.steps,
             instance: Some(arrangement.instance),
             bound,

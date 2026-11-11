@@ -2,57 +2,98 @@
 format: aep.planning-md/3
 id: story:light-and-dark-themes-render-differently
 kind: story
-status: draft
+status: active
 title: Light and dark themes render differently
 summary: 'themes: with theme.chosen_by: shell.theme stores the state but nothing reads it; light and dark render alike (0.77.0)'
 tags:
 - ess-batch-5
 - ess-next
 - ess-ui
-revision: 3
+- zero-open-issues
+refs:
+- provider: github
+  reference: beyond10x/ess#723
+relations:
+- decomposes: epic:zero-open-issues-2026-11
+- depends_on: story:the-react-renderer-draws-the-declared-tokens
+- serves: vision:O2
+scope:
+- confidence: inferred
+  path: crates/ui/ess-ui-react/src/assets.rs
+- confidence: inferred
+  path: crates/ui/ess-ui-react/src/emit.rs
+- confidence: cited
+  path: crates/ui/ess-ui-react/templates/runtime/shell.tsx.tmpl
+- confidence: inferred
+  path: crates/ui/ess-ui-react/tests/themes.rs
+revision: 9
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:45:01Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:45:03Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"review_outcome":1}}}
 ---
-<!-- Starting point for a `story` artifact, seeded by `aep artifact new story <name>`.
-     No frontmatter here on purpose: the `---` block is written by the CLI from the id, kind, status
-     and relations you gave it, and a second copy in this file would be the one that went stale.
-     Delete the italic guidance as you fill each section. -->
+## Need
 
-# Story: <name>
+A document's `themes:` and `theme:` change nothing in the generated React app. On ess 0.92.0 a
+document with
 
-## Outcome
+```yaml
+themes:
+  light: {}
+  dark:
+    color: {surface: "#101010"}
+theme: {default: light}
+```
 
-*What is true for whom once this has shipped, in one sentence. If it names a component rather than a
-person, it is a task — say what changes for someone.*
-
-## Context
-
-*Why this is worth doing now, and what it depends on. Link the epic or specification it comes from
-rather than restating it; the `derived_from` relation already carries the edge.*
+checks clean, and no generated file under `src/` mentions `data-theme` or a token value
+(`repro/run.txt`, "B15": `grep -rn 'data-theme\|123456' … | wc -l` prints `0`). With
+`theme: {default: light, chosen_by: shell.theme}` the shell stores the `theme` preference, and
+nothing reads it, so light and dark render alike.
 
 ## Acceptance
 
-- Over a toy document with a light and a dark theme chosen by `shell.theme`, switching the state changes the rendered colours to the chosen theme's tokens. A browser-free test asserts the applied theme attribute or variables for each state.
+As `docs/design/ui-style-tokens.md` § Renderers:
 
-## Out of Scope
+- `tokens.css` holds one `[data-theme="<name>"]` block per theme other than the default, with only
+  what it overrides.
+- The shell sets `data-theme` on the document element from the `chosen_by` state, through that
+  state's own store module, and to `theme.default` before the state has a value or when there is no
+  `chosen_by`.
+- A test (`crates/ui/ess-ui-react/tests/themes.rs`) over a document with `light` and `dark` asserts
+  the attribute for each state value and the override block's properties; a document without
+  `themes:` generates no `data-theme`.
 
-*What a reasonable reader would expect to be included and is not — the boundary that stops this
-story quietly becoming an epic.*
+## Scope
 
-## Ambiguities
+- cited: `crates/ui/ess-ui-react/templates/runtime/shell.tsx.tmpl`
+- inferred: `crates/ui/ess-ui-react/src/assets.rs`
+- inferred: `crates/ui/ess-ui-react/src/emit.rs`
+- inferred: `crates/ui/ess-ui-react/tests/themes.rs`
+- confidence: high
 
-*Each gap this story found and did not close, classified. `inferable` — the answer is already
-written down, so give the `path:line` or the artifact id that settles it.
-`requires-stakeholder-input` — nobody here can decide it, so name who does, and raise that entry as
-a `decision-blocker` with a `blocks` edge to this story, or it is a sentence somebody improvises
-later.*
+## Fit review
 
-## Open Questions
+Tree `995e29579d`, binary ess 0.92.0. Covers #723 item B15 ("there is no `data-theme` switch") and
+the 2026-10-29 report this story was first drafted from.
 
-*Anything still undecided belongs in `## Ambiguities` above, classified and with its citation or its
-decider. Keep this section for a question that is neither — an unowned question is a story that
-stalls without anybody noticing.*
+1. **Need.** A reader who picks dark sees dark. Reproduction above. The requester's words, theirs:
+   "there is no `data-theme` switch".
+2. **Class.** *Defect*: `themes`, `theme.default` and `theme.chosen_by` are accepted and documented
+   (`schemas/ui/ess-ui.schema.yaml` `Theme`, `ThemeChoice`), and the design states the shell sets
+   `data-theme` (`docs/design/ui-style-tokens.md` § Renderers).
+3. **Already expressible?** No.
+4. **Fit.** The language grids do not apply (`docs/design/language-grids.md:15`, `:63`). Decided by
+   the design page's own fit review (`ui-style-tokens.md` § "Decided in the fit review"); no new key.
+5. **Second adopter.** Any app with a dark mode preference.
+6. **Cost.** Generated output only; no source format change.
+7. **Considered.** (a) Change nothing. (b) `prefers-color-scheme` only: out of scope by the design
+   page (§ "Out of scope"). (c) Chosen: the design page's attribute switch.
 
-## Problem
+## Decisions
 
-Reported 2026-10-29 on ESS 0.77.0 by a downstream session, through the orchestrator. Not yet reproduced in this repository. ess-ui/1 accepts look-and-feel that the React renderer does not draw.
+**Accept as proposed.** As `docs/design/ui-style-tokens.md` decides. Depends on
+`story:the-react-renderer-draws-the-declared-tokens`, which writes `tokens.css`. No new format
+version.
 
-With `themes:` and `theme.chosen_by: shell.theme`, the generated React app stores the chosen theme, but nothing reads it, so light and dark render identically.
+## Source
+
+`github:beyond10x/ess#723`

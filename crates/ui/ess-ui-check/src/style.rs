@@ -9,9 +9,14 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use ess_ui::{
-    Body, Document, NodePath, NodeRef, Primitive, StateClass, TokenValue, Tokens, TypeExpr,
-    TypeToken,
+    Body, Document, NodePath, NodeRef, Primitive, StateClass, TokenValue, Tokens, ToneMap,
+    TypeExpr, TypeToken,
 };
+
+use ess_ui::token_grammar::{
+    color_problem as color_text, length_problem as length_text, weight_problem as weight_text,
+};
+use ess_ui::token_grammar::{css_unsafe, name_problem};
 
 use crate::schema;
 use crate::walk::body_of;
@@ -33,91 +38,37 @@ pub(crate) fn run(document: &Document, sink: &mut Sink) {
     }
     theme_choice(document, sink);
     tone_map_unused(document, sink);
+    tone_bands(document, sink);
     label_map_unused(document, sink);
 }
 
 // ── grammars ─────────────────────────────────────────────────────────────────────────────────
 
-/// Why `value` is not a color of `Tokens.grammar.color`, or `None` when it is one.
 fn color_problem(value: &TokenValue) -> Option<String> {
-    let text = value.0.as_str();
-    if let Some(digits) = text.strip_prefix('#') {
-        let hex = digits.chars().all(|c| c.is_ascii_hexdigit());
-        return (!(hex && [3, 6, 8].contains(&digits.len()))).then(|| {
-            format!("`{text}` is not a color: a hex color is `#rgb`, `#rrggbb` or `#rrggbbaa`")
-        });
-    }
-    if let Some(inner) = text
-        .strip_prefix("rgb(")
-        .and_then(|rest| rest.strip_suffix(')'))
-    {
-        let parts: Vec<&str> = inner.split_whitespace().collect();
-        let channel =
-            |part: &str| part.parse::<u8>().is_ok() && part.chars().all(|c| c.is_ascii_digit());
-        let alpha = |part: &str| {
-            is_decimal(part)
-                && part
-                    .parse::<f64>()
-                    .is_ok_and(|alpha| (0.0..=1.0).contains(&alpha))
-        };
-        let fits = matches!(parts.as_slice(), [r, g, b, "/", a]
-            if channel(r) && channel(g) && channel(b) && alpha(a));
-        return (!fits).then(|| {
-            format!(
-                "`{text}` is not a color: `rgb(r g b / a)` takes r, g and b from 0 to 255 and a \
-                 from 0 to 1"
-            )
-        });
-    }
-    let shown = if text.is_empty() {
-        "an empty value (an unquoted `#` starts a YAML comment; quote the color)".to_owned()
-    } else {
-        format!("`{text}`")
-    };
-    Some(format!(
-        "{shown} is not a color: a color is `#rgb`, `#rrggbb`, `#rrggbbaa` or `rgb(r g b / a)`, \
-         never `hsl()` or a color name"
-    ))
+    color_text(&value.0)
 }
 
-/// A decimal: digits, optionally with a fraction (`1`, `0.25`, `.5`).
-fn is_decimal(text: &str) -> bool {
-    let (whole, fraction) = text.split_once('.').unwrap_or((text, ""));
-    let digits = |part: &str| part.chars().all(|c| c.is_ascii_digit());
-    let has_fraction = text.contains('.');
-    digits(whole)
-        && digits(fraction)
-        && (!whole.is_empty() || !fraction.is_empty())
-        && (!has_fraction || !fraction.is_empty())
-}
-
-/// Why `value` is not a length of `Tokens.grammar.length`, or `None` when it is one.
 fn length_problem(value: &TokenValue) -> Option<String> {
-    let text = value.0.as_str();
-    if text == "0" {
-        return None;
-    }
-    let fits = ["rem", "px", "em"]
-        .iter()
-        .any(|unit| text.strip_suffix(unit).is_some_and(is_decimal));
-    (!fits).then(|| {
-        format!("`{text}` is not a length: a length is `0`, or a decimal with `px`, `rem` or `em`")
-    })
+    length_text(&value.0)
 }
 
-/// Why `value` is not a weight of `Tokens.grammar.weight`, or `None` when it is one.
 fn weight_problem(value: &TokenValue) -> Option<String> {
-    let text = value.0.as_str();
-    let fits = text.chars().all(|c| c.is_ascii_digit())
-        && text
-            .parse::<u32>()
-            .is_ok_and(|weight| (100..=900).contains(&weight) && weight % 100 == 0);
-    (!fits).then(|| format!("`{text}` is not a weight: a weight is 100 to 900 in steps of 100"))
+    weight_text(&value.0)
 }
 
 /// Every value of `tokens` outside its group's grammar, by path.
 fn value_problems(tokens: &Tokens, at: &NodePath) -> Vec<(NodePath, String)> {
     let mut problems = Vec::new();
+    for (group, names) in [
+        ("color", tokens.color.keys().collect::<Vec<_>>()),
+        ("space", tokens.space.keys().collect()),
+        ("radius", tokens.radius.keys().collect()),
+    ] {
+        for name in names {
+            problems
+                .extend(name_problem(name).map(|problem| (at.child(group).child(name), problem)));
+        }
+    }
     for (name, value) in &tokens.color {
         problems
             .extend(color_problem(value).map(|problem| (at.child("color").child(name), problem)));
@@ -131,7 +82,14 @@ fn value_problems(tokens: &Tokens, at: &NodePath) -> Vec<(NodePath, String)> {
     }
     for (style, entry) in &tokens.typography {
         let here = at.child("type").child(style);
-        let TypeToken { size, weight, .. } = entry;
+        let TypeToken {
+            family,
+            size,
+            weight,
+        } = entry;
+        if let Some(family) = family {
+            problems.extend(css_unsafe(family).map(|problem| (here.child("family"), problem)));
+        }
         if let Some(size) = size {
             problems.extend(length_problem(size).map(|problem| (here.child("size"), problem)));
         }
@@ -363,12 +321,19 @@ fn enum_values(document: &Document, ty: &TypeExpr, depth: usize) -> Option<Vec<S
 fn tone_map_unused(document: &Document, sink: &mut Sink) {
     let mut named = BTreeSet::new();
     for located in document.nodes() {
-        let tone_by = match body_of(located.node) {
-            Some(Body::Primitive(Primitive::Badge(badge))) => badge.tone_by.as_ref(),
-            Some(Body::Primitive(Primitive::Icon(icon))) => icon.tone_by.as_ref(),
-            _ => None,
+        let tone_by = match located.node {
+            NodeRef::Field(field) => field.tone_by.as_ref().map(|tone_by| &tone_by.tones),
+            node => match body_of(node) {
+                Some(Body::Primitive(Primitive::Badge(badge))) => {
+                    badge.tone_by.as_ref().map(|tone_by| &tone_by.tones)
+                }
+                Some(Body::Primitive(Primitive::Icon(icon))) => {
+                    icon.tone_by.as_ref().map(|tone_by| &tone_by.tones)
+                }
+                _ => None,
+            },
         };
-        named.extend(tone_by.and_then(|tone_by| tone_by.tones.clone()));
+        named.extend(tone_by.and_then(Clone::clone));
     }
     for name in document.tone_maps.keys() {
         if !named.contains(name) {
@@ -378,6 +343,68 @@ fn tone_map_unused(document: &Document, sink: &mut Sink) {
                 format!("no `tone_by` names the tone map `{name}`"),
             );
         }
+    }
+}
+
+// ── tone_bands ───────────────────────────────────────────────────────────────────────────────
+
+/// A band map's `from` values strictly ascend, in a `tone_maps` entry and in a `map:` written out
+/// on a badge or an icon. The values the bands tone are not typed here (no model types), so a
+/// band map named where they are not numbers is not checked.
+fn tone_bands(document: &Document, sink: &mut Sink) {
+    let root = NodePath::root();
+    for (name, map) in &document.tone_maps {
+        ascending(map, &root.child("tone_maps").child(name), sink);
+    }
+    for located in document.nodes() {
+        let tone_by = match body_of(located.node) {
+            Some(Body::Primitive(Primitive::Badge(badge))) => badge.tone_by.as_ref(),
+            Some(Body::Primitive(Primitive::Icon(icon))) => icon.tone_by.as_ref(),
+            _ => None,
+        };
+        // A map the loader resolved from `tones` is the `tone_maps` entry, checked above.
+        let Some(tone_by) = tone_by.filter(|tone_by| tone_by.tones.is_none()) else {
+            continue;
+        };
+        let at = located.path.child("tone_by").child("map");
+        if let Some(map) = ToneMap::from_value(&tone_by.map) {
+            ascending(&map, &at, sink);
+        } else if tone_by
+            .map
+            .get("bands")
+            .is_some_and(ess_yaml::Value::is_sequence)
+        {
+            // A band map written out that does not read as one: a `from` that is no finite
+            // number, or a band without its tone.
+            sink.push(
+                "tone_bands",
+                &at,
+                "the bands do not read: each is `{from: <finite number>, tone: <tone>}`".to_owned(),
+            );
+        }
+    }
+}
+
+fn ascending(map: &ToneMap, at: &NodePath, sink: &mut Sink) {
+    let ToneMap::Bands(bands) = map else {
+        return;
+    };
+    for (index, pair) in bands.windows(2).enumerate() {
+        if pair[1].from > pair[0].from {
+            continue;
+        }
+        sink.push(
+            "tone_bands",
+            at,
+            format!(
+                "the `from` of band {} is {}, which does not exceed the {} before it: bands \
+                 ascend strictly by `from`",
+                index + 1,
+                pair[1].from,
+                pair[0].from
+            ),
+        );
+        return;
     }
 }
 

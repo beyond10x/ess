@@ -101,7 +101,7 @@ func suiteReference(value any) error {
 //
 // Keep this aligned with the emitter's capability boundary. New majors require admission,
 // execution and report parity; changing this number alone supplies none of those semantics.
-const newestSuiteMajor = 63
+const newestSuiteMajor = 65
 
 // suiteMajorsNotRead are the majors below newestSuiteMajor that other work has allocated and this
 // runtime has no reader for yet. A suite labelled with one is refused by version, never read as
@@ -318,13 +318,22 @@ func orderedRefusal(a, b map[string]any) bool {
 	}
 	return true
 }
-func checkedRefusal(value any, selection map[string]any, sources map[string]any, survivors map[string]string, owners map[string]string) (map[string]any, error) {
-	r, err := closed(value, "origin scenario subject source code message effect retained scope needs", "")
+func checkedRefusal(value any, selection map[string]any, sources map[string]any, survivors map[string]string, owners map[string]string, major int) (map[string]any, error) {
+	r, err := closed(value, "origin scenario subject source code message effect retained scope needs", "covered_by")
 	if err != nil {
 		return nil, err
 	}
 	if err := nullableID(r["scenario"]); err != nil {
 		return nil, err
+	}
+	if by, present := r["covered_by"]; present {
+		id, ok := by.(string)
+		if !ok || major < 65 || r["origin"] != "generated" || r["scenario"] == nil || survivors[id] != "authored" {
+			return nil, coverageError()
+		}
+		if err := scenarioIdentity(id); err != nil {
+			return nil, err
+		}
 	}
 	if r["subject"] != nil {
 		if err := admitReference(r["subject"]); err != nil {
@@ -429,6 +438,7 @@ func admitCoverage(root map[string]any) error {
 	if err != nil {
 		return err
 	}
+	major := suiteMajor(root["provenance"].(map[string]any)["suite_version"].(string))
 	if c["knowledge"] != "unknown" && c["knowledge"] != "complete_inventory" {
 		return coverageError()
 	}
@@ -538,7 +548,7 @@ func admitCoverage(root map[string]any) error {
 	refusedSources := map[string]bool{}
 	var previousRefusal map[string]any
 	for _, value := range c["refused"].([]any) {
-		r, err := checkedRefusal(value, selection, sources, survivors, owners)
+		r, err := checkedRefusal(value, selection, sources, survivors, owners, major)
 		if err != nil {
 			return err
 		}
@@ -561,8 +571,14 @@ func completeCoverage(c map[string]any) bool {
 	if c == nil || c["knowledge"] != "complete_inventory" {
 		return false
 	}
+	authored := map[string]bool{}
+	for _, id := range c["authored"].([]any) {
+		authored[id.(string)] = true
+	}
 	for _, value := range c["refused"].([]any) {
-		if value.(map[string]any)["scope"] == "in_scope" {
+		refusal := value.(map[string]any)
+		by, _ := refusal["covered_by"].(string)
+		if refusal["scope"] == "in_scope" && !authored[by] {
 			return false
 		}
 	}
@@ -1893,7 +1909,7 @@ func Run(t *testing.T, newTarget func() Target) {
 		t.Fatalf("suite admission: %v", err)
 	}
 	if suiteMajor(suite.Provenance.SuiteVersion) >= 8 && config.version != "2" {
-		t.Fatalf("suite/8 through /63 require explicit ESS_REPORT_FORMAT=2 before execution")
+		t.Fatalf("suite/8 through /65 require explicit ESS_REPORT_FORMAT=2 before execution")
 	}
 	if (suite.Provenance.SuiteVersion == "ess-conformance/5" || suite.Provenance.SuiteVersion == "ess-conformance/6" || suite.Provenance.SuiteVersion == "ess-conformance/7") && config.version != "2" {
 		t.Fatalf("suite/5, /6 and /7 require explicit ESS_REPORT_FORMAT=2 before execution")

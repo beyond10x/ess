@@ -2,17 +2,22 @@
 format: aep.planning-md/3
 id: task:consumer-accounting-wire-behavior-period-parity
 kind: task
-status: active
+status: implemented
 title: Align Period schema and prove direct-file wire behavior
 owner: ESS maintainers
+tags:
+- already-fixed
+- zero-open-issues
 relations:
 - derived_from: story:consumer-accounting-baseline-never-extended
 - serves: vision:O2
 - depends_on: task:consumer-accounting-aggregate-reference-closure
-revision: 22
+- decomposes: epic:zero-open-issues-2026-11
+revision: 25
 transitions:
 - {from: "draft", to: "proposed", at: "2026-09-15T12:22:12Z", actor: "human:timo", revision: 4, decided_on: {"recorded":{"review_outcome":1}}, imported: true}
 - {from: "proposed", to: "active", at: "2026-09-15T12:22:15Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"review_outcome":1}}, imported: true}
+- {from: "active", to: "implemented", at: "2026-11-09T23:06:55Z", actor: "human:timo", revision: 25, decided_on: {"recorded":{"review_outcome":5}}}
 ---
 ## Outcome
 
@@ -418,3 +423,21 @@ Subsequent design/AEP/source edits invalidate that global source digest for futu
 they do not erase the actual diagnostic evidence. Fresh final native execution remains required.
 The next blocking mechanism for these6stable targets is unchanged-unknown/current-behavior
 collision; its new subordinate task and proposed design preserve all current/full-matrix obligations.
+
+
+## Verification on 0.92.0 (2026-11-09)
+
+Result: **already-fixed**. Checked against main at 4ab2ea1449 and the 0.92.0 release binary by the
+zero-open-issues run (epic `epic:zero-open-issues-2026-11`); this draft leaves the plan as archived.
+
+Proof: commit 9ea3363387 (tag 0.35.0); crates/specify/ess-domain/tests/serialized_string_schema.rs::the_period_schema_admits_exactly_what_the_parser_reads_across_every_range_split; repro/run.txt
+
+The defect this task repairs — `schemas/generated/ess.schema.json` describing `Period` as an
+integer and `ExternalRef` as an object — landed in 9ea3363387 (released 0.35.0; CHANGELOG
+"describes ExternalRef as the provider:key string and ... Period as the PT<seconds>S string").
+The committed schema now has `Period` as a string with the exact 1..u32::MAX pattern and
+`ExternalRef` as the `provider:key` string; four parity tests in `serialized_string_schema.rs` hold
+it. What remains open in the task (active, revision 22) is consumer-accounting process work
+(aggregate reconciliation, native qualification, gates), not a product defect; it is not a
+defect-class artifact and the body is left unchanged. No CLI run reaches the source schema, so the
+proof is the committed schema plus the tests.

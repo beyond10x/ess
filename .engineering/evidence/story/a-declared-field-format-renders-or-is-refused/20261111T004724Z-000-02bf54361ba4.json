@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-11T00:47:24Z",
+  "actor": "human:timo",
+  "artifact": "story:a-declared-field-format-renders-or-is-refused",
+  "kind": "story",
+  "revision": 12,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "turn-2 gate on integration/ess-zero-issues: chain on fd62240ee0 (fmt-check 0, docs 0, clippy ess-cli/ess-xtask 0, clippy lints in turn tests fixed); corrections 3e4f7a89c9 7d2f833285 2b82d93f55 66371526dc re-run on 66371526dc: fmt-check 0, clippy -D warnings on ess-domain ess-compiler ess-synth ess-entity-runtime ess-cli ess-ui-test ess-ui-react --all-targets 0 and the touched ess-conformance targets 0, typed_diagnostics selection_precedence_table binding_stored_read_idiom lowered_definitions_table 0, ess-synth view_params pass1/2 + datetime 19/19, coverage_cli authored_covers adversary_t2_covers_readers adversary_absent_optional_arrangement 0; ess-synth group 1522/1529 before the fixes; the full gate is the CI of the PR to main (operator, 2026-11-11)",
+    "reference": "commit:2aef845b57"
+  }
+}

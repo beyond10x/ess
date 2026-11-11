@@ -3665,6 +3665,7 @@ fn arranged_at(
         observe_read(ir, command, entity, &row, &mut steps, &mut setup.source);
         setup.bound.insert(field.to_owned(), row.instance.clone());
         super::related::settle(ir, outcome, &mut setup, (field, entity), &row);
+        setup.related_row.clone_from(&row.settled);
         input
     };
     // The related rows go ahead of the branch's own arrangement, but for rows filed under an owner
@@ -4467,8 +4468,9 @@ fn missing_sends<'c>(
     ))
 }
 
-/// An input naming `fresh` in `field` that no input-guarded refusal claims, the first the plain
-/// candidates hold.
+/// An input naming `fresh` in `field` that no input-guarded refusal claims: the first the plain
+/// candidates hold, else the first the candidates directed away from every such refusal's guard
+/// hold (beyond10x/ess#731). Where none does, the refusal names the refusal that took the input.
 fn unclaimed(
     ir: &EssIr,
     command: &ResolvedCommand,
@@ -4476,14 +4478,55 @@ fn unclaimed(
     distinction: Distinction,
     decided: &dyn Fn(&mut BTreeMap<String, Node>),
 ) -> Result<BTreeMap<String, Node>, RefusalCause> {
-    for mut input in candidates(ir, command, &[], distinction).map_err(RefusalCause::NoWitness)? {
-        input.insert(field.to_owned(), fresh.clone());
-        decided(&mut input);
-        if input_refusal_taking(ir, command, &input)?.is_none() {
-            return Ok(input);
+    let guards: Vec<&Predicate> = command
+        .outcomes
+        .iter()
+        .filter(|outcome| super::is_input_guarded_refusal(outcome))
+        .filter_map(input_guard)
+        .collect();
+    let negated: Vec<Predicate> = guards
+        .iter()
+        .map(|guard| Predicate::Not(Box::new((*guard).clone())))
+        .collect();
+    let goals: Vec<&Predicate> = negated.iter().collect();
+    let mut taken: Option<(&ResolvedOutcome, &Predicate)> = None;
+    let mut tried = 0;
+    // The plain candidates first, so an input found there is the one it always was; then those
+    // directed to refute every input-guarded refusal at once.
+    for directed in [&[][..], &goals[..]] {
+        for mut input in
+            candidates(ir, command, directed, distinction).map_err(RefusalCause::NoWitness)?
+        {
+            input.insert(field.to_owned(), fresh.clone());
+            decided(&mut input);
+            tried += 1;
+            match input_refusal_taking(ir, command, &input)? {
+                None => return Ok(input),
+                Some(refusal) => {
+                    if taken.is_none() {
+                        taken = input_guard(refusal).map(|guard| (refusal, guard));
+                    }
+                }
+            }
+        }
+        if goals.is_empty() {
+            break;
         }
     }
-    Err(unarranged())
+    let Some((refusal, guard)) = taken else {
+        return Err(unarranged());
+    };
+    let cut = crate::witness::cut_short(ir, command, &goals, distinction, false);
+    Err(super::unsatisfied(
+        &guards,
+        format!(
+            "{}, every such input taken first by `{}` ({guard})",
+            super::rendered(&guards, false),
+            refusal.name
+        ),
+        tried,
+        cut,
+    ))
 }
 
 /// Sends each of `others` for the missing row, each answered by the refusal it names: the

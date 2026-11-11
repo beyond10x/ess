@@ -2,19 +2,28 @@
 format: aep.planning-md/3
 id: story:a-row-set-selector-matching-absent-with-absent-is-witnessed
 kind: story
-status: draft
+status: active
 title: A row-set selector matching absent with absent is witnessed
 summary: A presence disjunction over two Optionals in a row-set where starves found (ESS-SYNTH-001); plain == over the same fields is witnessed.
 tags:
 - defect
 - downstream
 - follow-up
+- severity-medium
+- zero-open-issues
 relations:
 - informed_by: story:a-guard-on-the-input-addressed-parent-row-holds-on-every-command-of-its-children
+- decomposes: epic:zero-open-issues-2026-11
+- serves: vision:O2
 scope:
 - confidence: inferred
   path: crates/verify/ess-conformance/src/synthesize/row_set.rs
-revision: 2
+- confidence: inferred
+  path: crates/verify/ess-conformance/tests/row_sets.rs
+revision: 7
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:41:37Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:41:38Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Problem
 
@@ -27,30 +36,64 @@ revision: 2
     - all: ["not defined(tenant)", "not defined(input.tenant)"]
   ```
 
-- Inside a row-set `where:` this has no arrangement on 0.77.0, with or without a subject and with
-  no creator guard: `ESS-SYNTH-001`, "... is `row set`, which has no arrangement of rows its
-  selector selects".
-  - Under an addressed subject, both `found` and `child-not-found` are refused.
-  - Without one, `found` is refused.
-- The same selector with plain `tenant == input.tenant` over the same Optionals synthesizes and
-  passes the interpreted target. So the rows exist, and only the search does not reach them.
-- Reproduced with a neutral model, in a repro outside the repository.
+- Inside a row-set `where:` this has no arrangement, still on 0.92.0. Under an addressed subject,
+  both `found` and `child-not-found` are refused as `ESS-SYNTH-001`, "... is `row set`, which has no
+  arrangement of rows its selector selects". The refusal also blames the creator's
+  `parent-not-found` guard, which is wrong: the control below has the same creator and is witnessed.
+- The same selector with plain `tenant == input.tenant` over the same Optionals synthesizes 6
+  scenarios with no refusal and passes the interpreted target. So the rows exist, and only the
+  search does not reach them.
+- Minimal reproduction (0.92.0). `Child {child_id, parent_id, tenant: Optional<String>}`, created by
+  `CreateChild` (refuses a missing parent, sets `tenant: input.tenant`). `GetChild` addresses the
+  `Parent` by `parent_id`:
+
+  ```yaml
+  - name: child-not-found
+    when_related:
+      entity: demo.d.Child
+      where:
+        all:
+          - parent_id == input.parent_id
+          - child_id == input.child_id
+          - any:
+              - all: ["defined(tenant)", "defined(input.tenant)", tenant == input.tenant]
+              - all: ["not defined(tenant)", "not defined(input.tenant)"]
+      exists: false
+    error: demo.d.NotFound
+  - name: found
+    preserves: demo.d.Parent
+    instance: parent_id
+  ```
+
+  `ess verify conform synthesize` gives `4 scenario(s) (0 authored), 2 refusal(s)`: `ESS-SYNTH-001`
+  on `GetChild/child-not-found` and `GetChild/found`. With the `any:` replaced by
+  `tenant == input.tenant`: `6 scenario(s) (0 authored), 0 refusal(s)`, and the interpreted run
+  passes all 6.
 - Found while preparing
   `story:a-guard-on-the-input-addressed-parent-row-holds-on-every-command-of-its-children`. Its
   idiom for a tenant rule on a row-set reader writes the comparison in the selector, and an adopter
   writes it in this form.
 - Inferred, not traced: the row search tries the input and the rows' values from the selector's
-  comparisons (`crates/verify/ess-conformance/src/synthesize/row_set.rs`, `steered_inputs` `:4061`,
-  `rows_tried`). A disjunct of presence tests gives it no value to try, and no candidate leaves the
-  input and the row both absent.
+  comparisons (`crates/verify/ess-conformance/src/synthesize/row_set.rs`, `rows_tried` `:4193`,
+  `steered_inputs` `:4289`). A disjunct of presence tests gives it no value to try, and no candidate
+  leaves the input and the row both absent.
 
 ## Acceptance
 
-- A row set whose `where:` holds the disjunction above, beside `parent_id == input.parent_id` and
-  `child_id == input.child_id`, is witnessed on both sides with no refusal. This holds with and
-  without an addressed subject.
-- The interpreted target passes every scenario.
-- Models whose row sets 0.77.0 already synthesizes keep their suite bytes
+- `a_row_set_selector_matching_absent_with_absent_is_witnessed`, in
+  `crates/verify/ess-conformance/tests/row_sets.rs` with the inline model above: synthesis writes
+  `GetChild/outcome/found` and `GetChild/outcome/child-not-found` with no refusal, and every
+  scenario passes the interpreted target.
+- The same holds for a reader with no addressed subject (the row set alone decides `found`).
+- A target whose row-set test treats absent as unequal to absent fails at least one of those
+  scenarios.
+- Models whose row sets 0.92.0 already synthesizes keep their suite bytes
   (`synthesis_suite_bytes_table`).
-- Tests are named when the story is scoped, in `crates/verify/ess-conformance/tests/` with inline
-  models.
+
+## Scope
+
+- inferred: crates/verify/ess-conformance/src/synthesize/row_set.rs
+- inferred: crates/verify/ess-conformance/tests/row_sets.rs
+- cited: CHANGELOG.md
+
+confidence: medium

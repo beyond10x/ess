@@ -2,57 +2,99 @@
 format: aep.planning-md/3
 id: story:the-built-in-tones-meet-wcag-aa-for-badge-text
 kind: story
-status: draft
+status: active
 title: The built-in tones meet WCAG AA for badge text
 summary: 'Badge text in the built-in tone table is below WCAG AA: warning 2.68, info 3.04, success 3.18, danger 3.98 to 1 (0.77.0)'
 tags:
+- defect
 - ess-batch-6
 - ess-next
 - ess-ui
-revision: 3
+- severity-medium
+- zero-open-issues
+relations:
+- decomposes: epic:zero-open-issues-2026-11
+- serves: vision:O2
+scope:
+- confidence: cited
+  path: crates/ui/ess-ui-react/templates/runtime/styles.css.tmpl
+- confidence: inferred
+  path: crates/ui/ess-ui-react/tests/badge_contrast.rs
+- confidence: cited
+  path: schemas/ui/ess-ui.schema.yaml
+- confidence: cited
+  path: website/docs/reference/ess-ui.md
+revision: 13
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:47:07Z", actor: "human:timo", revision: 12, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:47:09Z", actor: "human:timo", revision: 13, decided_on: {"recorded":{"review_outcome":1}}}
 ---
-<!-- Starting point for a `story` artifact, seeded by `aep artifact new story <name>`.
-     No frontmatter here on purpose: the `---` block is written by the CLI from the id, kind, status
-     and relations you gave it, and a second copy in this file would be the one that went stale.
-     Delete the italic guidance as you fill each section. -->
-
-# Story: <name>
-
 ## Outcome
 
-*What is true for whom once this has shipped, in one sentence. If it names a component rather than a
-person, it is a task — say what changes for someone.*
-
-## Context
-
-*Why this is worth doing now, and what it depends on. Link the epic or specification it comes from
-rather than restating it; the `derived_from` relation already carries the edge.*
-
-## Acceptance
-
-- Every built-in tone's badge text and background reach at least 4.5:1 in the light and the dark theme. A test computes the contrast of each pair from the generated values.
-
-## Out of Scope
-
-*What a reasonable reader would expect to be included and is not — the boundary that stops this
-story quietly becoming an epic.*
-
-## Ambiguities
-
-*Each gap this story found and did not close, classified. `inferable` — the answer is already
-written down, so give the `path:line` or the artifact id that settles it.
-`requires-stakeholder-input` — nobody here can decide it, so name who does, and raise that entry as
-a `decision-blocker` with a `blocks` edge to this story, or it is a sentence somebody improvises
-later.*
-
-## Open Questions
-
-*Anything still undecided belongs in `## Ambiguities` above, classified and with its citation or its
-decider. Keep this section for a question that is neither — an unowned question is a story that
-stalls without anybody noticing.*
+A reader of a generated React app can read every badge drawn with a built-in tone: its text and
+background reach WCAG AA (4.5:1) without a document overriding `tokens:`.
 
 ## Problem
 
-Reported 2026-10-29 on ESS 0.77.0 by a downstream session, through the orchestrator. Not yet reproduced in this repository. ess-ui/1 accepts look-and-feel that the React renderer does not draw.
+Reported on 0.77.0 by a downstream adopter and reproduced on 0.92.0. The built-in token table
+(`schemas/ui/ess-ui.schema.yaml`, `constructs.Tokens.builtins`) and the React stylesheet draw a badge
+on `--ui-line` (#dcdde1) with the tone colour as its text, and a danger badge as #c0392b on
+`danger_fill` #f6d5d1.
 
-The built-in tone table is below WCAG AA (4.5:1) for badge text: warning 2.68:1, info 3.04:1, success 3.18:1 and danger 3.98:1.
+Reproduction: any document, `ess generate ui --target react --path ui.yaml --out gen`, then the
+WCAG 2 contrast of each pair in `gen/src/runtime/styles.css`:
+
+```
+.ui-badge { ... background: var(--ui-line); }      --ui-line: #dcdde1
+.ui-tone-info    { color: var(--ui-info); }        #2f7fd3 on #dcdde1: 3.04:1
+.ui-tone-success { color: var(--ui-success); }     #2e8a4f on #dcdde1: 3.18:1
+.ui-tone-warning { color: var(--ui-warning); }     #b7791f on #dcdde1: 2.68:1
+.ui-badge.ui-tone-danger { background: #f6d5d1; color: var(--ui-danger); }   #c0392b: 3.98:1
+```
+
+Every pair is below 4.5:1.
+
+The built-in fills do not help: each tone colour on its own `*_fill` reaches 3.23 (info), 3.58
+(success), 2.98 (warning) and 3.98 (danger) to 1, so the text colours have to move.
+
+## Decisions
+
+- The fix darkens the four tone text colours (`info`, `success`, `warning`, `danger`) and keeps
+  every badge background, because no existing fill reaches 4.5:1 under the current text colours
+  (figures above) while a darker text colour raises contrast at every other use of the tone too.
+- The schema ships no built-in theme (`themes:` is a document map; `constructs.Tokens.builtins`
+  holds tokens only, and `example:` is an example), so the test reads the built-in token table and
+  nothing else.
+
+## Acceptance
+
+- `cargo test -p ess-ui-react --locked --test badge_contrast` (new): for each of info, success,
+  warning and danger, the WCAG 2 contrast ratio of the tone's badge text over its badge background,
+  both read from `constructs.Tokens.builtins` and from the `:root` and badge rules of the
+  stylesheet `ess generate ui --target react` writes for a document without `tokens:`, is at least
+  4.5:1. Red on 0.92.0 (2.68 to 3.98).
+- Same target: the colour values the generated stylesheet's `:root` declares equal the
+  `builtins.color` entries of the schema, token by token.
+- For a document without `tokens:`, the generated `src/runtime/styles.css` differs from 0.92.0's
+  only in the `--ui-info`, `--ui-success`, `--ui-warning` and `--ui-danger` declarations
+  (`diff` of the two outputs).
+- `website/docs/reference/ess-ui.md` equals what `ess ui docs` writes from the changed schema.
+
+## Out of Scope
+
+- Contrast of document-supplied tokens and themes.
+- The terminal renderer, which draws tones with terminal colours.
+- Button tones (`.ui-tone-primary`, `.ui-tone-danger` buttons with white text).
+
+## Scope
+
+- cited: `schemas/ui/ess-ui.schema.yaml` (`constructs.Tokens.builtins`, the colour entries near `:1604-1610`)
+- cited: `crates/ui/ess-ui-react/templates/runtime/styles.css.tmpl` (`:root` tokens `:2-11`, badge and tone rules `:102-106`)
+- cited: `website/docs/reference/ess-ui.md` (the rendered built-in table, `:2603-2606`, generated by
+  `ess ui docs`)
+- inferred: `crates/ui/ess-ui-react/tests/badge_contrast.rs` (new, the contrast test)
+
+confidence: high
+
+`crates/ui/ess-ui/src/style.rs` (`Tokens::builtin`) reads the schema's embedded table and does not
+change. Shared surfaces moved: proposes the `CHANGELOG.md` sentence.

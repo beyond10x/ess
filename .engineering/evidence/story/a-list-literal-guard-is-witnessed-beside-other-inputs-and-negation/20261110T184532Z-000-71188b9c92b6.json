@@ -1,0 +1,14 @@
+{
+  "at": "2026-11-10T18:45:32Z",
+  "actor": "human:timo",
+  "artifact": "story:a-list-literal-guard-is-witnessed-beside-other-inputs-and-negation",
+  "kind": "story",
+  "revision": 8,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "review-result:zi-t2-listlit-adv-1",
+    "review": "review-result:zi-t2-listlit-adv-1",
+    "outcome": "escalated"
+  }
+}

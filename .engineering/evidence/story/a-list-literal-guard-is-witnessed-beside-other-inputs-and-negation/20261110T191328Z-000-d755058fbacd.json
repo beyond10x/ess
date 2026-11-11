@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-10T19:13:28Z",
+  "actor": "human:timo",
+  "artifact": "story:a-list-literal-guard-is-witnessed-beside-other-inputs-and-negation",
+  "kind": "story",
+  "revision": 8,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "ess-conformance adversary_u4_list_literals, adversary_t2_list_literal_attack and the synthesis byte pins",
+    "reference": "a-list-literal-guard-is-witnessed-beside-other-inputs-and-negation/red.txt (9 passed, 3 failed) vs verify-h-1.txt at c8f76df725 (36 passed, 2 ignored for backlog)"
+  }
+}

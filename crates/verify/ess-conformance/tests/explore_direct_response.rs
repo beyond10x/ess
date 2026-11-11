@@ -176,6 +176,8 @@ fn cases() -> Value {
         {"name": "drops-token", "mode": "drops-token"},
         {"name": "other-label", "mode": "other-label"},
         {"name": "with-note", "mode": "with-note"},
+        {"name": "null-token", "mode": "null-token"},
+        {"name": "null-note", "mode": "null-note"},
     ])
 }
 
@@ -241,6 +243,33 @@ fn members_the_model_does_not_determine_are_checked_for_presence_only() {
                 reached.contains(&"explorert.keys.Mint/minted"),
                 "{language} `{name}`: {found}"
             );
+        }
+    }
+}
+
+/// A REQUIRED member answered as `null` is not present: the suite refuses it as `invalid_input`.
+#[test]
+fn a_required_response_member_answered_as_null_fails_exploration_naming_it() {
+    for (language, lane) in [("typescript", &lanes().0), ("go", &lanes().1)] {
+        let found = result(lane, "null-token");
+        let message = found["failure"]["message"].as_str().unwrap_or_default();
+        assert!(
+            message.starts_with(
+                "response: the target's response to `minted` has no `token`, a member the \
+                 specification requires"
+            ),
+            "{language}: {found}"
+        );
+    }
+}
+
+/// An `Optional` member answered as `null`, or left out, reports no disagreement.
+#[test]
+fn an_optional_response_member_answered_as_null_or_left_out_passes() {
+    for (language, lane) in [("typescript", &lanes().0), ("go", &lanes().1)] {
+        for name in ["complete", "null-note"] {
+            let found = result(lane, name);
+            assert_eq!(lane.asserts[name], "ok", "{language} `{name}`: {found}");
         }
     }
 }

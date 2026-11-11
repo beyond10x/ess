@@ -1,0 +1,7 @@
+components:
+  - component: shelf-service
+    summary: serves the shelf domain
+    owns:
+      domains:
+        - store.shelf
+    reached_by: network

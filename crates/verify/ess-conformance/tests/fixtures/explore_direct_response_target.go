@@ -49,6 +49,10 @@ func (t *exploreExtTarget) ExecuteCommand(request CommandRequest) (CommandResult
 	switch t.mode {
 	case "drops-token":
 		delete(response, "token")
+	case "null-token":
+		response["token"] = nil
+	case "null-note":
+		response["note"] = nil
 	case "other-label":
 		response["label"] = fmt.Sprintf("label-%d", t.minted)
 	case "with-note":

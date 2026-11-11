@@ -906,6 +906,15 @@ impl<'d> Gen<'d> {
             .then(|| field.value_labels())
             .filter(|labels| !labels.is_empty())
             .map(|labels| ts::string_map(&labels));
+        // The tone a column or record draws its value in; a form input has no tone.
+        let tone = (!in_form)
+            .then(|| field.tone.as_ref().and_then(variant))
+            .flatten()
+            .map(|tone| ts::string(&tone));
+        let tone_by = (!in_form)
+            .then_some(field.tone_by.as_ref())
+            .flatten()
+            .map(|tone_by| ts::literal(&tone_by.map));
         // A field that is a host slot: the host's component in place of the value or input.
         let host = field
             .host
@@ -926,11 +935,21 @@ impl<'d> Gen<'d> {
                     .filter(|unit| !matches!(unit, ess_ui::DurationUnit::Unmapped(_)))
                     .map(|unit| ts::string(unit.as_str())),
             ),
+            (
+                "scale",
+                field
+                    .scale
+                    .as_ref()
+                    .filter(|scale| !matches!(scale, ess_ui::PercentScale::Unmapped(_)))
+                    .map(|scale| ts::string(scale.as_str())),
+            ),
             ("sortable", field.sortable.then(|| "true".to_owned())),
             ("visible", expr(field.visible.as_ref())),
             ("binds", expr(field.binds.as_ref())),
             ("labelFrom", label_from),
             ("labels", labels),
+            ("tone", tone),
+            ("toneBy", tone_by),
             ("suggests", suggests),
             ("note", quoted(field.note.as_ref())),
             ("choice", choice),
@@ -1632,6 +1651,20 @@ impl<'d> Gen<'d> {
                     .opt(
                         "format",
                         m.format.as_ref().and_then(variant).map(|f| ts::string(&f)),
+                    )
+                    .opt(
+                        "unit",
+                        m.unit
+                            .as_ref()
+                            .filter(|unit| !matches!(unit, ess_ui::DurationUnit::Unmapped(_)))
+                            .map(|unit| ts::string(unit.as_str())),
+                    )
+                    .opt(
+                        "scale",
+                        m.scale
+                            .as_ref()
+                            .filter(|scale| !matches!(scale, ess_ui::PercentScale::Unmapped(_)))
+                            .map(|scale| ts::string(scale.as_str())),
                     )
                     .opt("label", quoted(m.label.as_ref()))
                     .opt(

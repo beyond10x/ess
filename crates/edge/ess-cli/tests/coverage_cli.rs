@@ -495,3 +495,105 @@ fn impact_cli_requires_exact_complete_input_and_keeps_the_persisted_v3_shape() {
     assert!(!output.status.success());
     assert_eq!(output.stdout.len(), 0);
 }
+
+fn covers_specification(directory: &Path) -> PathBuf {
+    let from = root().join("crates/verify/ess-conformance/tests/fixtures/authored-covers");
+    let spec = directory.join("spec");
+    fs::create_dir_all(spec.join("scenarios")).unwrap();
+    for name in [
+        "ess-inputs.yaml",
+        "system.yaml",
+        "review.yaml",
+        "scenarios/too-many-tags.yaml",
+    ] {
+        fs::copy(from.join(format!("{name}.in")), spec.join(name)).unwrap();
+    }
+    spec
+}
+
+fn last_line(output: &Output) -> String {
+    String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .last()
+        .unwrap_or_default()
+        .to_owned()
+}
+
+fn synthesize_with_authored(spec: &Path, suite_format: &str, out: &Path) -> Output {
+    command(&[
+        "conform",
+        "synthesize",
+        "--path",
+        spec.to_str().unwrap(),
+        "--scenarios",
+        spec.to_str().unwrap(),
+        "--suite-format",
+        suite_format,
+        "--out",
+        out.to_str().unwrap(),
+    ])
+}
+
+#[test]
+fn a_covered_refusal_is_marked_and_the_synthesis_exits_zero() {
+    let dir = directory("covers");
+    let spec = covers_specification(&dir);
+    let out = dir.join("with-coverage.json");
+    let output = synthesize_with_authored(&spec, "5", &out);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(
+        last_line(&output),
+        "14 selected scenario(s), 1 authored source(s), 1 refusal occurrence(s), 1 covered by authored"
+    );
+    let suite: Value = serde_json::from_str(&fs::read_to_string(&out).unwrap()).unwrap();
+    assert_eq!(suite["provenance"]["suite_version"], "ess-conformance/65");
+    assert_eq!(suite["coverage"]["counts"]["refused"], 1);
+    assert_eq!(
+        suite["coverage"]["refused"][0]["covered_by"],
+        "example.review/authored/a-note-with-too-many-tags"
+    );
+}
+
+#[test]
+fn a_cover_of_an_unrefused_id_exits_one_and_writes_nothing() {
+    let dir = directory("covers-unknown");
+    let spec = covers_specification(&dir);
+    let file = spec.join("scenarios/too-many-tags.yaml");
+    let missing = "example.review.ConfirmDecision/outcome/missing";
+    fs::write(
+        &file,
+        fs::read_to_string(&file)
+            .unwrap()
+            .replace("example.review.TakeNote/outcome/too-many-tags", missing),
+    )
+    .unwrap();
+    let out = dir.join("with-coverage.json");
+    let output = synthesize_with_authored(&spec, "5", &out);
+    assert_eq!(output.status.code(), Some(1), "{output:?}");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("covers.unknown-scenario"), "{stderr}");
+    assert!(stderr.contains(missing), "{stderr}");
+    assert!(!out.exists());
+}
+
+#[test]
+fn ordinary_synthesis_keeps_its_summary_with_a_covers_key_present() {
+    let dir = directory("covers-ordinary");
+    let spec = covers_specification(&dir);
+    let out = dir.join("with.json");
+    let output = synthesize_with_authored(&spec, "4", &out);
+    assert!(output.status.success(), "{output:?}");
+    assert_eq!(
+        last_line(&output),
+        format!(
+            "14 scenario(s) (1 authored), 1 refusal(s), written to {}",
+            out.display()
+        )
+    );
+    let text = fs::read_to_string(&out).unwrap();
+    assert!(!text.contains("covered_by") && !text.contains("ess-conformance/65"));
+}

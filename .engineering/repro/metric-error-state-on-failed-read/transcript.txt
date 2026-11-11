@@ -1,0 +1,49 @@
+$ ess --version
+ess 0.90.0
+
+$ ess generate ui --target react --path ui/shelf.ui.yaml --out react-out --model spec
+32 files written to react-out
+
+--- generated code (file:line)
+$ grep -n "response.status < 200" react-out/src/runtime/data.ts   (the read helper throws a DataError on a non-2xx answer)
+308:      if (response.status < 200 || response.status >= 300) {
+319:      if (response.status < 200 || response.status >= 300) {
+$ sed -n 510,514p react-out/src/runtime/data.ts   (useRead turns it into status failed with rows [])
+        .catch((error: unknown) => {
+          if (live && source === sourceVersion) {
+            const status = error instanceof DataError && error.status === 403 ? "forbidden" : "failed";
+            setState({ status, rows: [], error: error instanceof Error ? error.message : String(error), source });
+          }
+$ sed -n 21p;26,27p;38p react-out/src/runtime/composites/metric.tsx   (MetricView never reads data.status)
+  const data = useData(props.reads);
+  if (value === undefined && data && props.aggregate) {
+    value = aggregateRows(data.rows, props.aggregate, props.field);
+      <span className="ui-metric-value">{value === undefined ? "–" : formatValue(value, props.format)}</span>
+$ sed -n 50,52p;56,58p react-out/src/runtime/composites/metric.tsx   (count of no rows is 0; sum of no rows is 0)
+  if (aggregate === "count") {
+    return rows.length;
+  }
+  if (numbers.length === 0) {
+    return aggregate === "sum" ? 0 : undefined;
+  }
+$ grep -n "status" react-out/src/runtime/composites/metric.tsx | wc -l
+0
+$ sed -n 431,435p react-out/src/runtime/core.tsx   (by contrast a section frame has a failed state)
+  } else if (data && data.status === "failed") {
+    body = (
+      <div className="ui-state ui-state-failed" role="alert">
+        <p>{states.failed?.message ?? "Could not load."}</p>
+        {states.failed?.retry !== false ? (
+
+$ (cd react-out && npm install && npm run build)
+  www/assets/main.js   270.9kb
+  www/assets/main.css   10.2kb
+
+⚡ Done in 64ms
+
+--- headless chrome against a static server that answers the view route with a chosen status
+$ node check.mjs react-out/www $PW_DIR $CHROME
+view answers 200: header metrics ["Items on the shelf=2","Units on the shelf=95"]; list section alerts []
+view answers 501: header metrics ["Items on the shelf=0","Units on the shelf=0"]; list section alerts ["Could not load.Retry"]
+view answers 404: header metrics ["Items on the shelf=0","Units on the shelf=0"]; list section alerts ["Could not load.Retry"]
+view answers 500: header metrics ["Items on the shelf=0","Units on the shelf=0"]; list section alerts ["Could not load.Retry"]

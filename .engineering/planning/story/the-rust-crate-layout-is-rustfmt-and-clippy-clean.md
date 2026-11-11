@@ -2,63 +2,197 @@
 format: aep.planning-md/3
 id: story:the-rust-crate-layout-is-rustfmt-and-clippy-clean
 kind: story
-status: draft
+status: active
 title: The Rust crate layout is rustfmt and clippy clean
 summary: ess generate synthesize --target rust --layout crate writes 327 rustfmt hunks in 18 files and 47 clippy warnings (0.77.0)
 tags:
+- defect
 - ess-batch-6
 - ess-next
-revision: 4
+- severity-low
+- zero-open-issues
+relations:
+- decomposes: epic:zero-open-issues-2026-11
+- serves: vision:O2
+scope:
+- confidence: inferred
+  path: crates/generate/ess-synth/src/rust/behaviour.rs
+- confidence: inferred
+  path: crates/generate/ess-synth/src/rust/http.rs
+- confidence: inferred
+  path: crates/generate/ess-synth/src/rust/items.rs
+- confidence: cited
+  path: crates/generate/ess-synth/src/rust/layout.rs
+- confidence: cited
+  path: crates/generate/ess-synth/src/rust/mod.rs
+- confidence: cited
+  path: crates/generate/ess-synth/src/rust/single.rs
+- confidence: inferred
+  path: crates/generate/ess-synth/src/rust/wire.rs
+- confidence: inferred
+  path: crates/generate/ess-synth/tests/crate_layout_clean.rs
+- confidence: inferred
+  path: generated/rust/billing/crates/billing-system/src/lib.rs
+- confidence: inferred
+  path: generated/rust/billing/crates/billing-types/src/actor.rs
+- confidence: inferred
+  path: generated/rust/billing/crates/billing-types/src/behaviour.rs
+- confidence: inferred
+  path: generated/rust/billing/crates/billing-types/src/email.rs
+- confidence: inferred
+  path: generated/rust/billing/crates/billing-types/src/invoice.rs
+- confidence: inferred
+  path: generated/rust/billing/crates/billing-types/src/lib.rs
+- confidence: inferred
+  path: generated/rust/billing/crates/billing-types/src/obligation.rs
+- confidence: inferred
+  path: generated/rust/billing/crates/billing-types/src/primitives.rs
+- confidence: inferred
+  path: generated/rust/billing/crates/email-service/src/lib.rs
+- confidence: inferred
+  path: generated/rust/billing/crates/invoice-service/src/lib.rs
+- confidence: inferred
+  path: generated/rust/gatepass/crates/gatepass-server/src/bin/pass-service-server.rs
+- confidence: inferred
+  path: generated/rust/gatepass/crates/gatepass-server/src/entry.rs
+- confidence: inferred
+  path: generated/rust/gatepass/crates/gatepass-server/src/http.rs
+- confidence: inferred
+  path: generated/rust/gatepass/crates/gatepass-server/src/json.rs
+- confidence: inferred
+  path: generated/rust/gatepass/crates/gatepass-server/src/lib.rs
+- confidence: inferred
+  path: generated/rust/gatepass/crates/gatepass-server/src/memory.rs
+- confidence: inferred
+  path: generated/rust/gatepass/crates/gatepass-server/src/pass_service.rs
+- confidence: inferred
+  path: generated/rust/gatepass/crates/gatepass-server/src/static_assets.rs
+- confidence: inferred
+  path: generated/rust/gatepass/crates/gatepass-server/src/wire.rs
+- confidence: inferred
+  path: generated/rust/gatepass/crates/gatepass-system/src/lib.rs
+- confidence: inferred
+  path: generated/rust/gatepass/crates/gatepass-types/src/actor.rs
+- confidence: inferred
+  path: generated/rust/gatepass/crates/gatepass-types/src/behaviour.rs
+- confidence: inferred
+  path: generated/rust/gatepass/crates/gatepass-types/src/lib.rs
+- confidence: inferred
+  path: generated/rust/gatepass/crates/gatepass-types/src/obligation.rs
+- confidence: inferred
+  path: generated/rust/gatepass/crates/gatepass-types/src/primitives.rs
+- confidence: inferred
+  path: generated/rust/gatepass/crates/gatepass-types/src/visit.rs
+- confidence: inferred
+  path: generated/rust/gatepass/crates/pass-service/src/lib.rs
+revision: 15
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:48:04Z", actor: "human:timo", revision: 14, decided_on: {"recorded":{"review_outcome":2}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:48:05Z", actor: "human:timo", revision: 15, decided_on: {"recorded":{"review_outcome":2}}}
 ---
-<!-- Starting point for a `story` artifact, seeded by `aep artifact new story <name>`.
-     No frontmatter here on purpose: the `---` block is written by the CLI from the id, kind, status
-     and relations you gave it, and a second copy in this file would be the one that went stale.
-     Delete the italic guidance as you fill each section. -->
-
-# Story: <name>
-
 ## Outcome
 
-*What is true for whom once this has shipped, in one sentence. If it names a component rather than a
-person, it is a task — say what changes for someone.*
-
-## Context
-
-*Why this is worth doing now, and what it depends on. Link the epic or specification it comes from
-rather than restating it; the `derived_from` relation already carries the edge.*
-
-## Acceptance
-
-- The crate-layout Rust output for every committed generated tree passes `rustfmt --check` and
-  `cargo clippy -- -D warnings`. Lints the generator cannot meet are allowed by name at the crate
-  root, each with its reason in the generator source. A test pins this.
-- Generated bytes change, so the fit review records the D135 handling: a notice in the release, or
-  an opt-in layout.
-
-## Out of Scope
-
-*What a reasonable reader would expect to be included and is not — the boundary that stops this
-story quietly becoming an epic.*
-
-## Ambiguities
-
-*Each gap this story found and did not close, classified. `inferable` — the answer is already
-written down, so give the `path:line` or the artifact id that settles it.
-`requires-stakeholder-input` — nobody here can decide it, so name who does, and raise that entry as
-a `decision-blocker` with a `blocks` edge to this story, or it is a sentence somebody improvises
-later.*
-
-## Open Questions
-
-*Anything still undecided belongs in `## Ambiguities` above, classified and with its citation or its
-decider. Keep this section for a question that is neither — an unowned question is a story that
-stalls without anybody noticing.*
+An adopter who formats and lints its Rust workspace can keep the crate that
+`ess generate synthesize --target rust --layout crate` writes inside it, without excluding or
+rewriting it.
 
 ## Problem
 
-Reported 2026-10-29 on ESS 0.77.0 by a downstream session, through the orchestrator. Not yet
-reproduced in this repository.
+Reported 2026-10-29 on ESS 0.77.0 by a downstream session: the crate-layout output is not
+rustfmt-clean (327 hunks in 18 files) and has 47 clippy warnings.
 
-The output of `ess generate synthesize --target rust --layout crate` is not rustfmt-clean (327
-hunks in 18 files) and has 47 clippy warnings, so an adopter that formats or lints its workspace
-must exclude the generated crate or rewrite it.
+Reproduced on 0.92.0 for the formatting half, with the repository's own examples:
+
+```
+$ ess generate synthesize --target rust --layout crate --path examples/gatepass --out crate-gatepass
+29 capabilities: 28 generated, 1 obligation(s), 0 refused
+$ rustfmt --check --edition 2021 crate-gatepass/src/lib.rs crate-gatepass/src/bin/pass-service-server.rs
+118 hunks in 16 of 18 files (exit 1)
+$ ess generate synthesize --target rust --layout crate --path examples/billing --out crate-billing
+$ rustfmt --check --edition 2021 crate-billing/src/lib.rs
+57 hunks in 9 of 11 files (exit 1)
+```
+
+The clippy half is not re-counted here (it needs a cargo build of the generated crate).
+
+The default workspace layout is not clean either: `rustfmt --check --edition 2021` exits 1 on each
+of the eight committed `generated/rust/*/crates/*/src/lib.rs` (0.92.0 tree). Both layouts come from
+one emitter: `crates/generate/ess-synth/src/rust/mod.rs` builds either through
+`feasibility::checked_shaped(…, single_crate)` and `Layout::shaped` in `layout.rs`.
+
+## Acceptance
+
+The two named tests are in a new target, run with
+`cargo test -p ess-synth --locked --test crate_layout_clean`.
+
+- `the_crate_layout_is_rustfmt_clean`: for every example under `examples/` that synthesizes for
+  Rust, `ess generate synthesize --target rust --layout crate` output passes
+  `rustfmt --check --edition 2021` on each crate root, exit 0.
+- `the_crate_layout_is_clippy_clean`: the same output passes
+  `cargo clippy --all-features -- -D warnings`, exit 0, and its text holds no `#![allow(` attribute
+  and no `allow(clippy::` attribute (count 0); the one rustc `#[allow(dead_code)]` on `MemoryKey`
+  that 0.92.0 already writes is the only `allow` left.
+- The committed workspace layout is clean too: `rustfmt --check --edition 2021` exits 0 on every
+  `.rs` file under `generated/rust/`, and the CI comparison of `generated/rust/` with what the
+  specifications determine passes on the regenerated tree.
+- `cargo test -p ess-synth --locked --test served_codec_names` and `--test go` pass; a pinned value
+  that moves is one computed over generated Rust text, and no value over generated Go text moves.
+
+## Decisions
+
+D135, decided: both layouts' default bytes change, with a release notice, and there is no opt-in.
+The emitter is shared by both layouts (`mod.rs`, `single_crate`), the change moves layout only and
+no behaviour, and an opt-in would keep the defect as every adopter's default. The workspace layout
+is therefore in scope, by the condition this section set before ("unless the same emitter is
+shared").
+
+- No clippy lint is allowed in the output: an allowed lint hides the warning in code the adopter
+  keeps in its tree instead of fixing it, and an open allow list would let any output pass, so the
+  emitter writes code clippy accepts.
+
+## Scope
+
+Shared surfaces moved: proposes the `CHANGELOG.md` sentence naming the byte change of both
+layouts' generated Rust under D135, and re-pins the byte-pin rows computed over generated Rust.
+
+- cited: crates/generate/ess-synth/src/rust/single.rs
+- cited: crates/generate/ess-synth/src/rust/mod.rs
+- cited: crates/generate/ess-synth/src/rust/layout.rs
+- inferred: crates/generate/ess-synth/src/rust/behaviour.rs
+- inferred: crates/generate/ess-synth/src/rust/http.rs
+- inferred: crates/generate/ess-synth/src/rust/wire.rs
+- inferred: crates/generate/ess-synth/src/rust/items.rs
+- inferred: crates/generate/ess-synth/tests/crate_layout_clean.rs
+- inferred: generated/rust/billing/crates/billing-system/src/lib.rs
+- inferred: generated/rust/billing/crates/billing-types/src/actor.rs
+- inferred: generated/rust/billing/crates/billing-types/src/behaviour.rs
+- inferred: generated/rust/billing/crates/billing-types/src/email.rs
+- inferred: generated/rust/billing/crates/billing-types/src/invoice.rs
+- inferred: generated/rust/billing/crates/billing-types/src/lib.rs
+- inferred: generated/rust/billing/crates/billing-types/src/obligation.rs
+- inferred: generated/rust/billing/crates/billing-types/src/primitives.rs
+- inferred: generated/rust/billing/crates/email-service/src/lib.rs
+- inferred: generated/rust/billing/crates/invoice-service/src/lib.rs
+- inferred: generated/rust/gatepass/crates/gatepass-server/src/bin/pass-service-server.rs
+- inferred: generated/rust/gatepass/crates/gatepass-server/src/entry.rs
+- inferred: generated/rust/gatepass/crates/gatepass-server/src/http.rs
+- inferred: generated/rust/gatepass/crates/gatepass-server/src/json.rs
+- inferred: generated/rust/gatepass/crates/gatepass-server/src/lib.rs
+- inferred: generated/rust/gatepass/crates/gatepass-server/src/memory.rs
+- inferred: generated/rust/gatepass/crates/gatepass-server/src/pass_service.rs
+- inferred: generated/rust/gatepass/crates/gatepass-server/src/static_assets.rs
+- inferred: generated/rust/gatepass/crates/gatepass-server/src/wire.rs
+- inferred: generated/rust/gatepass/crates/gatepass-system/src/lib.rs
+- inferred: generated/rust/gatepass/crates/gatepass-types/src/actor.rs
+- inferred: generated/rust/gatepass/crates/gatepass-types/src/behaviour.rs
+- inferred: generated/rust/gatepass/crates/gatepass-types/src/lib.rs
+- inferred: generated/rust/gatepass/crates/gatepass-types/src/obligation.rs
+- inferred: generated/rust/gatepass/crates/gatepass-types/src/primitives.rs
+- inferred: generated/rust/gatepass/crates/gatepass-types/src/visit.rs
+- inferred: generated/rust/gatepass/crates/pass-service/src/lib.rs
+
+confidence: low
+
+Every emitter writes text by hand, so the hunks are spread over every module; formatting the
+emitted text once, before it is written, is the likely single point, and a decision for the
+implementor.

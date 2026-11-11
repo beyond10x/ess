@@ -632,3 +632,49 @@ components:
         }
     }
 }
+
+#[test]
+fn adv_gen2_control_one_component_naming_a_group_like_its_own_top_level_command_is_refused() {
+    // One component places `desk.audit.RecordEntry` (wire `record`) at the top level and names a
+    // group `record`: the tree would define `record` twice and one could not be reached.
+    let components = "\
+components:
+  - component: desk-service
+    owns: {domains: [desk.audit, desk.note]}
+    accepts: {commands: [desk.audit.RecordEntry, desk.note.RecordEntry]}
+    reached_by: command_line
+    cli:
+      binary: desk
+      commands: [desk.audit.RecordEntry]
+      groups:
+        - name: record
+          commands: [desk.note.RecordEntry]
+";
+    match desk_validation(components) {
+        Err(errors) => {
+            let refused: Vec<_> = errors
+                .as_slice()
+                .iter()
+                .filter(|error| error.code == ValidationCode::DuplicateDeclaration)
+                .collect();
+            assert_eq!(refused.len(), 1, "{SHARED}: refused once: {errors}");
+            assert_eq!(refused[0].location, "component desk-service");
+            for named in ["`record`", "`desk.audit.RecordEntry`"] {
+                assert!(
+                    refused[0].message.contains(named),
+                    "{SHARED}: names {named}: {}",
+                    refused[0].message
+                );
+            }
+        }
+        Ok(_) => {
+            let synthesis = desk_clap(components);
+            let tree = &synthesis.artifacts["crates/desk-cli/src/tree.rs"].contents;
+            panic!(
+                "{SHARED}: validation accepts a group and a command both at `desk record`, and \
+                 the tree defines `record` {} times:\n{tree}",
+                tree.matches("::clap::Command::new(\"record\")").count()
+            );
+        }
+    }
+}

@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-10T19:43:22Z",
+  "actor": "human:timo",
+  "artifact": "story:a-set-guard-fed-by-a-subject-payload-is-arranged",
+  "kind": "story",
+  "revision": 9,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "ess-conformance binding_set_guard, adv_set_guard_subject_payload and the synthesis byte pins; clippy",
+    "reference": "a-set-guard-fed-by-a-subject-payload-is-arranged/red.final.txt (3 passed, 1 failed) vs verify-f-1.txt at 5730884d41 (46 passed, 1 ignored for backlog), verify-f-2.txt (clippy exit 0)"
+  }
+}

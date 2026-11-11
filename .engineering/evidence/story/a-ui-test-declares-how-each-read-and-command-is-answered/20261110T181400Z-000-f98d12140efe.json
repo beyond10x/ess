@@ -1,0 +1,14 @@
+{
+  "at": "2026-11-10T18:14:00Z",
+  "actor": "human:timo",
+  "artifact": "story:a-ui-test-declares-how-each-read-and-command-is-answered",
+  "kind": "story",
+  "revision": 6,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "review-result:zi-t2-uitest-adv-1",
+    "review": "review-result:zi-t2-uitest-adv-1",
+    "outcome": "fixed"
+  }
+}

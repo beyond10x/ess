@@ -346,6 +346,19 @@ pub const FORMAT: &str = "ess-scenario/1";
 /// compiling (an adopter report, wave D335).
 pub const TYPED_INPUTS_FORMAT: &str = crate::member_paths::SCENARIO_FORMAT;
 
+/// The first scenario format that reads `covers:`, the exact ids of the generated synthesis
+/// refusals the scenario covers (beyond10x/ess#735). A newer format reads everything an older one
+/// does, so a feature gated on a format is gated on `format_at_least`.
+pub const COVERS_FORMAT: &str = "ess-scenario/7";
+
+/// Whether `format` is `ess-scenario/<n>` for an `n` of at least `minimum`.
+fn format_at_least(format: &str, minimum: u32) -> bool {
+    format
+        .strip_prefix("ess-scenario/")
+        .and_then(|number| number.parse::<u32>().ok())
+        .is_some_and(|number| number >= minimum)
+}
+
 /// One file an author wrote, and where it was read from.
 ///
 /// Text rather than a path, because compiling is not reading: this crate holds no file system, the
@@ -398,6 +411,9 @@ pub struct Document {
     /// What must hold of the views afterwards.
     #[serde(default)]
     pub assert: Vec<Assertion>,
+    /// The ids of the generated synthesis refusals this scenario covers (`ess-scenario/7`).
+    #[serde(default)]
+    pub covers: Option<Vec<String>>,
 }
 
 /// One instance the scenario acts on, and whose it is.
@@ -2216,7 +2232,8 @@ diagnostic_catalogue! {
             "The document claims a format this build does not implement.",
             "a scenario's `type:` is `ess-scenario/1`, `ess-scenario/2` for entity setup, \
              `ess-scenario/3` for fixture values, `ess-scenario/4` for direct responses, \
-             `ess-scenario/5` for caller values, or `ess-scenario/6` for member paths in claims; \
+             `ess-scenario/5` for caller values, `ess-scenario/6` for member paths in claims, or \
+             `ess-scenario/7` for `covers:`; \
              a document in a repository-defined trace format is not a scenario input, so leave it \
              out of `--scenarios` and `ess-inputs.yaml`";
         Self::Duplicate { .. } => 3,
@@ -2834,11 +2851,15 @@ pub(crate) fn compile_one(
         used_fixtures: BTreeSet::new(),
         fixture_format: matches!(
             document.format.as_str(),
-            "ess-scenario/3" | "ess-scenario/4" | "ess-scenario/5" | "ess-scenario/6"
+            "ess-scenario/3"
+                | "ess-scenario/4"
+                | "ess-scenario/5"
+                | "ess-scenario/6"
+                | "ess-scenario/7"
         ),
         ir,
-        paths: document.format == crate::member_paths::SCENARIO_FORMAT,
-        typed_inputs: document.format == TYPED_INPUTS_FORMAT,
+        paths: format_at_least(&document.format, 6),
+        typed_inputs: format_at_least(&document.format, 6),
         origin: &source.origin,
         id: id.clone(),
         refusals: Vec::new(),
@@ -2889,6 +2910,30 @@ pub(crate) fn compile_one(
     Ok((id, scenario))
 }
 
+/// Whether `id` spells a generated scenario, the only kind a synthesis refusal names.
+fn is_generated_id(id: &str) -> bool {
+    ScenarioId::parse(id).is_ok_and(|id| !matches!(id, ScenarioId::Authored { .. }))
+}
+
+/// The generated refusals an authored document covers (`covers:`, `ess-scenario/7`), sorted and
+/// distinct, or none when the text is not a document this module compiles.
+pub(crate) fn covers_of(ir: &EssIr, source: &Source) -> Vec<ScenarioId> {
+    let Ok(document) = read_document(ir, &source.text) else {
+        return Vec::new();
+    };
+    if document_format_refusal(&document).is_some() {
+        return Vec::new();
+    }
+    document
+        .covers
+        .iter()
+        .flatten()
+        .filter_map(|id| ScenarioId::parse(id).ok())
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect()
+}
+
 /// Whether `format` is one of the scenario formats this module reads.
 fn is_scenario_format(format: &str) -> bool {
     matches!(
@@ -2899,6 +2944,7 @@ fn is_scenario_format(format: &str) -> bool {
             | "ess-scenario/4"
             | "ess-scenario/5"
             | "ess-scenario/6"
+            | "ess-scenario/7"
     )
 }
 
@@ -3099,7 +3145,11 @@ fn document_format_refusal(document: &Document) -> Option<Cause> {
     }
     if !matches!(
         document.format.as_str(),
-        "ess-scenario/3" | "ess-scenario/4" | "ess-scenario/5" | "ess-scenario/6"
+        "ess-scenario/3"
+            | "ess-scenario/4"
+            | "ess-scenario/5"
+            | "ess-scenario/6"
+            | "ess-scenario/7"
     ) && !document.fixtures.is_empty()
     {
         return Some(Cause::Unreadable {
@@ -3108,7 +3158,7 @@ fn document_format_refusal(document: &Document) -> Option<Cause> {
     }
     if !matches!(
         document.format.as_str(),
-        "ess-scenario/4" | "ess-scenario/5" | "ess-scenario/6"
+        "ess-scenario/4" | "ess-scenario/5" | "ess-scenario/6" | "ess-scenario/7"
     ) && document.timeline.iter().any(|act| act.response.is_some())
     {
         return Some(Cause::Unreadable {
@@ -3117,18 +3167,30 @@ fn document_format_refusal(document: &Document) -> Option<Cause> {
     }
     if !matches!(
         document.format.as_str(),
-        "ess-scenario/4" | "ess-scenario/5" | "ess-scenario/6"
+        "ess-scenario/4" | "ess-scenario/5" | "ess-scenario/6" | "ess-scenario/7"
     ) && document.timeline.iter().any(|act| act.refused.is_some())
     {
         return Some(Cause::Unreadable {
             detail: "`refused: not_granted` requires type: ess-scenario/4".into(),
         });
     }
+    if let Some(covers) = &document.covers {
+        if !format_at_least(&document.format, 7) {
+            return Some(Cause::Unreadable {
+                detail: format!("`covers:` is an unsupported key below {COVERS_FORMAT}"),
+            });
+        }
+        if let Some(bad) = covers.iter().find(|id| !is_generated_id(id)) {
+            return Some(Cause::Unreadable {
+                detail: format!("`covers:` names `{bad}`, which is not a generated scenario id"),
+            });
+        }
+    }
     // An older `ess` refuses `caller:` as an unknown key: a document that states one is a
     // document only this format can read, so its header says so and every earlier one refuses it.
     if !matches!(
         document.format.as_str(),
-        "ess-scenario/5" | "ess-scenario/6"
+        "ess-scenario/5" | "ess-scenario/6" | "ess-scenario/7"
     ) && document.timeline.iter().any(|act| !act.caller.is_empty())
     {
         return Some(Cause::Unreadable {

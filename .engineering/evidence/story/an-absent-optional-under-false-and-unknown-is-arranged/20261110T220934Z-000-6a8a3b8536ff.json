@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-10T22:09:34Z",
+  "actor": "human:timo",
+  "artifact": "story:an-absent-optional-under-false-and-unknown-is-arranged",
+  "kind": "story",
+  "revision": 12,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "ess-conformance arranged_row_beside_absent_optional_guard with the byte pins",
+    "reference": "an-absent-optional-under-false-and-unknown-is-arranged/red.txt (0 passed, 1 failed) vs lane/verify-lane-final-1.txt (18 named ess-conformance targets, 126 passed), verify-lane-final-2.txt (clippy exit 0), verify-lane-final-3.txt (ess-cli adversary_t2_order_tie_emit, 2 passed), verify-lane-final-4.txt (cargo xtask docs exit 0) at d715ff1fdc"
+  }
+}

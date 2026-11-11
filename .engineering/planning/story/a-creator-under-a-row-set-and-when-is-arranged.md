@@ -2,19 +2,105 @@
 format: aep.planning-md/3
 id: story:a-creator-under-a-row-set-and-when-is-arranged
 kind: story
-status: draft
+status: active
 title: A creator guarded by a row set and a when is arranged
 tags:
+- defect
 - ess-d368-close
+- severity-medium
+- zero-open-issues
 relations:
 - serves: vision:O2
-revision: 1
+- decomposes: epic:zero-open-issues-2026-11
+scope:
+- confidence: cited
+  path: crates/verify/ess-conformance/src/synthesize.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/synthesize/row_set.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/tests/a_creator_under_a_row_set_is_arranged.rs
+revision: 9
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:33:43Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:33:43Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Finding
 
-Found by wave D368 U4 (first-round implementor note), out of that story's Acceptance: a creator branch guarded by a row set and a `when:` together is never arranged, so the rows it lays are not reached through it (`synthesize.rs`, `arrange_toward_with`).
+Wave D368 U4 found this in a first-round implementor note, outside that story's Acceptance. A
+creator branch guarded by a row set is never used to arrange a row, so nothing that needs a row it
+lays is reached through it (`crates/verify/ess-conformance/src/synthesize.rs:13903`,
+`arrange_toward_with`). Only the per-input pass, which runs only beside captured rows, sends a
+creator guarded by a row set alone (`by_rows`, `synthesize.rs` in `arrange_toward_with`). The plain
+pass asks `selects_branch` without rows and never selects it, and a row set beside a `when:`
+(`RelatedSet { input: Some(_) }`) is never sent in any pass.
+
+## Problem
+
+Re-checked on 0.92.0. A uniqueness-checked creator, the common shape:
+
+```yaml
+commands:
+  - name: wiring.board.Connect
+    input:
+      - {name: from_port, type: String}
+      - {name: priority, type: Integer}
+    outcomes:
+      - name: source-taken
+        when_related: {entity: wiring.board.Wire, where: from_port == input.from_port, exists: true}
+        error: wiring.board.SourceTaken
+      - name: connected
+        when_related: {entity: wiring.board.Wire, where: from_port == input.from_port, exists: false}
+        when: priority >= 1
+        creates: wiring.board.Wire
+        instance: wire_id
+        sets: {from_port: input.from_port, priority: input.priority}
+        emits: [wiring.board.Connected]
+        payload: {wiring.board.Connected: {wire_id: {generated: true}}}
+      - name: too-weak
+        error: wiring.board.TooWeak
+  - name: wiring.board.Cut          # moves Wire Live -> Cut; wrong_state: not-live
+```
+
+`ess verify conform synthesize` writes `Connect/outcome/connected` (the creator itself is witnessed)
+and then refuses `Connect/source-taken` (ESS-SYNTH-001 "its own row set is False"), and refuses
+`Cut/outcome/cut`, `Wire/transition/cut/...` and `Wire/state/Cut/refuses/...` with ESS-SYNTH-004:
+"the route runs through `wiring.board.Connect/connected`, which no input reaches". That claim is
+false, because the same suite holds a scenario that reaches `connected`. Without the `when:` (row
+set alone) the same five refusals stand. Without the row set (`when:` alone) synthesis writes all 7
+scenarios and refuses none.
 
 ## Acceptance
 
-- Synthesis arranges a creator branch whose guard holds a row set and a `when:`, with an input that holds the `when:`, or refuses it as `ESS-SYNTH-003` naming the guard.
-- A test model with such a creator is witnessed, and committed models whose suites move are named.
+All tests run with `cargo test -p ess-conformance --locked --test a_creator_under_a_row_set_is_arranged`
+on the model above; each is red on 0.92.0.
+
+- `a_creator_under_a_row_set_and_when_is_arranged`: synthesis records no refusal, and the suite
+  holds all 7 scenarios.
+- Same test: `Cut/outcome/cut` and `Connect/outcome/source-taken` each arrange their `Wire` through
+  a `Connect` step whose `priority` input is `>= 1`.
+- Same test: the interpreted target passes every scenario of the suite.
+- `a_creator_under_a_row_set_alone_is_arranged`: the same model without the `when:` records no
+  refusal and the interpreted target passes every scenario.
+- `a_creator_under_a_row_set_and_contradictory_when_is_refused`: the model with `when: priority >= 1
+  and priority < 1` records a refusal of `Cut/outcome/cut` with code ESS-SYNTH-003 whose message
+  names `wiring.board.Connect/connected`'s guard, and no ESS-SYNTH-004 refusal.
+- `cargo test -p ess-conformance --locked --test synthesis_suite_bytes_table` passes, and every row
+  of `synthesis-suite-bytes-table.tsv` the change re-pins is a model that holds a creator guarded by
+  a row set, with that cause named beside the pin.
+
+## Decisions
+
+- The contradictory-guard case gets its own named test, so the ESS-SYNTH-003 outcome is checked by
+  a run rather than by reading the change.
+- The `examples/` scope entry is dropped: no model under `examples/` uses `when_related`, so no
+  example suite moves; a moved suite is seen only as a re-pinned suite-bytes row.
+
+## Scope
+
+- cited: crates/verify/ess-conformance/src/synthesize.rs
+- inferred: crates/verify/ess-conformance/src/synthesize/row_set.rs
+- inferred: crates/verify/ess-conformance/tests/a_creator_under_a_row_set_is_arranged.rs
+
+confidence: medium
+
+Shared surfaces: re-pins suite-bytes rows whose models hold a creator guarded by a row set.

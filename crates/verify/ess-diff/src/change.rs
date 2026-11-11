@@ -3877,6 +3877,20 @@ mod tests {
         ActorRef::new(QualifiedName::new(name).expect("a valid qualified name"))
     }
 
+    /// `ess-diff/24` is open for the constructs of one release and carries no change kind yet: it
+    /// is read and written wherever `ess-diff/23` is, and the newest floor a change asks for is
+    /// still `ess-diff/23`.
+    #[test]
+    fn delta_format_24_is_open_and_no_change_kind_asks_for_it() {
+        let opened = crate::DeltaFormat::parse("ess-diff/24").expect("a well formed version");
+        assert!(opened.is_supported());
+        assert_eq!(crate::SUPPORTED_DELTA_FORMATS.last(), Some(&24));
+        assert!(!crate::DeltaFormat::parse("ess-diff/25")
+            .expect("a well formed version")
+            .is_supported());
+        assert_eq!(ORDERED_DELTA_FORMAT, 23);
+    }
+
     #[test]
     fn a_change_id_names_its_category_subject_subtype_and_member_in_that_order() {
         let change = SemanticChange::Actor {

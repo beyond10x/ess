@@ -1405,6 +1405,11 @@ function literalValue(ir: Node, text: Node, type: Node): Node {
   }
 }
 
+/** The `Json` primitive itself, not a newtype over it: its own values include null. */
+function plainJson(type: Node): boolean {
+  return type?.kind === 'primitive' && type.name === 'json';
+}
+
 function optionalType(ir: Node, type: Node): boolean {
   for (let depth = 0; depth <= 32; depth += 1) {
     if (type?.kind === 'optional') return true;
@@ -2306,12 +2311,20 @@ async function perform(
   // A `returns: true` outcome returns the command's declared response (ess/17): every member it
   // declares REQUIRED, a type that is not `Optional`, is present. The model determines no response
   // value, so a member is checked for presence only
-  // (story:go-explorer-compares-direct-response-members).
+  // (story:go-explorer-compares-direct-response-members). A member answered as null is
+  // absent, as the suite refuses it as `invalid_input`, except one of the plain `Json` primitive,
+  // whose own values include null; a newtype over `Json` keeps the null test.
   if (outcome.returns === true) {
     const response = result.response ?? {};
     for (const field of list(command.node.response)) {
       if (optionalType(ir, field.type_ref)) continue;
-      if (!Object.prototype.hasOwnProperty.call(response, field.name)) {
+      const nullable = plainJson(field.type_ref);
+      const value = response[field.name];
+      if (
+        !Object.prototype.hasOwnProperty.call(response, field.name) ||
+        value === undefined ||
+        (value === null && !nullable)
+      ) {
         return {
           kind: 'response',
           detail: `the target's response to \`${outcome.name}\` has no \`${field.name}\`, a member the specification requires`,

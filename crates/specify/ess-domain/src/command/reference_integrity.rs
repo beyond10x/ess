@@ -11,7 +11,9 @@
 //!    entity sets the field, and each branch that writes it — creating, updating or moving the
 //!    addressed row, or every row an `instances:` or `affects:` selection names — writes either
 //!    nothing (`{cleared: true}`, the field's own value) or an input its command refuses first, with
-//!    an `exists: false` branch over that input naming the same entity and carrying no `when:`.
+//!    an `exists: false` branch over that input naming the same entity and carrying no `when:`,
+//!    answering before the writing branch under the precedence rule: a create-or-update creator
+//!    (`unknown_instance:`) answers before it and stores the identity unchecked.
 //! 2. **No branch removes a row of the referenced entity.** No `deletes:` subject, no
 //!    `instances: {deletes}` and no `affects:` entry with `deletes: true` names it. A binding runs a
 //!    command, so the command is what is named.
@@ -20,6 +22,7 @@
 //! deleting command or an unchecked writer is refused at the reading command, the refusal naming
 //! each branch that defeats the proof. Below `ess/30` the refusal stands, its hint naming
 //! `ess/30` where the proof holds.
+use super::precedence::{self, BranchShape, Composition};
 use super::{related_guard, related_value, CommandSpec, Effect, OutcomeCondition, PayloadSource};
 use super::{RelatedTest, RelatedVia};
 use crate::entity::EntitySpec;
@@ -182,10 +185,7 @@ fn checked(
         PayloadSource::InputField { field: input } => {
             !input.contains('.')
                 && !refuses_missing(outcome, input)
-                && command
-                    .outcomes
-                    .iter()
-                    .any(|other| refuses_missing(other, input))
+                && refused_before(spec, command, outcome, input)
                 && matches!(
                     related_guard::related_entity(spec, command, input),
                     related_value::Referenced::Entity(named) if named.name == target.name
@@ -193,6 +193,44 @@ fn checked(
         }
         _ => false,
     }
+}
+
+/// Whether a branch of `command` that [`refuses_missing`] over `input` answers before `outcome`
+/// under the precedence plan: a branch answering earlier (a create-or-update creator's
+/// `unknown_instance:`) stores the identity before that refusal is read.
+fn refused_before(
+    spec: &Specification,
+    command: &CommandSpec,
+    outcome: &super::Outcome,
+    input: &str,
+) -> bool {
+    let shapes: Vec<BranchShape> = command.outcomes.iter().map(BranchShape::of).collect();
+    // Below `ess/30` the hint promises what `ess/30` would do, so the order is the `ess/30` one.
+    let format = spec.system().format;
+    let format = if format.major() < FormatVersion::V30.major() {
+        FormatVersion::V30
+    } else {
+        format
+    };
+    let composition = Composition::of(command, format);
+    let answering: Vec<usize> = precedence::order(&shapes, &composition)
+        .into_iter()
+        .flat_map(|(_, held)| held)
+        .collect();
+    let at = |wanted: &super::Outcome| {
+        let index = command
+            .outcomes
+            .iter()
+            .position(|other| std::ptr::eq(other, wanted))?;
+        answering.iter().position(|held| *held == index)
+    };
+    let Some(written) = at(outcome) else {
+        return false;
+    };
+    command
+        .outcomes
+        .iter()
+        .any(|other| refuses_missing(other, input) && at(other).is_some_and(|read| read < written))
 }
 
 /// Whether `outcome` is the `exists: false` branch over the row `input` names, alone and with no

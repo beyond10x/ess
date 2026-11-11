@@ -191,6 +191,7 @@ impl AdmittedSuite {
 const ROOT_OPTIONAL: [&str; 3] = ["coverage", "events", "one_time_response"];
 const SCENARIO_OPTIONAL: [&str; 3] = ["one_time_response", "absent_events", "unpublished_events"];
 
+#[allow(clippy::too_many_lines)]
 fn validate_suite(value: &Json) -> Result<(), AdmissionError> {
     let root = value.closed(&["provenance", "scenarios"], &ROOT_OPTIONAL)?;
     let p = root["provenance"].closed(
@@ -210,7 +211,7 @@ fn validate_suite(value: &Json) -> Result<(), AdmissionError> {
     if !crate::go::admitted_major(version.major()) {
         return Err(p["suite_version"].error(
             "UnsupportedSuiteVersion",
-            "execution readers admit suite majors 1–63",
+            "execution readers admit suite majors 1–65",
         ));
     }
     match p.get("synthesis_seeds") {
@@ -276,11 +277,12 @@ fn validate_suite(value: &Json) -> Result<(), AdmissionError> {
             | 59
             | 61
             | 63
+            | 65
     ) != root.contains_key("coverage")
     {
         return Err(value.error(
             "InvalidCoverage",
-            "coverage is required exactly for odd suite majors from /5 through /63",
+            "coverage is required exactly for odd suite majors from /5 through /65",
         ));
     }
     compact_spellings(value, version.major())?;

@@ -1,0 +1,14 @@
+{
+  "at": "2026-11-09T23:58:07Z",
+  "actor": "human:timo",
+  "artifact": "story:accepted-input-arranges-referenced-list-rows",
+  "kind": "story",
+  "revision": 8,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "review-result:zero-issues-acceptance-round-1",
+    "review": "review-result:zero-issues-acceptance-round-1",
+    "outcome": "fixed"
+  }
+}

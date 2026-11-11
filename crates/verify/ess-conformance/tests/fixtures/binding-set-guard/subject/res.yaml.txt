@@ -1,0 +1,45 @@
+domain: example.res
+summary: Leases.
+types:
+  - {name: example.res.LeaseId, kind: newtype, of: Uuid}
+entities:
+  - name: example.res.Lease
+    identity: {name: lease_id, type: example.res.LeaseId}
+    fields: [{name: member_id, type: example.grp.MemberRef}]
+    lifecycle: {initial: Held, states: [Held, Removed], terminal: [Removed], transitions: [{name: remove, from: [Held], to: Removed}]}
+errors:
+  - {name: example.res.Unavailable, summary: Store unavailable.}
+actors:
+  - {name: example.res.Internal, may: [example.res.Issue, example.res.Reconcile]}
+commands:
+  - name: example.res.Issue
+    input: [{name: member_id, type: example.grp.MemberRef}]
+    outcomes:
+      - name: issued
+        creates: example.res.Lease
+        instance: lease_id
+        emits: [example.res.Issued]
+        payload: {example.res.Issued: {lease_id: {generated: true}}}
+        sets: {member_id: input.member_id}
+  - name: example.res.Reconcile
+    input: [{name: member_id, type: example.grp.MemberRef}]
+    outcomes:
+      - {name: unavailable, external: the store cannot be written to, error: example.res.Unavailable}
+      - name: kept
+        when_related: {entity: example.grp.Membership, where: {all: [member_id == input.member_id, state == Active, eligible == true]}, exists: true}
+        emits: [example.res.Kept]
+        payload: {example.res.Kept: {member_id: input.member_id}}
+      - name: removed
+        moves: example.res.Lease.remove
+        instances: {where: member_id == input.member_id}
+        emits: [example.res.Released]
+        payload: {example.res.Released: {member_id: input.member_id}}
+events:
+  - {name: example.res.Issued, fields: [{name: lease_id, type: example.res.LeaseId}]}
+  - {name: example.res.Kept, fields: [{name: member_id, type: example.grp.MemberRef}]}
+  - {name: example.res.Released, fields: [{name: member_id, type: example.grp.MemberRef}]}
+views:
+  - name: example.res.LeaseRecord
+    source: example.res.Lease
+    consistency: read_your_writes
+    fields: [{name: lease_id, type: example.res.LeaseId}, {name: state, type: example.res.Lease.State}, {name: member_id, type: example.grp.MemberRef}]

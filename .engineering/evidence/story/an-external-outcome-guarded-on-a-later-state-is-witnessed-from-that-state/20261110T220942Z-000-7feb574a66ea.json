@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-10T22:09:42Z",
+  "actor": "human:timo",
+  "artifact": "story:an-external-outcome-guarded-on-a-later-state-is-witnessed-from-that-state",
+  "kind": "story",
+  "revision": 9,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "ess-conformance external_narrowed_by_subject with the byte pins",
+    "reference": "no red: the behaviour was in place at the lane base (763faf488b, turn 1); an-external-outcome-guarded-on-a-later-state-is-witnessed-from-that-state/red3.txt (9 passed) and lane/verify-lane-final-1.txt (18 named ess-conformance targets, 126 passed), verify-lane-final-2.txt (clippy exit 0), verify-lane-final-3.txt (ess-cli adversary_t2_order_tie_emit, 2 passed), verify-lane-final-4.txt (cargo xtask docs exit 0) at d715ff1fdc"
+  }
+}

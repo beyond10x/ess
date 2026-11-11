@@ -246,8 +246,13 @@ fn view_path(ir: &EssIr) -> String {
         .path
 }
 
+/// Per process: nextest runs each test in its own process, and two processes building into one
+/// directory remove each other's files.
 fn scratch(label: &str) -> PathBuf {
-    Path::new(env!("CARGO_TARGET_TMPDIR")).join(format!("adversary-view-params-pass1-{label}"))
+    Path::new(env!("CARGO_TARGET_TMPDIR")).join(format!(
+        "adversary-view-params-pass1-{label}-{}",
+        std::process::id()
+    ))
 }
 
 fn write(synthesis: &Synthesis, directory: &Path) {

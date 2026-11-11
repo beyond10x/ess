@@ -2,97 +2,137 @@
 format: aep.planning-md/3
 id: story:a-command-binds-to-json-rpc-and-grpc-beside-http
 kind: story
-status: draft
-title: A command or view binds to a JSON-RPC 2.0 method and a gRPC method, as ess-http/1 binds it to HTTP
-summary: JSON-RPC 2.0 and gRPC bindings beside ess-http/1 (adopter item 8, beyond10x/a2a); blocked on the transport and IDL compile-targets ADR, not to be implemented before it is accepted.
+status: active
+title: A command or view binds to a JSON-RPC 2.0 method beside HTTP
+summary: A JSON-RPC 2.0 binding beside ess-http/1 (#650); gRPC and OpenRPC are split out and not part of this story.
 tags:
 - adopter-report
 - feature-request
+- zero-open-issues
+refs:
+- provider: github
+  reference: beyond10x/ess#650
 relations:
 - serves: vision:O2
-- depends_on: story:ess-projects-a-protobuf-idl-with-http-annotations
 - informed_by: story:http-binding-carries-transport-framing
 - informed_by: architecture-decision-record:transport-and-idl-compile-targets
-revision: 3
+- decomposes: epic:zero-open-issues-2026-11
+scope:
+- confidence: inferred
+  path: Cargo.toml
+- confidence: inferred
+  path: README.md
+- confidence: inferred
+  path: crates/edge/ess-cli/src/jsonrpc.rs
+- confidence: cited
+  path: crates/edge/ess-cli/src/main.rs
+- confidence: inferred
+  path: crates/specify/ess-jsonrpc/Cargo.toml
+- confidence: inferred
+  path: crates/specify/ess-jsonrpc/src/lib.rs
+- confidence: inferred
+  path: crates/specify/ess-jsonrpc/tests/compile.rs
+- confidence: inferred
+  path: crates/specify/ess-jsonrpc/tests/refusals.rs
+- confidence: cited
+  path: docs/design/rpc-bindings.md
+revision: 13
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:33:34Z", actor: "human:timo", revision: 12, decided_on: {"recorded":{"review_outcome":2}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:33:35Z", actor: "human:timo", revision: 13, decided_on: {"recorded":{"review_outcome":2}}}
 ---
-**Blocked on `architecture-decision-record:transport-and-idl-compile-targets`. Not to be implemented
-before that record is accepted.**
-
 ## Need
 
-Reported by the adopter session specifying A2A in beyond10x/a2a (item 8 of 9, 2026-10-22). The
-protocol serves the same operations over HTTP+JSON, JSON-RPC 2.0 and gRPC; ESS binds a command or
-view to HTTP only (`ess-http/1`). No error text: there is no binding to author. Operator's words,
-relayed: "technically ESS needs compile targets for all of these specs".
+A protocol that serves its operations as JSON-RPC 2.0 methods (one endpoint, the method named in
+the envelope, an error code per failure) cannot bind them: `ess-http/1` binds a route per operation
+and has no envelope. The method names and error-code tables then live in adapter code nothing checks
+against the model. This body covers JSON-RPC only: #650 asks for no gRPC binding, and neither gRPC
+nor an OpenRPC projection has a story in this epic. Suggested title: "A command or view binds to a
+JSON-RPC 2.0 method, as ess-http/1 binds it to HTTP".
 
-## Where it lives
+Minimal reproduction on 0.92.0 (the requester's envelope key on an `ess-http/1` route):
 
-- Sibling bindings: `docs/design/http-presentation-binding.md` (`ess-http/1`, decided via
-  `decision-blocker:http-surface-scope`), `docs/design/event-transport-binding.md`
-  (`ess-transport/1`).
-- Draft `story:http-binding-carries-transport-framing` (streaming and framing on HTTP).
+```text
+$ ess specify http validate --path model --binding http-envelope.yaml
+error: reading http-envelope.yaml as HTTP binding YAML: routes[0].request: unknown field `envelope`, expected one of `encoding`, `unknown`, `body` at line 10 column 15
+exit 1
+```
 
-## 0.68.0
+Three findings of one downstream report are parts of it: no numeric code on an error (J1), no
+method naming (J2), and one endpoint for every method refused by `ess-http/1` as `ESS-HTTP-010`
+(J3, `crates/specify/ess-http/src/lib.rs:3088`).
 
-No.
+## Acceptance
 
-## Cause
+The binding document `rpc.yaml` below pins the source digest of the model and holds
+`methods: [{command: example.orders.PlaceOrder, method: orders/place, params: by-name,
+errors: {example.orders.OutOfStock: -32001}}, {view: example.orders.OrderStatus, method:
+orders/status, params: by-name}]`.
 
-Not a defect: no RPC binding exists.
+- `docs/design/rpc-bindings.md` line 3 reads `Status: accepted` for the JSON-RPC sections, and
+  `## Open questions` items 1, 3 and 4 each carry their answer: 1, batch requests are refused by
+  name in `/1`; 3, a streamed answer is an exchange (ADR
+  `messages-are-exchanged-independent-of-the-wire`); 4, the error table is per binding.
+- `ess specify jsonrpc validate --path model --binding rpc.yaml` exits 0 with no diagnostic.
+- `ess specify jsonrpc compile --path model --binding rpc.yaml` exits 0 and writes an
+  `ess-jsonrpc-ir/1` document; a second run writes identical bytes. Both checked by
+  `cargo test -p ess-jsonrpc --locked --test compile`.
+- `cargo test -p ess-jsonrpc --locked --test refusals` passes, one case per refusal, each asserting
+  its code on a one-line change of `rpc.yaml`: `ESS-JSONRPC-001` an unknown command, view or error;
+  `ESS-JSONRPC-002` a method name given twice; `ESS-JSONRPC-003` `params: by-position`;
+  `ESS-JSONRPC-004` an error code given twice; `ESS-JSONRPC-005` a code in -32768 to -32000 outside
+  -32099 to -32000; `ESS-JSONRPC-006` an error the bound operation can answer left without a code;
+  `ESS-JSONRPC-007` a `batch` key; `ESS-JSONRPC-008` a digest that does not match.
+- The byte-pin targets AGENTS.md § "A gate of named test targets includes the repository-wide byte
+  pins" names pass with no row re-pinned: without a JSON-RPC binding every artifact keeps its bytes.
+
+## Scope
+
+- cited: docs/design/rpc-bindings.md
+- inferred: crates/specify/ess-jsonrpc/src/lib.rs (new crate, shaped like crates/specify/ess-http/src/lib.rs)
+- inferred: crates/specify/ess-jsonrpc/tests/compile.rs (new)
+- inferred: crates/specify/ess-jsonrpc/tests/refusals.rs (new)
+- inferred: crates/specify/ess-jsonrpc/Cargo.toml (new)
+- inferred: Cargo.toml (workspace member)
+- inferred: crates/edge/ess-cli/src/jsonrpc.rs (new, shaped like crates/edge/ess-cli/src/http.rs)
+- cited: crates/edge/ess-cli/src/main.rs (`SpecifyAreaCommand`, line 114, beside `Http`)
+- inferred: README.md (crate tree list)
+confidence: medium
+
+Shared surfaces moved: proposes its `CHANGELOG.md` sentence; no `ess/N` row and no byte-pin row.
 
 ## Fit review
 
-1. **Need.** Bind one command or view to a JSON-RPC 2.0 method and a gRPC method, with the result,
-   error code and status per outcome stated and checked, as `ess-http/1` does for HTTP.
-   Requester's wording: "JSON-RPC 2.0 and gRPC transport bindings beside ess-http/1".
-2. **Class: gap.** The method names and error-code tables (A2A uses -32001 to -32009) live in
-   adapter code nothing checks against the model.
-3. **Already expressible?** No.
-4. **Fit.** Same shape as `ess-http/1` and `ess-transport/1`: sibling documents `ess-jsonrpc/1` and
-   `ess-grpc/1`, pinned to the source digest, compiled to their own `*-ir/1`, `ess/N` unchanged.
-   gRPC messages and numbering come from the protobuf projection
-   (`story:ess-projects-a-protobuf-idl-with-http-annotations`). Streaming needs a model-level
-   streamed-answer notion shared with the HTTP SSE framing draft. Full outline:
-   `docs/design/rpc-bindings.md`.
-5. **Second adopter.** A language-server-style tool exposing commands over JSON-RPC 2.0; any
-   service with gRPC and HTTP gateways.
-6. **Cost.** Two new formats, generated servers and clients per target, a conformance target per
-   binding, and possibly an `ess/N` bump for streaming. Large; hence the ADR.
-7. **Alternatives.** (a) Change nothing. (b) Fold RPC into `ess-http/1`: a different protocol under
-   an HTTP format. (c) A generic binding format: forbidden facet registry (`AGENTS.md`
-   § Boundaries). (d) Chosen: two sibling formats, subject to the ADR.
+1. **Need.** Bind a command or view to a JSON-RPC 2.0 method with its params, result and an error
+   code per ESS error, checked against the model. Requester's syntax:
+   `request: {envelope: {jsonrpc: "2.0", params: input}}` inside `ess-http/1` (issue comment).
+2. **Class: gap.** No binding states a method or an error code (reproduction above).
+3. **Already expressible?** No: `ess-http/1` refuses one endpoint for several operations
+   (`ESS-HTTP-010`), and a POST route per method misstates the wire.
+4. **Fit.** Not a grid cell (`docs/design/language-grids.md`). Same shape as `ess-http/1` and
+   `ess-transport/1`: a sibling document pinned to the digest with a closed vocabulary
+   (ADR `transport-and-idl-compile-targets` § Decision 2, accepted 2026-10-23). Its methods are
+   bindings of implicit one-message exchanges (ADR `messages-are-exchanged-independent-of-the-wire`
+   § 2, § 5), so `story:json-rpc-binds-an-exchange` extends it later without changing it. Error
+   codes per binding, as `ess-http/1` keeps statuses per binding. Generated servers and a JSON-RPC
+   conformance target are later stories; the design page names them as not built.
+5. **Second adopter.** A language-server-style tool exposing commands over JSON-RPC 2.0.
+6. **Cost.** A new format pair `ess-jsonrpc/1`/`ess-jsonrpc-ir/1`, a crate and a CLI area. No
+   `ess/N` change (ADR `transport-and-idl-compile-targets` § Decision 3), no migration.
+7. **Alternatives.** (a) Change nothing. (b) The requester's `envelope` key inside `ess-http/1`: a
+   different protocol under an HTTP format, and still one route per method; refused. (c) A generic
+   binding with a transport field: forbidden (`AGENTS.md` § Boundaries). (d) Chosen: the sibling
+   `ess-jsonrpc/1`.
 
 ## Decisions
 
-**defer.** Blocked by `architecture-decision-record:transport-and-idl-compile-targets` (a `blocks`
-edge from it). The story stays in draft until that record is accepted and
-`docs/design/rpc-bindings.md` leaves draft. Depends on the protobuf projection story for gRPC.
+**accept, redesigned.** The earlier body deferred on ADR `transport-and-idl-compile-targets`, which
+the operator accepted on 2026-10-23, so the defer is lifted. The requester's `envelope` key is
+refused; the envelope is the sibling binding `ess-jsonrpc/1`. Narrowed to JSON-RPC (one crate). The
+`depends_on` edge on the protobuf projection story is dropped: #650 asks for no gRPC binding and
+this epic has no gRPC story. The refusal codes are numbered in the order the design page's "What
+compiling checks" lists them, so each test case names one fixed code.
 
-## Acceptance (provisional, fixed after the ADR)
+## Source
 
-- An `ess-jsonrpc/1` binding for `examples/billing` compiles to `ess-jsonrpc-ir/1`; an unknown
-  operation, duplicate method or unmapped error is refused by name.
-- An `ess-grpc/1` binding compiles against the protobuf projection's numbering.
-- Without either binding every artifact keeps its bytes.
-
-## a2a wave 1
-
-Relayed by the orchestrator on 2026-10-22 from the adopter session specifying A2A in
-beyond10x/a2a (ESS 0.67.0, a2a main 3a18050). All four are parts of the JSON-RPC binding this story
-outlines:
-
-- **J1** (a2a wave-1 gaps list, line 22): no numeric `code` attribute on an error. In this story
-  the code belongs to the binding's per-outcome error table (`ess-jsonrpc/1`), not to `ess/N`.
-- **J2** (a2a wave-1 gaps list, line 23): no JSON-RPC method naming beside `naming.wire`.
-- **J3** (a2a wave-1 gaps list, line 24): one endpoint for every method is refused by `ess-http/1`
-  as ESS-HTTP-010 (`crates/specify/ess-http/src/lib.rs:5125`, "are one route on component"). JSON-RPC
-  routes by method inside one HTTP endpoint, so it needs its own binding rather than more HTTP routes.
-- **J7** (a2a wave-1 gaps list, line 28): no JSON-RPC or OpenRPC projection. Add an OpenRPC
-  projection of `ess-jsonrpc/1` to this story's acceptance once the ADR is accepted.
-
-Claims on these codes in authored scenarios, and the protocol-level refusals -32602 and -32601,
-are `story:an-authored-scenario-claims-a-binding-error-code`, which depends on this one.
-
-## Adopter report N28 2026-10-23
-
-A JSON-RPC 2.0 envelope requested as `request: {envelope: ...}` in `ess-http/1` (ess#650 comment). It belongs here as `ess-jsonrpc/1`, behind ADR `transport-and-idl-compile-targets` (proposed).
+github:beyond10x/ess#650

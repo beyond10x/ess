@@ -1,0 +1,14 @@
+{
+  "at": "2026-11-09T23:59:53Z",
+  "actor": "human:timo",
+  "artifact": "story:a-uniqueness-create-read-by-identity-passes-on-the-interpreter",
+  "kind": "story",
+  "revision": 5,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "review-result:zero-issues-acceptance-round-1",
+    "review": "review-result:zero-issues-acceptance-round-1",
+    "outcome": "escalated"
+  }
+}

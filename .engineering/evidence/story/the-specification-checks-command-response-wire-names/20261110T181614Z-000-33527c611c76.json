@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-10T18:16:14Z",
+  "actor": "human:timo",
+  "artifact": "story:the-specification-checks-command-response-wire-names",
+  "kind": "story",
+  "revision": 7,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "ess-domain response wire-name collision; ess-synth Go and clap targets",
+    "reference": "the-specification-checks-command-response-wire-names/red-domain.txt (1 passed, 1 failed) vs green-domain.txt, g-synth.txt, verify-1.txt, verify-2.txt at ed8ade4a73 (2, 3, 12, 3 passed)"
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-10T22:09:46Z",
+  "actor": "human:timo",
+  "artifact": "story:existing-instance-arranges-the-prior-row-when-the-creator-reads-a-related-row",
+  "kind": "story",
+  "revision": 13,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "ess-conformance existing_instance_beside_related_guards and adv_existing_instance_own_run with the byte pins",
+    "reference": "existing-instance-arranges-the-prior-row-when-the-creator-reads-a-related-row/red-final.txt (4 passed, 3 failed) vs lane/verify-lane-final-1.txt (18 named ess-conformance targets, 126 passed), verify-lane-final-2.txt (clippy exit 0), verify-lane-final-3.txt (ess-cli adversary_t2_order_tie_emit, 2 passed), verify-lane-final-4.txt (cargo xtask docs exit 0) at d715ff1fdc, lane/verify-lane-s5adv-1.txt (10 passed)"
+  }
+}

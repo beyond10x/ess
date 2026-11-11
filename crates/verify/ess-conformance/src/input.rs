@@ -83,6 +83,22 @@ pub fn flatten<'ir>(
     })
 }
 
+/// [`flatten`] for a candidate that leaves fields out: the fields it carries are bound and a
+/// predicate reading one it does not is undecided, leaf by leaf (an instance identity the scenario
+/// names, beyond10x/ess#727).
+pub(crate) fn flatten_partial<'ir>(
+    ir: &'ir EssIr,
+    command: &'ir ResolvedCommand,
+    candidate: &BTreeMap<String, Node>,
+) -> Result<InputFacts<'ir>, ShapeErrors> {
+    bind(ir, &command.input, candidate, Completeness::Partial).map(|facts| InputFacts {
+        ir,
+        command,
+        facts,
+        scales: Scales::default(),
+    })
+}
+
 /// Project only actual literal arguments; instance identities remain unavailable to predicates.
 pub(crate) fn replay_facts<'ir>(
     ir: &'ir EssIr,

@@ -2,19 +2,78 @@
 format: aep.planning-md/3
 id: story:the-ess31-history-states-the-optional-read
 kind: story
-status: draft
+status: active
 title: The ess/31 history sentence states how an Optional read behaves
 tags:
+- defect
 - ess-d368-close
+- severity-low
+- zero-open-issues
 relations:
 - serves: vision:O2
-revision: 1
+- decomposes: epic:zero-open-issues-2026-11
+scope:
+- confidence: cited
+  path: crates/specify/ess-domain/src/system.rs
+- confidence: cited
+  path: crates/specify/ess-domain/tests/format_history.rs
+revision: 10
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:47:16Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"review_outcome":2}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:47:17Z", actor: "human:timo", revision: 10, decided_on: {"recorded":{"review_outcome":2}}}
 ---
 ## Finding
 
-Found by wave D368 U1's review passes, pre-existing and out of that story's Acceptance: the `ess/31` history sentence at `system.rs:335` says an `Optional` read is refused as `type_mismatch`, which no longer matches what the language does.
+Found by wave D368 U1's review passes (adversary pass 1, contract-drift note), pre-existing and out of that story's
+Acceptance. The `ess/31` history sentence for `{append: input.<path>}` in `FORMAT_HISTORY`
+(`crates/specify/ess-domain/src/system.rs:335`) says:
+
+> The element is `input.<path>` of type `T` exactly; another type, an `Optional` read included, is refused as
+> `type_mismatch` naming both
+
+Since D368 U1 (0.83.0) an `Optional<T>` read appended to a `List<Optional<T>>` is admitted, and an absent or `null`
+element appends `null` (interpreter, synthesis, generated Rust and Go). The sentence reads as if every `Optional` read
+were refused, and it says nothing about the `null` append. The refusal's own hint already states the rule correctly.
+
+## Reproduction (0.92.0)
+
+`ess/31` model: `Job.labels: List<Optional<String>>`, command `AddLabel` with input `label: Optional<String>` and
+`sets: {labels: {append: input.label}}` (the `LABELLED` fixture of `crates/verify/ess-conformance/tests/append_set.rs`).
+
+```text
+$ ess specify validate --path admitted
+demo v1 — 1 file(s), valid
+$ ess verify conform run --target interpreted --path admitted --suite admitted/suite.json --report-format 2
+  2 scenarios: 2 passed, 0 failed, 0 error, 0 unsupported
+```
+
+The same model with `labels: List<String>`:
+
+```text
+[type_mismatch] ... `input.label` has type `Optional<String>`, and `demo.jobs.Job.labels` is `List<String>`, whose
+element is `String`; `{append: …}` appends an element of exactly that type (hint: an absent element appends `null` only
+to a `List<Optional<…>>`; declare the input required, or the list's element `Optional`)
+```
 
 ## Acceptance
 
-- The sentence states the current behaviour, checked against a test that reads an `Optional` field at `ess/31`.
-- No other change.
+- A new test `ess_31_append_states_the_optional_read` in
+  `cargo test -p ess-domain --locked --test format_history` finds the `ess/31` entry of `FORMAT_HISTORY` whose text
+  starts "A `sets:` entry over a `List<T>`" and asserts that it holds "over a `List<Optional<T>>`" and "appends
+  `null`", and no longer holds "an `Optional` read included"; the test fails on today's sentence.
+- The rewritten sentence states both cases: an `Optional<T>` element over a `List<T>` is refused as `type_mismatch`,
+  and over a `List<Optional<T>>` it is admitted and an absent or `null` element appends `null`. The behaviour it
+  describes is unchanged: `crates/specify/ess-domain/tests/append_set.rs::an_element_of_another_type_is_refused_as_type_mismatch`
+  and `crates/verify/ess-conformance/tests/append_set.rs::an_optional_element_the_domain_admits_is_appended_by_the_interpreter`
+  pass with no edit.
+- `cargo xtask docs` exits 0 once the format-history page is regenerated. No other change.
+
+## Scope
+
+- cited: crates/specify/ess-domain/src/system.rs
+- cited: crates/specify/ess-domain/tests/format_history.rs
+confidence: high
+
+Shared surfaces: moves `website/docs/reference/spec-versions.md`, which the coordinator regenerates from the
+`ess/31` row (`crates/edge/ess-xtask/src/docs.rs:66`), and proposes its `CHANGELOG.md` sentence. `system.rs` stays
+typed scope because the edited row is `ess/31`, not the epic's `ess/37` row.

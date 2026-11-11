@@ -31,6 +31,7 @@ mod path;
 mod schema;
 mod style;
 mod toggle;
+pub mod token_grammar;
 
 use std::fmt;
 use std::path::Path;

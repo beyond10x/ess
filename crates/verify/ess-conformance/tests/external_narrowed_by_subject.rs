@@ -568,3 +568,106 @@ fn a_compensating_race_above_a_held_state_branch_is_witnessed() {
         "{statuses:#?}"
     );
 }
+
+// ---- a narrowed branch that is the command's only stored-row guard (beyond10x/ess#739) ----------
+
+const HELD: &str = "depot.parcel.ShipParcel/outcome/held";
+
+/// The commands the steps of `id` send, in order.
+fn commands_sent(suite: &ConformanceSuite, id: &str) -> Vec<String> {
+    suite
+        .scenarios
+        .iter()
+        .find_map(|(key, scenario)| (key.to_string() == id).then_some(scenario))
+        .unwrap_or_else(|| panic!("no scenario {id}"))
+        .steps
+        .iter()
+        .filter_map(|step| match step {
+            ScenarioStep::ExecuteCommand { command, .. } => Some(command.to_string()),
+            _ => None,
+        })
+        .collect()
+}
+
+/// The sends, forced outcomes and expectations of `id`, in order.
+fn trace(suite: &ConformanceSuite, id: &str) -> Vec<String> {
+    suite
+        .scenarios
+        .iter()
+        .find_map(|(key, scenario)| (key.to_string() == id).then_some(scenario))
+        .unwrap_or_else(|| panic!("no scenario {id}"))
+        .steps
+        .iter()
+        .filter_map(|step| match step {
+            ScenarioStep::ExecuteCommand { command, .. } => Some(format!("send {command}")),
+            ScenarioStep::ConfigureExternalOutcome { force, .. } => {
+                Some(format!("force {}", force.outcome))
+            }
+            ScenarioStep::ExpectOutcome { outcome } => Some(format!("expect {}", outcome.outcome)),
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn a_sole_narrowed_branch_on_a_later_state_is_witnessed_from_that_state() {
+    let model = ir(include_str!(
+        "fixtures/external-narrowed-by-state-only.yaml"
+    ));
+    let synthesis = synthesize(&model);
+    assert!(synthesis.refusals.is_empty(), "{:#?}", synthesis.refusals);
+    assert_eq!(
+        commands_sent(&synthesis.suite, HELD),
+        [
+            "depot.parcel.PackParcel",
+            "depot.parcel.SealParcel",
+            "depot.parcel.ShipParcel"
+        ]
+    );
+    assert_eq!(
+        trace(&synthesis.suite, HELD),
+        [
+            "send depot.parcel.PackParcel",
+            "expect packed",
+            "send depot.parcel.SealParcel",
+            "expect sealed",
+            "force held",
+            "send depot.parcel.ShipParcel",
+            "expect held"
+        ]
+    );
+    let statuses = run(&synthesis.suite, model);
+    assert!(failing(&statuses).is_empty(), "{statuses:#?}");
+}
+
+#[test]
+fn a_sole_narrowed_branch_no_arrangement_reaches_is_refused_by_name() {
+    let model = ir(include_str!(
+        "fixtures/external-narrowed-by-state-unreachable.yaml"
+    ));
+    let synthesis = synthesize(&model);
+    assert!(
+        !synthesis
+            .suite
+            .scenarios
+            .keys()
+            .any(|key| key.to_string() == HELD),
+        "{:#?}",
+        synthesis.suite.scenarios.keys().collect::<Vec<_>>()
+    );
+    let held: Vec<_> = synthesis
+        .refusals
+        .iter()
+        .filter(|refusal| {
+            refusal
+                .scenario
+                .as_ref()
+                .map(ToString::to_string)
+                .as_deref()
+                == Some(HELD)
+        })
+        .collect();
+    assert_eq!(held.len(), 1, "{:#?}", synthesis.refusals);
+    assert_eq!(held[0].code().to_string(), "ESS-SYNTH-003");
+    assert!(held[0].to_string().contains("held"), "{}", held[0]);
+}

@@ -2,68 +2,119 @@
 format: aep.planning-md/3
 id: story:requirement-refs-reach-suite-and-report
 kind: story
-status: draft
-title: Requirement refs on authored scenarios reach the suite and the run report
+status: active
+title: ess verify diff rates a refs-only change as documentation
+tags:
+- defect
+- severity-medium
+- zero-open-issues
 refs:
 - provider: github
   reference: beyond10x/ess#503
 relations:
 - serves: vision:O2
-revision: 3
+- decomposes: epic:zero-open-issues-2026-11
+- depends_on: story:ess-37-and-conformance-64-65-are-open-for-the-epics-constructs
+scope:
+- confidence: cited
+  path: crates/verify/ess-diff/src/change.rs
+- confidence: cited
+  path: crates/verify/ess-diff/src/compatibility.rs
+- confidence: cited
+  path: crates/verify/ess-diff/src/delta.rs
+- confidence: cited
+  path: crates/verify/ess-diff/src/diff.rs
+- confidence: inferred
+  path: crates/verify/ess-diff/src/impact.rs
+- confidence: inferred
+  path: crates/verify/ess-diff/tests/refs_changes.rs
+revision: 14
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-10T00:45:53Z", actor: "human:timo", revision: 13, decided_on: {"recorded":{"review_outcome":2}}}
+- {from: "proposed", to: "active", at: "2026-11-10T00:45:54Z", actor: "human:timo", revision: 14, decided_on: {"recorded":{"review_outcome":2}}}
 ---
 ## Outcome
 
-Authored scenarios accept `refs:` and the suite carries them; a synthesized scenario inherits the
-refs of the command and outcome its id names (never those of setup outcomes); the run report lists
-refs per scenario with an index from each ref to its scenario outcomes; and `ess verify diff` rates
-a change to `refs` alone as documentation. Requested in https://github.com/beyond10x/ess/issues/503
-(part B): a specification traced to a published standard cannot show which scenario proved which
-requirement, because refs stop at the compiled IR (`ess-compiler/src/ir.rs:869,1693,2444,2625`).
+`ess verify diff` rates a change to `refs` alone as documentation, as it rates a `summary` change,
+instead of `system/<name>/unclassified-changed` ("unknown"). This is the defect half of
+https://github.com/beyond10x/ess/issues/503 (part B): the diff's own documentation-only rule
+(`documentation_only`, `crates/verify/ess-diff/src/compatibility.rs:812-814`) covers display names,
+summaries and examples, and `refs` is kept residual on purpose (`crates/verify/ess-diff/src/diff.rs:2929`,
+"`refs` is deliberately absent: it stays residual"), so a refs-only edit falls to the residual
+comparison and is reported as an unknown change. Refs live on commands, outcomes, bindings and
+components in the compiled IR (`Refs` fields in `crates/specify/ess-compiler/src/ir.rs:1010,2079,3051,3207`).
+
+The feature half of part B (authored scenarios accept `refs:`, synthesized scenarios inherit them,
+the suite and the run report carry them) is split off as its own backlog draft outside this epic.
+
+## Problem
+
+Reproduced on 0.92.0 with the workbench base specification
+(`.engineering/repro/workbench-2026-11-09/examples/00-base/spec`) given `refs: [std:REQ-1]` on
+`gap.demo.CreateParent` and `refs: [std:REQ-2]` on its `created` outcome (`ess specify validate`:
+valid). Changing only the outcome's ref (`std:REQ-2` to `std:REQ-3`), `ess verify diff --from v1
+--to v2 --compatibility` reports `system/gap/unclassified-changed`, "unknown for callers, readers,
+history".
 
 ## Fit review
 
-1. **Need.** Show, per requirement reference, which scenarios exercised it and how they ended.
-2. **Class.** Gap: authored scenarios refuse the key (`authored.rs:352-375`, `deny_unknown_fields`);
-   suite and report carry nothing. The diff part is a defect against its own documentation-only
-   rule: a refs-only edit is `unclassified-changed` (`ess-diff/src/diff.rs:2664,2716`), where it
-   belongs with `summary` changes (`compatibility.rs:652-700`).
-3. **Already expressible?** For synthesized scenarios only by an external join of scenario id and
-   IR refs; `ConformanceScenario.source` (`scenario.rs:1237`) includes setup outcomes and would
-   over-attribute. No idiom for authored scenarios or the report.
-4. **Fit.** Same `ExternalRef` spelling (`refs.rs:33-89`) and key. Report reuses the `Outcomes`
-   id-list shape (`counts.rs:118-125`). Scenario files are not `ess verify diff` inputs, so a
-   scenario-refs diff is declined.
-5. **Second adopter.** A service tracing outcomes to an internal control catalogue and reporting
-   per control.
-6. **Cost.** `ess-scenario/5` (refs gated like `/2`-`/4`, `authored.rs:2181-2215`); suite pair
-   `ess-conformance/48`/`49` selected only when a scenario has refs, so ref-free suites keep their
-   bytes (the suite reader does not deny unknown fields, `scenario.rs:1212`, so an old reader would
-   drop refs silently without the bump); `ess-conformance-report/3` and `ess-conformance-run/3`
-   (`report.rs:510` denies unknown fields), `--report-format 3`; `ess-diff/17`. No source format.
-   Go and TypeScript runners admit the new suite pair (`go/mod.rs:370`, `admission.rs:209,266`).
-7. **Alternatives.** (a) Change nothing. (b) Compute refs at report time from IR and scenario id:
-   authored scenarios still have no home. (c) This story.
+1. **Need.** A refs-only edit, which no caller, reader or stored value depends on, is reported as
+   documentation, not as an unknown change that fails `--fail-on breaking-or-unknown`.
+2. **Class.** Defect against the diff's own documentation-only rule: a refs-only edit is
+   `unclassified-changed`, where it belongs with `summary` changes (`documentation_only`,
+   `crates/verify/ess-diff/src/compatibility.rs:812-814`).
+3. **Already expressible?** No: the residual comparison cannot tell a refs edit from any other
+   uncompared change.
+4. **Fit.** Same rule as the summary and display-name changes; one change kind per construct that
+   carries `refs`.
+5. **Second adopter.** A service tracing outcomes to an internal control catalogue, whose
+   catalogue renumbering today fails its compatibility gate.
+6. **Cost.** A new delta version, `ess-diff/24`, carrying the new change kinds; no source format, no
+   suite format.
+7. **Alternatives.** (a) Change nothing. (b) Drop refs from the residual comparison without a
+   change kind: the edit would vanish from the delta. (c) This story.
 
 ## Decisions
 
-- Accept, redesigned: scenario format `/5` rather than `/1`; command and outcome refs merged in
-  author order without duplicates; no scenario-file diff.
+- A refs-only edit is a change kind of its own on the construct that carries the refs, written as
+  `ess-diff/24` (the current newest is `/23`, `crates/verify/ess-diff/src/delta.rs:18`), because a
+  delta at `/23` or below has no entry for it.
+- `ess-diff/24` is this epic's one new delta version: another story of the epic that needs a delta
+  version takes the same `/24`.
 - Recording a run as AEP evidence is the AEP side's work; ESS has no AEP dependency.
 - Part C (a requirements register) is `story:requirement-completeness-without-prose-in-the-model`.
 
 ## Acceptance
 
-- `authored_refs_reach_the_suite`; `/1`-`/4` with `refs:` refused naming `/5`.
-- `synthesized_scenario_inherits_subject_refs` (setup outcomes contribute nothing).
-- `ref_free_suite_keeps_bytes_and_version`; `refs_select_suite_48_and_coverage_49`;
-  `go_and_ts_runners_admit_48_49`.
-- `run_3_carries_refs_per_scenario`; `report_3_indexes_refs_to_outcomes`; `report_2_unchanged`.
-- `refs_only_change_is_documentation` at `ess-diff/17`; `refs_change_below_17_stays_unclassified`.
+All tests are in `crates/verify/ess-diff/tests/refs_changes.rs` (new), run with
+`cargo test -p ess-diff --locked --test refs_changes`, on the v1/v2 pair above; each is red on 0.92.0.
+
+- `an_outcome_refs_change_is_documentation`: the delta of v1 to v2 is `ess-diff/24` and holds
+  exactly one change, `command/gap.demo.CreateParent/outcome-refs-changed/created`, classified
+  compatible for callers, readers and history (documentation), and no
+  `system/gap/unclassified-changed`.
+- `a_command_refs_change_is_documentation`: changing only `gap.demo.CreateParent`'s ref
+  (`std:REQ-1` to `std:REQ-4`) gives exactly `command/gap.demo.CreateParent/refs-changed`,
+  classified documentation.
+- `a_binding_and_a_component_refs_change_is_documentation`: a refs-only edit on a binding and on a
+  component gives `binding/<name>/refs-changed` and `component/<name>/refs-changed`, each
+  classified documentation.
+- `a_refs_change_fails_no_gate`: `ess verify diff --from v1 --to v2 --compatibility --fail-on
+  breaking-or-unknown` exits 0.
+- `cargo test -p ess-diff --locked` passes with every committed delta fixture unchanged: a pair
+  without a refs edit keeps its delta bytes and its `ess-diff/` version.
 
 ## Scope
 
-| unit | files | after |
-|---|---|---|
-| B1 suite | `ess-conformance/src/{authored,scenario,synthesize,admission}.rs`, `go/mod.rs`, TS admission, new `requirement_refs.rs`, scenario schema (`cargo xtask schema`) | none |
-| B2 report | `ess-conformance/src/{report,counts,runner,lib}.rs`, `ess-cli/src/main.rs` | B1 |
-| B3 diff | `ess-diff/src/{diff,change,compatibility,delta}.rs` | none |
+- cited: crates/verify/ess-diff/src/compatibility.rs
+- cited: crates/verify/ess-diff/src/diff.rs
+- cited: crates/verify/ess-diff/src/change.rs
+- cited: crates/verify/ess-diff/src/delta.rs
+- inferred: crates/verify/ess-diff/src/impact.rs
+- inferred: crates/verify/ess-diff/tests/refs_changes.rs
+
+confidence: medium
+
+`diff.rs` compares `refs` instead of leaving it residual; `change.rs` gains the change kinds and
+their minimum format; `delta.rs` admits `ess-diff/24`; `impact.rs` stops reading a refs-only edit
+as an uncompared family. Shared surfaces: proposes a `CHANGELOG.md` sentence.

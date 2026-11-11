@@ -157,10 +157,14 @@ idioms, in `idioms.latest`:
 - The latest row of one group is a parameterised row view with a declared `order_by` and `paging:`,
   read with size 1: `idioms.latest.LatestEvent`, `filter: outer == param.outer`, `order_by: [at desc,
   event_id asc]`. The identity is the tie rule. Synthesis arranges several rows at distinct instants
-  and asserts the order and the pages; it arranges no tie, so the authored scenario
-  `docs/design/read-api-view-idioms.scenarios/latest-tie.yaml` records two events of one group at
-  one instant and requires them in ascending identity order. A target breaking ties the other way
-  fails it.
+  and asserts the order and the pages, and for each key after the first a further row that agrees
+  with the first row on every key before it and differs on that key (the identity needs no
+  steering): here a second event at the same instant. Where no creating input writes the earlier
+  keys, or the view does not show the tie row, the scenario stands and names the view and the key
+  as a gap. The authored scenario
+  `docs/design/read-api-view-idioms.scenarios/latest-tie.yaml` still records two events of one
+  group at one instant and requires them in ascending identity order, which is the check for an
+  implementation audited with `--scenarios` against the interpreted target.
 - Nested groups are a flat `group_by: [outer, inner]` the consumer nests
   (`idioms.latest.ByOuterInner`).
 
