@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:the-playwright-spec-routes-each-declared-fixture-answer
 kind: story
-status: active
+status: implemented
 title: The Playwright spec routes each declared fixture answer
 tags:
 - zero-open-issues
@@ -22,10 +22,11 @@ scope:
   path: crates/ui/ess-ui-test/tests/playwright_answers.rs
 - confidence: inferred
   path: website/docs/reference/ess-ui-test.md
-revision: 6
+revision: 7
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-10T00:47:50Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"review_outcome":1}}}
 - {from: "proposed", to: "active", at: "2026-11-10T00:47:52Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "active", to: "implemented", at: "2026-11-11T17:04:44Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"test_result":1,"review_outcome":1}}}
 ---
 ## Need
 

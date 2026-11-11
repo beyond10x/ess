@@ -6,6 +6,7 @@ Generated from `changes/*.yaml` by `cargo xtask whats-changed`. Edit a fragment,
 
 | Release | Change | Kind | Impact |
 |---|---|---|---|
+| [0.94.0](#fixture-mode-applies-a-commands-effect-and-generated-decoders-check-struct-invariants) | Fixture mode applies a command's effect, and generated decoders check struct invariants | capability | notable |
 | [0.93.0](#kubernetes-scans-read-the-gateway-api-ui-values-take-tones-and-an-authored-scenario-retires-a-refusal) | Kubernetes scans read the Gateway API, UI values take tones, and an authored scenario retires a refusal | capability | significant |
 | [0.92.0](#react-projects-register-host-slots-and-the-terminal-draws-them-as-labelled-regions) | React projects register host slots, and the terminal draws them as labelled regions | capability | significant |
 | [0.91.1](#aggregate-measures-compute-expressions-enums-can-be-ordered-and-host-slots-are-checked) | Aggregate measures compute expressions, enums can be ordered, and host slots are checked | capability | significant |
@@ -104,6 +105,14 @@ Generated from `changes/*.yaml` by `cargo xtask whats-changed`. Edit a fragment,
 | [0.16.0](#an-authored-scenario-can-claim-a-length-of-time-and-a-target-has-to-answer-for-it) | An authored scenario can claim a length of time, and a target has to answer for it | capability | significant |
 | [0.14.0](#a-component-can-declare-a-command-line-surface-and-ess-synthesizes-its-parser) | A component can declare a command-line surface, and ESS synthesizes its parser | capability | significant |
 | [0.1.0](#ess-becomes-a-standalone-executable-specification-toolchain) | ESS becomes a standalone executable specification toolchain | migration | significant |
+
+## 0.94.0 — 2026-11-11
+
+### Fixture mode applies a command's effect, and generated decoders check struct invariants
+
+capability · notable impact · [release notes](https://github.com/beyond10x/ess/releases/tag/0.94.0)
+
+In fixture mode a confirmed command now changes the fixture rows as the model says, in the generated React project and in `ess ui test --model`. Generated Go and Rust decoders answer 400 for a struct that breaks a declared invariant. Synthesis witnesses a held-state guard without a view publishing `state`.
 
 ## 0.93.0 — 2026-11-11
 

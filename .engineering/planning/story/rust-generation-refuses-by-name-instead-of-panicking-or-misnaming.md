@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:rust-generation-refuses-by-name-instead-of-panicking-or-misnaming
 kind: story
-status: active
+status: implemented
 title: Rust generation refuses by name instead of panicking or allocating a bad identifier
 summary: A synthesis panic, `self` becoming `Self`, and colliding view method names (workbench report items 28, 29, 32)
 tags:
@@ -34,10 +34,11 @@ scope:
   path: crates/generate/ess-synth/src/rust/port.rs
 - confidence: inferred
   path: crates/generate/ess-synth/tests/generation_by_name.rs
-revision: 11
+revision: 12
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-10T00:46:02Z", actor: "human:timo", revision: 10, decided_on: {"recorded":{"review_outcome":1}}}
 - {from: "proposed", to: "active", at: "2026-11-10T00:46:04Z", actor: "human:timo", revision: 11, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "active", to: "implemented", at: "2026-11-11T17:04:26Z", actor: "human:timo", revision: 12, decided_on: {"recorded":{"test_result":1,"review_outcome":1}}}
 ---
 ## Need
 

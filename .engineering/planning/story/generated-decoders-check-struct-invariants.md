@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:generated-decoders-check-struct-invariants
 kind: story
-status: active
+status: implemented
 title: Generated Go and Rust decoders check a struct's declared invariants
 summary: The struct branch of the Go and Rust decoders admits an input breaking its invariants; enforce them or refuse the type by name
 tags:
@@ -27,10 +27,11 @@ scope:
   path: crates/generate/ess-synth/src/rust/wire.rs
 - confidence: inferred
   path: crates/generate/ess-synth/tests/invariant_check/value_constraints.rs
-revision: 7
+revision: 8
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-10T00:44:19Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":1}}}
 - {from: "proposed", to: "active", at: "2026-11-10T00:44:20Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "active", to: "implemented", at: "2026-11-11T17:04:29Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"test_result":1,"review_outcome":1}}}
 ---
 ## Need
 
