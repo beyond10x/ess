@@ -28,7 +28,7 @@ entity's creating route (`arrange_first`, as for related rows):
 
 | relation | a route creates the target | no route creates it |
 |---|---|---|
-| `cardinality: many`, a `List` | exactly as many created rows as the witness list held, eight at most (a longer list is a refusal naming the relation) | the empty list, which names no row, where the precedence order still selects the branch for it and the row the branch stores satisfies every invariant over the list, its literal sets applied; else a refusal naming `<entity>.<relation>` (an invariant the stored row leaves undecided, over a field the branch does not set, counts as not satisfied) |
+| `cardinality: many`, a `List` | exactly as many created rows as the witness list held, eight at most (a longer list is a refusal naming the relation) | the empty list, which names no row, where the precedence order still selects the branch for it and the row the branch stores (copied inputs, `else:` literals and literal sets applied, the state a creating branch lands in) satisfies every invariant that reads the list or a field copied from an input; else a refusal naming `<entity>.<relation>` (on a branch that does not create, an invariant reading a field the branch does not set is undecided and counts as not satisfied) |
 | `cardinality: one` | the created row's identity | no scenario: a refusal naming `<entity>.<relation>` |
 
 The witness already satisfies every guard and invariant over the input, so the arrangement never

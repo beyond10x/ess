@@ -11,7 +11,9 @@
 //!   chosen again, and an empty list stays empty;
 //! * a `many` relation with no route is sent the empty list, which names no missing row, where
 //!   the precedence order still selects the branch for it and the row the branch stores satisfies
-//!   every invariant over the list (its literal sets applied); where it does not
+//!   every invariant that reads the list or a field copied from an input (copies, `else:` literals,
+//!   literal sets and a created row's state applied; a branch that does not create leaves an
+//!   invariant over a field it does not set undecided); where it does not
 //!   (a sibling guard or an invariant holds the list non-empty) the scenario is refused by name;
 //! * a `one` relation with no route refuses the scenario by naming the relation, as a plain
 //!   reference has no empty value to fall back to;
@@ -32,10 +34,10 @@
 use std::collections::BTreeMap;
 
 use ess_compiler::ir::{
-    Driver, EntityHandle, EssIr, ResolvedCommand, ResolvedEffect, ResolvedOutcome,
-    ResolvedPayloadValue, ResolvedRelation,
+    Driver, EntityHandle, EssIr, ResolvedCommand, ResolvedEffect, ResolvedFallback,
+    ResolvedOutcome, ResolvedPayloadValue, ResolvedRelation,
 };
-use ess_domain::entity::{Cardinality, RelationKind};
+use ess_domain::entity::{Cardinality, EntitySpec, RelationKind};
 use ess_domain::name::QualifiedName;
 use ess_primitives::node::Node;
 use ess_primitives::predicate::Truth;
@@ -306,7 +308,8 @@ fn input_at(input: &BTreeMap<String, Node>, path: &str) -> Option<Node> {
 }
 
 /// The stored fields `outcome`'s `sets:` leaves holding a value `input` determines: a copied
-/// input, a literal read as the field's type, the empty list.
+/// input (or, where it is absent, the literal an `else:` names), a literal read as the field's
+/// type, the empty list.
 fn stored_by(
     ir: &EssIr,
     outcome: &ResolvedOutcome,
@@ -319,6 +322,17 @@ fn stored_by(
         .filter_map(|set| {
             let stored = match &set.value {
                 ResolvedPayloadValue::InputField { field, .. } => input_at(input, field)?,
+                ResolvedPayloadValue::InputOrGenerated {
+                    field, otherwise, ..
+                } => match input_at(input, field) {
+                    Some(sent) if sent != Node::Null => sent,
+                    _ => match otherwise {
+                        Some(ResolvedFallback::Literal(written)) => {
+                            super::literal_value(ir, &set.target_type, written, 0)?
+                        }
+                        _ => return None,
+                    },
+                },
                 ResolvedPayloadValue::Literal { value } => {
                     super::literal_value(ir, &set.target_type, value, 0)?
                 }
@@ -327,6 +341,22 @@ fn stored_by(
             };
             Some((set.target.clone(), stored))
         })
+        .collect()
+}
+
+/// The stored fields `outcome` sets from an input of its command.
+fn copied_fields(outcome: &ResolvedOutcome) -> Vec<&str> {
+    outcome
+        .sets
+        .iter()
+        .filter(|set| {
+            matches!(
+                set.value,
+                ResolvedPayloadValue::InputField { .. }
+                    | ResolvedPayloadValue::InputOrGenerated { .. }
+            )
+        })
+        .map(|set| set.target.as_str())
         .collect()
 }
 
@@ -363,19 +393,41 @@ fn empty_keeps_branch(
     let Some(subject) = &outcome.subject else {
         return true;
     };
+    if crate::witness::invariant_broken_by(ir, command, outcome, &moved).is_some() {
+        return false;
+    }
     let entity = ir.entity(&subject.entity);
-    let stored = stored_by(ir, outcome, &moved);
-    let Ok(facts) = crate::input::bind(ir, &entity.fields, &stored, Completeness::Partial) else {
+    let creates = matches!(subject.effect, ResolvedEffect::Creates);
+    let mut stored = stored_by(ir, outcome, &moved);
+    let mut fields = entity.fields.clone();
+    if creates {
+        let landed = subject.into.as_ref().unwrap_or(&entity.lifecycle.initial);
+        fields.push(entity.state_field());
+        stored.insert(EntitySpec::STATE.to_owned(), Node::Text(landed.to_string()));
+    }
+    let Ok(facts) = crate::input::bind(ir, &fields, &stored, Completeness::Partial) else {
         return false;
     };
-    let row = crate::input::TypedFacts::new(ir, &entity.fields, facts);
+    let row = crate::input::TypedFacts::new(ir, &fields, facts);
+    let mut copied = copied_fields(outcome);
+    copied.push(stored_field);
     entity.invariants.iter().all(|invariant| {
-        let reads = invariant.predicate.fact_paths().iter().any(|path| {
-            path.segments()
-                .first()
-                .is_some_and(|root| root == stored_field)
-        });
-        !reads || invariant.predicate.evaluate(&row) == Truth::True
+        let reads: Vec<&str> = invariant
+            .predicate
+            .fact_paths()
+            .iter()
+            .filter_map(|path| path.segments().first().map(String::as_str))
+            .collect();
+        if !reads.iter().any(|root| copied.contains(root)) {
+            return true;
+        }
+        let known = creates
+            || reads.iter().all(|root| {
+                stored.contains_key(*root)
+                    || (*root != EntitySpec::STATE
+                        && !entity.fields.iter().any(|held| held.name == *root))
+            });
+        known && invariant.predicate.evaluate(&row) == Truth::True
     })
 }
 
