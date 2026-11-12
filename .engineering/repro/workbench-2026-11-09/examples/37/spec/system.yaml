@@ -1,0 +1,86 @@
+format: ess/35
+system: probe
+version: v1
+domain: probe.run
+summary: a subject is marked conforming only against a run whose stored digest equals the one sent
+entities:
+  - name: probe.run.Run
+    identity: {name: run_id, type: String}
+    fields:
+      - {name: digest, type: String}
+    lifecycle: {initial: Recorded, states: [Recorded], terminal: [Recorded]}
+  - name: probe.run.Subject
+    identity: {name: subject_id, type: String}
+    fields:
+      - {name: run_id, type: String}
+    relations:
+      - {name: ran_in, kind: references, target: probe.run.Run, cardinality: one, via: run_id}
+    lifecycle:
+      initial: Validated
+      states: [Validated, Conforming]
+      terminal: [Conforming]
+      transitions:
+        - {name: conform, from: [Validated], to: Conforming}
+errors:
+  - {name: probe.run.DigestMismatch, summary: The run digest differs., fields: []}
+  - {name: probe.run.NoRun, summary: No run., fields: []}
+  - {name: probe.run.NoSubject, summary: No subject., fields: []}
+  - {name: probe.run.Wrong, summary: Wrong state., fields: []}
+events:
+  - name: probe.run.RunRecorded
+    fields: [{name: run_id, type: String}]
+  - name: probe.run.SubjectRecorded
+    fields: [{name: subject_id, type: String}]
+  - name: probe.run.Conformed
+    fields: [{name: subject_id, type: String}]
+actors:
+  - name: probe.run.Clerk
+    may: [probe.run.RecordRun, probe.run.RecordSubject, probe.run.MarkConforming]
+commands:
+  - name: probe.run.RecordRun
+    input:
+      - {name: run_id, type: String}
+      - {name: digest, type: String}
+    outcomes:
+      - name: recorded
+        creates: probe.run.Run
+        instance: run_id
+        emits: [probe.run.RunRecorded]
+        payload: {probe.run.RunRecorded: {run_id: input.run_id}}
+        sets: {digest: input.digest}
+  - name: probe.run.RecordSubject
+    input:
+      - {name: subject_id, type: String}
+      - {name: run_id, type: String}
+    outcomes:
+      - name: recorded
+        creates: probe.run.Subject
+        instance: subject_id
+        emits: [probe.run.SubjectRecorded]
+        payload: {probe.run.SubjectRecorded: {subject_id: input.subject_id}}
+        sets: {run_id: input.run_id}
+  - name: probe.run.MarkConforming
+    input:
+      - {name: subject_id, type: String}
+      - {name: digest, type: String}
+    outcomes:
+      - name: no-run
+        when_related: {via: run_id, exists: false}
+        error: probe.run.NoRun
+      - name: digest-mismatch
+        when_related: {via: run_id, predicate: digest != input.digest}
+        error: probe.run.DigestMismatch
+      - name: conforming
+        moves: probe.run.Subject.conform
+        instance: subject_id
+        emits: [probe.run.Conformed]
+        payload: {probe.run.Conformed: {subject_id: input.subject_id}}
+      - {name: unknown, unknown_instance: true, error: probe.run.NoSubject}
+      - {name: wrong-state, wrong_state: true, error: probe.run.Wrong}
+views:
+  - name: probe.run.Subjects
+    source: probe.run.Subject
+    consistency: read_your_writes
+    fields:
+      - {name: subject_id, type: String}
+      - {name: state, type: probe.run.Subject.State}
