@@ -1237,6 +1237,16 @@ impl App {
         body_reads(&section.body).map(|reads| self.request(reads, &ctx))
     }
 
+    /// Whether the section's read has not started: it depends on a sibling section whose
+    /// selection is not made.
+    pub(crate) fn waiting(&self, section: &Section) -> bool {
+        section.depends_on.as_deref().is_some_and(|dependency| {
+            !self
+                .eval(&format!("section.{dependency}.selection"), &Ctx::default())
+                .is_some_and(|selection| truthy(&selection))
+        })
+    }
+
     pub(crate) fn lifecycle(&self, section: &Section) -> Lifecycle {
         if section.load == Some(ess_ui::Load::OnDemand) && !self.demanded.contains(&section.name) {
             return Lifecycle::NotLoaded;
@@ -1244,6 +1254,10 @@ impl App {
         let Some(request) = self.section_request(section) else {
             return Lifecycle::Ready;
         };
+        // A read that has not started has nothing to show yet, which is what `states.empty` says.
+        if self.waiting(section) {
+            return Lifecycle::Empty;
+        }
         match self.read_state(&request) {
             None | Some(ReadState::Loading { .. }) => Lifecycle::Loading,
             Some(ReadState::Failed(_)) => Lifecycle::Failed,
@@ -1487,7 +1501,9 @@ impl App {
             );
         }
         for (_, section) in self.visible_sections() {
-            if self.lifecycle(section) == Lifecycle::NotLoaded {
+            if self.lifecycle(section) == Lifecycle::NotLoaded
+                || (self.waiting(section) && self.section_request(section).is_some())
+            {
                 continue;
             }
             let ctx = Ctx {

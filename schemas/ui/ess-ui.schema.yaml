@@ -587,7 +587,7 @@ constructs:
     fields:
       loading:    {type: {enum: [skeleton, spinner, none]}, default: skeleton, note: first load}
       refreshing: {type: {enum: [keep_rows, skeleton]}, default: keep_rows, note: later loads}
-      empty:      {type: {record: {title: {optional: string}, message: string, action: {optional: Action}}}, note: "ready with no rows; `title` is a heading above the message"}
+      empty:      {type: {record: {title: {optional: string}, message: string, action: {optional: Action}}}, note: "ready with no rows, or a read that has not started because its section `depends_on` a selection not made yet (absent, that section says `Nothing to show yet`); `title` is a heading above the message"}
       failed:     {type: {record: {message: {optional: string}, retry: boolean}}, default: {retry: true}, note: read refused or transport error}
       forbidden:  {type: {record: {message: {optional: string}}}, note: actor lacks the grant}
       stale:      {type: {record: {mark: {enum: [badge, dim, both]}}}, default: {mark: badge}, note: live channel down}
@@ -824,7 +824,7 @@ constructs:
     group: composites
     order: 11
     summary: A user-arranged grid of widgets, persisted.
-    doc: A board reads a dashboard record; each row places a widget whose kind is chosen by `widget_by`. A renderer without free layout stacks them in layout order.
+    doc: A board reads a dashboard record; each row places a widget whose kind is chosen by `widget_by`. A renderer without free layout stacks them in layout order. A row without that field draws a placeholder naming the field (`no kind`), and one whose kind no `widgets` entry names draws a placeholder naming the kind; `ess ui check` warns `board_widget_kinds` for a fixture row of either.
     fields:
       reads:        {type: Reads, required: true, note: the dashboard record}
       widget_by:    {type: name, note: row field choosing the widget kind}
@@ -963,7 +963,7 @@ constructs:
       scale:    {type: {enum: [fraction, hundredths]}, default: fraction, note: "what an `as: percent` value is a share of, and only on such a field: `fraction` reads 0.5 as 50%, `hundredths` reads 50 as 50%"}
       choice:   {type: Node, note: "the choice composite for `as: choice`"}
       sortable: {type: boolean, default: false, note: column can sort}
-      visible:  {type: expr, note: shows the field only when true}
+      visible:  {type: expr, note: "shows the field only when true. A condition that reads `row.<path>` is judged for each row: a column keeps its header and draws an empty cell where it is false, and a card or a record leaves the field out; any other condition shows or hides the whole column"}
       binds:    {type: expr, note: bind to UI state instead of the command input}
       label_from: {type: {record: {view: {ref: view}, field: name, key: {optional: name}}}, note: "show a field of a related view instead of the value: the row of `view` whose `key` (default `id`) equals the value; the view is read once, without params"}
       labels:   {type: {one_of: [{map: {key: string, value: string}}, name]}, note: "the text shown for a value: a map written out, or the name of an entry of `label_maps`"}
@@ -1792,3 +1792,4 @@ checks:
     - {id: checked_unreadable, subject: "**.checked on an as toggle action", must: [parse_as_a_filter_predicate, read_only_row_params_state_shell_args], severity: warning}
     - {id: host_slots, subject: "**.host", must: [carry_a_non_empty_reason, name_what_it_stands_in_for, be_the_only_slot_of_its_host_name, carry_neither_component_nor_primitive], severity: error}
     - {id: hosts_registered, subject: "**.host, for every name ess ui check --hosts lists", must_resolve_in: ["**.host"], severity: error}
+    - {id: board_widget_kinds, subject: "**.board.reads fixture rows", must: have_a_widget_by_field_that_names_an_entry_of_widgets, severity: warning}

@@ -167,6 +167,7 @@ pub const CHECKS: &[Check] = &[
     schema_check("checked_unreadable", Severity::Warning),
     schema_check("host_slots", Severity::Error),
     schema_check("hosts_registered", Severity::Error),
+    schema_check("board_widget_kinds", Severity::Warning),
     // The loader refused the document for a reason no other check names.
     rule("document_loads"),
     // `layers`: a node stands where its layer may not.
