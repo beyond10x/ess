@@ -13,7 +13,7 @@ tags:
 relations:
 - serves: vision:O2
 - decomposes: epic:zero-open-issues-2026-11
-revision: 1
+revision: 2
 ---
 ## Defect
 
@@ -72,9 +72,11 @@ the arrangement and the call take.
    second command that moves the row out of the initial state; a read-your-writes view of the
    entity carrying its identity. The enum with three variants and with four both synthesize a
    suite that `ess verify conform run --target interpreted` passes with 0 errors.
-3. Reordering or adding an enum variant removes no scenario from the suite without a refusal that
-   names it (the report's variant-first case lost one scenario; say in the story's evidence
-   whether that is a second defect or the declared refusal).
+3. Reordering the enum's variants changes no scenario id of the suite. On 0.94.0 this holds for
+   the report's model: with the new variant first and with it third the run lists the same 717
+   scenario ids, and variant-first passes 717 of 717. The reporter saw one scenario leave the
+   suite in the variant-first case on 0.90.0; that does not reproduce on 0.94.0 and is no part of
+   this story.
 4. The suite bytes of every committed example model are unchanged, or the changelog names the
    scenarios that changed.
 
