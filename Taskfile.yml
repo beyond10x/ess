@@ -9,6 +9,7 @@ vars:
   # The Rust harness `ess-synth`'s `integer_spellings` test runs, built once by
   # `integer-spellings-harness` beside the archives, so it reaches the test shards with them.
   INTEGER_SPELLINGS_HARNESS: '{{.ROOT_DIR}}/{{.NEXTEST_ARCHIVES}}/integer-spellings-harness'
+  APPEND_SET_HARNESS: '{{.ROOT_DIR}}/{{.NEXTEST_ARCHIVES}}/append-set-harness'
   JSON_BODY_CLOSURE_HARNESS: '{{.ROOT_DIR}}/{{.NEXTEST_ARCHIVES}}/json-body-closure-harness'
   JSON_BODY_SECURITY_HARNESS: '{{.ROOT_DIR}}/{{.NEXTEST_ARCHIVES}}/json-body-security-harness'
   UI_HTTP_SHELF_SERVER: '{{.ROOT_DIR}}/{{.NEXTEST_ARCHIVES}}/ui-http-shelf-server'
@@ -75,6 +76,7 @@ tasks:
   test:
     env:
       ESS_INTEGER_SPELLINGS_HARNESS: '{{.INTEGER_SPELLINGS_HARNESS}}'
+      ESS_APPEND_SET_HARNESS: '{{.APPEND_SET_HARNESS}}'
       ESS_JSON_BODY_CLOSURE_HARNESS: '{{.JSON_BODY_CLOSURE_HARNESS}}'
       ESS_JSON_BODY_SECURITY_HARNESS: '{{.JSON_BODY_SECURITY_HARNESS}}'
       ESS_UI_HTTP_SHELF_SERVER: '{{.UI_HTTP_SHELF_SERVER}}'
@@ -82,6 +84,7 @@ tasks:
       ESS_CLAP_SHARED_BINARY: '{{.CLAP_SHARED_BINARY}}'
     cmds:
       - task: integer-spellings-harness
+      - task: append-set-harness
       - task: json-body-harnesses
       - task: ui-http-servers
       - task: clap-shared-binary
@@ -101,6 +104,7 @@ tasks:
       vars: [PACKAGES]
     env:
       ESS_INTEGER_SPELLINGS_HARNESS: '{{.INTEGER_SPELLINGS_HARNESS}}'
+      ESS_APPEND_SET_HARNESS: '{{.APPEND_SET_HARNESS}}'
       ESS_JSON_BODY_CLOSURE_HARNESS: '{{.JSON_BODY_CLOSURE_HARNESS}}'
       ESS_JSON_BODY_SECURITY_HARNESS: '{{.JSON_BODY_SECURITY_HARNESS}}'
       ESS_UI_HTTP_SHELF_SERVER: '{{.UI_HTTP_SHELF_SERVER}}'
@@ -108,6 +112,7 @@ tasks:
       ESS_CLAP_SHARED_BINARY: '{{.CLAP_SHARED_BINARY}}'
     cmds:
       - task: integer-spellings-harness
+      - task: append-set-harness
       - task: json-body-harnesses
       - task: ui-http-servers
       - task: clap-shared-binary
@@ -143,6 +148,7 @@ tasks:
       - cargo nextest archive --workspace --exclude ess-xtask --locked -E '{{.WORKSPACE_GROUP_A}}' --archive-file {{.NEXTEST_ARCHIVES}}/workspace-a.tar.zst
       - cargo nextest archive --workspace --exclude ess-xtask --locked -E 'not ({{.WORKSPACE_GROUP_A}})' --archive-file {{.NEXTEST_ARCHIVES}}/workspace-b.tar.zst
       - task: integer-spellings-harness
+      - task: append-set-harness
       - task: json-body-harnesses
       - task: ui-http-servers
       - task: clap-shared-binary
@@ -173,6 +179,26 @@ tasks:
         cargo build --offline --quiet --manifest-path {{.WORK}}/harness/Cargo.toml --target-dir {{.WORK}}/target
       - cp {{.WORK}}/target/debug/harness {{.INTEGER_SPELLINGS_HARNESS}}
       # The generated server is in the binary; its build tree is not needed again.
+      - rm -rf {{.WORK}}
+
+  append-set-harness:
+    desc: Build the Rust harness ess-synth's append_set test runs, at APPEND_SET_HARNESS (no test builds with cargo, no_test_builds.rs).
+    vars:
+      WORK: target/append-set-harness
+      FIXTURES: crates/generate/ess-synth/tests/fixtures
+    cmds:
+      - cargo build --workspace --exclude ess-xtask --locked --bin ess
+      - rm -rf {{.WORK}}
+      - mkdir -p {{.WORK}}/harness/src {{.NEXTEST_ARCHIVES}}
+      - cp {{.FIXTURES}}/append-set/model.yaml.in {{.WORK}}/model.yaml
+      - target/debug/ess generate synthesize --path {{.WORK}}/model.yaml --target rust --out {{.WORK}}/demo
+      - cp {{.FIXTURES}}/append-set-harness/harness.toml {{.WORK}}/harness/Cargo.toml
+      - cp {{.FIXTURES}}/append-set-harness/main.rs {{.WORK}}/harness/src/main.rs
+      - >-
+        env -u CARGO_TARGET_DIR -u CARGO_ENCODED_RUSTFLAGS -u RUSTC_WRAPPER
+        CARGO_INCREMENTAL=0 RUSTFLAGS='-D warnings'
+        cargo build --offline --quiet --manifest-path {{.WORK}}/harness/Cargo.toml --target-dir {{.WORK}}/target
+      - cp {{.WORK}}/target/debug/harness {{.APPEND_SET_HARNESS}}
       - rm -rf {{.WORK}}
 
   json-body-harnesses:
@@ -287,6 +313,7 @@ tasks:
       OTHER_GROUP: '{{if eq .GROUP "a"}}b{{else}}a{{end}}'
     env:
       ESS_INTEGER_SPELLINGS_HARNESS: '{{.INTEGER_SPELLINGS_HARNESS}}'
+      ESS_APPEND_SET_HARNESS: '{{.APPEND_SET_HARNESS}}'
       ESS_JSON_BODY_CLOSURE_HARNESS: '{{.JSON_BODY_CLOSURE_HARNESS}}'
       ESS_JSON_BODY_SECURITY_HARNESS: '{{.JSON_BODY_SECURITY_HARNESS}}'
       ESS_UI_HTTP_SHELF_SERVER: '{{.UI_HTTP_SHELF_SERVER}}'

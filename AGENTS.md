@@ -225,6 +225,7 @@ in `adversary_287_pass1` fail with `TS2688: Cannot find type definition file for
 (no test builds with cargo, `no_test_builds.rs`); `task test` and the CI shards set
 `ESS_INTEGER_SPELLINGS_HARNESS` to it, and a bare `cargo test -p ess-synth` needs that task run and
 the variable set, or its Rust cases fail naming the task. The same holds for `task
+append-set-harness` (`append_set`, through `ESS_APPEND_SET_HARNESS`), `task
 json-body-harnesses` (`json_body_closure` and `adversary_w1_gen1_security`, through
 `ESS_JSON_BODY_CLOSURE_HARNESS` and `ESS_JSON_BODY_SECURITY_HARNESS`) and `task ui-http-servers`
 (`ess-cli`'s `generate_ui_http`, through `ESS_UI_HTTP_SHELF_SERVER` and `ESS_UI_HTTP_ITEMS_SERVER`).

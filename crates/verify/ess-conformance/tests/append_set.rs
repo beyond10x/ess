@@ -11,8 +11,10 @@ use ess_conformance::{
     interpret::Interpreted,
     report::Status,
     target::{
-        ConformanceTarget, Deadline, EntitySetupRequest, ScenarioContext, SemanticCommandRequest,
-        SemanticViewRequest, ViewRow,
+        ConformanceTarget, Deadline, EntitySetupRequest, EventObservationRequest,
+        ExternalOutcomeControl, ImplementationIdentity, ObservedEvent, RedeliveryRequest,
+        ScenarioContext, SemanticCommandRequest, SemanticCommandResult, SemanticViewRequest,
+        SemanticViewResult, TargetError, ViewRow,
     },
     AdmittedSuite, Runner, ScenarioStep, ScenarioValue, ViewExpectation,
 };
@@ -347,15 +349,31 @@ fn the_synthesized_suite_appending_an_optional_element_passes_on_the_interpreted
         .iter()
         .find(|(id, _)| id.to_string() == "demo.jobs.AddLabel/outcome/labelled")
         .map_or_else(|| panic!("no labelled scenario"), |(_, scenario)| scenario);
-    // The scenario leaves the `Optional` element out, and asserts the null appended after the
-    // element the arrangement stored.
-    assert!(
-        labelled.steps.iter().any(|step| matches!(
-            step,
+    // The scenario sends the `Optional` element present, `label: "label"`, and asserts it appended
+    // after the element the arrangement stored; beside it, a send that leaves the element out
+    // asserts the null appended after the stored element
+    // (story:a-present-optional-element-is-appended).
+    let sends: Vec<_> = labelled
+        .steps
+        .iter()
+        .filter_map(|step| match step {
             ScenarioStep::ExecuteCommand { command, input, .. }
-                if command.to_string() == "demo.jobs.AddLabel" && !input.contains_key("label")
-        )),
-        "{:#?}",
+                if command.to_string() == "demo.jobs.AddLabel" =>
+            {
+                Some(input.get("label"))
+            }
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        sends,
+        [
+            Some(&ScenarioValue::Literal {
+                value: Node::Text("label".into())
+            }),
+            None
+        ],
+        "story:a-present-optional-element-is-appended: {:#?}",
         labelled.steps
     );
     let expected: Vec<_> = labelled
@@ -370,11 +388,26 @@ fn the_synthesized_suite_appending_an_optional_element_passes_on_the_interpreted
         })
         .collect();
     assert_eq!(
-        expected,
-        [&ScenarioValue::Literal {
-            value: Node::Seq(vec![Node::Text("labels.0".into()), Node::Null]),
-        }],
-        "story:an-optional-element-is-appended-or-refused-consistently: {:#?}",
+        expected[0],
+        &ScenarioValue::Literal {
+            value: Node::Seq(vec![
+                Node::Text("labels.0".into()),
+                Node::Text("label".into())
+            ]),
+        },
+        "story:a-present-optional-element-is-appended: {:#?}",
+        labelled.steps
+    );
+    // The send that leaves the element out runs on a further row, as every omission run does, so
+    // the element its arrangement stored carries that row's own distinction.
+    assert!(
+        matches!(
+            expected.as_slice(),
+            [_, ScenarioValue::Literal { value: Node::Seq(items) }]
+                if matches!(items.as_slice(), [Node::Text(stored), Node::Null]
+                    if stored.starts_with("labels.0"))
+        ),
+        "story:a-present-optional-element-is-appended: {:#?}",
         labelled.steps
     );
     let input = AdmittedSuite::from_suite(&synthesis.suite).unwrap();
@@ -388,6 +421,74 @@ fn the_synthesized_suite_appending_an_optional_element_passes_on_the_interpreted
     assert!(
         unpassed.is_empty(),
         "story:an-optional-element-is-appended-or-refused-consistently: {unpassed:#?}"
+    );
+}
+
+/// The interpreter with `label` dropped from every `AddLabel` input: whatever is sent, it appends
+/// the absent `Optional`, `null`.
+struct DropsLabel(Interpreted);
+
+impl ConformanceTarget for DropsLabel {
+    fn identity(&self) -> Result<ImplementationIdentity, TargetError> {
+        self.0.identity()
+    }
+    fn begin_scenario(&self, scenario: &ScenarioContext) -> Result<(), TargetError> {
+        self.0.begin_scenario(scenario)
+    }
+    fn end_scenario(&self, scenario: &ScenarioContext) -> Result<(), TargetError> {
+        self.0.end_scenario(scenario)
+    }
+    fn establish_entity(&self, request: EntitySetupRequest) -> Result<(), TargetError> {
+        self.0.establish_entity(request)
+    }
+    fn execute_command(
+        &self,
+        mut request: SemanticCommandRequest,
+    ) -> Result<SemanticCommandResult, TargetError> {
+        if request.command.to_string() == "demo.jobs.AddLabel" {
+            request.input.remove("label");
+        }
+        self.0.execute_command(request)
+    }
+    fn query_view(&self, request: SemanticViewRequest) -> Result<SemanticViewResult, TargetError> {
+        self.0.query_view(request)
+    }
+    fn configure_external_outcome(
+        &self,
+        request: ExternalOutcomeControl,
+    ) -> Result<(), TargetError> {
+        self.0.configure_external_outcome(request)
+    }
+    fn redeliver_event(&self, request: RedeliveryRequest) -> Result<(), TargetError> {
+        self.0.redeliver_event(request)
+    }
+    fn observe_events(
+        &self,
+        request: EventObservationRequest,
+    ) -> Result<Vec<ObservedEvent>, TargetError> {
+        self.0.observe_events(request)
+    }
+}
+
+/// A target that appends `null` whatever `AddLabel` sends passed the suite, which never sent a
+/// present element.
+#[test]
+fn a_target_that_appends_null_whatever_is_sent_fails_the_present_element_scenario() {
+    let ir = model(LABELLED);
+    let synthesis = ess_conformance::synthesize(&ir);
+    let input = AdmittedSuite::from_suite(&synthesis.suite).unwrap();
+    let report = Runner::for_suite(input.suite())
+        .run_admitted(&input, &DropsLabel(Interpreted::for_model(ir)));
+    let labelled: Vec<_> = report
+        .scenarios
+        .iter()
+        .filter(|scenario| scenario.scenario.to_string() == "demo.jobs.AddLabel/outcome/labelled")
+        .collect();
+    assert_eq!(labelled.len(), 1, "{:#?}", report.scenarios);
+    assert_eq!(
+        labelled[0].status,
+        Status::Failed,
+        "story:a-present-optional-element-is-appended: {labelled:#?}"
     );
 }
 

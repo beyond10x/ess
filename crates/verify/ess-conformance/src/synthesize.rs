@@ -11737,6 +11737,15 @@ fn expression_value(
     )
 }
 
+/// Whether an `{append: …}` onto a field of this type appends an `Optional` element: the target is
+/// a `List<Optional<T>>`, through an `Optional` over the list.
+fn appends_optional(list: &ResolvedTypeRef) -> bool {
+    matches!(
+        list.required(),
+        ResolvedTypeRef::List { of } if of.is_optional()
+    )
+}
+
 /// ess/31: the list the arrangement left the row holding, absent read as empty, with the element
 /// the scenario sent last; nothing where the row's list or the sent element is undetermined.
 ///
@@ -11755,10 +11764,7 @@ fn appended_at(
         Node::Null => Vec::new(),
         _ => return None,
     };
-    let optional_element = matches!(
-        list.required(),
-        ResolvedTypeRef::List { of } if of.is_optional()
-    );
+    let optional_element = appends_optional(list);
     let root = element.split_once('.').map_or(element, |(root, _)| root);
     let root_literal = matches!(
         supplied.get(root),
@@ -12709,8 +12715,18 @@ fn reads<'a>(target: &'a ess_compiler::ir::ResolvedPayloadField, out: &mut Vec<(
             via: ess_compiler::ir::ResolvedRelatedVia::Input { field, .. },
             ..
         }
-        // ess/31: the element appended is sent.
-        | ResolvedPayloadValue::Append { field, .. } => out.push((field, Read::Needed)),
+        => out.push((field, Read::Needed)),
+        // ess/31: the element appended is sent; over a `List<Optional<T>>` it may be left out too,
+        // and a run of its own asserts the `null` that appends
+        // (story:a-present-optional-element-is-appended).
+        ResolvedPayloadValue::Append { field, .. } => out.push((
+            field,
+            if appends_optional(&target.target_type) {
+                Read::Fallback
+            } else {
+                Read::Needed
+            },
+        )),
         ResolvedPayloadValue::Struct { fields } => {
             for leaf in fields {
                 reads(leaf, out);

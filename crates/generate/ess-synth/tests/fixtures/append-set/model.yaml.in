@@ -1,0 +1,52 @@
+format: ess/31
+system: demo
+version: v1
+domain: demo.jobs
+summary: A job holds labels, some of them absent.
+types:
+  - {name: demo.jobs.JobId, kind: newtype, of: Uuid}
+entities:
+  - name: demo.jobs.Job
+    identity: {name: job_id, type: demo.jobs.JobId}
+    fields:
+      - {name: labels, type: List<Optional<String>>}
+    lifecycle: {initial: Open, states: [Open], terminal: [Open], transitions: []}
+events:
+  - name: demo.jobs.Changed
+    fields: [{name: job_id, type: demo.jobs.JobId}]
+errors:
+  - name: demo.jobs.NoSuchJob
+commands:
+  - name: demo.jobs.OpenJob
+    input: [{name: job_id, type: demo.jobs.JobId}, {name: labels, type: List<Optional<String>>}]
+    outcomes:
+      - name: opened
+        creates: demo.jobs.Job
+        instance: job_id
+        sets: {labels: input.labels}
+        emits: [demo.jobs.Changed]
+        payload: {demo.jobs.Changed: {job_id: input.job_id}}
+  - name: demo.jobs.AddLabel
+    input: [{name: job_id, type: demo.jobs.JobId}, {name: label, type: Optional<String>}]
+    outcomes:
+      - name: labelled
+        updates: demo.jobs.Job
+        instance: job_id
+        sets: {labels: {append: input.label}}
+        emits: [demo.jobs.Changed]
+        payload: {demo.jobs.Changed: {job_id: input.job_id}}
+      - {name: unknown, unknown_instance: true, error: demo.jobs.NoSuchJob}
+views:
+  - name: demo.jobs.Jobs
+    source: demo.jobs.Job
+    consistency: read_your_writes
+    fields:
+      - {name: job_id, type: demo.jobs.JobId}
+      - {name: labels, type: List<Optional<String>>}
+components:
+  - component: jobs-service
+    summary: Opens jobs, labels them and lists them.
+    owns: {domains: [demo.jobs]}
+    accepts: {commands: [demo.jobs.OpenJob, demo.jobs.AddLabel]}
+    publishes: {events: [demo.jobs.Changed]}
+    reached_by: network
