@@ -168,6 +168,36 @@ fn reads(text: &str) -> bool {
     false
 }
 
+/// Whether `text`, outside its quoted strings, reads a path of the current row (`row.has_note`):
+/// a `visible:` that does is judged for each row, any other for the column or field.
+pub(crate) fn reads_row(text: &str) -> bool {
+    let mut quote = None;
+    let mut word = String::new();
+    for character in text.chars().chain([' ']) {
+        if let Some(open) = quote {
+            if character == open {
+                quote = None;
+            }
+            continue;
+        }
+        if character.is_ascii_alphanumeric() || "_.-".contains(character) {
+            word.push(character);
+            continue;
+        }
+        if word
+            .strip_prefix("row.")
+            .is_some_and(|rest| !rest.is_empty())
+        {
+            return true;
+        }
+        word.clear();
+        if character == '"' || character == '\'' {
+            quote = Some(character);
+        }
+    }
+    false
+}
+
 /// The value at `segments` inside `value`, or `Null`.
 pub(crate) fn walk(value: &Value, segments: &[&str]) -> Value {
     let mut at = value;

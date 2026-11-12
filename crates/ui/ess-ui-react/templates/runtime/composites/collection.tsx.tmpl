@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ChangeEvent, type KeyboardEvent, type ReactNode } from "react";
 import { useUiPath } from "../core";
 import { ActionControl, runCommand, type ActionSpec } from "../actions";
-import { RowPath, ScopeLayer, display, rowKey, useData, useFramePath, useReport, useScope, useSectionName, type Scope } from "../core";
+import { RowPath, ScopeLayer, display, readsRow, rowKey, shownFor, useData, useFramePath, useReport, useScope, useSectionName, type Scope } from "../core";
 import type { ReadSpec } from "../data";
 import { assignable, evaluate, truthy } from "../expr";
 import { FieldValue, HelpNote, fieldLabel, useLabelled, type FieldSpec } from "../fields";
@@ -151,10 +151,11 @@ export function Collection(props: {
     };
   }
   // A selectable-columns state holding a list draws only the columns it names, in declared order.
+  // A column whose `visible:` reads the row stays, and each row judges it (`drawn` below).
   const chosen = props.columnsBind === undefined ? undefined : evaluate(props.columnsBind, scope.values);
   const columns = (props.columns ?? []).filter(
     (column) =>
-      (column.visible === undefined || truthy(evaluate(column.visible, scope.values))) &&
+      (column.visible === undefined || readsRow(column.visible) || truthy(evaluate(column.visible, scope.values))) &&
       (!Array.isArray(chosen) || chosen.some((name) => name === column.name || name === column.field)),
   );
   const allowed = props.sort?.allowed ?? [];
@@ -255,6 +256,8 @@ export function Collection(props: {
   const renderRow = (row: Json) => {
     const key = rowKey(row, props.rowKey);
     const open = expanded === key;
+    // A column whose `visible:` reads the row is drawn for the rows where it holds.
+    const drawn = (column: FieldSpec) => shownFor(column.visible, scope.values, row);
     const select = selectionOn ? (
       <input
         type={props.selection === "single" ? "radio" : "checkbox"}
@@ -374,7 +377,7 @@ export function Collection(props: {
         <div className="ui-row-body">
           {columns.length > 0 ? (
             <dl>
-              {columns.map((column) => (
+              {columns.filter(drawn).map((column) => (
                 <div key={column.name}>
                   <dt>{fieldLabel(column)}</dt>
                   <dd>
@@ -409,9 +412,7 @@ export function Collection(props: {
         >
           {selectionOn ? <td>{select}</td> : null}
           {columns.map((column) => (
-            <td key={`column:${column.name}`}>
-              <FieldValue field={column} row={labelled(row)} />
-            </td>
+            <td key={`column:${column.name}`}>{drawn(column) ? <FieldValue field={column} row={labelled(row)} /> : null}</td>
           ))}
           {items.map((item) => (
             <td key={`item:${item.name}`} className="ui-item-cell">
