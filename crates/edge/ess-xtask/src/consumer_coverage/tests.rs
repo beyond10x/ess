@@ -525,6 +525,43 @@ fn every_other_reference_or_pointer_type_is_still_refused() {
     }
 }
 
+#[test]
+fn adversary_int4_every_static_reference_shape_is_refused_or_accounts_its_target() {
+    for ty in [
+        "*mut Inner",
+        "&'_ Inner",
+        "&'static (Inner)",
+        "&'static Inner<'static>",
+    ] {
+        let source = format!("pub struct Root {{ value: {ty} }} struct Inner {{ count: u32 }}");
+        assert!(
+            model(&source).is_err(),
+            "{ty} is read: {:?}",
+            model(&source)
+        );
+    }
+    for ty in [
+        "Option<&'static Inner>",
+        "(u8, &'static Inner)",
+        "&'static &'static Inner",
+        "Vec<&'static Option<Inner>>",
+    ] {
+        let source = format!("pub struct Root {{ value: {ty} }} struct Inner {{ count: u32 }}");
+        let graph = model(&source).unwrap();
+        assert_eq!(
+            graph["references"]["fixture::Root"],
+            json!(["fixture::Inner"]),
+            "{ty}: {graph}"
+        );
+        assert!(
+            graph["obligations"]
+                .get("rust:fixture::Inner/field/count")
+                .is_some(),
+            "{ty}: {graph}"
+        );
+    }
+}
+
 fn profile_for(source: &str, target: &str) -> String {
     let entries = super::consumer::fixture(source).unwrap()["entries"]
         .as_object()
