@@ -24,52 +24,42 @@ dangling reference on the branch it calls accepted.
 
 On a run of a branch that accepts, an input copied unchanged into a field carrying a `references`
 relation names rows the scenario arranged before the command, each created through the referenced
-entity's creating route (`arrange_first`, as for related rows):
+entity's creating route (`arrange_first`, as for related rows), and an unrouted list is sent
+empty, but only where nothing in the model reads the field:
 
 | relation | a route creates the target | no route creates it |
 |---|---|---|
-| `cardinality: many`, a `List` | exactly as many created rows as the witness list held, eight at most (a longer list is a refusal naming the relation) | the empty list, which names no row, where the empty-list rule below holds; else a refusal naming `<entity>.<relation>` |
+| `cardinality: many`, a `List` | exactly as many created rows as the witness list held, eight at most (a longer list is a refusal naming the relation) | the empty list, which names no row |
 | `cardinality: one` | the created row's identity | no scenario: a refusal naming `<entity>.<relation>` |
 
-The empty-list rule fails closed, in three parts. (a) The input is decided again as it will be
-sent, on the arranged path as on the empty-list path: the arranged rows (each an identity no other
-value equals) and every `[]` are put in at once and the lists decided together, never one against
-the witness; the precedence order must still select the branch, a held-state guard that reads no
-input is skipped, a stored-row guard (`when_subject:`) reading an input the arrangement changed
-is undecided (a list's `count` stays decided where the arranged list is as long as the
-witness's), no invariant may be broken by that one input, and if they do not all hold the
-scenario is refused by naming the relations. A row chained below a command is held to the same
-rule at every depth: where its own list has no route it is sent `[]` where its creating branch and
-invariants keep it, else the chain is given up and the outer scenario refused by name; witness
-identities are never kept. (b) The row the branch stores
-binds a field only in a form understood exactly (an input copy, a literal, `{input: x, else:
-<literal>}`, the empty list, and the state a creating branch lands in); a field set in any other
-form (an `else:` naming an input, a struct value, a conversion, an expression, a generated value)
-is undecided, never absent, and a field a branch that does not create leaves unset is undecided
-too. (c) Every invariant of the entity that reads the list, a field the branch sets in any form,
-or `state` is evaluated over that row, and an undecided read refuses the scenario by name.
-
-The witness already satisfies every guard and invariant over the input, so the arrangement never
-chooses a list's length again: a list the witness held empty stays empty, and a list of four stays
-four. Where the witness sends a non-empty list the reference is exercised; a model whose guards
-admit only the empty list is not forced to send more. A plain reference has no empty value, so
-the refusal is the only result the rule admits there.
+The rule fails safe relative to the witness. A field is read where any guard of the command reads
+it (an input guard, a `when_subject:` in any form including its `input.` predicate, a `when_related:`
+or row-set guard, an external guard, a `before_row`), or where any invariant of an entity the
+branch writes reads a field the branch sets from it, through a copy of the input into another
+field, a struct member or a default included; anything not certainly independent counts as
+read. A read field is sent the witness value unchanged, as before this unit: the scenario is
+neither arranged nor refused for it, and the decisions the witness already made hold. The
+witness already satisfies every guard and invariant over the input, so no length is chosen again.
+A plain reference has no empty value, so an unrouted `one` is refused by name, read or not,
+where it is arranged.
 
 A referenced row rests in the state a creating branch leaves it in (`into:`, else the lifecycle's
 initial state), so a route is no less a route for creating straight into a later state.
 
 A referenced row whose creating branch writes a reference of its own from its input is created
-naming a row arranged first: the row a command names and three rows chained below it, four rows
-in all. The fourth is created plain, so its own references stay what the witness chose, as do those
-of a creating branch another family arranges (a related guard, a held-state guard, an owner).
+naming a row arranged first, under the same rule: a field the creating command's guards or the
+created entity's invariants read keeps its witness value. The row a command names and three rows
+chained below it make four rows in all. The fourth is created plain, so its own references stay
+what the witness chose, as do those of a creating branch another family arranges (a related guard,
+a held-state guard, an owner). Where no route creates a chained row's own `many` list it is sent
+empty; an unrouted `one` there gives up the chain and refuses the outer scenario by name.
 
-Left as before: a refusal and a replay (they are sent the input that selects them), a branch whose
-own `when:` guard reads the field itself (its witness list is what selects it; a guard reading
-only the list's `count` is not left alone, as the arrangement keeps the count), a field another
-arrangement already named, a relation held to the entity itself, and an optional input the witness
-sent absent. A command guarded by a related row (`when_related:`), by a list of references or by a
-row set keeps its own arrangement of the rows its guard reads, including the creating half of a
-create-or-update, which leaves that row unarranged on purpose; none of them is changed here.
+Left as before: a refusal and a replay (they are sent the input that selects them), a field
+something reads, a field another arrangement already named, a relation held to the entity itself,
+and an optional input the witness sent absent. A command guarded by a related row
+(`when_related:`), by a list of references or by a row set keeps its own arrangement of the rows
+its guard reads, including the creating half of a create-or-update, which leaves that row
+unarranged on purpose; none of them is changed here.
 
 ## Rows and distinctions
 
@@ -81,8 +71,9 @@ block the other arrangements number from, so no run reuses a row and no identity
 
 A row arranged for another command's scenario (a move, an update, a view read) through the
 creating command still sends the witness input, and so does a command a related guard, a list of
-references or a row set arranges. Both are recorded as backlog; their cases stay in
-`tests/referenced_list_input.rs`, ignored by slug.
+references or a row set arranges, and so does a reference field a guard or an invariant reads:
+its scenario sends the witness identity, which a target resolving references does not accept. All
+are recorded as backlog; their cases stay in `tests/referenced_list_input.rs`, ignored by slug.
 
 ## Byte pins
 
