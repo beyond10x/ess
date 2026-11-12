@@ -5311,15 +5311,129 @@ impl ess_primitives::facts::FactSource for HeldRow<'_, '_> {
 /// How many stored rows [`held_rows_answer`] tries at most.
 const MAX_HELD_ROWS: usize = 256;
 
+/// How the rows of a stored field are tried, by the type the entity declares for it.
+enum HeldKind {
+    /// An `Integer`: one either side.
+    Integer,
+    /// A `Decimal`, which declares no scale: a tenth of the finest unit any literal it is compared
+    /// with writes, so a row between two whole numbers is tried.
+    Decimal,
+    /// A `String`: the texts it is compared with, and one that is none of them.
+    Text,
+    /// An enum: its variants, bounded.
+    Enum(Vec<String>),
+}
+
+/// The kind of the stored field at `path` of `entity`, or `None` where the walk has no ladder for
+/// its type.
+fn held_kind(ir: &EssIr, entity: &EntityHandle, path: &FactPath) -> Option<HeldKind> {
+    let declared = ir.entity(entity);
+    let fields: Vec<_> = std::iter::once(declared.identity.clone())
+        .chain(declared.fields.iter().cloned())
+        .collect();
+    let resolved = ess_compiler::expression::resolve_path(ir, &fields, path, "held rows").ok()?;
+    if let Some(variants) = resolved.variants {
+        return Some(HeldKind::Enum(variants));
+    }
+    match resolved.terminal {
+        ResolvedTypeRef::Primitive {
+            name: Primitive::Integer,
+        } => Some(HeldKind::Integer),
+        ResolvedTypeRef::Primitive {
+            name: Primitive::Decimal,
+        } => Some(HeldKind::Decimal),
+        ResolvedTypeRef::Primitive {
+            name: Primitive::String,
+        } => Some(HeldKind::Text),
+        _ => None,
+    }
+}
+
+/// The fractional digits `number` is written with.
+fn fraction_digits(number: Number) -> usize {
+    number
+        .exact_text()
+        .split_once('.')
+        .map_or(0, |(_, fraction)| fraction.len())
+}
+
+/// `value` moved by `step`, rounded to the digits `step` carries.
+fn moved(value: f64, step: f64, digits: usize) -> Option<FactValue> {
+    let text = format!("{:.*}", digits, value + step);
+    FactValue::number(text.parse::<f64>().ok()?).ok()
+}
+
+/// The values a stored field of this kind takes: the literals the invariants and the guard compare
+/// it with and the values the input sends the guard, one step either side for a number.
+fn held_rungs(
+    kind: &HeldKind,
+    literals: &[FactValue],
+    sent: &[FactValue],
+) -> Option<Vec<FactValue>> {
+    let mut rungs: Vec<FactValue> = Vec::new();
+    let mut add = |value: FactValue| {
+        if !rungs.contains(&value) {
+            rungs.push(value);
+        }
+    };
+    match kind {
+        HeldKind::Integer | HeldKind::Decimal => {
+            let numbers: Vec<Number> = literals
+                .iter()
+                .chain(sent)
+                .filter_map(FactValue::as_number)
+                .collect();
+            if numbers.is_empty() {
+                return None;
+            }
+            let digits = numbers.iter().copied().map(fraction_digits).max()?;
+            let (step, digits) = match kind {
+                HeldKind::Decimal => (10f64.powi(-i32::try_from(digits + 1).ok()?), digits + 1),
+                _ => (1.0, 0),
+            };
+            for number in numbers {
+                let value = number.get();
+                add(moved(value, -step, digits)?);
+                add(moved(value, 0.0, digits)?);
+                add(moved(value, step, digits)?);
+            }
+        }
+        HeldKind::Text | HeldKind::Enum(_) => {
+            let texts: Vec<&str> = literals
+                .iter()
+                .chain(sent)
+                .filter_map(FactValue::as_text)
+                .collect();
+            for text in &texts {
+                add(FactValue::text(*text));
+            }
+            if let HeldKind::Enum(variants) = kind {
+                for variant in variants.iter().take(8) {
+                    add(FactValue::text(variant.clone()));
+                }
+            } else {
+                let mut other = String::from("other");
+                while texts.contains(&other.as_str()) {
+                    other.push('_');
+                }
+                add(FactValue::text(other));
+            }
+        }
+    }
+    Some(rungs)
+}
+
 /// Whether `guard`, a `when_subject:` predicate over the stored fields and the input, holds of
 /// every row `entity`'s invariants admit: `Some(true)` where it does, `Some(false)` where an
 /// admitted row refutes it, `None` where it cannot be decided.
 ///
-/// The rows tried are the bounded walk's own: each stored field the guard reads takes, one
-/// neighbour either side, the numbers the invariants compare it with and the numbers the input
-/// sends to the guard, and a row any invariant refutes is left out. `value >= input.value` beside
-/// `value >= 1` holds of every row for an input of 0 (stored `value` at its bound already
-/// satisfies it) and not for an input of 5 (the row at the bound does not).
+/// The rows tried are the bounded walk's own. Each stored field the guard reads takes the literals
+/// the entity's invariants and the guard compare it with and the values the input sends the guard,
+/// one step either side for a number ([`held_rungs`], by the field's declared type), and a row any
+/// invariant refutes is left out. `value >= input.value` beside `value >= 1` holds of every row for
+/// an input of 0 (stored `value` at its bound already satisfies it) and not for an input of 5 (the
+/// row at the bound does not). A field whose type has no ladder, or more rows than
+/// [`MAX_HELD_ROWS`], leaves the guard undecided.
 fn held_rows_answer(
     ir: &EssIr,
     entity: &EntityHandle,
@@ -5335,43 +5449,29 @@ fn held_rows_answer(
         .map(|invariant| &invariant.predicate)
         .collect();
     let mut stored: Vec<FactPath> = Vec::new();
-    let mut sent: Vec<f64> = Vec::new();
+    let mut sent: Vec<FactValue> = Vec::new();
     for read in guard.fact_paths() {
         if let Some(input) = HeldRow::input_path(read) {
-            if let Some(FactValue::Number(number)) = facts.fact(&input) {
-                sent.push(number.get());
-            }
+            sent.extend(facts.fact(&input));
         } else if !stored.contains(read) {
             stored.push(read.clone());
         }
     }
-    let mut ladders: Vec<Vec<f64>> = Vec::new();
+    let mut ladders: Vec<Vec<FactValue>> = Vec::new();
     for path in &stored {
-        let mut rungs: Vec<f64> = Vec::new();
-        let numbers = literals_at(&invariants, path)
-            .into_iter()
-            .filter_map(|value| value.as_number().map(Number::get))
-            .chain(sent.iter().copied());
-        for number in numbers {
-            for rung in [number - 1.0, number, number + 1.0] {
-                if !rungs.contains(&rung) {
-                    rungs.push(rung);
-                }
-            }
-        }
-        if rungs.is_empty() {
-            return None;
-        }
-        ladders.push(rungs);
+        let kind = held_kind(ir, entity, path)?;
+        let mut literals = literals_at(&invariants, path);
+        literals.extend(literals_at(&[guard], path));
+        ladders.push(held_rungs(&kind, &literals, &sent)?);
     }
-    let mut rows: Vec<Vec<f64>> = vec![Vec::new()];
+    let mut rows: Vec<Vec<FactValue>> = vec![Vec::new()];
     for ladder in &ladders {
         rows = rows
             .into_iter()
             .flat_map(|row| {
                 ladder.iter().map(move |rung| {
                     let mut next = row.clone();
-                    next.push(*rung);
+                    next.push(rung.clone());
                     next
                 })
             })
@@ -5383,8 +5483,8 @@ fn held_rows_answer(
     let (mut refuted, mut unknown, mut admitted) = (false, false, false);
     for row in rows {
         let mut store = FactStore::new();
-        for (path, value) in stored.iter().zip(&row) {
-            store.set(path.clone(), FactValue::number(*value).ok()?);
+        for (path, value) in stored.iter().zip(row) {
+            store.set(path.clone(), value);
         }
         let held = HeldRow {
             input: facts,
