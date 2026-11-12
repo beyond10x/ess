@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-12T10:21:49Z",
+  "actor": "human:timo",
+  "artifact": "story:a-parent-tenant-guard-holds-across-every-related-row-and-absent-field",
+  "kind": "story",
+  "revision": 16,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "PR 785 CI on c8b69640d0 (20 test shards, Checks, Gate)",
+    "reference": "https://github.com/beyond10x/ess/actions/runs/43185661432"
+  }
+}
