@@ -2325,3 +2325,288 @@ fn adversary7_a_chained_arranged_identity_a_sibling_refusal_compares_is_decided_
     }
     assert!(failures.is_empty(), "{failures:#?}");
 }
+
+// ---- Adversary pass 8 (turn 3): `read` of 13abc36675, readers it does not see. ----
+
+/// `Register` publishes its `sources` in `Registered`, and the binding `seal-on-registered`
+/// delivers them to `Seal`, which moves the same `Server` to `Sealed` and stores them in
+/// `sealed`, under `any: [state == Live, sealed.count >= 1]`. With `route` an `AddSource`
+/// command exists. At `ess/31`, so `Register` may store `sealed: []`.
+fn adversary8_sealing(route: bool) -> String {
+    let (may, add) = if route {
+        (
+            "demo.reg.AddSource, demo.reg.Register, demo.reg.Seal",
+            format!("{ADV_ADD_SOURCE}\n"),
+        )
+    } else {
+        ("demo.reg.Register, demo.reg.Seal", String::new())
+    };
+    format!(
+        r#"
+format: ess/31
+system: demo
+version: v1
+domain: demo.reg
+types:
+  - {{name: demo.reg.ServerId, kind: newtype, of: Uuid}}
+  - {{name: demo.reg.SourceId, kind: newtype, of: Uuid}}
+entities:
+  - name: demo.reg.Source
+    identity: {{name: id, type: demo.reg.SourceId}}
+    fields: []
+    lifecycle: {{initial: Live, states: [Live], terminal: [Live]}}
+  - name: demo.reg.Server
+    identity: {{name: id, type: demo.reg.ServerId}}
+    fields:
+      - {{name: sources, type: "List<demo.reg.SourceId>"}}
+      - {{name: sealed, type: "List<demo.reg.SourceId>"}}
+    relations:
+      - {{name: sources, kind: references, target: demo.reg.Source, cardinality: many, via: sources}}
+      - {{name: sealed, kind: references, target: demo.reg.Source, cardinality: many, via: sealed}}
+    invariants:
+      - any: [state == Live, "sealed.count >= 1"]
+    lifecycle:
+      initial: Live
+      states: [Live, Sealed]
+      terminal: [Sealed]
+      transitions:
+        - {{name: seal, from: [Live], to: Sealed}}
+errors:
+  - name: demo.reg.Conflict
+    fields:
+      - {{name: state, type: demo.reg.Server.State}}
+events:
+  - name: demo.reg.SourceAdded
+    fields: [{{name: id, type: demo.reg.SourceId}}]
+  - name: demo.reg.Registered
+    fields:
+      - {{name: id, type: demo.reg.ServerId}}
+      - {{name: sources, type: "List<demo.reg.SourceId>"}}
+  - name: demo.reg.Closed
+    fields: [{{name: id, type: demo.reg.ServerId}}]
+actors:
+  - name: demo.reg.Operator
+    may: [{may}]
+commands:
+{add}  - name: demo.reg.Register
+    input:
+      - {{name: id, type: demo.reg.ServerId}}
+      - {{name: sources, type: "List<demo.reg.SourceId>"}}
+    outcomes:
+      - name: accepted
+        creates: demo.reg.Server
+        instance: id
+        sets: {{sources: input.sources, sealed: []}}
+        emits: [demo.reg.Registered]
+        payload: {{demo.reg.Registered: {{id: input.id, sources: input.sources}}}}
+  - name: demo.reg.Seal
+    input:
+      - {{name: id, type: demo.reg.ServerId}}
+      - {{name: sources, type: "List<demo.reg.SourceId>"}}
+    outcomes:
+      - name: sealed
+        moves: demo.reg.Server.seal
+        instance: id
+        sets: {{sealed: input.sources}}
+        emits: [demo.reg.Closed]
+        payload: {{demo.reg.Closed: {{id: input.id}}}}
+      - {{name: wrong-state, wrong_state: true, error: demo.reg.Conflict}}
+views:
+  - name: demo.reg.Servers
+    source: demo.reg.Server
+    consistency: read_your_writes
+    fields:
+      - {{name: id, type: demo.reg.ServerId}}
+      - {{name: sources, type: "List<demo.reg.SourceId>"}}
+      - {{name: sealed, type: "List<demo.reg.SourceId>"}}
+      - {{name: state, type: demo.reg.Server.State}}
+bindings:
+  - id: seal-on-registered
+    when: {{event: demo.reg.Registered}}
+    invoke: {{command: demo.reg.Seal}}
+    mapping: {{id: event.id, sources: event.sources}}
+    delivery: at_least_once
+    on_failure: drop
+"#
+    )
+}
+
+/// A binding is a reader `read` does not see. `Register` reads `sources` in no guard and stores
+/// it in no field an invariant reads, so with no route it is sent `[]`; but `Registered` carries
+/// it to `Seal`, whose `sealed` the invariant does read. `Seal` is refused on `[]`, the row stays
+/// `Live`, and the eventual `Sealed` the scenario asserts never arrives. The witness list (what
+/// the base sent) seals the row; so does the same model with a route, where the unit arranges a
+/// list of the same length.
+#[test]
+fn adversary8_a_list_a_binding_carries_into_an_invariant_is_not_sent_empty() {
+    let mut failures = Vec::new();
+    for route in [true, false] {
+        let model = adversary_compile(&adversary8_sealing(route));
+        if let Some(failure) = adversary7_failure(model, ACCEPTED) {
+            failures.push(format!("route {route}: {failure}"));
+        }
+    }
+    assert!(failures.is_empty(), "{failures:#?}");
+}
+
+/// The rule one level down: the `Source` arranged for `Register` writes `origins` from its input,
+/// and `SourceAdded` carries them through `stamp-on-added` to `Stamp`, which stores them in
+/// `stamped` on the same row under `any: [done == false, stamped.count >= 1]`. No command
+/// creates an `Origin`, so `chained` sends `origins: []`; `Stamp` is refused, and the eventual
+/// `Stamped` the arrangement asserts for the row never arrives.
+#[test]
+fn adversary8_a_chained_list_a_binding_carries_into_an_invariant_is_not_sent_empty() {
+    let source = r#"  - name: demo.reg.Source
+    identity: {name: id, type: demo.reg.SourceId}
+    fields:
+      - {name: origins, type: "List<demo.reg.OriginId>"}
+      - {name: stamped, type: "List<demo.reg.OriginId>"}
+      - {name: done, type: Boolean}
+    relations:
+      - {name: origins, kind: references, target: demo.reg.Origin, cardinality: many, via: origins}
+      - {name: stamped, kind: references, target: demo.reg.Origin, cardinality: many, via: stamped}
+    invariants:
+      - any: [done == false, "stamped.count >= 1"]
+"#;
+    let add_source = r#"  - name: demo.reg.AddSource
+    input:
+      - {name: id, type: demo.reg.SourceId}
+      - {name: origins, type: "List<demo.reg.OriginId>"}
+    outcomes:
+      - name: added
+        creates: demo.reg.Source
+        instance: id
+        sets: {origins: input.origins, stamped: [], done: false}
+        emits: [demo.reg.SourceAdded]
+        payload: {demo.reg.SourceAdded: {id: input.id, origins: input.origins}}
+  - name: demo.reg.Stamp
+    input:
+      - {name: id, type: demo.reg.SourceId}
+      - {name: origins, type: "List<demo.reg.OriginId>"}
+    outcomes:
+      - name: stamped
+        updates: demo.reg.Source
+        instance: id
+        sets: {stamped: input.origins, done: true}
+        emits: [demo.reg.SourcePublished]
+        payload: {demo.reg.SourcePublished: {id: input.id}}"#;
+    let text = adversary_text(
+        ADV_LIVE,
+        &format!("{ADV_SERVER_MANY}\n{ADV5_ORIGIN}"),
+        &format!(
+            "{add_source}\n{}",
+            adversary_register("List<demo.reg.SourceId>", "", "", "")
+        ),
+    )
+    .replacen("format: ess/30", "format: ess/31", 1)
+    .replacen(
+        "  - name: demo.reg.Source\n    identity: {name: id, type: demo.reg.SourceId}\n    fields: []\n",
+        source,
+        1,
+    )
+    .replacen(
+        "  - name: demo.reg.SourceAdded\n    fields: [{name: id, type: demo.reg.SourceId}]\n",
+        "  - name: demo.reg.SourceAdded\n    fields: [{name: id, type: demo.reg.SourceId}, {name: \
+         origins, type: \"List<demo.reg.OriginId>\"}]\n",
+        1,
+    );
+    let text = format!(
+        "{text}bindings:\n  - id: stamp-on-added\n    when: {{event: demo.reg.SourceAdded}}\n    \
+         invoke: {{command: demo.reg.Stamp}}\n    mapping: {{id: event.id, origins: \
+         event.origins}}\n    delivery: at_least_once\n    on_failure: drop\n"
+    );
+    let failure = adversary7_failure(adversary_compile(&text), ACCEPTED);
+    assert!(failure.is_none(), "{}", failure.unwrap_or_default());
+}
+
+/// `external:` narrowed by `when_subject: {predicate: …}` (`ExternalSubject`) reading the input
+/// list: `floor <= input.sources.count`, `floor` stored `1`. `guard_reads` reads only the branch's
+/// `input` guard of an `ExternalSubject`, not its `predicate`, so `sources` counts as unread and,
+/// with no route, `reviewed` is sent `[]`: the predicate no longer selects the row, the provider
+/// is not asked, and `accepted` answers the forced scenario. With a route the list keeps its
+/// length and the scenario passes.
+#[test]
+fn adversary8_a_narrowed_external_predicate_reading_the_list_is_a_reader() {
+    let server = ADV_SERVER_MANY.replace(
+        "    relations:\n",
+        "      - {name: floor, type: Integer}\n    relations:\n",
+    );
+    let register = adversary_register("List<demo.reg.SourceId>", "", "", ", floor: \"1\"");
+    let reconfigure = r#"  - name: demo.reg.Reconfigure
+    input:
+      - {name: id, type: demo.reg.ServerId}
+      - {name: sources, type: "List<demo.reg.SourceId>"}
+    outcomes:
+      - name: reviewed
+        external: a reviewer approves the new sources
+        when_subject: {predicate: "floor <= input.sources.count"}
+        updates: demo.reg.Server
+        instance: id
+        sets: {sources: input.sources}
+        emits: [demo.reg.Registered]
+        payload: {demo.reg.Registered: {id: input.id}}
+      - name: accepted
+        updates: demo.reg.Server
+        instance: id
+        sets: {sources: input.sources}
+        emits: [demo.reg.Registered]
+        payload: {demo.reg.Registered: {id: input.id}}"#;
+    let mut failures = Vec::new();
+    for add in [format!("{ADV_ADD_SOURCE}\n"), String::new()] {
+        let text = adversary_text(
+            ADV_LIVE,
+            &server,
+            &format!("{add}{register}\n{reconfigure}"),
+        );
+        if let Some(failure) = adversary7_failure(
+            adversary_compile(&text),
+            "demo.reg.Reconfigure/outcome/reviewed",
+        ) {
+            failures.push(format!("route {}: {failure}", !add.is_empty()));
+        }
+    }
+    assert!(failures.is_empty(), "{failures:#?}");
+}
+
+/// An `affects:` filter reads the reference: `Reassign` claims the `Source` it names
+/// (`where: id == input.sources`, `moves: Source.claim` from `Free`). Neither a guard nor an
+/// invariant, so the unit arranges the row; the witness named no row, so at the base the entry
+/// selected none. The scenario must still pass or be refused by name.
+#[test]
+fn adversary8_an_affects_filter_reading_the_reference_keeps_the_scenario_passing() {
+    let server = ADV_SERVER_MANY
+        .replace("List<demo.reg.SourceId>", "demo.reg.SourceId")
+        .replace("cardinality: many", "cardinality: one");
+    let register = format!(
+        "{}\n{}",
+        adversary_register("demo.reg.SourceId", "", "", ""),
+        r"  - name: demo.reg.Reassign
+    input:
+      - {name: id, type: demo.reg.ServerId}
+      - {name: sources, type: demo.reg.SourceId}
+    outcomes:
+      - name: accepted
+        updates: demo.reg.Server
+        instance: id
+        sets: {sources: input.sources}
+        affects:
+          - entity: demo.reg.Source
+            where: id == input.sources
+            moves: demo.reg.Source.claim
+        emits: [demo.reg.Registered]
+        payload: {demo.reg.Registered: {id: input.id}}"
+    );
+    let lifecycle = "{initial: Free, states: [Free, Claimed], terminal: [Claimed], transitions: \
+                     [{name: claim, from: [Free], to: Claimed}]}";
+    let text = format!(
+        "{}views:\n  - name: demo.reg.Sources\n    source: demo.reg.Source\n    consistency: \
+         read_your_writes\n    fields:\n      - {{name: id, type: demo.reg.SourceId}}\n      - \
+         {{name: state, type: demo.reg.Source.State}}\n",
+        adversary_text(lifecycle, &server, &format!("{ADV_ADD_SOURCE}\n{register}"))
+    );
+    let failure = adversary7_failure(
+        adversary_compile(&text),
+        "demo.reg.Reassign/outcome/accepted",
+    );
+    assert!(failure.is_none(), "{}", failure.unwrap_or_default());
+}

@@ -5,9 +5,12 @@
 //! `references` relation (`cardinality: one` for a plain field, `many` for a `List`) is sent an
 //! input naming rows the scenario arranged first, each created through the referenced entity's
 //! creating route, so a target resolving the references it stores accepts the branch. The unit
-//! changes a sent value only where nothing in the model reads it: a field some guard of the
-//! command, or some invariant of an entity the branch writes, reads (by any path, through a copy
-//! of the input into another field included) is sent the witness value, as it was before.
+//! changes a sent value only where nothing reads it, decided by an allow-list: the input field is
+//! unread only when every use of it anywhere in the resolved command (every branch's guards of
+//! any form, sets, payload, affects, instances and filters) is the one `sets:` entry that copies it
+//! into the reference field, and nothing reads that stored field (no invariant of the entity, no
+//! guard, copy or expression of any command acting on it). Anything else, or anything in doubt, is
+//! a read, and a field read is sent the witness value, as it was before.
 //!
 //! * a `many` relation with a route is sent exactly as many rows as its witness list holds, and an
 //!   empty list stays empty;
@@ -18,7 +21,7 @@
 //!
 //! A referenced row rests where a creating branch leaves it (`into:`), and when that branch
 //! writes a reference of its own from its input the row it names is arranged first, under the same
-//! rule (a field the creating command's guards or the created entity's invariants read keeps its
+//! allow-list (a field the creating command uses elsewhere or the created entity reads keeps its
 //! witness value): the row a command names and the [`DEPTH`] rows chained below it, four rows in
 //! all; the fourth is created plain, so its own references stay what the witness chose, and so do
 //! those of a creating branch another family arranges (a related guard, a held-state guard, an
@@ -32,13 +35,13 @@
 use std::collections::BTreeMap;
 
 use ess_compiler::ir::{
-    Driver, EntityHandle, EssIr, ResolvedCommand, ResolvedCondition, ResolvedEffect,
-    ResolvedFallback, ResolvedOutcome, ResolvedPayloadValue, ResolvedRelation,
+    Driver, EntityHandle, EssIr, ResolvedCommand, ResolvedEffect, ResolvedOutcome,
+    ResolvedPayloadValue, ResolvedRelation,
 };
 use ess_domain::entity::{Cardinality, RelationKind};
 use ess_domain::name::QualifiedName;
 use ess_primitives::node::Node;
-use ess_primitives::predicate::Predicate;
+use serde_json::Value;
 
 use super::{
     arrange_first, binding_effects, born, created_by, has_subject_guards, invoke, related,
@@ -92,103 +95,149 @@ impl Distinctions {
         next
     }
 }
+/// The kinds of a `sets:` or `payload:` value that read the input, whose `field` is not a stored
+/// one; a node tagged `from: input` (a related guard's `via`) names an input field the same way.
+/// one.
+const INPUT_KINDS: [&str; 2] = ["input_field", "input_or_generated"];
 
-/// Whether `predicate` reads the input `field`: as a bare path (a guard of the command) or as
-/// `input.<field>` (a stored-row guard).
-fn reads(predicate: &Predicate, field: &str) -> bool {
-    predicate
-        .fact_paths()
-        .iter()
-        .any(|path| match path.segments() {
-            [root, name, ..] if root == "input" => name == field,
-            [root, ..] => root == field,
-            [] => false,
-        })
-}
-
-/// Whether some branch of `command` has a guard that reads the input `field`. A related-row or
-/// row-set guard is taken to read every input.
-fn guard_reads(command: &ResolvedCommand, field: &str) -> bool {
-    command
-        .outcomes
-        .iter()
-        .any(|branch| match &branch.condition {
-            ResolvedCondition::SubjectField { predicate, .. } => {
-                predicate.as_ref().is_some_and(|guard| reads(guard, field))
-            }
-            ResolvedCondition::SubjectPredicate { predicate, input } => {
-                reads(predicate, field) || input.as_ref().is_some_and(|guard| reads(guard, field))
-            }
-            ResolvedCondition::ExternalWhen { predicate, .. } => reads(predicate, field),
-            ResolvedCondition::ExternalSubject { input, .. } => {
-                input.as_ref().is_some_and(|guard| reads(guard, field))
-            }
-            ResolvedCondition::Related { .. } | ResolvedCondition::RelatedSet { .. } => true,
-            _ => crate::decision::when(branch).is_some_and(|guard| reads(guard, field)),
-        })
-}
-
-/// Whether `value`, a source of a `sets:` entry, may carry the input `field`: only a literal, a
-/// cleared or empty value, a minted one or a read of the row itself certainly does not.
-fn copies(value: &ResolvedPayloadValue, field: &str) -> bool {
-    let root = |read: &str| read.split('.').next() == Some(field);
+/// Whether any name in `value`, a resolved part of the model as JSON, passes `hit`: every string
+/// is read as the dotted paths it holds, and every key as a name, so a path in a predicate, an
+/// expression or a field is found wherever the model keeps it. The keys in `skipped` name no read,
+/// and a node naming an input field is passed over when `stored` is asked for.
+fn mentions(value: &Value, hit: &dyn Fn(&[&str]) -> bool, skipped: &[&str], stored: bool) -> bool {
+    let named = |text: &str| {
+        text.split(|c: char| !(c.is_alphanumeric() || c == '_' || c == '.'))
+            .any(|path| {
+                let segments: Vec<&str> = path.split('.').filter(|part| !part.is_empty()).collect();
+                !segments.is_empty() && hit(&segments)
+            })
+    };
     match value {
-        ResolvedPayloadValue::InputField { field: read, .. } => root(read),
-        ResolvedPayloadValue::InputOrGenerated {
-            field: read,
-            otherwise,
-            ..
-        } => root(read) || matches!(otherwise, Some(ResolvedFallback::Input { .. })),
-        ResolvedPayloadValue::Literal { .. }
-        | ResolvedPayloadValue::Cleared
-        | ResolvedPayloadValue::EmptyList
-        | ResolvedPayloadValue::Generated { .. }
-        | ResolvedPayloadValue::SubjectField { .. }
-        | ResolvedPayloadValue::SubjectState { .. }
-        | ResolvedPayloadValue::Increment { .. } => false,
-        ResolvedPayloadValue::Struct { fields } => {
-            fields.iter().any(|member| copies(&member.value, field))
+        Value::String(text) => named(text),
+        Value::Array(items) => items
+            .iter()
+            .any(|item| mentions(item, hit, skipped, stored)),
+        Value::Object(map) => {
+            let input = |map: &serde_json::Map<String, Value>| {
+                map.get("kind")
+                    .and_then(Value::as_str)
+                    .is_some_and(|kind| INPUT_KINDS.contains(&kind))
+                    || map.get("from").and_then(Value::as_str) == Some("input")
+            };
+            if stored && input(map) {
+                return false;
+            }
+            map.iter()
+                .filter(|(key, _)| !skipped.contains(&key.as_str()))
+                .any(|(key, item)| named(key) || mentions(item, hit, skipped, stored))
         }
-        _ => true,
+        _ => false,
     }
 }
 
-/// Whether some invariant of an entity `outcome` writes reads a stored field `outcome` sets from
-/// the input `field`.
-fn invariant_reads(ir: &EssIr, outcome: &ResolvedOutcome, field: &str) -> bool {
-    let mut written = Vec::new();
-    if let Some(subject) = &outcome.subject {
-        written.push((&subject.entity, &outcome.sets));
+/// Whether the input `field` of `command` is read anywhere but by the `sets:` entry of `outcome`
+/// that copies it into the subject field `via`: in any branch's guard of any form, set, payload,
+/// affect, instance or filter, or anything else the resolved command holds. Only the command's
+/// own declarations (names, input, response, naming) are left out. A command that cannot be
+/// written out counts as reading it.
+fn input_read(
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    via: &str,
+    field: &str,
+) -> bool {
+    let Ok(Value::Object(mut json)) = serde_json::to_value(command) else {
+        return true;
+    };
+    for key in [
+        "name",
+        "domain",
+        "input",
+        "response",
+        "examples",
+        "fixture_inputs",
+        "naming",
+        "refs",
+        "undeclared_fields",
+    ] {
+        json.remove(key);
     }
-    for affect in &outcome.affects {
-        written.push((&affect.entity, &affect.sets));
+    let Some(Value::Array(branches)) = json.get_mut("outcomes") else {
+        return true;
+    };
+    for (branch, value) in command.outcomes.iter().zip(branches) {
+        let Value::Object(map) = value else {
+            return true;
+        };
+        map.remove("name");
+        if !std::ptr::eq(branch, outcome) {
+            continue;
+        }
+        let claimed = outcome.sets.iter().position(|set| {
+            set.target == via
+                && set.conversion.is_none()
+                && matches!(&set.value, ResolvedPayloadValue::InputField { field: input, .. }
+                    if input == field)
+        });
+        if let (Some(index), Some(Value::Array(sets))) = (claimed, map.get_mut("sets")) {
+            sets.remove(index);
+        }
     }
-    written.into_iter().any(|(entity, sets)| {
-        let stored: Vec<&str> = sets
-            .iter()
-            .filter(|set| copies(&set.value, field))
-            .filter_map(|set| set.target.split('.').next())
-            .collect();
-        ir.entity(entity).invariants.iter().any(|invariant| {
-            invariant.predicate.fact_paths().iter().any(|path| {
-                path.segments()
-                    .first()
-                    .is_some_and(|root| stored.contains(&root.as_str()))
+    mentions(
+        &Value::Object(json),
+        &|path| path[0] == field || (path[0] == "input" && path.get(1) == Some(&field)),
+        &["target"],
+        false,
+    )
+}
+
+/// Whether the stored field `via` of `entity` is read: by an invariant of the entity, or by any
+/// branch of any command that acts on the entity (its guard, a copy of the field, an expression),
+/// where a branch's own input is not a stored read. Anything that cannot be written out counts as
+/// a read.
+fn stored_read(ir: &EssIr, entity: &EntityHandle, via: &str) -> bool {
+    let hit = |path: &[&str]| path[0] == via;
+    let by_invariant = ir.entity(entity).invariants.iter().any(|invariant| {
+        serde_json::to_value(&invariant.predicate)
+            .map_or(true, |predicate| mentions(&predicate, &hit, &[], false))
+    });
+    by_invariant
+        || ir.commands().values().any(|command| {
+            command.outcomes.iter().any(|branch| {
+                let acts = branch
+                    .subject
+                    .as_ref()
+                    .is_some_and(|subject| subject.entity == *entity)
+                    || branch
+                        .instances
+                        .as_ref()
+                        .is_some_and(|instances| instances.entity == *entity)
+                    || branch.affects.iter().any(|affect| affect.entity == *entity);
+                acts && serde_json::to_value(branch).map_or(true, |branch| {
+                    mentions(&branch, &hit, &["target", "name"], true)
+                })
             })
         })
-    })
 }
 
-/// Whether anything in the model reads the input `field` of `command`'s `outcome`: a guard of the
-/// command, or an invariant of an entity the branch writes. What is read is sent the witness
-/// value, which already satisfies it.
-fn read(ir: &EssIr, command: &ResolvedCommand, outcome: &ResolvedOutcome, field: &str) -> bool {
-    guard_reads(command, field) || invariant_reads(ir, outcome, field)
+/// Whether anything in the model reads the input `field` that `outcome` of `command` copies into
+/// the subject field `via` of `entity`: any use of the input but that copy, or any read of the
+/// stored field. What is read is sent the witness value, which already satisfies it. In doubt it
+/// is read.
+fn read(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    entity: &EntityHandle,
+    via: &str,
+    field: &str,
+) -> bool {
+    input_read(command, outcome, via, field) || stored_read(ir, entity, via)
 }
 
 /// The references `outcome` writes unchanged from its command's input into its entity, as the
-/// input field and the relation, leaving out a relation to the entity itself and one to an entity
-/// already being arranged.
+/// input field and the relation, leaving out a relation to the entity itself, one to an entity
+/// already being arranged and one anything else reads.
 fn written<'ir>(
     ir: &'ir EssIr,
     entity: &EntityHandle,
@@ -208,10 +257,8 @@ fn written<'ir>(
         })
         .filter_map(|relation| {
             let field = related::set_from_input(outcome, &relation.via)?;
-            command
-                .input
-                .iter()
-                .any(|held| held.name == field)
+            let held = command.input.iter().any(|held| held.name == field);
+            (held && !read(ir, command, outcome, entity, &relation.via, field))
                 .then_some((field, relation))
         })
         .collect()
@@ -319,10 +366,7 @@ fn chained(
         {
             continue;
         }
-        let references: Vec<_> = written(ir, entity, creator.command, creator.outcome, &chain)
-            .into_iter()
-            .filter(|(field, _)| !read(ir, creator.command, creator.outcome, field))
-            .collect();
+        let references = written(ir, entity, creator.command, creator.outcome, &chain);
         if references.is_empty() {
             continue;
         }
@@ -442,7 +486,7 @@ pub(super) fn arrange(
         };
         if setup.bound.contains_key(field)
             || !command.input.iter().any(|held| held.name == field)
-            || read(ir, command, outcome, field)
+            || read(ir, command, outcome, &subject.entity, &relation.via, field)
         {
             continue;
         }

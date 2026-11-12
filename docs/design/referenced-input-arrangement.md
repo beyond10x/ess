@@ -32,13 +32,16 @@ empty, but only where nothing in the model reads the field:
 | `cardinality: many`, a `List` | exactly as many created rows as the witness list held, eight at most (a longer list is a refusal naming the relation) | the empty list, which names no row |
 | `cardinality: one` | the created row's identity | no scenario: a refusal naming `<entity>.<relation>` |
 
-The rule fails safe relative to the witness. A field is read where any guard of the command reads
-it (an input guard, a `when_subject:` in any form including its `input.` predicate, a `when_related:`
-or row-set guard, an external guard, a `before_row`), or where any invariant of an entity the
-branch writes reads a field the branch sets from it, through a copy of the input into another
-field, a struct member or a default included; anything not certainly independent counts as
-read. A read field is sent the witness value unchanged, as before this unit: the scenario is
-neither arranged nor refused for it, and the decisions the witness already made hold. The
+The rule fails safe relative to the witness, and is an allow-list: an input field `x` is unread
+only when both hold. Every use of `input.x` anywhere in the resolved command is exactly the claimed
+branch's `sets: {f: input.x}` into the field `f` that carries the relation; every branch of the
+command counts, and every part of it (guards in all forms, sets, payload, response, replays,
+affects, instances, filters, emits, external eligibility), found by writing the resolved command
+out and reading every name in it, so no reader is listed by name. And nothing reads the stored
+`f`: no invariant of the entity, and no branch of any command acting on the entity (a guard, a copy
+of `f` into another field or an event, an expression). Anything else counts as read, and so does
+anything in doubt. A read field is sent the witness value unchanged, as before this unit: the
+scenario is neither arranged nor refused for it, and the decisions the witness already made hold. The
 witness already satisfies every guard and invariant over the input, so no length is chosen again.
 A plain reference has no empty value, so an unrouted `one` is refused by name, read or not,
 where it is arranged.
@@ -47,8 +50,9 @@ A referenced row rests in the state a creating branch leaves it in (`into:`, els
 initial state), so a route is no less a route for creating straight into a later state.
 
 A referenced row whose creating branch writes a reference of its own from its input is created
-naming a row arranged first, under the same rule: a field the creating command's guards or the
-created entity's invariants read keeps its witness value. The row a command names and three rows
+naming a row arranged first, under the same allow-list, applied to the creating command's own input
+field and the stored field it writes: a field the creating command uses elsewhere, or the created
+entity reads, keeps its witness value. The row a command names and three rows
 chained below it make four rows in all. The fourth is created plain, so its own references stay
 what the witness chose, as do those of a creating branch another family arranges (a related guard,
 a held-state guard, an owner). Where no route creates a chained row's own `many` list it is sent
