@@ -3123,6 +3123,24 @@ impl<'d> Gen<'d> {
         let mut lines = Vec::new();
         self.begin_component();
         let (values, setters) = self.state_hooks(&mut lines, &at, &shell.state, "shell");
+        let doc = self.doc;
+        if let Some(choice) = &doc.theme {
+            // The shell shows the theme its `chosen_by` state holds, through that state's own
+            // store, and `theme.default` where it declares none or the state holds no theme.
+            let chosen = choice
+                .chosen_by
+                .as_ref()
+                .and_then(|expr| expr.0.trim().strip_prefix("shell."))
+                .and_then(|state| values.iter().find(|(declared, _)| declared == state))
+                .map_or("undefined", |(_, local)| local.as_str())
+                .to_owned();
+            let use_theme = self.import("runtime/theme", "useTheme");
+            let themes = ts::array(doc.themes.keys().map(|theme| ts::string(theme)));
+            lines.push(format!(
+                "{use_theme}({chosen}, {themes}, {});",
+                ts::string(&choice.default)
+            ));
+        }
         self.end_component();
         let mut frame_lines = Vec::new();
         let mut blocked = false;

@@ -1,0 +1,15 @@
+import { useEffect } from "react";
+
+/**
+ * Shows one theme: sets `data-theme` on the document element to `chosen` when it names one of
+ * `themes`, and to `fallback` (the document's `theme.default`) when it does not, as before the
+ * state holds a value or when nothing chooses. `tokens.css` holds one block per theme.
+ */
+export function useTheme(chosen: unknown, themes: string[], fallback: string): void {
+  const name = typeof chosen === "string" && themes.includes(chosen) ? chosen : fallback;
+  useEffect(() => {
+    if (typeof document !== "undefined") {
+      document.documentElement.setAttribute("data-theme", name);
+    }
+  }, [name]);
+}
