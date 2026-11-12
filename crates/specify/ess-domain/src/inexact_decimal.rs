@@ -8,13 +8,13 @@
 //!   decimal of their binary64. [`ess_primitives::facts`] notes each literal that collapses while a
 //!   guard is read ([`collecting_inexact_decimals`]), and [`crate::expression::lexical::Written`]
 //!   keeps them with the site that wrote them.
-//! * A **YAML number** (a `sets:` or `payload:` literal, and the number of a guard written as a
-//!   mapping: `{amount: {lt: 0.1000000000000000000001}}`, `{amount: 0.1…}`, an `in` or `any_of`
-//!   list) reaches the domain as an `f64`. [`floats`] reads the spelling of each such number back
-//!   out of the text, beside the typed reading, and keeps the ones the `f64` does not hold, by
-//!   their path in the document. A predicate site claims the ones under it
-//!   ([`crate::expression::lexical::Written::from_document`]); [`authored`] takes the rest that sit
-//!   in a `sets:` or `payload:`.
+//! * A **YAML number** (a `sets:` or `payload:` literal, an `affects:` entry's `sets:` literal,
+//!   and the number of a guard written as a mapping: `{amount: {lt: 0.1000000000000000000001}}`,
+//!   `{amount: 0.1…}`, an `in` or `any_of` list) reaches the domain as an `f64`. [`floats`] reads
+//!   the spelling of each such number back out of the text, beside the typed reading, and keeps the
+//!   ones the `f64` does not hold, by their path in the document. A predicate site claims the ones
+//!   under it ([`crate::expression::lexical::Written::from_document`]); [`authored`] takes the rest
+//!   that sit in an outcome's `sets:` or `payload:`, or an `affects:` entry's `sets:`.
 //!
 //! Both end in [`refusals`], one [`InexactDecimalLiteral`](ValidationCode::InexactDecimalLiteral)
 //! per literal, at the place it was written. Nothing here changes what is written: the exact
@@ -91,8 +91,11 @@ pub(crate) fn under<'a>(
         .take_while(move |(at, _)| at.starts_with(path))
 }
 
-/// Every number of `floats` that a `sets:` or `payload:` of an outcome writes and no predicate site
-/// has claimed, with the location it is refused at.
+/// Every number of `floats` that a payload table of an outcome writes and no predicate site has
+/// claimed, with the location it is refused at.
+///
+/// The payload tables are an outcome's `sets:` and `payload:`, and the `sets:` of each of its
+/// `affects:` entries.
 pub(crate) fn authored(
     document: &Value,
     floats: &Floats,
@@ -100,18 +103,27 @@ pub(crate) fn authored(
 ) -> Vec<(String, InexactDecimal)> {
     let mut found = Vec::new();
     for (path, number) in floats {
-        let [Step::Key(commands), Step::Index(command), Step::Key(outcomes), Step::Index(outcome), Step::Key(place), rest @ ..] =
+        let [Step::Key(commands), Step::Index(command), Step::Key(outcomes), Step::Index(outcome), tail @ ..] =
             path.as_slice()
         else {
             continue;
         };
-        if commands != "commands"
-            || outcomes != "outcomes"
-            || !matches!(place.as_str(), "sets" | "payload")
-            || claimed.contains(path)
-        {
+        if commands != "commands" || outcomes != "outcomes" || claimed.contains(path) {
             continue;
         }
+        let (place, rest): (Vec<&Step>, &[Step]) = match tail {
+            [place @ Step::Key(table), rest @ ..]
+                if matches!(table.as_str(), "sets" | "payload") =>
+            {
+                (vec![place], rest)
+            }
+            [affects @ Step::Key(entries), at @ Step::Index(_), sets @ Step::Key(table), rest @ ..]
+                if entries == "affects" && table == "sets" =>
+            {
+                (vec![affects, at, sets], rest)
+            }
+            _ => continue,
+        };
         let name = |value: Option<&Value>| value?.get("name")?.as_str().map(str::to_owned);
         let command = document
             .get("commands")
@@ -122,16 +134,17 @@ pub(crate) fn authored(
         ) else {
             continue;
         };
-        let site = rest.iter().fold(
-            ConstructRef::new(ConstructKind::Command, command_name)
-                .key("outcomes")
-                .named(outcome_name)
-                .key(place.as_str()),
-            |site, step| match step {
-                Step::Key(key) => site.named(key.as_str()),
-                Step::Index(index) => site.index(*index),
-            },
-        );
+        let base = ConstructRef::new(ConstructKind::Command, command_name)
+            .key("outcomes")
+            .named(outcome_name);
+        let site = place.into_iter().fold(base, |site, step| match step {
+            Step::Key(key) => site.key(key.as_str()),
+            Step::Index(index) => site.index(*index),
+        });
+        let site = rest.iter().fold(site, |site, step| match step {
+            Step::Key(key) => site.named(key.as_str()),
+            Step::Index(index) => site.index(*index),
+        });
         found.push((site.render(), number.clone()));
     }
     found

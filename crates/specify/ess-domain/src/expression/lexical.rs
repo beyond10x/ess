@@ -392,6 +392,14 @@ pub(crate) enum Site {
         outcome: OutcomeName,
         index: usize,
     },
+    /// A predicate an outcome writes that is read for its decimal literals alone, at `place` under
+    /// the outcome: an `affects[k].each.where` (ess/27) or the `where` of a filtered read inside an
+    /// `affects[k].sets`. Its meaning is read by the typed reader and nothing here resolves it.
+    Literals {
+        command: QualifiedName,
+        outcome: OutcomeName,
+        place: String,
+    },
     /// An entity invariant, by position.
     Invariant { entity: QualifiedName, index: usize },
     /// A struct's or newtype's invariant, by position.
@@ -453,6 +461,11 @@ impl Site {
                 outcome: name,
                 index,
             } => outcome(command, name, &format!("affects[{index}].where")),
+            Self::Literals {
+                command,
+                outcome: name,
+                place,
+            } => outcome(command, name, place),
             Self::Invariant { entity, index } => format!("entity {entity}.invariants[{index}]"),
             Self::TypeInvariant { name, index } => format!("types.{name}.invariants[{index}]"),
             Self::View { view } => format!("view.{view}.filter"),
@@ -628,15 +641,37 @@ impl Written {
                     );
                 }
                 for (index, affect) in items(&outcome, "affects").iter().enumerate() {
+                    let affect_path = nth(&key(&outcome_path, "affects"), index);
                     put(
                         Site::Affect {
                             command: name.clone(),
                             outcome: outcome_name.clone(),
                             index,
                         },
-                        &key(&nth(&key(&outcome_path, "affects"), index), "where"),
+                        &key(&affect_path, "where"),
                         affect.get("where"),
                     );
+                    let literals = |place: String| Site::Literals {
+                        command: name.clone(),
+                        outcome: outcome_name.clone(),
+                        place,
+                    };
+                    let each = key(&affect_path, "each");
+                    put(
+                        literals(format!("affects[{index}].each.where")),
+                        &key(&each, "where"),
+                        affect.get("each").and_then(|it| it.get("where")),
+                    );
+                    for (place, filter) in affect_selections(affect) {
+                        let held_at = place
+                            .iter()
+                            .fold(affect_path.clone(), |path, step| key(&path, step));
+                        put(
+                            literals(format!("affects[{index}].{}", place.join("."))),
+                            &key(&key(&held_at, "related"), "where"),
+                            Some(&filter),
+                        );
+                    }
                 }
             }
         }
@@ -868,6 +903,7 @@ pub(crate) fn slot<'a>(
             .affects
             .get_mut(*index)
             .and_then(|affect| affect.filter.as_mut()),
+        Site::Literals { .. } => None,
         Site::Invariant { entity, index } => entities
             .get_mut(entity)?
             .invariants
@@ -1112,6 +1148,7 @@ pub(crate) fn resolutions(
                     over_row(&set_effect_fields(entity), entity, command, lexical),
                 ))
             }),
+            Site::Literals { .. } => None,
             Site::Invariant { entity, index } => spec.entities().get(entity).and_then(|entity| {
                 let invariant = entity.invariants.get(*index)?;
                 let fields = entity.observable_fields();
@@ -1397,40 +1434,69 @@ fn identity_orderings_in<E: crate::expression::TypeEnvironment>(
     found
 }
 
+/// Every filtered read in `value`, `{related: {entity, where, field}}`, with its place — `place`
+/// and then the keys under it — and its `where` as written.
+fn walk(
+    value: &ess_yaml::Value,
+    place: &mut Vec<String>,
+    found: &mut Vec<(Vec<String>, ess_yaml::Value)>,
+) {
+    use ess_yaml::Value;
+    let Some(mapping) = value.as_mapping() else {
+        return;
+    };
+    if let (1, Some(Value::Mapping(related))) = (mapping.len(), mapping.get("related")) {
+        let keys: Vec<&str> = related.keys().filter_map(Value::as_str).collect();
+        let filtered = keys.len() == 3
+            && ["entity", "where", "field"]
+                .iter()
+                .all(|key| keys.contains(key));
+        // The head of an ordered selection (ess/27, beyond10x/ess#543): a list `order_by`.
+        let ordered = keys.contains(&"entity")
+            && keys.contains(&"where")
+            && matches!(related.get("order_by"), Some(Value::Sequence(_)));
+        if filtered || ordered {
+            if let Some(filter) = related.get("where") {
+                found.push((place.clone(), filter.clone()));
+            }
+            return;
+        }
+    }
+    for (key, member) in mapping {
+        if let Some(key) = key.as_str() {
+            place.push(key.to_owned());
+            walk(member, place, found);
+            place.pop();
+        }
+    }
+}
+
+/// Every filtered read an `affects:` entry's `sets:` writes, with its place — `sets`, the target
+/// and any nested struct members — and its `where` as written.
+fn affect_selections(affect: &ess_yaml::Value) -> Vec<(Vec<String>, ess_yaml::Value)> {
+    let mut found = Vec::new();
+    for (target, value) in affect
+        .get("sets")
+        .and_then(ess_yaml::Value::as_mapping)
+        .into_iter()
+        .flatten()
+    {
+        if let Some(target) = target.as_str() {
+            walk(
+                value,
+                &mut vec!["sets".to_owned(), target.to_owned()],
+                &mut found,
+            );
+        }
+    }
+    found
+}
+
 /// Every filtered read an outcome of a source document writes, `{related: {entity, where,
 /// field}}` (ess/22), with its place — `sets`, or `payload` and the event or error, then the target
 /// and any nested struct members — and its `where` as written.
 fn selections(outcome: &ess_yaml::Value) -> Vec<(Vec<String>, ess_yaml::Value)> {
     use ess_yaml::Value;
-    fn walk(value: &Value, place: &mut Vec<String>, found: &mut Vec<(Vec<String>, Value)>) {
-        let Some(mapping) = value.as_mapping() else {
-            return;
-        };
-        if let (1, Some(Value::Mapping(related))) = (mapping.len(), mapping.get("related")) {
-            let keys: Vec<&str> = related.keys().filter_map(Value::as_str).collect();
-            let filtered = keys.len() == 3
-                && ["entity", "where", "field"]
-                    .iter()
-                    .all(|key| keys.contains(key));
-            // The head of an ordered selection (ess/27, beyond10x/ess#543): a list `order_by`.
-            let ordered = keys.contains(&"entity")
-                && keys.contains(&"where")
-                && matches!(related.get("order_by"), Some(Value::Sequence(_)));
-            if filtered || ordered {
-                if let Some(filter) = related.get("where") {
-                    found.push((place.clone(), filter.clone()));
-                }
-                return;
-            }
-        }
-        for (key, member) in mapping {
-            if let Some(key) = key.as_str() {
-                place.push(key.to_owned());
-                walk(member, place, found);
-                place.pop();
-            }
-        }
-    }
     let mut found = Vec::new();
     if let Some(sets) = outcome.get("sets").and_then(Value::as_mapping) {
         for (target, value) in sets {
