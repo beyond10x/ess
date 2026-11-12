@@ -390,3 +390,248 @@ fn a_quantifier_over_a_boolean_keyed_map_says_it_fell_back_to_a_one_entry_row() 
         notes[0]
     );
 }
+
+// Adversary pass 1 (story:collection-quantifiers-witnessed-everywhere).
+
+/// One command whose single guarded branch `blocked` reads `tags`, declared as `{list}`, with
+/// `{types}` added to the declared types.
+const ONE: &str = "format: ess/32
+system: demo
+version: v1
+domain: demo.files
+types:
+  - {name: demo.files.ItemId, kind: newtype, of: Uuid}
+{types}errors:
+  - {name: demo.files.Blocked, summary: A tag blocks the item., fields: []}
+entities:
+  - name: demo.files.Item
+    identity: {name: item_id, type: demo.files.ItemId}
+    fields:
+      - {name: label, type: String}
+    lifecycle: {initial: Filed, states: [Filed], terminal: [Filed]}
+events:
+  - name: demo.files.ItemFiled
+    fields: [{name: item_id, type: demo.files.ItemId}]
+actors:
+  - {name: demo.files.Clerk, may: [demo.files.FileItem]}
+commands:
+  - name: demo.files.FileItem
+    input:
+      - {name: label, type: String}
+      - {name: tags, type: '{list}'}
+    outcomes:
+      - name: blocked
+        when: {guard}
+        error: demo.files.Blocked
+      - name: filed
+        creates: demo.files.Item
+        instance: item_id
+        emits: [demo.files.ItemFiled]
+        payload:
+          demo.files.ItemFiled: {item_id: {generated: true}}
+        sets: {label: input.label}
+";
+
+fn one(types: &str, list: &str, guard: &str) -> String {
+    ONE.replace("{types}", types)
+        .replace("{list}", list)
+        .replace("{guard}", guard)
+}
+
+/// The `blocked` scenario, run against a target that reads only `tags[0]`, fails.
+fn first_only_fails_blocked(guard: &str, first_only: &str) {
+    let result = synthesized(&one("", "List<String>", guard));
+    let sent_tags = sent(&result, BLOCKED_ID, "tags");
+    let run = statuses(&result, &one("", "List<String>", first_only));
+    assert_ne!(
+        run.get(BLOCKED_ID),
+        Some(&Status::Passed),
+        "a target reading only tags[0] ({first_only}) fails {BLOCKED_ID}, sent tags = {sent_tags:?}"
+    );
+}
+
+/// An `exists` that holds, over a body the two elements built at `.1`/`.2` satisfy themselves: the
+/// widened list is decided by its first element as much as by its middle one, so a target reading
+/// only `tags[0]` passes the scenario the predicate reference says it fails.
+#[test]
+fn adv_an_exists_its_filler_tags_satisfy_fails_a_target_reading_only_the_first_tag() {
+    first_only_fails_blocked(
+        "{exists: {in: input.tags, as: t, that: 't != \"\"'}}",
+        "'input.tags.0 != \"\"'",
+    );
+}
+
+/// A `forall` that fails, over a body the two elements built at `.1`/`.2` refute themselves: the
+/// widened list is decided by its first element, so a target reading only `tags[0]` passes.
+#[test]
+fn adv_a_failing_forall_its_filler_tags_refute_fails_a_target_reading_only_the_first_tag() {
+    first_only_fails_blocked(
+        "{not: {forall: {in: input.tags, as: t, that: 't == \"ok\"'}}}",
+        "'input.tags.0 != \"ok\"'",
+    );
+}
+
+/// A list of a constrained element type: the elements built at `.1`/`.2` are not repaired onto
+/// the type, so the widened list is not admitted. The story's outcome is "witnessed with several
+/// elements, or says why not": either the deciding element sits between others, or a note says
+/// the scenario fell back.
+#[test]
+fn adv_a_list_of_a_constrained_element_type_is_spread_or_says_why_not() {
+    // The type's own invariant scenario is refused apart (`ValueInvariantUnwitnessed`, no
+    // scenario named); the branch scenarios are what this case reads.
+    let result = synthesize(&ir(&one(
+        "  - {name: demo.files.Grade, kind: newtype, of: Integer, invariants: [value >= 10, value <= 20]}\n",
+        "List<demo.files.Grade>",
+        "{exists: {in: input.tags, as: t, that: t == 15}}",
+    )));
+    assert!(
+        result
+            .refusals
+            .iter()
+            .all(|refusal| refusal.scenario.is_none()),
+        "no branch is refused: {:?}",
+        result.refusals
+    );
+    let tags = items(sent(&result, BLOCKED_ID, "tags"));
+    let at: Vec<usize> = tags
+        .iter()
+        .enumerate()
+        .filter(|(_, item)| format!("{item:?}").contains("15"))
+        .map(|(at, _)| at)
+        .collect();
+    let spread = tags.len() >= 3 && at.len() == 1 && at[0] != 0 && at[0] != tags.len() - 1;
+    let noted = result
+        .notes
+        .iter()
+        .any(|note| note.to_string().contains(BLOCKED_ID));
+    assert!(
+        spread || noted,
+        "{BLOCKED_ID} sends one 15 between other grades, or a note says why not: tags = \
+         {tags:?}, notes = {:?}",
+        result.notes
+    );
+}
+
+/// The mutant the brief names beside the three the story's acceptance names: a target reading the
+/// first and the last tag but not the middle one fails both deciding scenarios.
+#[test]
+fn adv_a_target_ignoring_the_middle_tag_fails_the_suite() {
+    let result = synthesized(&tags(BLOCKED, UNCHECKED));
+    let ((blocked, _), (unchecked, _)) = deciding(&result);
+    let mutant = tags(
+        &format!(
+            "{{any: ['input.tags.0 == \"blocked\"', 'input.tags.{} == \"blocked\"']}}",
+            blocked.len() - 1
+        ),
+        &format!(
+            "{{any: ['input.tags.0 == \"\"', 'input.tags.{} == \"\"']}}",
+            unchecked.len() - 1
+        ),
+    );
+    assert_killed(&result, &mutant, "ends only");
+}
+
+const RELATED_MAP: &str = "format: ess/32
+system: demo
+version: v1
+domain: demo.apps
+types:
+  - {name: demo.apps.AccountId, kind: newtype, of: Uuid}
+  - {name: demo.apps.SessionId, kind: newtype, of: Uuid}
+errors:
+  - {name: demo.apps.Refused, summary: Refused., fields: []}
+  - {name: demo.apps.Unknown, summary: No such account., fields: []}
+entities:
+  - name: demo.apps.Account
+    identity: {name: account_id, type: demo.apps.AccountId}
+    fields:
+      - {name: redirect_uris, type: 'Map<Boolean, String>'}
+    lifecycle: {initial: Active, states: [Active], terminal: [Active]}
+  - name: demo.apps.Session
+    identity: {name: session_id, type: demo.apps.SessionId}
+    fields:
+      - {name: account_id, type: demo.apps.AccountId}
+      - {name: application, type: String}
+    relations:
+      - {name: account, kind: references, target: demo.apps.Account, cardinality: one, via: account_id}
+    lifecycle: {initial: Open, states: [Open], terminal: [Open]}
+events:
+  - name: demo.apps.Registered
+    fields: [{name: account_id, type: demo.apps.AccountId}]
+  - name: demo.apps.Opened
+    fields: [{name: session_id, type: demo.apps.SessionId}]
+actors:
+  - {name: demo.apps.Client, may: [demo.apps.Register, demo.apps.Open]}
+commands:
+  - name: demo.apps.Register
+    input:
+      - {name: redirect_uris, type: 'Map<Boolean, String>'}
+    outcomes:
+      - name: registered
+        creates: demo.apps.Account
+        instance: account_id
+        emits: [demo.apps.Registered]
+        payload:
+          demo.apps.Registered: {account_id: {generated: true}}
+        sets:
+          redirect_uris: input.redirect_uris
+  - name: demo.apps.Open
+    input:
+      - {name: account_id, type: demo.apps.AccountId}
+      - {name: application, type: String}
+    outcomes:
+      - name: unknown
+        when_related: {via: input.account_id, exists: false}
+        error: demo.apps.Unknown
+      - name: refused
+        when_related:
+          via: input.account_id
+          predicate: {exists: {in: redirect_uris, as: r, that: r == input.application}}
+        error: demo.apps.Refused
+      - name: opened
+        creates: demo.apps.Session
+        instance: session_id
+        emits: [demo.apps.Opened]
+        payload:
+          demo.apps.Opened: {session_id: {generated: true}}
+        sets:
+          account_id: input.account_id
+          application: input.application
+views:
+  - name: demo.apps.Accounts
+    source: demo.apps.Account
+    consistency: read_your_writes
+    fields:
+      - {name: account_id, type: demo.apps.AccountId}
+      - {name: redirect_uris, type: 'Map<Boolean, String>'}
+  - name: demo.apps.Sessions
+    source: demo.apps.Session
+    consistency: read_your_writes
+    fields:
+      - {name: session_id, type: demo.apps.SessionId}
+      - {name: account_id, type: demo.apps.AccountId}
+      - {name: application, type: String}
+";
+
+/// The acceptance's `Boolean`-keyed map, read by a related guard instead of a subject guard: the
+/// related row holds two entries at most, so it falls back to a one-entry row
+/// (`related_guard.rs`, the strict search then the plain one) and says so as the subject row does.
+#[test]
+fn adv_a_related_quantifier_over_a_boolean_keyed_map_says_it_fell_back_to_a_one_entry_row() {
+    let result = synthesize(&ir(RELATED_MAP));
+    let id = "demo.apps.Open/outcome/refused";
+    assert!(
+        result
+            .suite
+            .scenarios
+            .keys()
+            .any(|key| key.to_string() == id),
+        "{id} is witnessed: refusals {:?}",
+        result.refusals
+    );
+    assert!(
+        unspread(&result).iter().any(|note| note.contains(id)),
+        "a fallback note names {id}: {:?}",
+        result.notes
+    );
+}

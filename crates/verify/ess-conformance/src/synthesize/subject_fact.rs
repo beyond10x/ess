@@ -6529,7 +6529,16 @@ pub(super) fn unspread(
     {
         return Vec::new();
     }
-    elementwise(ir, entity, &hints)
+    elementwise_guards(ir, entity, &hints)
+}
+
+/// The [`elementwise`] quantifiers of `predicates`, as the author wrote them.
+pub(super) fn elementwise_guards(
+    ir: &EssIr,
+    entity: &EntityHandle,
+    predicates: &[Predicate],
+) -> Vec<String> {
+    elementwise(ir, entity, predicates)
         .iter()
         .map(ToString::to_string)
         .collect()
