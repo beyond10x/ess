@@ -123,7 +123,7 @@ impl ModelTypes {
             .provenance;
         let mut binary64 = BTreeSet::new();
         for item in selected.values() {
-            body_numeric_locations(item, &mut binary64);
+            body_numeric_locations(ir, item, &mut binary64);
         }
         for (root, body) in &bodies {
             fields_numeric_locations(&pointer("/$defs", root), &body.fields, &mut binary64);
@@ -569,11 +569,24 @@ fn fields_numeric_locations(at: &str, fields: &[ResolvedField], found: &mut BTre
     }
 }
 
-fn body_numeric_locations(item: &ess_compiler::ir::ResolvedType, found: &mut BTreeSet<String>) {
+fn body_numeric_locations(
+    ir: &EssIr,
+    item: &ess_compiler::ir::ResolvedType,
+    found: &mut BTreeSet<String>,
+) {
     let at = pointer("/$defs", &item.name.to_string());
     match &item.body {
         ResolvedBody::Newtype { of, .. } => numeric_locations(of, &at, found),
-        ResolvedBody::Struct { fields, .. } => fields_numeric_locations(&at, fields, found),
+        ResolvedBody::Struct { fields, .. } => {
+            // A shorthand (`ess/27`) publishes `oneOf [the field's value, the object]`
+            // ([`types::body`]): the value is `oneOf/0`, the properties sit under `oneOf/1`.
+            if let Some(short) = types::shorthand_field(ir, &item.name, fields) {
+                numeric_locations(short.type_ref.required(), &format!("{at}/oneOf/0"), found);
+                fields_numeric_locations(&format!("{at}/oneOf/1"), fields, found);
+            } else {
+                fields_numeric_locations(&at, fields, found);
+            }
+        }
         ResolvedBody::Union { tag, variants } => {
             let content = types::content_key(tag);
             for (index, (_, payload)) in variants.iter().enumerate() {

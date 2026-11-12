@@ -52,6 +52,11 @@ Every fragment below is placed into this one specification before it is run. A `
 replaces the guard of outcome `placed`. An `invariants:` fragment replaces the invariants of
 `shop.order.Order`. A `filter:` fragment replaces the filter of `shop.order.OpenOrders`.
 
+`placed` stores `quantity: 1` rather than copying the input. Copied with no guard keeping it inside
+`quantity >= 1`, the input would leave the model without an outcome for a quantity of 0, and a
+`when:` fragment that says nothing about `quantity` would then draw `ESS-SYNTH-025` (see
+[an input outside an entity invariant](#an-input-outside-an-entity-invariant)).
+
 ```yaml ess-check="model"
 format: ess/15
 system: shop
@@ -108,7 +113,7 @@ commands:
             order_id: {generated: true}
         sets:
           channel: input.channel
-          quantity: input.quantity
+          quantity: 1
           sku: input.sku
           tags: input.tags
           labels: input.labels
@@ -1964,6 +1969,24 @@ reported beside it with `ESS-SYNTH-005`. Filter on `state` wherever the rule all
 ```yaml ess-check="filter" ess-expect="unwitnessed:ESS-SYNTH-005" ess-says="note == hello"
 filter: note == hello
 ```
+
+### An input outside an entity invariant
+
+Sending only inputs inside the invariants leaves a question open: what answers an input outside
+them. Where a branch copies an input into a field an entity invariant reads and no guard keeps the
+input inside the invariant, the model declares no outcome for such an input. The branch's
+`invariant/after` scenario is still written. Beside it, synthesis refuses the hole with
+`ESS-SYNTH-025`, naming the branch, the invariant and the input that breaks it, for example
+`sets: {quantity: input.quantity}` beside `quantity >= 1` with no `when:` on the quantity.
+
+A specification that synthesized with no refusal before can gain one. `ess verify conform
+synthesize` now prints `refused:` lines and a refusal count where it printed none, and a coverage
+suite (`--suite-format 5`) is written at suite `ess-conformance/65`, with exit status 1 until the
+refusal is answered. An ordinary suite keeps its bytes and its exit status, and so does `ess
+specify validate`, which lists the refusal under `completeness`. Answer it by guarding the branch
+on the input (`when: quantity >= 1`) or by declaring a refusal branch ahead of it whose `when:`
+answers the input (`when: quantity < 1`, `error: …`). The search is bounded, one neighbour per
+comparison, so a hole it does not reach is not reported.
 
 ## Limits
 

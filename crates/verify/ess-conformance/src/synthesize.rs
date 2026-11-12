@@ -856,6 +856,20 @@ impl fmt::Display for Refusal {
                     self.subject
                 )
             }
+            // The scenario exists; an input outside its invariant has no outcome the model
+            // declares (beyond10x/ess#738).
+            Some(id)
+                if self.stands
+                    && matches!(self.cause, RefusalCause::InvariantInputUnanswered { .. }) =>
+            {
+                writeln!(
+                    f,
+                    "refusal[{}]: {} has a scenario `{id}` that sends only inputs inside the \
+                     invariant",
+                    self.code(),
+                    self.subject
+                )
+            }
             // The scenario exists; a held state its refusal claims has no row in it (ess/23,
             // beyond10x/ess#461).
             Some(id) if self.stands => writeln!(
@@ -1210,7 +1224,32 @@ pub enum RefusalCause {
         /// What decides it, as the specification spells it.
         decided_by: &'static str,
     },
+    /// A branch copies an input into an entity and no guard keeps the input inside one of the
+    /// entity's invariants, so the model declares no outcome for an input outside it
+    /// (beyond10x/ess#738, `docs/design/ess-closed-loop-execution-conformance-design-v0.1.md`
+    /// §20). The interpreter reports such an input undetermined and a generated target answers it
+    /// as an unmet obligation, so no scenario can expect a refusal the model never declares. The
+    /// `invariant/after` scenario stands beside it.
+    InvariantInputUnanswered {
+        /// The entity whose invariant the input breaks.
+        entity: EntityRef,
+        /// The branch that answers the input.
+        outcome: OutcomeRef,
+        /// The invariant, as the author wrote it.
+        invariant: String,
+        /// The input the invariant reads, as sent, by field.
+        input: String,
+    },
 }
+
+/// `RefusalCause::InvariantInputUnanswered`'s number in the `SYNTH` family, the next after
+/// [`SYSTEM_DECIDED_REFUSAL`] (beyond10x/ess#738).
+pub const INVARIANT_INPUT_UNANSWERED: u16 = 25;
+
+/// The repair for an input that breaks an entity invariant with no outcome declared for it
+/// (beyond10x/ess#738).
+const INVARIANT_INPUT_REPAIR: &str = "guard the branch on the input, or declare a refusal branch \
+     whose `when:` answers it";
 
 /// `RefusalCause::SystemIssuedUnaddressed`'s number in the `SYNTH` family, the next after
 /// [`CHILD_UNWITNESSED`] (beyond10x/ess#542).
@@ -1657,6 +1696,7 @@ impl RefusalCause {
             Self::ChildUnwitnessed { .. } => CHILD_REPAIR,
             Self::SystemIssuedUnaddressed { .. } => UNADDRESSED_REPAIR,
             Self::SystemDecidedRefusal { .. } => SYSTEM_DECIDED_REPAIR,
+            Self::InvariantInputUnanswered { .. } => INVARIANT_INPUT_REPAIR,
         }
     }
 }
@@ -1757,6 +1797,7 @@ crate::authored::diagnostic_catalogue! {
                 | BindingGap::RelatedRefusalUnarranged { .. }
                 | BindingGap::ArrangementSetsOff { .. }
                 | BindingGap::DestinationIdentityUnavailable { .. }
+                | BindingGap::DestinationBranchRead { .. }
                 | BindingGap::DestinationIneligible { .. }
                 | BindingGap::DestinationUnreachable { .. }
                 | BindingGap::UnchangedUnobservable { .. }
@@ -1846,6 +1887,11 @@ crate::authored::diagnostic_catalogue! {
             "A refusal of a command the system issues itself is decided by its input, or by rows \
              its input names, which the system chooses; no scenario claims it.",
             SYSTEM_DECIDED_REPAIR;
+        Self::InvariantInputUnanswered { .. } => INVARIANT_INPUT_UNANSWERED,
+            "A branch copies an input into an entity and no guard keeps the input inside one of \
+             its invariants, so the model declares no outcome for an input outside it; the \
+             invariant scenario stands without that input.",
+            INVARIANT_INPUT_REPAIR;
     }
 }
 
@@ -2042,6 +2088,17 @@ impl fmt::Display for RefusalCause {
                 "`{outcome}` refuses a step the system issues itself, and {decided_by} decides \
                  it: the system chooses that input, so a refusal another choice would avoid is \
                  not observable as an obligation"
+            ),
+            Self::InvariantInputUnanswered {
+                entity,
+                outcome,
+                invariant,
+                input,
+            } => write!(
+                f,
+                "`{outcome}` copies its input into `{entity}` and no guard keeps it inside the \
+                 invariant `{invariant}`: sent {input}, it leaves the entity breaking the \
+                 invariant, and the model declares no outcome for that input"
             ),
             Self::InvariantUnobservable { .. } => invariant_unobservable(f, self),
             Self::ValueInvariantUnwitnessed {
@@ -2281,6 +2338,17 @@ pub enum BindingGap {
         input: String,
         /// Why that identity is not knowable beforehand.
         why: &'static str,
+    },
+    /// The invoked command acts on the existing row the trigger's own input names, and the
+    /// trigger, sent naming that row, no longer takes the branch that publishes the binding's
+    /// event: the branch reads the input that names the row.
+    DestinationBranchRead {
+        /// The invoked command.
+        command: CommandRef,
+        /// Its input naming the row.
+        input: String,
+        /// The trigger's branch that publishes the event.
+        trigger: OutcomeRef,
     },
     /// The trigger leaves the row it acts on in a state no accepting branch of the invoked command
     /// admits, so the binding can only be refused there.
@@ -2608,6 +2676,10 @@ impl BindingGap {
                 "map the row's identity from an event field the trigger fills from its own input or \
                  from the row it acts on, so a scenario can arrange that row before the trigger"
             }
+            Self::DestinationBranchRead { .. } => {
+                "let the trigger's branch not read the input that names the row, or cover the \
+                 binding with an authored scenario (ess-scenario/1)"
+            }
             Self::DestinationIneligible { .. } => {
                 "let the trigger leave the row in a state the invoked command accepts, or cover the \
                  binding with an authored scenario (ess-scenario/1)"
@@ -2751,6 +2823,16 @@ impl fmt::Display for BindingGap {
                 f,
                 "invokes `{command}` on an existing row named by `{input}`, and no identity for it \
                  is knowable before the trigger: {why}"
+            ),
+            Self::DestinationBranchRead {
+                command,
+                input,
+                trigger,
+            } => write!(
+                f,
+                "invokes `{command}` on an existing row named by `{input}`, and no arrangement \
+                 keeps the trigger on its branch: the trigger's branch `{trigger}` reads the \
+                 input that names the row"
             ),
             Self::DestinationIneligible { command, state } => write!(
                 f,
@@ -19488,7 +19570,8 @@ fn invariants(
                 entity: EntityRef::from(&subject.entity),
                 after: OutcomeRef::new(CommandRef::new(command.name.clone()), outcome.name.clone()),
             };
-            let Some(scenario) = holds_after(
+            let outside = input_outside_invariant(ir, command, outcome, &subject.entity, &id);
+            let held = holds_after(
                 models,
                 command,
                 outcome,
@@ -19496,15 +19579,49 @@ fn invariants(
                 actors,
                 &id,
                 refusals,
-            ) else {
-                continue;
-            };
-            insert(suite, id, scenario, refusals);
+            );
+            let stands = held.is_some();
+            if let Some(scenario) = held {
+                insert(suite, id, scenario, refusals);
+            }
+            if let Some(mut refusal) = outside {
+                refusal.stands = stands;
+                refusals.push(refusal);
+            }
         }
     }
     if focus.is_whole() {
         value_object_invariants(ir, actors, suite, refusals);
     }
+}
+
+/// The refusal for an input `outcome` answers that leaves `entity` breaking an invariant no
+/// outcome of the command declares an answer for (`ESS-SYNTH-025`, beyond10x/ess#738), recorded
+/// beside the branch's `invariant/after` scenario `id`. `None` where the bounded search
+/// ([`crate::witness::outside_invariant`]) finds no such input, or where it cannot run: the
+/// branch's own refusal then says why.
+fn input_outside_invariant(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    entity: &EntityHandle,
+    id: &ScenarioId,
+) -> Option<Refusal> {
+    let outside = crate::witness::outside_invariant(ir, command, outcome, entity).ok()??;
+    let input: Vec<String> = outside
+        .input
+        .iter()
+        .map(|(path, node)| format!("{path}: {node}"))
+        .collect();
+    Some(Refusal::beside(
+        id,
+        RefusalCause::InvariantInputUnanswered {
+            entity: EntityRef::from(entity),
+            outcome: OutcomeRef::new(CommandRef::new(command.name.clone()), outcome.name.clone()),
+            invariant: outside.statement,
+            input: input.join(", "),
+        },
+    ))
 }
 
 /// The scenario that runs one branch and then reads the entity's invariants off a view.

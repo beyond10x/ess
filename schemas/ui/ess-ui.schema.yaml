@@ -715,13 +715,14 @@ constructs:
     group: composites
     order: 6
     summary: Page title, count, primary actions, view switch, filters and live status.
-    doc: Every page has one header, placed by position (`header`) rather than by `component`, so it is not a member of the composite union. `total` names the section whose total is shown; `live` lists channels whose connection state is shown, so a stale page is visibly stale, and never applies events. `title_from` shows a field of the record a section of the page holds (its first row, with its live changes applied) in place of `title`, which stays the text shown until the record holds the field. A header metric takes its own `live`, as any nested composite with `reads` does.
+    doc: Every page has one header, placed by position (`header`) rather than by `component`, so it is not a member of the composite union. `total` names the section whose total is shown; `live` lists channels whose connection state is shown, so a stale page is visibly stale, and never applies events. `title_from` shows a field of the record a section of the page holds (its first row, with its live changes applied) in place of `title`, which stays the text shown until the record holds the field. `badge` draws a toned pill after the title. The view switch lists the pages of `switch` and `switch_to` and the current page, and marks the current one; `live` shows each channel's lifecycle in words. A header metric takes its own `live`, as any nested composite with `reads` does.
     shorthand:
       - {at: title, accepts: {const: from_page}, expands_to: $page.title}
     fields:
       title:   {type: {one_of: [string, {const: from_page}]}, note: header title}
       title_from: {type: {record: {section: {ref: section}, field: name}}, note: "a field of the first row of a section that reads, shown as the title once present; `title` until then"}
-      total:   {type: {ref: section}, note: section whose total is shown}
+      total:   {type: {ref: section}, note: "section whose total is shown, as a count after the title named by the section title"}
+      badge:   {type: {record: {text: expr, tone: {optional: {enum: [neutral, info, success, warning, danger]}}}}, note: "a toned pill after the title; `text` is a literal or an expression, `tone` defaults to neutral"}
       actions: {type: {list: Action}, note: primary actions}
       switch:  {type: {list: name}, note: "pages from switch_to, or modes of this page"}
       filters: {type: {ref: section}, note: filter bar rendered in the header}

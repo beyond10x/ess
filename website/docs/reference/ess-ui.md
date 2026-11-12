@@ -1072,7 +1072,7 @@ inputs: [{field: min_value, as: number, binds: state.min_value}]
 
 Page title, count, primary actions, view switch, filters and live status.
 
-Every page has one header, placed by position (`header`) rather than by `component`, so it is not a member of the composite union. `total` names the section whose total is shown; `live` lists channels whose connection state is shown, so a stale page is visibly stale, and never applies events. `title_from` shows a field of the record a section of the page holds (its first row, with its live changes applied) in place of `title`, which stays the text shown until the record holds the field. A header metric takes its own `live`, as any nested composite with `reads` does.
+Every page has one header, placed by position (`header`) rather than by `component`, so it is not a member of the composite union. `total` names the section whose total is shown; `live` lists channels whose connection state is shown, so a stale page is visibly stale, and never applies events. `title_from` shows a field of the record a section of the page holds (its first row, with its live changes applied) in place of `title`, which stays the text shown until the record holds the field. `badge` draws a toned pill after the title. The view switch lists the pages of `switch` and `switch_to` and the current page, and marks the current one; `live` shows each channel's lifecycle in words. A header metric takes its own `live`, as any nested composite with `reads` does.
 
 **Properties**
 
@@ -1080,7 +1080,8 @@ Every page has one header, placed by position (`header`) rather than by `compone
 |---|---|---|---|---|
 | `title` | one of: `string` \| exactly `from_page` |   |   | header title |
 | `title_from` | record \{ `section`: name of a [Section](#section), `field`: `name` \} |   |   | a field of the first row of a section that reads, shown as the title once present; `title` until then |
-| `total` | name of a [Section](#section) |   |   | section whose total is shown |
+| `total` | name of a [Section](#section) |   |   | section whose total is shown, as a count after the title named by the section title |
+| `badge` | record \{ `text`: `expr`, `tone`: optional (one of: `neutral` \| `info` \| `success` \| `warning` \| `danger`) \} |   |   | a toned pill after the title; `text` is a literal or an expression, `tone` defaults to neutral |
 | `actions` | list of [Action](#action) |   |   | primary actions |
 | `switch` | list of `name` |   |   | pages from switch\_to, or modes of this page |
 | `filters` | name of a [Section](#section) |   |   | filter bar rendered in the header |

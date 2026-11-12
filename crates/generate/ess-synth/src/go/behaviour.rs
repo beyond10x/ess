@@ -375,6 +375,7 @@ const HELPER_NAMES: &[&str] = &[
     "numberOrder",
     "textOrder",
     "readOrder",
+    "readOrderBy",
     "flagOrder",
     "textOf",
     "instant",
@@ -1347,6 +1348,20 @@ func textOf(value *string) string {
 		return \"\"
 	}
 	return *value
+}
+"),
+    ("readOrderBy", &[], "
+// readOrderBy orders two read texts as an `Option` orders: an unread one first, then by order.
+func readOrderBy(left *string, right *string, order func(string, string) int) int {
+	switch {
+	case left == nil && right == nil:
+		return 0
+	case left == nil:
+		return -1
+	case right == nil:
+		return 1
+	}
+	return order(*left, *right)
 }
 "),
     ("instant", &["strings"], "
@@ -3940,7 +3955,7 @@ impl<'a> Writer<'a> {
             input: self.locals.input.clone(),
             command: Some(self.command),
             row_entity: match env {
-                Env::Subject(_, entity) | Env::Row(entity) => Some(*entity),
+                Env::Subject(_, entity) | Env::Row(entity, _) => Some(*entity),
                 Env::Input(_) => None,
             },
             params: Vec::new(),

@@ -210,8 +210,113 @@ where
     }
 }
 
-impl<P: crate::invoice::obligations::OutstandingInvoicesQuery> crate::invoice::obligations::OutstandingInvoicesQuery for Generated<P> {
+/// `billing.invoice.OutstandingInvoices`, generated: every row is one the specification fully determines from the stored `billing.invoice.Invoice`s.
+impl<P> crate::invoice::obligations::OutstandingInvoicesQuery for Generated<P>
+where
+    P: InvoiceStorage,
+{
     fn outstanding_invoices(&self) -> Result<Vec<crate::invoice::OutstandingInvoices>, UnmetObligation> {
-        crate::invoice::obligations::OutstandingInvoicesQuery::outstanding_invoices(&self.ports)
+        let mut admitted = InvoiceStorage::list(&self.ports);
+        // `filter:` shows a row where it holds; false or unknown hides it.
+        admitted.retain(|held| equal(Some(&held.state).map(|value| match value { crate::invoice::InvoiceState::Cancelled => "Cancelled", crate::invoice::InvoiceState::Draft => "Draft", crate::invoice::InvoiceState::Issued => "Issued", crate::invoice::InvoiceState::Paid => "Paid" }.to_owned()), Some("Issued".to_owned())) == Some(true));
+        // `order_by:`, stably: rows equal on every key keep the port's order.
+        admitted.sort_by(|left, right| (match (Some(&left.data.issued_at).and_then(|value| value.as_ref()).map(|value| value.0.clone()), Some(&right.data.issued_at).and_then(|value| value.as_ref()).map(|value| value.0.clone())) { (Some(left), Some(right)) => instant_order(&left, &right), (left, right) => left.is_some().cmp(&right.is_some()) }).reverse());
+        Ok(admitted
+            .into_iter()
+            .map(|held| crate::invoice::OutstandingInvoices {
+                invoice_id: held.data.invoice_id,
+                total: held.data.total,
+                issued_at: held.data.issued_at,
+            })
+            .collect())
+    }
+}
+
+/// Equality of two read values; an unread one is Unknown.
+fn equal<T: PartialEq>(left: Option<T>, right: Option<T>) -> Option<bool> {
+    Some(left? == right?)
+}
+
+/// The instant an RFC 3339 `date-time` names, as seconds from the epoch and nanoseconds.
+fn instant(text: &str) -> Option<(i64, u32)> {
+    let bytes = text.as_bytes();
+    let digits = |from: usize, to: usize| -> Option<u32> {
+        let slice = bytes.get(from..to)?;
+        if slice.is_empty() || !slice.iter().all(u8::is_ascii_digit) {
+            return None;
+        }
+        slice
+            .iter()
+            .try_fold(0u32, |total, digit| Some(total * 10 + u32::from(digit - b'0')))
+    };
+    let at = |index: usize, expected: &[u8]| bytes.get(index).is_some_and(|b| expected.contains(b));
+    if !(at(4, b"-") && at(7, b"-") && at(10, b"Tt") && at(13, b":") && at(16, b":")) {
+        return None;
+    }
+    let (year, month, day) = (i64::from(digits(0, 4)?), digits(5, 7)?, digits(8, 10)?);
+    let leap = (year % 4 == 0 && year % 100 != 0) || year % 400 == 0;
+    let length = match month {
+        1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
+        4 | 6 | 9 | 11 => 30,
+        2 if leap => 29,
+        2 => 28,
+        _ => return None,
+    };
+    if day < 1 || day > length {
+        return None;
+    }
+    let (hour, minute, second) = (digits(11, 13)?, digits(14, 16)?, digits(17, 19)?);
+    if hour > 23 || minute > 59 || second > 59 {
+        return None;
+    }
+    let mut position = 19;
+    let mut nanos = 0u32;
+    if at(position, b".") {
+        let start = position + 1;
+        let mut end = start;
+        while bytes.get(end).is_some_and(u8::is_ascii_digit) {
+            end += 1;
+        }
+        let width = end - start;
+        if width == 0 || width > 9 {
+            return None;
+        }
+        nanos = digits(start, end)? * 10u32.pow(u32::try_from(9 - width).ok()?);
+        position = end;
+    }
+    let offset = match bytes.get(position..)? {
+        b"Z" | b"z" => 0i64,
+        [sign @ (b'+' | b'-'), _, _, b':', _, _] => {
+            let (hours, minutes) = (digits(position + 1, position + 3)?, digits(position + 4, position + 6)?);
+            if hours > 23 || minutes > 59 {
+                return None;
+            }
+            let magnitude = i64::from(hours * 3600 + minutes * 60);
+            if *sign == b'-' {
+                -magnitude
+            } else {
+                magnitude
+            }
+        }
+        _ => return None,
+    };
+    let shifted = year - i64::from(month <= 2);
+    let era = if shifted >= 0 { shifted } else { shifted - 399 } / 400;
+    let year_of_era = shifted - era * 400;
+    let month = i64::from(month);
+    let day_of_year = (153 * (month + if month > 2 { -3 } else { 9 }) + 2) / 5 + i64::from(day) - 1;
+    let day_of_era = year_of_era * 365 + year_of_era / 4 - year_of_era / 100 + day_of_year;
+    let days = era * 146_097 + day_of_era - 719_468;
+    Some((
+        days * 86_400 + i64::from(hour * 3600 + minute * 60 + second) - offset,
+        nanos,
+    ))
+}
+
+/// Two RFC 3339 renderings by the instant each names; text that names none by its bytes.
+fn instant_order(left: &str, right: &str) -> core::cmp::Ordering {
+    match (instant(left), instant(right)) {
+        (Some(left), Some(right)) => left.cmp(&right),
+        _ => left.as_bytes().cmp(right.as_bytes()),
     }
 }

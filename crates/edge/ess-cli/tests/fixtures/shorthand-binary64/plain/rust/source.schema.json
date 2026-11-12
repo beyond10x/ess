@@ -1,0 +1,29 @@
+{
+  "$defs": {
+    "tracker.ops.Plain": {
+      "additionalProperties": false,
+      "properties": {
+        "label": {
+          "type": "string"
+        },
+        "value": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "label"
+      ],
+      "title": "Plain",
+      "type": "object",
+      "x-ess-kind": "struct",
+      "x-ess-name": "tracker.ops.Plain"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "x-ess-provenance": {
+    "contract_digest": "slice-sha256/2:f0f2e3a27c174c4b1229915f542f96595fa2dba64790ae0c7709537f5c9de122",
+    "source_digest": "7c52612f4579e3e854e07d3d72a918c1320c2964d866594e2ea0902d2babd93c",
+    "specification_version": "v1",
+    "system": "tracker"
+  }
+}

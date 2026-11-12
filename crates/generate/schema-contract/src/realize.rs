@@ -1184,6 +1184,15 @@ impl Plan {
             }
             pending.extend(children(node));
         }
+        // A shorthand struct's first branch is its field's own schema, which is not planned as a
+        // node of its own: a number-valued short form is the numeric node `oneOf/0`.
+        let short_forms = self
+            .shorthands
+            .iter()
+            .filter(|(_, short)| short.kind == ShortKind::Number)
+            .map(|(pointer, _)| path(&path(pointer, "oneOf"), "0"))
+            .collect::<Vec<_>>();
+        numeric.extend(short_forms.iter());
         let errors = self
             .binary64
             .iter()

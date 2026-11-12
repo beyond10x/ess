@@ -537,7 +537,9 @@ fn artifact<'a>(synthesis: &'a Synthesis, path: &str) -> &'a str {
 }
 
 /// Every line, byte for byte as the committed trees carried them before view parameters were
-/// served: a view without parameters keeps its query's signature in every seam that spells it.
+/// served: a view without parameters keeps its query's signature in every seam that spells it. The
+/// owed-query stub and the forwarding of `Generated` are not among them for `OutstandingInvoices`:
+/// its order over an optional `Timestamp` is generated now, so no stub is written for it.
 #[test]
 fn a_view_without_params_keeps_its_bytes() {
     let billing = example("billing");
@@ -554,19 +556,6 @@ fn a_view_without_params_keeps_its_bytes() {
             "crates/billing-types/src/invoice.rs",
             "        fn outstanding_invoices(&self) -> Result<Vec<super::OutstandingInvoices>, \
              crate::obligation::UnmetObligation>;\n",
-        ),
-        (
-            "crates/billing-types/src/invoice.rs",
-            "    impl OutstandingInvoicesQuery for Unimplemented {\n        fn \
-             outstanding_invoices(&self) -> Result<Vec<super::OutstandingInvoices>, \
-             crate::obligation::UnmetObligation> {\n",
-        ),
-        (
-            "crates/billing-types/src/behaviour.rs",
-            "    fn outstanding_invoices(&self) -> Result<Vec<crate::invoice::OutstandingInvoices>, \
-             UnmetObligation> {\n        \
-             crate::invoice::obligations::OutstandingInvoicesQuery::outstanding_invoices(&self.\
-             ports)\n    }\n",
         ),
         (
             "crates/invoice-service/src/lib.rs",
@@ -597,16 +586,6 @@ fn a_view_without_params_keeps_its_bytes() {
         (
             "types/invoice/invoice.go",
             "\tOutstandingInvoices() ([]OutstandingInvoices, *obligation.UnmetObligation)\n",
-        ),
-        (
-            "types/invoice/invoice.go",
-            "func (Unimplemented) OutstandingInvoices() ([]OutstandingInvoices, \
-             *obligation.UnmetObligation) {\n",
-        ),
-        (
-            "types/behaviour/behaviour.go",
-            "func (b *Generated) OutstandingInvoices() ([]invoice.OutstandingInvoices, \
-             *obligation.UnmetObligation) {\n\treturn b.ports.Owed.OutstandingInvoices()\n}\n",
         ),
         (
             "components/invoiceservice/invoiceservice.go",

@@ -1733,16 +1733,17 @@ fn published_list(out: &mut String, emit: &Emit<'_>, outcome: &ResolvedOutcome) 
     });
 }
 
-/// The `response` member of a branch that answers its caller with the command's response
-/// (`returns: true`, from `ess/22`, beyond10x/ess#423): the variant's own `Response`, through the
-/// wire file's encoder. Nothing for any other branch.
+/// The `response` member of a branch whose answer carries the command's response: one that answers
+/// its caller with it (`returns: true`, from `ess/22`, beyond10x/ess#423) or retains it
+/// (`replays:`), as the served document requires. The variant's own `Response`, through the wire
+/// file's encoder. Nothing for any other branch.
 fn direct_response(
     out: &mut String,
     emit: &Emit<'_>,
     command: &ResolvedCommand,
     outcome: &ResolvedOutcome,
 ) {
-    if http::answers_with_response(emit.ir, outcome) {
+    if ess_gen::openapi::carries_result(emit.ir, outcome) {
         let _ = writeln!(
             out,
             "\t\tbody[\"response\"] = {}(taken.Response)",
@@ -1772,7 +1773,7 @@ fn response_encoder_name(layout: &Layout, command: &QualifiedName) -> String {
     format!("encodeResponse{}", ident(layout, command))
 }
 
-/// A command's declared response, for the `response` member of a branch that answers with it.
+/// A command's declared response, for the `response` member of a branch whose answer carries it.
 /// Only for a command with such a branch, so every other wire file keeps its bytes.
 fn response_encoder(
     out: &mut String,
@@ -1783,7 +1784,7 @@ fn response_encoder(
     let answers = command
         .outcomes
         .iter()
-        .any(|outcome| http::answers_with_response(emit.ir, outcome));
+        .any(|outcome| ess_gen::openapi::carries_result(emit.ir, outcome));
     if !answers {
         return;
     }

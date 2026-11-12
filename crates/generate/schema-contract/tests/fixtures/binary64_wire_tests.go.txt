@@ -128,3 +128,14 @@ func TestPresenceUnionAndAtomicRecords(t *testing.T) {
     var text SampleFloatChoice
     if err := json.Unmarshal([]byte(`{"value":"text","content":"-0"}`), &text); err != nil { t.Fatal(err) }
 }
+
+func TestShorthandStructDecodesShortFormAndObject(t *testing.T) {
+    var short SampleFloatLabelled
+    if err := json.Unmarshal([]byte(`"x"`), &short); err != nil { t.Fatal(err) }
+    if short.Label != "x" || short.Value.Present { t.Fatal("short form") }
+    var object SampleFloatLabelled
+    if err := json.Unmarshal([]byte(`{"label":"x","value":1.5}`), &object); err != nil { t.Fatal(err) }
+    if object.Label != "x" || !object.Value.Present || object.Value.Value.Float64() != 1.5 { t.Fatal("object form") }
+    var past SampleFloatLabelled
+    if json.Unmarshal([]byte(`{"label":"x","value":1e999}`), &past) == nil { t.Fatal("a token past the binary64 range") }
+}

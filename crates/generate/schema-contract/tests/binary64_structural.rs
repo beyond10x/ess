@@ -60,6 +60,12 @@ types:
       - {name: value, type: 'Optional<Binary64>', presence: null_when_absent}
       - {name: spare, type: 'Optional<Binary64>', presence: omitted_or_null}
       - {name: plain, type: 'Optional<Binary64>'}
+  - name: sample.float.Labelled
+    kind: struct
+    shorthand: label
+    fields:
+      - {name: label, type: String}
+      - {name: value, type: 'Optional<Binary64>'}
 entities:
   - name: sample.float.Sample
     identity: {name: sample_id, type: sample.float.SampleId}
@@ -144,6 +150,7 @@ fn plan() -> Plan {
         "Nested",
         "Plain",
         "Reading",
+        "Labelled",
         "Measure.input",
         "Measure.response",
     ]

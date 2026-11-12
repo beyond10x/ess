@@ -138,6 +138,58 @@ fn refusals(synthesis: &Synthesis) -> Vec<String> {
         .collect()
 }
 
+/// `Configure` and `Revise/revised` copy `input.revision` into the entity and no guard keeps it
+/// inside `1..=MAX`, so the model declares no outcome for a revision outside it: synthesis names
+/// the two branches with `ESS-SYNTH-025` beside their `invariant/after` scenarios (beyond10x/ess#738)
+/// and refuses nothing else. The refusal #251 was about, `ESS-SYNTH-003` of `exhausted`, stays gone.
+fn only_the_unguarded_inputs_are_refused(synthesis: &Synthesis) {
+    let mut refused: Vec<String> = synthesis
+        .refusals
+        .iter()
+        .map(|refusal| {
+            format!(
+                "{}: {}",
+                refusal.cause.code(),
+                refusal
+                    .scenario
+                    .as_ref()
+                    .map_or_else(String::new, ToString::to_string)
+            )
+        })
+        .collect();
+    refused.sort();
+    assert_eq!(
+        refused,
+        [
+            "ESS-SYNTH-025: repro.policy.Policy/invariant/after/repro.policy.Configure/configured",
+            "ESS-SYNTH-025: repro.policy.Policy/invariant/after/repro.policy.Revise/revised",
+        ],
+        "{:#?}",
+        refusals(synthesis)
+    );
+    // `stale` (`revision >= input.revision`) answers every revision below the stored one, and a
+    // stored revision is never below 1, so it answers the revision 0 on every row: the hole
+    // `Revise/revised` leaves is above the bound, where `exhausted` answers only the row at it.
+    let sent: Vec<(String, String)> = synthesis
+        .refusals
+        .iter()
+        .filter_map(|refusal| match &refusal.cause {
+            ess_conformance::synthesize::RefusalCause::InvariantInputUnanswered {
+                outcome,
+                input,
+                ..
+            } => Some((outcome.to_string(), input.clone())),
+            _ => None,
+        })
+        .collect();
+    let revised: Vec<&str> = sent
+        .iter()
+        .filter(|(outcome, _)| outcome.contains("Revise"))
+        .map(|(_, input)| input.as_str())
+        .collect();
+    assert_eq!(revised, ["revision: 9007199254740992"], "{sent:#?}");
+}
+
 fn scenario_ids(synthesis: &Synthesis) -> BTreeSet<String> {
     synthesis
         .suite
@@ -307,11 +359,11 @@ fn failing(synthesis: &Synthesis, decide: Decide) -> Vec<String> {
 }
 
 /// #251's acceptance: the reproduction synthesizes the seven scenarios it did through 0.42.0 and
-/// refuses nothing.
+/// refuses nothing but the two unguarded inputs `ESS-SYNTH-025` names.
 #[test]
 fn issue_251_the_reproduction_synthesizes_seven_scenarios_and_no_refusal() {
     let synthesis = compiled(POLICY);
-    assert!(synthesis.refusals.is_empty(), "{:#?}", refusals(&synthesis));
+    only_the_unguarded_inputs_are_refused(&synthesis);
     let expected: BTreeSet<String> = EXPECTED.iter().map(|id| (*id).to_owned()).collect();
     assert_eq!(scenario_ids(&synthesis), expected);
 }
@@ -344,7 +396,7 @@ fn issue_251_exhausted_is_witnessed_at_the_bound() {
 #[test]
 fn issue_251_the_suite_passes_a_correct_target_and_fails_order_mutants() {
     let synthesis = compiled(POLICY);
-    assert!(synthesis.refusals.is_empty(), "{:#?}", refusals(&synthesis));
+    only_the_unguarded_inputs_are_refused(&synthesis);
     let failed = failing(&synthesis, declared);
     assert!(failed.is_empty(), "the correct target failed: {failed:#?}");
     let mutants: [(&str, Decide); 2] = [

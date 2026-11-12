@@ -1974,6 +1974,25 @@ fn keeps_branch_sent(
     input_kept: bool,
     row_guards: bool,
 ) -> bool {
+    branch_not_kept(
+        publisher.outcomes.iter(),
+        from,
+        entity,
+        input_kept,
+        row_guards,
+    )
+    .is_none()
+}
+
+/// The first of `outcomes` that [`keeps_branch_sent`] finds the trigger no longer takes as it did
+/// when its input `from` is sent another value, if any.
+fn branch_not_kept<'a>(
+    outcomes: impl IntoIterator<Item = &'a ResolvedOutcome>,
+    from: &str,
+    entity: Option<&EntityHandle>,
+    input_kept: bool,
+    row_guards: bool,
+) -> Option<&'a ResolvedOutcome> {
     use ess_compiler::ir::{ResolvedRelatedTest, ResolvedRelatedVia};
     use ess_primitives::predicate::Predicate;
 
@@ -1994,7 +2013,7 @@ fn keeps_branch_sent(
     let input_guard =
         |predicate: Option<&Predicate>| input_kept || !predicate.is_some_and(guard_reads);
     let through = |via: &ResolvedRelatedVia| matches!(via, ResolvedRelatedVia::Input { field, .. } if field == from);
-    publisher.outcomes.iter().all(|outcome| {
+    let keeps = |outcome: &ResolvedOutcome| {
         let acts_on = outcome.subject.as_ref().is_some_and(|subject| {
             matches!(&subject.instance, ResolvedInstance::Supplied { field } if field.name == from)
         });
@@ -2047,7 +2066,8 @@ fn keeps_branch_sent(
                 | ResolvedCondition::InputAbsent
                 | ResolvedCondition::ExistingInstance => true,
             }
-    })
+    };
+    outcomes.into_iter().find(|outcome| !keeps(outcome))
 }
 
 /// The trigger of a binding whose invocation reaches a set effect publishing an event once per row
@@ -2730,6 +2750,42 @@ fn same_row_destination<'a>(
     })
 }
 
+/// The first branch of `publisher`, up to the one that publishes (`published_by`), that no longer
+/// answers as it did once its input `field` is sent naming the arranged `entity` row. Only the
+/// branches ahead of the publishing one compete with it for the row, and a branch that fires only
+/// where the named row is absent is one the existing row never selects.
+fn branch_reading_arranged<'a>(
+    publisher: &'a ResolvedCommand,
+    published_by: &ResolvedOutcome,
+    field: &str,
+    entity: &EntityHandle,
+) -> Option<&'a ResolvedOutcome> {
+    let ahead = publisher
+        .outcomes
+        .iter()
+        .position(|outcome| std::ptr::eq(outcome, published_by))
+        .map_or(publisher.outcomes.len(), |at| at + 1);
+    let never_selected = |outcome: &&ResolvedOutcome| {
+        !std::ptr::eq(*outcome, published_by)
+            && matches!(
+                &outcome.condition,
+                ResolvedCondition::Related {
+                    via: ess_compiler::ir::ResolvedRelatedVia::Input { field: through, .. },
+                    entity: read,
+                    test: ess_compiler::ir::ResolvedRelatedTest::Absent,
+                    input: None,
+                    also,
+                } if through == field && read == entity && also.is_empty()
+            )
+    };
+    let competing = publisher
+        .outcomes
+        .iter()
+        .take(ahead)
+        .filter(|outcome| !never_selected(outcome));
+    branch_not_kept(competing, field, Some(entity), false, false)
+}
+
 /// [`prepare`] where the trigger's caller names the destination in `field`: the row is arranged
 /// first, through the settled routes, in a state the one accepting branch admits, and the trigger
 /// is sent naming exactly it.
@@ -2781,6 +2837,21 @@ fn arranged_destination<'a>(
             why: "the trigger reads the stored fields of the row it names, and the state its \
                   arrangement leaves that row in cannot be followed",
         });
+    }
+    // Naming the arranged row in the trigger must leave it on the branch that publishes the
+    // event, as the sibling paths keep it ([`keeps_branch_sent`]); an input guard reading the
+    // value is taken to answer otherwise for it.
+    if let Some(publisher) = command_of(ir, published_by) {
+        if let Some(read) = branch_reading_arranged(publisher, published_by, field, entity) {
+            return Err(BindingGap::DestinationBranchRead {
+                command: command(),
+                input: field_name(invoked),
+                trigger: OutcomeRef::new(
+                    CommandRef::new(publisher.name.clone()),
+                    read.name.clone(),
+                ),
+            });
+        }
     }
     let (arrangement, reached) = eligible_row(ir, invoked, entity, trigger, actors)?;
     let identity = arrangement.identity();

@@ -917,7 +917,7 @@ export function predicateNumbers(value: Node): Node {
  * synthesize::CHECK_NOT_EMITTED). tests/coverage_refusal_catalogue.rs holds all three to the Rust
  * catalogues, vector by vector.
  */
-const NEWEST_GENERATED_REFUSAL = 24;
+const NEWEST_GENERATED_REFUSAL = 25;
 const NEWEST_AUTHORED_REFUSAL = 47;
 const CHECK_NOT_EMITTED = new Set([5, 11, 12, 14, 16, 17, 20, 21, 22]);
 
@@ -7357,6 +7357,10 @@ export function admitSuiteDocument(raw: string, explicit: boolean): Suite {
           major < 53
         ) {
           throw new Error('system-issued command refusals require suite/53');
+        }
+        // An input that breaks an entity invariant (beyond10x/ess#738).
+        if (isObject(item) && item.code === 'ESS-SYNTH-025' && major < 65) {
+          throw new Error('invariant input refusals require suite/65');
         }
       }
     }

@@ -1213,22 +1213,22 @@ fn reads_related(outcome: &ResolvedOutcome) -> bool {
         .any(|field| related(&field.value))
 }
 
-/// Why an input refusal's arranged or held-state half is withdrawn where no identity view shows
-/// the record and no branch tried has a valid send from the state the record was left in.
+/// Why an input refusal's arranged or held-state half is withdrawn where no view observes
+/// the record in its state and no branch tried has a valid send from the state the record was left in.
 const UNPROBED: &str = "has no valid send for the record an input refusal was sent for, from the \
-                        state that record was arranged in, and no identity view shows that \
-                        record, so nothing would show a target that changes on refusal what the \
+                        state that record was arranged in, and no view observes that \
+                        record in its state, so nothing would show a target that changes on refusal what the \
                         command answers for it";
 
-/// Why an input refusal's arranged or held-state half is withdrawn where no identity view shows
-/// the record and the sends [`probe`] tried leave states it cannot tell apart from the one the
+/// Why an input refusal's arranged or held-state half is withdrawn where no view observes
+/// the record in its state and the sends [`probe`] tried leave states it cannot tell apart from the one the
 /// record was left in: after the best sequence its bounded search found, extended one send at a
 /// time, or after none where valid sends exist but none tells a state apart. The path names that
 /// state first, then those.
 const UNTOLD: &str = "names first the state the record an input refusal was sent for was arranged \
                       in, then the states left untold from it once the sends synthesis tried have \
                       told apart all they could, after which no send synthesis can make tells \
-                      apart from it any of those, and no identity view shows that record, so a \
+                      apart from it any of those, and no view observes that record in its state, so a \
                       target that moved it on refusal into one of those would not be seen";
 
 /// Every input-guarded refusal naming no subject beside branches that read the held state, sent
@@ -1244,8 +1244,10 @@ const UNTOLD: &str = "names first the state the record an input refusal was sent
 /// state first answers a sibling in each and fails there, and a target that checks the input in
 /// every state but one fails in that one.
 ///
-/// Where no identity view shows the record, nothing observes it in its state or compares it
-/// unchanged, so after each refused send the commands read it back instead ([`probe`]): sends
+/// Where no view observes the record in its state (none shows it, or those that do project the
+/// identity but not `state`, or are filtered, paged or not `expect`-style), nothing observes it in
+/// its state or compares it unchanged, so after each refused send the commands read it back
+/// instead ([`probe`]): sends
 /// from that held state whose required answers tell it apart from every other state, the
 /// command's own branches that run there first, its held-state refusals among them. A target that
 /// moved the record on refusal, into any state, answers one with another branch and fails.
@@ -1253,9 +1255,10 @@ const UNTOLD: &str = "names first the state the record an input refusal was sent
 /// Where a sibling that runs in a state also reads the input, the refused input is sent there
 /// again at their overlap, refuting every other input refusal: a target that tries the sibling
 /// first takes it. Where no arrangement reaches a state, the scenario is withdrawn and refused
-/// with the arrangement's cause, never left without that state's witness; with no identity view,
-/// likewise where no send from a held state has a valid input, naming every branch tried, or
-/// where the sends leave a state they cannot tell apart from it, naming the states.
+/// with the arrangement's cause, never left without that state's witness;
+/// likewise where no view observes the held state and no send from it has a valid input, naming
+/// every branch tried, or where the sends leave a state they cannot tell apart from it, naming
+/// the states.
 fn refusals_in_each_held_state(
     models: &InvocationModels<'_>,
     command: &ResolvedCommand,
@@ -1340,9 +1343,10 @@ fn held_state_refusals(
             part.source.extend(arrangement.source);
             // Observed in the state it was arranged in, where a view shows it; the held-state
             // siblings need that view themselves, so its absence is theirs to refuse. Where no
-            // identity view shows the record at all, the commands read it back after the refusal
-            // instead ([`probe`]), as the arranged half of a command without held-state branches
-            // does; a model with such a view keeps its sends.
+            // view observes the record in its state (none, or one projecting the identity but
+            // not `state`, or one filtered, paged or not `expect`-style), the commands read it
+            // back after the refusal instead ([`probe`]), as the arranged half of a command
+            // without held-state branches does.
             let mut read_back = None;
             let preservation = if let Ok((observed, view)) = super::observe_selection_subject(
                 ir,
@@ -1355,15 +1359,13 @@ fn held_state_refusals(
                 part.source.insert(view.into());
                 subject_fact::preserve_refused_subject(ir, subject, &setup)?
             } else {
-                if identity_views(ir, subject).next().is_none() {
-                    let record = Record {
-                        instance: Some(&arrangement.instance),
-                        bound: &BTreeMap::new(),
-                        held: Some(state),
-                        arranged: false,
-                    };
-                    read_back = Some(probe(ir, command, &subject.entity, actors, &record)?);
-                }
+                let record = Record {
+                    instance: Some(&arrangement.instance),
+                    bound: &BTreeMap::new(),
+                    held: Some(state),
+                    arranged: false,
+                };
+                read_back = Some(probe(ir, command, &subject.entity, actors, &record)?);
                 unobserved()
             };
             part.steps.extend(preservation.before);

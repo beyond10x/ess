@@ -20,8 +20,8 @@ use std::sync::OnceLock;
 
 use crate::expand::entry_segment;
 use crate::model::{
-    Action, Channel, EmptyState, FailedState, Field, ForbiddenState, Node, Overlay, Page, PageKind,
-    Section, SectionStates, Shell, StaleState, Widget,
+    Action, Channel, EmptyState, FailedState, Field, ForbiddenState, Header, HeaderBadge, Node,
+    Overlay, Page, PageKind, Section, SectionStates, Shell, StaleState, Widget,
 };
 use crate::schema::{Schema, Shape};
 use crate::{LoadError, NodePath};
@@ -75,6 +75,8 @@ fn visit<'a>(value: &'a Value, at: &NodePath, keys: &[Option<&'a str>]) -> Optio
         Some(Expected::Failed) => refused::<FailedState>(value),
         Some(Expected::Forbidden) => refused::<ForbiddenState>(value),
         Some(Expected::Stale) => refused::<StaleState>(value),
+        Some(Expected::Header) => refused::<Header>(value),
+        Some(Expected::HeaderBadge) => refused::<HeaderBadge>(value),
         Some(Expected::Action) => refused::<Action>(value),
         Some(Expected::Field) => refused::<Field>(value),
         Some(Expected::Node) => refused::<Node>(value),
@@ -101,6 +103,10 @@ enum Expected {
     Forbidden,
     /// `states.stale`.
     Stale,
+    /// A page's `header`.
+    Header,
+    /// A page header's `badge`.
+    HeaderBadge,
     Action,
     Field,
     Node,
@@ -124,6 +130,10 @@ fn classify(keys: &[Option<&str>], mapping: &Mapping) -> Option<Expected> {
         (2, Some("channels")) => return Some(Expected::Channel),
         (2, Some("widgets")) => return Some(Expected::Widget),
         _ if section_at(keys) => return Some(Expected::Section),
+        (3, Some("pages")) if at(2) == Some("header") => return Some(Expected::Header),
+        (4, Some("pages")) if at(2) == Some("header") && at(3) == Some("badge") => {
+            return Some(Expected::HeaderBadge)
+        }
         _ => {}
     }
     if from_end(2) == Some("overlays")

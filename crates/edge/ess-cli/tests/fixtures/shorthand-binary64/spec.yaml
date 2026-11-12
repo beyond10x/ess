@@ -1,0 +1,22 @@
+format: ess/27
+system: tracker
+version: v1
+domain: tracker.ops
+types:
+  - name: tracker.ops.Reading
+    kind: struct
+    shorthand: label
+    fields:
+      - {name: label, type: String}
+      - {name: value, type: Optional<Binary64>}
+  - name: tracker.ops.Gauge
+    kind: struct
+    shorthand: level
+    fields:
+      - {name: level, type: Binary64}
+      - {name: unit, type: Optional<String>}
+  - name: tracker.ops.Plain
+    kind: struct
+    fields:
+      - {name: label, type: String}
+      - {name: value, type: Optional<Binary64>}

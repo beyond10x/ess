@@ -1689,6 +1689,8 @@ pub struct Header {
     pub title_from: Option<TitleFrom>,
     /// Section whose total is shown.
     pub total: Option<String>,
+    /// A toned pill after the title.
+    pub badge: Option<HeaderBadge>,
     /// Primary actions, in order.
     #[serde(default)]
     pub actions: Vec<Action>,
@@ -1705,6 +1707,16 @@ pub struct Header {
     pub metrics: Vec<Node>,
     /// Help text or link.
     pub help: Option<Help>,
+}
+
+/// The badge a header shows after its title.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct HeaderBadge {
+    /// Literal or expression.
+    pub text: Expr,
+    /// Tone; neutral when absent.
+    pub tone: Option<Tone>,
 }
 
 /// The record field a header shows as its title: the first row the named section holds, with

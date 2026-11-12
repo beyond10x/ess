@@ -321,16 +321,18 @@ never reaches them. Its scenario sends the refused input for an identity nothing
 the lifecycle in declaration order, on a record of its own arranged and observed in that state, the
 refused input as decided there, and again at the overlap with each sibling that runs in that state
 and reads the input; each send requires the refusal, its error, no event and the row unchanged
-(`existence::refusals_in_each_held_state`). On a model with no identity view nothing observes the
-record or compares it unchanged, so after each send the commands read it back instead, as the
+(`existence::refusals_in_each_held_state`). Where no view observes the record in its held state (no
+identity view, or only views that project the identity and not `state`, or are filtered, paged or
+not `expect`-style) nothing observes the record or compares it unchanged, so after each send the
+commands read it back instead, as the
 arranged half above does: sends from that held state whose required answers tell it apart from
 every other state, the command's own branches that run there tried first, its held-state
 refusals among them, each sent with the input `reach_in_state` decides for that state. A target
 that moved the record on refusal fails it. A state no arrangement reaches withdraws the scenario
-with the arrangement's cause; with no identity view, so does a held state from which no send has a
-valid input (`ESS-SYNTH-001`, naming every branch tried), or whose sends leave a state they cannot
-tell apart from it (`ESS-SYNTH-001`, naming the states). A model with an identity view keeps its
-sends. The model interpreter answers such a refusal before it reads
+with the arrangement's cause; where no view observes the held state, so does a held state from
+which no send has a valid input (`ESS-SYNTH-001`, naming every branch tried), or whose sends leave
+a state they cannot tell apart from it (`ESS-SYNTH-001`, naming the states). A model with a view
+that publishes `state` keeps its sends and observes the row through that view. The model interpreter answers such a refusal before it reads
 anything else, so it decides a request the refusal claims even on a command whose held-state
 branches it does not yet interpret; Entity Runtime already orders every input-guarded refusal
 first and decides it before the row is loaded.

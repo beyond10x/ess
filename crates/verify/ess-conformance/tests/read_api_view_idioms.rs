@@ -1054,10 +1054,16 @@ fn adversary_note_names_every_synthesis_refusal_of_the_example() {
             "the note says synthesis refuses {name} as ESS-SYNTH-017: {refused:#?}"
         );
     }
-    let unnamed: Vec<&String> = refused
-        .iter()
-        .filter(|refusal| !NAMED.iter().any(|name| refusal.contains(name)))
-        .collect();
+    assert!(
+        refused.iter().any(|refusal| refusal.starts_with("ESS-SYNTH-025")
+            && refusal.contains("idioms.fold.RecordEnd")),
+        "the note says synthesis names the unguarded RecordEnd input as ESS-SYNTH-025: {refused:#?}"
+    );
+    let named = |refusal: &str| {
+        NAMED.iter().any(|name| refusal.contains(name))
+            || (refusal.starts_with("ESS-SYNTH-025") && refusal.contains("idioms.fold.RecordEnd"))
+    };
+    let unnamed: Vec<&String> = refused.iter().filter(|refusal| !named(refusal)).collect();
     assert_eq!(
         unnamed.len(),
         0,

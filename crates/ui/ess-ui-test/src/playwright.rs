@@ -405,7 +405,7 @@ fn answer_route(
         if list {
             let _ = write!(
                 body,
-                "const answers = {}; const hit = answers.find((answer) => answer.by_params && Object.entries(answer.by_params).every(([key, value]) => key in params && String(params[key]) === String(value))) ?? answers.find((answer) => !answer.by_params); const source = {{ ...(hit ?? {{ rows: [] }}) }}; delete source.by_params; ",
+                "const text = (v) => typeof v === \"object\" ? JSON.stringify(v) : String(v); const answers = {}; const hit = answers.find((answer) => answer.by_params && Object.entries(answer.by_params).every(([key, value]) => key in params && text(params[key]) === text(value))) ?? answers.find((answer) => !answer.by_params); const source = {{ ...(hit ?? {{ rows: [] }}) }}; delete source.by_params; ",
                 json(data)
             );
         } else {
@@ -477,7 +477,7 @@ fn view_routes(out: &mut String, test: &Test, fixtured: &Fixtured, binding: Opti
         line(
             out,
             &format!(
-                "await page.route({route}, async (route) => {{ await page.evaluate((ms) => new Promise((resolve) => setTimeout(resolve, ms)), {}); await route.continue(); }});",
+                "await page.route({route}, async (route) => {{ await page.evaluate((ms) => new Promise((resolve) => setTimeout(resolve, ms)), {}); await route.fallback(); }});",
                 latency.as_millis()
             ),
         );

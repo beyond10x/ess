@@ -1494,7 +1494,9 @@ fn outcome_renderer(
         if matches!(&outcome.error, Some(handle) if !ir.error(handle).fields.is_empty()) {
             bindings.push("error".to_owned());
         }
-        if http::answers_with_response(ir, outcome) {
+        // `response` is bound where the answer writes it; a variant that carries one the answer
+        // does not write (a response read into an event) is covered by `..`.
+        if ess_gen::openapi::carries_result(ir, outcome) {
             bindings.insert(0, "response".to_owned());
         }
         let pattern = if !bindings.is_empty() {
@@ -1502,7 +1504,10 @@ fn outcome_renderer(
                 "{outcome_type}::{variant} {{ {}, .. }}",
                 bindings.join(", ")
             )
-        } else if outcome.error.is_some() || carries(server, outcome) {
+        } else if outcome.error.is_some()
+            || carries(server, outcome)
+            || super::items::carries_response(ir, outcome)
+        {
             format!("{outcome_type}::{variant} {{ .. }}")
         } else {
             format!("{outcome_type}::{variant}")
@@ -1543,8 +1548,9 @@ fn outcome_renderer(
     out.push_str("    };\n    body.push('}');\n    (status, body)\n}\n");
 }
 
-/// The `response` member of a branch that answers its caller with the command's response
-/// (`returns: true`, from `ess/22`, beyond10x/ess#423): the variant's own `response`, through the
+/// The `response` member of a branch whose answer carries the command's response: one that answers
+/// its caller with it (`returns: true`, from `ess/22`, beyond10x/ess#423) or retains it
+/// (`replays:`), as the served document requires. The variant's own `response`, through the
 /// `wire` module's encoder. Nothing for any other branch.
 fn direct_response(
     out: &mut String,
@@ -1553,7 +1559,7 @@ fn direct_response(
     command: &ess_compiler::ir::ResolvedCommand,
     outcome: &ess_compiler::ir::ResolvedOutcome,
 ) {
-    if http::answers_with_response(ir, outcome) {
+    if ess_gen::openapi::carries_result(ir, outcome) {
         let _ = writeln!(
             out,
             "            json::member(&mut body, \"response\");\n            \

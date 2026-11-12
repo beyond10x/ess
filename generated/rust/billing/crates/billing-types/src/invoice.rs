@@ -732,8 +732,8 @@ pub struct InvoiceById {
 /// Outstanding invoices — one row of the view `billing.invoice.OutstandingInvoices`.
 ///
 /// Projects `billing.invoice.Invoice` at `read_your_writes` consistency, containing instances where `state == Issued`.
-/// Serving it is an implementation obligation — see the plan — because how a projection is kept
-/// current is a storage decision the specification does not take.
+/// The specification fully determines every row, so its query is generated over the storage port —
+/// see the plan.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OutstandingInvoices {
     /// `invoice_id` — `billing.invoice.InvoiceId`.
@@ -809,16 +809,14 @@ pub mod obligations {
         fn invoice_by_id(&self) -> Result<Vec<super::InvoiceById>, crate::obligation::UnmetObligation>;
     }
 
-    /// The query `billing.invoice.OutstandingInvoices` — an implementation obligation.
+    /// The query `billing.invoice.OutstandingInvoices` — generated.
     ///
-    /// Why it is not generated: kept an obligation by an order over the optional field `issued_at`, which has no order against a present value.
-    ///
-    /// Contract: a query answering `billing.invoice.OutstandingInvoices` with rows projected from `billing.invoice.Invoice` at `read_your_writes` consistency, containing instances where `state == Issued`.
+    /// The specification fully determines it: [`crate::behaviour::Generated`] implements it
+    /// over the storage port. Implement it yourself to replace that query.
     pub trait OutstandingInvoicesQuery {
         /// Serves `billing.invoice.OutstandingInvoices` rows at the view's declared consistency.
         ///
-        /// `Err` is the typed refusal of an obligation nothing has satisfied; a satisfying
-        /// implementation never returns it.
+        /// `Err` is the typed refusal of a row whose declared type cannot hold its value.
         fn outstanding_invoices(&self) -> Result<Vec<super::OutstandingInvoices>, crate::obligation::UnmetObligation>;
     }
 
@@ -837,12 +835,6 @@ pub mod obligations {
     impl PayInvoiceBehavior for Unimplemented {
         fn pay_invoice(&mut self, _input: super::PayInvoice) -> Result<super::PayInvoiceOutcome, crate::obligation::UnmetObligation> {
             Err(crate::obligation::UnmetObligation { capability: "command behaviour", source: "billing.invoice.PayInvoice" })
-        }
-    }
-
-    impl OutstandingInvoicesQuery for Unimplemented {
-        fn outstanding_invoices(&self) -> Result<Vec<super::OutstandingInvoices>, crate::obligation::UnmetObligation> {
-            Err(crate::obligation::UnmetObligation { capability: "view query", source: "billing.invoice.OutstandingInvoices" })
         }
     }
 }

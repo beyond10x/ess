@@ -1,0 +1,90 @@
+format: ess/31
+system: tracker
+version: v1
+domain: tracker.ops
+types:
+  - {name: tracker.ops.SampleId, kind: newtype, of: String}
+  - {name: tracker.ops.Level, kind: newtype, of: Binary64}
+  - name: tracker.ops.Meter
+    kind: struct
+    shorthand: level
+    fields:
+      - {name: level, type: tracker.ops.Level}
+      - {name: unit, type: Optional<String>}
+  - name: tracker.ops.Gauge
+    kind: struct
+    shorthand: level
+    fields:
+      - {name: level, type: Binary64}
+      - {name: unit, type: Optional<String>}
+  - name: tracker.ops.Reading
+    kind: struct
+    shorthand: label
+    fields:
+      - {name: label, type: String}
+      - {name: value, type: Optional<Binary64>}
+      - {name: either, type: Optional<Binary64>, presence: omitted_or_null}
+      - {name: series, type: Optional<List<Binary64>>}
+      - {name: table, type: 'Optional<Map<String, Binary64>>'}
+  - name: tracker.ops.Panel
+    kind: struct
+    shorthand: title
+    fields:
+      - {name: title, type: String}
+      - {name: main, type: Optional<tracker.ops.Reading>}
+      - {name: readings, type: Optional<List<tracker.ops.Reading>>}
+  - name: tracker.ops.Holder
+    kind: struct
+    fields:
+      - {name: amount, type: Binary64}
+      - {name: reading, type: tracker.ops.Reading}
+      - {name: gauges, type: Optional<List<tracker.ops.Gauge>>}
+  - name: tracker.ops.Row
+    kind: struct
+    shorthand: label
+    fields:
+      - {name: label, type: String}
+      - {name: value, type: Optional<Binary64>}
+entities:
+  - name: tracker.ops.Sample
+    identity: {name: sample_id, type: tracker.ops.SampleId}
+    fields:
+      - {name: label, type: String}
+      - {name: value, type: Optional<Binary64>}
+      - {name: reading, type: tracker.ops.Reading}
+    lifecycle: {initial: Active, states: [Active], terminal: [Active], transitions: []}
+commands:
+  - name: tracker.ops.Record
+    input:
+      - {name: sample_id, type: tracker.ops.SampleId, example: s-1}
+      - {name: label, type: String, example: first}
+      - {name: value, type: Optional<Binary64>}
+      - {name: reading, type: tracker.ops.Reading}
+    outcomes:
+      - name: recorded
+        creates: tracker.ops.Sample
+        instance: sample_id
+        sets: {label: input.label, value: input.value, reading: input.reading}
+        emits: [tracker.ops.Recorded]
+        payload:
+          tracker.ops.Recorded: {sample_id: input.sample_id}
+events:
+  - name: tracker.ops.Recorded
+    fields:
+      - {name: sample_id, type: tracker.ops.SampleId}
+views:
+  - name: tracker.ops.Samples
+    source: tracker.ops.Sample
+    fields:
+      - {name: sample_id, type: tracker.ops.SampleId}
+      - {name: value, type: Optional<Binary64>}
+      - {name: reading, type: tracker.ops.Reading}
+  - name: tracker.ops.Rows
+    source: tracker.ops.Sample
+    shape: tracker.ops.Row
+components:
+  - component: tracker-service
+    reached_by: network
+    owns: {domains: [tracker.ops]}
+    accepts: {commands: [tracker.ops.Record]}
+    publishes: {events: [tracker.ops.Recorded]}

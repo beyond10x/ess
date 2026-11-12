@@ -1,0 +1,61 @@
+{
+  "format": "ess-types-report/3",
+  "source_digest": "7c52612f4579e3e854e07d3d72a918c1320c2964d866594e2ea0902d2babd93c",
+  "input": {
+    "kind": "model",
+    "system": "tracker",
+    "specification_version": "v1",
+    "contract_digest": "slice-sha256/2:f0f2e3a27c174c4b1229915f542f96595fa2dba64790ae0c7709537f5c9de122",
+    "projection_digest": "baafdf1dfc0e5075e6ccc1fa730ec5737dcbefb10b6050c604165852b85e57e9"
+  },
+  "generator_version": "0.93.0",
+  "target": "typescript",
+  "configuration": {
+    "language": "typescript"
+  },
+  "roots": [
+    "tracker.ops.Plain"
+  ],
+  "declarations": {
+    "tracker.ops.Plain": "TrackerOpsPlain"
+  },
+  "annotations": [
+    {
+      "pointer": "/$defs/tracker.ops.Plain/title",
+      "rule": "title",
+      "detail": "retained in source.schema.json; no decoder behavior inferred"
+    },
+    {
+      "pointer": "/$defs/tracker.ops.Plain/x-ess-kind",
+      "rule": "x-ess-kind",
+      "detail": "model identity and wire mapping retained in source.schema.json"
+    },
+    {
+      "pointer": "/$defs/tracker.ops.Plain/x-ess-name",
+      "rule": "x-ess-name",
+      "detail": "model identity and wire mapping retained in source.schema.json"
+    }
+  ],
+  "obligations": [
+    {
+      "pointer": "/",
+      "rule": "typescript_compiler_options",
+      "detail": "use strict and exactOptionalPropertyTypes; these declarations do not validate runtime JSON"
+    },
+    {
+      "pointer": "/$defs/tracker.ops.Plain",
+      "rule": "closed_object",
+      "detail": "TypeScript structural assignability does not enforce exact object keys; validate additionalProperties at runtime"
+    },
+    {
+      "pointer": "/$defs/tracker.ops.Plain/properties/value",
+      "rule": "json_number_precision",
+      "detail": "TypeScript number cannot retain arbitrary JSON numeric precision; validate representability before decoding"
+    },
+    {
+      "pointer": "/$defs/tracker.ops.Plain/properties/value",
+      "rule": "model_binary64",
+      "detail": "finite IEEE-754 binary64 requires nearest-even token decoding, signed-zero preservation and finite round-tripping serialization; the structural number representation alone does not enforce this contract"
+    }
+  ]
+}

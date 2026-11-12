@@ -908,6 +908,26 @@ For v0.1:
 - evaluate invariant predicates against observable entity/view state where possible;
 - do not require full formal proof.
 
+**The input that breaks an invariant (`ESS-SYNTH-025`, beyond10x/ess#738).** An invariant is checked
+after every branch that creates or changes the entity. Where a branch copies an input into the entity
+(`sets: {value: input.value}`) and no guard keeps the input inside the invariant, the model declares no
+outcome for an input outside it: the interpreter reports it undetermined and generated Rust answers it
+as an unmet obligation. Synthesis does not write a scenario that expects a refusal the model never
+declares. It runs one bounded search per state-changing branch of an entity that declares invariants:
+the invariants whose every read lands on a copied input, moved onto that input
+(`witness::outside_invariant`), are offered the literals and neighbours the same walk
+[`witness::candidates`] builds, without the filter that drops an input breaking them, and the first
+candidate the branch's own `when:` accepts, that no input-guarded refusal answers first and that
+refutes an invariant is the counterexample. Where one exists, the scenario `<Entity>/invariant/after/
+<Command>/<outcome>` still stands and a refusal `ESS-SYNTH-025` names the branch, the invariant and the
+input. Its repair is the idiom the specification already has: guard the branch on the input, or declare
+a refusal branch whose `when:` answers it, after which the outcome scenario of that refusal sends the
+outside input and checks that nothing changed. The search is bounded (one neighbour per comparison); it
+is no invariant solver, so an invariant that reads a field the branch does not copy, or one the walk
+does not reach, gets no refusal. A coverage suite whose inventory holds the code is written at
+`ess-conformance/65`, and a reader below that major refuses it by version, as for `ESS-SYNTH-023`
+and `-024`; an ordinary suite keeps its bytes.
+
 Later:
 
 ```text

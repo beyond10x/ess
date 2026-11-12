@@ -422,7 +422,7 @@ impl billing_types::invoice::obligations::InvoiceByIdQuery for Unrealized {
 
 impl billing_types::invoice::obligations::OutstandingInvoicesQuery for Unrealized {
     fn outstanding_invoices(&self) -> Result<Vec<billing_types::invoice::OutstandingInvoices>, billing_types::obligation::UnmetObligation> {
-        billing_types::invoice::obligations::Unimplemented.outstanding_invoices()
+        Err(billing_types::obligation::UnmetObligation { capability: "query ports", source: "billing.invoice.OutstandingInvoices" })
     }
 }
 

@@ -850,9 +850,9 @@ pub(crate) enum Env<'a> {
     /// The addressed row's stored fields and `state`, with the input under `input.` and the caller
     /// under `caller.`.
     Subject(&'a ResolvedCommand, &'a ResolvedEntity),
-    /// One stored row of an entity, as a view's `filter:` reads it: its fields and `state`, and
-    /// nothing else — no input, no caller.
-    Row(&'a ResolvedEntity),
+    /// One stored row of an entity, as a view's `filter:` reads it: its fields and `state`, and the
+    /// view's parameters under `param.`; no input, no caller.
+    Row(&'a ResolvedEntity, &'a [ResolvedField]),
 }
 
 /// Where a resolved path starts.
@@ -942,7 +942,27 @@ pub(crate) fn resolve(ir: &EssIr, env: &Env<'_>, path: &FactPath) -> Result<Reso
             .map(|field| field.type_ref.clone())
     };
     let (root, root_type, rest) = match (env, segments) {
-        (Env::Row(entity), [first, rest @ ..]) => {
+        // A view's parameter, which the interpreted target reads before any stored field of the
+        // same name: the query takes it as an argument. An optional one is left out of a read the
+        // caller chooses not to send, and the interpreted target refuses such a read where the
+        // filter compares with it, so a generated query that hid the rows instead would answer
+        // what the suite does not.
+        (Env::Row(_, params), [first, name, rest @ ..])
+            if first == ess_domain::view::ViewSpec::PARAM =>
+        {
+            let param = params
+                .iter()
+                .find(|param| &param.name == name)
+                .ok_or_else(unknown)?;
+            if param.type_ref.is_optional() {
+                return Err(format!(
+                    "a comparison with the optional view parameter `{name}`, which the interpreted \
+                     target refuses a read that leaves out, where a generated query would hide rows"
+                ));
+            }
+            (Root::Param(name.clone()), param.type_ref.clone(), rest)
+        }
+        (Env::Row(entity, _), [first, rest @ ..]) => {
             if first == "state" {
                 (
                     Root::State,
@@ -1150,7 +1170,7 @@ pub(crate) fn resolve_derived(
     env: &Env<'_>,
     derived: &Derived,
 ) -> Result<Resolved, String> {
-    if matches!(env, Env::Row(_)) {
+    if matches!(env, Env::Row(..)) {
         return Err(format!(
             "`{derived}`, a byte length the generated view query does not compare"
         ));
@@ -1356,7 +1376,7 @@ fn text_match_supported(
                 namespace: TextNamespace::Param,
                 ..
             },
-            Env::Row(_),
+            Env::Row(..),
         ) => Ok(()),
         (TextOperand::Literal(_), _) => Err(not_text()),
         // A command's input, compared with as it is read.
@@ -1389,7 +1409,7 @@ fn offset_supported(
     offset: &ess_primitives::predicate::OffsetOperand,
 ) -> Result<(), String> {
     use ess_primitives::predicate::OffsetMagnitude;
-    if matches!(env, Env::Row(_)) {
+    if matches!(env, Env::Row(..)) {
         return Err(format!(
             "`{predicate}`, an offset the generated view query does not compare"
         ));

@@ -24,6 +24,8 @@ import (
 	"example.invalid/billing/types/email"
 	"example.invalid/billing/types/invoice"
 	"example.invalid/billing/types/obligation"
+	"sort"
+	"strings"
 )
 
 // InvoiceStorage is where `billing.invoice.Invoice` is stored — a port the implementor provides.
@@ -122,7 +124,6 @@ func UnmetContext(source string) *obligation.UnmetObligation {
 type Owed interface {
 	invoice.CreateInvoiceBehavior
 	invoice.PayInvoiceBehavior
-	invoice.OutstandingInvoicesQuery
 }
 
 // Ports is everything the generated behaviours and queries read, and everything the plan still
@@ -251,12 +252,230 @@ func (b *Generated) InvoiceById() ([]invoice.InvoiceById, *obligation.UnmetOblig
 	return rows, nil
 }
 
-// OutstandingInvoices forwards the owed query `billing.invoice.OutstandingInvoices` to the ports.
+// OutstandingInvoices is `billing.invoice.OutstandingInvoices`, generated: every row is one the specification fully determines from the
+// stored `billing.invoice.Invoice`s.
 func (b *Generated) OutstandingInvoices() ([]invoice.OutstandingInvoices, *obligation.UnmetObligation) {
-	return b.ports.Owed.OutstandingInvoices()
+	listed := b.ports.InvoiceStorage.List()
+	// `filter:` shows a row where it holds; false or unknown hides it.
+	var kept []invoice.InvoiceSnapshot
+	for _, held := range listed {
+		var r0 *string
+		switch held.State.(type) {
+		case invoice.InvoiceStateCancelled:
+			r0 = some("Cancelled")
+		case invoice.InvoiceStateDraft:
+			r0 = some("Draft")
+		case invoice.InvoiceStateIssued:
+			r0 = some("Issued")
+		case invoice.InvoiceStatePaid:
+			r0 = some("Paid")
+		}
+		if equal(r0, some("Issued")) == verity {
+			kept = append(kept, held)
+		}
+	}
+	// `order_by:`, stably: rows equal on every key keep the port's order.
+	sort.SliceStable(kept, func(i int, j int) bool {
+		left, right := kept[i], kept[j]
+		var r2 *string
+		if left.Data.IssuedAt != nil {
+			v1 := *left.Data.IssuedAt
+			_ = v1
+			r2 = some(v1.Value())
+		}
+		var r4 *string
+		if right.Data.IssuedAt != nil {
+			v3 := *right.Data.IssuedAt
+			_ = v3
+			r4 = some(v3.Value())
+		}
+		if c := readOrderBy(r2, r4, instantOrder); c != 0 {
+			return c > 0
+		}
+		return false
+	})
+	rows := make([]invoice.OutstandingInvoices, 0, len(kept))
+	for _, held := range kept {
+		rows = append(rows, invoice.OutstandingInvoices{InvoiceId: held.Data.InvoiceId, Total: held.Data.Total, IssuedAt: held.Data.IssuedAt})
+	}
+	return rows, nil
 }
+
+// truth is a guard's reading: true, false, or unknown where a value it reads is absent.
+type truth int
+
+// unknown is the reading of a guard a value it reads is absent from: it selects no branch.
+const unknown truth = 0
+
+// falsity is the reading of a guard that does not hold.
+const falsity truth = 1
+
+// verity is the reading of a guard that holds.
+const verity truth = 2
 
 // some is value, present.
 func some[T any](value T) *T {
 	return &value
+}
+
+// known is the reading of a decided guard.
+func known(holds bool) truth {
+	if holds {
+		return verity
+	}
+	return falsity
+}
+
+// equal is the equality of two read values; an unread one is unknown.
+func equal[T comparable](left *T, right *T) truth {
+	if left == nil || right == nil {
+		return unknown
+	}
+	return known(*left == *right)
+}
+
+// readOrderBy orders two read texts as an `Option` orders: an unread one first, then by order.
+func readOrderBy(left *string, right *string, order func(string, string) int) int {
+	switch {
+	case left == nil && right == nil:
+		return 0
+	case left == nil:
+		return -1
+	case right == nil:
+		return 1
+	}
+	return order(*left, *right)
+}
+
+// instant is the instant an RFC 3339 `date-time` names, as seconds from the epoch and
+// nanoseconds; ok is false where it names none.
+func instant(value string) (int64, int64, bool) {
+	digits := func(from int, to int) (int64, bool) {
+		if from >= to || to > len(value) {
+			return 0, false
+		}
+		var total int64
+		for index := from; index < to; index++ {
+			if value[index] < '0' || value[index] > '9' {
+				return 0, false
+			}
+			total = total*10 + int64(value[index]-'0')
+		}
+		return total, true
+	}
+	at := func(index int, expected string) bool {
+		return index < len(value) && strings.IndexByte(expected, value[index]) >= 0
+	}
+	if !at(4, "-") || !at(7, "-") || !at(10, "Tt") || !at(13, ":") || !at(16, ":") {
+		return 0, 0, false
+	}
+	year, yearOk := digits(0, 4)
+	month, monthOk := digits(5, 7)
+	day, dayOk := digits(8, 10)
+	if !yearOk || !monthOk || !dayOk {
+		return 0, 0, false
+	}
+	leap := (year%4 == 0 && year%100 != 0) || year%400 == 0
+	var length int64
+	switch month {
+	case 1, 3, 5, 7, 8, 10, 12:
+		length = 31
+	case 4, 6, 9, 11:
+		length = 30
+	case 2:
+		length = 28
+		if leap {
+			length = 29
+		}
+	default:
+		return 0, 0, false
+	}
+	if day < 1 || day > length {
+		return 0, 0, false
+	}
+	hour, hourOk := digits(11, 13)
+	minute, minuteOk := digits(14, 16)
+	second, secondOk := digits(17, 19)
+	if !hourOk || !minuteOk || !secondOk || hour > 23 || minute > 59 || second > 59 {
+		return 0, 0, false
+	}
+	position := 19
+	var nanos int64
+	if at(position, ".") {
+		start := position + 1
+		end := start
+		for end < len(value) && value[end] >= '0' && value[end] <= '9' {
+			end++
+		}
+		width := end - start
+		if width == 0 || width > 9 {
+			return 0, 0, false
+		}
+		fraction, ok := digits(start, end)
+		if !ok {
+			return 0, 0, false
+		}
+		for padding := width; padding < 9; padding++ {
+			fraction *= 10
+		}
+		nanos = fraction
+		position = end
+	}
+	var offset int64
+	rest := value[position:]
+	switch {
+	case rest == "Z" || rest == "z":
+		offset = 0
+	case len(rest) == 6 && (rest[0] == '+' || rest[0] == '-') && rest[3] == ':':
+		hours, hoursOk := digits(position+1, position+3)
+		minutes, minutesOk := digits(position+4, position+6)
+		if !hoursOk || !minutesOk || hours > 23 || minutes > 59 {
+			return 0, 0, false
+		}
+		offset = hours*3600 + minutes*60
+		if rest[0] == '-' {
+			offset = -offset
+		}
+	default:
+		return 0, 0, false
+	}
+	shifted := year
+	if month <= 2 {
+		shifted--
+	}
+	era := shifted
+	if era < 0 {
+		era -= 399
+	}
+	era /= 400
+	yearOfEra := shifted - era*400
+	shiftedMonth := month - 3
+	if month <= 2 {
+		shiftedMonth = month + 9
+	}
+	dayOfYear := (153*shiftedMonth+2)/5 + day - 1
+	dayOfEra := yearOfEra*365 + yearOfEra/4 - yearOfEra/100 + dayOfYear
+	days := era*146097 + dayOfEra - 719468
+	return days*86400 + hour*3600 + minute*60 + second - offset, nanos, true
+}
+
+// instantOrder orders two RFC 3339 renderings by the instant each names, and text that names
+// none by its bytes: -1, 0 or 1.
+func instantOrder(left string, right string) int {
+	leftSeconds, leftNanos, leftOk := instant(left)
+	rightSeconds, rightNanos, rightOk := instant(right)
+	if !leftOk || !rightOk {
+		return strings.Compare(left, right)
+	}
+	switch {
+	case leftSeconds < rightSeconds:
+		return -1
+	case leftSeconds > rightSeconds:
+		return 1
+	case leftNanos < rightNanos:
+		return -1
+	case leftNanos > rightNanos:
+		return 1
+	}
+	return 0
 }

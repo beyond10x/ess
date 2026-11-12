@@ -172,6 +172,8 @@ export interface SectionInfo {
   total?: number;
   params?: Record<string, unknown>;
   selection?: unknown;
+  /** The section's title: what a header's count counts. */
+  title?: string;
   /** The first row, reported by the section a header title reads its record from. */
   row?: unknown;
 }
@@ -295,6 +297,7 @@ export function PageFrame(props: {
     <RegistryContext.Provider value={report}>
       <ScopeLayer values={{ section: sections, same_as: (name: string) => sections[name]?.params }}>
         <main className="ui-page" data-ui-path={props["data-ui-path"]} data-ui-host={props.host} data-profile={props.profile}>
+          {props.title ? <h1>{props.title}</h1> : null}
           {props.children}
         </main>
       </ScopeLayer>
@@ -432,7 +435,7 @@ export function SectionFrame(props: {
     observer.observe(ref.current);
     return () => observer.disconnect();
   }, [load, active, onActivate]);
-  useReport(props.name, { total: data?.total, params: data?.params, row: props.reportsRow ? data?.rows[0] : undefined });
+  useReport(props.name, { total: data?.total, params: data?.params, title: props.title, row: props.reportsRow ? data?.rows[0] : undefined });
   const mark = data?.stale ? states.stale?.mark ?? "badge" : undefined;
   let body: ReactNode = props.children;
   if (load === "on_demand" && !active) {
@@ -493,7 +496,15 @@ export function SectionFrame(props: {
 /** A link to another page. */
 export interface PageLink {
   label: string;
-  href: string;
+  /** Absent on the current page's entry, which does not navigate. */
+  href?: string;
+  current?: boolean;
+}
+
+/** A header badge: its text (an expression) and its tone. */
+export interface HeaderBadgeSpec {
+  text: string;
+  tone?: string;
 }
 
 /** The page header: title, total, actions, switch links, live channels, metrics and help. */
@@ -503,6 +514,9 @@ export function HeaderFrame(props: {
   /** A field of the record a section holds, shown in place of `title` once present. */
   titleFrom?: { section: string; field: string };
   total?: string;
+  /** Overrides the title of the section `total` names, which the count is named by. */
+  totalLabel?: string;
+  badge?: HeaderBadgeSpec;
   filters?: string;
   switchTo?: PageLink[];
   live?: string[];
@@ -521,20 +535,37 @@ export function HeaderFrame(props: {
     <header className="ui-header" data-ui-path={props["data-ui-path"]}>
       <div className="ui-header-title">
         {title ? <h1>{title}</h1> : null}
-        {total !== undefined ? <span className="ui-total">{total}</span> : null}
-        {(props.live ?? []).map((channel) => (
-          <span key={channel} className="ui-live" data-lifecycle={String(getPath(scope.values.channel, [channel, "lifecycle"]) ?? "connecting")}>
-            {channel}: {String(getPath(scope.values.channel, [channel, "lifecycle"]) ?? "connecting")}
+        {props.badge ? (
+          <span className={`ui-badge ui-tone-${props.badge.tone ?? "neutral"}`}>{formatValue(evaluate(props.badge.text, scope.values))}</span>
+        ) : null}
+        {total !== undefined ? (
+          <span className="ui-count ui-total" role="img" aria-label={`${total} ${props.totalLabel ?? (props.total ? sections[props.total]?.title : undefined) ?? "rows"}`}>
+            {new Intl.NumberFormat().format(total)}
           </span>
-        ))}
+        ) : null}
+        {(props.live ?? []).map((channel) => {
+          const lifecycle = String(getPath(scope.values.channel, [channel, "lifecycle"]) ?? "connecting");
+          const words: Record<string, string> = { live: "Live", connecting: "Connecting", loading: "Loading", reconnecting: "Reconnecting", stale: "Stale", closed: "Closed" };
+          return (
+            <span key={channel} className="ui-live" title={channel} data-lifecycle={lifecycle}>
+              {words[lifecycle] ?? lifecycle}
+            </span>
+          );
+        })}
       </div>
       {props.switchTo && props.switchTo.length > 0 ? (
-        <nav className="ui-switch">
-          {props.switchTo.map((link) => (
-            <a key={link.href} href={link.href} onClick={(event: MouseEvent) => { event.preventDefault(); scope.navigate(link.href); }}>
-              {link.label}
-            </a>
-          ))}
+        <nav className="ui-switch ui-segmented">
+          {props.switchTo.map((link) =>
+            link.current || link.href === undefined ? (
+              <span key={link.label} className="ui-segment" aria-current="page">
+                {link.label}
+              </span>
+            ) : (
+              <a key={link.href} className="ui-segment" href={link.href} onClick={(event: MouseEvent) => { event.preventDefault(); scope.navigate(link.href ?? ""); }}>
+                {link.label}
+              </a>
+            ),
+          )}
         </nav>
       ) : null}
       {props.metrics ? <div className="ui-header-metrics">{props.metrics}</div> : null}

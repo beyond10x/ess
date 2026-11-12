@@ -156,6 +156,12 @@ fn fnv(text: &str) -> u64 {
 /// story:a-badge-field-takes-a-tone: every project ships the runtime's `toneFor` (`json.ts`), the
 /// field value's tone (`fields.tsx`), the badge's shared tone lookup and the `ui-field-tone-*`
 /// text colors (`styles.css`); the pinned files above and the document's own page are unchanged.
+/// The whole-project digest re-pinned for
+/// story:a-page-shows-its-title-total-badge-and-live-status-and-marks-the-current-page: the header
+/// frame draws a count, a lifecycle word, a badge and a segmented switch, a page without a header
+/// draws its title, and navigation and `Link` mark the current page (`core.tsx`, `router.tsx`,
+/// `styles.css`); re-pinned again when the count reads its name from the section title the runtime
+/// reports (no page file carries it) and a `loading` channel has a word.
 /// `data.ts` and the whole-project digest re-pinned for story:metric-error-state-on-failed-read: a
 /// failed read carries its HTTP status (`errorStatus`), which a metric draws.
 /// The entry, `actions.tsx`, `confirm.tsx`, `form.tsx` and the whole-project digest re-pinned for
@@ -169,17 +175,20 @@ fn fnv(text: &str) -> u64 {
 /// `actions.tsx`, `data.ts` and the whole-project digest re-pinned for
 /// story:fixture-mode-applies-a-confirmed-commands-effect: a fixture project applies a confirmed
 /// command's model effect to its rows (`data.ts`) and says where the user acted when it could not
-/// (`actions.tsx`).
+/// (`actions.tsx`). The whole-project digest re-pinned for
+/// story:a-page-shows-its-title-total-badge-and-live-status-and-marks-the-current-page: the header
+/// names its count from the section title, marks the current page and draws a badge (`core.tsx`,
+/// `navigation.tsx`, `router.tsx`, `styles.css`).
 const PLAIN: [(&str, u64); 7] = [
     ("README.md", 0xdae6_c3b6_7e5c_2d28),
     ("src/main.tsx", 0x939b_2ed0_a001_98c5),
     ("src/runtime/actions.tsx", 0xdbb3_5348_126e_75bb),
     ("src/runtime/composites/confirm.tsx", 0xd98b_e5a3_8ad8_4503),
     ("src/runtime/composites/form.tsx", 0x8925_891d_a8af_c1fb),
-    ("src/runtime/data.ts", 0x4371_a4b4_7789_84a7),
+    ("src/runtime/data.ts", 0x1d12_0466_1213_7ea5),
     ("www/index.html", 0x5972_6d4a_5ee2_5ce2),
 ];
-const PLAIN_PROJECT: u64 = 0xf384_719d_bb38_e263;
+const PLAIN_PROJECT: u64 = 0x1ca7_240d_135e_879f;
 
 #[test]
 fn without_a_model_the_project_is_byte_identical() {

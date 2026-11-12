@@ -18,7 +18,7 @@ use super::super::invariant::{fresh, Lines};
 use super::super::selection::go_string;
 use super::super::{items, Emit};
 use super::{Guards, Uses, Writer};
-use crate::determined::{Env, Kind};
+use crate::determined::{Env, Kind, Step};
 use crate::view_query::{self, Values};
 
 /// The query's whole method.
@@ -148,7 +148,9 @@ impl<'a> Query<'a, '_> {
             self.lines
                 .open(&format!("for _, {held} := range {listed} {{"));
             let entity = self.entity;
-            let truth = self.guards(&held).predicate(&Env::Row(entity), filter);
+            let truth = self
+                .guards(&held)
+                .predicate(&Env::Row(entity, &view.params), filter);
             self.lines.open(&format!("if {truth} == verity {{"));
             self.lines.push(&format!("{kept} = append({kept}, {held})"));
             self.lines.close("}");
@@ -181,9 +183,33 @@ impl<'a> Query<'a, '_> {
         for ranking in &self.view.order_by {
             let resolved = view_query::resolve(self.emit.ir, self.entity, &ranking.field)
                 .expect("the plan admitted only keys that resolve");
-            let left_read = self.guards(&left).read(&resolved);
-            let right_read = self.guards(&right).read(&resolved);
-            let compared = match view_query::values(self.emit.ir, self.entity, &ranking.field) {
+            let values = view_query::values(self.emit.ir, self.entity, &ranking.field);
+            let optional = resolved
+                .steps
+                .iter()
+                .any(|step| matches!(step, Step::Optional));
+            let (left_read, right_read) = if values == Some(Values::Instant) {
+                (
+                    self.guards(&left).text(&resolved),
+                    self.guards(&right).text(&resolved),
+                )
+            } else {
+                (
+                    self.guards(&left).read(&resolved),
+                    self.guards(&right).read(&resolved),
+                )
+            };
+            let compared = match values {
+                Some(Values::Instant) => {
+                    self.uses.helpers.insert("instantOrder");
+                    self.uses.helpers.insert("readOrderBy");
+                    format!("readOrderBy({left_read}, {right_read}, instantOrder)")
+                }
+                Some(Values::Numeric) if optional => {
+                    self.uses.helpers.insert("numberOrder");
+                    self.uses.helpers.insert("readOrderBy");
+                    format!("readOrderBy({left_read}, {right_read}, numberOrder)")
+                }
                 Some(Values::Numeric) => {
                     self.uses.helpers.insert("numberOrder");
                     self.uses.helpers.insert("readOrder");
@@ -439,7 +465,9 @@ impl<'a> Query<'a, '_> {
         self.lines
             .open(&format!("for _, {held} := range {members} {{"));
         let entity = self.entity;
-        let truth = self.guards(&held).predicate(&Env::Row(entity), condition);
+        let truth = self
+            .guards(&held)
+            .predicate(&Env::Row(entity, &[]), condition);
         self.lines.push(&format!("{reading} := {truth}"));
         self.refuse_if(&format!("{reading} == unknown"));
         self.lines.open(&format!("if {reading} == verity {{"));
