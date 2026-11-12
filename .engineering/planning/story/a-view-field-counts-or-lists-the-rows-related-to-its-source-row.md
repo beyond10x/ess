@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-view-field-counts-or-lists-the-rows-related-to-its-source-row
 kind: story
-status: draft
+status: active
 title: A view field may count or list the rows related to its source row
 summary: 'count: on a view field is an unknown field and a related-row path is ESS-VIEW-001 on 0.93.0 (adopter report)'
 tags:
@@ -13,7 +13,10 @@ relations:
 - serves: vision:O2
 - decomposes: epic:adopter-gaps-domain-language
 - depends_on: story:a-view-filter-tests-rows-related-to-its-source-row
-revision: 1
+revision: 4
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-12T21:27:58Z", actor: "human:timo", revision: 3, executor: "agent:b10x", correlation: "operator-2026-11-12-accept-16"}
+- {from: "proposed", to: "active", at: "2026-11-12T21:27:59Z", actor: "human:timo", revision: 4, executor: "agent:b10x", correlation: "operator-2026-11-12-accept-16"}
 ---
 ## Need
 
@@ -65,3 +68,14 @@ error[ESS-VIEW-001]: `link.item` is no field of `demo.t.Item`, the row `demo.t.I
 
 Both refusals were rerun for this story on `ess 0.93.0` and are quoted verbatim. The count of
 notes is the adopter's.
+
+## Decisions
+
+**Accepted by the operator (2026-11-12),** with fifteen other drafts from one list of 25 that
+he was shown with a recommendation and an outside review per draft. He accepted the drafts both
+recommended. The two transitions carry the correlation `operator-2026-11-12-accept-16` and the executor
+`agent:b10x`.
+
+The fit review of `.agents/skills/assessing-external-requests/SKILL.md` is not written yet. It
+is owed before this story is dispatched and says which form of acceptance applies (as proposed
+or redesigned).

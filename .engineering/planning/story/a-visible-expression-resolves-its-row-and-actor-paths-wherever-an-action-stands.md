@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-visible-expression-resolves-its-row-and-actor-paths-wherever-an-action-stands
 kind: story
-status: draft
+status: active
 title: A visible expression resolves its row and actor paths wherever an action stands
 summary: ess ui check --model refuses a misspelled row path in visible only on a collection's row_actions; record and header actions and every actor path pass unchecked on 0.94.0 (adopter report)
 tags:
@@ -13,7 +13,10 @@ tags:
 relations:
 - serves: vision:O2
 - decomposes: epic:ess-ui-renderer-neutral-ui
-revision: 1
+revision: 4
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-12T21:27:19Z", actor: "human:timo", revision: 3, executor: "agent:b10x", correlation: "operator-2026-11-12-accept-16"}
+- {from: "proposed", to: "active", at: "2026-11-12T21:27:21Z", actor: "human:timo", revision: 4, executor: "agent:b10x", correlation: "operator-2026-11-12-accept-16"}
 ---
 ## Defect
 
@@ -99,3 +102,18 @@ questions before it is built. Other expression sites (`when`, `bind`, a section'
 Reproduction script and its output: session scratch `ess/adopter6/repro.sh`, `repro.txt`
 (not in the repository). Existing case for the one checked site:
 `crates/ui/ess-ui-check/tests/checks.rs`, test `field_in_model`.
+
+## Decisions
+
+**Accepted by the operator (2026-11-12),** with fifteen other drafts from one list of 25 that
+he was shown with a recommendation and an outside review per draft. He accepted the drafts both
+recommended. The two transitions carry the correlation `operator-2026-11-12-accept-16` and the executor
+`agent:b10x`.
+
+The fit review of `.agents/skills/assessing-external-requests/SKILL.md` is not written yet. It
+is owed before this story is dispatched and says which form of acceptance applies (as proposed
+or redesigned).
+
+Scope of the acceptance: acceptance points 1 to 4 (the missing check). Point 5, whether a header
+action reads the page's record, is a design question and is not accepted with them; the fit
+review states it as a question for the operator.

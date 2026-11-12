@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-sections-first-row-is-a-binding-in-the-reference-and-both-renderers-or-in-neither
 kind: story
-status: draft
+status: active
 title: A section's first row is a binding in the reference and both renderers, or in neither
 summary: The reference lists section.<name>.selection only; the React runtime also exposes section.<name>.row for the header's title section, the terminal renderer never does (0.94.0, adopter report)
 tags:
@@ -13,7 +13,10 @@ tags:
 relations:
 - serves: vision:O2
 - decomposes: epic:ess-ui-renderer-neutral-ui
-revision: 1
+revision: 4
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-12T21:27:27Z", actor: "human:timo", revision: 3, executor: "agent:b10x", correlation: "operator-2026-11-12-accept-16"}
+- {from: "proposed", to: "active", at: "2026-11-12T21:27:28Z", actor: "human:timo", revision: 4, executor: "agent:b10x", correlation: "operator-2026-11-12-accept-16"}
 ---
 ## Defect
 
@@ -67,3 +70,18 @@ point), or whether a page-level read is the form for that.
 ## Evidence
 
 Source lines named above; probe output in session scratch `ess/adopter9/` (not in the repository).
+
+## Decisions
+
+**Accepted by the operator (2026-11-12),** with fifteen other drafts from one list of 25 that
+he was shown with a recommendation and an outside review per draft. He accepted the drafts both
+recommended. The two transitions carry the correlation `operator-2026-11-12-accept-16` and the executor
+`agent:b10x`.
+
+The fit review of `.agents/skills/assessing-external-requests/SKILL.md` is not written yet. It
+is owed before this story is dispatched and says which form of acceptance applies (as proposed
+or redesigned).
+
+The choice between A and B is not made by this acceptance. The recommendation shown to the
+operator was A (the generated header title and documents in use read `section.<name>.row`); the
+fit review decides and records it here.

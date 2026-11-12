@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:ui-check-resolves-the-root-and-section-of-every-binding-path
 kind: story
-status: draft
+status: active
 title: ui check resolves the root and the section of every binding path
 summary: ess ui check accepts an unknown binding root and a section path naming no section or no listed member, in a navigate parameter and a read's params, on 0.94.0 (adopter report)
 tags:
@@ -13,7 +13,11 @@ tags:
 relations:
 - serves: vision:O2
 - decomposes: epic:ess-ui-renderer-neutral-ui
-revision: 1
+- depends_on: story:a-sections-first-row-is-a-binding-in-the-reference-and-both-renderers-or-in-neither
+revision: 4
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-12T21:27:16Z", actor: "human:timo", revision: 3, executor: "agent:b10x", correlation: "operator-2026-11-12-accept-16"}
+- {from: "proposed", to: "active", at: "2026-11-12T21:27:17Z", actor: "human:timo", revision: 4, executor: "agent:b10x", correlation: "operator-2026-11-12-accept-16"}
 ---
 ## Defect
 
@@ -63,3 +67,19 @@ covers `row.` and `actor.` paths inside an action's `visible`. This story is the
 
 Probe script, documents and output: session scratch `ess/adopter9/` (`probe.sh`, `probe.txt`,
 `pp-*`; not in the repository).
+
+## Decisions
+
+**Accepted by the operator (2026-11-12),** with fifteen other drafts from one list of 25 that
+he was shown with a recommendation and an outside review per draft. He accepted the drafts both
+recommended. The two transitions carry the correlation `operator-2026-11-12-accept-16` and the executor
+`agent:b10x`.
+
+The fit review of `.agents/skills/assessing-external-requests/SKILL.md` is not written yet. It
+is owed before this story is dispatched and says which form of acceptance applies (as proposed
+or redesigned).
+
+Review note: acceptance point 2 (the members of `section.<name>`) depends on the choice
+`story:a-sections-first-row-is-a-binding-in-the-reference-and-both-renderers-or-in-neither` makes
+for `section.<name>.row`. That story is settled first; this one enforces the list it leaves in
+the reference.

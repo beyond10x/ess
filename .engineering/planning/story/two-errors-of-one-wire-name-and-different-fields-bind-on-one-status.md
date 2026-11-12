@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:two-errors-of-one-wire-name-and-different-fields-bind-on-one-status
 kind: story
-status: draft
+status: active
 title: Two errors of one wire name and different fields bind on one status
 summary: 'ESS-HTTP-025 refuses the pair without alike: (cannot be told apart) and with it (the wire tells them apart) on 0.93.0 (adopter report)'
 tags:
@@ -14,7 +14,10 @@ relations:
 - serves: vision:O2
 - decomposes: epic:adopter-gaps-wire-and-answers
 - informed_by: story:two-outcomes-answered-alike-may-share-a-status-and-body
-revision: 1
+revision: 4
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-12T21:27:23Z", actor: "human:timo", revision: 3, executor: "agent:b10x", correlation: "operator-2026-11-12-accept-16"}
+- {from: "proposed", to: "active", at: "2026-11-12T21:27:25Z", actor: "human:timo", revision: 4, executor: "agent:b10x", correlation: "operator-2026-11-12-accept-16"}
 ---
 ## Defect
 
@@ -83,3 +86,14 @@ error[ESS-HTTP-025]: routes[0].alike: `alike[0]` (`[boom, boom-more]`): `boom` a
 Both refusals were rerun for this story on `ess 0.93.0` and are quoted verbatim. The pair came
 from a downstream adopter's retrofit, which counts 11 open notes on it. The rules read are the
 acceptance of `story:two-outcomes-answered-alike-may-share-a-status-and-body`.
+
+## Decisions
+
+**Accepted by the operator (2026-11-12),** with fifteen other drafts from one list of 25 that
+he was shown with a recommendation and an outside review per draft. He accepted the drafts both
+recommended. The two transitions carry the correlation `operator-2026-11-12-accept-16` and the executor
+`agent:b10x`.
+
+The fit review of `.agents/skills/assessing-external-requests/SKILL.md` is not written yet. It
+is owed before this story is dispatched and says which form of acceptance applies (as proposed
+or redesigned).

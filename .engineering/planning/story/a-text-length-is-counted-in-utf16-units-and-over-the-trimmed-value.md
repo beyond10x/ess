@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-text-length-is-counted-in-utf16-units-and-over-the-trimmed-value
 kind: story
-status: draft
+status: active
 title: A text length may be counted in UTF-16 code units, and over the trimmed value
 summary: 'label.utf16_count, length(trim(label)) and trimmed: {count_gt} are refused in a guard on 0.93.0 (adopter report)'
 tags:
@@ -13,7 +13,10 @@ relations:
 - serves: vision:O2
 - decomposes: epic:adopter-gaps-domain-language
 - depends_on: story:text-functions-compute-values
-revision: 1
+revision: 4
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-12T21:27:54Z", actor: "human:timo", revision: 3, executor: "agent:b10x", correlation: "operator-2026-11-12-accept-16"}
+- {from: "proposed", to: "active", at: "2026-11-12T21:27:55Z", actor: "human:timo", revision: 4, executor: "agent:b10x", correlation: "operator-2026-11-12-accept-16"}
 ---
 ## Need
 
@@ -69,3 +72,14 @@ error[ESS-SPEC-012]: cannot parse predicate "label: {trimmed: {count_gt: 64}}": 
 
 The three refusals and the validating `label.count > 64` were rerun for this story on
 `ess 0.93.0` and are quoted verbatim. The count of notes is the adopter's.
+
+## Decisions
+
+**Accepted by the operator (2026-11-12),** with fifteen other drafts from one list of 25 that
+he was shown with a recommendation and an outside review per draft. He accepted the drafts both
+recommended. The two transitions carry the correlation `operator-2026-11-12-accept-16` and the executor
+`agent:b10x`.
+
+The fit review of `.agents/skills/assessing-external-requests/SKILL.md` is not written yet. It
+is owed before this story is dispatched and says which form of acceptance applies (as proposed
+or redesigned).
