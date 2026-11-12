@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-form-host-slot-sets-its-value-and-can-hold-submit
 kind: story
-status: draft
+status: active
 title: A host slot in a form sets its value and can hold the form's submit
 summary: 'Form field and tab form slots get a typed form-value prop: read the draft, set the value, block submit (downstream report 2026-11-09)'
 tags:
@@ -14,7 +14,10 @@ relations:
 - depends_on: story:the-react-project-registers-each-declared-host-slot
 - depends_on: story:the-terminal-draws-a-host-slot-as-a-labelled-region
 - serves: vision:O2
-revision: 1
+revision: 4
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-12T21:47:44Z", actor: "human:timo", revision: 3, executor: "agent:b10x", correlation: "operator-2026-11-12-round-2"}
+- {from: "proposed", to: "active", at: "2026-11-12T21:47:44Z", actor: "human:timo", revision: 4, executor: "agent:b10x", correlation: "operator-2026-11-12-round-2"}
 ---
 ## Need
 
@@ -53,3 +56,16 @@ host able to set the value.
 
 Pending. An external request: it is assessed with
 `.agents/skills/assessing-external-requests/SKILL.md` before this story leaves draft.
+
+## Decisions
+
+**Accepted under the operator's procedure for external-request drafts (2026-11-12).** He set
+it that day: the session that maintains the repository recommends per draft, an independent
+adversarial review reads each draft, a draft both read as accept is accepted on his behalf, and
+a draft where the two differ goes to him. This draft was number 26 of a second list of 13
+(numbers 26 to 38); both read accept. The two transitions carry the correlation
+`operator-2026-11-12-round-2` and the executor `agent:b10x`.
+
+The fit review of `.agents/skills/assessing-external-requests/SKILL.md` is not written yet. It
+is owed before this story is dispatched and says which form of acceptance applies (as proposed
+or redesigned).

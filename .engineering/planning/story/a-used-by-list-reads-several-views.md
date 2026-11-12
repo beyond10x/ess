@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-used-by-list-reads-several-views
 kind: story
-status: draft
+status: active
 title: A used-by list and a delete confirm read several declared views
 summary: references.reads and confirm.references take a list of views, each row marked by its kind; no UI join, a view keeps one source (UI adopter composition report, P6)
 tags:
@@ -28,7 +28,10 @@ scope:
   path: schemas/ui/ess-ui.schema.yaml
 - confidence: inferred
   path: website/docs/reference/ess-ui.md
-revision: 2
+revision: 5
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-12T21:47:49Z", actor: "human:timo", revision: 4, executor: "agent:b10x", correlation: "operator-2026-11-12-round-2"}
+- {from: "proposed", to: "active", at: "2026-11-12T21:47:49Z", actor: "human:timo", revision: 5, executor: "agent:b10x", correlation: "operator-2026-11-12-round-2"}
 ---
 ## Need
 
@@ -94,6 +97,17 @@ Tree `b33454b88`, binary ess 0.90.0.
 `references` and `confirm.references`; the requester's `join`/`match`/`shape` and a union view in
 the model are refused, with the reasons in 3 and 4. The remaining composed-read lines are answered
 with `label_from`, aggregate views and a `ById` record, and not filed.
+
+**Accepted under the operator's procedure for external-request drafts (2026-11-12).** He set
+it that day: the session that maintains the repository recommends per draft, an independent
+adversarial review reads each draft, a draft both read as accept is accepted on his behalf, and
+a draft where the two differ goes to him. This draft was number 28 of a second list of 13
+(numbers 26 to 38); both read accept. The two transitions carry the correlation
+`operator-2026-11-12-round-2` and the executor `agent:b10x`.
+
+The acceptance is for the redesigned form above: a list of declared views on `references` and
+`confirm.references`. The requester's join syntax stays refused. The fit review above is the one
+this story owes; none is outstanding.
 
 ## Acceptance
 
