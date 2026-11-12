@@ -2540,16 +2540,40 @@ fn boundary_sites(
     }
 }
 
+/// Whether an outcome is a refusal of the stored row alone: a `when_subject:` predicate with an
+/// `error:`, naming no subject of its own and nothing else that decides it. Two of them answer in
+/// one precedence step, the first declared first, wherever one row satisfies both predicates.
+fn held_refusal(outcome: &RawOutcome) -> bool {
+    GuardKey::WhenSubject.of(outcome).is_some()
+        && outcome.error.is_some()
+        && outcome.when.is_none()
+        && outcome.when_related.is_none()
+        && outcome.when_subject_state.is_none()
+        && outcome.when_state_changes.is_none()
+        && outcome.external.is_none()
+        && outcome.replays.is_none()
+        && !outcome.wrong_state
+        && !outcome.unknown_instance
+        && !outcome.input_absent
+        && !outcome.existing_instance
+        && outcome.creates.is_none()
+        && outcome.moves.is_none()
+        && outcome.updates.is_none()
+        && outcome.preserves.is_none()
+        && outcome.deletes.is_none()
+}
+
 /// The `precedence-swap` sites of one command: two adjacent branches the input alone guards, both
-/// accepting or both refusing, where the first declared whose guard holds answers. An input-guarded
-/// refusal comes before every accepting branch whatever the order, so a refusal and an accepting
-/// branch are never a pair.
+/// accepting or both refusing, or two adjacent refusals of the stored row, where the first declared
+/// whose guard holds answers. An input-guarded refusal comes before every accepting branch whatever
+/// the order, so a refusal and an accepting branch are never a pair.
 fn precedence_sites(command: &RawCommandSpec, found: &mut Vec<Mutation>) {
     for pair in command.outcomes.windows(2) {
         let [first, second] = pair else { continue };
-        if guarded_by_input_alone(first)
+        if (guarded_by_input_alone(first)
             && guarded_by_input_alone(second)
-            && first.error.is_some() == second.error.is_some()
+            && first.error.is_some() == second.error.is_some())
+            || (held_refusal(first) && held_refusal(second))
         {
             found.push(Mutation::PrecedenceSwap {
                 command: command.name.to_string(),
@@ -2721,11 +2745,13 @@ fn describe_drop_or_swap(documents: &[Document], mutation: &Mutation) -> Option<
             first,
             second,
         } => {
+            // The `when:` of an input-guarded branch, the `when_subject:` predicate of a refusal of
+            // the stored row.
             let guard = |name: &str| {
-                self::outcome(documents, command, name)?
-                    .when
-                    .as_ref()
-                    .and_then(WrittenPredicate::predicate)
+                let found = self::outcome(documents, command, name)?;
+                GuardKey::When
+                    .of(found)
+                    .or_else(|| GuardKey::WhenSubject.of(found))
             };
             format!(
                 "`{first}` (`{}`) and `{second}` (`{}`) change places, so `{second}` answers \

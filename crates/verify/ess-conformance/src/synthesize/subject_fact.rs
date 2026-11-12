@@ -7359,17 +7359,17 @@ pub(super) fn around(
     )?;
     let (overlapping, overlap_source) =
         overlaps(models, command, outcome, actors, (&mut present, &mut taken))?;
-    let (declared, declared_source) =
-        declared_overlaps(models, command, outcome, actors, (&mut present, &mut taken))?;
+    let declared = declared_overlaps(models, command, outcome, actors, (&mut present, &mut taken))?;
     let (mut steps, mut unobserved) =
         around_row(models, command, outcome, actors, setup, supplied)?;
     models.mark(super::caller::InvocationPhase::Act, &mut steps);
     steps.extend(further);
     steps.extend(overlapping);
-    steps.extend(declared);
+    steps.extend(declared.steps);
     setup.source.extend(source);
     setup.source.extend(overlap_source);
-    setup.source.extend(declared_source);
+    setup.source.extend(declared.source);
+    unobserved.extend(declared.unobserved);
     let claimed = claimed_states(models, command, outcome, actors, setup, &mut taken);
     steps.extend(claimed.steps);
     setup.source.extend(claimed.source);
@@ -7379,11 +7379,15 @@ pub(super) fn around(
         refused,
         unclaimed: claimed.refused,
         unobserved,
+        unreached: declared.unreached,
     })
 }
 
 /// What [`around`] adds to a branch's run.
 pub(super) struct Around {
+    /// The later refusals whose guard no bounded row holds together with this refusal's
+    /// ([`Declared::unreached`]).
+    pub(super) unreached: Vec<OutcomeName>,
     /// The steps that belong after the branch's own assertions.
     pub(super) steps: Vec<ScenarioStep>,
     /// The further rows refused on their own while the scenario stands.
@@ -8855,34 +8859,136 @@ fn overlaps(
     Ok((steps, source))
 }
 
+/// Whether no row holds both `first` and `second`, decided only over predicates built from `all`,
+/// `any` and `not` and the equality or inequality of a stored field with a literal.
+///
+/// Each field is tried at every literal either predicate compares it with and at one value none of
+/// them names (a Boolean at both of its values), whatever its declared type admits, so the answer
+/// is a statement about a superset of the rows and can only err towards `false`, which a caller
+/// reads as "not shown". Two stored predicates that name different values of one field, as
+/// `route == D` and `route == B`, never hold together, and a pair noted as unreached is then not an
+/// overlap to witness.
+fn disjoint_on_rows(first: &Predicate, second: &Predicate) -> bool {
+    use ess_primitives::facts::{FactStore, FactValue};
+    /// The most combinations of values tried.
+    const LIMIT: usize = 1 << 12;
+    fn plain(predicate: &Predicate, leaves: &mut BTreeMap<FactPath, Vec<FactValue>>) -> bool {
+        match predicate {
+            Predicate::Always | Predicate::Never => true,
+            Predicate::All(children) | Predicate::Any(children) => {
+                children.iter().all(|child| plain(child, leaves))
+            }
+            Predicate::Not(inner) => plain(inner, leaves),
+            Predicate::Compare {
+                left,
+                op: CompareOp::Eq | CompareOp::Ne,
+                right,
+                kind: CompareKind::Value,
+            } => match (left, right) {
+                (Operand::Fact(path), Operand::Literal(value))
+                | (Operand::Literal(value), Operand::Fact(path)) => {
+                    leaves.entry(path.clone()).or_default().push(value.clone());
+                    true
+                }
+                _ => false,
+            },
+            _ => false,
+        }
+    }
+    let mut leaves = BTreeMap::new();
+    if !plain(first, &mut leaves) || !plain(second, &mut leaves) {
+        return false;
+    }
+    let mut domains: Vec<(FactPath, Vec<FactValue>)> = Vec::new();
+    for (path, named) in leaves {
+        let mut domain: Vec<FactValue> = Vec::new();
+        for value in named {
+            if !domain.contains(&value) {
+                domain.push(value);
+            }
+        }
+        let other = match domain.first() {
+            Some(FactValue::Bool(_)) => {
+                for value in [true, false] {
+                    if !domain.contains(&FactValue::Bool(value)) {
+                        domain.push(FactValue::Bool(value));
+                    }
+                }
+                None
+            }
+            Some(FactValue::Text(_)) => (0..=domain.len())
+                .map(|at| FactValue::text(format!("other-{at}")))
+                .find(|value| !domain.contains(value)),
+            Some(FactValue::Number(_)) => (0_u32..=u32::try_from(domain.len()).unwrap_or(u32::MAX))
+                .filter_map(|at| FactValue::number(f64::from(at) + 0.5).ok())
+                .find(|value| !domain.contains(value)),
+            None => None,
+        };
+        if domain
+            .iter()
+            .any(|value| std::mem::discriminant(value) != std::mem::discriminant(&domain[0]))
+        {
+            return false;
+        }
+        domain.extend(other);
+        domains.push((path, domain));
+    }
+    let mut combinations: usize = 1;
+    for (_, domain) in &domains {
+        combinations = match combinations.checked_mul(domain.len()) {
+            Some(product) if product <= LIMIT => product,
+            _ => return false,
+        };
+    }
+    (0..combinations).all(|mut at| {
+        let mut facts = FactStore::new();
+        for (path, domain) in &domains {
+            facts.set_if_absent(path.clone(), domain[at % domain.len()].clone());
+            at /= domain.len();
+        }
+        !(first.evaluate(&facts) == Truth::True && second.evaluate(&facts) == Truth::True)
+    })
+}
+
+/// What [`declared_overlaps`] adds to a refusal's run.
+#[derive(Default)]
+pub(super) struct Declared {
+    /// The further sends, one per later refusal whose guard one row holds together with this one's.
+    steps: Vec<ScenarioStep>,
+    /// What those sends depend on.
+    source: BTreeSet<EssSemanticRef>,
+    /// The later refusals no bounded row and input holds together with this one, in declaration
+    /// order: the pair has no send, and the scenario's note says so.
+    pub(super) unreached: Vec<OutcomeName>,
+    /// The subject fields a complete refusal's observation of those sends could not cover.
+    unobserved: BTreeSet<String>,
+}
+
 /// Further rows a refusal its stored guard selects is witnessed on where a refusal declared after
-/// it, selected by its own stored guard, holds too (`ess/27`; within one precedence step the first
-/// declared answers, `docs/design/generic-language-features.md` § G4; beyond10x/ess#584): one per
-/// such sibling, on a row and an input both guards hold on. The refusal is required there, so a
-/// target that checks the later refusal first fails. Below `ess/27` no row is added, so an older
-/// suite keeps its bytes; a pair no bounded row and input meets adds no row.
+/// it, selected by its own stored guard, holds too (within one precedence step the first declared
+/// answers, `docs/design/input-guard-overlap-precedence.md`; `ess/27`, beyond10x/ess#584, and every
+/// format below it, beyond10x/ess#472): one per such sibling, on a row and an input both guards
+/// hold on. The refusal is required there, so a target that checks the later refusal first fails.
+/// A pair no bounded row and input meets adds no row and is returned in [`Declared::unreached`].
 fn declared_overlaps(
     models: &super::caller::InvocationModels<'_>,
     command: &ResolvedCommand,
     outcome: &ResolvedOutcome,
     actors: &BTreeMap<QualifiedName, ActorRef>,
     (present, taken): (&mut bool, &mut BTreeSet<super::InstanceName>),
-) -> Result<(Vec<ScenarioStep>, BTreeSet<EssSemanticRef>), RefusalCause> {
+) -> Result<Declared, RefusalCause> {
     let ir = models.arrangement;
-    let mut steps = Vec::new();
-    let mut source = BTreeSet::new();
+    let mut declared = Declared::default();
     let held_refusal = |branch: &ResolvedOutcome| {
         branch.error.is_some()
             && branch.subject.is_none()
             && matches!(branch.condition, ResolvedCondition::SubjectPredicate { .. })
     };
-    if ir.format().major() < ess_domain::system::FormatVersion::V27.major()
-        || !held_refusal(outcome)
-    {
-        return Ok((steps, source));
+    if !held_refusal(outcome) {
+        return Ok(declared);
     }
     let (Some(own), Some(read)) = (stored(&outcome.condition), reading(command, outcome)) else {
-        return Ok((steps, source));
+        return Ok(declared);
     };
     let entity = &read.entity;
     let hints = with_calls(ir, command, hints(command));
@@ -8898,8 +9004,14 @@ fn declared_overlaps(
         let Some(theirs) = stored(&sibling.condition) else {
             continue;
         };
+        // Two predicates no row holds together overlap nowhere, so there is nothing to witness or
+        // to note.
+        if disjoint_on_rows(&own, &theirs) {
+            continue;
+        }
         if rows >= MAX_BOUNDARIES {
-            break;
+            declared.unreached.push(sibling.name.clone());
+            continue;
         }
         let both = [own.clone(), theirs];
         let found = search_unbound(
@@ -8934,9 +9046,16 @@ fn declared_overlaps(
             },
         )?;
         let Ok((arrangement, input)) = found else {
+            declared.unreached.push(sibling.name.clone());
             continue;
         };
         rows += 1;
+        let held = Setup {
+            instance: Some(arrangement.instance.clone()),
+            after: Some(arrangement.state.clone()),
+            settled: arrangement.settled.clone(),
+            ..Setup::none()
+        };
         send_for_row(
             models,
             command,
@@ -8945,15 +9064,45 @@ fn declared_overlaps(
             (read, &fields),
             arrangement,
             (&input, (&mut *present, &mut *taken)),
-            (&mut steps, &mut source),
+            (&mut declared.steps, &mut declared.source),
         )?;
+        // From ess/23 a refusal the stored row selects changes nothing on it in any field
+        // (beyond10x/ess#461), on this row as on the branch's own: the complete subject is
+        // snapshot before the send and compared after it.
+        if outcome.complete_refusal {
+            observe_overlap_send(ir, read, &held, &mut declared)?;
+        }
     }
     if rows > 0 {
         let command_ref = CommandRef::new(command.name.clone());
-        source.insert(OutcomeRef::new(command_ref.clone(), outcome.name.clone()).into());
-        source.insert(command_ref.into());
+        declared
+            .source
+            .insert(OutcomeRef::new(command_ref.clone(), outcome.name.clone()).into());
+        declared.source.insert(command_ref.into());
     }
-    Ok((steps, source))
+    Ok(declared)
+}
+
+/// The complete subject of the row [`declared_overlaps`] just sent, snapshot before that send and
+/// compared after it, as the branch's own row is.
+fn observe_overlap_send(
+    ir: &EssIr,
+    read: &ResolvedSubject,
+    held: &Setup,
+    declared: &mut Declared,
+) -> Result<(), RefusalCause> {
+    let preservation = preserve_selected_subject(ir, read, held)?;
+    let sent = declared
+        .steps
+        .iter()
+        .rposition(|step| matches!(step, ScenarioStep::ExecuteCommand { .. }))
+        .expect("the overlap send is the last command sent");
+    declared.steps.splice(sent..sent, preservation.before);
+    declared.steps.push(ScenarioStep::ExpectNoEvents);
+    declared.steps.extend(preservation.after);
+    declared.source.extend(preservation.source);
+    declared.unobserved.extend(preservation.unobserved);
+    Ok(())
 }
 
 pub(super) struct Preservation {

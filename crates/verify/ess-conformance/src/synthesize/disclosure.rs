@@ -343,6 +343,7 @@ fn retry(
         settled,
         refused: Vec::new(),
         unclaimed: Vec::new(),
+        unreached: Vec::new(),
         unobserved: std::collections::BTreeSet::new(),
     };
     super::exercise_run(ir, command, branch, actors, id, refusals, run)
@@ -416,6 +417,7 @@ fn supplied_retry(
         settled: origin.settled.clone(),
         refused: Vec::new(),
         unclaimed: Vec::new(),
+        unreached: Vec::new(),
         unobserved: std::collections::BTreeSet::new(),
     };
     super::exercise_run(ir, command, branch, actors, id, refusals, run)

@@ -4150,6 +4150,16 @@ fn outcome_scenario_noting(
             unobserved: run.unobserved.iter().cloned().collect(),
         });
     }
+    // A refusal over the stored row whose later sibling no bounded row holds together with it has
+    // no send of the overlap, which a target answering the sibling first is not failed by.
+    for other in &run.unreached {
+        notes.push(Note::UnwitnessedOverlap {
+            scenario: id.clone(),
+            first: outcome.name.clone(),
+            other: other.clone(),
+            gap: OverlapGap::Unreached,
+        });
+    }
     // A quantifier over an input list that the list sent does not decide apart from its deciding
     // element says so (beyond10x/ess#240, correction 1).
     if let Some(guard) = own_input_guard(outcome) {
@@ -5055,6 +5065,9 @@ struct Run {
     /// The subject fields a complete stored-field refusal's observation could not cover, which the
     /// scenario's [`Note::PartialObservation`] names (ess/23, beyond10x/ess#461, #132).
     unobserved: BTreeSet<String>,
+    /// The refusals declared after a stored-field refusal that no bounded row and input holds
+    /// together with it, which the scenario's [`Note::UnwitnessedOverlap`] names, one each.
+    unreached: Vec<OutcomeName>,
 }
 
 impl Run {
@@ -5424,16 +5437,23 @@ fn run_as(
     if (subject_fact::uses(command) || related || rows) && outcome.error.is_none() {
         invoke.push(ScenarioStep::ExpectNoError);
     }
-    let (mut after_steps, mut refused, unclaimed, mut unobserved) = if routed {
+    let (mut after_steps, mut refused, unclaimed, mut unobserved, unreached) = if routed {
         let around = subject_fact::around(models, command, outcome, actors, &mut setup, &supplied)?;
         (
             around.steps,
             around.refused,
             around.unclaimed,
             around.unobserved,
+            around.unreached,
         )
     } else {
-        (Vec::new(), Vec::new(), Vec::new(), BTreeSet::new())
+        (
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            BTreeSet::new(),
+            Vec::new(),
+        )
     };
     refused.extend(row_gaps);
     // ess/28 (#558): the accepting branch sent an empty list once its own claims are read.
@@ -5535,6 +5555,7 @@ fn run_as(
         refused,
         unclaimed,
         unobserved,
+        unreached,
         settled,
     };
     models.mark_run(&mut run);
@@ -7020,6 +7041,7 @@ fn run_state_refusal(
         before_settled: arranged.settled.clone(),
         refused: Vec::new(),
         unclaimed: Vec::new(),
+        unreached: Vec::new(),
         unobserved,
         settled: arranged.settled,
     })
@@ -7228,6 +7250,7 @@ fn run_replay_in(
         before_settled: origin.settled.clone(),
         refused: Vec::new(),
         unclaimed: Vec::new(),
+        unreached: Vec::new(),
         unobserved: BTreeSet::new(),
         settled: origin.settled,
     })

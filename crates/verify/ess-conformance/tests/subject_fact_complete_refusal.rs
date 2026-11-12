@@ -421,12 +421,15 @@ fn complete_refusal_minted_from_ess23_only() {
     }
 }
 
+/// Below `ess/23` the observation is the stored-field one, as it always was. Each refusal is sent
+/// on its own row, and `seed-change-refused` once more on the row `not-active`, declared after it,
+/// holds on too (beyond10x/ess#472), which every source format carries.
 #[test]
 fn below_ess23_suites_unchanged() {
     let result = synthesis(&at("ess/22"));
-    for (id, outcome) in [
-        (SEED_REFUSED, "seed-change-refused"),
-        (NOT_ACTIVE, "not-active"),
+    for (id, outcome, arranged) in [
+        (SEED_REFUSED, "seed-change-refused", 2),
+        (NOT_ACTIVE, "not-active", 1),
     ] {
         let found = scenario(&result, id);
         assert_eq!(
@@ -437,8 +440,8 @@ fn below_ess23_suites_unchanged() {
         );
         assert_eq!(
             sends(found, outcome).len(),
-            1,
-            "{id} at ess/22 keeps its one arranged record: {:#?}",
+            arranged,
+            "{id} at ess/22 keeps its arranged records: {:#?}",
             found.steps
         );
     }
