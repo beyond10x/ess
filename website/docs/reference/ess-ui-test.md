@@ -153,7 +153,7 @@ section whose body is a form it submits the form. On a collection's column
 (`…/columns/<name>`) it sorts by that column as a click on its header does: ascending, or
 descending when the collection is already sorted by it ascending; the column is `sortable`. A
 form that saves on change (`save: on_change`) sends its command on every change a step makes,
-without `act`, and has no submit: `act` on such a form (a section's or an overlay's) is refused in
+without `act`, and has no submit: `act` on such a form (a section's, or an overlay's not opened from a row) is refused in
 both renderers. A group that saves on
 change sends its own `does` (the form's when it names none) on every change to one of its fields,
 and the form keeps its submit for its other fields. At a page header's help (`pages/<page>/header/help`) it opens the help: the

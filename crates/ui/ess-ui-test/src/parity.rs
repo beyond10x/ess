@@ -18,7 +18,8 @@
 //!   form, and the collection parts above; and never an icon action or an action drawn as a
 //!   choice, which show no label in the browser;
 //! - `act` on a form (a section's or an overlay's own) that saves on change is refused: the
-//!   generated form draws no submit then ([`submit`]);
+//!   generated form draws no submit then ([`submit`]); an overlay opened from a row is not
+//!   checked yet (story:act-on-a-row-overlay-form-that-saves-on-change-is-refused);
 //! - `type` and `choose` at a field of a form group that starts collapsed are refused: the
 //!   generated app hides the group's body and no step opens it ([`closed_group`]);
 //! - a host slot is drawn by the host in the generated app and as a labelled region by the
@@ -207,7 +208,8 @@ fn saves_on_change(body: &Body) -> bool {
 /// Why `act` at `target` is refused because it submits a form (a section's or an overlay's own)
 /// that saves on change, if it does: the generated form draws no submit button then (every change
 /// already sent its command), so there is nothing in the browser to act on. A form whose group
-/// alone saves on change keeps its submit.
+/// alone saves on change keeps its submit. A target under a row is not checked yet
+/// (story:act-on-a-row-overlay-form-that-saves-on-change-is-refused).
 pub(crate) fn submit(document: &Document, target: &Target) -> Option<String> {
     if target.row.is_some() {
         return None;
@@ -235,12 +237,12 @@ pub(crate) fn submit(document: &Document, target: &Target) -> Option<String> {
 /// no step opens a group, so a browser step at the field waits on an element that never shows,
 /// while the terminal's cursor walks past the closed group's fields.
 pub(crate) fn closed_group(document: &Document, target: &Target) -> Option<String> {
-    let segments: Vec<&str> = target.node.split('/').collect();
-    let at = segments.iter().rposition(|segment| *segment == "groups")?;
-    let group = segments.get(..=at + 1)?.join("/");
     let collapsed = document.nodes().into_iter().any(|located| {
-        located.path.to_string() == group
-            && matches!(located.node, NodeRef::FormGroup(group) if group.collapsed == Some(true))
+        matches!(located.node, NodeRef::FormGroup(group) if group.collapsed == Some(true))
+            && target
+                .node
+                .strip_prefix(located.path.to_string().as_str())
+                .is_some_and(|rest| rest.starts_with("/fields/"))
     });
     collapsed.then(|| {
         format!(

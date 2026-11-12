@@ -751,3 +751,63 @@ fn adversary_act_on_an_on_change_overlay_form_is_refused() {
         "{message}"
     );
 }
+
+/// Adversary 2: the closed-group refusal holds for any field and group name. A field the
+/// document names `groups` (a user's group membership, say) in a collapsed group, and a collapsed
+/// group named `groups`, are refused with the collapsed-group reason in the terminal and marked
+/// `test.fixme` with it in the spec, as any other field of a closed group is.
+#[test]
+fn adversary2_a_closed_group_refuses_a_field_or_group_named_groups() {
+    let collapsed = DOCUMENT.replace(
+        "            label: Audit\n            save: on_change\n",
+        "            label: Audit\n            collapsed: true\n            save: on_change\n",
+    );
+    assert_ne!(collapsed, DOCUMENT);
+    let field_named_groups = collapsed.replace(
+        ADV_AUDIT_FIELDS,
+        "            fields: [{field: groups, as: toggle, label: Groups}]\n",
+    );
+    assert_ne!(field_named_groups, collapsed);
+    let group_named_groups =
+        collapsed.replace("          - name: audit\n", "          - name: groups\n");
+    assert_ne!(group_named_groups, collapsed);
+    let cases = [
+        (
+            "adv2_field_named_groups",
+            field_named_groups,
+            "pages/audit/sections/form/groups/audit/fields/groups",
+        ),
+        (
+            "adv2_group_named_groups",
+            group_named_groups,
+            "pages/audit/sections/form/groups/groups/fields/audit_on",
+        ),
+    ];
+    let mut wrong = Vec::new();
+    for (name, document, at) in cases {
+        let choose = format!("choose: {{at: {at}, option: 'true'}}");
+        let steps = ["open: audit", choose.as_str()];
+        let outcome = run_document(&document, name, &steps);
+        let message = outcome.message.clone().unwrap_or_default();
+        let wanted = format!(": {at}: the group starts collapsed");
+        if outcome.status != Status::Failed || !message.contains(&wanted) {
+            wrong.push(format!("{name}: terminal: {:?} {message}", outcome.status));
+        }
+        let path = document_of(&document, &format!("{name}_spec"));
+        let mut text =
+            "format: ess-ui-test/1\ndocument: ui.yaml\ntests:\n- name: spec\n  steps:\n".to_owned();
+        for step in steps {
+            text.push_str("  - ");
+            text.push_str(step);
+            text.push('\n');
+        }
+        let file = ess_ui_test::parse_str(&text, &path.with_file_name("journey.yaml"))
+            .unwrap_or_else(|error| panic!("{error}"));
+        let loaded = ess_ui::load_path(&path).expect("the document loads");
+        let spec = ess_ui_test::playwright(&[file], &loaded);
+        if !spec.contains("the group starts collapsed") {
+            wrong.push(format!("{name}: spec holds no collapsed-group test.fixme"));
+        }
+    }
+    assert!(wrong.is_empty(), "{}", wrong.join("\n"));
+}
