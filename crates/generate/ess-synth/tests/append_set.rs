@@ -570,3 +570,133 @@ fn the_generated_go_server_passes_the_suite_that_sends_a_present_element() {
     let _ = std::fs::remove_dir_all(root);
     assert_all_passed("go", &verdicts);
 }
+
+// Adversary pass 1 of story:a-present-optional-element-is-appended: the present element of other
+// element types, through the generated Go server.
+
+/// `LABELLED` over `List<Optional<{element}>>`, `types` declared beside the identity, compiled.
+fn labelled_of(element: &str, types: &str) -> EssIr {
+    let text = LABELLED
+        .replace("Optional<String>", &format!("Optional<{element}>"))
+        .replace(
+            "  - {name: demo.jobs.JobId, kind: newtype, of: Uuid}\n",
+            &format!("  - {{name: demo.jobs.JobId, kind: newtype, of: Uuid}}\n{types}"),
+        );
+    let spec = Specification::assemble([(
+        Source::new("labelled.yaml"),
+        RawSpecFile::parse(&text).expect("well formed"),
+    )])
+    .unwrap_or_else(|errors| panic!("validates: {errors}"));
+    compile(&spec, &SourceMap::new()).unwrap_or_else(|errors| panic!("compiles: {errors}"))
+}
+
+/// The suite of `ir` run against the generated Go server built from it: every scenario passes.
+fn go_passes(ir: &EssIr, tag: &str) {
+    let root = Path::new(env!("CARGO_TARGET_TMPDIR"))
+        .join(format!("append-set-adv-{tag}-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    let tree = root.join("go-demo");
+    for artifact in synthesize_for(ir, Target::Go)
+        .expect("the model synthesizes to Go")
+        .artifacts
+        .values()
+    {
+        let path = tree.join(&artifact.path);
+        std::fs::create_dir_all(path.parent().expect("a file has a parent")).unwrap();
+        std::fs::write(&path, &artifact.contents).unwrap();
+    }
+    let harness = root.join("go-harness");
+    std::fs::create_dir_all(&harness).unwrap();
+    std::fs::write(
+        harness.join("go.mod"),
+        "module appendsetharness\n\ngo 1.21\n\nrequire example.invalid/demo v0.0.0\n\nreplace \
+         example.invalid/demo => ../go-demo\n",
+    )
+    .unwrap();
+    std::fs::copy(
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/append-set-go-harness/main.go"),
+        harness.join("main.go"),
+    )
+    .unwrap();
+    let binary = root.join("harness-go");
+    let output = Command::new("go")
+        .args(["build", "-buildvcs=false", "-o"])
+        .arg(&binary)
+        .arg(".")
+        .current_dir(&harness)
+        .env("GOFLAGS", "-mod=mod")
+        .env("GOPROXY", "off")
+        .env("GOWORK", "off")
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{tag}: the Go harness builds:\n{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let suite = labelled_suite(ir);
+    let labelled = format!(
+        "{:#?}",
+        suite
+            .scenarios
+            .iter()
+            .find(|(id, _)| id.to_string() == LABELLED_ID)
+    );
+    let admitted = AdmittedSuite::from_suite(&suite).unwrap_or_else(|error| panic!("{error}"));
+    let target = Served::start(&binary, ir);
+    let report = Runner::for_suite(&suite)
+        .run_admitted(&admitted, &target)
+        .into_report();
+    drop(target);
+    let _ = std::fs::remove_dir_all(&root);
+    let not_passed: Vec<String> = report
+        .scenarios
+        .iter()
+        .filter(|result| result.status != Status::Passed)
+        .map(|result| format!("{}: {:?}", result.scenario, result))
+        .collect();
+    assert!(
+        not_passed.is_empty(),
+        "story:a-present-optional-element-is-appended: go, {tag}: every scenario passes: \
+         {not_passed:#?}\nthe labelled scenario: {labelled}"
+    );
+}
+
+#[test]
+fn adv_go_appends_a_present_integer() {
+    go_passes(&labelled_of("Integer", ""), "integer");
+}
+
+#[test]
+fn adv_go_appends_a_present_boolean() {
+    go_passes(&labelled_of("Boolean", ""), "boolean");
+}
+
+#[test]
+fn adv_go_appends_a_present_timestamp() {
+    go_passes(&labelled_of("Timestamp", ""), "timestamp");
+}
+
+#[test]
+fn adv_go_appends_a_present_enum() {
+    go_passes(
+        &labelled_of(
+            "demo.jobs.Colour",
+            "  - {name: demo.jobs.Colour, kind: enum, variants: [Red, Green]}\n",
+        ),
+        "enum",
+    );
+}
+
+#[test]
+fn adv_go_appends_a_present_struct() {
+    go_passes(
+        &labelled_of(
+            "demo.jobs.Tag",
+            "  - name: demo.jobs.Tag\n    kind: struct\n    fields:\n      - {name: name, type: \
+             String}\n      - {name: note, type: Optional<String>}\n",
+        ),
+        "struct",
+    );
+}

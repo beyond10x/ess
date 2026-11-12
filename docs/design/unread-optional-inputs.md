@@ -64,7 +64,8 @@ the scenario of the appending branch sends `x` present, as the witness for `T` s
 field's own name for a `String`), and asserts the list with that element last. The branch is run
 once more on a further row with `x` left out, so the suite also asserts the `null` that appends
 (story:a-present-optional-element-is-appended); a target that appends `null` whatever it is sent
-fails the first.
+fails the first. That holds where the arranging step stores the list; an `Optional<List<…>>` it
+leaves absent is not asserted yet (story:an-append-onto-an-absent-optional-list-is-asserted).
 
 A path a filter reads is matched both as written and with a leading `input` segment removed. That
 over-approximates: an entity field spelled like an input keeps the input filled, which is the old
