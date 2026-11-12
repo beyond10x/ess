@@ -15,7 +15,7 @@ tags:
 relations:
 - decomposes: epic:zero-open-issues-2026-11
 - serves: vision:O2
-revision: 1
+revision: 2
 ---
 ## Need
 
@@ -42,6 +42,20 @@ Wrongly refused, each with a route-less list and an invariant over the field:
   row's value is not known to synthesis.
 - A held-state branch, whose selection falls back to `keeps_branch` one list at a time.
 - An invariant reading `state` on a branch that does not create.
+- A stored-row guard (`when_subject: {predicate: "floor > input.sources.count"}`) reading an input
+  list the arrangement changed, which stays undecided because the arranged row's stored fields are
+  not known to synthesis (a read of the list's `count` stays decided where the arranged list is as
+  long as the witness's).
+- An arranged identity (`one` or `many`) that an input guard or invariant reads for more than
+  equality with another value: the arranged row's identity stands as one fresh text no other value
+  equals, so only equality and inequality are decided; ordering, pattern and type-constraint reads
+  of it refuse by name.
+- A row chained below a command whose own list has no route and whose creating branch or
+  invariants do not keep `[]`: the chain is given up and the outer scenario refused by name, where
+  a plain row of the entity could have been arranged.
+- A held-state guard decided by `selects_branch` without a held state: the guards the precedence
+  order reads are compared before and after the arrangement, so a guard that reads a changed input
+  is undecided, not decided against the row the scenario arranges.
 
 ## Design rule
 

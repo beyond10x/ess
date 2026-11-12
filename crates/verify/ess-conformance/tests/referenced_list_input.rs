@@ -1971,3 +1971,171 @@ fn adversary5_invariant_broken_by_and_the_stored_row_agree_on_a_defaulted_copy()
         ACCEPTED,
     );
 }
+
+// ---- Adversary pass 6 (turn 3): the fail-closed check of 29433762da, `send_empty`. ----
+
+/// A `one` reference with a route, behind a sibling refusal `sources != alt`: the witness sends
+/// `sources == alt` to refute it, the arrangement replaces `sources` with an arranged row's
+/// identity and leaves `alt`, and nothing decides the guards again on the arranged path, so the
+/// refusal answers the accepted scenario.
+#[test]
+fn adversary6_an_arranged_reference_a_sibling_refusal_compares_is_not_sent_into_it() {
+    let server = ADV_SERVER_MANY
+        .replace("List<demo.reg.SourceId>", "demo.reg.SourceId")
+        .replace("cardinality: many", "cardinality: one");
+    let refusal =
+        "      - name: refused\n        when: \"sources != alt\"\n        error: demo.reg.Refused";
+    let register = adversary_register(
+        "demo.reg.SourceId",
+        refusal,
+        "      - {name: alt, type: demo.reg.SourceId}",
+        "",
+    );
+    adversary5_passes_or_refused_by_name(
+        adversary_compile(&adversary_text(
+            ADV_LIVE,
+            &server,
+            &format!("{ADV_ADD_SOURCE}\n{register}"),
+        )),
+        ACCEPTED,
+    );
+}
+
+/// The arranged path beside an unarrangeable list: `sources` (`one`, a route) and `mirrors`
+/// (`many`, no route), under `any: [mirrors.count >= 1, sources == alt]`. The empty-list check
+/// reads `sources` at its witness value, not the arranged identity the step sends.
+#[test]
+fn adversary6_an_arranged_reference_beside_an_unarrangeable_list_is_read_as_sent() {
+    let server = r#"  - name: demo.reg.Server
+    identity: {name: id, type: demo.reg.ServerId}
+    fields:
+      - {name: sources, type: demo.reg.SourceId}
+      - {name: alt, type: demo.reg.SourceId}
+      - {name: mirrors, type: "List<demo.reg.OriginId>"}
+    relations:
+      - {name: sources, kind: references, target: demo.reg.Source, cardinality: one, via: sources}
+      - {name: mirrors, kind: references, target: demo.reg.Origin, cardinality: many, via: mirrors}
+    invariants:
+      - any: ["mirrors.count >= 1", "sources == alt"]
+    lifecycle: {initial: Live, states: [Live], terminal: [Live]}"#;
+    let register = adversary_register(
+        "demo.reg.SourceId",
+        "",
+        "      - {name: alt, type: demo.reg.SourceId}\n      - {name: mirrors, type: \
+         \"List<demo.reg.OriginId>\"}",
+        ", alt: input.alt, mirrors: input.mirrors",
+    );
+    adversary5_passes_or_refused_by_name(
+        adversary_compile(&adversary_text(
+            ADV_LIVE,
+            &format!("{server}\n{ADV5_ORIGIN}"),
+            &format!("{ADV_ADD_SOURCE}\n{register}"),
+        )),
+        ACCEPTED,
+    );
+}
+
+/// The `Source` arranged for `Register` writes its own list `origins` from its input, and no
+/// command creates an `Origin`. The chain skips a reference it cannot arrange (`continue`), so the
+/// arranged `AddSource` step sends the witness `origins`: identities no step created, where the
+/// empty list (or a refusal) is what the no-route rule admits.
+#[test]
+fn adversary6_an_arranged_row_whose_own_list_has_no_route_names_no_missing_row() {
+    let plain =
+        "  - name: demo.reg.Source\n    identity: {name: id, type: demo.reg.SourceId}\n    \
+                 fields: []\n";
+    let with_origins = "  - name: demo.reg.Source\n    identity: {name: id, type: \
+                        demo.reg.SourceId}\n    fields:\n      - {name: origins, type: \
+                        \"List<demo.reg.OriginId>\"}\n    relations:\n      - {name: origins, \
+                        kind: references, target: demo.reg.Origin, cardinality: many, via: \
+                        origins}\n";
+    let add_source = ADV_ADD_SOURCE
+        .replace(
+            "input: [{name: id, type: demo.reg.SourceId}]",
+            "input: [{name: id, type: demo.reg.SourceId}, {name: origins, type: \
+             \"List<demo.reg.OriginId>\"}]",
+        )
+        .replace(
+            "instance: id\n",
+            "instance: id\n        sets: {origins: input.origins}\n",
+        );
+    let text = adversary_text(
+        ADV_LIVE,
+        &format!("{ADV_SERVER_MANY}\n{ADV5_ORIGIN}"),
+        &format!(
+            "{add_source}\n{}",
+            adversary_register("List<demo.reg.SourceId>", "", "", "")
+        ),
+    )
+    .replace(plain, with_origins);
+    let synthesis = synthesize(&adversary_compile(&text));
+    let Some(accepted) = scenario(&synthesis, ACCEPTED) else {
+        let refusal = adversary2_refusal(&synthesis);
+        assert!(
+            refusal
+                .as_deref()
+                .is_some_and(|text| text.contains("demo.reg.")),
+            "no accepted scenario and no refusal naming a relation: {refusal:?}"
+        );
+        return;
+    };
+    let executions = adversary_executions(accepted, ADD);
+    assert!(
+        !executions.is_empty(),
+        "a Source is arranged: {:#?}",
+        accepted.steps
+    );
+    for (_, input) in executions {
+        let origins = &input["origins"];
+        assert!(
+            matches!(origins, ScenarioValue::Literal { value: Node::Seq(items) } if items.is_empty()),
+            "the Source arranged for Register names Origins, and no command creates one: \
+             {origins:#?}"
+        );
+    }
+}
+
+/// A `when_subject:` refusal on an update compares a stored field with the input list,
+/// `floor > input.sources.count` (`floor` stored `1`). The witness refutes it with one source; with
+/// no route the list is sent `[]`. The predicate is neither an input guard `keeps_branch` compares
+/// nor a guard `selects_branch` decides without a held state, so `[]` is sent and the refusal
+/// answers.
+#[test]
+fn adversary6_a_stored_row_guard_reading_the_input_list_is_decided_on_the_empty_list() {
+    let server = ADV_SERVER_MANY.replace(
+        "    relations:\n",
+        "      - {name: floor, type: Integer}\n    relations:\n",
+    );
+    let register = adversary_register("List<demo.reg.SourceId>", "", "", ", floor: \"1\"");
+    let reconfigure = r#"  - name: demo.reg.Reconfigure
+    input:
+      - {name: id, type: demo.reg.ServerId}
+      - {name: sources, type: "List<demo.reg.SourceId>"}
+    outcomes:
+      - name: short
+        when_subject: {predicate: "floor > input.sources.count"}
+        error: demo.reg.Refused
+      - name: accepted
+        updates: demo.reg.Server
+        instance: id
+        sets: {sources: input.sources}
+        emits: [demo.reg.Registered]
+        payload: {demo.reg.Registered: {id: input.id}}"#;
+    let model = |commands: &str| adversary_compile(&adversary_text(ADV_LIVE, &server, commands));
+    let (synthesis, failed) = adversary_interpreted(model(&format!(
+        "{ADV_ADD_SOURCE}\n{register}\n{reconfigure}"
+    )));
+    assert!(
+        scenario(&synthesis, RECONFIGURED).is_some(),
+        "with a route the update is arranged: {:?}",
+        adversary4_refusal(&synthesis, RECONFIGURED)
+    );
+    assert!(
+        failed.iter().all(|line| !line.starts_with(RECONFIGURED)),
+        "with a route the update passes: {failed:#?}"
+    );
+    adversary5_passes_or_refused_by_name(
+        model(&format!("{register}\n{reconfigure}")),
+        RECONFIGURED,
+    );
+}

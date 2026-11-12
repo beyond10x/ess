@@ -31,10 +31,17 @@ entity's creating route (`arrange_first`, as for related rows):
 | `cardinality: many`, a `List` | exactly as many created rows as the witness list held, eight at most (a longer list is a refusal naming the relation) | the empty list, which names no row, where the empty-list rule below holds; else a refusal naming `<entity>.<relation>` |
 | `cardinality: one` | the created row's identity | no scenario: a refusal naming `<entity>.<relation>` |
 
-The empty-list rule fails closed, in three parts. (a) Every list with no route is sent `[]` at
-once and the lists are decided together, never one against the witness: the precedence order must
-still select the branch, no invariant may be broken by that one input, and if they do not all
-hold every such list's scenario is refused by naming the relations. (b) The row the branch stores
+The empty-list rule fails closed, in three parts. (a) The input is decided again as it will be
+sent, on the arranged path as on the empty-list path: the arranged rows (each an identity no other
+value equals) and every `[]` are put in at once and the lists decided together, never one against
+the witness; the precedence order must still select the branch, a held-state guard that reads no
+input is skipped, a stored-row guard (`when_subject:`) reading an input the arrangement changed
+is undecided (a list's `count` stays decided where the arranged list is as long as the
+witness's), no invariant may be broken by that one input, and if they do not all hold the
+scenario is refused by naming the relations. A row chained below a command is held to the same
+rule at every depth: where its own list has no route it is sent `[]` where its creating branch and
+invariants keep it, else the chain is given up and the outer scenario refused by name; witness
+identities are never kept. (b) The row the branch stores
 binds a field only in a form understood exactly (an input copy, a literal, `{input: x, else:
 <literal>}`, the empty list, and the state a creating branch lands in); a field set in any other
 form (an `else:` naming an input, a struct value, a conversion, an expression, a generated value)
