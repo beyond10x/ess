@@ -520,6 +520,8 @@ fn keys_together(composite: &Composite, path: &NodePath, sink: &mut Sink) {
 struct Fixtures {
     views: BTreeSet<String>,
     scripts: BTreeSet<String>,
+    /// The `rows` each view's fixture file holds; a view whose file cannot be read has none.
+    rows: BTreeMap<String, Vec<Value>>,
 }
 
 impl Fixtures {
@@ -529,7 +531,11 @@ impl Fixtures {
         let Some(index) = &document.fixtures else {
             return fixtures;
         };
-        fixtures.absorb(index);
+        let dir = index
+            .dir
+            .as_ref()
+            .map_or_else(|| base.to_path_buf(), |dir| base.join(dir));
+        fixtures.absorb(index, &dir);
         if let Some(file) = &index.index {
             let path = base.join(file);
             let read = std::fs::read_to_string(&path)
@@ -538,7 +544,7 @@ impl Fixtures {
                     ess_yaml::from_str::<FixtureIndex>(&text).map_err(|error| error.to_string())
                 });
             match read {
-                Ok(file) => fixtures.absorb(&file),
+                Ok(file) => fixtures.absorb(&file, &dir),
                 Err(error) => sink.push(
                     "fixture_per_view",
                     &NodePath::root().child("fixtures").child("index"),
@@ -552,11 +558,27 @@ impl Fixtures {
         fixtures
     }
 
-    fn absorb(&mut self, index: &FixtureIndex) {
+    fn absorb(&mut self, index: &FixtureIndex, dir: &Path) {
         self.views.extend(index.views.keys().cloned());
         self.views.extend(index.derived.keys().cloned());
         self.scripts.extend(index.scripts.keys().cloned());
+        for (view, file) in &index.views {
+            if let Some(rows) = view_rows(&dir.join(file), view) {
+                self.rows.entry(view.clone()).or_insert(rows);
+            }
+        }
     }
+}
+
+/// The `rows` of `view` in a fixture file: one view (`view:` and `rows:`) or several (`views:`).
+fn view_rows(path: &Path, view: &str) -> Option<Vec<Value>> {
+    let file: Value = ess_yaml::from_str(&std::fs::read_to_string(path).ok()?).ok()?;
+    let body = match file.as_mapping()?.get("views") {
+        Some(Value::Mapping(views)) => views.get(view)?.clone(),
+        _ if file.as_mapping()?.get("view").and_then(Value::as_str) == Some(view) => file,
+        _ => return None,
+    };
+    Some(body.as_mapping()?.get("rows")?.as_sequence()?.clone())
 }
 
 struct Checker<'a> {
@@ -1154,6 +1176,9 @@ impl Checker<'_> {
                 if let Some((key, reads)) = composite_reads(composite) {
                     self.reads(sink, &path.child(key), reads);
                 }
+                if let Composite::Board(board) = composite {
+                    self.board_widget_kinds(sink, path, board);
+                }
                 if let Composite::GraphEditor(editor) = composite {
                     if let Some(opens) = editor.nodes.as_ref().and_then(|n| n.opens.as_ref()) {
                         self.opens(sink, &path.child("nodes"), opens);
@@ -1166,6 +1191,50 @@ impl Checker<'_> {
             Body::Primitive(primitive) => self.primitive(sink, path, primitive),
             Body::Widget(instance) => self.arguments(sink, path, instance),
             Body::Host(_) => {}
+        }
+    }
+
+    /// `board_widget_kinds`: a fixture row of the board's read whose `widget_by` field is absent,
+    /// or names no entry of `widgets`, is drawn as a placeholder, never as a widget.
+    fn board_widget_kinds(&self, sink: &mut Sink, path: &NodePath, board: &ess_ui::Board) {
+        let Some(rows) = board
+            .reads
+            .view
+            .as_ref()
+            .and_then(|view| self.fixtures.rows.get(view))
+        else {
+            return;
+        };
+        let by = board.widget_by.as_deref().unwrap_or("type");
+        let mut unnamed = BTreeSet::new();
+        let mut absent = false;
+        for row in rows {
+            let kind = row
+                .as_mapping()
+                .and_then(|row| row.get(by))
+                .and_then(scalar_text)
+                .filter(|kind| !kind.is_empty());
+            match kind {
+                None => absent = true,
+                Some(kind) if !board.widgets.contains_key(&kind) => {
+                    unnamed.insert(kind);
+                }
+                Some(_) => {}
+            }
+        }
+        if absent {
+            sink.push(
+                "board_widget_kinds",
+                path,
+                format!("a fixture row of the board's read has no `{by}`, so no `widgets` entry draws it"),
+            );
+        }
+        for kind in unnamed {
+            sink.push(
+                "board_widget_kinds",
+                path,
+                format!("a fixture row of the board's read has `{by}: {kind}`, which no `widgets` entry names"),
+            );
         }
     }
 

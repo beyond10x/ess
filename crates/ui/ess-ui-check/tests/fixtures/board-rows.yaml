@@ -1,0 +1,9 @@
+views:
+  t.Board:
+    rows:
+      - {widget: w1, kind: gauge, value: 1}
+      - {widget: w2, value: 7}
+      - {widget: w3, kind: ghost, value: 3}
+  t.Named:
+    rows:
+      - {widget: w1, kind: gauge, value: 1}

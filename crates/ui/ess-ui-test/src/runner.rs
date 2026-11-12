@@ -135,14 +135,23 @@ impl<'d> Runner<'d> {
             } => self.expect_export(view, format.as_deref(), params),
             Step::Type { at, text } => {
                 let target = self.acting(at)?;
+                if let Some(reason) = crate::parity::closed_group(self.doc, &target) {
+                    return Err(reason);
+                }
                 self.type_text(&target, text)
             }
             Step::Choose { at, option } => {
                 let target = self.acting(at)?;
+                if let Some(reason) = crate::parity::closed_group(self.doc, &target) {
+                    return Err(reason);
+                }
                 self.choose(&target, option)
             }
             Step::Act { at } => {
                 let target = self.acting(at)?;
+                if let Some(reason) = crate::parity::submit(self.doc, &target) {
+                    return Err(reason);
+                }
                 self.act(&target)
             }
             Step::Page { at, to } => {
@@ -1563,7 +1572,13 @@ fn value_mismatch(wanted: &Value, found: &Value, path: &str) -> Option<String> {
 /// The fields a form edits, in the order the terminal moves through them (first tab).
 fn form_fields(form: &Form) -> Vec<ess_ui::Field> {
     let mut fields = form.fields.clone();
-    for group in &form.groups {
+    // The terminal's cursor walks the fields it draws: a group that starts collapsed stays closed
+    // (no step presses the fold key), so its fields are skipped (the terminal's `shown_form_fields`).
+    for group in form
+        .groups
+        .iter()
+        .filter(|group| group.collapsed != Some(true))
+    {
         fields.extend(group.fields.iter().cloned());
     }
     if let Some(TabFields::Fields(tab)) = form.tabs.first().and_then(|tab| tab.fields.as_ref()) {

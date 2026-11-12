@@ -630,15 +630,15 @@ overlays: {edit: {kind: drawer, component: form, same_as: partners.list.edit}}
 
 A renderer-neutral arrangement of a page's sections.
 
-`stack` shows sections one below the other in declaration order. `columns` splits the page into named columns, each listing its sections. `areas` names grid cells row by row and places sections into areas; an area spanning several cells repeats its name. Renderers without columns or areas fall back to a stack in section declaration order.
+`stack` shows sections one below the other in declaration order. `columns` splits the page into named columns, each listing its sections. `areas` names grid cells row by row and places sections into areas; an area spanning several cells repeats its name. Renderers without columns or areas fall back to a stack in section declaration order. A column or an area draws its sections each in a frame of its own (`frame: each`, the default) or all in one frame under one heading (`frame: shared`); each section still loads, fails and empties on its own. An area's place entry is the list of its sections, which means `frame: each`, or a record `{sections, frame, title, collapsed}`. `title` is the heading of a shared frame and `collapsed: true` starts it closed, so `collapsed` needs a `title`; neither is written beside `frame: each`. The sections of a shared frame are consecutive in the page's section order, so a renderer that stacks sections draws one block.
 
 **Properties**
 
 | Property | Type | Required | Default | Note |
 |---|---|---|---|---|
 | `stack` | exactly `stack` |   |   | sections top to bottom in declaration order |
-| `columns` | list of record \{ `name`: `name`, `sections`: list of name of a [Section](#section), `width`: optional (one of: `narrow` \| `normal` \| `wide`) \} |   |   | named columns left to right |
-| `areas` | record \{ `grid`: list of list of `name`, `place`: map of `name` → list of name of a [Section](#section) \} |   |   | grid of area names and the sections placed in each |
+| `columns` | list of record \{ `name`: `name`, `sections`: list of name of a [Section](#section), `width`: optional (one of: `narrow` \| `normal` \| `wide`), `frame`: optional (one of: `each` \| `shared`), `title`: optional `string`, `collapsed`: optional `boolean` \} |   |   | named columns left to right; `frame: shared` draws a column's sections in one frame under `title`, which `collapsed` starts closed |
+| `areas` | record \{ `grid`: list of list of `name`, `place`: map of `name` → (one of: list of name of a [Section](#section) \| record \{ `sections`: list of name of a [Section](#section), `frame`: optional (one of: `each` \| `shared`), `title`: optional `string`, `collapsed`: optional `boolean` \}) \} |   |   | grid of area names and the sections placed in each: a list of sections, or a record that frames them |
 
 **You may also write**
 
@@ -658,11 +658,24 @@ one_of:
             name: name
             sections: {list: {ref: section}}
             width: {optional: {enum: [narrow, normal, wide]}}
+            frame: {optional: {enum: [each, shared]}}
+            title: {optional: string}
+            collapsed: {optional: boolean}
   - record:
       areas:
         record:
           grid: {list: {list: name}}
-          place: {map: {key: name, value: {list: {ref: section}}}}
+          place:
+            map:
+              key: name
+              value:
+                one_of:
+                  - {list: {ref: section}}
+                  - record:
+                      sections: {list: {ref: section}}
+                      frame: {optional: {enum: [each, shared]}}
+                      title: {optional: string}
+                      collapsed: {optional: boolean}
 ```
 
 **Default**
@@ -802,6 +815,7 @@ The section, not the page, is the unit of loading. Each has at most one `reads`,
 | `name` | `name` | yes |   | node name among the page's sections |
 | `component` | one of: name of a [Composite](#composite) \| name of a [Widget](#widget) | yes |   | what the section renders |
 | `title` | `string` |   |   | heading shown above the section; absent, none |
+| `collapsed` | `boolean` |   | `false` | starts the section closed under its `title`, which a reader clicks to open; needs a `title`, since there is nothing else to click. A collapsed section with `load: on_visible` starts its read when opened |
 | `reads` | [Reads](#reads) |   |   | the section's data; one per section; it is the composite's own `reads` |
 | `live` | [Live](#live) |   |   | how channel events change the rows |
 | `load` | one of: `eager` \| `on_visible` \| `on_demand` |   | `eager` | when the read starts |
@@ -875,7 +889,7 @@ Declare what the user sees while loading, when there is nothing, when the read f
 |---|---|---|---|---|
 | `loading` | one of: `skeleton` \| `spinner` \| `none` |   | `skeleton` | first load |
 | `refreshing` | one of: `keep_rows` \| `skeleton` |   | `keep_rows` | later loads |
-| `empty` | record \{ `title`: optional `string`, `message`: `string`, `action`: optional [Action](#action) \} |   |   | ready with no rows; `title` is a heading above the message |
+| `empty` | record \{ `title`: optional `string`, `message`: `string`, `action`: optional [Action](#action) \} |   |   | ready with no rows, or a read that has not started because its section `depends_on` a selection not made yet (absent, that section says `Nothing to show yet`); `title` is a heading above the message |
 | `failed` | record \{ `message`: optional `string`, `retry`: `boolean` \} |   | `{retry: true}` | read refused or transport error |
 | `forbidden` | record \{ `message`: optional `string` \} |   |   | actor lacks the grant |
 | `stale` | record \{ `mark`: (one of: `badge` \| `dim` \| `both`) \} |   | `{mark: badge}` | live channel down |
@@ -949,6 +963,7 @@ Use for detail views, KPI panels and read-only summaries.
 |---|---|---|---|---|
 | `reads` | [Reads](#reads) |   |   | the row |
 | `fields` | list of [Field](#field) |   |   | fields to show |
+| `groups` | list of record \{ `name`: `name`, `label`: optional `string`, `collapsed`: optional `boolean`, `fields`: list of [Field](#field) \} |   |   | fields shown under headings, in order, after `fields`: each group has a `name`, a `label` and `fields`, and `collapsed: true` starts it closed under its label, so `collapsed` needs a `label`; a group is read-only, so it takes no `save`, `does` or `actions`, and a key it does not declare is refused at the group's path |
 | `tabs` | list of [Tab](#tab) |   |   | fields split into tabs |
 | `item` | list of [Node](#node) |   |   | nested named nodes such as metrics or widgets, in order |
 | `actions` | list of [Action](#action) |   |   | actions on the record |
@@ -1243,7 +1258,7 @@ degrades: {no_charts: table}
 
 A user-arranged grid of widgets, persisted.
 
-A board reads a dashboard record; each row places a widget whose kind is chosen by `widget_by`. A renderer without free layout stacks them in layout order.
+A board reads a dashboard record; each row places a widget whose kind is chosen by `widget_by`. A renderer without free layout stacks them in layout order. A row without that field draws a placeholder naming the field (`no kind`), and one whose kind no `widgets` entry names draws a placeholder naming the kind; `ess ui check` warns `board_widget_kinds` for a fixture row of either.
 
 **Properties**
 
@@ -1460,7 +1475,7 @@ Columns and form inputs are fields. `as` is a semantic widget, not a component; 
 | `scale` | one of: `fraction` \| `hundredths` |   | `fraction` | what an `as: percent` value is a share of, and only on such a field: `fraction` reads 0.5 as 50%, `hundredths` reads 50 as 50% |
 | `choice` | [Node](#node) |   |   | the choice composite for `as: choice` |
 | `sortable` | `boolean` |   | `false` | column can sort |
-| `visible` | `expr` |   |   | shows the field only when true |
+| `visible` | `expr` |   |   | shows the field only when true. A condition that reads `row.<path>` is judged for each row: a column keeps its header and draws an empty cell where it is false, and a card or a record leaves the field out; any other condition shows or hides the whole column |
 | `binds` | `expr` |   |   | bind to UI state instead of the command input |
 | `label_from` | record \{ `view`: name of an ESS `view`, `field`: `name`, `key`: optional `name` \} |   |   | show a field of a related view instead of the value: the row of `view` whose `key` (default `id`) equals the value; the view is read once, without params |
 | `labels` | one of: map of `string` → `string` \| `name` |   |   | the text shown for a value: a map written out, or the name of an entry of `label_maps` |
@@ -1528,6 +1543,7 @@ Settings pages save each group independently, often on change.
 |---|---|---|---|---|
 | `name` | `name` | yes |   | node name |
 | `label` | `string` |   |   | group heading |
+| `collapsed` | `boolean` |   | `false` | starts the group closed under its `label`, which a reader clicks to open it, so `collapsed` needs a `label`; a collapsed group's fields are still sent with the form |
 | `fields` | list of [Field](#field) | yes |   | fields in the group |
 | `save` | one of: `with_form` \| `on_change` |   | `with_form` | when the group saves |
 | `does` | name of an ESS `command` |   |   | command for this group if not the form's |
@@ -2792,6 +2808,7 @@ What a validator checks in a document, and the construct each check applies to. 
 | `checked_unreadable` | [Action](#action) | `**.checked on an as toggle action` | `{must: [parse_as_a_filter_predicate, read_only_row_params_state_shell_args]}` | warning |
 | `host_slots` | [HostSlot](#hostslot) | `**.host` | `{must: [carry_a_non_empty_reason, name_what_it_stands_in_for, be_the_only_slot_of_its_host_name, carry_neither_component_nor_primitive]}` | error |
 | `hosts_registered` | every node | `**.host, for every name ess ui check --hosts lists` | `{must_resolve_in: ["**.host"]}` | error |
+| `board_widget_kinds` | every node | `**.board.reads fixture rows` | `{must: have_a_widget_by_field_that_names_an_entry_of_widgets}` | warning |
 
 ## Retrofits and lowering
 

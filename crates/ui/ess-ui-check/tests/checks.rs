@@ -378,6 +378,64 @@ fn hosts_registered() {
 }
 
 #[test]
+fn board_widget_kinds() {
+    let fixtures = (
+        "fixtures",
+        "{dir: tests/fixtures, views: {t.Board: board-rows.yaml, t.Named: board-rows.yaml}}",
+    );
+    let board = |view: &str, widgets: &str| {
+        doc(&[
+            fixtures,
+            (
+                "pages",
+                &format!(
+                    "{{p: {{kind: detail_page, title: P, sections: [{{name: summary, reads: t.ById}}, \
+                     {{name: dash, component: board, reads: {view}, widget_by: kind, widgets: {widgets}}}]}}}}"
+                ),
+            ),
+        ])
+    };
+    let first = report(&board(
+        "t.Board",
+        "{gauge: {primitive: text, text: row.widget}}",
+    ));
+    let found = tripped(&first, "board_widget_kinds");
+    assert_eq!(found.len(), 2, "{:#?}", first.findings);
+    trips_in(&first, "board_widget_kinds", "pages/p/sections/dash");
+    assert!(
+        found
+            .iter()
+            .any(|finding| finding.message.contains("no `kind`")),
+        "a row without the field is reported: {found:?}"
+    );
+    assert!(
+        found
+            .iter()
+            .any(|finding| finding.message.contains("kind: ghost")),
+        "a kind no widget names is reported: {found:?}"
+    );
+    let named = report(&board(
+        "t.Named",
+        "{gauge: {primitive: text, text: row.widget}}",
+    ));
+    assert!(
+        tripped(&named, "board_widget_kinds").is_empty(),
+        "every row names a widget: {:#?}",
+        named.findings
+    );
+    let both = report(&board(
+        "t.Board",
+        "{gauge: {primitive: text, text: row.widget}, ghost: {primitive: text, text: row.widget}}",
+    ));
+    assert_eq!(
+        tripped(&both, "board_widget_kinds").len(),
+        1,
+        "only the row without a kind is left: {:#?}",
+        both.findings
+    );
+}
+
+#[test]
 fn layout_complete() {
     let text = page(
         "{kind: detail_page, title: P, layout: {columns: [{name: main, sections: []}]}, \

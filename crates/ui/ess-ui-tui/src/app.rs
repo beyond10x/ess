@@ -464,6 +464,9 @@ pub struct App {
     exports: Vec<Exported>,
     /// Marks of the lines being drawn, not yet placed on the screen.
     pub(crate) marks: std::cell::RefCell<Vec<Mark>>,
+    /// The sections whose `selection` is being resolved: a section that reads its own selection,
+    /// directly or through another, sees none.
+    pub(crate) resolving: std::cell::RefCell<Vec<String>>,
     /// What the last frame drew where.
     pub(crate) regions: std::cell::RefCell<Vec<Region>>,
 }
@@ -570,6 +573,7 @@ impl App {
             commands_sent: 0,
             exports: Vec::new(),
             marks: std::cell::RefCell::default(),
+            resolving: std::cell::RefCell::default(),
             regions: std::cell::RefCell::default(),
         };
         app.go(&home, BTreeMap::new(), true);
@@ -1072,17 +1076,32 @@ impl App {
         expr::eval(text, &Scope { app: self, ctx })
     }
 
+    /// The value of a filter-grammar path, resolved as `keeps` resolves it.
+    fn filter_path(&self, ctx: &Ctx<'_>, path: &[String]) -> Value {
+        let segments: Vec<_> = path[1..].iter().map(String::as_str).collect();
+        match (Scope { app: self, ctx }).resolve(&path[0], &segments[..1]) {
+            Resolved::Whole(value) => ess_ui::filter::path(&value, &segments[1..]),
+            Resolved::Root(value) => ess_ui::filter::path(&value, &segments),
+        }
+    }
+
     /// A client predicate fails closed, unlike a display or visibility expression.
     fn keeps(&self, filter: Option<&ess_ui::Expr>, ctx: &Ctx<'_>) -> bool {
         filter.is_none_or(|filter| {
-            ess_ui::filter::keeps(&filter.0, &|path| {
-                let segments: Vec<_> = path[1..].iter().map(String::as_str).collect();
-                match (Scope { app: self, ctx }).resolve(&path[0], &segments[..1]) {
-                    Resolved::Whole(value) => ess_ui::filter::path(&value, &segments[1..]),
-                    Resolved::Root(value) => ess_ui::filter::path(&value, &segments),
-                }
-            })
+            ess_ui::filter::keeps(&filter.0, &|path| self.filter_path(ctx, path))
         })
+    }
+
+    /// A `visible` condition judged for the row in `ctx`, as React judges it: one that reads the
+    /// row is evaluated in the filter grammar (`and`, `or`, `not`, comparisons) when it parses
+    /// there, else as any other `visible` condition.
+    pub(crate) fn visible_for_row(&self, condition: &str, ctx: &Ctx<'_>) -> bool {
+        match ess_ui::filter::parse(condition).filter(ess_ui::filter::Predicate::allowed_roots) {
+            Some(predicate) => {
+                ess_ui::filter::truthy(&predicate.evaluate(&|path| self.filter_path(ctx, path)))
+            }
+            None => self.visible(Some(condition), ctx),
+        }
     }
 
     /// A `visible` condition: absent or outside the fixture grammar means shown.
@@ -1237,6 +1256,16 @@ impl App {
         body_reads(&section.body).map(|reads| self.request(reads, &ctx))
     }
 
+    /// Whether the section's read has not started: it depends on a sibling section whose
+    /// selection is not made.
+    pub(crate) fn waiting(&self, section: &Section) -> bool {
+        section.depends_on.as_deref().is_some_and(|dependency| {
+            !self
+                .eval(&format!("section.{dependency}.selection"), &Ctx::default())
+                .is_some_and(|selection| truthy(&selection))
+        })
+    }
+
     pub(crate) fn lifecycle(&self, section: &Section) -> Lifecycle {
         if section.load == Some(ess_ui::Load::OnDemand) && !self.demanded.contains(&section.name) {
             return Lifecycle::NotLoaded;
@@ -1244,6 +1273,10 @@ impl App {
         let Some(request) = self.section_request(section) else {
             return Lifecycle::Ready;
         };
+        // A read that has not started has nothing to show yet, which is what `states.empty` says.
+        if self.waiting(section) {
+            return Lifecycle::Empty;
+        }
         match self.read_state(&request) {
             None | Some(ReadState::Loading { .. }) => Lifecycle::Loading,
             Some(ReadState::Failed(_)) => Lifecycle::Failed,
@@ -1487,7 +1520,9 @@ impl App {
             );
         }
         for (_, section) in self.visible_sections() {
-            if self.lifecycle(section) == Lifecycle::NotLoaded {
+            if self.lifecycle(section) == Lifecycle::NotLoaded
+                || (self.waiting(section) && self.section_request(section).is_some())
+            {
                 continue;
             }
             let ctx = Ctx {
@@ -3450,14 +3485,14 @@ impl App {
             KeyCode::Char(' ') => {
                 if let Some(field) = current {
                     self.cycle_field(form, draft, &field, state.option, &ctx);
-                    self.save_on_change(target, form, draft);
+                    self.save_on_change(target, form, draft, &field.field);
                 }
             }
             KeyCode::Enter | KeyCode::Char('i') => {
                 if let Some(field) = current {
                     if matches!(field.field_as.as_deref(), Some("toggle" | "choice")) {
                         self.cycle_field(form, draft, &field, state.option, &ctx);
-                        self.save_on_change(target, form, draft);
+                        self.save_on_change(target, form, draft, &field.field);
                     } else {
                         self.ui_mut(ui).editing = true;
                     }
@@ -3598,18 +3633,26 @@ impl App {
         }
         self.set_field(&draft, &field, Value::String(text));
         if let Some(form) = &form {
-            self.save_on_change(target, form, &draft);
+            self.save_on_change(target, form, &draft, &field);
         }
     }
 
     /// A form that saves on change (`save: on_change`) sends its command after every change, as
     /// the generated React project does; the draft stays as typed. A refusal shows on the form.
-    fn save_on_change(&mut self, target: Target, form: &Form, draft: &str) {
-        if form.save != Some(ess_ui::FormSave::OnChange) {
-            return;
-        }
+    /// A field of a group that saves on change sends the group's own command (the form's when the
+    /// group names none), whatever the form's own `save` is; the input is the whole form's.
+    fn save_on_change(&mut self, target: Target, form: &Form, draft: &str, field: &str) {
+        let group = form.groups.iter().find(|group| {
+            group.save.as_deref() == Some("on_change")
+                && group.fields.iter().any(|member| member.field == field)
+        });
+        let command = match group {
+            Some(group) => group.does.as_ref().unwrap_or(&form.does),
+            None if form.save == Some(ess_ui::FormSave::OnChange) => &form.does,
+            None => return,
+        };
         let input = self.form_input(target, form, draft);
-        let refused = self.run_command(&form.does, &input);
+        let refused = self.run_command(command, &input);
         let ui = self.target_ui(target);
         self.ui_mut(&ui).refusal = refused.map(|refused| refused.by("form"));
     }
@@ -4543,18 +4586,21 @@ impl Resolve for Scope<'_> {
                 };
                 let selection = match &section.body {
                     Body::Composite(Composite::Collection(collection)) => {
-                        // Evaluating the section's own params here would recurse into this
-                        // lookup, so a dependent read sees the selection of the page shown.
-                        let reads_self = collection.reads.as_ref().is_some_and(|reads| {
-                            reads
-                                .params
-                                .values()
-                                .any(|expr| expr.0.starts_with("section."))
-                        });
-                        if reads_self {
+                        // The section's own params may read `section.<name>.selection`: a section
+                        // that is already being resolved (it reads its own selection, directly or
+                        // through another) sees none, and any other resolves its params first.
+                        if app
+                            .resolving
+                            .borrow()
+                            .iter()
+                            .any(|open| open.as_str() == *name)
+                        {
                             None
                         } else {
-                            app.selected_row(&ui, collection, &ctx)
+                            app.resolving.borrow_mut().push((*name).to_owned());
+                            let row = app.selected_row(&ui, collection, &ctx);
+                            app.resolving.borrow_mut().pop();
+                            row
                         }
                     }
                     _ => None,
