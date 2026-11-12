@@ -39,7 +39,8 @@ command counts, and every part of it (guards in all forms, sets, payload, respon
 affects, instances, filters, emits, external eligibility), found by writing the resolved command
 out and reading every name in it, so no reader is listed by name. And nothing reads the stored
 `f`: no invariant of the entity, and no branch of any command acting on the entity (a guard, a copy
-of `f` into another field or an event, an expression). Anything else counts as read, and so does
+of `f` into another field or an event, an expression, a selector or filter), the name `f` standing
+anywhere in a path, `subject.f` included. Anything else counts as read, and so does
 anything in doubt. A read field is sent the witness value unchanged, as before this unit: the
 scenario is neither arranged nor refused for it, and the decisions the witness already made hold. The
 witness already satisfies every guard and invariant over the input, so no length is chosen again.

@@ -2610,3 +2610,245 @@ fn adversary8_an_affects_filter_reading_the_reference_keeps_the_scenario_passing
     );
     assert!(failure.is_none(), "{}", failure.unwrap_or_default());
 }
+
+// ---- Adversary pass 9 (turn 3): the allow-list of 64e00c7222, a stored read it does not see. ----
+
+/// `Register` stores `source` (a `String`-backed `SourceId`, `cardinality: one`) and nothing
+/// else; `Registered` sets off `seal-on-registered`, which moves the same `Server` to `Sealed`
+/// and copies the stored reference into `label` with `{expr: "subject.source"}`, under
+/// `any: [state == Live, label starts_with sour]`. The expression is a read of the stored
+/// `source` by a branch acting on the entity, which the design page counts as a reader, but
+/// `stored_read` matches only a path whose first segment is the field, and `subject.source`
+/// starts with `subject`. So `source` is arranged (`id-<n>`) instead of keeping its witness
+/// (`source`): `Seal` breaks the invariant, is refused, and the eventual `Sealed` the scenario
+/// asserts never arrives. The witness value (the base) seals the row.
+#[test]
+fn adversary9_a_stored_reference_an_expression_reads_through_subject_keeps_its_witness() {
+    let failure = adversary7_failure(adversary_compile(ADV9_SEALING), ACCEPTED);
+    assert!(failure.is_none(), "{}", failure.unwrap_or_default());
+}
+
+/// The control: the same model with `source` also read bare, by an invariant its witness meets.
+/// The allow-list sees that read, keeps the witness (`source`), and the row seals, as at the base.
+#[test]
+fn adversary9_control_a_bare_read_of_the_stored_reference_keeps_its_witness_and_seals() {
+    let text = ADV9_SEALING.replacen(
+        "      - any: [state == Live, {label: {starts_with: sour}}]\n",
+        "      - any: [state == Live, {label: {starts_with: sour}}]\n      - {source: {starts_with: \
+         sour}}\n",
+        1,
+    );
+    assert_ne!(text, ADV9_SEALING);
+    let failure = adversary7_failure(adversary_compile(&text), ACCEPTED);
+    assert!(failure.is_none(), "{}", failure.unwrap_or_default());
+}
+
+const ADV9_SEALING: &str = r#"
+format: ess/31
+system: demo
+version: v1
+domain: demo.reg
+types:
+  - {name: demo.reg.ServerId, kind: newtype, of: Uuid}
+  - {name: demo.reg.SourceId, kind: newtype, of: String}
+entities:
+  - name: demo.reg.Source
+    identity: {name: id, type: demo.reg.SourceId}
+    fields: []
+    lifecycle: {initial: Live, states: [Live], terminal: [Live]}
+  - name: demo.reg.Server
+    identity: {name: id, type: demo.reg.ServerId}
+    fields:
+      - {name: source, type: demo.reg.SourceId}
+      - {name: label, type: String}
+    relations:
+      - {name: source, kind: references, target: demo.reg.Source, cardinality: one, via: source}
+    invariants:
+      - any: [state == Live, {label: {starts_with: sour}}]
+    lifecycle:
+      initial: Live
+      states: [Live, Sealed]
+      terminal: [Sealed]
+      transitions:
+        - {name: seal, from: [Live], to: Sealed}
+errors:
+  - name: demo.reg.Conflict
+    fields:
+      - {name: state, type: demo.reg.Server.State}
+events:
+  - name: demo.reg.SourceAdded
+    fields: [{name: id, type: demo.reg.SourceId}]
+  - name: demo.reg.Registered
+    fields: [{name: id, type: demo.reg.ServerId}]
+  - name: demo.reg.Closed
+    fields: [{name: id, type: demo.reg.ServerId}]
+actors:
+  - name: demo.reg.Operator
+    may: [demo.reg.AddSource, demo.reg.Register, demo.reg.Seal]
+commands:
+  - name: demo.reg.AddSource
+    input: [{name: id, type: demo.reg.SourceId}]
+    outcomes:
+      - name: added
+        creates: demo.reg.Source
+        instance: id
+        emits: [demo.reg.SourceAdded]
+        payload: {demo.reg.SourceAdded: {id: input.id}}
+  - name: demo.reg.Register
+    input:
+      - {name: id, type: demo.reg.ServerId}
+      - {name: source, type: demo.reg.SourceId}
+    outcomes:
+      - name: accepted
+        creates: demo.reg.Server
+        instance: id
+        sets: {source: input.source, label: none}
+        emits: [demo.reg.Registered]
+        payload: {demo.reg.Registered: {id: input.id}}
+  - name: demo.reg.Seal
+    input: [{name: id, type: demo.reg.ServerId}]
+    outcomes:
+      - name: sealed
+        moves: demo.reg.Server.seal
+        instance: id
+        sets: {label: {expr: "subject.source"}}
+        emits: [demo.reg.Closed]
+        payload: {demo.reg.Closed: {id: input.id}}
+      - {name: wrong-state, wrong_state: true, error: demo.reg.Conflict}
+views:
+  - name: demo.reg.Servers
+    source: demo.reg.Server
+    consistency: read_your_writes
+    fields:
+      - {name: id, type: demo.reg.ServerId}
+      - {name: source, type: demo.reg.SourceId}
+      - {name: label, type: String}
+      - {name: state, type: demo.reg.Server.State}
+bindings:
+  - id: seal-on-registered
+    when: {event: demo.reg.Registered}
+    invoke: {command: demo.reg.Seal}
+    mapping: {id: event.id}
+    delivery: at_least_once
+    on_failure: drop
+"#;
+
+/// The same read one level down: the `Source` arranged for `Register` writes `origin` (a
+/// `String`-backed `OriginId`, `cardinality: one`) from its input, and `SourceAdded` sets off
+/// `stamp-on-added`, whose `Stamp` updates that row with `label: {expr: "subject.origin"}` and
+/// `done: true` under `any: [done == false, label starts_with orig]`. `chained` decides `origin`
+/// unread, arranges an `Origin` (`id-<n>`) in place of the witness (`origin-<n>`), and `Stamp`
+/// is refused, so the arranged row never reaches the rest the arrangement asserts.
+#[test]
+fn adversary9_a_chained_reference_an_expression_reads_through_subject_keeps_its_witness() {
+    let failure = adversary7_failure(adversary_compile(ADV9_STAMPING), ACCEPTED);
+    assert!(failure.is_none(), "{}", failure.unwrap_or_default());
+}
+
+/// The control: the same model with `origin` also read bare, by an invariant its witness meets.
+/// The chain keeps the witness `origin` (the plain row of the base rule) and the scenario passes.
+#[test]
+fn adversary9_control_a_bare_read_of_the_chained_reference_keeps_its_witness_and_passes() {
+    let text = ADV9_STAMPING.replacen(
+        "      - any: [done == false, {label: {starts_with: orig}}]\n",
+        "      - any: [done == false, {label: {starts_with: orig}}]\n      - {origin: {starts_with: \
+         orig}}\n",
+        1,
+    );
+    assert_ne!(text, ADV9_STAMPING);
+    let failure = adversary7_failure(adversary_compile(&text), ACCEPTED);
+    assert!(failure.is_none(), "{}", failure.unwrap_or_default());
+}
+
+const ADV9_STAMPING: &str = r#"
+format: ess/31
+system: demo
+version: v1
+domain: demo.reg
+types:
+  - {name: demo.reg.ServerId, kind: newtype, of: Uuid}
+  - {name: demo.reg.SourceId, kind: newtype, of: String}
+  - {name: demo.reg.OriginId, kind: newtype, of: String}
+entities:
+  - name: demo.reg.Origin
+    identity: {name: id, type: demo.reg.OriginId}
+    fields: []
+    lifecycle: {initial: Live, states: [Live], terminal: [Live]}
+  - name: demo.reg.Source
+    identity: {name: id, type: demo.reg.SourceId}
+    fields:
+      - {name: origin, type: demo.reg.OriginId}
+      - {name: label, type: String}
+      - {name: done, type: Boolean}
+    relations:
+      - {name: origin, kind: references, target: demo.reg.Origin, cardinality: one, via: origin}
+    invariants:
+      - any: [done == false, {label: {starts_with: orig}}]
+    lifecycle: {initial: Live, states: [Live], terminal: [Live]}
+  - name: demo.reg.Server
+    identity: {name: id, type: demo.reg.ServerId}
+    fields:
+      - {name: sources, type: "List<demo.reg.SourceId>"}
+    relations:
+      - {name: sources, kind: references, target: demo.reg.Source, cardinality: many, via: sources}
+    lifecycle: {initial: Live, states: [Live], terminal: [Live]}
+events:
+  - name: demo.reg.OriginAdded
+    fields: [{name: id, type: demo.reg.OriginId}]
+  - name: demo.reg.SourceAdded
+    fields: [{name: id, type: demo.reg.SourceId}]
+  - name: demo.reg.SourcePublished
+    fields: [{name: id, type: demo.reg.SourceId}]
+  - name: demo.reg.Registered
+    fields: [{name: id, type: demo.reg.ServerId}]
+actors:
+  - name: demo.reg.Operator
+    may: [demo.reg.AddOrigin, demo.reg.AddSource, demo.reg.Stamp, demo.reg.Register]
+commands:
+  - name: demo.reg.AddOrigin
+    input: [{name: id, type: demo.reg.OriginId}]
+    outcomes:
+      - name: added
+        creates: demo.reg.Origin
+        instance: id
+        emits: [demo.reg.OriginAdded]
+        payload: {demo.reg.OriginAdded: {id: input.id}}
+  - name: demo.reg.AddSource
+    input:
+      - {name: id, type: demo.reg.SourceId}
+      - {name: origin, type: demo.reg.OriginId}
+    outcomes:
+      - name: added
+        creates: demo.reg.Source
+        instance: id
+        sets: {origin: input.origin, label: none, done: false}
+        emits: [demo.reg.SourceAdded]
+        payload: {demo.reg.SourceAdded: {id: input.id}}
+  - name: demo.reg.Stamp
+    input: [{name: id, type: demo.reg.SourceId}]
+    outcomes:
+      - name: stamped
+        updates: demo.reg.Source
+        instance: id
+        sets: {label: {expr: "subject.origin"}, done: true}
+        emits: [demo.reg.SourcePublished]
+        payload: {demo.reg.SourcePublished: {id: input.id}}
+  - name: demo.reg.Register
+    input:
+      - {name: id, type: demo.reg.ServerId}
+      - {name: sources, type: "List<demo.reg.SourceId>"}
+    outcomes:
+      - name: accepted
+        creates: demo.reg.Server
+        instance: id
+        sets: {sources: input.sources}
+        emits: [demo.reg.Registered]
+        payload: {demo.reg.Registered: {id: input.id}}
+bindings:
+  - id: stamp-on-added
+    when: {event: demo.reg.SourceAdded}
+    invoke: {command: demo.reg.Stamp}
+    mapping: {id: event.id}
+    delivery: at_least_once
+    on_failure: drop
+"#;

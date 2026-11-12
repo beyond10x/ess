@@ -9,7 +9,8 @@
 //! unread only when every use of it anywhere in the resolved command (every branch's guards of
 //! any form, sets, payload, affects, instances and filters) is the one `sets:` entry that copies it
 //! into the reference field, and nothing reads that stored field (no invariant of the entity, no
-//! guard, copy or expression of any command acting on it). Anything else, or anything in doubt, is
+//! guard, copy, expression or filter of any command acting on it, `subject.f` included). Anything
+//! else, or anything in doubt, is
 //! a read, and a field read is sent the witness value, as it was before.
 //!
 //! * a `many` relation with a route is sent exactly as many rows as its witness list holds, and an
@@ -192,11 +193,12 @@ fn input_read(
 }
 
 /// Whether the stored field `via` of `entity` is read: by an invariant of the entity, or by any
-/// branch of any command that acts on the entity (its guard, a copy of the field, an expression),
-/// where a branch's own input is not a stored read. Anything that cannot be written out counts as
-/// a read.
+/// branch of any command that acts on the entity (its guard, a copy of the field, an expression, a
+/// selector or filter), where a branch's own input is not a stored read. A name counts wherever it
+/// stands in a path (`subject.via` included, not only first). Anything that cannot be written out
+/// counts as a read.
 fn stored_read(ir: &EssIr, entity: &EntityHandle, via: &str) -> bool {
-    let hit = |path: &[&str]| path[0] == via;
+    let hit = |path: &[&str]| path.contains(&via);
     let by_invariant = ir.entity(entity).invariants.iter().any(|invariant| {
         serde_json::to_value(&invariant.predicate)
             .map_or(true, |predicate| mentions(&predicate, &hit, &[], false))
