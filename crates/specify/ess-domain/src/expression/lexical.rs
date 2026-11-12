@@ -473,6 +473,10 @@ impl Site {
 #[derive(Debug, Clone, Default)]
 pub struct Written {
     pub(crate) sites: BTreeMap<Site, LexicalPredicate>,
+    /// Each decimal literal binary64 cannot hold exactly that a predicate or a `sets:` /
+    /// `payload:` of this source wrote, with the location it is refused at
+    /// ([`crate::inexact_decimal`]).
+    pub(crate) inexact: Vec<(String, ess_primitives::facts::InexactDecimal)>,
 }
 
 impl Written {
@@ -498,8 +502,20 @@ impl Written {
             LexicalPredicate::from_node(&node).ok()
         };
         let mut put = |site: Site, value: Option<&Value>| {
-            if let Some(tree) = lexical(value) {
-                written.sites.entry(site).or_insert(tree);
+            // The reader still answers the nearest binary64 for a literal that collapses; what it
+            // met is refused at the site, once, where the predicate is first written.
+            let (tree, inexact) =
+                ess_primitives::facts::collecting_inexact_decimals(|| lexical(value));
+            if let Some(tree) = tree {
+                if let std::collections::btree_map::Entry::Vacant(slot) =
+                    written.sites.entry(site.clone())
+                {
+                    slot.insert(tree);
+                    let location = site.location();
+                    written
+                        .inexact
+                        .extend(inexact.into_iter().map(|number| (location.clone(), number)));
+                }
             }
         };
         for command in items(document, "commands") {
@@ -623,6 +639,18 @@ impl Written {
         for (site, tree) in other.sites {
             self.sites.entry(site).or_insert(tree);
         }
+        // A name another source wrote first keeps its own literals, as it keeps its predicate.
+        let held: std::collections::BTreeSet<String> = self
+            .inexact
+            .iter()
+            .map(|(location, _)| location.clone())
+            .collect();
+        self.inexact.extend(
+            other
+                .inexact
+                .into_iter()
+                .filter(|(location, _)| !held.contains(location)),
+        );
     }
 }
 

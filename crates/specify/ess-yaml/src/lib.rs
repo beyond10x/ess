@@ -29,6 +29,126 @@ pub use serde_norway::{
 
 use serde::Serialize;
 
+/// One step of a path into a document: a mapping key, or a position in a sequence.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Step {
+    /// A mapping's string key.
+    Key(String),
+    /// A sequence's position.
+    Index(usize),
+}
+
+/// The spelling of every plain number `document` holds as a float, by its path, read back out of
+/// `text`, the text `document` was read from.
+///
+/// A YAML number reaches every reader as an `f64`, so `0.1000000000000000000001` and `0.1` are one
+/// value by then. The digits survive only in the text, and only through a scalar read as a string,
+/// which is what this does: it walks `text` beside `document`, which says which scalars are
+/// floats, and reads each of those as the text it was written as. A number under a key that is not
+/// text has no path and is left out.
+///
+/// Empty where the two disagree, which a `document` read from `text` never does.
+pub fn float_spellings(text: &str, document: &Value) -> Vec<(Vec<Step>, String)> {
+    let found = std::cell::RefCell::new(Vec::new());
+    let guide = Guide {
+        value: document,
+        path: Vec::new(),
+        found: &found,
+    };
+    match serde::de::DeserializeSeed::deserialize(guide, Deserializer::from_str(text)) {
+        Ok(()) => found.into_inner(),
+        Err(_) => Vec::new(),
+    }
+}
+
+/// A walk of the text that follows the document it was read into.
+struct Guide<'a> {
+    value: &'a Value,
+    path: Vec<Step>,
+    found: &'a std::cell::RefCell<Vec<(Vec<Step>, String)>>,
+}
+
+impl<'de> serde::de::DeserializeSeed<'de> for Guide<'_> {
+    type Value = ();
+
+    fn deserialize<D: serde::Deserializer<'de>>(self, deserializer: D) -> Result<(), D::Error> {
+        match self.value {
+            Value::Number(number) if number.is_f64() => deserializer.deserialize_str(self),
+            Value::Mapping(_) => deserializer.deserialize_map(self),
+            Value::Sequence(_) => deserializer.deserialize_seq(self),
+            _ => deserializer
+                .deserialize_ignored_any(serde::de::IgnoredAny)
+                .map(drop),
+        }
+    }
+}
+
+impl<'de> serde::de::Visitor<'de> for Guide<'_> {
+    type Value = ();
+
+    fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("the document it was read into")
+    }
+
+    fn visit_str<E: serde::de::Error>(self, spelling: &str) -> Result<(), E> {
+        self.found
+            .borrow_mut()
+            .push((self.path, spelling.to_owned()));
+        Ok(())
+    }
+
+    fn visit_map<A: serde::de::MapAccess<'de>>(self, mut map: A) -> Result<(), A::Error> {
+        use serde::de::IgnoredAny;
+        let Value::Mapping(entries) = self.value else {
+            return Err(serde::de::Error::custom(
+                "not the document it was read into",
+            ));
+        };
+        for (key, value) in entries {
+            if map.next_key::<IgnoredAny>()?.is_none() {
+                break;
+            }
+            let Some(key) = key.as_str() else {
+                map.next_value::<IgnoredAny>()?;
+                continue;
+            };
+            let mut path = self.path.clone();
+            path.push(Step::Key(key.to_owned()));
+            map.next_value_seed(Guide {
+                value,
+                path,
+                found: self.found,
+            })?;
+        }
+        while map.next_key::<IgnoredAny>()?.is_some() {
+            map.next_value::<IgnoredAny>()?;
+        }
+        Ok(())
+    }
+
+    fn visit_seq<A: serde::de::SeqAccess<'de>>(self, mut seq: A) -> Result<(), A::Error> {
+        let Value::Sequence(items) = self.value else {
+            return Err(serde::de::Error::custom(
+                "not the document it was read into",
+            ));
+        };
+        for (index, value) in items.iter().enumerate() {
+            let mut path = self.path.clone();
+            path.push(Step::Index(index));
+            let more = seq.next_element_seed(Guide {
+                value,
+                path,
+                found: self.found,
+            })?;
+            if more.is_none() {
+                break;
+            }
+        }
+        while seq.next_element::<serde::de::IgnoredAny>()?.is_some() {}
+        Ok(())
+    }
+}
+
 /// The key a `serde_json::Number` is serialized under when `arbitrary_precision` is on.
 pub const SERDE_JSON_NUMBER: &str = "$serde_json::private::Number";
 
@@ -165,5 +285,30 @@ mod tests {
             to_string(&document).unwrap(),
             serde_norway::to_string(&document).unwrap()
         );
+    }
+
+    #[test]
+    fn a_float_is_read_back_as_the_digits_it_was_written_with() {
+        let text = "a: 0.1000000000000000000001\n\
+                    b:\n  - 2\n  - 0.5\n  - {c: 1e2}\n  - '0.25'\n\
+                    d: [x, 3.0]\n\
+                    ? [1]\n: 0.7\n";
+        let document: Value = from_str(text).unwrap();
+        let key = |name: &str| Step::Key(name.to_owned());
+        assert_eq!(
+            float_spellings(text, &document),
+            vec![
+                (vec![key("a")], "0.1000000000000000000001".to_owned()),
+                (vec![key("b"), Step::Index(1)], "0.5".to_owned()),
+                (vec![key("b"), Step::Index(2), key("c")], "1e2".to_owned()),
+                (vec![key("d"), Step::Index(1)], "3.0".to_owned()),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_document_that_is_not_the_text_it_was_read_from_reads_no_spelling() {
+        let document: Value = from_str("a: 0.5\n").unwrap();
+        assert_eq!(float_spellings("a: [0.5]\n", &document).first(), None);
     }
 }

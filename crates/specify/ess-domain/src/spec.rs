@@ -193,7 +193,12 @@ impl RawSpecFile {
     /// spelled as, which is what every earlier format means by it.
     pub fn parse(text: &str) -> Result<Self, ess_yaml::Error> {
         let mut document: ess_yaml::Value = ess_yaml::from_str(text)?;
-        let spelled = crate::expression::lexical::Written::from_document(&document);
+        let mut spelled = crate::expression::lexical::Written::from_document(&document);
+        // Read before anything is taken out of the document: the digits of a number are read back
+        // out of `text` by walking it beside the document as it was read.
+        spelled
+            .inexact
+            .extend(crate::inexact_decimal::authored(&document, text));
         // A type's `undeclared_fields:` is read beside its body rather than in it (`ess/24`), and
         // every other declaration's is read so it can be refused at its line.
         let undeclared_fields = crate::undeclared_fields::Written::take(&mut document)?;
@@ -456,6 +461,8 @@ impl Specification {
         // From `ess/22` a bare word on the right of a comparison may name a field; which one is
         // decided now that the format and every declaration are known (A1).
         errors.extend(specification.resolve_written(&collected.spelled));
+        // A decimal literal binary64 cannot hold, which every reader would take as another value.
+        errors.extend(crate::inexact_decimal::refusals(&collected.spelled.inexact));
         // A view field's `from:`, with the spelling that reads it, now that every source's
         // references are known (beyond10x/ess#675).
         errors.extend(crate::view::from::refusals(

@@ -458,6 +458,15 @@ validation_codes! {
     /// contains `/`, or is exactly `.` or `..`, so the segment would address another route
     /// (beyond10x/ess#493).
     PathSegmentWireName => "path_segment_wire_name",
+
+    /// An authored `Decimal` literal that binary64 cannot hold exactly: a `sets:` or payload
+    /// number, or a number in a guard, such as `0.1000000000000000000001`, which every reader
+    /// would take as `0.1`. Refused by name at the literal rather than changed silently.
+    ///
+    /// Nothing about how a value is written moves: the exact-decimal writer is a separate,
+    /// coordinated format change. A `Decimal` that reaches ESS at run time is not authored and is
+    /// not refused here.
+    InexactDecimalLiteral => "inexact_decimal_literal",
 }
 
 impl fmt::Display for ValidationCode {
