@@ -17,8 +17,10 @@
 //!   header and its actions, a section's child, a field slot of a section's or an overlay's own
 //!   form, and the collection parts above; and never an icon action or an action drawn as a
 //!   choice, which show no label in the browser;
-//! - `act` on a form that saves on change is refused: the generated form draws no submit then
-//!   ([`submit`]);
+//! - `act` on a form (a section's or an overlay's own) that saves on change is refused: the
+//!   generated form draws no submit then ([`submit`]);
+//! - `type` and `choose` at a field of a form group that starts collapsed are refused: the
+//!   generated app hides the group's body and no step opens it ([`closed_group`]);
 //! - a host slot is drawn by the host in the generated app and as a labelled region by the
 //!   terminal, so a step that acts inside it is refused ([`inside_host`]), and the spec marks a
 //!   `text` check at it `test.fixme` ([`host_text`]).
@@ -194,10 +196,18 @@ pub(crate) fn undriven(document: &Document, target: &Target) -> Option<String> {
     None
 }
 
-/// Why `act` at `target` is refused because it submits a form that saves on change, if it does:
-/// the generated form draws no submit button then (every change already sent its command), so
-/// there is nothing in the browser to act on. A form whose group alone saves on change keeps its
-/// submit.
+/// Whether `body` is a form that saves on change.
+fn saves_on_change(body: &Body) -> bool {
+    matches!(
+        body,
+        Body::Composite(Composite::Form(form)) if form.save == Some(ess_ui::FormSave::OnChange)
+    )
+}
+
+/// Why `act` at `target` is refused because it submits a form (a section's or an overlay's own)
+/// that saves on change, if it does: the generated form draws no submit button then (every change
+/// already sent its command), so there is nothing in the browser to act on. A form whose group
+/// alone saves on change keeps its submit.
 pub(crate) fn submit(document: &Document, target: &Target) -> Option<String> {
     if target.row.is_some() {
         return None;
@@ -206,22 +216,39 @@ pub(crate) fn submit(document: &Document, target: &Target) -> Option<String> {
         .nodes()
         .into_iter()
         .find(|located| located.path.to_string() == target.node)?;
-    match located.node {
-        NodeRef::Section(section)
-            if matches!(
-                &section.body,
-                Body::Composite(Composite::Form(form))
-                    if form.save == Some(ess_ui::FormSave::OnChange)
-            ) =>
-        {
-            Some(format!(
-                "{}: the form saves on change and has no submit in the generated app; \
-                 choose or type a field instead, each change sends the form's command",
-                target.written
-            ))
-        }
-        _ => None,
-    }
+    let body = match located.node {
+        NodeRef::Section(section) => &section.body,
+        NodeRef::Overlay(overlay) => &overlay.body,
+        _ => return None,
+    };
+    saves_on_change(body).then(|| {
+        format!(
+            "{}: the form saves on change and has no submit in the generated app; \
+             choose or type a field instead, each change sends the form's command",
+            target.written
+        )
+    })
+}
+
+/// Why `type` or `choose` at `target` is refused because the field is in a form group that
+/// starts collapsed, if it is: the generated app keeps the group's body mounted but hidden, and
+/// no step opens a group, so a browser step at the field waits on an element that never shows,
+/// while the terminal's cursor walks past the closed group's fields.
+pub(crate) fn closed_group(document: &Document, target: &Target) -> Option<String> {
+    let segments: Vec<&str> = target.node.split('/').collect();
+    let at = segments.iter().rposition(|segment| *segment == "groups")?;
+    let group = segments.get(..=at + 1)?.join("/");
+    let collapsed = document.nodes().into_iter().any(|located| {
+        located.path.to_string() == group
+            && matches!(located.node, NodeRef::FormGroup(group) if group.collapsed == Some(true))
+    });
+    collapsed.then(|| {
+        format!(
+            "{}: the group starts collapsed and no step opens it, so its fields are hidden in \
+             the generated app and skipped by the terminal's cursor",
+            target.written
+        )
+    })
 }
 
 /// Why a step that acts at `written` — `act`, `select`, `mark`, `move`, `upload`, `type`,

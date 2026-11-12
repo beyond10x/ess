@@ -521,6 +521,11 @@ fn refusal(step: &Step, document: &Document) -> Option<String> {
     if let Some(reason) = crate::parity::undriven(document, &target) {
         return Some(reason);
     }
+    if matches!(step, Step::Type { .. } | Step::Choose { .. }) {
+        if let Some(reason) = crate::parity::closed_group(document, &target) {
+            return Some(reason);
+        }
+    }
     if matches!(step, Step::Choose { .. }) {
         return crate::parity::choose(document, &target);
     }
