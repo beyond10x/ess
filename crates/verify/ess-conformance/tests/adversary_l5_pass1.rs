@@ -866,3 +866,385 @@ fn a_stillborn_swap_carrying_overlap_taken_by_is_refused() {
     mutate::Manifest::from_json(&manifest.to_string())
         .unwrap_or_else(|refusal| panic!("the same stillborn entry without it is read: {refusal}"));
 }
+
+/// A row-set command `Act` over three entities a branch may act on (a book, a shelf carrying a
+/// `label`, a cart). `LABEL` is what `BuildShelf` sets the label to, `OUTCOMES` every branch of
+/// `Act` after `unknown`.
+const ROWS: &str = r"format: ess/23
+system: demo
+version: v1
+domain: demo.shelf
+entities:
+  - name: demo.shelf.Library
+    identity: {name: library, type: String}
+    fields:
+      - {name: curator, type: String}
+    lifecycle: {initial: Open, states: [Open], terminal: [Open]}
+  - name: demo.shelf.Book
+    identity: {name: book, type: String}
+    fields: []
+    lifecycle: {initial: Shelved, states: [Shelved], terminal: [Shelved]}
+  - name: demo.shelf.Shelf
+    identity: {name: shelf, type: String}
+    fields:
+      - {name: label, type: String}
+    lifecycle: {initial: Up, states: [Up], terminal: [Up]}
+  - name: demo.shelf.Cart
+    identity: {name: cart, type: String}
+    fields: []
+    lifecycle: {initial: Parked, states: [Parked], terminal: [Parked]}
+errors:
+  - {name: demo.shelf.Refused, summary: The row set decides., fields: []}
+  - {name: demo.shelf.Unknown, summary: No row carries the identity., fields: []}
+  - {name: demo.shelf.Rushed, summary: A rush is not taken., fields: []}
+  - {name: demo.shelf.Idle, summary: Nothing was asked., fields: []}
+events:
+  - name: demo.shelf.LibraryOpened
+    fields: [{name: library, type: String}]
+  - name: demo.shelf.ShelfBuilt
+    fields: [{name: shelf, type: String}]
+  - name: demo.shelf.BookAdded
+    fields: [{name: book, type: String}]
+  - name: demo.shelf.CartParked
+    fields: [{name: cart, type: String}]
+  - name: demo.shelf.BookPaused
+    fields: [{name: book, type: String}]
+  - name: demo.shelf.ShelfPaused
+    fields: [{name: shelf, type: String}]
+  - name: demo.shelf.CartPaused
+    fields: [{name: cart, type: String}]
+commands:
+  - name: demo.shelf.OpenLibrary
+    input:
+      - {name: library, type: String}
+      - {name: curator, type: String}
+    outcomes:
+      - name: opened
+        creates: demo.shelf.Library
+        instance: library
+        sets: {curator: input.curator}
+        emits: [demo.shelf.LibraryOpened]
+        payload:
+          demo.shelf.LibraryOpened: {library: input.library}
+  - name: demo.shelf.BuildShelf
+    input:
+      - {name: shelf, type: String}
+      - {name: label, type: String}
+    outcomes:
+      - name: built
+        creates: demo.shelf.Shelf
+        instance: shelf
+        sets: {label: LABEL}
+        emits: [demo.shelf.ShelfBuilt]
+        payload:
+          demo.shelf.ShelfBuilt: {shelf: input.shelf}
+  - name: demo.shelf.AddBook
+    input:
+      - {name: book, type: String}
+    outcomes:
+      - name: added
+        creates: demo.shelf.Book
+        instance: book
+        emits: [demo.shelf.BookAdded]
+        payload:
+          demo.shelf.BookAdded: {book: input.book}
+  - name: demo.shelf.ParkCart
+    input:
+      - {name: cart, type: String}
+    outcomes:
+      - name: parked
+        creates: demo.shelf.Cart
+        instance: cart
+        emits: [demo.shelf.CartParked]
+        payload:
+          demo.shelf.CartParked: {cart: input.cart}
+  - name: demo.shelf.Act
+    input:
+      - {name: book, type: String}
+      - {name: shelf, type: String}
+      - {name: cart, type: String}
+      - {name: curator, type: String}
+      - {name: pause, type: Boolean}
+      - {name: halt, type: Boolean}
+      - {name: rush, type: Boolean}
+    outcomes:
+      - {name: unknown, unknown_instance: true, error: demo.shelf.Unknown}
+OUTCOMES";
+
+/// The row set over libraries `SHELF` reads: `refused` where a library of the curator exists.
+const LIBRARY_SET: &str = "      - name: refused
+        when_related:
+          entity: demo.shelf.Library
+          where: curator == input.curator
+          exists: true
+        error: demo.shelf.Refused
+";
+
+/// A row set over shelves: `refused` where a shelf labelled with the curator exists.
+const SHELF_SET_PRESENT: &str = "      - name: refused
+        when_related:
+          entity: demo.shelf.Shelf
+          where: label == input.curator
+          exists: true
+        error: demo.shelf.Refused
+";
+
+/// A row set over shelves: `refused` where no shelf carries the label `shelf` names (pass 1's
+/// finding 3).
+const SHELF_SET_ABSENT: &str = "      - name: refused
+        when_related:
+          entity: demo.shelf.Shelf
+          where: label == input.shelf
+          exists: false
+        error: demo.shelf.Refused
+";
+
+const IDLE: &str = "      - {name: idle, error: demo.shelf.Idle}\n";
+const RUSHED: &str = "      - {name: rushed, when: rush == true, error: demo.shelf.Rushed}\n";
+
+/// What an acting branch updates: entity, input field, event.
+type Target = (&'static str, &'static str, &'static str);
+const BOOK: Target = ("Book", "book", "BookPaused");
+const SHELF_ROW: Target = ("Shelf", "shelf", "ShelfPaused");
+const CART: Target = ("Cart", "cart", "CartPaused");
+
+/// An accepting branch `name` updating `target` through its field, guarded by `when` (the default
+/// where `None`).
+fn acting(name: &str, when: Option<&str>, (entity, field, event): Target) -> String {
+    let guard = when.map_or_else(String::new, |when| format!("        when: {when}\n"));
+    format!(
+        "      - name: {name}\n{guard}        updates: demo.shelf.{entity}\n        instance: \
+         {field}\n        emits: [demo.shelf.{event}]\n        payload:\n          \
+         demo.shelf.{event}: {{{field}: input.{field}}}\n"
+    )
+}
+
+/// `ROWS` with `BuildShelf` setting the label to `label` and `outcomes` after `unknown`.
+fn rows(label: &str, outcomes: &str) -> String {
+    ROWS.replace("LABEL", label).replace("OUTCOMES", outcomes)
+}
+
+/// `None` where synthesis writes a scenario for each of `branches` of `Act` and every scenario of
+/// the suite passes on the interpreted target; else what went wrong.
+fn act_suite_fails(text: &str, branches: &[&str]) -> Option<String> {
+    let (files, texts) = documents(text);
+    let ir = mutate::compile(files, &texts).unwrap_or_else(|error| panic!("{error:?}\n{text}"));
+    let synthesis = ess_conformance::synthesize::synthesize(&ir);
+    let written: Vec<String> = synthesis
+        .suite
+        .scenarios
+        .keys()
+        .map(ToString::to_string)
+        .collect();
+    let mut problems: Vec<String> = branches
+        .iter()
+        .map(|branch| format!("Act/outcome/{branch}"))
+        .filter(|wanted| !written.iter().any(|id| id.ends_with(wanted)))
+        .map(|wanted| format!("synthesis wrote no `{wanted}` scenario"))
+        .collect();
+    if !problems.is_empty() {
+        problems.push(format!(
+            "refused:\n{}",
+            synthesis
+                .refusals
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+                .join("\n")
+        ));
+    }
+    let admitted =
+        AdmittedSuite::from_suite(&synthesis.suite).unwrap_or_else(|error| panic!("{error}"));
+    let report = Runner::for_suite(admitted.suite())
+        .run_admitted(&admitted, &Interpreted::for_model(ir.clone()))
+        .into_report();
+    for result in report
+        .scenarios
+        .iter()
+        .filter(|result| result.status != Status::Passed)
+    {
+        let scenario = synthesis
+            .suite
+            .scenarios
+            .iter()
+            .find(|(id, _)| **id == result.scenario)
+            .map(|(_, scenario)| serde_json::to_string_pretty(scenario).unwrap());
+        problems.push(format!(
+            "{}: {:?} {:#?}\n{}",
+            result.scenario,
+            result.status,
+            result.diagnostics().collect::<Vec<_>>(),
+            scenario.unwrap_or_default()
+        ));
+    }
+    (!problems.is_empty()).then(|| problems.join("\n"))
+}
+
+/// BLOCKER (adversary pass 2 on the different-rows unit). `book-paused` updates a book through
+/// `book`; the default branch `shelf-touched` (no `when:`) updates a shelf through `shelf`. The
+/// subject-less `refused` scenario sends a `pause` that either selects `book-paused` or leaves
+/// the request to the default, in one of the two polarities. The interpreter answers the
+/// selected branch's row before the row set (`subject_refusals_before_present_related`), the
+/// default included; `beside_addressed_row` picks the selected branch only among branches whose
+/// `when:` holds ("else the default" in its comment is not in the code), so no shelf is arranged
+/// and `refused` is answered `unknown`.
+#[test]
+fn a_row_set_refusal_whose_send_selects_a_default_acting_on_another_row_passes_its_own_suite() {
+    let mut failed = Vec::new();
+    for pause in ["true", "false"] {
+        let guard = format!("pause == {pause}");
+        let text = rows(
+            "input.label",
+            &[
+                LIBRARY_SET.to_owned(),
+                acting("book-paused", Some(&guard), BOOK),
+                acting("shelf-touched", None, SHELF_ROW),
+            ]
+            .concat(),
+        );
+        if let Some(why) = act_suite_fails(&text, &["refused", "book-paused", "shelf-touched"]) {
+            failed.push(format!("book-paused when {guard}:\n{why}"));
+        }
+    }
+    assert!(failed.is_empty(), "{}", failed.join("\n\n"));
+}
+
+/// BLOCKER (adversary pass 2 on the different-rows unit). The row set of `refused` reads shelves
+/// (`label == input.curator`), and `shelf-paused` updates a shelf through `shelf`. With
+/// `shelf-paused` declared first, the scenario of `book-paused` holds two shelves: the shelf the
+/// row-set arrangement arranges beside its row set, and the first declared branch's row
+/// `beside_addressed_row` arranges under `Distinction::further(1)`, a number the row-set
+/// arrangement numbers its own rows from too, so one identity is created twice and synthesis
+/// refuses `book-paused` (`ESS-SYNTH-001`). The last polarity is the one where the `refused` send
+/// (every Boolean `true`) selects `shelf-paused`, the same two shelves through the selected
+/// branch. Every order and polarity passes its own suite.
+#[test]
+fn a_row_set_over_the_selected_branchs_entity_keeps_its_rows_apart() {
+    let mut failed = Vec::new();
+    for (book, shelf) in [
+        (
+            "pause == true",
+            "{all: ['pause == false', 'halt == false']}",
+        ),
+        (
+            "pause == false",
+            "{all: ['pause == true', 'halt == false']}",
+        ),
+        ("pause == false", "{all: ['pause == true', 'halt == true']}"),
+    ] {
+        for book_first in [true, false] {
+            let pair = if book_first {
+                [
+                    acting("book-paused", Some(book), BOOK),
+                    acting("shelf-paused", Some(shelf), SHELF_ROW),
+                ]
+            } else {
+                [
+                    acting("shelf-paused", Some(shelf), SHELF_ROW),
+                    acting("book-paused", Some(book), BOOK),
+                ]
+            };
+            let text = rows(
+                "input.label",
+                &[SHELF_SET_PRESENT.to_owned(), pair.concat(), IDLE.to_owned()].concat(),
+            );
+            if let Some(why) = act_suite_fails(&text, &["refused", "book-paused", "shelf-paused"]) {
+                failed.push(format!(
+                    "book `{book}`, shelf `{shelf}`, book first {book_first}:\n{why}"
+                ));
+            }
+        }
+    }
+    assert!(failed.is_empty(), "{}", failed.join("\n\n"));
+}
+
+/// BLOCKER (adversary pass 2 on the different-rows unit). Pass 1's finding 3 through the selected
+/// branch: `refused` holds where no shelf carries the label `shelf` names, and a shelf's label is
+/// its identity, so `refused` is reachable only by a send selecting `book-paused` (a shelf the
+/// send names exists and carries that label). Synthesis has to send such a `pause`; where its
+/// witness selects `shelf-paused` instead (the last polarity, for a send whose Booleans are all
+/// `true`), the shelf `beside_addressed_row` arranges fills the row set `refused` needs empty.
+#[test]
+fn an_exists_false_refusal_whose_send_selects_the_shelf_branch_keeps_its_witness() {
+    let mut failed = Vec::new();
+    for (book, shelf) in [
+        (
+            "pause == true",
+            "{all: ['pause == false', 'halt == false']}",
+        ),
+        (
+            "pause == false",
+            "{all: ['pause == true', 'halt == false']}",
+        ),
+        ("pause == false", "{all: ['pause == true', 'halt == true']}"),
+    ] {
+        let text = rows(
+            "input.shelf",
+            &[
+                SHELF_SET_ABSENT.to_owned(),
+                acting("book-paused", Some(book), BOOK),
+                acting("shelf-paused", Some(shelf), SHELF_ROW),
+                IDLE.to_owned(),
+            ]
+            .concat(),
+        );
+        if let Some(why) = act_suite_fails(&text, &["refused"]) {
+            failed.push(format!("book `{book}`, shelf `{shelf}`:\n{why}"));
+        }
+    }
+    assert!(failed.is_empty(), "{}", failed.join("\n\n"));
+}
+
+/// Three accepting branches addressing three rows, under mutually exclusive `when:` guards, in
+/// every declaration order, with an input-guarded refusal declared between the first two: each
+/// passes its own suite.
+#[test]
+fn three_branches_addressing_three_rows_pass_their_own_suite_in_every_order() {
+    let branches = [
+        acting(
+            "book-paused",
+            Some("{all: ['pause == true', 'halt == false']}"),
+            BOOK,
+        ),
+        acting(
+            "shelf-paused",
+            Some("{all: ['pause == false', 'halt == true']}"),
+            SHELF_ROW,
+        ),
+        acting(
+            "cart-paused",
+            Some("{all: ['pause == true', 'halt == true']}"),
+            CART,
+        ),
+    ];
+    let orders = [
+        [0, 1, 2],
+        [0, 2, 1],
+        [1, 0, 2],
+        [1, 2, 0],
+        [2, 0, 1],
+        [2, 1, 0],
+    ];
+    let mut failed = Vec::new();
+    for order in orders {
+        let text = rows(
+            "input.label",
+            &[
+                LIBRARY_SET,
+                branches[order[0]].as_str(),
+                RUSHED,
+                branches[order[1]].as_str(),
+                branches[order[2]].as_str(),
+                IDLE,
+            ]
+            .concat(),
+        );
+        if let Some(why) = act_suite_fails(
+            &text,
+            &["refused", "book-paused", "shelf-paused", "cart-paused"],
+        ) {
+            failed.push(format!("order {order:?}:\n{why}"));
+        }
+    }
+    assert!(failed.is_empty(), "{}", failed.join("\n\n"));
+}

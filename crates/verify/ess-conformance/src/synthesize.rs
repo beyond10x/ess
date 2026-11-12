@@ -5110,7 +5110,8 @@ fn run_as(
         let beside_named = row_set::beside_named(ir.format(), command, outcome);
         match row_set::prepare(models, command, outcome, actors) {
             Ok((setup, input, gaps)) => {
-                let mut setup = beside_addressed_row(ir, command, outcome, actors, &input, setup);
+                let (mut setup, input) =
+                    beside_addressed_row(ir, command, outcome, actors, &input, setup);
                 if beside_named {
                     row_set::with_overlaps(models, command, outcome, actors, &mut setup, &input);
                 }
@@ -5498,10 +5499,10 @@ fn arranged(
     {
         return Ok((addressed_row(ir, command, actors, setup), input));
     }
-    let setup = if outcome.subject.is_some() {
+    let (setup, input) = if outcome.subject.is_some() {
         beside_addressed_row(ir, command, outcome, actors, &input, setup)
     } else {
-        setup
+        (setup, input)
     };
     // Existence answers before such a branch wherever a non-creating `unknown_instance:` is read
     // first (beyond10x/ess#645), so the branch is reached only for a stored row.
@@ -5917,6 +5918,17 @@ fn acting_subjects(command: &ResolvedCommand) -> impl Iterator<Item = (&Resolved
         })
 }
 
+/// Every instance name `steps` capture.
+fn captured_instances(steps: &[ScenarioStep]) -> BTreeSet<InstanceName> {
+    steps
+        .iter()
+        .filter_map(|step| match step {
+            ScenarioStep::CaptureInstance { instance, .. } => Some(instance.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
 /// The input field `subject` is addressed through, where it is supplied.
 fn supplied_field(subject: &ResolvedSubject) -> Option<&str> {
     match &subject.instance {
@@ -5934,65 +5946,60 @@ fn acts_from(subject: &ResolvedSubject, state: &StateName) -> bool {
     }
 }
 
-/// `setup` for `outcome` on a row-set command, with the rows the interpreter reads beside the row
-/// `setup` arranges (`docs/design/filtered-related-reads.md`, "Subject borrowing and precedence"):
-/// the row the first declared accepting branch addresses, read before any branch is selected, and,
-/// for a branch naming no subject of its own, the row of the accepting branch the send selects,
-/// whose existence and held state answer before a row-set refusal. A branch acting on a row keeps
-/// that row, its state and its input field as `setup` had them, and a row an input field already
-/// names is never arranged twice.
-///
-/// Each row rests in a state its branch acts from: the first branch's row in one some accepting
-/// branch moves from (the held-state refusal [`addressed_row`] answers where none does), the
-/// selected branch's in one it moves from. Each is a row of its own, under a distinction no other
-/// row of the scenario uses, so two fields naming one entity name two rows. The rows' steps come
-/// first. A creation, and every command no row set guards, keeps `setup`.
-fn beside_addressed_row(
+/// The subject of the accepting branch `input` selects on `command`: the first accepting branch,
+/// in declaration order, whose `when:` holds of it, else the default. `None` where that branch acts
+/// on no existing row through a supplied field, or no branch is decided.
+fn selected_subject<'c>(
     ir: &EssIr,
-    command: &ResolvedCommand,
-    outcome: &ResolvedOutcome,
-    actors: &BTreeMap<QualifiedName, ActorRef>,
+    command: &'c ResolvedCommand,
     input: &BTreeMap<String, Node>,
-    mut setup: Setup,
-) -> Setup {
-    if !row_set::uses(command)
-        || outcome
-            .subject
-            .as_ref()
-            .is_some_and(|subject| subject.effect == ResolvedEffect::Creates)
-    {
-        return setup;
-    }
-    let field_of = supplied_field;
-    let own = outcome.subject.as_ref().and_then(field_of);
-    // The branch the send selects, where `outcome` names no subject of its own: the first accepting
-    // branch whose `when:` holds of it, else the default.
+) -> Option<&'c ResolvedSubject> {
+    let facts = flatten(ir, command, input).ok();
+    command
+        .outcomes
+        .iter()
+        .filter(|branch| branch.error.is_none())
+        .find(|branch| match &branch.condition {
+            ResolvedCondition::Otherwise => true,
+            ResolvedCondition::When { predicate } => facts
+                .as_ref()
+                .is_some_and(|facts| facts.decide(predicate) == Decision::Satisfied),
+            _ => false,
+        })
+        .and_then(|branch| branch.subject.as_ref())
+        .filter(|subject| subject.effect != ResolvedEffect::Creates)
+        .filter(|subject| supplied_field(subject).is_some())
+}
+
+/// The subjects of the rows [`beside_addressed_row`] arranges, each with whether it is the first
+/// declared accepting branch's.
+type Rows<'c> = Vec<(&'c ResolvedSubject, bool)>;
+
+/// The rows [`beside_addressed_row`] arranges for `outcome` under the send `input`, each with
+/// whether it is the first declared accepting branch's: that row, and the row of the branch the
+/// send selects where `outcome` names no subject of its own, each unless an input field already
+/// names a row of `setup`.
+fn rows_beside<'c>(
+    ir: &EssIr,
+    command: &'c ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    input: &BTreeMap<String, Node>,
+) -> Rows<'c> {
+    let own = outcome.subject.as_ref().and_then(supplied_field);
+    let first = acting_subjects(command).next().map(|(subject, _)| subject);
+    let covered = own.or(first.and_then(supplied_field));
     let selected = if outcome.subject.is_none() {
-        let facts = flatten(ir, command, input).ok();
-        command
-            .outcomes
-            .iter()
-            .filter(|branch| branch.error.is_none() && branch.subject.is_some())
-            .find(|branch| {
-                facts.as_ref().is_some_and(|facts| {
-                    when(branch).is_some_and(|guard| facts.decide(guard) == Decision::Satisfied)
-                })
-            })
-            .and_then(|branch| branch.subject.as_ref())
-            .filter(|subject| subject.effect != ResolvedEffect::Creates)
+        selected_subject(ir, command, input)
     } else {
         None
     };
-    let first = acting_subjects(command).next().map(|(subject, _)| subject);
-    let first_field = first.and_then(field_of);
-    let covered = own.or(first_field);
     let mut wanted: Vec<(&ResolvedSubject, bool)> = Vec::new();
     for (subject, row_first) in first
         .map(|subject| (subject, true))
         .into_iter()
         .chain(selected.map(|subject| (subject, false)))
     {
-        let Some(field) = field_of(subject) else {
+        let Some(field) = supplied_field(subject) else {
             continue;
         };
         if Some(field) == covered {
@@ -6000,15 +6007,149 @@ fn beside_addressed_row(
         }
         match wanted
             .iter_mut()
-            .find(|(held, _)| field_of(held) == Some(field))
+            .find(|(held, _)| supplied_field(held) == Some(field))
         {
             Some((_, also_first)) => *also_first |= row_first,
             None => wanted.push((subject, row_first)),
         }
     }
+    wanted
+}
+
+/// Whether a row of an entity in `wanted` would fill the rows the row-set guard of `outcome` needs
+/// empty: its selector reads that entity and its test is anything but `exists: true`.
+fn fills_the_row_set(outcome: &ResolvedOutcome, wanted: &[(&ResolvedSubject, bool)]) -> bool {
+    let ResolvedCondition::RelatedSet {
+        selection, test, ..
+    } = &outcome.condition
+    else {
+        return false;
+    };
+    !matches!(test, ess_compiler::ir::ResolvedRowSetTest::Exists(true))
+        && wanted
+            .iter()
+            .any(|(subject, _)| subject.entity == selection.entity)
+}
+
+/// How a send decides the input-guarded refusals of `command`: whether each holds. A send that
+/// changes none of them is answered by the same branch up to the accepting branches.
+fn refusals_decided(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    input: &BTreeMap<String, Node>,
+) -> Option<Vec<bool>> {
+    let facts = flatten(ir, command, input).ok()?;
+    Some(
+        command
+            .outcomes
+            .iter()
+            .filter(|branch| branch.error.is_some())
+            .filter_map(|branch| match &branch.condition {
+                ResolvedCondition::When { predicate } => {
+                    Some(facts.decide(predicate) == Decision::Satisfied)
+                }
+                _ => None,
+            })
+            .collect(),
+    )
+}
+
+/// A send for the row-set refusal `outcome` whose rows beside do not fill the set it needs empty
+/// ([`fills_the_row_set`]), and those rows: `input` with the first of its Booleans flipped, in name
+/// order, that the refusal's selector and guard do not read and that decides no input-guarded
+/// refusal differently. `None` where no flip does.
+fn another_send<'c>(
+    ir: &EssIr,
+    command: &'c ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    input: &BTreeMap<String, Node>,
+) -> Option<(BTreeMap<String, Node>, Rows<'c>)> {
+    let ResolvedCondition::RelatedSet {
+        selection,
+        input: guard,
+        ..
+    } = &outcome.condition
+    else {
+        return None;
+    };
+    let read: BTreeSet<String> = row_set::input_reads(&selection.filter)
+        .map(str::to_owned)
+        .chain(guard.iter().flat_map(|guard| {
+            guard
+                .fact_paths()
+                .into_iter()
+                .filter_map(|path| path.segments().first().cloned())
+        }))
+        .collect();
+    let decided = refusals_decided(ir, command, input)?;
+    input.iter().find_map(|(field, value)| {
+        let Node::Bool(flag) = value else {
+            return None;
+        };
+        if read.contains(field) {
+            return None;
+        }
+        let mut other = input.clone();
+        other.insert(field.clone(), Node::Bool(!flag));
+        let rows = rows_beside(ir, command, outcome, &other);
+        (refusals_decided(ir, command, &other).as_ref() == Some(&decided)
+            && !fills_the_row_set(outcome, &rows))
+        .then_some((other, rows))
+    })
+}
+
+/// `setup` for `outcome` on a row-set command, with the rows the interpreter reads beside the row
+/// `setup` arranges (`docs/design/filtered-related-reads.md`, "Subject borrowing and precedence"):
+/// the row the first declared accepting branch addresses, read before any branch is selected, and,
+/// for a branch naming no subject of its own, the row of the accepting branch the send selects,
+/// the default included, whose existence and held state answer before a row-set refusal. A branch
+/// acting on a row keeps that row, its state and its input field as `setup` had them, and a row an
+/// input field already names is never arranged twice.
+///
+/// Each row rests in a state its branch acts from: the first branch's row in one some accepting
+/// branch moves from (the held-state refusal [`addressed_row`] answers where none does), the
+/// selected branch's in one it moves from. Each is a row of its own, named after no instance the
+/// scenario already holds, so two fields naming one entity name two rows. The rows' steps come
+/// first.
+///
+/// A row of the entity the scenario's own row-set refusal needs empty ([`fills_the_row_set`]) would
+/// fill that set, so the send is chosen again: the first Boolean of it flipped, in name order, that
+/// the refusal's guard does not read and that decides no input-guarded refusal differently, whose
+/// selected branch's row does not. Where none is found `setup` and the send are kept as they were.
+/// A creation, and every command no row set guards, keeps `setup`; the send is returned with it.
+fn beside_addressed_row(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    input: &BTreeMap<String, Node>,
+    mut setup: Setup,
+) -> (Setup, BTreeMap<String, Node>) {
+    if !row_set::uses(command)
+        || outcome
+            .subject
+            .as_ref()
+            .is_some_and(|subject| subject.effect == ResolvedEffect::Creates)
+    {
+        return (setup, input.clone());
+    }
+    let mut send = input.clone();
+    let mut wanted = rows_beside(ir, command, outcome, &send);
+    if fills_the_row_set(outcome, &wanted) {
+        match another_send(ir, command, outcome, input) {
+            Some((other, rows)) => (send, wanted) = (other, rows),
+            None => return (setup, input.clone()),
+        }
+    }
+    let selected = if outcome.subject.is_none() {
+        selected_subject(ir, command, &send)
+    } else {
+        None
+    };
     let mut beside = Vec::new();
-    for (index, (subject, row_first)) in wanted.into_iter().enumerate() {
-        let Some(field) = field_of(subject) else {
+    let mut taken: BTreeSet<InstanceName> = captured_instances(&setup.steps);
+    for (subject, row_first) in wanted {
+        let Some(field) = supplied_field(subject) else {
             continue;
         };
         if setup.bound.contains_key(field) {
@@ -6023,17 +6164,24 @@ fn beside_addressed_row(
                     .filter(|state| **state != lifecycle.initial),
             )
             .collect();
-        let selected_here = selected.is_some_and(|chosen| field_of(chosen) == Some(field));
+        let selected_here = selected.is_some_and(|chosen| supplied_field(chosen) == Some(field));
         let fits = |state: &StateName| {
             (!row_first || acting_subjects(command).any(|(other, _)| acts_from(other, state)))
                 && (!selected_here || selected.is_none_or(|chosen| acts_from(chosen, state)))
         };
-        let distinction = Distinction::further(index + 1);
+        // The lowest further distinction no instance the scenario holds, or an earlier row of this
+        // arrangement, is already named after.
+        let entity = &ir.entity(&subject.entity).name;
+        let distinction = (1..=taken.len() + 64)
+            .map(Distinction::further)
+            .find(|distinction| !taken.contains(&instance_name(entity, *distinction)))
+            .unwrap_or(Distinction::UNKNOWN);
         let row = states
             .iter()
             .filter(|state| fits(state))
             .find_map(|state| held_row_in(ir, subject, state, actors, false, distinction).ok());
         if let Some(row) = row {
+            taken.extend(captured_instances(&row.steps));
             beside.push(row);
         }
     }
@@ -6047,7 +6195,7 @@ fn beside_addressed_row(
         }
     }
     setup.steps.extend(own_steps);
-    setup
+    (setup, send)
 }
 
 /// `true` for a branch that accepts without naming a subject of its own or refusing: a `when:` or

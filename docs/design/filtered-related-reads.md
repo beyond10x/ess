@@ -99,10 +99,13 @@ first declared accepting branch names, whichever branch the request selects: it 
 branch is selected, and swapping the declaration order of two such branches moves which row's
 absence answers `unknown_instance:`. The interpreter keeps that reading; the fix is in synthesis,
 where a later accepting branch's scenario arranges the first declared branch's row beside its own,
-and a refusal naming no subject also arranges the row of the accepting branch its send selects,
-whose existence and held state answer before a row-set refusal. Each such row rests in a state its
-branch acts from and has an identity of its own, so two fields naming one entity name two rows, and
-the unmutated suite passes `--target interpreted` in either declaration order.
+and a refusal naming no subject also arranges the row of the accepting branch its send selects (the
+default included), whose existence and held state answer before a row-set refusal. Each such row
+rests in a state its branch acts from and is named after no instance the scenario already holds, so
+two fields naming one entity name two rows. Where such a row would fill the set the refusal needs
+empty, the send is chosen again (a Boolean flipped that the refusal does not read and that decides
+no input-guarded refusal differently); where none keeps the set empty, the scenario is left as it
+was and the post-check refuses it rather than write a scenario the interpreter fails.
 
 The value consumer extends the existing source:
 
