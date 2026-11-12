@@ -912,3 +912,385 @@ fn adv2_a_list_whose_element_type_admits_no_other_value_says_so() {
         result.refusals
     );
 }
+
+// Adversary pass 3 (story:collection-quantifiers-witnessed-everywhere).
+
+/// `model` synthesized with no branch refused, the model passing every scenario, and the labels of
+/// the `mutants` (whole models) that pass every scenario too.
+fn adv3_survivors(model: &str, mutants: &[(&str, String)]) -> (Synthesis, Vec<String>) {
+    let result = synthesize(&ir(model));
+    assert!(
+        result
+            .refusals
+            .iter()
+            .all(|refusal| refusal.scenario.is_none()),
+        "no branch is refused: {:?}",
+        result.refusals
+    );
+    for (id, status) in statuses(&result, model) {
+        assert_eq!(status, Status::Passed, "the model passes its own {id}");
+    }
+    let found = mutants
+        .iter()
+        .filter(|(_, mutant)| {
+            statuses(&result, mutant)
+                .values()
+                .all(|status| *status == Status::Passed)
+        })
+        .map(|(label, _)| (*label).to_owned())
+        .collect();
+    (result, found)
+}
+
+/// Every literal `field` each scenario sends, and every note.
+fn adv3_evidence(result: &Synthesis, field: &str) -> Vec<String> {
+    result
+        .suite
+        .scenarios
+        .iter()
+        .flat_map(|(id, scenario)| {
+            scenario.steps.iter().filter_map(move |step| match step {
+                ScenarioStep::ExecuteCommand { input, .. } => match input.get(field) {
+                    Some(ScenarioValue::Literal { value }) => Some(format!("{id}: {value:?}")),
+                    _ => None,
+                },
+                _ => None,
+            })
+        })
+        .chain(result.notes.iter().map(|note| format!("note: {note}")))
+        .collect()
+}
+
+fn adv3_unspread_naming(result: &Synthesis, id: &str) -> bool {
+    result.notes.iter().any(|note| {
+        matches!(
+            note,
+            Note::UnspreadInputList { .. } | Note::UnspreadCollection { .. }
+        ) && note.to_string().contains(id)
+    })
+}
+
+/// The inner quantifier of `exists l in input.tags: <inner> c in l.codes: body(c)` read as the
+/// other quantifier, over its first element only, and over its last only.
+fn adv3_inner_mutants(
+    model: &dyn Fn(&str) -> String,
+    exists: bool,
+    body: &dyn Fn(&str) -> String,
+) -> Vec<(&'static str, String)> {
+    let outer = |inner: String| model(&quantifier("exists", "input.tags", "l", &inner));
+    let other = if exists { "forall" } else { "exists" };
+    vec![
+        (
+            "inner swapped",
+            outer(quantifier(other, "l.codes", "c", &body("c"))),
+        ),
+        ("inner first", outer(first_only(exists, "l.codes", body))),
+        ("inner last", outer(last_only(exists, "l.codes", body))),
+    ]
+}
+
+const ADV3_DEEP: &str = "  - name: demo.files.Code\n    kind: struct\n    fields:\n      - {name: name, type: String}\n      - {name: marks, type: 'List<String>'}\n  - name: demo.files.Line\n    kind: struct\n    fields:\n      - {name: sku, type: String}\n      - {name: codes, type: 'List<demo.files.Code>'}\n";
+
+/// Three levels: `exists a in input.tags: exists b in a.codes: exists c in b.marks: c == "x"`. The
+/// changelog: a nested quantifier read as the other quantifier, or over its first or last element
+/// only, fails a scenario.
+#[test]
+fn adv3_three_levels_of_nesting_kill_the_inner_mutants() {
+    let list = "List<demo.files.Line>";
+    let mark = text_is("x");
+    let deep = |middle: &str, innermost: String| {
+        one(
+            ADV3_DEEP,
+            list,
+            &quantifier(
+                "exists",
+                "input.tags",
+                "a",
+                &quantifier(middle, "a.codes", "b", &innermost),
+            ),
+        )
+    };
+    let model = deep("exists", quantifier("exists", "b.marks", "c", &mark("c")));
+    let mutants = [
+        (
+            "innermost swapped",
+            deep("exists", quantifier("forall", "b.marks", "c", &mark("c"))),
+        ),
+        (
+            "middle swapped",
+            deep("forall", quantifier("exists", "b.marks", "c", &mark("c"))),
+        ),
+        (
+            "innermost first",
+            deep("exists", first_only(true, "b.marks", &mark)),
+        ),
+        (
+            "innermost last",
+            deep("exists", last_only(true, "b.marks", &mark)),
+        ),
+    ];
+    let (result, found) = adv3_survivors(&model, &mutants);
+    assert!(
+        found.is_empty(),
+        "no mutant survives: {found:?}; sent {:#?}",
+        adv3_evidence(&result, "tags")
+    );
+}
+
+/// `exists l in input.tags: forall c in l.codes: c == "ok"`: the nested `forall` holds on the
+/// deciding element. An element whose codes are `["ok", "x"]` tells it from `exists` (and from a
+/// first-only or last-only read) in the `filed` scenario, as the flat holding `forall` is.
+#[test]
+#[ignore = "backlog: nested-quantifier-apart (story:a-nested-collection-quantifier-is-witnessed-apart)"]
+fn adv3_a_holding_nested_forall_beside_an_outer_exists_kills_the_inner_mutants() {
+    let list = "List<demo.files.Line>";
+    let model = |guard: &str| one(LINE, list, guard);
+    let ok = text_is("ok");
+    let original = model(&quantifier(
+        "exists",
+        "input.tags",
+        "l",
+        &quantifier("forall", "l.codes", "c", &ok("c")),
+    ));
+    let (result, found) = adv3_survivors(&original, &adv3_inner_mutants(&model, false, &ok));
+    assert!(
+        found.is_empty(),
+        "no mutant survives: {found:?}; sent {:#?}",
+        adv3_evidence(&result, "tags")
+    );
+}
+
+/// `exists l in input.tags: exists c in l.codes: c == One` over an enum of one variant: the inner
+/// list cannot be spread, so the changelog's note ("an input list whose element type admits no
+/// other value ... says so with a note: line naming the scenario and the quantifier") is due.
+#[test]
+#[ignore = "backlog: nested-quantifier-apart (story:a-nested-collection-quantifier-is-witnessed-apart)"]
+fn adv3_a_nested_quantifier_over_a_one_variant_enum_is_spread_or_says_why_not() {
+    let types = "  - {name: demo.files.Only, kind: enum, variants: [One]}\n  - name: demo.files.Line\n    kind: struct\n    fields:\n      - {name: sku, type: String}\n      - {name: codes, type: 'List<demo.files.Only>'}\n";
+    let list = "List<demo.files.Line>";
+    let model = |guard: &str| one(types, list, guard);
+    let is_one = |at: &str| format!("'{at} == One'");
+    let original = model(&quantifier(
+        "exists",
+        "input.tags",
+        "l",
+        &quantifier("exists", "l.codes", "c", &is_one("c")),
+    ));
+    let (result, found) = adv3_survivors(&original, &adv3_inner_mutants(&model, true, &is_one));
+    assert!(
+        found.is_empty() || adv3_unspread_naming(&result, BLOCKED_ID),
+        "the inner mutants {found:?} survive and no note names {BLOCKED_ID}: {:#?}",
+        adv3_evidence(&result, "tags")
+    );
+}
+
+/// `exists l in input.tags: exists c in l.codes: c == 15` where `codes` holds a newtype with an
+/// invariant (10..=20): other grades are admitted, so the inner mutants fail, or a note says why.
+#[test]
+fn adv3_an_inner_list_of_a_constrained_element_kills_the_inner_mutants_or_says_why_not() {
+    let types = "  - {name: demo.files.Grade, kind: newtype, of: Integer, invariants: [value >= 10, value <= 20]}\n  - name: demo.files.Line\n    kind: struct\n    fields:\n      - {name: sku, type: String}\n      - {name: codes, type: 'List<demo.files.Grade>'}\n";
+    let list = "List<demo.files.Line>";
+    let model = |guard: &str| one(types, list, guard);
+    let is_15 = |at: &str| format!("'{at} == 15'");
+    let original = model(&quantifier(
+        "exists",
+        "input.tags",
+        "l",
+        &quantifier("exists", "l.codes", "c", &is_15("c")),
+    ));
+    let mut mutants = adv3_inner_mutants(&model, true, &is_15);
+    mutants.push((
+        "outer swapped",
+        model(&quantifier(
+            "forall",
+            "input.tags",
+            "l",
+            &quantifier("exists", "l.codes", "c", &is_15("c")),
+        )),
+    ));
+    let (result, found) = adv3_survivors(&original, &mutants);
+    assert!(
+        found.is_empty() || adv3_unspread_naming(&result, BLOCKED_ID),
+        "the mutants {found:?} survive and no note names {BLOCKED_ID}: {:#?}",
+        adv3_evidence(&result, "tags")
+    );
+}
+
+const ADV3_RELATED: &str = "format: ess/32
+system: demo
+version: v1
+domain: demo.apps
+types:
+  - {name: demo.apps.AccountId, kind: newtype, of: Uuid}
+  - {name: demo.apps.SessionId, kind: newtype, of: Uuid}
+  - name: demo.apps.Line
+    kind: struct
+    fields:
+      - {name: sku, type: String}
+      - {name: codes, type: 'List<String>'}
+errors:
+  - {name: demo.apps.Refused, summary: Refused., fields: []}
+  - {name: demo.apps.Unknown, summary: No such account., fields: []}
+entities:
+  - name: demo.apps.Account
+    identity: {name: account_id, type: demo.apps.AccountId}
+    fields:
+      - {name: lines, type: 'List<demo.apps.Line>'}
+    lifecycle: {initial: Active, states: [Active], terminal: [Active]}
+  - name: demo.apps.Session
+    identity: {name: session_id, type: demo.apps.SessionId}
+    fields:
+      - {name: account_id, type: demo.apps.AccountId}
+      - {name: application, type: String}
+    relations:
+      - {name: account, kind: references, target: demo.apps.Account, cardinality: one, via: account_id}
+    lifecycle: {initial: Open, states: [Open], terminal: [Open]}
+events:
+  - name: demo.apps.Registered
+    fields: [{name: account_id, type: demo.apps.AccountId}]
+  - name: demo.apps.Opened
+    fields: [{name: session_id, type: demo.apps.SessionId}]
+actors:
+  - {name: demo.apps.Client, may: [demo.apps.Register, demo.apps.Open]}
+commands:
+  - name: demo.apps.Register
+    input:
+      - {name: lines, type: 'List<demo.apps.Line>'}
+    outcomes:
+      - name: registered
+        creates: demo.apps.Account
+        instance: account_id
+        emits: [demo.apps.Registered]
+        payload:
+          demo.apps.Registered: {account_id: {generated: true}}
+        sets:
+          lines: input.lines
+  - name: demo.apps.Open
+    input:
+      - {name: account_id, type: demo.apps.AccountId}
+      - {name: application, type: String}
+    outcomes:
+      - name: unknown
+        when_related: {via: input.account_id, exists: false}
+        error: demo.apps.Unknown
+      - name: refused
+        when_related:
+          via: input.account_id
+          predicate: {exists: {in: lines, as: l, that: {inner}}}
+        error: demo.apps.Refused
+      - name: opened
+        creates: demo.apps.Session
+        instance: session_id
+        emits: [demo.apps.Opened]
+        payload:
+          demo.apps.Opened: {session_id: {generated: true}}
+        sets:
+          account_id: input.account_id
+          application: input.application
+views:
+  - name: demo.apps.Accounts
+    source: demo.apps.Account
+    consistency: read_your_writes
+    fields:
+      - {name: account_id, type: demo.apps.AccountId}
+      - {name: lines, type: 'List<demo.apps.Line>'}
+  - name: demo.apps.Sessions
+    source: demo.apps.Session
+    consistency: read_your_writes
+    fields:
+      - {name: session_id, type: demo.apps.SessionId}
+      - {name: account_id, type: demo.apps.AccountId}
+      - {name: application, type: String}
+";
+
+/// A nested quantifier in a `when_related` predicate, over a stored list of structs:
+/// `exists l in lines: exists c in l.codes: c == input.application`. The predicate reference: the
+/// row is arranged with several entries so `forall` for `exists` fails, or a `note:` says it fell
+/// back.
+#[test]
+#[ignore = "backlog: nested-quantifier-apart (story:a-nested-collection-quantifier-is-witnessed-apart)"]
+fn adv3_a_nested_quantifier_in_a_related_predicate_kills_the_inner_swap_or_says_why_not() {
+    let id = "demo.apps.Open/outcome/refused";
+    let model = |inner: &str| {
+        ADV3_RELATED.replace(
+            "{inner}",
+            &quantifier(inner, "l.codes", "c", "c == input.application"),
+        )
+    };
+    let (result, found) = adv3_survivors(&model("exists"), &[("inner swapped", model("forall"))]);
+    assert!(
+        result
+            .suite
+            .scenarios
+            .keys()
+            .any(|key| key.to_string() == id),
+        "{id} is witnessed: refusals {:?}",
+        result.refusals
+    );
+    assert!(
+        found.is_empty() || adv3_unspread_naming(&result, id),
+        "the mutants {found:?} survive and no note names {id}: notes {:?}",
+        result.notes
+    );
+}
+
+/// Two branches over the same nested list with their own literals: `blocked` on `"blocked"`, then
+/// `held` on `"held"`. The other candidates' first codes are `"blocked"` and `"held"`, the two
+/// values the filler's inner list is drawn from, and each decides one branch itself. `Line`
+/// admits other codes, so `held` is spread (its outer mutants fail) and no `UnspreadInputList`
+/// note is due.
+#[test]
+fn adv3_a_second_nested_branch_is_spread_though_the_pooled_codes_each_decide_a_branch() {
+    let list = "List<demo.files.Line>";
+    let held_id = "demo.files.FileItem/outcome/held";
+    let nested = |outer: &str, inner: &str, literal: &'static str| {
+        quantifier(
+            outer,
+            "input.tags",
+            "l",
+            &quantifier(inner, "l.codes", "c", &text_is(literal)("c")),
+        )
+    };
+    let model = |held: &str| {
+        one(LINE, list, &nested("exists", "exists", "blocked"))
+            .replace(
+                "errors:\n",
+                "errors:\n  - {name: demo.files.Held, summary: A code holds the item., fields: []}\n",
+            )
+            .replace(
+                "        error: demo.files.Blocked\n",
+                &format!(
+                    "        error: demo.files.Blocked\n      - name: held\n        when: {held}\n        error: demo.files.Held\n"
+                ),
+            )
+    };
+    let held_code = text_is("held");
+    let mutants = [
+        (
+            "held outer swapped",
+            model(&nested("forall", "exists", "held")),
+        ),
+        (
+            "held inner swapped",
+            model(&nested("exists", "forall", "held")),
+        ),
+        (
+            "held inner first",
+            model(&quantifier(
+                "exists",
+                "input.tags",
+                "l",
+                &first_only(true, "l.codes", &held_code),
+            )),
+        ),
+    ];
+    let (result, found) = adv3_survivors(&model(&nested("exists", "exists", "held")), &mutants);
+    let noted = result.notes.iter().any(|note| {
+        matches!(note, Note::UnspreadInputList { .. }) && note.to_string().contains(held_id)
+    });
+    assert!(
+        found.is_empty() && !noted,
+        "no mutant survives ({found:?}) and no UnspreadInputList note names {held_id}: {:#?}",
+        adv3_evidence(&result, "tags")
+    );
+}

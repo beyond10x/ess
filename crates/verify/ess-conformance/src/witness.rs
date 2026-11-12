@@ -3702,7 +3702,9 @@ fn decided_apart(
     };
     // A quantifier nested in the body, read as the other quantifier, is held to the same where some
     // one element of `over` shows it can differ: where the leaf holds as it does on `input` and the
-    // swapped one does not. An inner `forall` that holds is not told from an `exists` by any list.
+    // swapped one does not. An inner `forall` that holds is not told apart here: that needs a sibling
+    // element with a mixed inner list in the refusing scenario
+    // (story:a-nested-collection-quantifier-is-witnessed-apart).
     let nested_apart = nested_swaps(&quantified.body).into_iter().all(|body| {
         let mut swapped = quantified.clone();
         swapped.body = body;
