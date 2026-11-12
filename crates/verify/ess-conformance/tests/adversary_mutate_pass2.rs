@@ -20,11 +20,23 @@ use ess_domain::system::Source;
 mod support_versions;
 
 fn load(paths: Vec<std::path::PathBuf>) -> (Vec<Document>, SourceMap) {
+    load_replacing(paths, "", "")
+}
+
+/// `paths` read with `from` (where it is not empty) replaced by `to` in every file.
+fn load_replacing(
+    paths: Vec<std::path::PathBuf>,
+    from: &str,
+    to: &str,
+) -> (Vec<Document>, SourceMap) {
     let mut texts = SourceMap::new();
     let mut parsed = Vec::new();
     for path in paths {
         let label = path.display().to_string();
-        let text = std::fs::read_to_string(&path).expect("readable");
+        let mut text = std::fs::read_to_string(&path).expect("readable");
+        if !from.is_empty() {
+            text = text.replace(from, to);
+        }
         parsed.push((
             Source::new(label.clone()),
             RawSpecFile::parse(&text).expect("well formed"),
@@ -35,6 +47,28 @@ fn load(paths: Vec<std::path::PathBuf>) -> (Vec<Document>, SourceMap) {
 }
 
 fn example(name: &str) -> (Vec<Document>, SourceMap) {
+    example_replacing(name, "", "")
+}
+
+/// The gatepass example without its invariant `expected_minutes > 0`. Declared, the
+/// `guard-boundary` mutant of `RegisterVisit` (`expected_minutes >= 0`) lets a zero through the
+/// guard to break that invariant, so its suite gains `ESS-SYNTH-025` and the audit reports it
+/// `unwitnessed` (beyond10x/ess#738). Without the invariant the mutant gains nothing and stays
+/// `inconclusive` for the scenarios its baseline did not execute, the verdict this test attacks.
+fn gatepass_without_the_minutes_invariant() -> (Vec<Document>, SourceMap) {
+    let invariant = "      - expected_minutes > 0\n";
+    let visit =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../examples/gatepass/domains/visit.yaml");
+    assert!(
+        std::fs::read_to_string(visit)
+            .expect("readable")
+            .contains(invariant),
+        "the example declares the invariant"
+    );
+    example_replacing("gatepass", invariant, "")
+}
+
+fn example_replacing(name: &str, from: &str, to: &str) -> (Vec<Document>, SourceMap) {
     let base = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../../examples")
         .join(name);
@@ -51,7 +85,7 @@ fn example(name: &str) -> (Vec<Document>, SourceMap) {
         }
     }
     found.sort();
-    load(found)
+    load_replacing(found, from, to)
 }
 
 fn shop() -> (Vec<Document>, SourceMap) {
@@ -126,6 +160,10 @@ fn an_excluded_scenario_the_mutant_did_not_change_does_not_make_it_inconclusive(
         ("billing", example("billing")),
         ("oracle-fixture", example("oracle-fixture")),
         ("gatepass", example("gatepass")),
+        (
+            "gatepass-unbounded",
+            gatepass_without_the_minutes_invariant(),
+        ),
         ("shop", shop()),
     ] {
         let ir = mutate::compile(files.clone(), &texts).unwrap();

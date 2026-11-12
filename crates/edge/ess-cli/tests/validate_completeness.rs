@@ -180,9 +180,27 @@ fn two(name: &str, items_text: &str) -> PathBuf {
 }
 
 /// The same system, where one invariant reads a field no view publishes: synthesis refuses its one
-/// scenario, `ESS-SYNTH-011`.
+/// scenario, `ESS-SYNTH-011`. `AddItem` guards its input on the invariant and declares the refusal
+/// beside it, so the model leaves no input outside the invariant unanswered (`ESS-SYNTH-025`,
+/// beyond10x/ess#738) and the one refusal stays one.
 fn one_refusal(name: &str) -> PathBuf {
-    two(name, &items("    invariants: [quantity >= 0]\n", false))
+    let text = items("    invariants: [quantity >= 0]\n", false)
+        .replacen(
+            "      - name: added\n",
+            "      - name: added\n        when: quantity >= 0\n",
+            1,
+        )
+        .replacen(
+            "          quantity: input.quantity\nviews:\n",
+            "          quantity: input.quantity\n      - name: refused\n        error: two.items.Negative\nviews:\n",
+            1,
+        )
+        .replacen(
+            "events:\n",
+            "errors:\n  - {name: two.items.Negative, summary: The quantity is below zero., fields: []}\nevents:\n",
+            1,
+        );
+    two(name, &text)
 }
 
 fn nothing_owed(name: &str) -> PathBuf {

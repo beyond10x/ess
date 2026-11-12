@@ -113,11 +113,34 @@ fn member<'a>(node: &'a Node, name: &str) -> &'a Node {
 
 /// Everything synthesized, nothing refused, and every scenario passes against the model itself.
 fn runs_clean(model: &str) -> Synthesis {
+    runs_clean_but_for(model, &[])
+}
+
+/// As [`runs_clean`], except for the inputs the model leaves unanswered: a branch that copies an
+/// input into the entity with no guard keeping it inside an invariant is named `ESS-SYNTH-025`
+/// beside its `invariant/after` scenario (beyond10x/ess#738), and nothing else is refused.
+/// `unguarded` lists those scenarios.
+fn runs_clean_but_for(model: &str, unguarded: &[&str]) -> Synthesis {
     let result = synthesize(&ir(model));
+    let named: Vec<String> = refusals(&result)
+        .into_iter()
+        .map(|refusal| {
+            refusal
+                .splitn(3, ": ")
+                .take(2)
+                .collect::<Vec<_>>()
+                .join(": ")
+        })
+        .collect();
+    let expected: Vec<String> = unguarded
+        .iter()
+        .map(|id| format!("{id}: ESS-SYNTH-025"))
+        .collect();
     assert_eq!(
-        refusals(&result),
-        Vec::<String>::new(),
-        "nothing is refused"
+        named,
+        expected,
+        "only the unguarded inputs are refused: {:#?}",
+        refusals(&result)
     );
     assert_eq!(
         failing(&result, model),
@@ -208,9 +231,13 @@ views:
       - {name: state, type: demo.req.Request.State}
 "#;
 
+/// `Submit/submitted` copies the struct input into the entity and no guard keeps it inside
+/// `fingerprint.low < fingerprint.high`, so the model declares no outcome for an input outside it.
+const FINGERPRINT_UNGUARDED: &str = "demo.req.Request/invariant/after/demo.req.Submit/submitted";
+
 #[test]
 fn issue_234_a_struct_input_satisfies_the_entity_invariants_over_its_members() {
-    let result = runs_clean(FINGERPRINT);
+    let result = runs_clean_but_for(FINGERPRINT, &[FINGERPRINT_UNGUARDED]);
     let sent = inputs(
         scenario(&result, "demo.req.Submit/outcome/submitted"),
         "demo.req.Submit",
@@ -233,7 +260,7 @@ fn issue_234_a_struct_input_satisfies_the_entity_invariants_over_its_members() {
 /// `Close` needs a row, so its scenarios create one before closing it.
 #[test]
 fn issue_234_every_arranged_creation_satisfies_the_entity_invariants() {
-    let result = runs_clean(FINGERPRINT);
+    let result = runs_clean_but_for(FINGERPRINT, &[FINGERPRINT_UNGUARDED]);
     let mut creations = 0;
     for scenario in result.suite.scenarios.values() {
         for input in inputs(scenario, "demo.req.Submit") {

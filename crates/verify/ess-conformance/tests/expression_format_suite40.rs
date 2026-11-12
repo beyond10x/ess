@@ -325,10 +325,37 @@ fn typescript_reads_suite40_and_fails_the_broken_invariant() {
     );
 }
 
+/// `MODEL` with `Open` guarded on the invariant and a refusal branch beside it. Unguarded, `Open`
+/// copies both inputs into the entity with no outcome for a pair outside `leased <= capacity`, and a
+/// coverage inventory then holds `ESS-SYNTH-025` (beyond10x/ess#738), which selects suite `/65`.
+fn guarded_ir() -> EssIr {
+    let guarded = MODEL
+        .replacen(
+            "      - name: opened\n",
+            "      - name: opened\n        when: leased <= capacity\n",
+            1,
+        )
+        .replacen(
+            "        sets: {leased: input.leased, capacity: input.capacity}\n",
+            "        sets: {leased: input.leased, capacity: input.capacity}\n      - name: refused\n        error: pool.lease.Refused\n",
+            1,
+        )
+        .replacen(
+            "events:\n",
+            "errors:\n  - {name: pool.lease.Refused, summary: The lease exceeds the capacity., fields: []}\nevents:\n",
+            1,
+        );
+    assert_ne!(guarded, MODEL);
+    let raw = RawSpecFile::parse(&guarded).unwrap_or_else(|error| panic!("{error}"));
+    let spec = Specification::assemble([(Source::new("pool.yaml"), raw)])
+        .unwrap_or_else(|errors| panic!("{errors}"));
+    compile(&spec, &SourceMap::new()).unwrap_or_else(|error| panic!("{error:?}"))
+}
+
 #[test]
 fn a_coverage_input_carrying_the_vocabulary_selects_suite41() {
     let input = ess_conformance::coverage_build::build(
-        &ir(),
+        &guarded_ir(),
         &[],
         ess_conformance::coverage::Scope::System,
         ess_conformance::coverage::Origins::Generated,

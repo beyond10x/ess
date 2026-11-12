@@ -224,6 +224,7 @@ mod tests {
         "collection.sort.mode",
         "collection.style",
         "form.save",
+        "header.badge.tone",
         "icon.tone",
         "metric.aggregate",
         "metric.format",

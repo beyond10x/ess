@@ -30,6 +30,39 @@ fn suite(model: &EssIr) -> ConformanceSuite {
     synthesis.suite
 }
 
+/// The suite of a model that declares an invariant over a field its port branches copy from their
+/// input: the model declares no outcome for an input outside the invariant, so synthesis names each
+/// branch with `ESS-SYNTH-025` beside its `invariant/after` scenario (beyond10x/ess#738), and
+/// refuses nothing else.
+fn suite_naming_the_unguarded_branches(model: &EssIr) -> ConformanceSuite {
+    let synthesis = ess_conformance::synthesize::synthesize(model);
+    let mut refused: Vec<String> = synthesis
+        .refusals
+        .iter()
+        .map(|refusal| {
+            format!(
+                "{}: {}",
+                refusal.code(),
+                refusal
+                    .scenario
+                    .as_ref()
+                    .map_or_else(String::new, ToString::to_string)
+            )
+        })
+        .collect();
+    refused.sort();
+    assert_eq!(
+        refused,
+        [
+            "ESS-SYNTH-025: integrity.board.Port/invariant/after/integrity.board.AddPort/added",
+            "ESS-SYNTH-025: integrity.board.Port/invariant/after/integrity.board.Rename/renamed",
+        ],
+        "only the unanswered inputs are refused: {:#?}",
+        synthesis.refusals
+    );
+    synthesis.suite
+}
+
 /// The commands `id`'s scenario sends, in order.
 fn sent(suite: &ConformanceSuite, id: &str) -> Vec<String> {
     let (_, scenario) = suite
@@ -226,7 +259,7 @@ fn declared_invariants_and_the_node_read_share_one_scenario() {
     );
     assert_ne!(board, BOARD);
     let model = ir(&board);
-    let suite = suite(&model);
+    let suite = suite_naming_the_unguarded_branches(&model);
     for branch in ["AddPort/added", "Rename/renamed"] {
         let id = format!("integrity.board.Port/invariant/after/integrity.board.{branch}");
         let required = required(&suite, &id);

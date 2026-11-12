@@ -71,13 +71,18 @@ fn billing() -> EssIr {
 /// One word of the normative model and nothing else, so a difference in an emitted tree is
 /// attributable to the guarantee rather than to a second fixture that also differs elsewhere.
 fn billing_delivering(word: &str) -> EssIr {
+    billing_replacing("delivery: at_least_once", &format!("delivery: {word}"))
+}
+
+/// The billing example with `from` replaced by `to` in every file, compiled.
+fn billing_replacing(from: &str, to: &str) -> EssIr {
     let labels = files();
     let mut sources = SourceMap::new();
     let mut parsed = Vec::new();
     for label in &labels {
         let text = std::fs::read_to_string(example().join(label))
             .unwrap_or_else(|error| panic!("{label} is readable: {error}"))
-            .replace("delivery: at_least_once", &format!("delivery: {word}"));
+            .replace(from, to);
         let raw = RawSpecFile::parse(&text)
             .unwrap_or_else(|error| panic!("{label} is well formed: {error}"));
         sources.insert(label.clone(), text);
@@ -148,8 +153,11 @@ fn the_billing_plan_counts_are_pinned() {
     // 0.46: `IssueInvoice`, `CancelInvoice` and `SendEmail` are fully declared, so their behaviours
     // moved from obligation to generated (`story:generated-behaviour-for-declared-commands`), and
     // the query of the fully declared view `InvoiceById` (`story:generated-view-queries`).
-    assert_eq!(counts.generated, 40, "generated capabilities");
-    assert_eq!(counts.obligations, 4, "obligations");
+    // `OutstandingInvoices` ranks by the optional `issued_at`, which a generated query now
+    // applies (`story:a-generated-rust-view-query-applies-its-parameters-and-orders`), so its query
+    // moved from obligation to generated; `website/data/generate.terminal.json` records 41 and 3.
+    assert_eq!(counts.generated, 41, "generated capabilities");
+    assert_eq!(counts.obligations, 3, "obligations");
     assert_eq!(counts.refused, 4, "refusals");
 }
 
@@ -236,7 +244,15 @@ fn send_email_behaviour_is_generated_and_asks_the_context_for_the_providers_answ
 
 #[test]
 fn a_view_query_obligation_carries_filter_and_consistency() {
-    let plan = SynthesisPlan::of(&billing());
+    // `OutstandingInvoices` is generated since its order over the optional `issued_at` is applied
+    // (`story:a-generated-rust-view-query-applies-its-parameters-and-orders`), so the obligation is
+    // one the view keeps for a comparison with an optional parameter, which a generated query would
+    // answer with fewer rows than the interpreted target does.
+    let ir = billing_replacing(
+        "    filter: state == Issued\n",
+        "    params:\n      - {name: note, type: Optional<String>}\n    filter:\n      all:\n        - state == Issued\n        - note == param.note\n",
+    );
+    let plan = SynthesisPlan::of(&ir);
     let disposition = plan
         .disposition_of(
             CapabilityKind::ViewQuery,
@@ -745,9 +761,9 @@ fn the_plans_obligations_and_the_workspaces_stubs_are_the_same_list() {
         })
         .collect();
     owed.sort();
-    // Four since 0.46: three of the eight were command behaviours the specification determines, and
-    // one the query of a view it determines.
-    assert_eq!(owed.len(), 4, "the billing plan owes four capabilities");
+    // Three since the view-query story: of the four owed since 0.46, the query of
+    // `OutstandingInvoices` (an order over the optional `issued_at`) is generated now.
+    assert_eq!(owed.len(), 3, "the billing plan owes three capabilities");
     assert_eq!(
         stubs, owed,
         "the generated stubs are not exactly the plan's obligations"

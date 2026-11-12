@@ -39,7 +39,7 @@ carry each disposition and its reason:
 
 ```shell-session
 $ ess generate synthesize --path examples/billing --target rust | head -2
-48 capabilities: 40 generated, 4 obligation(s), 4 refused
+48 capabilities: 41 generated, 3 obligation(s), 4 refused
 16 artifact(s), nothing written
 ```
 
@@ -48,7 +48,7 @@ A refusal reads the same way and says what it cannot state: *"actor grants
 caller identity, which types do not carry"*.
 
 The plan is rendered as `PLAN.md` and `plan.json` in every emitted tree, and it is
-**language-neutral**. The existing Rust, Go and Web billing example produces the same 48/40/4/4
+**language-neutral**. The existing Rust, Go and Web billing example produces the same 48/41/3/4
 summary and `plan.json` digest. Clap also carries the plan and reports its grammar-specific
 weakenings separately; command behavior remains a handler obligation.
 

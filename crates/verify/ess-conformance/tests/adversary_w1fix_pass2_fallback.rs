@@ -85,15 +85,47 @@ commands:
 
 const OPENED: &str = "demo.orders.Open/outcome/opened";
 
-fn suite(body: &str) -> Suite {
+fn synthesized(body: &str) -> ess_conformance::synthesize::Synthesis {
     let raw = RawSpecFile::parse(body).unwrap_or_else(|error| panic!("{error}\n{body}"));
     let spec = Specification::assemble([(Source::new("orders.yaml"), raw)])
         .unwrap_or_else(|error| panic!("{error}\n{body}"));
     let ir = compile(&spec, &SourceMap::new()).unwrap_or_else(|error| panic!("{error:?}\n{body}"));
-    let synthesis = ess_conformance::synthesize::synthesize(&ir);
+    ess_conformance::synthesize::synthesize(&ir)
+}
+
+fn suite(body: &str) -> Suite {
+    let synthesis = synthesized(body);
     assert!(
         synthesis.refusals.is_empty(),
         "nothing is refused: {:#?}",
+        synthesis.refusals
+    );
+    synthesis.suite
+}
+
+/// The suite of a model whose entity invariant the omitted input breaks: the model declares no
+/// outcome for the omission, so synthesis names that one hole, `ESS-SYNTH-025`, beside the
+/// `invariant/after` scenario (beyond10x/ess#738), and refuses nothing else.
+fn suite_naming_the_omitted_input(body: &str) -> Suite {
+    let synthesis = synthesized(body);
+    let refused: Vec<String> = synthesis
+        .refusals
+        .iter()
+        .map(|refusal| {
+            format!(
+                "{}: {}",
+                refusal.code(),
+                refusal
+                    .scenario
+                    .as_ref()
+                    .map_or_else(String::new, ToString::to_string)
+            )
+        })
+        .collect();
+    assert_eq!(
+        refused,
+        ["ESS-SYNTH-025: demo.orders.Order/invariant/after/demo.orders.Open/opened"],
+        "only the unanswered input is refused: {:#?}",
         synthesis.refusals
     );
     synthesis.suite
@@ -299,7 +331,7 @@ fn adversary_w1fix_pass2_the_omission_run_does_not_contradict_an_invariant_over_
         1,
     );
     assert!(body.contains("defined(asked)"), "{body}");
-    let suite = suite(&body);
+    let suite = suite_naming_the_omitted_input(&body);
     for scenario in suite.scenarios.values() {
         let mut omitted = false;
         for step in &scenario.steps {

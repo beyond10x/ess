@@ -78,7 +78,29 @@ fn ir(format: u32) -> EssIr {
 
 fn suite() -> ConformanceSuite {
     let synthesis = ess_conformance::synthesize::synthesize(&ir(22));
-    assert_eq!(synthesis.refusals.len(), 0, "{:#?}", synthesis.refusals);
+    // `Open` copies both instants into the entity and no guard keeps them inside the invariant, so
+    // the model declares no outcome for a pair outside it: that one hole is named `ESS-SYNTH-025`
+    // beside the scenario, which stands (beyond10x/ess#738). Nothing else is refused.
+    let refused: Vec<String> = synthesis
+        .refusals
+        .iter()
+        .map(|refusal| {
+            format!(
+                "{}: {}",
+                refusal.code(),
+                refusal
+                    .scenario
+                    .as_ref()
+                    .map_or_else(String::new, ToString::to_string)
+            )
+        })
+        .collect();
+    assert_eq!(
+        refused,
+        [format!("ESS-SYNTH-025: {INVARIANT}")],
+        "{:#?}",
+        synthesis.refusals
+    );
     synthesis.suite
 }
 
