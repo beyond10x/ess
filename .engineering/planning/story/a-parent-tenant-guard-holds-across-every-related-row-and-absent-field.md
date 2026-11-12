@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-parent-tenant-guard-holds-across-every-related-row-and-absent-field
 kind: story
-status: active
+status: implemented
 title: A parent tenant guard holds across every related row and an absent field
 summary: 'U13 adversary: a second related row guarded on tenant still starves found; an absent Optional tenant splits synthesis and interpreter'
 tags:
@@ -27,10 +27,11 @@ scope:
   path: crates/verify/ess-conformance/src/synthesize/subject_fact.rs
 - confidence: cited
   path: crates/verify/ess-conformance/tests/parent_row_guard.rs
-revision: 16
+revision: 17
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-10T00:41:03Z", actor: "human:timo", revision: 15, decided_on: {"recorded":{"review_outcome":2}}}
 - {from: "proposed", to: "active", at: "2026-11-10T00:41:04Z", actor: "human:timo", revision: 16, decided_on: {"recorded":{"review_outcome":2}}}
+- {from: "active", to: "implemented", at: "2026-11-12T10:24:34Z", actor: "human:timo", revision: 17, decided_on: {"recorded":{"test_result":1,"review_outcome":2}}}
 ---
 ## Outcome
 

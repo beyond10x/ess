@@ -93,6 +93,21 @@ to their earlier phase. Value reads occur only after that branch is selected and
 same pre-outcome snapshot. A refusal that answers before subject existence cannot copy a subject
 value through this source.
 
+Where the accepting branches of a row-set command address different rows (each `updates:`,
+`moves:`, `preserves:` or `deletes:` through its own input field), the addressed row is the one the
+first declared accepting branch names, whichever branch the request selects: it is read before any
+branch is selected, and swapping the declaration order of two such branches moves which row's
+absence answers `unknown_instance:`. The interpreter keeps that reading; the fix is in synthesis,
+where a later accepting branch's scenario arranges the first declared branch's row beside its own,
+and a refusal naming no subject also arranges the row of the accepting branch its send selects (the
+default included), whose existence and held state answer before a row-set refusal. Each such row
+rests in a state its branch acts from and is named after no instance the scenario already holds, so
+two fields naming one entity name two rows. Where such a row would fill the set the refusal needs
+empty, the send is chosen again (a Boolean flipped that the refusal does not read and that decides
+no input-guarded refusal differently, and, for an accepting branch, that still selects it); where
+none keeps the set empty, the scenario is refused by name rather than written for the interpreter
+to fail.
+
 The value consumer extends the existing source:
 
 ```yaml

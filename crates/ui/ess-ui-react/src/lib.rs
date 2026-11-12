@@ -162,6 +162,7 @@ pub fn render_with(
         binding.is_some(),
         binding.is_some_and(Binding::routed),
         effects.is_some(),
+        gen.collapse,
     ));
     if files.contains_key("src/runtime/live.ts") {
         files.insert("src/channels.ts".to_owned(), gen.channels());

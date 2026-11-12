@@ -4,10 +4,10 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{Debug, Write as _};
 
 use ess_ui::{
-    Action, ActionConfirm, Body, Carries, ChartKind, Columns, Composite, Direction, Document,
-    Field, Header, HostSlot, Live, NavPages, Node, NodeCommon, NodePath, NodeRef, Overlay, Page,
-    PageLayout, Primitive, Reads, Region, RegionKind, Section, SectionStates, Selection, Shell,
-    State, StateClass, Store, Tab, TabFields, TabForm,
+    Action, ActionConfirm, AreaPlace, Body, Carries, ChartKind, Columns, Composite, Direction,
+    Document, Field, Header, HostSlot, Live, NavPages, Node, NodeCommon, NodePath, NodeRef,
+    Overlay, Page, PageLayout, Primitive, Reads, Region, RegionKind, Section, SectionStates,
+    Selection, Shell, State, StateClass, Store, Tab, TabFields, TabForm,
 };
 use ess_yaml::Value;
 
@@ -95,6 +95,14 @@ enum Rows {
     Own,
 }
 
+/// Where a shared frame sits in its page layout.
+enum FrameSlot {
+    /// A layout column, with its width when it names one.
+    Column(Option<String>),
+    /// An area of the area grid.
+    Area,
+}
+
 /// Rendering options passed down to a body.
 #[derive(Clone)]
 struct Opts {
@@ -161,6 +169,11 @@ pub(crate) struct Gen<'d> {
     /// The expressions the reads of the page being written are given (params and filters): a
     /// filter bar draws its search box only when one of them takes the search's state.
     page_reads: Option<Vec<String>>,
+    /// The document names a collapsed group, section or frame, a shared frame or a record's
+    /// groups: its runtime carries the collapsing parts (the others keep their bytes).
+    pub(crate) collapse: bool,
+    /// The sections of the page being written that a shared frame holds.
+    framed: BTreeSet<String>,
 }
 
 /// How often a bound `live:` section reads again when its read declares no `refresh:` duration.
@@ -282,6 +295,8 @@ impl<'d> Gen<'d> {
             bound: binding.is_some(),
             binding: binding.cloned(),
             page_reads: None,
+            collapse: false,
+            framed: BTreeSet::new(),
         }
     }
 
@@ -1417,10 +1432,30 @@ impl<'d> Gen<'d> {
                 let tabs = self.tabs(at, &r.tabs, false);
                 let item = self.node_fragment(at, "item", &r.item);
                 let actions = self.actions(at, "actions", &r.actions);
+                let mut groups = Vec::new();
+                for group in &r.groups {
+                    let here = at.child("groups").child(&group.name);
+                    let group_fields = self
+                        .fields(&here, "fields", &group.fields, false)
+                        .unwrap_or_else(|| "[]".to_owned());
+                    let collapsed = group.collapsed == Some(true);
+                    groups.push(ts::object([
+                        ("data-ui-path", Some(ts::string(&here.to_string()))),
+                        ("name", Some(ts::string(&group.name))),
+                        ("label", quoted(group.label.as_ref())),
+                        ("collapsed", collapsed.then(|| "true".to_owned())),
+                        ("fields", Some(group_fields)),
+                    ]));
+                }
+                let groups = (!groups.is_empty()).then(|| {
+                    self.collapse = true;
+                    ts::array(groups)
+                });
                 El::new(&component)
                     .path_if(!opts.framed, &path)
                     .opt("reads", Self::own_reads(opts, r.reads.as_ref()))
                     .opt("fields", fields)
+                    .opt("groups", groups)
                     .opt("tabs", tabs)
                     .opt("item", item)
                     .opt("actions", actions)
@@ -1436,10 +1471,13 @@ impl<'d> Gen<'d> {
                         .fields(&here, "fields", &group.fields, true)
                         .unwrap_or_else(|| "[]".to_owned());
                     let group_actions = self.actions(&here, "actions", &group.actions);
+                    let collapsed = group.collapsed == Some(true);
+                    self.collapse |= collapsed;
                     groups.push(ts::object([
                         ("data-ui-path", Some(ts::string(&here.to_string()))),
                         ("name", Some(ts::string(&group.name))),
                         ("label", quoted(group.label.as_ref())),
+                        ("collapsed", collapsed.then(|| "true".to_owned())),
                         ("fields", Some(group_fields)),
                         ("save", quoted(group.save.as_ref())),
                         ("does", quoted(group.does.as_ref())),
@@ -2391,6 +2429,13 @@ impl<'d> Gen<'d> {
         if Self::titles_header(page, section) && reads.is_some() {
             frame = frame.expr("reportsRow", "true");
         }
+        if self.framed.contains(&section.name) {
+            frame = frame.expr("framed", "true");
+        }
+        if section.collapsed == Some(true) {
+            self.collapse = true;
+            frame = frame.expr("collapsed", "true");
+        }
         if let Some(reads) = &reads {
             let use_scope = self.import("runtime/core", "useScope");
             let trigger = self.import("runtime/core", "useLoadTrigger");
@@ -2569,6 +2614,60 @@ impl<'d> Gen<'d> {
             .render()
     }
 
+    /// The section names each shared frame of the page's layout holds, in order.
+    fn shared_frames(page: &Page) -> Vec<&[String]> {
+        match &page.layout {
+            PageLayout::Stack(_) => Vec::new(),
+            PageLayout::Columns(columns) => columns
+                .columns
+                .iter()
+                .filter(|column| column.is_shared())
+                .map(|column| column.sections.as_slice())
+                .collect(),
+            PageLayout::Areas(areas) => areas
+                .areas
+                .place
+                .values()
+                .filter_map(AreaPlace::framed)
+                .filter(|framed| framed.is_shared())
+                .map(|framed| framed.sections.as_slice())
+                .collect(),
+        }
+    }
+
+    /// One frame at a column's or an area's path, holding its sections in order under the
+    /// frame's heading.
+    fn shared_frame(
+        &mut self,
+        path: &str,
+        title: Option<&String>,
+        collapsed: Option<bool>,
+        slot: FrameSlot,
+        sections: Vec<String>,
+    ) -> String {
+        self.collapse = true;
+        let component = self.import("runtime/core", "SharedFrame");
+        let mut frame = El::new(&component)
+            .path(path)
+            .opt("title", quoted(title))
+            .opt(
+                "column",
+                matches!(slot, FrameSlot::Column(_)).then(|| "true".to_owned()),
+            )
+            .opt(
+                "width",
+                match slot {
+                    FrameSlot::Column(width) => width,
+                    FrameSlot::Area => None,
+                },
+            );
+        if collapsed == Some(true) {
+            frame = frame.expr("collapsed", "true");
+        }
+        frame.children(sections).render()
+    }
+
+    #[allow(clippy::too_many_lines)] // stack, columns and areas of one layout
     fn layout(
         &mut self,
         at: &NodePath,
@@ -2583,7 +2682,12 @@ impl<'d> Gen<'d> {
                 .iter()
                 .flat_map(|c| c.sections.iter())
                 .collect(),
-            PageLayout::Areas(areas) => areas.areas.place.values().flatten().collect(),
+            PageLayout::Areas(areas) => areas
+                .areas
+                .place
+                .values()
+                .flat_map(|place| place.sections().iter())
+                .collect(),
         };
         let rest: Vec<String> = page
             .sections
@@ -2606,44 +2710,66 @@ impl<'d> Gen<'d> {
                         .filter(|name| sections.contains_key(*name))
                         .map(element)
                         .collect();
-                    children.push(
+                    let path = at
+                        .child("layout")
+                        .child("columns")
+                        .child(&entry.name)
+                        .to_string();
+                    let width = entry
+                        .width
+                        .as_ref()
+                        .and_then(variant)
+                        .map(|w| ts::string(&w));
+                    let element = if entry.is_shared() {
+                        self.shared_frame(
+                            &path,
+                            entry.title.as_ref(),
+                            entry.collapsed,
+                            FrameSlot::Column(width),
+                            inner,
+                        )
+                    } else {
                         El::new(&column)
-                            .path(
-                                &at.child("layout")
-                                    .child("columns")
-                                    .child(&entry.name)
-                                    .to_string(),
-                            )
-                            .opt(
-                                "width",
-                                entry
-                                    .width
-                                    .as_ref()
-                                    .and_then(variant)
-                                    .map(|w| ts::string(&w)),
-                            )
+                            .path(&path)
+                            .opt("width", width)
                             .children(inner)
-                            .render(),
-                    );
+                            .render()
+                    };
+                    children.push(element);
                 }
                 El::new(&layout).children(children).render()
             }
             PageLayout::Areas(areas) => {
                 let layout = self.import("runtime/core", "AreasLayout");
                 let grid = ts::array(areas.areas.grid.iter().map(strings));
-                let entries: Vec<(String, Option<String>)> = areas
-                    .areas
-                    .place
-                    .iter()
-                    .map(|(area, names)| {
-                        let inner: Vec<String> = names
-                            .iter()
-                            .filter(|name| sections.contains_key(*name))
-                            .map(element)
-                            .collect();
-                        (area.clone(), Some(fragment(inner)))
-                    })
-                    .collect();
+                let mut entries: Vec<(String, Option<String>)> = Vec::new();
+                for (area, place) in &areas.areas.place {
+                    let inner: Vec<String> = place
+                        .sections()
+                        .iter()
+                        .filter(|name| sections.contains_key(*name))
+                        .map(element)
+                        .collect();
+                    let content = match place.framed().filter(|framed| framed.is_shared()) {
+                        Some(framed) => {
+                            let path = at
+                                .child("layout")
+                                .child("areas")
+                                .child("place")
+                                .child(area)
+                                .to_string();
+                            self.shared_frame(
+                                &path,
+                                framed.title.as_ref(),
+                                framed.collapsed,
+                                FrameSlot::Area,
+                                inner,
+                            )
+                        }
+                        None => fragment(inner),
+                    };
+                    entries.push((area.clone(), Some(content)));
+                }
                 El::new(&layout)
                     .expr("grid", grid)
                     .expr("areas", multiline_object(&entries))
@@ -2682,6 +2808,10 @@ impl<'d> Gen<'d> {
         self.page = Some(name.to_owned());
         self.page_reads = Some(self.page_read_exprs(name));
         let at = NodePath::root().child("pages").child(name);
+        self.framed = Self::shared_frames(page)
+            .into_iter()
+            .flat_map(|sections| sections.iter().cloned())
+            .collect();
         let mut section_components = BTreeMap::new();
         for section in &page.sections {
             let component =
@@ -2778,6 +2908,7 @@ impl<'d> Gen<'d> {
         self.page_profile = None;
         self.page = None;
         self.page_reads = None;
+        self.framed.clear();
         let rendered = self.scope_layer("state", &values, &setters, &extra, hosted);
         self.import("react", "type ReactNode");
         let mut w = Writer::default();

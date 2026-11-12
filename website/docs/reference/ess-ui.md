@@ -630,15 +630,15 @@ overlays: {edit: {kind: drawer, component: form, same_as: partners.list.edit}}
 
 A renderer-neutral arrangement of a page's sections.
 
-`stack` shows sections one below the other in declaration order. `columns` splits the page into named columns, each listing its sections. `areas` names grid cells row by row and places sections into areas; an area spanning several cells repeats its name. Renderers without columns or areas fall back to a stack in section declaration order.
+`stack` shows sections one below the other in declaration order. `columns` splits the page into named columns, each listing its sections. `areas` names grid cells row by row and places sections into areas; an area spanning several cells repeats its name. Renderers without columns or areas fall back to a stack in section declaration order. A column or an area draws its sections each in a frame of its own (`frame: each`, the default) or all in one frame under one heading (`frame: shared`); each section still loads, fails and empties on its own. An area's place entry is the list of its sections, which means `frame: each`, or a record `{sections, frame, title, collapsed}`. `title` is the heading of a shared frame and `collapsed: true` starts it closed, so `collapsed` needs a `title`; neither is written beside `frame: each`. The sections of a shared frame are consecutive in the page's section order, so a renderer that stacks sections draws one block.
 
 **Properties**
 
 | Property | Type | Required | Default | Note |
 |---|---|---|---|---|
 | `stack` | exactly `stack` |   |   | sections top to bottom in declaration order |
-| `columns` | list of record \{ `name`: `name`, `sections`: list of name of a [Section](#section), `width`: optional (one of: `narrow` \| `normal` \| `wide`) \} |   |   | named columns left to right |
-| `areas` | record \{ `grid`: list of list of `name`, `place`: map of `name` → list of name of a [Section](#section) \} |   |   | grid of area names and the sections placed in each |
+| `columns` | list of record \{ `name`: `name`, `sections`: list of name of a [Section](#section), `width`: optional (one of: `narrow` \| `normal` \| `wide`), `frame`: optional (one of: `each` \| `shared`), `title`: optional `string`, `collapsed`: optional `boolean` \} |   |   | named columns left to right; `frame: shared` draws a column's sections in one frame under `title`, which `collapsed` starts closed |
+| `areas` | record \{ `grid`: list of list of `name`, `place`: map of `name` → (one of: list of name of a [Section](#section) \| record \{ `sections`: list of name of a [Section](#section), `frame`: optional (one of: `each` \| `shared`), `title`: optional `string`, `collapsed`: optional `boolean` \}) \} |   |   | grid of area names and the sections placed in each: a list of sections, or a record that frames them |
 
 **You may also write**
 
@@ -658,11 +658,24 @@ one_of:
             name: name
             sections: {list: {ref: section}}
             width: {optional: {enum: [narrow, normal, wide]}}
+            frame: {optional: {enum: [each, shared]}}
+            title: {optional: string}
+            collapsed: {optional: boolean}
   - record:
       areas:
         record:
           grid: {list: {list: name}}
-          place: {map: {key: name, value: {list: {ref: section}}}}
+          place:
+            map:
+              key: name
+              value:
+                one_of:
+                  - {list: {ref: section}}
+                  - record:
+                      sections: {list: {ref: section}}
+                      frame: {optional: {enum: [each, shared]}}
+                      title: {optional: string}
+                      collapsed: {optional: boolean}
 ```
 
 **Default**
@@ -802,6 +815,7 @@ The section, not the page, is the unit of loading. Each has at most one `reads`,
 | `name` | `name` | yes |   | node name among the page's sections |
 | `component` | one of: name of a [Composite](#composite) \| name of a [Widget](#widget) | yes |   | what the section renders |
 | `title` | `string` |   |   | heading shown above the section; absent, none |
+| `collapsed` | `boolean` |   | `false` | starts the section closed under its `title`, which a reader clicks to open; needs a `title`, since there is nothing else to click. A collapsed section with `load: on_visible` starts its read when opened |
 | `reads` | [Reads](#reads) |   |   | the section's data; one per section; it is the composite's own `reads` |
 | `live` | [Live](#live) |   |   | how channel events change the rows |
 | `load` | one of: `eager` \| `on_visible` \| `on_demand` |   | `eager` | when the read starts |
@@ -949,6 +963,7 @@ Use for detail views, KPI panels and read-only summaries.
 |---|---|---|---|---|
 | `reads` | [Reads](#reads) |   |   | the row |
 | `fields` | list of [Field](#field) |   |   | fields to show |
+| `groups` | list of record \{ `name`: `name`, `label`: optional `string`, `collapsed`: optional `boolean`, `fields`: list of [Field](#field) \} |   |   | fields shown under headings, in order, after `fields`: each group has a `name`, a `label` and `fields`, and `collapsed: true` starts it closed under its label, so `collapsed` needs a `label`; a group is read-only, so it takes no `save`, `does` or `actions`, and a key it does not declare is refused at the group's path |
 | `tabs` | list of [Tab](#tab) |   |   | fields split into tabs |
 | `item` | list of [Node](#node) |   |   | nested named nodes such as metrics or widgets, in order |
 | `actions` | list of [Action](#action) |   |   | actions on the record |
@@ -1528,6 +1543,7 @@ Settings pages save each group independently, often on change.
 |---|---|---|---|---|
 | `name` | `name` | yes |   | node name |
 | `label` | `string` |   |   | group heading |
+| `collapsed` | `boolean` |   | `false` | starts the group closed under its `label`, which a reader clicks to open it, so `collapsed` needs a `label`; a collapsed group's fields are still sent with the form |
 | `fields` | list of [Field](#field) | yes |   | fields in the group |
 | `save` | one of: `with_form` \| `on_change` |   | `with_form` | when the group saves |
 | `does` | name of an ESS `command` |   |   | command for this group if not the form's |

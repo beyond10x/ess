@@ -652,8 +652,7 @@ pub struct PageKind {
 }
 
 /// A renderer-neutral arrangement of a page's sections.
-#[derive(Debug, Clone, PartialEq, Deserialize)]
-#[serde(untagged)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum PageLayout {
     /// `stack`: sections top to bottom in declaration order.
     Stack(StackLayout),
@@ -662,6 +661,33 @@ pub enum PageLayout {
     /// A grid of area names.
     Areas(AreasLayout),
 }
+
+impl<'de> Deserialize<'de> for PageLayout {
+    /// Read by its shape, so a refusal names the key it refuses rather than every shape it was
+    /// not.
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let value = Value::deserialize(deserializer)?;
+        match &value {
+            Value::String(_) => ess_yaml::from_value(value)
+                .map(Self::Stack)
+                .map_err(D::Error::custom),
+            Value::Mapping(mapping) if mapping.contains_key("columns") => {
+                ess_yaml::from_value(value)
+                    .map(Self::Columns)
+                    .map_err(D::Error::custom)
+            }
+            Value::Mapping(mapping) if mapping.contains_key("areas") => ess_yaml::from_value(value)
+                .map(Self::Areas)
+                .map_err(D::Error::custom),
+            _ => Err(D::Error::custom(
+                "a layout is `stack`, `{columns: [...]}` or `{areas: {grid, place}}`",
+            )),
+        }
+    }
+}
+
+/// How a layout column or area draws its sections.
+pub const FRAMES: &[&str] = &["each", "shared"];
 
 /// The literal `stack`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
@@ -689,6 +715,13 @@ pub struct LayoutColumn {
     pub sections: Vec<String>,
     /// Relative width.
     pub width: Option<ColumnWidth>,
+    /// `each` (the default): every section draws its own frame; `shared`: one frame holds them
+    /// all. Read as text, so `ess ui check` names a value outside [`FRAMES`] at the column.
+    pub frame: Option<String>,
+    /// The heading of a shared frame.
+    pub title: Option<String>,
+    /// Whether a shared frame starts closed.
+    pub collapsed: Option<bool>,
 }
 
 /// Relative width of a layout column.
@@ -721,7 +754,80 @@ pub struct Areas {
     /// Rows of area names.
     pub grid: Vec<Vec<String>>,
     /// Sections placed in each area.
-    pub place: BTreeMap<String, Vec<String>>,
+    pub place: BTreeMap<String, AreaPlace>,
+}
+
+/// What is placed in one area: a list of sections (the short form, `frame: each`) or a record
+/// that also says how they are framed.
+#[derive(Debug, Clone, PartialEq)]
+pub enum AreaPlace {
+    /// `[a, b]`.
+    Sections(Vec<String>),
+    /// `{sections: [a, b], frame: shared, title: T}`.
+    Framed(FramedArea),
+}
+
+/// An area's place entry written as a record.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct FramedArea {
+    /// Sections in the area, top to bottom.
+    pub sections: Vec<String>,
+    /// `each` (the default) or `shared`; read as text like a column's.
+    pub frame: Option<String>,
+    /// The heading of a shared frame.
+    pub title: Option<String>,
+    /// Whether a shared frame starts closed.
+    pub collapsed: Option<bool>,
+}
+
+impl AreaPlace {
+    /// The sections placed, top to bottom.
+    pub fn sections(&self) -> &[String] {
+        match self {
+            Self::Sections(sections) => sections,
+            Self::Framed(framed) => &framed.sections,
+        }
+    }
+
+    /// The record form, where the entry is written as one.
+    pub fn framed(&self) -> Option<&FramedArea> {
+        match self {
+            Self::Sections(_) => None,
+            Self::Framed(framed) => Some(framed),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for AreaPlace {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let value = Value::deserialize(deserializer)?;
+        match &value {
+            Value::Sequence(_) => ess_yaml::from_value(value)
+                .map(Self::Sections)
+                .map_err(D::Error::custom),
+            Value::Mapping(_) => ess_yaml::from_value(value)
+                .map(Self::Framed)
+                .map_err(D::Error::custom),
+            _ => Err(D::Error::custom(
+                "an area places a list of sections or a record `{sections, frame, title, collapsed}`",
+            )),
+        }
+    }
+}
+
+impl LayoutColumn {
+    /// Whether the column draws its sections in one shared frame.
+    pub fn is_shared(&self) -> bool {
+        self.frame.as_deref() == Some("shared")
+    }
+}
+
+impl FramedArea {
+    /// Whether the area draws its sections in one shared frame.
+    pub fn is_shared(&self) -> bool {
+        self.frame.as_deref() == Some("shared")
+    }
 }
 
 /// Fields every node frame shares: a composite, a widget instance or a primitive.
@@ -752,6 +858,8 @@ pub struct Section {
     pub name: String,
     /// The heading shown above the section, where it has one (beyond10x/ess#281).
     pub title: Option<String>,
+    /// Whether the section starts closed under its heading; needs a `title`.
+    pub collapsed: Option<bool>,
     /// State, visibility, degrades and unmapped notes of the section.
     pub common: NodeCommon,
     /// How channel events change the rows.
@@ -775,6 +883,7 @@ pub struct Section {
 struct SectionFrame {
     name: String,
     title: Option<String>,
+    collapsed: Option<bool>,
     #[serde(default)]
     state: BTreeMap<String, State>,
     visible: Option<Expr>,
@@ -794,6 +903,7 @@ struct SectionFrame {
 const SECTION_FRAME_KEYS: &[&str] = &[
     "name",
     "title",
+    "collapsed",
     "state",
     "visible",
     "degrades",
@@ -822,6 +932,7 @@ impl<'de> Deserialize<'de> for Section {
         Ok(Self {
             name: frame.name,
             title: frame.title,
+            collapsed: frame.collapsed,
             common: NodeCommon {
                 name: None,
                 state: frame.state,
@@ -1398,6 +1509,9 @@ pub struct Record {
     /// Fields split into tabs.
     #[serde(default)]
     pub tabs: Vec<Tab>,
+    /// Fields under headings, in order.
+    #[serde(default)]
+    pub groups: Vec<RecordGroup>,
     /// Nested named nodes, in order.
     #[serde(default)]
     pub item: Vec<Node>,
@@ -2753,6 +2867,8 @@ pub struct FormGroup {
     pub name: String,
     /// Group heading.
     pub label: Option<String>,
+    /// Whether the group starts closed under its heading.
+    pub collapsed: Option<bool>,
     /// Fields in the group, in order.
     pub fields: Vec<Field>,
     /// When the group saves: `with_form` or `on_change`.
@@ -2766,6 +2882,20 @@ pub struct FormGroup {
     pub endpoint: Option<String>,
     /// Help text or link shown with the group.
     pub help: Option<Help>,
+}
+
+/// Fields of a record shown under a heading. Read-only: it has no save key.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RecordGroup {
+    /// Node name.
+    pub name: String,
+    /// Group heading.
+    pub label: Option<String>,
+    /// Whether the group starts closed under its heading.
+    pub collapsed: Option<bool>,
+    /// Fields in the group, in order.
+    pub fields: Vec<Field>,
 }
 
 // ── data ─────────────────────────────────────────────────────────────────────────────────────
