@@ -3450,14 +3450,14 @@ impl App {
             KeyCode::Char(' ') => {
                 if let Some(field) = current {
                     self.cycle_field(form, draft, &field, state.option, &ctx);
-                    self.save_on_change(target, form, draft);
+                    self.save_on_change(target, form, draft, &field.field);
                 }
             }
             KeyCode::Enter | KeyCode::Char('i') => {
                 if let Some(field) = current {
                     if matches!(field.field_as.as_deref(), Some("toggle" | "choice")) {
                         self.cycle_field(form, draft, &field, state.option, &ctx);
-                        self.save_on_change(target, form, draft);
+                        self.save_on_change(target, form, draft, &field.field);
                     } else {
                         self.ui_mut(ui).editing = true;
                     }
@@ -3598,18 +3598,26 @@ impl App {
         }
         self.set_field(&draft, &field, Value::String(text));
         if let Some(form) = &form {
-            self.save_on_change(target, form, &draft);
+            self.save_on_change(target, form, &draft, &field);
         }
     }
 
     /// A form that saves on change (`save: on_change`) sends its command after every change, as
     /// the generated React project does; the draft stays as typed. A refusal shows on the form.
-    fn save_on_change(&mut self, target: Target, form: &Form, draft: &str) {
-        if form.save != Some(ess_ui::FormSave::OnChange) {
-            return;
-        }
+    /// A field of a group that saves on change sends the group's own command (the form's when the
+    /// group names none), whatever the form's own `save` is; the input is the whole form's.
+    fn save_on_change(&mut self, target: Target, form: &Form, draft: &str, field: &str) {
+        let group = form.groups.iter().find(|group| {
+            group.save.as_deref() == Some("on_change")
+                && group.fields.iter().any(|member| member.field == field)
+        });
+        let command = match group {
+            Some(group) => group.does.as_ref().unwrap_or(&form.does),
+            None if form.save == Some(ess_ui::FormSave::OnChange) => &form.does,
+            None => return,
+        };
         let input = self.form_input(target, form, draft);
-        let refused = self.run_command(&form.does, &input);
+        let refused = self.run_command(command, &input);
         let ui = self.target_ui(target);
         self.ui_mut(&ui).refusal = refused.map(|refused| refused.by("form"));
     }
