@@ -60,7 +60,7 @@
 //!    guard; `[]` and `[tags.0]`, the element's own path as every text witness is, refute it; each
 //!    such candidate is tried first with the list widened to three elements, the one element
 //!    between two built at positions of their own, then as three copies of it
-//!    ([`quantified_first`]), so a target reading only the first element, only the last, or
+//!    (`quantified_first`), so a target reading only the first element, only the last, or
 //!    `forall` for `exists` is failed by the suite; and
 //!    `tags.count > 0` is decided by `[]` and `[tags.0]`, because the flattener publishes an input
 //!    list's `count` the way an observed collection publishes one. A list a guard reads **by
@@ -2899,7 +2899,7 @@ enum Choice {
     /// A list of this many elements: element 0 built at `<path>.0` from the declared element type
     /// like any other value and varied there by the same ladders, and every further element a
     /// copy of it. A list a quantifier walks is also tried widened afterwards
-    /// ([`quantified_first`]), so a quantifier is not decided by element 0 alone.
+    /// (`quantified_first`), so a quantifier is not decided by element 0 alone.
     Elements(usize),
     /// A list a `distinct` reads (ess/22): element 0 as [`Self::Elements`] builds it, and each further
     /// element built at its own position and a further [`Distinction`], so its key differs; with a
@@ -6799,7 +6799,7 @@ struct Builder<'ir> {
     /// Every expanded path that holds a declared list.
     lists: BTreeSet<FactPath>,
     /// The declared element type of each list in [`Self::lists`], so a candidate can be widened
-    /// with elements built at positions of their own ([`quantified_first`]).
+    /// with elements built at positions of their own (`quantified_first`).
     elements: BTreeMap<FactPath, ResolvedTypeRef>,
     /// Every recorded path that holds a map with one entry in its base (beyond10x/ess#196): what a
     /// `.count` guard over it varies by [`Choice::Elements`].
