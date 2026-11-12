@@ -28,12 +28,22 @@ entity's creating route (`arrange_first`, as for related rows):
 
 | relation | a route creates the target | no route creates it |
 |---|---|---|
-| `cardinality: many`, a `List` | a non-empty list of created rows: as many as the witness list held, one at least, three at most | the empty list, which names no row |
+| `cardinality: many`, a `List` | exactly as many created rows as the witness list held, eight at most (a longer list is a refusal naming the relation) | the empty list, which names no row |
 | `cardinality: one` | the created row's identity | no scenario: a refusal naming `<entity>.<relation>` |
 
-A non-empty list is arranged where a route exists, because an empty list would pass without
-exercising the reference. A plain reference has no empty value, so the refusal is the only result
-the rule admits there.
+The witness already satisfies every guard and invariant over the input, so the arrangement never
+chooses a list's length again: a list the witness held empty stays empty, and a list of four stays
+four. Where the witness sends a non-empty list the reference is exercised; a model whose guards
+admit only the empty list is not forced to send more. A plain reference has no empty value, so
+the refusal is the only result the rule admits there.
+
+A referenced row rests in the state a creating branch leaves it in (`into:`, else the lifecycle's
+initial state), so a route is no less a route for creating straight into a later state.
+
+A referenced row whose creating branch writes a reference of its own from its input is created
+naming a row arranged first, to a depth of three rows. Beyond that depth, and for a creating branch
+another family arranges (a related guard, a held-state guard, an owner), the input stays what the
+witness chose.
 
 Left as before: a refusal and a replay (they are sent the input that selects them), a branch whose
 own `when:` guard reads the field (its witness list is what selects it), a field another
@@ -47,6 +57,13 @@ create-or-update, which leaves that row unarranged on purpose; none of them is c
 Every run of a scenario arranges its own rows: the further runs of a branch (an Optional left out,
 a union variant, an expression point) each take a block of distinctions of their own, past every
 block the other arrangements number from, so no run reuses a row and no identity is created twice.
+
+## Not covered
+
+A row arranged for another command's scenario (a move, an update, a view read) through the
+creating command still sends the witness input, and so does a command a related guard, a list of
+references or a row set arranges. Both are recorded as backlog; their cases stay in
+`tests/referenced_list_input.rs`, ignored by slug.
 
 ## Byte pins
 
