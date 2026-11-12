@@ -402,12 +402,18 @@ export function GroupBox(props: {
 export function AreasLayout(props: { grid: string[][]; areas: Record<string, ReactNode> }): ReactNode {
   const template = props.grid.map((row) => `"${row.join(" ")}"`).join(" ");
   const columns = Math.max(1, ...props.grid.map((row) => row.length));
+  const reading = props.grid.flat();
+  const rank = (area: string) => {
+    const at = reading.indexOf(area);
+    return at < 0 ? reading.length : at;
+  };
+  const placed = Object.entries(props.areas).sort(([a], [b]) => rank(a) - rank(b));
   return (
     <div
       className="ui-layout-areas"
       style={{ gridTemplateAreas: template, gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` }}
     >
-      {Object.entries(props.areas).map(([area, content]) => (
+      {placed.map(([area, content]) => (
         <div key={area} className="ui-area" style={{ gridArea: area }}>
           {content}
         </div>
