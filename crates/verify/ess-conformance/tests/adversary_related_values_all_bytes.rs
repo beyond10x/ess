@@ -37,6 +37,10 @@
 //! (story:a-value-invariant-on-a-type-nothing-reaches-refuses-nothing), and `explore-external` and
 //! `explore-external-exits` carry the `ESS-SYNTH-003` refusal that names its repair
 //! (story:a-not-found-branch-after-a-guarded-move-is-refused-with-its-repair).
+//!
+//! The suite digest of `aggregate-stored-guarded-move.yaml` is re-pinned to the bytes table for
+//! beyond10x/ess#472: its two `when_subject` refusals of one phase are sent once on a row both
+//! hold on, requiring the first declared. Its IR and refusal digests are unchanged.
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 

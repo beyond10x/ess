@@ -11,8 +11,10 @@ use std::path::Path;
 
 use ess_compiler::{ir::EssIr, resolve::compile, source::SourceMap};
 use ess_conformance::interpret::Interpreted;
+use ess_conformance::mutate;
 use ess_conformance::report::Status;
 use ess_conformance::scenario::{ErrorRef, OutcomeRef};
+use ess_conformance::synthesize::Note;
 use ess_conformance::target::{
     AbsentInputRequest, ConformanceTarget, DeclaredErrorValue, EventObservationRequest,
     ExternalOutcomeControl, ImplementationIdentity, InvocationObservationRequest, ObservedEvent,
@@ -372,4 +374,409 @@ fn refusal_pair_paragraph_states_declaration_order() {
             "the subsection says {phrase:?}:\n{text}"
         );
     }
+}
+
+// ---- stored-field pairs: two `when_subject` refusals one row satisfies together ------------------
+
+/// A `demo.order` document of the commands `names`, whose declarations are `commands`.
+fn order_document(names: &[&str], commands: &str) -> String {
+    let qualified = names
+        .iter()
+        .map(|name| format!("demo.order.{name}"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!(
+        r"format: ess/20
+system: demo
+version: v1
+domain: demo.order
+summary: Orders refused for two conditions their stored fields or their input can hold together.
+types:
+  - {{name: demo.order.OrderId, kind: newtype, of: Uuid}}
+entities:
+  - name: demo.order.Order
+    identity: {{name: order_id, type: demo.order.OrderId}}
+    fields:
+      - {{name: quantity, type: Integer}}
+      - {{name: discount, type: Integer}}
+      - {{name: locked, type: Boolean}}
+    lifecycle: {{initial: Open, states: [Open], terminal: [Open]}}
+actors:
+  - name: demo.order.Agent
+    may: [{qualified}]
+errors:
+  - {{name: demo.order.BadQuantity, fields: []}}
+  - {{name: demo.order.BadDiscount, fields: []}}
+  - {{name: demo.order.Locked, fields: []}}
+  - {{name: demo.order.Empty, fields: []}}
+events:
+  - name: demo.order.Placed
+    fields: [{{name: order_id, type: demo.order.OrderId}}]
+  - name: demo.order.Changed
+    fields: [{{name: order_id, type: demo.order.OrderId}}]
+commands:
+{commands}components:
+  - component: orders
+    owns: {{domains: [demo.order]}}
+    accepts: {{commands: [{qualified}]}}
+    reached_by: network
+"
+    )
+}
+
+/// The command every model creates its rows through; `locked` is what it stores in `locked`, and
+/// `refusing` has it refuse a quantity at or below zero and a discount below zero.
+fn placing(locked: &str, refusing: bool) -> String {
+    let refusals = if refusing {
+        "      - {name: bad-quantity, when: quantity <= 0, error: demo.order.BadQuantity}\n      - {name: bad-discount, when: discount < 0, error: demo.order.BadDiscount}\n"
+    } else {
+        ""
+    };
+    format!(
+        r"  - name: demo.order.Place
+    input:
+      - {{name: quantity, type: Integer}}
+      - {{name: discount, type: Integer}}
+      - {{name: locked, type: Boolean}}
+    outcomes:
+{refusals}      - name: placed
+        creates: demo.order.Order
+        instance: order_id
+        sets: {{quantity: input.quantity, discount: input.discount, locked: {locked}}}
+        emits: [demo.order.Placed]
+        payload: {{demo.order.Placed: {{order_id: {{generated: true}}}}}}
+"
+    )
+}
+
+/// Model A, the shape of beyond10x/ess#472: two input refusals on a creating command.
+fn model_a() -> String {
+    order_document(&["Place"], &placing("input.locked", true))
+}
+
+/// Model B: the same two input refusals on an updating command, beside a `when_subject` refusal.
+fn model_b() -> String {
+    order_document(
+        &["Place", "Amend"],
+        &format!(
+            "{}{}",
+            placing("input.locked", false),
+            r"  - name: demo.order.Amend
+    input:
+      - {name: order_id, type: demo.order.OrderId}
+      - {name: quantity, type: Integer}
+      - {name: discount, type: Integer}
+    outcomes:
+      - {name: bad-quantity, when: quantity <= 0, error: demo.order.BadQuantity}
+      - {name: bad-discount, when: discount < 0, error: demo.order.BadDiscount}
+      - name: locked
+        when_subject: {predicate: locked == true}
+        error: demo.order.Locked
+      - name: amended
+        updates: demo.order.Order
+        instance: order_id
+        sets: {quantity: input.quantity, discount: input.discount}
+        emits: [demo.order.Changed]
+        payload: {demo.order.Changed: {order_id: input.order_id}}
+"
+        ),
+    )
+}
+
+/// Model C: two `when_subject` refusals of one phase, and a `Ship` that locks the row it accepts.
+/// `placed_locked` is what `Place` stores in `locked`; `locked_first` declares `locked` before
+/// `empty`.
+fn model_c(placed_locked: &str, locked_first: bool) -> String {
+    let empty = "      - name: empty\n        when_subject: {predicate: quantity <= 0}\n        error: demo.order.Empty\n";
+    let locked = "      - name: locked\n        when_subject: {predicate: locked == true}\n        error: demo.order.Locked\n";
+    let (one, other) = if locked_first {
+        (locked, empty)
+    } else {
+        (empty, locked)
+    };
+    let shipped = "      - name: shipped\n        updates: demo.order.Order\n        instance: order_id\n        sets: {locked: true}\n        emits: [demo.order.Changed]\n        payload: {demo.order.Changed: {order_id: input.order_id}}\n";
+    order_document(
+        &["Place", "Ship"],
+        &format!(
+            "{}  - name: demo.order.Ship\n    input:\n      - {{name: order_id, type: demo.order.OrderId}}\n    outcomes:\n{one}{other}{shipped}",
+            placing(placed_locked, false)
+        ),
+    )
+}
+
+const SHIP_EMPTY: &str = "demo.order.Ship/outcome/empty";
+
+type Send = (Vec<String>, Option<String>, Option<String>);
+
+/// Each send of the command `short` the scenario makes: the literals it sends for `fields` (`-`
+/// for a field sent as a reference) and the outcome and error the next steps require.
+fn sent_to(scenario: &ConformanceScenario, short: &str, fields: &[&str]) -> Vec<Send> {
+    let mut out = Vec::new();
+    for (at, step) in scenario.steps.iter().enumerate() {
+        let ScenarioStep::ExecuteCommand { command, input, .. } = step else {
+            continue;
+        };
+        if command.name().to_string() != format!("demo.order.{short}") {
+            continue;
+        }
+        let values = fields
+            .iter()
+            .map(|field| {
+                let json = literal_json(input, field);
+                if json.is_empty() {
+                    "-".to_owned()
+                } else {
+                    json
+                }
+            })
+            .collect();
+        let outcome = scenario.steps.get(at + 1).and_then(|next| match next {
+            ScenarioStep::ExpectOutcome { outcome } => Some(outcome.outcome.to_string()),
+            _ => None,
+        });
+        let error = scenario.steps.get(at + 2).and_then(|next| match next {
+            ScenarioStep::ExpectError { error, .. } => Some(error.to_string()),
+            _ => None,
+        });
+        out.push((values, outcome, error));
+    }
+    out
+}
+
+/// The literal `field` is sent as, in JSON; empty where it is sent as a reference or not at all.
+fn literal_json(input: &BTreeMap<String, ScenarioValue>, field: &str) -> String {
+    input
+        .get(field)
+        .and_then(ScenarioValue::as_literal)
+        .map_or_else(String::new, |node| {
+            match serde_json::to_value(node).expect("a literal is JSON") {
+                // Whatever spelling a number is written with (`0`, `0.0`), the same value.
+                serde_json::Value::Number(number) => number
+                    .as_f64()
+                    .map_or_else(|| number.to_string(), |value| value.to_string()),
+                other => other.to_string(),
+            }
+        })
+}
+
+fn audit(text: &str) -> mutate::MutationReport {
+    let raw = RawSpecFile::parse(text).unwrap_or_else(|error| panic!("{error}\n{text}"));
+    let mut texts = SourceMap::new();
+    texts.insert("fixture.yaml".to_owned(), text.to_owned());
+    let files = vec![(Source::new("fixture.yaml"), raw)];
+    let ir = mutate::compile(files.clone(), &texts).expect("the fixture compiles");
+    mutate::audit(
+        &files,
+        &texts,
+        &[mutate::MutantClass::PrecedenceSwap],
+        || Interpreted::for_model(ir.clone()),
+    )
+    .unwrap_or_else(|refusal| panic!("{refusal}"))
+}
+
+/// The exit status `ess verify conform mutate` gives `report`: 1 with a survivor, 3 with an
+/// unwitnessed or inconclusive mutant or none run, 0 otherwise.
+fn exit_status(report: &mutate::MutationReport) -> u8 {
+    let ran = report
+        .mutants
+        .iter()
+        .filter(|entry| {
+            !matches!(
+                entry.verdict,
+                mutate::Verdict::Stillborn | mutate::Verdict::Equivalent
+            )
+        })
+        .count();
+    if report.counts.survived > 0 {
+        1
+    } else if report.counts.unwitnessed > 0
+        || report.counts.inconclusive > 0
+        || ran == 0
+        || report.unaudited_sites() > 0
+    {
+        3
+    } else {
+        0
+    }
+}
+
+fn verdict_of(report: &mutate::MutationReport, id: &str) -> mutate::Verdict {
+    report
+        .mutants
+        .iter()
+        .find(|entry| entry.id == id)
+        .unwrap_or_else(|| panic!("no site {id}:\n{}", report.render_text()))
+        .verdict
+}
+
+#[test]
+fn input_refusal_pairs_stay_witnessed_and_killed_on_both_paths() {
+    for (model, command) in [(model_a(), "Place"), (model_b(), "Amend")] {
+        let result = synthesis(&model);
+        assert_eq!(result.refusals.len(), 0, "{:#?}", result.refusals);
+        let id = format!("demo.order.{command}/outcome/bad-quantity");
+        let sent = sent_to(
+            scenario(&result.suite, &id),
+            command,
+            &["quantity", "discount"],
+        );
+        assert!(
+            sent.contains(&(
+                vec!["0".to_owned(), "-1".to_owned()],
+                Some("bad-quantity".to_owned()),
+                Some("demo.order.BadQuantity".to_owned())
+            )),
+            "{command}: the overlap {{quantity: 0, discount: -1}} requires bad-quantity: {sent:#?}"
+        );
+        let report = audit(&model);
+        let site = format!("precedence-swap/demo.order.{command}/bad-quantity/bad-discount");
+        assert_eq!(
+            verdict_of(&report, &site),
+            mutate::Verdict::Killed,
+            "{}",
+            report.render_text()
+        );
+        assert_eq!(exit_status(&report), 0, "{}", report.render_text());
+    }
+}
+
+/// Whether `scenario` arranges the row `{quantity: 0, locked: true}` and sends `Ship` for it,
+/// requiring `empty` and `Empty`.
+fn sends_overlap_row(scenario: &ConformanceScenario) -> bool {
+    let arranged = sent_to(scenario, "Place", &["quantity", "locked"])
+        .iter()
+        .any(|(values, _, _)| values == &["0".to_owned(), "true".to_owned()]);
+    let refused = sent_to(scenario, "Ship", &["order_id"])
+        .iter()
+        .filter(|(_, outcome, error)| {
+            outcome.as_deref() == Some("empty") && error.as_deref() == Some("demo.order.Empty")
+        })
+        .count();
+    arranged && refused >= 2
+}
+
+/// Model C's suite as 0.92.0 wrote it: `empty`'s scenario cut at the first send that arranges the
+/// overlap row.
+fn without_overlap_send(suite: &ConformanceSuite) -> ConformanceSuite {
+    let mut cut = suite.clone();
+    let (_, scenario) = cut
+        .scenarios
+        .iter_mut()
+        .find(|(key, _)| key.to_string() == SHIP_EMPTY)
+        .expect("the scenario is filed");
+    let at = scenario
+        .steps
+        .iter()
+        .position(|step| match step {
+            ScenarioStep::ExecuteCommand { command, input, .. } => {
+                command.name().to_string() == "demo.order.Place"
+                    && literal_json(input, "quantity") == "0"
+                    && literal_json(input, "locked") == "true"
+            }
+            _ => false,
+        })
+        .expect("the overlap row is arranged");
+    scenario.steps.truncate(at);
+    cut
+}
+
+#[test]
+fn stored_pair_overlap_is_sent_in_the_first_declared_scenario() {
+    let result = synthesis(&model_c("input.locked", false));
+    assert_eq!(result.refusals.len(), 0, "{:#?}", result.refusals);
+    let sent = scenario(&result.suite, SHIP_EMPTY);
+    assert!(
+        sends_overlap_row(sent),
+        "`empty`'s scenario arranges {{quantity: 0, locked: true}} and requires `empty` and \
+         `Empty` of it: {sent:#?}"
+    );
+}
+
+#[test]
+fn locked_first_target_fails_only_the_overlap_send() {
+    let suite = synthesis(&model_c("input.locked", false)).suite;
+    let honest = Interpreted::for_model(ir(&model_c("input.locked", false)));
+    assert_eq!(not_passed(&run(&suite, &honest)), Vec::<&str>::new());
+    let swapped = Interpreted::for_model(ir(&model_c("input.locked", true)));
+    assert_eq!(
+        not_passed(&run(&suite, &swapped)),
+        vec![SHIP_EMPTY],
+        "a target answering `locked` first fails `empty`'s scenario and nothing else"
+    );
+    assert_eq!(
+        not_passed(&run(&without_overlap_send(&suite), &swapped)),
+        Vec::<&str>::new(),
+        "and passes every scenario of the suite 0.92.0 wrote"
+    );
+}
+
+#[test]
+fn stored_pair_swap_site_is_killed() {
+    let report = audit(&model_c("input.locked", false));
+    let site = "precedence-swap/demo.order.Ship/empty/locked";
+    assert_eq!(
+        verdict_of(&report, site),
+        mutate::Verdict::Killed,
+        "{}",
+        report.render_text()
+    );
+    assert_eq!(exit_status(&report), 0, "{}", report.render_text());
+}
+
+#[test]
+fn stored_pair_no_row_satisfies_is_noted_and_swap_is_not_a_survivor() {
+    let model = model_c("false", false);
+    let result = synthesis(&model);
+    let noted: Vec<(String, String)> = result
+        .notes
+        .iter()
+        .filter_map(|note| match note {
+            Note::UnwitnessedOverlap {
+                scenario,
+                first,
+                other,
+                ..
+            } if scenario.to_string() == SHIP_EMPTY => Some((first.to_string(), other.to_string())),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        noted,
+        vec![("empty".to_owned(), "locked".to_owned())],
+        "{:#?}",
+        result.notes
+    );
+    let report = audit(&model);
+    assert_eq!(report.counts.survived, 0, "{}", report.render_text());
+    assert_eq!(
+        verdict_of(&report, "precedence-swap/demo.order.Ship/empty/locked"),
+        mutate::Verdict::Unwitnessed,
+        "the pair has no send, so the swap asks the target what the baseline did: {}",
+        report.render_text()
+    );
+}
+
+#[test]
+fn stored_pair_no_row_can_satisfy_is_not_sent_and_not_noted() {
+    // `quantity == 0` and `quantity == 1` name two values of one field: the pair overlaps nowhere.
+    let model = model_c("input.locked", false)
+        .replace("quantity <= 0", "quantity == 0")
+        .replace("locked == true", "quantity == 1");
+    let result = synthesis(&model);
+    assert_eq!(result.refusals.len(), 0, "{:#?}", result.refusals);
+    let overlaps: Vec<_> = result
+        .notes
+        .iter()
+        .filter(|note| matches!(note, Note::UnwitnessedOverlap { .. }))
+        .collect();
+    assert_eq!(overlaps, Vec::<&Note>::new(), "an empty overlap is no gap");
+    let sent = scenario(&result.suite, SHIP_EMPTY);
+    let refused = sent_to(sent, "Ship", &["order_id"])
+        .iter()
+        .filter(|(_, outcome, _)| outcome.as_deref() == Some("empty"))
+        .count();
+    assert_eq!(
+        refused, 1,
+        "`empty` is sent once, for its own row: {sent:#?}"
+    );
 }
