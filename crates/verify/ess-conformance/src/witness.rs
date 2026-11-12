@@ -1520,8 +1520,12 @@ fn optional_copies(
     fn sources(fields: &[ResolvedPayloadField], found: &mut BTreeSet<FactPath>) {
         for field in fields {
             match &field.value {
+                // ess/31: the element an `{append: …}` stores is a copy of the input, so over a
+                // `List<Optional<T>>` the scenario of the branch sends it present
+                // (story:a-present-optional-element-is-appended).
                 ResolvedPayloadValue::InputField { field, .. }
-                | ResolvedPayloadValue::InputOrGenerated { field, .. } => {
+                | ResolvedPayloadValue::InputOrGenerated { field, .. }
+                | ResolvedPayloadValue::Append { field, .. } => {
                     if let Ok(path) = FactPath::new(field) {
                         found.insert(path);
                     }
