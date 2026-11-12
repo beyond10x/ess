@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-row-set-command-whose-branches-address-different-rows-passes-its-own-suite
 kind: story
-status: active
+status: implemented
 title: A row-set command whose accepting branches address different rows passes its own suite against the reference interpreter
 summary: The interpreter addresses the first declared accepting branch's row; a later branch's synthesized scenario fails (ESS-MUTATE-001).
 tags:
@@ -22,10 +22,11 @@ scope:
   path: crates/verify/ess-conformance/tests/adversary_l5_pass1.rs
 - confidence: inferred
   path: docs/design/filtered-related-reads.md
-revision: 7
+revision: 8
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-10T00:41:33Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":1}}}
 - {from: "proposed", to: "active", at: "2026-11-10T00:41:34Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "active", to: "implemented", at: "2026-11-12T14:55:49Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"test_result":1,"review_outcome":1}}}
 ---
 ## Problem
 
