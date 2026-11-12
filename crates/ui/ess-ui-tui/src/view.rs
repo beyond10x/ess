@@ -28,7 +28,7 @@ use crate::app::{
     group_names, paged, references_collection, App, BarItem, Ctx, Focus, Lifecycle, Mark, Prompt,
     ReadState, Region,
 };
-use crate::expr::{display, field_path, row_key, truthy};
+use crate::expr::{display, field_path, reads_row, row_key, truthy};
 
 const NAV_WIDTH: u16 = 26;
 const SPARKS: [char; 8] = ['▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'];
@@ -768,7 +768,14 @@ impl App {
                     .into_iter()
                     .collect();
                 lines.push(Line::from(empty.map_or_else(
-                    || "No rows".to_owned(),
+                    || {
+                        if self.waiting(section) {
+                            "Nothing to show yet"
+                        } else {
+                            "No rows"
+                        }
+                        .to_owned()
+                    },
                     |empty| empty.message.clone(),
                 )));
                 if let Some(action) = empty.and_then(|empty| empty.action.as_ref()) {
@@ -1017,7 +1024,21 @@ impl App {
                 let row = self.record_row(record, &place.ctx).unwrap_or(Value::Null);
                 let mut lines = Vec::new();
                 let shown = self.labelled(&record.fields, &row);
-                for field in &record.fields {
+                // A field whose `visible:` does not hold for the record's row is not drawn.
+                let at_row = Ctx {
+                    row: Some(&row),
+                    ..place.ctx
+                };
+                let drawn = |field: &Field| {
+                    field.visible.as_ref().is_none_or(|expr| {
+                        if reads_row(&expr.0) {
+                            self.visible_for_row(&expr.0, &at_row)
+                        } else {
+                            self.visible(Some(&expr.0), &at_row)
+                        }
+                    })
+                };
+                for field in record.fields.iter().filter(|field| drawn(field)) {
                     self.mark_field_slot(field, place, &place.path.child("fields"), lines.len());
                     lines.push(labelled(field, &shown));
                 }
@@ -1033,7 +1054,7 @@ impl App {
                     ));
                     if open {
                         let shown = self.labelled(&group.fields, &row);
-                        for field in &group.fields {
+                        for field in group.fields.iter().filter(|field| drawn(field)) {
                             self.mark_field_slot(field, place, &at.child("fields"), lines.len());
                             lines.push(labelled(field, &shown));
                         }
@@ -1069,7 +1090,7 @@ impl App {
                             || place.path.child("fields"),
                             |tab| place.path.child("tabs").child(&tab.name).child("fields"),
                         );
-                        for field in fields {
+                        for field in fields.iter().filter(|field| drawn(field)) {
                             self.mark_field_slot(field, place, &at, lines.len());
                             lines.push(labelled(field, &shown));
                         }
@@ -1139,10 +1160,20 @@ impl App {
                     } else {
                         bold()
                     };
+                    // A row without the field that picks its widget says so, as one whose kind
+                    // no widget names does.
+                    let heading = if kind.is_empty() {
+                        format!("no {by}")
+                    } else {
+                        kind.clone()
+                    };
                     lines.push(Line::styled(
-                        format!("── {kind} ({}) ──", display(&row["widget"])),
+                        format!("── {heading} ({}) ──", display(&row["widget"])),
                         style,
                     ));
+                    if !kind.is_empty() && !board.widgets.contains_key(&kind) {
+                        lines.push(Line::styled(format!("No widget for {kind}"), dim()));
+                    }
                     if let Some(node) = board.widgets.get(&kind) {
                         let path = place.path.child("widgets").child(&kind);
                         let inner = Place {
@@ -1362,10 +1393,9 @@ impl App {
         let columns: Vec<Field> = columns_of(collection, all)
             .into_iter()
             .filter(|field| {
-                self.visible(
-                    field.visible.as_ref().map(|expr| expr.0.as_str()),
-                    &place.ctx,
-                )
+                let condition = field.visible.as_ref().map(|expr| expr.0.as_str());
+                // A condition that reads the row is judged for each row (`cell_at`).
+                condition.is_some_and(reads_row) || self.visible(condition, &place.ctx)
             })
             .collect();
         // Filtered and sorted once: the page shown and the footer's row count both read it.
@@ -1392,12 +1422,26 @@ impl App {
             .iter()
             .map(|row| App::labelled_by(&labels, &columns, row))
             .collect();
+        // A cell as row `index` draws it: empty where the column's `visible:` reads the row and
+        // does not hold for it.
+        let cell_at = |field: &Field, index: usize| -> String {
+            let condition = field.visible.as_ref().map(|expr| expr.0.as_str());
+            if let Some(condition) = condition.filter(|condition| reads_row(condition)) {
+                let at_row = Ctx {
+                    row: Some(rows[index]),
+                    ..place.ctx
+                };
+                if !self.visible_for_row(condition, &at_row) {
+                    return String::new();
+                }
+            }
+            cell(field, &shown_rows[index])
+        };
         let natural: Vec<usize> = columns
             .iter()
             .map(|field| {
-                shown_rows
-                    .iter()
-                    .map(|row| cell(field, row).width())
+                (0..shown_rows.len())
+                    .map(|index| cell_at(field, index).width())
                     .chain(std::iter::once(label_of(field).width()))
                     .max()
                     .unwrap_or(0)
@@ -1506,17 +1550,15 @@ impl App {
                     .contains(&self.selection_key(row, Some(reads), place.ctx.section));
             let mark = if selected { "✓ " } else { "  " };
             let text = if cards {
-                let mut parts: Vec<String> = columns
-                    .iter()
-                    .map(|field| cell(field, &shown_rows[index]))
-                    .collect();
+                let mut parts: Vec<String> =
+                    columns.iter().map(|field| cell_at(field, index)).collect();
                 parts.retain(|part| !part.is_empty());
                 parts.join(" · ")
             } else {
                 columns
                     .iter()
                     .zip(&widths)
-                    .map(|(field, width)| pad(&cell(field, &shown_rows[index]), *width))
+                    .map(|(field, width)| pad(&cell_at(field, index), *width))
                     .collect::<Vec<_>>()
                     .join("  ")
             };
@@ -1534,7 +1576,7 @@ impl App {
                 } else {
                     columns
                         .iter()
-                        .map(|field| cell(field, &shown_rows[index]))
+                        .map(|field| cell_at(field, index))
                         .collect::<Vec<_>>()
                         .join("  ")
                 };
@@ -1550,7 +1592,7 @@ impl App {
                 recorded.push((key.clone(), lines.len(), row));
                 let mut x = 2;
                 for (field, (width, start)) in columns.iter().zip(widths.iter().zip(&starts)) {
-                    let shown = cell(field, &shown_rows[index]);
+                    let shown = cell_at(field, index);
                     let (at, cells) = if cards {
                         if shown.is_empty() {
                             continue;
@@ -1582,7 +1624,7 @@ impl App {
             if cards {
                 let shown = columns
                     .iter()
-                    .map(|field| (cell(field, &shown_rows[index]), field))
+                    .map(|field| (cell_at(field, index), field))
                     .filter(|(text, _)| !text.is_empty());
                 for (at, (text, field)) in shown.enumerate() {
                     if at > 0 {
@@ -1596,7 +1638,7 @@ impl App {
                         spans.push(Span::raw("  "));
                     }
                     spans.push(Span::styled(
-                        pad(&cell(field, &shown_rows[index]), *width),
+                        pad(&cell_at(field, index), *width),
                         cell_style(field, &shown_rows[index]),
                     ));
                 }

@@ -23,8 +23,24 @@ shells:
       main: {kind: page_outlet}
 navigation:
   home: items
-  sections: [{name: all, pages: [items, settings, prefs, report]}]
+  sections: [{name: all, pages: [items, settings, prefs, audit, report]}]
 pages:
+  audit:
+    kind: form_page
+    shell: app
+    title: Audit
+    sections:
+      - name: form
+        component: form
+        does: shelf.Save
+        fields:
+          - {field: owner, label: Owner}
+        groups:
+          - name: audit
+            label: Audit
+            save: on_change
+            does: shelf.SaveAudit
+            fields: [{field: audit_on, as: toggle, label: Audit on}]
   settings:
     kind: settings_page
     shell: app
@@ -133,6 +149,10 @@ const ROWS: &str = "pages/items/sections/list/rows";
 
 /// Each test writes its own copy of the document, so no test reads another's half-written file.
 fn document(name: &str) -> PathBuf {
+    document_of(DOCUMENT, name)
+}
+
+fn document_of(text: &str, name: &str) -> PathBuf {
     let dir = Path::new(env!("CARGO_TARGET_TMPDIR"))
         .join("ess-ui-test-journey-controls")
         .join(name);
@@ -142,13 +162,17 @@ fn document(name: &str) -> PathBuf {
     std::fs::create_dir_all(&dir).expect("the scratch dir is made");
     std::fs::write(dir.join("views.yaml"), VIEWS).expect("the fixture is written");
     std::fs::write(dir.join("stock.csv"), CSV).expect("the upload file is written");
-    std::fs::write(dir.join("ui.yaml"), DOCUMENT).expect("the document is written");
+    std::fs::write(dir.join("ui.yaml"), text).expect("the document is written");
     dir.join("ui.yaml")
 }
 
 /// Runs one test of `steps` (one YAML step per entry) from a test file next to the document.
 fn run(name: &str, steps: &[&str]) -> Outcome {
-    let document = document(name);
+    run_document(DOCUMENT, name, steps)
+}
+
+fn run_document(text: &str, name: &str, steps: &[&str]) -> Outcome {
+    let document = document_of(text, name);
     let mut text =
         format!("format: ess-ui-test/1\ndocument: ui.yaml\ntests:\n- name: {name}\n  steps:\n");
     for step in steps {
@@ -190,6 +214,90 @@ fn an_on_change_section_form_sends_each_change() {
             "expect_command: {command: shelf.SetPrefs, input: {nickname: Ada}}",
             "choose: {at: pages/prefs/sections/settings/fields/dark, option: 'true'}",
             "expect_command: {command: shelf.SetPrefs, input: {nickname: Ada, dark: true}}",
+        ],
+    ));
+}
+
+const AUDIT_TOGGLE: &str =
+    "choose: {at: pages/audit/sections/form/groups/audit/fields/audit_on, option: 'true'}";
+
+#[test]
+fn a_group_on_change_sends_each_change_in_the_terminal() {
+    passed(&run(
+        "group_on_change",
+        &[
+            "open: audit",
+            AUDIT_TOGGLE,
+            "expect_command: {command: shelf.SaveAudit, input: {audit_on: true}}",
+        ],
+    ));
+}
+
+#[test]
+fn a_group_on_change_without_does_sends_the_forms_command() {
+    let document = DOCUMENT.replace("            does: shelf.SaveAudit\n", "");
+    assert_ne!(document, DOCUMENT);
+    passed(&run_document(
+        &document,
+        "group_on_change_forms_command",
+        &[
+            "open: audit",
+            AUDIT_TOGGLE,
+            "expect_command: {command: shelf.Save, input: {audit_on: true}}",
+        ],
+    ));
+}
+
+#[test]
+fn act_on_an_on_change_form_is_refused_in_both_renderers() {
+    let steps = [
+        "open: prefs",
+        "choose: {at: pages/prefs/sections/settings/fields/dark, option: 'true'}",
+        "act: pages/prefs/sections/settings",
+    ];
+    let outcome = run("act_on_change", &steps);
+    assert_eq!(outcome.status, Status::Failed, "{outcome:#?}");
+    assert_eq!(outcome.step, Some(3), "{outcome:#?}");
+    // The runner names the step before the reason.
+    let message = outcome.message.unwrap_or_default();
+    let message = message
+        .strip_prefix("act pages/prefs/sections/settings: ")
+        .unwrap_or_else(|| panic!("{message}"))
+        .to_owned();
+    assert!(
+        message.starts_with("pages/prefs/sections/settings:")
+            && message.contains("saves on change")
+            && message.contains("no submit"),
+        "{message}"
+    );
+
+    let document = document("act_on_change_spec");
+    let mut text =
+        "format: ess-ui-test/1\ndocument: ui.yaml\ntests:\n- name: spec\n  steps:\n".to_owned();
+    for step in steps {
+        text.push_str("  - ");
+        text.push_str(step);
+        text.push('\n');
+    }
+    let file = ess_ui_test::parse_str(&text, &document.with_file_name("journey.yaml"))
+        .unwrap_or_else(|error| panic!("{error}"));
+    let loaded = ess_ui::load_path(&document).expect("the document loads");
+    let spec = ess_ui_test::playwright(&[file], &loaded);
+    assert!(!spec.contains("button[type=\"submit\"]"), "{spec}");
+    let fixme = format!(
+        "test.fixme(true, {});",
+        serde_json::to_string(&message).expect("a string")
+    );
+    assert!(spec.contains(&fixme), "{fixme}\n{spec}");
+
+    // A form whose group alone saves on change keeps its submit.
+    passed(&run(
+        "act_group_on_change",
+        &[
+            "open: audit",
+            AUDIT_TOGGLE,
+            "act: pages/audit/sections/form",
+            "expect_command: {command: shelf.Save, input: {audit_on: true}}",
         ],
     ));
 }
@@ -448,4 +556,258 @@ fn the_playwright_spec_drives_each_control() {
     ] {
         assert!(spec.contains(&wanted), "{wanted}\n{spec}");
     }
+}
+
+const ADV_AUDIT_FIELDS: &str =
+    "            fields: [{field: audit_on, as: toggle, label: Audit on}]\n";
+
+/// Adversary: a text and a choice field of a group that saves on change send the group's command
+/// as a toggle does (the `type` path passes the field's name too).
+#[test]
+fn adversary_a_groups_text_and_choice_fields_send_the_groups_command() {
+    let document = DOCUMENT.replace(
+        ADV_AUDIT_FIELDS,
+        "            fields:\n              - {field: audit_on, as: toggle, label: Audit on}\n              - {field: note, label: Note}\n              - {field: level, as: choice, label: Level, choice: {component: choice, options: [low, high]}}\n",
+    );
+    assert_ne!(document, DOCUMENT);
+    passed(&run_document(
+        &document,
+        "adv_group_text_choice",
+        &[
+            "open: audit",
+            "type: {at: pages/audit/sections/form/groups/audit/fields/note, text: Hi}",
+            "expect_command: {command: shelf.SaveAudit, input: {note: Hi}}",
+            "choose: {at: pages/audit/sections/form/groups/audit/fields/level, option: high}",
+            "expect_command: {command: shelf.SaveAudit, input: {note: Hi, level: high}}",
+        ],
+    ));
+}
+
+/// Adversary: in a form that saves on change, a group that saves on change sends its own command
+/// (React's inner layer wins), and a group with a `does` that does not save on change sends the
+/// form's (it only draws a "Save" button of its own).
+#[test]
+fn adversary_groups_inside_an_on_change_form_send_as_react_does() {
+    let document = DOCUMENT.replace(
+        "        fields: [nickname, {field: dark, as: toggle, label: Dark}]\n",
+        "        fields: [nickname, {field: dark, as: toggle, label: Dark}]\n        groups:\n          - {name: own, label: Own, save: on_change, does: shelf.SaveOwn, fields: [{field: own_on, as: toggle, label: Own on}]}\n          - {name: plain, label: Plain, does: shelf.SavePlain, fields: [{field: plain_on, as: toggle, label: Plain on}]}\n",
+    );
+    assert_ne!(document, DOCUMENT);
+    passed(&run_document(
+        &document,
+        "adv_groups_in_on_change_form",
+        &[
+            "open: prefs",
+            "choose: {at: pages/prefs/sections/settings/groups/own/fields/own_on, option: 'true'}",
+            "expect_command: {command: shelf.SaveOwn, input: {own_on: true}}",
+            "choose: {at: pages/prefs/sections/settings/groups/plain/fields/plain_on, option: 'true'}",
+            "expect_command: {command: shelf.SetPrefs, input: {own_on: true, plain_on: true}}",
+        ],
+    ));
+}
+
+/// Adversary: a visible field after a group that starts collapsed (and is closed) is the field a
+/// `choose` step sets. The generated app sets `first`; the terminal must not set `second`.
+#[test]
+fn adversary_a_field_after_a_closed_group_is_the_one_chosen() {
+    let document = DOCUMENT
+        .replace(
+            "            label: Audit\n            save: on_change\n",
+            "            label: Audit\n            collapsed: true\n            save: on_change\n",
+        )
+        .replace(
+            ADV_AUDIT_FIELDS,
+            &format!("{ADV_AUDIT_FIELDS}          - name: extra\n            label: Extra\n            save: on_change\n            does: shelf.SaveExtra\n            fields: [{{field: first, as: toggle, label: First}}, {{field: second, as: toggle, label: Second}}]\n"),
+        );
+    assert!(document.contains("collapsed: true") && document.contains("SaveExtra"));
+    passed(&run_document(
+        &document,
+        "adv_after_closed_group",
+        &[
+            "open: audit",
+            "choose: {at: pages/audit/sections/form/groups/extra/fields/first, option: 'true'}",
+            "expect_command: {command: shelf.SaveExtra, input: {first: true, second: false}}",
+        ],
+    ));
+}
+
+/// A field inside a group that starts collapsed is refused by `type` and `choose` in both
+/// renderers: the generated app hides the group's body and no step opens it.
+#[test]
+fn a_field_inside_a_collapsed_group_is_refused_in_both_renderers() {
+    let document = DOCUMENT.replace(
+        "            label: Audit\n            save: on_change\n",
+        "            label: Audit\n            collapsed: true\n            save: on_change\n",
+    );
+    assert_ne!(document, DOCUMENT);
+    let steps = [
+        "open: audit",
+        "choose: {at: pages/audit/sections/form/groups/audit/fields/audit_on, option: 'true'}",
+    ];
+    let outcome = run_document(&document, "closed_group_choose", &steps);
+    assert_eq!(outcome.status, Status::Failed, "{outcome:#?}");
+    assert_eq!(outcome.step, Some(2), "{outcome:#?}");
+    let message = outcome.message.unwrap_or_default();
+    let (_, reason) = message
+        .split_once(": ")
+        .unwrap_or_else(|| panic!("{message}"));
+    let reason = reason.to_owned();
+    assert!(
+        reason.starts_with("pages/audit/sections/form/groups/audit/fields/audit_on:")
+            && reason.contains("collapsed"),
+        "{reason}"
+    );
+
+    let path = document_of(&document, "closed_group_spec");
+    let mut text =
+        "format: ess-ui-test/1\ndocument: ui.yaml\ntests:\n- name: spec\n  steps:\n".to_owned();
+    for step in steps {
+        text.push_str("  - ");
+        text.push_str(step);
+        text.push('\n');
+    }
+    let file = ess_ui_test::parse_str(&text, &path.with_file_name("journey.yaml"))
+        .unwrap_or_else(|error| panic!("{error}"));
+    let loaded = ess_ui::load_path(&path).expect("the document loads");
+    let spec = ess_ui_test::playwright(&[file], &loaded);
+    let fixme = format!(
+        "test.fixme(true, {});",
+        serde_json::to_string(&reason).expect("a string")
+    );
+    assert!(spec.contains(&fixme), "{fixme}\n{spec}");
+}
+
+const ADV_OVERLAY: &str = r"format: ess-ui/1
+app: probe
+model: probe.system
+placement_profile: fat
+fixtures: {views: {shelf.Items: views.yaml}}
+shells:
+  app:
+    regions:
+      main: {kind: page_outlet}
+      overlay: {kind: overlay_outlet}
+navigation:
+  home: adv
+  sections: [{name: all, pages: [adv]}]
+pages:
+  adv:
+    kind: form_page
+    shell: app
+    title: Adv
+    header: {actions: [{name: more, opens: more, label: More}]}
+    sections:
+      - name: form
+        component: form
+        does: shelf.Save
+        fields: [{field: owner, label: Owner}]
+    overlays:
+      more:
+        kind: drawer
+        component: form
+        title: More
+        does: shelf.SetMore
+        save: on_change
+        fields: [{field: verbose, as: toggle, label: Verbose}]
+        groups:
+          - {name: g, label: G, save: on_change, does: shelf.SaveG, fields: [{field: gt, as: toggle, label: Gt}]}
+";
+
+/// Adversary: an overlay form's group that saves on change sends its command in the terminal, as
+/// the generated form does.
+#[test]
+fn adversary_an_overlay_groups_on_change_sends_its_command() {
+    passed(&run_document(
+        ADV_OVERLAY,
+        "adv_overlay_group",
+        &[
+            "open: adv",
+            "act: pages/adv/header/actions/more",
+            "choose: {at: pages/adv/overlays/more/groups/g/fields/gt, option: 'true'}",
+            "expect_command: {command: shelf.SaveG, input: {gt: true}}",
+            "choose: {at: pages/adv/overlays/more/fields/verbose, option: 'true'}",
+            "expect_command: {command: shelf.SetMore, input: {verbose: true}}",
+        ],
+    ));
+}
+
+/// Adversary: an overlay form that saves on change draws no submit in the generated app either
+/// (the same `FormView`), so `act` on it is refused as on a section's form, not submitted in the
+/// terminal while the spec clicks a primary button that is not there.
+#[test]
+fn adversary_act_on_an_on_change_overlay_form_is_refused() {
+    let steps = [
+        "open: adv",
+        "act: pages/adv/header/actions/more",
+        "choose: {at: pages/adv/overlays/more/fields/verbose, option: 'true'}",
+        "act: pages/adv/overlays/more",
+    ];
+    let outcome = run_document(ADV_OVERLAY, "adv_overlay_act", &steps);
+    assert_eq!(outcome.status, Status::Failed, "{outcome:#?}");
+    assert_eq!(outcome.step, Some(4), "{outcome:#?}");
+    let message = outcome.message.unwrap_or_default();
+    assert!(
+        message.contains("saves on change") && message.contains("no submit"),
+        "{message}"
+    );
+}
+
+/// Adversary 2: the closed-group refusal holds for any field and group name. A field the
+/// document names `groups` (a user's group membership, say) in a collapsed group, and a collapsed
+/// group named `groups`, are refused with the collapsed-group reason in the terminal and marked
+/// `test.fixme` with it in the spec, as any other field of a closed group is.
+#[test]
+fn adversary2_a_closed_group_refuses_a_field_or_group_named_groups() {
+    let collapsed = DOCUMENT.replace(
+        "            label: Audit\n            save: on_change\n",
+        "            label: Audit\n            collapsed: true\n            save: on_change\n",
+    );
+    assert_ne!(collapsed, DOCUMENT);
+    let field_named_groups = collapsed.replace(
+        ADV_AUDIT_FIELDS,
+        "            fields: [{field: groups, as: toggle, label: Groups}]\n",
+    );
+    assert_ne!(field_named_groups, collapsed);
+    let group_named_groups =
+        collapsed.replace("          - name: audit\n", "          - name: groups\n");
+    assert_ne!(group_named_groups, collapsed);
+    let cases = [
+        (
+            "adv2_field_named_groups",
+            field_named_groups,
+            "pages/audit/sections/form/groups/audit/fields/groups",
+        ),
+        (
+            "adv2_group_named_groups",
+            group_named_groups,
+            "pages/audit/sections/form/groups/groups/fields/audit_on",
+        ),
+    ];
+    let mut wrong = Vec::new();
+    for (name, document, at) in cases {
+        let choose = format!("choose: {{at: {at}, option: 'true'}}");
+        let steps = ["open: audit", choose.as_str()];
+        let outcome = run_document(&document, name, &steps);
+        let message = outcome.message.clone().unwrap_or_default();
+        let wanted = format!(": {at}: the group starts collapsed");
+        if outcome.status != Status::Failed || !message.contains(&wanted) {
+            wrong.push(format!("{name}: terminal: {:?} {message}", outcome.status));
+        }
+        let path = document_of(&document, &format!("{name}_spec"));
+        let mut text =
+            "format: ess-ui-test/1\ndocument: ui.yaml\ntests:\n- name: spec\n  steps:\n".to_owned();
+        for step in steps {
+            text.push_str("  - ");
+            text.push_str(step);
+            text.push('\n');
+        }
+        let file = ess_ui_test::parse_str(&text, &path.with_file_name("journey.yaml"))
+            .unwrap_or_else(|error| panic!("{error}"));
+        let loaded = ess_ui::load_path(&path).expect("the document loads");
+        let spec = ess_ui_test::playwright(&[file], &loaded);
+        if !spec.contains("the group starts collapsed") {
+            wrong.push(format!("{name}: spec holds no collapsed-group test.fixme"));
+        }
+    }
+    assert!(wrong.is_empty(), "{}", wrong.join("\n"));
 }

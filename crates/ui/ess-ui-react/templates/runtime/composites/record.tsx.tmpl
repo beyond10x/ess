@@ -6,9 +6,8 @@ import { useState, type ReactNode } from "react";
 //-collapse
 import { useUiPath } from "../core";
 import { ActionControl, type ActionSpec } from "../actions";
-import { ScopeLayer, useData, useScope } from "../core";
+import { ScopeLayer, shownFor, useData, useScope } from "../core";
 import type { ReadSpec } from "../data";
-import { evaluate, truthy } from "../expr";
 import { FieldValue, Tabs, fieldLabel, useLabelled, type FieldSpec, type TabSpec } from "../fields";
 
 //+collapse
@@ -78,7 +77,7 @@ export function RecordView(props: {
   const list = (fields: FieldSpec[]) => (
     <dl className="ui-record-fields">
       {fields
-        .filter((field) => field.visible === undefined || truthy(evaluate(field.visible, scope.values)))
+        .filter((field) => shownFor(field.visible, scope.values, row))
         .map((field) => (
           <div key={field.name}>
             <dt>{fieldLabel(field)}</dt>

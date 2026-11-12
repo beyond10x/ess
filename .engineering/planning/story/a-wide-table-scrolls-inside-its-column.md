@@ -23,7 +23,7 @@ scope:
   path: crates/ui/ess-ui-react/tests/narrow_layout.rs
 - confidence: inferred
   path: website/docs/reference/ess-ui.md
-revision: 10
+revision: 11
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-10T00:42:54Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"review_outcome":1}}}
 - {from: "proposed", to: "active", at: "2026-11-10T00:42:56Z", actor: "human:timo", revision: 10, decided_on: {"recorded":{"review_outcome":1}}}
@@ -85,6 +85,21 @@ from.
 ## Decisions
 
 **Accept, redesigned.** The breakpoint is the renderer's, not a declared key. No new format version.
+
+**Delivered form (2026-11-12).** Acceptance 3 holds with one exception: a page laid out in `areas`
+now emits its areas in section declaration order, with that order also passed as an `order` list.
+So such a page's generated file changes.
+
+The reason is that acceptance 1 and acceptance 3 cannot both hold for an areas page. Acceptance 1
+asks for the order `degrades: {no_columns: stack}` uses, which the schema names
+`section_declaration` and the terminal already follows. The React runtime receives `areas` as a
+map from name to content, so it cannot know the section order; only the generator can pass it.
+
+Acceptance 3 exists for "no key, no format change" (Fit review, item 6). A change to the order of
+entries in a generated file is neither.
+
+The order goes in as a list, not as object key order. `Object.entries` puts integer-like keys
+first, and the name pattern admits an area named `1`. Columns keep their declared order.
 
 ## Source
 

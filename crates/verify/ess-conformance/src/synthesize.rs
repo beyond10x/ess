@@ -489,6 +489,28 @@ pub enum Note {
         /// The entity the command addresses.
         entity: EntityRef,
     },
+    /// A branch whose guard walks a stored collection with a quantifier is witnessed on a row that
+    /// holds one entry in it, because no row and input that hold several could be arranged: no
+    /// input writes the collection, or it is keyed by a `Boolean` and holds two entries at most
+    /// (beyond10x/ess#240, correction 1). A target reading only the first entry, only the last, or
+    /// `forall` for `exists` is not failed by it.
+    UnspreadCollection {
+        /// The branch's scenario.
+        scenario: ScenarioId,
+        /// The quantifier, as the author wrote it.
+        guard: String,
+    },
+    /// A branch whose guard walks a command-input list with a quantifier is sent a list in which
+    /// the element that decides the quantifier is first or last, or repeated on every position,
+    /// because no value the element's type admits was found to put beside it so that the
+    /// quantifier is decided by it alone (beyond10x/ess#240, correction 1). A target reading only
+    /// the first element, only the last, or `forall` for `exists` is not failed by it.
+    UnspreadInputList {
+        /// The branch's scenario.
+        scenario: ScenarioId,
+        /// The quantifier, as the author wrote it.
+        guard: String,
+    },
 }
 
 impl fmt::Display for Note {
@@ -640,6 +662,22 @@ impl fmt::Display for Note {
                 "`{scenario}` answers an identity no record carries without effect, and no \
                  immediate view of `{entity}` publishes its identity, so nothing shows that the \
                  target stored no row for it"
+            ),
+            Self::UnspreadCollection { scenario, guard } => write!(
+                f,
+                "`{scenario}` is witnessed on a one-entry row: `{guard}` walks a stored collection, \
+                 and no row and input holding several entries could be arranged (no input writes \
+                 the collection, or it is keyed by a `Boolean` and holds two entries at most), so \
+                 the scenario falls back to a one-entry row and a target reading only the first \
+                 entry, only the last, or `forall` for `exists` is not failed by it"
+            ),
+            Self::UnspreadInputList { scenario, guard } => write!(
+                f,
+                "`{scenario}` sends the list `{guard}` walks without spreading it: no values the \
+                 list's element type admits were found that, beside the deciding element, leave \
+                 the quantifier decided by that element alone, so the list is sent with it first, \
+                 last or on every position, and a target reading only the first element, only the \
+                 last, or `forall` for `exists` is not failed by it"
             ),
         }
     }
@@ -3457,7 +3495,9 @@ fn synthesize_in(ir: &EssIr, seeds: &AdmittedSeeds) -> Synthesis {
     let suite = &synthesis.suite;
     synthesis.notes.retain(|note| match note {
         Note::UnseparatedSources { scenario, .. }
-        | Note::UnaccompaniedRelatedCopy { scenario, .. } => suite.scenario(scenario).is_some(),
+        | Note::UnaccompaniedRelatedCopy { scenario, .. }
+        | Note::UnspreadCollection { scenario, .. }
+        | Note::UnspreadInputList { scenario, .. } => suite.scenario(scenario).is_some(),
         _ => true,
     });
     // Read off the finished suite, so every path that builds a branch's scenario is held to it.
@@ -3538,7 +3578,9 @@ fn about_scenario(note: &Note, id: &ScenarioId) -> bool {
         | Note::CrossCallerUnwitnessed { scenario, .. }
         | Note::UnaccompaniedRelatedCopy { scenario, .. }
         | Note::ProvidedRelatedRow { scenario, .. }
-        | Note::UnobservedNoOp { scenario, .. } => scenario == id,
+        | Note::UnobservedNoOp { scenario, .. }
+        | Note::UnspreadCollection { scenario, .. }
+        | Note::UnspreadInputList { scenario, .. } => scenario == id,
         _ => false,
     }
 }
@@ -3649,6 +3691,22 @@ fn synthesize_invocations(models: &caller::InvocationModels<'_>, focus: Focus<'_
                     scenario: id.clone(),
                     fields,
                 });
+            }
+            if subject_fact::routes(command, outcome) {
+                for guard in subject_fact::unspread(ir, command, outcome, &actors) {
+                    unseparated_notes.push(Note::UnspreadCollection {
+                        scenario: id.clone(),
+                        guard,
+                    });
+                }
+            }
+            if related_guard::routes(command, outcome) {
+                for guard in related_guard::unspread(ir, command, outcome, &actors) {
+                    unseparated_notes.push(Note::UnspreadCollection {
+                        scenario: id.clone(),
+                        guard,
+                    });
+                }
             }
             insert(&mut suite, id, scenario, &mut refusals);
         }
@@ -4091,6 +4149,21 @@ fn outcome_scenario_noting(
             scenario: id.clone(),
             unobserved: run.unobserved.iter().cloned().collect(),
         });
+    }
+    // A quantifier over an input list that the list sent does not decide apart from its deciding
+    // element says so (beyond10x/ess#240, correction 1).
+    if let Some(guard) = own_input_guard(outcome) {
+        let literals: BTreeMap<String, Node> = run
+            .input
+            .iter()
+            .filter_map(|(field, value)| Some((field.clone(), value.as_literal()?.clone())))
+            .collect();
+        for guard in crate::witness::unspread_lists(models.arrangement, command, guard, &literals) {
+            notes.push(Note::UnspreadInputList {
+                scenario: id.clone(),
+                guard,
+            });
+        }
     }
     // A row-set branch is witnessed on the rows its own arrangement selects (ess/22,
     // beyond10x/ess#228, #299): no further witness sends it without them. A refusal over a row the
@@ -5497,7 +5570,7 @@ fn arranged(
         && row_set::uses(command)
         && !row_set::routes(ir.format(), command, outcome)
     {
-        return Ok((addressed_row(ir, command, actors, setup), input));
+        return Ok((addressed_row(ir, command, actors, setup, &input)?, input));
     }
     let (setup, input) = if outcome.subject.is_some() {
         beside_addressed_row(ir, command, outcome, actors, &input, setup)?
@@ -5517,7 +5590,7 @@ fn arranged(
     // A complete input-guarded or related-row refusal (ess/34) is sent for a row that exists, which
     // [`external_read_back`] reads back unchanged.
     if guarded_complete(outcome) && !has_subject_guards(command) {
-        return Ok((addressed_row(ir, command, actors, setup), input));
+        return Ok((addressed_row(ir, command, actors, setup, &input)?, input));
     }
     Ok((setup, input))
 }
@@ -5554,7 +5627,7 @@ fn unclaimed_external(
     }
     if !has_subject_guards(command) {
         if outcome.complete_refusal && outcome.subject.is_none() {
-            return Ok((addressed_row(ir, command, actors, setup), input));
+            return Ok((addressed_row(ir, command, actors, setup, &input)?, input));
         }
         return Ok((setup, input));
     }
@@ -5891,15 +5964,35 @@ pub(super) fn guarded_complete(outcome: &ResolvedOutcome) -> bool {
 /// branch is forced on a row that exists. The row rests in the lifecycle's initial state where
 /// that is reachable, else in the first declared state that is. Where no row can be arranged, or
 /// the input already names one, `setup` is kept as it was and the scenario observes no row.
+///
+/// The row is sent through the input field in place of the literal `input` chose there, so a
+/// `when:` on that identity is decided on the row sent
+/// (story:identity-guard-decided-on-the-row-sent-on-every-synthesis-path): where the plain row does
+/// not keep the branch `input` was chosen for it is created under an identity that does
+/// ([`identity_steered`]), and where a row can be arranged and none such meets the guard the
+/// scenario is refused naming it (`ESS-SYNTH-003`), never written for a target to fail.
 fn addressed_row(
     ir: &EssIr,
     command: &ResolvedCommand,
     actors: &BTreeMap<QualifiedName, ActorRef>,
     setup: Setup,
-) -> Setup {
-    match addressed_held(ir, command, actors, &setup, (Distinction::PLAIN, None)) {
-        Some(Ok(arranged)) => joined(arranged, setup),
-        Some(Err(_)) | None => setup,
+    input: &BTreeMap<String, Node>,
+) -> Result<Setup, RefusalCause> {
+    match addressed_held(
+        ir,
+        command,
+        actors,
+        &setup,
+        (Distinction::PLAIN, Some(input)),
+    ) {
+        Some(Ok(arranged)) => Ok(joined(arranged, setup)),
+        Some(Err(cause)) => {
+            match addressed_held(ir, command, actors, &setup, (Distinction::PLAIN, None)) {
+                Some(Ok(_)) => Err(cause),
+                Some(Err(_)) | None => Ok(setup),
+            }
+        }
+        None => Ok(setup),
     }
 }
 
@@ -6776,6 +6869,43 @@ fn is_state_refusal(command: &ResolvedCommand, outcome: &ResolvedOutcome) -> boo
         && outcome.replays.is_none()
 }
 
+/// `arranged`, the row of `subject` resting in `state`, kept where it is sent through the input
+/// field that addresses it in place of the literal `input` chose there and every input guard is
+/// decided as `input` decides it ([`sent_keeps_branch`]), else created again under an identity
+/// that does ([`identity_steered`]), refused naming the guards where none is found
+/// (story:identity-guard-decided-on-the-row-sent-on-every-synthesis-path).
+fn identity_kept(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    (subject, state): (&ResolvedSubject, &StateName),
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    (distinction, input): (Distinction, &BTreeMap<String, Node>),
+    arranged: Arrangement,
+) -> Result<Arrangement, RefusalCause> {
+    let ResolvedInstance::Supplied { field } = &subject.instance else {
+        return Ok(arranged);
+    };
+    if sent_keeps_branch(
+        ir,
+        command,
+        input,
+        &field.name,
+        &arranged.steps,
+        &arranged.instance,
+    ) {
+        return Ok(arranged);
+    }
+    identity_steered(
+        ir,
+        command,
+        (&subject.entity, &field.name),
+        std::slice::from_ref(state),
+        actors,
+        (distinction, input),
+    )
+}
+
+#[allow(clippy::too_many_lines)]
 fn run_state_refusal(
     ir: &EssIr,
     command: &ResolvedCommand,
@@ -6818,6 +6948,14 @@ fn run_state_refusal(
         arranged = row;
         chosen
     } else {
+        arranged = identity_kept(
+            ir,
+            command,
+            (subject, state),
+            actors,
+            (distinction, &input),
+            arranged,
+        )?;
         input
     };
     let input = supply(
@@ -9402,7 +9540,18 @@ fn prepare_state_input(
             continue;
         }
         match reach_in_state(ir, command, outcome, &state, Distinction::PLAIN).and_then(|input| {
-            let mut setup = prepare(ir, outcome, actors, Some(&state))?;
+            let setup = prepare(ir, outcome, actors, Some(&state))?;
+            // The row is sent through its identity input in place of the literal chosen there,
+            // so a guard on that input is decided on the row held in `state`
+            // (story:identity-guard-decided-on-the-row-sent-on-every-synthesis-path).
+            let mut setup = identity_sent(
+                ir,
+                command,
+                outcome,
+                actors,
+                setup,
+                (Distinction::PLAIN, &input),
+            )?;
             let instance = setup
                 .instance
                 .as_ref()
@@ -17637,6 +17786,18 @@ fn equal_input_pairs(command: &ResolvedCommand) -> Vec<(&str, &str)> {
         walk(guard, &mut found);
     }
     found
+}
+
+/// The part of `outcome`'s own guard that reads the command's input: its `when:`, an external
+/// branch's input guard, and the input half of a stored-row or related-row guard.
+fn own_input_guard(outcome: &ResolvedOutcome) -> Option<&Predicate> {
+    match &outcome.condition {
+        ResolvedCondition::ExternalWhen { predicate, .. } => Some(predicate),
+        ResolvedCondition::SubjectPredicate { input, .. }
+        | ResolvedCondition::ExternalSubject { input, .. }
+        | ResolvedCondition::Related { input, .. } => input.as_ref(),
+        _ => when(outcome),
+    }
 }
 
 /// Every guard that reads a command's input: each branch's `when:`, an external branch's input

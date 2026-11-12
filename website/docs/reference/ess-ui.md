@@ -889,7 +889,7 @@ Declare what the user sees while loading, when there is nothing, when the read f
 |---|---|---|---|---|
 | `loading` | one of: `skeleton` \| `spinner` \| `none` |   | `skeleton` | first load |
 | `refreshing` | one of: `keep_rows` \| `skeleton` |   | `keep_rows` | later loads |
-| `empty` | record \{ `title`: optional `string`, `message`: `string`, `action`: optional [Action](#action) \} |   |   | ready with no rows; `title` is a heading above the message |
+| `empty` | record \{ `title`: optional `string`, `message`: `string`, `action`: optional [Action](#action) \} |   |   | ready with no rows, or a read that has not started because its section `depends_on` a selection not made yet (absent, that section says `Nothing to show yet`); `title` is a heading above the message |
 | `failed` | record \{ `message`: optional `string`, `retry`: `boolean` \} |   | `{retry: true}` | read refused or transport error |
 | `forbidden` | record \{ `message`: optional `string` \} |   |   | actor lacks the grant |
 | `stale` | record \{ `mark`: (one of: `badge` \| `dim` \| `both`) \} |   | `{mark: badge}` | live channel down |
@@ -1258,7 +1258,7 @@ degrades: {no_charts: table}
 
 A user-arranged grid of widgets, persisted.
 
-A board reads a dashboard record; each row places a widget whose kind is chosen by `widget_by`. A renderer without free layout stacks them in layout order.
+A board reads a dashboard record; each row places a widget whose kind is chosen by `widget_by`. A renderer without free layout stacks them in layout order. A row without that field draws a placeholder naming the field (`no kind`), and one whose kind no `widgets` entry names draws a placeholder naming the kind; `ess ui check` warns `board_widget_kinds` for a fixture row of either.
 
 **Properties**
 
@@ -1475,7 +1475,7 @@ Columns and form inputs are fields. `as` is a semantic widget, not a component; 
 | `scale` | one of: `fraction` \| `hundredths` |   | `fraction` | what an `as: percent` value is a share of, and only on such a field: `fraction` reads 0.5 as 50%, `hundredths` reads 50 as 50% |
 | `choice` | [Node](#node) |   |   | the choice composite for `as: choice` |
 | `sortable` | `boolean` |   | `false` | column can sort |
-| `visible` | `expr` |   |   | shows the field only when true |
+| `visible` | `expr` |   |   | shows the field only when true. A condition that reads `row.<path>` is judged for each row: a column keeps its header and draws an empty cell where it is false, and a card or a record leaves the field out; any other condition shows or hides the whole column |
 | `binds` | `expr` |   |   | bind to UI state instead of the command input |
 | `label_from` | record \{ `view`: name of an ESS `view`, `field`: `name`, `key`: optional `name` \} |   |   | show a field of a related view instead of the value: the row of `view` whose `key` (default `id`) equals the value; the view is read once, without params |
 | `labels` | one of: map of `string` → `string` \| `name` |   |   | the text shown for a value: a map written out, or the name of an entry of `label_maps` |
@@ -2808,6 +2808,7 @@ What a validator checks in a document, and the construct each check applies to. 
 | `checked_unreadable` | [Action](#action) | `**.checked on an as toggle action` | `{must: [parse_as_a_filter_predicate, read_only_row_params_state_shell_args]}` | warning |
 | `host_slots` | [HostSlot](#hostslot) | `**.host` | `{must: [carry_a_non_empty_reason, name_what_it_stands_in_for, be_the_only_slot_of_its_host_name, carry_neither_component_nor_primitive]}` | error |
 | `hosts_registered` | every node | `**.host, for every name ess ui check --hosts lists` | `{must_resolve_in: ["**.host"]}` | error |
+| `board_widget_kinds` | every node | `**.board.reads fixture rows` | `{must: have_a_widget_by_field_that_names_an_entry_of_widgets}` | warning |
 
 ## Retrofits and lowering
 

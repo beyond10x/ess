@@ -317,10 +317,27 @@ fn a_narrowed_branch_beside_a_sibling_reading_the_row_is_witnessed_on_its_guard(
     assert!(!failing(&statuses).is_empty(), "{statuses:#?}");
 }
 
+/// The guard is an `exists` over the input list: the one element the stored list holds is neither
+/// first nor last of three, so a target reading only the first or only the last element fails.
 #[test]
 fn a_narrowed_branch_with_no_own_guard_is_witnessed_on_its_guard() {
     let (_, suite) = witnessed("List<String>", NO_OWN_WHEN);
-    every_missing_is_required(&suite);
+    let (created, decided) = inputs(&suite);
+    let requires = list(created.get("requires"));
+    let missing = list(decided.get("missing"));
+    let matching: Vec<usize> = missing
+        .iter()
+        .enumerate()
+        .filter(|(_, element)| requires.contains(element))
+        .map(|(at, _)| at)
+        .collect();
+    assert!(
+        missing.len() >= 3
+            && matching.len() == 1
+            && matching[0] != 0
+            && matching[0] != missing.len() - 1,
+        "{requires:?} {missing:?}"
+    );
 }
 
 #[test]
