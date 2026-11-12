@@ -255,7 +255,12 @@ fn uses(body: &Body, profile: &RendererProfile) -> Vec<&'static str> {
             };
             used.extend(media(fields));
         }
-        Composite::Record(record) => used.extend(media(&record.fields)),
+        Composite::Record(record) => {
+            used.extend(media(&record.fields));
+            for group in &record.groups {
+                used.extend(media(&group.fields));
+            }
+        }
         _ => {}
     }
     used

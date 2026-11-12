@@ -387,6 +387,124 @@ fn layout_complete() {
     assert!(finding.message.contains("summary"), "{finding:?}");
 }
 
+/// A page `p` of three sections, `a`, `b` and `c`, with `layout` written as given.
+fn framed_page(layout: &str) -> String {
+    page(&format!(
+        "{{kind: detail_page, title: P, layout: {layout}, sections: [\
+         {{name: a, title: A, component: record, reads: t.ById}}, {{name: b, title: B, component: record, reads: t.ById}}, \
+         {{name: c, title: C, component: record, reads: t.ById}}]}}"
+    ))
+}
+
+#[test]
+fn a_shared_frame_and_a_collapsed_group_or_section_are_accepted() {
+    let accepted = [
+        framed_page("{columns: [{name: main, frame: shared, title: Customer, sections: [a, b]}, {name: side, sections: [c]}]}"),
+        framed_page("{columns: [{name: main, frame: shared, sections: [a, b, c]}]}"),
+        framed_page("{columns: [{name: main, frame: shared, title: Customer, collapsed: true, sections: [a, b, c]}]}"),
+        framed_page("{columns: [{name: main, frame: each, sections: [a, b, c]}]}"),
+        framed_page("{areas: {grid: [[x, y]], place: {x: {sections: [a, b], frame: shared, title: Customer}, y: [c]}}}"),
+        framed_page("{areas: {grid: [[x]], place: {x: {sections: [a, b, c], frame: shared, title: T, collapsed: true}}}}"),
+        page(
+            "{kind: detail_page, title: P, sections: [{name: a, title: A, collapsed: true, \
+             component: record, reads: t.ById}, {name: g, component: record, reads: t.ById, groups: [\
+             {name: contact, label: Contact, fields: [email]}, \
+             {name: audit, label: Audit, collapsed: true, fields: [created_at]}]}]}",
+        ),
+        page(
+            "{kind: detail_page, title: P, sections: [{name: f, component: form, does: t.Save, \
+             groups: [{name: adv, label: Advanced, collapsed: true, fields: [x]}]}]}",
+        ),
+    ];
+    for text in accepted {
+        let report = report(&text);
+        assert!(errors(&report).is_empty(), "{text}\n{:#?}", report.findings);
+    }
+}
+
+#[test]
+fn frame_rules() {
+    // A frame value other than `each` or `shared`: `enum_values`, at the column or the area.
+    let text = framed_page("{columns: [{name: main, frame: loud, sections: [a, b, c]}]}");
+    let finding = trips(&text, "enum_values", "pages/p/layout/columns/main");
+    assert!(finding.message.contains("loud"), "{finding:?}");
+    let text =
+        framed_page("{areas: {grid: [[x]], place: {x: {sections: [a, b, c], frame: loud}}}}");
+    trips(&text, "enum_values", "pages/p/layout/areas/place/x");
+
+    // `title` or `collapsed` beside `frame: each` (written or the default).
+    for beside in [
+        "frame: each, title: T",
+        "title: T",
+        "frame: each, collapsed: true",
+        "collapsed: true",
+    ] {
+        let text = framed_page(&format!(
+            "{{columns: [{{name: main, {beside}, sections: [a, b, c]}}]}}"
+        ));
+        let finding = trips(&text, "frame_rules", "pages/p/layout/columns/main");
+        assert!(finding.message.contains("each"), "{beside}: {finding:?}");
+    }
+    let text = framed_page("{areas: {grid: [[x]], place: {x: {sections: [a, b, c], title: T}}}}");
+    trips(&text, "frame_rules", "pages/p/layout/areas/place/x");
+
+    // `collapsed` without `title`.
+    let text = framed_page(
+        "{columns: [{name: main, frame: shared, collapsed: true, sections: [a, b, c]}]}",
+    );
+    let finding = trips(&text, "frame_rules", "pages/p/layout/columns/main");
+    assert!(finding.message.contains("title"), "{finding:?}");
+    let text = framed_page(
+        "{areas: {grid: [[x]], place: {x: {sections: [a, b, c], frame: shared, collapsed: true}}}}",
+    );
+    trips(&text, "frame_rules", "pages/p/layout/areas/place/x");
+    let text = page(
+        "{kind: detail_page, title: P, sections: [{name: a, collapsed: true, component: record, reads: t.ById}]}",
+    );
+    let finding = trips(&text, "frame_rules", "pages/p/sections/a");
+    assert!(finding.message.contains("title"), "{finding:?}");
+
+    // A shared frame whose sections are not consecutive in the page's section order: the first
+    // section out of order is named.
+    let text = framed_page(
+        "{columns: [{name: main, frame: shared, sections: [a, c]}, {name: side, sections: [b]}]}",
+    );
+    let finding = trips(&text, "frame_rules", "pages/p/layout/columns/main");
+    assert!(
+        finding.message.starts_with("section `c` does not follow"),
+        "{finding:?}"
+    );
+    let text = framed_page(
+        "{areas: {grid: [[x, y]], place: {x: {sections: [c, a], frame: shared}, y: [b]}}}",
+    );
+    let finding = trips(&text, "frame_rules", "pages/p/layout/areas/place/x");
+    assert!(
+        finding.message.starts_with("section `a` does not follow"),
+        "{finding:?}"
+    );
+    // Consecutive, in any order of the list, is fine; an unshared column may skip.
+    let text = framed_page(
+        "{columns: [{name: main, sections: [a, c]}, {name: side, frame: shared, sections: [b]}]}",
+    );
+    assert_eq!(tripped(&report(&text), "frame_rules").len(), 0);
+}
+
+#[test]
+fn a_record_group_takes_no_save_key() {
+    for key in ["save: with_form", "does: t.Save"] {
+        let text = page(&format!(
+            "{{kind: detail_page, title: P, sections: [{{name: g, component: record, \
+             reads: t.ById, groups: [{{name: contact, label: Contact, {key}, fields: [email]}}]}}]}}"
+        ));
+        let finding = trips(&text, "document_loads", "pages/p/sections/g/groups/contact");
+        let word = key.split(':').next().unwrap();
+        assert!(
+            finding.message.contains(&format!("`{word}`")),
+            "{finding:?}"
+        );
+    }
+}
+
 #[test]
 fn widget_expands() {
     let widgets = (

@@ -208,7 +208,10 @@ fn constructs_used(document: &Document) -> BTreeSet<String> {
                 }
             }
             NodeRef::NavSection(_) => mark("NavSection"),
-            NodeRef::PageKind(_) | NodeRef::LayoutColumn(_) => {}
+            NodeRef::PageKind(_)
+            | NodeRef::LayoutColumn(_)
+            | NodeRef::RecordGroup(_)
+            | NodeRef::LayoutArea(_) => {}
             NodeRef::Widget(_) => mark("Widget"),
             NodeRef::Channel(_) => mark("Channel"),
             NodeRef::Page(page) => {

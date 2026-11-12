@@ -440,14 +440,21 @@ constructs:
       `stack` shows sections one below the other in declaration order. `columns` splits the page
       into named columns, each listing its sections. `areas` names grid cells row by row and
       places sections into areas; an area spanning several cells repeats its name. Renderers
-      without columns or areas fall back to a stack in section declaration order.
+      without columns or areas fall back to a stack in section declaration order. A column or an
+      area draws its sections each in a frame of its own (`frame: each`, the default) or all in
+      one frame under one heading (`frame: shared`); each section still loads, fails and empties
+      on its own. An area's place entry is the list of its sections, which means `frame: each`,
+      or a record `{sections, frame, title, collapsed}`. `title` is the heading of a shared frame
+      and `collapsed: true` starts it closed, so `collapsed` needs a `title`; neither is written
+      beside `frame: each`. The sections of a shared frame are consecutive in the page's section
+      order, so a renderer that stacks sections draws one block.
     shorthand:
       - {accepts: absent, expands_to: stack}
     fields:
       stack:   {type: {const: stack}, note: sections top to bottom in declaration order}
-      columns: {type: {list: {record: {name: name, sections: {list: {ref: section}}, width: {optional: {enum: [narrow, normal, wide]}}}}}, note: named columns left to right}
-      areas:   {type: {record: {grid: {list: {list: name}}, place: {map: {key: name, value: {list: {ref: section}}}}}}, note: grid of area names and the sections placed in each}
-    form: {one_of: [{const: stack}, {record: {columns: {list: {record: {name: name, sections: {list: {ref: section}}, width: {optional: {enum: [narrow, normal, wide]}}}}}}}, {record: {areas: {record: {grid: {list: {list: name}}, place: {map: {key: name, value: {list: {ref: section}}}}}}}}]}
+      columns: {type: {list: {record: {name: name, sections: {list: {ref: section}}, width: {optional: {enum: [narrow, normal, wide]}}, frame: {optional: {enum: [each, shared]}}, title: {optional: string}, collapsed: {optional: boolean}}}}, note: "named columns left to right; `frame: shared` draws a column's sections in one frame under `title`, which `collapsed` starts closed"}
+      areas:   {type: {record: {grid: {list: {list: name}}, place: {map: {key: name, value: {one_of: [{list: {ref: section}}, {record: {sections: {list: {ref: section}}, frame: {optional: {enum: [each, shared]}}, title: {optional: string}, collapsed: {optional: boolean}}}]}}}}}, note: "grid of area names and the sections placed in each: a list of sections, or a record that frames them"}
+    form: {one_of: [{const: stack}, {record: {columns: {list: {record: {name: name, sections: {list: {ref: section}}, width: {optional: {enum: [narrow, normal, wide]}}, frame: {optional: {enum: [each, shared]}}, title: {optional: string}, collapsed: {optional: boolean}}}}}}, {record: {areas: {record: {grid: {list: {list: name}}, place: {map: {key: name, value: {one_of: [{list: {ref: section}}, {record: {sections: {list: {ref: section}}, frame: {optional: {enum: [each, shared]}}, title: {optional: string}, collapsed: {optional: boolean}}}]}}}}}}}]}
     default: stack
     degrades: {no_columns: stack, no_areas: stack}
     example:
@@ -537,6 +544,7 @@ constructs:
       name:       {type: name, required: true, note: node name among the page's sections}
       component:  {type: {one_of: [{ref: composite_kind}, {ref: widget}]}, required: true, note: what the section renders}
       title:      {type: string, note: "heading shown above the section; absent, none"}
+      collapsed:  {type: boolean, default: false, note: "starts the section closed under its `title`, which a reader clicks to open; needs a `title`, since there is nothing else to click. A collapsed section with `load: on_visible` starts its read when opened"}
       reads:      {type: Reads, note: "the section's data; one per section; it is the composite's own `reads`"}
       live:       {type: Live, note: how channel events change the rows}
       load:       {type: {enum: [eager, on_visible, on_demand]}, default: eager, note: when the read starts}
@@ -627,6 +635,7 @@ constructs:
     fields:
       reads:   {type: Reads, note: the row}
       fields:  {type: {list: Field}, note: fields to show}
+      groups:  {type: {list: {record: {name: name, label: {optional: string}, collapsed: {optional: boolean}, fields: {list: Field}}}}, note: "fields shown under headings, in order, after `fields`: each group has a `name`, a `label` and `fields`, and `collapsed: true` starts it closed under its label; a group is read-only, so it takes no `save`, `does` or `actions`, and a key it does not declare is refused at the group's path"}
       tabs:    {type: {list: Tab}, note: fields split into tabs}
       item:    {type: {list: Node}, note: "nested named nodes such as metrics or widgets, in order"}
       actions: {type: {list: Action}, note: actions on the record}
@@ -986,6 +995,7 @@ constructs:
     fields:
       name:     {type: name, required: true, note: node name}
       label:    {type: string, note: group heading}
+      collapsed: {type: boolean, default: false, note: "starts the group closed under its `label`; a collapsed group's fields are still sent with the form"}
       fields:   {type: {list: Field}, required: true, note: fields in the group}
       save:     {type: {enum: [with_form, on_change]}, default: with_form, note: when the group saves}
       does:     {type: {ref: command}, note: command for this group if not the form's}

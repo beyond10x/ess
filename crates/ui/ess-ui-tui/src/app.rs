@@ -318,6 +318,17 @@ pub(crate) struct Ui {
     pub refusal: Option<Refused>,
 }
 
+/// A layout column or an area that draws its sections in one frame.
+#[derive(Debug, Clone)]
+pub(crate) struct SharedFrame {
+    /// `pages/<page>/layout/columns/<column>` or `…/areas/place/<area>`.
+    pub path: NodePath,
+    pub title: Option<String>,
+    /// The frame starts closed, and a fold key opens it.
+    pub collapsed: bool,
+    pub sections: Vec<String>,
+}
+
 /// An open overlay.
 #[derive(Debug, Clone)]
 pub(crate) struct OpenOverlay {
@@ -420,6 +431,9 @@ pub struct App {
     pub(crate) overlay: Option<OpenOverlay>,
     pub(crate) prompt: Option<Prompt>,
     pending_g: bool,
+    /// The collapsible parts (a shared frame, a section, a group) the fold keys flipped, by path:
+    /// each is open when it does not start collapsed, or when it does and was flipped.
+    flipped: BTreeSet<String>,
     pub(crate) notifications: Vec<String>,
     cache: BTreeMap<String, CacheEntry>,
     pub(crate) channels: BTreeMap<String, ChannelState>,
@@ -538,6 +552,7 @@ impl App {
             overlay: None,
             prompt: None,
             pending_g: false,
+            flipped: BTreeSet::new(),
             notifications: Vec::new(),
             cache: BTreeMap::new(),
             channels: BTreeMap::new(),
@@ -781,6 +796,145 @@ impl App {
 
     pub(crate) fn section_path(&self, name: &str) -> NodePath {
         self.page_path().child("sections").child(name)
+    }
+
+    /// Whether a part that may start closed is open: it starts as `collapsed` says, and each
+    /// fold key flips it.
+    pub(crate) fn is_open(&self, path: &NodePath, collapsed: bool) -> bool {
+        !collapsed ^ self.flipped.contains(&path.to_string())
+    }
+
+    /// The shared frames of the page's layout, each with its path, heading and sections.
+    pub(crate) fn shared_frames(&self) -> Vec<SharedFrame> {
+        let at = self.page_path().child("layout");
+        match &self.page_def().layout {
+            ess_ui::PageLayout::Stack(_) => Vec::new(),
+            ess_ui::PageLayout::Columns(layout) => layout
+                .columns
+                .iter()
+                .filter(|column| column.is_shared())
+                .map(|column| SharedFrame {
+                    path: at.child("columns").child(&column.name),
+                    title: column.title.clone(),
+                    collapsed: column.collapsed == Some(true),
+                    sections: column.sections.clone(),
+                })
+                .collect(),
+            ess_ui::PageLayout::Areas(layout) => layout
+                .areas
+                .place
+                .iter()
+                .filter_map(|(area, place)| {
+                    let framed = place.framed().filter(|framed| framed.is_shared())?;
+                    Some(SharedFrame {
+                        path: at.child("areas").child("place").child(area),
+                        title: framed.title.clone(),
+                        collapsed: framed.collapsed == Some(true),
+                        sections: framed.sections.clone(),
+                    })
+                })
+                .collect(),
+        }
+    }
+
+    /// The groups of a record or form section that start collapsed, with their paths.
+    fn collapsible_groups(&self, section: &Section) -> Vec<NodePath> {
+        let at = self.section_path(&section.name).child("groups");
+        let named: Vec<(&String, Option<bool>)> = match &section.body {
+            Body::Composite(Composite::Record(record)) => record
+                .groups
+                .iter()
+                .map(|group| (&group.name, group.collapsed))
+                .collect(),
+            Body::Composite(Composite::Form(form)) => form
+                .groups
+                .iter()
+                .map(|group| (&group.name, group.collapsed))
+                .collect(),
+            _ => Vec::new(),
+        };
+        named
+            .into_iter()
+            .filter(|(_, collapsed)| *collapsed == Some(true))
+            .map(|(name, _)| at.child(name))
+            .collect()
+    }
+
+    fn flip(&mut self, path: &NodePath) {
+        let key = path.to_string();
+        if !self.flipped.remove(&key) {
+            self.flipped.insert(key);
+        }
+    }
+
+    /// `z` opens the focused section's closed frame, then its closed section, and closes the
+    /// outermost of them once both are open; where it has neither it folds the groups, as `Z`
+    /// always does: the first closed group opens, and when none is closed they all close.
+    /// Returns whether the key meant anything here.
+    fn fold(&mut self, groups_only: bool) -> bool {
+        let Focus::Section(index) = self.focus else {
+            return false;
+        };
+        let Some(section) = self.page_def().sections.get(index).cloned() else {
+            return false;
+        };
+        let mut parts = Vec::new();
+        if !groups_only {
+            if let Some(frame) = self
+                .shared_frames()
+                .into_iter()
+                .find(|frame| frame.collapsed && frame.sections.contains(&section.name))
+            {
+                parts.push(frame.path);
+            }
+            if section.collapsed == Some(true) {
+                parts.push(self.section_path(&section.name));
+            }
+        }
+        if !parts.is_empty() {
+            let closed = parts.iter().find(|path| !self.is_open(path, true)).cloned();
+            self.flip(&closed.unwrap_or_else(|| parts[0].clone()));
+            return true;
+        }
+        let groups = self.collapsible_groups(&section);
+        if groups.is_empty() {
+            return false;
+        }
+        if let Some(closed) = groups
+            .iter()
+            .find(|path| !self.is_open(path, true))
+            .cloned()
+        {
+            self.flip(&closed);
+        } else {
+            for path in &groups {
+                self.flip(path);
+            }
+        }
+        true
+    }
+
+    /// The fields of a form on its current tab that are drawn and walked: those of a collapsed
+    /// group that is closed are neither (they are still sent with the form).
+    pub(crate) fn shown_form_fields<'f>(
+        &self,
+        form: &'f Form,
+        tab: usize,
+        at: &NodePath,
+    ) -> Vec<&'f Field> {
+        let mut fields: Vec<&Field> = form.fields.iter().collect();
+        for group in &form.groups {
+            let collapsed = group.collapsed == Some(true);
+            if self.is_open(&at.child("groups").child(&group.name), collapsed) {
+                fields.extend(group.fields.iter());
+            }
+        }
+        if let Some(TabFields::Fields(tab_fields)) =
+            form.tabs.get(tab).and_then(|tab| tab.fields.as_ref())
+        {
+            fields.extend(tab_fields.iter());
+        }
+        fields
     }
 
     fn section_by_name(&self, name: &str) -> Option<&Section> {
@@ -1567,6 +1721,9 @@ impl App {
             },
             Composite::Record(record) => {
                 Self::label_reads(&record.fields, out);
+                for group in &record.groups {
+                    Self::label_reads(&group.fields, out);
+                }
                 for tab in &record.tabs {
                     if let Some(TabFields::Fields(fields)) = &tab.fields {
                         Self::label_reads(fields, out);
@@ -2625,6 +2782,8 @@ impl App {
             KeyCode::Char('q') => self.quit = true,
             KeyCode::Backspace => self.back(),
             KeyCode::Char('R') => self.reload_focused(),
+            KeyCode::Char('z') if self.fold(false) => {}
+            KeyCode::Char('Z') if self.fold(true) => {}
             _ => match self.focus {
                 Focus::Nav => self.nav_key(key),
                 Focus::Section(index) => self.target_key(Target::Section(index), key),
@@ -2662,6 +2821,20 @@ impl App {
                 }
             }
             _ => {}
+        }
+    }
+
+    /// The canonical path of the node a key target draws: a section's, or the open overlay's.
+    fn target_path(&self, target: Target) -> NodePath {
+        match target {
+            Target::Section(index) => self.page_def().sections.get(index).map_or_else(
+                || self.page_path(),
+                |section| self.section_path(&section.name),
+            ),
+            Target::Overlay => self
+                .overlay
+                .as_ref()
+                .map_or_else(|| self.page_path(), |open| open.path.clone()),
         }
     }
 
@@ -3210,7 +3383,7 @@ impl App {
 
     fn form_key(&mut self, target: Target, ui: &str, form: &Form, draft: &str, key: KeyEvent) {
         let state = self.ui(ui);
-        let fields = form_fields(form, state.tab);
+        let fields = self.shown_form_fields(form, state.tab, &self.target_path(target));
         let section = match target {
             Target::Section(index) => self
                 .page_def()
@@ -3346,7 +3519,7 @@ impl App {
         }
         let (field, form) = match &body {
             Body::Composite(Composite::Form(form)) => {
-                let fields = form_fields(form, state.tab);
+                let fields = self.shown_form_fields(form, state.tab, &self.target_path(target));
                 if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('s') {
                     self.submit(target, form, &draft);
                     return;

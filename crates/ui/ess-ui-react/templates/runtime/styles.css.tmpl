@@ -47,6 +47,17 @@ th .ui-help, .ui-form-field .ui-help, .ui-form-group > .ui-help { display: block
 .ui-area { display: flex; flex-direction: column; gap: var(--ui-space-md); min-width: 0; }
 
 .ui-section { position: relative; min-width: 0; background: var(--ui-color-surface); border: var(--ui-size-hairline) solid var(--ui-color-line); border-radius: var(--ui-radius-lg); padding: var(--ui-space-md); }
+//+collapse
+.ui-frame { position: relative; display: flex; flex-direction: column; gap: var(--ui-space-md); min-width: 0; background: var(--ui-color-surface); border: var(--ui-size-hairline) solid var(--ui-color-line); border-radius: var(--ui-radius-lg); padding: var(--ui-space-md); }
+.ui-frame-body { display: flex; flex-direction: column; gap: var(--ui-space-md); min-width: 0; }
+.ui-section-framed { border: 0; border-radius: 0; padding: 0; background: none; }
+.ui-collapse-body[hidden], .ui-frame-body[hidden] { display: none; }
+.ui-collapse { display: inline-flex; gap: var(--ui-space-xs); align-items: center; font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
+.ui-collapse::before { content: "\25B8"; }
+.ui-collapse[aria-expanded="true"]::before { content: "\25BE"; }
+.ui-record-group { display: flex; flex-direction: column; }
+.ui-record-group-title { margin: var(--ui-size-gap-wide) 0 var(--ui-space-xs); }
+//-collapse
 .ui-dim { opacity: 0.6; }
 .ui-stale-badge, .ui-new-count { position: absolute; top: var(--ui-space-sm); right: var(--ui-space-sm); font-size: var(--ui-size-text-tiny); padding: var(--ui-size-pad-hair) var(--ui-size-pad-cell); border-radius: var(--ui-radius-pill); background: var(--ui-color-warning_fill); }
 .ui-new-count { right: var(--ui-size-new-count-offset); background: var(--ui-color-info_fill); }

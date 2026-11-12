@@ -119,7 +119,17 @@ fn imports(id: &str, text: &str) -> Vec<String> {
 /// the template with every routed block removed — each byte for byte what it was before the
 /// blocks were written. `//+effects` … `//-effects` hold the lines of a fixture project generated
 /// with the effects of its model, and `//+noeffects` … `//-noeffects` those of one without.
-pub(crate) fn select(text: &str, bound: bool, routed: bool, effects: bool) -> String {
+/// `//+collapse` … `//-collapse` hold the lines of a project whose document names a collapsed
+/// group, section or frame, a shared frame or a record's groups, and `//+nocollapse` …
+/// `//-nocollapse` the lines they replace: a document without those keys keeps its bytes.
+#[allow(clippy::fn_params_excessive_bools)] // one flag per template block family
+pub(crate) fn select(
+    text: &str,
+    bound: bool,
+    routed: bool,
+    effects: bool,
+    collapse: bool,
+) -> String {
     let mut out = String::with_capacity(text.len());
     // Whether each open block is kept; a line is emitted when every one is.
     let mut open: Vec<bool> = Vec::new();
@@ -131,8 +141,10 @@ pub(crate) fn select(text: &str, bound: bool, routed: bool, effects: bool) -> St
             "//+unrouted" => open.push(!routed),
             "//+effects" => open.push(effects),
             "//+noeffects" => open.push(!effects),
+            "//+collapse" => open.push(collapse),
+            "//+nocollapse" => open.push(!collapse),
             "//-bound" | "//-plain" | "//-routed" | "//-unrouted" | "//-effects"
-            | "//-noeffects" => {
+            | "//-noeffects" | "//-collapse" | "//-nocollapse" => {
                 open.pop();
             }
             _ if open.iter().all(|kept| *kept) => out.push_str(line),
@@ -143,18 +155,23 @@ pub(crate) fn select(text: &str, bound: bool, routed: bool, effects: bool) -> St
 }
 
 /// The runtime files for the modules used, closed over their imports.
+#[allow(clippy::fn_params_excessive_bools)] // one flag per template block family
 pub(crate) fn runtime(
     used: &BTreeSet<String>,
     bound: bool,
     routed: bool,
     effects: bool,
+    collapse: bool,
 ) -> BTreeMap<String, String> {
     let table: BTreeMap<&str, (&Module, String)> = RUNTIME
         .iter()
         .map(|module| {
             (
                 module.id,
-                (module, select(module.text, bound, routed, effects)),
+                (
+                    module,
+                    select(module.text, bound, routed, effects, collapse),
+                ),
             )
         })
         .collect();
@@ -178,7 +195,13 @@ pub(crate) fn runtime(
     }
     files.insert(
         "src/runtime/styles.css".to_owned(),
-        include_str!("../templates/runtime/styles.css.tmpl").to_owned(),
+        select(
+            include_str!("../templates/runtime/styles.css.tmpl"),
+            bound,
+            routed,
+            effects,
+            collapse,
+        ),
     );
     files
 }
@@ -204,6 +227,7 @@ pub(crate) fn project(
             text,
             binding.is_some(),
             binding.is_some_and(Binding::routed),
+            false,
             false,
         )
         .replace("{{app}}", app)

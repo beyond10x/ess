@@ -21,24 +21,29 @@ use std::sync::OnceLock;
 use crate::expand::entry_segment;
 use crate::model::{
     Action, Channel, EmptyState, FailedState, Field, ForbiddenState, Header, HeaderBadge, Node,
-    Overlay, Page, PageKind, Section, SectionStates, Shell, StaleState, Widget,
+    Overlay, Page, PageKind, RecordGroup, Section, SectionStates, Shell, StaleState, Widget,
 };
 use crate::schema::{Schema, Shape};
 use crate::{LoadError, NodePath};
 
 pub(crate) fn locate(expanded: &Value) -> Option<LoadError> {
-    visit(expanded, &NodePath::root(), &[])
+    visit(expanded, &NodePath::root(), &[], false)
 }
 
 /// `keys` holds one entry per segment of `at`: the container key it is, or `None` where the
 /// segment is a name, that of a list entry or the key of an entry of a map of named nodes.
-fn visit<'a>(value: &'a Value, at: &NodePath, keys: &[Option<&'a str>]) -> Option<LoadError> {
+fn visit<'a>(
+    value: &'a Value,
+    at: &NodePath,
+    keys: &[Option<&'a str>],
+    record_group: bool,
+) -> Option<LoadError> {
     let Value::Mapping(mapping) = value else {
         if let Value::Sequence(entries) = value {
             let keys = [keys, &[None]].concat();
-            return entries
-                .iter()
-                .find_map(|entry| visit(entry, &at.child(&entry_segment(entry)), &keys));
+            return entries.iter().find_map(|entry| {
+                visit(entry, &at.child(&entry_segment(entry)), &keys, record_group)
+            });
         }
         return None;
     };
@@ -58,9 +63,16 @@ fn visit<'a>(value: &'a Value, at: &NodePath, keys: &[Option<&'a str>]) -> Optio
             continue;
         }
         let keys = [keys, &[(!names).then_some(key)]].concat();
-        if let Some(error) = visit(child, &at.child(key), &keys) {
+        // The entries of a record's `groups` are record groups, which take no save key.
+        let groups = !names
+            && key == "groups"
+            && mapping.get("component").and_then(Value::as_str) == Some("record");
+        if let Some(error) = visit(child, &at.child(key), &keys, groups) {
             return Some(error);
         }
+    }
+    if record_group {
+        return refused::<RecordGroup>(value).map(|message| LoadError::new(at.clone(), message));
     }
     let refusal = match classify(keys, mapping) {
         Some(Expected::Page) => refused::<Page>(value),

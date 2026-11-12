@@ -17,6 +17,71 @@ use crate::schema::{self, Capability};
 use crate::walk::{body_of, composite_kind, composite_reads, in_declaration, page_of, section_of};
 use crate::{Options, Sink};
 
+/// How one layout column or area frames its sections, as written.
+struct Framing<'a> {
+    frame: Option<&'a str>,
+    title: Option<&'a str>,
+    collapsed: Option<bool>,
+    sections: &'a [String],
+}
+
+/// `frame_rules`: `title` and `collapsed` belong to a shared frame, `collapsed` needs the `title`
+/// a reader clicks, and a shared frame holds sections that are consecutive in the page's section
+/// order, since a renderer that stacks sections draws one block at the first one's place. A
+/// `frame` outside `each` and `shared` is `enum_values`' to report.
+fn frame_rules(sink: &mut Sink, at: &NodePath, order: &[&str], framing: &Framing<'_>) {
+    match framing.frame {
+        Some("shared") => {}
+        None | Some("each") => {
+            for (key, written) in [
+                ("title", framing.title.is_some()),
+                ("collapsed", framing.collapsed.is_some()),
+            ] {
+                if written {
+                    sink.push(
+                        "frame_rules",
+                        at,
+                        format!(
+                            "`{key}` is the heading or the state of a shared frame, and these \
+                             sections are `frame: each`: write `frame: shared`, or drop `{key}`"
+                        ),
+                    );
+                }
+            }
+            return;
+        }
+        Some(_) => return,
+    }
+    if framing.collapsed == Some(true) && framing.title.is_none() {
+        sink.push(
+            "frame_rules",
+            at,
+            "`collapsed` needs a `title`: a collapsed frame is its title, which a reader clicks \
+             to open it",
+        );
+    }
+    let mut previous: Option<(&str, usize)> = None;
+    for section in framing.sections {
+        let Some(index) = order.iter().position(|name| *name == section) else {
+            continue;
+        };
+        if let Some((before, last)) = previous {
+            if index != last + 1 {
+                sink.push(
+                    "frame_rules",
+                    at,
+                    format!(
+                        "section `{section}` does not follow `{before}` in the page's section \
+                         order, and a shared frame holds consecutive sections"
+                    ),
+                );
+                return;
+            }
+        }
+        previous = Some((section, index));
+    }
+}
+
 pub(crate) fn run(document: &Document, base: &Path, options: &Options, sink: &mut Sink) {
     let located = document.nodes();
     let fixtures = Fixtures::read(document, base, sink);
@@ -623,13 +688,37 @@ impl Checker<'_> {
                         for section in &column.sections {
                             place(sink, &here, section);
                         }
+                        frame_rules(
+                            sink,
+                            &here,
+                            &sections,
+                            &Framing {
+                                frame: column.frame.as_deref(),
+                                title: column.title.as_deref(),
+                                collapsed: column.collapsed,
+                                sections: &column.sections,
+                            },
+                        );
                     }
                 }
                 PageLayout::Areas(areas) => {
                     for (area, entries) in &areas.areas.place {
                         let here = layout.child("areas").child("place").child(area);
-                        for section in entries {
+                        for section in entries.sections() {
                             place(sink, &here, section);
+                        }
+                        if let Some(framed) = entries.framed() {
+                            frame_rules(
+                                sink,
+                                &here,
+                                &sections,
+                                &Framing {
+                                    frame: framed.frame.as_deref(),
+                                    title: framed.title.as_deref(),
+                                    collapsed: framed.collapsed,
+                                    sections: &framed.sections,
+                                },
+                            );
                         }
                     }
                 }
@@ -930,6 +1019,14 @@ impl Checker<'_> {
                             format!("`{target}` names no section of this page"),
                         );
                     }
+                }
+                if section.collapsed == Some(true) && section.title.is_none() {
+                    sink.push(
+                        "frame_rules",
+                        path,
+                        "`collapsed` needs a `title`: a collapsed section is its title, which a \
+                         reader clicks to open it",
+                    );
                 }
                 degrades_known(sink, path, &section.common);
                 self.body(sink, path, &section.body);

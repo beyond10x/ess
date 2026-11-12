@@ -205,3 +205,125 @@ fn adversary_a_refresh_after_an_answer_keeps_the_value_then_fails_to_an_alert() 
 ",
     );
 }
+
+const FOLDED_DOCUMENT: &str = r"
+format: ess-ui/1
+app: console
+model: console.system
+placement_profile: fat
+shells:
+  app: {regions: {main: {kind: page_outlet}}}
+navigation:
+  home: shelf
+  sections: [{name: all, pages: [shelf]}]
+pages:
+  shelf:
+    kind: detail_page
+    title: Shelf
+    layout: {columns: [{name: main, frame: shared, title: Shelf, collapsed: true, sections: [list, later]}]}
+    sections:
+      - {name: list, component: collection, reads: {view: store.shelf.Items}, columns: [qty]}
+      - name: later
+        title: Later
+        collapsed: true
+        load: on_visible
+        component: collection
+        reads: {view: store.shelf.Later}
+        columns: [qty]
+      - name: settings
+        component: form
+        does: store.shelf.Save
+        groups:
+          - {name: advanced, label: Advanced, collapsed: true, fields: [limit]}
+";
+
+const FOLDED_HARNESS: &str = r"
+browser('/shelf');
+const observers = [];
+globalThis.IntersectionObserver = class {
+  constructor(callback) { this.callback = callback; this.targets = []; observers.push(this); }
+  observe(target) { this.targets.push(target); }
+  disconnect() {}
+};
+const { setDataAdapter } = out('runtime/data');
+const { ShelfPage } = out('pages/Shelf');
+setDataAdapter({ read: async (request) => ({
+  rows: [{ qty: request.view === 'store.shelf.Later' ? 4242 : 7 }],
+  total: 1,
+}) });
+const root = React.__root(jsx(ShelfPage, {}));
+const tick = () => new Promise((resolve) => setTimeout(resolve, 5));
+async function settle() { for (let i = 0; i < 4; i++) { root.settle(); await tick(); } root.settle(); }
+const heading = (label) => {
+  const found = root.find((node) => node.tag === 'button' && node.props.className === 'ui-collapse' && node.children.join('') === label);
+  assert.equal(found.length, 1, `one heading button ${label}: ${root.text()}`);
+  return found[0];
+};
+const byClass = (name) => root.find((node) => node.props && node.props.className === name);
+const section = (name) => root.find((node) => node.tag === 'section' && node.props['data-ui-path'] === `pages/shelf/sections/${name}`)[0];
+";
+
+fn run_folded(test: &str, body: &str) {
+    let out: PathBuf = Path::new(env!("CARGO_TARGET_TMPDIR"))
+        .join("ess-ui-react-folded")
+        .join(test);
+    if out.exists() {
+        std::fs::remove_dir_all(&out).expect("the old scratch project is removed");
+    }
+    let document = ess_ui::load_str(FOLDED_DOCUMENT).expect("the document loads");
+    ess_ui_react::generate(&document, Path::new("."), &out).expect("the project generates");
+    support::compile(&out, &["pages/Shelf.tsx"]);
+    support::node(
+        &out,
+        test,
+        &format!(
+            "{FOLDED_HARNESS}\n(async () => {{\n{body}\n}})().catch((error) => {{ console.error(error); process.exitCode = 1; }});\n"
+        ),
+    );
+}
+
+#[test]
+fn a_collapsed_frame_and_section_open_on_a_click_and_the_read_starts_when_the_section_opens() {
+    run_folded(
+        "frame-and-section",
+        r"
+  await settle();
+  assert.equal(heading('Shelf').props['aria-expanded'], false, 'the frame starts closed');
+  assert.equal(byClass('ui-frame-body')[0].props.hidden, true, 'a closed frame hides its body');
+  assert.ok(section('list'), 'a closed frame keeps its sections mounted');
+  click(heading('Shelf'));
+  await settle();
+  assert.equal(heading('Shelf').props['aria-expanded'], true);
+  assert.equal(byClass('ui-frame-body')[0].props.hidden, false);
+  assert.equal(heading('Later').props['aria-expanded'], false, 'the section starts closed inside the open frame');
+  section('later').props.ref.current = {};
+  await settle();
+  assert.equal(observers.length, 0, 'a closed section starts no read');
+  assert.ok(!root.text().includes('4,242'), root.text());
+  click(heading('Later'));
+  await settle();
+  assert.equal(heading('Later').props['aria-expanded'], true);
+  assert.ok(observers.length > 0, 'an opened on_visible section watches for its view');
+  observers[observers.length - 1].callback([{ isIntersecting: true }]);
+  await settle();
+  assert.ok(root.text().includes('4,242'), `the opened section read its rows: ${root.text()}`);
+",
+    );
+}
+
+#[test]
+fn a_collapsed_form_group_keeps_its_fields_mounted_so_they_are_still_submitted() {
+    run_folded(
+        "form-group",
+        r"
+  await settle();
+  assert.equal(heading('Advanced').props['aria-expanded'], false, 'the group starts closed');
+  const body = root.find((node) => node.tag === 'fieldset')[0].children.find((child) => child.props && child.props.className === 'ui-collapse-body');
+  assert.equal(body.props.hidden, true);
+  assert.ok(root.find((node) => node.tag === 'input' || node.tag === 'textarea' || node.tag === 'select').length > 0, `the closed group's field is still in the form: ${root.text()}`);
+  click(heading('Advanced'));
+  await settle();
+  assert.equal(heading('Advanced').props['aria-expanded'], true);
+",
+    );
+}
