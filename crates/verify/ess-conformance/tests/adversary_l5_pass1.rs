@@ -351,6 +351,258 @@ fn synthesized_suite_passes_and_audits(text: &str) {
     assert!(!rendered.contains("ESS-MUTATE-001"), "{rendered}");
 }
 
+/// The scenario of `Act`'s branch `branch` in the suite synthesized for `text`, run with the whole
+/// suite on the interpreted target: panics where synthesis wrote no such scenario, and returns
+/// `Err` naming every scenario that did not pass where this one did not.
+fn act_scenario_passes(text: &str, branch: &str) -> Result<(), String> {
+    let (files, texts) = documents(text);
+    let ir = mutate::compile(files, &texts).unwrap_or_else(|error| panic!("{error:?}\n{text}"));
+    let synthesis = ess_conformance::synthesize::synthesize(&ir);
+    let wanted = format!("Act/outcome/{branch}");
+    let written: Vec<String> = synthesis
+        .suite
+        .scenarios
+        .keys()
+        .map(ToString::to_string)
+        .collect();
+    assert!(
+        written.iter().any(|id| id.ends_with(&wanted)),
+        "synthesis wrote no `{wanted}` scenario: {written:#?}\nrefused:\n{}",
+        synthesis
+            .refusals
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>()
+            .join("\n")
+    );
+    let admitted =
+        AdmittedSuite::from_suite(&synthesis.suite).unwrap_or_else(|error| panic!("{error}"));
+    let report = Runner::for_suite(admitted.suite())
+        .run_admitted(&admitted, &Interpreted::for_model(ir.clone()))
+        .into_report();
+    let failed: Vec<(String, String)> = report
+        .scenarios
+        .iter()
+        .filter(|result| result.status != Status::Passed)
+        .map(|result| {
+            let scenario = synthesis
+                .suite
+                .scenarios
+                .iter()
+                .find(|(id, _)| **id == result.scenario)
+                .map(|(_, scenario)| serde_json::to_string_pretty(scenario).unwrap());
+            (
+                result.scenario.to_string(),
+                format!(
+                    "{}: {:?} {:#?}\n{}",
+                    result.scenario,
+                    result.status,
+                    result.diagnostics().collect::<Vec<_>>(),
+                    scenario.unwrap_or_default()
+                ),
+            )
+        })
+        .collect();
+    if failed.iter().any(|(id, _)| id.ends_with(&wanted)) {
+        return Err(failed
+            .into_iter()
+            .map(|(_, line)| line)
+            .collect::<Vec<_>>()
+            .join("\n"));
+    }
+    Ok(())
+}
+
+/// BLOCKER (adversary pass 1 on the different-rows unit). Two accepting branches of a row-set
+/// command address the same entity through different input fields: `book-paused` a book through
+/// `book`, `shelf-paused` a book through `shelf`. Each row-set scenario arranges its own book and,
+/// through `beside_addressed_row`, a second book for the other field, both at the plain
+/// distinction: one identity is created twice, and synthesis refuses `book-paused`, `refused`,
+/// `shelf-paused` and `idle` (`ESS-SYNTH-001`, "creates a second row under a value a row it created
+/// still holds"). One row sent through both fields is what the interpreter reads.
+#[test]
+fn branches_addressing_one_entity_through_two_fields_pass_their_own_suite() {
+    let text = reachable_shelf(true).replace(
+        "updates: demo.shelf.Shelf\n        instance: shelf",
+        "updates: demo.shelf.Book\n        instance: shelf",
+    );
+    assert!(text.contains("updates: demo.shelf.Book\n        instance: shelf"));
+    if let Err(failed) = act_scenario_passes(&text, "shelf-paused") {
+        panic!("the scenario of `shelf-paused` fails its own interpreter:\n{failed}");
+    }
+}
+
+/// A row-set command whose two accepting branches each `moves:` a row of its own entity, the
+/// first declared (`book-lost`) from a state that is not the lifecycle's initial one (`Out`).
+/// `HALT` stands for the guard of `shelf-dropped`.
+const MOVING: &str = r"format: ess/23
+system: demo
+version: v1
+domain: demo.shelf
+entities:
+  - name: demo.shelf.Library
+    identity: {name: library, type: String}
+    fields:
+      - {name: curator, type: String}
+    lifecycle: {initial: Open, states: [Open], terminal: [Open]}
+  - name: demo.shelf.Book
+    identity: {name: book, type: String}
+    fields: []
+    lifecycle:
+      initial: Shelved
+      states: [Shelved, Out, Lost]
+      terminal: [Lost]
+      transitions:
+        - {name: lend, from: [Shelved], to: Out}
+        - {name: lose, from: [Out], to: Lost}
+  - name: demo.shelf.Shelf
+    identity: {name: shelf, type: String}
+    fields: []
+    lifecycle:
+      initial: Up
+      states: [Up, Down]
+      terminal: [Down]
+      transitions:
+        - {name: drop, from: [Up], to: Down}
+errors:
+  - {name: demo.shelf.Refused, summary: A library of the curator is open., fields: []}
+  - {name: demo.shelf.Unknown, summary: No row carries the identity., fields: []}
+  - {name: demo.shelf.Idle, summary: Nothing was asked., fields: []}
+events:
+  - name: demo.shelf.LibraryOpened
+    fields: [{name: library, type: String}]
+  - name: demo.shelf.ShelfBuilt
+    fields: [{name: shelf, type: String}]
+  - name: demo.shelf.BookAdded
+    fields: [{name: book, type: String}]
+  - name: demo.shelf.BookLent
+    fields: [{name: book, type: String}]
+  - name: demo.shelf.BookLost
+    fields: [{name: book, type: String}]
+  - name: demo.shelf.ShelfDropped
+    fields: [{name: shelf, type: String}]
+commands:
+  - name: demo.shelf.OpenLibrary
+    input:
+      - {name: library, type: String}
+      - {name: curator, type: String}
+    outcomes:
+      - name: opened
+        creates: demo.shelf.Library
+        instance: library
+        sets: {curator: input.curator}
+        emits: [demo.shelf.LibraryOpened]
+        payload:
+          demo.shelf.LibraryOpened: {library: input.library}
+  - name: demo.shelf.BuildShelf
+    input:
+      - {name: shelf, type: String}
+    outcomes:
+      - name: built
+        creates: demo.shelf.Shelf
+        instance: shelf
+        emits: [demo.shelf.ShelfBuilt]
+        payload:
+          demo.shelf.ShelfBuilt: {shelf: input.shelf}
+  - name: demo.shelf.AddBook
+    input:
+      - {name: book, type: String}
+    outcomes:
+      - name: added
+        creates: demo.shelf.Book
+        instance: book
+        emits: [demo.shelf.BookAdded]
+        payload:
+          demo.shelf.BookAdded: {book: input.book}
+  - name: demo.shelf.LendBook
+    input:
+      - {name: book, type: String}
+    outcomes:
+      - name: lent
+        moves: demo.shelf.Book.lend
+        instance: book
+        emits: [demo.shelf.BookLent]
+        payload:
+          demo.shelf.BookLent: {book: input.book}
+  - name: demo.shelf.Act
+    input:
+      - {name: book, type: String}
+      - {name: shelf, type: String}
+      - {name: curator, type: String}
+      - {name: pause, type: Boolean}
+      - {name: halt, type: Boolean}
+    outcomes:
+      - {name: unknown, unknown_instance: true, error: demo.shelf.Unknown}
+      - name: refused
+        when_related:
+          entity: demo.shelf.Library
+          where: curator == input.curator
+          exists: true
+        error: demo.shelf.Refused
+      - name: book-lost
+        when: pause == true
+        moves: demo.shelf.Book.lose
+        instance: book
+        emits: [demo.shelf.BookLost]
+        payload:
+          demo.shelf.BookLost: {book: input.book}
+      - name: shelf-dropped
+        when: halt == true
+        moves: demo.shelf.Shelf.drop
+        instance: shelf
+        emits: [demo.shelf.ShelfDropped]
+        payload:
+          demo.shelf.ShelfDropped: {shelf: input.shelf}
+      - {name: idle, error: demo.shelf.Idle}
+";
+
+/// BLOCKER (adversary pass 1 on the different-rows unit). The interpreter reads the first declared
+/// accepting branch's row (the book) before selecting a branch, and where every acting branch
+/// `moves:` it answers the held-state refusal unless some transition moves from the state that row
+/// holds. `beside_addressed_row` arranges the book in the lifecycle's initial state (`Shelved`),
+/// which `book-lost` (`from: [Out]`) does not move from, so the scenario of `shelf-dropped` is
+/// still answered before its branch: the row arranged beside must rest in a state the first
+/// declared branch acts from.
+#[test]
+fn a_moving_branch_beside_a_first_branch_moving_from_a_later_state_passes_its_own_suite() {
+    if let Err(failed) = act_scenario_passes(MOVING, "shelf-dropped") {
+        panic!("the scenario of `shelf-dropped` fails its own interpreter:\n{failed}");
+    }
+}
+
+/// BLOCKER (adversary pass 1 on the different-rows unit). The row set of `refused` reads shelves
+/// (`exists: false` over `label == input.shelf`: no shelf carries the label the input names), and
+/// `shelf-paused` updates a shelf through `shelf`. The witness of `refused` sends a shelf no row
+/// carries; `beside_addressed_row` arranges a shelf for `shelf-paused`'s field and binds `shelf`
+/// to it, so the row the refusal says is absent now exists, and synthesis refuses `refused` ("its
+/// own row set is False"); `book-paused`, `shelf-paused` and `idle` are refused for a second shelf
+/// under one identity. The interpreter reads only the book before `refused`, so no shelf is owed.
+#[test]
+fn a_row_set_refusal_over_the_other_branchs_entity_keeps_its_witness() {
+    let text = reachable_shelf(true)
+        .replace(
+            "    identity: {name: shelf, type: String}\n    fields: []\n",
+            "    identity: {name: shelf, type: String}\n    fields:\n      - {name: label, type: \
+             String}\n",
+        )
+        .replace(
+            "        creates: demo.shelf.Shelf\n        instance: shelf\n",
+            "        creates: demo.shelf.Shelf\n        instance: shelf\n        sets: {label: \
+             input.shelf}\n",
+        )
+        .replace(
+            "          entity: demo.shelf.Library\n          where: curator == input.curator\n          \
+             exists: true\n",
+            "          entity: demo.shelf.Shelf\n          where: label == input.shelf\n          \
+             exists: false\n",
+        );
+    assert!(text.contains("where: label == input.shelf"), "{text}");
+    assert!(text.contains("sets: {label: input.shelf}"), "{text}");
+    if let Err(failed) = act_scenario_passes(&text, "refused") {
+        panic!("the scenario of `refused` fails its own interpreter:\n{failed}");
+    }
+}
+
 /// The audit of `text`'s precedence swaps against its own interpreter, as JSON, and its text.
 fn swaps_audited(text: &str) -> (Value, String) {
     let (files, texts) = documents(text);
