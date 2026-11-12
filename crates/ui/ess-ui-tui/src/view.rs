@@ -117,7 +117,8 @@ struct Place<'a> {
 
 /// A section's lines, ready to be placed.
 struct SectionBlock {
-    index: usize,
+    /// The sections drawn in the block: one, or those a shared frame holds.
+    indices: Vec<usize>,
     path: String,
     title: String,
     lines: Vec<Line<'static>>,
@@ -349,6 +350,7 @@ impl App {
         frame.render_widget(Paragraph::new(lines).block(block), area);
     }
 
+    #[allow(clippy::too_many_lines)] // the header, the stack, the shared frames and the marks of one outlet
     fn draw_outlet(&self, frame: &mut Frame<'_>, area: Rect) {
         self.marks.borrow_mut().clear();
         let header = self.header_lines(area.width as usize);
@@ -389,27 +391,49 @@ impl App {
         }
         let width = rest.width.saturating_sub(2) as usize;
         let sections = self.visible_sections();
-        let blocks: Vec<SectionBlock> = sections
-            .iter()
-            .map(|(index, section)| {
-                self.marks.borrow_mut().clear();
-                let (title, lines) = self.section_lines(section, *index, width);
-                SectionBlock {
-                    index: *index,
-                    path: self.section_path(&section.name).to_string(),
-                    title,
-                    lines,
-                    marks: self.take_marks(),
+        let frames = self.shared_frames();
+        let mut blocks: Vec<SectionBlock> = Vec::new();
+        let mut drawn_paths: Vec<String> = Vec::new();
+        for (index, section) in &sections {
+            let frame = frames
+                .iter()
+                .find(|frame| frame.sections.contains(&section.name));
+            if let Some(frame) = frame {
+                // A shared frame is one block, at the place of the first of its sections.
+                let path = frame.path.to_string();
+                if !drawn_paths.contains(&path) {
+                    let members: Vec<(usize, &ess_ui::Section)> = sections
+                        .iter()
+                        .filter(|(_, member)| frame.sections.contains(&member.name))
+                        .map(|(index, member)| (*index, *member))
+                        .collect();
+                    blocks.push(self.frame_block(frame, &members, width));
+                    drawn_paths.push(path);
                 }
-            })
-            .collect();
+                continue;
+            }
+            self.marks.borrow_mut().clear();
+            let (title, lines) = self.section_lines(section, *index, width);
+            blocks.push(SectionBlock {
+                indices: vec![*index],
+                path: self.section_path(&section.name).to_string(),
+                title,
+                lines,
+                marks: self.take_marks(),
+            });
+        }
         let heights: Vec<u16> = blocks
             .iter()
             .map(|block| u16::try_from(block.lines.len() + 2).unwrap_or(u16::MAX))
             .collect();
         let focused = blocks
             .iter()
-            .position(|block| Focus::Section(block.index) == self.focus)
+            .position(|block| {
+                block
+                    .indices
+                    .iter()
+                    .any(|index| Focus::Section(*index) == self.focus)
+            })
             .unwrap_or(0);
         let mut start = 0;
         while start < focused && heights[start..=focused].iter().sum::<u16>() > rest.height {
@@ -421,7 +445,11 @@ impl App {
             }
             let height = height.min(rest.height);
             let block = Block::bordered().title(section.title);
-            let block = if Focus::Section(section.index) == self.focus {
+            let block = if section
+                .indices
+                .iter()
+                .any(|index| Focus::Section(*index) == self.focus)
+            {
                 block.border_style(bold())
             } else {
                 block
@@ -606,6 +634,55 @@ impl App {
         channels
     }
 
+    /// The block of a shared frame: its heading in the border and, while it is open, each of its
+    /// sections under its own heading line, in order. A closed frame is its heading alone.
+    fn frame_block(
+        &self,
+        frame: &crate::app::SharedFrame,
+        members: &[(usize, &ess_ui::Section)],
+        width: usize,
+    ) -> SectionBlock {
+        let open = self.is_open(&frame.path, frame.collapsed);
+        let marker = fold_marker(frame.collapsed, open);
+        let mut block = SectionBlock {
+            indices: members.iter().map(|(index, _)| *index).collect(),
+            path: frame.path.to_string(),
+            title: frame
+                .title
+                .as_ref()
+                .map_or_else(String::new, |title| format!(" {marker}{title} ")),
+            lines: Vec::new(),
+            marks: Vec::new(),
+        };
+        if !open {
+            return block;
+        }
+        for (index, section) in members {
+            self.marks.borrow_mut().clear();
+            let (heading, lines) = self.section_lines(section, *index, width);
+            let marks = self.take_marks();
+            let start = block.lines.len();
+            block
+                .lines
+                .push(Line::styled(heading.trim().to_owned(), bold()));
+            block.marks.push(Mark {
+                path: self.section_path(&section.name).to_string(),
+                row: None,
+                line: start,
+                height: lines.len() + 1,
+                x: 0,
+                width: None,
+                text: None,
+            });
+            for mut mark in marks {
+                mark.line += start + 1;
+                block.marks.push(mark);
+            }
+            block.lines.extend(lines);
+        }
+        block
+    }
+
     #[allow(clippy::too_many_lines)] // one arm per lifecycle state
     fn section_lines(
         &self,
@@ -637,6 +714,14 @@ impl App {
                 });
             if mark == "badge" {
                 title.push_str("[stale] ");
+            }
+        }
+        // A section that may start closed is its heading line while closed.
+        if section.collapsed == Some(true) {
+            let open = self.is_open(&path, true);
+            title = format!(" {}{}", fold_marker(true, open), title.trim_start());
+            if !open {
+                return (title, Vec::new());
             }
         }
         let states = section.states.as_ref();
@@ -935,6 +1020,24 @@ impl App {
                 for field in &record.fields {
                     self.mark_field_slot(field, place, &place.path.child("fields"), lines.len());
                     lines.push(labelled(field, &shown));
+                }
+                // Groups of fields under their headings; a collapsed one is its heading line.
+                for group in &record.groups {
+                    let at = place.path.child("groups").child(&group.name);
+                    let collapsed = group.collapsed == Some(true);
+                    let open = self.is_open(&at, collapsed);
+                    let heading = group.label.clone().unwrap_or_else(|| group.name.clone());
+                    lines.push(Line::styled(
+                        format!("{}{heading}", fold_marker(collapsed, open)),
+                        bold(),
+                    ));
+                    if open {
+                        let shown = self.labelled(&group.fields, &row);
+                        for field in &group.fields {
+                            self.mark_field_slot(field, place, &at.child("fields"), lines.len());
+                            lines.push(labelled(field, &shown));
+                        }
+                    }
                 }
                 let tab = self
                     .ui(place.ui)
@@ -1641,6 +1744,16 @@ impl App {
 
 /// The label an action's control shows in the generated React project: its `label`, else its name
 /// with `_` read as a space.
+/// What leads the heading of a part that may start closed: `▸` while closed, `▾` while open, and
+/// nothing on one that cannot fold.
+fn fold_marker(collapsible: bool, open: bool) -> &'static str {
+    match (collapsible, open) {
+        (false, _) => "",
+        (true, true) => "▾ ",
+        (true, false) => "▸ ",
+    }
+}
+
 fn browser_label(action: &ess_ui::Action) -> String {
     action
         .label
@@ -1961,21 +2074,33 @@ impl App {
             })
         };
         let mut heading = None;
-        for (index, field) in fields.iter().enumerate() {
+        // The cursor walks the fields drawn: those of a closed group are not among them.
+        let mut drawn = 0;
+        for field in &fields {
             if let Some(group) = group_of(field) {
+                let collapsed = group.collapsed == Some(true);
+                let open = self.is_open(&place.path.child("groups").child(&group.name), collapsed);
                 if heading != Some(&group.name) {
                     let save = group.save.clone().unwrap_or_else(|| "with_form".into());
                     lines.push(Line::styled(
                         format!(
-                            "{} (saves {save})",
+                            "{}{} (saves {save})",
+                            fold_marker(collapsed, open),
                             group.label.clone().unwrap_or_else(|| group.name.clone())
                         ),
                         bold(),
                     ));
-                    lines.extend(group.help.as_ref().and_then(|help| help_line("", help)));
+                    if open {
+                        lines.extend(group.help.as_ref().and_then(|help| help_line("", help)));
+                    }
                     heading = Some(&group.name);
                 }
+                if !open {
+                    continue;
+                }
             }
+            let index = drawn;
+            drawn += 1;
             let value = self.field_value(form, &draft, &field.field, &place.ctx);
             let shown = match field.field_as.as_deref() {
                 Some("choice") => {

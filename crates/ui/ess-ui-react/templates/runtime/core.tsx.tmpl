@@ -328,6 +328,76 @@ export function LayoutColumn(props: {
   );
 }
 
+//+collapse
+/**
+ * One frame holding several sections under a heading, drawn at a layout column's or area's path.
+ * A collapsed frame starts closed under its heading; its body stays mounted, hidden, so the
+ * sections inside keep their reads and their state.
+ */
+export function SharedFrame(props: {
+  "data-ui-path": string;
+  title?: string;
+  /** The frame stands in for a layout column of this width. */
+  column?: boolean;
+  width?: string;
+  collapsed?: boolean;
+  children?: ReactNode;
+}): ReactNode {
+  const [open, setOpen] = useState(!props.collapsed);
+  const bodyId = `${props["data-ui-path"]}#body`;
+  return (
+    <div
+      className={`ui-frame${props.column ? ` ui-column ui-column-${props.width ?? "normal"}` : ""}`}
+      data-ui-path={props["data-ui-path"]}
+    >
+      {props.title ? (
+        <h2 className="ui-section-title">
+          {props.collapsed ? (
+            <button type="button" className="ui-collapse" aria-expanded={open} aria-controls={bodyId} onClick={() => setOpen(!open)}>
+              {props.title}
+            </button>
+          ) : (
+            props.title
+          )}
+        </h2>
+      ) : null}
+      <div className="ui-frame-body" id={bodyId} hidden={!open}>
+        {props.children}
+      </div>
+    </div>
+  );
+}
+
+/** A form group's fieldset: its heading, which opens and closes the fields when `collapsed`. */
+export function GroupBox(props: {
+  "data-ui-path"?: string;
+  label?: string;
+  collapsed?: boolean;
+  children?: ReactNode;
+}): ReactNode {
+  const [open, setOpen] = useState(!props.collapsed);
+  const bodyId = `${props["data-ui-path"]}#body`;
+  return (
+    <fieldset className="ui-form-group" data-ui-path={props["data-ui-path"]}>
+      {props.label ? (
+        <legend>
+          {props.collapsed ? (
+            <button type="button" className="ui-collapse" aria-expanded={open} aria-controls={bodyId} onClick={() => setOpen(!open)}>
+              {props.label}
+            </button>
+          ) : (
+            props.label
+          )}
+        </legend>
+      ) : null}
+      <div className="ui-collapse-body" id={bodyId} hidden={!open}>
+        {props.children}
+      </div>
+    </fieldset>
+  );
+}
+
+//-collapse
 /** Sections placed on a grid of named areas. */
 export function AreasLayout(props: { grid: string[][]; areas: Record<string, ReactNode> }): ReactNode {
   const template = props.grid.map((row) => `"${row.join(" ")}"`).join(" ");
@@ -417,13 +487,27 @@ export function SectionFrame(props: {
   host?: string;
   /** The page header's title reads this section's record: report its first row. */
   reportsRow?: boolean;
+//+collapse
+  /** The section starts closed under its title; its body stays mounted, hidden. */
+  collapsed?: boolean;
+  /** A shared frame holds the section: it draws no frame of its own and its title is a subheading. */
+  framed?: boolean;
+//-collapse
   children?: ReactNode;
 }): ReactNode {
   const { data, states = {} } = props;
   const ref = useRef<HTMLElement | null>(null);
+//+collapse
+  const [open, setOpen] = useState(!props.collapsed);
+//-collapse
   const { onActivate, active, load } = props;
   useEffect(() => {
+//+nocollapse
     if (load !== "on_visible" || active || !onActivate || !ref.current) {
+//-nocollapse
+//+collapse
+    if (load !== "on_visible" || active || !onActivate || !ref.current || !open) {
+//-collapse
       return;
     }
     const observer = new IntersectionObserver((entries) => {
@@ -434,9 +518,25 @@ export function SectionFrame(props: {
     });
     observer.observe(ref.current);
     return () => observer.disconnect();
+//+nocollapse
   }, [load, active, onActivate]);
+//-nocollapse
+//+collapse
+  }, [load, active, onActivate, open]);
+//-collapse
   useReport(props.name, { total: data?.total, params: data?.params, title: props.title, row: props.reportsRow ? data?.rows[0] : undefined });
   const mark = data?.stale ? states.stale?.mark ?? "badge" : undefined;
+//+collapse
+  const bodyId = `${props["data-ui-path"]}#body`;
+  const heading =
+    props.title && props.collapsed ? (
+      <button type="button" className="ui-collapse" aria-expanded={open} aria-controls={bodyId} onClick={() => setOpen(!open)}>
+        {props.title}
+      </button>
+    ) : (
+      props.title
+    );
+//-collapse
   let body: ReactNode = props.children;
   if (load === "on_demand" && !active) {
     body = (
@@ -476,16 +576,43 @@ export function SectionFrame(props: {
       <DataContext.Provider value={data}>
         <section
           ref={ref}
+//+nocollapse
           className={`ui-section${mark === "dim" || mark === "both" ? " ui-dim" : ""}`}
+//-nocollapse
+//+collapse
+          className={`ui-section${props.framed ? " ui-section-framed" : ""}${mark === "dim" || mark === "both" ? " ui-dim" : ""}`}
+//-collapse
           data-ui-path={props["data-ui-path"]}
           data-status={data?.status ?? "ready"}
           data-ui-host={props.host}
           data-profile={props.profile}
         >
+//+nocollapse
           {props.title ? <h2 className="ui-section-title">{props.title}</h2> : null}
+//-nocollapse
+//+collapse
+          {props.title ? (
+            props.framed ? (
+              <h3 className="ui-section-title">{heading}</h3>
+            ) : (
+              <h2 className="ui-section-title">{heading}</h2>
+            )
+          ) : null}
+//-collapse
           {mark === "badge" || mark === "both" ? <span className="ui-stale-badge">stale</span> : null}
           {data?.newCount ? <span className="ui-new-count">{data.newCount} new</span> : null}
+//+nocollapse
           {body}
+//-nocollapse
+//+collapse
+          {props.collapsed ? (
+            <div className="ui-collapse-body" id={bodyId} hidden={!open}>
+              {body}
+            </div>
+          ) : (
+            body
+          )}
+//-collapse
         </section>
       </DataContext.Provider>
     </SectionNameContext.Provider>

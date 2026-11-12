@@ -8,9 +8,10 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
 use crate::model::{
-    Action, ActionConfirm, Body, Columns, Composite, Document, Field, FormGroup, Guard, Header,
-    Help, HostSlot, LayoutColumn, Metric, MetricFormat, NavSection, Node, Overlay, Page, PageKind,
-    PageLayout, Primitive, Reads, Region, Section, Shell, State, Tab, TabFields, TabForm, Widget,
+    Action, ActionConfirm, AreaPlace, Body, Columns, Composite, Document, Field, FormGroup, Guard,
+    Header, Help, HostSlot, LayoutColumn, Metric, MetricFormat, NavSection, Node, Overlay, Page,
+    PageKind, PageLayout, Primitive, Reads, RecordGroup, Region, Section, Shell, State, Tab,
+    TabFields, TabForm, Widget,
 };
 use crate::LoadError;
 
@@ -89,6 +90,10 @@ pub enum NodeRef<'a> {
     Tab(&'a Tab),
     /// A form group.
     FormGroup(&'a FormGroup),
+    /// A record group.
+    RecordGroup(&'a RecordGroup),
+    /// `pages/<name>/layout/areas/place/<area>`.
+    LayoutArea(&'a AreaPlace),
 }
 
 /// A node with its canonical path.
@@ -154,6 +159,13 @@ impl Document {
                     walk.push(
                         &at.child("layout").child("columns").child(&column.name),
                         NodeRef::LayoutColumn(column),
+                    );
+                }
+            } else if let PageLayout::Areas(layout) = &page.layout {
+                for (area, place) in &layout.areas.place {
+                    walk.push(
+                        &at.child("layout").child("areas").child("place").child(area),
+                        NodeRef::LayoutArea(place),
                     );
                 }
             }
@@ -344,6 +356,11 @@ impl<'a> Walk<'a> {
             }
             Composite::Record(record) => {
                 self.fields(at, "fields", &record.fields);
+                for group in &record.groups {
+                    let here = at.child("groups").child(&group.name);
+                    self.push(&here, NodeRef::RecordGroup(group));
+                    self.fields(&here, "fields", &group.fields);
+                }
                 self.tabs(at, &record.tabs);
                 self.node_list(at, "item", &record.item);
                 self.actions(at, "actions", &record.actions);

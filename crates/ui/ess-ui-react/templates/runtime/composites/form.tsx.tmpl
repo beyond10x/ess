@@ -5,6 +5,9 @@ import { ActionControl, runCommand, type ActionSpec } from "../actions";
 import { RefusalNote, type Refusal } from "../actions";
 //-bound
 import { ScopeLayer, useScope } from "../core";
+//+collapse
+import { GroupBox } from "../core";
+//-collapse
 import { useRead, type ReadSpec } from "../data";
 import { FieldInput, HelpNote, Tabs, type FieldSpec, type HelpSpec, type TabSpec } from "../fields";
 import { getPath, isObject, setPath } from "../json";
@@ -14,6 +17,9 @@ export interface GroupSpec {
   "data-ui-path": string;
   name: string;
   label?: string;
+//+collapse
+  collapsed?: boolean;
+//-collapse
   fields: FieldSpec[];
   save?: string;
   does?: string;
@@ -160,8 +166,13 @@ function FormBody(props: Parameters<typeof FormView>[0]): ReactNode {
         <FieldInput key={field.name} field={field} />
       ))}
       {(props.groups ?? []).map((group) => (
+//+nocollapse
         <fieldset key={group.name} className="ui-form-group" data-ui-path={useUiPath(group["data-ui-path"])}>
           {group.label ? <legend>{group.label}</legend> : null}
+//-nocollapse
+//+collapse
+        <GroupBox key={group.name} data-ui-path={useUiPath(group["data-ui-path"])} label={group.label} collapsed={group.collapsed}>
+//-collapse
           <HelpNote help={group.help} />
           <ScopeLayer setters={group.save === "on_change" ? savesOnChange(group.does ?? props.does) : {}}>
             {group.fields.map((field) => (
@@ -176,7 +187,12 @@ function FormBody(props: Parameters<typeof FormView>[0]): ReactNode {
           {(group.actions ?? []).map((action) => (
             <ActionControl key={action.name} action={action} />
           ))}
+//+nocollapse
         </fieldset>
+//-nocollapse
+//+collapse
+        </GroupBox>
+//-collapse
       ))}
       {props.tabs && props.tabs.length > 0 ? (
         <Tabs

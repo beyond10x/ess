@@ -21,6 +21,8 @@ const CHECKED: &[&str] = &[
     "Field.as",
     "FormGroup.save",
     "Navigation.search.over",
+    "PageLayout.areas.place.*.frame",
+    "PageLayout.columns.frame",
     "State.clear_on",
     "State.scope",
     "badge.tone_by.map.*",
@@ -54,6 +56,22 @@ pub(crate) fn run(document: &Document, located: &[Located<'_>], sink: &mut Sink)
             NodeRef::FormGroup(group) => {
                 if let Some(written) = &group.save {
                     value(sink, path, "FormGroup.save", "save", written);
+                }
+            }
+            NodeRef::LayoutColumn(column) => {
+                if let Some(written) = &column.frame {
+                    value(sink, path, "PageLayout.columns.frame", "frame", written);
+                }
+            }
+            NodeRef::LayoutArea(place) => {
+                if let Some(written) = place.framed().and_then(|framed| framed.frame.as_ref()) {
+                    value(
+                        sink,
+                        path,
+                        "PageLayout.areas.place.*.frame",
+                        "frame",
+                        written,
+                    );
                 }
             }
             NodeRef::Action(action) => {
