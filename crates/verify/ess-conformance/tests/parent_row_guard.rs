@@ -1208,3 +1208,152 @@ fn the_only_related_row_compared_plainly_is_created_under_the_tenant_sent() {
     assert_synthesized(&run, CREATE_CHILD);
     assert_none_failed_or_unsupported(&run);
 }
+
+/// The folder's tenant refusal with `predicate` in place of the absent-matching-absent guard.
+fn folder_refusal(predicate: &str) -> String {
+    format!(
+        "      - name: folder-other-tenant\n        when_related: {{via: input.folder_id, predicate: \
+         {predicate}}}\n        error: demo.d.NotFound\n"
+    )
+}
+
+/// The folder, without the parent guard, refused by `predicate`: `CreateChild/created`,
+/// `GetChild/found` and `GetChild/child-not-found` are synthesized with the folder under the
+/// tenant sent, and the interpreted run reports 0 failed and 0 unsupported.
+fn assert_folder_refusal_holds(predicate: &str) {
+    let run = run(&folder_guarded(&folder_refusal(predicate)));
+    assert_none_failed_or_unsupported(&run);
+    for wanted in [CREATE_CHILD, FOUND, CHILD_NOT_FOUND] {
+        assert_synthesized(&run, wanted);
+        assert_related_rows_under_the_tenant_sent(&run, wanted, false);
+    }
+}
+
+#[test]
+#[ignore = "backlog: plain-related-row-reader (story:a-reader-beside-a-plain-related-tenant-guard-is-witnessed)"]
+fn adversary2_the_parent_guard_beside_a_folder_compared_plainly_leaves_found_and_deleted() {
+    // Case 1 with the parent guard, its folder guard written plainly.
+    let run = run(&replaced(
+        &with_folder(),
+        folder_tenant_guard(),
+        &folder_refusal(PLAIN_GUARD),
+    ));
+    for wanted in [FOUND, DELETED] {
+        assert_synthesized(&run, wanted);
+        assert_related_rows_under_the_tenant_sent(&run, wanted, true);
+        assert_passed(&run, wanted);
+    }
+    assert_none_failed_or_unsupported(&run);
+}
+
+#[test]
+#[ignore = "backlog: plain-related-row-reader (story:a-reader-beside-a-plain-related-tenant-guard-is-witnessed)"]
+fn adversary2_three_related_rows_two_compared_plainly_leave_every_witness() {
+    let plain = folder_refusal(PLAIN_GUARD);
+    let text = replaced(&with_shelf(), folder_tenant_guard(), &plain);
+    let text = replaced(
+        &text,
+        &folder_tenant_guard().replace("folder", "shelf"),
+        &plain.replace("folder", "shelf"),
+    );
+    let run = run(&text);
+    for wanted in [CREATE_CHILD, FOUND, DELETED] {
+        assert_synthesized(&run, wanted);
+    }
+    assert_none_failed_or_unsupported(&run);
+}
+
+#[test]
+fn adversary2_a_negated_equality_on_the_folder_is_a_plain_comparison() {
+    assert_folder_refusal_holds("{not: 'tenant == input.tenant'}");
+}
+
+#[test]
+fn adversary2_a_plain_comparison_with_the_input_on_the_left_is_a_plain_comparison() {
+    assert_folder_refusal_holds("input.tenant != tenant");
+}
+
+#[test]
+#[ignore = "backlog: presence-tested-plain-guard (story:a-plain-comparison-beside-an-input-presence-test-is-witnessed)"]
+fn adversary2_a_plain_comparison_beside_an_input_presence_test_is_a_plain_comparison() {
+    assert_folder_refusal_holds("{any: ['not defined(input.tenant)', tenant != input.tenant]}");
+}
+
+#[test]
+fn adversary2_a_presence_tested_tenant_compared_unguarded_never_reads_two_absences() {
+    // Absent matching absent written with the comparison left unguarded: on a folder and a send
+    // both without a tenant the comparison is Unknown, and no other disjunct holds.
+    assert_folder_refusal_holds(
+        "{any: [{all: ['defined(tenant)', 'not defined(input.tenant)']}, {all: ['not \
+         defined(tenant)', 'defined(input.tenant)']}, tenant != input.tenant]}",
+    );
+}
+
+#[test]
+fn adversary2_a_folder_given_its_tenant_after_creation_leaves_the_earlier_refusals() {
+    // The folder is created without a tenant and given one by `AssignFolder`; the parent's
+    // refusals answer before the folder's plain comparison is read.
+    let text = replaced(
+        &with_folder(),
+        folder_tenant_guard(),
+        &folder_refusal(PLAIN_GUARD),
+    );
+    let text = replaced(
+        &text,
+        CREATE_FOLDER,
+        "  - name: demo.d.CreateFolder
+    input: []
+    outcomes:
+      - name: created
+        creates: demo.d.Folder
+        instance: folder_id
+        emits: [demo.d.FolderCreated]
+        payload: {demo.d.FolderCreated: {folder_id: {generated: true}}}
+  - name: demo.d.AssignFolder
+    input:
+      - {name: folder_id, type: demo.d.FolderId}
+      - {name: tenant, type: Optional<String>}
+    outcomes:
+      - name: not-found
+        unknown_instance: true
+        error: demo.d.NotFound
+      - name: assigned
+        updates: demo.d.Folder
+        instance: folder_id
+        sets: {tenant: input.tenant}
+        emits: [demo.d.FolderAssigned]
+        payload: {demo.d.FolderAssigned: {folder_id: input.folder_id}}
+",
+    );
+    let text = replaced(
+        &text,
+        "  - name: demo.d.FolderCreated\n",
+        "  - name: demo.d.FolderAssigned\n    fields: [{name: folder_id, type: demo.d.FolderId}]\n  \
+         - name: demo.d.FolderCreated\n",
+    );
+    let run = run(&text);
+    for wanted in [
+        "demo.d.CreateChild/outcome/parent-not-found",
+        "demo.d.CreateChild/outcome/other-tenant",
+        "demo.d.CreateChild/outcome/folder-not-found",
+    ] {
+        assert_synthesized(&run, wanted);
+    }
+    assert_none_fails(&run);
+}
+
+#[test]
+fn adversary2_a_plain_folder_refusal_under_an_input_when_is_not_refused() {
+    let text = replaced(
+        &folder_guarded(&folder_refusal(PLAIN_GUARD)),
+        "        when_related: {via: input.folder_id, predicate: tenant != input.tenant}\n",
+        "        when_related: {via: input.folder_id, predicate: tenant != input.tenant}\n        \
+         when: \"defined(input.tenant)\"\n",
+    );
+    let run = run(&text);
+    assert_synthesized(&run, CREATE_CHILD);
+    for wanted in [FOUND, CHILD_NOT_FOUND] {
+        assert_passes_or_refused(&run, wanted);
+    }
+    assert_none_failed_or_unsupported(&run);
+}
