@@ -483,11 +483,27 @@ impl Written {
     /// Reads every predicate site of one source document, as the typed reader will find them.
     /// Whatever does not read here is left out: the typed reader refuses it with its own
     /// diagnostic, and a predicate left out keeps the meaning it had before `ess/22`.
+    ///
+    /// `text` is the document as written: a number reaches the document as an `f64`, so the digits
+    /// of one a guard written as a mapping holds are read back out of it
+    /// ([`crate::inexact_decimal`]).
     // One `put` per predicate site an outcome, a declaration or a view writes.
     #[allow(clippy::too_many_lines)]
-    pub(crate) fn from_document(document: &ess_yaml::Value) -> Self {
-        use ess_yaml::Value;
+    pub(crate) fn from_document(document: &ess_yaml::Value, text: &str) -> Self {
+        use ess_yaml::{Step, Value};
+        let floats = crate::inexact_decimal::floats(document, text);
+        let mut claimed = std::collections::BTreeSet::<Vec<Step>>::new();
         let mut written = Self::default();
+        let key = |base: &[Step], name: &str| -> Vec<Step> {
+            let mut path = base.to_vec();
+            path.push(Step::Key(name.to_owned()));
+            path
+        };
+        let nth = |base: &[Step], index: usize| -> Vec<Step> {
+            let mut path = base.to_vec();
+            path.push(Step::Index(index));
+            path
+        };
         let items = |value: &Value, key: &str| -> Vec<Value> {
             value
                 .get(key)
@@ -501,11 +517,19 @@ impl Written {
             let node: Node = ess_yaml::from_value(value?.clone()).ok()?;
             LexicalPredicate::from_node(&node).ok()
         };
-        let mut put = |site: Site, value: Option<&Value>| {
-            // The reader still answers the nearest binary64 for a literal that collapses; what it
-            // met is refused at the site, once, where the predicate is first written.
-            let (tree, inexact) =
+        // `path` is where `value` sits in the document. The reader still answers the nearest
+        // binary64 for a literal that collapses; what it met in a text predicate, and each number
+        // of a mapping-form predicate whose digits its `f64` does not hold, is refused at the site,
+        // once, where the predicate is first written.
+        let mut put = |site: Site, path: &[Step], value: Option<&Value>| {
+            let (tree, mut inexact) =
                 ess_primitives::facts::collecting_inexact_decimals(|| lexical(value));
+            for (at, number) in crate::inexact_decimal::under(&floats, path) {
+                claimed.insert(at.clone());
+                if !inexact.contains(number) {
+                    inexact.push(number.clone());
+                }
+            }
             if let Some(tree) = tree {
                 if let std::collections::btree_map::Entry::Vacant(slot) =
                     written.sites.entry(site.clone())
@@ -518,11 +542,13 @@ impl Written {
                 }
             }
         };
-        for command in items(document, "commands") {
+        let commands = key(&[], "commands");
+        for (command_index, command) in items(document, "commands").into_iter().enumerate() {
             let Some(name) = named(&command) else {
                 continue;
             };
-            for outcome in items(&command, "outcomes") {
+            let outcomes_path = key(&nth(&commands, command_index), "outcomes");
+            for (outcome_index, outcome) in items(&command, "outcomes").into_iter().enumerate() {
                 let Some(outcome_name) = outcome
                     .get("name")
                     .and_then(Value::as_str)
@@ -530,21 +556,26 @@ impl Written {
                 else {
                     continue;
                 };
+                let outcome_path = nth(&outcomes_path, outcome_index);
                 let at = |make: fn(QualifiedName, OutcomeName) -> Site| {
                     make(name.clone(), outcome_name.clone())
                 };
+                let when_related = key(&outcome_path, "when_related");
                 put(
                     at(|command, outcome| Site::Guard { command, outcome }),
+                    &key(&outcome_path, "when"),
                     outcome.get("when"),
                 );
                 put(
                     at(|command, outcome| Site::Subject { command, outcome }),
+                    &key(&key(&outcome_path, "when_subject"), "predicate"),
                     outcome
                         .get("when_subject")
                         .and_then(|it| it.get("predicate")),
                 );
                 put(
                     at(|command, outcome| Site::Related { command, outcome }),
+                    &key(&when_related, "predicate"),
                     outcome
                         .get("when_related")
                         .and_then(|it| it.get("predicate")),
@@ -562,28 +593,37 @@ impl Written {
                             outcome: outcome_name.clone(),
                             index,
                         },
+                        &key(&nth(&key(&when_related, "all"), index), "predicate"),
                         element.get("predicate"),
                     );
                 }
                 put(
                     at(|command, outcome| Site::RowSetWhere { command, outcome }),
+                    &key(&when_related, "where"),
                     outcome.get("when_related").and_then(|it| it.get("where")),
                 );
                 put(
                     at(|command, outcome| Site::RowSetForall { command, outcome }),
+                    &key(&when_related, "forall"),
                     outcome.get("when_related").and_then(|it| it.get("forall")),
                 );
                 put(
                     at(|command, outcome| Site::Instances { command, outcome }),
+                    &key(&key(&outcome_path, "instances"), "where"),
                     outcome.get("instances").and_then(|it| it.get("where")),
                 );
                 for (place, filter) in selections(&outcome) {
+                    // The filter sits under its place, then `related`, then `where`.
+                    let held_at = place
+                        .iter()
+                        .fold(outcome_path.clone(), |path, step| key(&path, step));
                     put(
                         Site::Selection {
                             command: name.clone(),
                             outcome: outcome_name.clone(),
                             place,
                         },
+                        &key(&key(&held_at, "related"), "where"),
                         Some(&filter),
                     );
                 }
@@ -594,12 +634,13 @@ impl Written {
                             outcome: outcome_name.clone(),
                             index,
                         },
+                        &key(&nth(&key(&outcome_path, "affects"), index), "where"),
                         affect.get("where"),
                     );
                 }
             }
         }
-        for (key, invariant_site) in [
+        for (section, invariant_site) in [
             (
                 "entities",
                 (|entity, index| Site::Invariant { entity, index })
@@ -607,29 +648,47 @@ impl Written {
             ),
             ("types", |name, index| Site::TypeInvariant { name, index }),
         ] {
-            for declared in items(document, key) {
+            let declarations = key(&[], section);
+            for (declared_index, declared) in items(document, section).into_iter().enumerate() {
                 let Some(name) = named(&declared) else {
                     continue;
                 };
+                let invariants = key(&nth(&declarations, declared_index), "invariants");
                 for (index, invariant) in items(&declared, "invariants").iter().enumerate() {
-                    put(invariant_site(name.clone(), index), Some(invariant));
+                    put(
+                        invariant_site(name.clone(), index),
+                        &nth(&invariants, index),
+                        Some(invariant),
+                    );
                 }
             }
         }
-        for view in items(document, "views") {
+        let views = key(&[], "views");
+        for (view_index, view) in items(document, "views").into_iter().enumerate() {
             if let Some(name) = named(&view) {
-                put(Site::View { view: name.clone() }, view.get("filter"));
-                for (field, condition) in conditions(&view) {
+                let view_path = nth(&views, view_index);
+                put(
+                    Site::View { view: name.clone() },
+                    &key(&view_path, "filter"),
+                    view.get("filter"),
+                );
+                let fields = key(&view_path, "fields");
+                for (field_index, field, condition) in conditions(&view) {
                     put(
                         Site::Measure {
                             view: name.clone(),
                             field,
                         },
+                        &key(&key(&nth(&fields, field_index), "aggregate"), "where"),
                         Some(condition),
                     );
                 }
             }
         }
+        // What is left of a `sets:` or `payload:` is a literal the outcome wrote itself.
+        written.inexact.extend(crate::inexact_decimal::authored(
+            document, &floats, &claimed,
+        ));
         written
     }
 
@@ -654,15 +713,17 @@ impl Written {
     }
 }
 
-/// Each aggregate field of a written view that declares `where:`, with its name and the condition.
-fn conditions(view: &ess_yaml::Value) -> Vec<(String, &ess_yaml::Value)> {
+/// Each aggregate field of a written view that declares `where:`, with its position, its name and
+/// the condition.
+fn conditions(view: &ess_yaml::Value) -> Vec<(usize, String, &ess_yaml::Value)> {
     view.get("fields")
         .and_then(ess_yaml::Value::as_sequence)
         .into_iter()
         .flatten()
-        .filter_map(|field| {
+        .enumerate()
+        .filter_map(|(index, field)| {
             let name = field.get("name")?.as_str()?.to_owned();
-            Some((name, field.get("aggregate")?.get("where")?))
+            Some((index, name, field.get("aggregate")?.get("where")?))
         })
         .collect()
 }

@@ -193,12 +193,9 @@ impl RawSpecFile {
     /// spelled as, which is what every earlier format means by it.
     pub fn parse(text: &str) -> Result<Self, ess_yaml::Error> {
         let mut document: ess_yaml::Value = ess_yaml::from_str(text)?;
-        let mut spelled = crate::expression::lexical::Written::from_document(&document);
         // Read before anything is taken out of the document: the digits of a number are read back
         // out of `text` by walking it beside the document as it was read.
-        spelled
-            .inexact
-            .extend(crate::inexact_decimal::authored(&document, text));
+        let spelled = crate::expression::lexical::Written::from_document(&document, text);
         // A type's `undeclared_fields:` is read beside its body rather than in it (`ess/24`), and
         // every other declaration's is read so it can be refused at its line.
         let undeclared_fields = crate::undeclared_fields::Written::take(&mut document)?;
