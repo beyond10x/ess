@@ -2743,7 +2743,23 @@ impl<'d> Gen<'d> {
                 let layout = self.import("runtime/core", "AreasLayout");
                 let grid = ts::array(areas.areas.grid.iter().map(strings));
                 let mut entries: Vec<(String, Option<String>)> = Vec::new();
-                for (area, place) in &areas.areas.place {
+                // The runtime draws the areas in the order they are passed, and below the
+                // renderer width that is the order they stack in: the section declaration
+                // order the `no_areas: stack` degrade uses. An area is placed by the position
+                // of the earliest declared section it places; an area placing no known section
+                // goes last.
+                let rank = |place: &AreaPlace| {
+                    place
+                        .sections()
+                        .iter()
+                        .filter(|name| sections.contains_key(*name))
+                        .filter_map(|name| page.sections.iter().position(|s| &s.name == name))
+                        .min()
+                        .unwrap_or(usize::MAX)
+                };
+                let mut ordered: Vec<(&String, &AreaPlace)> = areas.areas.place.iter().collect();
+                ordered.sort_by_key(|(area, place)| (rank(place), *area));
+                for (area, place) in ordered {
                     let inner: Vec<String> = place
                         .sections()
                         .iter()
@@ -2770,9 +2786,13 @@ impl<'d> Gen<'d> {
                     };
                     entries.push((area.clone(), Some(content)));
                 }
+                // `order` carries the stacking order: an object's integer-like keys (an area
+                // named `1`) would come first in `Object.entries` whatever order they are written.
+                let order = ts::array(entries.iter().map(|(area, _)| ts::string(area)));
                 El::new(&layout)
                     .expr("grid", grid)
                     .expr("areas", multiline_object(&entries))
+                    .expr("order", order)
                     .render()
             }
         };

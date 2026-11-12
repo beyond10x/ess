@@ -208,38 +208,41 @@ fn a_wide_table_scrolls_inside_its_column() {
 }
 
 #[test]
-fn areas_stack_in_the_order_the_grid_reads() {
+fn areas_stack_in_the_section_declaration_order() {
     let all = files();
-    let core = all
-        .get("src/runtime/core.tsx")
-        .expect("the runtime core is generated");
-    let start = core
-        .find("export function AreasLayout(")
-        .expect("the runtime draws an AreasLayout");
-    let body = &core[start..];
-    let body = &body[..body.find("\n}\n").expect("the function ends")];
-    assert!(
-        body.contains("props.grid.flat()") && body.contains(".sort("),
-        "the area divs are ordered by their first appearance in the grid:\n{body}"
-    );
-    assert!(
-        !body.contains("Object.entries(props.areas).map("),
-        "the area divs are not drawn in the key order of the places:\n{body}"
-    );
-
     let page = all
         .get("src/pages/Overview.tsx")
         .expect("the overview page is generated");
-    let at = |needle: &str| {
-        page.find(needle)
-            .unwrap_or_else(|| panic!("no `{needle}` in:\n{page}"))
+    let object = &page[page
+        .find("areas={")
+        .unwrap_or_else(|| panic!("the page passes its areas:\n{page}"))..];
+    // The grid reads zeta, alpha, mid; the names sort alpha, mid, zeta; the sections are
+    // declared wide (placed in mid), notes (alpha), tail (zeta).
+    let key = |area: &str| {
+        object
+            .match_indices(&format!("{area}: "))
+            .find(|(at, _)| object[..*at].ends_with(char::is_whitespace))
+            .map_or_else(|| panic!("no `{area}` key in:\n{object}"), |(at, _)| at)
     };
-    assert!(
-        at("\"zeta\"") < at("\"alpha\""),
-        "the grid reads zeta before alpha:\n{page}"
+    let mut keys: Vec<&str> = vec!["alpha", "mid", "zeta"];
+    keys.sort_by_key(|area| key(area));
+    assert_eq!(
+        keys,
+        ["mid", "alpha", "zeta"],
+        "the page passes its areas in section declaration order:\n{object}"
     );
+
+    // The order is passed as a list too: `Object.entries` would put an integer-like area name
+    // (`1`, which the name pattern admits) first whatever order the keys are written in.
     assert!(
-        at("alpha:") < at("zeta:"),
-        "the places arrive sorted by name, so the runtime must reorder them:\n{page}"
+        page.contains(r#"order={["mid", "alpha", "zeta"]}"#),
+        "the page passes its stacking order as a list:\n{object}"
+    );
+    let core = all
+        .get("src/runtime/core.tsx")
+        .expect("the runtime core is generated");
+    assert!(
+        core.contains("props.order.map(") && !core.contains("Object.entries(props.areas)"),
+        "the runtime draws the areas in the order list the page passes"
     );
 }
