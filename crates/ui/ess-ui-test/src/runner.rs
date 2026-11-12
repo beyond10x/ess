@@ -143,6 +143,9 @@ impl<'d> Runner<'d> {
             }
             Step::Act { at } => {
                 let target = self.acting(at)?;
+                if let Some(reason) = crate::parity::submit(self.doc, &target) {
+                    return Err(reason);
+                }
                 self.act(&target)
             }
             Step::Page { at, to } => {

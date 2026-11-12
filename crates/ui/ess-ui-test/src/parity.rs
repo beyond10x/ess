@@ -17,6 +17,8 @@
 //!   header and its actions, a section's child, a field slot of a section's or an overlay's own
 //!   form, and the collection parts above; and never an icon action or an action drawn as a
 //!   choice, which show no label in the browser;
+//! - `act` on a form that saves on change is refused: the generated form draws no submit then
+//!   ([`submit`]);
 //! - a host slot is drawn by the host in the generated app and as a labelled region by the
 //!   terminal, so a step that acts inside it is refused ([`inside_host`]), and the spec marks a
 //!   `text` check at it `test.fixme` ([`host_text`]).
@@ -190,6 +192,36 @@ pub(crate) fn undriven(document: &Document, target: &Target) -> Option<String> {
         }
     }
     None
+}
+
+/// Why `act` at `target` is refused because it submits a form that saves on change, if it does:
+/// the generated form draws no submit button then (every change already sent its command), so
+/// there is nothing in the browser to act on. A form whose group alone saves on change keeps its
+/// submit.
+pub(crate) fn submit(document: &Document, target: &Target) -> Option<String> {
+    if target.row.is_some() {
+        return None;
+    }
+    let located = document
+        .nodes()
+        .into_iter()
+        .find(|located| located.path.to_string() == target.node)?;
+    match located.node {
+        NodeRef::Section(section)
+            if matches!(
+                &section.body,
+                Body::Composite(Composite::Form(form))
+                    if form.save == Some(ess_ui::FormSave::OnChange)
+            ) =>
+        {
+            Some(format!(
+                "{}: the form saves on change and has no submit in the generated app; \
+                 choose or type a field instead, each change sends the form's command",
+                target.written
+            ))
+        }
+        _ => None,
+    }
 }
 
 /// Why a step that acts at `written` — `act`, `select`, `mark`, `move`, `upload`, `type`,

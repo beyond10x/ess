@@ -153,7 +153,9 @@ section whose body is a form it submits the form. On a collection's column
 (`…/columns/<name>`) it sorts by that column as a click on its header does: ascending, or
 descending when the collection is already sorted by it ascending; the column is `sortable`. A
 form that saves on change (`save: on_change`) sends its command on every change a step makes,
-without `act`. At a page header's help (`pages/<page>/header/help`) it opens the help: the
+without `act`, and has no submit: `act` on it is refused in both renderers. A group that saves on
+change sends its own `does` (the form's when it names none) on every change to one of its fields,
+and the form keeps its submit for its other fields. At a page header's help (`pages/<page>/header/help`) it opens the help: the
 terminal and the generated app draw it open, so the step only checks that no overlay covers it,
 and an app that draws the help closed (a disclosure beside the title) opens it there. `expect`
 reads the help's text at the same path.
@@ -416,6 +418,7 @@ refuses:
 | `text` or `not_text` at an icon action, or an action drawn as a choice | the browser shows no label there |
 | `choose` at a field `as: choice` without a `choice` node | it offers no options in either renderer |
 | `checked` at a node that is not a form toggle of a section's or an overlay's own form | neither renderer holds a toggle's state there |
+| `act` at a section whose form has `save: on_change` | the generated form draws no submit then |
 | `advance` or `play` past the end of the clock | the move does not fit |
 | `advance` or `play` over more than `MAX_CYCLES_PER_ADVANCE` cycles of a looping script | every cycle's events are delivered one by one |
 

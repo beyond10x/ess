@@ -524,6 +524,9 @@ fn refusal(step: &Step, document: &Document) -> Option<String> {
     if matches!(step, Step::Choose { .. }) {
         return crate::parity::choose(document, &target);
     }
+    if matches!(step, Step::Act { .. }) {
+        return crate::parity::submit(document, &target);
+    }
     let checks = checks?;
     if checks
         .iter()

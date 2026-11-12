@@ -23,8 +23,24 @@ shells:
       main: {kind: page_outlet}
 navigation:
   home: items
-  sections: [{name: all, pages: [items, settings, prefs, report]}]
+  sections: [{name: all, pages: [items, settings, prefs, audit, report]}]
 pages:
+  audit:
+    kind: form_page
+    shell: app
+    title: Audit
+    sections:
+      - name: form
+        component: form
+        does: shelf.Save
+        fields:
+          - {field: owner, label: Owner}
+        groups:
+          - name: audit
+            label: Audit
+            save: on_change
+            does: shelf.SaveAudit
+            fields: [{field: audit_on, as: toggle, label: Audit on}]
   settings:
     kind: settings_page
     shell: app
@@ -133,6 +149,10 @@ const ROWS: &str = "pages/items/sections/list/rows";
 
 /// Each test writes its own copy of the document, so no test reads another's half-written file.
 fn document(name: &str) -> PathBuf {
+    document_of(DOCUMENT, name)
+}
+
+fn document_of(text: &str, name: &str) -> PathBuf {
     let dir = Path::new(env!("CARGO_TARGET_TMPDIR"))
         .join("ess-ui-test-journey-controls")
         .join(name);
@@ -142,13 +162,17 @@ fn document(name: &str) -> PathBuf {
     std::fs::create_dir_all(&dir).expect("the scratch dir is made");
     std::fs::write(dir.join("views.yaml"), VIEWS).expect("the fixture is written");
     std::fs::write(dir.join("stock.csv"), CSV).expect("the upload file is written");
-    std::fs::write(dir.join("ui.yaml"), DOCUMENT).expect("the document is written");
+    std::fs::write(dir.join("ui.yaml"), text).expect("the document is written");
     dir.join("ui.yaml")
 }
 
 /// Runs one test of `steps` (one YAML step per entry) from a test file next to the document.
 fn run(name: &str, steps: &[&str]) -> Outcome {
-    let document = document(name);
+    run_document(DOCUMENT, name, steps)
+}
+
+fn run_document(text: &str, name: &str, steps: &[&str]) -> Outcome {
+    let document = document_of(text, name);
     let mut text =
         format!("format: ess-ui-test/1\ndocument: ui.yaml\ntests:\n- name: {name}\n  steps:\n");
     for step in steps {
@@ -190,6 +214,90 @@ fn an_on_change_section_form_sends_each_change() {
             "expect_command: {command: shelf.SetPrefs, input: {nickname: Ada}}",
             "choose: {at: pages/prefs/sections/settings/fields/dark, option: 'true'}",
             "expect_command: {command: shelf.SetPrefs, input: {nickname: Ada, dark: true}}",
+        ],
+    ));
+}
+
+const AUDIT_TOGGLE: &str =
+    "choose: {at: pages/audit/sections/form/groups/audit/fields/audit_on, option: 'true'}";
+
+#[test]
+fn a_group_on_change_sends_each_change_in_the_terminal() {
+    passed(&run(
+        "group_on_change",
+        &[
+            "open: audit",
+            AUDIT_TOGGLE,
+            "expect_command: {command: shelf.SaveAudit, input: {audit_on: true}}",
+        ],
+    ));
+}
+
+#[test]
+fn a_group_on_change_without_does_sends_the_forms_command() {
+    let document = DOCUMENT.replace("            does: shelf.SaveAudit\n", "");
+    assert_ne!(document, DOCUMENT);
+    passed(&run_document(
+        &document,
+        "group_on_change_forms_command",
+        &[
+            "open: audit",
+            AUDIT_TOGGLE,
+            "expect_command: {command: shelf.Save, input: {audit_on: true}}",
+        ],
+    ));
+}
+
+#[test]
+fn act_on_an_on_change_form_is_refused_in_both_renderers() {
+    let steps = [
+        "open: prefs",
+        "choose: {at: pages/prefs/sections/settings/fields/dark, option: 'true'}",
+        "act: pages/prefs/sections/settings",
+    ];
+    let outcome = run("act_on_change", &steps);
+    assert_eq!(outcome.status, Status::Failed, "{outcome:#?}");
+    assert_eq!(outcome.step, Some(3), "{outcome:#?}");
+    // The runner names the step before the reason.
+    let message = outcome.message.unwrap_or_default();
+    let message = message
+        .strip_prefix("act pages/prefs/sections/settings: ")
+        .unwrap_or_else(|| panic!("{message}"))
+        .to_owned();
+    assert!(
+        message.starts_with("pages/prefs/sections/settings:")
+            && message.contains("saves on change")
+            && message.contains("no submit"),
+        "{message}"
+    );
+
+    let document = document("act_on_change_spec");
+    let mut text =
+        "format: ess-ui-test/1\ndocument: ui.yaml\ntests:\n- name: spec\n  steps:\n".to_owned();
+    for step in steps {
+        text.push_str("  - ");
+        text.push_str(step);
+        text.push('\n');
+    }
+    let file = ess_ui_test::parse_str(&text, &document.with_file_name("journey.yaml"))
+        .unwrap_or_else(|error| panic!("{error}"));
+    let loaded = ess_ui::load_path(&document).expect("the document loads");
+    let spec = ess_ui_test::playwright(&[file], &loaded);
+    assert!(!spec.contains("button[type=\"submit\"]"), "{spec}");
+    let fixme = format!(
+        "test.fixme(true, {});",
+        serde_json::to_string(&message).expect("a string")
+    );
+    assert!(spec.contains(&fixme), "{fixme}\n{spec}");
+
+    // A form whose group alone saves on change keeps its submit.
+    passed(&run(
+        "act_group_on_change",
+        &[
+            "open: audit",
+            AUDIT_TOGGLE,
+            "act: pages/audit/sections/form",
+            "expect_command: {command: shelf.Save, input: {audit_on: true}}",
         ],
     ));
 }
