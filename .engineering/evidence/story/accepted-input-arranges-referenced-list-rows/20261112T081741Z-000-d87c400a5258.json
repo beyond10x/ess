@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-12T08:17:41Z",
+  "actor": "human:timo",
+  "artifact": "story:accepted-input-arranges-referenced-list-rows",
+  "kind": "story",
+  "revision": 10,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "PR 784 CI on 4086c925a4 (20 test shards, Checks, Gate)",
+    "reference": "https://github.com/beyond10x/ess/actions/runs/43169007022"
+  }
+}
