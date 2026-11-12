@@ -1196,3 +1196,236 @@ fn adversary2_a_four_row_chain_through_an_into_creator_names_arranged_rows() {
         }
     }
 }
+
+// ---- Adversary pass 3 (turn 3): the fix commit 8d773d68c3. ----
+
+/// `Server` with an `Integer` field `min` and the invariant `sources.count >= min`.
+fn adversary3_min_server() -> String {
+    ADV_SERVER_MANY
+        .replace(
+            "    relations:\n",
+            "      - {name: min, type: Integer}\n    relations:\n",
+        )
+        .replace(
+            "    lifecycle:",
+            "    invariants: [\"sources.count >= min\"]\n    lifecycle:",
+        )
+}
+
+/// The invariant `sources.count >= min` holds the list non-empty, but `min` is set from a literal
+/// (`min: "1"`), so `keeps_branch` does not see the invariant (only invariants every read of which
+/// lands on a copied input are checked). With a route the arranged scenario passes, so the witness
+/// list holds a row; with none it is sent `[]`, and the interpreter finds the invariant broken.
+#[test]
+fn adversary3_an_unarrangeable_list_a_literal_bounded_invariant_holds_non_empty_is_not_sent_empty()
+{
+    let register = adversary_register("List<demo.reg.SourceId>", "", "", ", min: \"1\"");
+    let (_, failed) = adversary_interpreted(adversary_compile(&adversary_text(
+        ADV_LIVE,
+        &adversary3_min_server(),
+        &format!("{ADV_ADD_SOURCE}\n{register}"),
+    )));
+    assert!(
+        failed.iter().all(|line| !line.starts_with(ACCEPTED)),
+        "with a route the accepted scenario passes: {failed:#?}"
+    );
+    adversary2_accepted_passes_or_is_refused_by_name(adversary_compile(&adversary_text(
+        ADV_LIVE,
+        &adversary3_min_server(),
+        &register,
+    )));
+}
+
+/// `accepted` (`when: flag == true`) is declared before the accepting `bare`
+/// (`when: sources.count == 0`): with no route, `[]` and `flag: true` still select `accepted` by
+/// declaration order, so the empty list keeps the branch and the scenario is not refused.
+#[test]
+fn adversary3_a_later_accepting_branch_reading_the_count_does_not_refuse_the_empty_list() {
+    let register = r#"  - name: demo.reg.Register
+    input:
+      - {name: id, type: demo.reg.ServerId}
+      - {name: sources, type: "List<demo.reg.SourceId>"}
+      - {name: flag, type: Boolean}
+    outcomes:
+      - name: accepted
+        when: flag == true
+        creates: demo.reg.Server
+        instance: id
+        sets: {sources: input.sources}
+        emits: [demo.reg.Registered]
+        payload: {demo.reg.Registered: {id: input.id}}
+      - name: bare
+        when: sources.count == 0
+        creates: demo.reg.Server
+        instance: id
+        sets: {sources: input.sources}
+        emits: [demo.reg.Registered]
+        payload: {demo.reg.Registered: {id: input.id}}
+      - name: refused
+        error: demo.reg.Refused"#;
+    let (synthesis, failed) = adversary_interpreted(adversary_compile(&adversary_text(
+        ADV_LIVE,
+        ADV_SERVER_MANY,
+        register,
+    )));
+    assert!(
+        scenario(&synthesis, ACCEPTED).is_some(),
+        "`[]` with `flag: true` still selects accepted, yet it is refused: {:?}",
+        adversary2_refusal(&synthesis)
+    );
+    assert!(
+        failed.iter().all(|line| !line.starts_with(ACCEPTED)),
+        "{failed:#?}"
+    );
+}
+
+/// `Register` whose accepting branch is guarded by `guard`, with an `Integer` input `n` and a
+/// plain `SourceId` input `primary` (no relation) the guard may read; a default refusal below.
+fn adversary3_guarded_register(guard: &str) -> String {
+    format!(
+        r#"  - name: demo.reg.Register
+    input:
+      - {{name: id, type: demo.reg.ServerId}}
+      - {{name: sources, type: "List<demo.reg.SourceId>"}}
+      - {{name: n, type: Integer}}
+      - {{name: primary, type: demo.reg.SourceId}}
+    outcomes:
+      - name: accepted
+        when: {guard}
+        creates: demo.reg.Server
+        instance: id
+        sets: {{sources: input.sources}}
+        emits: [demo.reg.Registered]
+        payload: {{demo.reg.Registered: {{id: input.id}}}}
+      - name: refused
+        error: demo.reg.Refused"#
+    )
+}
+
+/// Held (probe): `sources.count == n` compared with another input. With a route the list names
+/// arranged rows and passes; with none it passes or is refused by name.
+#[test]
+fn adversary3_a_count_compared_with_an_input_is_arranged_or_refused_by_name() {
+    let register = adversary3_guarded_register("\"sources.count == n\"");
+    let (synthesis, failed) = adversary_interpreted(adversary_compile(&adversary_text(
+        ADV_LIVE,
+        ADV_SERVER_MANY,
+        &format!("{ADV_ADD_SOURCE}\n{register}"),
+    )));
+    assert!(failed.is_empty(), "{failed:#?}");
+    let accepted = scenario(&synthesis, ACCEPTED).expect("the accepted scenario exists");
+    let (at, input) = adversary_executions(accepted, REGISTER)[0];
+    if !matches!(&input["sources"], ScenarioValue::Literal { value: Node::Seq(items) } if items.is_empty())
+    {
+        assert_eq!(
+            adversary_dangling(accepted, &input["sources"], ADD, at),
+            None,
+            "sources"
+        );
+    }
+    adversary2_accepted_passes_or_is_refused_by_name(adversary_compile(&adversary_text(
+        ADV_LIVE,
+        ADV_SERVER_MANY,
+        &register,
+    )));
+}
+
+/// Held (probe): a guard reading the count and an element (`exists ... s == primary`) is left
+/// alone, route or none: the accepted scenario exists and passes, so the witness list that holds
+/// `primary` is not replaced by arranged rows, nor refused.
+#[test]
+fn adversary3_a_guard_reading_the_count_and_an_element_is_left_alone() {
+    let register = adversary3_guarded_register(
+        "{all: [\"sources.count > 0\", {exists: {in: sources, as: s, that: \"s == primary\"}}]}",
+    );
+    for commands in [format!("{ADV_ADD_SOURCE}\n{register}"), register.clone()] {
+        let (synthesis, failed) = adversary_interpreted(adversary_compile(&adversary_text(
+            ADV_LIVE,
+            ADV_SERVER_MANY,
+            &commands,
+        )));
+        assert!(
+            scenario(&synthesis, ACCEPTED).is_some(),
+            "refused: {:?}",
+            adversary2_refusal(&synthesis)
+        );
+        assert!(
+            failed.iter().all(|line| !line.starts_with(ACCEPTED)),
+            "{failed:#?}"
+        );
+    }
+}
+
+/// Held (probe): with no route, `sources.count <= limit` (`limit` copied from the input) keeps
+/// the empty list, which is sent; so does `forall` over the list, which the arrangement does not
+/// refuse.
+#[test]
+fn adversary3_invariants_over_the_list_decide_the_empty_list() {
+    let server = ADV_SERVER_MANY
+        .replace(
+            "    relations:\n",
+            "      - {name: limit, type: Integer}\n      - {name: primary, type: demo.reg.SourceId}\n    relations:\n",
+        );
+    let extra_input =
+        "      - {name: limit, type: Integer}\n      - {name: primary, type: demo.reg.SourceId}";
+    let extra_sets = ", limit: input.limit, primary: input.primary";
+    let register = adversary_register("List<demo.reg.SourceId>", "", extra_input, extra_sets);
+    let bounded = server.replace(
+        "    lifecycle:",
+        "    invariants: [\"sources.count <= limit\"]\n    lifecycle:",
+    );
+    let model = adversary_compile(&adversary_text(ADV_LIVE, &bounded, &register));
+    let (synthesis, failed) = adversary_interpreted(model);
+    let accepted = scenario(&synthesis, ACCEPTED).unwrap_or_else(|| {
+        panic!(
+            "the empty list keeps `sources.count <= limit`, yet: {:?}",
+            adversary2_refusal(&synthesis)
+        )
+    });
+    let (_, input) = adversary_executions(accepted, REGISTER)[0];
+    assert_eq!(
+        input["sources"],
+        ScenarioValue::literal(Node::Seq(Vec::new()))
+    );
+    assert!(
+        failed.iter().all(|line| !line.starts_with(ACCEPTED)),
+        "{failed:#?}"
+    );
+    // `exists` over the list is not probed: its witness is refused before any arrangement
+    // (ESS-SYNTH-003, "no candidate of the 2 tried satisfies"), which is not this unit's.
+    let forall = server.replace(
+        "    lifecycle:",
+        "    invariants: [{forall: {in: sources, as: s, that: \"s != primary\"}}]\n    lifecycle:",
+    );
+    let (synthesis, failed) = adversary_interpreted(adversary_compile(&adversary_text(
+        ADV_LIVE, &forall, &register,
+    )));
+    let refusal = adversary2_refusal(&synthesis);
+    assert!(
+        !refusal
+            .as_deref()
+            .is_some_and(|text| text.contains("would not keep the branch")),
+        "`forall` holds the empty list vacuously, yet the arrangement refuses: {refusal:?}"
+    );
+    assert!(
+        failed.iter().all(|line| !line.starts_with(ACCEPTED)),
+        "{failed:#?}"
+    );
+}
+
+/// Held (probe): an `Optional` `one` reference with no route, a sibling refusal requiring it
+/// present (`not defined(sources)`): the accepted scenario passes or is refused by name, never
+/// sent absent into the refusal.
+#[test]
+fn adversary3_an_unarrangeable_optional_reference_a_refusal_requires_is_refused_by_name() {
+    let server = ADV_SERVER_MANY
+        .replace("List<demo.reg.SourceId>", "Optional<demo.reg.SourceId>")
+        .replace("cardinality: many", "cardinality: one");
+    let refusal =
+        "      - name: refused\n        when: 'not defined(sources)'\n        error: demo.reg.Refused";
+    adversary2_accepted_passes_or_is_refused_by_name(adversary_compile(&adversary_text(
+        ADV_LIVE,
+        &server,
+        &adversary_register("Optional<demo.reg.SourceId>", refusal, "", ""),
+    )));
+}
