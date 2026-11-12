@@ -857,7 +857,28 @@ export type Row = Json;
 
 /** Whether a `visible:` condition reads the current row (`row.<path>`). */
 export function readsRow(condition: string): boolean {
-  return /(^|[^\w.])row\./.test(condition);
+  let quote: string | undefined;
+  let word = "";
+  for (const character of `${condition} `) {
+    if (quote !== undefined) {
+      if (character === quote) {
+        quote = undefined;
+      }
+      continue;
+    }
+    if (/[A-Za-z0-9_.-]/.test(character)) {
+      word += character;
+      continue;
+    }
+    if (word.startsWith("row.") && word.length > 4) {
+      return true;
+    }
+    word = "";
+    if (character === '"' || character === "'") {
+      quote = character;
+    }
+  }
+  return false;
 }
 
 /**

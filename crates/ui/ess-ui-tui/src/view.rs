@@ -1030,7 +1030,13 @@ impl App {
                     ..place.ctx
                 };
                 let drawn = |field: &Field| {
-                    self.visible(field.visible.as_ref().map(|expr| expr.0.as_str()), &at_row)
+                    field.visible.as_ref().is_none_or(|expr| {
+                        if reads_row(&expr.0) {
+                            self.visible_for_row(&expr.0, &at_row)
+                        } else {
+                            self.visible(Some(&expr.0), &at_row)
+                        }
+                    })
                 };
                 for field in record.fields.iter().filter(|field| drawn(field)) {
                     self.mark_field_slot(field, place, &place.path.child("fields"), lines.len());
@@ -1420,16 +1426,14 @@ impl App {
         // does not hold for it.
         let cell_at = |field: &Field, index: usize| -> String {
             let condition = field.visible.as_ref().map(|expr| expr.0.as_str());
-            if condition.is_some_and(reads_row)
-                && !self.visible(
-                    condition,
-                    &Ctx {
-                        row: Some(rows[index]),
-                        ..place.ctx
-                    },
-                )
-            {
-                return String::new();
+            if let Some(condition) = condition.filter(|condition| reads_row(condition)) {
+                let at_row = Ctx {
+                    row: Some(rows[index]),
+                    ..place.ctx
+                };
+                if !self.visible_for_row(condition, &at_row) {
+                    return String::new();
+                }
             }
             cell(field, &shown_rows[index])
         };

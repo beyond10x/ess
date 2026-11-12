@@ -464,6 +464,9 @@ pub struct App {
     exports: Vec<Exported>,
     /// Marks of the lines being drawn, not yet placed on the screen.
     pub(crate) marks: std::cell::RefCell<Vec<Mark>>,
+    /// The sections whose `selection` is being resolved: a section that reads its own selection,
+    /// directly or through another, sees none.
+    pub(crate) resolving: std::cell::RefCell<Vec<String>>,
     /// What the last frame drew where.
     pub(crate) regions: std::cell::RefCell<Vec<Region>>,
 }
@@ -570,6 +573,7 @@ impl App {
             commands_sent: 0,
             exports: Vec::new(),
             marks: std::cell::RefCell::default(),
+            resolving: std::cell::RefCell::default(),
             regions: std::cell::RefCell::default(),
         };
         app.go(&home, BTreeMap::new(), true);
@@ -1072,17 +1076,32 @@ impl App {
         expr::eval(text, &Scope { app: self, ctx })
     }
 
+    /// The value of a filter-grammar path, resolved as `keeps` resolves it.
+    fn filter_path(&self, ctx: &Ctx<'_>, path: &[String]) -> Value {
+        let segments: Vec<_> = path[1..].iter().map(String::as_str).collect();
+        match (Scope { app: self, ctx }).resolve(&path[0], &segments[..1]) {
+            Resolved::Whole(value) => ess_ui::filter::path(&value, &segments[1..]),
+            Resolved::Root(value) => ess_ui::filter::path(&value, &segments),
+        }
+    }
+
     /// A client predicate fails closed, unlike a display or visibility expression.
     fn keeps(&self, filter: Option<&ess_ui::Expr>, ctx: &Ctx<'_>) -> bool {
         filter.is_none_or(|filter| {
-            ess_ui::filter::keeps(&filter.0, &|path| {
-                let segments: Vec<_> = path[1..].iter().map(String::as_str).collect();
-                match (Scope { app: self, ctx }).resolve(&path[0], &segments[..1]) {
-                    Resolved::Whole(value) => ess_ui::filter::path(&value, &segments[1..]),
-                    Resolved::Root(value) => ess_ui::filter::path(&value, &segments),
-                }
-            })
+            ess_ui::filter::keeps(&filter.0, &|path| self.filter_path(ctx, path))
         })
+    }
+
+    /// A `visible` condition judged for the row in `ctx`, as React judges it: one that reads the
+    /// row is evaluated in the filter grammar (`and`, `or`, `not`, comparisons) when it parses
+    /// there, else as any other `visible` condition.
+    pub(crate) fn visible_for_row(&self, condition: &str, ctx: &Ctx<'_>) -> bool {
+        match ess_ui::filter::parse(condition).filter(ess_ui::filter::Predicate::allowed_roots) {
+            Some(predicate) => {
+                ess_ui::filter::truthy(&predicate.evaluate(&|path| self.filter_path(ctx, path)))
+            }
+            None => self.visible(Some(condition), ctx),
+        }
     }
 
     /// A `visible` condition: absent or outside the fixture grammar means shown.
@@ -4567,18 +4586,21 @@ impl Resolve for Scope<'_> {
                 };
                 let selection = match &section.body {
                     Body::Composite(Composite::Collection(collection)) => {
-                        // Evaluating the section's own params here would recurse into this
-                        // lookup, so a dependent read sees the selection of the page shown.
-                        let reads_self = collection.reads.as_ref().is_some_and(|reads| {
-                            reads
-                                .params
-                                .values()
-                                .any(|expr| expr.0.starts_with("section."))
-                        });
-                        if reads_self {
+                        // The section's own params may read `section.<name>.selection`: a section
+                        // that is already being resolved (it reads its own selection, directly or
+                        // through another) sees none, and any other resolves its params first.
+                        if app
+                            .resolving
+                            .borrow()
+                            .iter()
+                            .any(|open| open.as_str() == *name)
+                        {
                             None
                         } else {
-                            app.selected_row(&ui, collection, &ctx)
+                            app.resolving.borrow_mut().push((*name).to_owned());
+                            let row = app.selected_row(&ui, collection, &ctx);
+                            app.resolving.borrow_mut().pop();
+                            row
                         }
                     }
                     _ => None,
