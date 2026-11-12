@@ -4479,9 +4479,10 @@ fn the_absent_side_of_a_presence_guard_omits_the_optional_field_from_the_input()
     }
 }
 
-/// A list guard is met by a one-element list built from the guard's own literal.
+/// A list guard is met by a list of three whose deciding element is the guard's own literal,
+/// between two the path's own text names (`input_list_quantifiers.rs` holds the mutants).
 #[test]
-fn a_list_guard_is_satisfied_by_one_element_the_guard_itself_writes() {
+fn a_list_guard_is_satisfied_by_a_middle_element_the_guard_itself_writes() {
     let synthesis = synthesize(&fixture(GUARDS));
     let tags = |id: &str| {
         literals(&synthesis, id)
@@ -4491,13 +4492,13 @@ fn a_list_guard_is_satisfied_by_one_element_the_guard_itself_writes() {
     let text = |value: &str| Node::Text(value.to_owned());
     assert_eq!(
         tags("guards.calls.Vip/outcome/taken"),
-        Node::Seq(vec![text("vip")])
+        Node::Seq(vec![text("tags.1"), text("vip"), text("tags.2")])
     );
     assert_eq!(tags("guards.calls.Vip/outcome/refused"), Node::Seq(vec![]));
     assert_eq!(tags("guards.calls.Clean/outcome/taken"), Node::Seq(vec![]));
     assert_eq!(
         tags("guards.calls.Clean/outcome/refused"),
-        Node::Seq(vec![text("spam")])
+        Node::Seq(vec![text("tags.1"), text("spam"), text("tags.2")])
     );
     assert_eq!(
         tags("guards.calls.Tagged/outcome/refused"),
@@ -4506,7 +4507,8 @@ fn a_list_guard_is_satisfied_by_one_element_the_guard_itself_writes() {
     assert_eq!(
         tags("guards.calls.Tagged/outcome/taken"),
         Node::Seq(vec![text("tags.0")]),
-        "an element with no literal to copy is the path's own text, as every text witness is"
+        "a list only counted is not widened, and its element with no literal to copy is the path's \
+         own text, as every text witness is"
     );
 }
 

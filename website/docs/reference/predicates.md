@@ -1222,7 +1222,9 @@ whether it is empty fails. The row is arranged with several entries where the co
 from an input: where one element decides the quantifier (an `exists` that holds, a `forall` that
 fails), that element is neither the first nor the last in key order, so a target reading only one
 value, or `forall` for `exists`, fails; where the whole collection decides it, the row holds two or
-more elements. Where no arrangement reaches that shape, the row with one entry is used. An entity
+more elements. Where no arrangement reaches that shape (no input writes the collection, or a
+`Boolean`-keyed map holds two entries at most), the row with one entry is used and
+`ess verify conform synthesize` prints a `note:` naming the scenario and the quantifier. An entity
 that declares a stored field named `input` keeps reading `input.<member>` as that field.
 
 ### From `ess/29`: an external branch narrowed to some records
@@ -1816,7 +1818,7 @@ It reports a refusal naming the scenario it could not build, and `synthesize` st
 | a bare path over a `Boolean` | yes |
 | a bare path over text (`when: sku`) | no. The falsy side needs an empty text, which is not a literal of the guard. `ESS-SYNTH-003` |
 | `defined(x)`, `not defined(x)`, `x: {exists: …}` over an `Optional` | yes. One candidate omits the field. |
-| `.count`, `exists`, `forall` over an input list | yes. The list is built from the guard's own literal: a one-element list satisfies the guard, and `[]` or a list of other text refutes it. |
+| `.count`, `exists`, `forall` over an input list | yes. The list is built from the guard's own literal, as the one element of a list of three that sits neither first nor last, so a target reading only the first element, only the last, or `forall` for `exists` fails; `[]` or a list of other text refutes it. |
 | `.count`, `exists`, `forall` over an input map | yes. The map holds one entry, and its value is tried at the guard's own literal as a list element is. |
 | a list element by position (`tags.0`) | yes |
 | text ordering | yes, byte-wise |

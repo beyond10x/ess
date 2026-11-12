@@ -57,7 +57,11 @@
 //!    `[]`, one candidate carries a single element built at `<list>.0` like any other value, and a
 //!    quantifier's body is rebound onto that element — `exists t in tags: t == vip` reads
 //!    `tags.0 == vip` — so its literal is what the element is tried at. `[vip]` satisfies that
-//!    guard; `[]` and `[tags.0]`, the element's own path as every text witness is, refute it; and
+//!    guard; `[]` and `[tags.0]`, the element's own path as every text witness is, refute it; each
+//!    such candidate is tried first with the list widened to three elements, the one element
+//!    between two built at positions of their own, then as three copies of it
+//!    ([`quantified_first`]), so a target reading only the first element, only the last, or
+//!    `forall` for `exists` is failed by the suite; and
 //!    `tags.count > 0` is decided by `[]` and `[tags.0]`, because the flattener publishes an input
 //!    list's `count` the way an observed collection publishes one. A list a guard reads **by
 //!    position** — `tags.0 == vip` — holds that many elements already in the base, because a read
@@ -1053,7 +1057,11 @@ fn search_with(
         inputs.truncate(MAX_CANDIDATES);
     }
     // A `distinct` guard is decided by lists that hold two or more elements ([`decisive_first`]).
-    let mut inputs = decisive_first(&mut builder, command, &expanded, inputs)?;
+    let inputs = decisive_first(&mut builder, command, &expanded, inputs)?;
+    // A list a quantifier walks holds one element in every candidate so far, so its deciding
+    // element is also the first and the last: each such candidate is also tried with that list
+    // widened, before it is tried as it is ([`quantified_first`]).
+    let mut inputs = quantified_first(&builder, command, &expanded, inputs);
     // A list several existentials compare with literals of their own is tried once holding each
     // of them, every other leaf at its base: a one-element list holds one at most
     // (beyond10x/ess#761). Tried last, so a branch an earlier candidate witnessed keeps it. Only
@@ -2890,7 +2898,8 @@ enum Choice {
     Null,
     /// A list of this many elements: element 0 built at `<path>.0` from the declared element type
     /// like any other value and varied there by the same ladders, and every further element a
-    /// copy of it, so a quantifier is decided by element 0 alone, as it was with one element.
+    /// copy of it. A list a quantifier walks is also tried widened afterwards
+    /// ([`quantified_first`]), so a quantifier is not decided by element 0 alone.
     Elements(usize),
     /// A list a `distinct` reads (ess/22): element 0 as [`Self::Elements`] builds it, and each further
     /// element built at its own position and a further [`Distinction`], so its key differs; with a
@@ -3507,6 +3516,454 @@ fn enclosing_lists(builder: &Builder<'_>, path: &FactPath) -> Vec<FactPath> {
         .map(|end| FactPath::from_segments(&segments[..end]))
         .filter(|enclosing| builder.lists.contains(enclosing))
         .collect()
+}
+
+/// How many elements a list a quantifier walks is widened to.
+const QUANTIFIED_ELEMENTS: usize = 3;
+
+/// The most distinct element values of one list, taken from the candidates, tried as the elements
+/// either side of the deciding one.
+const MAX_FILLERS: usize = 8;
+
+/// The lists of the input a quantifier of `guards` walks — and, through the quantifier bodies the
+/// search rebinds onto their first element, a member of a bound element — that the builder varies
+/// and no `distinct` shapes, deepest first so a list inside an element is widened before the
+/// element is moved or copied; and each such quantifier, with the list it walks.
+fn quantified_lists(
+    builder: &Builder<'_>,
+    guards: &[&Predicate],
+) -> (Vec<FactPath>, Vec<(FactPath, Predicate)>) {
+    fn walk(predicate: &Predicate, found: &mut Vec<(FactPath, Predicate)>) {
+        match predicate {
+            Predicate::All(children) | Predicate::Any(children) => {
+                for child in children {
+                    walk(child, found);
+                }
+            }
+            Predicate::Not(inner) => walk(inner, found),
+            Predicate::Forall(quantified) | Predicate::Exists(quantified) => {
+                if let Some(over) = quantified.over.fact() {
+                    found.push((over.clone(), predicate.clone()));
+                }
+                walk(&quantified.body, found);
+            }
+            _ => {}
+        }
+    }
+    let mut leaves = Vec::new();
+    for guard in guards {
+        walk(guard, &mut leaves);
+    }
+    let keyed: Vec<FactPath> = keyed_lists(builder, guards)
+        .into_iter()
+        .map(|list| list.path)
+        .collect();
+    let walked = |path: &FactPath| {
+        builder.lists.contains(path) && builder.elements.contains_key(path) && !keyed.contains(path)
+    };
+    leaves.retain(|(over, _)| walked(over));
+    let mut lists: Vec<FactPath> = leaves.iter().map(|(over, _)| over.clone()).collect();
+    lists.sort();
+    lists.dedup();
+    lists.sort_by_key(|list| std::cmp::Reverse(list.segments().len()));
+    (lists, leaves)
+}
+
+/// The member of `node` that `segments` reach, a list by position and a struct by name.
+fn descend_mut<'n>(node: &'n mut Node, segments: &[String]) -> Option<&'n mut Node> {
+    segments.iter().try_fold(node, |at, segment| match at {
+        Node::Map(fields) => fields.get_mut(segment),
+        Node::Seq(items) => items.get_mut(segment.parse::<usize>().ok()?),
+        _ => None,
+    })
+}
+
+/// [`descend_mut`], to read.
+fn descend<'n>(node: &'n Node, segments: &[String]) -> Option<&'n Node> {
+    segments.iter().try_fold(node, |at, segment| match at {
+        Node::Map(fields) => fields.get(segment),
+        Node::Seq(items) => items.get(segment.parse::<usize>().ok()?),
+        _ => None,
+    })
+}
+
+/// The list at `list` in `input`, where it is one.
+fn list_at<'n>(input: &'n BTreeMap<String, Node>, list: &FactPath) -> Option<&'n Vec<Node>> {
+    let (root, rest) = list.segments().split_first()?;
+    match descend(input.get(root)?, rest)? {
+        Node::Seq(items) => Some(items),
+        _ => None,
+    }
+}
+
+/// [`list_at`], to write.
+fn list_at_mut<'n>(
+    input: &'n mut BTreeMap<String, Node>,
+    list: &FactPath,
+) -> Option<&'n mut Vec<Node>> {
+    let (root, rest) = list.segments().split_first()?;
+    match descend_mut(input.get_mut(root)?, rest)? {
+        Node::Seq(items) => Some(items),
+        _ => None,
+    }
+}
+
+/// Whether `leaf` holds on `input`: `None` where it is not decided (a field `input` leaves out, a
+/// read that misses).
+fn holds(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    input: &BTreeMap<String, Node>,
+    leaf: &Predicate,
+) -> Option<bool> {
+    let facts = crate::input::flatten_partial(ir, command, input).ok()?;
+    match facts.decide(leaf) {
+        Decision::Satisfied => Some(true),
+        Decision::Refuted(_) => Some(false),
+        Decision::Unevaluable(_) => None,
+    }
+}
+
+/// The bodies `body` becomes with one quantifier inside it, however deep, read as the other
+/// quantifier.
+fn nested_swaps(body: &Predicate) -> Vec<Predicate> {
+    match body {
+        Predicate::All(children) | Predicate::Any(children) => {
+            let mut swaps = Vec::new();
+            for (at, child) in children.iter().enumerate() {
+                for swapped in nested_swaps(child) {
+                    let mut all = children.clone();
+                    all[at] = swapped;
+                    swaps.push(if matches!(body, Predicate::All(_)) {
+                        Predicate::All(all)
+                    } else {
+                        Predicate::Any(all)
+                    });
+                }
+            }
+            swaps
+        }
+        Predicate::Not(inner) => nested_swaps(inner)
+            .into_iter()
+            .map(|swapped| Predicate::Not(Box::new(swapped)))
+            .collect(),
+        Predicate::Forall(quantified) | Predicate::Exists(quantified) => {
+            let exists = matches!(body, Predicate::Exists(_));
+            let make = |quantified| {
+                if exists {
+                    Predicate::Exists(quantified)
+                } else {
+                    Predicate::Forall(quantified)
+                }
+            };
+            let mut swaps = vec![if exists {
+                Predicate::Forall(quantified.clone())
+            } else {
+                Predicate::Exists(quantified.clone())
+            }];
+            for inner in nested_swaps(&quantified.body) {
+                let mut deeper = quantified.clone();
+                deeper.body = inner;
+                swaps.push(make(deeper));
+            }
+            swaps
+        }
+        _ => Vec::new(),
+    }
+}
+
+/// Whether the quantifier `leaf` over the list `over`, which one element decides on `input` (an
+/// `exists` that holds, a `forall` that fails), is also decided apart from that element: read over
+/// the list's first element alone, over its last alone, and as the other quantifier, it holds
+/// otherwise — so a target reading only the first element, only the last, or `forall` for `exists`
+/// answers `input` wrongly; and so, for a quantifier nested in the body ([`nested_swaps`]), a target
+/// that reads it as the other quantifier where one element shows it can differ. `None` where the whole list decides the quantifier or it is undecided,
+/// which asks nothing of the list's other elements.
+fn decided_apart(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    input: &BTreeMap<String, Node>,
+    over: &FactPath,
+    leaf: &Predicate,
+) -> Option<bool> {
+    let (Predicate::Forall(quantified) | Predicate::Exists(quantified)) = leaf else {
+        return None;
+    };
+    let exists = matches!(leaf, Predicate::Exists(_));
+    let held = holds(ir, command, input, leaf)?;
+    if held != exists {
+        return None;
+    }
+    let differs = |other: Option<bool>| other.is_some_and(|other| other != held);
+    let other = if exists {
+        Predicate::Forall(quantified.clone())
+    } else {
+        Predicate::Exists(quantified.clone())
+    };
+    // A quantifier nested in the body, read as the other quantifier, is held to the same where some
+    // one element of `over` shows it can differ: where the leaf holds as it does on `input` and the
+    // swapped one does not. An inner `forall` that holds is not told apart here: that needs a sibling
+    // element with a mixed inner list in the refusing scenario
+    // (story:a-nested-collection-quantifier-is-witnessed-apart).
+    let nested_apart = nested_swaps(&quantified.body).into_iter().all(|body| {
+        let mut swapped = quantified.clone();
+        swapped.body = body;
+        let swapped = if exists {
+            Predicate::Exists(swapped)
+        } else {
+            Predicate::Forall(swapped)
+        };
+        let shown = list_at(input, over).is_some_and(|items| {
+            items.iter().any(|item| {
+                let mut cut = input.clone();
+                if let Some(held_items) = list_at_mut(&mut cut, over) {
+                    *held_items = vec![item.clone()];
+                }
+                holds(ir, command, &cut, leaf) == Some(held)
+                    && differs(holds(ir, command, &cut, &swapped))
+            })
+        });
+        !shown || differs(holds(ir, command, input, &swapped))
+    });
+    let alone = |last: bool| {
+        let mut cut = input.clone();
+        let items = list_at_mut(&mut cut, over)?;
+        let kept = if last {
+            items.last()?.clone()
+        } else {
+            items.first()?.clone()
+        };
+        *items = vec![kept];
+        Some(cut)
+    };
+    Some(
+        differs(holds(ir, command, input, &other))
+            && nested_apart
+            && [false, true]
+                .into_iter()
+                .all(|last| alone(last).is_some_and(|cut| differs(holds(ir, command, &cut, leaf)))),
+    )
+}
+
+/// The quantifiers of `guard` over a list of `input` that one element decides and `input` does
+/// not decide apart from it ([`decided_apart`]), as the author wrote them: the lists a scenario
+/// sends with their deciding element first or last, or the same on every element, because no
+/// element value the element's type admits was found to put beside it. Only the quantifiers a
+/// guard writes over an input list, not those nested in a quantifier's body.
+pub(crate) fn unspread_lists(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    guard: &Predicate,
+    input: &BTreeMap<String, Node>,
+) -> Vec<String> {
+    fn walk(
+        ir: &EssIr,
+        command: &ResolvedCommand,
+        input: &BTreeMap<String, Node>,
+        predicate: &Predicate,
+        found: &mut Vec<String>,
+    ) {
+        match predicate {
+            Predicate::All(children) | Predicate::Any(children) => {
+                for child in children {
+                    walk(ir, command, input, child, found);
+                }
+            }
+            Predicate::Not(inner) => walk(ir, command, input, inner, found),
+            Predicate::Forall(quantified) | Predicate::Exists(quantified) => {
+                if let Some(over) = quantified.over.fact() {
+                    if list_at(input, over).is_some()
+                        && decided_apart(ir, command, input, over, predicate) == Some(false)
+                    {
+                        found.push(predicate.to_string());
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    let mut found = Vec::new();
+    walk(ir, command, input, guard, &mut found);
+    found
+}
+
+/// The first element each of `inputs` gives each of `lists`, at most [`MAX_FILLERS`] distinct ones.
+fn first_elements<'l>(
+    lists: &'l [FactPath],
+    inputs: &[BTreeMap<String, Node>],
+) -> BTreeMap<&'l FactPath, Vec<Node>> {
+    let mut pool: BTreeMap<&FactPath, Vec<Node>> = BTreeMap::new();
+    for list in lists {
+        let values = pool.entry(list).or_default();
+        for input in inputs {
+            if let Some(first) = list_at(input, list).and_then(|items| items.first()) {
+                if !values.contains(first) && values.len() < MAX_FILLERS {
+                    values.push(first.clone());
+                }
+            }
+        }
+    }
+    pool
+}
+
+/// The lists of `lists` inside the elements of `list`, shallowest first (`lists` is deepest first),
+/// each with the segments below the element.
+fn lists_inside<'l>(lists: &'l [FactPath], list: &FactPath) -> Vec<(&'l FactPath, Vec<String>)> {
+    let depth = list.segments().len();
+    lists
+        .iter()
+        .rev()
+        .filter(|inner| {
+            let at = inner.segments();
+            at.len() > depth + 1 && at[..depth] == *list.segments() && at[depth] == "0"
+        })
+        .map(|inner| (inner, inner.segments()[depth + 1..].to_vec()))
+        .collect()
+}
+
+/// `element` with each of its `inside` lists ([`lists_inside`]) holding the `rank`th value another
+/// candidate has for it (`pool`). A filler is built with those lists empty; given one value, it
+/// decides a quantifier over its own list too, which an empty list would not (`forall` over it
+/// holds, `exists` fails), so [`decided_apart`] can read that one as the other quantifier.
+fn fill_inside(
+    element: &Node,
+    inside: &[(&FactPath, Vec<String>)],
+    pool: &BTreeMap<&FactPath, Vec<Node>>,
+    rank: usize,
+) -> Node {
+    let mut element = element.clone();
+    for (inner, below) in inside {
+        if let Some(value) = pool.get(inner).and_then(|values| values.get(rank)) {
+            if let Some(Node::Seq(items)) = descend_mut(&mut element, below) {
+                *items = vec![value.clone()];
+            }
+        }
+    }
+    element
+}
+
+/// Each of `inputs` first with every list a quantifier walks that holds one element widened to
+/// [`QUANTIFIED_ELEMENTS`], and then as it was (beyond10x/ess#240, correction 1).
+///
+/// A one-element list is decided by that element alone, so a target that reads only the first
+/// element, only the last, or `forall` for `exists` answers every scenario the list decides as the
+/// model does. Two widenings are tried: the element between two others, then three copies of it.
+/// The elements either side are the ones built at positions 1 and 2 under the list, or, where
+/// those do not decide each quantifier over the list apart from the middle element
+/// ([`decided_apart`]) or the widened input is not admitted by its type, the values the other
+/// candidates give the list's elements — which carry the guard's own literals and the type's
+/// repair. Where a quantifier nested in the body walks a list of the element too, the fillers'
+/// own lists are given a value the other candidates have for it, so a nested quantifier read as the
+/// other quantifier answers differently (an empty list would not tell `forall` from `exists`). A
+/// list no such pair serves is not widened that way. The copies serve a `forall` that
+/// holds and an `exists` that fails, where the elements built apart would not all satisfy the
+/// body. A widened candidate that does not decide the branch the original did is passed over, and
+/// the original is tried next, so no branch is witnessed less than before. Only commands whose
+/// guards walk an input list get them; the lists no guard walks, those a `distinct` shapes, and
+/// those of another length keep their elements.
+fn quantified_first(
+    builder: &Builder<'_>,
+    command: &ResolvedCommand,
+    guards: &[&Predicate],
+    inputs: Vec<BTreeMap<String, Node>>,
+) -> Vec<BTreeMap<String, Node>> {
+    let (lists, leaves) = quantified_lists(builder, guards);
+    if lists.is_empty() {
+        return inputs;
+    }
+    let ir = builder.ir;
+    // The elements either side, built at positions 1 and 2 under the list so neither repeats the
+    // deciding element built at position 0.
+    let mut probe = builder.clone();
+    let built: BTreeMap<&FactPath, (Node, Node)> = lists
+        .iter()
+        .filter_map(|list| {
+            let of = builder.elements.get(list)?;
+            let mut at = |position: &str| {
+                probe
+                    .value(of, &list.child(position), &BTreeMap::new(), 1, false)
+                    .ok()
+            };
+            Some((list, (at("1")?, at("2")?)))
+        })
+        .collect();
+    // The first element each candidate gives a list: the values the guard's literals and the
+    // element type's repair made.
+    let pool = first_elements(&lists, &inputs);
+    let between = |input: &BTreeMap<String, Node>| {
+        let mut input = input.clone();
+        let mut changed = false;
+        for list in &lists {
+            let [element] = list_at(&input, list).map_or(&[][..], Vec::as_slice) else {
+                continue;
+            };
+            let element = element.clone();
+            let own: Vec<&(FactPath, Predicate)> =
+                leaves.iter().filter(|(over, _)| over == list).collect();
+            let mut pairs: Vec<(Node, Node)> = built.get(list).cloned().into_iter().collect();
+            pairs.extend(
+                pool.get(list)
+                    .into_iter()
+                    .flatten()
+                    .map(|value| (value.clone(), value.clone())),
+            );
+            let inside = lists_inside(&lists, list);
+            let filled = |element: &Node, rank: usize| fill_inside(element, &inside, &pool, rank);
+            let ranks: Vec<Option<usize>> = if inside.is_empty() {
+                vec![None]
+            } else {
+                std::iter::once(None)
+                    .chain((0..MAX_FILLERS).map(Some))
+                    .collect()
+            };
+            'pairs: for (before, after) in pairs {
+                for rank in &ranks {
+                    let (before, after) = match rank {
+                        Some(rank) => (filled(&before, *rank), filled(&after, *rank)),
+                        None => (before.clone(), after.clone()),
+                    };
+                    let mut trial = input.clone();
+                    if let Some(items) = list_at_mut(&mut trial, list) {
+                        *items = vec![before, element.clone(), after];
+                    }
+                    if own.iter().all(|(over, leaf)| {
+                        decided_apart(ir, command, &trial, over, leaf) != Some(false)
+                    }) && !admitted_inputs(ir, command, vec![trial.clone()]).is_empty()
+                    {
+                        input = trial;
+                        changed = true;
+                        break 'pairs;
+                    }
+                }
+            }
+        }
+        changed.then_some(input)
+    };
+    let copies = |input: &BTreeMap<String, Node>| {
+        let mut input = input.clone();
+        let mut changed = false;
+        for list in &lists {
+            if let Some(items) = list_at_mut(&mut input, list) {
+                if let [element] = items.as_slice() {
+                    *items = vec![element.clone(); QUANTIFIED_ELEMENTS];
+                    changed = true;
+                }
+            }
+        }
+        changed.then_some(input)
+    };
+    let mut out: Vec<BTreeMap<String, Node>> = Vec::with_capacity(inputs.len() * 3);
+    for input in inputs {
+        for wide in [between(&input), copies(&input)].into_iter().flatten() {
+            if !out.contains(&wide) {
+                out.push(wide);
+            }
+        }
+        if !out.contains(&input) {
+            out.push(input);
+        }
+    }
+    out
 }
 
 /// Every list of the input a guard's `distinct` reads outside any quantifier — and, through the
@@ -6341,6 +6798,9 @@ struct Builder<'ir> {
     leaves: BTreeMap<FactPath, (Leaf, Node)>,
     /// Every expanded path that holds a declared list.
     lists: BTreeSet<FactPath>,
+    /// The declared element type of each list in [`Self::lists`], so a candidate can be widened
+    /// with elements built at positions of their own ([`quantified_first`]).
+    elements: BTreeMap<FactPath, ResolvedTypeRef>,
     /// Every recorded path that holds a map with one entry in its base (beyond10x/ess#196): what a
     /// `.count` guard over it varies by [`Choice::Elements`].
     maps: BTreeSet<FactPath>,
@@ -6423,6 +6883,7 @@ impl<'ir> Builder<'ir> {
             positional,
             leaves: BTreeMap::new(),
             lists: BTreeSet::new(),
+            elements: BTreeMap::new(),
             maps: BTreeSet::new(),
             building: Vec::new(),
             copied: BTreeSet::new(),
@@ -6675,6 +7136,7 @@ impl<'ir> Builder<'ir> {
             return Ok(Node::Seq(elements));
         }
         self.lists.insert(path.clone());
+        self.elements.insert(path.clone(), of.clone());
         // Built even where the base keeps the list empty, so its leaves are recorded
         // before any ladder is drawn.
         let element = self.value(of, &path.child("0"), overrides, depth + 1, record)?;

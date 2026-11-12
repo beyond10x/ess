@@ -3639,6 +3639,47 @@ fn steered_beside(
     .map_err(|_| cause)
 }
 
+/// The quantifiers over a stored collection of the row `outcome`'s `when_related:` guard reads,
+/// written as the author wrote them, that the row its scenario is arranged on does not witness
+/// element by element (`subject_fact::unspread`, beyond10x/ess#240): the strict search found no
+/// row and input that do, and the plain search it fell back to holds one entry. Empty where the
+/// row witnesses them, the guard reads no such quantifier, or the branch is not arranged.
+pub(super) fn unspread(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+) -> Vec<String> {
+    let Some((_, entity)) = focus(ir, command, outcome) else {
+        return Vec::new();
+    };
+    let predicates = predicates(command);
+    if !routes(command, outcome)
+        || is_absent(outcome)
+        || !subject_fact::has_elementwise(ir, entity, &predicates)
+    {
+        return Vec::new();
+    }
+    let Ok((row, _, input)) = with_row(
+        ir,
+        command,
+        outcome,
+        entity,
+        actors,
+        (OWN, Distinction::PLAIN, &[]),
+        None,
+        None,
+        None,
+        (&BTreeMap::new(), &[], &BTreeMap::new()),
+    ) else {
+        return Vec::new();
+    };
+    if subject_fact::witnesses_elements(ir, command, entity, &predicates, &row, &input) {
+        return Vec::new();
+    }
+    subject_fact::elementwise_guards(ir, entity, &predicates)
+}
+
 /// Whether `outcome`'s own scenario ([`prepare_at_in`]) copies a field from the row its guard reads and
 /// arranges no second row the guard accepts holding another value there ([`companion`],
 /// beyond10x/ess#270): a target copying from "a row the guard accepts" rather than the row named

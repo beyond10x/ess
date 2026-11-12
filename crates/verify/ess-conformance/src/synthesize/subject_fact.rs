@@ -6489,6 +6489,61 @@ fn arranged_row(
     }
 }
 
+/// The quantifiers over a stored collection, written as the author wrote them, that the row
+/// [`prepare`] arranges for `outcome` does not witness element by element: the search for a row and
+/// input that do ([`arranged_row`]) found none, because no input writes the collection or the
+/// collection is keyed by a `Boolean` and holds two entries at most, and the plain row it fell back
+/// to holds the one entry the witness gives it. Empty where the row witnesses them, where the
+/// branch reads no such quantifier, and where the branch is not arranged ([`prepare`] refuses it).
+pub(super) fn unspread(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+) -> Vec<String> {
+    let Some(subject) = reading(command, outcome) else {
+        return Vec::new();
+    };
+    let entity = &subject.entity;
+    let mut hints = with_calls(ir, command, self::hints(command));
+    if !has_elementwise(ir, entity, &hints) {
+        return Vec::new();
+    }
+    let fields = read_fields(ir, entity, &hints);
+    let label = fields.iter().cloned().collect::<Vec<_>>().join(",");
+    if unarrangeable(ir, entity, &fields).is_some() {
+        return Vec::new();
+    }
+    for held in plain_presence(ir, entity, &self::hints(command)) {
+        if !hints.contains(&held) {
+            hints.push(held);
+        }
+    }
+    let Ok(((arrangement, input), found)) =
+        arranged_row(ir, command, outcome, entity, actors, &hints, &label)
+    else {
+        return Vec::new();
+    };
+    if found == Found::Elementwise
+        || witnesses_elements(ir, command, entity, &hints, &arrangement, &input)
+    {
+        return Vec::new();
+    }
+    elementwise_guards(ir, entity, &hints)
+}
+
+/// The [`elementwise`] quantifiers of `predicates`, as the author wrote them.
+pub(super) fn elementwise_guards(
+    ir: &EssIr,
+    entity: &EntityHandle,
+    predicates: &[Predicate],
+) -> Vec<String> {
+    elementwise(ir, entity, predicates)
+        .iter()
+        .map(ToString::to_string)
+        .collect()
+}
+
 /// Require the arranged row before the command runs ([`prepare`]): every guarded field, or — for a
 /// branch taken before the row is read — only what the arrangement determined of it, and nothing
 /// where it determined none of them.
