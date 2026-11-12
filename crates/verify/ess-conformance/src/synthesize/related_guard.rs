@@ -676,6 +676,206 @@ pub(super) fn beside_bound(
         .collect()
 }
 
+/// [`beside_bound`], each row arranged for the send `input` rather than for every input: a row of
+/// its entity on which no branch over it answering before `outcome` is selected once `input` is
+/// sent ([`row_for`]), steered on what `input` carries. For the creator of rows a captured row is
+/// guarded for, which also guards a second row on the same tenant: no row holds for every input,
+/// and the one that holds for the input sent is a row of that tenant. `None` where `bound` names
+/// every row the command reads, where one is read through anything but an input, and where no
+/// bounded arrangement holds such a row for `input`.
+pub(super) fn beside_steered(
+    ir: &EssIr,
+    (command, outcome): (&ResolvedCommand, &ResolvedOutcome),
+    bound: &BTreeMap<String, crate::scenario::InstanceName>,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    (distinction, input): (Distinction, &BTreeMap<String, Node>),
+) -> Option<Vec<(String, Arrangement)>> {
+    if stored::field(command).is_some() {
+        return None;
+    }
+    let unbound: Vec<(&ResolvedRelatedVia, &EntityHandle)> = rows(command)
+        .into_iter()
+        .filter(|(via, _)| !bound.contains_key(via.field()))
+        .collect();
+    if unbound.is_empty()
+        || unbound.len() > 4
+        || unbound
+            .iter()
+            .any(|(via, _)| !matches!(via, ResolvedRelatedVia::Input { .. }))
+    {
+        return None;
+    }
+    unbound
+        .into_iter()
+        .enumerate()
+        .map(|(index, (via, entity))| {
+            let at = block_start(BESIDE_DRIVEN + index, distinction);
+            row_for(ir, (command, outcome), (via, entity), actors, (at, input))
+                .map(|row| (via.field().to_owned(), row))
+        })
+        .collect()
+}
+
+/// The hints a row of `entity` is searched with for the send `input`: the predicates the command
+/// holds of it, each comparison with the input grounded on the value `input` carries
+/// ([`subject_fact::grounded_on_input`]), and the presence of every stored field they compare, held
+/// and left out: an `Optional` tenant is the tenant sent, or absent where none is sent. A field
+/// they compare plainly ([`subject_fact::plain_presence`]) is only held: a row leaving it out
+/// leaves the comparison `Unknown`.
+fn hints_for(
+    ir: &EssIr,
+    entity: &EntityHandle,
+    predicates: &[Predicate],
+    input: &BTreeMap<String, Node>,
+) -> Vec<Predicate> {
+    let mut hints = predicates.to_vec();
+    hints.extend(subject_fact::grounded_on_input(
+        ir, entity, input, predicates,
+    ));
+    let plain = subject_fact::plain_presence(ir, entity, predicates);
+    for held in subject_fact::compared_presence(ir, entity, predicates) {
+        if !plain.contains(&held) {
+            hints.push(Predicate::Not(Box::new(held.clone())));
+        }
+        hints.push(held);
+    }
+    hints
+}
+
+/// Whether `node` holds every `Optional` field the guards `predicates` compare with the input and
+/// never test for presence ([`subject_fact::plain_presence`]). On a row leaving one out the
+/// comparison is `Unknown`, which synthesis reads as not taken and the interpreter reports
+/// unsupported, so such a row leaves no branch to answer.
+fn holds_plain(
+    ir: &EssIr,
+    entity: &EntityHandle,
+    predicates: &[Predicate],
+    node: &Arrangement,
+) -> bool {
+    subject_fact::plain_presence(ir, entity, predicates)
+        .iter()
+        .all(|held| {
+            subject_fact::guard_truth_with(
+                ir,
+                entity,
+                &node.settled,
+                &node.unwritten,
+                Some(&node.state),
+                held,
+                None,
+            ) == Truth::True
+        })
+}
+
+/// Whether the row `node` of `entity`, named through `field`, is left `Unknown` for `outcome` by
+/// the comparisons alone that branches over it make plainly between an `Optional` field it holds
+/// and the input ([`subject_fact::plain_presence`]), and by nothing else: no branch over it that
+/// [`answers_before`] `outcome` is undecided on any other count, nor carries a `when:` over the
+/// input. Such a comparison is decided by the input sent, steered on the values the row holds.
+fn undecided_by_plain(
+    ir: &EssIr,
+    (command, outcome): (&ResolvedCommand, &ResolvedOutcome),
+    (field, entity, node): (&str, &EntityHandle, &Arrangement),
+) -> bool {
+    let mut compared = false;
+    for branch in &command.outcomes {
+        let ResolvedCondition::Related {
+            via,
+            test: ResolvedRelatedTest::Holds { predicate },
+            ..
+        } = &branch.condition
+        else {
+            continue;
+        };
+        if via.field() != field || !answers_before(command, outcome, branch) {
+            continue;
+        }
+        let held = subject_fact::guard_truth_with(
+            ir,
+            entity,
+            &node.settled,
+            &node.unwritten,
+            Some(&node.state),
+            predicate,
+            None,
+        );
+        if input_guard(branch).is_some() && held != Truth::False {
+            return false;
+        }
+        if held == Truth::Unknown {
+            if subject_fact::plain_presence(ir, entity, std::slice::from_ref(predicate)).is_empty()
+            {
+                return false;
+            }
+            compared = true;
+        }
+    }
+    compared
+}
+
+/// A row of `entity`, which `via` of `command` names, that leaves `outcome` to answer once `input`
+/// is sent ([`leaves_to`]), arranged at the further witness `at`: [`beside_row`] for one input. The
+/// row a creator is sent beside the rows it is guarded on the same tenant over. `None` where no
+/// bounded arrangement holds such a row, and where the search for it is already open
+/// ([`opening`]).
+fn row_for(
+    ir: &EssIr,
+    (command, outcome): (&ResolvedCommand, &ResolvedOutcome),
+    (via, entity): (&ResolvedRelatedVia, &EntityHandle),
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    (at, input): (usize, &BTreeMap<String, Node>),
+) -> Option<Arrangement> {
+    let _open = opening(ir, command, via.field())?;
+    let predicates = predicates_over(command, via.field());
+    let leaves = |node: &Arrangement| {
+        leaves_to(
+            ir,
+            (command, outcome),
+            (via.field(), entity, node),
+            Some(input),
+        )
+        .is_ok_and(|truth| truth == Truth::True)
+    };
+    if super::provided::serves(ir, entity) {
+        return super::provided::search(ir, entity, Distinction::further(at), |node| {
+            Ok(leaves(node).then_some(()))
+        })
+        .ok()
+        .map(|(row, ())| row);
+    }
+    let leaves = |node: &Arrangement| holds_plain(ir, entity, &predicates, node) && leaves(node);
+    let hints = hints_for(ir, entity, &predicates, input);
+    search_rows(ir, entity, actors, (at, None), &hints, |node| {
+        Ok(leaves(node))
+    })
+    .or_else(|| row_at(ir, entity, actors, at, &[]).filter(|node| leaves(node)))
+}
+
+/// [`steering_for`] over the rows `bound` names alone: the comparisons the refusals over each of
+/// them make with the input, grounded on its settled values, and the presence tests of the input
+/// they read, where the command reads rows `bound` leaves unnamed ([`beside_steered`] arranges
+/// them once an input is chosen).
+pub(super) fn steering_bound(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    bound: &BTreeMap<String, crate::scenario::InstanceName>,
+    rows: &HeldRows,
+) -> Vec<Predicate> {
+    let mut steering = Vec::new();
+    for (via, entity) in self::rows(command) {
+        let Some(settled) = bound
+            .get(via.field())
+            .and_then(|instance| rows.get(instance))
+        else {
+            continue;
+        };
+        let refusals = predicates_over(command, via.field());
+        steering.extend(subject_fact::grounded(ir, entity, settled, &refusals));
+        steering.extend(subject_fact::input_presence(ir, entity, &refusals));
+    }
+    steering
+}
+
 /// [`present_for`] over every row `command` reads, each the captured row `bound` names with the
 /// values `rows` settled for it, at every format: the creator of a cascade's rows sent beside rows
 /// [`beside_bound`] arranged, whose values are all known, so no format gate is needed.
@@ -973,6 +1173,16 @@ pub(super) struct Beside<'c> {
     row: Arrangement,
 }
 
+impl Beside<'_> {
+    /// Whether a branch of `command` over this row compares its stored fields with the input, so
+    /// the row that leaves the branch under test to answer depends on the input sent.
+    fn reads_input(&self, ir: &EssIr, command: &ResolvedCommand) -> bool {
+        predicates_over(command, self.via.field())
+            .iter()
+            .any(|predicate| subject_fact::reads_input(ir, self.entity, predicate))
+    }
+}
+
 /// Whether a branch over another row, holding, answers before `outcome` in the precedence order
 /// (beyond10x/ess#283). Nothing does before a missing row's `exists: false`, an input-guarded
 /// refusal, `wrong_state` or `existing_instance`, all answered before any present row's predicate;
@@ -1189,14 +1399,35 @@ fn beside_row(
                 .flatten()
         });
     }
-    search_rows(ir, entity, actors, (at, None), &predicates, |node| {
+    // A row leaving out an `Optional` field a guard compares plainly with the input is decided
+    // only by reading its absence as not taken ([`holds_plain`]): it is never the row that leaves
+    // `outcome` to answer for sure, and the search is steered to one that holds the field. A row
+    // that holds it, `strict`, is left undecided by those comparisons alone, which the input sent
+    // beside it decides: the creator's input is steered on the values the row holds.
+    let truth = |node: &Arrangement| match truth(node) {
+        Truth::True if !holds_plain(ir, entity, &predicates, node) => Truth::Unknown,
+        Truth::Unknown
+            if strict
+                && holds_plain(ir, entity, &predicates, node)
+                && undecided_by_plain(ir, (command, outcome), (via.field(), entity, node)) =>
+        {
+            Truth::True
+        }
+        held => held,
+    };
+    let hints = [
+        predicates.clone(),
+        subject_fact::plain_presence(ir, entity, &predicates),
+    ]
+    .concat();
+    search_rows(ir, entity, actors, (at, None), &hints, |node| {
         Ok(truth(node) == Truth::True)
     })
     .or_else(|| row_at(ir, entity, actors, at, &[]).filter(|node| truth(node) == Truth::True))
     .or_else(|| {
         (!strict)
             .then(|| {
-                search_rows(ir, entity, actors, (at, None), &predicates, |node| {
+                search_rows(ir, entity, actors, (at, None), &hints, |node| {
                     Ok(truth(node) != Truth::False)
                 })
             })
@@ -1661,6 +1892,9 @@ struct Around<'a> {
     command: &'a ResolvedCommand,
     outcome: &'a ResolvedOutcome,
     rows: &'a [Beside<'a>],
+    /// Whether a row whose guards read the input is admitted whatever input is chosen, to be
+    /// arranged for the input that is ([`steered_beside`]).
+    relaxed: bool,
 }
 
 impl Around<'_> {
@@ -1684,13 +1918,14 @@ impl Around<'_> {
     /// Whether, sent with `input`, every row beside leaves the branch under test to answer.
     fn admits(&self, ir: &EssIr, input: &BTreeMap<String, Node>) -> bool {
         self.rows.iter().all(|row| {
-            leaves_to(
-                ir,
-                (self.command, self.outcome),
-                (row.via.field(), row.entity, &row.row),
-                Some(input),
-            )
-            .is_ok_and(|truth| truth == Truth::True)
+            (self.relaxed && row.reads_input(ir, self.command))
+                || leaves_to(
+                    ir,
+                    (self.command, self.outcome),
+                    (row.via.field(), row.entity, &row.row),
+                    Some(input),
+                )
+                .is_ok_and(|truth| truth == Truth::True)
         })
     }
 }
@@ -2465,6 +2700,50 @@ pub(super) fn drive_toward(
     .map(|(invocation, _)| invocation)
 }
 
+/// Every row beside the driven one that reads the chosen input and leaves the branch to answer
+/// for another, arranged again for that input at the block it held ([`row_for`]), where one such
+/// row is found.
+fn resteer_beside(
+    ir: &EssIr,
+    driver: &super::Driver<'_>,
+    (focus_field, actors, distinction): (&str, &BTreeMap<QualifiedName, ActorRef>, Distinction),
+    chosen: &BTreeMap<String, Node>,
+    others: &mut [Beside<'_>],
+) {
+    let besides = rows(driver.command)
+        .into_iter()
+        .filter(|(other, _)| other.field() != focus_field)
+        .map(|(other, _)| other.field())
+        .collect::<Vec<_>>();
+    for other in others {
+        let leaves = |row: &Arrangement| {
+            leaves_to(
+                ir,
+                (driver.command, driver.outcome),
+                (other.via.field(), other.entity, row),
+                Some(chosen),
+            )
+            .is_ok_and(|truth| truth == Truth::True)
+        };
+        if !other.reads_input(ir, driver.command) || leaves(&other.row) {
+            continue;
+        }
+        let Some(index) = besides.iter().position(|field| *field == other.via.field()) else {
+            continue;
+        };
+        let at = block_start(BESIDE_DRIVEN + index, distinction);
+        if let Some(row) = row_for(
+            ir,
+            (driver.command, driver.outcome),
+            (other.via, other.entity),
+            actors,
+            (at, chosen),
+        ) {
+            other.row = row;
+        }
+    }
+}
+
 /// [`drive`] on a command reading several rows (beyond10x/ess#283): the run driven around one of
 /// them, every other row arranged beside it first so that nothing answering before the driven
 /// branch can hold there, whatever the input.
@@ -2529,6 +2808,18 @@ fn drive_several(
                 ));
             }
         }
+    }
+    // A row beside that leaves the branch to answer for no input but the ones its own search
+    // tried, sent beside a chosen input it refuses: arranged again for that input, at the block
+    // it held, where one such row is found ([`row_for`]).
+    if let Some(chosen) = input {
+        resteer_beside(
+            ir,
+            driver,
+            (via.field(), actors, distinction),
+            chosen,
+            &mut others,
+        );
     }
     let mut bound = bound.clone();
     if left.iter().any(|field| bound.contains_key(*field)) {
@@ -3196,7 +3487,7 @@ fn arranged(
     .ok_or_else(unarranged)?;
     let projected = projection(command, via.field());
     let own = kept(&projected, outcome)?;
-    let others = beside(
+    let mut others = beside(
         ir,
         (command, outcome),
         via.field(),
@@ -3204,39 +3495,26 @@ fn arranged(
         distinction,
         (BESIDE, false),
     )?;
-    // ess/28: a branch over several rows at once is decided on the rows arranged beside.
-    let projected = decided_beside(ir, &projected, outcome, &others);
-    let own = kept(&projected, own)?;
-    let around = Around {
-        command,
-        outcome,
-        rows: &others,
-    };
-    let (mut setup, input, lonely) = arranged_at(
+    let (mut setup, input, lonely) = match arranged_beside(
         models,
-        &projected,
-        own,
+        (command, outcome),
+        (&projected, own),
         actors,
-        distinction,
-        goal,
-        Some(around),
-    )?;
-    for other in &others {
-        if !passes(ir, (command, outcome), other, &input)? {
-            return Err(RefusalCause::GuardUnsatisfiable {
-                predicate: format!(
-                    "a row of `{}` for `{}` of `{}` on which no branch over it is selected by the \
-                     input that selects `{}`",
-                    other.entity.name(),
-                    other.via,
-                    command.name,
-                    outcome.name
-                ),
-                tried: 1,
-                cut: 0,
-            });
-        }
-    }
+        (distinction, goal),
+        (&others, false),
+    ) {
+        Ok(found) => found,
+        // A row beside that holds for no input but the one it was arranged for: arranged again
+        // for the input the first try chose ([`steered_beside`]).
+        Err(cause) => steered_beside(
+            models,
+            (command, outcome),
+            (&projected, own),
+            actors,
+            (distinction, goal),
+            (&mut others, cause),
+        )?,
+    };
     if goal.is_none() {
         overlaps(
             models,
@@ -3249,6 +3527,116 @@ fn arranged(
         )?;
     }
     Ok((setup, input, lonely))
+}
+
+/// [`arranged_at`] around the focus row of `projected`, the rows `others` arranged beside it, each
+/// read by the input sent ([`Around`]): and, where `relaxed` is not set, every one of them leaves
+/// `outcome` to answer for that input. Where it is, a row whose guards read the input is
+/// admitted whatever input is chosen, for [`steered_beside`] to arrange for the input chosen.
+fn arranged_beside(
+    models: &super::caller::InvocationModels<'_>,
+    (command, outcome): (&ResolvedCommand, &ResolvedOutcome),
+    (projected, own): (&ResolvedCommand, &ResolvedOutcome),
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    (distinction, goal): (Distinction, Option<&Goal>),
+    (others, relaxed): (&[Beside<'_>], bool),
+) -> Result<(Setup, BTreeMap<String, Node>, bool), RefusalCause> {
+    let ir = models.arrangement;
+    // ess/28: a branch over several rows at once is decided on the rows arranged beside.
+    let projected = decided_beside(ir, projected, outcome, others);
+    let own = kept(&projected, own)?;
+    let around = Around {
+        command,
+        outcome,
+        rows: others,
+        relaxed,
+    };
+    let (setup, input, lonely) = arranged_at(
+        models,
+        &projected,
+        own,
+        actors,
+        distinction,
+        goal,
+        Some(around),
+    )?;
+    if !relaxed {
+        for other in others {
+            if !passes(ir, (command, outcome), other, &input)? {
+                return Err(RefusalCause::GuardUnsatisfiable {
+                    predicate: format!(
+                        "a row of `{}` for `{}` of `{}` on which no branch over it is selected by \
+                         the input that selects `{}`",
+                        other.entity.name(),
+                        other.via,
+                        command.name,
+                        outcome.name
+                    ),
+                    tried: 1,
+                    cut: 0,
+                });
+            }
+        }
+    }
+    Ok((setup, input, lonely))
+}
+
+/// [`arranged_beside`] where the rows beside, each arranged without an input, left no input of
+/// which every one of them leaves `outcome` to answer: the creator of rows sent beside a second
+/// row it guards on the same tenant, which no row of that tenant holds for every input. `cause`,
+/// the refusal of that first try, is the answer where this finds nothing either.
+///
+/// An input is chosen admitting any row beside whose guards read it ([`Around::relaxed`]), and each
+/// such row that does not leave `outcome` to answer for it is arranged again for it ([`row_for`]),
+/// at the block it held. The rows then stand, and the arrangement is tried once more with every
+/// one of them held to its answer.
+fn steered_beside(
+    models: &super::caller::InvocationModels<'_>,
+    (command, outcome): (&ResolvedCommand, &ResolvedOutcome),
+    (projected, own): (&ResolvedCommand, &ResolvedOutcome),
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    (distinction, goal): (Distinction, Option<&Goal>),
+    (others, cause): (&mut [Beside<'_>], RefusalCause),
+) -> Result<(Setup, BTreeMap<String, Node>, bool), RefusalCause> {
+    let ir = models.arrangement;
+    if !others.iter().any(|other| other.reads_input(ir, command)) {
+        return Err(cause);
+    }
+    let Ok((_, input, _)) = arranged_beside(
+        models,
+        (command, outcome),
+        (projected, own),
+        actors,
+        (distinction, goal),
+        (&*others, true),
+    ) else {
+        return Err(cause);
+    };
+    for (index, other) in others.iter_mut().enumerate() {
+        if !other.reads_input(ir, command) || passes(ir, (command, outcome), other, &input)? {
+            continue;
+        }
+        let at = block_start(BESIDE + index, distinction);
+        let Some(row) = row_for(
+            ir,
+            (command, outcome),
+            (other.via, other.entity),
+            actors,
+            (at, &input),
+        ) else {
+            return Err(cause);
+        };
+        other.row = row;
+    }
+    arranged_beside(
+        models,
+        (command, outcome),
+        (projected, own),
+        actors,
+        (distinction, goal),
+        (&*others, false),
+    )
+    .map_err(|_| cause)
 }
 
 /// Whether `outcome`'s own scenario ([`prepare_at_in`]) copies a field from the row its guard reads and

@@ -14389,7 +14389,12 @@ fn arrange_toward_held(
 /// ([`related_guard::beside_bound`]), decided on every row it reads
 /// ([`related_guard::present_beside`]): the rows a cascade moves, created by a command reading the
 /// moving subject and a second related row (an adopter's report of 2026-10-29). Only a cascade
-/// witness's last try takes it, so every row [`arrange_toward_held`] arranges keeps its steps.
+/// witness's last try takes it, and the rows filed under an addressed subject once
+/// [`arrange_toward_held`] finds none ([`row_set`]), so every row it arranges keeps its steps.
+///
+/// Where no row of the second related row's entity holds for every input — the creator guards it
+/// on the same tenant as the captured row, a comparison with the input — the row is arranged for
+/// each input tried instead, steered on what it carries ([`related_guard::beside_steered`]).
 #[allow(clippy::too_many_arguments)]
 fn arrange_toward_beside(
     ir: &EssIr,
@@ -14424,6 +14429,11 @@ enum CreatorPass {
     /// Those reading a row `fields` does not bind, sent beside a row of their own there
     /// ([`arrange_toward_beside`]).
     Beside,
+    /// Those reading a row `fields` does not bind that no row holds beside for every input, sent
+    /// beside a row arranged for each input tried ([`related_guard::beside_steered`]): the
+    /// creator guarding a second related row on the same tenant as the captured one. Tried after
+    /// [`Self::Beside`], so every row it arranges keeps its steps.
+    Steered,
 }
 
 /// The same bounded arrangement search with fields populated from already captured instances.
@@ -14488,6 +14498,9 @@ fn arrange_toward_with(
     }
     if beside && !fields.is_empty() {
         passes.push(CreatorPass::Beside);
+        if !rows.is_empty() {
+            passes.push(CreatorPass::Steered);
+        }
     }
     for (pass, creator) in passes.iter().flat_map(|pass| {
         drivers
@@ -14527,30 +14540,41 @@ fn arrange_toward_with(
         // The rows sent beside the bound one, and every row the creator reads, held as it rests.
         let mut beside_rows = Vec::new();
         let (mut resting_beside, mut rows_beside) = (BTreeMap::new(), BTreeMap::new());
-        if pass == CreatorPass::Beside {
-            if bound.is_empty() || !related_guard::routes(creator.command, creator.outcome) {
+        // Where no row holds for every input, the rows `bound` leaves unnamed are arranged for each
+        // input sent instead ([`related_guard::beside_steered`]): a second related row the creator
+        // guards on the same tenant is created under the tenant the input carries.
+        let steered = pass == CreatorPass::Steered;
+        if pass == CreatorPass::Beside || steered {
+            if bound.is_empty()
+                || !related_guard::routes(creator.command, creator.outcome)
+                || (steered && !related_guard::several(creator.command))
+            {
                 continue;
             }
-            let Some(arranged) = related_guard::beside_bound(
-                ir,
-                (creator.command, creator.outcome),
-                &bound,
-                actors,
-                distinction,
-            ) else {
-                continue;
-            };
             resting_beside.clone_from(resting);
             rows_beside.clone_from(rows);
-            for (field, row) in arranged {
-                bound.insert(field, row.instance.clone());
-                resting_beside.insert(row.instance.clone(), row.state.clone());
-                rows_beside.insert(row.instance.clone(), row.settled.clone());
-                beside_rows.push(row);
+            if !steered {
+                let Some(arranged) = related_guard::beside_bound(
+                    ir,
+                    (creator.command, creator.outcome),
+                    &bound,
+                    actors,
+                    distinction,
+                ) else {
+                    continue;
+                };
+                for (field, row) in arranged {
+                    bound.insert(field, row.instance.clone());
+                    resting_beside.insert(row.instance.clone(), row.state.clone());
+                    rows_beside.insert(row.instance.clone(), row.settled.clone());
+                    beside_rows.push(row);
+                }
             }
         }
         let steering = if per_input {
             related_guard::steering_for(ir, creator.command, &bound, rows)
+        } else if steered {
+            related_guard::steering_bound(ir, creator.command, &bound, rows)
         } else {
             Vec::new()
         };
@@ -14573,19 +14597,6 @@ fn arrange_toward_with(
             continue;
         };
         for input in inputs {
-            let present = match pass {
-                CreatorPass::Plain => true,
-                CreatorPass::PerInput => {
-                    related_guard::present_for(ir, creator.command, &bound, (resting, rows), &input)
-                }
-                CreatorPass::Beside => related_guard::present_beside(
-                    ir,
-                    creator.command,
-                    &bound,
-                    (&resting_beside, &rows_beside),
-                    &input,
-                ),
-            };
             // A creating branch guarded by a row set alone, decided per input on the rows it
             // reads, is selected by the rows the steps leave, which no input decides: the row
             // set's arrangement keeps such a row only where those rows decide the branch
@@ -14600,9 +14611,63 @@ fn arrange_toward_with(
             } else {
                 selects_branch(ir, creator.command, creator.outcome, None, &input) == Ok(true)
             };
-            if !selected || !present {
+            if !selected {
                 continue;
             }
+            // The rows arranged for this input alone, where the unbound ones are steered on it.
+            let mut here = None;
+            if steered {
+                let Some(arranged) = related_guard::beside_steered(
+                    ir,
+                    (creator.command, creator.outcome),
+                    &bound,
+                    actors,
+                    (distinction, &input),
+                ) else {
+                    continue;
+                };
+                let (mut named_here, mut resting_here, mut rows_here) =
+                    (bound.clone(), resting_beside.clone(), rows_beside.clone());
+                let mut rows_arranged = Vec::new();
+                for (field, row) in arranged {
+                    named_here.insert(field, row.instance.clone());
+                    resting_here.insert(row.instance.clone(), row.state.clone());
+                    rows_here.insert(row.instance.clone(), row.settled.clone());
+                    rows_arranged.push(row);
+                }
+                here = Some((named_here, resting_here, rows_here, rows_arranged));
+            }
+            let present = match pass {
+                CreatorPass::Plain => true,
+                CreatorPass::PerInput => {
+                    related_guard::present_for(ir, creator.command, &bound, (resting, rows), &input)
+                }
+                CreatorPass::Beside | CreatorPass::Steered => match &here {
+                    Some((named_here, resting_here, rows_here, _)) => {
+                        related_guard::present_beside(
+                            ir,
+                            creator.command,
+                            named_here,
+                            (resting_here, rows_here),
+                            &input,
+                        )
+                    }
+                    None => related_guard::present_beside(
+                        ir,
+                        creator.command,
+                        &bound,
+                        (&resting_beside, &rows_beside),
+                        &input,
+                    ),
+                },
+            };
+            if !present {
+                continue;
+            }
+            let (bound_in, beside_in) = match &here {
+                Some((named_here, _, _, rows_arranged)) => (named_here, rows_arranged),
+                None => (&bound, &beside_rows),
+            };
             let owner =
                 owner.or_else(|| ir.owner_of(entity).and_then(|owned| fields.get(owned.via)));
             let under = owner.and_then(|owner| under_owner(ir, entity, creator, owner));
@@ -14613,15 +14678,15 @@ fn arrange_toward_with(
                 actors,
                 distinction,
                 (under, named),
-                &bound,
+                bound_in,
                 &input,
             );
             let Ok(mut start) = start else {
                 continue;
             };
-            if !beside_rows.is_empty() {
+            if !beside_in.is_empty() {
                 let mut steps = Vec::new();
-                for row in &beside_rows {
+                for row in beside_in {
                     steps.extend(row.steps.iter().cloned());
                     start.source.extend(row.source.iter().cloned());
                 }
