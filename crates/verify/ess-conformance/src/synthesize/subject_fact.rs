@@ -1241,6 +1241,43 @@ pub(super) fn compared_presence(
     presence
 }
 
+/// `defined(f)` for every `Optional` stored field `f` that a stored guard of `command` compares with
+/// the input in a leaf and never tests for presence: `tenant != input.tenant` is decided only where
+/// both sides hold a value, and a row leaving `tenant` out leaves it `Unknown`, which every target
+/// reads as not taken and the interpreter reports unsupported. Handed to the row search as hints,
+/// they steer it to a row holding the field, so no side of the comparison reads an absence. A guard
+/// that tests the field for presence itself (`all: [defined(tenant), …]`) is decided on a row
+/// leaving it out, and adds nothing.
+fn plain_presence(ir: &EssIr, entity: &EntityHandle, command: &ResolvedCommand) -> Vec<Predicate> {
+    let optional = |path: &FactPath| {
+        ir.entity(entity)
+            .fields
+            .iter()
+            .any(|field| field.name == path.namespace() && field.type_ref.is_optional())
+    };
+    let mut presence: Vec<Predicate> = Vec::new();
+    for predicate in hints(command) {
+        let mut found = Vec::new();
+        leaves(&predicate, &mut found);
+        let tested: Vec<&FactPath> = found
+            .iter()
+            .filter_map(|leaf| match leaf {
+                Predicate::Defined(path) => Some(path),
+                _ => None,
+            })
+            .collect();
+        for guard in compared_presence(ir, entity, std::slice::from_ref(&predicate)) {
+            let Predicate::Defined(path) = &guard else {
+                continue;
+            };
+            if optional(path) && !tested.contains(&path) && !presence.contains(&guard) {
+                presence.push(guard);
+            }
+        }
+    }
+    presence
+}
+
 /// [`grounded`] the other way round: every comparison between the row and an input field `fixed`
 /// already holds, the input side replaced by the value held there and the stored side left the
 /// field it reads. Handed to the stored-row search as hints, its literals are the values the row
@@ -6554,11 +6591,16 @@ pub(super) fn prepare(
         strategy: outcome.test_strategy,
     })?;
     let entity = &subject.entity;
-    let hints = with_calls(ir, command, hints(command));
+    let mut hints = with_calls(ir, command, hints(command));
     let fields = read_fields(ir, entity, &hints);
     let label = fields.iter().cloned().collect::<Vec<_>>().join(",");
     if let Some(refusal) = unarrangeable(ir, entity, &fields) {
         return Err(refusal);
+    }
+    for held in plain_presence(ir, entity, command) {
+        if !hints.contains(&held) {
+            hints.push(held);
+        }
     }
     // A stored instant ordered against `now` no arranging branch carries is refused by name; one
     // no creator carries names the search's refusal where no later branch reached it (A3).

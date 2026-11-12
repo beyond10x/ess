@@ -2316,6 +2316,24 @@ fn held_owners(
         .collect()
 }
 
+/// The addressed subject's link, state and settled rows [`arrange_row`] files its rows under.
+type HeldSubject = (
+    BTreeMap<String, InstanceName>,
+    BTreeMap<InstanceName, StateName>,
+    super::related_guard::HeldRows,
+);
+
+/// The subject `owner` addresses as the row the entity's owner link names, where it addresses one.
+fn held_under_subject(ir: &EssIr, entity: &EntityHandle, owner: Owner<'_>) -> Option<HeldSubject> {
+    let subject = owner.subject?;
+    let link = ir.owner_of(entity)?;
+    Some((
+        BTreeMap::from([(link.via.to_owned(), subject.instance.clone())]),
+        BTreeMap::from([(subject.instance.clone(), subject.state.clone())]),
+        super::related_guard::HeldRows::from([(subject.instance.clone(), subject.settled.clone())]),
+    ))
+}
+
 /// One row `accept` takes, its creating input steered by `goal`; where no creator's input maps every
 /// field `goal` reads — an `Optional` field one creator leaves unwritten — by the conjuncts over the
 /// required fields alone, and then by nothing. `accept` decides; the steering only proposes.
@@ -2391,19 +2409,11 @@ fn arrange_row(
     // Rows filed under the addressed subject, their creator's input steered on the subject as it
     // was created, so a refusal of that subject comparing it with the input passes: a child row
     // sent the tenant its parent holds.
-    let held_subject = owner.subject.and_then(|subject| {
-        let link = ir.owner_of(entity)?;
-        Some((
-            BTreeMap::from([(link.via.to_owned(), subject.instance.clone())]),
-            BTreeMap::from([(subject.instance.clone(), subject.state.clone())]),
-            super::related_guard::HeldRows::from([(
-                subject.instance.clone(),
-                subject.settled.clone(),
-            )]),
-        ))
-    });
+    let held_subject = held_under_subject(ir, entity, owner);
     let create = |steer: &Predicate, accept: &dyn Fn(&Arrangement) -> bool| {
         if let Some((fields, held, rows)) = &held_subject {
+            // Where the rows' creator guards a second related row on the input too, that row is
+            // created for the input sent ([`super::arrange_toward_beside`]).
             return super::arrange_toward_held(
                 ir,
                 entity,
@@ -2413,7 +2423,19 @@ fn arrange_row(
                 fields,
                 (held, rows),
                 accept,
-            );
+            )
+            .or_else(|| {
+                super::arrange_toward_beside(
+                    ir,
+                    entity,
+                    steer,
+                    actors,
+                    distinction,
+                    fields,
+                    (held, rows),
+                    accept,
+                )
+            });
         }
         if owner.under.is_none() && owner.names_held(ir, entity, steer) {
             arrange_toward_named_owner(ir, entity, steer, actors, distinction, accept)
