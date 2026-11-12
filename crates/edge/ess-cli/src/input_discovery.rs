@@ -180,22 +180,65 @@ pub(crate) struct Pin {
 /// Only the release pin is read this way. Input selection keeps reading the immediate manifest
 /// of an explicitly supplied directory and nothing else.
 pub(crate) fn nearest_pin(start: &Path) -> Option<Pin> {
-    start.ancestors().find_map(|directory| {
-        let manifest = directory.join(MANIFEST);
-        let metadata = fs::symlink_metadata(&manifest).ok()?;
-        let symlink = metadata.file_type().is_symlink();
-        (metadata.is_file() || symlink).then(|| Pin {
-            requires: if symlink {
-                Err(anyhow::anyhow!(
-                    "{MANIFEST} must be a regular non-symlink file"
-                ))
-            } else {
-                manifest_lists(&manifest).map(|configuration| configuration.requires)
-            },
-            manifest,
-            symlink,
-        })
+    start.ancestors().find_map(pin_in)
+}
+
+fn pin_in(directory: &Path) -> Option<Pin> {
+    let manifest = directory.join(MANIFEST);
+    let metadata = fs::symlink_metadata(&manifest).ok()?;
+    let symlink = metadata.file_type().is_symlink();
+    (metadata.is_file() || symlink).then(|| Pin {
+        requires: if symlink {
+            Err(anyhow::anyhow!(
+                "{MANIFEST} must be a regular non-symlink file"
+            ))
+        } else {
+            manifest_lists(&manifest).map(|configuration| configuration.requires)
+        },
+        manifest,
+        symlink,
     })
+}
+
+/// How far below the working directory `pins_below` looks.
+const BELOW_DEPTH: usize = 6;
+
+/// Directories `pins_below` never enters, besides hidden ones: build output and vendored trees.
+const BELOW_SKIPPED: [&str; 2] = ["target", "node_modules"];
+
+/// Every `ess-inputs.yaml` below `start`, in path order: the pins the walk upwards cannot see.
+///
+/// Looked up only to name a pin that does not apply where `ess` runs (`toolchain which`, the
+/// refusal in `requires.rs`); no command runs a release because of one. Symlinked directories,
+/// hidden ones, `target` and `node_modules` are not entered, and the search stops
+/// `BELOW_DEPTH` directories down.
+pub(crate) fn pins_below(start: &Path) -> Vec<Pin> {
+    fn walk(directory: &Path, depth: usize, found: &mut Vec<Pin>) {
+        let Ok(entries) = fs::read_dir(directory) else {
+            return;
+        };
+        let mut children: Vec<PathBuf> = entries
+            .filter_map(|entry| {
+                let entry = entry.ok()?;
+                let name = entry.file_name();
+                let name = name.to_str()?;
+                (entry.file_type().ok()?.is_dir()
+                    && !name.starts_with('.')
+                    && !BELOW_SKIPPED.contains(&name))
+                .then(|| entry.path())
+            })
+            .collect();
+        children.sort();
+        for child in children {
+            found.extend(pin_in(&child));
+            if depth > 1 {
+                walk(&child, depth - 1, found);
+            }
+        }
+    }
+    let mut found = Vec::new();
+    walk(start, BELOW_DEPTH, &mut found);
+    found
 }
 
 /// Set `requires: ess <release>` in `manifest`, moving an `ess-inputs/1` document to `/2`.

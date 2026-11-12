@@ -4,8 +4,9 @@
 //! directory, or `ESS_TOOLCHAIN=X.Y.Z` for one command. When it names another release, the running
 //! `ess` execs that release from its cache with the same arguments and environment, adding
 //! `ESS_TOOLCHAIN_DELEGATED=1` so the release it runs never delegates again. A minor-line pin or no
-//! pin at all runs this release, exactly as before. `docs/design/specification-requires-release.md`
-//! states the rules.
+//! pin at all runs this release, exactly as before. A pin below the working directory delegates
+//! nothing: `toolchain which` names it, and a command given its manifest refuses by name
+//! (`unfollowed_pin`). `docs/design/specification-requires-release.md` states the rules.
 
 use std::{
     ffi::OsString,
@@ -89,9 +90,23 @@ fn this() -> Release {
 enum Reason {
     Delegated,
     Override,
-    Pin { manifest: PathBuf, requires: String },
-    Unpinned { manifest: PathBuf, detail: String },
-    NoManifest { from: PathBuf },
+    Pin {
+        manifest: PathBuf,
+        requires: String,
+    },
+    Unpinned {
+        manifest: PathBuf,
+        detail: String,
+    },
+    NoManifest {
+        from: PathBuf,
+    },
+    /// Only `toolchain which` looks below the working directory, and only to say a pin is there.
+    PinBelow {
+        from: PathBuf,
+        manifests: Vec<PathBuf>,
+        release: Release,
+    },
     NoWorkingDirectory,
 }
 
@@ -110,6 +125,18 @@ impl fmt::Display for Reason {
                 f,
                 "self: no ess-inputs.yaml in {} or any directory above it",
                 from.display()
+            ),
+            Self::PinBelow {
+                from,
+                manifests,
+                release,
+            } => write!(
+                f,
+                "self: `requires: ess {release}` in {} is below {}, so it pins nothing here; \
+                 `{}` or `{OVERRIDE}={release}` runs it",
+                shown(from, manifests),
+                from.display(),
+                enter(from, &manifests[0])
             ),
             Self::NoWorkingDirectory => write!(
                 f,
@@ -138,6 +165,119 @@ fn choose() -> Result<Choice> {
         );
     }
     Ok(choice)
+}
+
+fn relative<'a>(from: &Path, manifest: &'a Path) -> &'a Path {
+    manifest.strip_prefix(from).unwrap_or(manifest)
+}
+
+/// `manifests` as `ess-inputs.yaml` paths relative to `from`, comma separated.
+fn shown(from: &Path, manifests: &[PathBuf]) -> String {
+    let names: Vec<_> = manifests
+        .iter()
+        .map(|manifest| relative(from, manifest).display().to_string())
+        .collect();
+    names.join(", ")
+}
+
+/// The command that enters the directory holding `manifest`.
+fn enter(from: &Path, manifest: &Path) -> String {
+    let directory = relative(from, manifest).parent().unwrap_or(Path::new("."));
+    format!("cd {}", directory.display())
+}
+
+/// Whether the nearest manifest at or above `from` names an exact release: only such a pin chooses
+/// the release that runs there, so only it makes a pin below irrelevant.
+fn exact_pin_at_or_above(from: &Path) -> bool {
+    input_discovery::nearest_pin(from).is_some_and(
+        |pin| matches!(pin.requires, Ok(Some(ref requires)) if requires::exact(requires).is_some()),
+    )
+}
+
+/// `toolchain which`: `choose`, and when no exact pin is at or above the working directory, the
+/// exact pins below it. They do not change the release (nothing delegates because of a pin below,
+/// see `unfollowed_pin`); one is named, and pins that name different releases are refused.
+fn choose_to_explain() -> Result<Choice> {
+    let mut choice = choose()?;
+    let from = match &choice.reason {
+        Reason::NoManifest { from } => from.clone(),
+        Reason::Unpinned { .. } => {
+            std::env::current_dir().context("reading the working directory")?
+        }
+        _ => return Ok(choice),
+    };
+    let from = &from;
+    let mut pins: Vec<(PathBuf, Release)> = input_discovery::pins_below(from)
+        .into_iter()
+        .filter_map(|pin| {
+            let requires = pin.requires.ok()??;
+            Some((pin.manifest, requires::exact(&requires)?.into()))
+        })
+        .collect();
+    let Some(&(_, release)) = pins.first() else {
+        return Ok(choice);
+    };
+    if let Some((_, other)) = pins.iter().find(|(_, other)| *other != release) {
+        let stated: Vec<_> = pins
+            .iter()
+            .map(|(manifest, release)| {
+                format!(
+                    "{} requires ess {release}",
+                    relative(from, manifest).display()
+                )
+            })
+            .collect();
+        bail!(
+            "refused: the manifests below {} pin different releases ({}); no exact pin at or above \
+             it decides, so run ess from the directory of one, or name a release with \
+             `{OVERRIDE}={release}` or `{OVERRIDE}={other}`",
+            from.display(),
+            stated.join("; ")
+        );
+    }
+    let manifests = pins.drain(..).map(|(manifest, _)| manifest).collect();
+    choice.reason = Reason::PinBelow {
+        from: from.clone(),
+        manifests,
+        release,
+    };
+    Ok(choice)
+}
+
+/// The refusal for an exact `requires` of another release than this one, read from `manifest` by a
+/// command given a path below the working directory, where no manifest at or above it pins an
+/// exact release.
+///
+/// Delegation is chosen before the command line is parsed, so the release the manifest names is
+/// not the one running, and warning or telling the user to upgrade would leave them believing it
+/// was. `None` where the dispatcher followed or ruled out a pin, so the ordinary check applies: a
+/// pin at or above the working directory, `ESS_TOOLCHAIN`, a delegated run, or a manifest that is
+/// not below the working directory.
+pub(crate) fn unfollowed_pin(
+    manifest: &Path,
+    requires: &str,
+    pinned: (u64, u64, u64),
+) -> Option<String> {
+    if delegated() || std::env::var_os(OVERRIDE).is_some_and(|value| !value.is_empty()) {
+        return None;
+    }
+    let from = std::env::current_dir().ok()?.canonicalize().ok()?;
+    if exact_pin_at_or_above(&from) {
+        return None;
+    }
+    let manifest_here = manifest.canonicalize().ok()?;
+    if !manifest_here.starts_with(&from) {
+        return None;
+    }
+    let release = Release::from(pinned);
+    Some(format!(
+        "{} requires {requires} and this is ess {}, and no ess-inputs.yaml at or above the \
+         working directory pins an exact release, so ess did not switch to it; `{}` and run ess there, \
+         or run it as `{OVERRIDE}={release} ess …`, to use ess {release}",
+        manifest.display(),
+        this(),
+        enter(&from, &manifest_here)
+    ))
 }
 
 /// Whether this process was delegated to, read once and then removed from its environment so the
@@ -582,7 +722,7 @@ pub(crate) fn run_command(command: &Command) -> Result<ExitCode> {
             }
         }
         Command::Which => {
-            let choice = choose()?;
+            let choice = choose_to_explain()?;
             println!("ess {}", choice.release);
             println!("reason: {}", choice.reason);
             if choice.release == this() {

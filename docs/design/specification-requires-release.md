@@ -96,6 +96,21 @@ which is what the release smoke check's `awk '{print $NF}'` reads.
 `ess specify toolchain …` (and its flat `ess toolchain …`) is never delegated: the dispatcher owns
 the cache, and an older release may not have the command.
 
+**A pin below the working directory.** The walk is upwards only, so a manifest below the working
+directory chooses nothing: from the repository root `ess` stays on the release called, and
+delegation, chosen before any argument is read, cannot follow a `--path`. Two places say so rather
+than leave the user believing the pin runs. `ess specify toolchain which`, where no exact pin is at
+or above the working directory, looks up to six directories down (not into hidden directories,
+symlinked ones, `target` or `node_modules`): it still names this release, and its reason names the
+one manifest found, its `requires`, `cd <directory>` and `ESS_TOOLCHAIN=X.Y.Z`; manifests whose
+exact pins name different releases are refused, exit 1, naming each. And the check above, for an
+exact `requires` of another release than this one, older or newer, in a manifest below the working
+directory with no exact pin at or above it (the nearest manifest above may have none, a minor
+line or a manifest that does not parse: it chooses nothing, so it does not hide the pin below),
+`ESS_TOOLCHAIN` unset and no delegation, refuses
+instead of warning or pointing at `b10x upgrade`, naming the manifest, `cd <directory>` and
+`ESS_TOOLCHAIN=X.Y.Z`. A minor line, an override and a manifest elsewhere keep the table above.
+
 **The cache** is `$ESS_TOOLCHAIN_DIR`, else `$XDG_CACHE_HOME/ess/toolchains`, else
 `~/.cache/ess/toolchains`, holding one `<X.Y.Z>/ess` per release. A relative value of any of
 the three is ignored like an unset one, so one project uses one cache from every directory, and

@@ -109,7 +109,10 @@ scenarios: []
 An exact pin, `requires: ess 0.32.1`, decides which release runs: any `ess` run in that directory
 or below it runs 0.32.1 from the cache, installing it first when it is not cached, whatever release
 is on your `PATH`, and says on stderr that it delegated. `ess specify toolchain which` prints the
-release that would run and why. A minor line, `requires: ess 0.32`, leaves the release on your
+release that would run and why. The pin applies from that directory and below, not above: run from
+the repository root, `ess` does not see a pin in `spec/`, so `which` names it there, and
+`ess specify validate --path spec` refuses, naming the manifest, `cd spec` and
+`ESS_TOOLCHAIN=0.32.1`, whether `ess` is older or newer. A minor line, `requires: ess 0.32`, leaves the release on your
 `PATH` to run, and that release checks the line: an older `ess` refuses with exit `1`, naming the
 required release and how to get it: `b10x upgrade`, or `/ess:upgrade` in an agent session. A newer
 `ess` prints one warning per command and continues; `--strict-requires` refuses instead, which is

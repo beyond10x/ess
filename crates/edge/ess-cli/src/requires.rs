@@ -99,6 +99,13 @@ pub(crate) fn check(manifest: &Path, requires: &str) -> Result<()> {
         Required::Exact(x, y, z) => (major, minor, patch).cmp(&(x, y, z)),
         Required::Line(x, y) => (major, minor).cmp(&(x, y)),
     };
+    if let Required::Exact(x, y, z) = pin {
+        if ordering.is_ne() {
+            if let Some(refusal) = crate::toolchain::unfollowed_pin(manifest, requires, (x, y, z)) {
+                bail!("{refusal}");
+            }
+        }
+    }
     let stated = format!(
         "{} requires {requires} and this is ess {THIS}",
         manifest.display()
