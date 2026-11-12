@@ -399,7 +399,11 @@ export function GroupBox(props: {
 
 //-collapse
 /** Sections placed on a grid of named areas. */
-export function AreasLayout(props: { grid: string[][]; areas: Record<string, ReactNode> }): ReactNode {
+export function AreasLayout(props: {
+  grid: string[][];
+  areas: Record<string, ReactNode>;
+  order: string[];
+}): ReactNode {
   const template = props.grid.map((row) => `"${row.join(" ")}"`).join(" ");
   const columns = Math.max(1, ...props.grid.map((row) => row.length));
   return (
@@ -407,9 +411,9 @@ export function AreasLayout(props: { grid: string[][]; areas: Record<string, Rea
       className="ui-layout-areas"
       style={{ gridTemplateAreas: template, gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` }}
     >
-      {Object.entries(props.areas).map(([area, content]) => (
+      {props.order.map((area) => (
         <div key={area} className="ui-area" style={{ gridArea: area }}>
-          {content}
+          {props.areas[area]}
         </div>
       ))}
     </div>

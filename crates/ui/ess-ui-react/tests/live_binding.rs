@@ -178,7 +178,10 @@ fn fnv(text: &str) -> u64 {
 /// (`actions.tsx`). The whole-project digest re-pinned for
 /// story:a-page-shows-its-title-total-badge-and-live-status-and-marks-the-current-page: the header
 /// names its count from the section title, marks the current page and draws a badge (`core.tsx`,
-/// `navigation.tsx`, `router.tsx`, `styles.css`).
+/// `navigation.tsx`, `router.tsx`, `styles.css`). The whole-project digest re-pinned for
+/// story:a-wide-table-scrolls-inside-its-column: `styles.css` stacks the page columns and areas
+/// below `48rem` (one `@media` rule), and `core.tsx`'s `AreasLayout` draws the areas in the
+/// `order` list the page passes; no file of the pins above or of the document changes.
 const PLAIN: [(&str, u64); 7] = [
     ("README.md", 0xdae6_c3b6_7e5c_2d28),
     ("src/main.tsx", 0x939b_2ed0_a001_98c5),
@@ -188,7 +191,7 @@ const PLAIN: [(&str, u64); 7] = [
     ("src/runtime/data.ts", 0x1d12_0466_1213_7ea5),
     ("www/index.html", 0x5972_6d4a_5ee2_5ce2),
 ];
-const PLAIN_PROJECT: u64 = 0x1ca7_240d_135e_879f;
+const PLAIN_PROJECT: u64 = 0x4d5f_e60b_75c4_9a6e;
 
 #[test]
 fn without_a_model_the_project_is_byte_identical() {
