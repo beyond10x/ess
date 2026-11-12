@@ -476,6 +476,92 @@ fn local_declarations_shadow_prelude_leaves_and_generics_refuse() {
     assert!(model("struct Root { text: std::string::String }").is_ok());
 }
 
+#[test]
+fn a_shared_static_reference_is_read_and_its_target_is_accounted() {
+    let graph =
+        model("pub struct Root { value: &'static Inner } struct Inner { count: u32 }").unwrap();
+    let field = &graph["obligations"]["rust:fixture::Root/field/value"];
+    assert!(field.is_string(), "{graph}");
+    assert!(
+        graph["obligations"]
+            .get("rust:fixture::Inner/field/count")
+            .is_some(),
+        "the referenced declaration is reached and accounted: {graph}"
+    );
+    let other =
+        model("pub struct Root { value: &'static Inner } struct Inner { count: u64 }").unwrap();
+    assert_ne!(
+        graph["obligations"]["rust:fixture::Inner/field/count"],
+        other["obligations"]["rust:fixture::Inner/field/count"]
+    );
+    let owned = model("pub struct Root { value: Inner } struct Inner { count: u32 }").unwrap();
+    assert_ne!(
+        field, &owned["obligations"]["rust:fixture::Root/field/value"],
+        "a reference is not its target"
+    );
+}
+
+#[test]
+fn every_other_reference_or_pointer_type_is_still_refused() {
+    for ty in [
+        "&Inner",
+        "&'a Inner",
+        "&'static mut Inner",
+        "*const Inner",
+        "&'static [u8]",
+        "&'static str",
+        "&'static dyn Inner",
+        "fn(u8) -> u8",
+        "[u8; 4]",
+    ] {
+        let source = format!("pub struct Root {{ value: {ty} }} struct Inner;");
+        let error = model(&source).unwrap_err().to_string();
+        assert!(
+            error.contains("unsupported declaration type")
+                || error.contains("unknown type owner")
+                || error.contains("unsupported"),
+            "{ty}: {error}"
+        );
+    }
+}
+
+#[test]
+fn adversary_int4_every_static_reference_shape_is_refused_or_accounts_its_target() {
+    for ty in [
+        "*mut Inner",
+        "&'_ Inner",
+        "&'static (Inner)",
+        "&'static Inner<'static>",
+    ] {
+        let source = format!("pub struct Root {{ value: {ty} }} struct Inner {{ count: u32 }}");
+        assert!(
+            model(&source).is_err(),
+            "{ty} is read: {:?}",
+            model(&source)
+        );
+    }
+    for ty in [
+        "Option<&'static Inner>",
+        "(u8, &'static Inner)",
+        "&'static &'static Inner",
+        "Vec<&'static Option<Inner>>",
+    ] {
+        let source = format!("pub struct Root {{ value: {ty} }} struct Inner {{ count: u32 }}");
+        let graph = model(&source).unwrap();
+        assert_eq!(
+            graph["references"]["fixture::Root"],
+            json!(["fixture::Inner"]),
+            "{ty}: {graph}"
+        );
+        assert!(
+            graph["obligations"]
+                .get("rust:fixture::Inner/field/count")
+                .is_some(),
+            "{ty}: {graph}"
+        );
+    }
+}
+
 fn profile_for(source: &str, target: &str) -> String {
     let entries = super::consumer::fixture(source).unwrap()["entries"]
         .as_object()
