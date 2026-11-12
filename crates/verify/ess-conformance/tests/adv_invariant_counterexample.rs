@@ -197,6 +197,37 @@ fn adv_an_any_refusal_that_answers_the_input_gets_no_refusal() {
     assert_eq!(broken(&synthesis), Vec::<String>::new());
 }
 
+/// A held-state refusal that compares the stored field with the input answers every input below
+/// the row's value: `stale` (`when_subject: value >= input.value`) precedes `adjusted`, and every
+/// row holds `value >= 1` (`Set` is guarded on it), so `adjusted` only ever stores a value above
+/// one. No input leaves the counter outside `value >= 1` unanswered, and `ESS-SYNTH-025` must not
+/// name `adjusted` (the shape of the #251 reproduction's `Revise`, without its upper bound).
+#[test]
+fn adv2_a_stale_check_on_the_held_value_answers_the_input_below_the_bound() {
+    let set = set_with(&format!(
+        "      - name: set
+        when: value >= 1
+        creates: bounded.counter.Counter
+        instance: counter_id
+        sets: {{value: input.value, cap: 8}}
+{EMITS}      - {{name: otherwise, error: bounded.counter.ValueTooLarge}}
+"
+    ));
+    let adjust = adjust_with(&format!(
+        "      - name: stale
+        when_subject:
+          predicate: value >= input.value
+        error: bounded.counter.ValueTooLarge
+      - name: adjusted
+        updates: bounded.counter.Counter
+        instance: counter_id
+        sets: {{value: input.value}}
+{EMITS}"
+    ));
+    let synthesis = synthesize(&ir(&spec("value >= 1", &(set + &adjust))));
+    assert_eq!(broken(&synthesis), Vec::<String>::new());
+}
+
 // ---- false negatives inside the bounded search -------------------------------------------------
 
 /// A refusal that answers only part of the outside (`value > 9`) leaves `value: 9` unanswered.

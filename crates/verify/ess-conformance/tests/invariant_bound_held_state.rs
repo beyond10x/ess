@@ -167,6 +167,27 @@ fn only_the_unguarded_inputs_are_refused(synthesis: &Synthesis) {
         "{:#?}",
         refusals(synthesis)
     );
+    // `stale` (`revision >= input.revision`) answers every revision below the stored one, and a
+    // stored revision is never below 1, so it answers the revision 0 on every row: the hole
+    // `Revise/revised` leaves is above the bound, where `exhausted` answers only the row at it.
+    let sent: Vec<(String, String)> = synthesis
+        .refusals
+        .iter()
+        .filter_map(|refusal| match &refusal.cause {
+            ess_conformance::synthesize::RefusalCause::InvariantInputUnanswered {
+                outcome,
+                input,
+                ..
+            } => Some((outcome.to_string(), input.clone())),
+            _ => None,
+        })
+        .collect();
+    let revised: Vec<&str> = sent
+        .iter()
+        .filter(|(outcome, _)| outcome.contains("Revise"))
+        .map(|(_, input)| input.as_str())
+        .collect();
+    assert_eq!(revised, ["revision: 9007199254740992"], "{sent:#?}");
 }
 
 fn scenario_ids(synthesis: &Synthesis) -> BTreeSet<String> {
