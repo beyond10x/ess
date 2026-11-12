@@ -5109,7 +5109,8 @@ fn run_as(
         }
         let beside_named = row_set::beside_named(ir.format(), command, outcome);
         match row_set::prepare(models, command, outcome, actors) {
-            Ok((mut setup, input, gaps)) => {
+            Ok((setup, input, gaps)) => {
+                let mut setup = beside_addressed_row(ir, command, outcome, actors, setup);
                 if beside_named {
                     row_set::with_overlaps(models, command, outcome, actors, &mut setup, &input);
                 }
@@ -5497,6 +5498,11 @@ fn arranged(
     {
         return Ok((addressed_row(ir, command, actors, setup), input));
     }
+    let setup = if outcome.subject.is_some() {
+        beside_addressed_row(ir, command, outcome, actors, setup)
+    } else {
+        setup
+    };
     // Existence answers before such a branch wherever a non-creating `unknown_instance:` is read
     // first (beyond10x/ess#645), so the branch is reached only for a stored row.
     let setup = stored_where_unknown_first(
@@ -5894,6 +5900,79 @@ fn addressed_row(
         Some(Ok(arranged)) => joined(arranged, setup),
         Some(Err(_)) | None => setup,
     }
+}
+
+/// `setup` for `outcome` on a row-set command, with a row arranged for every other row an
+/// accepting branch of the command acts on through its own input field: the interpreter reads the
+/// row the first declared accepting branch addresses before any branch is selected, and the row
+/// of the branch the request selects after it
+/// (`docs/design/filtered-related-reads.md`, "Subject borrowing and precedence"), so a send
+/// reaches its branch only where each of those rows exists. The row `setup` already arranges, the
+/// one `outcome` acts on or, for a branch naming none, the first addressed, is kept as it was, with
+/// its state and its input field; the other rows' steps come first and each identity is sent
+/// through its own field. A creation, and every command no row set guards, keeps `setup`.
+fn beside_addressed_row(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    mut setup: Setup,
+) -> Setup {
+    let field_of = |subject: &ResolvedSubject| match &subject.instance {
+        ResolvedInstance::Supplied { field } => Some(field.name.clone()),
+        ResolvedInstance::Observed { .. } => None,
+    };
+    if !row_set::uses(command)
+        || outcome
+            .subject
+            .as_ref()
+            .is_some_and(|subject| subject.effect == ResolvedEffect::Creates)
+    {
+        return setup;
+    }
+    let covered = match &outcome.subject {
+        Some(subject) => field_of(subject),
+        None => addressed(command).and_then(field_of),
+    };
+    let mut seen: BTreeSet<String> = covered.into_iter().collect();
+    let mut beside = Vec::new();
+    for subject in command
+        .outcomes
+        .iter()
+        .filter(|branch| branch.error.is_none())
+        .filter_map(|branch| branch.subject.as_ref())
+        .filter(|subject| subject.effect != ResolvedEffect::Creates)
+    {
+        let Some(field) = field_of(subject) else {
+            continue;
+        };
+        if setup.bound.contains_key(&field) || !seen.insert(field.clone()) {
+            continue;
+        }
+        let lifecycle = &ir.entity(&subject.entity).lifecycle;
+        let row = std::iter::once(&lifecycle.initial)
+            .chain(
+                lifecycle
+                    .states
+                    .iter()
+                    .filter(|state| **state != lifecycle.initial),
+            )
+            .find_map(|state| held_row(ir, subject, state, actors, false).ok());
+        if let Some(row) = row {
+            beside.push(row);
+        }
+    }
+    let own = std::mem::take(&mut setup.steps);
+    for row in beside {
+        setup.steps.extend(row.steps);
+        setup.source.extend(row.source);
+        setup.unobserved.extend(row.unobserved);
+        for (field, instance) in row.bound {
+            setup.bound.entry(field).or_insert(instance);
+        }
+    }
+    setup.steps.extend(own);
+    setup
 }
 
 /// `true` for a branch that accepts without naming a subject of its own or refusing: a `when:` or

@@ -93,6 +93,15 @@ to their earlier phase. Value reads occur only after that branch is selected and
 same pre-outcome snapshot. A refusal that answers before subject existence cannot copy a subject
 value through this source.
 
+Where the accepting branches of a row-set command address different rows (each `updates:`,
+`moves:`, `preserves:` or `deletes:` through its own input field), the addressed row is the one the
+first declared accepting branch names, whichever branch the request selects: it is read before any
+branch is selected, and swapping the declaration order of two such branches moves which row's
+absence answers `unknown_instance:`. The interpreter keeps that reading; the fix is in synthesis,
+where a later accepting branch's scenario arranges the first declared branch's row beside its own,
+and a refusal naming no subject arranges the rows of every other accepting branch beside the one it
+is sent for, so the unmutated suite passes `--target interpreted` in either declaration order.
+
 The value consumer extends the existing source:
 
 ```yaml

@@ -9,7 +9,9 @@
 use ess_compiler::source::SourceMap;
 use ess_conformance::interpret::Interpreted;
 use ess_conformance::mutate::{self, Document, MutantClass};
+use ess_conformance::report::Status;
 use ess_conformance::target::{ConformanceTarget, ScenarioContext, SemanticCommandRequest};
+use ess_conformance::{AdmittedSuite, Runner};
 use ess_domain::spec::RawSpecFile;
 use ess_domain::system::Source;
 use ess_primitives::ids::CorrelationId;
@@ -140,6 +142,22 @@ fn shelf(book_first: bool) -> String {
     SHELF.replace("PAIR", &pair)
 }
 
+/// [`shelf`] with `shelf-paused` made reachable: a Boolean input `halt` selects it where no
+/// earlier branch takes the request (`pause == false` and `halt == true`), so no refusal covers it
+/// and its synthesized scenario is a live one.
+fn reachable_shelf(book_first: bool) -> String {
+    shelf(book_first)
+        .replace(
+            "      - {name: rush, type: Boolean}\n",
+            "      - {name: rush, type: Boolean}\n      - {name: halt, type: Boolean}\n",
+        )
+        .replace(
+            "when: rush == true\n        updates: demo.shelf.Shelf",
+            "when: {any: ['rush == true', {all: ['pause == false', 'halt == true']}]}\n        \
+             updates: demo.shelf.Shelf",
+        )
+}
+
 fn documents(text: &str) -> (Vec<Document>, SourceMap) {
     let label = "model.yaml".to_owned();
     let raw = RawSpecFile::parse(text).unwrap_or_else(|error| panic!("{error}\n{text}"));
@@ -236,6 +254,101 @@ fn a_swap_that_moves_the_addressed_row_is_not_scored_equivalent() {
         "the baseline answers `{baseline}` and the swapped model `{swapped}` to one request, yet \
          the swap is scored equivalent: {swap:#}\n{rendered}"
     );
+}
+
+/// The two addressed-row cases hold on the reachable model too: its `Act` takes `halt`, and the
+/// request that selects neither swapped branch sends `halt: false`.
+#[test]
+fn a_swap_that_moves_the_addressed_row_is_not_scored_equivalent_on_the_reachable_model() {
+    let held_shelf = |book_first: bool| {
+        let target = target(&reachable_shelf(book_first));
+        assert_eq!(
+            answer(&target, "demo.shelf.BuildShelf", &[("shelf", text("s1"))]),
+            "built"
+        );
+        answer(
+            &target,
+            "demo.shelf.Act",
+            &[
+                ("book", text("b-missing")),
+                ("shelf", text("s1")),
+                ("curator", text("nobody")),
+                ("pause", Node::Bool(false)),
+                ("rush", Node::Bool(false)),
+                ("halt", Node::Bool(false)),
+            ],
+        )
+    };
+    let (baseline, swapped) = (held_shelf(true), held_shelf(false));
+    assert_ne!(baseline, swapped, "the two orders answer the request alike");
+    let (json, rendered) = swaps_audited(&reachable_shelf(true));
+    let swap = mutant(&json, SHELF_SWAP);
+    assert_eq!(swap["verdict"], "killed", "{swap:#}\n{rendered}");
+    assert!(swap.get("overlap_taken_by").is_none(), "{swap:#}");
+}
+
+/// A row-set command whose accepting branches address different rows (`book-paused` a book,
+/// `shelf-paused` a shelf) passes its own synthesized suite against the reference interpreter:
+/// the interpreter reads the row of the first declared accepting branch before any branch is
+/// selected (`docs/design/filtered-related-reads.md`, "Subject borrowing and precedence"), so the
+/// scenario of the later branch arranges that row beside its own. Every scenario passes, and the
+/// audit's unmutated suite, which refuses with `ESS-MUTATE-001` when any scenario fails, runs.
+#[test]
+fn a_row_set_command_whose_branches_address_different_rows_passes_its_own_suite() {
+    synthesized_suite_passes_and_audits(&reachable_shelf(true));
+}
+
+/// The same with `shelf-paused` declared first: the interpreter reads the shelf first, and the
+/// subject-less `refused` scenario, sent a `pause` that selects `book-paused`, arranges the book
+/// beside the shelf as well.
+#[test]
+fn a_row_set_command_whose_branches_address_different_rows_passes_its_own_suite_in_the_other_order()
+{
+    synthesized_suite_passes_and_audits(&reachable_shelf(false));
+}
+
+/// Every scenario of the suite synthesized for `text` passes on the interpreted target, and the
+/// precedence-swap audit runs.
+fn synthesized_suite_passes_and_audits(text: &str) {
+    let (files, texts) = documents(text);
+    let ir = mutate::compile(files.clone(), &texts).unwrap_or_else(|error| panic!("{error:?}"));
+    let synthesis = ess_conformance::synthesize::synthesize(&ir);
+    let admitted =
+        AdmittedSuite::from_suite(&synthesis.suite).unwrap_or_else(|error| panic!("{error}"));
+    let report = Runner::for_suite(admitted.suite())
+        .run_admitted(&admitted, &Interpreted::for_model(ir.clone()))
+        .into_report();
+    let failed: Vec<String> = report
+        .scenarios
+        .iter()
+        .filter(|result| result.status != Status::Passed)
+        .map(|result| {
+            let written = synthesis
+                .suite
+                .scenarios
+                .iter()
+                .find(|(id, _)| **id == result.scenario)
+                .map(|(_, scenario)| serde_json::to_string_pretty(scenario).unwrap());
+            format!(
+                "{}: {:?} {:#?}\n{}",
+                result.scenario,
+                result.status,
+                result.diagnostics().collect::<Vec<_>>(),
+                written.unwrap_or_default()
+            )
+        })
+        .collect();
+    assert!(
+        failed.is_empty(),
+        "every scenario passes on the interpreted target:\n{}",
+        failed.join("\n")
+    );
+    let report = mutate::audit(&files, &texts, &[MutantClass::PrecedenceSwap], || {
+        Interpreted::for_model(ir.clone())
+    })
+    .unwrap_or_else(|refusal| panic!("{refusal}\n{text}"));
+    let rendered = report.render_text();
+    assert!(!rendered.contains("ESS-MUTATE-001"), "{rendered}");
 }
 
 /// The audit of `text`'s precedence swaps against its own interpreter, as JSON, and its text.
