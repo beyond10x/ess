@@ -344,6 +344,7 @@ export function SharedFrame(props: {
   children?: ReactNode;
 }): ReactNode {
   const [open, setOpen] = useState(!props.collapsed);
+  const bodyId = `${props["data-ui-path"]}#body`;
   return (
     <div
       className={`ui-frame${props.column ? ` ui-column ui-column-${props.width ?? "normal"}` : ""}`}
@@ -352,7 +353,7 @@ export function SharedFrame(props: {
       {props.title ? (
         <h2 className="ui-section-title">
           {props.collapsed ? (
-            <button type="button" className="ui-collapse" aria-expanded={open} onClick={() => setOpen(!open)}>
+            <button type="button" className="ui-collapse" aria-expanded={open} aria-controls={bodyId} onClick={() => setOpen(!open)}>
               {props.title}
             </button>
           ) : (
@@ -360,7 +361,7 @@ export function SharedFrame(props: {
           )}
         </h2>
       ) : null}
-      <div className="ui-frame-body" hidden={!open}>
+      <div className="ui-frame-body" id={bodyId} hidden={!open}>
         {props.children}
       </div>
     </div>
@@ -375,12 +376,13 @@ export function GroupBox(props: {
   children?: ReactNode;
 }): ReactNode {
   const [open, setOpen] = useState(!props.collapsed);
+  const bodyId = `${props["data-ui-path"]}#body`;
   return (
     <fieldset className="ui-form-group" data-ui-path={props["data-ui-path"]}>
       {props.label ? (
         <legend>
           {props.collapsed ? (
-            <button type="button" className="ui-collapse" aria-expanded={open} onClick={() => setOpen(!open)}>
+            <button type="button" className="ui-collapse" aria-expanded={open} aria-controls={bodyId} onClick={() => setOpen(!open)}>
               {props.label}
             </button>
           ) : (
@@ -388,7 +390,7 @@ export function GroupBox(props: {
           )}
         </legend>
       ) : null}
-      <div className="ui-collapse-body" hidden={!open}>
+      <div className="ui-collapse-body" id={bodyId} hidden={!open}>
         {props.children}
       </div>
     </fieldset>
@@ -525,9 +527,10 @@ export function SectionFrame(props: {
   useReport(props.name, { total: data?.total, params: data?.params, title: props.title, row: props.reportsRow ? data?.rows[0] : undefined });
   const mark = data?.stale ? states.stale?.mark ?? "badge" : undefined;
 //+collapse
+  const bodyId = `${props["data-ui-path"]}#body`;
   const heading =
     props.title && props.collapsed ? (
-      <button type="button" className="ui-collapse" aria-expanded={open} onClick={() => setOpen(!open)}>
+      <button type="button" className="ui-collapse" aria-expanded={open} aria-controls={bodyId} onClick={() => setOpen(!open)}>
         {props.title}
       </button>
     ) : (
@@ -603,7 +606,7 @@ export function SectionFrame(props: {
 //-nocollapse
 //+collapse
           {props.collapsed ? (
-            <div className="ui-collapse-body" hidden={!open}>
+            <div className="ui-collapse-body" id={bodyId} hidden={!open}>
               {body}
             </div>
           ) : (

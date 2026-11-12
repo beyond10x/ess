@@ -28,12 +28,13 @@ function RecordGroupBox(props: {
   children?: ReactNode;
 }): ReactNode {
   const [open, setOpen] = useState(!props.collapsed);
+  const bodyId = `${props["data-ui-path"]}#body`;
   return (
     <section className="ui-record-group" data-ui-path={props["data-ui-path"]}>
       {props.label ? (
         <h3 className="ui-record-group-title">
           {props.collapsed ? (
-            <button type="button" className="ui-collapse" aria-expanded={open} onClick={() => setOpen(!open)}>
+            <button type="button" className="ui-collapse" aria-expanded={open} aria-controls={bodyId} onClick={() => setOpen(!open)}>
               {props.label}
             </button>
           ) : (
@@ -41,7 +42,7 @@ function RecordGroupBox(props: {
           )}
         </h3>
       ) : null}
-      <div className="ui-collapse-body" hidden={!open}>
+      <div className="ui-collapse-body" id={bodyId} hidden={!open}>
         {props.children}
       </div>
     </section>

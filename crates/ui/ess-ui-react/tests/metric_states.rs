@@ -247,10 +247,14 @@ globalThis.IntersectionObserver = class {
 };
 const { setDataAdapter } = out('runtime/data');
 const { ShelfPage } = out('pages/Shelf');
-setDataAdapter({ read: async (request) => ({
-  rows: [{ qty: request.view === 'store.shelf.Later' ? 4242 : 7 }],
-  total: 1,
-}) });
+const sent = [];
+setDataAdapter({
+  read: async (request) => ({
+    rows: [{ qty: request.view === 'store.shelf.Later' ? 4242 : 7 }],
+    total: 1,
+  }),
+  send: async (command, input) => { sent.push([command, input]); return { accepted: true }; },
+});
 const root = React.__root(jsx(ShelfPage, {}));
 const tick = () => new Promise((resolve) => setTimeout(resolve, 5));
 async function settle() { for (let i = 0; i < 4; i++) { root.settle(); await tick(); } root.settle(); }
@@ -290,12 +294,16 @@ fn a_collapsed_frame_and_section_open_on_a_click_and_the_read_starts_when_the_se
   await settle();
   assert.equal(heading('Shelf').props['aria-expanded'], false, 'the frame starts closed');
   assert.equal(byClass('ui-frame-body')[0].props.hidden, true, 'a closed frame hides its body');
+  assert.ok(byClass('ui-frame-body')[0].props.id, 'the frame body has an id');
+  assert.equal(heading('Shelf').props['aria-controls'], byClass('ui-frame-body')[0].props.id, 'the frame heading controls its body');
   assert.ok(section('list'), 'a closed frame keeps its sections mounted');
   click(heading('Shelf'));
   await settle();
   assert.equal(heading('Shelf').props['aria-expanded'], true);
   assert.equal(byClass('ui-frame-body')[0].props.hidden, false);
   assert.equal(heading('Later').props['aria-expanded'], false, 'the section starts closed inside the open frame');
+  const laterBody = byClass('ui-collapse-body').find((node) => node.props.id === heading('Later').props['aria-controls']);
+  assert.ok(laterBody && laterBody.props.hidden === true, 'the section heading controls its hidden body');
   section('later').props.ref.current = {};
   await settle();
   assert.equal(observers.length, 0, 'a closed section starts no read');
@@ -320,7 +328,19 @@ fn a_collapsed_form_group_keeps_its_fields_mounted_so_they_are_still_submitted()
   assert.equal(heading('Advanced').props['aria-expanded'], false, 'the group starts closed');
   const body = root.find((node) => node.tag === 'fieldset')[0].children.find((child) => child.props && child.props.className === 'ui-collapse-body');
   assert.equal(body.props.hidden, true);
-  assert.ok(root.find((node) => node.tag === 'input' || node.tag === 'textarea' || node.tag === 'select').length > 0, `the closed group's field is still in the form: ${root.text()}`);
+  assert.ok(body.props.id, 'the body has an id');
+  assert.equal(heading('Advanced').props['aria-controls'], body.props.id, 'the heading button controls the body');
+  const inputs = root.find((node) => node.tag === 'input' || node.tag === 'textarea' || node.tag === 'select');
+  assert.ok(inputs.length > 0, `the closed group's field is still in the form: ${root.text()}`);
+  inputs[0].props.onChange({ target: { value: '12' } });
+  await settle();
+  const [form] = root.find((node) => node.tag === 'form');
+  assert.ok(form, `the form is drawn: ${root.text()}`);
+  form.props.onSubmit({ preventDefault() {} });
+  for (let i = 0; i < 10; i += 1) await tick();
+  assert.equal(sent.length, 1, `the form sent one command: ${JSON.stringify(sent)}`);
+  assert.equal(sent[0][0], 'store.shelf.Save');
+  assert.equal(sent[0][1].limit, '12', `a field inside the closed group is in the submitted body: ${JSON.stringify(sent[0])}`);
   click(heading('Advanced'));
   await settle();
   assert.equal(heading('Advanced').props['aria-expanded'], true);

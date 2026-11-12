@@ -197,6 +197,46 @@ fn a_collapsed_form_group_names_collapsed_and_keeps_its_fields() {
 }
 
 #[test]
+fn every_collapse_heading_button_controls_its_body_by_id() {
+    let files = files(COLUMN);
+    let record = &files.files["src/runtime/composites/record.tsx"];
+    for (name, text) in [
+        ("SharedFrame", &files.files["src/runtime/core.tsx"]),
+        ("GroupBox", &files.files["src/runtime/core.tsx"]),
+        ("SectionFrame", &files.files["src/runtime/core.tsx"]),
+        ("RecordGroupBox", record),
+    ] {
+        let start = text
+            .find(&format!("function {name}"))
+            .unwrap_or_else(|| panic!("no {name}"));
+        let rest = &text[start..];
+        let body = &rest[..rest.find("\n}\n").unwrap_or(rest.len())];
+        assert!(
+            body.contains("aria-controls={bodyId}"),
+            "the {name} button names the body it controls:\n{body}"
+        );
+        assert!(
+            body.contains("id={bodyId}"),
+            "the {name} body carries the id:\n{body}"
+        );
+    }
+}
+
+#[test]
+fn a_form_group_body_keeps_the_groups_layout_once_a_collapse_key_is_used() {
+    let files = files(COLUMN);
+    let styles = &files.files["src/runtime/styles.css"];
+    assert!(
+        styles.contains(".ui-form-group > .ui-collapse-body:not([hidden]) { display: flex;"),
+        "the body of a form group lays its fields out as the group does:\n{styles}"
+    );
+    assert!(
+        styles.contains(".ui-form-group > .ui-collapse-body > .ui-help {"),
+        "a group's help inside the body stays a block:\n{styles}"
+    );
+}
+
+#[test]
 fn the_runtime_draws_a_collapsed_heading_as_a_button_over_a_body_that_stays_mounted() {
     let files = files(COLUMN);
     let core = &files.files["src/runtime/core.tsx"];

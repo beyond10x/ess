@@ -178,7 +178,8 @@ pub const CHECKS: &[Check] = &[
     // A value written where the schema declares a closed enum is one of its values.
     rule("enum_values"),
     // `PageLayout`: `title` and `collapsed` belong to `frame: shared`, a collapsed frame or
-    // section has a `title`, and a shared frame holds consecutive sections.
+    // section has a `title`, a collapsed group has a `label`, and a shared frame holds
+    // consecutive sections.
     rule("frame_rules"),
     // Every key of an overlay's `params` is read inside it as `params.<key>`.
     rule("overlay_params"),

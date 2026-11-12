@@ -43,9 +43,9 @@ layout:
 
 - `enum_values`: a `frame` other than `each` or `shared`.
 - `frame_rules`: `title` or `collapsed` beside `frame: each`; `collapsed` without a `title` on a
-  shared frame or a section; a shared frame whose sections are not consecutive in the page's
-  section order, naming the first section out of order. Reported at the column's, the area's or
-  the section's node path.
+  shared frame or a section; `collapsed` without a `label` on a form or record group; a shared
+  frame whose sections are not consecutive in the page's section order, naming the first section
+  out of order. Reported at the column's, the area's, the section's or the group's node path.
 - The loader refuses a record group's `save` or `does` at the group's path.
 
 ## Renderers

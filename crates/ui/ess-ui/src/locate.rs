@@ -20,8 +20,9 @@ use std::sync::OnceLock;
 
 use crate::expand::entry_segment;
 use crate::model::{
-    Action, Channel, EmptyState, FailedState, Field, ForbiddenState, Header, HeaderBadge, Node,
-    Overlay, Page, PageKind, RecordGroup, Section, SectionStates, Shell, StaleState, Widget,
+    Action, Channel, EmptyState, FailedState, Field, ForbiddenState, FramedArea, Header,
+    HeaderBadge, LayoutColumn, Node, Overlay, Page, PageKind, RecordGroup, Section, SectionStates,
+    Shell, StaleState, Widget,
 };
 use crate::schema::{Schema, Shape};
 use crate::{LoadError, NodePath};
@@ -87,6 +88,8 @@ fn visit<'a>(
         Some(Expected::Failed) => refused::<FailedState>(value),
         Some(Expected::Forbidden) => refused::<ForbiddenState>(value),
         Some(Expected::Stale) => refused::<StaleState>(value),
+        Some(Expected::Column) => refused::<LayoutColumn>(value),
+        Some(Expected::AreaPlace) => refused::<FramedArea>(value),
         Some(Expected::Header) => refused::<Header>(value),
         Some(Expected::HeaderBadge) => refused::<HeaderBadge>(value),
         Some(Expected::Action) => refused::<Action>(value),
@@ -119,6 +122,10 @@ enum Expected {
     Header,
     /// A page header's `badge`.
     HeaderBadge,
+    /// A column of a page's `layout`.
+    Column,
+    /// An area's `place` entry written as a record.
+    AreaPlace,
     Action,
     Field,
     Node,
@@ -145,6 +152,14 @@ fn classify(keys: &[Option<&str>], mapping: &Mapping) -> Option<Expected> {
         (3, Some("pages")) if at(2) == Some("header") => return Some(Expected::Header),
         (4, Some("pages")) if at(2) == Some("header") && at(3) == Some("badge") => {
             return Some(Expected::HeaderBadge)
+        }
+        (5, Some("pages")) if at(2) == Some("layout") && at(3) == Some("columns") => {
+            return Some(Expected::Column)
+        }
+        (6, Some("pages"))
+            if (at(2), at(3), at(4)) == (Some("layout"), Some("areas"), Some("place")) =>
+        {
+            return Some(Expected::AreaPlace)
         }
         _ => {}
     }

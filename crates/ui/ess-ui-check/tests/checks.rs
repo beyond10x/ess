@@ -506,6 +506,52 @@ fn a_record_group_takes_no_save_key() {
 }
 
 #[test]
+fn adversary_a_collapsed_group_without_a_label_is_refused_at_the_group() {
+    // React draws a group's heading button only from its `label`: a collapsed group without one
+    // starts closed with nothing to click, as a collapsed section without a `title` would.
+    for (text, path) in [
+        (
+            page(
+                "{kind: detail_page, title: P, sections: [{name: f, component: form, does: t.Save, \
+                 groups: [{name: adv, collapsed: true, fields: [x]}]}]}",
+            ),
+            "pages/p/sections/f/groups/adv",
+        ),
+        (
+            page(
+                "{kind: detail_page, title: P, sections: [{name: g, component: record, \
+                 reads: t.ById, groups: [{name: audit, collapsed: true, fields: [created_at]}]}]}",
+            ),
+            "pages/p/sections/g/groups/audit",
+        ),
+    ] {
+        let report = report(&text);
+        assert!(
+            errors(&report).iter().any(|finding| finding.path == path),
+            "a collapsed group without a label is accepted at `{path}`:\n{text}\n{:#?}",
+            report.findings
+        );
+    }
+}
+
+#[test]
+fn adversary_a_misspelled_key_of_an_area_record_is_refused_at_the_area() {
+    let text = framed_page(
+        "{areas: {grid: [[x]], place: {x: {sections: [a, b, c], frame: shared, titel: T}}}}",
+    );
+    let finding = trips(&text, "document_loads", "pages/p/layout/areas/place/x");
+    assert!(finding.message.contains("titel"), "{finding:?}");
+}
+
+#[test]
+fn a_misspelled_key_of_a_layout_column_is_refused_at_the_column() {
+    let text =
+        framed_page("{columns: [{name: main, frame: shared, titel: T, sections: [a, b, c]}]}");
+    let finding = trips(&text, "document_loads", "pages/p/layout/columns/main");
+    assert!(finding.message.contains("titel"), "{finding:?}");
+}
+
+#[test]
 fn widget_expands() {
     let widgets = (
         "widgets",

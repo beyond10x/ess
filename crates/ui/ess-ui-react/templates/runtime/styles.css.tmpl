@@ -52,6 +52,8 @@ th .ui-help, .ui-form-field .ui-help, .ui-form-group > .ui-help { display: block
 .ui-frame-body { display: flex; flex-direction: column; gap: var(--ui-space-md); min-width: 0; }
 .ui-section-framed { border: 0; border-radius: 0; padding: 0; background: none; }
 .ui-collapse-body[hidden], .ui-frame-body[hidden] { display: none; }
+.ui-form-group > .ui-collapse-body:not([hidden]) { display: flex; flex-direction: column; gap: var(--ui-space-sm); }
+.ui-form-group > .ui-collapse-body > .ui-help { display: block; font-weight: var(--ui-size-text-weight-regular); }
 .ui-collapse { display: inline-flex; gap: var(--ui-space-xs); align-items: center; font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
 .ui-collapse::before { content: "\25B8"; }
 .ui-collapse[aria-expanded="true"]::before { content: "\25BE"; }

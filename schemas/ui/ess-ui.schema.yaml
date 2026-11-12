@@ -635,7 +635,7 @@ constructs:
     fields:
       reads:   {type: Reads, note: the row}
       fields:  {type: {list: Field}, note: fields to show}
-      groups:  {type: {list: {record: {name: name, label: {optional: string}, collapsed: {optional: boolean}, fields: {list: Field}}}}, note: "fields shown under headings, in order, after `fields`: each group has a `name`, a `label` and `fields`, and `collapsed: true` starts it closed under its label; a group is read-only, so it takes no `save`, `does` or `actions`, and a key it does not declare is refused at the group's path"}
+      groups:  {type: {list: {record: {name: name, label: {optional: string}, collapsed: {optional: boolean}, fields: {list: Field}}}}, note: "fields shown under headings, in order, after `fields`: each group has a `name`, a `label` and `fields`, and `collapsed: true` starts it closed under its label, so `collapsed` needs a `label`; a group is read-only, so it takes no `save`, `does` or `actions`, and a key it does not declare is refused at the group's path"}
       tabs:    {type: {list: Tab}, note: fields split into tabs}
       item:    {type: {list: Node}, note: "nested named nodes such as metrics or widgets, in order"}
       actions: {type: {list: Action}, note: actions on the record}
@@ -995,7 +995,7 @@ constructs:
     fields:
       name:     {type: name, required: true, note: node name}
       label:    {type: string, note: group heading}
-      collapsed: {type: boolean, default: false, note: "starts the group closed under its `label`; a collapsed group's fields are still sent with the form"}
+      collapsed: {type: boolean, default: false, note: "starts the group closed under its `label`, which a reader clicks to open it, so `collapsed` needs a `label`; a collapsed group's fields are still sent with the form"}
       fields:   {type: {list: Field}, required: true, note: fields in the group}
       save:     {type: {enum: [with_form, on_change]}, default: with_form, note: when the group saves}
       does:     {type: {ref: command}, note: command for this group if not the form's}

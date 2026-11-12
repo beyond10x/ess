@@ -82,6 +82,24 @@ fn frame_rules(sink: &mut Sink, at: &NodePath, order: &[&str], framing: &Framing
     }
 }
 
+/// `frame_rules`: a collapsed group is its `label`, which a reader clicks to open it, so a
+/// collapsed group without one starts closed with nothing to click.
+fn collapsed_group_has_label(
+    sink: &mut Sink,
+    at: &NodePath,
+    collapsed: Option<bool>,
+    label: Option<&str>,
+) {
+    if collapsed == Some(true) && label.is_none() {
+        sink.push(
+            "frame_rules",
+            at,
+            "`collapsed` needs a `label`: a collapsed group is its label, which a reader clicks \
+             to open it",
+        );
+    }
+}
+
 pub(crate) fn run(document: &Document, base: &Path, options: &Options, sink: &mut Sink) {
     let located = document.nodes();
     let fixtures = Fixtures::read(document, base, sink);
@@ -1030,6 +1048,12 @@ impl Checker<'_> {
                 }
                 degrades_known(sink, path, &section.common);
                 self.body(sink, path, &section.body);
+            }
+            NodeRef::FormGroup(group) => {
+                collapsed_group_has_label(sink, path, group.collapsed, group.label.as_deref());
+            }
+            NodeRef::RecordGroup(group) => {
+                collapsed_group_has_label(sink, path, group.collapsed, group.label.as_deref());
             }
             NodeRef::Overlay(overlay) => {
                 degrades_known(sink, path, &overlay.common);

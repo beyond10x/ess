@@ -196,6 +196,88 @@ fn a_record_draws_its_groups_under_their_labels_in_order() {
     );
 }
 
+/// A record with a collapsed group and an action whose first free letter is `z`, and an overlay
+/// form with a collapsed group.
+const ADVERSARY_FOLDS: &str = "format: ess-ui/1
+app: shop
+model: shop.system
+placement_profile: fat
+fixtures: {views: {shop.Customers: data.yaml}}
+shells:
+  app: {regions: {main: {kind: page_outlet}, overlay: {kind: overlay_outlet}}}
+navigation:
+  home: customer
+  sections: [{name: all, pages: [customer]}]
+pages:
+  customer:
+    kind: detail_page
+    title: Customer
+    sections:
+      - name: profile
+        component: record
+        reads: {view: shop.Customers}
+        fields: [name]
+        groups:
+          - {name: audit, label: Audit, collapsed: true, fields: [created_by]}
+        actions:
+          - {name: zap, label: Zap, opens: note}
+    overlays:
+      note:
+        kind: dialog
+        title: Note
+        component: form
+        does: shop.Note
+        fields: [subject]
+        groups:
+          - {name: advanced, label: Advanced, collapsed: true, fields: [internal_ref]}
+";
+
+fn adversary_app(test: &str) -> App {
+    let dir = scratch(test);
+    App::from_text(ADVERSARY_FOLDS, &dir, Options::new(dir.join("state")))
+        .unwrap_or_else(|error| panic!("{error}"))
+}
+
+#[test]
+fn adversary_the_key_an_action_hint_shows_runs_that_action_beside_a_collapsed_group() {
+    let mut app = adversary_app("adversary-zap");
+    app.focus_section("profile");
+    let screen = app.render_text(100, 40);
+    // The hint reads `<key> Zap`: press the key it shows.
+    let hint = screen
+        .lines()
+        .find(|line| line.contains(" Zap"))
+        .unwrap_or_else(|| panic!("the record hints its action:\n{screen}"));
+    let at = hint.find(" Zap").expect("found above");
+    let key = hint[..at].chars().last().expect("a key leads the label");
+    app.keys(&key.to_string());
+    let after = app.render_text(100, 40);
+    assert!(
+        after.contains("subject"),
+        "the hint says `{key}` runs Zap, which opens the Note overlay; it did not:\n{after}"
+    );
+}
+
+#[test]
+fn adversary_a_collapsed_group_of_an_overlay_form_opens_on_z() {
+    let mut app = adversary_app("adversary-overlay");
+    app.open_overlay("note");
+    let closed = app.render_text(100, 40);
+    assert!(
+        closed
+            .lines()
+            .any(|line| line.contains("Advanced") && line.contains('▸')),
+        "the closed group draws its heading:\n{closed}"
+    );
+    assert!(!closed.contains("internal_ref"), "{closed}");
+    app.keys("z");
+    let open = app.render_text(100, 40);
+    assert!(
+        open.contains("internal_ref"),
+        "z opens a collapsed form group in an overlay as it does on a page:\n{open}"
+    );
+}
+
 #[test]
 fn a_collapsed_section_is_its_heading_line_and_z_opens_it() {
     let mut app = app("section", "stack");

@@ -404,7 +404,7 @@ enum Target {
 }
 
 /// Letters no row action may take, because navigation uses them.
-const RESERVED: &str = "jknpsSxqgRJK/: []";
+const RESERVED: &str = "jknpsSxqgRJKzZ/: []";
 
 /// Letters a filter bar takes before its own actions: `h` and `l` move between its items.
 pub(crate) const BAR_KEYS: &str = "hl";
@@ -837,10 +837,10 @@ impl App {
         }
     }
 
-    /// The groups of a record or form section that start collapsed, with their paths.
-    fn collapsible_groups(&self, section: &Section) -> Vec<NodePath> {
-        let at = self.section_path(&section.name).child("groups");
-        let named: Vec<(&String, Option<bool>)> = match &section.body {
+    /// The groups of a record or form body at `owner` that start collapsed, with their paths.
+    fn collapsible_groups(body: &Body, owner: &NodePath) -> Vec<NodePath> {
+        let at = owner.child("groups");
+        let named: Vec<(&String, Option<bool>)> = match body {
             Body::Composite(Composite::Record(record)) => record
                 .groups
                 .iter()
@@ -872,6 +872,10 @@ impl App {
     /// always does: the first closed group opens, and when none is closed they all close.
     /// Returns whether the key meant anything here.
     fn fold(&mut self, groups_only: bool) -> bool {
+        if let Some(open) = &self.overlay {
+            let groups = Self::collapsible_groups(&open.overlay.body, &open.path);
+            return self.fold_groups(&groups);
+        }
         let Focus::Section(index) = self.focus else {
             return false;
         };
@@ -896,7 +900,13 @@ impl App {
             self.flip(&closed.unwrap_or_else(|| parts[0].clone()));
             return true;
         }
-        let groups = self.collapsible_groups(&section);
+        let groups = Self::collapsible_groups(&section.body, &self.section_path(&section.name));
+        self.fold_groups(&groups)
+    }
+
+    /// Folds `groups`: the first closed one opens, and when none is closed they all close.
+    /// Returns whether there was a group to fold.
+    fn fold_groups(&mut self, groups: &[NodePath]) -> bool {
         if groups.is_empty() {
             return false;
         }
@@ -907,7 +917,7 @@ impl App {
         {
             self.flip(&closed);
         } else {
-            for path in &groups {
+            for path in groups {
                 self.flip(path);
             }
         }
@@ -3683,6 +3693,14 @@ impl App {
         }
         if key.code == KeyCode::Char(':') {
             self.prompt = Some(Prompt::Palette(String::new()));
+            return;
+        }
+        let folded = match key.code {
+            KeyCode::Char('z') => self.fold(false),
+            KeyCode::Char('Z') => self.fold(true),
+            _ => false,
+        };
+        if folded {
             return;
         }
         self.target_key(Target::Overlay, key);
