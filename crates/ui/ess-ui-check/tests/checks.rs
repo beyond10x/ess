@@ -544,6 +544,65 @@ fn adversary_a_misspelled_key_of_an_area_record_is_refused_at_the_area() {
 }
 
 #[test]
+fn adversary2_a_collapsed_group_with_an_empty_label_is_refused_at_the_group() {
+    // React draws the heading button from `props.label ? ... : null`: an empty label is falsy,
+    // so the group starts closed with nothing to click, exactly as a missing label does.
+    for (text, path) in [
+        (
+            page(
+                "{kind: detail_page, title: P, sections: [{name: f, component: form, does: t.Save, \
+                 groups: [{name: adv, label: \"\", collapsed: true, fields: [x]}]}]}",
+            ),
+            "pages/p/sections/f/groups/adv",
+        ),
+        (
+            page(
+                "{kind: detail_page, title: P, sections: [{name: g, component: record, \
+                 reads: t.ById, groups: [{name: audit, label: \"\", collapsed: true, \
+                 fields: [created_at]}]}]}",
+            ),
+            "pages/p/sections/g/groups/audit",
+        ),
+    ] {
+        let report = report(&text);
+        assert!(
+            errors(&report).iter().any(|finding| finding.path == path),
+            "a collapsed group with an empty label is accepted at `{path}`:\n{text}\n{:#?}",
+            report.findings
+        );
+    }
+}
+
+#[test]
+fn adversary2_a_collapsed_section_or_frame_with_an_empty_title_is_refused() {
+    // React draws the heading button from `props.title && props.collapsed` and the heading from
+    // `props.title ? ... : null`: an empty title starts the body closed with nothing to click.
+    for (text, path) in [
+        (
+            page(
+                "{kind: detail_page, title: P, sections: [{name: a, title: \"\", collapsed: true, \
+                 component: record, reads: t.ById}]}",
+            ),
+            "pages/p/sections/a",
+        ),
+        (
+            framed_page(
+                "{columns: [{name: main, frame: shared, title: \"\", collapsed: true, \
+                 sections: [a, b, c]}]}",
+            ),
+            "pages/p/layout/columns/main",
+        ),
+    ] {
+        let report = report(&text);
+        assert!(
+            errors(&report).iter().any(|finding| finding.path == path),
+            "a collapsed part with an empty title is accepted at `{path}`:\n{text}\n{:#?}",
+            report.findings
+        );
+    }
+}
+
+#[test]
 fn a_misspelled_key_of_a_layout_column_is_refused_at_the_column() {
     let text =
         framed_page("{columns: [{name: main, frame: shared, titel: T, sections: [a, b, c]}]}");

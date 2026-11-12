@@ -52,7 +52,8 @@ fn frame_rules(sink: &mut Sink, at: &NodePath, order: &[&str], framing: &Framing
         }
         Some(_) => return,
     }
-    if framing.collapsed == Some(true) && framing.title.is_none() {
+    if framing.collapsed == Some(true) && framing.title.is_none_or(|title| title.trim().is_empty())
+    {
         sink.push(
             "frame_rules",
             at,
@@ -90,7 +91,7 @@ fn collapsed_group_has_label(
     collapsed: Option<bool>,
     label: Option<&str>,
 ) {
-    if collapsed == Some(true) && label.is_none() {
+    if collapsed == Some(true) && label.is_none_or(|label| label.trim().is_empty()) {
         sink.push(
             "frame_rules",
             at,
@@ -1038,7 +1039,12 @@ impl Checker<'_> {
                         );
                     }
                 }
-                if section.collapsed == Some(true) && section.title.is_none() {
+                if section.collapsed == Some(true)
+                    && section
+                        .title
+                        .as_deref()
+                        .is_none_or(|title| title.trim().is_empty())
+                {
                     sink.push(
                         "frame_rules",
                         path,

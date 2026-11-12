@@ -279,6 +279,22 @@ fn adversary_a_collapsed_group_of_an_overlay_form_opens_on_z() {
 }
 
 #[test]
+fn adversary2_z_typed_into_a_field_of_an_overlay_form_with_a_collapsed_group_is_text() {
+    let mut app = adversary_app("adversary2-typing");
+    app.open_overlay("note");
+    app.keys("<enter>zZz<enter>");
+    let screen = app.render_text(100, 40);
+    assert!(
+        screen.contains("zZz"),
+        "z and Z typed into the subject field are text, not the fold key:\n{screen}"
+    );
+    assert!(
+        !screen.contains("internal_ref"),
+        "typing z does not open the collapsed group:\n{screen}"
+    );
+}
+
+#[test]
 fn a_collapsed_section_is_its_heading_line_and_z_opens_it() {
     let mut app = app("section", "stack");
     app.focus_section("history");
