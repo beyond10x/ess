@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-12T06:20:33Z",
+  "actor": "human:timo",
+  "artifact": "story:a-related-refusal-compares-the-rewritten-row",
+  "kind": "story",
+  "revision": 9,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "PR 783 CI on ccefa367b7 (20 test shards, Checks, Gate)",
+    "reference": "https://github.com/beyond10x/ess/actions/runs/43160611600"
+  }
+}
