@@ -1241,14 +1241,19 @@ pub(super) fn compared_presence(
     presence
 }
 
-/// `defined(f)` for every `Optional` stored field `f` that a stored guard of `command` compares with
-/// the input in a leaf and never tests for presence: `tenant != input.tenant` is decided only where
-/// both sides hold a value, and a row leaving `tenant` out leaves it `Unknown`, which every target
-/// reads as not taken and the interpreter reports unsupported. Handed to the row search as hints,
-/// they steer it to a row holding the field, so no side of the comparison reads an absence. A guard
-/// that tests the field for presence itself (`all: [defined(tenant), …]`) is decided on a row
-/// leaving it out, and adds nothing.
-fn plain_presence(ir: &EssIr, entity: &EntityHandle, command: &ResolvedCommand) -> Vec<Predicate> {
+/// `defined(f)` for every `Optional` stored field `f` of `entity` that one of `guards`, the stored
+/// guards of a command, compares with the input in a leaf and never tests for presence:
+/// `tenant != input.tenant` is decided only where both sides hold a value, and a row leaving
+/// `tenant` out leaves it `Unknown`, which every target reads as not taken and the interpreter
+/// reports unsupported. Handed to the row search as hints, they steer it to a row holding the
+/// field, so no side of the comparison reads an absence: the addressed subject's and every related
+/// row's alike. A guard that tests the field for presence itself (`all: [defined(tenant), …]`) is
+/// decided on a row leaving it out, and adds nothing.
+pub(super) fn plain_presence(
+    ir: &EssIr,
+    entity: &EntityHandle,
+    guards: &[Predicate],
+) -> Vec<Predicate> {
     let optional = |path: &FactPath| {
         ir.entity(entity)
             .fields
@@ -1256,9 +1261,9 @@ fn plain_presence(ir: &EssIr, entity: &EntityHandle, command: &ResolvedCommand) 
             .any(|field| field.name == path.namespace() && field.type_ref.is_optional())
     };
     let mut presence: Vec<Predicate> = Vec::new();
-    for predicate in hints(command) {
+    for predicate in guards {
         let mut found = Vec::new();
-        leaves(&predicate, &mut found);
+        leaves(predicate, &mut found);
         let tested: Vec<&FactPath> = found
             .iter()
             .filter_map(|leaf| match leaf {
@@ -1266,7 +1271,7 @@ fn plain_presence(ir: &EssIr, entity: &EntityHandle, command: &ResolvedCommand) 
                 _ => None,
             })
             .collect();
-        for guard in compared_presence(ir, entity, std::slice::from_ref(&predicate)) {
+        for guard in compared_presence(ir, entity, std::slice::from_ref(predicate)) {
             let Predicate::Defined(path) = &guard else {
                 continue;
             };
@@ -6597,7 +6602,7 @@ pub(super) fn prepare(
     if let Some(refusal) = unarrangeable(ir, entity, &fields) {
         return Err(refusal);
     }
-    for held in plain_presence(ir, entity, command) {
+    for held in plain_presence(ir, entity, &self::hints(command)) {
         if !hints.contains(&held) {
             hints.push(held);
         }

@@ -719,7 +719,9 @@ pub(super) fn beside_steered(
 /// The hints a row of `entity` is searched with for the send `input`: the predicates the command
 /// holds of it, each comparison with the input grounded on the value `input` carries
 /// ([`subject_fact::grounded_on_input`]), and the presence of every stored field they compare, held
-/// and left out: an `Optional` tenant is the tenant sent, or absent where none is sent.
+/// and left out: an `Optional` tenant is the tenant sent, or absent where none is sent. A field
+/// they compare plainly ([`subject_fact::plain_presence`]) is only held: a row leaving it out
+/// leaves the comparison `Unknown`.
 fn hints_for(
     ir: &EssIr,
     entity: &EntityHandle,
@@ -730,11 +732,85 @@ fn hints_for(
     hints.extend(subject_fact::grounded_on_input(
         ir, entity, input, predicates,
     ));
+    let plain = subject_fact::plain_presence(ir, entity, predicates);
     for held in subject_fact::compared_presence(ir, entity, predicates) {
-        hints.push(Predicate::Not(Box::new(held.clone())));
+        if !plain.contains(&held) {
+            hints.push(Predicate::Not(Box::new(held.clone())));
+        }
         hints.push(held);
     }
     hints
+}
+
+/// Whether `node` holds every `Optional` field the guards `predicates` compare with the input and
+/// never test for presence ([`subject_fact::plain_presence`]). On a row leaving one out the
+/// comparison is `Unknown`, which synthesis reads as not taken and the interpreter reports
+/// unsupported, so such a row leaves no branch to answer.
+fn holds_plain(
+    ir: &EssIr,
+    entity: &EntityHandle,
+    predicates: &[Predicate],
+    node: &Arrangement,
+) -> bool {
+    subject_fact::plain_presence(ir, entity, predicates)
+        .iter()
+        .all(|held| {
+            subject_fact::guard_truth_with(
+                ir,
+                entity,
+                &node.settled,
+                &node.unwritten,
+                Some(&node.state),
+                held,
+                None,
+            ) == Truth::True
+        })
+}
+
+/// Whether the row `node` of `entity`, named through `field`, is left `Unknown` for `outcome` by
+/// the comparisons alone that branches over it make plainly between an `Optional` field it holds
+/// and the input ([`subject_fact::plain_presence`]), and by nothing else: no branch over it that
+/// [`answers_before`] `outcome` is undecided on any other count, nor carries a `when:` over the
+/// input. Such a comparison is decided by the input sent, steered on the values the row holds.
+fn undecided_by_plain(
+    ir: &EssIr,
+    (command, outcome): (&ResolvedCommand, &ResolvedOutcome),
+    (field, entity, node): (&str, &EntityHandle, &Arrangement),
+) -> bool {
+    let mut compared = false;
+    for branch in &command.outcomes {
+        let ResolvedCondition::Related {
+            via,
+            test: ResolvedRelatedTest::Holds { predicate },
+            ..
+        } = &branch.condition
+        else {
+            continue;
+        };
+        if via.field() != field || !answers_before(command, outcome, branch) {
+            continue;
+        }
+        let held = subject_fact::guard_truth_with(
+            ir,
+            entity,
+            &node.settled,
+            &node.unwritten,
+            Some(&node.state),
+            predicate,
+            None,
+        );
+        if input_guard(branch).is_some() && held != Truth::False {
+            return false;
+        }
+        if held == Truth::Unknown {
+            if subject_fact::plain_presence(ir, entity, std::slice::from_ref(predicate)).is_empty()
+            {
+                return false;
+            }
+            compared = true;
+        }
+    }
+    compared
 }
 
 /// A row of `entity`, which `via` of `command` names, that leaves `outcome` to answer once `input`
@@ -767,6 +843,7 @@ fn row_for(
         .ok()
         .map(|(row, ())| row);
     }
+    let leaves = |node: &Arrangement| holds_plain(ir, entity, &predicates, node) && leaves(node);
     let hints = hints_for(ir, entity, &predicates, input);
     search_rows(ir, entity, actors, (at, None), &hints, |node| {
         Ok(leaves(node))
@@ -1322,14 +1399,35 @@ fn beside_row(
                 .flatten()
         });
     }
-    search_rows(ir, entity, actors, (at, None), &predicates, |node| {
+    // A row leaving out an `Optional` field a guard compares plainly with the input is decided
+    // only by reading its absence as not taken ([`holds_plain`]): it is never the row that leaves
+    // `outcome` to answer for sure, and the search is steered to one that holds the field. A row
+    // that holds it, `strict`, is left undecided by those comparisons alone, which the input sent
+    // beside it decides: the creator's input is steered on the values the row holds.
+    let truth = |node: &Arrangement| match truth(node) {
+        Truth::True if !holds_plain(ir, entity, &predicates, node) => Truth::Unknown,
+        Truth::Unknown
+            if strict
+                && holds_plain(ir, entity, &predicates, node)
+                && undecided_by_plain(ir, (command, outcome), (via.field(), entity, node)) =>
+        {
+            Truth::True
+        }
+        held => held,
+    };
+    let hints = [
+        predicates.clone(),
+        subject_fact::plain_presence(ir, entity, &predicates),
+    ]
+    .concat();
+    search_rows(ir, entity, actors, (at, None), &hints, |node| {
         Ok(truth(node) == Truth::True)
     })
     .or_else(|| row_at(ir, entity, actors, at, &[]).filter(|node| truth(node) == Truth::True))
     .or_else(|| {
         (!strict)
             .then(|| {
-                search_rows(ir, entity, actors, (at, None), &predicates, |node| {
+                search_rows(ir, entity, actors, (at, None), &hints, |node| {
                     Ok(truth(node) != Truth::False)
                 })
             })
