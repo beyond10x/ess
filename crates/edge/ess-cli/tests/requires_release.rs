@@ -91,8 +91,12 @@ impl Fixture {
         .unwrap();
     }
 
+    /// Runs under `ESS_TOOLCHAIN` naming this release: the manifests sit below the working
+    /// directory, where an exact pin of another release is refused by name (`tests/toolchain.rs`)
+    /// instead of being compared. These cases are about that comparison.
     fn ess(&self, args: &[&str]) -> Output {
         Command::new(env!("CARGO_BIN_EXE_ess"))
+            .env("ESS_TOOLCHAIN", THIS)
             .current_dir(&self.0)
             .args(args)
             .output()
@@ -127,6 +131,39 @@ fn an_older_ess_refuses_an_exact_or_line_requirement_and_says_how_to_upgrade() {
         assert!(err.contains("/ess:upgrade"), "{err}");
         assert!(output.stdout.is_empty(), "{required}: nothing validated");
     }
+}
+
+/// No override: a minor line below the working directory is checked as it always was.
+#[test]
+fn a_minor_line_requirement_is_checked_in_the_default_environment() {
+    let (major, minor, _) = this();
+    let default = |fixture: &Fixture| {
+        Command::new(env!("CARGO_BIN_EXE_ess"))
+            .env_remove("ESS_TOOLCHAIN")
+            .env_remove("ESS_TOOLCHAIN_DELEGATED")
+            .current_dir(&fixture.0)
+            .args(VALIDATE)
+            .output()
+            .unwrap()
+    };
+    let fixture = Fixture::new(&format!(
+        "format: ess-inputs/2\nrequires: ess {major}.{}\n",
+        minor + 1
+    ));
+    let output = default(&fixture);
+    assert_eq!(output.status.code(), Some(1), "{}", stderr(&output));
+    assert!(
+        stderr(&output).contains("b10x upgrade"),
+        "{}",
+        stderr(&output)
+    );
+
+    let fixture = Fixture::new(&format!(
+        "format: ess-inputs/2\nrequires: ess {major}.{minor}\n"
+    ));
+    let output = default(&fixture);
+    assert_eq!(output.status.code(), Some(0), "{}", stderr(&output));
+    assert!(output.stderr.is_empty(), "{}", stderr(&output));
 }
 
 #[test]

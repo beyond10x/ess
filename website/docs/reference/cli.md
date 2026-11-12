@@ -64,7 +64,9 @@ refused rather than ignored. `--scenarios` reads the same manifest's `scenarios:
 refusals.
 
 `format: ess-inputs/2` can pin the `ess` release with `requires:`. An older `ess` refuses and a
-newer one warns; the global `--strict-requires`, accepted in any position, refuses instead. See
+newer one warns; the global `--strict-requires`, accepted in any position, refuses instead. An exact
+pin of another release in a manifest below the working directory is refused by name in both cases,
+because `ess` does not run it from there. See
 [the release a project runs](#the-release-a-project-runs).
 
 A manifest selects inputs; it does not permit writing generated output into the specification's
@@ -96,6 +98,14 @@ prints both releases' lines. A release that cannot be installed is refused,
 naming the newest cached one. This walk upwards reads only the pin; input selection still reads
 only the manifest of the directory it is given. The `toolchain` commands always run in the `ess`
 you called.
+
+A pin in a manifest below the working directory decides nothing: run from the repository root,
+`ess` stays on the release you called. `ess specify toolchain which` names the one it finds below,
+with the `cd` and the `ESS_TOOLCHAIN=X.Y.Z` that run it, and refuses when two manifests below pin
+different releases. A command given a path to such a manifest (`ess specify validate --path spec`)
+refuses where its exact pin names another release than this `ess`, older or newer, naming the
+manifest, `cd <directory>` and `ESS_TOOLCHAIN=X.Y.Z`. A minor line `ess X.Y`, and a command run
+under `ESS_TOOLCHAIN`, keep the checks above.
 
 ### CLI presentation bindings
 

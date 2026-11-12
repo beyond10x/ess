@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-binding-destination-arrangement-keeps-the-trigger-on-its-branch
 kind: story
-status: active
+status: implemented
 title: A binding destination arrangement keeps the trigger on its branch
 summary: arranged_destination re-checks the trigger branch after arranging, as related_decided does since 0.72.0
 tags:
@@ -19,10 +19,11 @@ scope:
   path: crates/verify/ess-conformance/src/synthesize/binding_effects.rs
 - confidence: inferred
   path: crates/verify/ess-conformance/tests/a_binding_destination_arrangement_keeps_the_trigger_on_its_branch.rs
-revision: 11
+revision: 13
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-10T00:37:44Z", actor: "human:timo", revision: 10, decided_on: {"recorded":{"review_outcome":1}}}
 - {from: "proposed", to: "active", at: "2026-11-10T00:37:45Z", actor: "human:timo", revision: 11, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "active", to: "implemented", at: "2026-11-12T02:47:37Z", actor: "human:timo", revision: 12, decided_on: {"recorded":{"test_result":1,"review_outcome":1}}}
 ---
 ## Problem
 
@@ -82,6 +83,13 @@ a_binding_destination_arrangement_keeps_the_trigger_on_its_branch`.
   only when the row its input names does not exist, while the binding needs that row to exist, so
   no arrangement keeps the trigger on its branch, and the sibling paths that call
   `keeps_branch_sent` already keep the gap in that case.
+- Delivered form (2026-11-12, PR 782): synthesis reports one `ESS-SYNTH-010` refusal per scenario
+  kind the binding would have had, three on the reproduction's model, each with the message and
+  reason the first acceptance point names, where that point says "one refusal". The suite keeps
+  the binding's mapping scenario, which sends no command to the existing row, where the point
+  says the suite holds no `activate-on-announce/binding/*` scenario. The interpreted run reports
+  `0 failed` and no suite-bytes row changed, as accepted. The adversary recorded the difference
+  as a wording gap of the acceptance text, not as a defect.
 
 ## Scope
 

@@ -383,7 +383,8 @@ pub(super) fn arranged_at(
         let fresh = relink(
             ir,
             &mut setup.steps,
-            setup.instance.is_some().then_some(&mut setup.settled),
+            (setup.instance.is_some() || setup.settled.contains_key(field))
+                .then_some(&mut setup.settled),
             &subject,
             field,
             &Link::Fresh(entity),
@@ -395,7 +396,8 @@ pub(super) fn arranged_at(
             relink(
                 ir,
                 &mut setup.steps,
-                setup.instance.is_some().then_some(&mut setup.settled),
+                (setup.instance.is_some() || setup.settled.contains_key(field))
+                    .then_some(&mut setup.settled),
                 &subject,
                 field,
                 &Link::Row(&row.instance),

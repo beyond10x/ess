@@ -564,6 +564,16 @@ impl Graph {
             Type::Tuple(t) => Ok(
                 json!({"tuple":t.elems.iter().map(|t|self.ty(module,t,edges)).collect::<Result<Vec<_>>>()?}),
             ),
+            // A shared `&'static T` is owned by the program, not borrowed from a caller, so it is a
+            // value of `T` for accounting: the edge to `T` is recorded and `T` is accounted like
+            // any other reached declaration. Every other reference (a lifetime parameter, `mut`,
+            // an elided one) and every pointer stays unsupported.
+            Type::Reference(r)
+                if r.mutability.is_none()
+                    && r.lifetime.as_ref().is_some_and(|l| l.ident == "static") =>
+            {
+                Ok(json!({"static_reference":self.ty(module,&r.elem,edges)?}))
+            }
             _ => bail!("{module}: unsupported declaration type {}", tokens(ty)),
         }
     }

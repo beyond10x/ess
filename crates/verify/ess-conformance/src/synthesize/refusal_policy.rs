@@ -10,6 +10,10 @@
 //! trigger can be sent naming a row no row carries ([`super::binding_effects::related_missing`]),
 //! and a `when_related: {via: input.<f>, predicate: …}` refusal where a row the predicate refuses
 //! can be arranged before the trigger ([`super::binding_effects::related_refused`]).
+//! A `when_related` refusal of a command that also rewrites the row the trigger acted on reads that
+//! row back: snapshotted after the trigger, required unchanged after the counted attempts
+//! ([`super::binding_effects::rewritten_read`]), with what no view publishes named as a
+//! [`Note::PartialObservation`].
 //! An unforceable refusal is refused by name, a coverage limitation and never a fabricated result. The untyped fallback is no
 //! declared refusal and no suite can force one; the runtime controls witness it.
 //!
@@ -30,8 +34,8 @@ use ess_compiler::ir::{
 use super::{
     accepting_component, clipped, insert, payload_shape, publishes, ActorRef, BTreeMap, BTreeSet,
     BindingGap, BindingRef, Built, CommandRef, ConformanceScenario, ConformanceSuite, EssIr,
-    EssSemanticRef, EventRef, OutcomeRef, QualifiedName, Refusal, RefusalCause, ResolvedBinding,
-    ResolvedCommand, ResolvedOutcome, Run, ScenarioId, ScenarioStep, TestStrategy,
+    EssSemanticRef, EventRef, Note, OutcomeRef, QualifiedName, Refusal, RefusalCause,
+    ResolvedBinding, ResolvedCommand, ResolvedOutcome, Run, ScenarioId, ScenarioStep, TestStrategy,
 };
 
 /// Every declared refusal's scenario, or the refusal that says why there is none.
@@ -48,6 +52,7 @@ pub(super) fn witnesses(
     source: &BTreeSet<EssSemanticRef>,
     suite: &mut ConformanceSuite,
     refusals: &mut Vec<Refusal>,
+    notes: &mut Vec<Note>,
 ) {
     let subject = BindingRef::new(binding.name.clone());
     for rule in &policy.refusals {
@@ -55,6 +60,7 @@ pub(super) fn witnesses(
             binding: subject.clone(),
             outcome: rule.outcome.clone(),
         };
+        let mut unobserved = Vec::new();
         let built = if matches!(rule.action, ResolvedRefusalAction::Retry { bound: None }) {
             retried(
                 ir,
@@ -77,12 +83,19 @@ pub(super) fn witnesses(
                 (published_by, trigger),
                 event,
                 actors,
+                &mut unobserved,
             )
         };
         match built {
             Ok((steps, purpose, extra)) => {
                 let mut depends = source.clone();
                 depends.extend(extra);
+                if !unobserved.is_empty() {
+                    notes.push(Note::PartialObservation {
+                        scenario: id.clone(),
+                        unobserved,
+                    });
+                }
                 insert(
                     suite,
                     id,
@@ -136,6 +149,7 @@ fn witness(
     (published_by, trigger): (&ResolvedOutcome, &Run),
     event: &EventRef,
     actors: &BTreeMap<QualifiedName, ActorRef>,
+    unobserved: &mut Vec<String>,
 ) -> Built {
     let command = CommandRef::new(invoked.name.clone());
     let forced = forcible(ir.format(), invoked, outcome);
@@ -268,12 +282,34 @@ fn witness(
         (setup.as_slice(), invoke.as_slice(), &rewritten),
         event,
     ));
+    // The row the refused command rewrites, as the trigger left it, read again once the attempts
+    // are counted and what the refusal owes is published: a refusal changes nothing
+    // (story:a-related-refusal-compares-the-rewritten-row).
+    let read = super::binding_effects::rewritten_read(
+        ir,
+        binding,
+        outcome,
+        invoked,
+        sent_by,
+        (&setup, &invoke),
+    );
+    steps.extend(
+        read.as_ref()
+            .map(|read| read.before.clone())
+            .into_iter()
+            .flatten(),
+    );
     steps.push(super::bounded_retry::count(
         BindingRef::new(binding.name.clone()),
         command,
         invocations,
     ));
     steps.extend(after);
+    if let Some(read) = read {
+        steps.extend(read.after);
+        source.extend(read.source);
+        *unobserved = read.unobserved;
+    }
     Ok((steps, clipped(&text), source))
 }
 

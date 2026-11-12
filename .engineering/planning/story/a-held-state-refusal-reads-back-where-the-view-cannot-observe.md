@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-held-state-refusal-reads-back-where-the-view-cannot-observe
 kind: story
-status: active
+status: implemented
 title: A held-state refusal reads the record back where the view cannot observe it
 tags:
 - defect
@@ -21,10 +21,11 @@ scope:
   path: crates/verify/ess-conformance/tests/a_held_state_refusal_reads_back_where_the_view_cannot_observe.rs
 - confidence: inferred
   path: docs/design/outcome-shapes.md
-revision: 9
+revision: 10
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-10T00:34:19Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"review_outcome":2}}}
 - {from: "proposed", to: "active", at: "2026-11-10T00:34:21Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"review_outcome":2}}}
+- {from: "active", to: "implemented", at: "2026-11-12T02:47:35Z", actor: "human:timo", revision: 10, decided_on: {"recorded":{"test_result":1,"review_outcome":2}}}
 ---
 ## Finding
 

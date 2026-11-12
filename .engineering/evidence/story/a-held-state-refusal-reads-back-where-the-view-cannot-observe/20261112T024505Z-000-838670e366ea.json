@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-12T02:45:05Z",
+  "actor": "human:timo",
+  "artifact": "story:a-held-state-refusal-reads-back-where-the-view-cannot-observe",
+  "kind": "story",
+  "revision": 9,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "PR 782 CI on a216babde8 (20 test shards, Checks, Gate)",
+    "reference": "https://github.com/beyond10x/ess/actions/runs/43136328693"
+  }
+}

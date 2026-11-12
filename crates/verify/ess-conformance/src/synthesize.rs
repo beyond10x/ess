@@ -3681,7 +3681,7 @@ fn synthesize_invocations(models: &caller::InvocationModels<'_>, focus: Focus<'_
     // its row is read again after every branch that could remove it.
     reference_integrity::references(models, &actors, focus, &mut suite, &mut refusals);
     if focus.is_whole() {
-        bindings(ir, &actors, &mut suite, &mut refusals);
+        bindings(ir, &actors, &mut suite, &mut refusals, &mut notes);
         // The fresh suite's `Empty` authority, established before the aggregate planner reads it
         // (`docs/design/aggregate-group-selection.md`); the final selection below still runs.
         suite.select_fresh_format();
@@ -10719,7 +10719,7 @@ fn view_expectations(
         (Some(captured), ResolvedInstance::Observed { .. }) if absent_run(captured) => {
             Some(ScenarioValue::instance(captured.clone()))
         }
-        _ => identity_of(subject, instance),
+        _ => run_identity(subject, run),
     };
     let identity = identity.as_ref();
     // What names the row in each view: the identity written, for a re-key.
@@ -14972,6 +14972,25 @@ fn identity_of(
             field.name.clone(),
         )),
     }
+}
+
+/// [`identity_of`] for the subject of `run`: where the scenario's setup captured a further
+/// instance of the entity before the subject, the subject is named by the instance it captured.
+/// The runners resolve an observed reference to the event's first occurrence, which is the further
+/// instance's.
+fn run_identity(subject: &ResolvedSubject, run: &Run) -> Option<ScenarioValue> {
+    if let (Some(captured), ResolvedInstance::Observed { event, .. }) =
+        (run.instance.as_ref(), &subject.instance)
+    {
+        let further = run.setup.iter().any(|step| {
+            matches!(step, ScenarioStep::CaptureInstance { instance: other, event: published, .. }
+                if other != captured && *published == EventRef::from(event))
+        });
+        if further {
+            return Some(ScenarioValue::instance(captured.clone()));
+        }
+    }
+    identity_of(subject, run.instance.as_ref())
 }
 
 /// What this scenario supplies for each parameter the view declares.
@@ -19654,7 +19673,7 @@ fn holds_after(
     // The state the branch leaves the instance in, which is what decides whether a filtered view
     // holds a row to read the invariant off. A branch with a subject always has one.
     let state = run.after.clone()?;
-    let known = identity_of(subject, run.instance.as_ref());
+    let known = run_identity(subject, &run);
     let views = projections
         .get(&subject.entity)
         .map(Vec::as_slice)
@@ -20065,7 +20084,7 @@ fn holds_at(
             let Some(state) = run.after.clone() else {
                 continue;
             };
-            let known = identity_of(subject, run.instance.as_ref());
+            let known = run_identity(subject, &run);
             let params = bound(ir, view, &run.settled, known.as_ref());
             if !matches!(
                 shows_row(ir, view, &state, &run.settled, known.as_ref(), &params),
@@ -20291,6 +20310,7 @@ fn bindings(
     actors: &BTreeMap<QualifiedName, ActorRef>,
     suite: &mut ConformanceSuite,
     refusals: &mut Vec<Refusal>,
+    notes: &mut Vec<Note>,
 ) {
     for binding in ir.bindings().values() {
         if binding.cause.periodic().is_some() {
@@ -20304,7 +20324,7 @@ fn bindings(
         // A conditioned binding (ess/22, beyond10x/ess#268) runs only for a payload its condition
         // holds for, so every publishing branch is a candidate trigger.
         if let Some(condition) = &binding.condition {
-            conditioned(ir, binding, condition, actors, suite, refusals);
+            conditioned(ir, binding, condition, actors, suite, refusals, notes);
             continue;
         }
         let subject = BindingRef::new(binding.name.clone());
@@ -20327,7 +20347,7 @@ fn bindings(
         }
         // Each publishing branch in turn, until one witnesses every aspect; else the one leaving
         // the fewest refused, the earlier on a tie.
-        let mut chosen: Option<(ConformanceSuite, Vec<Refusal>)> = None;
+        let mut chosen: Option<(ConformanceSuite, Vec<Refusal>, Vec<Note>)> = None;
         let mut first_failure = None;
         for (publisher, published_by) in publishing {
             let run =
@@ -20348,21 +20368,31 @@ fn bindings(
                 scenarios: BTreeMap::new(),
             };
             let mut refused = Vec::new();
-            binding_aspects(ir, binding, &trigger, actors, &mut tried, &mut refused);
+            let mut remarks = Vec::new();
+            binding_aspects(
+                ir,
+                binding,
+                &trigger,
+                actors,
+                &mut tried,
+                &mut refused,
+                &mut remarks,
+            );
             let witnessed = refused.is_empty();
             if chosen
                 .as_ref()
-                .is_none_or(|(_, fewest)| refused.len() < fewest.len())
+                .is_none_or(|(_, fewest, _)| refused.len() < fewest.len())
             {
-                chosen = Some((tried, refused));
+                chosen = Some((tried, refused, remarks));
             }
             if witnessed {
                 break;
             }
         }
         match chosen {
-            Some((tried, refused)) => {
+            Some((tried, refused, remarks)) => {
                 refusals.extend(refused);
+                notes.extend(remarks);
                 for (id, scenario) in tried.scenarios {
                     insert(suite, id, scenario, refusals);
                 }
@@ -20387,6 +20417,7 @@ fn binding_aspects(
     actors: &BTreeMap<QualifiedName, ActorRef>,
     suite: &mut ConformanceSuite,
     refusals: &mut Vec<Refusal>,
+    notes: &mut Vec<Note>,
 ) {
     let subject = BindingRef::new(binding.name.clone());
     let event = EventRef::from(binding.cause.event().expect("event cause"));
@@ -20463,6 +20494,7 @@ fn binding_aspects(
             &source,
             suite,
             refusals,
+            notes,
         );
         return;
     }
@@ -20481,6 +20513,7 @@ fn conditioned(
     actors: &BTreeMap<QualifiedName, ActorRef>,
     suite: &mut ConformanceSuite,
     refusals: &mut Vec<Refusal>,
+    notes: &mut Vec<Note>,
 ) {
     let subject = BindingRef::new(binding.name.clone());
     let witnesses = match binding_condition::witnesses(ir, binding, condition, actors) {
@@ -20497,7 +20530,7 @@ fn conditioned(
         }
     };
     match &witnesses.holds {
-        Ok(trigger) => binding_aspects(ir, binding, trigger, actors, suite, refusals),
+        Ok(trigger) => binding_aspects(ir, binding, trigger, actors, suite, refusals, notes),
         Err(gap) => {
             let selected = binding.refusal_policy.as_ref();
             let finals = selected.is_none()

@@ -1673,7 +1673,17 @@ fn missing_row(
         return Ok(None);
     };
     if absent.subject.is_none() && absent.error.is_some() {
-        return Ok(Some(vec![refusal(ir, spec, absent, store, input, None)?]));
+        // A refusal through a stored reference reads the addressed row its payload names
+        // (`subject: parent_id`), held as it is before the answer.
+        let held = determined::selected_subject(ir, spec, absent, store, input);
+        return Ok(Some(vec![refusal(
+            ir,
+            spec,
+            absent,
+            store,
+            input,
+            held.as_ref(),
+        )?]));
     }
     match take(ir, spec, absent, store, input, generated, responses)? {
         Ok(step) => Ok(Some(vec![step])),

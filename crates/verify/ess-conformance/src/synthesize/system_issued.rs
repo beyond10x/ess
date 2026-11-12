@@ -159,7 +159,9 @@ fn rewritten<'ir>(
                 reason,
             })?;
         let outcome = claimed(command, &steps[at + 1..]);
-        let claim = outcome.map_or(Claim::Reached, claim_of);
+        // A send claiming no branch has none for an await to witness: the system is asked for
+        // nothing, as for a record that decides the refusal.
+        let claim = outcome.map_or(Claim::NotIssued, claim_of);
         let refused = |decided_by| {
             outcome.map_or(
                 RefusalCause::SystemIssuedUnaddressed {
