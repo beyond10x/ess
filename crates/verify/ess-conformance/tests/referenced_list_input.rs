@@ -1699,3 +1699,275 @@ fn adversary4_a_default_branch_behind_an_accepting_count_guard_refuses_by_name()
         register,
     )));
 }
+
+// ---- Adversary pass 5 (turn 3): the fix commit b8abb76263, `empty_keeps_branch`. ----
+
+/// Scenario `id` passes the interpreter, or is refused naming a relation of `demo.reg.Server`.
+fn adversary5_passes_or_refused_by_name(model: EssIr, id: &str) {
+    let (synthesis, failed) = adversary_interpreted(model);
+    if let Some(found) = scenario(&synthesis, id) {
+        let sent: Vec<String> = found
+            .steps
+            .iter()
+            .filter_map(|step| match step {
+                ScenarioStep::ExecuteCommand { input, .. } => Some(format!("{input:?}")),
+                _ => None,
+            })
+            .collect();
+        assert!(
+            failed.iter().all(|line| !line.starts_with(id)),
+            "{id} fails the interpreter, sent {sent:#?}: {failed:#?}"
+        );
+    } else {
+        let refusal = adversary4_refusal(&synthesis, id);
+        assert!(
+            refusal
+                .as_deref()
+                .is_some_and(|text| text.contains("demo.reg.Server.")),
+            "no {id} scenario and no refusal naming a relation: {refusal:?}"
+        );
+    }
+}
+
+const ADV5_ORIGIN: &str = "  - name: demo.reg.Origin\n    identity: {name: id, type: demo.reg.OriginId}\n    fields: []\n    lifecycle: {initial: Live, states: [Live], terminal: [Live]}";
+
+/// Two lists, `sources` (to `Source`) and `mirrors` (to `Origin`), neither with a route. Each is
+/// checked with the other still holding its witness row, so each alone keeps the branch and the
+/// invariant `any: [sources.count >= 1, mirrors.count >= 1]` (or the branch past a refusal
+/// answering both empty); both are then sent `[]`, which breaks it.
+#[test]
+fn adversary5_two_unarrangeable_lists_are_not_both_sent_empty() {
+    let server = ADV_SERVER_MANY
+        .replace(
+            "    relations:\n",
+            "      - {name: mirrors, type: \"List<demo.reg.OriginId>\"}\n    relations:\n",
+        )
+        .replace(
+            "    lifecycle:",
+            "      - {name: mirrors, kind: references, target: demo.reg.Origin, cardinality: many, \
+             via: mirrors}\n    lifecycle:",
+        );
+    let invariant = server.replace(
+        "    lifecycle:",
+        "    invariants:\n      - any: [\"sources.count >= 1\", \"mirrors.count >= 1\"]\n    \
+         lifecycle:",
+    );
+    let refusal = "      - name: refused\n        when: {all: [\"sources.count == 0\", \
+                   \"mirrors.count == 0\"]}\n        error: demo.reg.Refused";
+    let extra_input = "      - {name: mirrors, type: \"List<demo.reg.OriginId>\"}";
+    for (server, before) in [(invariant.as_str(), ""), (server.as_str(), refusal)] {
+        let extra = format!("{server}\n{ADV5_ORIGIN}");
+        adversary5_passes_or_refused_by_name(
+            adversary_compile(&adversary_text(
+                ADV_LIVE,
+                &extra,
+                &adversary_register(
+                    "List<demo.reg.SourceId>",
+                    before,
+                    extra_input,
+                    ", mirrors: input.mirrors",
+                ),
+            )),
+            ACCEPTED,
+        );
+    }
+}
+
+/// `note` is stored `{input: note, else: input.alt}` and the branch is taken only without `note`,
+/// so the row holds `alt`, and `any: [not defined(note), sources.count >= 1]` needs a source. The
+/// stored row binds no `note` (an `else:` naming an input is not followed) and, the branch
+/// creating, reads it absent, so `[]` is sent and breaks the invariant.
+#[test]
+fn adversary5_an_else_naming_another_input_is_not_read_absent() {
+    let server = ADV_SERVER_MANY
+        .replace(
+            "    relations:\n",
+            "      - {name: note, type: Optional<String>}\n    relations:\n",
+        )
+        .replace(
+            "    lifecycle:",
+            "    invariants:\n      - any: [{not: \"defined(note)\"}, \"sources.count >= 1\"]\n    \
+             lifecycle:",
+        );
+    let register = format!(
+        r#"  - name: demo.reg.Register
+    input:
+      - {{name: id, type: demo.reg.ServerId}}
+      - {{name: sources, type: "List<demo.reg.SourceId>"}}
+      - {{name: note, type: Optional<String>}}
+      - {{name: alt, type: String}}
+    outcomes:
+      - name: accepted
+        when: "not defined(note)"
+        creates: demo.reg.Server
+        instance: id
+        sets: {{sources: input.sources, note: {{input: note, else: input.alt}}}}
+        emits: [demo.reg.Registered]
+        payload: {{demo.reg.Registered: {{id: input.id}}}}
+{ADV4_REFUSED}"#
+    );
+    let (_, failed) = adversary_interpreted(adversary_compile(&adversary_text(
+        ADV_LIVE,
+        &server,
+        &format!("{ADV_ADD_SOURCE}\n{register}"),
+    )));
+    assert!(
+        failed.iter().all(|line| !line.starts_with(ACCEPTED)),
+        "with a route the accepted scenario passes: {failed:#?}"
+    );
+    adversary2_accepted_passes_or_is_refused_by_name(adversary_compile(&adversary_text(
+        ADV_LIVE, &server, &register,
+    )));
+}
+
+/// The list is copied a second time into a struct member, `cfg: {backup: input.sources}`, under
+/// `cfg.backup.count >= min` with `min` a literal `1`. `cfg` is not among the copied fields (a
+/// struct source is neither stored nor counted) and `min` is unmapped for `invariant_broken_by`,
+/// so nothing evaluates the invariant and `[]` is sent.
+#[test]
+fn adversary5_an_invariant_over_a_struct_member_copy_of_the_list_is_kept() {
+    let server = ADV_SERVER_MANY
+        .replace(
+            "    relations:\n",
+            "      - {name: cfg, type: demo.reg.Cfg}\n      - {name: min, type: Integer}\n    \
+             relations:\n",
+        )
+        .replace(
+            "    lifecycle:",
+            "    invariants: [\"cfg.backup.count >= min\"]\n    lifecycle:",
+        );
+    let register = adversary_register(
+        "List<demo.reg.SourceId>",
+        "",
+        "",
+        ", cfg: {backup: input.sources}, min: \"1\"",
+    );
+    let cfg = "  - name: demo.reg.Cfg\n    kind: struct\n    fields: [{name: backup, type: \
+               \"List<demo.reg.SourceId>\"}]\nentities:\n";
+    let text = |commands: &str| {
+        adversary_text(ADV_LIVE, &server, commands).replacen("entities:\n", cfg, 1)
+    };
+    let (_, failed) = adversary_interpreted(adversary_compile(&text(&format!(
+        "{ADV_ADD_SOURCE}\n{register}"
+    ))));
+    assert!(
+        failed.iter().all(|line| !line.starts_with(ACCEPTED)),
+        "with a route the accepted scenario passes: {failed:#?}"
+    );
+    adversary2_accepted_passes_or_is_refused_by_name(adversary_compile(&text(&register)));
+}
+
+/// Held (probe): two creating branches land apart, `parked` (`flag == true`) into `Retired` and
+/// `accepted` into `Live`, under `any: [state == Live, sources.count >= 1]`: `accepted` keeps `[]`
+/// and passes, `parked` passes or is refused by name.
+#[test]
+fn adversary5_creating_branches_landing_apart_are_each_decided_by_their_own_state() {
+    let server = adversary4_retiring_server().replace(
+        "    lifecycle:",
+        "    invariants:\n      - any: [state == Live, \"sources.count >= 1\"]\n    lifecycle:",
+    );
+    let register = r#"  - name: demo.reg.Register
+    input:
+      - {name: id, type: demo.reg.ServerId}
+      - {name: sources, type: "List<demo.reg.SourceId>"}
+      - {name: flag, type: Boolean}
+    outcomes:
+      - name: parked
+        when: flag == true
+        creates: demo.reg.Server
+        instance: id
+        into: Retired
+        sets: {sources: input.sources}
+        emits: [demo.reg.Registered]
+        payload: {demo.reg.Registered: {id: input.id}}
+      - name: accepted
+        creates: demo.reg.Server
+        instance: id
+        sets: {sources: input.sources}
+        emits: [demo.reg.Registered]
+        payload: {demo.reg.Registered: {id: input.id}}"#;
+    let model = || {
+        adversary_compile(&adversary_text(
+            ADV_LIVE,
+            &server,
+            &format!("{register}\n{ADV_RETIRE}"),
+        ))
+    };
+    adversary4_exists_and_passes(model(), ACCEPTED);
+    adversary5_passes_or_refused_by_name(model(), "demo.reg.Register/outcome/parked");
+}
+
+/// Held (probe): an update keeps the old list in `backup` (`{subject: sources}`) beside
+/// `input.sources`, under `any: [sources.count >= 1, backup.count == 0]`. `backup` is a field the
+/// update does not copy from an input, so the invariant is undecided: the update passes or is
+/// refused by name, never sent `[]` into the invariant.
+#[test]
+fn adversary5_an_update_keeping_the_old_list_in_a_row_field_is_refused_or_passes() {
+    let server = ADV_SERVER_MANY
+        .replace(
+            "    relations:\n",
+            "      - {name: backup, type: \"List<demo.reg.SourceId>\"}\n    relations:\n",
+        )
+        .replace(
+            "    lifecycle:",
+            "    invariants:\n      - any: [\"sources.count >= 1\", \"backup.count == 0\"]\n    \
+             lifecycle:",
+        );
+    let register = adversary_register("List<demo.reg.SourceId>", "", "", ", backup: input.sources");
+    let reconfigure = r#"  - name: demo.reg.Reconfigure
+    input:
+      - {name: id, type: demo.reg.ServerId}
+      - {name: sources, type: "List<demo.reg.SourceId>"}
+    outcomes:
+      - name: accepted
+        updates: demo.reg.Server
+        instance: id
+        sets: {sources: input.sources, backup: {subject: sources}}
+        emits: [demo.reg.Registered]
+        payload: {demo.reg.Registered: {id: input.id}}"#;
+    adversary5_passes_or_refused_by_name(
+        adversary_compile(&adversary_text(
+            ADV_LIVE,
+            &server,
+            &format!("{register}\n{reconfigure}"),
+        )),
+        RECONFIGURED,
+    );
+}
+
+/// `limit` is stored `{input: limit, else: 8}` and the branch is taken only without `limit`, so the
+/// row holds 8 and `sources.count <= limit` keeps `[]`: the stored row reads the `else:` literal,
+/// `invariant_broken_by` reads the absent input. Where they disagree the scenario must not be
+/// refused by the arrangement.
+#[test]
+fn adversary5_invariant_broken_by_and_the_stored_row_agree_on_a_defaulted_copy() {
+    let server = ADV_SERVER_MANY
+        .replace(
+            "    relations:\n",
+            "      - {name: limit, type: Integer}\n    relations:\n",
+        )
+        .replace(
+            "    lifecycle:",
+            "    invariants: [\"sources.count <= limit\"]\n    lifecycle:",
+        );
+    let register = format!(
+        r#"  - name: demo.reg.Register
+    input:
+      - {{name: id, type: demo.reg.ServerId}}
+      - {{name: sources, type: "List<demo.reg.SourceId>"}}
+      - {{name: limit, type: Optional<Integer>}}
+    outcomes:
+      - name: accepted
+        when: "not defined(limit)"
+        creates: demo.reg.Server
+        instance: id
+        sets: {{sources: input.sources, limit: {{input: limit, else: 8}}}}
+        emits: [demo.reg.Registered]
+        payload: {{demo.reg.Registered: {{id: input.id}}}}
+{ADV4_REFUSED}"#
+    );
+    adversary4_exists_and_passes(
+        adversary_compile(&adversary_text(ADV_LIVE, &server, &register)),
+        ACCEPTED,
+    );
+}

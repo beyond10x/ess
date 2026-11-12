@@ -28,8 +28,19 @@ entity's creating route (`arrange_first`, as for related rows):
 
 | relation | a route creates the target | no route creates it |
 |---|---|---|
-| `cardinality: many`, a `List` | exactly as many created rows as the witness list held, eight at most (a longer list is a refusal naming the relation) | the empty list, which names no row, where the precedence order still selects the branch for it and the row the branch stores (copied inputs, `else:` literals and literal sets applied, the state a creating branch lands in) satisfies every invariant that reads the list or a field copied from an input; else a refusal naming `<entity>.<relation>` (on a branch that does not create, an invariant reading a field the branch does not set is undecided and counts as not satisfied) |
+| `cardinality: many`, a `List` | exactly as many created rows as the witness list held, eight at most (a longer list is a refusal naming the relation) | the empty list, which names no row, where the empty-list rule below holds; else a refusal naming `<entity>.<relation>` |
 | `cardinality: one` | the created row's identity | no scenario: a refusal naming `<entity>.<relation>` |
+
+The empty-list rule fails closed, in three parts. (a) Every list with no route is sent `[]` at
+once and the lists are decided together, never one against the witness: the precedence order must
+still select the branch, no invariant may be broken by that one input, and if they do not all
+hold every such list's scenario is refused by naming the relations. (b) The row the branch stores
+binds a field only in a form understood exactly (an input copy, a literal, `{input: x, else:
+<literal>}`, the empty list, and the state a creating branch lands in); a field set in any other
+form (an `else:` naming an input, a struct value, a conversion, an expression, a generated value)
+is undecided, never absent, and a field a branch that does not create leaves unset is undecided
+too. (c) Every invariant of the entity that reads the list, a field the branch sets in any form,
+or `state` is evaluated over that row, and an undecided read refuses the scenario by name.
 
 The witness already satisfies every guard and invariant over the input, so the arrangement never
 chooses a list's length again: a list the witness held empty stays empty, and a list of four stays

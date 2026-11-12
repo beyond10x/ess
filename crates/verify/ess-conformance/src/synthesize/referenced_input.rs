@@ -9,12 +9,15 @@
 //! * a `many` relation with a route is sent exactly as many rows as its witness list holds: the
 //!   witness already satisfies every guard and invariant over the list, so its length is not
 //!   chosen again, and an empty list stays empty;
-//! * a `many` relation with no route is sent the empty list, which names no missing row, where
-//!   the precedence order still selects the branch for it and the row the branch stores satisfies
-//!   every invariant that reads the list or a field copied from an input (copies, `else:` literals,
-//!   literal sets and a created row's state applied; a branch that does not create leaves an
-//!   invariant over a field it does not set undecided); where it does not
-//!   (a sibling guard or an invariant holds the list non-empty) the scenario is refused by name;
+//! * a `many` relation with no route is sent the empty list, which names no missing row, and it
+//!   fails closed: (a) every such list is sent `[]` at once and they are decided together, the
+//!   precedence order still selecting the branch and no invariant broken by that one input; (b)
+//!   the row the branch stores binds a field only in a form understood exactly (an input copy, a
+//!   literal, `{input: x, else: <literal>}`, the empty list, a created row's state), any other
+//!   form being undecided, never absent, as is a field a branch that does not create leaves
+//!   unset; (c) every invariant reading a list, a field the branch sets in any form or `state` is
+//!   evaluated over that row. Where they do not all hold, or a read is undecided, every such
+//!   list's scenario is refused by name;
 //! * a `one` relation with no route refuses the scenario by naming the relation, as a plain
 //!   reference has no empty value to fall back to;
 //! * a list of more than [`MOST`] rows refuses the scenario by naming the relation.
@@ -35,7 +38,7 @@ use std::collections::BTreeMap;
 
 use ess_compiler::ir::{
     Driver, EntityHandle, EssIr, ResolvedCommand, ResolvedEffect, ResolvedFallback,
-    ResolvedOutcome, ResolvedPayloadValue, ResolvedRelation,
+    ResolvedOutcome, ResolvedPayloadField, ResolvedPayloadValue, ResolvedRelation,
 };
 use ess_domain::entity::{Cardinality, EntitySpec, RelationKind};
 use ess_domain::name::QualifiedName;
@@ -307,85 +310,104 @@ fn input_at(input: &BTreeMap<String, Node>, path: &str) -> Option<Node> {
     Some(current.clone())
 }
 
-/// The stored fields `outcome`'s `sets:` leaves holding a value `input` determines: a copied
-/// input (or, where it is absent, the literal an `else:` names), a literal read as the field's
-/// type, the empty list.
-fn stored_by(
+/// The row `outcome` would store, as far as it is understood exactly.
+struct StoredRow {
+    /// The fields whose stored value is known: a copied input (or the literal an `else:` names
+    /// where it is absent), a literal, the empty list.
+    known: BTreeMap<String, Node>,
+    /// The fields `sets:` fills in a form this does not follow (an `else:` naming an input, a
+    /// struct, a conversion, an expression, a generated value, a member path): undecided, never
+    /// absent.
+    undecided: Vec<String>,
+    /// Every field `sets:` fills, whatever the form.
+    set: Vec<String>,
+}
+
+/// The value one `sets:` entry stores, where its form is one this follows exactly.
+fn stored_value(
     ir: &EssIr,
-    outcome: &ResolvedOutcome,
+    set: &ResolvedPayloadField,
     input: &BTreeMap<String, Node>,
-) -> BTreeMap<String, Node> {
-    outcome
-        .sets
-        .iter()
-        .filter(|set| set.conversion.is_none() && !set.target.contains('.'))
-        .filter_map(|set| {
-            let stored = match &set.value {
-                ResolvedPayloadValue::InputField { field, .. } => input_at(input, field)?,
-                ResolvedPayloadValue::InputOrGenerated {
-                    field, otherwise, ..
-                } => match input_at(input, field) {
-                    Some(sent) if sent != Node::Null => sent,
-                    _ => match otherwise {
-                        Some(ResolvedFallback::Literal(written)) => {
-                            super::literal_value(ir, &set.target_type, written, 0)?
-                        }
-                        _ => return None,
-                    },
-                },
-                ResolvedPayloadValue::Literal { value } => {
-                    super::literal_value(ir, &set.target_type, value, 0)?
+) -> Option<Node> {
+    if set.conversion.is_some() || set.target.contains('.') {
+        return None;
+    }
+    match &set.value {
+        ResolvedPayloadValue::InputField { field, .. } => input_at(input, field),
+        ResolvedPayloadValue::InputOrGenerated {
+            field, otherwise, ..
+        } => match input_at(input, field) {
+            Some(given) if given != Node::Null => Some(given),
+            _ => match otherwise {
+                Some(ResolvedFallback::Literal(written)) => {
+                    super::literal_value(ir, &set.target_type, written, 0)
                 }
-                ResolvedPayloadValue::EmptyList => Node::Seq(Vec::new()),
-                _ => return None,
-            };
-            Some((set.target.clone(), stored))
-        })
-        .collect()
+                _ => None,
+            },
+        },
+        ResolvedPayloadValue::Literal { value } => {
+            super::literal_value(ir, &set.target_type, value, 0)
+        }
+        ResolvedPayloadValue::EmptyList => Some(Node::Seq(Vec::new())),
+        _ => None,
+    }
 }
 
-/// The stored fields `outcome` sets from an input of its command.
-fn copied_fields(outcome: &ResolvedOutcome) -> Vec<&str> {
-    outcome
-        .sets
-        .iter()
-        .filter(|set| {
-            matches!(
-                set.value,
-                ResolvedPayloadValue::InputField { .. }
-                    | ResolvedPayloadValue::InputOrGenerated { .. }
-            )
-        })
-        .map(|set| set.target.as_str())
-        .collect()
+/// The row `outcome` stores for `input`.
+fn stored_by(ir: &EssIr, outcome: &ResolvedOutcome, input: &BTreeMap<String, Node>) -> StoredRow {
+    let mut row = StoredRow {
+        known: BTreeMap::new(),
+        undecided: Vec::new(),
+        set: Vec::new(),
+    };
+    for set in &outcome.sets {
+        let root = set.target.split('.').next().unwrap_or(&set.target);
+        row.set.push(root.to_owned());
+        match stored_value(ir, set, input) {
+            Some(value) => {
+                row.known.insert(root.to_owned(), value);
+            }
+            None => row.undecided.push(root.to_owned()),
+        }
+    }
+    row
 }
 
-/// Whether sending `field` the empty list leaves `outcome` the branch the command takes and its
-/// subject's invariants over that list holding: the precedence order selects `outcome` for the
-/// moved input (the selection `reach` makes, so a later accepting branch does not count), and each
-/// invariant reading `field` is satisfied by the row `outcome` would store, with its literal sets
-/// applied. An invariant the stored row leaves undecided (a field the branch does not set) is not
-/// held to be kept.
-fn empty_keeps_branch(
+/// Whether sending every list of `lists` (input field, stored field) the empty list at once
+/// leaves `outcome` the branch the command takes and its subject's invariants holding: the
+/// precedence order selects `outcome` for the one moved input (the selection `reach` makes, so a
+/// later accepting branch does not count), `invariant_broken_by` finds none broken, and every
+/// invariant that reads a list, a field the branch sets in any form or `state` is satisfied by the
+/// row `outcome` would store. A field the branch sets in a form [`stored_by`] does not follow is
+/// undecided, and on a branch that does not create so is a field it does not set; an undecided
+/// read is not held to be kept.
+fn empties_keep_branch(
     ir: &EssIr,
     command: &ResolvedCommand,
     outcome: &ResolvedOutcome,
     input: &BTreeMap<String, Node>,
-    field: &str,
-    stored_field: &str,
+    lists: &[(&str, &str)],
 ) -> bool {
     let empty = Node::Seq(Vec::new());
-    let Some(declared) = super::input_type(ir, command, field) else {
-        return false;
-    };
-    if crate::input::validate_typed_value(ir, declared, &empty).is_err() {
-        return false;
-    }
     let mut moved = input.clone();
-    moved.insert(field.to_owned(), empty);
-    let selected = match super::selects_branch(ir, command, outcome, None, &moved) {
-        Ok(selected) => selected,
-        Err(_) => super::keeps_branch(ir, command, input, field, &Node::Seq(Vec::new())),
+    for (field, _) in lists {
+        let Some(declared) = super::input_type(ir, command, field) else {
+            return false;
+        };
+        if crate::input::validate_typed_value(ir, declared, &empty).is_err() {
+            return false;
+        }
+        moved.insert((*field).to_owned(), empty.clone());
+    }
+    let selected = if let Ok(selected) = super::selects_branch(ir, command, outcome, None, &moved) {
+        selected
+    } else {
+        let mut held = input.clone();
+        lists.iter().all(|(field, _)| {
+            let kept = super::keeps_branch(ir, command, &held, field, &empty);
+            held.insert((*field).to_owned(), empty.clone());
+            kept
+        })
     };
     if !selected {
         return false;
@@ -398,19 +420,18 @@ fn empty_keeps_branch(
     }
     let entity = ir.entity(&subject.entity);
     let creates = matches!(subject.effect, ResolvedEffect::Creates);
-    let mut stored = stored_by(ir, outcome, &moved);
+    let mut row = stored_by(ir, outcome, &moved);
     let mut fields = entity.fields.clone();
     if creates {
         let landed = subject.into.as_ref().unwrap_or(&entity.lifecycle.initial);
         fields.push(entity.state_field());
-        stored.insert(EntitySpec::STATE.to_owned(), Node::Text(landed.to_string()));
+        row.known
+            .insert(EntitySpec::STATE.to_owned(), Node::Text(landed.to_string()));
     }
-    let Ok(facts) = crate::input::bind(ir, &fields, &stored, Completeness::Partial) else {
+    let Ok(facts) = crate::input::bind(ir, &fields, &row.known, Completeness::Partial) else {
         return false;
     };
-    let row = crate::input::TypedFacts::new(ir, &fields, facts);
-    let mut copied = copied_fields(outcome);
-    copied.push(stored_field);
+    let facts = crate::input::TypedFacts::new(ir, &fields, facts);
     entity.invariants.iter().all(|invariant| {
         let reads: Vec<&str> = invariant
             .predicate
@@ -418,17 +439,66 @@ fn empty_keeps_branch(
             .iter()
             .filter_map(|path| path.segments().first().map(String::as_str))
             .collect();
-        if !reads.iter().any(|root| copied.contains(root)) {
+        let touched = reads.iter().any(|root| {
+            *root == EntitySpec::STATE
+                || row.set.iter().any(|set| set == root)
+                || lists.iter().any(|(_, stored)| stored == root)
+        });
+        if !touched {
             return true;
         }
-        let known = creates
-            || reads.iter().all(|root| {
-                stored.contains_key(*root)
-                    || (*root != EntitySpec::STATE
-                        && !entity.fields.iter().any(|held| held.name == *root))
-            });
-        known && invariant.predicate.evaluate(&row) == Truth::True
+        let decided = reads.iter().all(|root| {
+            if row.undecided.iter().any(|undecided| undecided == root) {
+                return false;
+            }
+            let declared =
+                *root == EntitySpec::STATE || entity.fields.iter().any(|held| held.name == *root);
+            creates || !declared || row.known.contains_key(*root)
+        });
+        decided && invariant.predicate.evaluate(&facts) == Truth::True
     })
+}
+
+/// The empty list for every list of `unarranged` (input field, relation) no route creates a row
+/// for, decided together by [`empties_keep_branch`]; refused, naming every relation, where they do
+/// not all hold.
+fn send_empty(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    input: &BTreeMap<String, Node>,
+    unarranged: &[(&str, &ResolvedRelation)],
+) -> Result<BTreeMap<String, ScenarioValue>, RefusalCause> {
+    let (Some((_, first)), Some(subject)) = (unarranged.first(), &outcome.subject) else {
+        return Ok(BTreeMap::new());
+    };
+    let lists: Vec<(&str, &str)> = unarranged
+        .iter()
+        .map(|(field, relation)| (*field, relation.via.as_str()))
+        .collect();
+    if !empties_keep_branch(ir, command, outcome, input, &lists) {
+        let entity = ir.entity(&subject.entity);
+        return Err(RefusalCause::NoWitness(WitnessGap {
+            path: unarranged
+                .iter()
+                .map(|(_, relation)| format!("{}.{}", entity.name, relation.name))
+                .collect::<Vec<_>>()
+                .join(" and "),
+            type_ref: ir.entity(&first.target).name.to_string(),
+            reason: "no command creates the entity this reference names in a state the scenario \
+                     can arrange, and the empty list would not keep the branch and the entity's \
+                     invariants, so it cannot send an input naming a row",
+        }));
+    }
+    Ok(unarranged
+        .iter()
+        .map(|(field, _)| {
+            (
+                (*field).to_owned(),
+                ScenarioValue::literal(Node::Seq(Vec::new())),
+            )
+        })
+        .collect())
 }
 
 /// The inputs `outcome` is sent naming rows arranged ahead of `setup`'s own steps, by field.
@@ -465,6 +535,7 @@ pub(super) fn arrange(
             reason,
         })
     };
+    let mut unarranged: Vec<(&str, &ResolvedRelation)> = Vec::new();
     for relation in &entity.relations {
         if relation.kind != RelationKind::References
             || relation.via == entity.identity.name
@@ -505,18 +576,14 @@ pub(super) fn arrange(
             })
             .collect();
         let Ok(rows) = rows else {
-            let empty = Node::Seq(Vec::new());
-            if relation.cardinality == Cardinality::Many
-                && empty_keeps_branch(ir, command, outcome, input, field, &relation.via)
-            {
-                sent.insert(field.to_owned(), ScenarioValue::literal(empty));
+            if relation.cardinality == Cardinality::Many {
+                unarranged.push((field, relation));
                 continue;
             }
             return Err(unsent(
                 relation,
                 "no command creates the entity this reference names in a state the scenario can \
-                 arrange, and the empty list would not keep the branch and the entity's \
-                 invariants, so it cannot send an input naming a row",
+                 arrange, so it cannot send an input naming a row",
             ));
         };
         let instances: Vec<ScenarioValue> = rows
@@ -539,6 +606,7 @@ pub(super) fn arrange(
         };
         sent.insert(field.to_owned(), value);
     }
+    sent.extend(send_empty(ir, command, outcome, input, &unarranged)?);
     arranged.append(&mut setup.steps);
     setup.steps = arranged;
     setup.source.extend(sources);
