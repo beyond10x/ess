@@ -8931,7 +8931,9 @@ pub(crate) fn disjoint_on_rows(first: &Predicate, second: &Predicate) -> bool {
                 .map(|at| FactValue::text(format!("other-{at}")))
                 .find(|value| !domain.contains(value)),
             Some(FactValue::Number(_)) => {
-                number_regions(&mut domain);
+                if !number_regions(&mut domain) {
+                    return false;
+                }
                 None
             }
             None => None,
@@ -8963,31 +8965,45 @@ pub(crate) fn disjoint_on_rows(first: &Predicate, second: &Predicate) -> bool {
 }
 
 /// `domain`, numbers, with a value between each two of them and one beyond the outermost on each
-/// side: one value of every region the comparisons with its numbers tell apart.
-fn number_regions(domain: &mut Vec<ess_primitives::facts::FactValue>) {
-    use ess_primitives::facts::FactValue;
-    let mut points: Vec<f64> = domain
-        .iter()
-        .filter_map(|value| match value {
-            FactValue::Number(number) => Some(number.get()),
-            _ => None,
+/// side: one value of every region the comparisons with its numbers tell apart. False when a region
+/// has no value an `f64` can name (a literal at or above 2^53, or two literals one `f64` holds):
+/// the regions are then not all tried, so the pair is not called disjoint.
+fn number_regions(domain: &mut Vec<ess_primitives::facts::FactValue>) -> bool {
+    use ess_primitives::facts::{FactValue, Number};
+    let mut points: Vec<Number> = domain.iter().filter_map(FactValue::as_number).collect();
+    points.sort();
+    points.dedup();
+    let (Some(low), Some(high)) = (points.first().copied(), points.last().copied()) else {
+        return true;
+    };
+    let mut candidates: Vec<(f64, Option<Number>, Option<Number>)> = points
+        .windows(2)
+        .map(|pair| {
+            (
+                f64::midpoint(pair[0].get(), pair[1].get()),
+                Some(pair[0]),
+                Some(pair[1]),
+            )
         })
         .collect();
-    points.sort_by(f64::total_cmp);
-    let (Some(low), Some(high)) = (points.first().copied(), points.last().copied()) else {
-        return;
-    };
-    let between: Vec<f64> = points
-        .windows(2)
-        .map(|pair| f64::midpoint(pair[0], pair[1]))
-        .collect();
-    for point in between.into_iter().chain([low - 1.0, high + 1.0]) {
-        if let Ok(value) = FactValue::number(point) {
-            if !domain.contains(&value) {
-                domain.push(value);
-            }
+    candidates.push((low.get() - 1.0, None, Some(low)));
+    candidates.push((high.get() + 1.0, Some(high), None));
+    let mut complete = true;
+    for (point, above, below) in candidates {
+        let Some(value) = FactValue::number(point).ok() else {
+            complete = false;
+            continue;
+        };
+        let inside = value.as_number().is_some_and(|number| {
+            above.is_none_or(|edge| number > edge) && below.is_none_or(|edge| number < edge)
+        });
+        if !inside {
+            complete = false;
+        } else if !domain.contains(&value) {
+            domain.push(value);
         }
     }
+    complete
 }
 
 /// What [`declared_overlaps`] adds to a refusal's run.
