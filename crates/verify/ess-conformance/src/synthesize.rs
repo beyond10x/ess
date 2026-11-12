@@ -210,6 +210,7 @@ mod set_effects;
 mod shorthand;
 mod singleton;
 mod subject_fact;
+pub(crate) use subject_fact::disjoint_on_rows;
 pub(crate) mod system_issued;
 mod value_invariant;
 mod view_grant;

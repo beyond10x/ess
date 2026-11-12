@@ -2473,6 +2473,10 @@ enum Order {
     /// `held-for-promotion: result == Healthy` beside a `when_subject:`, declared before
     /// `promoted: result == Healthy` (beyond10x/ess#278).
     FirstDeclared,
+    /// [`Order::FirstDeclared`] on a row of any state, one no move of the command starts from
+    /// included: a refusal its stored guard selects there answers before `wrong_state:` does, in
+    /// the same phase (beyond10x/ess#192, #472), so the row is not the wrong-state family's.
+    Overlap,
 }
 
 /// Which branch this command selects for the row `arrangement` holds and this input: the only one
@@ -2489,10 +2493,11 @@ fn selects<'a>(
     input: &BTreeMap<String, Node>,
     order: Order,
 ) -> Result<Option<&'a ResolvedOutcome>, RefusalCause> {
-    let wrong = ir
-        .wrong_states(command)
-        .get(&entity)
-        .is_some_and(|states| states.contains(&arrangement.state));
+    let wrong = order != Order::Overlap
+        && ir
+            .wrong_states(command)
+            .get(&entity)
+            .is_some_and(|states| states.contains(&arrangement.state));
     // A guarded branch is selected before `wrong_state` applies (beyond10x/ess#192), and one
     // whose predicate reads `state` (ess/18, #204) may name a state no move starts from: such a
     // row is answered here when that branch is the one it selects. Every other wrong-state row is
@@ -2554,7 +2559,7 @@ fn selects<'a>(
     let pick = match (selected.as_slice(), order) {
         ([], _) => command.outcomes.iter().find(|branch| state_default(branch)),
         ([only], _) => Some(*only),
-        (several, Order::FirstDeclared) => first_read(ir, command, several),
+        (several, Order::FirstDeclared | Order::Overlap) => first_read(ir, command, several),
         (_, Order::Unique) => None,
     };
     if wrong && !pick.is_some_and(reads_state) {
@@ -8860,15 +8865,18 @@ fn overlaps(
 }
 
 /// Whether no row holds both `first` and `second`, decided only over predicates built from `all`,
-/// `any` and `not` and the equality or inequality of a stored field with a literal.
+/// `any` and `not`, the equality or inequality of a stored field with a literal, and the ordering
+/// of a stored field against a number literal.
 ///
 /// Each field is tried at every literal either predicate compares it with and at one value none of
 /// them names (a Boolean at both of its values), whatever its declared type admits, so the answer
 /// is a statement about a superset of the rows and can only err towards `false`, which a caller
-/// reads as "not shown". Two stored predicates that name different values of one field, as
-/// `route == D` and `route == B`, never hold together, and a pair noted as unreached is then not an
-/// overlap to witness.
-fn disjoint_on_rows(first: &Predicate, second: &Predicate) -> bool {
+/// reads as "not shown". A number field is tried at each of its literals, between each two of them
+/// and beyond the outermost, which reaches every region its comparisons tell apart. Two stored
+/// predicates that name different values of one field, as `route == D` and `route == B`, or bound
+/// one number field apart, as `quantity < 0` and `quantity > 10`, never hold together, and a pair
+/// noted as unreached is then not an overlap to witness.
+pub(crate) fn disjoint_on_rows(first: &Predicate, second: &Predicate) -> bool {
     use ess_primitives::facts::{FactStore, FactValue};
     /// The most combinations of values tried.
     const LIMIT: usize = 1 << 12;
@@ -8881,12 +8889,15 @@ fn disjoint_on_rows(first: &Predicate, second: &Predicate) -> bool {
             Predicate::Not(inner) => plain(inner, leaves),
             Predicate::Compare {
                 left,
-                op: CompareOp::Eq | CompareOp::Ne,
+                op,
                 right,
                 kind: CompareKind::Value,
             } => match (left, right) {
                 (Operand::Fact(path), Operand::Literal(value))
-                | (Operand::Literal(value), Operand::Fact(path)) => {
+                | (Operand::Literal(value), Operand::Fact(path))
+                    if matches!(op, CompareOp::Eq | CompareOp::Ne)
+                        || matches!(value, FactValue::Number(_)) =>
+                {
                     leaves.entry(path.clone()).or_default().push(value.clone());
                     true
                 }
@@ -8919,9 +8930,10 @@ fn disjoint_on_rows(first: &Predicate, second: &Predicate) -> bool {
             Some(FactValue::Text(_)) => (0..=domain.len())
                 .map(|at| FactValue::text(format!("other-{at}")))
                 .find(|value| !domain.contains(value)),
-            Some(FactValue::Number(_)) => (0_u32..=u32::try_from(domain.len()).unwrap_or(u32::MAX))
-                .filter_map(|at| FactValue::number(f64::from(at) + 0.5).ok())
-                .find(|value| !domain.contains(value)),
+            Some(FactValue::Number(_)) => {
+                number_regions(&mut domain);
+                None
+            }
             None => None,
         };
         if domain
@@ -8948,6 +8960,34 @@ fn disjoint_on_rows(first: &Predicate, second: &Predicate) -> bool {
         }
         !(first.evaluate(&facts) == Truth::True && second.evaluate(&facts) == Truth::True)
     })
+}
+
+/// `domain`, numbers, with a value between each two of them and one beyond the outermost on each
+/// side: one value of every region the comparisons with its numbers tell apart.
+fn number_regions(domain: &mut Vec<ess_primitives::facts::FactValue>) {
+    use ess_primitives::facts::FactValue;
+    let mut points: Vec<f64> = domain
+        .iter()
+        .filter_map(|value| match value {
+            FactValue::Number(number) => Some(number.get()),
+            _ => None,
+        })
+        .collect();
+    points.sort_by(f64::total_cmp);
+    let (Some(low), Some(high)) = (points.first().copied(), points.last().copied()) else {
+        return;
+    };
+    let between: Vec<f64> = points
+        .windows(2)
+        .map(|pair| f64::midpoint(pair[0], pair[1]))
+        .collect();
+    for point in between.into_iter().chain([low - 1.0, high + 1.0]) {
+        if let Ok(value) = FactValue::number(point) {
+            if !domain.contains(&value) {
+                domain.push(value);
+            }
+        }
+    }
 }
 
 /// What [`declared_overlaps`] adds to a refusal's run.
@@ -9036,7 +9076,7 @@ fn declared_overlaps(
                         ) == Truth::True
                     });
                     if holds
-                        && selects(ir, command, entity, node, &input, Order::FirstDeclared)?
+                        && selects(ir, command, entity, node, &input, Order::Overlap)?
                             .is_some_and(|branch| branch.name == outcome.name)
                     {
                         return Ok(Some(input));

@@ -225,10 +225,15 @@ const BASE: &str = include_str!("fixtures/adversary-244b-base-digests.tsv");
 ///
 /// beyond10x/ess#472: two `when_subject:` refusals of one command whose stored predicates one row
 /// satisfies together are witnessed where both hold, and the mutation audit lists their
-/// adjacent-outcome swap. `aggregate-stored-guarded-move` and `generated-views` each carry such a
-/// pair, so their suites grow by the overlap send; `aggregate-stored-guarded-move` also gains the
-/// pair's swap mutants. IR and refusals are unchanged; an entry above superseded here keeps its
-/// other columns.
+/// adjacent-outcome swap. `aggregate-stored-guarded-move` carries such a pair, so its suite grows
+/// by the overlap send and it gains the pair's swap mutants. IR and refusals are unchanged; an
+/// entry above superseded here keeps its other columns.
+///
+/// `generated-views` was stale here at the unit's base, not moved by #472: its suite moved from
+/// 67900 to 70670 bytes in the turns 1 and 2 integration (`ee2bebbd9`) with
+/// story:a-tie-breaking-sort-key-is-pinned-by-a-synthesized-tie, which synthesizes a tie for the
+/// view's second sort key. This probe is `#[ignore]`d, so nothing caught the entry then. IR,
+/// refusals and mutants are unchanged.
 const INTENDED: &[(&str, &str)] = &[
     (
         "crates/verify/ess-conformance/tests/fixtures/arrangement-input-refusal.yaml",

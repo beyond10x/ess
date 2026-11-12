@@ -3248,6 +3248,14 @@ fn unsatisfiable_guard(baseline: &EssIr, mutant: &EssIr, mutation: &Mutation) ->
         second,
     } = mutation
     {
+        // Two refusals of the stored row that no row satisfies together never compete either.
+        if let (Some(one), Some(other)) = (
+            stored_guard_of(baseline, command, first),
+            stored_guard_of(baseline, command, second),
+        ) {
+            return crate::synthesize::disjoint_on_rows(one, other)
+                .then(|| Predicate::All(vec![one.clone(), other.clone()]).to_string());
+        }
         let (found, one) = guard_of(baseline, command, first)?;
         let (_, other) = guard_of(baseline, command, second)?;
         return disjoint_overlap(baseline, found, one, other);
@@ -3491,6 +3499,27 @@ fn overlap_taken_by(baseline: &EssIr, mutation: &Mutation) -> Option<Vec<String>
     let left = overlap(Some(Predicate::Not(Box::new(taken))));
     (!satisfiable(baseline, found, &left)?)
         .then(|| earlier.into_iter().map(|(name, _)| name).collect())
+}
+
+/// The stored-row predicate of the refusal `outcome` of `command` selects, where it is selected by
+/// a `when_subject:` predicate alone.
+fn stored_guard_of<'ir>(ir: &'ir EssIr, command: &str, outcome: &str) -> Option<&'ir Predicate> {
+    let found = ir
+        .commands()
+        .values()
+        .find(|it| it.name.to_string() == command)?;
+    let branch = found
+        .outcomes
+        .iter()
+        .find(|it| it.name.to_string() == outcome)?;
+    match &branch.condition {
+        ess_compiler::ir::ResolvedCondition::SubjectPredicate { predicate, .. }
+            if branch.error.is_some() && branch.subject.is_none() =>
+        {
+            Some(predicate)
+        }
+        _ => None,
+    }
 }
 
 /// The command of `ir` named `command`, and the input guard of its outcome `outcome`.
