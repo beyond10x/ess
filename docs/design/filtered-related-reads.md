@@ -104,8 +104,9 @@ default included), whose existence and held state answer before a row-set refusa
 rests in a state its branch acts from and is named after no instance the scenario already holds, so
 two fields naming one entity name two rows. Where such a row would fill the set the refusal needs
 empty, the send is chosen again (a Boolean flipped that the refusal does not read and that decides
-no input-guarded refusal differently); where none keeps the set empty, the scenario is left as it
-was and the post-check refuses it rather than write a scenario the interpreter fails.
+no input-guarded refusal differently, and, for an accepting branch, that still selects it); where
+none keeps the set empty, the scenario is refused by name rather than written for the interpreter
+to fail.
 
 The value consumer extends the existing source:
 

@@ -1248,3 +1248,146 @@ fn three_branches_addressing_three_rows_pass_their_own_suite_in_every_order() {
     }
     assert!(failed.is_empty(), "{}", failed.join("\n\n"));
 }
+
+/// `None` where synthesis writes the scenario of `Act`'s branch `branch` for `text` and it passes
+/// on the interpreted target; else why not (other scenarios' results are not read).
+fn act_branch_fails(text: &str, branch: &str) -> Option<String> {
+    let (files, texts) = documents(text);
+    let ir = mutate::compile(files, &texts).unwrap_or_else(|error| panic!("{error:?}\n{text}"));
+    let synthesis = ess_conformance::synthesize::synthesize(&ir);
+    let wanted = format!("Act/outcome/{branch}");
+    let Some((id, scenario)) = synthesis
+        .suite
+        .scenarios
+        .iter()
+        .find(|(id, _)| id.to_string().ends_with(&wanted))
+    else {
+        return Some(format!(
+            "synthesis wrote no `{wanted}` scenario; refused:\n{}",
+            synthesis
+                .refusals
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+                .join("\n")
+        ));
+    };
+    let admitted =
+        AdmittedSuite::from_suite(&synthesis.suite).unwrap_or_else(|error| panic!("{error}"));
+    let report = Runner::for_suite(admitted.suite())
+        .run_admitted(&admitted, &Interpreted::for_model(ir.clone()))
+        .into_report();
+    let result = report
+        .scenarios
+        .iter()
+        .find(|result| result.scenario == *id)
+        .expect("the scenario ran");
+    (result.status != Status::Passed).then(|| {
+        format!(
+            "{id}: {:?} {:#?}\n{}",
+            result.status,
+            result.diagnostics().collect::<Vec<_>>(),
+            serde_json::to_string_pretty(scenario).unwrap()
+        )
+    })
+}
+
+/// An accepting row-set branch naming no subject: `listed` accepts where no shelf carries the
+/// label `shelf` names, emitting only.
+const LISTED: &str = "      - name: listed
+        when_related:
+          entity: demo.shelf.Shelf
+          where: label == input.shelf
+          exists: false
+        emits: [demo.shelf.CartPaused]
+        payload:
+          demo.shelf.CartPaused: {cart: input.cart}
+";
+
+/// BLOCKER (adversary pass 3 on the different-rows unit; introduced by `another_send`, 266aec86b4).
+/// `book-paused` (`pause == true`) is declared first, then `listed`, an accepting row-set branch
+/// naming no subject (`exists: false` over shelves), then a default acting on a row. `listed`'s
+/// own send carries `pause: false`, so `book-paused` does not take it. `selected_subject` reads
+/// only `when:` and default branches, skips `listed` itself and picks the default; where the
+/// default updates a shelf, `fills_the_row_set` holds (the guard is `RelatedSet`, the test is not
+/// `exists: true`) and `another_send` flips `pause`, which only `book-paused`'s `when:` reads and
+/// no input-guarded refusal reads, so the send now selects `book-paused` and the interpreter
+/// answers it instead of `listed`. On the base no row and no flip were arranged: the default
+/// updating a cart (no fill, no flip) is the control and passes.
+#[test]
+fn a_flip_never_hands_an_accepting_row_set_branch_to_an_earlier_when() {
+    let mut failed = Vec::new();
+    for default in [CART, SHELF_ROW] {
+        let text = rows(
+            "input.label",
+            &[
+                acting("book-paused", Some("pause == true"), BOOK),
+                LISTED.to_owned(),
+                acting("touched", None, default),
+            ]
+            .concat(),
+        );
+        if let Some(why) = act_branch_fails(&text, "listed") {
+            failed.push(format!("default updating a {}:\n{why}", default.0));
+        }
+    }
+    assert!(failed.is_empty(), "{}", failed.join("\n\n"));
+}
+
+/// The row-set refusal `refused` (`exists: false` over shelves) declared after `book-paused`
+/// (`pause == true`) and before a default updating a shelf: the `refused` send that leaves
+/// `book-paused` out selects the default, whose shelf would fill the set, so `another_send`
+/// flips `pause` to select `book-paused`. Both declaration orders of `refused` and `book-paused`.
+/// Passes (adversary pass 3): it pins the flip beside a filling default, which no case did.
+#[test]
+fn a_flip_beside_a_refusal_declared_after_an_accepting_when_keeps_the_refusal() {
+    let mut failed = Vec::new();
+    for refused_first in [true, false] {
+        let book = acting("book-paused", Some("pause == true"), BOOK);
+        let pair = if refused_first {
+            [SHELF_SET_ABSENT.to_owned(), book]
+        } else {
+            [book, SHELF_SET_ABSENT.to_owned()]
+        };
+        let text = rows(
+            "input.label",
+            &[pair.concat(), acting("touched", None, SHELF_ROW)].concat(),
+        );
+        if let Some(why) = act_branch_fails(&text, "refused") {
+            failed.push(format!("refused first {refused_first}:\n{why}"));
+        }
+    }
+    assert!(failed.is_empty(), "{}", failed.join("\n\n"));
+}
+
+/// BLOCKER (adversary pass 3 on the different-rows unit; in the acceptance, origin pre-existing:
+/// the fallback returns the base arrangement unchanged). An Integer selector, where no Boolean
+/// flip changes the selected branch: `book-paused` takes `level >= 5`, `shelf-paused` `level < 5`,
+/// and `refused` holds where no shelf carries the label `shelf` names (a shelf's label is its
+/// identity). `pause`, `halt` and `rush` are read by no guard, so every flip `another_send` tries
+/// leaves the rows as they were and the fallback keeps the base arrangement: a send of `level: 1`
+/// naming a shelf no row carries. The design page says the post-check then refuses the scenario;
+/// it is written instead and answered `unknown`. A send of `level >= 5` witnesses `refused`.
+#[test]
+fn an_integer_selected_row_set_refusal_keeps_its_witness_or_is_refused() {
+    let text = rows(
+        "input.shelf",
+        &[
+            SHELF_SET_ABSENT.to_owned(),
+            acting("book-paused", Some("level >= 5"), BOOK),
+            acting("shelf-paused", Some("level < 5"), SHELF_ROW),
+            IDLE.to_owned(),
+        ]
+        .concat(),
+    )
+    .replace(
+        "      - {name: rush, type: Boolean}\n",
+        "      - {name: rush, type: Boolean}\n      - {name: level, type: Integer}\n",
+    );
+    if let Some(why) = act_branch_fails(&text, "refused") {
+        let refused_by_name = why.starts_with("synthesis wrote no")
+            && why.contains("demo.shelf.Act/refused has no scenario")
+            && why.contains("no send keeps the row set empty");
+        assert!(refused_by_name, "{why}");
+    }
+}
