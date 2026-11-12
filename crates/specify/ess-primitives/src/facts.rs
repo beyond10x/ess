@@ -871,8 +871,8 @@ impl Ord for Number {
     /// The signed zero `Primitive::Binary64` promises survives in the bytes, because
     /// [`Serialize`](serde::Serialize) writes the carried binary64.
     ///
-    /// An [`Observed`](Repr::Observed) on either side is compared by value against whatever the
-    /// other is — exact, observed, or the shortest decimal of a binary64 — so the order is that of
+    /// An observed number (one `Number::from_json_token` read) on either side is compared by value
+    /// against whatever the other is — exact, observed, or the shortest decimal of a binary64 — so the order is that of
     /// the values themselves. The others compare as they always did.
     fn cmp(&self, other: &Self) -> Ordering {
         if matches!(self.0, Repr::Observed { .. }) || matches!(other.0, Repr::Observed { .. }) {
