@@ -5259,11 +5259,262 @@ fn reachable(command: &ResolvedCommand, facts: &crate::InputFacts<'_>) -> Vec<us
     reached
 }
 
+/// A stored row beside an input, read by a `when_subject:` guard: `input.x` is the input's `x`,
+/// every other path is a stored field of the row.
+struct HeldRow<'a, 'ir> {
+    input: &'a crate::InputFacts<'ir>,
+    stored: ess_primitives::facts::FactStore,
+}
+
+impl HeldRow<'_, '_> {
+    /// The input path a read names, where it names one.
+    fn input_path(path: &FactPath) -> Option<FactPath> {
+        match path.segments().split_first() {
+            Some((head, rest)) if head == "input" && !rest.is_empty() => {
+                Some(FactPath::from_segments(rest))
+            }
+            _ => None,
+        }
+    }
+}
+
+impl ess_primitives::facts::FactSource for HeldRow<'_, '_> {
+    fn fact(&self, path: &FactPath) -> Option<FactValue> {
+        match Self::input_path(path) {
+            Some(input) => ess_primitives::facts::FactSource::fact(self.input, &input),
+            None => self.stored.fact(path),
+        }
+    }
+
+    fn present(&self, path: &FactPath) -> bool {
+        match Self::input_path(path) {
+            Some(input) => ess_primitives::facts::FactSource::present(self.input, &input),
+            None => self.stored.present(path),
+        }
+    }
+
+    fn scales(&self) -> &ess_primitives::facts::Scales {
+        ess_primitives::facts::FactSource::scales(self.input)
+    }
+
+    fn orders_as_instant(&self, path: &FactPath) -> bool {
+        Self::input_path(path).is_some_and(|input| {
+            ess_primitives::facts::FactSource::orders_as_instant(self.input, &input)
+        })
+    }
+
+    fn now(&self) -> Option<Rfc3339Instant> {
+        ess_primitives::facts::FactSource::now(self.input)
+    }
+}
+
+/// How many stored rows [`held_rows_answer`] tries at most.
+const MAX_HELD_ROWS: usize = 256;
+
+/// How the rows of a stored field are tried, by the type the entity declares for it.
+enum HeldKind {
+    /// An `Integer`: one either side.
+    Integer,
+    /// A `Decimal`, which declares no scale: a tenth of the finest unit any literal it is compared
+    /// with writes, so a row between two whole numbers is tried.
+    Decimal,
+    /// A `String`: the texts it is compared with, and one that is none of them.
+    Text,
+    /// An enum: its variants, bounded.
+    Enum(Vec<String>),
+}
+
+/// The kind of the stored field at `path` of `entity`, or `None` where the walk has no ladder for
+/// its type.
+fn held_kind(ir: &EssIr, entity: &EntityHandle, path: &FactPath) -> Option<HeldKind> {
+    let declared = ir.entity(entity);
+    let fields: Vec<_> = std::iter::once(declared.identity.clone())
+        .chain(declared.fields.iter().cloned())
+        .collect();
+    let resolved = ess_compiler::expression::resolve_path(ir, &fields, path, "held rows").ok()?;
+    if let Some(variants) = resolved.variants {
+        return Some(HeldKind::Enum(variants));
+    }
+    match resolved.terminal {
+        ResolvedTypeRef::Primitive {
+            name: Primitive::Integer,
+        } => Some(HeldKind::Integer),
+        ResolvedTypeRef::Primitive {
+            name: Primitive::Decimal,
+        } => Some(HeldKind::Decimal),
+        ResolvedTypeRef::Primitive {
+            name: Primitive::String,
+        } => Some(HeldKind::Text),
+        _ => None,
+    }
+}
+
+/// The fractional digits `number` is written with.
+fn fraction_digits(number: Number) -> usize {
+    number
+        .exact_text()
+        .split_once('.')
+        .map_or(0, |(_, fraction)| fraction.len())
+}
+
+/// `value` moved by `step`, rounded to the digits `step` carries.
+fn moved(value: f64, step: f64, digits: usize) -> Option<FactValue> {
+    let text = format!("{:.*}", digits, value + step);
+    FactValue::number(text.parse::<f64>().ok()?).ok()
+}
+
+/// The values a stored field of this kind takes: the literals the invariants and the guard compare
+/// it with and the values the input sends the guard, one step either side for a number.
+fn held_rungs(
+    kind: &HeldKind,
+    literals: &[FactValue],
+    sent: &[FactValue],
+) -> Option<Vec<FactValue>> {
+    let mut rungs: Vec<FactValue> = Vec::new();
+    let mut add = |value: FactValue| {
+        if !rungs.contains(&value) {
+            rungs.push(value);
+        }
+    };
+    match kind {
+        HeldKind::Integer | HeldKind::Decimal => {
+            let numbers: Vec<Number> = literals
+                .iter()
+                .chain(sent)
+                .filter_map(FactValue::as_number)
+                .collect();
+            if numbers.is_empty() {
+                return None;
+            }
+            let digits = numbers.iter().copied().map(fraction_digits).max()?;
+            let (step, digits) = match kind {
+                HeldKind::Decimal => (10f64.powi(-i32::try_from(digits + 1).ok()?), digits + 1),
+                _ => (1.0, 0),
+            };
+            for number in numbers {
+                let value = number.get();
+                add(moved(value, -step, digits)?);
+                add(moved(value, 0.0, digits)?);
+                add(moved(value, step, digits)?);
+            }
+        }
+        HeldKind::Text | HeldKind::Enum(_) => {
+            let texts: Vec<&str> = literals
+                .iter()
+                .chain(sent)
+                .filter_map(FactValue::as_text)
+                .collect();
+            for text in &texts {
+                add(FactValue::text(*text));
+            }
+            if let HeldKind::Enum(variants) = kind {
+                for variant in variants.iter().take(8) {
+                    add(FactValue::text(variant.clone()));
+                }
+            } else {
+                let mut other = String::from("other");
+                while texts.contains(&other.as_str()) {
+                    other.push('_');
+                }
+                add(FactValue::text(other));
+            }
+        }
+    }
+    Some(rungs)
+}
+
+/// Whether `guard`, a `when_subject:` predicate over the stored fields and the input, holds of
+/// every row `entity`'s invariants admit: `Some(true)` where it does, `Some(false)` where an
+/// admitted row refutes it, `None` where it cannot be decided.
+///
+/// The rows tried are the bounded walk's own. Each stored field the guard reads takes the literals
+/// the entity's invariants and the guard compare it with and the values the input sends the guard,
+/// one step either side for a number ([`held_rungs`], by the field's declared type), and a row any
+/// invariant refutes is left out. `value >= input.value` beside `value >= 1` holds of every row for
+/// an input of 0 (stored `value` at its bound already satisfies it) and not for an input of 5 (the
+/// row at the bound does not). A field whose type has no ladder, or more rows than
+/// [`MAX_HELD_ROWS`], leaves the guard undecided.
+fn held_rows_answer(
+    ir: &EssIr,
+    entity: &EntityHandle,
+    guard: &Predicate,
+    facts: &crate::InputFacts<'_>,
+) -> Option<bool> {
+    use ess_primitives::facts::{FactSource, FactStore};
+    use ess_primitives::predicate::Truth;
+    let invariants: Vec<&Predicate> = ir
+        .entity(entity)
+        .invariants
+        .iter()
+        .map(|invariant| &invariant.predicate)
+        .collect();
+    let mut stored: Vec<FactPath> = Vec::new();
+    let mut sent: Vec<FactValue> = Vec::new();
+    for read in guard.fact_paths() {
+        if let Some(input) = HeldRow::input_path(read) {
+            sent.extend(facts.fact(&input));
+        } else if !stored.contains(read) {
+            stored.push(read.clone());
+        }
+    }
+    let mut ladders: Vec<Vec<FactValue>> = Vec::new();
+    for path in &stored {
+        let kind = held_kind(ir, entity, path)?;
+        let mut literals = literals_at(&invariants, path);
+        literals.extend(literals_at(&[guard], path));
+        ladders.push(held_rungs(&kind, &literals, &sent)?);
+    }
+    let mut rows: Vec<Vec<FactValue>> = vec![Vec::new()];
+    for ladder in &ladders {
+        rows = rows
+            .into_iter()
+            .flat_map(|row| {
+                ladder.iter().map(move |rung| {
+                    let mut next = row.clone();
+                    next.push(rung.clone());
+                    next
+                })
+            })
+            .collect();
+        if rows.len() > MAX_HELD_ROWS {
+            return None;
+        }
+    }
+    let (mut refuted, mut unknown, mut admitted) = (false, false, false);
+    for row in rows {
+        let mut store = FactStore::new();
+        for (path, value) in stored.iter().zip(row) {
+            store.set(path.clone(), value);
+        }
+        let held = HeldRow {
+            input: facts,
+            stored: store,
+        };
+        if invariants
+            .iter()
+            .any(|invariant| invariant.evaluate(&held) == Truth::False)
+        {
+            continue;
+        }
+        admitted = true;
+        match guard.evaluate(&held) {
+            Truth::True => {}
+            Truth::False => refuted = true,
+            Truth::Unknown => unknown = true,
+        }
+    }
+    if !admitted || (unknown && !refuted) {
+        return None;
+    }
+    Some(!refuted)
+}
+
 /// Whether the model answers `facts` with a refusal selected by the held state, whatever state the
 /// row `outcome` updates or moves rests in: for each state the branch can be taken from, a refusal
 /// the precedence plan reads before `outcome`, whose `when_subject_state:` (or
 /// `when_state_changes:`) admits that state and whose input guard, where it has one, the input
-/// meets. A branch that creates its row has no held state to answer at.
+/// meets; or a `when_subject:` refusal every row the entity's invariants admit meets
+/// ([`held_rows_answer`]). A branch that creates its row has no held state to answer at.
 fn answered_by_held_refusal(
     ir: &EssIr,
     command: &ResolvedCommand,
@@ -5295,14 +5546,23 @@ fn answered_by_held_refusal(
     starts.peek().is_some()
         && starts.all(|state| {
             before.iter().any(|branch| {
-                let guard = match &branch.condition {
-                    ResolvedCondition::SubjectState { predicate, .. }
-                    | ResolvedCondition::StateChange { predicate, .. } => predicate.as_ref(),
-                    _ => return false,
-                };
+                let met = |guard: &Predicate| matches!(facts.decide(guard), Decision::Satisfied);
                 branch.error.is_some()
                     && crate::synthesize::admits_held_state(&branch.condition, state)
-                    && guard.is_none_or(|guard| matches!(facts.decide(guard), Decision::Satisfied))
+                    && match &branch.condition {
+                        ResolvedCondition::SubjectState { predicate, .. }
+                        | ResolvedCondition::StateChange { predicate, .. } => {
+                            predicate.as_ref().is_none_or(met)
+                        }
+                        // A stored-field guard answers the input where every row the entity's
+                        // invariants admit meets it; one it cannot decide is not reported
+                        // against, as everywhere in this walk.
+                        ResolvedCondition::SubjectPredicate { predicate, input } => {
+                            input.as_ref().is_none_or(met)
+                                && held_rows_answer(ir, entity, predicate, facts) != Some(false)
+                        }
+                        _ => false,
+                    }
             })
         })
 }

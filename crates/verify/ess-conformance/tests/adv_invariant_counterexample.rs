@@ -197,6 +197,37 @@ fn adv_an_any_refusal_that_answers_the_input_gets_no_refusal() {
     assert_eq!(broken(&synthesis), Vec::<String>::new());
 }
 
+/// A held-state refusal that compares the stored field with the input answers every input below
+/// the row's value: `stale` (`when_subject: value >= input.value`) precedes `adjusted`, and every
+/// row holds `value >= 1` (`Set` is guarded on it), so `adjusted` only ever stores a value above
+/// one. No input leaves the counter outside `value >= 1` unanswered, and `ESS-SYNTH-025` must not
+/// name `adjusted` (the shape of the #251 reproduction's `Revise`, without its upper bound).
+#[test]
+fn adv2_a_stale_check_on_the_held_value_answers_the_input_below_the_bound() {
+    let set = set_with(&format!(
+        "      - name: set
+        when: value >= 1
+        creates: bounded.counter.Counter
+        instance: counter_id
+        sets: {{value: input.value, cap: 8}}
+{EMITS}      - {{name: otherwise, error: bounded.counter.ValueTooLarge}}
+"
+    ));
+    let adjust = adjust_with(&format!(
+        "      - name: stale
+        when_subject:
+          predicate: value >= input.value
+        error: bounded.counter.ValueTooLarge
+      - name: adjusted
+        updates: bounded.counter.Counter
+        instance: counter_id
+        sets: {{value: input.value}}
+{EMITS}"
+    ));
+    let synthesis = synthesize(&ir(&spec("value >= 1", &(set + &adjust))));
+    assert_eq!(broken(&synthesis), Vec::<String>::new());
+}
+
 // ---- false negatives inside the bounded search -------------------------------------------------
 
 /// A refusal that answers only part of the outside (`value > 9`) leaves `value: 9` unanswered.
@@ -223,6 +254,136 @@ fn adv_a_lower_bound_invariant_is_named() {
     let found = broken(&synthesis);
     assert_eq!(found.len(), 2, "{found:#?}");
     assert!(found[0].contains("value: 0"), "{found:#?}");
+}
+
+// ---- pass 3: holes the held-row narrowing (`held_rows_answer`) must not hide --------------------
+
+/// `HEAD` with one more stored field and the same field on both commands' input.
+fn spec_with_field(field: &str, invariant: &str, commands: &str) -> String {
+    let line = format!("      - {{name: {field}}}\n");
+    let head = HEAD.replace("INVARIANT", invariant).replace(
+        "      - {name: cap, type: Integer}\n    invariants",
+        &format!("      - {{name: cap, type: Integer}}\n{line}    invariants"),
+    );
+    format!("{head}{}", commands.replace("FIELD\n", &line))
+}
+
+/// An input that also carries the extra field, written `FIELD` until [`spec_with_field`] fills it.
+const INPUT_FIELD: &str = "    input:
+      - {name: counter_id, type: bounded.counter.CounterId}
+      - {name: value, type: Integer}
+FIELD
+";
+
+/// `Set` creates guarded on `guard`, copying `sets`; `Adjust` refuses on `refusal` (a
+/// `when_subject:` predicate) before `adjusted` copies `copied: input.copied` unguarded.
+fn refused_before_copy(guard: &str, sets: &str, refusal: &str, copied: &str) -> String {
+    format!(
+        "  - name: bounded.counter.Set
+{INPUT_FIELD}    outcomes:
+      - name: set
+        when: {guard}
+        creates: bounded.counter.Counter
+        instance: counter_id
+        sets: {{{sets}}}
+{EMITS}      - {{name: otherwise, error: bounded.counter.ValueTooLarge}}
+  - name: bounded.counter.Adjust
+{INPUT_FIELD}    outcomes:
+      - name: held
+        when_subject:
+          predicate: {refusal}
+        error: bounded.counter.ValueTooLarge
+      - name: adjusted
+        updates: bounded.counter.Counter
+        instance: counter_id
+        sets: {{{copied}: input.{copied}}}
+{EMITS}"
+    )
+}
+
+fn names_adjusted(synthesis: &Synthesis) -> bool {
+    broken(synthesis)
+        .iter()
+        .any(|refusal| refusal.contains("Adjust/adjusted"))
+}
+
+/// `when_subject: value < 10` refuses only rows below ten; a row holding `value: 10` meets
+/// `value >= 1` and is not refused, so `adjusted` stores `value: 0` there. The held rows are built
+/// from the invariant's literal (0, 1, 2) and never from the guard's own `10`, so every admitted
+/// row meets the guard and the hole is hidden. Before the narrowing `ESS-SYNTH-025` named it.
+#[test]
+fn adv3_a_stored_guard_that_holds_below_its_own_literal_does_not_hide_the_hole() {
+    let commands = refused_before_copy(
+        "value >= 1",
+        "value: input.value, cap: 8, cap2: 1",
+        "value < 10",
+        "value",
+    );
+    let synthesis = synthesize(&ir(&spec_with_field(
+        "cap2, type: Integer",
+        "value >= 1",
+        &commands,
+    )));
+    assert!(names_adjusted(&synthesis), "{:#?}", broken(&synthesis));
+}
+
+/// The ownership check `owner != input.owner` refuses a foreign row only; on the owner's own row
+/// `adjusted` stores `value: 0`, breaking `value >= 1`. The guard reads a text field the ladder has
+/// no rung for (only numbers the input sends are rungs), so `held_rows_answer` answers `None` and
+/// the hole is hidden, although the row holding the input's own `owner` decides it.
+#[test]
+fn adv3_an_ownership_check_does_not_hide_the_hole() {
+    let commands = refused_before_copy(
+        "value >= 1",
+        "value: input.value, cap: 8, owner: input.owner",
+        "owner != input.owner",
+        "value",
+    );
+    let synthesis = synthesize(&ir(&spec_with_field(
+        "owner, type: String",
+        "value >= 1",
+        &commands,
+    )));
+    assert!(names_adjusted(&synthesis), "{:#?}", broken(&synthesis));
+}
+
+/// `owner != input.owner and value <= input.value` refuses a raise of a foreign row only; on the
+/// owner's own row `value: 9` is stored, breaking `value <= 8`. The ladder gives the text field
+/// `owner` the numbers the input sends (8, 9, 10), a number is never equal to the input's text, so
+/// every row "meets" `owner != input.owner` and the guard is decided on `value` alone: answered.
+#[test]
+fn adv3_a_text_field_given_numeric_rungs_does_not_answer_the_input() {
+    let commands = refused_before_copy(
+        "value <= 8",
+        "value: input.value, cap: 8, owner: input.owner",
+        "{all: [\"owner != input.owner\", \"value <= input.value\"]}",
+        "value",
+    );
+    let synthesis = synthesize(&ir(&spec_with_field(
+        "owner, type: String",
+        "value <= 8",
+        &commands,
+    )));
+    assert!(names_adjusted(&synthesis), "{:#?}", broken(&synthesis));
+}
+
+/// A Decimal field steps by one: beside `amount > 0` the rows are -1, 0 and 1 (and 0, 1, 2 had the
+/// guard's own literal been read), so `amount >= 1` holds of every admitted row, yet a stored
+/// `amount: 0.5` meets the invariant, is not refused, and `adjusted` stores `amount: 0`.
+#[test]
+fn adv3_a_decimal_row_between_the_rungs_does_not_hide_the_hole() {
+    let commands = refused_before_copy(
+        "amount > 0",
+        "value: input.value, cap: 8, amount: input.amount",
+        "amount >= 1",
+        "amount",
+    );
+    let synthesis = synthesize(&ir(&spec_with_field(
+        "amount, type: Decimal",
+        "amount > 0",
+        &commands,
+    )));
+    assert!(names_adjusted(&synthesis), "{:#?}", broken(&synthesis));
 }
 
 /// An invariant over two copied inputs, `value <= cap`.
