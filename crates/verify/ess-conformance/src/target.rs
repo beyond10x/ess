@@ -784,6 +784,11 @@ pub struct SemanticCommandResult {
     /// Integer exactly before constructing this map: use `Number::from(actual_i64)` for native
     /// integers. JSON adapters need proven lossless decoding or must report Unsupported. A value
     /// rounded before observation cannot be recovered by the retained-result comparison.
+    ///
+    /// A `Decimal` is compared by the exact value of the number token reported, as the Go and
+    /// TypeScript runners compare it. Decode a JSON response with
+    /// [`Node::from_json_exact`](ess_primitives::node::Node::from_json_exact): `serde`'s
+    /// `Deserialize` reads a non-integer through binary64 before ESS sees its digits.
     pub response: Option<BTreeMap<String, Node>>,
 }
 

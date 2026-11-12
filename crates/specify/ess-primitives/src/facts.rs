@@ -64,6 +64,211 @@ enum Repr {
     },
     /// A value outside the exact range, held as it always was.
     Binary64(f64),
+    /// The exact value of a number token a target reported ([`Number::from_json_token`]), where
+    /// the write cannot give it back.
+    ///
+    /// Compared by its [`Dec`], whatever its size (a token is at most [`MAX_TOKEN`] characters,
+    /// with an exponent within `±MAX_EXPONENT`), and written as `binary`, the binary64 every
+    /// run-time number has always been written as: the run-time writer half of decimal
+    /// serialization is not built, so no byte moves. Every comparison with an `Observed` is by
+    /// value ([`Number::cmp`]), so the variant need not be a function of `binary`.
+    Observed {
+        /// The interned value; see [`interned`].
+        value: &'static Dec,
+        /// What this value is written as.
+        binary: f64,
+    },
+}
+
+/// The longest number token [`Number::from_json_token`] reads: the bound the Go and TypeScript
+/// runners put on a returned number.
+const MAX_TOKEN: usize = 512;
+
+/// The largest exponent a token may spell, either sign: the Go and TypeScript bound.
+const MAX_EXPONENT: i64 = 512;
+
+/// A decimal of any size a bounded token spells: `± 0.digits × 10^point`.
+///
+/// Normalised, so one value has one `Dec`: `digits` has no leading and no trailing zero, and zero
+/// is the empty `digits` with `point` `0` and no sign.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+struct Dec {
+    negative: bool,
+    digits: String,
+    point: i64,
+}
+
+impl Dec {
+    /// `digits` as written, with the point `point` places from its start, normalised.
+    fn of_parts(negative: bool, digits: &str, point: i64) -> Self {
+        let trimmed = digits.trim_start_matches('0').trim_end_matches('0');
+        if trimmed.is_empty() {
+            return Self {
+                negative: false,
+                digits: String::new(),
+                point: 0,
+            };
+        }
+        // Saturating: `point` may be an exponent saturated at `±i64::MAX`.
+        let leading = digits.len() - digits.trim_start_matches('0').len();
+        let point = point.saturating_sub(i64::try_from(leading).unwrap_or(i64::MAX));
+        Self {
+            negative,
+            digits: trimmed.to_owned(),
+            point,
+        }
+    }
+
+    fn of_exact(units: i128, scale: u8) -> Self {
+        let digits = units.unsigned_abs().to_string();
+        let point = i64::try_from(digits.len()).unwrap_or(i64::MAX) - i64::from(scale);
+        Self::of_parts(units < 0, &digits, point)
+    }
+
+    /// The shortest decimal of a binary64, which is what `f64`'s `Display` prints.
+    fn of_binary64(value: f64) -> Self {
+        let text = format!("{}", value.abs());
+        let (integer, fraction) = text.split_once('.').unwrap_or((&text, ""));
+        let digits = format!("{integer}{fraction}");
+        Self::of_parts(
+            value < 0.0,
+            &digits,
+            i64::try_from(integer.len()).unwrap_or(i64::MAX),
+        )
+    }
+
+    fn is_zero(&self) -> bool {
+        self.digits.is_empty()
+    }
+
+    /// The integer this is, when it is one that fits an `i64`: an `Observed` spelt `1e18` or
+    /// `9007199254740993.0` answers as the `Exact` integer it equals.
+    fn as_i64(&self) -> Option<i64> {
+        let length = i64::try_from(self.digits.len()).ok()?;
+        // At most 19 digits before the point hold an `i64`, so nothing longer is built.
+        if self.is_zero() || self.point < length || self.point > 19 {
+            return self.is_zero().then_some(0);
+        }
+        let zeros = usize::try_from(self.point - length).ok()?;
+        let magnitude: i128 = format!("{}{}", self.digits, "0".repeat(zeros))
+            .parse()
+            .ok()?;
+        i64::try_from(if self.negative { -magnitude } else { magnitude }).ok()
+    }
+
+    fn compare(&self, other: &Self) -> Ordering {
+        let sign = |value: &Self| {
+            if value.is_zero() {
+                0
+            } else if value.negative {
+                -1
+            } else {
+                1
+            }
+        };
+        match sign(self).cmp(&sign(other)) {
+            Ordering::Equal if self.is_zero() => Ordering::Equal,
+            Ordering::Equal => {
+                let magnitude = self
+                    .point
+                    .cmp(&other.point)
+                    .then_with(|| self.digits.cmp(&other.digits));
+                if self.negative {
+                    magnitude.reverse()
+                } else {
+                    magnitude
+                }
+            }
+            other => other,
+        }
+    }
+
+    /// No exponent, no trailing zeroes: the spelling [`exact_text`] gives for the same value.
+    fn text(&self) -> String {
+        if self.is_zero() {
+            return "0".to_owned();
+        }
+        let sign = if self.negative { "-" } else { "" };
+        let length = i64::try_from(self.digits.len()).unwrap_or(i64::MAX);
+        let places = |count: i64| "0".repeat(usize::try_from(count).unwrap_or(0));
+        if self.point <= 0 {
+            format!("{sign}0.{}{}", places(-self.point), self.digits)
+        } else if self.point >= length {
+            format!("{sign}{}{}", self.digits, places(self.point - length))
+        } else {
+            let at = usize::try_from(self.point).unwrap_or(0);
+            format!("{sign}{}.{}", &self.digits[..at], &self.digits[at..])
+        }
+    }
+}
+
+/// One `'static` copy of each distinct value an [`Observed`](Repr::Observed) holds, so that
+/// [`Number`] stays `Copy`.
+///
+/// The table grows by one entry of at most [`MAX_TOKEN`] bytes for each distinct inexact token a
+/// process reads through [`Number::from_json_token`] and is never freed: a conformance run reads a
+/// bounded number of responses and exits.
+fn interned(value: Dec) -> &'static Dec {
+    static TABLE: OnceLock<std::sync::Mutex<std::collections::HashSet<&'static Dec>>> =
+        OnceLock::new();
+    let mut table = TABLE
+        .get_or_init(Default::default)
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    if let Some(found) = table.get(&value) {
+        return found;
+    }
+    let leaked: &'static Dec = Box::leak(Box::new(value));
+    table.insert(leaked);
+    leaked
+}
+
+/// A JSON number token, in the grammar JSON gives and no other: its sign, integer digits,
+/// fraction digits and exponent (saturated at `±i64::MAX`). `None` for anything else and for a
+/// token past [`MAX_TOKEN`] characters, which the Go and TypeScript runners refuse.
+fn json_token_parts(token: &str) -> Option<(bool, &str, &str, i64)> {
+    if token.len() > MAX_TOKEN {
+        return None;
+    }
+    let digits = |part: &str| !part.is_empty() && part.bytes().all(|b| b.is_ascii_digit());
+    let (negative, rest) = match token.strip_prefix('-') {
+        Some(rest) => (true, rest),
+        None => (false, token),
+    };
+    let (mantissa, exponent) = match rest.find(['e', 'E']) {
+        Some(at) => (&rest[..at], Some(&rest[at + 1..])),
+        None => (rest, None),
+    };
+    let (integer, fraction) = mantissa.split_once('.').unwrap_or((mantissa, ""));
+    let has_point = mantissa.contains('.');
+    if !digits(integer)
+        || (integer.len() > 1 && integer.starts_with('0'))
+        || (has_point && !digits(fraction))
+    {
+        return None;
+    }
+    let exponent = match exponent {
+        None => 0,
+        Some(text) => {
+            let (negative, body) = match text.as_bytes().first() {
+                Some(b'-') => (true, &text[1..]),
+                Some(b'+') => (false, &text[1..]),
+                _ => (false, text),
+            };
+            if !digits(body) {
+                return None;
+            }
+            // Saturating, so an exponent of any length is read at once and refused by the caller
+            // unless the mantissa is zero.
+            let value: i64 = body.parse().unwrap_or(i64::MAX);
+            if negative {
+                -value
+            } else {
+                value
+            }
+        }
+    };
+    Some((negative, integer, fraction, exponent))
 }
 
 /// The magnitude below which an integral binary64 is carried as the integer it is.
@@ -226,7 +431,9 @@ impl Number {
     /// index or a sign from it. [`as_i64`](Self::as_i64) is the exact answer.
     pub const fn get(self) -> f64 {
         match self.0 {
-            Repr::Exact { binary, .. } | Repr::Binary64(binary) => binary,
+            Repr::Exact { binary, .. } | Repr::Observed { binary, .. } | Repr::Binary64(binary) => {
+                binary
+            }
         }
     }
 
@@ -250,6 +457,7 @@ impl Number {
             Repr::Exact {
                 units, scale: 0, ..
             } => i64::try_from(units).ok(),
+            Repr::Observed { value, .. } => value.as_i64(),
             _ => None,
         }
     }
@@ -260,6 +468,7 @@ impl Number {
     pub fn exact_text(self) -> String {
         match self.0 {
             Repr::Exact { units, scale, .. } => exact_text(units, scale),
+            Repr::Observed { value, .. } => value.text(),
             Repr::Binary64(value) => format!("{value}"),
         }
     }
@@ -269,11 +478,20 @@ impl Number {
         self.exact()
     }
 
+    /// The value as a [`Dec`], whichever way it is held.
+    fn decimal(&self) -> Dec {
+        match self.0 {
+            Repr::Exact { units, scale, .. } => Dec::of_exact(units, scale),
+            Repr::Observed { value, .. } => value.clone(),
+            Repr::Binary64(value) => Dec::of_binary64(value),
+        }
+    }
+
     /// The exact value as `(units, scale)`, when there is one.
     const fn exact(self) -> Option<(i128, u8)> {
         match self.0 {
             Repr::Exact { units, scale, .. } => Some((units, scale)),
-            Repr::Binary64(_) => None,
+            Repr::Observed { .. } | Repr::Binary64(_) => None,
         }
     }
 
@@ -350,6 +568,74 @@ impl Number {
         Some(Self(match authored.filter(survives_the_write) {
             Some((units, scale)) => Repr::exact(units, scale, binary),
             None => Repr::of_binary64(binary),
+        }))
+    }
+
+    /// Reads a JSON number token as the exact value it spells, for a target to report.
+    ///
+    /// A number a target hands the runner is compared by value, so `0.1` and
+    /// `0.10000000000000001`, `1` and `1.0000000000000000001`, and two 30-digit integers one apart
+    /// are different values, as the Go and TypeScript runners compare them. A `Number` read
+    /// through `serde` cannot be: `serde_json` parses the token to a binary64 before any visitor
+    /// sees it. This is the door that keeps the digits, of any size the bound below allows, so
+    /// `1` and `1.0000000000000000000000000000000000000001`, and `0` and `1e-400`, are two values
+    /// too, and trailing zeroes never change one.
+    ///
+    /// **Nothing else moves.** A spelling of a binary64's own shortest decimal reads as it always
+    /// did. An integer within an `i64` is that integer whatever its spelling (`9007199254740993.0`,
+    /// `9.223372036854775807e18`): it writes as the integer token and reads back as itself. Any
+    /// other token the write would collapse compares by its digits and still writes as its
+    /// binary64: the run-time writer half of decimal serialization is not built.
+    ///
+    /// **The bound is the Go and TypeScript bound.** A token is the JSON number grammar and no
+    /// other (no leading `+`, no leading zero), at most 512 characters, with an exponent within
+    /// `±512` and a magnitude within binary64; anything else is `None`, where those runners refuse
+    /// the number. One token is read where they refuse it: a zero with an exponent past the
+    /// bound, such as `0e999999`, is zero and is read at once, so no exponent can stall the
+    /// reader. An adapter that gets `None` reports the response as undecodable
+    /// ([`Node::from_json_exact`](crate::node::Node::from_json_exact) is an `Err`). A number whose
+    /// digits are not a binary64's own is kept in a table that lives for the process, one entry
+    /// per distinct value.
+    pub fn from_json_token(token: &str) -> Option<Self> {
+        let (negative, integer, fraction, exponent) = json_token_parts(token)?;
+        // A zero is zero whatever its exponent, and is read at once; any other value with an
+        // exponent past the bound is refused, as Go and TypeScript refuse it.
+        let zero = integer.bytes().chain(fraction.bytes()).all(|b| b == b'0');
+        if !zero && exponent.abs() > MAX_EXPONENT {
+            return None;
+        }
+        let json = crate::json::number(token).ok()?;
+        if let Some(value) = json.as_i64() {
+            return Some(Self::from(value));
+        }
+        if let Some(value) = json.as_u64() {
+            return Some(Self::from_integer(i128::from(value)));
+        }
+        let binary = json.as_f64().filter(|value| value.is_finite())?;
+        let spelled = Dec::of_parts(
+            negative,
+            &format!("{integer}{fraction}"),
+            i64::try_from(integer.len()).ok()?.saturating_add(exponent),
+        );
+        let carried = canonical_decimal(binary).map_or_else(
+            || Dec::of_binary64(binary),
+            |(units, scale)| Dec::of_exact(units, scale),
+        );
+        // An integer within an `i64` is that integer, which writes as the integer token and reads
+        // back as itself, so `is_integral` holds on both sides of the write: an `Observed` would
+        // answer as the integer and write a binary64 that is another one.
+        if spelled != carried {
+            if let Some(integer) = spelled.as_i64() {
+                return Some(Self::from(integer));
+            }
+        }
+        Some(Self(if spelled == carried {
+            Repr::of_binary64(binary)
+        } else {
+            Repr::Observed {
+                value: interned(spelled),
+                binary,
+            }
         }))
     }
 }
@@ -584,7 +870,14 @@ impl Ord for Number {
     /// type was rewritten (`eq` was `f64 ==`); and it is what a guard `amount == 0` has to mean.
     /// The signed zero `Primitive::Binary64` promises survives in the bytes, because
     /// [`Serialize`](serde::Serialize) writes the carried binary64.
+    ///
+    /// An [`Observed`](Repr::Observed) on either side is compared by value against whatever the
+    /// other is — exact, observed, or the shortest decimal of a binary64 — so the order is that of
+    /// the values themselves. The others compare as they always did.
     fn cmp(&self, other: &Self) -> Ordering {
+        if matches!(self.0, Repr::Observed { .. }) || matches!(other.0, Repr::Observed { .. }) {
+            return self.decimal().compare(&other.decimal());
+        }
         match (self.exact(), other.exact()) {
             (Some(left), Some(right)) => exact_cmp(left, right),
             _ => self.get().total_cmp(&other.get()),
