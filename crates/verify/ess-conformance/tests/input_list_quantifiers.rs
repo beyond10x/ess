@@ -635,3 +635,280 @@ fn adv_a_related_quantifier_over_a_boolean_keyed_map_says_it_fell_back_to_a_one_
         result.notes
     );
 }
+
+// Adversary pass 2 (story:collection-quantifiers-witnessed-everywhere).
+
+const FILED_PREFIX: &str = "demo.files.FileItem/outcome/";
+const LINE: &str = "  - name: demo.files.Line\n    kind: struct\n    fields:\n      - {name: sku, type: String}\n      - {name: codes, type: 'List<String>'}\n";
+const PRIORITY: &str = "  - {name: demo.files.Priority, kind: enum, variants: [Low, Mid, High]}\n";
+const LONGEST: usize = 8;
+
+/// `{name: {in: <over>, as: <var>, that: <body>}}`.
+fn quantifier(name: &str, over: &str, var: &str, body: &str) -> String {
+    format!("{{{name}: {{in: {over}, as: {var}, that: {body}}}}}")
+}
+
+/// A target reading only the first element of `over`: `exists` is false on `[]`, `forall` true.
+fn first_only(exists: bool, over: &str, body: &dyn Fn(&str) -> String) -> String {
+    let at = body(&format!("{over}.0"));
+    if exists {
+        format!("{{all: ['{over}.count > 0', {at}]}}")
+    } else {
+        format!("{{any: ['{over}.count == 0', {at}]}}")
+    }
+}
+
+/// A target reading only the last element of `over`, for lists of up to [`LONGEST`] elements.
+fn last_only(exists: bool, over: &str, body: &dyn Fn(&str) -> String) -> String {
+    let arms: Vec<String> = (1..=LONGEST)
+        .map(|n| {
+            format!(
+                "{{all: ['{over}.count == {n}', {}]}}",
+                body(&format!("{over}.{}", n - 1))
+            )
+        })
+        .collect();
+    if exists {
+        format!("{{any: [{}]}}", arms.join(", "))
+    } else {
+        format!("{{any: ['{over}.count == 0', {}]}}", arms.join(", "))
+    }
+}
+
+/// Every literal list each `FileItem` scenario sends at `tags`, by scenario.
+fn sent_lists(result: &Synthesis) -> Vec<String> {
+    result
+        .suite
+        .scenarios
+        .iter()
+        .filter(|(id, _)| id.to_string().starts_with(FILED_PREFIX))
+        .flat_map(|(id, scenario)| {
+            scenario.steps.iter().filter_map(move |step| match step {
+                ScenarioStep::ExecuteCommand { input, .. } => match input.get("tags") {
+                    Some(ScenarioValue::Literal { value }) => Some(format!("{id}: {value:?}")),
+                    _ => None,
+                },
+                _ => None,
+            })
+        })
+        .collect()
+}
+
+/// The mutants of `mutants` that pass every scenario synthesized from the model whose `blocked`
+/// guard is `original` over `tags: <list>`, after the model itself passes all of them.
+fn survivors(types: &str, list: &str, original: &str, mutants: &[(&str, String)]) -> Vec<String> {
+    let model = one(types, list, original);
+    let result = synthesized(&model);
+    for (id, status) in statuses(&result, &model) {
+        assert_eq!(status, Status::Passed, "the model passes its own {id}");
+    }
+    mutants
+        .iter()
+        .filter(|(_, mutant)| {
+            statuses(&result, &one(types, list, mutant))
+                .values()
+                .all(|status| *status == Status::Passed)
+        })
+        .map(|(label, mutant)| format!("{label}: {mutant}"))
+        .chain(std::iter::once(String::from("-- sent:")).chain(sent_lists(&result)))
+        .collect()
+}
+
+/// The three mutants the story names for a flat quantifier `[not] exists|forall t in input.tags:
+/// body(t)`, and the survivors among them.
+fn flat_survivors(
+    types: &str,
+    list: &str,
+    negated: bool,
+    exists: bool,
+    body: &dyn Fn(&str) -> String,
+) -> Vec<String> {
+    let wrap = |guard: String| {
+        if negated {
+            format!("{{not: {guard}}}")
+        } else {
+            guard
+        }
+    };
+    let name = |exists: bool| if exists { "exists" } else { "forall" };
+    let original = wrap(quantifier(name(exists), "input.tags", "t", &body("t")));
+    let mutants = [
+        ("first", wrap(first_only(exists, "input.tags", body))),
+        ("last", wrap(last_only(exists, "input.tags", body))),
+        (
+            "swapped",
+            wrap(quantifier(name(!exists), "input.tags", "t", &body("t"))),
+        ),
+    ];
+    let found = survivors(types, list, &original, &mutants);
+    if found.first().is_some_and(|line| line == "-- sent:") {
+        Vec::new()
+    } else {
+        found
+    }
+}
+
+fn text_is(literal: &'static str) -> impl Fn(&str) -> String {
+    move |at: &str| format!("'{at} == \"{literal}\"'")
+}
+
+/// `forall t in input.tags: t == "ok"` decides `blocked` by the whole list; the scenario a single
+/// element decides is the `filed` one beside it (a `forall` that fails), and the three named
+/// mutants have to fail there.
+#[test]
+fn adv2_a_holding_forall_kills_first_last_and_swapped_targets() {
+    let found = flat_survivors("", "List<String>", false, false, &text_is("ok"));
+    assert!(found.is_empty(), "no mutant survives: {found:#?}");
+}
+
+/// `not exists t in input.tags: t == "blocked"`: the scenario one element decides is `filed`.
+#[test]
+fn adv2_a_negated_exists_kills_first_last_and_swapped_targets() {
+    let found = flat_survivors("", "List<String>", true, true, &text_is("blocked"));
+    assert!(found.is_empty(), "no mutant survives: {found:#?}");
+}
+
+/// `exists t in input.tags: t.sku == "blocked"` over a list of structs.
+#[test]
+fn adv2_an_exists_over_a_list_of_structs_kills_first_last_and_swapped_targets() {
+    let found = flat_survivors(LINE, "List<demo.files.Line>", false, true, &|at: &str| {
+        format!("'{at}.sku == \"blocked\"'")
+    });
+    assert!(found.is_empty(), "no mutant survives: {found:#?}");
+}
+
+/// `forall t in input.tags: t.sku == "ok"` over a list of structs.
+#[test]
+fn adv2_a_forall_over_a_list_of_structs_kills_first_last_and_swapped_targets() {
+    let found = flat_survivors(LINE, "List<demo.files.Line>", false, false, &|at: &str| {
+        format!("'{at}.sku == \"ok\"'")
+    });
+    assert!(found.is_empty(), "no mutant survives: {found:#?}");
+}
+
+/// `exists t in input.tags: t == High` over a list of an enum: `Low` and `Mid` are admitted
+/// beside `High`, so the list is spread and no mutant survives.
+#[test]
+fn adv2_an_exists_over_a_list_of_an_enum_kills_first_last_and_swapped_targets() {
+    let found = flat_survivors(
+        PRIORITY,
+        "List<demo.files.Priority>",
+        false,
+        true,
+        &|at: &str| format!("'{at} == High'"),
+    );
+    assert!(found.is_empty(), "no mutant survives: {found:#?}");
+}
+
+/// `exists l in input.tags: exists c in l.codes: c == "blocked"`: the mutants on the outer list
+/// and on the inner one.
+#[test]
+fn adv2_a_nested_exists_kills_first_last_and_swapped_targets_on_both_lists() {
+    let code = |at: &str| format!("'{at} == \"blocked\"'");
+    let inner_exists = |over: &str| quantifier("exists", over, "c", &code("c"));
+    let original = quantifier("exists", "input.tags", "l", &inner_exists("l.codes"));
+    // The inner `exists` read over a positioned element, written out by position.
+    let inner_at = |at: &str| {
+        let arms: Vec<String> = (0..LONGEST)
+            .map(|j| {
+                format!(
+                    "{{all: ['{at}.codes.count > {j}', {}]}}",
+                    code(&format!("{at}.codes.{j}"))
+                )
+            })
+            .collect();
+        format!("{{any: [{}]}}", arms.join(", "))
+    };
+    let mutants = [
+        ("outer first", first_only(true, "input.tags", &inner_at)),
+        ("outer last", last_only(true, "input.tags", &inner_at)),
+        (
+            "outer swapped",
+            quantifier("forall", "input.tags", "l", &inner_exists("l.codes")),
+        ),
+        (
+            "inner first",
+            quantifier(
+                "exists",
+                "input.tags",
+                "l",
+                &first_only(true, "l.codes", &code),
+            ),
+        ),
+        (
+            "inner last",
+            quantifier(
+                "exists",
+                "input.tags",
+                "l",
+                &last_only(true, "l.codes", &code),
+            ),
+        ),
+        (
+            "inner swapped",
+            quantifier(
+                "exists",
+                "input.tags",
+                "l",
+                &quantifier("forall", "l.codes", "c", &code("c")),
+            ),
+        ),
+    ];
+    let found = survivors(LINE, "List<demo.files.Line>", &original, &mutants);
+    assert!(
+        found.first().is_some_and(|line| line == "-- sent:"),
+        "no mutant survives: {found:#?}"
+    );
+}
+
+/// A newtype list whose invariant admits other grades than the deciding `15`: the deciding grade
+/// is sent between two others, without an `UnspreadInputList` note (the changelog: the note is for
+/// an element type that admits no other value).
+#[test]
+fn adv2_a_constrained_list_that_admits_other_grades_is_spread_without_a_note() {
+    let result = synthesize(&ir(&one(
+        "  - {name: demo.files.Grade, kind: newtype, of: Integer, invariants: [value >= 10, value <= 20]}\n",
+        "List<demo.files.Grade>",
+        "{exists: {in: input.tags, as: t, that: t == 15}}",
+    )));
+    let tags = items(sent(&result, BLOCKED_ID, "tags"));
+    let at: Vec<usize> = tags
+        .iter()
+        .enumerate()
+        .filter(|(_, item)| format!("{item:?}").contains("15"))
+        .map(|(at, _)| at)
+        .collect();
+    let notes: Vec<String> = result
+        .notes
+        .iter()
+        .filter(|note| matches!(note, Note::UnspreadInputList { .. }))
+        .map(ToString::to_string)
+        .collect();
+    assert!(
+        tags.len() >= 3 && at.len() == 1 && at[0] != 0 && at[0] != tags.len() - 1 && notes.is_empty(),
+        "{BLOCKED_ID} sends one 15 between other grades and no note: tags = {tags:?}, notes = {notes:?}"
+    );
+}
+
+/// An enum of one variant admits no other element: the list cannot be spread, and the
+/// `UnspreadInputList` note names the scenario and the quantifier.
+#[test]
+fn adv2_a_list_whose_element_type_admits_no_other_value_says_so() {
+    let result = synthesize(&ir(&one(
+        "  - {name: demo.files.Only, kind: enum, variants: [One]}\n",
+        "List<demo.files.Only>",
+        "{exists: {in: input.tags, as: t, that: t == One}}",
+    )));
+    let notes: Vec<String> = result
+        .notes
+        .iter()
+        .filter(|note| matches!(note, Note::UnspreadInputList { .. }))
+        .map(ToString::to_string)
+        .collect();
+    assert!(
+        notes.len() == 1 && notes[0].contains(BLOCKED_ID) && notes[0].contains("exists"),
+        "one UnspreadInputList note names {BLOCKED_ID}: {:?}; refusals {:?}",
+        result.notes,
+        result.refusals
+    );
+}
