@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-12T22:14:18Z",
+  "actor": "human:timo",
+  "artifact": "story:identity-guard-decided-on-the-row-sent-on-every-synthesis-path",
+  "kind": "story",
+  "revision": 10,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "PR 787 CI on e8f8130dca (20 test shards, Checks, Gate)",
+    "reference": "https://github.com/beyond10x/ess/actions/runs/43300152839"
+  }
+}
