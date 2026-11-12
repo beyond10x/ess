@@ -12,7 +12,7 @@ tags:
 relations:
 - serves: vision:O2
 - informed_by: story:aggregate-group-keys-are-expressions
-revision: 1
+revision: 2
 ---
 ## Need
 
@@ -42,3 +42,11 @@ Pending. An external request: it is assessed with
 ## Source
 
 `.engineering/repro/workbench-2026-11-09/report.md`, with its examples under `examples/`.
+
+Second report, 2026-11-12, from an adopter on 0.90.0, reproduced on the 0.94.0 release binary: a
+view that counts rows per hour or per day of a Timestamp. `{expr: "hour(input.at)"}` is refused
+with `ESS-SPEC-012` ("`hour` is no function of the expression language; the functions are `round`,
+`abs`, `min`, `max`, `coalesce`, `sha256`, `base64url`, `ascii`"), and the reporter got
+`ESS-VIEW-009` ("grouping by a timestamp is time bucketing, which is not in this cut") for a group
+key of type Timestamp. The adopter removed its per-hour chart and the view behind it. Hour is the
+bucket this report adds to the acceptance's list as its first use.

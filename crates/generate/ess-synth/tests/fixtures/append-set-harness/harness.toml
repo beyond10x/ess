@@ -1,0 +1,17 @@
+[package]
+name = "append-set-harness"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[workspace]
+
+[[bin]]
+name = "harness"
+path = "src/main.rs"
+
+[dependencies]
+demo-types = { path = "../demo/crates/demo-types" }
+demo-server = { path = "../demo/crates/demo-server" }
+jobs-service = { path = "../demo/crates/jobs-service" }
+demo-system = { path = "../demo/crates/demo-system" }
