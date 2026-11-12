@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-uniqueness-create-read-by-identity-passes-on-the-interpreter
 kind: story
-status: active
+status: implemented
 title: A create under a uniqueness check, read by identity, passes on the interpreter
 summary: With a when_related row-set uniqueness check, a view by identity and no examples, the synthesized created scenario expects unsuffixed values the arranged inputs suffix (0.88.0 adversary pass, pre-existing)
 tags:
@@ -22,10 +22,11 @@ scope:
   path: crates/verify/ess-conformance/src/synthesize/identity.rs
 - confidence: cited
   path: crates/verify/ess-conformance/tests/suffixed_instance_inputs.rs
-revision: 7
+revision: 8
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-10T00:42:19Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":1}}}
 - {from: "proposed", to: "active", at: "2026-11-10T00:42:20Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "active", to: "implemented", at: "2026-11-12T06:24:42Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"test_result":1,"review_outcome":1}}}
 ---
 ## Need
 
