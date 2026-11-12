@@ -28,7 +28,7 @@ entity's creating route (`arrange_first`, as for related rows):
 
 | relation | a route creates the target | no route creates it |
 |---|---|---|
-| `cardinality: many`, a `List` | exactly as many created rows as the witness list held, eight at most (a longer list is a refusal naming the relation) | the empty list, which names no row |
+| `cardinality: many`, a `List` | exactly as many created rows as the witness list held, eight at most (a longer list is a refusal naming the relation) | the empty list, which names no row, where it still selects the branch and keeps the entity's invariants; else a refusal naming `<entity>.<relation>` |
 | `cardinality: one` | the created row's identity | no scenario: a refusal naming `<entity>.<relation>` |
 
 The witness already satisfies every guard and invariant over the input, so the arrangement never
@@ -41,12 +41,13 @@ A referenced row rests in the state a creating branch leaves it in (`into:`, els
 initial state), so a route is no less a route for creating straight into a later state.
 
 A referenced row whose creating branch writes a reference of its own from its input is created
-naming a row arranged first, to a depth of three rows. Beyond that depth, and for a creating branch
-another family arranges (a related guard, a held-state guard, an owner), the input stays what the
-witness chose.
+naming a row arranged first: the row a command names and three rows chained below it, four rows
+in all. The fourth is created plain, so its own references stay what the witness chose, as do those
+of a creating branch another family arranges (a related guard, a held-state guard, an owner).
 
 Left as before: a refusal and a replay (they are sent the input that selects them), a branch whose
-own `when:` guard reads the field (its witness list is what selects it), a field another
+own `when:` guard reads the field itself (its witness list is what selects it; a guard reading
+only the list's `count` is not left alone, as the arrangement keeps the count), a field another
 arrangement already named, a relation held to the entity itself, and an optional input the witness
 sent absent. A command guarded by a related row (`when_related:`), by a list of references or by a
 row set keeps its own arrangement of the rows its guard reads, including the creating half of a

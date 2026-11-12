@@ -797,3 +797,402 @@ fn adversary_the_moved_repository_models_pass_the_interpreter() {
     }
     assert!(failures.is_empty(), "{failures:#?}");
 }
+
+// ---- Adversary pass 2 (turn 3): the fix commit c7026095ea. ----
+
+/// The refusal of `ACCEPTED`, where synthesis recorded one.
+fn adversary2_refusal(synthesis: &Synthesis) -> Option<String> {
+    synthesis
+        .refusals
+        .iter()
+        .find(|refusal| {
+            refusal
+                .scenario
+                .as_ref()
+                .map(ToString::to_string)
+                .as_deref()
+                == Some(ACCEPTED)
+        })
+        .map(ToString::to_string)
+}
+
+/// Either the accepted scenario passes the interpreter, or it is refused naming the relation (the
+/// story's design rule: no route and a list that must be non-empty is refused by name).
+fn adversary2_accepted_passes_or_is_refused_by_name(model: EssIr) {
+    let (synthesis, failed) = adversary_interpreted(model);
+    if let Some(accepted) = scenario(&synthesis, ACCEPTED) {
+        let (_, input) = adversary_executions(accepted, REGISTER)[0];
+        assert!(
+            failed.iter().all(|line| !line.starts_with(ACCEPTED)),
+            "the accepted scenario fails the interpreter, sent {:#?}: {failed:#?}",
+            input["sources"]
+        );
+    } else {
+        let refusal = adversary2_refusal(&synthesis);
+        assert!(
+            refusal
+                .as_deref()
+                .is_some_and(|text| text.contains("demo.reg.Server.sources")),
+            "no accepted scenario and no refusal naming the relation: {refusal:?}"
+        );
+    }
+}
+
+/// No route creates a `Source` and a sibling refusal answers an empty list: the witness sends one
+/// identity, the arrangement replaces it with `[]`, and the refusal answers the accepted scenario.
+#[test]
+fn adversary2_an_unarrangeable_list_a_sibling_refusal_holds_non_empty_is_not_sent_empty() {
+    let refusal =
+        "      - name: refused\n        when: \"sources.count < 1\"\n        error: demo.reg.Refused";
+    adversary2_accepted_passes_or_is_refused_by_name(adversary_compile(&adversary_text(
+        ADV_LIVE,
+        ADV_SERVER_MANY,
+        &adversary_register("List<demo.reg.SourceId>", refusal, "", ""),
+    )));
+}
+
+/// The same with an entity invariant holding the list non-empty instead of a sibling refusal.
+#[test]
+fn adversary2_an_unarrangeable_list_an_invariant_holds_non_empty_is_not_sent_empty() {
+    let server = ADV_SERVER_MANY.replace(
+        "    lifecycle:",
+        "    invariants: [\"sources.count >= 1\"]\n    lifecycle:",
+    );
+    adversary2_accepted_passes_or_is_refused_by_name(adversary_compile(&adversary_text(
+        ADV_LIVE,
+        &server,
+        &adversary_register("List<demo.reg.SourceId>", "", "", ""),
+    )));
+}
+
+/// The accepting branch's own guard reads only the list's length (`sources.count > 0`). The
+/// arrangement keeps the witness length, so nothing the guard reads moves, yet the branch is
+/// skipped whole and the accepted scenario sends identities no step created.
+#[test]
+fn adversary2_an_accepting_branch_guarded_on_the_list_count_names_arranged_rows() {
+    let register = r#"  - name: demo.reg.Register
+    input:
+      - {name: id, type: demo.reg.ServerId}
+      - {name: sources, type: "List<demo.reg.SourceId>"}
+    outcomes:
+      - name: accepted
+        when: sources.count > 0
+        creates: demo.reg.Server
+        instance: id
+        sets: {sources: input.sources}
+        emits: [demo.reg.Registered]
+        payload: {demo.reg.Registered: {id: input.id}}
+      - name: refused
+        error: demo.reg.Refused"#;
+    let model = adversary_compile(&adversary_text(
+        ADV_LIVE,
+        ADV_SERVER_MANY,
+        &format!("{ADV_ADD_SOURCE}\n{register}"),
+    ));
+    let synthesis = synthesize(&model);
+    let accepted = scenario(&synthesis, ACCEPTED).expect("the accepted scenario exists");
+    let (at, input) = adversary_executions(accepted, REGISTER)[0];
+    assert_eq!(
+        adversary_dangling(accepted, &input["sources"], ADD, at),
+        None,
+        "the accepted Register sends Sources no step created"
+    );
+}
+
+/// Whether `value` is an Optional sent absent.
+fn adversary2_absent(value: Option<&ScenarioValue>) -> bool {
+    matches!(
+        value,
+        None | Some(ScenarioValue::Literal { value: Node::Null })
+    )
+}
+
+/// `Source` references an `Origin`, and `Origin` references back an Optional `Source`: the chain
+/// stops at the cycle, and the `Origin` arranged for the `Source` is created naming a `Source` no
+/// step created, where leaving the Optional out names no missing row.
+#[test]
+fn adversary2_a_reference_cycle_sends_no_dangling_back_reference() {
+    let origin = format!(
+        "{ADV_SERVER_MANY}\n  - name: demo.reg.Origin\n    identity: {{name: id, type: demo.reg.OriginId}}\n    fields:\n      - {{name: source, type: \"Optional<demo.reg.SourceId>\"}}\n    relations:\n      - {{name: source, kind: references, target: demo.reg.Source, cardinality: one, via: source}}\n    lifecycle: {ADV_LIVE}"
+    );
+    let add_origin = r#"  - name: demo.reg.AddOrigin
+    input:
+      - {name: id, type: demo.reg.OriginId}
+      - {name: source, type: "Optional<demo.reg.SourceId>"}
+    outcomes:
+      - name: added
+        creates: demo.reg.Origin
+        instance: id
+        sets: {source: input.source}
+        emits: [demo.reg.OriginAdded]
+        payload: {demo.reg.OriginAdded: {id: input.id}}"#;
+    let add_source = ADV_ADD_SOURCE
+        .replace(
+            "input: [{name: id, type: demo.reg.SourceId}]",
+            "input: [{name: id, type: demo.reg.SourceId}, {name: origin, type: demo.reg.OriginId}]",
+        )
+        .replace(
+            "instance: id\n",
+            "instance: id\n        sets: {origin: input.origin}\n",
+        );
+    let text = adversary_text(
+        ADV_LIVE,
+        &origin,
+        &format!(
+            "{add_origin}\n{add_source}\n{}",
+            adversary_register("List<demo.reg.SourceId>", "", "", "")
+        ),
+    )
+    .replace(
+        "  - name: demo.reg.Source\n    identity: {name: id, type: demo.reg.SourceId}\n    fields: []\n",
+        "  - name: demo.reg.Source\n    identity: {name: id, type: demo.reg.SourceId}\n    fields:\n      - {name: origin, type: demo.reg.OriginId}\n    relations:\n      - {name: origin, kind: references, target: demo.reg.Origin, cardinality: one, via: origin}\n",
+    );
+    let synthesis = synthesize(&adversary_compile(&text));
+    let accepted = scenario(&synthesis, ACCEPTED).expect("the accepted scenario exists");
+    let executions = adversary_executions(accepted, "demo.reg.AddOrigin");
+    assert!(
+        !executions.is_empty(),
+        "an Origin is arranged: {:#?}",
+        accepted.steps
+    );
+    for (at, input) in executions {
+        if adversary2_absent(input.get("source")) {
+            continue;
+        }
+        assert_eq!(
+            adversary_dangling(accepted, &input["source"], ADD, at),
+            None,
+            "the Origin arranged for a Source names a Source no step created"
+        );
+    }
+}
+
+/// `Source` references an Optional parent `Source`: the row arranged for `Register` is created
+/// naming a parent no step created, where leaving the Optional out names no missing row.
+#[test]
+fn adversary2_a_self_referencing_arranged_row_sends_no_dangling_parent() {
+    let add_source = ADV_ADD_SOURCE.replace(
+        "    input: [{name: id, type: demo.reg.SourceId}]\n",
+        "    input:\n      - {name: id, type: demo.reg.SourceId}\n      - {name: parent, type: \"Optional<demo.reg.SourceId>\"}\n",
+    ).replace(
+        "instance: id\n",
+        "instance: id\n        sets: {parent: input.parent}\n",
+    );
+    let text = adversary_text(
+        ADV_LIVE,
+        ADV_SERVER_MANY,
+        &format!(
+            "{add_source}\n{}",
+            adversary_register("List<demo.reg.SourceId>", "", "", "")
+        ),
+    )
+    .replace(
+        "  - name: demo.reg.Source\n    identity: {name: id, type: demo.reg.SourceId}\n    fields: []\n",
+        "  - name: demo.reg.Source\n    identity: {name: id, type: demo.reg.SourceId}\n    fields:\n      - {name: parent, type: \"Optional<demo.reg.SourceId>\"}\n    relations:\n      - {name: parent, kind: references, target: demo.reg.Source, cardinality: one, via: parent}\n",
+    );
+    let synthesis = synthesize(&adversary_compile(&text));
+    let accepted = scenario(&synthesis, ACCEPTED).expect("the accepted scenario exists");
+    let executions = adversary_executions(accepted, ADD);
+    assert!(
+        !executions.is_empty(),
+        "a Source is arranged: {:#?}",
+        accepted.steps
+    );
+    for (at, input) in executions {
+        if adversary2_absent(input.get("parent")) {
+            continue;
+        }
+        assert_eq!(
+            adversary_dangling(accepted, &input["parent"], ADD, at),
+            None,
+            "the Source arranged for Register names a parent no step created"
+        );
+    }
+}
+
+/// Held (probe): two relations to `Source` (a list and a plain one) on one command, and a
+/// `Source` creator with several branches where only a guarded one creates. Every scenario
+/// passes the interpreter, both inputs name arranged rows, and no instance is captured twice.
+#[test]
+fn adversary2_two_relations_to_a_guarded_creator_name_distinct_arranged_rows() {
+    let server = ADV_SERVER_MANY.replace(
+        "    relations:\n",
+        "      - {name: primary, type: demo.reg.SourceId}\n    relations:\n      - {name: primary, kind: references, target: demo.reg.Source, cardinality: one, via: primary}\n",
+    );
+    let add_source = r"  - name: demo.reg.AddSource
+    input: [{name: id, type: demo.reg.SourceId}, {name: score, type: Integer}]
+    outcomes:
+      - name: added
+        when: score > 50
+        creates: demo.reg.Source
+        instance: id
+        emits: [demo.reg.SourceAdded]
+        payload: {demo.reg.SourceAdded: {id: input.id}}
+      - name: low
+        error: demo.reg.Refused";
+    let refusal =
+        "      - name: refused\n        when: \"sources.count < 3\"\n        error: demo.reg.Refused";
+    let model = adversary_compile(&adversary_text(
+        ADV_LIVE,
+        &server,
+        &format!(
+            "{add_source}\n{}",
+            adversary_register(
+                "List<demo.reg.SourceId>",
+                refusal,
+                "      - {name: primary, type: demo.reg.SourceId}",
+                ", primary: input.primary"
+            )
+        ),
+    ));
+    let (synthesis, failed) = adversary_interpreted(model);
+    assert!(failed.is_empty(), "{failed:#?}");
+    let accepted = scenario(&synthesis, ACCEPTED).expect("the accepted scenario exists");
+    let (at, input) = adversary_executions(accepted, REGISTER)[0];
+    for field in ["sources", "primary"] {
+        assert_eq!(
+            adversary_dangling(accepted, &input[field], ADD, at),
+            None,
+            "{field}"
+        );
+    }
+    for (id, scenario) in &synthesis.suite.scenarios {
+        let mut seen = Vec::new();
+        for step in &scenario.steps {
+            if let ScenarioStep::CaptureInstance { instance, .. } = step {
+                assert!(
+                    !seen.contains(instance),
+                    "{id}: {instance:?} captured twice"
+                );
+                seen.push(instance.clone());
+            }
+        }
+    }
+}
+
+/// A chain `Server -> A1 -> A2 -> A3 -> A4`, `A2` created straight into `Live`: the model the
+/// depth and `into:` probes run on.
+fn adversary2_chain_model() -> EssIr {
+    let mut types = String::from("  - {name: demo.reg.ServerId, kind: newtype, of: Uuid}\n");
+    let mut entities = String::new();
+    let mut events = String::from(
+        "  - name: demo.reg.Registered\n    fields: [{name: id, type: demo.reg.ServerId}]\n",
+    );
+    let mut commands = String::new();
+    let mut may = Vec::new();
+    for level in 1..=4 {
+        let next = level + 1;
+        let (fields, relations, input, sets) = if level < 4 {
+            (
+                format!("    fields:\n      - {{name: next, type: demo.reg.A{next}Id}}\n"),
+                format!("    relations:\n      - {{name: next, kind: references, target: demo.reg.A{next}, cardinality: one, via: next}}\n"),
+                format!(", {{name: next, type: demo.reg.A{next}Id}}"),
+                "        sets: {next: input.next}\n".to_owned(),
+            )
+        } else {
+            (
+                "    fields: []\n".to_owned(),
+                String::new(),
+                String::new(),
+                String::new(),
+            )
+        };
+        let (lifecycle, into) = if level == 2 {
+            (
+                "{initial: Draft, states: [Draft, Live], terminal: [Live], transitions: [{name: publish, from: [Draft], to: Live}]}",
+                "        into: Live\n",
+            )
+        } else {
+            ("{initial: Live, states: [Live], terminal: [Live]}", "")
+        };
+        let _ = writeln!(
+            types,
+            "  - {{name: demo.reg.A{level}Id, kind: newtype, of: Uuid}}"
+        );
+        let _ = write!(
+            entities,
+            "  - name: demo.reg.A{level}\n    identity: {{name: id, type: demo.reg.A{level}Id}}\n{fields}{relations}    lifecycle: {lifecycle}\n"
+        );
+        let _ = write!(
+            events,
+            "  - name: demo.reg.A{level}Added\n    fields: [{{name: id, type: demo.reg.A{level}Id}}]\n"
+        );
+        let _ = write!(
+            commands,
+            "  - name: demo.reg.AddA{level}\n    input: [{{name: id, type: demo.reg.A{level}Id}}{input}]\n    outcomes:\n      - name: added\n        creates: demo.reg.A{level}\n{into}        instance: id\n{sets}        emits: [demo.reg.A{level}Added]\n        payload: {{demo.reg.A{level}Added: {{id: input.id}}}}\n"
+        );
+        may.push(format!("demo.reg.AddA{level}"));
+        if level == 2 {
+            events.push_str(
+                "  - name: demo.reg.A2Published\n    fields: [{name: id, type: demo.reg.A2Id}]\n",
+            );
+            commands.push_str("  - name: demo.reg.PublishA2\n    input: [{name: id, type: demo.reg.A2Id}]\n    outcomes:\n      - name: published\n        moves: demo.reg.A2.publish\n        instance: id\n        emits: [demo.reg.A2Published]\n        payload: {demo.reg.A2Published: {id: input.id}}\n");
+            may.push("demo.reg.PublishA2".to_owned());
+        }
+    }
+    may.push(REGISTER.to_owned());
+    let text = format!(
+        r"
+format: ess/30
+system: demo
+version: v1
+domain: demo.reg
+types:
+{types}entities:
+{entities}  - name: demo.reg.Server
+    identity: {{name: id, type: demo.reg.ServerId}}
+    fields:
+      - {{name: first, type: demo.reg.A1Id}}
+    relations:
+      - {{name: first, kind: references, target: demo.reg.A1, cardinality: one, via: first}}
+    lifecycle: {{initial: Live, states: [Live], terminal: [Live]}}
+events:
+{events}actors:
+  - name: demo.reg.Operator
+    may: [{may}]
+commands:
+{commands}  - name: demo.reg.Register
+    input: [{{name: id, type: demo.reg.ServerId}}, {{name: first, type: demo.reg.A1Id}}]
+    outcomes:
+      - name: accepted
+        creates: demo.reg.Server
+        instance: id
+        sets: {{first: input.first}}
+        emits: [demo.reg.Registered]
+        payload: {{demo.reg.Registered: {{id: input.id}}}}
+",
+        may = may.join(", ")
+    );
+    adversary_compile(&text)
+}
+
+/// Held (probe): every reference down the chain, through the `into:` creator, names an arranged
+/// row, four rows deep (the design page says three), and the suite passes the interpreter.
+#[test]
+fn adversary2_a_four_row_chain_through_an_into_creator_names_arranged_rows() {
+    let (synthesis, failed) = adversary_interpreted(adversary2_chain_model());
+    assert!(failed.is_empty(), "{failed:#?}");
+    let accepted = scenario(&synthesis, ACCEPTED).expect("the accepted scenario exists");
+    let (at, input) = adversary_executions(accepted, REGISTER)[0];
+    assert_eq!(
+        adversary_dangling(accepted, &input["first"], "demo.reg.AddA1", at),
+        None,
+        "Register.first"
+    );
+    for level in 1..4 {
+        let next = level + 1;
+        for (at, input) in adversary_executions(accepted, &format!("demo.reg.AddA{level}")) {
+            assert_eq!(
+                adversary_dangling(
+                    accepted,
+                    &input["next"],
+                    &format!("demo.reg.AddA{next}"),
+                    at
+                ),
+                None,
+                "A{level}.next: {:#?}",
+                accepted.steps
+            );
+        }
+    }
+}

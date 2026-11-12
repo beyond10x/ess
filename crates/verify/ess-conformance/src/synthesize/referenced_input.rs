@@ -9,19 +9,23 @@
 //! * a `many` relation with a route is sent exactly as many rows as its witness list holds: the
 //!   witness already satisfies every guard and invariant over the list, so its length is not
 //!   chosen again, and an empty list stays empty;
-//! * a `many` relation with no route is sent the empty list, which names no missing row;
+//! * a `many` relation with no route is sent the empty list, which names no missing row, where
+//!   the empty list still selects the branch and keeps the entity's invariants; where it does not
+//!   (a sibling guard or an invariant holds the list non-empty) the scenario is refused by name;
 //! * a `one` relation with no route refuses the scenario by naming the relation, as a plain
 //!   reference has no empty value to fall back to;
 //! * a list of more than [`MOST`] rows refuses the scenario by naming the relation.
 //!
 //! A referenced row rests where a creating branch leaves it (`into:`), and when that branch
-//! writes a reference of its own from its input the row it names is arranged first, to a depth of
-//! [`DEPTH`] rows; below that, and for a creating branch another family arranges (a related guard,
-//! a held-state guard, an owner), the input stays what the witness chose.
+//! writes a reference of its own from its input the row it names is arranged first: the row a
+//! command names and the [`DEPTH`] rows chained below it, four rows in all; the fourth is created
+//! plain, so its own references stay what the witness chose, and so do those of a creating branch
+//! another family arranges (a related guard, a held-state guard, an owner).
 //!
-//! Left alone: a refusal, a replay, a branch whose own `when:` guard reads the field (its witness
-//! list is what selects it), a field another arrangement already named, and a relation the
-//! subject's entity holds to itself. The caller leaves out every command a related guard, a list
+//! Left alone: a refusal, a replay, a branch whose own `when:` guard reads the field itself (its
+//! witness list is what selects it; a guard reading only the list's `count` is not left alone, as
+//! the arrangement keeps the count), a field another arrangement already named, and a relation
+//! the subject's entity holds to itself. The caller leaves out every command a related guard, a list
 //! of references or a row set arranges: they name their own rows.
 
 use std::collections::BTreeMap;
@@ -52,8 +56,8 @@ const RUN: usize = 4096;
 /// The most rows one list is arranged with.
 const MOST: usize = 8;
 
-/// How many rows deep a referenced row's own references are arranged: the row a command names,
-/// the row that one names, and the row after it.
+/// How many rows are chained below the row a command names: that row and the [`DEPTH`] rows
+/// beneath it make four, the last created plain.
 const DEPTH: usize = 3;
 
 /// Which run of its branch a witness is, so each run arranges rows of its own.
@@ -86,13 +90,16 @@ impl Distinctions {
     }
 }
 
-/// Whether `outcome`'s own `when:` guard reads the input `field`.
+/// Whether `outcome`'s own `when:` guard reads the input `field` other than through its length:
+/// a read of `field.count` alone is decided by how many rows the witness list holds, and the
+/// arrangement keeps that number.
 fn guards_on(outcome: &ResolvedOutcome, field: &str) -> bool {
     crate::decision::when(outcome).is_some_and(|guard| {
-        guard
-            .fact_paths()
-            .iter()
-            .any(|path| path.segments().first().is_some_and(|root| root == field))
+        guard.fact_paths().iter().any(|path| {
+            let segments = path.segments();
+            segments.first().is_some_and(|root| root == field)
+                && !(segments.len() == 2 && segments[1] == "count")
+        })
     })
 }
 
@@ -355,17 +362,18 @@ pub(super) fn arrange(
             })
             .collect();
         let Ok(rows) = rows else {
-            if relation.cardinality == Cardinality::Many {
-                sent.insert(
-                    field.to_owned(),
-                    ScenarioValue::literal(Node::Seq(Vec::new())),
-                );
+            let empty = Node::Seq(Vec::new());
+            if relation.cardinality == Cardinality::Many
+                && super::keeps_branch(ir, command, input, field, &empty)
+            {
+                sent.insert(field.to_owned(), ScenarioValue::literal(empty));
                 continue;
             }
             return Err(unsent(
                 relation,
                 "no command creates the entity this reference names in a state the scenario can \
-                 arrange, so it cannot send an input naming a row",
+                 arrange, and the empty list would not keep the branch and the entity's \
+                 invariants, so it cannot send an input naming a row",
             ));
         };
         let instances: Vec<ScenarioValue> = rows
