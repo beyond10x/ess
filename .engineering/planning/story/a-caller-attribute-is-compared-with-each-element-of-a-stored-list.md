@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-caller-attribute-is-compared-with-each-element-of-a-stored-list
 kind: story
-status: draft
+status: active
 title: A caller attribute is compared with each element of a stored list
 summary: A when_subject quantifier over a stored list refuses a binder compared with caller.<attribute> as ESS-COMMAND-003 (adopter report)
 tags:
@@ -12,7 +12,10 @@ tags:
 relations:
 - serves: vision:O2
 - decomposes: epic:adopter-gaps-synthesis
-revision: 1
+revision: 4
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-12T21:27:34Z", actor: "human:timo", revision: 3, executor: "agent:b10x", correlation: "operator-2026-11-12-accept-16"}
+- {from: "proposed", to: "active", at: "2026-11-12T21:27:35Z", actor: "human:timo", revision: 4, executor: "agent:b10x", correlation: "operator-2026-11-12-accept-16"}
 ---
 ## Need
 
@@ -99,3 +102,14 @@ that form. Two more limits seen in the reproduction belong to other stories, not
 
 Grid R, row `when_subject:`, column caller: today "yes (`ess/16`)" for a stored scalar, refused for
 a quantifier binder over a stored list. The story makes the cell whole.
+
+## Decisions
+
+**Accepted by the operator (2026-11-12),** with fifteen other drafts from one list of 25 that
+he was shown with a recommendation and an outside review per draft. He accepted the drafts both
+recommended. The two transitions carry the correlation `operator-2026-11-12-accept-16` and the executor
+`agent:b10x`.
+
+The fit review of `.agents/skills/assessing-external-requests/SKILL.md` is not written yet. It
+is owed before this story is dispatched and says which form of acceptance applies (as proposed
+or redesigned).
