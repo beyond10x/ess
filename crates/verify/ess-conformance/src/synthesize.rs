@@ -489,6 +489,17 @@ pub enum Note {
         /// The entity the command addresses.
         entity: EntityRef,
     },
+    /// A branch whose guard walks a stored collection with a quantifier is witnessed on a row that
+    /// holds one entry in it, because no row and input that hold several could be arranged: no
+    /// input writes the collection, or it is keyed by a `Boolean` and holds two entries at most
+    /// (beyond10x/ess#240, correction 1). A target reading only the first entry, only the last, or
+    /// `forall` for `exists` is not failed by it.
+    UnspreadCollection {
+        /// The branch's scenario.
+        scenario: ScenarioId,
+        /// The quantifier, as the author wrote it.
+        guard: String,
+    },
 }
 
 impl fmt::Display for Note {
@@ -640,6 +651,14 @@ impl fmt::Display for Note {
                 "`{scenario}` answers an identity no record carries without effect, and no \
                  immediate view of `{entity}` publishes its identity, so nothing shows that the \
                  target stored no row for it"
+            ),
+            Self::UnspreadCollection { scenario, guard } => write!(
+                f,
+                "`{scenario}` is witnessed on a one-entry row: `{guard}` walks a stored collection, \
+                 and no row and input holding several entries could be arranged (no input writes \
+                 the collection, or it is keyed by a `Boolean` and holds two entries at most), so \
+                 the scenario falls back to a one-entry row and a target reading only the first \
+                 entry, only the last, or `forall` for `exists` is not failed by it"
             ),
         }
     }
@@ -3457,7 +3476,8 @@ fn synthesize_in(ir: &EssIr, seeds: &AdmittedSeeds) -> Synthesis {
     let suite = &synthesis.suite;
     synthesis.notes.retain(|note| match note {
         Note::UnseparatedSources { scenario, .. }
-        | Note::UnaccompaniedRelatedCopy { scenario, .. } => suite.scenario(scenario).is_some(),
+        | Note::UnaccompaniedRelatedCopy { scenario, .. }
+        | Note::UnspreadCollection { scenario, .. } => suite.scenario(scenario).is_some(),
         _ => true,
     });
     // Read off the finished suite, so every path that builds a branch's scenario is held to it.
@@ -3538,7 +3558,8 @@ fn about_scenario(note: &Note, id: &ScenarioId) -> bool {
         | Note::CrossCallerUnwitnessed { scenario, .. }
         | Note::UnaccompaniedRelatedCopy { scenario, .. }
         | Note::ProvidedRelatedRow { scenario, .. }
-        | Note::UnobservedNoOp { scenario, .. } => scenario == id,
+        | Note::UnobservedNoOp { scenario, .. }
+        | Note::UnspreadCollection { scenario, .. } => scenario == id,
         _ => false,
     }
 }
@@ -3649,6 +3670,14 @@ fn synthesize_invocations(models: &caller::InvocationModels<'_>, focus: Focus<'_
                     scenario: id.clone(),
                     fields,
                 });
+            }
+            if subject_fact::routes(command, outcome) {
+                for guard in subject_fact::unspread(ir, command, outcome, &actors) {
+                    unseparated_notes.push(Note::UnspreadCollection {
+                        scenario: id.clone(),
+                        guard,
+                    });
+                }
             }
             insert(&mut suite, id, scenario, &mut refusals);
         }
