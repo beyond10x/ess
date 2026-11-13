@@ -117,6 +117,7 @@ Each bracketed validation name is reported under the class below. Its family is 
 | `null_comparison` | `017` `NULL_COMPARISON` |
 | `implied_relation` | `019` `IMPLIED_RELATION` |
 | `path_segment_wire_name` | `012` `OTHER` |
+| `inexact_decimal_literal` | `002` `TYPE_MISMATCH` |
 
 ## Authored scenarios: `ESS-AUTHOR`
 

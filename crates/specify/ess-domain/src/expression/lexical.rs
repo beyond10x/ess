@@ -392,6 +392,14 @@ pub(crate) enum Site {
         outcome: OutcomeName,
         index: usize,
     },
+    /// A predicate an outcome writes that is read for its decimal literals alone, at `place` under
+    /// the outcome: an `affects[k].each.where` (ess/27) or the `where` of a filtered read inside an
+    /// `affects[k].sets`. Its meaning is read by the typed reader and nothing here resolves it.
+    Literals {
+        command: QualifiedName,
+        outcome: OutcomeName,
+        place: String,
+    },
     /// An entity invariant, by position.
     Invariant { entity: QualifiedName, index: usize },
     /// A struct's or newtype's invariant, by position.
@@ -453,6 +461,11 @@ impl Site {
                 outcome: name,
                 index,
             } => outcome(command, name, &format!("affects[{index}].where")),
+            Self::Literals {
+                command,
+                outcome: name,
+                place,
+            } => outcome(command, name, place),
             Self::Invariant { entity, index } => format!("entity {entity}.invariants[{index}]"),
             Self::TypeInvariant { name, index } => format!("types.{name}.invariants[{index}]"),
             Self::View { view } => format!("view.{view}.filter"),
@@ -473,17 +486,37 @@ impl Site {
 #[derive(Debug, Clone, Default)]
 pub struct Written {
     pub(crate) sites: BTreeMap<Site, LexicalPredicate>,
+    /// Each decimal literal binary64 cannot hold exactly that a predicate or a `sets:` /
+    /// `payload:` of this source wrote, with the location it is refused at
+    /// ([`crate::inexact_decimal`]).
+    pub(crate) inexact: Vec<(String, ess_primitives::facts::InexactDecimal)>,
 }
 
 impl Written {
     /// Reads every predicate site of one source document, as the typed reader will find them.
     /// Whatever does not read here is left out: the typed reader refuses it with its own
     /// diagnostic, and a predicate left out keeps the meaning it had before `ess/22`.
+    ///
+    /// `text` is the document as written: a number reaches the document as an `f64`, so the digits
+    /// of one a guard written as a mapping holds are read back out of it
+    /// ([`crate::inexact_decimal`]).
     // One `put` per predicate site an outcome, a declaration or a view writes.
     #[allow(clippy::too_many_lines)]
-    pub(crate) fn from_document(document: &ess_yaml::Value) -> Self {
-        use ess_yaml::Value;
+    pub(crate) fn from_document(document: &ess_yaml::Value, text: &str) -> Self {
+        use ess_yaml::{Step, Value};
+        let floats = crate::inexact_decimal::floats(document, text);
+        let mut claimed = std::collections::BTreeSet::<Vec<Step>>::new();
         let mut written = Self::default();
+        let key = |base: &[Step], name: &str| -> Vec<Step> {
+            let mut path = base.to_vec();
+            path.push(Step::Key(name.to_owned()));
+            path
+        };
+        let nth = |base: &[Step], index: usize| -> Vec<Step> {
+            let mut path = base.to_vec();
+            path.push(Step::Index(index));
+            path
+        };
         let items = |value: &Value, key: &str| -> Vec<Value> {
             value
                 .get(key)
@@ -497,16 +530,38 @@ impl Written {
             let node: Node = ess_yaml::from_value(value?.clone()).ok()?;
             LexicalPredicate::from_node(&node).ok()
         };
-        let mut put = |site: Site, value: Option<&Value>| {
-            if let Some(tree) = lexical(value) {
-                written.sites.entry(site).or_insert(tree);
+        // `path` is where `value` sits in the document. The reader still answers the nearest
+        // binary64 for a literal that collapses; what it met in a text predicate, and each number
+        // of a mapping-form predicate whose digits its `f64` does not hold, is refused at the site,
+        // once, where the predicate is first written.
+        let mut put = |site: Site, path: &[Step], value: Option<&Value>| {
+            let (tree, mut inexact) =
+                ess_primitives::facts::collecting_inexact_decimals(|| lexical(value));
+            for (at, number) in crate::inexact_decimal::under(&floats, path) {
+                claimed.insert(at.clone());
+                if !inexact.contains(number) {
+                    inexact.push(number.clone());
+                }
+            }
+            if let Some(tree) = tree {
+                if let std::collections::btree_map::Entry::Vacant(slot) =
+                    written.sites.entry(site.clone())
+                {
+                    slot.insert(tree);
+                    let location = site.location();
+                    written
+                        .inexact
+                        .extend(inexact.into_iter().map(|number| (location.clone(), number)));
+                }
             }
         };
-        for command in items(document, "commands") {
+        let commands = key(&[], "commands");
+        for (command_index, command) in items(document, "commands").into_iter().enumerate() {
             let Some(name) = named(&command) else {
                 continue;
             };
-            for outcome in items(&command, "outcomes") {
+            let outcomes_path = key(&nth(&commands, command_index), "outcomes");
+            for (outcome_index, outcome) in items(&command, "outcomes").into_iter().enumerate() {
                 let Some(outcome_name) = outcome
                     .get("name")
                     .and_then(Value::as_str)
@@ -514,21 +569,26 @@ impl Written {
                 else {
                     continue;
                 };
+                let outcome_path = nth(&outcomes_path, outcome_index);
                 let at = |make: fn(QualifiedName, OutcomeName) -> Site| {
                     make(name.clone(), outcome_name.clone())
                 };
+                let when_related = key(&outcome_path, "when_related");
                 put(
                     at(|command, outcome| Site::Guard { command, outcome }),
+                    &key(&outcome_path, "when"),
                     outcome.get("when"),
                 );
                 put(
                     at(|command, outcome| Site::Subject { command, outcome }),
+                    &key(&key(&outcome_path, "when_subject"), "predicate"),
                     outcome
                         .get("when_subject")
                         .and_then(|it| it.get("predicate")),
                 );
                 put(
                     at(|command, outcome| Site::Related { command, outcome }),
+                    &key(&when_related, "predicate"),
                     outcome
                         .get("when_related")
                         .and_then(|it| it.get("predicate")),
@@ -546,44 +606,76 @@ impl Written {
                             outcome: outcome_name.clone(),
                             index,
                         },
+                        &key(&nth(&key(&when_related, "all"), index), "predicate"),
                         element.get("predicate"),
                     );
                 }
                 put(
                     at(|command, outcome| Site::RowSetWhere { command, outcome }),
+                    &key(&when_related, "where"),
                     outcome.get("when_related").and_then(|it| it.get("where")),
                 );
                 put(
                     at(|command, outcome| Site::RowSetForall { command, outcome }),
+                    &key(&when_related, "forall"),
                     outcome.get("when_related").and_then(|it| it.get("forall")),
                 );
                 put(
                     at(|command, outcome| Site::Instances { command, outcome }),
+                    &key(&key(&outcome_path, "instances"), "where"),
                     outcome.get("instances").and_then(|it| it.get("where")),
                 );
                 for (place, filter) in selections(&outcome) {
+                    // The filter sits under its place, then `related`, then `where`.
+                    let held_at = place
+                        .iter()
+                        .fold(outcome_path.clone(), |path, step| key(&path, step));
                     put(
                         Site::Selection {
                             command: name.clone(),
                             outcome: outcome_name.clone(),
                             place,
                         },
+                        &key(&key(&held_at, "related"), "where"),
                         Some(&filter),
                     );
                 }
                 for (index, affect) in items(&outcome, "affects").iter().enumerate() {
+                    let affect_path = nth(&key(&outcome_path, "affects"), index);
                     put(
                         Site::Affect {
                             command: name.clone(),
                             outcome: outcome_name.clone(),
                             index,
                         },
+                        &key(&affect_path, "where"),
                         affect.get("where"),
                     );
+                    let literals = |place: String| Site::Literals {
+                        command: name.clone(),
+                        outcome: outcome_name.clone(),
+                        place,
+                    };
+                    let each = key(&affect_path, "each");
+                    put(
+                        literals(format!("affects[{index}].each.where")),
+                        &key(&each, "where"),
+                        affect.get("each").and_then(|it| it.get("where")),
+                    );
+                    for (place, filter) in affect_selections(affect) {
+                        let held_at = place
+                            .iter()
+                            .fold(affect_path.clone(), |path, step| key(&path, step));
+                        put(
+                            literals(format!("affects[{index}].{}", place.join("."))),
+                            &key(&key(&held_at, "related"), "where"),
+                            Some(&filter),
+                        );
+                    }
                 }
             }
         }
-        for (key, invariant_site) in [
+        for (section, invariant_site) in [
             (
                 "entities",
                 (|entity, index| Site::Invariant { entity, index })
@@ -591,29 +683,47 @@ impl Written {
             ),
             ("types", |name, index| Site::TypeInvariant { name, index }),
         ] {
-            for declared in items(document, key) {
+            let declarations = key(&[], section);
+            for (declared_index, declared) in items(document, section).into_iter().enumerate() {
                 let Some(name) = named(&declared) else {
                     continue;
                 };
+                let invariants = key(&nth(&declarations, declared_index), "invariants");
                 for (index, invariant) in items(&declared, "invariants").iter().enumerate() {
-                    put(invariant_site(name.clone(), index), Some(invariant));
+                    put(
+                        invariant_site(name.clone(), index),
+                        &nth(&invariants, index),
+                        Some(invariant),
+                    );
                 }
             }
         }
-        for view in items(document, "views") {
+        let views = key(&[], "views");
+        for (view_index, view) in items(document, "views").into_iter().enumerate() {
             if let Some(name) = named(&view) {
-                put(Site::View { view: name.clone() }, view.get("filter"));
-                for (field, condition) in conditions(&view) {
+                let view_path = nth(&views, view_index);
+                put(
+                    Site::View { view: name.clone() },
+                    &key(&view_path, "filter"),
+                    view.get("filter"),
+                );
+                let fields = key(&view_path, "fields");
+                for (field_index, field, condition) in conditions(&view) {
                     put(
                         Site::Measure {
                             view: name.clone(),
                             field,
                         },
+                        &key(&key(&nth(&fields, field_index), "aggregate"), "where"),
                         Some(condition),
                     );
                 }
             }
         }
+        // What is left of a `sets:` or `payload:` is a literal the outcome wrote itself.
+        written.inexact.extend(crate::inexact_decimal::authored(
+            document, &floats, &claimed,
+        ));
         written
     }
 
@@ -623,18 +733,32 @@ impl Written {
         for (site, tree) in other.sites {
             self.sites.entry(site).or_insert(tree);
         }
+        // A name another source wrote first keeps its own literals, as it keeps its predicate.
+        let held: std::collections::BTreeSet<String> = self
+            .inexact
+            .iter()
+            .map(|(location, _)| location.clone())
+            .collect();
+        self.inexact.extend(
+            other
+                .inexact
+                .into_iter()
+                .filter(|(location, _)| !held.contains(location)),
+        );
     }
 }
 
-/// Each aggregate field of a written view that declares `where:`, with its name and the condition.
-fn conditions(view: &ess_yaml::Value) -> Vec<(String, &ess_yaml::Value)> {
+/// Each aggregate field of a written view that declares `where:`, with its position, its name and
+/// the condition.
+fn conditions(view: &ess_yaml::Value) -> Vec<(usize, String, &ess_yaml::Value)> {
     view.get("fields")
         .and_then(ess_yaml::Value::as_sequence)
         .into_iter()
         .flatten()
-        .filter_map(|field| {
+        .enumerate()
+        .filter_map(|(index, field)| {
             let name = field.get("name")?.as_str()?.to_owned();
-            Some((name, field.get("aggregate")?.get("where")?))
+            Some((index, name, field.get("aggregate")?.get("where")?))
         })
         .collect()
 }
@@ -779,6 +903,7 @@ pub(crate) fn slot<'a>(
             .affects
             .get_mut(*index)
             .and_then(|affect| affect.filter.as_mut()),
+        Site::Literals { .. } => None,
         Site::Invariant { entity, index } => entities
             .get_mut(entity)?
             .invariants
@@ -1023,6 +1148,7 @@ pub(crate) fn resolutions(
                     over_row(&set_effect_fields(entity), entity, command, lexical),
                 ))
             }),
+            Site::Literals { .. } => None,
             Site::Invariant { entity, index } => spec.entities().get(entity).and_then(|entity| {
                 let invariant = entity.invariants.get(*index)?;
                 let fields = entity.observable_fields();
@@ -1308,40 +1434,69 @@ fn identity_orderings_in<E: crate::expression::TypeEnvironment>(
     found
 }
 
+/// Every filtered read in `value`, `{related: {entity, where, field}}`, with its place — `place`
+/// and then the keys under it — and its `where` as written.
+fn walk(
+    value: &ess_yaml::Value,
+    place: &mut Vec<String>,
+    found: &mut Vec<(Vec<String>, ess_yaml::Value)>,
+) {
+    use ess_yaml::Value;
+    let Some(mapping) = value.as_mapping() else {
+        return;
+    };
+    if let (1, Some(Value::Mapping(related))) = (mapping.len(), mapping.get("related")) {
+        let keys: Vec<&str> = related.keys().filter_map(Value::as_str).collect();
+        let filtered = keys.len() == 3
+            && ["entity", "where", "field"]
+                .iter()
+                .all(|key| keys.contains(key));
+        // The head of an ordered selection (ess/27, beyond10x/ess#543): a list `order_by`.
+        let ordered = keys.contains(&"entity")
+            && keys.contains(&"where")
+            && matches!(related.get("order_by"), Some(Value::Sequence(_)));
+        if filtered || ordered {
+            if let Some(filter) = related.get("where") {
+                found.push((place.clone(), filter.clone()));
+            }
+            return;
+        }
+    }
+    for (key, member) in mapping {
+        if let Some(key) = key.as_str() {
+            place.push(key.to_owned());
+            walk(member, place, found);
+            place.pop();
+        }
+    }
+}
+
+/// Every filtered read an `affects:` entry's `sets:` writes, with its place — `sets`, the target
+/// and any nested struct members — and its `where` as written.
+fn affect_selections(affect: &ess_yaml::Value) -> Vec<(Vec<String>, ess_yaml::Value)> {
+    let mut found = Vec::new();
+    for (target, value) in affect
+        .get("sets")
+        .and_then(ess_yaml::Value::as_mapping)
+        .into_iter()
+        .flatten()
+    {
+        if let Some(target) = target.as_str() {
+            walk(
+                value,
+                &mut vec!["sets".to_owned(), target.to_owned()],
+                &mut found,
+            );
+        }
+    }
+    found
+}
+
 /// Every filtered read an outcome of a source document writes, `{related: {entity, where,
 /// field}}` (ess/22), with its place — `sets`, or `payload` and the event or error, then the target
 /// and any nested struct members — and its `where` as written.
 fn selections(outcome: &ess_yaml::Value) -> Vec<(Vec<String>, ess_yaml::Value)> {
     use ess_yaml::Value;
-    fn walk(value: &Value, place: &mut Vec<String>, found: &mut Vec<(Vec<String>, Value)>) {
-        let Some(mapping) = value.as_mapping() else {
-            return;
-        };
-        if let (1, Some(Value::Mapping(related))) = (mapping.len(), mapping.get("related")) {
-            let keys: Vec<&str> = related.keys().filter_map(Value::as_str).collect();
-            let filtered = keys.len() == 3
-                && ["entity", "where", "field"]
-                    .iter()
-                    .all(|key| keys.contains(key));
-            // The head of an ordered selection (ess/27, beyond10x/ess#543): a list `order_by`.
-            let ordered = keys.contains(&"entity")
-                && keys.contains(&"where")
-                && matches!(related.get("order_by"), Some(Value::Sequence(_)));
-            if filtered || ordered {
-                if let Some(filter) = related.get("where") {
-                    found.push((place.clone(), filter.clone()));
-                }
-                return;
-            }
-        }
-        for (key, member) in mapping {
-            if let Some(key) = key.as_str() {
-                place.push(key.to_owned());
-                walk(member, place, found);
-                place.pop();
-            }
-        }
-    }
     let mut found = Vec::new();
     if let Some(sets) = outcome.get("sets").and_then(Value::as_mapping) {
         for (target, value) in sets {
