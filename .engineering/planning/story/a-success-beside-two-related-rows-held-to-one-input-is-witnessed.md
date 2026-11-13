@@ -16,7 +16,7 @@ relations:
 - serves: vision:O2
 - informed_by: story:a-command-with-two-related-selectors-arranges-both
 - informed_by: story:a-row-arranged-beside-is-created-once-under-its-name
-revision: 1
+revision: 2
 ---
 ## Defect
 
@@ -76,3 +76,27 @@ have not tried either on the reproduction.
 Owed. This draft records the report and its reproduction only. It is an external request: the seven
 questions of `.agents/skills/assessing-external-requests/SKILL.md` are answered here before the
 story is accepted or dispatched, and the acceptance is fixed there.
+
+## Tried by the consumer (2026-11-13, later that day)
+
+The consumer applied the input form to its own specification on ess 0.94.0 and reported back. We
+have not seen its specification; the texts below are as it gave them, with its names left out.
+
+- The input form validates. Synthesis then refuses four outcomes of the command, three refusals
+  and the success, each with ESS-SYNTH-003 "no candidate of the 4 tried satisfies" the stored
+  related row. Our reproduction loses the success only; the consumer's command has more branches
+  beside the two rows, and one of its creators sets a field from an attribute of the caller.
+- An authored scenario that reaches all four outcomes (a second parent with a row of its own) did
+  not bring them back: the four refusals stayed.
+- A synthesis seed for the related row was refused: "synthesis seed refused
+  [caller-contradiction]: field <field> of <entity> is set from the caller's <attribute>, and it
+  holds no value a caller carries".
+
+So the section "Meanwhile" above does not hold for the consumer's model: neither an authored
+scenario nor a seed restores the outcomes. The consumer took the input form out again and keeps
+its `UNMAPPED` marker; with it the suite stays at its floor.
+
+For the fit review: the reproduction in the repository is smaller than the reported shape. A
+second reproduction needs a creator that sets a field of the related row from a caller attribute,
+and at least one further refusal beside the two predicates; the acceptance covers the refusals
+that are lost, not the success alone, and says what a seed for such a row may hold.
