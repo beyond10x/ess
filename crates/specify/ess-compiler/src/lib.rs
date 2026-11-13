@@ -51,6 +51,7 @@ pub mod ir;
 pub mod refs;
 pub mod resolve;
 pub mod source;
+pub mod unknown_instance;
 
 pub use diagnostic::{Diagnostic, Diagnostics, Severity};
 pub use graph::{DependencyEdge, DependencyRelation, ImpactClass, Reach, SemanticDependencyGraph};

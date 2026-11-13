@@ -21,7 +21,7 @@ adapter answered the rule *before* the seam, so its seam was never asked.
 ## Rule
 
 A command gets a **second spelling** of its `wrong_state` outcome — the unknown-instance variant —
-exactly when `ess_gen::unknown_instance::unknown_instance_answer` returns it. All three must hold:
+exactly when `ess_compiler::unknown_instance::unknown_instance_answer`, which `ess_gen::unknown_instance` re-exports, returns it. All three must hold:
 
 1. a branch acts on an existing instance the caller names (`moves:` or `updates:`, with
    `instance:` read from input), so an identity naming no record reaches the command;

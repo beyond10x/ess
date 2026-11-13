@@ -1760,5 +1760,8 @@ mod answer_forms;
 #[path = "board_routes.rs"]
 mod board_routes;
 
+#[path = "errors_of_one_wire_name.rs"]
+mod errors_of_one_wire_name;
+
 #[path = "adversary_w089_u2_pass1.rs"]
 mod adversary_w089_u2_pass1;
