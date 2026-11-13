@@ -273,15 +273,15 @@ export function useSectionName(): string | undefined {
   return useContext(SectionNameContext);
 }
 
-/** A page: its frame, and the registry sections report totals, params and selections to. */
-export function PageFrame(props: {
-  "data-ui-path": string;
-  title?: string;
-  profile?: string;
-  /** The host slot the page is: the `host` its component is registered under. */
-  host?: string;
-  children?: ReactNode;
-}): ReactNode {
+const RegisteredContext = createContext(false);
+
+/**
+ * The registry sections report totals, params, selections and first rows to, and the `section`
+ * and `same_as` scope roots it gives everything below it. A page with overlays holds one around
+ * its overlay host, so an overlay, which renders outside the page frame, reads the sections of
+ * its page; every other page frame holds its own.
+ */
+export function PageRegistry(props: { children?: ReactNode }): ReactNode {
   const [sections, setSections] = useState<Record<string, SectionInfo>>({});
   const report = (name: string, info: SectionInfo) =>
     setSections((previous) => {
@@ -294,15 +294,31 @@ export function PageFrame(props: {
       return stableKey(previous[name]) === stableKey(merged) ? previous : { ...previous, [name]: merged };
     });
   return (
-    <RegistryContext.Provider value={report}>
-      <ScopeLayer values={{ section: sections, same_as: (name: string) => sections[name]?.params }}>
-        <main className="ui-page" data-ui-path={props["data-ui-path"]} data-ui-host={props.host} data-profile={props.profile}>
-          {props.title ? <h1>{props.title}</h1> : null}
-          {props.children}
-        </main>
-      </ScopeLayer>
-    </RegistryContext.Provider>
+    <RegisteredContext.Provider value={true}>
+      <RegistryContext.Provider value={report}>
+        <ScopeLayer values={{ section: sections, same_as: (name: string) => sections[name]?.params }}>{props.children}</ScopeLayer>
+      </RegistryContext.Provider>
+    </RegisteredContext.Provider>
   );
+}
+
+/** A page: its frame, inside the registry sections report to. */
+export function PageFrame(props: {
+  "data-ui-path": string;
+  title?: string;
+  profile?: string;
+  /** The host slot the page is: the `host` its component is registered under. */
+  host?: string;
+  children?: ReactNode;
+}): ReactNode {
+  const registered = useContext(RegisteredContext);
+  const main = (
+    <main className="ui-page" data-ui-path={props["data-ui-path"]} data-ui-host={props.host} data-profile={props.profile}>
+      {props.title ? <h1>{props.title}</h1> : null}
+      {props.children}
+    </main>
+  );
+  return registered ? main : <PageRegistry>{main}</PageRegistry>;
 }
 
 /** Sections one under another. */
@@ -526,7 +542,7 @@ export function SectionFrame(props: {
 //+collapse
   }, [load, active, onActivate, open]);
 //-collapse
-  useReport(props.name, { total: data?.total, params: data?.params, title: props.title, row: data?.rows[0] });
+  useReport(props.name, { total: data?.total, params: data?.params, title: props.title, row: data?.current ? data.rows[0] : undefined });
   const mark = data?.stale ? states.stale?.mark ?? "badge" : undefined;
 //+collapse
   const bodyId = `${props["data-ui-path"]}#body`;

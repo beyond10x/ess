@@ -10,7 +10,7 @@
 
 use std::collections::BTreeSet;
 
-use ess_ui::{Document, NodePath};
+use ess_ui::{Body, Composite, Document, NodePath};
 use ess_yaml::Value;
 
 use crate::schema::{self, is_unmapped_marker};
@@ -166,13 +166,18 @@ impl Walker<'_> {
                 continue;
             };
             let Some(reads) = section.body.reads() else {
+                let why = if matches!(&section.body, Body::Composite(Composite::Choice(_))) {
+                    "a choice, which offers options and holds no row"
+                } else {
+                    "which reads nothing"
+                };
                 self.report(
                     sink,
                     "section_row",
                     at,
                     format!(
-                        "`section.{0}.row` reads the first row of section `{0}`, which reads \
-                         nothing, so it holds none",
+                        "`section.{0}.row` reads the first row of section `{0}`, {why}, so it \
+                         holds none",
                         path.section
                     ),
                 );

@@ -188,18 +188,20 @@ fn fnv(text: &str) -> u64 {
 /// record and board composites follow it; at the merge with the wide-table change both causes
 /// move it, and it is pinned at the merged tree. The whole-project digest re-pinned for
 /// story:a-sections-first-row-is-a-binding-in-the-reference-and-both-renderers-or-in-neither:
-/// `core.tsx` reports the first row of every section that reads (`reportsRow` is gone); no file of
-/// the pins above changes.
+/// `core.tsx` reports the first row of every section that reads (`reportsRow` is gone), and holds
+/// the page's section registry around a page's overlays; `data.ts` says whether a read's rows
+/// answer its current params, so a section reports no row while it reads for new ones. `data.ts`
+/// is re-pinned with it; no other file of the pins above changes.
 const PLAIN: [(&str, u64); 7] = [
     ("README.md", 0xdae6_c3b6_7e5c_2d28),
     ("src/main.tsx", 0x939b_2ed0_a001_98c5),
     ("src/runtime/actions.tsx", 0xdbb3_5348_126e_75bb),
     ("src/runtime/composites/confirm.tsx", 0xd98b_e5a3_8ad8_4503),
     ("src/runtime/composites/form.tsx", 0x8925_891d_a8af_c1fb),
-    ("src/runtime/data.ts", 0x1d12_0466_1213_7ea5),
+    ("src/runtime/data.ts", 0x5284_0c01_17d1_fa7f),
     ("www/index.html", 0x5972_6d4a_5ee2_5ce2),
 ];
-const PLAIN_PROJECT: u64 = 0xb38b_f47a_969d_6c83;
+const PLAIN_PROJECT: u64 = 0x4d79_5e85_205a_9cc2;
 
 #[test]
 fn without_a_model_the_project_is_byte_identical() {

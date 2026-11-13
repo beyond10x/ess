@@ -4,8 +4,10 @@
 //! project resolves for the same document (`ess-ui-react`, `tests/section_row.rs`).
 
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
-use ess_ui_tui::{App, Options};
+use ess_ui_tui::live::Script;
+use ess_ui_tui::{App, FixtureAdapter, Lifecycle, Options};
 
 const DOCUMENT: &str = r"
 format: ess-ui/1
@@ -118,4 +120,76 @@ fn the_header_title_still_reads_its_sections_record() {
         .find(|line| line.contains("Grace"))
         .unwrap_or_else(|| panic!("the title is the record field:\n{screen}"));
     assert!(!title.contains("Order"), "{screen}");
+}
+
+/// A section that is `load: on_demand` and has not been loaded holds no row, though another
+/// section already cached the same read: `customer` reads with no id (every customer) until
+/// `order` is loaded, as the React project's section, whose read waits for its activation.
+#[test]
+fn an_on_demand_section_that_is_not_loaded_holds_no_row() {
+    let text = DOCUMENT
+        .replace(
+            "      - {name: order, component: record, reads: {view: orders.ById, key: id}, fields: [id]}\n",
+            "      - {name: peer, component: record, reads: {view: orders.ById, key: id}, fields: [id]}\n      \
+             - {name: order, component: record, load: on_demand, reads: {view: orders.ById, key: id}, fields: [id]}\n",
+        );
+    let mut app = open("on-demand", &text);
+    assert_eq!(ids(&app, "peer"), ["o-1"]);
+    assert_eq!(ids(&app, "customer"), ["c-1", "c-9"]);
+    app.focus_section("order");
+    app.keys("R");
+    assert_eq!(ids(&app, "customer"), ["c-9"]);
+}
+
+/// A read started again with the same params (a live refetch; a poll or a command do the same)
+/// does not blank the row: the rows it held stay while it runs, as the React project's section
+/// does (`refreshing`). The reference says the row is absent while the section loads, and a
+/// section that has answered for its current params is not loading them.
+#[test]
+fn a_row_is_held_while_its_read_runs_again_for_the_same_params() {
+    let text = DOCUMENT
+        .replace(
+            "pages:\n",
+            "channels:\n  feed:\n    carries: {events: [orders.Changed]}\n    direction: server_to_client\n    \
+             delivery: every_event\n    resume: refetch\npages:\n",
+        )
+        .replace(
+            "reads: {view: orders.ById, key: id}, fields: [id]}",
+            "reads: {view: orders.ById, key: id}, fields: [id], live: {channel: feed, effect: refetch}}",
+        );
+    let dir: PathBuf = Path::new(env!("CARGO_TARGET_TMPDIR"))
+        .join("ess-ui-tui-section-row")
+        .join("same-params");
+    if dir.exists() {
+        std::fs::remove_dir_all(&dir).expect("a stale dir is removed");
+    }
+    std::fs::create_dir_all(&dir).expect("the dir is created");
+    for (name, body) in FIXTURES {
+        std::fs::write(dir.join(name), body).expect("the fixture is written");
+    }
+    let document = ess_ui::load_str(&text).unwrap_or_else(|error| panic!("{error}"));
+    let (adapter, _) = FixtureAdapter::load(&document, &dir, None).expect("the fixtures load");
+    let script = Script::parse(
+        "feed",
+        &ess_yaml::from_str(
+            "{channel: feed, events: [{at: 2s, event: orders.Changed, payload: {id: o-1}}]}",
+        )
+        .expect("the script is YAML"),
+    )
+    .expect("the script parses");
+    let mut options = Options::new(dir.join("state"));
+    options
+        .view_latency
+        .insert("orders.ById".to_owned(), Duration::from_secs(1));
+    let mut app = App::with_adapter(document, Box::new(adapter), vec![script], options)
+        .unwrap_or_else(|error| panic!("{error}"));
+    app.open_page("order", &[]);
+    app.advance(Duration::from_secs(1));
+    assert_eq!(ids(&app, "customer"), ["c-9"]);
+    app.advance(Duration::from_secs(1));
+    assert_eq!(app.section_state("order"), Lifecycle::Loading);
+    assert_eq!(ids(&app, "customer"), ["c-9"]);
+    app.advance(Duration::from_secs(1));
+    assert_eq!(app.section_state("order"), Lifecycle::Ready);
+    assert_eq!(ids(&app, "customer"), ["c-9"]);
 }

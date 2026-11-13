@@ -181,6 +181,25 @@ fn with_a_model_a_row_field_the_view_lacks_is_refused() {
 }
 
 #[test]
+fn a_row_of_a_choice_section_that_reads_is_refused_in_words_true_of_it() {
+    let text = page(
+        "      - {name: pick, component: choice, reads: {view: t.Shelf, key: id}}\n      \
+         - {name: lines, component: collection, reads: t.Lines, columns: [sku], row_actions: [{name: open, label: Open, navigate: {to: q, params: {id: section.pick.row.id}}}]}",
+    );
+    let report = report(&text);
+    let found = row_findings(&report);
+    assert_eq!(found.len(), 1, "{:#?}", report.findings);
+    assert_eq!(found[0].path, "pages/p/sections/lines/row_actions/open");
+    assert!(
+        found[0].message.contains("`pick`")
+            && found[0].message.contains("choice")
+            && !found[0].message.contains("reads nothing"),
+        "a choice that reads holds no row, and is not a section that reads nothing: {found:#?}"
+    );
+    assert!(report.has_errors());
+}
+
+#[test]
 fn with_a_model_a_row_field_the_view_carries_is_admitted() {
     let model = model();
     let report = check_source(

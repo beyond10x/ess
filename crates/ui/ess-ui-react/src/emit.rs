@@ -2891,6 +2891,14 @@ impl<'d> Gen<'d> {
         );
         let framed = page_frame.children(header).child(layout).render();
         let hosted = self.overlay_host(&owner, &at, &page.overlays, framed);
+        // The page's overlays render outside its frame: the registry of its sections is held
+        // around both, so an overlay reads `section.<name>` as the page's own sections do.
+        let hosted = if page.overlays.is_empty() {
+            hosted
+        } else {
+            let registry = self.import("runtime/core", "PageRegistry");
+            El::new(&registry).child(hosted).render()
+        };
         let hosted = match &page.visible {
             Some(condition) => {
                 let visible = self.import("runtime/core", "Visible");

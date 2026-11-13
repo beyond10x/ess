@@ -74,9 +74,11 @@ const tables = {
   "lines.All": [{ sku: "bolt" }],
   "invoices.ById": [{ id: "i-3" }],
 };
+let hold = false;
 setDataAdapter({
   read: async (request) => {
     requests.push({ view: request.view, params: { ...request.params } });
+    if (hold && request.view === "orders.ById") return new Promise(() => {});
     const rows = (tables[request.view] || []).filter((row) =>
       Object.entries(request.params).every(([name, value]) => value === undefined || row[name] === value));
     return { rows, total: rows.length };
@@ -148,6 +150,31 @@ fn the_header_title_still_reads_its_sections_record() {
         r#"
   await settle();
   assert.strictEqual(heading(), "Grace", "the title is the record field");
+"#,
+    );
+}
+
+/// A read started again with the same params (a command invalidates every read; a poll or a live
+/// refresh does the same) does not blank the row: `customer` still reads `c-9` while the read of
+/// `order` is under way. The terminal holds the row the same way
+/// (`ess-ui-tui`, `a_row_is_held_while_its_read_runs_again_for_the_same_params`).
+#[test]
+fn a_row_is_held_while_its_read_runs_again_for_the_same_params() {
+    run(
+        "same-params",
+        DOCUMENT,
+        r#"
+  const { invalidate } = out("runtime/data");
+  await settle();
+  assert.deepStrictEqual(lastRead("customers.ById").params, { id: "c-9" }, JSON.stringify(requests));
+  const before = requests.filter((request) => request.view === "orders.ById").length;
+  hold = true;
+  invalidate();
+  await settle();
+  const after = requests.filter((request) => request.view === "orders.ById").length;
+  assert.ok(after > before, "order reads again: " + JSON.stringify(requests));
+  assert.deepStrictEqual(lastRead("customers.ById").params, { id: "c-9" }, "the row is held while order reads again: " + JSON.stringify(requests));
+  assert.ok(root.text().includes("grace@shop.test"), root.text());
 "#,
     );
 }
