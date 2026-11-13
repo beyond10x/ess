@@ -15,7 +15,7 @@ relations:
 - serves: vision:O2
 - informed_by: epic:ess-ui-renderer-neutral-ui
 - informed_by: story:an-action-runs-a-command-and-then-opens-a-page
-revision: 1
+revision: 2
 ---
 ## Need
 
@@ -77,3 +77,10 @@ error document_loads pages/requests.inbox/sections/list/row_actions/approve: unk
 Owed. This draft records the need and its reproduction only. It is an external request: the seven
 questions of `.agents/skills/assessing-external-requests/SKILL.md` are answered here before the
 story is accepted or dispatched, and the design below the need is chosen there, not in this draft.
+
+## Reported again (2026-11-13, a third list)
+
+The same need from a consumer specification's UI document (ess 0.94.0, item 7 of its third
+collected list): an action cannot run a second command with the outcome of the first. The consumer
+carries an `unmapped` marker for the step in its document until this is decided. No new
+reproduction; the two above stand.

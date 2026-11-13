@@ -26,7 +26,7 @@ scope:
   path: crates/ui/ess-ui-tui/src/view.rs
 - confidence: inferred
   path: website/docs/reference/ess-ui-test.md
-revision: 8
+revision: 9
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-10T00:48:16Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"review_outcome":1}}}
 - {from: "proposed", to: "active", at: "2026-11-10T00:48:17Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":1}}}
@@ -159,3 +159,36 @@ widest table.
 ## Source
 
 github:beyond10x/ess#722
+
+## Reported case (2026-11-13, a third list)
+
+A consumer specification's UI document (ess 0.94.0, item 6 of its third collected list): a
+collection nested in a record's `item`, with a row action. On a record section `summary` of the
+page `requests.detail` with
+`item: [{name: more, component: collection, reads: {view: …PendingRequests}, columns: [title], row_actions: [{name: approve, does: …ApproveRequest, bind: {id: row.id}, label: Approve}]}]`
+the terminal draws the nested rows and the action's key under the record's fields:
+
+```
+title            request-one
+state            Pending
+  title
+  request-one
+  request-two
+page 1/1 · 2 rows
+a Approve
+```
+
+and a test reaches neither the collection nor its rows nor the action:
+
+```
+failed ... expect at pages/requests.detail/sections/summary/item/more: … the terminal draws a collection nested inside a record, a tab or a node without addressing it or its rows; address a section's or an overlay's own collection instead
+failed ... act pages/requests.detail/sections/summary/item/more/rows/r1/row_actions/approve: … (the same reason)
+```
+
+The refusal is one rule with one reason, as this story's acceptance asks for a node the terminal
+does not address. What the report adds: the action is drawn with a key and no journey can run it,
+so a command a user can send from the terminal has no test.
+
+Proposed acceptance line: `expect rows`, `select` and `act` reach the rows and row actions of a
+collection nested in a record's `item` at `…/sections/<s>/item/<name>/rows/<key>/…`, the path the
+React project addresses, or the terminal does not offer a key for an action no test can run.
