@@ -106,6 +106,20 @@ impl<'a> Types<'a> {
         }
     }
 
+    /// The values of an enum type, written inline or through a named type; `None` for any other
+    /// type.
+    pub(crate) fn enum_values(&self, ty: &TypeExpr) -> Option<Vec<String>> {
+        let mut ty = ty;
+        for _ in 0..32 {
+            match ty {
+                TypeExpr::Enum(values) => return Some(values.values.clone()),
+                TypeExpr::Named(name) => ty = self.defined.get(name)?,
+                _ => return None,
+            }
+        }
+        None
+    }
+
     /// The initial value of a state of this type with no `default`, as a literal.
     pub(crate) fn initial(&self, ty: &TypeExpr) -> String {
         self.initial_depth(ty, 0)

@@ -369,7 +369,10 @@ fn issue_251_the_reproduction_synthesizes_seven_scenarios_and_no_refusal() {
 }
 
 /// #251's acceptance: `exhausted` is witnessed on a row at the invariant's bound, with an input the
-/// invariant admits — so `stale` holds there too and the declared order decides.
+/// invariant admits — so `stale` holds there too and the declared order decides. The scenario
+/// arranges that row twice: once for its own send and once for the overlap send of
+/// story:overlap-witnesses-per-phase, which witnesses `exhausted` before `stale` on a row both
+/// hold; each arrangement configures the bound.
 #[test]
 fn issue_251_exhausted_is_witnessed_at_the_bound() {
     let synthesis = compiled(POLICY);
@@ -379,7 +382,7 @@ fn issue_251_exhausted_is_witnessed_at_the_bound() {
         .filter(|(command, _)| command == "Configure")
         .map(|(_, value)| *value)
         .collect();
-    assert_eq!(configured, [MAX], "{steps:?}");
+    assert_eq!(configured, [MAX, MAX], "{steps:?}");
     let (_, revised) = steps
         .iter()
         .rev()

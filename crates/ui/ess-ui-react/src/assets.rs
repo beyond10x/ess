@@ -39,6 +39,7 @@ const RUNTIME: &[Module] = &[
     module!("runtime/overlays", "tsx"),
     module!("runtime/live", "ts"),
     module!("runtime/shell", "tsx"),
+    module!("runtime/theme", "ts"),
     module!("runtime/navigation", "tsx"),
     module!("runtime/widget", "tsx"),
     module!("runtime/hosts", "tsx"),
@@ -349,12 +350,12 @@ const FIXED_CONSTANTS: &[(&str, &str)] = &[
     ("transparent", "transparent"),
 ];
 
-/// One declaration of `tokens.css`, refused when its name or value is not safe to write. `ess ui
-/// check` refuses the same names and values at their key paths (the grammars are
-/// [`ess_ui::token_grammar`]'s), but `generate` does not run the check. `problem` is the grammar
-/// of the value's group.
+/// One declaration of `tokens.css` as `(property, value)`, refused when its name or value is not
+/// safe to write. `ess ui check` refuses the same names and values at their key paths (the
+/// grammars are [`ess_ui::token_grammar`]'s), but `generate` does not run the check. `problem` is
+/// the grammar of the value's group.
 fn declare(
-    out: &mut String,
+    out: &mut Vec<(String, String)>,
     path: &str,
     name: &str,
     property: &str,
@@ -367,23 +368,19 @@ fn declare(
     if let Some(why) = problem(value) {
         return Err(GenerateError::new(format!("{path}/{name}: {why}")));
     }
-    let _ = writeln!(out, "  {property}: {value};");
+    out.push((property.to_owned(), value.to_owned()));
     Ok(())
 }
 
-/// `src/runtime/tokens.css`: one `:root` block holding every token of the document's merged
-/// table (the built-in table, then `tokens:`, `type` entries filled), as the custom properties
-/// `styles.css` reads: `--ui-color-<name>`, `--ui-space-<name>`, `--ui-radius-<name>`,
-/// `--ui-type-<style>-family|size|weight` and `--ui-tone-<tone>-text|fill`. The renderer-fixed
+/// Every custom property one token table gives `styles.css`, in the order `tokens.css` writes
+/// them: `--ui-color-<name>`, `--ui-space-<name>`, `--ui-radius-<name>`, the renderer-fixed
 /// `--ui-size-<name>` lengths ([`FIXED_SIZES`]) and `--ui-fixed-<name>` constants
-/// ([`FIXED_CONSTANTS`]) follow the radii. A tone's colors are written as a reference to the color
-/// token they name, so a color override reaches its tones.
-///
-/// A token name or value outside its grammar, or one that could write outside its own custom
-/// property, is refused with an error naming the token.
-pub(crate) fn tokens_css(document: &ess_ui::Document) -> Result<String, GenerateError> {
-    let tokens = document.base_tokens();
-    let mut out = String::from(":root {\n");
+/// ([`FIXED_CONSTANTS`]), `--ui-type-<style>-family|size|weight` and
+/// `--ui-tone-<tone>-text|fill`. A tone's colors are a reference to the color token they name, so
+/// a color override reaches its tones. `at` is the table's path in the document (`tokens`, or
+/// `themes/<name>`), which an error names.
+fn declarations(tokens: &ess_ui::Tokens, at: &str) -> Result<Vec<(String, String)>, GenerateError> {
+    let mut out = Vec::new();
     for (group, entries, problem) in [
         (
             "color",
@@ -400,7 +397,7 @@ pub(crate) fn tokens_css(document: &ess_ui::Document) -> Result<String, Generate
         for (name, value) in entries {
             declare(
                 &mut out,
-                &format!("tokens/{group}"),
+                &format!("{at}/{group}"),
                 name,
                 &format!("--ui-{group}-{name}"),
                 &value.0,
@@ -409,14 +406,14 @@ pub(crate) fn tokens_css(document: &ess_ui::Document) -> Result<String, Generate
         }
     }
     for (name, value) in FIXED_SIZES {
-        let _ = writeln!(out, "  --ui-size-{name}: {value};");
+        out.push((format!("--ui-size-{name}"), (*value).to_owned()));
     }
     for (name, value) in FIXED_CONSTANTS {
-        let _ = writeln!(out, "  --ui-fixed-{name}: {value};");
+        out.push((format!("--ui-fixed-{name}"), (*value).to_owned()));
     }
     for (style, entry) in &tokens.typography {
         if let Some(why) = token_grammar::name_problem(style) {
-            return Err(GenerateError::new(format!("tokens/type/{style}: {why}")));
+            return Err(GenerateError::new(format!("{at}/type/{style}: {why}")));
         }
         for (part, value, problem) in [
             (
@@ -438,7 +435,7 @@ pub(crate) fn tokens_css(document: &ess_ui::Document) -> Result<String, Generate
             if let Some(value) = value {
                 declare(
                     &mut out,
-                    &format!("tokens/type/{style}"),
+                    &format!("{at}/type/{style}"),
                     part,
                     &format!("--ui-type-{style}-{part}"),
                     value,
@@ -451,12 +448,12 @@ pub(crate) fn tokens_css(document: &ess_ui::Document) -> Result<String, Generate
         for (role, color) in [("text", &entry.text), ("fill", &entry.fill)] {
             if let Some(why) = token_grammar::name_problem(color) {
                 return Err(GenerateError::new(format!(
-                    "tokens/tone/{tone}/{role}: {why}"
+                    "{at}/tone/{tone}/{role}: {why}"
                 )));
             }
             declare(
                 &mut out,
-                &format!("tokens/tone/{tone}"),
+                &format!("{at}/tone/{tone}"),
                 role,
                 &format!("--ui-tone-{tone}-{role}"),
                 &format!("var(--ui-color-{color})"),
@@ -464,6 +461,48 @@ pub(crate) fn tokens_css(document: &ess_ui::Document) -> Result<String, Generate
             )?;
         }
     }
+    Ok(out)
+}
+
+/// `src/runtime/tokens.css`: one `:root` block holding every token of the default theme
+/// (`theme.default`, or the document's merged table, the built-in table then `tokens:`, when it
+/// names none), as the custom properties `styles.css` reads ([`declarations`]), and one
+/// `[data-theme="<name>"]` block per other theme, after it, holding only what that theme gives
+/// differently from `:root`: its own overrides, and the values a default theme with overrides of
+/// its own would otherwise leave behind. The shell sets `data-theme` (`runtime/theme.ts`).
+///
+/// A token or theme name or a value outside its grammar, or one that could write outside its own
+/// custom property, is refused with an error naming the token.
+pub(crate) fn tokens_css(document: &ess_ui::Document) -> Result<String, GenerateError> {
+    let base = declarations(&document.base_tokens(), "tokens")?;
+    let default = document.theme.as_ref().map(|theme| theme.default.as_str());
+    let shown =
+        match default.and_then(|name| document.theme_tokens(name).map(|table| (name, table))) {
+            Some((name, table)) => declarations(&table, &format!("themes/{name}"))?,
+            None => base,
+        };
+    let mut out = String::from(":root {\n");
+    for (property, value) in &shown {
+        let _ = writeln!(out, "  {property}: {value};");
+    }
     out.push_str("}\n");
+    for name in document.themes.keys() {
+        if default == Some(name.as_str()) {
+            continue;
+        }
+        if let Some(why) = token_grammar::name_problem(name) {
+            return Err(GenerateError::new(format!("themes/{name}: {why}")));
+        }
+        let Some(table) = document.theme_tokens(name) else {
+            continue;
+        };
+        let _ = writeln!(out, "[data-theme=\"{name}\"] {{");
+        for (property, value) in declarations(&table, &format!("themes/{name}"))? {
+            if !shown.contains(&(property.clone(), value.clone())) {
+                let _ = writeln!(out, "  {property}: {value};");
+            }
+        }
+        out.push_str("}\n");
+    }
     Ok(out)
 }
