@@ -357,9 +357,11 @@ The source leaves the key's type out; the canonical form writes it, as
 write the one its declarations give. A mapping under `distinct` without `as` is a constraint on a
 fact named `distinct`, as it always was. It is an `ess/22` form, refused below it, and a suite
 carrying it is `ess-conformance/40` or `/41`, whose readers require `kind` and read a view row's
-lists element by element. Generated Rust and Go behaviour owes a guard or a view filter reading it
-by name, an entity invariant with it refuses the generated target by name, and Entity Runtime
-refuses it as `DistinctUnsupported`.
+lists element by element. The generated Rust and Go decoders check it in a struct's `invariants:`,
+by the equality above, and answer a request whose list repeats a key with a decode error at the
+struct's path naming the invariant. Generated Rust and Go behaviour owes a guard or a view filter
+reading it by name, an entity or newtype invariant with it refuses the generated target by name,
+and Entity Runtime refuses it as `DistinctUnsupported`.
 
 The published JSON Schema asserts it where a keyword says it exactly (beyond10x/ess#686). Over a
 list of scalars, or a list newtype's `value`, it is `uniqueItems: true` on the list. Where an

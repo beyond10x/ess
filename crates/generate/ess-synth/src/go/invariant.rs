@@ -24,7 +24,8 @@ use ess_domain::Primitive;
 use ess_gen::{Artifact, Provenance};
 use ess_primitives::facts::{FactPath, FactValue};
 use ess_primitives::predicate::{
-    Collection, CompareOp, FoldOp, Operand, Predicate, Quantified, TextOp, TextOperand,
+    Collection, CompareOp, Distinct, DistinctKeyKind, FoldOp, Operand, Predicate, Quantified,
+    TextOp, TextOperand,
 };
 
 use super::layout::Layout;
@@ -85,7 +86,7 @@ pub(super) fn preflight(
         }
         let package = layout.package_of(&declared.name);
         let emit = Emit::new(ir, layout, package, Some(layout.owner(&declared.name)));
-        if let Err((at, reason)) = newtype_checks(&emit, declared) {
+        for (at, reason) in checks_and_refusals(&emit, declared).1 {
             causes.push(TargetFailureCause::new(
                 TargetFailureCode::MissingRepresentation,
                 vec![format!("types.{}.{at}", declared.name)],
@@ -211,6 +212,23 @@ fn newtype_checks(
     emit: &Emit<'_>,
     declared: &ess_compiler::ir::ResolvedType,
 ) -> Result<Vec<Constraint>, (String, String)> {
+    let (checks, mut refused) = checks_and_refusals(emit, declared);
+    if refused.is_empty() {
+        Ok(checks)
+    } else {
+        Err(refused.remove(0))
+    }
+}
+
+/// [`newtype_checks`] without stopping at the first constraint it cannot check: the constraints it
+/// can, and every one it cannot, each as its declaration's member and why. [`preflight`] names them
+/// all, so an author fixing a type meets no further refusal on the next run.
+fn checks_and_refusals(
+    emit: &Emit<'_>,
+    declared: &ess_compiler::ir::ResolvedType,
+) -> (Vec<Constraint>, Vec<(String, String)>) {
+    let mut checks = Vec::new();
+    let mut refused = Vec::new();
     if let ResolvedBody::Struct { fields, invariants } = &declared.body {
         let mut check = Check::rooted(
             emit,
@@ -219,7 +237,8 @@ fn newtype_checks(
             STRUCT_RECEIVER,
         );
         check.depth = 2;
-        return invariant_checks(&mut check, invariants);
+        check_invariants(&mut check, invariants, &mut checks, &mut refused);
+        return (checks, refused);
     }
     let ResolvedBody::Newtype {
         of,
@@ -228,10 +247,9 @@ fn newtype_checks(
         invariants,
     } = &declared.body
     else {
-        return Ok(Vec::new());
+        return (checks, refused);
     };
     let mut check = Check::rooted(emit, Subject::Newtype(of), emit.layout.package_names(), "v");
-    let mut checks = Vec::new();
     if alphabet.is_some() || prefix.is_some() {
         // The text the declaration constrains: the field, through every newtype it wraps.
         let mut text = format!("{}.value", check.receiver);
@@ -253,33 +271,34 @@ fn newtype_checks(
         } else {
             "prefix"
         };
-        if primitive(current) != Some(Primitive::String) {
-            return Err((
+        if primitive(current) == Some(Primitive::String) {
+            if let Some(alphabet) = alphabet {
+                emit.import("strings");
+                // Trimming every character of the alphabet from both ends leaves nothing exactly
+                // when every character is one of it; the empty text is inside every alphabet.
+                checks.push(Constraint {
+                    expected: format!("a value whose every character is one of `{alphabet}`"),
+                    prelude: Vec::new(),
+                    broken: format!("strings.Trim({text}, {}) != \"\"", go_string(alphabet)),
+                });
+            }
+            if let Some(prefix) = prefix {
+                emit.import("strings");
+                checks.push(Constraint {
+                    expected: format!("a value starting with `{prefix}`"),
+                    prelude: Vec::new(),
+                    broken: format!("!strings.HasPrefix({text}, {})", go_string(prefix)),
+                });
+            }
+        } else {
+            refused.push((
                 member.to_owned(),
                 format!("its {member} constrains `{current}`, which is not a String"),
             ));
         }
-        if let Some(alphabet) = alphabet {
-            emit.import("strings");
-            // Trimming every character of the alphabet from both ends leaves nothing exactly when
-            // every character is one of it; the empty text is inside every alphabet.
-            checks.push(Constraint {
-                expected: format!("a value whose every character is one of `{alphabet}`"),
-                prelude: Vec::new(),
-                broken: format!("strings.Trim({text}, {}) != \"\"", go_string(alphabet)),
-            });
-        }
-        if let Some(prefix) = prefix {
-            emit.import("strings");
-            checks.push(Constraint {
-                expected: format!("a value starting with `{prefix}`"),
-                prelude: Vec::new(),
-                broken: format!("!strings.HasPrefix({text}, {})", go_string(prefix)),
-            });
-        }
     }
-    checks.extend(invariant_checks(&mut check, invariants)?);
-    Ok(checks)
+    check_invariants(&mut check, invariants, &mut checks, &mut refused);
+    (checks, refused)
 }
 
 /// The receiver a struct's invariants are read from in its decoder: the value being decoded.
@@ -293,26 +312,33 @@ fn struct_reserved(emit: &Emit<'_>) -> BTreeSet<String> {
     reserved
 }
 
-/// Each of `invariants` as a [`Constraint`], in order.
-fn invariant_checks(
+/// Each of `invariants` as a [`Constraint`] in order, and every one the check cannot render as its
+/// member and why, so no refusal hides another. What a refused invariant had begun to write is
+/// dropped.
+fn check_invariants(
     check: &mut Check<'_>,
     invariants: &[ess_domain::entity::Invariant],
-) -> Result<Vec<Constraint>, (String, String)> {
-    let mut checks = Vec::new();
+    checks: &mut Vec<Constraint>,
+    refused: &mut Vec<(String, String)>,
+) {
+    let depth = check.depth;
     for (index, invariant) in invariants.iter().enumerate() {
-        let truth = check.predicate(&invariant.predicate).map_err(|reason| {
-            (
-                format!("invariants.{index}"),
-                format!("`{}`: {reason}", invariant.statement),
-            )
-        })?;
-        checks.push(Constraint {
-            expected: format!("a value satisfying `{}`", invariant.statement),
-            prelude: std::mem::take(&mut check.prelude),
-            broken: format!("{}({truth})", check.iv("Broken")),
-        });
+        match check.predicate(&invariant.predicate) {
+            Ok(truth) => checks.push(Constraint {
+                expected: format!("a value satisfying `{}`", invariant.statement),
+                prelude: std::mem::take(&mut check.prelude),
+                broken: format!("{}({truth})", check.iv("Broken")),
+            }),
+            Err(reason) => {
+                check.prelude.clear();
+                check.depth = depth;
+                refused.push((
+                    format!("invariants.{index}"),
+                    format!("`{}`: {reason}", invariant.statement),
+                ));
+            }
+        }
     }
-    Ok(checks)
 }
 
 /// The statements a struct's decoder runs once it has read every member: a block, so the
@@ -419,6 +445,16 @@ pub(super) fn package(ir: &EssIr, layout: &Layout, provenance: &Provenance) -> O
     let mut out = provenance.commented_for("//", REGENERATE);
     out.push('\n');
     out.push_str(RUNTIME);
+    // The key comparison of `distinct` is in the package only for a model in which some struct
+    // reads one, so a model that reads none keeps every byte it had.
+    if ir.types().values().any(|declared| match &declared.body {
+        ResolvedBody::Struct { invariants, .. } => invariants
+            .iter()
+            .any(|invariant| invariant.predicate.reads_distinct()),
+        _ => false,
+    }) {
+        out.push_str(DISTINCT);
+    }
     Some(Artifact::new(layout.invariant().file(), out))
 }
 
@@ -653,14 +689,7 @@ impl<'a> Check<'a> {
             }
             Predicate::Forall(quantified) => self.quantified(true, quantified)?,
             Predicate::Exists(quantified) => self.quantified(false, quantified)?,
-            // The shared invariant evaluator compares no keys across a list's elements: refused by
-            // name rather than dropped from the check.
-            Predicate::Distinct(_) => {
-                return Err(format!(
-                    "`{predicate}` requires distinct list members, which the generated invariant \
-                     check does not evaluate"
-                ))
-            }
+            Predicate::Distinct(distinct) => self.distinct(predicate, distinct)?,
             // Validation admits a calendar window only in a command guard, and the shared invariant
             // evaluator reads no window: refused by name rather than rendered as something else.
             Predicate::Window(window) => {
@@ -876,6 +905,66 @@ impl<'a> Check<'a> {
         self.line("}");
         self.close_guards(depth);
         Ok(variable)
+    }
+
+    /// `distinct`: no two elements of the list share a key, the key each element's own value or the
+    /// member `by` names, under the equality its type declares. The keys are gathered by a loop and
+    /// compared by `invariant.Distinct`; unknown where the list is absent.
+    ///
+    /// Only a struct's invariants read it. The decoders check those, and the evaluator carries the
+    /// comparison only for a model that has one; an entity's or a newtype's is refused by name
+    /// rather than dropped from the check.
+    fn distinct(&mut self, predicate: &Predicate, distinct: &Distinct) -> Result<String, String> {
+        if !matches!(self.subject, Subject::Struct(_)) {
+            return Err(format!(
+                "`{predicate}` requires distinct list members, which the generated invariant check \
+                 evaluates only for a struct"
+            ));
+        }
+        let Some(kind) = distinct.key_kind else {
+            return Err(format!("`{predicate}` has no resolved key type"));
+        };
+        let (guards, expression, terminal) = match self.walk(&distinct.over)? {
+            Walked::Value {
+                guards,
+                expression,
+                terminal,
+            } => (guards, expression, terminal),
+            Walked::Count { .. } | Walked::Absent => {
+                return Err(format!("`{}` is not a list", distinct.over));
+            }
+        };
+        let ResolvedTypeRef::List { of } = &terminal else {
+            return Err(format!("`{}` is `{terminal}`, not a list", distinct.over));
+        };
+        let element = (**of).clone();
+        let (truth, keys) = (self.local("t"), self.local("k"));
+        let item = fresh(&self.reserved, &format!("item{}", self.binders.len()));
+        // The zero `Truth` is `Unknown`, which an absent list leaves it at.
+        let truth_type = self.iv("Truth");
+        self.line(&format!("var {truth} {truth_type}"));
+        let depth = self.open_guards(&guards);
+        let fact_type = self.iv("Fact");
+        self.line(&format!("var {keys} []{fact_type}"));
+        self.line(&format!("for _, {item} := range {expression} {{"));
+        self.depth += 1;
+        self.line(&format!("_ = {item}"));
+        self.binders.push(Binder {
+            name: distinct.bind.clone(),
+            variable: item,
+            element,
+        });
+        let key = self.fact(&distinct.key_path());
+        self.binders.pop();
+        let key = key?;
+        self.line(&format!("{keys} = append({keys}, {key})"));
+        self.depth -= 1;
+        self.line("}");
+        let instant = kind == DistinctKeyKind::Timestamp;
+        let compare = self.iv("Distinct");
+        self.line(&format!("{truth} = {compare}({keys}, {instant})"));
+        self.close_guards(depth);
+        Ok(truth)
     }
 
     /// Opens one `if` per guard, binding what each found; returns the depth to close back to.
@@ -1163,3 +1252,6 @@ fn ordinal(segment: &str) -> bool {
 
 /// The evaluator, as its own package.
 const RUNTIME: &str = include_str!("runtime/invariant.go");
+
+/// `invariant.Distinct`, the last function of the evaluator's package.
+const DISTINCT: &str = include_str!("runtime/distinct.go.txt");

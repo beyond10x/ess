@@ -430,7 +430,7 @@ fn primitives_module(ir: &EssIr, layout: &Layout, provenance: &Provenance) -> Ar
     let mut out = provenance.commented_for("//", REGENERATE);
     out.push_str(PRIMITIVES);
     out.push_str(&reading::helpers(ir));
-    out.push_str(invariant::runtime(ir));
+    out.push_str(&invariant::runtime(ir));
     Artifact::new(
         format!("crates/{}/src/primitives.rs", layout.package()),
         out,

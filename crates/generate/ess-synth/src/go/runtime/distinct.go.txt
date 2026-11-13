@@ -1,0 +1,49 @@
+
+// Distinct reads whether no two elements of a list share a key. keys holds each element's key in
+// order, Absent where the element has none; instant says the keys are a `Timestamp`, equal by the
+// instant they name, where every other key is equal by its value: a number exactly, text byte for
+// byte.
+//
+// Fewer than two elements hold. Two known equal keys anywhere make it False; every key known and
+// pairwise unequal makes it True; anything else — a key absent, or a text that no `date-time`
+// spells for a `Timestamp` — is Unknown, never one shared absence. The reading the conformance
+// interpreter and the published schema give `distinct`.
+func Distinct(keys []Fact, instant bool) Truth {
+	if len(keys) < 2 {
+		return True
+	}
+	type instantKey struct {
+		seconds int64
+		nanos   int64
+	}
+	seen := map[Fact]struct{}{}
+	seenInstants := map[instantKey]struct{}{}
+	unknown := false
+	for _, key := range keys {
+		if key.kind == absent {
+			unknown = true
+			continue
+		}
+		if instant && key.kind == text {
+			seconds, nanos, ok := rfc3339(key.text)
+			if !ok {
+				unknown = true
+				continue
+			}
+			at := instantKey{seconds: seconds, nanos: nanos}
+			if _, found := seenInstants[at]; found {
+				return False
+			}
+			seenInstants[at] = struct{}{}
+			continue
+		}
+		if _, found := seen[key]; found {
+			return False
+		}
+		seen[key] = struct{}{}
+	}
+	if unknown {
+		return Unknown
+	}
+	return True
+}

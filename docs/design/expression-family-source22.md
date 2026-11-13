@@ -894,7 +894,9 @@ section above.
   list distinct at two elements. The finite-domain controls of the section above — three Boolean
   keys, a singleton enum refused by name — are not implemented by U6.
 - Generated lanes: `determined::supported` owes a guard, filter or selection reading `distinct` by
-  name; the Rust and Go invariant checks refuse it by name; Entity Runtime refuses it as
+  name; the Rust and Go invariant checks refuse it by name in an entity's or a newtype's invariant
+  and evaluate it in a struct's, which the generated decoders check (`iv::distinct` in Rust,
+  `invariant.Distinct` in Go, the key equality above); Entity Runtime refuses it as
   `DistinctUnsupported`; `infra-spec/1` refuses it. Mutation excludes a `distinct` leaf from
   `guard-boundary` (decision 16); the guard around it is still negated.
 - Undecidable rows: an absent key is `Unknown` in all three runners, which the Rust runner reports
