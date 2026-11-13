@@ -179,10 +179,12 @@ fn quoted_text_a_number_and_an_undotted_word_draw_nothing() {
     for value in [
         "'\"example.com\"'",
         "\"'example.com'\"",
-        "3",
-        "1.5",
+        "'3'",
+        "'1.5'",
+        "'-2.5'",
+        "'10.0.0.1'",
         "plain",
-        "true",
+        "'true'",
     ] {
         for (text, _, _) in at_both_sites(value) {
             let report = run(&text);
@@ -366,4 +368,49 @@ fn a_bare_section_is_resolved_by_its_name_only() {
         Severity::Error,
         &["`section.nosuch`"],
     );
+}
+
+/// An action's `sets` is a map keyed by `expr`: the key is the state written, and a state out of
+/// scope there is the error.
+#[test]
+fn a_key_typed_as_an_expression_is_a_site() {
+    let with_sets = |key: &str| {
+        document("section.deals.selection.id", "section.deals.selection.id").replace(
+            "navigate: {to: q, params: {id: section.deals.selection.id}}}]",
+            &format!(
+                "navigate: {{to: q, params: {{id: section.deals.selection.id}}}}}}, \
+                 {{name: star, label: Star, sets: {{{key}: toggle}}}}]"
+            ),
+        )
+    };
+    let report = run(&with_sets("state.search"));
+    assert!(story_findings(&report).is_empty(), "{:#?}", report.findings);
+    let report = run(&with_sets("state.nosuch"));
+    let found = of(&report, "expr_paths");
+    assert_eq!(found.len(), 1, "{:#?}", report.findings);
+    assert_eq!(found[0].path, "pages/p/sections/deals/row_actions/star");
+    assert!(found[0].message.contains("`state.nosuch`"), "{found:#?}");
+}
+
+/// A guard's `then` is a `one_of` of a refusal, a redirect and a `set` map: the `set` is reached
+/// through it, with its key and its value read as expressions.
+#[test]
+fn a_type_that_is_one_of_several_is_followed() {
+    let guarded = |then: &str| {
+        document("section.deals.selection.id", "section.deals.selection.id").replace(
+            "state: {theme: {type: string, class: preference, store: local_storage}}}}",
+            &format!(
+                "state: {{theme: {{type: string, class: preference, store: local_storage}}}}, \
+                 guards: [{{name: g, when: url.query.x, then: {then}}}]}}}}"
+            ),
+        )
+    };
+    let report = run(&guarded("{set: {shell.theme: url.query.x}}"));
+    assert!(story_findings(&report).is_empty(), "{:#?}", report.findings);
+    let report = run(&guarded("{set: {shell.theme: bogusroot.x}}"));
+    assert_eq!(of(&report, "expr_roots").len(), 1, "{:#?}", report.findings);
+    let report = run(&guarded("{set: {shell.nosuch: url.query.x}}"));
+    let found = of(&report, "expr_paths");
+    assert_eq!(found.len(), 1, "{:#?}", report.findings);
+    assert_eq!(found[0].path, "shells/app/guards/g");
 }

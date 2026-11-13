@@ -182,16 +182,21 @@ pub(crate) fn is_construct(name: &str) -> bool {
 /// The field tables a mapping written as construct `name` is read with: the construct's own, and
 /// — for a mapping that names its kind inline — those of the composite (`component`, one of
 /// `Composite.union.members`, or a widget, whose use is a `WidgetInstance`) or primitive
-/// (`primitive`) it stands for, each with the name of the construct it belongs to.
+/// (`primitive`) it stands for, each with the name of the construct it belongs to. A mapping that
+/// names neither takes the composite or widget in `inherited`: the kind the loader gave the node
+/// at this place (a page kind's or a `same_as` overlay's), which the document as written omits.
 pub(crate) fn field_tables(
     name: &str,
     mapping: &ess_yaml::Mapping,
+    inherited: Option<&str>,
 ) -> Vec<(String, &'static ess_yaml::Mapping)> {
     let constructs = &schema()["constructs"];
     let members = strings(&constructs["Composite"]["union"]["members"]);
     let kinds = strings(&constructs["Primitive"]["fields"]["primitive"]["type"]["enum"]);
     let mut owners = vec![name.to_owned()];
-    if let Some(component) = mapping.get("component").and_then(Value::as_str) {
+    let own = mapping.get("component").and_then(Value::as_str);
+    let inherits = own.is_none() && !mapping.contains_key("primitive");
+    if let Some(component) = own.or(inherits.then_some(inherited).flatten()) {
         owners.push("Composite".to_owned());
         owners.push(if members.iter().any(|member| member == component) {
             component.to_owned()

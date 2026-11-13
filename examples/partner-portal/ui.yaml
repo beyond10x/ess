@@ -80,7 +80,7 @@ shells:
       theme:             {type: {enum: [light, dark]}, class: preference, store: local_storage, pinned: true, default: light}
       assistant_enabled: {type: boolean, class: preference, default: false}
       credentials:       {type: {record: {access_token: string, refresh_token: string}}, class: credential, sensitive: true, store: server_session, pinned: true}
-      invite_token:      {type: string, class: preference}
+      invite_token:      {type: string, class: draft}
     preload:
       policy: in_background
       except_on: [auth.sign_in]
@@ -100,7 +100,7 @@ shells:
       main:   {kind: page_outlet}
       notify: {kind: notifications}
     state:
-      logo_url: {type: string, class: preference}
+      logo_url: {type: string, class: component_state}
 
 # ── Navigation ────────────────────────────────────────────────────────────────────────────────
 navigation:

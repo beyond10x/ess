@@ -37,8 +37,34 @@ pub(crate) struct Reading {
     pub(crate) strays: Vec<String>,
 }
 
-/// What `text` reads, or `None` when it does not parse in the grammar: such a string is literal.
+/// What `text` reads, or `None` when it parses in neither grammar: such a string is literal. A
+/// string outside the expression grammar that the filter grammar reads (`row.tags contains
+/// state.search`, which `checked` and a row-judged `visible` may use) is read there.
 pub(crate) fn read(text: &str) -> Option<Reading> {
+    read_expression(text).or_else(|| read_filter(text))
+}
+
+/// The paths of a string in the filter grammar: a path of a root, or a dotted word that begins
+/// with none.
+fn read_filter(text: &str) -> Option<Reading> {
+    let predicate = ess_ui::filter::parse(text)?;
+    let forms = forms();
+    let mut reading = Reading {
+        paths: Vec::new(),
+        strays: Vec::new(),
+    };
+    for segments in predicate.paths() {
+        let word = segments.join(".");
+        if forms.roots.contains(&segments[0]) {
+            reading.paths.push(word);
+        } else {
+            reading.strays.push(word);
+        }
+    }
+    Some(reading)
+}
+
+fn read_expression(text: &str) -> Option<Reading> {
     let tokens = tokenize(text)?;
     let mut parser = Parser {
         tokens: &tokens,

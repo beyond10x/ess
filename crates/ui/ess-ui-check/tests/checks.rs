@@ -403,7 +403,14 @@ fn expr_roots() {
     );
     assert!(finding.message.contains("bogusroot.x"), "{finding:?}");
     assert_eq!(finding.severity, Severity::Warning);
-    for quiet in ["row.id", "'\"example.com\"'", "42", "plain"] {
+    for quiet in [
+        "row.id",
+        "'\"example.com\"'",
+        "'42'",
+        "'1.5'",
+        "'-2.5'",
+        "plain",
+    ] {
         let fine = report(&read(quiet));
         assert!(
             tripped(&fine, "expr_roots").is_empty(),

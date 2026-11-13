@@ -12,28 +12,36 @@
 //! The row filter of a read is left to `filter_expr`, `filter_roots` and `filter_paths`, which
 //! hold it to the same scope.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
-use ess_ui::{Document, NodePath, NodeRef};
+use ess_ui::{Body, Document, NodePath, NodeRef};
 use ess_yaml::Value;
 
 use crate::expr;
 use crate::filter::Scope;
 use crate::raw::{locate, segment};
 use crate::schema::{self, is_unmapped_marker};
-use crate::walk::page_of;
+use crate::walk::{body_of, composite_kind, page_of};
 use crate::Sink;
 
 pub(crate) fn run(text: &str, document: &Document, sink: &mut Sink) {
     let Ok(value) = ess_yaml::from_str::<Value>(text) else {
         return;
     };
+    let located = document.nodes();
     let mut walker = Walker {
         document,
-        nodes: document
-            .nodes()
-            .into_iter()
-            .map(|located| located.path)
+        nodes: located.iter().map(|located| located.path.clone()).collect(),
+        kinds: located
+            .iter()
+            .filter_map(|located| {
+                let kind = match body_of(located.node)? {
+                    Body::Composite(composite) => composite_kind(composite).to_owned(),
+                    Body::Widget(widget) => widget.component.clone(),
+                    Body::Primitive(_) | Body::Host(_) => return None,
+                };
+                Some((located.path.clone(), kind))
+            })
             .collect(),
         seen: BTreeSet::new(),
     };
@@ -43,6 +51,10 @@ pub(crate) fn run(text: &str, document: &Document, sink: &mut Sink) {
 struct Walker<'a> {
     document: &'a Document,
     nodes: BTreeSet<NodePath>,
+    /// The composite or widget each section, overlay and nested node holds once loaded, by its
+    /// path: the kind of a node whose `component` the document leaves to a page kind or a
+    /// `same_as`.
+    kinds: BTreeMap<NodePath, String>,
     /// What has been reported, so a field two tables of one node both type is reported once.
     seen: BTreeSet<(&'static str, NodePath, String)>,
 }
@@ -66,7 +78,7 @@ impl Walker<'_> {
         let Some(mapping) = value.as_mapping() else {
             return;
         };
-        let tables = schema::field_tables(name, mapping);
+        let tables = schema::field_tables(name, mapping, self.kinds.get(at).map(String::as_str));
         for (key, child) in mapping {
             let Some(key) = key.as_str() else {
                 continue;
@@ -77,11 +89,14 @@ impl Walker<'_> {
                 };
                 let at = at.child(key);
                 match (owner.as_str(), key) {
-                    ("Reads", "filter") => {}
+                    // Held to the same scope by `filter_expr`, `filter_roots` and `filter_paths`.
+                    ("Reads" | "DynamicNavEntries", "filter") => {}
+                    // An argument is a path or a literal; the widget may substitute it into text,
+                    // where a dotted word is what is shown, so no word is called a stray.
                     ("WidgetInstance", "args") => {
                         for (arg, text) in child.as_mapping().into_iter().flatten() {
                             if let Some(arg) = arg.as_str() {
-                                self.expression(text, &at.child(arg), sink);
+                                self.expression(text, &at.child(arg), false, sink);
                             }
                         }
                     }
@@ -104,7 +119,7 @@ impl Walker<'_> {
         }
         if let Some(name) = ty.as_str() {
             if name == "expr" {
-                self.expression(value, at, sink);
+                self.expression(value, at, true, sink);
             } else if schema::is_construct(name) {
                 self.construct(name, value, at, sink);
             }
@@ -126,7 +141,7 @@ impl Walker<'_> {
                 };
                 let under = at.child(entry_key);
                 if map["key"].as_str() == Some("expr") {
-                    self.expression(&Value::String(entry_key.to_owned()), &under, sink);
+                    self.expression(&Value::String(entry_key.to_owned()), &under, true, sink);
                 }
                 self.typed(&map["value"], entry, &under, key, sink);
             }
@@ -146,7 +161,7 @@ impl Walker<'_> {
     }
 
     /// One value written where an expression stands.
-    fn expression(&mut self, value: &Value, at: &NodePath, sink: &mut Sink) {
+    fn expression(&mut self, value: &Value, at: &NodePath, strays: bool, sink: &mut Sink) {
         let Some(text) = value.as_str() else {
             return;
         };
@@ -156,7 +171,7 @@ impl Walker<'_> {
         let Some(reading) = expr::read(text) else {
             return;
         };
-        for word in &reading.strays {
+        for word in reading.strays.iter().filter(|_| strays) {
             let message = format!(
                 "`{word}` reads no path: `{}` is no root ({}), so it stays literal text; write \
                  `\"{word}\"` to say so",
