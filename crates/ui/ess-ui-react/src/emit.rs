@@ -539,15 +539,26 @@ impl<'d> Gen<'d> {
         for (name, state) in states {
             let path = at.child("state").child(name);
             let (local, setter) = self.local_pair(&ts::camel(name));
-            let ty = self.types.lower(&state.ty);
+            let mut ty = self.types.lower(&state.ty);
             self.model_types();
-            let initial = state.default.as_ref().map_or_else(
-                || match theme {
-                    Some((chosen, default)) if chosen == name => ts::string(default),
-                    _ => self.types.initial(&state.ty),
-                },
-                default_literal,
-            );
+            let initial = if let Some(default) = &state.default {
+                default_literal(default)
+            } else if let Some((_, default)) = theme.filter(|(chosen, _)| *chosen == name) {
+                match self.types.enum_values(&state.ty) {
+                    Some(values) => {
+                        if !values.iter().any(|value| value == default) {
+                            // The checker accepts a `theme.default` the enum leaves out, and the
+                            // shell shows `theme.default` before the state holds a value: this
+                            // state's type then admits that one theme too.
+                            ty = format!("{ty} | {}", ts::string(default));
+                        }
+                        ts::string(default)
+                    }
+                    None => self.types.initial(&state.ty),
+                }
+            } else {
+                self.types.initial(&state.ty)
+            };
             let call = self.placement_call(&path, state, &ty, &initial);
             lines.push(format!("const [{local}, {setter}] = {call};"));
             values.push((name.clone(), local));
