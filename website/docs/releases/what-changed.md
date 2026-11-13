@@ -9,6 +9,14 @@ What each ESS release is worth to somebody using it: what became possible, how m
 
 This page is generated from the change records kept in the repository. A release with no entry here added nothing somebody using ESS would act on.
 
+## 0.96.0 — 2026-11-13
+
+### ess ui check resolves every binding path, and two more refusals are told apart
+
+capability · notable impact · [release notes](https://github.com/beyond10x/ess/releases/tag/0.96.0)
+
+`ess ui check` resolves the root and the section of every binding path and reports a state, parameter or section that is not in scope. Two errors of one wire name bind on one status where a field tells their bodies apart. Synthesis sends the overlap of two refusals when one guard is a `distinct` predicate over a list.
+
 ## 0.95.0 — 2026-11-13
 
 ### Records group their fields, a page header takes a badge, and generated decoders check a struct's distinct keys

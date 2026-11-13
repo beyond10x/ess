@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.96.0] — 2026-11-13
+
 ### Fixed
 
 - Two errors of one wire name whose fields differ by an always-written field now bind on one status without `alike:` (`ESS-HTTP-025`, `ess-http/1`): one error always writes a field, by wire name, that the other never writes, and one function decides it for the status check and the `alike` check. A field is always written when its type, through any newtype, is not `Optional` and its outcome is not the unknown-instance answer of its command (the `wrong_state` outcome of a command that moves, updates or deletes an instance its input names and declares no `unknown_instance:` outcome, which answers an unknown instance without its error's fields). With `alike:` such a pair is refused and the message names the field. A pair that differs only in an optional field (also one typed by a newtype over `Optional<…>`), an order or a field's type is still refused in both forms; the refusal states what was checked, that the fields differ and no field one error always writes is one the other never writes, and the forms that validate as written, and makes no claim about what a body can hold. Where both always write one field with values of JSON types that have no value in common (a string against a number), the message names the field and says the binding tells errors apart by which fields are written, not by a field's type. The status refusal says a reader cannot tell the bodies apart only of outcomes whose body form, `encoding` and redirect (both or neither) are the same. `OpenAPI` writes no discriminator for two bodies of one wire name, which one value of `error` names. `ess-http/1` does not move: no key is added and a binding the rule admits is refused by an older `ess`.
