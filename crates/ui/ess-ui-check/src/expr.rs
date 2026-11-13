@@ -27,6 +27,146 @@ pub(crate) fn is_expression(text: &str) -> bool {
     parser.or().is_some() && parser.at == tokens.len() && parser.reads
 }
 
+/// The paths a string that parses in the expression grammar reads, and the dotted words in it
+/// that begin with no root.
+pub(crate) struct Reading {
+    /// Each path of a root, as written (`section.deals.selection.id`).
+    pub(crate) paths: Vec<String>,
+    /// The paths read outside the arguments of a call: in `actor.may(args.cmd)`, `args.cmd` is
+    /// read inside one and is no entry here.
+    pub(crate) outside: Vec<String>,
+    /// Each unquoted dotted word whose first segment is no root and that is no number
+    /// (`example.com`): literal text, outside the arguments of a call.
+    pub(crate) strays: Vec<String>,
+}
+
+/// What `text` reads, or `None` when it parses in neither grammar: such a string is literal. A
+/// string outside the expression grammar that the filter grammar reads (`row.tags contains
+/// state.search`, which `checked` and a row-judged `visible` may use) is read there.
+pub(crate) fn read(text: &str) -> Option<Reading> {
+    read_expression(text).or_else(|| read_filter(text))
+}
+
+/// The paths of a string in the filter grammar: a path of a root, or a dotted word that begins
+/// with none.
+fn read_filter(text: &str) -> Option<Reading> {
+    let predicate = ess_ui::filter::parse(text)?;
+    let forms = forms();
+    let mut reading = Reading {
+        paths: Vec::new(),
+        outside: Vec::new(),
+        strays: Vec::new(),
+    };
+    for segments in predicate.paths() {
+        let word = segments.join(".");
+        if forms.roots.contains(&segments[0]) {
+            reading.outside.push(word.clone());
+            reading.paths.push(word);
+        } else {
+            reading.strays.push(word);
+        }
+    }
+    Some(reading)
+}
+
+fn read_expression(text: &str) -> Option<Reading> {
+    let tokens = tokenize(text)?;
+    let mut parser = Parser {
+        tokens: &tokens,
+        at: 0,
+        reads: false,
+    };
+    if parser.or().is_none() || parser.at != tokens.len() {
+        return None;
+    }
+    let forms = forms();
+    let mut reading = Reading {
+        paths: Vec::new(),
+        outside: Vec::new(),
+        strays: Vec::new(),
+    };
+    // One entry per open parenthesis: `true` where it opens the arguments of a call.
+    let mut open: Vec<bool> = Vec::new();
+    for (index, token) in tokens.iter().enumerate() {
+        match token {
+            Token::Open => {
+                let call = index
+                    .checked_sub(1)
+                    .and_then(|before| tokens.get(before))
+                    .is_some_and(|before| matches!(before, Token::Word(word) if !is_keyword(word)));
+                open.push(call);
+            }
+            Token::Close => {
+                open.pop();
+            }
+            Token::Word(word) if !is_keyword(word) => {
+                let (root, rest) = word.split_once('.').unwrap_or((word, ""));
+                if forms.roots.contains(root) {
+                    if rest.split('.').all(|segment| !segment.is_empty()) && !rest.is_empty() {
+                        reading.paths.push(word.clone());
+                        if !open.contains(&true) {
+                            reading.outside.push(word.clone());
+                        }
+                    }
+                } else if !rest.is_empty()
+                    && !is_number(word)
+                    && !open.contains(&true)
+                    && tokens.get(index + 1) != Some(&Token::Open)
+                {
+                    reading.strays.push(word.clone());
+                }
+            }
+            _ => {}
+        }
+    }
+    Some(reading)
+}
+
+const KEYWORDS: [&str; 4] = ["and", "or", "not", "in"];
+
+fn is_keyword(word: &str) -> bool {
+    KEYWORDS.contains(&word)
+}
+
+/// A number (`3`, `1.5`, `-2`, `10.0.0.1`) is a word of digits, dots and signs.
+fn is_number(word: &str) -> bool {
+    word.chars()
+        .all(|c| c.is_ascii_digit() || c == '.' || c == '-')
+}
+
+/// The roots `expressions.forms` names, in its order (`state`, `params`, …).
+pub(crate) fn roots() -> Vec<String> {
+    let mut roots = Vec::new();
+    for form in schema::expression_forms() {
+        let head = form_head(form);
+        if form[head.len()..].starts_with('.') && !roots.contains(&head) {
+            roots.push(head);
+        }
+    }
+    roots
+}
+
+/// The members of a section the reference lists: `selection` and `row`, read from the forms
+/// `section.<name>.<member>`.
+pub(crate) fn section_members() -> Vec<String> {
+    schema::expression_forms()
+        .iter()
+        .filter_map(|form| form.strip_prefix("section.<name>."))
+        .map(|member| {
+            member
+                .chars()
+                .take_while(|c| c.is_ascii_alphanumeric() || *c == '_')
+                .collect()
+        })
+        .collect()
+}
+
+fn form_head(form: &str) -> String {
+    form.chars()
+        .take_while(|c| c.is_ascii_alphanumeric() || *c == '_')
+        .collect()
+}
+
 /// The roots and function forms `expressions.forms` names.
 struct Forms {
     roots: BTreeSet<String>,

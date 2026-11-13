@@ -50,6 +50,29 @@ fn holding(dir: &Path, needle: &str) -> Vec<PathBuf> {
         .collect()
 }
 
+/// Two shell states the example declares for the client: a draft (`invite_token`, which a guard
+/// sets from the invite link) resolves to session storage, and a component state (`logo_url`,
+/// which an image only reads) to memory, through the document's placement defaults.
+#[test]
+fn adv1_the_examples_draft_resolves_to_session_storage_and_its_component_state_to_memory() {
+    let document =
+        ess_ui::load_path(&example_dir().join("ui.yaml")).unwrap_or_else(|error| panic!("{error}"));
+    let placements =
+        ess_ui_tui::placement::resolve(&document).unwrap_or_else(|error| panic!("{error:?}"));
+    let store = |path: &str| {
+        placements
+            .get(path)
+            .unwrap_or_else(|| panic!("`{path}` is placed; have {:?}", placements.keys()))
+            .store
+            .clone()
+    };
+    assert_eq!(
+        store("shells/app/state/invite_token"),
+        ess_ui::Store::SessionStorage
+    );
+    assert_eq!(store("shells/auth/state/logo_url"), ess_ui::Store::Memory);
+}
+
 /// Every sensitive draft the example has, typed through the keyboard; no file under the state
 /// dir may hold any of them afterwards.
 #[test]

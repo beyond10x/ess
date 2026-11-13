@@ -1755,7 +1755,7 @@ checks:
     - {id: shell_refs,          subject: "pages.*.shell", must_resolve: {ref: shell}, severity: error}
     - {id: page_outlet,         subject: "shells.* a page renders in", must: have_a_region_of_kind_page_outlet, severity: error}
     - {id: channel_refs,        subject: ["**.live.channel", "**.header.live[]", "channel.<name> inside expr"], must_resolve: {ref: channel}, severity: error}
-    - {id: section_refs,        subject: ["**.header.total", "**.header.filters", "**.depends_on", "pages.*.layout.columns[].sections[]", "pages.*.layout.areas.place.*[]"], must_resolve_in: [page.sections], severity: error}
+    - {id: section_refs,        subject: ["**.header.total", "**.header.filters", "**.depends_on", "pages.*.layout.columns[].sections[]", "pages.*.layout.areas.place.*[]", "section.<name>.<member> inside expr"], must_resolve_in: [page.sections, expressions.forms], severity: error}
     - {id: layout_complete,     subject: "pages.*.layout", must: place_every_section_once, severity: warning}
     - {id: widget_expands,      subject: "**.component naming a widget", must: [resolve_widget, required_args_present, args_match_param_types, no_recursion], then: check_expanded_body, severity: error}
     - {id: primitive_props,     subject: "**.primitive", must: props_of_kind_only, severity: error}
@@ -1794,3 +1794,5 @@ checks:
     - {id: host_slots, subject: "**.host", must: [carry_a_non_empty_reason, name_what_it_stands_in_for, be_the_only_slot_of_its_host_name, carry_neither_component_nor_primitive], severity: error}
     - {id: hosts_registered, subject: "**.host, for every name ess ui check --hosts lists", must_resolve_in: ["**.host"], severity: error}
     - {id: board_widget_kinds, subject: "**.board.reads fixture rows", must: have_a_widget_by_field_that_names_an_entry_of_widgets, severity: warning}
+    - {id: expr_paths, subject: ["judged: state.<name>, params.<name> and shell.<name> inside an expr written in a page or in an overlay of a shell, against what is in scope there (a page overlay that declares params has the page's and its own, a shell overlay its own); and shell.<name> inside the rest of a shell (its regions and guards)", "not judged: page kinds, widget declarations, navigation, state.<name> and params.<name> inside the rest of a shell, and params.<name> inside an overlay that declares no params, whose opener hands it values"], must_resolve_in: ["the state, parameters and shell state in scope where the expression stands"], severity: error}
+    - {id: expr_roots, subject: ["an unquoted dotted word inside an expr, outside the arguments of a call", "not judged: a read's filter and a dynamic menu entry's filter (held by the filter_* checks), and a widget argument whose parameter the widget does not substitute into an expr, where the word is shown as text"], must: begin_with_a_root_of_expressions.forms_or_be_quoted, severity: warning}

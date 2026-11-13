@@ -66,13 +66,7 @@ impl Walker<'_> {
     /// Reports at the nearest node enclosing `at` (a finding names a node, not a field), with
     /// the field it was found in named in the message.
     fn report(&self, sink: &mut Sink, id: &'static str, at: &NodePath, message: String) {
-        let segments = at.segments();
-        let depth = (0..=segments.len())
-            .rev()
-            .find(|depth| *depth == 0 || self.nodes.contains(&path_of(&segments[..*depth])))
-            .unwrap_or(0);
-        let node = path_of(&segments[..depth]);
-        let field = segments[depth..].join("/");
+        let (node, field) = locate(&self.nodes, at);
         if field.is_empty() {
             sink.push(id, &node, message);
         } else {
@@ -304,6 +298,17 @@ fn unknown_channels(text: &str, document: &Document) -> Vec<String> {
         }
     }
     unknown
+}
+
+/// The nearest node enclosing `at` and the field of it `at` is, as a path relative to the node
+/// (empty when `at` is the node).
+pub(crate) fn locate(nodes: &BTreeSet<NodePath>, at: &NodePath) -> (NodePath, String) {
+    let segments = at.segments();
+    let depth = (0..=segments.len())
+        .rev()
+        .find(|depth| *depth == 0 || nodes.contains(&path_of(&segments[..*depth])))
+        .unwrap_or(0);
+    (path_of(&segments[..depth]), segments[depth..].join("/"))
 }
 
 fn path_of(segments: &[String]) -> NodePath {

@@ -355,6 +355,70 @@ fn section_row() {
     assert!(tripped(&fine, "section_row").is_empty(), "{fine:#?}");
 }
 
+/// `state.<name>`, `params.<name>` and `shell.<name>` inside an expression name a declaration in
+/// scope where the expression stands.
+#[test]
+fn expr_paths() {
+    let read = |path: &str| {
+        page(&format!(
+            "{{kind: detail_page, title: P, sections: [{{name: summary, \
+             reads: {{view: t.ById, params: {{id: {path}}}}}}}]}}"
+        ))
+    };
+    for path in ["state.nosuch", "params.nosuch", "shell.nosuch"] {
+        let finding = trips(&read(path), "expr_paths", "pages/p/sections/summary");
+        assert!(finding.message.contains(path), "{finding:?}");
+    }
+    let fine = report(&doc(&[
+        (
+            "shells",
+            "{app: {regions: {main: {kind: page_outlet}}, \
+             state: {theme: {type: string, class: preference, store: local_storage}}}}",
+        ),
+        (
+            "pages",
+            "{p: {kind: detail_page, title: P, params: {id: string}, \
+             state: {q: {type: string, class: page_state}}, \
+             sections: [{name: summary, reads: {view: t.ById, \
+             params: {a: state.q, b: params.id, c: shell.theme}}}]}}",
+        ),
+    ]));
+    assert!(tripped(&fine, "expr_paths").is_empty(), "{fine:#?}");
+}
+
+/// A dotted word whose first segment is no root of the expression grammar stays literal text and
+/// draws a warning.
+#[test]
+fn expr_roots() {
+    let read = |value: &str| {
+        page(&format!(
+            "{{kind: detail_page, title: P, sections: [{{name: summary, \
+             reads: {{view: t.ById, params: {{id: {value}}}}}}}]}}"
+        ))
+    };
+    let finding = trips(
+        &read("bogusroot.x"),
+        "expr_roots",
+        "pages/p/sections/summary",
+    );
+    assert!(finding.message.contains("bogusroot.x"), "{finding:?}");
+    assert_eq!(finding.severity, Severity::Warning);
+    for quiet in [
+        "row.id",
+        "'\"example.com\"'",
+        "'42'",
+        "'1.5'",
+        "'-2.5'",
+        "plain",
+    ] {
+        let fine = report(&read(quiet));
+        assert!(
+            tripped(&fine, "expr_roots").is_empty(),
+            "{quiet}: {fine:#?}"
+        );
+    }
+}
+
 #[test]
 fn export_selection() {
     let report = report(&page(

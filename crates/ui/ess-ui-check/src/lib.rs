@@ -34,6 +34,7 @@ mod raw;
 mod rules;
 mod schema;
 mod section_row;
+mod sites;
 mod style;
 mod walk;
 
@@ -169,6 +170,8 @@ pub const CHECKS: &[Check] = &[
     schema_check("host_slots", Severity::Error),
     schema_check("hosts_registered", Severity::Error),
     schema_check("board_widget_kinds", Severity::Warning),
+    schema_check("expr_paths", Severity::Error),
+    schema_check("expr_roots", Severity::Warning),
     // The loader refused the document for a reason no other check names.
     rule("document_loads"),
     // `layers`: a node stands where its layer may not.
@@ -575,6 +578,7 @@ pub fn check_source(
             filter::run(&document, model, &mut sink);
             style::run(&document, &mut sink);
             raw::run(text, &document, model, &mut sink);
+            sites::run(text, &document, &mut sink);
             section_row::run(&document, &mut sink);
             hosts::run(&document, options, &mut sink);
             if let Some(model) = model {
