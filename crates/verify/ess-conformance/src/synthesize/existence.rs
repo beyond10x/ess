@@ -1542,19 +1542,21 @@ fn identity_views<'i>(
 
 /// Whether the one-row snapshot can be read from `view` after the updating branch: an immediate,
 /// unparameterised view whose filter — where it has one — is decided to admit the row the branch
-/// leaves, from its state and the fields the scenario determined.
-fn one_row_view(ir: &EssIr, view: &ResolvedView, run: &Run) -> bool {
+/// leaves, from its state and the fields the scenario determined. Those are the `run`'s, which are
+/// the snapshot row's only where `same_row`; a filter is not decided on any other row.
+fn one_row_view(ir: &EssIr, view: &ResolvedView, run: &Run, same_row: bool) -> bool {
     super::paging::read_whole(view)
         && view.consistency == Consistency::ReadYourWrites
         && view.assertion_style == AssertionStyle::Expect
         && (view.filter.is_none()
-            || run.after.as_ref().is_some_and(|state| {
-                shows(ir, view, state, &run.settled, &BTreeMap::new()) == Ok(true)
-            }))
+            || (same_row
+                && run.after.as_ref().is_some_and(|state| {
+                    shows(ir, view, state, &run.settled, &BTreeMap::new()) == Ok(true)
+                })))
 }
 
 /// The instance the scenario's last call of `command` addresses with the identity `updating` names:
-/// the row its second call updates, under the name the scenario's own steps bound it.
+/// the row that call updates, under the name the scenario's own steps bound it.
 fn called_instance(
     steps: &[ScenarioStep],
     command: &ResolvedCommand,
@@ -1609,23 +1611,25 @@ fn one_row(
     if candidates.is_empty() {
         return;
     }
-    // The run the scenario was built from, again, for the state and fields the row is left with.
+    // The run the scenario was built from, again: the state and fields it leaves its row with.
     // The instance is not read from it: the scenario was built under the names its earlier runs
     // bound, which this run does not know, so it may name the row differently.
     let Ok(run) = super::run_as(models, command, updating, actors, super::Witness::Full) else {
         return;
     };
+    let steps = &suite.scenarios[&id].steps;
+    let bound = super::bound_instances(steps);
+    let called = called_instance(steps, command, updating).filter(|named| bound.contains(named));
+    // The second run's state and fields are those of the row it names. Where the scenario's last
+    // call addresses another row, nothing here says what that row holds, so a filtered view is not
+    // decided to admit it and only the views without a filter carry the snapshot.
+    let same_row = called.is_some() && called == run.instance;
     let usable: Vec<&ResolvedView> = candidates
         .iter()
         .copied()
-        .filter(|view| one_row_view(ir, view, &run))
+        .filter(|view| one_row_view(ir, view, &run, same_row))
         .collect();
-    let steps = &suite.scenarios[&id].steps;
-    let bound = super::bound_instances(steps);
-    let Some(instance) = called_instance(steps, command, updating)
-        .filter(|named| bound.contains(named))
-        .filter(|_| !usable.is_empty())
-    else {
+    let Some(instance) = called.filter(|_| !usable.is_empty()) else {
         suite.scenarios.remove(&id);
         refusals.push(Refusal::about(
             &id,
