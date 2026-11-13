@@ -521,6 +521,19 @@ impl<'d> Gen<'d> {
         states: &BTreeMap<String, State>,
         root: &str,
     ) -> (Entries, Entries) {
+        self.state_hooks_starting(lines, at, states, root, None)
+    }
+
+    /// `state_hooks`, where the state named by `theme` (its name and the `theme.default`) starts
+    /// at `theme.default` instead of the type's initial when it declares no `default:`.
+    fn state_hooks_starting(
+        &mut self,
+        lines: &mut Vec<String>,
+        at: &NodePath,
+        states: &BTreeMap<String, State>,
+        root: &str,
+        theme: Option<(&str, &str)>,
+    ) -> (Entries, Entries) {
         let mut values = Vec::new();
         let mut setters = Vec::new();
         for (name, state) in states {
@@ -528,10 +541,13 @@ impl<'d> Gen<'d> {
             let (local, setter) = self.local_pair(&ts::camel(name));
             let ty = self.types.lower(&state.ty);
             self.model_types();
-            let initial = state
-                .default
-                .as_ref()
-                .map_or_else(|| self.types.initial(&state.ty), default_literal);
+            let initial = state.default.as_ref().map_or_else(
+                || match theme {
+                    Some((chosen, default)) if chosen == name => ts::string(default),
+                    _ => self.types.initial(&state.ty),
+                },
+                default_literal,
+            );
             let call = self.placement_call(&path, state, &ty, &initial);
             lines.push(format!("const [{local}, {setter}] = {call};"));
             values.push((name.clone(), local));
@@ -3122,8 +3138,13 @@ impl<'d> Gen<'d> {
         let at = NodePath::root().child("shells").child(name);
         let mut lines = Vec::new();
         self.begin_component();
-        let (values, setters) = self.state_hooks(&mut lines, &at, &shell.state, "shell");
         let doc = self.doc;
+        let theme_state = doc.theme.as_ref().and_then(|choice| {
+            let state = choice.chosen_by.as_ref()?.0.trim().strip_prefix("shell.")?;
+            Some((state, choice.default.as_str()))
+        });
+        let (values, setters) =
+            self.state_hooks_starting(&mut lines, &at, &shell.state, "shell", theme_state);
         if let Some(choice) = &doc.theme {
             // The shell shows the theme its `chosen_by` state holds, through that state's own
             // store, and `theme.default` where it declares none or the state holds no theme.
