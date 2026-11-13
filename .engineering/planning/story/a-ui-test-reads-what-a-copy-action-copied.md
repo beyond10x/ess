@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-ui-test-reads-what-a-copy-action-copied
 kind: story
-status: draft
+status: active
 title: A UI test reads what a copy action copied
 summary: ess-ui-test/1 has no step for the clipboard; the terminal's notice `copied <value>` is the only trace (a consumer specification's UI list, item 5)
 tags:
@@ -14,7 +14,10 @@ tags:
 relations:
 - serves: vision:O2
 - informed_by: epic:ess-ui-renderer-neutral-ui
-revision: 1
+revision: 4
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-13T09:06:05Z", actor: "human:timo", revision: 3, executor: "agent:b10x", correlation: "operator-2026-11-13-clipboard-step"}
+- {from: "proposed", to: "active", at: "2026-11-13T09:06:06Z", actor: "human:timo", revision: 4, executor: "agent:b10x", correlation: "operator-2026-11-13-clipboard-step"}
 ---
 ## Need
 
@@ -58,6 +61,14 @@ empty copy (`copied`) from a notice cut at the edge, and depends on the notice's
   empty copy fails against a non-empty expectation; a test with no copy before the step fails and
   says so.
 - The reference of `ess-ui-test/1` lists the step beside `expect_command` and `expect_export`.
+
+## Decisions
+
+**Accepted (2026-11-13) on the operator's behalf.** The operator's delegate accepted this draft
+after it was filed: it adds a test step and changes no existing behaviour. The two transitions
+carry the correlation `operator-2026-11-13-clipboard-step` and the executor `agent:b10x`. It is in
+no wave: the plan in work on that day takes no further story, and the fit review below is owed
+before dispatch. No review-result exists for this draft, so no `review_outcome` record was written.
 
 ## Fit review
 
