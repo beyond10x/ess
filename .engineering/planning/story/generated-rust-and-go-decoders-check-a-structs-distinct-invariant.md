@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:generated-rust-and-go-decoders-check-a-structs-distinct-invariant
 kind: story
-status: draft
+status: active
 title: Generated Rust and Go decoders check a struct's distinct invariant
 summary: '0.94.0 refuses to generate Rust or Go for a workspace with distinct: in a struct, which 0.93.0 generated; the new struct invariant check does not evaluate distinct'
 tags:
@@ -14,7 +14,10 @@ tags:
 relations:
 - serves: vision:O2
 - decomposes: epic:zero-open-issues-2026-11
-revision: 1
+revision: 4
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-12T22:38:41Z", actor: "human:timo", revision: 3, executor: "agent:b10x", correlation: "operator-2026-11-12-d8"}
+- {from: "proposed", to: "active", at: "2026-11-12T22:38:43Z", actor: "human:timo", revision: 4, executor: "agent:b10x", correlation: "operator-2026-11-12-d8"}
 ---
 ## Defect
 
@@ -82,3 +85,11 @@ Two smaller observations on the same output:
 
 Reproduction on the 0.94.0 release binary: session scratch `ess/adopter11/` (`run.sh`,
 `gen-rust.log`; not in the repository).
+
+## Decisions
+
+**Accepted (2026-11-12).** Decided on the operator's behalf, under the delegation the operator
+gave that day for decisions that are low risk or easy to revert. Reason given: a defect against
+shipped behaviour, reproduced on the 0.94.0 release binary; an accepted story can be moved back.
+The two transitions carry the correlation `operator-2026-11-12-d8` and the executor `agent:b10x`. No
+review-result exists for this draft, so no `review_outcome` record was written.

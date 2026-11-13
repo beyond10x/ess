@@ -33,13 +33,17 @@ const SEED: &str = include_str!("fixtures/caller-model-seed/seed.yaml");
 const USED: &str = "demo.s.Use/outcome/used";
 const USE: &str = "demo.s.Use";
 
-/// The canonical JSON digests of the two unseeded suites, taken at the base before the note.
+/// The canonical JSON digests of the two unseeded suites, taken at the base before the note;
+/// re-pinned for story:overlap-witnesses-per-phase, whose overlap send (with its complete-subject
+/// snapshot) the fixture's two `when_subject` refusals now get, as the fixture's suite bytes row
+/// `caller-model-seed/attr` moved for the same cause.
 const SEEDED_MODEL_UNSEEDED_SHA256: &str =
-    "6c8d4dcf4534d83a39515b20495457848539bf1a1084b19e9b8636c570a984d9";
+    "697847d2b055cfbbcea8482a582d1ac57bea282e8f69d3fa8e0b66655676d99f";
 const TWIN_UNSEEDED_SHA256: &str =
-    "c75b27a131a029d76f6125269cb71e6d3a84602dcd7f378fd57860e06b940212";
-/// The seeded suite's digest, taken at the same base: the note is not part of the suite.
-const SEEDED_SHA256: &str = "e1ef5e4e4626392f0e3c1ca5466255bfd1d4937a26caa1389a040aa7e84e25aa";
+    "532a2905a7091ead3c7811f5fef255ef1552fd978697cfc9fd51cce2150579e8";
+/// The seeded suite's digest, taken at the same base: the note is not part of the suite. Re-pinned
+/// for the same cause.
+const SEEDED_SHA256: &str = "c27e9cc17ce9aaa17acd6145ae6a074a57147052da08fdd166c7e1287348ade6";
 
 /// The fixture's caller model, whose `used` branch only a seed row reaches.
 fn seeded_model() -> EssIr {

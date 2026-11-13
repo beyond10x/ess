@@ -548,6 +548,16 @@ export function SectionFrame(props: {
         Load
       </button>
     );
+  } else if (data && data.status === "idle" && active !== false) {
+    // A read that waits on a selection has not started: it has nothing to show yet, which is what
+    // `states.empty` says, and it is not loading.
+    body = (
+      <div className="ui-state ui-state-empty">
+        {states.empty?.title ? <h3 className="ui-state-title">{states.empty.title}</h3> : null}
+        <p>{states.empty?.message ?? "Nothing to show yet"}</p>
+        {states.empty ? props.emptyAction : null}
+      </div>
+    );
   } else if (data && (data.status === "loading" || data.status === "idle")) {
     body = <Skeleton style={states.loading ?? "skeleton"} />;
   } else if (data && data.status === "refreshing" && states.refreshing === "skeleton") {
@@ -848,3 +858,37 @@ export function display(row: unknown, field: string): unknown {
 
 /** A JSON value typed for a read's params and rows. */
 export type Row = Json;
+
+/** Whether a `visible:` condition reads the current row (`row.<path>`). */
+export function readsRow(condition: string): boolean {
+  let quote: string | undefined;
+  let word = "";
+  for (const character of `${condition} `) {
+    if (quote !== undefined) {
+      if (character === quote) {
+        quote = undefined;
+      }
+      continue;
+    }
+    if (/[A-Za-z0-9_.-]/.test(character)) {
+      word += character;
+      continue;
+    }
+    if (word.startsWith("row.") && word.length > 4) {
+      return true;
+    }
+    word = "";
+    if (character === '"' || character === "'") {
+      quote = character;
+    }
+  }
+  return false;
+}
+
+/**
+ * Whether a column or field is drawn for `row`: a condition that reads the row is judged for that
+ * row, any other is the column's, and `shown` is its answer for the whole column.
+ */
+export function shownFor(condition: string | undefined, values: Record<string, unknown>, row: unknown): boolean {
+  return condition === undefined || truthy(evaluate(condition, readsRow(condition) ? { ...values, row } : values));
+}

@@ -318,9 +318,15 @@ commands:
 ";
 
 fn tags(result: &Synthesis, id: &str) -> Vec<Node> {
+    let sent = sends(result, id);
+    assert_eq!(sent.len(), 1);
+    sent[0].clone()
+}
+
+fn sends(result: &Synthesis, id: &str) -> Vec<Vec<Node>> {
     let scenario = scenario(&result.suite, id)
         .unwrap_or_else(|| panic!("no scenario {id}: {:?}", refusals_about(result, id)));
-    let sent: Vec<Vec<Node>> = scenario
+    scenario
         .steps
         .iter()
         .filter_map(|step| match step {
@@ -332,9 +338,7 @@ fn tags(result: &Synthesis, id: &str) -> Vec<Node> {
             },
             _ => None,
         })
-        .collect();
-    assert_eq!(sent.len(), 1);
-    sent[0].clone()
+        .collect()
 }
 
 #[test]
@@ -346,21 +350,28 @@ fn a_list_count_above_one_is_witnessed_by_copies_of_the_first_element() {
         "GUARD",
         "{all: [tags.count > 1, {forall: {in: tags, as: t, that: t == vip}}]}",
     ));
+    // The quantifier is witnessed with several elements first
+    // (story:collection-quantifiers-witnessed-everywhere); the count ladder's own send at the
+    // boundary is still copies of the first element.
+    let vip = || Node::Text("vip".into());
     assert_eq!(
-        tags(&result, refused),
-        vec![Node::Text("vip".into()), Node::Text("vip".into())]
+        sends(&result, refused),
+        vec![vec![vip(), vip(), vip()], vec![vip(), vip()]]
     );
 }
 
 #[test]
 fn the_list_ladders_unit_a1_built_keep_their_candidates() {
     // Characterization, written and green before the count ladder existed: the candidates for
-    // the three guards unit A1 synthesizes are byte-equal after it.
+    // the three guards unit A1 synthesizes are byte-equal after it. The quantifier's ladder also
+    // holds the several-element lists story:collection-quantifiers-witnessed-everywhere adds (the
+    // deciding element neither first nor last, and three copies); unit A1's three candidates are
+    // all still there.
     let expected = [
         ("tags.count > 0", r#"[{"tags":[]},{"tags":["tags.0"]}]"#),
         (
             "{exists: {in: tags, as: t, that: t == vip}}",
-            r#"[{"tags":[]},{"tags":["tags.0"]},{"tags":["vip"]}]"#,
+            r#"[{"tags":[]},{"tags":["tags.1","tags.0","tags.2"]},{"tags":["tags.0","tags.0","tags.0"]},{"tags":["tags.0"]},{"tags":["tags.1","vip","tags.2"]},{"tags":["vip","vip","vip"]},{"tags":["vip"]}]"#,
         ),
         ("tags.0 == vip", r#"[{"tags":["tags.0"]},{"tags":["vip"]}]"#),
     ];

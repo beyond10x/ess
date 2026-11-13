@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-view-may-answer-each-row-as-one-scalar-value
 kind: story
-status: draft
+status: active
 title: A view may answer each row as one scalar value, not an object
 summary: A list whose items are bare strings has no spelling in a view or an ess-http/1 route on 0.93.0 (adopter report)
 tags:
@@ -12,7 +12,10 @@ tags:
 relations:
 - serves: vision:O2
 - decomposes: epic:adopter-gaps-wire-and-answers
-revision: 1
+revision: 4
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-12T21:28:01Z", actor: "human:timo", revision: 3, executor: "agent:b10x", correlation: "operator-2026-11-12-accept-16"}
+- {from: "proposed", to: "active", at: "2026-11-12T21:28:02Z", actor: "human:timo", revision: 4, executor: "agent:b10x", correlation: "operator-2026-11-12-accept-16"}
 ---
 ## Need
 
@@ -59,3 +62,14 @@ One of the two forms; the scoper picks, and the story names the one it did not t
 
 The refusals above, observed by the reporting session on the 0.93.0 release binary on 2026-11-11.
 Not rerun in this repository; the scoper reruns them before the story is proposed.
+
+## Decisions
+
+**Accepted by the operator (2026-11-12),** with fifteen other drafts from one list of 25 that
+he was shown with a recommendation and an outside review per draft. He accepted the drafts both
+recommended. The two transitions carry the correlation `operator-2026-11-12-accept-16` and the executor
+`agent:b10x`.
+
+The fit review of `.agents/skills/assessing-external-requests/SKILL.md` is not written yet. It
+is owed before this story is dispatched and says which form of acceptance applies (as proposed
+or redesigned).

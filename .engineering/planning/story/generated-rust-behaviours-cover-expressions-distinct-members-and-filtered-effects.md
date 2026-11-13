@@ -2,12 +2,11 @@
 format: aep.planning-md/3
 id: story:generated-rust-behaviours-cover-expressions-distinct-members-and-filtered-effects
 kind: story
-status: draft
-title: Generated Rust behaviours cover expression values, distinct members, counted paths and filtered effects
-summary: Several behaviour constructs stay obligations in generated Rust (workbench report items 27, 30, 31, 33, 34)
+status: active
+title: Generated Rust and Go behaviours cover expression values, distinct members and counted paths
+summary: Three determined behaviour constructs stay obligations in generated Rust and Go (workbench report items 30, 31, 33)
 tags:
 - backlog
-- defect
 - external-request
 - from-consumer-report
 - severity-low
@@ -24,7 +23,10 @@ scope:
   path: crates/generate/ess-synth/src/rust/behaviour.rs
 - confidence: inferred
   path: crates/generate/ess-synth/src/rust/invariant.rs
-revision: 6
+revision: 10
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-12T21:48:15Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"review_outcome":2}}, executor: "agent:b10x", correlation: "operator-2026-11-12-round-2"}
+- {from: "proposed", to: "active", at: "2026-11-12T21:48:17Z", actor: "human:timo", revision: 10, decided_on: {"recorded":{"review_outcome":2}}, executor: "agent:b10x", correlation: "operator-2026-11-12-round-2"}
 ---
 ## Need
 
@@ -91,6 +93,21 @@ Items 27, 30, 31, 33 and 34 of the 2026-11-09 workbench report.
 Accept, redesigned: Rust and Go both, not Rust only; items 30, 31 and 33 here; item 34 split out to
 a story on enumerating rows by a selector in the storage port; item 27 dropped until it is
 minimised.
+
+**Accepted under the operator's procedure for external-request drafts (2026-11-12).** He set
+it that day: the session that maintains the repository recommends per draft, an independent
+adversarial review reads each draft, a draft both read as accept is accepted on his behalf, and
+a draft where the two differ goes to him. This draft was number 36 of a second list of 13
+(numbers 26 to 38); both read accept. The two transitions carry the correlation
+`operator-2026-11-12-round-2` and the executor `agent:b10x`.
+
+The acceptance is for the redesigned form above: items 30, 31 and 33, in generated Rust and Go.
+Item 34 is filed as `story:generated-storage-lists-the-rows-a-selector-selects`, a draft. Item 27 is
+not filed. The fit review above is the one this story owes; none is outstanding.
+
+Corrected with this acceptance: the title and the summary, which named Rust only and the
+filtered effects of item 34; and the tag `defect` is removed, since fit review point 2 reads
+"Gap, not defect".
 
 ## Acceptance
 

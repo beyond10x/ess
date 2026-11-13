@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-view-route-answers-declared-refusals
 kind: story
-status: draft
+status: active
 title: A view may declare refusals, and its route answers them
 summary: 'A view route has empty: only; outcomes and errors on a view are ESS-HTTP-022 (adopter report)'
 tags:
@@ -12,7 +12,10 @@ tags:
 relations:
 - serves: vision:O2
 - decomposes: epic:adopter-gaps-wire-and-answers
-revision: 1
+revision: 4
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-12T21:27:41Z", actor: "human:timo", revision: 3, executor: "agent:b10x", correlation: "operator-2026-11-12-accept-16"}
+- {from: "proposed", to: "active", at: "2026-11-12T21:27:42Z", actor: "human:timo", revision: 4, executor: "agent:b10x", correlation: "operator-2026-11-12-accept-16"}
 ---
 ## Need
 
@@ -39,3 +42,14 @@ view route in `ess-http/1` has `empty:` for a `single` view with no row and noth
 The `ESS-HTTP-022` row is read from `crates/specify/ess-http/src/lib.rs:3094` at 0.93.0. The
 adopter's refusals (view route with `outcomes`) were observed by the adopter's session and are not
 rerun here; the scoper reruns one before the story is proposed.
+
+## Decisions
+
+**Accepted by the operator (2026-11-12),** with fifteen other drafts from one list of 25 that
+he was shown with a recommendation and an outside review per draft. He accepted the drafts both
+recommended. The two transitions carry the correlation `operator-2026-11-12-accept-16` and the executor
+`agent:b10x`.
+
+The fit review of `.agents/skills/assessing-external-requests/SKILL.md` is not written yet. It
+is owed before this story is dispatched and says which form of acceptance applies (as proposed
+or redesigned).

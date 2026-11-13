@@ -875,6 +875,12 @@ fn unclaimed_external_witnesses_keep_their_bytes() {
 /// (story:a-value-invariant-on-a-type-nothing-reaches-refuses-nothing), and
 /// `explore-external.yaml` and `explore-external-exits.yaml` carry the `ESS-SYNTH-003` refusal
 /// that names its repair (story:a-not-found-branch-after-a-guarded-move-is-refused-with-its-repair).
+/// The suites of `aggregate-stored-guarded-move.yaml` (`too-low` and `not-urgent`) and
+/// `subject-fact-complete-refusal.yaml` (`seed-change-refused` and `not-active`) were re-pinned
+/// when two `when_subject` refusals of one phase that one row satisfies together were sent that
+/// row below `ess/27` as well, requiring the first declared, and that row's complete subject
+/// observed where the refusal is a complete one (beyond10x/ess#472,
+/// story:overlap-witnesses-per-phase), their refusals and claimable lists unchanged.
 const BASE: &str = include_str!("fixtures/external-beside-held-guard-base.tsv");
 
 fn root() -> PathBuf {

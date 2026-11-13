@@ -181,7 +181,12 @@ fn fnv(text: &str) -> u64 {
 /// `navigation.tsx`, `router.tsx`, `styles.css`). The whole-project digest re-pinned for
 /// story:a-wide-table-scrolls-inside-its-column: `styles.css` stacks the page columns and areas
 /// below `48rem` (one `@media` rule), and `core.tsx`'s `AreasLayout` draws the areas in the
-/// `order` list the page passes; no file of the pins above or of the document changes.
+/// `order` list the page passes; no file of the pins above or of the document changes. The
+/// whole-project digest re-pinned for
+/// story:each-row-and-each-waiting-read-draws-what-the-document-declares: `core.tsx` judges a
+/// row-reading `visible:` per row and draws a waiting read's empty state, and the collection,
+/// record and board composites follow it; at the merge with the wide-table change both causes
+/// move it, and it is pinned at the merged tree.
 const PLAIN: [(&str, u64); 7] = [
     ("README.md", 0xdae6_c3b6_7e5c_2d28),
     ("src/main.tsx", 0x939b_2ed0_a001_98c5),
@@ -191,7 +196,7 @@ const PLAIN: [(&str, u64); 7] = [
     ("src/runtime/data.ts", 0x1d12_0466_1213_7ea5),
     ("www/index.html", 0x5972_6d4a_5ee2_5ce2),
 ];
-const PLAIN_PROJECT: u64 = 0x4d5f_e60b_75c4_9a6e;
+const PLAIN_PROJECT: u64 = 0x432e_1a81_28fc_b997;
 
 #[test]
 fn without_a_model_the_project_is_byte_identical() {
