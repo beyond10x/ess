@@ -32,6 +32,9 @@ pub(crate) fn is_expression(text: &str) -> bool {
 pub(crate) struct Reading {
     /// Each path of a root, as written (`section.deals.selection.id`).
     pub(crate) paths: Vec<String>,
+    /// The paths read outside the arguments of a call: in `actor.may(args.cmd)`, `args.cmd` is
+    /// read inside one and is no entry here.
+    pub(crate) outside: Vec<String>,
     /// Each unquoted dotted word whose first segment is no root and that is no number
     /// (`example.com`): literal text, outside the arguments of a call.
     pub(crate) strays: Vec<String>,
@@ -51,11 +54,13 @@ fn read_filter(text: &str) -> Option<Reading> {
     let forms = forms();
     let mut reading = Reading {
         paths: Vec::new(),
+        outside: Vec::new(),
         strays: Vec::new(),
     };
     for segments in predicate.paths() {
         let word = segments.join(".");
         if forms.roots.contains(&segments[0]) {
+            reading.outside.push(word.clone());
             reading.paths.push(word);
         } else {
             reading.strays.push(word);
@@ -77,6 +82,7 @@ fn read_expression(text: &str) -> Option<Reading> {
     let forms = forms();
     let mut reading = Reading {
         paths: Vec::new(),
+        outside: Vec::new(),
         strays: Vec::new(),
     };
     // One entry per open parenthesis: `true` where it opens the arguments of a call.
@@ -98,6 +104,9 @@ fn read_expression(text: &str) -> Option<Reading> {
                 if forms.roots.contains(root) {
                     if rest.split('.').all(|segment| !segment.is_empty()) && !rest.is_empty() {
                         reading.paths.push(word.clone());
+                        if !open.contains(&true) {
+                            reading.outside.push(word.clone());
+                        }
                     }
                 } else if !rest.is_empty()
                     && !is_number(word)

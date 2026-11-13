@@ -11,6 +11,11 @@ fn schema() -> &'static Value {
     PARSED.get_or_init(|| ess_yaml::from_str(ess_ui::SCHEMA).expect("the embedded schema is YAML"))
 }
 
+/// `constructs.PageKind.builtins`: the page kinds a document may extend without declaring.
+pub(crate) fn builtin_page_kinds() -> &'static Value {
+    &schema()["constructs"]["PageKind"]["builtins"]
+}
+
 fn strings(value: &Value) -> Vec<String> {
     value
         .as_sequence()
@@ -180,6 +185,7 @@ pub(crate) fn is_construct(name: &str) -> bool {
 }
 
 /// What a node holds once loaded: a composite or a widget (`component`), or a primitive.
+#[derive(Clone)]
 pub(crate) enum Kind {
     Component(String),
     Primitive(String),

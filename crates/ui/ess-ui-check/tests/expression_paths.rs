@@ -452,3 +452,86 @@ fn a_widget_argument_is_an_expression_where_the_declaration_substitutes_it_into_
         assert!(found[0].message.contains("(in `args/who`)"), "{found:#?}");
     }
 }
+
+/// A parameter read inside the arguments of a call alone is no `expr` position (a dotted word is
+/// a command name there); one also read outside a call is.
+#[test]
+fn a_parameter_read_inside_and_outside_a_call_is_an_expression() {
+    let widgets = |body: &str| {
+        document("section.deals.selection.id", "section.deals.selection.id")
+            .replace(
+                "pages:\n",
+                &format!(
+                    "widgets:\n  gated:\n    summary: G\n    \
+                     params: {{cmd: {{type: string, required: true, note: n}}}}\n    \
+                     body: [{body}]\npages:\n"
+                ),
+            )
+            .replace(
+                "fields: [id]}\n  q:",
+                "fields: [id], children: [{name: use, component: gated, \
+                 args: {cmd: orders.Approve}}]}\n  q:",
+            )
+    };
+    let report = run(&widgets(
+        "{name: t, primitive: text, text: Hi, visible: actor.may(args.cmd)}",
+    ));
+    assert!(
+        of(&report, "expr_roots").is_empty(),
+        "{:#?}",
+        report.findings
+    );
+    let report = run(&widgets(
+        "{name: t, primitive: text, text: args.cmd, visible: actor.may(args.cmd)}",
+    ));
+    assert_eq!(of(&report, "expr_roots").len(), 1, "{:#?}", report.findings);
+}
+
+/// A page kind that extends a built-in kind and restates its section without `component` is
+/// walked with the composite the built-in kind gives that section.
+#[test]
+fn a_kind_restating_a_built_in_kinds_section_is_walked_as_its_composite() {
+    let text = "format: ess-ui/1\napp: t\nmodel: shop\nplacement_profile: fat\n\
+         shells: {app: {regions: {main: {kind: page_outlet}}}}\n\
+         navigation: {home: k1, sections: [{name: all, pages: [k1]}]}\n\
+         page_kinds:\n  mine:\n    extends: detail_page\n    purpose: x\n    sections:\n      \
+         - {name: summary, reads: t.ById, fields: [id], \
+         item: [{name: t, primitive: text, text: bogus.word}]}\n\
+         pages:\n  k1:\n    kind: mine\n    title: K\n    sections:\n      - {name: summary}\n";
+    let report = run(text);
+    let found = of(&report, "expr_roots");
+    assert_eq!(found.len(), 1, "{:#?}", report.findings);
+    assert!(found[0].path.starts_with("page_kinds/mine"), "{found:#?}");
+}
+
+/// An argument may name state the widget's body declares on the node that reads it or on a node
+/// around it; state that neither the use nor the body declares is still an error.
+#[test]
+fn an_argument_may_name_state_the_body_declares_and_no_other() {
+    let widgets = |shown: &str| {
+        document("section.deals.selection.id", "section.deals.selection.id")
+            .replace(
+                "pages:\n",
+                "widgets:\n  disc:\n    summary: D\n    \
+                 params: {shown: {type: string, required: true, note: n}}\n    \
+                 body: [{name: outer, component: record, reads: t.ById, fields: [id], \
+                 state: {note: {type: string, class: component_state}}, \
+                 item: [{name: t, primitive: text, text: args.shown}]}]\npages:\n",
+            )
+            .replace(
+                "fields: [id]}\n  q:",
+                &format!(
+                    "fields: [id], children: [{{name: use, component: disc, \
+                     args: {{shown: {shown}}}}}]}}\n  q:"
+                ),
+            )
+    };
+    let report = run(&widgets("state.note"));
+    assert!(
+        of(&report, "expr_paths").is_empty(),
+        "{:#?}",
+        report.findings
+    );
+    let report = run(&widgets("state.other"));
+    assert_eq!(of(&report, "expr_paths").len(), 1, "{:#?}", report.findings);
+}

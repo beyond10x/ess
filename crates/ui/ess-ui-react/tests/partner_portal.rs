@@ -369,9 +369,9 @@ fn state_is_placed_where_its_store_says() {
     assert!(url.contains("useSearchParams"), "{url}");
 }
 
-/// The two shell states a guard and a primitive of the example write on the client: a draft
-/// (`invite_token`) is kept in session storage and a component state (`logo_url`) in memory, each
-/// through the document's placement defaults.
+/// Two shell states the example declares for the client: a draft (`invite_token`, which a guard
+/// sets from the invite link) is kept in session storage, and a component state (`logo_url`,
+/// which an image only reads) in memory, each through the document's placement defaults.
 #[test]
 fn the_examples_client_written_shell_states_are_placed_in_the_browser() {
     let (_, files) = generate_example("shell-client-state");

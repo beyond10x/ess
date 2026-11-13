@@ -50,9 +50,9 @@ fn holding(dir: &Path, needle: &str) -> Vec<PathBuf> {
         .collect()
 }
 
-/// The two shell states a guard and a primitive of the example write on the client: a draft
-/// (`invite_token`) resolves to session storage and a component state (`logo_url`) to memory,
-/// through the document's placement defaults.
+/// Two shell states the example declares for the client: a draft (`invite_token`, which a guard
+/// sets from the invite link) resolves to session storage, and a component state (`logo_url`,
+/// which an image only reads) to memory, through the document's placement defaults.
 #[test]
 fn adv1_the_examples_client_written_shell_states_resolve_to_the_browser_side_stores() {
     let document =

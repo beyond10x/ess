@@ -11,8 +11,11 @@
 //! widget's `args` are the one place a value is an expression though the schema types it `json`:
 //! an argument is a path or a literal, so a string argument is read as an expression. A dotted
 //! word under no root is called a stray there only when the widget's declaration substitutes that
-//! parameter into an `expr` position (directly or through another widget it hands it to); where it
-//! lands in text alone, the word is what is shown.
+//! parameter into an `expr` position outside the arguments of a call (directly or through another
+//! widget it hands it to); where it lands in text alone, or in a call's arguments, the word is what
+//! is shown or a command name. An argument may also name state the widget's body declares around
+//! the node that reads the parameter. A page kind's nested nodes take the kind they restate or
+//! inherit from the kinds it extends.
 //! The row filter of a read is left to `filter_expr`, `filter_roots` and `filter_paths`, which
 //! hold it to the same scope.
 
@@ -53,10 +56,26 @@ pub(crate) fn run(text: &str, document: &Document, sink: &mut Sink) {
         seen: BTreeSet::new(),
         gathering: true,
         in_expr: BTreeMap::new(),
+        declares: BTreeMap::new(),
         forwards: Vec::new(),
+        around: Vec::new(),
+        learning: None,
     };
+    // The loaded document lists a page kind as one node: its nested nodes take the kind they
+    // restate, or the one the kind they extend gives them.
+    let mut learned = BTreeSet::new();
+    for name in value
+        .get("page_kinds")
+        .and_then(Value::as_mapping)
+        .into_iter()
+        .flatten()
+        .filter_map(|(name, _)| name.as_str())
+    {
+        walker.learn(&value, name, &mut learned);
+    }
     // A first walk learns which parameters of each widget its declaration substitutes into an
-    // `expr` position; the second reports, knowing that.
+    // `expr` position, and the state its body declares around them; the second reports, knowing
+    // that.
     walker.construct("Document", &value, &NodePath::root(), &mut Sink::default());
     walker.settle();
     walker.gathering = false;
@@ -105,9 +124,36 @@ struct Walker<'a> {
     /// By widget, the parameters its declaration reads inside an `expr` position
     /// (`text: args.who`): an argument for one is an expression where it stands.
     in_expr: BTreeMap<String, BTreeSet<String>>,
-    /// A declaration that hands its parameter on as the argument of another widget:
-    /// (widget, parameter, inner widget, inner parameter).
-    forwards: Vec<(String, String, String, String)>,
+    /// By widget and parameter, the state its body declares on a node that reads the parameter or
+    /// on a node around one: an argument may name it, since it is substituted in where it is
+    /// declared.
+    declares: BTreeMap<(String, String), BTreeSet<String>>,
+    /// A declaration that hands its parameter on as the argument of another widget.
+    forwards: Vec<Forward>,
+    /// The state declared by the nodes the walk is inside of, outermost first.
+    around: Vec<String>,
+    /// While a page kind is walked to learn the kinds of its nested nodes: the kinds it extends,
+    /// nearest first.
+    learning: Option<Vec<String>>,
+}
+
+struct Forward {
+    widget: String,
+    param: String,
+    inner: String,
+    inner_param: String,
+    /// Read outside the arguments of a call.
+    outside: bool,
+    /// The state declared around where it is handed on.
+    around: BTreeSet<String>,
+}
+
+/// The page kind `name`, declared in the document or built in.
+fn page_kind<'v>(root: &'v Value, name: &str) -> Option<&'v Value> {
+    root.get("page_kinds")
+        .and_then(|declared| declared.get(name))
+        .or_else(|| schema::builtin_page_kinds().get(name))
+        .filter(|kind| kind.as_mapping().is_some())
 }
 
 impl Walker<'_> {
@@ -123,13 +169,79 @@ impl Walker<'_> {
         }
     }
 
+    /// Walks page kind `name` after the kinds it extends, noting the kind of each node nested in
+    /// it by `kinds`.
+    fn learn(&mut self, root: &Value, name: &str, learned: &mut BTreeSet<String>) {
+        if !learned.insert(name.to_owned()) {
+            return;
+        }
+        let Some(body) = page_kind(root, name) else {
+            return;
+        };
+        let mut chain: Vec<String> = Vec::new();
+        let mut next = body.get("extends").and_then(Value::as_str);
+        while let Some(parent) = next {
+            if parent == name || chain.iter().any(|seen| seen == parent) {
+                break;
+            }
+            chain.push(parent.to_owned());
+            next = page_kind(root, parent)
+                .and_then(|kind| kind.get("extends"))
+                .and_then(Value::as_str);
+        }
+        for parent in &chain {
+            self.learn(root, parent, learned);
+        }
+        self.learning = Some(chain);
+        let at = NodePath::root().child("page_kinds").child(name);
+        self.construct("PageKind", body, &at, &mut Sink::default());
+        self.learning = None;
+    }
+
+    /// The kind of the node at `at` inside the page kind being learned: what it writes, or what
+    /// the node of that name in a kind it extends has.
+    fn learned_kind(&self, at: &NodePath, value: &Value) -> Option<Kind> {
+        let chain = self.learning.as_ref()?;
+        let [_, _, rest @ ..] = at.segments() else {
+            return None;
+        };
+        if rest.is_empty() {
+            return None;
+        }
+        if let Some(primitive) = value.get("primitive").and_then(Value::as_str) {
+            return Some(Kind::Primitive(primitive.to_owned()));
+        }
+        if let Some(component) = value.get("component").and_then(Value::as_str) {
+            return Some(Kind::Component(component.to_owned()));
+        }
+        chain.iter().find_map(|parent| {
+            let mut under = NodePath::root().child("page_kinds").child(parent);
+            for segment in rest {
+                under = under.child(segment);
+            }
+            self.kinds.get(&under).cloned()
+        })
+    }
+
     /// The fields of `name` and, for a mapping that names a composite, a primitive or a widget
     /// inline, those of its kind: each present key is read as the type it has there.
     fn construct(&mut self, name: &str, value: &Value, at: &NodePath, sink: &mut Sink) {
         let Some(mapping) = value.as_mapping() else {
             return;
         };
+        if let Some(kind) = self.learned_kind(at, value) {
+            self.kinds.insert(at.clone(), kind);
+        }
         let tables = schema::field_tables(name, mapping, self.kinds.get(at));
+        let depth = self.around.len();
+        self.around.extend(
+            value
+                .get("state")
+                .and_then(Value::as_mapping)
+                .into_iter()
+                .flatten()
+                .filter_map(|(state, _)| state.as_str().map(str::to_owned)),
+        );
         let widget = match (
             mapping.get("component").and_then(Value::as_str),
             self.kinds.get(at),
@@ -171,6 +283,7 @@ impl Walker<'_> {
                 }
             }
         }
+        self.around.truncate(depth);
     }
 
     fn typed(
@@ -262,18 +375,31 @@ impl Walker<'_> {
             );
             self.report(sink, "expr_roots", at, &message);
         }
+        // An argument may name state the widget's body declares where it substitutes it in.
+        let body_state = match site {
+            Site::Argument {
+                widget: Some(widget),
+                param,
+            } => self
+                .declares
+                .get(&(widget.clone(), param.clone()))
+                .cloned()
+                .unwrap_or_default(),
+            _ => BTreeSet::new(),
+        };
         for path in &reading.paths {
             let segments: Vec<&str> = path.split('.').collect();
             match segments[0] {
                 "section" => self.section(&segments, at, sink),
-                "state" | "params" | "shell" => self.declared(&segments, at, sink),
+                "state" | "params" | "shell" => self.declared(&segments, at, &body_state, sink),
                 _ => {}
             }
         }
     }
 
     /// Inside the declaration of a widget, notes each `args.<param>` it reads: in an `expr`
-    /// position, or handed on as the argument of another widget.
+    /// position (outside the arguments of a call), or handed on as the argument of another
+    /// widget; and the state its body declares around the read.
     fn gather(&mut self, reading: &expr::Reading, at: &NodePath, site: &Site) {
         let [top, widget, ..] = at.segments() else {
             return;
@@ -281,50 +407,77 @@ impl Walker<'_> {
         if top != "widgets" {
             return;
         }
+        let around: BTreeSet<String> = self.around.iter().cloned().collect();
         for path in &reading.paths {
             let mut segments = path.split('.');
             let (Some("args"), Some(param)) = (segments.next(), segments.next()) else {
                 continue;
             };
+            let outside = reading.outside.contains(path);
             match site {
                 Site::Field => {
-                    self.in_expr
-                        .entry(widget.clone())
+                    self.declares
+                        .entry((widget.clone(), param.to_owned()))
                         .or_default()
-                        .insert(param.to_owned());
+                        .extend(around.iter().cloned());
+                    if outside {
+                        self.in_expr
+                            .entry(widget.clone())
+                            .or_default()
+                            .insert(param.to_owned());
+                    }
                 }
                 Site::Argument {
                     widget: Some(inner),
                     param: inner_param,
-                } => self.forwards.push((
-                    widget.clone(),
-                    param.to_owned(),
-                    inner.clone(),
-                    inner_param.clone(),
-                )),
+                } => self.forwards.push(Forward {
+                    widget: widget.clone(),
+                    param: param.to_owned(),
+                    inner: inner.clone(),
+                    inner_param: inner_param.clone(),
+                    outside,
+                    around: around.clone(),
+                }),
                 Site::Argument { widget: None, .. } => {}
             }
         }
     }
 
-    /// Carries `in_expr` through the declarations that hand a parameter on to another widget.
+    /// Carries `in_expr` and `declares` through the declarations that hand a parameter on to
+    /// another widget.
     fn settle(&mut self) {
         loop {
             let mut grew = false;
-            for (widget, param, inner, inner_param) in &self.forwards {
-                let reaches = self
-                    .in_expr
-                    .get(inner)
-                    .is_some_and(|params| params.contains(inner_param));
+            for forward in std::mem::take(&mut self.forwards) {
+                let reaches = forward.outside
+                    && self
+                        .in_expr
+                        .get(&forward.inner)
+                        .is_some_and(|params| params.contains(&forward.inner_param));
                 if reaches
                     && self
                         .in_expr
-                        .entry(widget.clone())
+                        .entry(forward.widget.clone())
                         .or_default()
-                        .insert(param.clone())
+                        .insert(forward.param.clone())
                 {
                     grew = true;
                 }
+                let mut states = forward.around.clone();
+                if let Some(inner) = self
+                    .declares
+                    .get(&(forward.inner.clone(), forward.inner_param.clone()))
+                {
+                    states.extend(inner.iter().cloned());
+                }
+                let own = self
+                    .declares
+                    .entry((forward.widget.clone(), forward.param.clone()))
+                    .or_default();
+                let before = own.len();
+                own.extend(states);
+                grew |= own.len() != before;
+                self.forwards.push(forward);
             }
             if !grew {
                 break;
@@ -379,7 +532,13 @@ impl Walker<'_> {
 
     /// `state.<name>`, `params.<name>` and `shell.<name>` name a declaration in scope where the
     /// expression stands: the scope a row filter is held to.
-    fn declared(&mut self, segments: &[&str], at: &NodePath, sink: &mut Sink) {
+    fn declared(
+        &mut self,
+        segments: &[&str],
+        at: &NodePath,
+        body_state: &BTreeSet<String>,
+        sink: &mut Sink,
+    ) {
         let Some(name) = segments.get(1) else {
             return;
         };
@@ -404,7 +563,7 @@ impl Walker<'_> {
             "params" => (&scope.params, "parameter"),
             _ => (&scope.shell, "shell state"),
         };
-        if names.contains(*name) {
+        if names.contains(*name) || (segments[0] == "state" && body_state.contains(*name)) {
             return;
         }
         let in_scope: Vec<&str> = names.iter().map(String::as_str).collect();
