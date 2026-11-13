@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.95.0] — 2026-11-13
+
 ### Added
 
 - A page header takes an optional `badge: {text, tone}` (additive in `ess-ui/1`). The generated React header draws the total as a locale-grouped count named `<total> <section title, else rows>`, each `live` channel as a status word (`Live`, `Connecting`, `Reconnecting`, `Stale`, `Closed`) titled with the channel, and the switch as one segmented control that lists the current page and marks it `aria-current="page"`. Navigation links mark the current page, and a page without a header draws its title. The terminal draws the badge after the title, `● <lifecycle>` for live channels, and marks the current switch entry with `▸`. A refused header or badge is reported at its own path.
