@@ -19665,7 +19665,17 @@ fn unwitnessed_overlaps(ir: &EssIr, suite: &ConformanceSuite) -> Vec<Note> {
             .and_then(|inputs| inputs.into_iter().next())
             .unwrap_or_default();
         for outcome in &command.outcomes {
-            let found = overlaps(ir.format(), command, outcome);
+            // An input refusal pair is sent where a candidate lies in both guards; where a guard
+            // reads a `distinct` and none does, the pair is recorded as the others are. Only such
+            // pairs, so every other model keeps its notes.
+            let found: Vec<Overlap<'_>> = overlaps(ir.format(), command, outcome)
+                .into_iter()
+                .chain(
+                    refusal_pair_overlaps(ir.format(), command, outcome)
+                        .into_iter()
+                        .filter(|pair| pair.both.iter().any(|guard| !guard.distincts().is_empty())),
+                )
+                .collect();
             if found.is_empty() {
                 continue;
             }
@@ -19689,8 +19699,11 @@ fn unwitnessed_overlaps(ir: &EssIr, suite: &ConformanceSuite) -> Vec<Note> {
                 }
                 let gap = if overlap_witness(ir, command, &overlap, &[], |_| true).is_some() {
                     OverlapGap::Unsent
-                } else if crate::witness::exhausts(ir, command, &overlap.searched()) {
-                    // Every region was tried and none lies in both: the overlap is empty.
+                } else if crate::witness::exhausts(ir, command, &overlap.searched())
+                    || crate::witness::duplicate_capped_below_two(&overlap.both)
+                {
+                    // Every region was tried and none lies in both, or one guard asks for a
+                    // duplicate and the other for fewer than two elements: the overlap is empty.
                     continue;
                 } else {
                     OverlapGap::Unreached
