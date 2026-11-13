@@ -135,9 +135,9 @@ fn creates(scenario: &ConformanceScenario) -> Vec<Create> {
     out
 }
 
-/// Whether `sent` holds the overlap: a blank site and two items of one name, requiring `missing`.
-/// Where the list holds more than two, the repeat is the decisive one: first and last, with an
-/// item of another name between them.
+/// Whether `sent` holds the overlap: a blank site and a list of two or more items whose first and
+/// last share a name, requiring `missing`. What stands between the two is not checked here; that
+/// the repeat is the decisive one is `adversary_refusal_overlap_distinct_pass1`'s case.
 fn sends_overlap(sent: &[Create]) -> bool {
     sent.iter().any(|(site, items, outcome, error)| {
         site == "\"\""
