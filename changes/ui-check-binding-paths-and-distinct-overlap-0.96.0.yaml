@@ -1,0 +1,17 @@
+schema: b10x-change/v1
+id: ess/ui-check-binding-paths-and-distinct-overlap-0.96.0
+repository: ess
+publishedAt: 2026-11-13T00:00:00Z
+title: ess ui check resolves every binding path, and two more refusals are told apart
+summary: >-
+  `ess ui check` resolves the root and the section of every binding path and reports a state,
+  parameter or section that is not in scope. Two errors of one wire name bind on one status
+  where a field tells their bodies apart. Synthesis sends the overlap of two refusals when one
+  guard is a `distinct` predicate over a list.
+kind: capability
+impact: notable
+source:
+  url: https://github.com/beyond10x/ess/releases/tag/0.96.0
+  version: 0.96.0
+journeys: [specify, operate-services]
+affectedSurfaces: [ess/docs]

@@ -406,6 +406,11 @@ list, and neither says which line a commit is on. AEP hit the same shape one ver
 | What shipped | `CHANGELOG.md`, and `git tag -n99` |
 | Whether an adopter's request is adopted, redesigned, declined or deferred | the story's `## Fit review` and `## Decisions`, written by `.agents/skills/assessing-external-requests/SKILL.md` |
 
+Where the open work stands, what was released last and what waits on the operator: the first
+section of `.engineering/waves/zero-open-issues.md`. Read it before starting anything; the copy
+on the branch `integration/ess-zero-issues-4` is the later one whenever that branch is ahead of
+`main`.
+
 A change an adopter asks for — an issue, another session's message, a downstream review — is
 assessed with `.agents/skills/assessing-external-requests/SKILL.md` before a story is written
 around it. The requester's proposed syntax is evidence of a need, not a design, and a story from an

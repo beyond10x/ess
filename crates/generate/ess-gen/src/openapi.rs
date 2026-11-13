@@ -1806,13 +1806,20 @@ fn one_of(members: Vec<Member>) -> Option<Value> {
                     .as_ref()
                     .map(|(property, ..)| property.clone())
             });
+            // One value of the property that names two members maps to one of them, so two bodies
+            // of one error wire name (told apart by their fields) carry no discriminator.
             let discriminator = property.filter(|property| {
                 members.iter().all(|member| {
                     member
                         .discriminated
                         .as_ref()
                         .is_some_and(|(other, ..)| other == property)
-                })
+                }) && members
+                    .iter()
+                    .filter_map(|member| member.discriminated.as_ref().map(|(_, value, _)| value))
+                    .collect::<BTreeSet<_>>()
+                    .len()
+                    == members.len()
             });
             let mut schema = json!({});
             if let Some(property) = discriminator {

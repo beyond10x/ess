@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:the-one-row-check-reads-the-instance-its-scenario-bound
 kind: story
-status: active
+status: implemented
 title: The one-row check after an update reads the instance its scenario bound
 summary: Synthesis appends a snapshot naming an instance the scenario never bound, so conform run errors (ESS-CF-SUITE, exit 3) on a valid model after an enum gains a variant (0.90.0 to 0.94.0)
 tags:
@@ -13,10 +13,11 @@ tags:
 relations:
 - serves: vision:O2
 - decomposes: epic:zero-open-issues-2026-11
-revision: 5
+revision: 6
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-12T22:38:35Z", actor: "human:timo", revision: 4, executor: "agent:b10x", correlation: "operator-2026-11-12-d8"}
 - {from: "proposed", to: "active", at: "2026-11-12T22:38:37Z", actor: "human:timo", revision: 5, executor: "agent:b10x", correlation: "operator-2026-11-12-d8"}
+- {from: "active", to: "implemented", at: "2026-11-13T15:51:44Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"test_result":1}}}
 ---
 ## Defect
 

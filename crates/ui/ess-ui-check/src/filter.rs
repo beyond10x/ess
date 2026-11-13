@@ -227,14 +227,15 @@ fn calls(text: &str) -> bool {
     false
 }
 
+/// The names a path of the document may read: the parameters, state and shell state in scope.
 #[derive(Default)]
-struct Scope {
-    params: BTreeSet<String>,
-    state: BTreeSet<String>,
-    shell: BTreeSet<String>,
+pub(crate) struct Scope {
+    pub(crate) params: BTreeSet<String>,
+    pub(crate) state: BTreeSet<String>,
+    pub(crate) shell: BTreeSet<String>,
 }
 impl Scope {
-    fn at(document: &Document, path: &NodePath) -> Self {
+    pub(crate) fn at(document: &Document, path: &NodePath) -> Self {
         let mut scope = Self::default();
         let shell = page_of(document, path)
             .map(|(_, page)| page.shell.as_str())

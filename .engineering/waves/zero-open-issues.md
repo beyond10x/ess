@@ -5,6 +5,83 @@ The wave plan of `epic:zero-open-issues-2026-11`: every GitHub issue of `beyond1
 verbatim (2026-11-09): "zero remaining issues on github, all bugs fixed from planning store",
 narrowed to "for repo ess". Every story serves `vision:O2`.
 
+## Where this stands on 2026-11-13: read this first
+
+The plan below is stopped. On 2026-11-13 the operator narrowed it to eight stories and ended it:
+finish those, merge what is green, release, and start no further wave, story or refactoring. The
+epic's goal is not reached. Counted on 2026-11-13 after the 0.95.0 release: 32 issues of
+`beyond10x/ess` are open (`gh issue list --repo beyond10x/ess --state open`), and the store holds
+242 active stories, 110 of them tagged `defect`, and 193 drafts, 55 of them tagged `defect`.
+
+This section was written into the pull request that releases 0.96.0, so it describes the state at
+that pull request. The same section on the branch `integration/ess-zero-issues-4` is the later
+copy: read it there whenever that branch is ahead of `main`.
+
+### The eight stories
+
+1. `story:generated-rust-and-go-decoders-check-a-structs-distinct-invariant`: released in 0.95.0.
+   The story stays `active`: the conformance clause of its acceptance 2 has no evidence.
+   `story:the-generated-servers-of-a-distinct-model-pass-its-conformance-suite` (draft) is the work
+   that closes the clause; its size estimate is owed in the draft before it is accepted.
+2. `story:the-one-row-check-reads-the-instance-its-scenario-bound`: released in 0.95.0,
+   `implemented`.
+3. `story:a-sections-first-row-is-a-binding-in-the-reference-and-both-renderers-or-in-neither`:
+   released in 0.95.0, `implemented`.
+4. `story:ui-check-resolves-the-root-and-section-of-every-binding-path`: in 0.96.0, after four
+   review passes. One case of the fourth pass is ignored with the id of
+   `story:a-nodes-own-visible-is-judged-in-the-scope-the-renderers-draw-it-in` (draft);
+   `story:a-widget-parameter-in-a-map-key-is-substituted-or-refused` (draft) holds a second finding,
+   made by reading only.
+5. `story:a-visible-expression-resolves-its-row-and-actor-paths-wherever-an-action-stands`: not
+   started. No branch and no code exist for it. The operator's order of 2026-11-13 holds it: an
+   open story that no consumer waits on is not started.
+6. `story:two-errors-of-one-wire-name-and-different-fields-bind-on-one-status`: in 0.96.0, after
+   four review passes. Not compared, and said so in the unit's last commit: response headers an
+   outcome sets can also tell two bodies apart.
+7. `story:expect-error-checks-generated-field-presence`: not started, by a ruling of the operator's
+   delegate on 2026-11-13. It waits on `story:view-and-error-assertions-carry-their-value-shape`
+   (its `depends_on`, `active`): `ScenarioStep::ExpectError` holds only fields
+   (`crates/verify/ess-conformance/src/scenario.rs:2525` at `83f0996f4d`).
+8. `story:refusal-overlap-witnessed-for-distinct-guard`: in 0.96.0, after two review passes. Two
+   observations of the second pass were so before the unit and are drafts:
+   `story:a-duplicate-beside-a-forall-over-the-same-list-is-witnessed` and
+   `story:a-creating-branch-beside-a-positive-distinct-under-a-count-bound-is-witnessed`.
+
+The stories of 4, 6 and 8 stay `active` until a store commit records the CI run of the 0.96.0
+release head for each and moves it to `implemented`; that commit is made on
+`integration/ess-zero-issues-4` after the release.
+
+### What waits on the operator
+
+- Four stories the operator's delegate accepted on 2026-11-13, none started:
+  `story:a-success-beside-two-related-rows-held-to-one-input-is-witnessed`,
+  `story:a-redirect-parameter-counts-only-fields-every-answer-writes`,
+  `story:the-one-row-check-decides-a-filtered-view-from-the-replayed-row` and
+  `story:a-ui-test-reads-what-a-copy-action-copied`.
+- `story:a-related-predicate-compares-its-row-with-another-related-row` stays a draft: it asks for
+  a change of the source language, and a design note to the operator is owed before it is accepted.
+- 53 of the 193 drafts were filed since 0.94.0, from consumer reports and review findings. List
+  them with
+  `git diff --name-only --diff-filter=A 0.94.0 -- .engineering/planning/story | xargs grep -l '^status: draft'`.
+- 37 drafts say `Owed` under `## Fit review`: none of them enters a wave before that review is
+  written (`AGENTS.md` § Where work is tracked). List them with
+  `grep -l -i -A3 '^## Fit review' .engineering/planning/story/*.md`, keeping the drafts whose
+  section says `Owed`.
+- `story:delivery-trust-fixture-race` (draft) happened again: on the 0.95.0 release pull request
+  one test shard failed on its first attempt where a fixture binary was replaced while it was being
+  copied (CI run 43436965012, `Test 17/20`); a second attempt of that job passed.
+
+### The next start
+
+1. Nothing of this plan starts without the operator's word. The order in force since 2026-11-13: a
+   story starts only when a consumer that waits on it asks for it by name.
+2. When work resumes, 5 and 7 are the two left of the eight; 7 goes after the story it depends on.
+3. The order of everything else is the wave plan below. Derive it again before using it, because
+   stories were accepted and implemented since it was written:
+   `aep plan artifact waves --kind story --status active`.
+4. A unit forks from `integration/ess-zero-issues-4` (the `-2` and `-3` branches named below are
+   older and merged); a release follows `AGENTS.md`.
+
 Skill: aep 0.26.0 (`aep:implementing`, wave mode), run non-interactive: no operator turn exists, so
 each stage-1 stop is an `approval-record` tagged `non-interactive` (the plan's acceptance is
 `approval-record:zero-issues-accept-the-plan`). Role types per wave: `aep:story-scoper` (opus)

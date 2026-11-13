@@ -11,6 +11,11 @@ fn schema() -> &'static Value {
     PARSED.get_or_init(|| ess_yaml::from_str(ess_ui::SCHEMA).expect("the embedded schema is YAML"))
 }
 
+/// `constructs.PageKind.builtins`: the page kinds a document may extend without declaring.
+pub(crate) fn builtin_page_kinds() -> &'static Value {
+    &schema()["constructs"]["PageKind"]["builtins"]
+}
+
 fn strings(value: &Value) -> Vec<String> {
     value
         .as_sequence()
@@ -172,6 +177,69 @@ pub(crate) fn expression_forms() -> &'static Vec<String> {
             .filter_map(|entry| entry["form"].as_str().map(str::to_owned))
             .collect()
     })
+}
+
+/// `true` when the schema declares a construct called `name`.
+pub(crate) fn is_construct(name: &str) -> bool {
+    construct_names().contains(name)
+}
+
+/// What a node holds once loaded: a composite or a widget (`component`), or a primitive.
+#[derive(Clone)]
+pub(crate) enum Kind {
+    Component(String),
+    Primitive(String),
+}
+
+/// The field tables a mapping written as construct `name` is read with: the construct's own, and
+/// — for a mapping that names its kind inline — those of the composite (`component`, one of
+/// `Composite.union.members`, or a widget, whose use is a `WidgetInstance`) or primitive
+/// (`primitive`) it stands for, each with the name of the construct it belongs to. A mapping that
+/// names neither takes the kind in `inherited`: what the loader gave the node at this place (a
+/// page kind's or a `same_as` overlay's), which the document as written omits.
+pub(crate) fn field_tables(
+    name: &str,
+    mapping: &ess_yaml::Mapping,
+    inherited: Option<&Kind>,
+) -> Vec<(String, &'static ess_yaml::Mapping)> {
+    let constructs = &schema()["constructs"];
+    let members = strings(&constructs["Composite"]["union"]["members"]);
+    let kinds = strings(&constructs["Primitive"]["fields"]["primitive"]["type"]["enum"]);
+    let mut owners = vec![name.to_owned()];
+    let own = mapping.get("component").and_then(Value::as_str);
+    let own_primitive = mapping.get("primitive").and_then(Value::as_str);
+    let inherits = own.is_none() && !mapping.contains_key("primitive");
+    let inherited = inherits.then_some(inherited).flatten();
+    let component = own.or(match inherited {
+        Some(Kind::Component(component)) => Some(component.as_str()),
+        _ => None,
+    });
+    if let Some(component) = component {
+        owners.push("Composite".to_owned());
+        owners.push(if members.iter().any(|member| member == component) {
+            component.to_owned()
+        } else {
+            "WidgetInstance".to_owned()
+        });
+    }
+    let primitive = own_primitive.or(match inherited {
+        Some(Kind::Primitive(primitive)) => Some(primitive.as_str()),
+        _ => None,
+    });
+    if let Some(kind) = primitive {
+        if kinds.iter().any(|known| known == kind) {
+            owners.push("Primitive".to_owned());
+            owners.push(kind.to_owned());
+        }
+    }
+    owners.dedup();
+    owners
+        .into_iter()
+        .filter_map(|owner| {
+            let fields = constructs[owner.as_str()]["fields"].as_mapping()?;
+            Some((owner, fields))
+        })
+        .collect()
 }
 
 /// `unmapped_marker.accepted_by.types`: the primitive type names (`string`, `expr`, …) and the

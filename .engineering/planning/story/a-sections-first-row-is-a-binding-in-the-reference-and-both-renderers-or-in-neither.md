@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-sections-first-row-is-a-binding-in-the-reference-and-both-renderers-or-in-neither
 kind: story
-status: active
+status: implemented
 title: A section's first row is a binding in the reference and both renderers, or in neither
 summary: The reference lists section.<name>.selection only; the React runtime also exposes section.<name>.row for the header's title section, the terminal renderer never does (0.94.0, adopter report)
 tags:
@@ -13,10 +13,11 @@ tags:
 relations:
 - serves: vision:O2
 - decomposes: epic:ess-ui-renderer-neutral-ui
-revision: 8
+revision: 9
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-12T21:27:27Z", actor: "human:timo", revision: 3, executor: "agent:b10x", correlation: "operator-2026-11-12-accept-16"}
 - {from: "proposed", to: "active", at: "2026-11-12T21:27:28Z", actor: "human:timo", revision: 4, executor: "agent:b10x", correlation: "operator-2026-11-12-accept-16"}
+- {from: "active", to: "implemented", at: "2026-11-13T15:51:45Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"test_result":1}}}
 ---
 ## Defect
 

@@ -704,7 +704,7 @@ areas:
 
 | Check | Subject | Rule | Severity |
 |---|---|---|---|
-| `section_refs` | `**.header.total`, `**.header.filters`, `**.depends_on`, `pages.*.layout.columns[].sections[]`, `pages.*.layout.areas.place.*[]` | `{must_resolve_in: [page.sections]}` | error |
+| `section_refs` | `**.header.total`, `**.header.filters`, `**.depends_on`, `pages.*.layout.columns[].sections[]`, `pages.*.layout.areas.place.*[]`, `section.<name>.<member> inside expr` | `{must_resolve_in: [page.sections, expressions.forms]}` | error |
 | `layout_complete` | `pages.*.layout` | `{must: place_every_section_once}` | warning |
 
 ### PageKind
@@ -875,7 +875,7 @@ states:
 
 | Check | Subject | Rule | Severity |
 |---|---|---|---|
-| `section_refs` | `**.header.total`, `**.header.filters`, `**.depends_on`, `pages.*.layout.columns[].sections[]`, `pages.*.layout.areas.place.*[]` | `{must_resolve_in: [page.sections]}` | error |
+| `section_refs` | `**.header.total`, `**.header.filters`, `**.depends_on`, `pages.*.layout.columns[].sections[]`, `pages.*.layout.areas.place.*[]`, `section.<name>.<member> inside expr` | `{must_resolve_in: [page.sections, expressions.forms]}` | error |
 | `widget_expands` | `**.component naming a widget` | `{must: [resolve_widget, required_args_present, args_match_param_types, no_recursion], then: check_expanded_body}` | error |
 
 ### SectionStates
@@ -1123,7 +1123,7 @@ actions: [{name: create, opens: create, label: New ticket}]
 | Check | Subject | Rule | Severity |
 |---|---|---|---|
 | `channel_refs` | `**.live.channel`, `**.header.live[]`, `channel.<name> inside expr` | `{must_resolve: {ref: channel}}` | error |
-| `section_refs` | `**.header.total`, `**.header.filters`, `**.depends_on`, `pages.*.layout.columns[].sections[]`, `pages.*.layout.areas.place.*[]` | `{must_resolve_in: [page.sections]}` | error |
+| `section_refs` | `**.header.total`, `**.header.filters`, `**.depends_on`, `pages.*.layout.columns[].sections[]`, `pages.*.layout.areas.place.*[]`, `section.<name>.<member> inside expr` | `{must_resolve_in: [page.sections, expressions.forms]}` | error |
 
 ### overlay
 
@@ -2771,7 +2771,7 @@ What a validator checks in a document, and the construct each check applies to. 
 | `shell_refs` | [Page](#page) | `pages.*.shell` | `{must_resolve: {ref: shell}}` | error |
 | `page_outlet` | [Shell](#shell) | `shells.* a page renders in` | `{must: have_a_region_of_kind_page_outlet}` | error |
 | `channel_refs` | [Live](#live), [header](#header) | `**.live.channel`, `**.header.live[]`, `channel.<name> inside expr` | `{must_resolve: {ref: channel}}` | error |
-| `section_refs` | [header](#header), [Section](#section), [PageLayout](#pagelayout) | `**.header.total`, `**.header.filters`, `**.depends_on`, `pages.*.layout.columns[].sections[]`, `pages.*.layout.areas.place.*[]` | `{must_resolve_in: [page.sections]}` | error |
+| `section_refs` | [header](#header), [Section](#section), [PageLayout](#pagelayout) | `**.header.total`, `**.header.filters`, `**.depends_on`, `pages.*.layout.columns[].sections[]`, `pages.*.layout.areas.place.*[]`, `section.<name>.<member> inside expr` | `{must_resolve_in: [page.sections, expressions.forms]}` | error |
 | `layout_complete` | [PageLayout](#pagelayout) | `pages.*.layout` | `{must: place_every_section_once}` | warning |
 | `widget_expands` | [Section](#section), [overlay](#overlay), [WidgetInstance](#widgetinstance), [Composite](#composite) | `**.component naming a widget` | `{must: [resolve_widget, required_args_present, args_match_param_types, no_recursion], then: check_expanded_body}` | error |
 | `primitive_props` | [Primitive](#primitive) | `**.primitive` | `{must: props_of_kind_only}` | error |
@@ -2810,6 +2810,8 @@ What a validator checks in a document, and the construct each check applies to. 
 | `host_slots` | [HostSlot](#hostslot) | `**.host` | `{must: [carry_a_non_empty_reason, name_what_it_stands_in_for, be_the_only_slot_of_its_host_name, carry_neither_component_nor_primitive]}` | error |
 | `hosts_registered` | every node | `**.host, for every name ess ui check --hosts lists` | `{must_resolve_in: ["**.host"]}` | error |
 | `board_widget_kinds` | every node | `**.board.reads fixture rows` | `{must: have_a_widget_by_field_that_names_an_entry_of_widgets}` | warning |
+| `expr_paths` | every node | `judged: state.<name>, params.<name> and shell.<name> inside an expr written in a page or in an overlay of a shell, against what is in scope there (a page overlay that declares params has the page's and its own, a shell overlay its own); and shell.<name> inside the rest of a shell (its regions and guards)`, `not judged: page kinds, widget declarations, navigation, state.<name> and params.<name> inside the rest of a shell, and params.<name> inside an overlay that declares no params, whose opener hands it values` | `{must_resolve_in: ["the state, parameters and shell state in scope where the expression stands"]}` | error |
+| `expr_roots` | every node | `an unquoted dotted word inside an expr, outside the arguments of a call`, `not judged: a read's filter and a dynamic menu entry's filter (held by the filter_* checks), and a widget argument whose parameter the widget does not substitute into an expr, where the word is shown as text` | `{must: begin_with_a_root_of_expressions.forms_or_be_quoted}` | warning |
 
 ## Retrofits and lowering
 
