@@ -2430,15 +2430,6 @@ impl<'d> Gen<'d> {
         frame
     }
 
-    /// Whether the page header's title reads its record from `section` (`header.title_from`,
-    /// beyond10x/ess#354): that section reports its first row.
-    fn titles_header(page: &Page, section: &Section) -> bool {
-        page.header
-            .as_ref()
-            .and_then(|header| header.title_from.as_ref())
-            .is_some_and(|from| from.section == section.name)
-    }
-
     #[allow(clippy::too_many_lines)] // one section frame, one attribute per declared concern
     fn section_component(&mut self, name: &str, page: &Page, at: &NodePath, section: &Section) {
         let mut lines = Vec::new();
@@ -2453,9 +2444,6 @@ impl<'d> Gen<'d> {
                 "host",
                 section.body.host().map(|slot| ts::string(&slot.host)),
             );
-        if Self::titles_header(page, section) && reads.is_some() {
-            frame = frame.expr("reportsRow", "true");
-        }
         if self.framed.contains(&section.name) {
             frame = frame.expr("framed", "true");
         }
@@ -2903,6 +2891,14 @@ impl<'d> Gen<'d> {
         );
         let framed = page_frame.children(header).child(layout).render();
         let hosted = self.overlay_host(&owner, &at, &page.overlays, framed);
+        // The page's overlays render outside its frame: the registry of its sections is held
+        // around both, so an overlay reads `section.<name>` as the page's own sections do.
+        let hosted = if page.overlays.is_empty() {
+            hosted
+        } else {
+            let registry = self.import("runtime/core", "PageRegistry");
+            El::new(&registry).child(hosted).render()
+        };
         let hosted = match &page.visible {
             Some(condition) => {
                 let visible = self.import("runtime/core", "Visible");
@@ -3259,6 +3255,14 @@ impl<'d> Gen<'d> {
             &shell.overlays,
             format!("<{frame_component} />"),
         );
+        // The shell's overlays render outside the page its outlet shows: the registry of the
+        // page shown is held around both, so an overlay reads `section.<name>` of that page.
+        let hosted = if shell.overlays.is_empty() {
+            hosted
+        } else {
+            let registry = self.import("runtime/core", "PageRegistry");
+            El::new(&registry).child(hosted).render()
+        };
         let scanned = format!("{}\n{hosted}", self.hoisted.join("\n"));
         let channels = self.channels_used(&scanned, &[]);
         let mut extra = Vec::new();

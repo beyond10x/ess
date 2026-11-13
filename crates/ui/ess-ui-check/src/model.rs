@@ -652,6 +652,15 @@ impl Model {
             .map(|(qualified, view)| (qualified, &view.fields))
     }
 
+    /// What is wrong with `field` as a key of the first row of a section that reads `reads`
+    /// (`section.<name>.row.<field>`), as `header.title_from.field` is held: by wire name, a dotted
+    /// field by its first segment. `None` when the view is not in the model or carries the key.
+    pub(crate) fn section_row_problem(&self, reads: &Reads, field: &str) -> Option<String> {
+        let (qualified, view) = self.view(reads.view.as_deref()?)?;
+        let field = field.split('.').next().unwrap_or(field);
+        wire_problem(&qualified, &view.wires, field, "a section's row")
+    }
+
     /// The fields and values the document reads from rows and inputs the model types: a
     /// `group_by`, `group_order`, an aggregate's `field`, a `label_from`, a `suggests` `value`, a form choice's fixed
     /// options, and a choice's `value` and `label` (beyond10x/ess#351, #358, #364, #330, #328).
@@ -892,10 +901,22 @@ fn wire_field(
     name: &str,
     subject: &str,
 ) {
-    if wires.values().any(|wire| wire == name) {
-        return;
+    if let Some(message) = wire_problem(view, wires, name, subject) {
+        sink.push("row_fields", at, message);
     }
-    let message = match wires.get(name) {
+}
+
+/// What is wrong with `name` as a key of the rows of `view`, if anything: see [`wire_field`].
+fn wire_problem(
+    view: &str,
+    wires: &BTreeMap<String, String>,
+    name: &str,
+    subject: &str,
+) -> Option<String> {
+    if wires.values().any(|wire| wire == name) {
+        return None;
+    }
+    Some(match wires.get(name) {
         Some(wire) => format!(
             "`{name}` is the model name of a field the rows of `{view}` carry as `{wire}`; \
              {subject} names the key its rows carry, so write `{wire}`"
@@ -908,8 +929,7 @@ fn wire_field(
                 .collect::<Vec<_>>()
                 .join(", ")
         ),
-    };
-    sink.push("row_fields", at, message);
+    })
 }
 
 /// `true` when `name` is a row field of `view`; else reports it under `row_fields`.

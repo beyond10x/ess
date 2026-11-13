@@ -104,9 +104,26 @@ pub enum Lifecycle {
 
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum ReadState {
-    Loading { since: Duration },
+    /// Under way since `since`; `held` is what the read answered before it started again for the
+    /// same request, when it had answered.
+    Loading {
+        since: Duration,
+        held: Option<ReadResult>,
+    },
     Ready(ReadResult),
     Failed(String),
+}
+
+impl ReadState {
+    /// This read started again at `now`, for the same request: what it answered stays held.
+    fn again(&self, now: Duration) -> Self {
+        let held = match self {
+            Self::Ready(result) => Some(result.clone()),
+            Self::Loading { held, .. } => held.clone(),
+            Self::Failed(_) => None,
+        };
+        Self::Loading { since: now, held }
+    }
 }
 
 /// What the screen shown needs: its reads, and the nested live nodes it shows.
@@ -1248,6 +1265,48 @@ impl App {
         }))
     }
 
+    /// The first row of a section's read: of its answer, or, while the read runs again for the
+    /// same request, of the answer it held. A read that has not answered for its request holds
+    /// none.
+    fn first_row(&self, section: &Section) -> Option<Value> {
+        let reads = body_reads(&section.body)?;
+        let ctx = Ctx {
+            section: Some(&section.name),
+            ..Ctx::default()
+        };
+        match self.held_rows(reads, &ctx) {
+            Some(held) => held.into_iter().next(),
+            None => self.rows(&section.name).into_iter().next(),
+        }
+    }
+
+    /// The rows `reads` answered before it started again for the same request, with its filter
+    /// applied; `None` unless it is running again after an answer. After a failed read, and for
+    /// a request nothing has answered, nothing is held.
+    fn held_rows(&self, reads: &Reads, ctx: &Ctx<'_>) -> Option<Vec<Value>> {
+        let Some(ReadState::Loading {
+            held: Some(held), ..
+        }) = self.read_state(&self.request(reads, ctx))
+        else {
+            return None;
+        };
+        Some(
+            held.rows
+                .iter()
+                .filter(|row| {
+                    self.keeps(
+                        reads.filter.as_ref(),
+                        &Ctx {
+                            row: Some(row),
+                            ..*ctx
+                        },
+                    )
+                })
+                .cloned()
+                .collect(),
+        )
+    }
+
     pub(crate) fn section_request(&self, section: &Section) -> Option<ReadRequest> {
         let ctx = Ctx {
             section: Some(&section.name),
@@ -1316,7 +1375,7 @@ impl App {
                 }
                 if let Some(entry) = self.cache.get_mut(&node.request.key()) {
                     if !matches!(entry.state, ReadState::Loading { .. }) {
-                        entry.state = ReadState::Loading { since: self.now };
+                        entry.state = entry.state.again(self.now);
                         changed = true;
                     }
                 }
@@ -1329,7 +1388,10 @@ impl App {
                         key,
                         CacheEntry {
                             request,
-                            state: ReadState::Loading { since: self.now },
+                            state: ReadState::Loading {
+                                since: self.now,
+                                held: None,
+                            },
                             answered: self.now,
                             answer: None,
                             generation: 0,
@@ -1348,7 +1410,7 @@ impl App {
                         .get(&entry.request.view)
                         .copied()
                         .unwrap_or(self.options.read_latency);
-                    matches!(entry.state, ReadState::Loading { since }
+                    matches!(entry.state, ReadState::Loading { since, .. }
                         if since + latency <= self.now)
                 })
                 .map(|(key, _)| key.clone())
@@ -1465,14 +1527,25 @@ impl App {
             .collect();
         for key in due {
             if let Some(entry) = self.cache.get_mut(&key) {
-                entry.state = ReadState::Loading { since: self.now };
+                entry.state = entry.state.again(self.now);
             }
         }
     }
 
-    /// Drops every cached read, so what the screen shows is read again.
+    /// Reads again what the screen shows, and drops every other cached read. A read the screen
+    /// shows keeps the rows it answered while it runs again ([`ReadState::Loading`]).
     fn invalidate(&mut self) {
-        self.cache.clear();
+        let shown: BTreeSet<String> = self
+            .needed_reads()
+            .reads
+            .iter()
+            .map(ReadRequest::key)
+            .collect();
+        self.cache.retain(|key, _| shown.contains(key));
+        let now = self.now;
+        for entry in self.cache.values_mut() {
+            entry.state = entry.state.again(now);
+        }
     }
 
     fn needed_reads(&self) -> Wanted {
@@ -1961,6 +2034,25 @@ impl App {
         rows.get(cursor).cloned()
     }
 
+    /// The row `section.<name>.selection` binds: the cursor's row of the rows shown, and, while
+    /// the collection's read runs again for the same request, the cursor's row of the answer it
+    /// held. What the screen draws while loading, its counts, paging and row actions do not read
+    /// the held answer.
+    fn bound_selection(
+        &self,
+        ui: &str,
+        collection: &ess_ui::Collection,
+        ctx: &Ctx<'_>,
+    ) -> Option<Value> {
+        if let Some(row) = self.selected_row(ui, collection, ctx) {
+            return Some(row);
+        }
+        let held = self.held_rows(collection.reads.as_ref()?, ctx)?;
+        let (rows, _) = self.page_of(ui, collection, &self.arranged_rows(ui, collection, &held));
+        let cursor = self.ui(ui).cursor.min(rows.len().saturating_sub(1));
+        rows.get(cursor).map(|row| (*row).clone())
+    }
+
     /// Whether an `as: toggle` action is on, evaluating the one state expression
     /// [`ess_ui::toggle_state`] names, which the React project is handed too; a toggle whose
     /// state no expression names is off. `None` for an action that is not a toggle.
@@ -2171,7 +2263,7 @@ impl App {
         }
         if live.effect == Effect::Refetch {
             if let Some(entry) = self.cache.get_mut(&key) {
-                entry.state = ReadState::Loading { since: self.now };
+                entry.state = entry.state.again(self.now);
             }
             return;
         }
@@ -2327,7 +2419,7 @@ impl App {
         let now = self.now;
         for key in keys {
             if let Some(entry) = self.cache.get_mut(&key) {
-                entry.state = ReadState::Loading { since: now };
+                entry.state = entry.state.again(now);
             }
         }
     }
@@ -2439,7 +2531,7 @@ impl App {
         };
         apply(live, &mut result.rows, payload);
         if live.effect == Effect::Refetch {
-            entry.state = ReadState::Loading { since: now };
+            entry.state = entry.state.again(now);
         }
     }
 
@@ -2845,7 +2937,10 @@ impl App {
         };
         self.demanded.insert(section.name.clone());
         if let Some(request) = self.section_request(&section) {
-            self.cache.remove(&request.key());
+            let now = self.now;
+            if let Some(entry) = self.cache.get_mut(&request.key()) {
+                entry.state = entry.state.again(now);
+            }
         }
     }
 
@@ -4598,15 +4693,38 @@ impl Resolve for Scope<'_> {
                             None
                         } else {
                             app.resolving.borrow_mut().push((*name).to_owned());
-                            let row = app.selected_row(&ui, collection, &ctx);
+                            let row = app.bound_selection(&ui, collection, &ctx);
                             app.resolving.borrow_mut().pop();
                             row
                         }
                     }
                     _ => None,
                 };
+                // `row`: the first row of a section that reads, as the header's title reads it,
+                // absent while the section loads for its params, when it is empty, where it
+                // reads nothing and while an `on_demand` section is not loaded. Its own params
+                // may read the row too: a section already being resolved sees none, as with
+                // `selection`.
+                let row = if segments.get(1) != Some(&"row")
+                    || section.body.reads().is_none()
+                    || app.waiting(section)
+                    || app.lifecycle(section) == Lifecycle::NotLoaded
+                    || app
+                        .resolving
+                        .borrow()
+                        .iter()
+                        .any(|open| open.as_str() == *name)
+                {
+                    None
+                } else {
+                    app.resolving.borrow_mut().push((*name).to_owned());
+                    let first = app.first_row(section);
+                    app.resolving.borrow_mut().pop();
+                    first
+                };
                 let mut value = Mapping::new();
                 value.insert("selection".into(), selection.unwrap_or(Value::Null));
+                value.insert("row".into(), row.unwrap_or(Value::Null));
                 Resolved::Whole(expr::walk(&Value::Mapping(value), &segments[1..]))
             }
             "url" => {

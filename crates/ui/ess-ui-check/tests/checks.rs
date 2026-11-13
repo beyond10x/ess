@@ -332,6 +332,29 @@ fn header_record() {
     assert!(tripped(&fine, "section_refs").is_empty(), "{fine:#?}");
 }
 
+/// `section.<name>.row` is the first row of a section that reads: a section that reads nothing
+/// holds none, and a read whose params read its own section's row waits on itself.
+#[test]
+fn section_row() {
+    let silent = page(
+        "{kind: detail_page, title: P, sections: [{name: note, component: record, fields: [goal]}, \
+         {name: summary, reads: {view: t.ById, params: {id: section.note.row.id}}}]}",
+    );
+    let finding = trips(&silent, "section_row", "pages/p/sections/summary");
+    assert!(finding.message.contains("note"), "{finding:?}");
+    let own = page(
+        "{kind: detail_page, title: P, \
+         sections: [{name: summary, reads: {view: t.ById, params: {id: section.summary.row.id}}}]}",
+    );
+    let finding = trips(&own, "section_row", "pages/p/sections/summary/reads");
+    assert!(finding.message.contains("summary"), "{finding:?}");
+    let fine = report(&page(
+        "{kind: detail_page, title: P, sections: [{name: first, reads: t.ById}, \
+         {name: summary, reads: {view: t.ById, params: {id: section.first.row.id}}}]}",
+    ));
+    assert!(tripped(&fine, "section_row").is_empty(), "{fine:#?}");
+}
+
 #[test]
 fn export_selection() {
     let report = report(&page(
