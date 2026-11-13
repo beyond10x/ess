@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-success-beside-two-related-rows-held-to-one-input-is-witnessed
 kind: story
-status: draft
+status: active
 title: A success beside two related rows held to one input is witnessed
 summary: Two when_related predicates that compare their rows with one input validate, and synthesis writes no scenario for the success (ESS-SYNTH-003) on 0.94.0; a consumer's suite falls one scenario under its floor
 tags:
@@ -16,7 +16,10 @@ relations:
 - serves: vision:O2
 - informed_by: story:a-command-with-two-related-selectors-arranges-both
 - informed_by: story:a-row-arranged-beside-is-created-once-under-its-name
-revision: 2
+revision: 4
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-13T11:02:40Z", actor: "agent:operator-delegate", revision: 3}
+- {from: "proposed", to: "active", at: "2026-11-13T11:02:40Z", actor: "agent:operator-delegate", revision: 4}
 ---
 ## Defect
 

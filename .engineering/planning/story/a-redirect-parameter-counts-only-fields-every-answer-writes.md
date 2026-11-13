@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-redirect-parameter-counts-only-fields-every-answer-writes
 kind: story
-status: draft
+status: active
 title: A redirect parameter counts only fields every answer writes
 summary: Written::of takes a newtype over Optional and a wrong_state error's field under the unknown-instance answer as always written, so a redirect may read a parameter an answer lacks (found by reading in a review pass, backlog)
 tags:
@@ -14,7 +14,10 @@ tags:
 relations:
 - serves: vision:O2
 - informed_by: story:two-errors-of-one-wire-name-and-different-fields-bind-on-one-status
-revision: 1
+revision: 3
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-13T11:02:41Z", actor: "agent:operator-delegate", revision: 2}
+- {from: "proposed", to: "active", at: "2026-11-13T11:02:41Z", actor: "agent:operator-delegate", revision: 3}
 ---
 ## Finding
 
