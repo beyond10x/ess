@@ -565,7 +565,11 @@ impl Number {
         let survives_the_write = |(units, scale): &(i128, u8)| {
             *scale == 0 || Some((*units, *scale)) == canonical_decimal(binary)
         };
-        Some(Self(match authored.filter(survives_the_write) {
+        let kept = authored.filter(survives_the_write);
+        if kept.is_none() {
+            note_inexact_decimal(text);
+        }
+        Some(Self(match kept {
             Some((units, scale)) => Repr::exact(units, scale, binary),
             None => Repr::of_binary64(binary),
         }))
@@ -637,6 +641,102 @@ impl Number {
                 binary,
             }
         }))
+    }
+}
+
+/// A decimal literal that binary64 cannot hold exactly, as it was written and as it reads.
+///
+/// `0.1000000000000000000001` is not the binary64 nearest it, `0.1`, and every reader that goes
+/// through a binary64 takes it as that: it is written, displayed and compared as `0.1`. Refusing it
+/// by name is the repository's answer until the exact-decimal writer is built.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InexactDecimal {
+    /// The literal as it was written.
+    pub spelled: String,
+    /// The shortest decimal of the binary64 nearest it, which is the value it reads as.
+    pub nearest: String,
+}
+
+impl InexactDecimal {
+    /// `Some` where `text` is a finite decimal number whose value is not its own nearest
+    /// binary64's shortest decimal: `0.1000000000000000000001`, and `1.0000000000000000001`. An
+    /// integer that binary64 holds, a decimal of at most 15 significant digits and the shortest
+    /// decimal of any binary64 are each their own, so are `None`.
+    pub fn of_text(text: &str) -> Option<Self> {
+        let binary = text.parse::<f64>().ok().filter(|value| value.is_finite())?;
+        let spelled = Dec::of_text(text)?;
+        let carried = canonical_decimal(binary).map_or_else(
+            || Dec::of_binary64(binary),
+            |(units, scale)| Dec::of_exact(units, scale),
+        );
+        (spelled != carried).then(|| Self {
+            spelled: text.to_owned(),
+            nearest: format!("{binary}"),
+        })
+    }
+}
+
+std::thread_local! {
+    /// The literals [`collecting_inexact_decimals`] is collecting, while it runs.
+    static INEXACT_DECIMALS: std::cell::RefCell<Option<Vec<InexactDecimal>>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// Runs `read`, and returns with its value every [`InexactDecimal`] it read as a decimal literal
+/// that collapsed to its binary64, each once, in the order met.
+///
+/// What a guard's literal does when [`FactValue::parse_literal`] reads it, said out loud: the
+/// reader still answers the nearest binary64, as it always did, and the validator that called this
+/// refuses what was collected.
+pub fn collecting_inexact_decimals<T>(read: impl FnOnce() -> T) -> (T, Vec<InexactDecimal>) {
+    let before = INEXACT_DECIMALS.with(|found| found.replace(Some(Vec::new())));
+    let value = read();
+    let found = INEXACT_DECIMALS.with(|found| found.replace(before));
+    (value, found.unwrap_or_default())
+}
+
+/// Notes `text` where a [`collecting_inexact_decimals`] is running and it is one.
+fn note_inexact_decimal(text: &str) {
+    INEXACT_DECIMALS.with(|found| {
+        if let Some(found) = found.borrow_mut().as_mut() {
+            if let Some(number) = InexactDecimal::of_text(text) {
+                if !found.contains(&number) {
+                    found.push(number);
+                }
+            }
+        }
+    });
+}
+
+impl Dec {
+    /// A decimal as YAML or JSON spells it, in the grammar `str::parse::<f64>` reads and with no
+    /// bound on its digits: an optional sign, digits with at most one point, an optional exponent.
+    fn of_text(text: &str) -> Option<Self> {
+        let (negative, rest) = match text.as_bytes().first() {
+            Some(b'-') => (true, &text[1..]),
+            Some(b'+') => (false, &text[1..]),
+            _ => (false, text),
+        };
+        let (mantissa, exponent) = match rest.find(['e', 'E']) {
+            Some(at) => (&rest[..at], rest[at + 1..].parse::<i64>().ok()?),
+            None => (rest, 0),
+        };
+        let (integer, fraction) = mantissa.split_once('.').unwrap_or((mantissa, ""));
+        if integer.is_empty() && fraction.is_empty() {
+            return None;
+        }
+        if !integer
+            .bytes()
+            .chain(fraction.bytes())
+            .all(|b| b.is_ascii_digit())
+        {
+            return None;
+        }
+        Some(Self::of_parts(
+            negative,
+            &format!("{integer}{fraction}"),
+            i64::try_from(integer.len()).ok()?.saturating_add(exponent),
+        ))
     }
 }
 
@@ -1884,5 +1984,60 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn a_decimal_binary64_cannot_hold_is_named_with_the_value_it_reads_as() {
+        for text in [
+            "0.1000000000000000000001",
+            "0.10000000000000001",
+            "-1.0000000000000000001",
+            "1.5000000000000000000000000000000000000001",
+        ] {
+            let found = InexactDecimal::of_text(text).unwrap_or_else(|| panic!("{text}"));
+            assert_eq!(found.spelled, text);
+        }
+        assert_eq!(
+            InexactDecimal::of_text("0.1000000000000000000001")
+                .unwrap()
+                .nearest,
+            "0.1"
+        );
+        for text in [
+            "0.1",
+            "0.5",
+            "1e2",
+            "100",
+            "-2.50",
+            "0.30000000000000004",
+            "007",
+            ".5",
+            "1e400",
+            "abc",
+            "",
+        ] {
+            assert_eq!(InexactDecimal::of_text(text), None, "{text}");
+        }
+    }
+
+    #[test]
+    fn a_literal_that_collapses_is_collected_only_while_one_is_collecting() {
+        let (value, found) = collecting_inexact_decimals(|| {
+            let kept = FactValue::parse_literal("0.5");
+            let collapsed = FactValue::parse_literal("0.1000000000000000000001");
+            let again = FactValue::parse_literal("0.1000000000000000000001");
+            (kept, collapsed, again)
+        });
+        assert_eq!(value.0, FactValue::parse_literal("0.5"));
+        // What the reader answers does not move: the nearest binary64, as it always was.
+        assert_eq!(value.1, FactValue::parse_literal("0.1"));
+        assert_eq!(
+            found,
+            vec![InexactDecimal::of_text("0.1000000000000000000001").unwrap()]
+        );
+        let ((), none) = collecting_inexact_decimals(|| ());
+        assert_eq!(none, Vec::new());
+        FactValue::parse_literal("0.1000000000000000000001");
+        assert_eq!(collecting_inexact_decimals(|| ()).1, Vec::new());
     }
 }

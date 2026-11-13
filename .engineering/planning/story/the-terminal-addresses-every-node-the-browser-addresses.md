@@ -26,7 +26,7 @@ scope:
   path: crates/ui/ess-ui-tui/src/view.rs
 - confidence: inferred
   path: website/docs/reference/ess-ui-test.md
-revision: 6
+revision: 8
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-10T00:48:16Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"review_outcome":1}}}
 - {from: "proposed", to: "active", at: "2026-11-10T00:48:17Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":1}}}
@@ -63,6 +63,32 @@ failed  item 18a ... expect at pages/orders.board/sections/board/rows/w-1: no no
 failed  item 19 ... expect at pages/orders.list/sections/list/rows/o-1/columns/c10: ... the terminal does not draw this node on cells of its own
 ```
 
+A further node of the same class, from a consumer's UI document (2026-11-13, reproduced on ess
+0.94.0, items 6 of its first and 9 of its second report): a node of a collection's `item`. With
+`item: [{name: tile, component: tile, args: {title: row.title}}]`, the widget `tile` a body of a
+heading `args.title`, a text `TILE-MARK` and a badge `FLAG-MARK`, the terminal draws the item once,
+for the row under the cursor, in one line below the rows, in every `style` (`table`, `cards`,
+`list`):
+
+```
+  request-one · Pending
+  request-two · Pending
+▸ request-one TILE-MARK [FLAG-MARK]
+```
+
+No row's own line holds its item, so a card grid reads as a list of column values, and a test
+reads the item neither at the row nor at its own path:
+
+```
+failed ... expect at pages/requests.inbox/sections/list/rows/r1: expected "TILE-MARK" ...; it shows: request-one · Pending
+failed ... expect at pages/requests.inbox/sections/list/rows/r1/item/tile: ... the terminal does not draw this node on cells of its own, so its text cannot be told from its neighbours'; expect text at the row, section, overlay or page instead
+```
+
+An `item` of primitives (`{name: mark, primitive: text, text: ITEM-MARK}`) is drawn the same way.
+A tile with several body nodes cannot be tested node by node headless, and no row but the one under
+the cursor shows its tile. (An earlier text of this case said the tile's text is drawn in the
+row's line; that reading came from a tile whose text equalled the row's `title` column.)
+
 ## Acceptance
 
 Journey tests in `crates/ui/ess-ui-test/tests/`, each red on 0.92.0:
@@ -78,6 +104,9 @@ Journey tests in `crates/ui/ess-ui-test/tests/`, each red on 0.92.0:
   at `…/rows/<key>/columns/<last>` reads its value. The test file needs no key for it.
 - Every node the terminal still does not address is refused by one parity rule with one reason in
   both renderers, never by `no node at` for a path the document declares.
+- With a collection whose `item` holds a widget instance, `expect: {at: …/rows/<key>/item/<name>,
+  text: …}` reads that item's text only, and a node of the widget's body is addressed below it as
+  the React project addresses it by `data-ui-path`.
 
 ## Scope
 

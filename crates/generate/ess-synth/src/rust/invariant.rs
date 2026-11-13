@@ -15,6 +15,7 @@
 //! An invariant this emitter cannot spell as such an expression is refused before anything is
 //! rendered ([`preflight`]), naming the invariant, rather than dropped from the check.
 
+use std::borrow::Cow;
 use std::fmt::Write as _;
 
 use ess_compiler::ir::{
@@ -24,7 +25,8 @@ use ess_domain::entity::Invariant;
 use ess_domain::Primitive;
 use ess_primitives::facts::{FactPath, FactValue};
 use ess_primitives::predicate::{
-    Collection, CompareOp, FoldOp, Operand, Predicate, Quantified, TextOp, TextOperand,
+    Collection, CompareOp, Distinct, DistinctKeyKind, FoldOp, Operand, Predicate, Quantified,
+    TextOp, TextOperand,
 };
 
 use super::{name, Emit};
@@ -88,7 +90,7 @@ pub(super) fn preflight(
             layout,
             domain: layout.owner(&declared.name),
         };
-        if let Err((at, reason)) = newtype_checks(&emit, declared) {
+        for (at, reason) in checks_and_refusals(&emit, declared).1 {
             causes.push(TargetFailureCause::new(
                 TargetFailureCode::MissingRepresentation,
                 vec![format!("types.{}.{at}", declared.name)],
@@ -130,23 +132,56 @@ fn newtype_checks(
     emit: &Emit<'_>,
     declared: &ResolvedType,
 ) -> Result<Vec<(String, String)>, (String, String)> {
-    if let ResolvedBody::Struct { fields, invariants } = &declared.body {
-        let mut checks = Vec::new();
-        for (index, invariant) in invariants.iter().enumerate() {
-            let expression = Check::rooted(emit, Root::Struct(fields))
-                .invariant(invariant)
-                .map_err(|reason| {
-                    (
-                        format!("invariants.{index}"),
-                        format!("`{}`: {reason}", invariant.statement),
-                    )
-                })?;
-            checks.push((
+    let (checks, mut refused) = checks_and_refusals(emit, declared);
+    if refused.is_empty() {
+        Ok(checks)
+    } else {
+        Err(refused.remove(0))
+    }
+}
+
+/// What [`checks_and_refusals`] reads: a declaration's member and the text its check or its
+/// refusal carries.
+type Member = (String, String);
+
+/// Each of `invariants` read as `root` reads it: the ones it can check, in order, and every one it
+/// cannot, so no refusal hides another.
+fn check_invariants(
+    emit: &Emit<'_>,
+    root: Root<'_>,
+    invariants: &[Invariant],
+    checks: &mut Vec<Member>,
+    refused: &mut Vec<Member>,
+) {
+    for (index, invariant) in invariants.iter().enumerate() {
+        match Check::rooted(emit, root).invariant(invariant) {
+            Ok(expression) => checks.push((
                 format!("a value satisfying `{}`", invariant.statement),
                 format!("iv::broken({expression})"),
-            ));
+            )),
+            Err(reason) => refused.push((
+                format!("invariants.{index}"),
+                format!("`{}`: {reason}", invariant.statement),
+            )),
         }
-        return Ok(checks);
+    }
+}
+
+/// [`newtype_checks`] without stopping at the first constraint it cannot check: the constraints it
+/// can, and every one it cannot, each as its declaration's member and why. [`preflight`] names them
+/// all, so an author fixing a type meets no further refusal on the next run.
+fn checks_and_refusals(emit: &Emit<'_>, declared: &ResolvedType) -> (Vec<Member>, Vec<Member>) {
+    let mut checks = Vec::new();
+    let mut refused = Vec::new();
+    if let ResolvedBody::Struct { fields, invariants } = &declared.body {
+        check_invariants(
+            emit,
+            Root::Struct(fields),
+            invariants,
+            &mut checks,
+            &mut refused,
+        );
+        return (checks, refused);
     }
     let ResolvedBody::Newtype {
         of,
@@ -155,9 +190,8 @@ fn newtype_checks(
         invariants,
     } = &declared.body
     else {
-        return Ok(Vec::new());
+        return (checks, refused);
     };
-    let mut checks = Vec::new();
     if alphabet.is_some() || prefix.is_some() {
         // The text the declaration constrains: `self.0`, through every newtype it wraps.
         let mut text = "self.0".to_owned();
@@ -179,45 +213,39 @@ fn newtype_checks(
         } else {
             "prefix"
         };
-        if !matches!(
+        if matches!(
             current,
             ResolvedTypeRef::Primitive {
                 name: Primitive::String
             }
         ) {
-            return Err((
+            if let Some(alphabet) = alphabet {
+                checks.push((
+                    format!("a value whose every character is one of `{alphabet}`"),
+                    format!("!{text}.chars().all(|c| {alphabet:?}.contains(c))"),
+                ));
+            }
+            if let Some(prefix) = prefix {
+                checks.push((
+                    format!("a value starting with `{prefix}`"),
+                    format!("!{text}.starts_with({prefix:?})"),
+                ));
+            }
+        } else {
+            refused.push((
                 member.to_owned(),
                 format!("its {member} constrains `{current}`, which is not a String"),
             ));
         }
-        if let Some(alphabet) = alphabet {
-            checks.push((
-                format!("a value whose every character is one of `{alphabet}`"),
-                format!("!{text}.chars().all(|c| {alphabet:?}.contains(c))"),
-            ));
-        }
-        if let Some(prefix) = prefix {
-            checks.push((
-                format!("a value starting with `{prefix}`"),
-                format!("!{text}.starts_with({prefix:?})"),
-            ));
-        }
     }
-    for (index, invariant) in invariants.iter().enumerate() {
-        let expression = Check::rooted(emit, Root::Newtype(of))
-            .invariant(invariant)
-            .map_err(|reason| {
-                (
-                    format!("invariants.{index}"),
-                    format!("`{}`: {reason}", invariant.statement),
-                )
-            })?;
-        checks.push((
-            format!("a value satisfying `{}`", invariant.statement),
-            format!("iv::broken({expression})"),
-        ));
-    }
-    Ok(checks)
+    check_invariants(
+        emit,
+        Root::Newtype(of),
+        invariants,
+        &mut checks,
+        &mut refused,
+    );
+    (checks, refused)
 }
 
 /// `impl <Newtype> { pub fn broken_constraint(&self) -> Option<&'static str> }`, for a newtype that
@@ -513,14 +541,7 @@ impl<'a> Check<'a> {
             }
             Predicate::Forall(quantified) => self.quantified("forall", quantified)?,
             Predicate::Exists(quantified) => self.quantified("exists", quantified)?,
-            // The shared invariant evaluator compares no keys across a list's elements: refused by
-            // name rather than dropped from the check.
-            Predicate::Distinct(_) => {
-                return Err(format!(
-                    "`{predicate}` requires distinct list members, which the generated invariant \
-                     check does not evaluate"
-                ))
-            }
+            Predicate::Distinct(distinct) => self.distinct(predicate, distinct)?,
             // Validation admits a calendar window only in a command guard, and the shared invariant
             // evaluator reads no window: refused by name rather than rendered as something else.
             Predicate::Window(window) => {
@@ -651,6 +672,47 @@ impl<'a> Check<'a> {
         let body = self.predicate(&quantified.body);
         self.binders.pop();
         Ok(format!("iv::{which}({items}, |{variable}| {})", body?))
+    }
+
+    /// `distinct`: no two elements of the list share a key, the key each element's own value or the
+    /// member `by` names, under the equality its type declares.
+    ///
+    /// Only a struct's invariants read it. The decoders check those, and the evaluator carries the
+    /// comparison only for a model that has one; an entity's or a newtype's is refused by name
+    /// rather than dropped from the check.
+    fn distinct(&mut self, predicate: &Predicate, distinct: &Distinct) -> Result<String, String> {
+        if !matches!(self.root, Root::Struct(_)) {
+            return Err(format!(
+                "`{predicate}` requires distinct list members, which the generated invariant check \
+                 evaluates only for a struct"
+            ));
+        }
+        let Some(kind) = distinct.key_kind else {
+            return Err(format!("`{predicate}` has no resolved key type"));
+        };
+        let (reach, terminal) = match self.walk(&distinct.over)? {
+            Walked::Value { reach, terminal } => (reach, terminal),
+            Walked::Count(_) | Walked::Absent => {
+                return Err(format!("`{}` is not a list", distinct.over));
+            }
+        };
+        let ResolvedTypeRef::List { of } = &terminal else {
+            return Err(format!("`{}` is `{terminal}`, not a list", distinct.over));
+        };
+        let items = reach.items("iter()");
+        let variable = format!("item{}", self.binders.len());
+        self.binders.push(Binder {
+            name: distinct.bind.clone(),
+            variable: variable.clone(),
+            element: (**of).clone(),
+        });
+        let key = self.fact(&distinct.key_path());
+        self.binders.pop();
+        let instant = kind == DistinctKeyKind::Timestamp;
+        Ok(format!(
+            "iv::distinct({items}, {instant}, |{variable}| {})",
+            key?
+        ))
     }
 
     /// The value a leaf reads, as an `Option<iv::Fact>` expression.
@@ -880,13 +942,86 @@ fn literals(values: &[FactValue]) -> String {
 
 /// The evaluator every generated check calls, appended to the `primitives` module of a model in
 /// which some entity declares an invariant.
-pub(super) fn runtime(ir: &EssIr) -> &'static str {
-    if used(ir) {
-        RUNTIME
+///
+/// The key comparison of `distinct` is in it only for a model in which some struct reads one, so a
+/// model that reads none keeps every byte it had.
+pub(super) fn runtime(ir: &EssIr) -> Cow<'static, str> {
+    if !used(ir) {
+        Cow::Borrowed("")
+    } else if distinct_used(ir) {
+        // The module closes with its last line: the comparison goes in before it.
+        let module = RUNTIME
+            .strip_suffix("}\n")
+            .expect("the evaluator is one module");
+        Cow::Owned(format!("{module}{DISTINCT}}}\n"))
     } else {
-        ""
+        Cow::Borrowed(RUNTIME)
     }
 }
+
+/// Whether some struct of the model declares an invariant that reads `distinct`, which is what
+/// brings the key comparison in.
+fn distinct_used(ir: &EssIr) -> bool {
+    ir.types().values().any(|declared| match &declared.body {
+        ResolvedBody::Struct { invariants, .. } => invariants
+            .iter()
+            .any(|invariant| invariant.predicate.reads_distinct()),
+        _ => false,
+    })
+}
+
+/// `invariant::distinct`, the last item of the evaluator's module.
+const DISTINCT: &str = r"
+    /// No two elements of a list share a key. `key` reads each element's key in order, `None` where
+    /// the element has none; `instant` says the keys are a `Timestamp`, equal by the instant they
+    /// name, where every other key is equal by its value: a number exactly, text byte for byte.
+    ///
+    /// Fewer than two elements hold, and an absent list is unknown. Two known equal keys anywhere
+    /// make it false; every key known and pairwise unequal makes it true; anything else — a key
+    /// absent, or a text that no `date-time` spells for a `Timestamp` — is unknown, never one
+    /// shared absence. The reading the conformance interpreter and the published schema give
+    /// `distinct`.
+    pub fn distinct<'a, I: IntoIterator>(
+        items: Option<I>,
+        instant: bool,
+        key: impl FnMut(I::Item) -> Option<Fact<'a>>,
+    ) -> Option<bool> {
+        #[derive(PartialEq, Eq, PartialOrd, Ord)]
+        enum Key<'a> {
+            Bool(bool),
+            Number(Number),
+            Text(Cow<'a, str>),
+            Instant((i64, u32)),
+        }
+        let keys: Vec<Option<Fact<'a>>> = items?.into_iter().map(key).collect();
+        if keys.len() < 2 {
+            return Some(true);
+        }
+        let mut seen = std::collections::BTreeSet::new();
+        let mut unknown = false;
+        for fact in keys {
+            let observed = fact.and_then(|fact| match fact {
+                Fact::Bool(flag) => Some(Key::Bool(flag)),
+                Fact::Number(number) => Some(Key::Number(number)),
+                Fact::Text(text) if instant => rfc3339(&text).map(Key::Instant),
+                Fact::Text(text) => Some(Key::Text(text)),
+            });
+            match observed {
+                Some(observed) => {
+                    if !seen.insert(observed) {
+                        return Some(false);
+                    }
+                }
+                None => unknown = true,
+            }
+        }
+        if unknown {
+            None
+        } else {
+            Some(true)
+        }
+    }
+";
 
 const RUNTIME: &str = r#"
 /// The three-valued reading every generated `broken_invariant` shares.

@@ -63,6 +63,7 @@ pub mod component;
 pub mod domain;
 pub mod entity;
 pub mod expression;
+mod inexact_decimal;
 pub mod locate;
 pub mod name;
 pub mod outcome_group;

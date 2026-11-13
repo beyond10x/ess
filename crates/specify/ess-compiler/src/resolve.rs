@@ -1311,9 +1311,10 @@ pub fn class_of(code: ValidationCode) -> u16 {
         | Refused::UnknownProfile
         | Refused::UnknownWorkflow
         | Refused::UnknownProtocol => codes::class::UNDECLARED,
-        Refused::TypeMismatch | Refused::EventPayloadMismatch | Refused::VersionMismatch => {
-            codes::class::TYPE_MISMATCH
-        }
+        Refused::TypeMismatch
+        | Refused::EventPayloadMismatch
+        | Refused::VersionMismatch
+        | Refused::InexactDecimalLiteral => codes::class::TYPE_MISMATCH,
         Refused::UnobservableFact => codes::class::UNREADABLE,
         Refused::AccessorDepth => codes::class::ACCESSOR_DEPTH,
         Refused::AccessorTraversal => codes::class::ACCESSOR_TRAVERSAL,
