@@ -61,6 +61,7 @@ expressions:
     - {form: "selection.<field>",        note: the selected row(s) of the section}
     - {form: "draft.<field>",            note: the unsaved input of the enclosing form}
     - {form: "section.<name>.selection", note: another section's selection}
+    - {form: "section.<name>.row",       note: "the first row of a section that reads, as `header.title_from` reads it; absent while the section loads, when it is empty, and for a section without a read"}
     - {form: "channel.<name>.<field>",   note: a named field of a channel}
     - {form: "shell.<name>",             note: shell state}
     - {form: "url.query.<name>",         note: a query parameter (guards only)}

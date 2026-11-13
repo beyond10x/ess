@@ -33,6 +33,7 @@ mod names;
 mod raw;
 mod rules;
 mod schema;
+mod section_row;
 mod style;
 mod walk;
 
@@ -227,6 +228,10 @@ pub const CHECKS: &[Check] = &[
     // An export's params read `selection.<field>` only on a bulk action, where the selection is
     // in scope (beyond10x/ess#723).
     rule("export_selection"),
+    // `section.<name>.row` is the first row of a section that reads: a section that reads nothing
+    // holds none, and a read whose params read its own section's row, or sections that read
+    // each other's, never settle.
+    rule("section_row"),
 ];
 
 fn severity_of(id: &str) -> Severity {
@@ -569,7 +574,8 @@ pub fn check_source(
             rules::run(&document, base, options, &mut sink);
             filter::run(&document, model, &mut sink);
             style::run(&document, &mut sink);
-            raw::run(text, &document, &mut sink);
+            raw::run(text, &document, model, &mut sink);
+            section_row::run(&document, &mut sink);
             hosts::run(&document, options, &mut sink);
             if let Some(model) = model {
                 model.check(&document, &mut sink);

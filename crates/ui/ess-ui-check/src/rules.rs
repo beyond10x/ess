@@ -1651,7 +1651,7 @@ const SHOWN: usize = 6;
 /// from the widget to its component's root and back, along breadth-first trees grown inside
 /// the component. Linear in widgets and uses, and iterative, so a deep chain neither slows it
 /// down nor overflows the stack.
-fn cycles<'a>(
+pub(crate) fn cycles<'a>(
     widgets: &[&'a str],
     uses: &BTreeMap<&'a str, BTreeSet<&'a str>>,
 ) -> BTreeMap<&'a str, Vec<&'a str>> {

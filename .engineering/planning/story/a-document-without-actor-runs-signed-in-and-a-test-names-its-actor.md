@@ -16,7 +16,7 @@ relations:
 - serves: vision:O2
 - informed_by: epic:ess-ui-renderer-neutral-ui
 - informed_by: story:an-actor-expression-reads-the-fields-of-the-session-view
-revision: 1
+revision: 3
 ---
 ## Defect
 
@@ -79,3 +79,27 @@ view with the row action `approve`, and a page `requests.detail` with a param `i
 Owed. This draft records the need and its reproduction only. It is an external request: the seven
 questions of `.agents/skills/assessing-external-requests/SKILL.md` are answered here before the
 story is accepted or dispatched, and the acceptance is fixed there.
+
+## Reported again (2026-11-13)
+
+A consumer's report on ess 0.94.0, the case point 2 above ends with: its document's shell preloads
+no view, so `ess ui test` runs every journey with no signed-in actor, and a journey cannot show
+that a read was keyed by `actor.user_id`.
+
+What works today, from `website/docs/reference/ess-ui-test.md` (section Fixtures; not run by us
+for this report): the shell preloads a session view, the test gives that view one row under
+`fixtures.views`, and the keyed view answers with rows only under `by_params` equal to that row's
+`user_id`, with no rows otherwise. The journey then shows the rows only when the read went out
+with the actor's id. It needs a preload the document may not want, which is what this story is
+about.
+
+## Tried by the consumer (2026-11-13, later that day)
+
+The consumer tried the form the section above names as working today. Its document was refused:
+`view_in_model` at `shells/app/preload`, the view "names no view of model". Its model has no view
+of the signed-in person: that person is an actor of the specification, not an entity with a view,
+and the consumer added no view only to have one to preload.
+
+So for a model whose signed-in person is an actor and nothing else, no document can give
+`ess ui test` a signed-in actor on 0.94.0. The fit review's point 2 (a test names its actor) is
+the only way for such a model; it cannot rest on a preloaded view.

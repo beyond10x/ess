@@ -6,6 +6,7 @@ Generated from `changes/*.yaml` by `cargo xtask whats-changed`. Edit a fragment,
 
 | Release | Change | Kind | Impact |
 |---|---|---|---|
+| [0.95.0](#records-group-their-fields-a-page-header-takes-a-badge-and-generated-decoders-check-a-structs-distinct-keys) | Records group their fields, a page header takes a badge, and generated decoders check a struct's distinct keys | capability | notable |
 | [0.94.0](#fixture-mode-applies-a-commands-effect-and-generated-decoders-check-struct-invariants) | Fixture mode applies a command's effect, and generated decoders check struct invariants | capability | notable |
 | [0.93.0](#kubernetes-scans-read-the-gateway-api-ui-values-take-tones-and-an-authored-scenario-retires-a-refusal) | Kubernetes scans read the Gateway API, UI values take tones, and an authored scenario retires a refusal | capability | significant |
 | [0.92.0](#react-projects-register-host-slots-and-the-terminal-draws-them-as-labelled-regions) | React projects register host slots, and the terminal draws them as labelled regions | capability | significant |
@@ -105,6 +106,14 @@ Generated from `changes/*.yaml` by `cargo xtask whats-changed`. Edit a fragment,
 | [0.16.0](#an-authored-scenario-can-claim-a-length-of-time-and-a-target-has-to-answer-for-it) | An authored scenario can claim a length of time, and a target has to answer for it | capability | significant |
 | [0.14.0](#a-component-can-declare-a-command-line-surface-and-ess-synthesizes-its-parser) | A component can declare a command-line surface, and ESS synthesizes its parser | capability | significant |
 | [0.1.0](#ess-becomes-a-standalone-executable-specification-toolchain) | ESS becomes a standalone executable specification toolchain | migration | significant |
+
+## 0.95.0 — 2026-11-13
+
+### Records group their fields, a page header takes a badge, and generated decoders check a struct's distinct keys
+
+capability · notable impact · [release notes](https://github.com/beyond10x/ess/releases/tag/0.95.0)
+
+In `ess-ui/1` a record groups its fields under headings and a page header takes a badge. Generated Rust and Go build again for a struct that declares `distinct:` and answer 400 for a list with duplicate keys. `ess specify validate` refuses a `Decimal` literal that binary64 cannot hold exactly.
 
 ## 0.94.0 — 2026-11-11
 

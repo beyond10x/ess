@@ -14,7 +14,7 @@ tags:
 relations:
 - serves: vision:O2
 - informed_by: epic:ess-ui-renderer-neutral-ui
-revision: 1
+revision: 2
 ---
 ## Need
 
@@ -84,3 +84,10 @@ is the missing capability, not the missing finding.
 Owed. This draft records the need and its reproduction only. It is an external request: the seven
 questions of `.agents/skills/assessing-external-requests/SKILL.md` are answered here before the
 story is accepted or dispatched, and the design below the need is chosen there, not in this draft.
+
+## Reported again (2026-11-13)
+
+The same need on an action, from a consumer's document on ess 0.94.0: an action's `visible`
+cannot depend on whether another read returned rows. No reproduction of our own for the action;
+the expression forms are the ones the Need section lists, so the spelling this draft asks for
+("this read has a row") is asked for an action's `visible` too.

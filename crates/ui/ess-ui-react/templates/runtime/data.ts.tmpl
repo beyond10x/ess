@@ -749,6 +749,8 @@ export interface ReadState {
   /** The HTTP status of the failed read, when the failure carried one. */
   errorStatus?: number;
   params: Record<string, unknown>;
+  /** The rows answer `params`: false while the read runs for params it has not answered yet, true while it reads the same params again. */
+  current?: boolean;
   stale?: boolean;
   newCount?: number;
   /** `restart` gives up this subscriber's stalled request without aborting other subscribers. */
@@ -831,7 +833,7 @@ export function useRead(
   const startedNonce = useRef(0);
   const restartNext = useRef(false);
   const started = useRef(false);
-  const [state, setState] = useState<Omit<ReadState, "refetch" | "params"> & {source: number}>({
+  const [state, setState] = useState<Omit<ReadState, "refetch" | "params" | "current"> & {source: number; answered?: string}>({
     status: spec && enabled ? "loading" : "idle",
     rows: [],
     source,
@@ -856,7 +858,7 @@ export function useRead(
       return acquired.promise
         .then((result) => {
           if (live && source === sourceVersion) {
-            setState({ status: "ready", rows: result.rows, total: result.total ?? result.rows.length, source });
+            setState({ status: "ready", rows: result.rows, total: result.total ?? result.rows.length, source, answered: key });
           }
         })
         .catch((error: unknown) => {
@@ -880,8 +882,9 @@ export function useRead(
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key, enabled, seen, nonce, source]);
-  const visible = state.source === source ? state : { status: "loading" as const, rows: [], source };
-  return { ...visible, params, refetch: (restart = false) => {
+  const visible: typeof state = state.source === source ? state : { status: "loading", rows: [], source };
+  const { answered, ...shown } = visible;
+  return { ...shown, params, current: answered === key, refetch: (restart = false) => {
     restartNext.current ||= restart;
     setNonce((value) => value + 1);
   }};
