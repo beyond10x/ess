@@ -18,8 +18,7 @@ const NOTES: &str = include_str!("fixtures/notes.yaml");
 
 /// What both refusals say of a pair whose fields differ and no always-written field decides.
 const UNDECIDED: &str =
-    "their fields differ and no field one error always writes is one the other never writes, so a \
-     body one of them answers can be one the other answers";
+    "their fields differ and no field one error always writes is one the other never writes";
 
 /// The forms that validate as written, as both refusals of such a pair name them.
 const FORMS: &str = "one error with the optional field, reported by both outcomes, under \
@@ -190,8 +189,8 @@ fn with_alike_that_pair_is_refused_naming_the_deciding_field() {
     }
 }
 
-/// An optional field only, a type only, an order only: an answer without the field, or with either
-/// type, fits both bodies, so neither form holds.
+/// An optional field only, a type only, an order only: no always-written field decides, so neither
+/// form holds.
 #[test]
 fn a_pair_no_always_written_field_decides_is_refused_in_both_forms_with_one_fact() {
     for (first, second) in [
@@ -233,6 +232,12 @@ fn a_pair_no_always_written_field_decides_is_refused_in_both_forms_with_one_fact
                 text.contains(UNDECIDED) && text.contains(FORMS),
                 "{first:?} against {second:?}: the refusal states the fact and the forms:\n{text}"
             );
+            for said in [SHARED_BODY, NOT_APART] {
+                assert!(
+                    !text.contains(said),
+                    "{first:?} against {second:?}: the refusal makes no claim about a body: `{said}`:\n{text}"
+                );
+            }
         }
     }
 }
@@ -401,11 +406,11 @@ fn a_pair_that_differs_by_disjoint_json_types_is_refused_without_saying_a_body_f
     }
 }
 
-/// The first form that refusal names validates when applied; a type that can hold a value of the
-/// other (`Json` holds any, a newtype over `String` holds a string, `Binary64` holds an integer)
-/// is an undecided pair that says a body fits both.
+/// The first form that refusal names validates when applied; a pair of types the check does not
+/// find to be of different JSON types is an undecided pair, and its refusals state what the rule
+/// checked and the forms, and say nothing of what a body can hold.
 #[test]
-fn a_type_that_holds_a_value_of_the_other_is_said_to_share_a_body() {
+fn a_pair_of_types_not_found_disjoint_states_what_was_checked_and_no_shared_body() {
     let integer = "{name: message, type: Integer}";
     let one_type = model(&[integer], &[integer]);
     let result = bound(&one_type, true);
@@ -420,18 +425,34 @@ fn a_type_that_holds_a_value_of_the_other_is_said_to_share_a_body() {
             let text = worded(&bound(&ir, alike));
             assert!(
                 text.contains(UNDECIDED) && text.contains(FORMS),
-                "{first} against {second}: a value is both's (alike: {alike}):\n{text}"
+                "{first} against {second}: the rule's fact and the forms (alike: {alike}):\n{text}"
             );
+            for said in [SHARED_BODY, NOT_APART, "different JSON types"] {
+                assert!(
+                    !text.contains(said),
+                    "{first} against {second}: `{said}` (alike: {alike}):\n{text}"
+                );
+            }
         }
     }
 }
 
 /// The sentence that a reader cannot tell the bodies apart is said where it is true: of two
-/// identical bodies, not of a pair whose fields differ.
+/// identical answers, not of a pair whose fields differ, nor of an `envelope` beside an error
+/// object, which a reader can tell by its `outcome` member.
 #[test]
 fn the_status_refusal_says_a_reader_cannot_tell_the_bodies_apart_only_where_it_is_true() {
     let identical = worded(&bound(&model(&[MESSAGE], &[MESSAGE]), false));
     assert!(identical.contains(SAME_SENTENCE), "{identical}");
+    let mixed = worded(&bound_keys(
+        &model(&[MESSAGE], &[MESSAGE]),
+        "    outcomes:\n      negative: {status: 409, body: {error: error}}\n      blank: {status: 409, body: envelope}\n",
+    ));
+    assert!(
+        mixed.contains("ESS-HTTP-025") && mixed.contains("and so does `blank` ("),
+        "{mixed}"
+    );
+    assert!(!mixed.contains(SAME_SENTENCE), "{mixed}");
     let optional = "{name: details, type: Optional<String>}";
     for (first, second) in [
         (vec![MESSAGE], vec![MESSAGE, optional]),

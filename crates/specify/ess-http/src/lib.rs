@@ -5358,8 +5358,9 @@ enum Fields<'a> {
     /// answer of both, and the binding still tells errors apart by which fields they write, not by
     /// a field's type.
     Typed(&'a str),
-    /// The fields differ, and no always-written field decides: an answer without an optional
-    /// field, or with a value both types hold, fits both bodies.
+    /// The fields differ, and no always-written field decides, and no field both always write is
+    /// of JSON types with no value in common. The refusal states that, and says nothing of what a
+    /// body can hold.
     Undecided,
 }
 
@@ -5397,8 +5398,7 @@ const FIELD_FORMS: &str = "one error with the optional field, reported by both o
 
 /// What both refusals state of that pair.
 const NO_DECIDING_FIELD: &str =
-    "their fields differ and no field one error always writes is one the other never writes, so a \
-     body one of them answers can be one the other answers";
+    "their fields differ and no field one error always writes is one the other never writes";
 
 /// What both refusals state of a pair that both write one field, with values of different JSON
 /// types.
@@ -5491,8 +5491,8 @@ fn errors_apart(
             Fields::Undecided => {
                 return Some(format!(
                     "`{}` and `{}` answer `{}` with `{}`, which writes each error's own fields \
-                     beside the member, and {NO_DECIDING_FIELD}{}, so the wire does not tell them \
-                     apart and they are not one answer; the forms that validate are {FIELD_FORMS}",
+                     beside the member, and {NO_DECIDING_FIELD}{}; the forms that validate are \
+                     {FIELD_FORMS}",
                     one.name,
                     two.name,
                     answer.status,
@@ -6657,15 +6657,17 @@ fn distinguishable(
 /// What the status refusal of `this` says of the `others` it clashes with: who they are, and the
 /// fact about those that clash only by their error fields (`field_clash`) with the forms that
 /// validate. The sentence that a reader cannot tell the bodies apart is said only of the others
-/// that clash by anything else, where it is true.
+/// whose answer is the same as `this` one's ([`same_answer`]), where it is true.
 fn clash_text(
     declared: &Declared<'_>,
     this: &Counted<'_>,
     others: &[&Counted<'_>],
 ) -> (String, String) {
-    let (by_fields, plain): (Vec<&&Counted<'_>>, Vec<&&Counted<'_>>) = others
+    let (by_fields, rest): (Vec<&&Counted<'_>>, Vec<&&Counted<'_>>) = others
         .iter()
         .partition(|other| field_clash(this, other).is_some());
+    let (same, other): (Vec<&&Counted<'_>>, Vec<&&Counted<'_>>) =
+        rest.into_iter().partition(|other| same_answer(this, other));
     let who = |list: &[&&Counted<'_>]| {
         list.iter()
             .map(|other| format!("`{}` ({})", other.0, declared.how(other)))
@@ -6673,16 +6675,27 @@ fn clash_text(
             .join(", ")
     };
     let mut parts = Vec::new();
-    if !plain.is_empty() {
+    if !same.is_empty() {
         parts.push(format!(
             "{}, with a body a reader cannot tell apart",
-            who(&plain)
+            who(&same)
         ));
+    }
+    if !other.is_empty() {
+        parts.push(who(&other));
     }
     if !by_fields.is_empty() {
         parts.push(who(&by_fields));
     }
     (parts.join(", and so does "), field_facts(this, &by_fields))
+}
+
+/// Whether `other` answers as `this` does, so that no reader can tell a body of one from a body
+/// of the other: the same body, and either both a redirect or neither. An answer that differs in
+/// body (an `envelope` beside `{<member>: error}`, `none` beside a member) or that is a redirect
+/// beside one that is not is a clash the rule refuses, which does not say no reader can tell.
+fn same_answer(this: &Counted<'_>, other: &Counted<'_>) -> bool {
+    this.2 == other.2 && this.4.is_some() == other.4.is_some()
 }
 
 /// How `other` clashes with `this` by error fields alone: both are `{<member>: error}` on one

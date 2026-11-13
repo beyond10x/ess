@@ -434,21 +434,23 @@ is `text`. An adopter asked for a token endpoint that answers a bare string
   decides the field rule, and the status check and the `alike` check both call it. `boom` with
   `{message}` and `boom-more` with `{message, details}`, both of wire name `internal_error`, on
   one `500` compile without `alike:`, `boom-more` always writing `details`, and with `alike:` are
-  refused, the message naming `details`. A pair whose fields differ only in an optional field, in
-  order, or in a type that can hold a value of the other (the same JSON type, `Json`, a union) is
-  not told apart, because an answer without the optional field, or with a value both types hold,
-  fits both; nor are its bodies one answer, so `alike` does not hold either. It is refused in both
-  forms with one fact (the fields differ, no always-written field decides, and a body one answers
-  can be one the other answers) and the forms that validate as written: one error with the
-  optional field, reported by both outcomes, under `alike:`; or, with the `alike:` group dropped, a
-  field one error always writes that the other never writes, distinct error wire names, or
-  `envelope`. A pair that both write one field with values of different JSON types (`String`
-  against `Integer`) has no body that fits both, and the binding tells errors apart by which
-  fields they write, not by a field's type: it is refused in both forms too, the message naming
-  the field, saying both write it and that the binding does not tell them apart by its type. A
-  pair of identical fields is refused without `alike:` and admitted with it. The status refusal
-  says a reader cannot tell the bodies apart only of outcomes whose bodies are identical, not of
-  a pair whose fields differ.
+  refused, the message naming `details`. A pair whose fields differ and where no field one error
+  always writes is one the other never writes, because the difference is only an optional field,
+  an order or a field's type, is not told apart by the rule, in either form: without `alike:` the
+  two share a status, and with it the group is refused. The refusal states what the rule checked
+  (the fields differ, and no field one error always writes is one the other never writes) and the
+  forms that validate as written, and makes no claim about what a body can hold: one error with
+  the optional field, reported by both outcomes, under `alike:`; or, with the `alike:` group
+  dropped, a field one error always writes that the other never writes, distinct error wire names,
+  or `envelope`. Where both always write one field and its values are of JSON types that have no
+  value in common (a string against a number, an object against an array), the refusal says that,
+  names the field, and says the binding tells errors apart by which fields are written, not by a
+  field's type; the check follows newtypes and reads a union, `Json` and `Optional` as no one
+  type, and it is only that sentence that depends on it. A pair of identical fields is refused
+  without `alike:` and admitted with it. The status refusal says a reader cannot tell the bodies
+  apart only of outcomes whose answers are the same (one body, both or neither a redirect); of an
+  `envelope` beside an error object, or of a pair whose fields differ, it names the outcomes
+  without that sentence.
 
 A command route may declare outcomes the service answers the same way `alike`: a list of groups,
 each of two or more of the command's outcome names, such as `alike: [[fetched, inline]]`. Each
@@ -459,7 +461,7 @@ caller is not meant to tell them apart. Every member needs a declared answer, li
 key that differs, and so is one the wire already tells apart: `envelope` bodies (the `outcome`
 member names the branch), `{<member>: error}` bodies under distinct error wire names or over
 errors one of which always writes a field the other never writes, or whose fields differ in an
-optional field, a type or an order (not one answer), or redirects one of which always writes a
+optional field, a type or an order, or redirects one of which always writes a
 parameter the other never does (`ESS-HTTP-025`). An
 unknown name, a name in two groups or twice in one, a group of one, a name with no declared
 answer, and `alike` on a view are refused (`ESS-HTTP-022`). Compiled IR writes `alike` only when
