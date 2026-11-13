@@ -31,7 +31,7 @@ scope:
   path: schemas/ui/ess-ui.schema.yaml
 - confidence: inferred
   path: website/docs/reference/ess-ui.md
-revision: 4
+revision: 5
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-08T15:49:57Z", actor: "human:timo", revision: 3}
 - {from: "proposed", to: "active", at: "2026-11-08T15:49:58Z", actor: "human:timo", revision: 4}
@@ -131,3 +131,27 @@ authored; no `reorder` key; the add button's text is the field's `label`. Design
   (inferred)
 - `crates/ui/ess-ui-tui/src/view.rs` (inferred)
 - `website/docs/reference/ess-ui.md` (inferred)
+
+## Reported cases (2026-11-13)
+
+From a consumer's UI document, second collected report, reproduced on ess 0.94.0 with a document of
+our own. Recorded here because the case is this story's class; the acceptance above or below is
+not changed by this section, and the proposed line is taken up when the story is scoped.
+
+Item 4, a list field of a row shown as rows. A row of a collection holds a list (the lines of an
+order) and the consumer wants it drawn as rows under the row, with columns. A nested `collection`
+reads a view only:
+
+```
+error document_loads pages/requests.inbox/sections/list/item/lines: `collection`: unknown field `rows`, expected one of `reads`, `columns`, `sort`, `style`, `selection`, `row_actions`, `bulk_actions`, `actions`, `expand`, `item`, `reorder`, `group_by`, `group_order`, `show_empty_groups`
+error view_in_model pages/requests.inbox/sections/list/item/lines/reads: `row.lines` names no view of model `desk`
+```
+
+(`item: [{name: lines, component: collection, rows: row.lines, columns: [title]}]`, and the same
+with `reads: row.lines`; `expand` answers as `item` does.) This story's `as: list` with `fields:` in
+a column or a record field is the same need. What the report adds: the consumer expected the
+element's fields as columns of a table under the row, in a row's `item` or `expand`.
+
+Proposed acceptance line: a column or record field `as: list` with `fields:` standing in a row's
+`expand` draws the list as a table, one element per line and one field per column, in both
+renderers.

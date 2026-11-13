@@ -15,7 +15,7 @@ relations:
 - decomposes: epic:ess-ui-renderer-neutral-ui
 - depends_on: story:ui-check-resolves-the-root-and-section-of-every-binding-path
 - depends_on: story:a-sections-first-row-is-a-binding-in-the-reference-and-both-renderers-or-in-neither
-revision: 7
+revision: 8
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-12T21:27:19Z", actor: "human:timo", revision: 3, executor: "agent:b10x", correlation: "operator-2026-11-12-accept-16"}
 - {from: "proposed", to: "active", at: "2026-11-12T21:27:21Z", actor: "human:timo", revision: 4, executor: "agent:b10x", correlation: "operator-2026-11-12-accept-16"}
@@ -169,3 +169,21 @@ recommended. The two transitions carry the correlation `operator-2026-11-12-acce
   `row` of `section.<name>`.
 
 The requester is told in one message before the work starts.
+
+## Reported cases (2026-11-13)
+
+From a consumer's UI document, second collected report, reproduced on ess 0.94.0 with a document of
+our own. Recorded here because the case is this story's class; the acceptance above or below is
+not changed by this section, and the proposed line is taken up when the story is scoped.
+
+Item 5, the signed-in actor's display name. On 0.94.0 `actor.<field>` reads every field of the
+first row of the first view the home page's shell preloads: with that row holding
+`display_name: Ada Example`, a text `actor.display_name` shows `Ada Example` in the terminal. The
+reference lists `user_id`, `account_id`, `roles`, `signed_in` and `may(<command>)` only.
+
+Acceptance 3 of this story makes a name outside the reference's list an error. As written it also
+refuses `actor.display_name`, the one way a document shows its user's name today.
+`story:an-actor-expression-reads-the-fields-of-the-session-view` (draft) asks what the actor's
+fields are. Whoever implements acceptance 3 first reads that draft: either the list the check
+refuses against comes from the session view, or the reference's list grows before the check closes
+it.
