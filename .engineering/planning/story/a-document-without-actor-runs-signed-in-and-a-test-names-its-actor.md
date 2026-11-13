@@ -16,7 +16,7 @@ relations:
 - serves: vision:O2
 - informed_by: epic:ess-ui-renderer-neutral-ui
 - informed_by: story:an-actor-expression-reads-the-fields-of-the-session-view
-revision: 1
+revision: 2
 ---
 ## Defect
 
@@ -79,3 +79,16 @@ view with the row action `approve`, and a page `requests.detail` with a param `i
 Owed. This draft records the need and its reproduction only. It is an external request: the seven
 questions of `.agents/skills/assessing-external-requests/SKILL.md` are answered here before the
 story is accepted or dispatched, and the acceptance is fixed there.
+
+## Reported again (2026-11-13)
+
+A consumer's report on ess 0.94.0, the case point 2 above ends with: its document's shell preloads
+no view, so `ess ui test` runs every journey with no signed-in actor, and a journey cannot show
+that a read was keyed by `actor.user_id`.
+
+What works today, from `website/docs/reference/ess-ui-test.md` (section Fixtures; not run by us
+for this report): the shell preloads a session view, the test gives that view one row under
+`fixtures.views`, and the keyed view answers with rows only under `by_params` equal to that row's
+`user_id`, with no rows otherwise. The journey then shows the rows only when the read went out
+with the actor's id. It needs a preload the document may not want, which is what this story is
+about.

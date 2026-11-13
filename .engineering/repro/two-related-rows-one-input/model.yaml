@@ -1,0 +1,115 @@
+format: ess/37
+system: hall
+version: v1
+domain: hall.floor
+summary: A badge is paired with a seat only when both belong to the room the caller names.
+types:
+  - {name: hall.floor.RoomId, kind: newtype, of: Uuid}
+  - {name: hall.floor.SeatId, kind: newtype, of: Uuid}
+  - {name: hall.floor.BadgeId, kind: newtype, of: Uuid}
+  - {name: hall.floor.PairingId, kind: newtype, of: Uuid}
+entities:
+  - name: hall.floor.Room
+    identity: {name: room_id, type: hall.floor.RoomId}
+    fields:
+      - {name: label, type: String}
+    lifecycle: {initial: Open, states: [Open], terminal: [Open]}
+  - name: hall.floor.Seat
+    identity: {name: seat_id, type: hall.floor.SeatId}
+    fields:
+      - {name: room_id, type: hall.floor.RoomId}
+    relations:
+      - {name: room, kind: references, target: hall.floor.Room, cardinality: one, via: room_id}
+    lifecycle: {initial: Open, states: [Open], terminal: [Open]}
+  - name: hall.floor.Badge
+    identity: {name: badge_id, type: hall.floor.BadgeId}
+    fields:
+      - {name: room_id, type: hall.floor.RoomId}
+    relations:
+      - {name: room, kind: references, target: hall.floor.Room, cardinality: one, via: room_id}
+    lifecycle: {initial: Open, states: [Open], terminal: [Open]}
+  - name: hall.floor.Pairing
+    identity: {name: pairing_id, type: hall.floor.PairingId}
+    fields:
+      - {name: seat_id, type: hall.floor.SeatId}
+      - {name: badge_id, type: hall.floor.BadgeId}
+    lifecycle: {initial: Open, states: [Open], terminal: [Open]}
+errors:
+  - {name: hall.floor.SeatNotFound, summary: No seat carries this identity., fields: []}
+  - {name: hall.floor.BadgeNotFound, summary: No badge carries this identity., fields: []}
+  - {name: hall.floor.NotInRoom, summary: The seat or the badge is in another room., fields: []}
+events:
+  - name: hall.floor.RoomAdded
+    fields: [{name: room_id, type: hall.floor.RoomId}]
+  - name: hall.floor.SeatAdded
+    fields: [{name: seat_id, type: hall.floor.SeatId}]
+  - name: hall.floor.BadgeAdded
+    fields: [{name: badge_id, type: hall.floor.BadgeId}]
+  - name: hall.floor.Paired
+    fields: [{name: pairing_id, type: hall.floor.PairingId}]
+actors:
+  - name: hall.floor.Usher
+    may: [hall.floor.AddRoom, hall.floor.AddSeat, hall.floor.AddBadge, hall.floor.Pair]
+commands:
+  - name: hall.floor.AddRoom
+    input:
+      - {name: label, type: String}
+    outcomes:
+      - name: added
+        creates: hall.floor.Room
+        instance: room_id
+        emits: [hall.floor.RoomAdded]
+        payload: {hall.floor.RoomAdded: {room_id: {generated: true}}}
+        sets: {label: input.label}
+  - name: hall.floor.AddSeat
+    input:
+      - {name: room_id, type: hall.floor.RoomId}
+    outcomes:
+      - name: added
+        creates: hall.floor.Seat
+        instance: seat_id
+        emits: [hall.floor.SeatAdded]
+        payload: {hall.floor.SeatAdded: {seat_id: {generated: true}}}
+        sets: {room_id: input.room_id}
+  - name: hall.floor.AddBadge
+    input:
+      - {name: room_id, type: hall.floor.RoomId}
+    outcomes:
+      - name: added
+        creates: hall.floor.Badge
+        instance: badge_id
+        emits: [hall.floor.BadgeAdded]
+        payload: {hall.floor.BadgeAdded: {badge_id: {generated: true}}}
+        sets: {room_id: input.room_id}
+  - name: hall.floor.Pair
+    input:
+      - {name: seat_id, type: hall.floor.SeatId}
+      - {name: badge_id, type: hall.floor.BadgeId}
+      - {name: room_id, type: hall.floor.RoomId}
+    outcomes:
+      - name: no-seat
+        when_related: {via: input.seat_id, exists: false}
+        error: hall.floor.SeatNotFound
+      - name: no-badge
+        when_related: {via: input.badge_id, exists: false}
+        error: hall.floor.BadgeNotFound
+      - name: seat-elsewhere
+        when_related: {via: input.seat_id, predicate: room_id != input.room_id}
+        error: hall.floor.NotInRoom
+      - name: badge-elsewhere
+        when_related: {via: input.badge_id, predicate: room_id != input.room_id}
+        error: hall.floor.NotInRoom
+      - name: paired
+        creates: hall.floor.Pairing
+        instance: pairing_id
+        emits: [hall.floor.Paired]
+        payload: {hall.floor.Paired: {pairing_id: {generated: true}}}
+        sets: {seat_id: input.seat_id, badge_id: input.badge_id}
+views:
+  - name: hall.floor.Pairings
+    source: hall.floor.Pairing
+    consistency: read_your_writes
+    fields:
+      - {name: pairing_id, type: hall.floor.PairingId}
+      - {name: seat_id, type: hall.floor.SeatId}
+      - {name: badge_id, type: hall.floor.BadgeId}

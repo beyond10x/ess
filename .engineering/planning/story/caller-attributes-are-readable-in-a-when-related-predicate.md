@@ -37,7 +37,7 @@ scope:
   path: docs/design/language-grids.md
 - confidence: inferred
   path: website/docs/guides/specify/values-and-views.md
-revision: 12
+revision: 13
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-10T00:43:08Z", actor: "human:timo", revision: 11, decided_on: {"recorded":{"review_outcome":1}}}
 - {from: "proposed", to: "active", at: "2026-11-10T00:43:09Z", actor: "human:timo", revision: 12, decided_on: {"recorded":{"review_outcome":1}}}
@@ -165,3 +165,14 @@ of `ess/16`, at `ess/37`. Synthesis and the targets follow in
 
 github:beyond10x/ess#636
 
+## Reported again (2026-11-13)
+
+The same need from a consumer's specification at `ess/37` on ess 0.94.0: a `when_related`
+predicate that reads the caller is refused with ESS-COMMAND-003, as in the reproduction above. This
+story is accepted and not yet in the code, so the release the consumer runs still refuses it.
+
+What the consumer does meanwhile: an extra input (the caller's own id) that an input guard holds
+equal to the caller's attribute, and the related predicate compares its row with that input. It
+states the same rule and validates. Its cost is a value on the wire that the server knows: a client
+has to send its own id, and a client that sends another id gets the input guard's refusal. It is
+the form we would use until this story ships; the input goes when it does.
