@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-13T02:25:49Z",
+  "actor": "human:timo",
+  "artifact": "story:overlap-witnesses-per-phase",
+  "kind": "story",
+  "revision": 17,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "PR 788 CI on 764a90f12a (20 test shards, Checks, Gate)",
+    "reference": "https://github.com/beyond10x/ess/actions/runs/43341091691"
+  }
+}

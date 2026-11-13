@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:overlap-witnesses-per-phase
 kind: story
-status: active
+status: implemented
 title: Two overlapping branches of one phase are witnessed where both hold
 tags:
 - defect
@@ -33,10 +33,11 @@ scope:
   path: crates/verify/ess-conformance/tests/refusal_pair_overlap.rs
 - confidence: cited
   path: docs/design/input-guard-overlap-precedence.md
-revision: 17
+revision: 18
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-10T00:45:28Z", actor: "human:timo", revision: 16, decided_on: {"recorded":{"review_outcome":5}}}
 - {from: "proposed", to: "active", at: "2026-11-10T00:45:29Z", actor: "human:timo", revision: 17, decided_on: {"recorded":{"review_outcome":5}}}
+- {from: "active", to: "implemented", at: "2026-11-13T02:26:52Z", actor: "human:timo", revision: 18, decided_on: {"recorded":{"test_result":1,"review_outcome":5}}}
 ---
 # Story: Two overlapping stored-field refusals of one phase are witnessed where both hold
 
