@@ -222,6 +222,18 @@ const BASE: &str = include_str!("fixtures/adversary-244b-base-digests.tsv");
 /// `explore-external-exits` keep their refusal counts with the repair the refusal now names
 /// (story:a-not-found-branch-after-a-guarded-move-is-refused-with-its-repair). Their entries
 /// above are superseded in the refusals column only; IR, suite and mutants are unchanged.
+///
+/// beyond10x/ess#472: two `when_subject:` refusals of one command whose stored predicates one row
+/// satisfies together are witnessed where both hold, and the mutation audit lists their
+/// adjacent-outcome swap. `aggregate-stored-guarded-move` carries such a pair, so its suite grows
+/// by the overlap send and it gains the pair's swap mutants. IR and refusals are unchanged; an
+/// entry above superseded here keeps its other columns.
+///
+/// `generated-views` was stale here at the unit's base, not moved by #472: its suite moved from
+/// 67900 to 70670 bytes in the turns 1 and 2 integration (`ee2bebbd9`) with
+/// story:a-tie-breaking-sort-key-is-pinned-by-a-synthesized-tie, which synthesizes a tie for the
+/// view's second sort key. This probe is `#[ignore]`d, so nothing caught the entry then. IR,
+/// refusals and mutants are unchanged.
 const INTENDED: &[(&str, &str)] = &[
     (
         "crates/verify/ess-conformance/tests/fixtures/arrangement-input-refusal.yaml",
@@ -241,11 +253,11 @@ const INTENDED: &[(&str, &str)] = &[
     ),
     (
         "crates/verify/ess-conformance/tests/fixtures/aggregate-stored-guarded-move.yaml",
-        "ir=5500cec8d73ec1066754:12118 suite=c9591218350b81be905c:41344 refusals=e3b0c44298fc1c149afb:0 mutants=e718573da44217168ab5:1029",
+        "ir=5500cec8d73ec1066754:12118 suite=1f80db3a630d254dc620:44217 refusals=e3b0c44298fc1c149afb:0 mutants=774c5a91ed4adf7b6972:1200",
     ),
     (
         "crates/verify/ess-conformance/tests/fixtures/aggregate-stored-guarded-move.yaml@ess22",
-        "ir=5500cec8d73ec1066754:12118 suite=c9591218350b81be905c:41344 refusals=e3b0c44298fc1c149afb:0 mutants=e718573da44217168ab5:1029",
+        "ir=5500cec8d73ec1066754:12118 suite=1f80db3a630d254dc620:44217 refusals=e3b0c44298fc1c149afb:0 mutants=774c5a91ed4adf7b6972:1200",
     ),
     (
         "crates/verify/ess-conformance/tests/fixtures/arrangement-paid-route.yaml",
@@ -381,11 +393,11 @@ const INTENDED: &[(&str, &str)] = &[
     ),
     (
         "crates/generate/ess-synth/tests/fixtures/generated-views.yaml",
-        "ir=d684139b5be5288707c0:29577 suite=f88bb646379f8be8ac10:67900 refusals=e3b0c44298fc1c149afb:0 mutants=66176fd1765309a19637:1220",
+        "ir=d684139b5be5288707c0:29577 suite=d32aa78f44e6efb410be:70670 refusals=e3b0c44298fc1c149afb:0 mutants=66176fd1765309a19637:1220",
     ),
     (
         "crates/generate/ess-synth/tests/fixtures/generated-views.yaml@ess22",
-        "ir=d684139b5be5288707c0:29577 suite=f88bb646379f8be8ac10:67900 refusals=e3b0c44298fc1c149afb:0 mutants=66176fd1765309a19637:1220",
+        "ir=d684139b5be5288707c0:29577 suite=d32aa78f44e6efb410be:70670 refusals=e3b0c44298fc1c149afb:0 mutants=66176fd1765309a19637:1220",
     ),
     (
         "crates/specify/ess-compiler/tests/fixtures/adversary_expression.yaml",

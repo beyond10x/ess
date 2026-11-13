@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-wrapped-answer-carries-literal-members-and-paging-facts
 kind: story
-status: draft
+status: active
 title: A wrapped answer may carry literal members and paging facts beside its rows
 summary: An answer object of several members ({success, items, pagination}) has no ess-http/1 form (adopter report)
 tags:
@@ -13,7 +13,10 @@ relations:
 - serves: vision:O2
 - decomposes: epic:adopter-gaps-wire-and-answers
 - depends_on: story:an-answer-may-be-wrapped-in-one-named-member
-revision: 1
+revision: 4
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-12T21:27:45Z", actor: "human:timo", revision: 3, executor: "agent:b10x", correlation: "operator-2026-11-12-accept-16"}
+- {from: "proposed", to: "active", at: "2026-11-12T21:27:46Z", actor: "human:timo", revision: 4, executor: "agent:b10x", correlation: "operator-2026-11-12-accept-16"}
 ---
 ## Need
 
@@ -41,3 +44,14 @@ form. The adopter counts about 32 open notes on it.
 The one-member rule and its refusal of two members are read from the acceptance of
 `story:an-answer-may-be-wrapped-in-one-named-member`. The adopter's routes were observed by the
 adopter's session and are not rerun here; the scoper reruns one before the story is proposed.
+
+## Decisions
+
+**Accepted by the operator (2026-11-12),** with fifteen other drafts from one list of 25 that
+he was shown with a recommendation and an outside review per draft. He accepted the drafts both
+recommended. The two transitions carry the correlation `operator-2026-11-12-accept-16` and the executor
+`agent:b10x`.
+
+The fit review of `.agents/skills/assessing-external-requests/SKILL.md` is not written yet. It
+is owed before this story is dispatched and says which form of acceptance applies (as proposed
+or redesigned).

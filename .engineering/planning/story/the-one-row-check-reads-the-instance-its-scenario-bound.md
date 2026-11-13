@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:the-one-row-check-reads-the-instance-its-scenario-bound
 kind: story
-status: draft
+status: active
 title: The one-row check after an update reads the instance its scenario bound
 summary: Synthesis appends a snapshot naming an instance the scenario never bound, so conform run errors (ESS-CF-SUITE, exit 3) on a valid model after an enum gains a variant (0.90.0 to 0.94.0)
 tags:
@@ -13,7 +13,10 @@ tags:
 relations:
 - serves: vision:O2
 - decomposes: epic:zero-open-issues-2026-11
-revision: 2
+revision: 5
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-12T22:38:35Z", actor: "human:timo", revision: 4, executor: "agent:b10x", correlation: "operator-2026-11-12-d8"}
+- {from: "proposed", to: "active", at: "2026-11-12T22:38:37Z", actor: "human:timo", revision: 5, executor: "agent:b10x", correlation: "operator-2026-11-12-d8"}
 ---
 ## Defect
 
@@ -86,3 +89,11 @@ Reproduction on the 0.94.0 release binary and both synthesized suites: session s
 `ess/adopter10/` (`run.sh`, `base-suite.json`, `four-suite.json`, `four-conform.log`; not in the
 repository). Base: 695 scenarios, 0 errors. With the fourth variant: 717 scenarios, 716 passed,
 1 error, exit 3.
+
+## Decisions
+
+**Accepted (2026-11-12).** Decided on the operator's behalf, under the delegation the operator
+gave that day for decisions that are low risk or easy to revert. Reason given: a defect against
+shipped behaviour, reproduced on the 0.94.0 release binary; an accepted story can be moved back.
+The two transitions carry the correlation `operator-2026-11-12-d8` and the executor `agent:b10x`. No
+review-result exists for this draft, so no `review_outcome` record was written.
