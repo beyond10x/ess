@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-13T15:48:01Z",
+  "actor": "human:timo",
+  "artifact": "story:a-sections-first-row-is-a-binding-in-the-reference-and-both-renderers-or-in-neither",
+  "kind": "story",
+  "revision": 8,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "PR 790 CI on 04880b606a (20 test shards, Checks, Gate; second attempt of one shard)",
+    "reference": "https://github.com/beyond10x/ess/actions/runs/43436965012"
+  }
+}
