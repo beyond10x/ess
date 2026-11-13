@@ -414,3 +414,41 @@ fn a_type_that_is_one_of_several_is_followed() {
     assert_eq!(found.len(), 1, "{:#?}", report.findings);
     assert_eq!(found[0].path, "shells/app/guards/g");
 }
+
+/// A widget argument is an expression where the widget's declaration substitutes it into an
+/// `expr` position, also when the declaration only hands it on as the argument of another widget;
+/// where it lands in text alone (an image's `alt`), a dotted word is what is shown.
+#[test]
+fn a_widget_argument_is_an_expression_where_the_declaration_substitutes_it_into_one() {
+    let widgets = "widgets:\n  card:\n    summary: C\n    \
+         params: {who: {type: string, required: true, note: n}, \
+         cap: {type: string, required: true, note: n}}\n    \
+         body: [{name: t, primitive: text, text: args.who}, \
+         {name: i, primitive: image, src: row.logo, alt: args.cap}]\n  \
+         wrap:\n    summary: W\n    \
+         params: {who: {type: string, required: true, note: n}, \
+         cap: {type: string, required: true, note: n}}\n    \
+         body: [{name: c, component: card, args: {who: args.who, cap: args.cap}}]\n";
+    let use_of = |widget: &str, args: &str| {
+        document("section.deals.selection.id", "section.deals.selection.id")
+            .replace("pages:\n", &format!("{widgets}pages:\n"))
+            .replace(
+                "fields: [id]}\n  q:",
+                &format!(
+                    "fields: [id], children: [{{name: use, component: {widget}, args: {args}}}]}}\n  q:"
+                ),
+            )
+    };
+    for widget in ["card", "wrap"] {
+        let report = run(&use_of(widget, "{who: stat.mine, cap: diagram.png}"));
+        assert!(
+            !report.findings.iter().any(|f| f.check == "document_loads"),
+            "{widget}: {:#?}",
+            report.findings
+        );
+        let found = of(&report, "expr_roots");
+        assert_eq!(found.len(), 1, "{widget}: {:#?}", report.findings);
+        assert!(found[0].message.contains("`stat.mine`"), "{found:#?}");
+        assert!(found[0].message.contains("(in `args/who`)"), "{found:#?}");
+    }
+}

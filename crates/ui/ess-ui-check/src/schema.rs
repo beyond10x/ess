@@ -179,24 +179,36 @@ pub(crate) fn is_construct(name: &str) -> bool {
     construct_names().contains(name)
 }
 
+/// What a node holds once loaded: a composite or a widget (`component`), or a primitive.
+pub(crate) enum Kind {
+    Component(String),
+    Primitive(String),
+}
+
 /// The field tables a mapping written as construct `name` is read with: the construct's own, and
 /// — for a mapping that names its kind inline — those of the composite (`component`, one of
 /// `Composite.union.members`, or a widget, whose use is a `WidgetInstance`) or primitive
 /// (`primitive`) it stands for, each with the name of the construct it belongs to. A mapping that
-/// names neither takes the composite or widget in `inherited`: the kind the loader gave the node
-/// at this place (a page kind's or a `same_as` overlay's), which the document as written omits.
+/// names neither takes the kind in `inherited`: what the loader gave the node at this place (a
+/// page kind's or a `same_as` overlay's), which the document as written omits.
 pub(crate) fn field_tables(
     name: &str,
     mapping: &ess_yaml::Mapping,
-    inherited: Option<&str>,
+    inherited: Option<&Kind>,
 ) -> Vec<(String, &'static ess_yaml::Mapping)> {
     let constructs = &schema()["constructs"];
     let members = strings(&constructs["Composite"]["union"]["members"]);
     let kinds = strings(&constructs["Primitive"]["fields"]["primitive"]["type"]["enum"]);
     let mut owners = vec![name.to_owned()];
     let own = mapping.get("component").and_then(Value::as_str);
+    let own_primitive = mapping.get("primitive").and_then(Value::as_str);
     let inherits = own.is_none() && !mapping.contains_key("primitive");
-    if let Some(component) = own.or(inherits.then_some(inherited).flatten()) {
+    let inherited = inherits.then_some(inherited).flatten();
+    let component = own.or(match inherited {
+        Some(Kind::Component(component)) => Some(component.as_str()),
+        _ => None,
+    });
+    if let Some(component) = component {
         owners.push("Composite".to_owned());
         owners.push(if members.iter().any(|member| member == component) {
             component.to_owned()
@@ -204,7 +216,11 @@ pub(crate) fn field_tables(
             "WidgetInstance".to_owned()
         });
     }
-    if let Some(kind) = mapping.get("primitive").and_then(Value::as_str) {
+    let primitive = own_primitive.or(match inherited {
+        Some(Kind::Primitive(primitive)) => Some(primitive.as_str()),
+        _ => None,
+    });
+    if let Some(kind) = primitive {
         if kinds.iter().any(|known| known == kind) {
             owners.push("Primitive".to_owned());
             owners.push(kind.to_owned());

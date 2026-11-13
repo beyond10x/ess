@@ -7,20 +7,24 @@
 //! types through `optional`, `list`, `map`, `record` and `one_of` over the document as written, so
 //! a new `expr` field is covered without a rule of its own. A composite or primitive written
 //! inline (`component`, `primitive`) adds the fields of its kind to those of the construct it
-//! stands in. A widget's `args` are the one place a value is an expression though the schema types
-//! it `json`: an argument is a path or a literal, so a string argument is read as an expression.
+//! stands in; a node the document writes with neither takes the kind the loader gave it. A
+//! widget's `args` are the one place a value is an expression though the schema types it `json`:
+//! an argument is a path or a literal, so a string argument is read as an expression. A dotted
+//! word under no root is called a stray there only when the widget's declaration substitutes that
+//! parameter into an `expr` position (directly or through another widget it hands it to); where it
+//! lands in text alone, the word is what is shown.
 //! The row filter of a read is left to `filter_expr`, `filter_roots` and `filter_paths`, which
 //! hold it to the same scope.
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use ess_ui::{Body, Document, NodePath, NodeRef};
+use ess_ui::{Body, Document, NodePath, NodeRef, Primitive};
 use ess_yaml::Value;
 
 use crate::expr;
 use crate::filter::Scope;
 use crate::raw::{locate, segment};
-use crate::schema::{self, is_unmapped_marker};
+use crate::schema::{self, is_unmapped_marker, Kind};
 use crate::walk::{body_of, composite_kind, page_of};
 use crate::Sink;
 
@@ -36,27 +40,74 @@ pub(crate) fn run(text: &str, document: &Document, sink: &mut Sink) {
             .iter()
             .filter_map(|located| {
                 let kind = match body_of(located.node)? {
-                    Body::Composite(composite) => composite_kind(composite).to_owned(),
-                    Body::Widget(widget) => widget.component.clone(),
-                    Body::Primitive(_) | Body::Host(_) => return None,
+                    Body::Composite(composite) => {
+                        Kind::Component(composite_kind(composite).to_owned())
+                    }
+                    Body::Widget(widget) => Kind::Component(widget.component.clone()),
+                    Body::Primitive(primitive) => Kind::Primitive(primitive_kind(primitive)),
+                    Body::Host(_) => return None,
                 };
                 Some((located.path.clone(), kind))
             })
             .collect(),
         seen: BTreeSet::new(),
+        gathering: true,
+        in_expr: BTreeMap::new(),
+        forwards: Vec::new(),
     };
+    // A first walk learns which parameters of each widget its declaration substitutes into an
+    // `expr` position; the second reports, knowing that.
+    walker.construct("Document", &value, &NodePath::root(), &mut Sink::default());
+    walker.settle();
+    walker.gathering = false;
+    walker.seen.clear();
     walker.construct("Document", &value, &NodePath::root(), sink);
+}
+
+/// The name of a primitive, as `primitive:` writes it.
+fn primitive_kind(primitive: &Primitive) -> String {
+    match primitive {
+        Primitive::Text(_) => "text",
+        Primitive::Badge(_) => "badge",
+        Primitive::Icon(_) => "icon",
+        Primitive::Button(_) => "button",
+        Primitive::Link(_) => "link",
+        Primitive::Input(_) => "input",
+        Primitive::Toggle(_) => "toggle",
+        Primitive::Image(_) => "image",
+        Primitive::Divider(_) => "divider",
+    }
+    .to_owned()
+}
+
+/// Where an expression stands.
+#[derive(Clone)]
+enum Site {
+    /// A field typed `expr`.
+    Field,
+    /// The value of widget `widget`'s argument `param` (`None`: the widget is not known here).
+    Argument {
+        widget: Option<String>,
+        param: String,
+    },
 }
 
 struct Walker<'a> {
     document: &'a Document,
     nodes: BTreeSet<NodePath>,
-    /// The composite or widget each section, overlay and nested node holds once loaded, by its
-    /// path: the kind of a node whose `component` the document leaves to a page kind or a
-    /// `same_as`.
-    kinds: BTreeMap<NodePath, String>,
+    /// What each section, overlay and nested node holds once loaded, by its path: the kind of a
+    /// node whose `component` or `primitive` the document leaves to a page kind or a `same_as`.
+    kinds: BTreeMap<NodePath, Kind>,
     /// What has been reported, so a field two tables of one node both type is reported once.
     seen: BTreeSet<(&'static str, NodePath, String)>,
+    /// `true` during the walk that only learns `in_expr` and `forwards`.
+    gathering: bool,
+    /// By widget, the parameters its declaration reads inside an `expr` position
+    /// (`text: args.who`): an argument for one is an expression where it stands.
+    in_expr: BTreeMap<String, BTreeSet<String>>,
+    /// A declaration that hands its parameter on as the argument of another widget:
+    /// (widget, parameter, inner widget, inner parameter).
+    forwards: Vec<(String, String, String, String)>,
 }
 
 impl Walker<'_> {
@@ -78,7 +129,18 @@ impl Walker<'_> {
         let Some(mapping) = value.as_mapping() else {
             return;
         };
-        let tables = schema::field_tables(name, mapping, self.kinds.get(at).map(String::as_str));
+        let tables = schema::field_tables(name, mapping, self.kinds.get(at));
+        let widget = match (
+            mapping.get("component").and_then(Value::as_str),
+            self.kinds.get(at),
+        ) {
+            (Some(own), _) => Some(own.to_owned()),
+            (None, Some(Kind::Component(inherited))) if !mapping.contains_key("primitive") => {
+                Some(inherited.clone())
+            }
+            _ => None,
+        }
+        .filter(|used| self.document.widgets.contains_key(used));
         for (key, child) in mapping {
             let Some(key) = key.as_str() else {
                 continue;
@@ -91,12 +153,17 @@ impl Walker<'_> {
                 match (owner.as_str(), key) {
                     // Held to the same scope by `filter_expr`, `filter_roots` and `filter_paths`.
                     ("Reads" | "DynamicNavEntries", "filter") => {}
-                    // An argument is a path or a literal; the widget may substitute it into text,
-                    // where a dotted word is what is shown, so no word is called a stray.
+                    // An argument is a path or a literal. Where the widget substitutes it into an
+                    // `expr` position it is an expression, and a dotted word under no root is a
+                    // stray; where it lands in text alone, that word is what is shown.
                     ("WidgetInstance", "args") => {
                         for (arg, text) in child.as_mapping().into_iter().flatten() {
                             if let Some(arg) = arg.as_str() {
-                                self.expression(text, &at.child(arg), false, sink);
+                                let site = Site::Argument {
+                                    widget: widget.clone(),
+                                    param: arg.to_owned(),
+                                };
+                                self.expression(text, &at.child(arg), &site, sink);
                             }
                         }
                     }
@@ -119,7 +186,7 @@ impl Walker<'_> {
         }
         if let Some(name) = ty.as_str() {
             if name == "expr" {
-                self.expression(value, at, true, sink);
+                self.expression(value, at, &Site::Field, sink);
             } else if schema::is_construct(name) {
                 self.construct(name, value, at, sink);
             }
@@ -141,7 +208,12 @@ impl Walker<'_> {
                 };
                 let under = at.child(entry_key);
                 if map["key"].as_str() == Some("expr") {
-                    self.expression(&Value::String(entry_key.to_owned()), &under, true, sink);
+                    self.expression(
+                        &Value::String(entry_key.to_owned()),
+                        &under,
+                        &Site::Field,
+                        sink,
+                    );
                 }
                 self.typed(&map["value"], entry, &under, key, sink);
             }
@@ -161,7 +233,7 @@ impl Walker<'_> {
     }
 
     /// One value written where an expression stands.
-    fn expression(&mut self, value: &Value, at: &NodePath, strays: bool, sink: &mut Sink) {
+    fn expression(&mut self, value: &Value, at: &NodePath, site: &Site, sink: &mut Sink) {
         let Some(text) = value.as_str() else {
             return;
         };
@@ -171,7 +243,17 @@ impl Walker<'_> {
         let Some(reading) = expr::read(text) else {
             return;
         };
-        for word in reading.strays.iter().filter(|_| strays) {
+        if self.gathering {
+            self.gather(&reading, at, site);
+        }
+        let stray_words = match site {
+            Site::Field => true,
+            Site::Argument { widget, param } => widget
+                .as_ref()
+                .and_then(|widget| self.in_expr.get(widget))
+                .is_some_and(|params| params.contains(param)),
+        };
+        for word in reading.strays.iter().filter(|_| stray_words) {
             let message = format!(
                 "`{word}` reads no path: `{}` is no root ({}), so it stays literal text; write \
                  `\"{word}\"` to say so",
@@ -186,6 +268,66 @@ impl Walker<'_> {
                 "section" => self.section(&segments, at, sink),
                 "state" | "params" | "shell" => self.declared(&segments, at, sink),
                 _ => {}
+            }
+        }
+    }
+
+    /// Inside the declaration of a widget, notes each `args.<param>` it reads: in an `expr`
+    /// position, or handed on as the argument of another widget.
+    fn gather(&mut self, reading: &expr::Reading, at: &NodePath, site: &Site) {
+        let [top, widget, ..] = at.segments() else {
+            return;
+        };
+        if top != "widgets" {
+            return;
+        }
+        for path in &reading.paths {
+            let mut segments = path.split('.');
+            let (Some("args"), Some(param)) = (segments.next(), segments.next()) else {
+                continue;
+            };
+            match site {
+                Site::Field => {
+                    self.in_expr
+                        .entry(widget.clone())
+                        .or_default()
+                        .insert(param.to_owned());
+                }
+                Site::Argument {
+                    widget: Some(inner),
+                    param: inner_param,
+                } => self.forwards.push((
+                    widget.clone(),
+                    param.to_owned(),
+                    inner.clone(),
+                    inner_param.clone(),
+                )),
+                Site::Argument { widget: None, .. } => {}
+            }
+        }
+    }
+
+    /// Carries `in_expr` through the declarations that hand a parameter on to another widget.
+    fn settle(&mut self) {
+        loop {
+            let mut grew = false;
+            for (widget, param, inner, inner_param) in &self.forwards {
+                let reaches = self
+                    .in_expr
+                    .get(inner)
+                    .is_some_and(|params| params.contains(inner_param));
+                if reaches
+                    && self
+                        .in_expr
+                        .entry(widget.clone())
+                        .or_default()
+                        .insert(param.clone())
+                {
+                    grew = true;
+                }
+            }
+            if !grew {
+                break;
             }
         }
     }

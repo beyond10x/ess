@@ -369,6 +369,24 @@ fn state_is_placed_where_its_store_says() {
     assert!(url.contains("useSearchParams"), "{url}");
 }
 
+/// The two shell states a guard and a primitive of the example write on the client: a draft
+/// (`invite_token`) is kept in session storage and a component state (`logo_url`) in memory, each
+/// through the document's placement defaults.
+#[test]
+fn the_examples_client_written_shell_states_are_placed_in_the_browser() {
+    let (_, files) = generate_example("shell-client-state");
+    let app = file(&files, "src/shells/AppShell.tsx");
+    assert!(
+        app.contains("useSessionStorageState<string>(\"portal:shells/app/state/invite_token\""),
+        "invite_token in session storage: {app}"
+    );
+    let auth = file(&files, "src/shells/AuthShell.tsx");
+    assert!(
+        auth.contains("useMemoryState<string>(\"portal:shells/auth/state/logo_url\""),
+        "logo_url in memory: {auth}"
+    );
+}
+
 #[test]
 fn reads_default_to_fixtures_behind_a_data_adapter() {
     let (_, files) = generate_example("fixtures");
