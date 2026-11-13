@@ -424,15 +424,22 @@ is `text`. An adopter asked for a token endpoint that answers a bare string
   `alike` (below) are not such a pair.
 - `{<member>: error}` writes the error's own fields beside the member, so two such bodies of one
   error wire name are told apart, as two redirects are, when one error always writes a field the
-  other never writes: a field by wire name, always written when its type is not `Optional`. One
-  function decides it, and the status check and the `alike` check both call it. `boom` with
+  other never writes: a field by wire name, always written when its type, followed through every
+  newtype, is not `Optional`, and when no answer of its outcome can leave it out. An outcome
+  `wrong_state` of a command that moves, updates or deletes an instance its input names can be the
+  answer for an instance no record carries, which writes none of its error's fields
+  (`docs/design/unknown-instance-seams.md`); `ess-http` cannot ask `ess-gen` which command has that
+  answer, so it takes every such outcome as that answer, and none of its error's fields decide,
+  which refuses what the field rule would otherwise admit and breaks no binding that validated
+  before the rule. One function decides it, and the status check and the `alike` check both call it. `boom` with
   `{message}` and `boom-more` with `{message, details}`, both of wire name `internal_error`, on
   one `500` compile without `alike:`, `boom-more` always writing `details`, and with `alike:` are
   refused, the message naming `details`. A pair whose fields differ only in an optional field, in
   a type or in order is not told apart, because an answer without the optional field, or in either
   type, fits both; nor are its bodies one answer, so `alike` does not hold either. It is refused in
-  both forms with one fact (the bodies differ and no always-written field decides) and the forms
-  that validate: one error with the optional field, reported by both outcomes, under `alike:`, a
+  both forms with one fact (the fields differ, no always-written field decides, and a body one
+  answers can be one the other answers) and the forms that validate as written: one error with the
+  optional field, reported by both outcomes, under `alike:`; or, with the `alike:` group dropped, a
   field one error always writes that the other never writes, distinct error wire names, or
   `envelope`. A pair of identical fields is refused without `alike:` and admitted with it.
 
@@ -535,7 +542,7 @@ can answer a malformed request with its own error while the binding's other rout
 | `ESS-HTTP-022` | an `outcomes:` key that is not an outcome of the command, or `outcomes:` on a view; `errors:` on a view, or on a route whose command has no outcome with `error` that `outcomes:` leaves unlisted; `alike:` on a view, or a group of one, a name that is not an outcome of the command, one in two groups or twice in one, or one with no declared answer | `routes[i].outcomes.<name>`, `routes[i].errors` or `routes[i].alike` |
 | `ESS-HTTP-023` | a status outside `100..=599`, in a class the outcome may not use, or a `3xx` other than `301`, `302`, `303`, `307` and `308` | the outcome, the status, the class |
 | `ESS-HTTP-024` | a body form not admitted for the outcome or operation: `response` or `response.<field>` on an outcome without `returns: true` or with `error`, and so under `errors`; `response.<field>` naming no response field or an `Optional` one, or a source other than `response.<field>` as a body; `{…: error}` without `error`; `{…: {literal: …}}` on an outcome; a body other than `none` on `204` or beside a `redirect`; `single`, `array` or `rows` on a command, or an outcome form on a view; `single` or `array` on a paged view; a `<member>` that is empty or equals the wire name of one of the error's fields; an `encoding` other than `json` and `text`, or `text` beside any body but `response.<field>`, on a field that is not a `String`, or under `errors` | the outcome (or `routes[i].body`) and the form, or `….encoding` |
-| `ESS-HTTP-025` | two outcomes on one status that the bodies cannot tell apart, an unlisted outcome counted at its derived status with `envelope`, unless both are `{<member>: error}` on one member over errors of one wire name and one error always writes (its type not `Optional`) a field, by wire name, that the other never writes (one function decides it for this check and for `alike:`), or both declare a `redirect` and one always writes (its source not `Optional`) a parameter name the other never writes, or both write one parameter name from `error.wire` with distinct error wire names; a `refusals:` override on a route the binding names, on the status of an outcome of its command, with a body that does not tell the two apart (answer 24); an `alike:` group whose answers differ, or that the wire tells apart (`envelope` bodies, error objects under distinct wire names or over errors one of which always writes a field the other never writes, the message naming the field, and error objects over errors whose fields differ otherwise, in an optional field, a type or an order, which are not one answer either, a header or challenge param reading `error.wire` under distinct wire names, redirects told apart as above); two outcomes in one group are never a pair | both outcomes and the status (for an override, `refusals.<key>` or the route's own `routes[i].refusals.<key>`, the route and the outcomes; for a group, `routes[i].alike`, the group and the first key that differs) |
+| `ESS-HTTP-025` | two outcomes on one status that the bodies cannot tell apart, an unlisted outcome counted at its derived status with `envelope`, unless both are `{<member>: error}` on one member over errors of one wire name and one error always writes (its type not `Optional` through any newtype, its outcome not a `wrong_state` one that can answer an unknown instance) a field, by wire name, that the other never writes (one function decides it for this check and for `alike:`), or both declare a `redirect` and one always writes (its source not `Optional`) a parameter name the other never writes, or both write one parameter name from `error.wire` with distinct error wire names; a `refusals:` override on a route the binding names, on the status of an outcome of its command, with a body that does not tell the two apart (answer 24); an `alike:` group whose answers differ, or that the wire tells apart (`envelope` bodies, error objects under distinct wire names or over errors one of which always writes a field the other never writes, the message naming the field, and error objects over errors whose fields differ otherwise, in an optional field, a type or an order, which are not one answer either, a header or challenge param reading `error.wire` under distinct wire names, redirects told apart as above); two outcomes in one group are never a pair | both outcomes and the status (for an override, `refusals.<key>` or the route's own `routes[i].refusals.<key>`, the route and the outcomes; for a group, `routes[i].alike`, the group and the first key that differs) |
 | `ESS-HTTP-026` | a header name that is not a token, a header the server (`Connection`), the encoding (`Content-Type`, `Content-Encoding`, `Content-Length`, `Transfer-Encoding`) or `redirect` (`Location`) owns, a literal that is not a field value, `error.wire` whose wire name is not a field value, a header declared twice ignoring case, a source that names no field or names a non-scalar, a source the outcome cannot supply (`response.` without `returns: true`, `error.` without `error`), `error.wire` on an outcome whose error declares a field named `wire`, or any `source` in a `refusals:` header | the header and the source |
 | `ESS-HTTP-027` | a challenge whose scheme or param name is not a token, a param declared twice, a literal param or a param reading `error.wire` whose text no quoted string carries, a challenge under any header but `WWW-Authenticate`, or a declared `401` (outcome or refusal) without a `WWW-Authenticate` challenge | the header, the param |
 | `ESS-HTTP-028` | `redirect` without a `3xx` status, a `3xx` without `redirect`, a `location` that is not a `String` or a newtype of `String`, or is `Optional`, or that reads `error.wire`; a `mode` absent or outside the set, a parameter name that is not one or more RFC 3986 `unreserved` characters, a parameter declared twice, a parameter source that names no field, names a non-scalar or that the outcome cannot supply | the outcome and the key |
@@ -790,9 +797,12 @@ ess verify conform run --path MODEL --target http --http server-http.yaml \
 - **Command.** Encode the input per the route, send it to the declared method and path, and map
   status, body and headers back to the outcome. Stage 2's distinguishability rule
   (`ESS-HTTP-025`) is what makes that mapping total. Two `{<member>: error}` answers of one error
-  wire name on one status map to their outcomes by the field rule: an answer that holds the field
+  wire name on one status map to their outcomes by the field rule: an answer that holds a field
   one outcome's error always writes and the other's never writes is the first outcome's, and one
-  that lacks it is the other's. An answer a route declares `alike` maps to
+  that lacks it is not the first outcome's. An answer for an instance no record carries is the
+  exception the rule leaves out: the `wrong_state` outcome answers it without its error's fields
+  (`docs/design/unknown-instance-seams.md`), so no field of such an outcome's error is one it
+  always writes. An answer a route declares `alike` maps to
   the set of its group's outcomes, not to one: a scenario expecting any outcome of the set passes,
   and the report says which outcomes the wire did not tell apart. No HTTP conformance target
   exists yet, so this is the design, and the two generated servers' tests carry the proof that

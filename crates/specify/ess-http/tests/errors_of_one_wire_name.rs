@@ -18,18 +18,23 @@ const NOTES: &str = include_str!("fixtures/notes.yaml");
 
 /// What both refusals say of a pair whose fields differ and no always-written field decides.
 const UNDECIDED: &str =
-    "the bodies differ, but no field one error always writes is one the other never writes";
+    "their fields differ and no field one error always writes is one the other never writes, so a \
+     body one of them answers can be one the other answers";
 
-/// The forms that validate, as both refusals of such a pair name them.
-const FORMS: &str =
-    "one error with the optional field, reported by both outcomes, under `alike:`, \
-                     a field one error always writes that the other never writes, distinct error \
-                     wire names, or `envelope`";
+/// The forms that validate as written, as both refusals of such a pair name them.
+const FORMS: &str = "one error with the optional field, reported by both outcomes, under \
+                     `alike:`; or, with the `alike:` group dropped, a field one error always \
+                     writes that the other never writes, distinct error wire names, or `envelope`";
 
 /// `notes.yaml` with `negative` reporting an error of wire name `refused` with the fields `first`
 /// and `blank` one of the same wire name with the fields `second`, each a list of `{name, type}`
 /// flow entries.
 fn model(first: &[&str], second: &[&str]) -> EssIr {
+    model_with("", first, second)
+}
+
+/// [`model`] with `types`, `types:` entries one per line, declared beside `NoteId`.
+fn model_with(types: &str, first: &[&str], second: &[&str]) -> EssIr {
     let fields = |fields: &[&str]| {
         if fields.is_empty() {
             String::new()
@@ -42,6 +47,10 @@ fn model(first: &[&str], second: &[&str]) -> EssIr {
         }
     };
     let text = NOTES
+        .replace(
+            "  - {name: demo.notes.NoteId, kind: newtype, of: String}\n",
+            &format!("  - {{name: demo.notes.NoteId, kind: newtype, of: String}}\n{types}"),
+        )
         .replace(
             "  - name: demo.notes.Refused\n    naming: {wire: refused}\n",
             &format!(
@@ -94,8 +103,16 @@ fn bound(ir: &EssIr, alike: bool) -> Result<HttpIr, HttpDiagnostics> {
     } else {
         ""
     };
+    bound_keys(
+        ir,
+        &format!("    outcomes:\n      negative: {{status: 409, body: {{error: error}}}}\n      blank: {{status: 409, body: {{error: error}}}}\n      too-large: {{status: 422, body: none}}\n{group}"),
+    )
+}
+
+/// The route of `CreateNote` with `keys` beside its path.
+fn bound_keys(ir: &EssIr, keys: &str) -> Result<HttpIr, HttpDiagnostics> {
     let text = format!(
-        "type: ess-http/1\nspecification:\n  system: demo\n  version: v1\n  source_digest: sha256:{}\nroutes:\n  - command: demo.notes.CreateNote\n    method: post\n    path: /api/notes\n    outcomes:\n      negative: {{status: 409, body: {{error: error}}}}\n      blank: {{status: 409, body: {{error: error}}}}\n      too-large: {{status: 422, body: none}}\n{group}",
+        "type: ess-http/1\nspecification:\n  system: demo\n  version: v1\n  source_digest: sha256:{}\nroutes:\n  - command: demo.notes.CreateNote\n    method: post\n    path: /api/notes\n{keys}",
         ir.source_digest()
     );
     let spec = HttpSpec::from_yaml(&text).unwrap_or_else(|error| panic!("parses: {error}\n{text}"));
@@ -249,4 +266,78 @@ fn the_status_refusal_names_the_field_rule_among_the_forms_that_tell_outcomes_ap
         ),
         "{text}"
     );
+}
+
+const MAYBE: &str = "  - {name: demo.notes.MaybeText, kind: newtype, of: Optional<String>}\n";
+const DEEPER: &str = "  - {name: demo.notes.Deeper, kind: newtype, of: demo.notes.MaybeText}\n  - {name: demo.notes.Deepest, kind: newtype, of: demo.notes.Deeper}\n";
+
+/// A newtype admits absence when what it wraps does, through any number of newtypes, and a field
+/// of such a type is not always written: it decides nothing. A newtype over a `String` is always
+/// written, as before. The model has no other wrapping type (`kind` is `newtype`, `struct`, `enum`
+/// or `union`), so there is no alias to follow.
+#[test]
+fn a_field_through_newtypes_over_optional_decides_nothing_and_one_over_a_string_decides() {
+    let types = format!("{MAYBE}{DEEPER}");
+    for field in [
+        "{name: details, type: demo.notes.MaybeText}",
+        "{name: details, type: demo.notes.Deeper}",
+        "{name: details, type: demo.notes.Deepest}",
+        "{name: details, type: Optional<demo.notes.Deepest>}",
+    ] {
+        let ir = model_with(&types, &[MESSAGE], &[MESSAGE, field]);
+        let without = bound(&ir, false);
+        assert_eq!(
+            located(&without),
+            [("ESS-HTTP-025", "routes[0].outcomes.negative".to_owned())],
+            "{field}: {}",
+            worded(&without)
+        );
+        let text = worded(&without);
+        assert!(text.contains(UNDECIDED), "{field}: {text}");
+    }
+    let ir = model_with(
+        &types,
+        &[MESSAGE],
+        &[MESSAGE, "{name: details, type: demo.notes.NoteId}"],
+    );
+    let result = bound(&ir, false);
+    assert_eq!(located(&result), [], "{}", worded(&result));
+}
+
+/// Each form the two refusals of an undecided pair name validates when applied as they say.
+#[test]
+fn each_form_the_refusals_name_validates_when_applied() {
+    let optional = "{name: details, type: Optional<String>}";
+    let undecided = model(&[MESSAGE], &[MESSAGE, optional]);
+    for text in [
+        worded(&bound(&undecided, false)),
+        worded(&bound(&undecided, true)),
+    ] {
+        assert!(text.contains(FORMS), "{text}");
+    }
+    // One error with the optional field, reported by both outcomes, under `alike:`.
+    let one_error = model(&[MESSAGE, optional], &[MESSAGE, optional]);
+    let result = bound(&one_error, true);
+    assert_eq!(located(&result), [], "{}", worded(&result));
+    // With the group dropped: a field one error always writes that the other never writes.
+    let always = model(&[MESSAGE], &[MESSAGE, DETAILS]);
+    let result = bound(&always, false);
+    assert_eq!(located(&result), [], "{}", worded(&result));
+    // ... which `alike:` refuses, so the refusal says the group is dropped.
+    assert_eq!(
+        located(&bound(&always, true)),
+        [("ESS-HTTP-025", "routes[0].alike".to_owned())]
+    );
+    // With the group dropped: distinct error wire names (`Refused` and `TooLarge`).
+    let result = bound_keys(
+        &undecided,
+        "    outcomes:\n      negative: {status: 409, body: {error: error}}\n      too-large: {status: 409, body: {error: error}}\n",
+    );
+    assert_eq!(located(&result), [], "{}", worded(&result));
+    // With the group dropped: `envelope`.
+    let result = bound_keys(
+        &undecided,
+        "    outcomes:\n      negative: {status: 409, body: envelope}\n      blank: {status: 409, body: envelope}\n",
+    );
+    assert_eq!(located(&result), [], "{}", worded(&result));
 }
