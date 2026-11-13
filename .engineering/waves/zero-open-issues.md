@@ -9,13 +9,16 @@ narrowed to "for repo ess". Every story serves `vision:O2`.
 
 The plan below is stopped. On 2026-11-13 the operator narrowed it to eight stories and ended it:
 finish those, merge what is green, release, and start no further wave, story or refactoring. The
-epic's goal is not reached. Counted on 2026-11-13 after the 0.95.0 release: 32 issues of
+epic's goal is not reached. Counted on 2026-11-13 after the 0.96.0 release: 32 issues of
 `beyond10x/ess` are open (`gh issue list --repo beyond10x/ess --state open`), and the store holds
-242 active stories, 110 of them tagged `defect`, and 193 drafts, 55 of them tagged `defect`.
+239 active stories, 107 of them tagged `defect`, and 193 drafts, 55 of them tagged `defect`.
 
-This section was written into the pull request that releases 0.96.0, so it describes the state at
-that pull request. The same section on the branch `integration/ess-zero-issues-4` is the later
-copy: read it there whenever that branch is ahead of `main`.
+This is the later copy of the section, on the branch `integration/ess-zero-issues-4`; `main` holds
+the copy written into the pull request that released 0.96.0. Released on 2026-11-13: 0.95.0 (pull
+request 790, merge commit `ab0e9c9f27`) and 0.96.0 (pull request 791, merge commit `9e91e8b575`,
+published 2026-11-13T18:30:14Z). This branch is `main` at 0.96.0 plus two store commits: the three
+story moves named below and this copy. They reach `main` with the next pull request from this
+branch.
 
 ### The eight stories
 
@@ -27,29 +30,30 @@ copy: read it there whenever that branch is ahead of `main`.
    `implemented`.
 3. `story:a-sections-first-row-is-a-binding-in-the-reference-and-both-renderers-or-in-neither`:
    released in 0.95.0, `implemented`.
-4. `story:ui-check-resolves-the-root-and-section-of-every-binding-path`: in 0.96.0, after four
-   review passes. One case of the fourth pass is ignored with the id of
+4. `story:ui-check-resolves-the-root-and-section-of-every-binding-path`: released in 0.96.0 after
+   four review passes, `implemented`. One case of the fourth pass is ignored with the id of
    `story:a-nodes-own-visible-is-judged-in-the-scope-the-renderers-draw-it-in` (draft);
    `story:a-widget-parameter-in-a-map-key-is-substituted-or-refused` (draft) holds a second finding,
    made by reading only.
 5. `story:a-visible-expression-resolves-its-row-and-actor-paths-wherever-an-action-stands`: not
    started. No branch and no code exist for it. The operator's order of 2026-11-13 holds it: an
    open story that no consumer waits on is not started.
-6. `story:two-errors-of-one-wire-name-and-different-fields-bind-on-one-status`: in 0.96.0, after
-   four review passes. Not compared, and said so in the unit's last commit: response headers an
+6. `story:two-errors-of-one-wire-name-and-different-fields-bind-on-one-status`: released in 0.96.0
+   after four review passes, `implemented`. Not compared, and said so in the unit's last commit: response headers an
    outcome sets can also tell two bodies apart.
 7. `story:expect-error-checks-generated-field-presence`: not started, by a ruling of the operator's
    delegate on 2026-11-13. It waits on `story:view-and-error-assertions-carry-their-value-shape`
    (its `depends_on`, `active`): `ScenarioStep::ExpectError` holds only fields
    (`crates/verify/ess-conformance/src/scenario.rs:2525` at `83f0996f4d`).
-8. `story:refusal-overlap-witnessed-for-distinct-guard`: in 0.96.0, after two review passes. Two
+8. `story:refusal-overlap-witnessed-for-distinct-guard`: released in 0.96.0 after two review
+   passes, `implemented`. Two
    observations of the second pass were so before the unit and are drafts:
    `story:a-duplicate-beside-a-forall-over-the-same-list-is-witnessed` and
    `story:a-creating-branch-beside-a-positive-distinct-under-a-count-bound-is-witnessed`.
 
-The stories of 4, 6 and 8 stay `active` until a store commit records the CI run of the 0.96.0
-release head for each and moves it to `implemented`; that commit is made on
-`integration/ess-zero-issues-4` after the release.
+The stories of 4, 6 and 8 moved to `implemented` on this branch, each with a `test_result` record
+naming the CI run of the 0.96.0 release head (run 43462735274); on `main` they still read
+`active`.
 
 ### What waits on the operator
 
@@ -69,7 +73,9 @@ release head for each and moves it to `implemented`; that commit is made on
   section says `Owed`.
 - `story:delivery-trust-fixture-race` (draft) happened again: on the 0.95.0 release pull request
   one test shard failed on its first attempt where a fixture binary was replaced while it was being
-  copied (CI run 43436965012, `Test 17/20`); a second attempt of that job passed.
+  copied (CI run 43436965012, `Test 17/20`); a second attempt of that job passed. On the 0.96.0
+  pull request one macOS job never acquired a hosted runner on its first attempt (CI run
+  43462735274, `Output ownership (macos-15)`); its second attempt passed.
 
 ### The next start
 
