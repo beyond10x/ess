@@ -425,23 +425,30 @@ is `text`. An adopter asked for a token endpoint that answers a bare string
 - `{<member>: error}` writes the error's own fields beside the member, so two such bodies of one
   error wire name are told apart, as two redirects are, when one error always writes a field the
   other never writes: a field by wire name, always written when its type, followed through every
-  newtype, is not `Optional`, and when no answer of its outcome can leave it out. An outcome
-  `wrong_state` of a command that moves, updates or deletes an instance its input names can be the
-  answer for an instance no record carries, which writes none of its error's fields
-  (`docs/design/unknown-instance-seams.md`); `ess-http` cannot ask `ess-gen` which command has that
-  answer, so it takes every such outcome as that answer, and none of its error's fields decide,
-  which refuses what the field rule would otherwise admit and breaks no binding that validated
-  before the rule. One function decides it, and the status check and the `alike` check both call it. `boom` with
+  newtype, is not `Optional`, and when no answer of its outcome can leave it out. The outcome
+  `ess_compiler::unknown_instance::unknown_instance_answer` returns for a command is the answer for
+  an instance no record carries, which writes none of its error's fields
+  (`docs/design/unknown-instance-seams.md`), so none of that outcome's fields decide; the function
+  lives in `ess-compiler`, below `ess-http` and `ess-gen`, and both ask it, so a command that
+  declares an `unknown_instance:` outcome has its `wrong_state` fields deciding. One function
+  decides the field rule, and the status check and the `alike` check both call it. `boom` with
   `{message}` and `boom-more` with `{message, details}`, both of wire name `internal_error`, on
   one `500` compile without `alike:`, `boom-more` always writing `details`, and with `alike:` are
   refused, the message naming `details`. A pair whose fields differ only in an optional field, in
-  a type or in order is not told apart, because an answer without the optional field, or in either
-  type, fits both; nor are its bodies one answer, so `alike` does not hold either. It is refused in
-  both forms with one fact (the fields differ, no always-written field decides, and a body one
-  answers can be one the other answers) and the forms that validate as written: one error with the
+  order, or in a type that can hold a value of the other (the same JSON type, `Json`, a union) is
+  not told apart, because an answer without the optional field, or with a value both types hold,
+  fits both; nor are its bodies one answer, so `alike` does not hold either. It is refused in both
+  forms with one fact (the fields differ, no always-written field decides, and a body one answers
+  can be one the other answers) and the forms that validate as written: one error with the
   optional field, reported by both outcomes, under `alike:`; or, with the `alike:` group dropped, a
   field one error always writes that the other never writes, distinct error wire names, or
-  `envelope`. A pair of identical fields is refused without `alike:` and admitted with it.
+  `envelope`. A pair that both write one field with values of different JSON types (`String`
+  against `Integer`) has no body that fits both, and the binding tells errors apart by which
+  fields they write, not by a field's type: it is refused in both forms too, the message naming
+  the field, saying both write it and that the binding does not tell them apart by its type. A
+  pair of identical fields is refused without `alike:` and admitted with it. The status refusal
+  says a reader cannot tell the bodies apart only of outcomes whose bodies are identical, not of
+  a pair whose fields differ.
 
 A command route may declare outcomes the service answers the same way `alike`: a list of groups,
 each of two or more of the command's outcome names, such as `alike: [[fetched, inline]]`. Each

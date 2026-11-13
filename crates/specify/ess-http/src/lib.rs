@@ -15,9 +15,9 @@ use std::collections::BTreeMap;
 use std::fmt;
 
 use ess_compiler::ir::{
-    ResolvedBody, ResolvedCommand, ResolvedCondition, ResolvedEffect, ResolvedField,
-    ResolvedInstance, ResolvedOutcome, ResolvedTypeRef, ResolvedView,
+    ResolvedBody, ResolvedCommand, ResolvedField, ResolvedOutcome, ResolvedTypeRef, ResolvedView,
 };
+use ess_compiler::unknown_instance::unknown_instance_answer;
 use ess_compiler::EssIr;
 use ess_domain::component::Reach;
 use ess_domain::types::Primitive;
@@ -5222,26 +5222,70 @@ fn alike(
 
 /// What `{<member>: error}` writes beside its member for one outcome's error: `written`, each of
 /// the error's fields by wire name with its type, in declaration order (empty for an outcome
-/// without an error), and `always`, the names among them every answer of the outcome writes.
+/// without an error), `always`, the names among them every answer of the outcome writes, and
+/// `kinds`, the JSON type of each always-written field whose values are all of one.
 #[derive(Debug)]
 struct ErrorFields<'a> {
     written: Vec<(&'a str, &'a ResolvedTypeRef)>,
     always: Vec<&'a str>,
+    kinds: BTreeMap<&'a str, JsonKind>,
     /// Whether an answer of the outcome can leave every field out: the outcome is the
     /// unknown-instance answer of its command.
     unknown_instance: bool,
+}
+
+/// The one JSON type every value of an ESS type is written as, where there is one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum JsonKind {
+    String,
+    Boolean,
+    Number,
+    Array,
+    Object,
+}
+
+/// The JSON type every value of `type_ref` is written as, followed through newtypes: `None` where
+/// a value can be of more than one (`Json`, a union, whose unit variant is `null`) or the type
+/// is `Optional`, which a field that is always written is not.
+fn json_kind(ir: &EssIr, type_ref: &ResolvedTypeRef) -> Option<JsonKind> {
+    let mut current = type_ref;
+    for _ in 0..=ir.types().len() {
+        match current {
+            ResolvedTypeRef::Primitive { name } => {
+                return match name {
+                    Primitive::Boolean => Some(JsonKind::Boolean),
+                    Primitive::Integer | Primitive::Binary64 => Some(JsonKind::Number),
+                    Primitive::Json => None,
+                    Primitive::String
+                    | Primitive::Decimal
+                    | Primitive::Timestamp
+                    | Primitive::Duration
+                    | Primitive::Uuid
+                    | Primitive::Bytes => Some(JsonKind::String),
+                };
+            }
+            ResolvedTypeRef::Declared { name } => match &ir.named_type(name).body {
+                ResolvedBody::Newtype { of, .. } => current = of,
+                ResolvedBody::Struct { .. } => return Some(JsonKind::Object),
+                ResolvedBody::Enum { .. } => return Some(JsonKind::String),
+                ResolvedBody::Union { .. } => return None,
+            },
+            ResolvedTypeRef::Optional { .. } => return None,
+            ResolvedTypeRef::List { .. } => return Some(JsonKind::Array),
+            ResolvedTypeRef::Map { .. } => return Some(JsonKind::Object),
+        }
+    }
+    None
 }
 
 /// What `{<member>: error}` writes beside its member for `outcome` of `command`.
 ///
 /// A field is always written when its type, followed through every newtype, is not `Optional`
 /// (a newtype over `Optional<…>` admits absence and every writer omits an absent value), and when
-/// no answer of the outcome can be written without it. A `wrong_state` outcome of a command that
-/// moves, updates or deletes an instance its input names can be the answer for an instance no
-/// record carries, which writes none of its error's fields (`docs/design/unknown-instance-seams.md`,
-/// `ess_gen::unknown_instance::unknown_instance_answer`, which `ess-http` cannot call: `ess-gen`
-/// depends on it). Taking every such outcome as that answer is the conservative side: it refuses
-/// what an `ess` before the field rule refused.
+/// no answer of the outcome can be written without it. The unknown-instance answer of a command
+/// (`ess_compiler::unknown_instance::unknown_instance_answer`, `docs/design/unknown-instance-seams.md`)
+/// is the one that writes none of its error's fields, for an instance no record carries; the
+/// function is the one `ess-gen` asks.
 fn error_fields<'a>(
     ir: &'a EssIr,
     command: &ResolvedCommand,
@@ -5260,18 +5304,9 @@ fn error_fields<'a>(
                 })
                 .collect()
         });
-    let unknown_instance = outcome.condition == ResolvedCondition::WrongState
-        && command.outcomes.iter().any(|other| {
-            other.subject.as_ref().is_some_and(|subject| {
-                matches!(
-                    subject.effect,
-                    ResolvedEffect::Moves { .. }
-                        | ResolvedEffect::Updates
-                        | ResolvedEffect::Deletes
-                ) && matches!(subject.instance, ResolvedInstance::Supplied { .. })
-            })
-        });
-    let always = if unknown_instance {
+    let unknown_instance =
+        unknown_instance_answer(ir, command).is_some_and(|answer| answer.name == outcome.name);
+    let always: Vec<&'a str> = if unknown_instance {
         Vec::new()
     } else {
         written
@@ -5280,9 +5315,15 @@ fn error_fields<'a>(
             .map(|(name, _)| *name)
             .collect()
     };
+    let kinds = written
+        .iter()
+        .filter(|(name, _)| always.contains(name))
+        .filter_map(|(name, type_ref)| Some((*name, json_kind(ir, type_ref)?)))
+        .collect();
     ErrorFields {
         written,
         always,
+        kinds,
         unknown_instance,
     }
 }
@@ -5313,8 +5354,12 @@ enum Fields<'a> {
     /// One error always writes this field, by wire name and with a type that is not `Optional`,
     /// that the other never writes: the wire tells the two bodies apart.
     Deciding(&'a str),
+    /// Both errors always write this field, with values of different JSON types: no body is an
+    /// answer of both, and the binding still tells errors apart by which fields they write, not by
+    /// a field's type.
+    Typed(&'a str),
     /// The fields differ, and no always-written field decides: an answer without an optional
-    /// field, or in either type, fits both bodies.
+    /// field, or with a value both types hold, fits both bodies.
     Undecided,
 }
 
@@ -5333,9 +5378,13 @@ fn fields_of<'a>(one: &ErrorFields<'a>, two: &ErrorFields<'a>) -> Fields<'a> {
             .find(|name| !other.written.iter().any(|(written, _)| written == *name))
             .copied()
     };
-    deciding(one, two)
-        .or_else(|| deciding(two, one))
-        .map_or(Fields::Undecided, Fields::Deciding)
+    if let Some(field) = deciding(one, two).or_else(|| deciding(two, one)) {
+        return Fields::Deciding(field);
+    }
+    one.kinds
+        .iter()
+        .find(|(name, kind)| two.kinds.get(*name).is_some_and(|other| other != *kind))
+        .map_or(Fields::Undecided, |(name, _)| Fields::Typed(name))
 }
 
 /// The forms that validate as written for two errors of one wire name whose fields differ and no
@@ -5350,6 +5399,24 @@ const FIELD_FORMS: &str = "one error with the optional field, reported by both o
 const NO_DECIDING_FIELD: &str =
     "their fields differ and no field one error always writes is one the other never writes, so a \
      body one of them answers can be one the other answers";
+
+/// What both refusals state of a pair that both write one field, with values of different JSON
+/// types.
+fn same_field_other_type(field: &str) -> String {
+    format!(
+        "both write `{field}`, with values of different JSON types, so no body is an answer of \
+         both; the binding tells errors apart by which fields they write, not by a field's type"
+    )
+}
+
+/// The forms that validate as written for such a pair: with `alike:` only the first does.
+fn type_forms(field: &str) -> String {
+    format!(
+        "one error whose `{field}` has the type of the other's, reported by both outcomes, under \
+         `alike:`; or, with the `alike:` group dropped, a field one error always writes that the \
+         other never writes, distinct error wire names, or `envelope`"
+    )
+}
 
 /// A clause for a refusal of a pair where an outcome is the unknown-instance answer of its
 /// command (`error_fields`), which writes none of its error's fields; empty otherwise.
@@ -5406,6 +5473,19 @@ fn errors_apart(
                      beside the member, and one error always writes `{field}`, which the other \
                      never writes, so the wire tells them apart",
                     one.name, two.name, answer.status, answer.body,
+                ));
+            }
+            Fields::Typed(field) => {
+                return Some(format!(
+                    "`{}` and `{}` answer `{}` with `{}`, which writes each error's own fields \
+                     beside the member, and {}, so they are not one answer; the forms that \
+                     validate are {}",
+                    one.name,
+                    two.name,
+                    answer.status,
+                    answer.body,
+                    same_field_other_type(field),
+                    type_forms(field),
                 ));
             }
             Fields::Undecided => {
@@ -6548,14 +6628,10 @@ fn distinguishable(
         let mut group = vec![name];
         group.extend(others.iter().map(|other| other.0));
         reported.push(group);
-        let fields = undecided_fields(this, &others);
-        let clashing: Vec<String> = others
-            .into_iter()
-            .map(|other| format!("`{}` ({})", other.0, declared.how(other)))
-            .collect();
-        if clashing.is_empty() {
+        if others.is_empty() {
             continue;
         }
+        let (clashing, fields) = clash_text(declared, this, &others);
         let under = if at == errors_at {
             ", under `errors`,"
         } else {
@@ -6565,51 +6641,101 @@ fn distinguishable(
             "ESS-HTTP-025",
             at,
             format!(
-                "outcome `{name}` of {operation}{under} answers `{}` with `{}`, and so does {}, \
-                 with a body a reader cannot tell apart; two outcomes on one status are told \
-                 apart by two `envelope` bodies, by `{{<member>: error}}` on one member with \
-                 distinct error wire names or with one error always writing a field the other \
-                 never writes, or by two redirects, one always writing a parameter the other \
-                 never writes or both writing one parameter from `error.wire` with distinct \
-                 error wire names{fields}",
-                this.1,
-                this.2,
-                clashing.join(", ")
+                "outcome `{name}` of {operation}{under} answers `{}` with `{}`, and so does \
+                 {clashing}; two outcomes on one status are told apart by two `envelope` bodies, \
+                 by `{{<member>: error}}` on one member with distinct error wire names or with \
+                 one error always writing a field the other never writes, or by two redirects, \
+                 one always writing a parameter the other never writes or both writing one \
+                 parameter from `error.wire` with distinct error wire names{fields}",
+                this.1, this.2,
             ),
         );
     }
     overridden(operation, declared, &counted, standard, path, refusals);
 }
 
-/// What a refusal of `this` adds for the `others` it clashes with whose error objects write other
-/// fields than `this` one's, of one error wire name, none always written by one and never by the
-/// other ([`Fields::Undecided`]): the fact and the forms that validate, or nothing.
-fn undecided_fields(this: &Counted<'_>, others: &[&Counted<'_>]) -> String {
-    let undecided: Vec<&&Counted<'_>> = others
+/// What the status refusal of `this` says of the `others` it clashes with: who they are, and the
+/// fact about those that clash only by their error fields (`field_clash`) with the forms that
+/// validate. The sentence that a reader cannot tell the bodies apart is said only of the others
+/// that clash by anything else, where it is true.
+fn clash_text(
+    declared: &Declared<'_>,
+    this: &Counted<'_>,
+    others: &[&Counted<'_>],
+) -> (String, String) {
+    let (by_fields, plain): (Vec<&&Counted<'_>>, Vec<&&Counted<'_>>) = others
         .iter()
-        .filter(|other| match (&this.2, &other.2) {
-            (Body::Error { member: one }, Body::Error { member: two }) => {
-                one == two && this.3 == other.3 && fields_of(&this.5, &other.5) == Fields::Undecided
-            }
-            _ => false,
-        })
-        .collect();
-    if undecided.is_empty() {
-        return String::new();
+        .partition(|other| field_clash(this, other).is_some());
+    let who = |list: &[&&Counted<'_>]| {
+        list.iter()
+            .map(|other| format!("`{}` ({})", other.0, declared.how(other)))
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+    let mut parts = Vec::new();
+    if !plain.is_empty() {
+        parts.push(format!(
+            "{}, with a body a reader cannot tell apart",
+            who(&plain)
+        ));
     }
-    let names: Vec<String> = undecided
+    if !by_fields.is_empty() {
+        parts.push(who(&by_fields));
+    }
+    (parts.join(", and so does "), field_facts(this, &by_fields))
+}
+
+/// How `other` clashes with `this` by error fields alone: both are `{<member>: error}` on one
+/// member of one error wire name, and [`fields_of`] finds the fields differ without one error
+/// always writing a field the other never writes ([`Fields::Undecided`] and [`Fields::Typed`]).
+fn field_clash<'a>(this: &Counted<'a>, other: &Counted<'a>) -> Option<Fields<'a>> {
+    match (&this.2, &other.2) {
+        (Body::Error { member: one }, Body::Error { member: two })
+            if one == two && this.3 == other.3 =>
+        {
+            Some(fields_of(&this.5, &other.5))
+                .filter(|fields| matches!(fields, Fields::Undecided | Fields::Typed(_)))
+        }
+        _ => None,
+    }
+}
+
+/// What a refusal of `this` adds for the `others` it clashes with by error fields alone: the fact
+/// and the forms that validate, or nothing.
+fn field_facts(this: &Counted<'_>, others: &[&&Counted<'_>]) -> String {
+    let undecided: Vec<&&&Counted<'_>> = others
         .iter()
-        .map(|other| format!("`{}`", other.0))
+        .filter(|other| field_clash(this, other) == Some(Fields::Undecided))
         .collect();
-    let mut fields = vec![(this.0, &this.5)];
-    fields.extend(undecided.iter().map(|other| (other.0, &other.5)));
-    format!(
-        "; the errors of `{}` and {} write one wire name, and {NO_DECIDING_FIELD}{}; the forms \
-         that validate are {FIELD_FORMS}",
-        this.0,
-        names.join(", "),
-        unknown_instance_clause(&fields)
-    )
+    let mut facts: Vec<String> = Vec::new();
+    if !undecided.is_empty() {
+        let names: Vec<String> = undecided
+            .iter()
+            .map(|other| format!("`{}`", other.0))
+            .collect();
+        let mut fields = vec![(this.0, &this.5)];
+        fields.extend(undecided.iter().map(|other| (other.0, &other.5)));
+        facts.push(format!(
+            "; the errors of `{}` and {} write one wire name, and {NO_DECIDING_FIELD}{}; the \
+             forms that validate are {FIELD_FORMS}",
+            this.0,
+            names.join(", "),
+            unknown_instance_clause(&fields)
+        ));
+    }
+    for other in others {
+        if let Some(Fields::Typed(field)) = field_clash(this, other) {
+            facts.push(format!(
+                "; the errors of `{}` and `{}` write one wire name, and {}; the forms that \
+                 validate are {}",
+                this.0,
+                other.0,
+                same_field_other_type(field),
+                type_forms(field)
+            ));
+        }
+    }
+    facts.concat()
 }
 
 /// Every outcome [`distinguishable`] counts: its name, status, body, error wire name and redirect
