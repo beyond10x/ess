@@ -19,6 +19,8 @@ use ess_synth::{synthesize_for, Synthesis, Target};
 
 #[path = "invariant_check/adversary_struct_invariants_pass1.rs"]
 mod adversary_struct_invariants_pass1;
+#[path = "invariant_check/distinct_invariants.rs"]
+mod distinct_invariants;
 #[path = "invariant_check/struct_invariants.rs"]
 mod struct_invariants;
 #[path = "invariant_check/value_constraints.rs"]

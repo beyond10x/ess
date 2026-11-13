@@ -279,7 +279,9 @@ fn adv_go_decoder_holds_struct_invariants_wherever_the_struct_sits() {
 }
 
 /// Acceptance: a struct invariant the target cannot check fails synthesis for that target, naming
-/// the struct and the invariant. `distinct` is refused by both lanes for an entity invariant.
+/// the struct and the invariant. An offset (`low + 5`) is read by neither lane; `distinct` was the
+/// invariant here until both decoders checked it
+/// (`story:generated-rust-and-go-decoders-check-a-structs-distinct-invariant`).
 #[test]
 fn adv_a_struct_invariant_no_target_checks_refuses_both_targets_by_name() {
     let model = "format: ess/22
@@ -290,9 +292,10 @@ types:
   - name: probe.range.Bag
     kind: struct
     fields:
-      - {name: tags, type: List<String>}
+      - {name: low, type: Integer}
+      - {name: high, type: Integer}
     invariants:
-      - {distinct: {in: tags, as: tag}}
+      - high <= low + 5
 events:
   - name: probe.range.BagSet
     fields: [{name: note, type: String}]
@@ -316,11 +319,11 @@ components:
     for target in [Target::Rust, Target::Go] {
         let refused = synthesize_for(&ir(model), target)
             .err()
-            .unwrap_or_else(|| panic!("{target:?}: a distinct struct invariant is refused"));
+            .unwrap_or_else(|| panic!("{target:?}: an offset struct invariant is refused"));
         let rendered = format!("{refused:?}");
         assert!(
             rendered.contains("types.probe.range.Bag.invariants.0")
-                && rendered.contains("requires distinct list members"),
+                && rendered.contains("moves a fact by a constant"),
             "{target:?}: {rendered}"
         );
     }
