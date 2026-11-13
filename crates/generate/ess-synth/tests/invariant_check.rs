@@ -17,6 +17,8 @@ use ess_compiler::{resolve::compile, source::SourceMap, EssIr};
 use ess_domain::{spec::RawSpecFile, system::Source, Specification};
 use ess_synth::{synthesize_for, Synthesis, Target};
 
+#[path = "invariant_check/adversary_distinct_pass1.rs"]
+mod adversary_distinct_pass1;
 #[path = "invariant_check/adversary_struct_invariants_pass1.rs"]
 mod adversary_struct_invariants_pass1;
 #[path = "invariant_check/distinct_invariants.rs"]

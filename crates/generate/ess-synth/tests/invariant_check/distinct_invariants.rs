@@ -7,9 +7,9 @@
 //! distinct list members"): numbers exactly, an instant by the instant it names, text exactly, an
 //! absent `Optional` key unknown and so never a duplicate.
 //!
-//! The model has the reporter's shape: six structs and nine `distinct:` invariants, with and
-//! without `by:`, over a scalar list, a text member, an enum member and an `Optional` member, and a
-//! list nested in a struct of a list.
+//! The model has the reported shape: six structs that each declare `distinct:`, nine invariants in
+//! all and one struct with four, with and without `by:`, over a scalar list, a text member, an enum
+//! member and an `Optional` member, and a list nested in a struct of a list.
 
 use super::{cargo, ir, scratch, write};
 use ess_compiler::ir::ResolvedBody;
@@ -24,15 +24,23 @@ domain: probe.range
 types:
   - {name: probe.range.Tag, kind: newtype, of: String}
   - {name: probe.range.Level, kind: enum, variants: [Low, High]}
-  - name: probe.range.Labels
+  - name: probe.range.Tags
     kind: struct
     fields:
       - {name: tags, type: 'List<String>'}
-      - {name: stamps, type: 'List<Timestamp>'}
-      - {name: amounts, type: 'List<Decimal>'}
     invariants:
       - {distinct: {in: tags, as: tag}}
+  - name: probe.range.Stamps
+    kind: struct
+    fields:
+      - {name: stamps, type: 'List<Timestamp>'}
+    invariants:
       - {distinct: {in: stamps, as: stamp}}
+  - name: probe.range.Amounts
+    kind: struct
+    fields:
+      - {name: amounts, type: 'List<Decimal>'}
+    invariants:
       - {distinct: {in: amounts, as: amount}}
   - name: probe.range.Levels
     kind: struct
@@ -46,6 +54,7 @@ types:
       - {name: name, type: probe.range.Tag}
       - {name: level, type: probe.range.Level}
       - {name: note, type: 'Optional<String>'}
+      - {name: label, type: String}
   - name: probe.range.Registry
     kind: struct
     fields:
@@ -54,6 +63,7 @@ types:
       - {distinct: {in: entries, as: entry, by: entry.name}}
       - {distinct: {in: entries, as: entry, by: entry.level}}
       - {distinct: {in: entries, as: entry, by: entry.note}}
+      - {distinct: {in: entries, as: entry, by: entry.label}}
   - name: probe.range.Group
     kind: struct
     fields:
@@ -64,7 +74,6 @@ types:
     fields:
       - {name: groups, type: 'List<probe.range.Group>'}
     invariants:
-      - {distinct: {in: groups, as: group, by: group.name}}
       - forall: {in: groups, as: group, that: {distinct: {in: group.items, as: item}}}
 events:
   - name: probe.range.AllSet
@@ -72,7 +81,9 @@ events:
 commands:
   - name: probe.range.SetAll
     input:
-      - {name: labels, type: probe.range.Labels}
+      - {name: tags, type: probe.range.Tags}
+      - {name: stamps, type: probe.range.Stamps}
+      - {name: amounts, type: probe.range.Amounts}
       - {name: levels, type: probe.range.Levels}
       - {name: registry, type: probe.range.Registry}
       - {name: catalog, type: probe.range.Catalog}
@@ -93,15 +104,13 @@ components:
 /// A value every invariant holds for: no two elements of any list share a key.
 fn base() -> Value {
     json!({
-        "labels": {
-            "tags": ["a", "b"],
-            "stamps": ["2020-01-01T00:00:00Z", "2020-01-01T01:00:00Z"],
-            "amounts": ["1", "2"],
-        },
+        "tags": {"tags": ["a", "b"]},
+        "stamps": {"stamps": ["2020-01-01T00:00:00Z", "2020-01-01T01:00:00Z"]},
+        "amounts": {"amounts": ["1", "2"]},
         "levels": {"levels": ["Low", "High"]},
         "registry": {"entries": [
-            {"name": "a", "level": "Low", "note": "x"},
-            {"name": "b", "level": "High", "note": "y"},
+            {"name": "a", "level": "Low", "note": "x", "label": "p"},
+            {"name": "b", "level": "High", "note": "y", "label": "q"},
         ]},
         "note": "x",
         "catalog": {"groups": [
@@ -138,37 +147,37 @@ fn scalar_cases() -> Vec<Case> {
         ("a value with no repeated key", base(), None),
         (
             "a repeated scalar",
-            with(&|v| v["labels"]["tags"] = json!(["a", "a"])),
-            Some(("labels", "Labels", 0)),
+            with(&|v| v["tags"]["tags"] = json!(["a", "a"])),
+            Some(("tags", "Tags", 0)),
         ),
         (
             "text keys differing in case are two keys",
-            with(&|v| v["labels"]["tags"] = json!(["a", "A"])),
+            with(&|v| v["tags"]["tags"] = json!(["a", "A"])),
             None,
         ),
         (
             "one instant in two spellings",
             with(&|v| {
-                v["labels"]["stamps"] =
+                v["stamps"]["stamps"] =
                     json!(["2020-01-01T00:00:00Z", "2019-12-31T19:00:00-05:00"]);
             }),
-            Some(("labels", "Labels", 1)),
+            Some(("stamps", "Stamps", 0)),
         ),
         (
             "text spelling two instants stays two keys",
             with(&|v| {
-                v["labels"]["stamps"] = json!(["2020-01-01T00:00:00Z", "2020-01-01T00:00:01Z"]);
+                v["stamps"]["stamps"] = json!(["2020-01-01T00:00:00Z", "2020-01-01T00:00:01Z"]);
             }),
             None,
         ),
         (
             "one decimal in two spellings",
-            with(&|v| v["labels"]["amounts"] = json!(["1", "1.0"])),
-            Some(("labels", "Labels", 2)),
+            with(&|v| v["amounts"]["amounts"] = json!(["1", "1.0"])),
+            Some(("amounts", "Amounts", 0)),
         ),
         (
             "two decimals that differ",
-            with(&|v| v["labels"]["amounts"] = json!(["1", "10"])),
+            with(&|v| v["amounts"]["amounts"] = json!(["1", "10"])),
             None,
         ),
         (
@@ -226,7 +235,7 @@ fn member_cases() -> Vec<Case> {
             with(&|v| {
                 let entries = v["registry"]["entries"].as_array_mut().unwrap();
                 entries[0].as_object_mut().unwrap().remove("note");
-                entries.push(json!({"name": "c", "level": "Low", "note": "z"}));
+                entries.push(json!({"name": "c", "level": "Low", "note": "z", "label": "r"}));
             }),
             Some(("registry", "Registry", 1)),
         ),
@@ -239,14 +248,14 @@ fn member_cases() -> Vec<Case> {
             Some(("registry", "Registry", 0)),
         ),
         (
-            "a repeated member of a list of structs",
-            with(&|v| v["catalog"]["groups"][1]["name"] = json!("g1")),
-            Some(("catalog", "Catalog", 0)),
+            "a repeated member, a plain text",
+            with(&|v| v["registry"]["entries"][1]["label"] = json!("p")),
+            Some(("registry", "Registry", 3)),
         ),
         (
             "a repeated element of a list nested in a list of structs",
             with(&|v| v["catalog"]["groups"][1]["items"] = json!([3, 3])),
-            Some(("catalog", "Catalog", 1)),
+            Some(("catalog", "Catalog", 0)),
         ),
         (
             "the same elements in two different nested lists",
@@ -256,8 +265,8 @@ fn member_cases() -> Vec<Case> {
         (
             "empty and one-element lists hold",
             with(&|v| {
-                v["labels"]["tags"] = json!([]);
-                v["labels"]["stamps"] = json!(["2020-01-01T00:00:00Z"]);
+                v["tags"]["tags"] = json!([]);
+                v["stamps"]["stamps"] = json!(["2020-01-01T00:00:00Z"]);
                 v["levels"]["levels"] = json!([]);
                 v["registry"]["entries"] = json!([]);
                 v["catalog"]["groups"] = json!([{"name": "g", "items": []}]);
@@ -346,20 +355,26 @@ func TestDistinctInvariants(t *testing.T) {
 "#;
 
 #[test]
-fn the_reporters_shape_is_six_structs_and_nine_distinct_invariants() {
+fn the_reported_shape_is_six_structs_and_nine_distinct_invariants() {
     let model = ir(MODEL);
-    let mut structs = 0;
-    let mut distinct = 0;
+    let mut each = Vec::new();
     for declared in model.types().values() {
         if let ResolvedBody::Struct { invariants, .. } = &declared.body {
-            structs += 1;
-            distinct += invariants
+            let reading = invariants
                 .iter()
                 .filter(|invariant| invariant.predicate.reads_distinct())
                 .count();
+            if reading > 0 {
+                each.push(reading);
+            }
         }
     }
-    assert_eq!((structs, distinct), (6, 9));
+    each.sort_unstable();
+    assert_eq!(
+        (each.len(), each.iter().sum::<usize>(), each.last().copied()),
+        (6, 9, Some(4)),
+        "the structs that declare distinct:, by how many"
+    );
 }
 
 /// A workspace 0.93.0 generated generates again, for both targets.
