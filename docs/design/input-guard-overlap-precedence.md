@@ -311,6 +311,55 @@ checked. `tests/enum_presence_guard.rs` runs the check over every `examples/` an
 every single-document `.yaml` fixture under a crate's `tests/fixtures/` that compiles (79), and none
 carries such a step.
 
+### Two refusals of the stored row (beyond10x/ess#472)
+
+```yaml
+outcomes:
+  - name: empty
+    when_subject: {predicate: quantity <= 0}
+    error: demo.order.Empty
+  - name: locked
+    when_subject: {predicate: locked == true}
+    error: demo.order.Locked
+```
+
+A row holding `{quantity: 0, locked: true}` satisfies both. The two answer in one precedence step,
+the held state and the subject's stored fields, so the rule is the one above: **the first declared
+whose predicate holds answers**, here `empty`. Synthesis holds a target to it on every format, as it
+does for two input refusals:
+
+1. **The first-declared refusal is sent again on a row both predicates hold on**
+   (`subject_fact::declared_overlaps`): for each later `when_subject:` refusal of the command, a
+   row and an input both stored predicates hold on and `Order::FirstDeclared` selects the first
+   refusal on. The row is arranged and the command sent after the refusal's own assertions, in its
+   own `…/outcome/<first>` scenario, requiring the refusal and its error, and the row is observed
+   unchanged. For the model above that is `Place` sent `{quantity: 0, locked: true}` and `Ship`
+   required to answer `empty`, so a target answering `locked` first fails.
+   Before this a pair was witnessed only from `ess/27`; below it, no row was sent and the order
+   went unchecked.
+   The row is found on any state, one no move of the command starts from included
+   (`Order::Overlap`): a stored refusal that holds on a revoked token answers before `wrong_state:`
+   does, so `client_id != input.client_id` before `state == Revoked` is sent a revoked token by
+   another client.
+2. **A pair no row can satisfy is skipped, and a pair no bounded row and input holds together is
+   noted.** Two predicates over equalities, inequalities and number bounds of stored fields that
+   no row holds together (`discount == 1` beside `discount == 2`, `quantity < 0` beside
+   `quantity > 10`, `disjoint_on_rows`) overlap nowhere, so there is nothing to send and nothing to
+   note. Where every row the search
+   arranges satisfies one predicate and not the other, the scenario of the first refusal carries a
+   `Note::UnwitnessedOverlap` naming `first` and `other` (gap `Unreached`). With `Place` storing the
+   literal `locked: false`, only a `Ship` of a row with `quantity > 0` stores `locked: true`, so no
+   row holds both.
+3. **`mutate --class precedence-swap` has the site** (`mutate::precedence_sites`): two adjacent
+   `when_subject:` refusals, each with an `error:` and nothing else deciding it, are a pair, and
+   the mutant swaps their declarations. A pair no row can satisfy is `equivalent`, as an input pair
+   no input selects together is. A pair some row can satisfy that no bounded row reaches is the
+   mutant whose suite asks the target what the baseline's does, scored `unwitnessed`, not
+   `survived`.
+
+No scenario id is added and no format changes. A suite of a model with such a pair gains the
+overlap send.
+
 ## Entity Runtime
 
 Entity Runtime selects the first branch whose guard holds. The lowering in
