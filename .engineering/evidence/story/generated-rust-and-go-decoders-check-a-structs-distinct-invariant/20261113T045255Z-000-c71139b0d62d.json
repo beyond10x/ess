@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-13T04:52:55Z",
+  "actor": "human:timo",
+  "artifact": "story:generated-rust-and-go-decoders-check-a-structs-distinct-invariant",
+  "kind": "story",
+  "revision": 4,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "PR 789 CI on 7eefa3cb7d (20 test shards, Checks, Gate)",
+    "reference": "https://github.com/beyond10x/ess/actions/runs/43359032118"
+  }
+}

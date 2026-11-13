@@ -14,7 +14,7 @@ tags:
 relations:
 - serves: vision:O2
 - decomposes: epic:zero-open-issues-2026-11
-revision: 4
+revision: 5
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-12T22:38:41Z", actor: "human:timo", revision: 3, executor: "agent:b10x", correlation: "operator-2026-11-12-d8"}
 - {from: "proposed", to: "active", at: "2026-11-12T22:38:43Z", actor: "human:timo", revision: 4, executor: "agent:b10x", correlation: "operator-2026-11-12-d8"}
@@ -93,3 +93,14 @@ gave that day for decisions that are low risk or easy to revert. Reason given: a
 shipped behaviour, reproduced on the 0.94.0 release binary; an accepted story can be moved back.
 The two transitions carry the correlation `operator-2026-11-12-d8` and the executor `agent:b10x`. No
 review-result exists for this draft, so no `review_outcome` record was written.
+
+**Delivered in part (2026-11-13), the story stays active.** PR 789 (merge `83f0996f4d`, CI run
+43359032118) carries acceptances 1, 3, 4, 5 and 6 and the first sentence of acceptance 2: both
+targets generate the model with each `distinct:` form, and one decoder test per form refuses a
+duplicate and admits a distinct list. The last sentence of acceptance 2 ("The generated servers
+pass the model's conformance suite, value-invariant scenarios included") is not met: the
+repository has no harness that runs an arbitrary model's generated server against its suite, and
+no text of the change claims such a run. That clause is the draft
+`story:the-generated-servers-of-a-distinct-model-pass-its-conformance-suite`. This story moves to
+implemented when that run exists, or when the operator rules that the clause leaves this story's
+acceptance and lives in the draft alone; an acceptance the operator accepted is not narrowed here.
