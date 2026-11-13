@@ -439,8 +439,8 @@ is `text`. An adopter asked for a token endpoint that answers a bare string
   an order or a field's type, is not told apart by the rule, in either form: without `alike:` the
   two share a status, and with it the group is refused. The refusal states what the rule checked
   (the fields differ, and no field one error always writes is one the other never writes) and the
-  forms that validate as written, and makes no claim about what a body can hold: one error with
-  the optional field, reported by both outcomes, under `alike:`; or, with the `alike:` group
+  forms that validate as written, and makes no claim about what a body can hold: one error
+  reported by both outcomes, under `alike:`; or, with the `alike:` group
   dropped, a field one error always writes that the other never writes, distinct error wire names,
   or `envelope`. Where both always write one field and its values are of JSON types that have no
   value in common (a string against a number, an object against an array), the refusal says that,
@@ -448,9 +448,9 @@ is `text`. An adopter asked for a token endpoint that answers a bare string
   field's type; the check follows newtypes and reads a union, `Json` and `Optional` as no one
   type, and it is only that sentence that depends on it. A pair of identical fields is refused
   without `alike:` and admitted with it. The status refusal says a reader cannot tell the bodies
-  apart only of outcomes whose answers are the same (one body, both or neither a redirect); of an
-  `envelope` beside an error object, or of a pair whose fields differ, it names the outcomes
-  without that sentence.
+  apart only of outcomes whose answers are the same: the same body form, the same `encoding` and
+  both or neither a redirect; of an `envelope` beside an error object, of a `text` answer beside a
+  `json` one, or of a pair whose fields differ, it names the outcomes without that sentence.
 
 A command route may declare outcomes the service answers the same way `alike`: a list of groups,
 each of two or more of the command's outcome names, such as `alike: [[fetched, inline]]`. Each

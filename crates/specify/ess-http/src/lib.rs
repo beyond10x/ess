@@ -5391,8 +5391,8 @@ fn fields_of<'a>(one: &ErrorFields<'a>, two: &ErrorFields<'a>) -> Fields<'a> {
 /// The forms that validate as written for two errors of one wire name whose fields differ and no
 /// always-written field decides, as both refusals of such a pair name them. Under `alike:` only
 /// the first does: a group of such a pair is refused, so the others apply with the group dropped.
-const FIELD_FORMS: &str = "one error with the optional field, reported by both outcomes, under \
-                           `alike:`; or, with the `alike:` group dropped, a field one error \
+const FIELD_FORMS: &str = "one error reported by both outcomes, under `alike:`; or, with \
+                           the `alike:` group dropped, a field one error \
                            always writes that the other never writes, distinct error wire names, \
                            or `envelope`";
 
@@ -6442,8 +6442,8 @@ fn outcome_redirect(
 }
 
 /// An outcome as `ESS-HTTP-025` counts it: its name, status, body, error wire name, the parameter
-/// names its redirect writes, if it declares one, and the fields its error writes beside the
-/// member of an error object (`error_fields`).
+/// names its redirect writes, if it declares one, the fields its error writes beside the
+/// member of an error object (`error_fields`), and how its body is written.
 type Counted<'a> = (
     &'a str,
     u16,
@@ -6451,6 +6451,7 @@ type Counted<'a> = (
     Option<&'a str>,
     Option<Written<'a>>,
     ErrorFields<'a>,
+    ResponseEncoding,
 );
 
 /// The parameter names a redirect writes (`ESS-HTTP-025`): `always` those whose source is never
@@ -6691,11 +6692,13 @@ fn clash_text(
 }
 
 /// Whether `other` answers as `this` does, so that no reader can tell a body of one from a body
-/// of the other: the same body, and either both a redirect or neither. An answer that differs in
-/// body (an `envelope` beside `{<member>: error}`, `none` beside a member) or that is a redirect
-/// beside one that is not is a clash the rule refuses, which does not say no reader can tell.
+/// of the other: the same body form, the same `encoding`, and either both a redirect or neither.
+/// An answer that differs in body form (an `envelope` beside `{<member>: error}`, `none` beside a
+/// member), in `encoding` (`text` beside `json` of one field: `n1` as `text/plain` against `"n1"`
+/// as `application/json`) or that is a redirect beside one that is not is a clash the rule
+/// refuses, which does not say no reader can tell.
 fn same_answer(this: &Counted<'_>, other: &Counted<'_>) -> bool {
-    this.2 == other.2 && this.4.is_some() == other.4.is_some()
+    this.2 == other.2 && this.6 == other.6 && this.4.is_some() == other.4.is_some()
 }
 
 /// How `other` clashes with `this` by error fields alone: both are `{<member>: error}` on one
@@ -6790,6 +6793,7 @@ fn counted<'a>(
                 wire,
                 redirect,
                 error_fields(ir, command, outcome),
+                answer.encoding,
             ));
         } else if !listed_names.contains(name) && !declared.covered.contains(&name) {
             let derived = status::outcome_status(ir, outcome)
@@ -6802,6 +6806,7 @@ fn counted<'a>(
                 wire,
                 None,
                 error_fields(ir, command, outcome),
+                ResponseEncoding::default(),
             ));
         }
     }

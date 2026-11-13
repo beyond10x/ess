@@ -21,9 +21,10 @@ const UNDECIDED: &str =
     "their fields differ and no field one error always writes is one the other never writes";
 
 /// The forms that validate as written, as both refusals of such a pair name them.
-const FORMS: &str = "one error with the optional field, reported by both outcomes, under \
-                     `alike:`; or, with the `alike:` group dropped, a field one error always \
-                     writes that the other never writes, distinct error wire names, or `envelope`";
+const FORMS: &str =
+    "one error reported by both outcomes, under `alike:`; or, with the `alike:` group \
+                     dropped, a field one error always writes that the other never writes, \
+                     distinct error wire names, or `envelope`";
 
 /// `notes.yaml` with `negative` reporting an error of wire name `refused` with the fields `first`
 /// and `blank` one of the same wire name with the fields `second`, each a list of `{name, type}`
@@ -323,7 +324,7 @@ fn each_form_the_refusals_name_validates_when_applied() {
     ] {
         assert!(text.contains(FORMS), "{text}");
     }
-    // One error with the optional field, reported by both outcomes, under `alike:`.
+    // One error reported by both outcomes, under `alike:`.
     let one_error = model(&[MESSAGE, optional], &[MESSAGE, optional]);
     let result = bound(&one_error, true);
     assert_eq!(located(&result), [], "{}", worded(&result));
