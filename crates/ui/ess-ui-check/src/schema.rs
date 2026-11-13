@@ -174,6 +174,47 @@ pub(crate) fn expression_forms() -> &'static Vec<String> {
     })
 }
 
+/// `true` when the schema declares a construct called `name`.
+pub(crate) fn is_construct(name: &str) -> bool {
+    construct_names().contains(name)
+}
+
+/// The field tables a mapping written as construct `name` is read with: the construct's own, and
+/// — for a mapping that names its kind inline — those of the composite (`component`, one of
+/// `Composite.union.members`, or a widget, whose use is a `WidgetInstance`) or primitive
+/// (`primitive`) it stands for, each with the name of the construct it belongs to.
+pub(crate) fn field_tables(
+    name: &str,
+    mapping: &ess_yaml::Mapping,
+) -> Vec<(String, &'static ess_yaml::Mapping)> {
+    let constructs = &schema()["constructs"];
+    let members = strings(&constructs["Composite"]["union"]["members"]);
+    let kinds = strings(&constructs["Primitive"]["fields"]["primitive"]["type"]["enum"]);
+    let mut owners = vec![name.to_owned()];
+    if let Some(component) = mapping.get("component").and_then(Value::as_str) {
+        owners.push("Composite".to_owned());
+        owners.push(if members.iter().any(|member| member == component) {
+            component.to_owned()
+        } else {
+            "WidgetInstance".to_owned()
+        });
+    }
+    if let Some(kind) = mapping.get("primitive").and_then(Value::as_str) {
+        if kinds.iter().any(|known| known == kind) {
+            owners.push("Primitive".to_owned());
+            owners.push(kind.to_owned());
+        }
+    }
+    owners.dedup();
+    owners
+        .into_iter()
+        .filter_map(|owner| {
+            let fields = constructs[owner.as_str()]["fields"].as_mapping()?;
+            Some((owner, fields))
+        })
+        .collect()
+}
+
 /// `unmapped_marker.accepted_by.types`: the primitive type names (`string`, `expr`, …) and the
 /// constructors (`enum` for `{enum: …}`, `ref` for `{ref: …}`) that accept the marker.
 pub(crate) struct MarkerAccepted {

@@ -1755,7 +1755,7 @@ checks:
     - {id: shell_refs,          subject: "pages.*.shell", must_resolve: {ref: shell}, severity: error}
     - {id: page_outlet,         subject: "shells.* a page renders in", must: have_a_region_of_kind_page_outlet, severity: error}
     - {id: channel_refs,        subject: ["**.live.channel", "**.header.live[]", "channel.<name> inside expr"], must_resolve: {ref: channel}, severity: error}
-    - {id: section_refs,        subject: ["**.header.total", "**.header.filters", "**.depends_on", "pages.*.layout.columns[].sections[]", "pages.*.layout.areas.place.*[]"], must_resolve_in: [page.sections], severity: error}
+    - {id: section_refs,        subject: ["**.header.total", "**.header.filters", "**.depends_on", "pages.*.layout.columns[].sections[]", "pages.*.layout.areas.place.*[]", "section.<name>.<member> inside expr"], must_resolve_in: [page.sections, expressions.forms], severity: error}
     - {id: layout_complete,     subject: "pages.*.layout", must: place_every_section_once, severity: warning}
     - {id: widget_expands,      subject: "**.component naming a widget", must: [resolve_widget, required_args_present, args_match_param_types, no_recursion], then: check_expanded_body, severity: error}
     - {id: primitive_props,     subject: "**.primitive", must: props_of_kind_only, severity: error}
@@ -1794,3 +1794,5 @@ checks:
     - {id: host_slots, subject: "**.host", must: [carry_a_non_empty_reason, name_what_it_stands_in_for, be_the_only_slot_of_its_host_name, carry_neither_component_nor_primitive], severity: error}
     - {id: hosts_registered, subject: "**.host, for every name ess ui check --hosts lists", must_resolve_in: ["**.host"], severity: error}
     - {id: board_widget_kinds, subject: "**.board.reads fixture rows", must: have_a_widget_by_field_that_names_an_entry_of_widgets, severity: warning}
+    - {id: expr_paths, subject: ["state.<name> inside expr", "params.<name> inside expr", "shell.<name> inside expr"], must_resolve_in: ["the state, parameters and shell state in scope where the expression stands"], severity: error}
+    - {id: expr_roots, subject: "dotted word inside expr", must: begin_with_a_root_of_expressions.forms_or_be_quoted, severity: warning}
