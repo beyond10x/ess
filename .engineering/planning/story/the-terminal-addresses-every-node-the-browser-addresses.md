@@ -26,7 +26,7 @@ scope:
   path: crates/ui/ess-ui-tui/src/view.rs
 - confidence: inferred
   path: website/docs/reference/ess-ui-test.md
-revision: 6
+revision: 7
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-10T00:48:16Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"review_outcome":1}}}
 - {from: "proposed", to: "active", at: "2026-11-10T00:48:17Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":1}}}
@@ -63,6 +63,19 @@ failed  item 18a ... expect at pages/orders.board/sections/board/rows/w-1: no no
 failed  item 19 ... expect at pages/orders.list/sections/list/rows/o-1/columns/c10: ... the terminal does not draw this node on cells of its own
 ```
 
+A further node of the same class, from a consumer's UI document (2026-11-13, reproduced on ess
+0.94.0): a node of a collection's `item`. With `style: cards` and
+`item: [{name: tile, component: tile, args: {title: row.title}}]` (a widget whose body is one text),
+the terminal draws the tile's text in the row's line, so `expect: {at: …/sections/list/rows/r1,
+text: request-one}` passes, but the tile itself cannot be addressed:
+
+```
+failed ... expect at pages/requests.inbox/sections/list/rows/r1/item/tile: ... the terminal does not draw this node on cells of its own, so its text cannot be told from its neighbours'; expect text at the row, section, overlay or page instead
+```
+
+A tile with several body nodes cannot be tested node by node headless, and two tiles' texts in one
+row cannot be told apart.
+
 ## Acceptance
 
 Journey tests in `crates/ui/ess-ui-test/tests/`, each red on 0.92.0:
@@ -78,6 +91,9 @@ Journey tests in `crates/ui/ess-ui-test/tests/`, each red on 0.92.0:
   at `…/rows/<key>/columns/<last>` reads its value. The test file needs no key for it.
 - Every node the terminal still does not address is refused by one parity rule with one reason in
   both renderers, never by `no node at` for a path the document declares.
+- With a collection whose `item` holds a widget instance, `expect: {at: …/rows/<key>/item/<name>,
+  text: …}` reads that item's text only, and a node of the widget's body is addressed below it as
+  the React project addresses it by `data-ui-path`.
 
 ## Scope
 
