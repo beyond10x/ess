@@ -136,11 +136,13 @@ fn creates(scenario: &ConformanceScenario) -> Vec<Create> {
 }
 
 /// Whether `sent` holds the overlap: a blank site and two items of one name, requiring `missing`.
+/// Where the list holds more than two, the repeat is the decisive one: first and last, with an
+/// item of another name between them.
 fn sends_overlap(sent: &[Create]) -> bool {
     sent.iter().any(|(site, items, outcome, error)| {
         site == "\"\""
-            && items.len() == 2
-            && items[0] == items[1]
+            && items.len() >= 2
+            && items[0] == items[items.len() - 1]
             && items[0] != "-"
             && outcome.as_deref() == Some("missing")
             && error.as_deref() == Some("demo.cfg.Missing")
@@ -215,20 +217,18 @@ fn distinct_and_count_swaps_are_killed() {
     }
 }
 
-/// `duplicate` read the other way: it holds of three or more items with distinct flags, which a
-/// `Boolean` key cannot supply, so no input lies in its overlap with `missing`.
-fn boolean_key_model() -> String {
-    MODEL
-        .replace("name: demo.cfg.Item\n    kind: struct\n    fields:\n      - {name: name, type: String}", "name: demo.cfg.Item\n    kind: struct\n    fields:\n      - {name: flag, type: Boolean}")
-        .replace(
-            DISTINCT_GUARD,
-            "{all: [{distinct: {in: items, as: i, by: i.flag}}, \"items.count > 2\"]}",
-        )
+/// `duplicate` with a count bound above the longest list a witness is built with: the overlap with
+/// `missing` is not empty, and no candidate reaches it.
+fn unreached_model(duplicate: &str) -> String {
+    MODEL.replace(
+        DISTINCT_GUARD,
+        &format!("{{all: [\"items.count > 5000\", {duplicate}]}}"),
+    )
 }
 
 #[test]
 fn distinct_overlap_no_candidate_reaches_is_noted() {
-    let result = synthesis(&boolean_key_model());
+    let result = synthesis(&unreached_model(DISTINCT_GUARD));
     let noted: Vec<(String, String)> = result
         .notes
         .iter()
@@ -250,8 +250,36 @@ fn distinct_overlap_no_candidate_reaches_is_noted() {
     );
 }
 
+/// A pair with an unreached overlap and no `distinct` guard is not noted: only a pair where a guard
+/// reads a `distinct` is, so this case fails where that filter is removed.
 #[test]
-fn models_without_a_distinct_guard_gain_no_note() {
-    let result = synthesis(&count_model());
+fn an_unreached_pair_without_a_distinct_guard_gains_no_note() {
+    let result = synthesis(&unreached_model("\"defined(items)\""));
     assert_eq!(unwitnessed(&result), Vec::<&Note>::new());
+}
+
+/// A pair whose other guard bounds the list's count below two has an empty overlap with a
+/// duplicate, which takes two elements: no note, whichever way the bound is written.
+#[test]
+fn an_empty_distinct_overlap_is_not_noted() {
+    for bound in [
+        "items.count < 2",
+        "items.count <= 1",
+        "items.count == 0",
+        "items.count == 1",
+    ] {
+        let model = MODEL.replace(
+            "      - name: duplicate\n",
+            &format!(
+                "      - name: single\n        when: {{all: [\"defined(items)\", \"{bound}\"]}}\n        error: demo.cfg.Missing\n      - name: duplicate\n"
+            ),
+        );
+        let result = synthesis(&model);
+        assert_eq!(
+            unwitnessed(&result),
+            Vec::<&Note>::new(),
+            "{bound}: {:#?}",
+            result.notes
+        );
+    }
 }

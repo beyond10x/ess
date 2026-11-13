@@ -327,6 +327,53 @@ pub fn candidates_between(
         .map(|(inputs, between, _)| between.then_some(inputs))
 }
 
+/// Whether `guards` hold together of no input because one requires a list that is not `distinct`
+/// (a duplicate, which takes two elements) and another requires its `.count` below two: `count < 2`,
+/// `count <= 1`, `count == 0`, `count == 1`, each read as a conjunct. Anything less plain answers
+/// `false`, which a caller reads as "not shown".
+pub(crate) fn duplicate_capped_below_two(guards: &[&Predicate]) -> bool {
+    fn conjuncts<'p>(predicate: &'p Predicate, found: &mut Vec<&'p Predicate>) {
+        match predicate {
+            Predicate::All(children) => children.iter().for_each(|child| conjuncts(child, found)),
+            other => found.push(other),
+        }
+    }
+    /// Whether `conjunct` bounds the count at `count` below two.
+    fn caps(conjunct: &Predicate, count: &FactPath) -> bool {
+        let Predicate::Compare {
+            left, op, right, ..
+        } = conjunct
+        else {
+            return false;
+        };
+        let (Operand::Fact(read), Operand::Literal(value)) = (left, right) else {
+            return false;
+        };
+        let Some(value) = value.as_number().map(Number::get).filter(|_| read == count) else {
+            return false;
+        };
+        match *op {
+            CompareOp::Lt => value <= 2.0,
+            CompareOp::Le | CompareOp::Eq => value < 2.0,
+            CompareOp::Ne | CompareOp::Gt | CompareOp::Ge => false,
+        }
+    }
+    let mut found = Vec::new();
+    for guard in guards {
+        conjuncts(guard, &mut found);
+    }
+    found.iter().any(|conjunct| {
+        let Predicate::Not(inner) = conjunct else {
+            return false;
+        };
+        let Predicate::Distinct(distinct) = &**inner else {
+            return false;
+        };
+        let count = distinct.over.child("count");
+        found.iter().any(|other| caps(other, &count))
+    })
+}
+
 /// Whether the candidates for `guards` try a value in every region the guards' literals divide each
 /// leaf into, in every combination: then no candidate deciding two guards together means no input
 /// does, and an overlap nothing reached is shown empty rather than merely unreached.
@@ -4531,10 +4578,7 @@ fn count_ladders(
         }
         ladders.insert(path, ladder);
     }
-    let read_by_distinct: Vec<FactPath> = keyed_lists(builder, guards)
-        .into_iter()
-        .map(|list| list.path)
-        .collect();
+    let read_by_distinct = keyed_lists(builder, guards);
     for path in &builder.lists {
         // One element first, as unit A1 built it; length 0 is the base `[]`.
         let mut ladder = vec![Choice::Elements(1)];
@@ -4544,11 +4588,21 @@ fn count_ladders(
                 ladder.push(choice);
             }
         }
-        // A list a `distinct` reads is also tried with two elements, which are copies of one
-        // another and so hold the same key: the duplicate that lies in the same candidate as the
-        // other guards' ladders, which [`decisive_first`]'s lists, shaped over the base, do not.
-        if read_by_distinct.contains(path) && !ladder.contains(&Choice::Elements(2)) {
-            ladder.push(Choice::Elements(2));
+        // A list a `distinct` reads is also tried as the duplicate [`decisive_first`] builds —
+        // three elements, the last repeating the first one's key, at each length a guard's
+        // `.count` of it requires as well — so a candidate that holds the duplicate also holds the
+        // values the other guards' ladders choose, which `decisive_first`'s lists, shaped over the
+        // base, do not.
+        if let Some(list) = read_by_distinct.iter().find(|list| &list.path == path) {
+            for held in std::iter::once(3).chain(list.required.iter().copied()) {
+                let choice = Choice::Keyed(Keyed {
+                    held,
+                    repeat: Some(list.repeat.clone()),
+                });
+                if !ladder.contains(&choice) {
+                    ladder.push(choice);
+                }
+            }
         }
         ladders.insert(path.clone(), ladder);
     }

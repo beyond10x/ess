@@ -19699,8 +19699,11 @@ fn unwitnessed_overlaps(ir: &EssIr, suite: &ConformanceSuite) -> Vec<Note> {
                 }
                 let gap = if overlap_witness(ir, command, &overlap, &[], |_| true).is_some() {
                     OverlapGap::Unsent
-                } else if crate::witness::exhausts(ir, command, &overlap.searched()) {
-                    // Every region was tried and none lies in both: the overlap is empty.
+                } else if crate::witness::exhausts(ir, command, &overlap.searched())
+                    || crate::witness::duplicate_capped_below_two(&overlap.both)
+                {
+                    // Every region was tried and none lies in both, or one guard asks for a
+                    // duplicate and the other for fewer than two elements: the overlap is empty.
                     continue;
                 } else {
                     OverlapGap::Unreached
