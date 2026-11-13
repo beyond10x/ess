@@ -15,7 +15,7 @@ relations:
 - informed_by: story:a-success-beside-two-related-rows-held-to-one-input-is-witnessed
 - informed_by: story:caller-attributes-are-readable-in-a-when-related-predicate
 - informed_by: story:a-related-selector-compares-a-row-field-with-a-subject-field
-revision: 2
+revision: 3
 ---
 ## Need
 
@@ -72,3 +72,8 @@ Owed. This draft records the need and a probe only. It is an external request an
 specification language: the seven questions of
 `.agents/skills/assessing-external-requests/SKILL.md` are answered here, and the operator decides
 before the story is accepted.
+
+## Before acceptance (2026-11-13)
+
+This story asks for a new construct of the language. It stays a draft until a design note with the
+syntax has been put to the operator; nothing of it is built before that.

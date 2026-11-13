@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:the-one-row-check-decides-a-filtered-view-from-the-replayed-row
 kind: story
-status: draft
+status: active
 title: The one-row check decides a filtered view from the replayed row
 summary: 'Which views carry the one-row snapshot is decided from the steps'' bindings: a filtered view that would show the called row is left out, and a model with only a filtered identity view loses the reported shape''s scenario (third review pass, backlog)'
 tags:
@@ -15,7 +15,10 @@ tags:
 relations:
 - serves: vision:O2
 - informed_by: story:the-one-row-check-reads-the-instance-its-scenario-bound
-revision: 1
+revision: 3
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-13T11:02:42Z", actor: "agent:operator-delegate", revision: 2}
+- {from: "proposed", to: "active", at: "2026-11-13T11:02:42Z", actor: "agent:operator-delegate", revision: 3}
 ---
 ## Finding
 
