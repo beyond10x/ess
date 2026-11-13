@@ -14,7 +14,7 @@
 //! parameter into an `expr` position outside the arguments of a call (directly or through another
 //! widget it hands it to); where it lands in text alone, or in a call's arguments, the word is what
 //! is shown or a command name. An argument may also name state the widget's body declares around
-//! the node that reads the parameter. A page kind's nested nodes take the kind they restate or
+//! every read of the parameter. A page kind's nested nodes take the kind they restate or
 //! inherit from the kinds it extends.
 //! The row filter of a read is left to `filter_expr`, `filter_roots` and `filter_paths`, which
 //! hold it to the same scope.
@@ -57,6 +57,7 @@ pub(crate) fn run(text: &str, document: &Document, sink: &mut Sink) {
         gathering: true,
         in_expr: BTreeMap::new(),
         declares: BTreeMap::new(),
+        direct: BTreeMap::new(),
         forwards: Vec::new(),
         around: Vec::new(),
         learning: None,
@@ -124,10 +125,13 @@ struct Walker<'a> {
     /// By widget, the parameters its declaration reads inside an `expr` position
     /// (`text: args.who`): an argument for one is an expression where it stands.
     in_expr: BTreeMap<String, BTreeSet<String>>,
-    /// By widget and parameter, the state its body declares on a node that reads the parameter or
-    /// on a node around one: an argument may name it, since it is substituted in where it is
-    /// declared.
+    /// By widget and parameter, the state its body declares around every read of the parameter,
+    /// on the node that reads it or on one around it: an argument may name it, since it is
+    /// substituted in where it is declared. A state around one read alone does not resolve at
+    /// the others. A parameter with no read has none.
     declares: BTreeMap<(String, String), BTreeSet<String>>,
+    /// The same over the reads written directly in an `expr` position, before the hand-ons.
+    direct: BTreeMap<(String, String), BTreeSet<String>>,
     /// A declaration that hands its parameter on as the argument of another widget.
     forwards: Vec<Forward>,
     /// The state declared by the nodes the walk is inside of, outermost first.
@@ -416,10 +420,10 @@ impl Walker<'_> {
             let outside = reading.outside.contains(path);
             match site {
                 Site::Field => {
-                    self.declares
+                    self.direct
                         .entry((widget.clone(), param.to_owned()))
-                        .or_default()
-                        .extend(around.iter().cloned());
+                        .and_modify(|held| held.retain(|state| around.contains(state)))
+                        .or_insert_with(|| around.clone());
                     if outside {
                         self.in_expr
                             .entry(widget.clone())
@@ -444,8 +448,10 @@ impl Walker<'_> {
     }
 
     /// Carries `in_expr` and `declares` through the declarations that hand a parameter on to
-    /// another widget.
+    /// another widget. A hand-on is a read too: the state around it together with what the inner
+    /// widget's parameter has. `declares` only shrinks from the first value a read gives it.
     fn settle(&mut self) {
+        self.declares = self.direct.clone();
         loop {
             let mut grew = false;
             for forward in std::mem::take(&mut self.forwards) {
@@ -463,20 +469,23 @@ impl Walker<'_> {
                 {
                     grew = true;
                 }
-                let mut states = forward.around.clone();
+                // An inner parameter nothing reads (yet) gives the hand-on no read to hold.
                 if let Some(inner) = self
                     .declares
                     .get(&(forward.inner.clone(), forward.inner_param.clone()))
                 {
+                    let mut states = forward.around.clone();
                     states.extend(inner.iter().cloned());
+                    let own = (forward.widget.clone(), forward.param.clone());
+                    if let Some(held) = self.declares.get_mut(&own) {
+                        let before = held.len();
+                        held.retain(|state| states.contains(state));
+                        grew |= held.len() != before;
+                    } else {
+                        self.declares.insert(own, states);
+                        grew = true;
+                    }
                 }
-                let own = self
-                    .declares
-                    .entry((forward.widget.clone(), forward.param.clone()))
-                    .or_default();
-                let before = own.len();
-                own.extend(states);
-                grew |= own.len() != before;
                 self.forwards.push(forward);
             }
             if !grew {

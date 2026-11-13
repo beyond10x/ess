@@ -373,7 +373,7 @@ fn state_is_placed_where_its_store_says() {
 /// sets from the invite link) is kept in session storage, and a component state (`logo_url`,
 /// which an image only reads) in memory, each through the document's placement defaults.
 #[test]
-fn the_examples_client_written_shell_states_are_placed_in_the_browser() {
+fn the_examples_draft_is_in_session_storage_and_its_component_state_in_memory() {
     let (_, files) = generate_example("shell-client-state");
     let app = file(&files, "src/shells/AppShell.tsx");
     assert!(
