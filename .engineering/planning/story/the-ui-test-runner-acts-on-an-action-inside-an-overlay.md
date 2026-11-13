@@ -29,7 +29,7 @@ scope:
   path: crates/ui/ess-ui-tui/src/view.rs
 - confidence: inferred
   path: website/docs/reference/ess-ui-test.md
-revision: 8
+revision: 9
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-07T21:42:29Z", actor: "human:timo", revision: 2}
 - {from: "proposed", to: "active", at: "2026-11-07T21:42:29Z", actor: "human:timo", revision: 3}
@@ -146,3 +146,39 @@ filed elsewhere.
 ## Source
 
 github:beyond10x/ess#722
+
+## Reported cases (2026-11-13)
+
+From a consumer's UI document, second collected report, reproduced on ess 0.94.0 with a document of
+our own. Recorded here because the case is this story's class; the acceptance above or below is
+not changed by this section, and the proposed line is taken up when the story is scoped.
+
+Item 6, the `actions` of a collection that is a section's body. The terminal does not draw them and
+the runner cannot run them, whatever the action does (`navigate`, `does`, `opens` tried):
+
+```
+failed ... expect at pages/requests.inbox: expected "Open the first" at pages/requests.inbox; it shows: ...
+failed ... act pages/requests.inbox/sections/list/actions/first: ... the section does not offer Open the first
+```
+
+(`actions: [{name: first, navigate: {to: requests.detail, params: {id: r1}}, label: Open the first}]`
+on the section's collection.) The same action in the page's `header.actions` is drawn and runs.
+This story lists the `actions` of a collection that is an overlay's body; a section's collection
+is the same gap one level up.
+
+Item 7, the action of an empty state. With no rows the terminal draws the message and the action's
+label, and no key runs it:
+
+```
+Nothing waits
+[Open the first]
+failed ... act pages/requests.inbox/sections/list/states/empty/action: ... the section does not offer Open the first
+```
+
+(`states: {empty: {message: Nothing waits, action: {name: first, navigate: {…}, label: Open the first}}}`,
+the view answered with `rows: []`; `…/states/empty/action/first` and `…/empty/action` are
+`no node at <path>`.)
+
+Proposed acceptance lines: a section's collection draws its `actions` with a key each, and `act`
+at `…/sections/<s>/actions/<a>` runs one; an empty state's action has a key, and `act` at
+`…/sections/<s>/states/empty/action` runs it.

@@ -14,7 +14,7 @@ relations:
 - serves: vision:O2
 - decomposes: epic:ess-ui-renderer-neutral-ui
 - depends_on: story:a-sections-first-row-is-a-binding-in-the-reference-and-both-renderers-or-in-neither
-revision: 7
+revision: 8
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-12T21:27:16Z", actor: "human:timo", revision: 3, executor: "agent:b10x", correlation: "operator-2026-11-12-accept-16"}
 - {from: "proposed", to: "active", at: "2026-11-12T21:27:17Z", actor: "human:timo", revision: 4, executor: "agent:b10x", correlation: "operator-2026-11-12-accept-16"}
@@ -166,3 +166,17 @@ Source read at main `582524ae95`; probes on the 0.94.0 release binary, 2026-11-1
    under listed roots, a warning for a dotted word that reads no path. (d) An error for an unknown
    root only at sites that take a path and no text: I don't know which sites the model types that
    way; not taken.
+
+## Reported cases (2026-11-13)
+
+From a consumer's UI document, second collected report, reproduced on ess 0.94.0 with a document of
+our own. Recorded here because the case is this story's class; the acceptance above or below is
+not changed by this section, and the proposed line is taken up when the story is scoped.
+
+Item 2, a guard's params. The shell guard
+`{name: forward, when: url.query.go, then: {redirect: requests.detail, params: {id: row.id}}}`
+checks with `0 error(s), 0 warning(s)` under `--model`. A guard runs before a page opens and has no
+row; the reference gives a guard's condition the roots actor, url and page.
+
+Proposed acceptance line: a `row.`, `selection.`, `draft.` or `section.` path in a guard's `when`
+or in its `then.params` or `then.set` is an error naming the roots a guard may read.
