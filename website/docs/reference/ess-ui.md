@@ -63,6 +63,7 @@ Expressions connect a node to state and data. They are short paths plus a few op
 | `selection.<field>` | the selected row(s) of the section |
 | `draft.<field>` | the unsaved input of the enclosing form |
 | `section.<name>.selection` | another section's selection |
+| `section.<name>.row` | the first row of a section that reads, as `header.title_from` reads it; absent while the section loads, when it is empty, and for a section without a read |
 | `channel.<name>.<field>` | a named field of a channel |
 | `shell.<name>` | shell state |
 | `url.query.<name>` | a query parameter (guards only) |

@@ -174,7 +174,7 @@ export interface SectionInfo {
   selection?: unknown;
   /** The section's title: what a header's count counts. */
   title?: string;
-  /** The first row, reported by the section a header title reads its record from. */
+  /** The first row of a section that reads: `section.<name>.row`, and the record a header title reads. Absent while the section loads, when it is empty, and for a section without a read. */
   row?: unknown;
 }
 
@@ -287,7 +287,7 @@ export function PageFrame(props: {
     setSections((previous) => {
       const merged: SectionInfo = { ...previous[name] };
       for (const [key, value] of Object.entries(info) as [keyof SectionInfo, unknown][]) {
-        if (value !== undefined) {
+        if (value !== undefined || key === "row") {
           (merged as Record<string, unknown>)[key] = value;
         }
       }
@@ -489,8 +489,6 @@ export function SectionFrame(props: {
   profile?: string;
   /** The host slot the section is: the `host` its component is registered under. */
   host?: string;
-  /** The page header's title reads this section's record: report its first row. */
-  reportsRow?: boolean;
 //+collapse
   /** The section starts closed under its title; its body stays mounted, hidden. */
   collapsed?: boolean;
@@ -528,7 +526,7 @@ export function SectionFrame(props: {
 //+collapse
   }, [load, active, onActivate, open]);
 //-collapse
-  useReport(props.name, { total: data?.total, params: data?.params, title: props.title, row: props.reportsRow ? data?.rows[0] : undefined });
+  useReport(props.name, { total: data?.total, params: data?.params, title: props.title, row: data?.rows[0] });
   const mark = data?.stale ? states.stale?.mark ?? "badge" : undefined;
 //+collapse
   const bodyId = `${props["data-ui-path"]}#body`;

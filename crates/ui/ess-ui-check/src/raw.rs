@@ -14,6 +14,8 @@ use ess_ui::{Document, NodePath};
 use ess_yaml::Value;
 
 use crate::schema::{self, is_unmapped_marker};
+use crate::section_row;
+use crate::Model;
 use crate::Sink;
 
 /// Keys whose string values are prose for a reader, never an expression.
@@ -38,12 +40,13 @@ const PROSE: &[&str] = &[
     "transport_today",
 ];
 
-pub(crate) fn run(text: &str, document: &Document, sink: &mut Sink) {
+pub(crate) fn run(text: &str, document: &Document, model: Option<&Model>, sink: &mut Sink) {
     let Ok(value) = ess_yaml::from_str::<Value>(text) else {
         return;
     };
     let walker = Walker {
         document,
+        model,
         nodes: document
             .nodes()
             .into_iter()
@@ -55,6 +58,7 @@ pub(crate) fn run(text: &str, document: &Document, sink: &mut Sink) {
 
 struct Walker<'a> {
     document: &'a Document,
+    model: Option<&'a Model>,
     nodes: BTreeSet<NodePath>,
 }
 
@@ -140,6 +144,52 @@ impl Walker<'_> {
                 at,
                 format!("`channel.{name}` names no channel"),
             );
+        }
+        self.section_rows(text, at, sink);
+    }
+
+    /// `section_row`, and with a model `row_fields`: each `section.<name>.row` an expression of a
+    /// page reads names a section of that page that reads, and its `<field>` a key the rows of
+    /// that read carry. A name that is no section of the page is not this check's to report.
+    fn section_rows(&self, text: &str, at: &NodePath, sink: &mut Sink) {
+        let [pages, page, ..] = at.segments() else {
+            return; // a page kind or a widget declaration: the page it reaches is not known here
+        };
+        let Some(page) = (pages == "pages")
+            .then(|| self.document.pages.get(page))
+            .flatten()
+        else {
+            return;
+        };
+        for path in section_row::row_paths(text) {
+            let Some(section) = page.sections.iter().find(|s| s.name == path.section) else {
+                continue;
+            };
+            let Some(reads) = section.body.reads() else {
+                self.report(
+                    sink,
+                    "section_row",
+                    at,
+                    format!(
+                        "`section.{0}.row` reads the first row of section `{0}`, which reads \
+                         nothing, so it holds none",
+                        path.section
+                    ),
+                );
+                continue;
+            };
+            let problem = self
+                .model
+                .zip(path.field)
+                .and_then(|(model, field)| model.section_row_problem(reads, field));
+            if let Some(problem) = problem {
+                self.report(
+                    sink,
+                    "row_fields",
+                    at,
+                    format!("`section.{}.row`: {problem}", path.section),
+                );
+            }
         }
     }
 }

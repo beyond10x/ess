@@ -186,7 +186,10 @@ fn fnv(text: &str) -> u64 {
 /// story:each-row-and-each-waiting-read-draws-what-the-document-declares: `core.tsx` judges a
 /// row-reading `visible:` per row and draws a waiting read's empty state, and the collection,
 /// record and board composites follow it; at the merge with the wide-table change both causes
-/// move it, and it is pinned at the merged tree.
+/// move it, and it is pinned at the merged tree. The whole-project digest re-pinned for
+/// story:a-sections-first-row-is-a-binding-in-the-reference-and-both-renderers-or-in-neither:
+/// `core.tsx` reports the first row of every section that reads (`reportsRow` is gone); no file of
+/// the pins above changes.
 const PLAIN: [(&str, u64); 7] = [
     ("README.md", 0xdae6_c3b6_7e5c_2d28),
     ("src/main.tsx", 0x939b_2ed0_a001_98c5),
@@ -196,7 +199,7 @@ const PLAIN: [(&str, u64); 7] = [
     ("src/runtime/data.ts", 0x1d12_0466_1213_7ea5),
     ("www/index.html", 0x5972_6d4a_5ee2_5ce2),
 ];
-const PLAIN_PROJECT: u64 = 0x432e_1a81_28fc_b997;
+const PLAIN_PROJECT: u64 = 0xb38b_f47a_969d_6c83;
 
 #[test]
 fn without_a_model_the_project_is_byte_identical() {

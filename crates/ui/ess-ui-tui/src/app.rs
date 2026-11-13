@@ -4605,8 +4605,29 @@ impl Resolve for Scope<'_> {
                     }
                     _ => None,
                 };
+                // `row`: the first row of a section that reads, as the header's title reads it,
+                // absent while the section loads, when it is empty and where it reads nothing.
+                // Its own params may read the row too: a section already being resolved sees
+                // none, as with `selection`.
+                let row = if segments.get(1) != Some(&"row")
+                    || section.body.reads().is_none()
+                    || app.waiting(section)
+                    || app
+                        .resolving
+                        .borrow()
+                        .iter()
+                        .any(|open| open.as_str() == *name)
+                {
+                    None
+                } else {
+                    app.resolving.borrow_mut().push((*name).to_owned());
+                    let first = app.rows(name).into_iter().next();
+                    app.resolving.borrow_mut().pop();
+                    first
+                };
                 let mut value = Mapping::new();
                 value.insert("selection".into(), selection.unwrap_or(Value::Null));
+                value.insert("row".into(), row.unwrap_or(Value::Null));
                 Resolved::Whole(expr::walk(&Value::Mapping(value), &segments[1..]))
             }
             "url" => {
