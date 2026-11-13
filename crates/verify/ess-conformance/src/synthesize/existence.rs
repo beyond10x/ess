@@ -27,10 +27,10 @@ use super::{
     clipped, created, insert, is_input_guarded_refusal, not_emitted, reach, shows, subject_fact,
     supply, ActorRef, Arrangement, AssertionStyle, BTreeMap, BTreeSet, CommandRef,
     ConformanceScenario, ConformanceSuite, Distinction, EntityRef, ErrorRef, EssIr, EssSemanticRef,
-    Focus, InstanceNeed, Node, OutcomeRef, QualifiedName, Refusal, RefusalCause, ResolvedCommand,
-    ResolvedCondition, ResolvedEffect, ResolvedInstance, ResolvedOutcome, ResolvedSubject,
-    ResolvedView, Run, ScenarioId, ScenarioStep, ScenarioValue, Setup, Unreachable, ViewRef,
-    FRESH_WITNESSES,
+    Focus, InstanceName, InstanceNeed, Node, OutcomeRef, QualifiedName, Refusal, RefusalCause,
+    ResolvedCommand, ResolvedCondition, ResolvedEffect, ResolvedInstance, ResolvedOutcome,
+    ResolvedSubject, ResolvedView, Run, ScenarioId, ScenarioStep, ScenarioValue, Setup,
+    Unreachable, ViewRef, FRESH_WITNESSES,
 };
 
 /// `true` for the creating half of create-or-update: a `creates:` branch marked
@@ -1553,6 +1553,30 @@ fn one_row_view(ir: &EssIr, view: &ResolvedView, run: &Run) -> bool {
             }))
 }
 
+/// The instance the scenario's last call of `command` addresses with the identity `updating` names:
+/// the row its second call updates, under the name the scenario's own steps bound it.
+fn called_instance(
+    steps: &[ScenarioStep],
+    command: &ResolvedCommand,
+    updating: &ResolvedOutcome,
+) -> Option<InstanceName> {
+    let ResolvedInstance::Supplied { field } = &updating.subject.as_ref()?.instance else {
+        return None;
+    };
+    let command = CommandRef::new(command.name.clone());
+    steps.iter().rev().find_map(|step| match step {
+        ScenarioStep::ExecuteCommand {
+            command: called,
+            input,
+            ..
+        } if *called == command => match input.get(field.name.as_str()) {
+            Some(ScenarioValue::Instance { instance }) => Some(instance.clone()),
+            _ => None,
+        },
+        _ => None,
+    })
+}
+
 /// Adds to the updating branch's own scenario that exactly one row carries the identity after the
 /// second call: a snapshot selects exactly one row or fails, so an implementation that stored a
 /// second row for the identity rather than updating the first is caught even where it answered the
@@ -1585,8 +1609,9 @@ fn one_row(
     if candidates.is_empty() {
         return;
     }
-    // The run the scenario was built from, again: synthesis is deterministic, so this is the row
-    // the scenario's second call leaves, and the instance its arrangement bound.
+    // The run the scenario was built from, again, for the state and fields the row is left with.
+    // The instance is not read from it: the scenario was built under the names its earlier runs
+    // bound, which this run does not know, so it may name the row differently.
     let Ok(run) = super::run_as(models, command, updating, actors, super::Witness::Full) else {
         return;
     };
@@ -1595,7 +1620,12 @@ fn one_row(
         .copied()
         .filter(|view| one_row_view(ir, view, &run))
         .collect();
-    let Some(instance) = run.instance.clone().filter(|_| !usable.is_empty()) else {
+    let steps = &suite.scenarios[&id].steps;
+    let bound = super::bound_instances(steps);
+    let Some(instance) = called_instance(steps, command, updating)
+        .filter(|named| bound.contains(named))
+        .filter(|_| !usable.is_empty())
+    else {
         suite.scenarios.remove(&id);
         refusals.push(Refusal::about(
             &id,
