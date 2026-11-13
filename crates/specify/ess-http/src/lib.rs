@@ -3094,7 +3094,7 @@ impl Refusals {
 /// | `ESS-HTTP-022` | at `routes[i].outcomes.<name>`: a key that is not the local name of an outcome of the command, or one listed twice; at `routes[i].outcomes`: `outcomes` on a view; at `routes[i].errors`: `errors` on a view, or on a command none of whose outcomes reports an error without being listed under `outcomes`; at `routes[i].alike`: `alike` on a view, a group of fewer than two names, a name that is not the local name of an outcome of the command, one in two groups or twice in one, or one with no declared answer (neither listed under `outcomes` nor covered by `errors`) |
 /// | `ESS-HTTP-023` | at `routes[i].outcomes.<name>.status`, or `routes[i].errors.status` once for each outcome `errors` covers: a status outside `100..=599`, a `1xx`, a `3xx` other than `301`, `302`, `303`, `307` and `308`, a `2xx` on an outcome with an error, or a `4xx` or `5xx` on one without |
 /// | `ESS-HTTP-024` | at `routes[i].outcomes.<name>.body`, or `routes[i].errors.body` once for each outcome `errors` covers: a word no body form spells, `response` or `response.<field>` on an outcome without `returns: true` or with an error, `response.<field>` naming no field of the response or an `Optional` one, `input.<field>`, `error.<field>` or `error.wire` as a body, `{<member>: error}` on one without an error, under an empty `<member>` or one equal to the wire name of a field of the error, a literal body, `rows`, `array` or `single`, or any body but `none` on `204` when that status compiled, or beside a `redirect` on a redirect status; at `routes[i].body`: `body` on a command, a body other than `rows`, `array` and `single` on a view, or `single` or `array` on a paged view; at `routes[i].outcomes.<name>.encoding`, or `routes[i].errors.encoding` once for each outcome `errors` covers: a word other than `json` and `text`, or `text` beside any body but `response.<field>` or on a field that is not a `String` (a newtype of one counts) |
-/// | `ESS-HTTP-025` | at `routes[i].outcomes.<name>`, or `routes[i].errors` for an outcome `errors` covers: two outcomes of the command on one status whose bodies do not tell them apart (both `envelope`, or both `{<member>: error}` on one member with distinct error wire names, do) and whose redirects do not either (both declare one and one always writes a parameter, its source not `Optional`, the other never writes, do), an outcome `errors` covers counted at the status and body of `errors`, any other the route does not list at its derived status ([`status::outcome_status`]) with `envelope`. Reported once, at the first listed outcome in document order, then the first covered one in declaration order, naming the others and the status; a pair already named together is not reported again, and an outcome left with none is not reported; at `refusals.<key>`: an override on a route the binding names, on the status of an outcome of its command, whose body does not tell the two apart (only `{<member>: {literal: <text>}}` beside `{<member>: error}` on one member, the text differing from the error's wire name, does), once per route, naming the route, the outcomes and the status; at `routes[i].refusals.<key>`: the same for a route's own override, which stands on that route in place of the binding's; two outcomes in one `alike` group are not a pair; at `routes[i].alike`: a group whose answers differ (the first differing key among `status`, `body`, `encoding`, `headers` and `redirect` named), or that the wire tells apart: `envelope` bodies, `{<member>: error}` bodies under distinct error wire names or over errors whose fields differ (wire name, type or order), a header or challenge param reading `error.wire` under distinct error wire names, or redirects one of which always writes a parameter the other never does |
+/// | `ESS-HTTP-025` | at `routes[i].outcomes.<name>`, or `routes[i].errors` for an outcome `errors` covers: two outcomes of the command on one status whose bodies do not tell them apart (both `envelope`, or both `{<member>: error}` on one member with distinct error wire names, or with one wire name and one error always writing a field, its type not `Optional`, that the other never writes, do; one function decides the field rule for this check and for `alike`) and whose redirects do not either (both declare one and one always writes a parameter, its source not `Optional`, the other never writes, do), an outcome `errors` covers counted at the status and body of `errors`, any other the route does not list at its derived status ([`status::outcome_status`]) with `envelope`. Reported once, at the first listed outcome in document order, then the first covered one in declaration order, naming the others and the status; a pair already named together is not reported again, and an outcome left with none is not reported; at `refusals.<key>`: an override on a route the binding names, on the status of an outcome of its command, whose body does not tell the two apart (only `{<member>: {literal: <text>}}` beside `{<member>: error}` on one member, the text differing from the error's wire name, does), once per route, naming the route, the outcomes and the status; at `routes[i].refusals.<key>`: the same for a route's own override, which stands on that route in place of the binding's; two outcomes in one `alike` group are not a pair; at `routes[i].alike`: a group whose answers differ (the first differing key among `status`, `body`, `encoding`, `headers` and `redirect` named), or that the wire tells apart: `envelope` bodies, `{<member>: error}` bodies under distinct error wire names or over errors one of which always writes a field the other never writes (the message names the field), or that are not one answer, the fields of the errors differing otherwise (in an optional field, a type or an order), a header or challenge param reading `error.wire` under distinct error wire names, or redirects one of which always writes a parameter the other never does |
 /// | `ESS-HTTP-026` | at `routes[i].outcomes.<name>.headers.<Name>`, `routes[i].errors.headers.<Name>` (once for each outcome `errors` covers), `refusals.<key>.headers.<Name>` or `routes[i].refusals.<key>.headers.<Name>`: a name that is not an RFC 9110 token; `Content-Type`, `Content-Length`, `Transfer-Encoding` or `Location` in any case, which the encoding and `redirect` write; a name declared again ignoring case; a literal that is not a field value (visible US-ASCII, spaces and tabs, no space or tab at either end); a source outside `input.<field>`, `response.<field>`, `error.<field>` and `error.wire`, naming no field, naming one of a type other than a scalar or an `Optional` scalar, or one the outcome cannot supply (`response.` without `returns: true`, `error.` without an error), or `error.wire` where the error declares a field named `wire`; any source in a standard refusal's header. At `….challenge.params.<param>`: the same source refusals for a sourced challenge param |
 /// | `ESS-HTTP-027` | at `….headers.<Name>`: a challenge under any header but `WWW-Authenticate`; at `….challenge.scheme`: a scheme that is not a token; at `….challenge.params.<param>`: a param name that is not a token, one declared again ignoring case, or a literal a quoted string cannot carry; at `….headers`: an outcome or standard refusal on `401` without a `WWW-Authenticate` challenge (one refused for its scheme or params counts as declared) |
 /// | `ESS-HTTP-028` | at `routes[i].outcomes.<name>.redirect` or `routes[i].errors.redirect` (once for each outcome `errors` covers): a `redirect` on a compiled status other than `301`, `302`, `303`, `307` and `308`, or one of those without a `redirect`; at `….redirect.location`: a source the outcome cannot supply (as for `ESS-HTTP-026`), or of a type other than `String` or a newtype of `String`, `Optional` included; at `….redirect.mode`: none, or one outside `query` and `fragment`; at `….redirect.parameters.<name>`: a parameter written twice, or a source refused as a header source is |
@@ -5105,7 +5105,8 @@ fn outcomes(
 /// covered by `errors` (`ESS-HTTP-022`); and in each group one answer the wire cannot tell apart
 /// (`ESS-HTTP-025`): the same status, body, encoding, headers and redirect, never `envelope`,
 /// whose `outcome` member names the outcome, never `{<member>: error}` under two error wire names
-/// or over errors whose fields differ, never a header reading `error.wire` under two error wire
+/// or over errors whose fields differ (one always writing a field the other never writes, or
+/// differing otherwise, [`fields_of`]), never a header reading `error.wire` under two error wire
 /// names, and never redirects whose parameters tell them apart. A member whose declared answer was
 /// refused is refused for that alone. Every refusal is at `routes[i].alike`, one per name or per
 /// group. Returns the groups as compiled IR writes them: names in name order, groups ordered by
@@ -5238,8 +5239,58 @@ fn error_members<'a>(
     })
 }
 
+/// What the fields two errors of one wire name write beside the member of `{<member>: error}` say
+/// of the two bodies (`ESS-HTTP-025`).
+#[derive(Debug, PartialEq, Eq)]
+enum Fields<'a> {
+    /// The same fields, in the same order.
+    Same,
+    /// One error always writes this field, by wire name and with a type that is not `Optional`,
+    /// that the other never writes: the wire tells the two bodies apart.
+    Deciding(&'a str),
+    /// The fields differ, and no always-written field decides: an answer without an optional
+    /// field, or in either type, fits both bodies.
+    Undecided,
+}
+
+/// The one rule that decides whether the wire tells two `{<member>: error}` bodies of one error
+/// wire name apart by the fields of their errors (`error_members`): one error always writes a
+/// field that the other never writes. The status check ([`distinguishable`]) and the `alike` check
+/// ([`errors_apart`]) both call it.
+fn fields_of<'a>(
+    one: &[(&'a str, &'a ResolvedTypeRef)],
+    two: &[(&'a str, &'a ResolvedTypeRef)],
+) -> Fields<'a> {
+    if one == two {
+        return Fields::Same;
+    }
+    let deciding = |writes: &[(&'a str, &'a ResolvedTypeRef)], other: &[(&str, _)]| {
+        writes
+            .iter()
+            .find(|(name, type_ref)| {
+                !matches!(type_ref, ResolvedTypeRef::Optional { .. })
+                    && !other.iter().any(|(written, _)| written == name)
+            })
+            .map(|(name, _)| *name)
+    };
+    deciding(one, two)
+        .or_else(|| deciding(two, one))
+        .map_or(Fields::Undecided, Fields::Deciding)
+}
+
+/// The forms that validate for two errors of one wire name whose fields differ and no
+/// always-written field decides, as both refusals of such a pair name them.
+const FIELD_FORMS: &str = "one error with the optional field, reported by both outcomes, under \
+                           `alike:`, a field one error always writes that the other never writes, \
+                           distinct error wire names, or `envelope`";
+
+/// What both refusals state of that pair.
+const NO_DECIDING_FIELD: &str =
+    "the bodies differ, but no field one error always writes is one the other never writes";
+
 /// Why two members of an `alike` group sharing `answer` are told apart by their errors, if they
-/// are: `{<member>: error}` under two error wire names or over errors whose fields differ, or a
+/// are, or are not one answer: `{<member>: error}` under two error wire names or over errors one
+/// of which always writes a field the other never writes, or whose fields differ otherwise; or a
 /// header reading `error.wire` under two error wire names.
 fn errors_apart(
     ir: &EssIr,
@@ -5259,13 +5310,26 @@ fn errors_apart(
             two_wire.unwrap_or_default()
         ));
     }
-    if error_object && error_members(ir, one) != error_members(ir, two) {
-        return Some(format!(
-            "`{}` and `{}` answer `{}` with `{}`, which writes each error's own fields beside the \
-             member, and their errors' fields differ in name, wire name, type or order, so the \
-             wire tells them apart",
-            one.name, two.name, answer.status, answer.body,
-        ));
+    if error_object {
+        match fields_of(&error_members(ir, one), &error_members(ir, two)) {
+            Fields::Same => {}
+            Fields::Deciding(field) => {
+                return Some(format!(
+                    "`{}` and `{}` answer `{}` with `{}`, which writes each error's own fields \
+                     beside the member, and one error always writes `{field}`, which the other \
+                     never writes, so the wire tells them apart",
+                    one.name, two.name, answer.status, answer.body,
+                ));
+            }
+            Fields::Undecided => {
+                return Some(format!(
+                    "`{}` and `{}` answer `{}` with `{}`, which writes each error's own fields \
+                     beside the member, and {NO_DECIDING_FIELD}, so they are not one answer; the \
+                     forms that validate are {FIELD_FORMS}",
+                    one.name, two.name, answer.status, answer.body,
+                ));
+            }
+        }
     }
     if one_wire != two_wire && reads_error_wire(&answer.headers) {
         return Some(format!(
@@ -6201,9 +6265,17 @@ fn outcome_redirect(
     }
 }
 
-/// An outcome as `ESS-HTTP-025` counts it: its name, status, body, error wire name, and the
-/// parameter names its redirect writes, if it declares one.
-type Counted<'a> = (&'a str, u16, Body, Option<&'a str>, Option<Written<'a>>);
+/// An outcome as `ESS-HTTP-025` counts it: its name, status, body, error wire name, the parameter
+/// names its redirect writes, if it declares one, and the fields its error writes beside the
+/// member of an error object (`error_members`).
+type Counted<'a> = (
+    &'a str,
+    u16,
+    Body,
+    Option<&'a str>,
+    Option<Written<'a>>,
+    Vec<(&'a str, &'a ResolvedTypeRef)>,
+);
 
 /// The parameter names a redirect writes (`ESS-HTTP-025`): `always` those whose source is never
 /// absent, `all` every one, an `Optional` source being omitted when absent, and `wired` those
@@ -6302,7 +6374,8 @@ impl Declared<'_> {
 /// covers at the status and body of `errors`, any other at its derived status
 /// ([`status::outcome_status`]) with `envelope`. Two bodies tell two outcomes apart when both are
 /// `envelope`, whose `outcome` member names the branch, or both `{<member>: error}` on one member
-/// with distinct error wire names. Two redirects on one status, both `body: none`, are told apart
+/// with distinct error wire names or with one wire name and errors one of which always writes a
+/// field the other never writes ([`fields_of`], which the `alike` check asks too). Two redirects on one status, both `body: none`, are told apart
 /// by their parameters when one always writes a name the other never writes (RFC 6749 §4.1.2 and
 /// §4.1.2.1: `code` and `error` on one `302`), or when both always write one name from
 /// `error.wire` and their error wire names differ (§4.1.2.1: `access_denied` and `invalid_scope`
@@ -6332,7 +6405,9 @@ fn distinguishable(
             || match (&left.2, &right.2) {
                 (Body::Envelope, Body::Envelope) => true,
                 (Body::Error { member: one }, Body::Error { member: other }) => {
-                    one == other && left.3 != right.3
+                    one == other
+                        && (left.3 != right.3
+                            || matches!(fields_of(&left.5, &right.5), Fields::Deciding(_)))
                 }
                 _ => false,
             }
@@ -6377,6 +6452,7 @@ fn distinguishable(
         let mut group = vec![name];
         group.extend(others.iter().map(|other| other.0));
         reported.push(group);
+        let fields = undecided_fields(this, &others);
         let clashing: Vec<String> = others
             .into_iter()
             .map(|other| format!("`{}` ({})", other.0, declared.how(other)))
@@ -6396,9 +6472,10 @@ fn distinguishable(
                 "outcome `{name}` of {operation}{under} answers `{}` with `{}`, and so does {}, \
                  with a body a reader cannot tell apart; two outcomes on one status are told \
                  apart by two `envelope` bodies, by `{{<member>: error}}` on one member with \
-                 distinct error wire names, or by two redirects, one always writing a parameter \
-                 the other never writes or both writing one parameter from `error.wire` with \
-                 distinct error wire names",
+                 distinct error wire names or with one error always writing a field the other \
+                 never writes, or by two redirects, one always writing a parameter the other \
+                 never writes or both writing one parameter from `error.wire` with distinct \
+                 error wire names{fields}",
                 this.1,
                 this.2,
                 clashing.join(", ")
@@ -6406,6 +6483,31 @@ fn distinguishable(
         );
     }
     overridden(operation, declared, &counted, standard, path, refusals);
+}
+
+/// What a refusal of `this` adds for the `others` it clashes with whose error objects write other
+/// fields than `this` one's, of one error wire name, none always written by one and never by the
+/// other ([`Fields::Undecided`]): the fact and the forms that validate, or nothing.
+fn undecided_fields(this: &Counted<'_>, others: &[&Counted<'_>]) -> String {
+    let undecided: Vec<String> = others
+        .iter()
+        .filter(|other| match (&this.2, &other.2) {
+            (Body::Error { member: one }, Body::Error { member: two }) => {
+                one == two && this.3 == other.3 && fields_of(&this.5, &other.5) == Fields::Undecided
+            }
+            _ => false,
+        })
+        .map(|other| format!("`{}`", other.0))
+        .collect();
+    if undecided.is_empty() {
+        return String::new();
+    }
+    format!(
+        "; the errors of `{}` and {} write one wire name and differ in their fields, and \
+         {NO_DECIDING_FIELD}; the forms that validate are {FIELD_FORMS}",
+        this.0,
+        undecided.join(", ")
+    )
 }
 
 /// Every outcome [`distinguishable`] counts: its name, status, body, error wire name and redirect
@@ -6440,12 +6542,19 @@ fn counted<'a>(
                 .redirect
                 .as_ref()
                 .map(|redirect| Written::of(redirect, &reader));
-            counted.push((name, answer.status, answer.body.clone(), wire, redirect));
+            counted.push((
+                name,
+                answer.status,
+                answer.body.clone(),
+                wire,
+                redirect,
+                error_members(ir, outcome),
+            ));
         } else if !listed_names.contains(name) && !declared.covered.contains(&name) {
             let derived = status::outcome_status(ir, outcome)
                 .parse::<u16>()
                 .unwrap_or_else(|error| panic!("a derived status is a number: {error}"));
-            counted.push((name, derived, Body::Envelope, wire, None));
+            counted.push((name, derived, Body::Envelope, wire, None, Vec::new()));
         }
     }
     counted

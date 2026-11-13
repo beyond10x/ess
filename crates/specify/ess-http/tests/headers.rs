@@ -888,9 +888,9 @@ fn ess_http_025_two_redirects_on_one_status_are_told_apart_by_the_parameters_the
           `catalog.auth.ApproveOrder` answers `302` with `none`, and so does `denied` (`none`), \
           with a body a reader cannot tell apart; two outcomes on one status are told apart by \
           two `envelope` bodies, by `{<member>: error}` on one member with distinct error wire \
-          names, or by two redirects, one always writing a parameter the other never \
-          writes or both writing one parameter from `error.wire` with distinct error wire \
-          names"
+          names or with one error always writing a field the other never writes, or by two \
+          redirects, one always writing a parameter the other never writes or both writing one \
+          parameter from `error.wire` with distinct error wire names"
         ]
     );
     // A required name the other never writes tells them apart, though the other's are a subset.
