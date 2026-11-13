@@ -193,3 +193,59 @@ fn a_row_is_held_while_its_read_runs_again_for_the_same_params() {
     assert_eq!(app.section_state("order"), Lifecycle::Ready);
     assert_eq!(ids(&app, "customer"), ["c-9"]);
 }
+
+/// `pick` holds the order `o-2` under its cursor and reads again for the same request (`R`): the
+/// selection `order` reads by is the held row while it runs, `customer` keeps reading `c-2`, and
+/// the cursor is on the same row when the answer arrives.
+#[test]
+fn a_selection_is_held_while_its_collection_reads_again_and_the_cursor_stays() {
+    let text = "format: ess-ui/1\napp: shop\nmodel: shop.system\nplacement_profile: fat\n\
+        fixtures:\n  views:\n    orders.All: orders.yaml\n    orders.ById: orders.yaml\n    \
+        customers.ById: customers.yaml\n\
+        shells:\n  app: {regions: {main: {kind: page_outlet}}}\n\
+        navigation:\n  home: order\n  sections: [{name: all, pages: [order]}]\n\
+        pages:\n  order:\n    kind: detail_page\n    title: Order\n    sections:\n      \
+        - {name: pick, component: collection, selection: single, reads: {view: orders.All, key: id}, columns: [id]}\n      \
+        - {name: order, component: record, reads: {view: orders.ById, key: id, params: {id: section.pick.selection.id}}, fields: [id]}\n      \
+        - {name: customer, component: record, reads: {view: customers.ById, key: id, params: {id: section.order.row.customer_id}}, fields: [email]}\n";
+    let dir: PathBuf = Path::new(env!("CARGO_TARGET_TMPDIR"))
+        .join("ess-ui-tui-section-row")
+        .join("selection-held");
+    if dir.exists() {
+        std::fs::remove_dir_all(&dir).expect("a stale dir is removed");
+    }
+    std::fs::create_dir_all(&dir).expect("the dir is created");
+    for (name, body) in [
+        (
+            "orders.yaml",
+            "views:\n  orders.All:\n    rows:\n      - {id: o-1}\n      - {id: o-2}\n  \
+             orders.ById:\n    rows:\n      - {id: o-1, customer_id: c-1}\n      \
+             - {id: o-2, customer_id: c-2}\n",
+        ),
+        (
+            "customers.yaml",
+            "views:\n  customers.ById:\n    rows:\n      - {id: c-1, email: ada@shop.test}\n      \
+             - {id: c-2, email: grace@shop.test}\n",
+        ),
+    ] {
+        std::fs::write(dir.join(name), body).expect("the fixture is written");
+    }
+    let mut options = Options::new(dir.join("state"));
+    options
+        .view_latency
+        .insert("orders.All".to_owned(), Duration::from_secs(1));
+    let mut app = App::from_text(text, &dir, options).unwrap_or_else(|error| panic!("{error}"));
+    app.open_page("order", &[]);
+    app.advance(Duration::from_secs(1));
+    app.focus_section("pick");
+    app.keys("j");
+    assert_eq!(ids(&app, "order"), ["o-2"]);
+    app.keys("R");
+    assert_eq!(app.section_state("pick"), Lifecycle::Loading);
+    assert_eq!(ids(&app, "order"), ["o-2"]);
+    assert_eq!(ids(&app, "customer"), ["c-2"]);
+    app.advance(Duration::from_secs(1));
+    assert_eq!(app.section_state("pick"), Lifecycle::Ready);
+    assert_eq!(ids(&app, "order"), ["o-2"]);
+    assert_eq!(ids(&app, "customer"), ["c-2"]);
+}

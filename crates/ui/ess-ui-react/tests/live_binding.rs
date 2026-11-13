@@ -191,7 +191,10 @@ fn fnv(text: &str) -> u64 {
 /// `core.tsx` reports the first row of every section that reads (`reportsRow` is gone), and holds
 /// the page's section registry around a page's overlays; `data.ts` says whether a read's rows
 /// answer its current params, so a section reports no row while it reads for new ones. `data.ts`
-/// is re-pinned with it; no other file of the pins above changes.
+/// is re-pinned with it; no other file of the pins above changes. Moved again after the review of
+/// the shell's overlays: `core.tsx` lets a registry inside another be the outer one, forgets a
+/// page's sections when its frame goes, and reports the title's record apart from the row
+/// (`titleRow`); only the whole-project digest moves.
 const PLAIN: [(&str, u64); 7] = [
     ("README.md", 0xdae6_c3b6_7e5c_2d28),
     ("src/main.tsx", 0x939b_2ed0_a001_98c5),
@@ -201,7 +204,7 @@ const PLAIN: [(&str, u64); 7] = [
     ("src/runtime/data.ts", 0x5284_0c01_17d1_fa7f),
     ("www/index.html", 0x5972_6d4a_5ee2_5ce2),
 ];
-const PLAIN_PROJECT: u64 = 0x4d79_5e85_205a_9cc2;
+const PLAIN_PROJECT: u64 = 0xae0b_aa82_8ebf_670e;
 
 #[test]
 fn without_a_model_the_project_is_byte_identical() {

@@ -179,6 +179,77 @@ fn a_row_is_held_while_its_read_runs_again_for_the_same_params() {
     );
 }
 
+/// A shell's overlay reads the sections of the page shown: `section.order.row` on the page that
+/// has `order`, and nothing on a page that has not, after the shell moved from one to the other.
+const SHELL_OVERLAY: &str = r"
+format: ess-ui/1
+app: shop
+model: shop.system
+placement_profile: fat
+shells:
+  app:
+    regions: {main: {kind: page_outlet}}
+    overlays:
+      invoice:
+        kind: drawer
+        component: record
+        title: Invoice
+        reads: {view: invoices.ById, key: id, params: {id: section.order.row.invoice_id}}
+        fields: [id]
+navigation:
+  home: order
+  sections: [{name: all, pages: [order, other]}]
+pages:
+  order:
+    kind: detail_page
+    title: Order
+    sections:
+      - {name: order, component: record, reads: {view: orders.ById, key: id}, fields: [id]}
+      - name: lines
+        component: collection
+        reads: {view: lines.All, key: sku}
+        columns: [sku]
+        row_actions:
+          - {name: open_invoice, label: Open invoice, opens: invoice}
+  other:
+    kind: detail_page
+    title: Other
+    sections:
+      - name: items
+        component: collection
+        reads: {view: lines.All, key: sku}
+        columns: [sku]
+        row_actions:
+          - {name: open_invoice, label: Open invoice, opens: invoice}
+";
+
+#[test]
+fn a_shell_overlay_sees_the_sections_of_the_page_shown_and_no_other() {
+    run(
+        "shell-overlay-pages",
+        SHELL_OVERLAY,
+        r#"
+  await settle();
+  const openInvoice = () => {
+    const open = root.find((n) => n.tag === "button" && textOf(n) === "Open invoice");
+    assert.strictEqual(open.length, 1, root.text());
+    open[0].props.onClick();
+  };
+  openInvoice();
+  await settle();
+  assert.strictEqual(lastRead("invoices.ById").params.id, "i-3", "the page shown holds order: " + JSON.stringify(requests));
+  const before = requests.length;
+  b.pop("/other");
+  await settle();
+  openInvoice();
+  await settle();
+  const after = requests.slice(before).filter((request) => request.view === "invoices.ById");
+  assert.ok(after.length > 0, "the overlay reads on the other page: " + JSON.stringify(requests));
+  assert.strictEqual(after.at(-1).params.id, undefined, "the other page holds no order: " + JSON.stringify(requests));
+"#,
+    );
+}
+
 #[test]
 fn every_section_with_a_read_reports_its_row_and_none_is_marked() {
     let files = {

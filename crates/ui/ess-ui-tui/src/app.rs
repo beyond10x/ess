@@ -1274,25 +1274,37 @@ impl App {
             section: Some(&section.name),
             ..Ctx::default()
         };
-        if let Some(ReadState::Loading {
+        match self.held_rows(reads, &ctx) {
+            Some(held) => held.into_iter().next(),
+            None => self.rows(&section.name).into_iter().next(),
+        }
+    }
+
+    /// The rows `reads` answered before it started again for the same request, with its filter
+    /// applied; `None` unless it is running again after an answer. After a failed read, and for
+    /// a request nothing has answered, nothing is held.
+    fn held_rows(&self, reads: &Reads, ctx: &Ctx<'_>) -> Option<Vec<Value>> {
+        let Some(ReadState::Loading {
             held: Some(held), ..
-        }) = self.read_state(&self.request(reads, &ctx))
-        {
-            return held
-                .rows
+        }) = self.read_state(&self.request(reads, ctx))
+        else {
+            return None;
+        };
+        Some(
+            held.rows
                 .iter()
-                .find(|row| {
+                .filter(|row| {
                     self.keeps(
                         reads.filter.as_ref(),
                         &Ctx {
                             row: Some(row),
-                            ..ctx
+                            ..*ctx
                         },
                     )
                 })
-                .cloned();
-        }
-        self.rows(&section.name).into_iter().next()
+                .cloned()
+                .collect(),
+        )
     }
 
     pub(crate) fn section_request(&self, section: &Section) -> Option<ReadRequest> {
@@ -2020,6 +2032,25 @@ impl App {
         let (rows, _) = self.page_rows(ui, collection, ctx);
         let cursor = self.ui(ui).cursor.min(rows.len().saturating_sub(1));
         rows.get(cursor).cloned()
+    }
+
+    /// The row `section.<name>.selection` binds: the cursor's row of the rows shown, and, while
+    /// the collection's read runs again for the same request, the cursor's row of the answer it
+    /// held. What the screen draws while loading, its counts, paging and row actions do not read
+    /// the held answer.
+    fn bound_selection(
+        &self,
+        ui: &str,
+        collection: &ess_ui::Collection,
+        ctx: &Ctx<'_>,
+    ) -> Option<Value> {
+        if let Some(row) = self.selected_row(ui, collection, ctx) {
+            return Some(row);
+        }
+        let held = self.held_rows(collection.reads.as_ref()?, ctx)?;
+        let (rows, _) = self.page_of(ui, collection, &self.arranged_rows(ui, collection, &held));
+        let cursor = self.ui(ui).cursor.min(rows.len().saturating_sub(1));
+        rows.get(cursor).map(|row| (*row).clone())
     }
 
     /// Whether an `as: toggle` action is on, evaluating the one state expression
@@ -4662,7 +4693,7 @@ impl Resolve for Scope<'_> {
                             None
                         } else {
                             app.resolving.borrow_mut().push((*name).to_owned());
-                            let row = app.selected_row(&ui, collection, &ctx);
+                            let row = app.bound_selection(&ui, collection, &ctx);
                             app.resolving.borrow_mut().pop();
                             row
                         }

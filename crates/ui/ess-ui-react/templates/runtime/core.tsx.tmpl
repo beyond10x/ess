@@ -174,15 +174,23 @@ export interface SectionInfo {
   selection?: unknown;
   /** The section's title: what a header's count counts. */
   title?: string;
-  /** The first row of a section that reads: `section.<name>.row`, and the record a header title reads. Absent while the section loads, when it is empty, and for a section without a read. */
+  /** `section.<name>.row`: the first row of a section that reads, once its read has answered for the params it reads now. Absent while the section loads, when it is empty, and for a section without a read. */
   row?: unknown;
+  /** The record a header title reads: the first row the read holds, kept while the section reads for new params. */
+  titleRow?: unknown;
 }
 
-const RegistryContext = createContext<(name: string, info: SectionInfo) => void>(() => undefined);
+interface Registry {
+  report(name: string, info: SectionInfo): void;
+  /** Forgets every section: the page that reported them is gone. */
+  clear(): void;
+}
+
+const RegistryContext = createContext<Registry>({ report: () => undefined, clear: () => undefined });
 
 /** Reports this section's info to the page, when it changed. */
 export function useReport(name: string | undefined, info: SectionInfo): void {
-  const report = useContext(RegistryContext);
+  const { report } = useContext(RegistryContext);
   const key = stableKey(info);
   useEffect(() => {
     if (name) {
@@ -277,25 +285,33 @@ const RegisteredContext = createContext(false);
 
 /**
  * The registry sections report totals, params, selections and first rows to, and the `section`
- * and `same_as` scope roots it gives everything below it. A page with overlays holds one around
- * its overlay host, so an overlay, which renders outside the page frame, reads the sections of
- * its page; every other page frame holds its own.
+ * and `same_as` scope roots it gives everything below it. A shell or a page with overlays holds
+ * one around its overlay host, so an overlay, which renders outside the page frame, reads the
+ * sections of the page shown; a registry inside another is the outer one, and a page forgets
+ * its sections when it goes. Every other page frame holds its own.
  */
 export function PageRegistry(props: { children?: ReactNode }): ReactNode {
   const [sections, setSections] = useState<Record<string, SectionInfo>>({});
-  const report = (name: string, info: SectionInfo) =>
-    setSections((previous) => {
-      const merged: SectionInfo = { ...previous[name] };
-      for (const [key, value] of Object.entries(info) as [keyof SectionInfo, unknown][]) {
-        if (value !== undefined || key === "row") {
-          (merged as Record<string, unknown>)[key] = value;
+  const registered = useContext(RegisteredContext);
+  if (registered) {
+    return <>{props.children}</>;
+  }
+  const registry: Registry = {
+    report: (name, info) =>
+      setSections((previous) => {
+        const merged: SectionInfo = { ...previous[name] };
+        for (const [key, value] of Object.entries(info) as [keyof SectionInfo, unknown][]) {
+          if (value !== undefined || key === "row") {
+            (merged as Record<string, unknown>)[key] = value;
+          }
         }
-      }
-      return stableKey(previous[name]) === stableKey(merged) ? previous : { ...previous, [name]: merged };
-    });
+        return stableKey(previous[name]) === stableKey(merged) ? previous : { ...previous, [name]: merged };
+      }),
+    clear: () => setSections((previous) => (Object.keys(previous).length === 0 ? previous : {})),
+  };
   return (
     <RegisteredContext.Provider value={true}>
-      <RegistryContext.Provider value={report}>
+      <RegistryContext.Provider value={registry}>
         <ScopeLayer values={{ section: sections, same_as: (name: string) => sections[name]?.params }}>{props.children}</ScopeLayer>
       </RegistryContext.Provider>
     </RegisteredContext.Provider>
@@ -312,6 +328,8 @@ export function PageFrame(props: {
   children?: ReactNode;
 }): ReactNode {
   const registered = useContext(RegisteredContext);
+  const { clear } = useContext(RegistryContext);
+  useEffect(() => clear, []);
   const main = (
     <main className="ui-page" data-ui-path={props["data-ui-path"]} data-ui-host={props.host} data-profile={props.profile}>
       {props.title ? <h1>{props.title}</h1> : null}
@@ -542,7 +560,13 @@ export function SectionFrame(props: {
 //+collapse
   }, [load, active, onActivate, open]);
 //-collapse
-  useReport(props.name, { total: data?.total, params: data?.params, title: props.title, row: data?.current ? data.rows[0] : undefined });
+  useReport(props.name, {
+    total: data?.total,
+    params: data?.params,
+    title: props.title,
+    row: data?.current ? data.rows[0] : undefined,
+    titleRow: data?.rows[0],
+  });
   const mark = data?.stale ? states.stale?.mark ?? "badge" : undefined;
 //+collapse
   const bodyId = `${props["data-ui-path"]}#body`;
@@ -683,7 +707,7 @@ export function HeaderFrame(props: {
   const scope = useScope();
   const sections = (scope.values.section ?? {}) as Record<string, SectionInfo>;
   const total = props.total ? sections[props.total]?.total : undefined;
-  const record = props.titleFrom ? sections[props.titleFrom.section]?.row : undefined;
+  const record = props.titleFrom ? sections[props.titleFrom.section]?.titleRow : undefined;
   const field = props.titleFrom && record !== undefined ? getPath(record, props.titleFrom.field.split(".")) : undefined;
   const title = field === undefined || field === null ? props.title : formatValue(field);
   return (

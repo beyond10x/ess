@@ -3255,6 +3255,14 @@ impl<'d> Gen<'d> {
             &shell.overlays,
             format!("<{frame_component} />"),
         );
+        // The shell's overlays render outside the page its outlet shows: the registry of the
+        // page shown is held around both, so an overlay reads `section.<name>` of that page.
+        let hosted = if shell.overlays.is_empty() {
+            hosted
+        } else {
+            let registry = self.import("runtime/core", "PageRegistry");
+            El::new(&registry).child(hosted).render()
+        };
         let scanned = format!("{}\n{hosted}", self.hoisted.join("\n"));
         let channels = self.channels_used(&scanned, &[]);
         let mut extra = Vec::new();
