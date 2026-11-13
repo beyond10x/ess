@@ -19665,7 +19665,17 @@ fn unwitnessed_overlaps(ir: &EssIr, suite: &ConformanceSuite) -> Vec<Note> {
             .and_then(|inputs| inputs.into_iter().next())
             .unwrap_or_default();
         for outcome in &command.outcomes {
-            let found = overlaps(ir.format(), command, outcome);
+            // An input refusal pair is sent where a candidate lies in both guards; where a guard
+            // reads a `distinct` and none does, the pair is recorded as the others are. Only such
+            // pairs, so every other model keeps its notes.
+            let found: Vec<Overlap<'_>> = overlaps(ir.format(), command, outcome)
+                .into_iter()
+                .chain(
+                    refusal_pair_overlaps(ir.format(), command, outcome)
+                        .into_iter()
+                        .filter(|pair| pair.both.iter().any(|guard| !guard.distincts().is_empty())),
+                )
+                .collect();
             if found.is_empty() {
                 continue;
             }

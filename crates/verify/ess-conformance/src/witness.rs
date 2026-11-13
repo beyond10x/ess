@@ -4531,6 +4531,10 @@ fn count_ladders(
         }
         ladders.insert(path, ladder);
     }
+    let read_by_distinct: Vec<FactPath> = keyed_lists(builder, guards)
+        .into_iter()
+        .map(|list| list.path)
+        .collect();
     for path in &builder.lists {
         // One element first, as unit A1 built it; length 0 is the base `[]`.
         let mut ladder = vec![Choice::Elements(1)];
@@ -4539,6 +4543,12 @@ fn count_ladders(
             if held > 1 && !ladder.contains(&choice) {
                 ladder.push(choice);
             }
+        }
+        // A list a `distinct` reads is also tried with two elements, which are copies of one
+        // another and so hold the same key: the duplicate that lies in the same candidate as the
+        // other guards' ladders, which [`decisive_first`]'s lists, shaped over the base, do not.
+        if read_by_distinct.contains(path) && !ladder.contains(&Choice::Elements(2)) {
+            ladder.push(Choice::Elements(2));
         }
         ladders.insert(path.clone(), ladder);
     }
