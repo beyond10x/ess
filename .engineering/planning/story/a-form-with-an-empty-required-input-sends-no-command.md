@@ -36,7 +36,7 @@ scope:
   path: crates/ui/ess-ui/src/binding.rs
 - confidence: inferred
   path: website/docs/reference/ess-ui-test.md
-revision: 14
+revision: 15
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-10T00:38:05Z", actor: "human:timo", revision: 13, decided_on: {"recorded":{"review_outcome":1}}}
 - {from: "proposed", to: "active", at: "2026-11-10T00:38:06Z", actor: "human:timo", revision: 14, decided_on: {"recorded":{"review_outcome":1}}}
@@ -165,3 +165,8 @@ This story moves only the `CHANGELOG.md` shared surface.
 - inferred: website/docs/reference/ess-ui-test.md
 
 confidence: medium
+
+## Reported again (2026-11-13)
+
+A consumer reported the same on ess 0.94.0: a form sends its command with a required input empty.
+The consumer's own renderer will refuse the send on its side until this story ships.
