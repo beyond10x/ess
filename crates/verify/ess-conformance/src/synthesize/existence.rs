@@ -1629,7 +1629,26 @@ fn one_row(
         .copied()
         .filter(|view| one_row_view(ir, view, &run, same_row))
         .collect();
-    let Some(instance) = called.filter(|_| !usable.is_empty()) else {
+    // In this order: a view without a filter reads the row the last call addresses; failing that,
+    // where the second run's own row is one the scenario binds, the filtered views that run decided
+    // admit it read that row, the snapshot the scenario always had; failing that, none.
+    let chosen = match called {
+        Some(instance) if !usable.is_empty() => Some((instance, usable)),
+        _ => run
+            .instance
+            .clone()
+            .filter(|second| bound.contains(second))
+            .map(|second| {
+                let decided: Vec<&ResolvedView> = candidates
+                    .iter()
+                    .copied()
+                    .filter(|view| one_row_view(ir, view, &run, true))
+                    .collect();
+                (second, decided)
+            })
+            .filter(|(_, decided)| !decided.is_empty()),
+    };
+    let Some((instance, usable)) = chosen else {
         suite.scenarios.remove(&id);
         refusals.push(Refusal::about(
             &id,

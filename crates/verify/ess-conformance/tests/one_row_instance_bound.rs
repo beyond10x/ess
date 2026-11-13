@@ -264,6 +264,41 @@ fn one_row_roster_four_variants_reads_only_bound_instances_and_passes() {
     assert_eq!(not_passed(model, &result.suite), Vec::<String>::new());
 }
 
+/// The roster with its one view limited to the members who are active, so no view without a filter
+/// carries the one-row snapshot, and the instance the second run of `rejoined` names is one no step
+/// of its scenario binds: the scenario is withdrawn rather than filed with that snapshot.
+#[test]
+fn one_row_filtered_only_view_withdraws_where_the_second_run_instance_is_unbound() {
+    let text = ROSTER
+        .replace("@VARIANTS@", "Human, Agent, ControlPlane, Daemon")
+        .replace(
+            "    consistency: read_your_writes\n",
+            "    consistency: read_your_writes\n    filter: state == Active\n",
+        );
+    assert!(text.contains("filter: state == Active"));
+    let model = ir(&text);
+    let result = synthesize(&model);
+    let rejoined = "demo.roster.JoinTeam/outcome/rejoined";
+    assert!(
+        result
+            .suite
+            .scenarios
+            .keys()
+            .all(|key| key.to_string() != rejoined),
+        "`rejoined` is withdrawn"
+    );
+    assert!(
+        result.refusals.iter().any(|refusal| refusal
+            .scenario
+            .as_ref()
+            .is_some_and(|scenario| scenario.to_string() == rejoined)
+            && format!("{:?}", refusal.cause).contains("one-row check")),
+        "and refused for the one-row check"
+    );
+    assert_eq!(unbound_references(&result.suite), Vec::<String>::new());
+    assert_eq!(not_passed(model, &result.suite), Vec::<String>::new());
+}
+
 #[test]
 fn one_row_roster_variant_order_changes_no_scenario_id() {
     let last = ids(&roster("Human, Agent, Daemon, ControlPlane"));
