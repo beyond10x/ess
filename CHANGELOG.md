@@ -23,7 +23,10 @@
   stays undecided. Where none does, the run sends the input as its own caller's
   attribute, as the first run does, so the scenario keeps its run with the callers swapped or
   reversed. The suite of a model with this shape changes, so committed suites of such models must
-  be re-pinned: it sends other values there than before. Only where a
+  be re-pinned: it sends other values there than before. The same holds for a step that sends a
+  captured instance beside an input that an input guard compares with a literal and a selector
+  reads: its fresh values are checked against that guard too, so such a model's suite can change
+  and can gain scenarios 0.97.0 refused with `ESS-SYNTH-019`. Only where a
   selector reading that input, or any other input the run sends the same value in, pins no other
   stored field to a value drawn afresh, so it would find the rows the first run left, or where one
   of those inputs names a `when_related:` row, does the scenario run once; the note then names that selector or row instead of saying the input's type has too
