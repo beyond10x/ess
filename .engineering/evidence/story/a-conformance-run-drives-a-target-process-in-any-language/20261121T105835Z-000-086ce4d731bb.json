@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-21T10:58:35Z",
+  "actor": "human:timo",
+  "artifact": "story:a-conformance-run-drives-a-target-process-in-any-language",
+  "kind": "story",
+  "revision": 9,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "CI of pull request 797 on its head fc1ffeb859: 32 of 32 checks passed",
+    "reference": "https://github.com/beyond10x/ess/actions/runs/44891308044"
+  }
+}

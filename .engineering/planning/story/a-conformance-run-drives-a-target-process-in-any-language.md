@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-conformance-run-drives-a-target-process-in-any-language
 kind: story
-status: active
+status: implemented
 title: A conformance run drives a target process written in any language
 summary: ess verify conform run starts an outside program and asks it ConformanceTarget's questions over a versioned protocol on stdin/stdout; the Rust runner judges and writes report/2
 relations:
@@ -23,10 +23,11 @@ scope:
   path: website/docs/guides/verify/runners.md
 - confidence: inferred
   path: website/docs/reference/formats.md
-revision: 9
+revision: 10
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-20T23:41:09Z", actor: "human:timo", revision: 2}
 - {from: "proposed", to: "active", at: "2026-11-21T02:34:03Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"approval":1}}}
+- {from: "active", to: "implemented", at: "2026-11-21T12:19:55Z", actor: "human:timo", revision: 10, decided_on: {"recorded":{"test_result":1,"approval":1,"review_outcome":14}}}
 ---
 ## Outcome
 

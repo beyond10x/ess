@@ -279,7 +279,7 @@ const FORMAT_RELEASES: &[(&str, u32, Option<&str>)] = &[
     ("ess-conformance-results", 1, Some("0.48.0")),
     ("ess-known-failures", 1, Some("0.53.0")),
     ("ess-conformance-execution", 1, Some("0.53.0")),
-    ("ess-conformance-target", 1, None),
+    ("ess-conformance-target", 1, Some("0.97.0")),
     ("ess-known-failure-accounting", 1, Some("0.53.0")),
     ("ess-target-failure", 1, Some("0.19.0")),
     ("ess-target-failure", 2, Some("0.20.0")),
