@@ -79,6 +79,8 @@ impl Drop for Cleanup {
 /// Runs the billing suite against the adapter, sends `signal` to `ess` while the run is going, and
 /// returns the processes of the target's group still alive 10 s after `ess` exited.
 fn left_behind_after(signal: Signal) -> (Vec<i32>, Vec<i32>) {
+    // A CI shard that unpacks a test archive into `target/` has not created this directory.
+    fs::create_dir_all(env!("CARGO_TARGET_TMPDIR")).unwrap();
     let dir = tempfile::tempdir_in(env!("CARGO_TARGET_TMPDIR")).unwrap();
     let adapter = dir.path().join("adapter.sh");
     fs::write(&adapter, ADAPTER).unwrap();
