@@ -6,6 +6,23 @@
 
 - Release: the GitHub release body of a release is the committed file `release-notes/<version>.md`, written by hand in the release-preparation commit beside the changelog section. `cargo xtask release notes <version>` validates and prints it instead of rendering the section, `cargo xtask release verify` refuses a release from 0.79.0 on without a valid file, and `cargo xtask release notes --check` validates every file present.
 
+### Fixed
+
+- `ess verify conform synthesize` no longer writes a suite its own interpreted target fails where an
+  input guard compares an input with a caller attribute (`writer != caller.principal`) and a
+  row-set selector or `forall:` test reads the same input (`writer == input.writer`)
+  (beyond10x/ess#805). The run appended with the callers swapped drew that input afresh, as it
+  draws every input a selector reads, and kept the fresh value because the guard, read without the
+  caller, was undecided before and after; the target answered the caller guard where the suite
+  expected another branch. A fresh value now has to decide every input guard as before with the
+  step's own caller written in. Where none does, the run sends the input as its own caller's
+  attribute, as the first run does, so the scenario keeps its run with the callers swapped or
+  reversed and the suite of such a model sends other values there than before. Only where a
+  selector reading that input pins no other stored field to a value drawn afresh, so it would find
+  the rows the first run left, or where the input names a `when_related:` row, does the scenario
+  run once; the note then names that selector or row instead of saying the input's type has too
+  few values.
+
 ## [0.97.0] — 2026-11-21
 
 ### Added
