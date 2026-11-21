@@ -78,6 +78,13 @@ path = "tests/support/recovery_driver.rs"
 name = "ess-recovery-fake"
 path = "tests/support/fake_helm.rs"
 
+[[bin]]
+# Test-only. A protocol peer of `ess verify conform run --target process` over the billing
+# reference that exits, stalls, writes garbage or answers out of turn on request: the fault cases
+# need a target that misbehaves, which the public `ess verify conform serve` does not offer.
+name = "ess-conformance-peer"
+path = "tests/support/conformance_peer.rs"
+
 [dev-dependencies]
 tempfile = "3.27"
 

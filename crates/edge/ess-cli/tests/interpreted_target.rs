@@ -35,7 +35,8 @@ fn conform_run_help_offers_interpreted_beside_the_existing_targets() {
     assert!(output.status.success(), "{}", unwrapped(&output.stderr));
     let help = unwrapped(&output.stdout);
     assert!(
-        help.contains("[possible values: billing, oracle-fixture, interpreted]"),
+        // `process` follows since story:a-conformance-run-drives-a-target-process-in-any-language.
+        help.contains("[possible values: billing, oracle-fixture, interpreted, process]"),
         "`conform run --help` offers the interpreter beside the two reference targets: {help}"
     );
 }

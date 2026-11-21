@@ -291,8 +291,10 @@ fn the_help_names_the_twelve_classes_and_the_exit_statuses() {
         ),
         "story:the-mutation-audit-covers-actor-grants: {help}"
     );
+    // `process` is parsed and refused by name, naming the `--emit`/`--collect` route
+    // (story:a-conformance-run-drives-a-target-process-in-any-language).
     assert!(
-        help.contains("[possible values: billing, oracle-fixture, interpreted]"),
+        help.contains("[possible values: billing, oracle-fixture, interpreted, process]"),
         "{help}"
     );
     for status in ["Exit 0", "Exit 1", "Exit 3"] {

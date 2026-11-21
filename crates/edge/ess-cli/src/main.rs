@@ -24,6 +24,7 @@ mod requires;
 mod schema;
 mod schema_bundle;
 mod site;
+mod target_process;
 mod toolchain;
 mod transport;
 mod ui;
@@ -789,6 +790,8 @@ enum ConformCommand {
         scenarios: Option<PathBuf>,
         #[arg(long, value_enum)]
         target: ReferenceTarget,
+        #[command(flatten)]
+        process: ProcessArgs,
         /// Standalone JSON destination; suites/5-/7 require explicit report/2, even without this option.
         #[arg(long)]
         report_out: Option<PathBuf>,
@@ -815,6 +818,19 @@ enum ConformCommand {
         accounting_out: Option<PathBuf>,
         #[arg(long, value_enum, default_value_t = Format::Text)]
         format: Format,
+    },
+    /// Serve a built-in reference implementation over `ess-conformance-target/1`.
+    ///
+    /// Answers the protocol `run --target process` speaks, one JSON request per line on standard
+    /// input and one answer per line on standard output, until standard input closes. It is the
+    /// reference peer for an adapter's author: `ess verify conform run --target process -- ess
+    /// verify conform serve --target billing` reports what `--target billing` reports.
+    ///
+    /// Exit 0 at the end of input. Exit 2 at a request it cannot decode, naming the fault's kind
+    /// and never the line.
+    Serve {
+        #[arg(long, value_enum)]
+        target: ServedTarget,
     },
     /// Turn a runner's own per-scenario results into a report/2 for a suite ESS admits.
     ///
@@ -1212,6 +1228,38 @@ enum ReferenceTarget {
     // No doc comment on any variant: one would switch clap from the inline `[possible values: …]`
     // list to a described block, changing the help of an option whose other two values say nothing.
     Interpreted,
+    Process,
+}
+
+/// What `ess verify conform run --target process` starts, and how long it waits for an answer
+/// (`docs/design/conformance-target-process.md`, "The command line").
+#[derive(Debug, clap::Args)]
+struct ProcessArgs {
+    /// With `--target process`: the directory the command after `--` starts in, the current
+    /// directory when absent. A relative program containing `/` is found there.
+    #[arg(long, value_name = "DIR")]
+    target_dir: Option<PathBuf>,
+    /// With `--target process`: how many seconds to wait for each answer, 1 to 3600; 30 when
+    /// absent. A request that asks the target to let time pass adds that time.
+    #[arg(
+        long,
+        value_name = "SECONDS",
+        value_parser = clap::value_parser!(u64).range(1..=3600)
+    )]
+    target_timeout: Option<u64>,
+    /// With `--target process`: the program to start and its arguments. It is executed directly,
+    /// without a shell, and answers `ess-conformance-target/1` on its standard input and output.
+    #[arg(last = true, value_name = "COMMAND")]
+    command: Vec<std::ffi::OsString>,
+}
+
+/// The built-in references `ess verify conform serve` answers for.
+#[derive(Debug, Clone, Copy, ValueEnum)]
+enum ServedTarget {
+    // No doc comment on either variant, for the reason `ReferenceTarget` gives.
+    Billing,
+    #[value(name = "oracle-fixture")]
+    OracleFixture,
 }
 
 #[derive(Debug, Subcommand)]
@@ -3785,6 +3833,7 @@ fn conform(command: ConformCommand) -> Result<ExitCode> {
         } => coverage::select(suite.as_deref(), suite_input.as_deref(), &ids, &out),
         ConformCommand::Diff { from, to, format } => conform_diff(&from, &to, format),
         command @ ConformCommand::Run { .. } => conform_run(command),
+        ConformCommand::Serve { target } => Ok(conform_serve(target)),
         command @ ConformCommand::Report { .. } => Ok(conform_report_mode(command)),
         command @ ConformCommand::Mutate { .. } => conform_mutate_mode(command),
         ConformCommand::CheckHistory {
@@ -4251,6 +4300,7 @@ fn conform_run(command: ConformCommand) -> Result<ExitCode> {
         suite_format,
         scenarios,
         target,
+        process,
         report_out,
         report_format,
         strict,
@@ -4261,6 +4311,10 @@ fn conform_run(command: ConformCommand) -> Result<ExitCode> {
     } = command
     else {
         unreachable!("dispatched on `Run` only");
+    };
+    let process = match process_program(target, &process, known_failing.is_some()) {
+        Ok(process) => process,
+        Err(refused) => return Ok(refused),
     };
     if strict && report_format != "2" {
         bail!("strict conformance requires explicit --report-format 2; use --allow-incomplete for diagnostic report/1");
@@ -4311,29 +4365,11 @@ fn conform_run(command: ConformCommand) -> Result<ExitCode> {
         Ok(known) => known,
         Err(code) => return Ok(code),
     };
-    let interpreted = match target {
-        ReferenceTarget::Interpreted => match interpreter_for(&path, suite, format)? {
-            Ok(interpreter) => Some(interpreter),
-            Err(code) => return Ok(code),
-        },
-        ReferenceTarget::Billing | ReferenceTarget::OracleFixture => None,
+    let spec = (path.as_path(), format);
+    let report = match run_target(target, spec, &admitted, &report_format, process.as_ref())? {
+        Ok(report) => report,
+        Err(code) => return Ok(code),
     };
-    let report = coverage::execute(&admitted, &report_format, || match target {
-        ReferenceTarget::Billing => wall_clock_runner(suite)
-            .run_admitted(&admitted, &ess_conformance::reference::Billing::new()),
-        ReferenceTarget::OracleFixture => wall_clock_runner(suite)
-            .run_admitted(&admitted, &ess_conformance::reference::Oracle::new()),
-        ReferenceTarget::Interpreted => {
-            let mut runner = ess_conformance::now_offset::scenario_clock_runner(suite);
-            // The interpreter decides a `now` guard at the instant of the step being executed
-            // (https://github.com/beyond10x/ess/issues/510); without a clock it answers every
-            // such decision `unsupported`.
-            let clocked = interpreted
-                .expect("the interpreted target was built from `--path` above")
-                .with_command_clock(runner.command_clock());
-            runner.run_admitted(&admitted, &clocked)
-        }
-    })?;
     let render = || {
         render_conformance_report(
             &report,
@@ -4347,6 +4383,187 @@ fn conform_run(command: ConformCommand) -> Result<ExitCode> {
     match known {
         None => render(),
         Some(known) => known.finish(&report, &admitted, render),
+    }
+}
+
+/// The admitted suite run against `target`, once the report choice is checked
+/// (`coverage::execute`). `Err` in the inner result is the exit status of a refusal already
+/// printed: the specification did not load for `interpreted`, or the process target did not start
+/// or handshake. `process` carries the program and its timeout in seconds for `--target process`.
+fn run_target(
+    target: ReferenceTarget,
+    (path, format): (&Path, Format),
+    admitted: &ess_conformance::AdmittedSuite,
+    report_format: &str,
+    process: Option<&(target_process::Program, u64)>,
+) -> Result<std::result::Result<ess_conformance::ExecutedRun, ExitCode>> {
+    let suite = admitted.suite();
+    let interpreted = match target {
+        ReferenceTarget::Interpreted => match interpreter_for(path, suite, format)? {
+            Ok(interpreter) => Some(interpreter),
+            Err(code) => return Ok(Err(code)),
+        },
+        ReferenceTarget::Billing | ReferenceTarget::OracleFixture | ReferenceTarget::Process => {
+            None
+        }
+    };
+    coverage::execute(admitted, report_format, || match target {
+        ReferenceTarget::Billing => Ok(wall_clock_runner(suite)
+            .run_admitted(admitted, &ess_conformance::reference::Billing::new())),
+        ReferenceTarget::OracleFixture => Ok(wall_clock_runner(suite)
+            .run_admitted(admitted, &ess_conformance::reference::Oracle::new())),
+        ReferenceTarget::Interpreted => {
+            let mut runner = ess_conformance::now_offset::scenario_clock_runner(suite);
+            // The interpreter decides a `now` guard at the instant of the step being executed
+            // (https://github.com/beyond10x/ess/issues/510); without a clock it answers every
+            // such decision `unsupported`.
+            let clocked = interpreted
+                .expect("the interpreted target was built from `--path` above")
+                .with_command_clock(runner.command_clock());
+            Ok(runner.run_admitted(admitted, &clocked))
+        }
+        ReferenceTarget::Process => {
+            let (program, timeout) =
+                process.expect("`--target process` was given its command before the run");
+            run_process(admitted, program, *timeout)
+        }
+    })
+}
+
+/// `--target-timeout` when it is absent, in seconds.
+const DEFAULT_TARGET_TIMEOUT: u64 = 30;
+
+/// The program `--target process` starts and its timeout in seconds, or `None` for a built-in
+/// target. `Err` is the exit status of a refusal, printed here
+/// (`docs/design/conformance-target-process.md`, "Refusals"): exit 2, before anything runs.
+fn process_program(
+    target: ReferenceTarget,
+    process: &ProcessArgs,
+    known_failing: bool,
+) -> std::result::Result<Option<(target_process::Program, u64)>, ExitCode> {
+    let timeout = process.target_timeout.unwrap_or(DEFAULT_TARGET_TIMEOUT);
+    process_refusal(
+        target,
+        &process.command,
+        process.target_dir.as_deref(),
+        process.target_timeout,
+        known_failing,
+    )
+    .map(|program| program.map(|program| (program, timeout)))
+    .map_err(|message| {
+        eprintln!("{message}");
+        ExitCode::from(known_failures::REFUSED)
+    })
+}
+
+/// [`process_program`]'s decision, with the refusal as its message.
+fn process_refusal(
+    target: ReferenceTarget,
+    command: &[std::ffi::OsString],
+    target_dir: Option<&Path>,
+    target_timeout: Option<u64>,
+    known_failing: bool,
+) -> std::result::Result<Option<target_process::Program>, String> {
+    if !matches!(target, ReferenceTarget::Process) {
+        let name = clap::ValueEnum::to_possible_value(&target)
+            .map(|value| value.get_name().to_owned())
+            .unwrap_or_default();
+        if !command.is_empty() {
+            return Err(format!(
+                "a command after `--` is run only by `--target process`; `--target {name}` is \
+                 built into ess"
+            ));
+        }
+        for (given, option) in [
+            (target_dir.is_some(), "--target-dir"),
+            (target_timeout.is_some(), "--target-timeout"),
+        ] {
+            if given {
+                return Err(format!(
+                    "`{option}` applies only to `--target process`, not to `--target {name}`"
+                ));
+            }
+        }
+        return Ok(None);
+    }
+    let Some(program) = target_process::Program::new(command, target_dir) else {
+        return Err("`--target process` needs the command to start after `--`: \
+             ess verify conform run --target process -- <program> [args…]"
+            .to_owned());
+    };
+    if let Some(dir) = target_dir {
+        if !dir.is_dir() {
+            return Err(format!(
+                "`--target-dir` {} is not an existing directory",
+                dir.display()
+            ));
+        }
+    }
+    if known_failing {
+        return Err(
+            "`--known-failing` is refused with `--target process`: a declaration binds the build \
+             that ran, and `run` binds the ess executable's own SHA-256, which is not the target's \
+             build"
+                .to_owned(),
+        );
+    }
+    Ok(Some(program))
+}
+
+/// The suite against the program: started, handshaken, run, and ended. `Err` is the exit status of
+/// a refusal already printed: the program did not start, or its first handshake failed.
+fn run_process(
+    admitted: &ess_conformance::AdmittedSuite,
+    program: &target_process::Program,
+    timeout_seconds: u64,
+) -> std::result::Result<ess_conformance::ExecutedRun, ExitCode> {
+    use ess_conformance::process::{HandshakeSuite, ProcessTarget};
+
+    let peer = target_process::ChildPeer::start(program.clone()).map_err(|error| {
+        eprintln!(
+            "cannot start the target program {}: {:?}",
+            program.path().display(),
+            error.kind()
+        );
+        ExitCode::from(known_failures::REFUSED)
+    })?;
+    let target = ProcessTarget::connect(
+        peer,
+        HandshakeSuite::of(admitted),
+        timeout_seconds.saturating_mul(1000),
+    )
+    .map_err(|refusal| {
+        eprintln!("the process target is refused: {refusal}");
+        ExitCode::from(known_failures::REFUSED)
+    })?;
+    let report = wall_clock_runner(admitted.suite()).run_admitted(admitted, &target);
+    target.into_peer().finish();
+    Ok(report)
+}
+
+/// `ess verify conform serve`: a built-in reference over `ess-conformance-target/1` on standard
+/// input and output, until input ends.
+fn conform_serve(target: ServedTarget) -> ExitCode {
+    let input = std::io::stdin().lock();
+    let output = std::io::stdout().lock();
+    let served = match target {
+        ServedTarget::Billing => ess_conformance::process::serve(
+            &ess_conformance::reference::Billing::new(),
+            input,
+            output,
+        ),
+        ServedTarget::OracleFixture => ess_conformance::process::serve(
+            &ess_conformance::reference::Oracle::new(),
+            input,
+            output,
+        ),
+    };
+    match served {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(error) => {
+            eprintln!("serve.{}: {error}", error.kind());
+            ExitCode::from(known_failures::REFUSED)
+        }
     }
 }
 
@@ -4429,6 +4646,16 @@ fn conform_mutate_mode(command: ConformCommand) -> Result<ExitCode> {
     else {
         unreachable!("dispatched on `Mutate` only");
     };
+    if matches!(target, Some(ReferenceTarget::Process)) {
+        eprintln!(
+            "`mutate --target process` is refused: every mutant needs its own run. Split the \
+             audit instead: `ess verify conform mutate --emit DIR`, then `ess verify conform run \
+             --target process --suite <suite> --report-format 2 --report-out report.json -- \
+             <program>` for each suite under DIR, writing report.json beside it, then `ess verify \
+             conform mutate --collect DIR`"
+        );
+        return Ok(ExitCode::from(known_failures::REFUSED));
+    }
     let component = component.as_deref();
     let out = MutationOut {
         report_out: report_out.as_deref(),
@@ -4555,6 +4782,9 @@ fn conform_mutate(
             known,
             &authored,
         ),
+        ReferenceTarget::Process => {
+            unreachable!("`conform_mutate_mode` refuses `--target process` before dispatch")
+        }
     };
     let exit = finish_mutation_audit(audited, out, format);
     note_unmutated_sets(&raw.parsed, &classes);
@@ -6439,7 +6669,7 @@ mod tests {
     ///
     /// Written down on purpose. A verb added to the tree and to no area would otherwise be
     /// counted by the enumeration it is missing from and pass every case below.
-    const AREA_LEAVES: usize = 84;
+    const AREA_LEAVES: usize = 85;
     const AREA_ONLY_LEAVES: [&[&str]; 13] = [
         &["specify", "protocol", "validate"],
         &["specify", "protocol", "compile"],
