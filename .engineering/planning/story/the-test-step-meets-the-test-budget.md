@@ -30,7 +30,7 @@ scope:
   path: crates/generate/ess-synth/tests
 - confidence: inferred
   path: crates/verify/ess-conformance/tests
-revision: 7
+revision: 11
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T21:10:59Z", actor: "human:timo", revision: 5}
 - {from: "proposed", to: "active", at: "2026-11-21T21:11:00Z", actor: "human:timo", revision: 6}
@@ -242,6 +242,14 @@ the slow tests: `ess-conformance` (100 spawning files), `ess-synth` (52), `ess-c
 - `release.yml`'s `prior-gate` refuses a run whose test jobs or `slow` lane were skipped;
   `a_release_runs_its_full_gate_unless_a_full_gate_passed_the_tagged_tree` covers it.
 - `AGENTS.md` § Gate describes the lanes as they are.
+- A test-running step fails when it runs over 120 s, locally and in CI, and says which step and
+  how long (the organization rule as amended on 2026-11-21). The bound is enforced by the task
+  that runs the step, not by a job timeout, and `ci_lanes.rs` fails when a test-running step
+  runs without it. Until the steps above have landed, a step known to be over the bound is
+  listed by name with its measured time in `AGENTS.md` § Gate, and the list only shrinks.
+- A pull request whose diff is only prose `*.md` files outside `website/` passes its required
+  checks without a test job once `test-xtask`, `tutorial_page` and `site_navigation`, which read
+  those files, run in one small job (the second change of design step 2).
 
 ## Fit review
 
@@ -327,6 +335,30 @@ seven questions are answered for the gate.
 - **Accepted by the operator on 2026-11-21** as decided above ("do it", passed on by the design
   authority), for this story and `story:one-integration-test-binary-per-large-crate`. The word
   does not cover larger runners; nothing is bought.
+- **Correction, 2026-11-21: an in-process fixture shares nothing under cargo-nextest.** CI runs
+  the tests with cargo-nextest, which starts one process per test, so a `OnceLock` or `LazyLock`
+  is built once per test, not once per binary. Wherever this story says "once per binary
+  (`OnceLock`)" or "one shared fixture per test binary", the form is a cache on disk under
+  `target/`, keyed by the digest of its sources, or a setup step that runs before the tests.
+  The 23 files that use `OnceLock` or `LazyLock` today share on a local `cargo test` and not on
+  CI; step 1's ten-slowest report shows what that costs.
+- **One integration-test binary per crate, and no full debug information for tests**, as the
+  organization rule now says. The first is D2; the second holds already: `[profile.dev] debug`
+  keeps line tables only (`AGENTS.md` § Gate).
+- **Debug information of test binaries is measured as part of D2.** Test builds carry line tables
+  today. On the development host a cargo configuration file sets the same and wins over the
+  manifest, so a change in `Cargo.toml` alone has no effect there. Before the archives are
+  reshaped, the share of `.debug_*` sections in one test binary is read with `readelf -S` on a
+  CI-built binary; if it is a large part of the 20.9 GB, the archive build sets
+  `CARGO_PROFILE_DEV_DEBUG=false` in its environment, proven by the same `readelf -S`, and a
+  failing test then prints no file and line in a backtrace, which is the cost.
+- **`.engineering/repro/` is not plan-only.** Tests read reproductions there (`ess-conformance`,
+  `ess-domain` and `ess-synth` targets), so a pull request that changes a file under it runs
+  every test job. Design step 2 is built with that exclusion, and a test fails when an
+  archived test reads any other path under `.engineering/`.
+- **Kept on a plan-only run:** `checks` (`test-xtask` scans the whole tree), `msrv`,
+  `transport-network` and the macOS output-ownership witnesses, which are required checks by
+  name. Skipped: the two archive builds and the 20 test jobs.
 
 ## Out of scope
 
