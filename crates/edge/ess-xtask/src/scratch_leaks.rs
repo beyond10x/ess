@@ -21,6 +21,7 @@ use std::process::Command;
 const UNIT_SUITES: &[(&str, &str)] = &[
     ("src/main.rs", "tests::sync_"),
     ("src/whats_changed.rs", "whats_changed::tests::"),
+    ("src/release_notes.rs", "release_notes::tests::"),
     (
         "src/infra_acceptance.rs",
         "infra_acceptance::tests::a_scratch_below_",

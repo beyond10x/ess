@@ -10,6 +10,7 @@ mod format_history;
 mod git_checkout;
 mod infra_acceptance;
 mod presentation;
+mod release_notes;
 #[cfg(test)]
 mod scratch;
 #[cfg(test)]
@@ -163,16 +164,20 @@ enum Command {
 
 #[derive(Debug, Subcommand)]
 enum ReleaseCommand {
-    /// Verify that Cargo and the changelog name the same release.
+    /// Verify that Cargo, the changelog and the release notes file name the same release.
     Verify {
         /// Version to verify; defaults to the workspace version. Named, it is a release being cut,
         /// and every `FORMAT_HISTORY` row must also record its release.
         version: Option<String>,
     },
-    /// Print one release's GitHub release notes, rendered from its changelog section.
+    /// Print one release's GitHub release body, `release-notes/<version>.md`, once it validates.
     Notes {
-        /// Version whose notes should be rendered.
-        version: String,
+        /// Version whose notes file should be validated and printed.
+        #[arg(required_unless_present = "check", conflicts_with = "check")]
+        version: Option<String>,
+        /// Validate every `release-notes/*.md` against its own changelog section instead.
+        #[arg(long)]
+        check: bool,
     },
     /// Report whether every pushed version tag has a GitHub Release behind it.
     Status,
@@ -238,25 +243,30 @@ fn run(cli: Cli) -> Result<String, String> {
             command: ReleaseCommand::Verify { version },
         } => {
             let (workspace_version, changelog) = release_inputs(&root)?;
+            let notes_path = root.join(release_notes::path(
+                version.as_deref().unwrap_or(&workspace_version),
+            ));
+            let notes = match fs::read_to_string(&notes_path) {
+                Ok(text) => Some(text),
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+                Err(error) => return Err(format!("read {}: {error}", notes_path.display())),
+            };
             release_verify(
                 version.as_deref(),
                 &workspace_version,
                 &changelog,
                 ess_domain::system::FORMAT_HISTORY,
+                notes.as_deref(),
             )
         }
         Command::Release {
-            command: ReleaseCommand::Notes { version },
+            command: ReleaseCommand::Notes { version, check },
         } => {
-            let (workspace_version, changelog) = release_inputs(&root)?;
-            if version != workspace_version {
-                return Err(format!(
-                    "release {version} does not match workspace version {workspace_version}"
-                ));
+            let (_, changelog) = release_inputs(&root)?;
+            match version {
+                Some(version) if !check => release_notes::print(&root, &changelog, &version),
+                _ => release_notes::check(&root, &changelog),
             }
-            let titles =
-                whats_changed::titles(&root, &version).map_err(|error| format!("{error:#}"))?;
-            render_release_notes(&changelog, &version, &titles)
         }
         Command::Release {
             command: ReleaseCommand::Status,
@@ -279,11 +289,17 @@ fn run(cli: Cli) -> Result<String, String> {
 /// unreleased. The argument-less form is `task release-check` on every tree, and between releases
 /// the workspace keeps the last release's version and dated section, so that form cannot tell a
 /// release commit from the work after it and does not apply the format check.
+///
+/// Both forms require the version's release body, `release-notes/<version>.md` (`notes`, `None`
+/// when the file is absent), to exist and validate from 0.79.0 on: it is written in the
+/// release-preparation commit beside the changelog section, so a preparation without it fails
+/// `task release-check` on its pull request rather than in the tag's release run.
 fn release_verify(
     requested: Option<&str>,
     workspace_version: &str,
     changelog: &str,
     history: &[FormatHistoryEntry],
+    notes: Option<&str>,
 ) -> Result<String, String> {
     let version = requested.unwrap_or(workspace_version);
     if version != workspace_version {
@@ -291,7 +307,13 @@ fn release_verify(
             "release {version} does not match workspace version {workspace_version}"
         ));
     }
-    release_notes(changelog, version)?;
+    release_notes::section(changelog, version)?;
+    let notes_checked = release_notes::required(version);
+    if notes_checked {
+        let notes = notes.ok_or_else(|| release_notes::missing(version))?;
+        release_notes::validate(changelog, version, notes)
+            .map_err(|refusals| release_notes::refusal_report(version, &refusals))?;
+    }
     if requested.is_some() {
         let unreleased: Vec<String> = history
             .iter()
@@ -307,9 +329,11 @@ fn release_verify(
             ));
         }
     }
-    Ok(format!(
-        "release {version}: workspace version and changelog agree\n"
-    ))
+    Ok(if notes_checked {
+        format!("release {version}: workspace version and changelog agree, release notes valid\n")
+    } else {
+        format!("release {version}: workspace version and changelog agree\n")
+    })
 }
 
 fn release_inputs(root: &Path) -> Result<(String, String), String> {
@@ -347,128 +371,6 @@ fn workspace_version(manifest: &str) -> Option<&str> {
         }
     }
     None
-}
-
-fn release_notes(changelog: &str, version: &str) -> Result<String, String> {
-    let prefix = format!("## [{version}] ");
-    let mut lines = changelog.lines();
-    let found = lines
-        .by_ref()
-        .find(|line| line.starts_with(&prefix))
-        .ok_or_else(|| format!("CHANGELOG.md has no release heading for {version}"))?;
-    if !found.contains('—') {
-        return Err(format!("release heading for {version} has no date"));
-    }
-    let body = lines
-        .take_while(|line| !line.starts_with("## ["))
-        .collect::<Vec<_>>()
-        .join("\n")
-        .trim()
-        .to_owned();
-    if body.is_empty() {
-        return Err(format!("release heading for {version} has no notes"));
-    }
-    Ok(format!("{body}\n"))
-}
-
-/// The most lines a list of the GitHub release notes holds; the rest is counted in a last line.
-const NOTES_LIST_LIMIT: usize = 8;
-
-/// `cargo xtask release notes VERSION`: the GitHub release body `release.yml` publishes.
-///
-/// The changelog section is the record and stays whole there; the release page is a summary of
-/// it. Its first line is the title of each `changes/` fragment of the release, its second the
-/// number of entries under each heading; then the entries that start with `**Breaking`, then the
-/// others in changelog order, each list at most [`NOTES_LIST_LIMIT`] lines, and a link to the
-/// section. An entry is its whole bullet, continuation lines joined; a line of the section that is
-/// no bullet (the language count line) is not an entry.
-fn render_release_notes(
-    changelog: &str,
-    version: &str,
-    titles: &[String],
-) -> Result<String, String> {
-    let body = release_notes(changelog, version)?;
-    let heading = changelog
-        .lines()
-        .find(|line| line.starts_with(&format!("## [{version}] ")))
-        .and_then(|line| line.strip_prefix("## "))
-        .unwrap_or_default();
-    let mut counts: Vec<(String, usize, usize)> = Vec::new();
-    let mut breaking: Vec<String> = Vec::new();
-    let mut other: Vec<String> = Vec::new();
-    let mut current: Option<(String, bool)> = None;
-    let mut finish = |entry: Option<(String, bool)>| {
-        if let Some((text, is_breaking)) = entry {
-            if is_breaking {
-                breaking.push(text);
-            } else {
-                other.push(text);
-            }
-        }
-    };
-    for line in body.lines() {
-        if let Some(name) = line.strip_prefix("### ") {
-            finish(current.take());
-            counts.push((name.trim().to_lowercase(), 0, 0));
-        } else if let Some(text) = line.strip_prefix("- ") {
-            finish(current.take());
-            let is_breaking = text.starts_with("**Breaking");
-            if counts.is_empty() {
-                counts.push(("changes".to_owned(), 0, 0));
-            }
-            if let Some((_, entries, breaking_entries)) = counts.last_mut() {
-                *entries += 1;
-                *breaking_entries += usize::from(is_breaking);
-            }
-            current = Some((text.trim().to_owned(), is_breaking));
-        } else if line.starts_with(char::is_whitespace) && !line.trim().is_empty() {
-            if let Some((text, _)) = current.as_mut() {
-                text.push(' ');
-                text.push_str(line.trim());
-            }
-        } else {
-            finish(current.take());
-        }
-    }
-    finish(current.take());
-    let tally = counts
-        .iter()
-        .filter(|(_, entries, _)| *entries > 0)
-        .map(|(name, entries, breaking_entries)| match breaking_entries {
-            0 => format!("{entries} {name}"),
-            _ => format!("{entries} {name} ({breaking_entries} breaking)"),
-        })
-        .collect::<Vec<_>>()
-        .join(", ");
-    let mut out = String::new();
-    if !titles.is_empty() {
-        let _ = writeln!(out, "{}.", titles.join("; ").trim_end_matches('.'));
-    }
-    let _ = writeln!(out, "{tally}.");
-    for (name, entries) in [("Breaking", &breaking), ("Changed", &other)] {
-        if entries.is_empty() {
-            continue;
-        }
-        let _ = write!(out, "\n**{name}**\n\n");
-        let shown = if entries.len() > NOTES_LIST_LIMIT {
-            NOTES_LIST_LIMIT - 1
-        } else {
-            entries.len()
-        };
-        for entry in &entries[..shown] {
-            let _ = writeln!(out, "- {entry}");
-        }
-        if shown < entries.len() {
-            let _ = writeln!(out, "- {} more in the changelog.", entries.len() - shown);
-        }
-    }
-    let _ = write!(
-        out,
-        "\nEvery change: [CHANGELOG.md § {version}]\
-         (https://github.com/beyond10x/ess/blob/{version}/CHANGELOG.md#{})\n",
-        whats_changed::anchor(heading)
-    );
-    Ok(out)
 }
 
 /// Pushed tags that will never have a release, and why.
@@ -510,7 +412,7 @@ fn release_status(
     releases: &BTreeSet<String>,
     off_main: &BTreeSet<String>,
 ) -> Result<String, String> {
-    release_notes(changelog, version)?;
+    release_notes::section(changelog, version)?;
     let cut = match (tags.contains(version), releases.contains(version)) {
         (true, true) => "tagged and published",
         (true, false) => "tagged, not published",
@@ -553,13 +455,13 @@ fn release_status(
             stranded.join(", ")
         );
     }
-    // `release notes` renders a release body from that section, so a tag without one can be
-    // neither published nor backfilled. Until this existed the section was checked for the
+    // `release notes` validates a release body against that section, so a tag without one can
+    // be neither published nor backfilled. Until this existed the section was checked for the
     // workspace version alone, so an omission surfaced at the next release of that exact
     // version — which never comes.
     let unwritten: Vec<&str> = tags
         .iter()
-        .filter(|tag| release_notes(changelog, tag).is_err())
+        .filter(|tag| release_notes::section(changelog, tag).is_err())
         .map(String::as_str)
         .collect();
     if !unwritten.is_empty() {
@@ -567,7 +469,7 @@ fn release_status(
         let _ = write!(
             report,
             "version tags with no dated CHANGELOG.md section: {}\n\
-             `release notes` renders a release's body from that section, so a tag without one \
+             `release notes` validates a release's body against that section, so a tag without one \
              cannot be published or backfilled. Write the section.\n",
             unwritten.join(", ")
         );
@@ -1371,7 +1273,7 @@ mod tests {
             format_entry(24, None),
         ];
         assert_eq!(
-            release_verify(Some("0.54.0"), "0.54.0", changelog, &history),
+            release_verify(Some("0.54.0"), "0.54.0", changelog, &history, None),
             Err(
                 "release 0.54.0: FORMAT_HISTORY in crates/specify/ess-domain/src/system.rs \
                  records no release for `ess/23`, `ess/24`; set each row's `release` to \
@@ -1384,7 +1286,7 @@ mod tests {
             format_entry(23, Some("0.54.0")),
         ];
         assert_eq!(
-            release_verify(Some("0.54.0"), "0.54.0", changelog, &released),
+            release_verify(Some("0.54.0"), "0.54.0", changelog, &released, None),
             Ok("release 0.54.0: workspace version and changelog agree\n".to_owned())
         );
     }
@@ -1396,97 +1298,58 @@ mod tests {
         let changelog = "# Changelog\n\n## [Unreleased]\n\n## [0.53.0] — 2026-10-05\n\n- Notes.\n";
         let history = [format_entry(22, Some("0.53.0")), format_entry(23, None)];
         assert_eq!(
-            release_verify(None, "0.53.0", changelog, &history),
+            release_verify(None, "0.53.0", changelog, &history, None),
             Ok("release 0.53.0: workspace version and changelog agree\n".to_owned())
         );
-        assert!(release_verify(Some("0.53.0"), "0.53.0", changelog, &history).is_err());
+        assert!(release_verify(Some("0.53.0"), "0.53.0", changelog, &history, None).is_err());
         assert_eq!(
             release_verify(
                 None,
                 "0.53.0",
                 "## [0.53.0] 2026-10-05\n\n- Notes.\n",
-                &history
+                &history,
+                None
             ),
             Err("release heading for 0.53.0 has no date".to_owned())
         );
     }
 
     #[test]
+    fn release_verify_refuses_a_version_with_no_notes_file_in_both_forms() {
+        let changelog =
+            "# Changelog\n\n## [Unreleased]\n\n## [0.98.0] — 2026-11-22\n\n### Fixed\n\n\
+             - `ess specify validate` names the file of a refused node.\n";
+        let history = [format_entry(40, Some("0.97.0"))];
+        for requested in [None, Some("0.98.0")] {
+            let refusal = release_verify(requested, "0.98.0", changelog, &history, None)
+                .expect_err("a release with no notes file");
+            assert_eq!(refusal, release_notes::missing("0.98.0"));
+            assert!(refusal.contains("release-notes/0.98.0.md"), "{refusal}");
+        }
+        let notes = "`ess specify validate` names the file of a refused node.\n\n\
+                     **Breaking**\n\n- None.\n\n\
+                     **Changed**\n\n- `ess specify validate` names the file of a refused node\n\n\
+                     Full entry: [CHANGELOG.md, 0.98.0](https://github.com/beyond10x/ess/blob/0.98.0/CHANGELOG.md#0980--2026-11-22)\n";
+        assert_eq!(
+            release_verify(Some("0.98.0"), "0.98.0", changelog, &history, Some(notes)),
+            Ok(
+                "release 0.98.0: workspace version and changelog agree, release notes valid\n"
+                    .to_owned()
+            )
+        );
+        let invented = notes.replace(
+            "`ess specify validate` names the file of a refused node\n",
+            "`ess verify` names it\n",
+        );
+        let refusal = release_verify(None, "0.98.0", changelog, &history, Some(&invented))
+            .expect_err("invalid notes");
+        assert!(refusal.contains("release-notes/0.98.0.md:9: "), "{refusal}");
+    }
+
+    #[test]
     fn workspace_version_comes_only_from_the_workspace_package_table() {
         let manifest = "[package]\nversion = \"9.9.9\"\n[workspace.package]\nlicense = \"Apache-2.0\"\nversion = \"0.1.0\"\n";
         assert_eq!(workspace_version(manifest), Some("0.1.0"));
-    }
-
-    #[test]
-    fn release_notes_stop_before_the_next_release() {
-        let changelog = "# Changelog\n\n## [0.1.0] — 2026-09-01\n\n- First.\n\n## [0.0.1] — 2026-08-01\n\n- Old.\n";
-        assert_eq!(
-            release_notes(changelog, "0.1.0"),
-            Ok("- First.\n".to_owned())
-        );
-    }
-
-    #[test]
-    fn release_notes_summarize_lead_with_breaking_and_cap_each_list() {
-        let fixed = (1..=8).fold(String::new(), |mut s, n| {
-            let _ = writeln!(s, "- Fix {n} (#{n}).");
-            s
-        });
-        let changelog = format!(
-            "# Changelog\n\n## [Unreleased]\n\n## [0.2.0] — 2026-10-21\n\n### Added\n\n\
-             - A new key; set `format: ess/2` to use it (#10).\n\n### Changed\n\n\
-             - **Breaking:** suites are `s/2`; update runners (#11).\n\
-             - A refusal says why; specs unchanged.\n\n### Fixed\n\n{fixed}\n\
-             Language: 0 general, 0 one-to-one, 1 part (general share 0%; cumulative 22%).\n\n\
-             ## [0.1.0] — 2026-09-01\n\n- Old.\n"
-        );
-        let titles = ["A key and a format".to_owned()];
-        let notes = render_release_notes(&changelog, "0.2.0", &titles).expect("renders");
-        assert_eq!(
-            notes,
-            "A key and a format.\n\
-             1 added, 2 changed (1 breaking), 8 fixed.\n\n\
-             **Breaking**\n\n\
-             - **Breaking:** suites are `s/2`; update runners (#11).\n\n\
-             **Changed**\n\n\
-             - A new key; set `format: ess/2` to use it (#10).\n\
-             - A refusal says why; specs unchanged.\n\
-             - Fix 1 (#1).\n- Fix 2 (#2).\n- Fix 3 (#3).\n- Fix 4 (#4).\n- Fix 5 (#5).\n\
-             - 3 more in the changelog.\n\n\
-             Every change: [CHANGELOG.md § 0.2.0]\
-             (https://github.com/beyond10x/ess/blob/0.2.0/CHANGELOG.md#020--2026-10-21)\n"
-        );
-    }
-
-    #[test]
-    fn release_notes_read_an_older_section_of_wrapped_bullets_without_headings() {
-        let changelog = "## [0.1.0] — 2026-09-01\n\n- First, wrapped\n  over two lines.\n\
-                         - **Breaking for a caller**: second.\n";
-        assert_eq!(
-            render_release_notes(changelog, "0.1.0", &[]),
-            Ok("2 changes (1 breaking).\n\n\
-                **Breaking**\n\n- **Breaking for a caller**: second.\n\n\
-                **Changed**\n\n- First, wrapped over two lines.\n\n\
-                Every change: [CHANGELOG.md § 0.1.0]\
-                (https://github.com/beyond10x/ess/blob/0.1.0/CHANGELOG.md#010--2026-09-01)\n"
-                .to_owned())
-        );
-    }
-
-    #[test]
-    fn an_undated_release_is_refused_by_name() {
-        assert_eq!(
-            release_notes("## [0.1.0] 2026-09-01\n\n- First.\n", "0.1.0"),
-            Err("release heading for 0.1.0 has no date".to_owned())
-        );
-    }
-
-    #[test]
-    fn an_empty_release_is_refused_by_name() {
-        assert_eq!(
-            release_notes("## [0.1.0] — 2026-09-01\n\n", "0.1.0"),
-            Err("release heading for 0.1.0 has no notes".to_owned())
-        );
     }
 
     #[test]
@@ -1893,8 +1756,8 @@ mod tests {
 
     #[test]
     fn a_version_tag_with_no_changelog_section_is_refused() {
-        // `release notes` renders a release body from that section, so a tag without one cannot be
-        // published or backfilled. Until this check existed the section was verified for the
+        // `release notes` validates a release body against that section, so a tag without one
+        // cannot be published or backfilled. Until this check existed the section was verified for the
         // workspace version alone, and a tag cut without one stayed invisible forever.
         let refusal = release_status(
             &workspace_root().expect("workspace root"),

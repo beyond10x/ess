@@ -79,7 +79,7 @@ struct Source {
 }
 
 /// A version as its three numbers, so `0.9.0` sorts before `0.10.0`.
-fn ordinal(version: &str) -> Option<(u64, u64, u64)> {
+pub(crate) fn ordinal(version: &str) -> Option<(u64, u64, u64)> {
     let mut parts = version.split('.');
     let major = parts.next()?.parse().ok()?;
     let minor = parts.next()?.parse().ok()?;
@@ -145,15 +145,6 @@ fn read_all(root: &Path) -> Result<Vec<Fragment>> {
         fragments.push(fragment);
     }
     Ok(fragments)
-}
-
-/// The title of every fragment of `version`, in file-name order: the release notes' first line.
-pub fn titles(root: &Path, version: &str) -> Result<Vec<String>> {
-    Ok(read_all(root)?
-        .into_iter()
-        .filter(|fragment| fragment.source.version == version)
-        .map(|fragment| fragment.title.trim().to_owned())
-        .collect())
 }
 
 /// The minors at or after [`FEED_FLOOR`] that carry no fragment.

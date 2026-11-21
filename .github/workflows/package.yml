@@ -57,7 +57,7 @@ jobs:
             exit 0
           fi
           if ! cargo xtask release verify; then
-            echo "$version is not a dated release; nothing to prebuild"
+            echo "$version is not a dated release with a valid release-notes file; nothing to prebuild"
             exit 0
           fi
           # A dated, untagged version is a release being cut: the checks the tag's packaging
