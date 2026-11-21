@@ -1,6 +1,6 @@
 # A conformance run drives a target process (`ess-conformance-target/1`)
 
-Status: binding design, written 2026-11-21 before the code, for
+Status: binding design, released in 0.97.0, written 2026-11-21 before the code, for
 `story:a-conformance-run-drives-a-target-process-in-any-language`. Built on the branch
 `unit/outside-conformance-target`, 2026-11-21: where the build differs from the first design this
 page states the build and cites it. Citations of code the build did not write (`target.rs`,
@@ -1072,11 +1072,11 @@ Added by the review of the build, with the tests that pin them:
 ## Format consequences
 
 `FORMAT_RELEASES` (`crates/edge/ess-xtask/src/docs.rs:147`) has `("ess-conformance-target", 1,
-None)` after `("ess-conformance-execution", 1, Some("0.53.0"))` (`docs.rs:281-282`): the format is
-in no release, and the release that ships it fills the version in, as `("infra-ir", 4, None)` and
-`("ess-conformance", 64, None)` do until theirs. The family has no `SUPPORTED_*` constant, so
-`cargo xtask docs` reads its row from the quoted literal in non-test source, as `docs.rs:116-121`
-describes, and refused without the row.
+Some("0.97.0"))` after `("ess-conformance-execution", 1, Some("0.53.0"))` (`docs.rs:281-282`): the
+build recorded it as `None`, in no release, and 0.97.0, the release that ships it, filled the
+version in, as the release that ships `("infra-ir", 4, None)` or `("ess-conformance", 64, None)`
+will. The family has no `SUPPORTED_*` constant, so `cargo xtask docs` reads its row from the quoted
+literal in non-test source, as `docs.rs:116-121` describes, and refused without the row.
 
 `website/docs/reference/formats.md` has the row after `ess-conformance-execution/1`, in the table
 whose columns are "Document and discriminator | Separate identity | Reader and byte contract". It

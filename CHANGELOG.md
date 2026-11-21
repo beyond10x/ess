@@ -2,11 +2,13 @@
 
 ## [Unreleased]
 
+## [0.97.0] — 2026-11-21
+
 ### Added
 
 - `ess verify conform run --target process [--target-dir <dir>] [--target-timeout <seconds>] --
   <program> [args…]` runs a suite against a program written in any language, over the new
-  protocol `ess-conformance-target/1` (in no release yet). `ess` starts the program without a
+  protocol `ess-conformance-target/1` (released in 0.97.0). `ess` starts the program without a
   shell, in its own process group and in `--target-dir` (the current directory when absent), asks
   it each question of the conformance target as one JSON object per line on its standard input
   and reads one answer per line from its standard output. The Rust runner judges the answers and

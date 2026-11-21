@@ -9,6 +9,14 @@ What each ESS release is worth to somebody using it: what became possible, how m
 
 This page is generated from the change records kept in the repository. A release with no entry here added nothing somebody using ESS would act on.
 
+## 0.97.0 — 2026-11-21
+
+### A conformance run holds a program in any language to its suite
+
+capability · significant impact · [release post](https://beyond10x.github.io/ess/releases/conformance-in-any-language) · [release notes](https://github.com/beyond10x/ess/releases/tag/0.97.0)
+
+`ess verify conform run --target process` runs a suite against a program in any language over the new protocol `ess-conformance-target/1`, and `ess verify conform serve` answers it for a built-in reference. The text report escapes control, line-separator and bidirectional characters, so its bytes change only for a string that holds one.
+
 ## 0.96.0 — 2026-11-13
 
 ### ess ui check resolves every binding path, and two more refusals are told apart

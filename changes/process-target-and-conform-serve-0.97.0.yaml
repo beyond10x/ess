@@ -1,0 +1,17 @@
+schema: b10x-change/v1
+id: ess/process-target-and-conform-serve-0.97.0
+repository: ess
+publishedAt: 2026-11-21T00:00:00Z
+title: A conformance run holds a program in any language to its suite
+summary: >-
+  `ess verify conform run --target process` runs a suite against a program in any language over
+  the new protocol `ess-conformance-target/1`, and `ess verify conform serve` answers it for a
+  built-in reference. The text report escapes control, line-separator and bidirectional
+  characters, so its bytes change only for a string that holds one.
+kind: capability
+impact: significant
+source:
+  url: https://github.com/beyond10x/ess/releases/tag/0.97.0
+  version: 0.97.0
+journeys: [specify]
+affectedSurfaces: [ess/docs]
