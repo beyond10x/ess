@@ -1,0 +1,12 @@
+{
+  "at": "2026-11-21T00:00:00Z",
+  "actor": "human:timo",
+  "artifact": "story:a-conformance-run-drives-a-target-process-in-any-language",
+  "kind": "story",
+  "revision": 6,
+  "change": {
+    "change": "evidence",
+    "kind": "approval",
+    "source": "operator, in the ess session: 'I give you my yes' to option A (commit, pull request, active, design page, implementation)"
+  }
+}
