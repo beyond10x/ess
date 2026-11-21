@@ -506,9 +506,10 @@ jobs:
           key: release-notes
           save-if: ${{ github.ref == 'refs/heads/main' && github.event_name != 'workflow_dispatch' || github.event_name == 'pull_request' }}
 
-      # Notes come from the matching dated changelog section. The Rust helper refuses a missing,
-      # empty, undated, or version-mismatched release before GitHub is mutated.
-      - name: Release notes from CHANGELOG.md
+      # The body is the committed `release-notes/<tag>.md`. The Rust helper refuses a missing,
+      # empty, undated, or version-mismatched release, and a notes file that is missing or breaks
+      # its limits, before GitHub is mutated.
+      - name: Release notes from release-notes/
         env:
           TAG: ${{ needs.resolve.outputs.tag }}
           EXPECTED_COMMIT: ${{ needs.resolve.outputs.commit }}

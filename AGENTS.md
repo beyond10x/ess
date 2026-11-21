@@ -296,6 +296,27 @@ there under Rosetta; `lipo -archs` names the architecture that was built. Archiv
 `SHA256SUMS` are unchanged. Site rendering remains a documentation-validation gate; ordinary
 source releases do not wait for it.
 
+**The GitHub release body is `release-notes/<version>.md`, written by hand.** Whoever prepares
+the release writes it in the release-preparation commit, beside the version's `CHANGELOG.md`
+section, which stays the full record. The file is exactly the body, in this shape: a lead, a
+blank line, `**Breaking**`, a blank line, its list, a blank line, `**Changed**`, a blank line, its
+list, a blank line, and last the line
+`Full entry: [CHANGELOG.md, <version>](https://github.com/beyond10x/ess/blob/<version>/CHANGELOG.md#<anchor>)`,
+`<anchor>` being GitHub's anchor of the section heading. The tool refuses: more than 900
+characters before that last line (1,200 when `**Breaking**` has more than 3 bullets); a lead of
+more than one line, one sentence or 25 words, or one that counts entries; a list of more than 5
+bullets; a bullet over 110 characters after `- `, ending with a period, or holding "so that", a
+parenthesis, a `U+` code point or a semicolon (one is allowed in a `**Breaking**` bullet);
+"now", "again" and "its own" anywhere outside code; a word in backticks that the section does not
+contain; and `- None.`, the only no-breaking form, when the section has an entry starting
+`**Breaking`. What no program can check is the writer's duty: each bullet is one clause, no
+second clause after "and", no list of three or more examples, no internals or rationale.
+`cargo xtask release notes <version>` validates and prints it, and `release.yml` publishes that
+output as `notes.md`. `cargo xtask release verify`, and with it `task release-check` and CI,
+refuses the workspace version without a valid file; `cargo xtask release notes --check`, in
+`release-check` too, validates every file present. The rules are `release_notes.rs` in
+`ess-xtask`.
+
 Public CI has read-only GitHub permissions and never creates or edits a Release. A successful
 `Release preparation` run uploads one artifact named `ess-release-<tag>-<commit>`, containing the
 four archives under `dist/`, `dist/SHA256SUMS` and `notes.md`. From a trusted operator environment,
@@ -436,7 +457,7 @@ within one hour of the reproduction.
 
 1. Branch from the latest release tag, or from the newest release head not yet released.
 2. Write the failing regression test first, then the fix.
-3. Bump the patch version and add its `CHANGELOG.md` section.
+3. Bump the patch version and add its `CHANGELOG.md` section and its `release-notes/<version>.md`.
 4. Before the tag, run only the regression test and the touched crates' tests and Clippy: no local
    full gate.
 5. Commit with `b10x-gates bot`, create an annotated tag with `b10x-gates bot -- tag -a`, and push

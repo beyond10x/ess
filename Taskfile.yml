@@ -435,6 +435,7 @@ tasks:
   release-check:
     cmds:
       - cargo xtask release verify
+      - cargo xtask release notes --check
 
   action-check:
     cmds:
