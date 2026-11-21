@@ -11,6 +11,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::ffi::OsString;
 use std::fs;
+use std::os::unix::process::ExitStatusExt as _;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 use std::time::{Duration, Instant};
@@ -389,10 +390,33 @@ impl Drop for Running {
     }
 }
 
-/// A signal to `ess` while it waits for an answer: the target's group is killed, `ess` exits
-/// 128 plus the signal's number, and no report is written.
+/// A signal to `ess` while it waits for an answer: the target's group is killed, `ess` dies of
+/// that signal, and no report is written.
 #[test]
 fn a_sighup_to_ess_waiting_for_an_answer_ends_the_targets_group_and_writes_no_report() {
+    let status = signalled_while_waiting(rustix::process::Signal::HUP);
+    assert_eq!(status.signal(), Some(1), "{status:?}");
+}
+
+/// What a parent that waits for `ess` sees when `ess` is sent each signal that ends it: a process
+/// terminated by that signal (`WIFSIGNALED`, `WTERMSIG`), not one that exited, so a shell running
+/// `ess` in a loop stops on Ctrl-C as it does for any program the interrupt kills.
+#[test]
+fn a_parent_waiting_for_ess_sees_it_terminated_by_each_signal_that_ends_it() {
+    use rustix::process::Signal;
+    for (signal, number) in [(Signal::INT, 2), (Signal::TERM, 15), (Signal::HUP, 1)] {
+        let status = signalled_while_waiting(signal);
+        assert_eq!(
+            (status.signal(), status.code()),
+            (Some(number), None),
+            "{signal:?}: {status:?}"
+        );
+    }
+}
+
+/// `ess` sent `signal` while it waits for the answer the peer stalls on, and how it ended. Asserts
+/// that no report was written and the peer's group is gone.
+fn signalled_while_waiting(signal: rustix::process::Signal) -> std::process::ExitStatus {
     let dir = tempfile::tempdir().unwrap();
     let pids = dir.path().join("pids");
     let record = dir.path().join("record");
@@ -432,11 +456,11 @@ fn a_sighup_to_ess_waiting_for_an_answer_ends_the_targets_group_and_writes_no_re
         std::thread::sleep(Duration::from_millis(20));
     }
     let pid = rustix::process::Pid::from_child(&ess.0);
-    rustix::process::kill_process(pid, rustix::process::Signal::HUP).expect("ess is signalled");
-    let status = ess.0.wait().expect("ess exits");
-    assert_eq!(status.code(), Some(128 + 1), "{status:?}");
+    rustix::process::kill_process(pid, signal).expect("ess is signalled");
+    let status = ess.0.wait().expect("ess ends");
     assert!(!report.exists(), "a signalled run writes no report");
     assert_gone(&pids);
+    status
 }
 
 #[test]

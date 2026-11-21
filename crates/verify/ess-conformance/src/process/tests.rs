@@ -1784,11 +1784,14 @@ const STEERING: &[(char, &str)] = &[
 ];
 
 /// Characters next to the escaped ones that stay as they are.
-const KEPT: &str = "a é\u{a0}\u{200b}\u{2027}\u{202f}\u{2065}\u{206a}\u{fe0f}𝄞\\";
+const KEPT: &str = "a é\u{a0}\u{200b}\u{2027}\u{202f}\u{2065}\u{206a}\u{fe0f}𝄞";
 
+/// A target's text with every character [`STEERING`] names and the ones [`KEPT`] names, and the
+/// text the boundary keeps of it: a backslash doubled, so the six characters `\u{1b}` and an
+/// escaped ESC never read the same.
 fn steering() -> (String, String) {
-    let mut raw = String::from(KEPT);
-    let mut written = String::from(KEPT);
+    let mut raw = format!(r"{KEPT}\u{{1b}}|\|");
+    let mut written = format!(r"{KEPT}\\u{{1b}}|\\|");
     for (c, text) in STEERING {
         raw.push(*c);
         raw.push('|');

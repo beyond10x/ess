@@ -8,10 +8,10 @@
 //! ask for".
 //!
 //! The correction to the *other* round-1 finding wrote the unqualified version of the same claim
-//! into the published adopter guide. `website/docs/guides/verify/runners.md:21-25` now says of
+//! into the published adopter guide. `website/docs/guides/verify/runners.md:28-30` now says of
 //! this target: "it executes nothing, so every scenario comes back as an unsatisfied obligation and
 //! the run fails." There is no qualification, and the same guide documents the `[]` selection at
-//! line 206 — the exact input for which the run does not fail. The claim the round-1 case removed
+//! line 277 — the exact input for which the run does not fail. The claim the round-1 case removed
 //! from a doc comment is now in a public page, where it is worth more.
 //!
 //! This case is about the document, because the behaviour is settled: the empty-suite verdict is
@@ -73,7 +73,7 @@ fn empty_suite_outcome(target: &str) -> (String, Option<i32>) {
 ///
 /// The rule is the one `interpret.rs:24-35` already follows — a sentence that states how a run comes
 /// out has to name the suites it is true of, because there is one it is not true of and the same
-/// guide documents how to build it (`runners.md:206-207`, `[]` explicitly selects none).
+/// guide documents how to build it (`runners.md:277-278`, `[]` explicitly selects none).
 /// Qualifying the sentence turns this green; so does dropping the run-level promise and keeping only
 /// the per-scenario one, which is unconditionally true.
 #[test]

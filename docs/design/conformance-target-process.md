@@ -24,8 +24,8 @@ What follows describes the tree this design was written against.
 - `ConformanceTarget` is a Rust trait with 29 methods (`crates/verify/ess-conformance/src/
   target.rs:103-584`); the runner is synchronous and calls one at a time (`target.rs:68-76`).
 - `ess verify conform run --target` takes `billing`, `oracle-fixture` and `interpreted`
-  (`crates/edge/ess-cli/src/main.rs:1207-1215`), and the guide says only built-in targets run
-  (`website/docs/guides/verify/runners.md:47`).
+  (`crates/edge/ess-cli/src/main.rs:1207-1215`), and the guide said only built-in targets run; it
+  now names `process` beside them (`website/docs/guides/verify/runners.md:22-24`).
 - The CLI runs every built-in target on `wall_clock_runner` (`main.rs:4396-4412`): budgets,
   deadlines and report instants come from `AdvancingClock`, which starts at
   1 700 000 000 000 ms and moves 100 ms per read (`runner.rs:146-180`); only a `now_offset` value
@@ -81,7 +81,7 @@ Each refusal exits 2, writes no report and starts no scenario. `bail!` exits 1
 | `--target-dir` that is not an existing directory | the path |
 | `--known-failing` with `--target process` | that the declaration binds `ess`'s own build (`known_failures.rs:162-167`), which is not the target's; see "Open questions" |
 | the program cannot be spawned | the program and the OS error kind |
-| the first handshake fails in any way | the fault kind (below); for a version, the versions this `ess` reads, never quoting what the target wrote; for an `implementation` `name` or `version` over 256 bytes, `identity-too-long` (`process.rs:405-411`) |
+| the first handshake fails in any way | the fault kind (below); for a version, the versions this `ess` reads, never quoting what the target wrote; for an `implementation` `name` or `version` over 256 bytes, `identity-too-long` (`process.rs:407-413`) |
 | `ess verify conform mutate --target process` | the split route: `--emit DIR`, then `run --target process` per suite writing `report.json` beside it, then `--collect DIR` |
 
 `mutate` shares `ReferenceTarget` (`main.rs:991-992`, `:4533-4558`), so `process` becomes a value
@@ -94,8 +94,9 @@ Unchanged. `render_conformance_report` decides it from the report: with `--repor
 and 3 for passed, failed and error (`main.rs:4877-4881`). `--strict` still requires
 `--report-format 2` (`main.rs:4265-4267`), still conflicts with `--allow-incomplete`
 (`main.rs:798-802`), and still cannot pass a legacy suite with unknown coverage (`main.rs:798`).
-A signal to `ess` during a process-target run ends it with 128 plus the signal's number and no
-report (see "A signalled `ess`").
+A signal to `ess` during a process-target run kills the program's process group and then ends
+`ess` by that signal, so a shell reports 128 plus the signal number and a Ctrl-C still stops a
+shell loop; no report is written (see "A signalled `ess`").
 Every failed, errored or unsupported scenario is listed under its own category in report/2's
 `outcomes` (`crates/verify/ess-conformance/src/counts.rs:117-125`, `:264-285`).
 
@@ -143,17 +144,19 @@ ess                                                  target process
    contacting anything: `end_scenario` answers success (the killed process closed the context, and
    the scenario already carries its one error check), every other call answers the same fault.
 6. **Restart.** The first call of the next scenario spawns a fresh process and handshakes again
-   (`process.rs:615-646`). The restarted process must name the same `implementation` (name and
+   (`process.rs:617-650`). The restarted process must name the same `implementation` (name and
    version) as the first; another identity is a failed handshake, because one report names one
-   implementation. A failed restart is a respawn that cannot start (fault kind `not-started`) or a
+   implementation. The two are compared as the target sent them, not as their escaped text
+   (`process.rs:628-630`, `wire.rs:289-316`), so two names that would print alike are still two
+   implementations. A failed restart is a respawn that cannot start (fault kind `not-started`) or a
    handshake that fails, and it is `Unavailable { operation: "handshake" }` carrying the refusal's
-   text (`process.rs:641`). That scenario and every remaining one end `error` with it, `ess` does
-   not restart again (`process.rs:642`), and `end_scenario` answers success, as it does after any
-   fault (`process.rs:997-1007`).
+   text (`process.rs:645`). That scenario and every remaining one end `error` with it, `ess` does
+   not restart again (`process.rs:646`), and `end_scenario` answers success, as it does after any
+   fault (`process.rs:1001-1011`).
 7. **End.** When the run's last scenario has ended, `ess` closes the child's stdin, waits up to 5 s
    for the exit, and then sends `SIGKILL` to the process group and reaps the child. The group is
    killed after the wait always, even when the child has already exited, so a server it left in
-   its group dies too (`target_process.rs:312-318`; a group that is already gone is ignored,
+   its group dies too (`target_process.rs:338-344`; a group that is already gone is ignored,
    `:84-87`). A target exits when its standard input closes. That rule ends a target whose `ess`
    was killed with `SIGKILL` or crashed; any other signal to `ess` is handled (below). The child's
    exit status is not part of the report.
@@ -162,19 +165,27 @@ ess                                                  target process
 server the adapter started in its own group dies with it. `ess` signals the group before it reaps
 the child, so the group id cannot have been reused: it reads the child's status with `waitid` and
 `NOWAIT` (`rustix`'s `process` feature, which `ess-cli` already enables) without reaping it
-(`target_process.rs:244-257`), and reaps it only after the kill (`:280-291`). A process the adapter
+(`target_process.rs:270-283`), and reaps it only after the kill (`:306-317`). A process the adapter
 moved into another session or group is the adapter's to end. The released `ess` archives are Unix
 only (`.github/workflows/package.yml:78-84`).
 
 **A signalled `ess`.** The child's own process group does not receive the interrupt a terminal
 sends to `ess`'s, and a process that dies of a signal runs no `Drop`. From before the first spawn, a
 `signal-hook` iterator thread waits for `SIGINT`, `SIGTERM` and `SIGHUP`
-(`target_process.rs:50-68`). On one it kills the target's process group and its leader, reaps the
-child and exits `128 + the signal` (130, 143 and 129) with no report (`:70-79`). One lock orders
-this. A spawn registers the child under it before releasing it, and a kill, reap and clear all
-happen under it (`:148-155`, `:280-291`); the signal thread takes the same lock and never releases
-it, so it sees either no target or one that is registered and not yet reaped, and no target is
-spawned after it. `signal-hook` is a direct dependency of `ess-cli`
+(`target_process.rs:50-68`). On one it kills the target's process group and its leader, then reaps
+the child, waiting at most 2 s (`SIGNAL_REAP`, `:70-75`, polled by `reap_within`, `:92-105`): a
+child killed with `SIGKILL` is reaped within milliseconds, one that is not reaped in 2 s will not
+be, and every later signal is swallowed while `ess` waits, so a leader that cannot be reaped does
+not leave `ess` ignoring termination. Then `ess` ends by that same signal, with no report:
+`signal_hook::low_level::emulate_default_handler`, a safe function, restores the default action,
+unblocks the signal and raises it again, and for `SIGINT`, `SIGTERM` and `SIGHUP`, whose default
+is to terminate, that ends the process; should it return, `ess` exits `128 + the signal` (`:82-90`).
+A parent therefore sees a process terminated by the signal, as it would without the handler, so a
+shell reports 128 plus the signal number and a Ctrl-C still stops a shell loop over runs. One lock
+orders this. A spawn registers the child under it before releasing it, and a kill, reap and clear
+all happen under it (`:174-181`, `:306-317`); the signal thread takes the same lock and never
+releases it, so it sees either no target or one that is registered and not yet reaped, and no
+target is spawned after it. `signal-hook` is a direct dependency of `ess-cli`
 (`crates/edge/ess-cli/Cargo.toml:58`); it was already locked through the terminal renderer, so
 `Cargo.lock` gains a dependency line and no package. `SIGKILL` cannot be handled.
 
@@ -232,12 +243,12 @@ Reading rules:
 - **Integer members are read by value**: `20.0` is `20`, as `Number` compares (`exact.rs:381-392`).
   A fraction, a negative number and a number past `u64` are refused where an unsigned integer is
   required.
-- **`not_granted.actor` may be absent or `null`** in an answer (`wire.rs:322-327`,
+- **`not_granted.actor` may be absent or `null`** in an answer (`wire.rs:337-342`,
   `exact.rs:329-335`); both mean no actor.
 - **An answer holds exactly one of `ok` and `target_error`.** `{"ok": …, "target_error": null}` is
-  refused as it is with a non-null one (`process.rs:772-777`).
+  refused as it is with a non-null one (`process.rs:776-781`).
 - **`ElapsedObservation`, `OrderedScan` and `ImplementationIdentity` answers are decoded by hand**
-  (`wire.rs:288-300`, `:424-438`), because the types derive `Deserialize` without
+  (`wire.rs:302-316`, `:439-453`), because the types derive `Deserialize` without
   `deny_unknown_fields` and would silently drop an unknown member.
 - **Requests are open, at every depth.** A target ignores a request member it does not know,
   wherever it sits in the request. That is what lets a later `ess` add an optional request member
@@ -272,10 +283,12 @@ in-process target's do, with two bounds that an in-process target's strings do n
 string of a `target_error` (`observation`, `why`, `operation`, `detail`, `actor`) is cut at 4096
 bytes at a character boundary, ending ` … (<n> bytes more)`, where `<n>` counts the bytes cut, and
 has every control character (Cc), line or paragraph separator (U+2028, U+2029) and bidirectional
-override or isolate (U+202A to U+202E, U+2066 to U+2069) written as its escape, `\u{1b}` style
-(`wire.rs:240-282`, `process.rs:70-72`). The 4096 bound counts the bytes the target sent, before
-escaping. No message lets a target say a scenario passed: there is no verdict member anywhere in
-the format, and the status is the runner's fold of its checks (`runner.rs:537-540`).
+override or isolate (U+202A to U+202E, U+2066 to U+2069) written as its escape, `\u{1b}` style,
+and every backslash doubled, so the six characters `\u{1b}` print as `\\u{1b}` and never as an
+escaped ESC does (`wire.rs:240-286`, `process.rs:72-74`). The 4096 bound counts the bytes the
+target sent, before escaping. No message lets a target say a scenario passed: there is no verdict
+member anywhere in the format, and the status is the runner's fold of its checks
+(`runner.rs:537-540`).
 
 **An operation the target does not implement**, including an `op` it has never heard of, is
 answered `{"kind":"unsupported","observation":<op>,"why":<reason>}`. For four optional operations
@@ -311,23 +324,23 @@ runner's fixed redacted diagnostic (`runner.rs:3311-3323`), unchanged.
 | `not-started` | a restart's respawn cannot start the program | `target process could not be started again (NotFound) before 0 (handshake)` |
 
 `not-started` is a fault of a restart only: it is a failed restart (lifecycle step 6), reported as
-`Unavailable { operation: "handshake" }` with this text (`process.rs:279-280`, `:374-377`,
-`:615-622`). A failed first start is not a fault but the refusal "cannot start the target program"
+`Unavailable { operation: "handshake" }` with this text (`process.rs:281-282`, `:376-379`,
+`:617-624`). A failed first start is not a fault but the refusal "cannot start the target program"
 (exit 2, `main.rs:4522-4530`).
 
 There is no `closed-stdin` kind. A failed write to the child's standard input is reported as
-`exited` or `closed-stdout` by the same 500 ms rule (`target_process.rs:322-336`).
+`exited` or `closed-stdout` by the same 500 ms rule (`target_process.rs:348-362`).
 
 A handshake answer naming a version `ess` does not read is not a fault kind; it is the refusal
 `target speaks ess-conformance-target/2; this ess reads ess-conformance-target/1`. The refusal never
 quotes `speaks`: its text names a version only when the value is `ess-conformance-target/` followed
-by one to nine decimal digits (`process.rs:437-446`, `:699-705`), and any other value is refused as
+by one to nine decimal digits (`process.rs:439-448`, `:703-709`), and any other value is refused as
 `target speaks no version of ess-conformance-target; this ess reads ess-conformance-target/1`.
 
 ### Writing, reading and the end of a stream
 
 `ChildPeer` hands each request line to a writer thread and reads answer lines on a reader thread
-(`target_process.rs:162-172`), so a target that stops reading its standard input cannot hold `ess`
+(`target_process.rs:188-198`), so a target that stops reading its standard input cannot hold `ess`
 in a write, and every wait for an answer ends at `limit_ms` (`:338-368`). The reader passes lines
 over a channel of two (`:171`): a target that writes lines nobody asked for stalls on its own after
 two, and the next request reads the first of them as its answer and fails it by `id` (`wrong-id`).
@@ -481,7 +494,7 @@ called only by the mutation audit (`src/mutate.rs:5652`); the process target kee
 | `request.suite.component` | string | no | present when the suite is scoped to one component (`scenario.rs:499-500`) |
 | `request.suite.suite_digest` | string | yes | `AdmittedSuite::digest()`, `sha256-json-bytes/1` of the suite's bytes, written `sha256:` and 64 lowercase hex digits, not bare hex (`src/admission.rs:154-160`, `:180-183`) |
 | `ok.speaks` | string | yes | the one version the target speaks; must be in `reads` |
-| `ok.implementation.name`, `.version` | string | yes | `ImplementationIdentity` (`target.rs:593-601`), each at most 256 bytes: a longer one is `identity-too-long` (`wire.rs:254-264`), and each is stored with control, line-separator and bidirectional characters written as escapes (`wire.rs:240-250`) |
+| `ok.implementation.name`, `.version` | string | yes | `ImplementationIdentity` (`target.rs:593-601`), each at most 256 bytes: a longer one is `identity-too-long` (`wire.rs:258-268`), counted in the bytes sent, and each is stored with control, line-separator and bidirectional characters written as escapes and a backslash doubled (`wire.rs:240-256`), while a restart is compared by the name and version as sent (`process.rs:628-630`) |
 
 A target may refuse a suite it does not implement by answering the handshake with its identity and
 then answering what it can; the runner's verdict says the rest. A handshake answered with
@@ -938,7 +951,7 @@ stronger equality. A restart changes nothing that is minted.
   reader: `SemanticCommandResult`, `DeclaredErrorValue`, `ObservedEvent`, `SemanticViewResult`,
   `ObservedInvocation`, `AwaitAnswer`, `TargetError`. `ElapsedObservation`, `OrderedScan` and
   `ImplementationIdentity` already derive both but are decoded by hand too, so that an unknown
-  member is refused (`wire.rs:288-300`, `:424-438`). The periodic results and `ReadingEvidence`
+  member is refused (`wire.rs:302-316`, `:439-453`). The periodic results and `ReadingEvidence`
   already derive both, and the periodic result types deny unknown members (`periodic.rs:28`,
   `:58`, `:77`, `:98`, `:173`, `:182`, `:195`).
   `InstantName`, `StateName`, the semantic refs and `BindingRef` already have hand-written
@@ -1077,7 +1090,8 @@ says what the format is, who writes and reads it, and its rules:
 - **Open**: a request's reader ignores a member it does not know, at every depth, and a value map
   holds whatever names the specification gives.
 - **Escaped and bounded**: strings a target supplies that `ess` shows are escaped for control,
-  line-separator and bidirectional characters, and a `target_error` string is cut at 4096 bytes.
+  line-separator and bidirectional characters, with a backslash doubled, and a `target_error`
+  string is cut at 4096 bytes.
 
 **Within `/1`**, with no new version:
 
@@ -1113,20 +1127,27 @@ release `ess` may read both, `reads: ["…/1", "…/2"]`, and the target picks.
 
 ## Known limits
 
-Three things are deliberately left as they are in `/1`.
+Five things are deliberately left as they are in `/1`.
 
 - **A run in which every scenario times out takes scenarios × `--target-timeout`**, plus a restart
   handshake for each: 17 minutes for the 34-scenario billing suite at the default 30 s (34 × 30 s),
   and 34.2 s measured at `--target-timeout 1`. The guide tells an author to lower the option while
   building an adapter.
 - **An answer written early with the next request's id is accepted**, and gains the target nothing.
-  The reader holds up to two unasked lines (`target_process.rs:171`); when the next request is
+  The reader holds up to two unasked lines (`target_process.rs:197`); when the next request is
   sent, the first of them is read as its answer, checked against that request's `id` and judged by
   the runner against the specification like any other answer. A target that answers early can be
   right or wrong, and cannot be passed for what it did not answer.
 - **`serve` answers a last line with no line feed although `ess` refuses one.** `ess`'s reader
-  treats a final line with no `\n` as the end of the stream (`target_process.rs:213-217`), and
+  treats a final line with no `\n` as the end of the stream (`target_process.rs:239-243`), and
   `serve` decodes it and answers (`serve.rs:123-128`). An adapter must end every answer with `\n`.
+- **A member name in a diagnostic line prints `"`, `\`, `=` and `, ` as they are**
+  (`crates/verify/ess-conformance/src/report.rs:456-473`, `quote_name`), so a row member a target
+  names `a = 1, b` reads like two fields. Only control, line-separator and bidirectional characters
+  are escaped, so the name stays within its one line and cannot steer a terminal.
+- **The report file is written in place** (`crates/edge/ess-cli/src/main.rs:5082`, `:5099`,
+  `fs::write`, which truncates and then writes), so a signal landing during that write can leave a
+  truncated file where an earlier report was. It was so before this story.
 
 ## Open questions
 

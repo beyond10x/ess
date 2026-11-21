@@ -237,12 +237,16 @@ fn steers(c: char) -> bool {
         )
 }
 
-/// `text` with every character that [`steers`] written as its escape, `\u{1b}` style, so a string
-/// a target supplied prints as one line of plain text wherever it is shown.
+/// `text` with every character that [`steers`] written as its escape, `\u{1b}` style, and every
+/// backslash doubled, so a string a target supplied prints as one line of plain text wherever it is
+/// shown and two different strings never print the same: the six characters `\u{1b}` print as
+/// `\\u{1b}`, an ESC as `\u{1b}`.
 fn printable(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
     for c in text.chars() {
-        if steers(c) {
+        if c == '\\' {
+            out.push_str("\\\\");
+        } else if steers(c) {
             out.extend(c.escape_unicode());
         } else {
             out.push(c);
@@ -251,16 +255,16 @@ fn printable(text: &str) -> String {
     out
 }
 
-/// A handshake's implementation `name` or `version`: refused past [`MAX_IDENTITY`] bytes, and
-/// stored [`printable`].
-fn identity_text(member: &'static str, text: &str) -> Result<String, HandshakeRefusal> {
+/// A handshake's implementation `name` or `version`, checked against [`MAX_IDENTITY`] in the bytes
+/// the target sent: refused past it.
+fn identity_text(member: &'static str, text: String) -> Result<String, HandshakeRefusal> {
     if text.len() > MAX_IDENTITY {
         return Err(HandshakeRefusal::IdentityTooLong {
             member,
             bytes: text.len(),
         });
     }
-    Ok(printable(text))
+    Ok(text)
 }
 
 /// A string of a `target_error` answer: past [`MAX_TARGET_TEXT`] bytes cut at a character
@@ -282,8 +286,18 @@ fn target_text(value: &Value) -> Result<String, Bad> {
 
 // ---- answers, read -----------------------------------------------------------------------------
 
+/// The implementation a handshake names: its `name` and `version` as the target sent them, which a
+/// restart is compared by, and the identity the run reports, each of them [`printable`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct Named {
+    /// `name` and `version`, as sent.
+    pub sent: (String, String),
+    /// The identity `identity()` returns and the report names.
+    pub identity: ImplementationIdentity,
+}
+
 /// A handshake's `speaks`, and the implementation it names or why that name is refused.
-pub(crate) type Handshook = (String, Result<ImplementationIdentity, HandshakeRefusal>);
+pub(crate) type Handshook = (String, Result<Named, HandshakeRefusal>);
 
 pub(crate) fn handshake_answer(value: &Value) -> Result<Handshook, Bad> {
     let members = exact::object(value, &["speaks", "implementation"], &[])?;
@@ -291,13 +305,14 @@ pub(crate) fn handshake_answer(value: &Value) -> Result<Handshook, Bad> {
     let implementation = exact::object(members.req("implementation"), &["name", "version"], &[])?;
     let name = exact::text(implementation.req("name"))?;
     let version = exact::text(implementation.req("version"))?;
-    let identity = identity_text("name", &name).and_then(|name| {
-        Ok(ImplementationIdentity::new(
-            name,
-            identity_text("version", &version)?,
-        ))
+    let named = identity_text("name", name).and_then(|name| {
+        let version = identity_text("version", version)?;
+        Ok(Named {
+            identity: ImplementationIdentity::new(printable(&name), printable(&version)),
+            sent: (name, version),
+        })
     });
-    Ok((speaks, identity))
+    Ok((speaks, named))
 }
 
 pub(crate) fn target_error(value: &Value) -> Result<TargetError, Bad> {

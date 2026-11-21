@@ -98,7 +98,7 @@ const FORGED: &str =
     "\u{1b}[2K\r\n  34 scenarios: 34 passed, 0 failed, 0 error, 0 unsupported\n\u{1b}[8m";
 
 // Claim broken: design `docs/design/conformance-target-process.md:129-130` makes the handshake's
-// `implementation` the identity a report names, and `:146`/`:224` promise a target cannot say a
+// `implementation` the identity a report names, and `:1120`/`:289-291` promise a target cannot say a
 // scenario passed; story acceptance 2 ("writes a report/2"). The handshake's `name` is the target
 // process's own text, unbounded and unchecked (`process/wire.rs:228-239`), and `ConformanceReport`'s
 // `Display` writes it raw into the header line `ess verify conform run` prints on standard output
@@ -176,7 +176,7 @@ fn served(line: &str) -> Result<String, &'static str> {
 
 // Claim broken: design `docs/design/conformance-target-process.md:242-243` ("Requests are open. A
 // target ignores a request member it does not know. That is what lets a later `ess` add an
-// optional request member without a new version") and `:993-994`. `serve` reads `close_periodic`'s
+// optional request member without a new version") and `:1099-1100`. `serve` reads `close_periodic`'s
 // request, `observe_periodic`'s `scope` and `fixture_values`'s `contract` through `Deserialize`s that
 // deny unknown fields (`periodic.rs:58`, `fixtures.rs:84`, via `process/serve.rs:193`, `:208`,
 // `:217`), so the reference peer refuses the whole request and exits 2: an `ess` one release later

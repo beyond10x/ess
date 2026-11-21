@@ -18,8 +18,10 @@
 //! The strings a target supplies that are shown as text, the handshake's implementation `name` and
 //! `version` and every string of a `target_error`, are bounded ([`MAX_IDENTITY`], refused past it;
 //! [`MAX_TARGET_TEXT`], cut past it) and have every control character (Cc), line or paragraph
-//! separator and bidirectional override or isolate written as its escape, `\u{1b}` style, before
-//! they are kept. An in-process target's strings are not touched.
+//! separator and bidirectional override or isolate written as its escape, `\u{1b}` style, and every
+//! backslash doubled, before they are kept, so two different strings are never kept as one. The
+//! bounds count the bytes the target sent. A restart's handshake is compared with the first by the
+//! name and version as sent. An in-process target's strings are not touched.
 //!
 //! # Lifecycle
 //!
@@ -505,7 +507,7 @@ impl HandshakeSuite {
 pub struct ProcessTarget<P: Peer> {
     timeout_ms: u64,
     suite: HandshakeSuite,
-    identity: ImplementationIdentity,
+    named: wire::Named,
     link: RefCell<Link<P>>,
 }
 
@@ -544,10 +546,10 @@ impl<P: Peer> ProcessTarget<P> {
             dead: None,
         };
         match handshake(&mut link, timeout_ms, &suite) {
-            Ok(identity) => Ok(Self {
+            Ok(named) => Ok(Self {
                 timeout_ms,
                 suite,
-                identity,
+                named,
                 link: RefCell::new(link),
             }),
             Err(refusal) => {
@@ -564,7 +566,7 @@ impl<P: Peer> ProcessTarget<P> {
 
     /// The implementation the first handshake named.
     pub fn implementation(&self) -> &ImplementationIdentity {
-        &self.identity
+        &self.named.identity
     }
 
     /// One operation: the lifecycle rules, then one exchange.
@@ -622,8 +624,10 @@ impl<P: Peer> ProcessTarget<P> {
             }))
         } else {
             link.next_id = 0;
-            handshake(link, self.timeout_ms, &self.suite).and_then(|identity| {
-                if identity == self.identity {
+            handshake(link, self.timeout_ms, &self.suite).and_then(|named| {
+                // The name and version as sent, not their escaped text, so two that print alike
+                // could not pass for one implementation even if the escaping let them.
+                if named.sent == self.named.sent {
                     Ok(())
                 } else {
                     Err(HandshakeRefusal::OtherImplementation)
@@ -663,7 +667,7 @@ fn handshake<P: Peer>(
     link: &mut Link<P>,
     timeout_ms: u64,
     suite: &HandshakeSuite,
-) -> Result<ImplementationIdentity, HandshakeRefusal> {
+) -> Result<wire::Named, HandshakeRefusal> {
     let request = wire::HandshakeRequest {
         reads: READS,
         suite,
@@ -833,7 +837,7 @@ impl<P: Peer> ConformanceTarget for ProcessTarget<P> {
     }
 
     fn identity(&self) -> Result<ImplementationIdentity, TargetError> {
-        Ok(self.identity.clone())
+        Ok(self.named.identity.clone())
     }
 
     fn begin_scenario(&self, scenario: &ScenarioContext) -> Result<(), TargetError> {

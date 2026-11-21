@@ -21,8 +21,9 @@
   `--`, a command, `--target-dir` or `--target-timeout` with another target, a `--target-dir` that
   is not a directory, `--known-failing`, a program that cannot be started and a first handshake
   that fails or names a version `ess` does not read. When `ess` receives SIGINT, SIGTERM or SIGHUP
-  during the run it kills the program's process group and exits 128 plus the signal number (130,
-  143, 129) with no report. `ess verify conform mutate --target process` is refused with exit 2,
+  during the run it kills the program's process group and then ends by that signal, with no
+  report, so a shell reports 128 plus the signal number (130, 143, 129) and a Ctrl-C still stops a
+  shell loop. `ess verify conform mutate --target process` is refused with exit 2,
   naming the `--emit`, `run`, `--collect` route. The guide page "An implementation in any language"
   holds an adapter in Python that a test runs; the design is
   `docs/design/conformance-target-process.md`.
@@ -42,7 +43,8 @@
   characters keeps its bytes. A process target's own strings are also bounded and escaped where
   `ess` reads them: its implementation `name` and `version` are refused over 256 bytes
   (`identity-too-long`), and every string of a `target_error` is cut at 4096 bytes, each with
-  control, line-separator and bidirectional characters written as escapes.
+  control, line-separator and bidirectional characters written as escapes and a backslash
+  doubled, so the text `\u{1b}` and an escaped ESC never print the same.
 
 ## [0.96.0] — 2026-11-13
 

@@ -14,9 +14,9 @@
 //! The child's own process group does not receive the interrupt a terminal sends to `ess`'s, and
 //! `ess` dying of a signal would run no `Drop`. So from the first spawn on, a thread of its own
 //! waits for `SIGINT`, `SIGTERM` and `SIGHUP` ([`watch_signals`]). On one it kills the group of
-//! the target alive then, reaps it, and exits with status 128 plus the signal's number, writing no
-//! report. `SIGKILL` cannot be handled; a target whose `ess` was killed exits when its standard
-//! input closes, as the design requires of every target.
+//! the target alive then, reaps it within [`SIGNAL_REAP`], and ends `ess` by that same signal,
+//! writing no report ([`end_on`]). `SIGKILL` cannot be handled; a target whose `ess` was killed
+//! exits when its standard input closes, as the design requires of every target.
 //!
 //! The group alive is [`ALIVE`], and nothing changes it outside its lock: a spawn registers its
 //! child before the lock is released, and a reap clears it before the lock is released. The
@@ -67,15 +67,41 @@ fn watch_signals() -> std::io::Result<()> {
     watching.map_err(std::io::Error::from)
 }
 
-/// Kills and reaps the target alive, then exits `128 + signal`. The lock is never released, so
-/// nothing is spawned after this.
+/// How long a signalled `ess` waits to reap the target it has killed. A child killed with
+/// `SIGKILL` is reaped within milliseconds; one that is not reaped in 2 s will not be (it is stuck
+/// in an uninterruptible wait, or the kill was refused because it changed its user), and every
+/// later signal is swallowed while `ess` waits, so the person who pressed Ctrl-C waits at most
+/// this long before `ess` ends anyway.
+const SIGNAL_REAP: Duration = Duration::from_secs(2);
+
+/// Kills the target alive and reaps it within [`SIGNAL_REAP`], then ends `ess` by `signal` itself:
+/// a parent sees a process terminated by that signal, as it would without the handler, so a shell
+/// looping over runs stops on Ctrl-C. `signal_hook`'s emulation restores the default action and
+/// raises the signal again; should that return, `ess` exits `128 + signal`, the status a shell
+/// shows for it. The lock is never released, so nothing is spawned after this.
 fn end_on(signal: i32) -> ! {
     let alive = alive();
     if let Some(pid) = *alive {
         kill_group(pid);
-        let _ = rustix::process::waitid(WaitId::Pid(pid), WaitIdOptions::EXITED);
+        reap_within(pid, SIGNAL_REAP);
     }
+    let _ = signal_hook::low_level::emulate_default_handler(signal);
     std::process::exit(128 + signal);
+}
+
+/// Waits up to `limit` for the child `pid` to exit and reaps it; whether it was reaped.
+fn reap_within(pid: Pid, limit: Duration) -> bool {
+    let deadline = Instant::now() + limit;
+    loop {
+        match rustix::process::waitid(
+            WaitId::Pid(pid),
+            WaitIdOptions::EXITED | WaitIdOptions::NOHANG,
+        ) {
+            Ok(Some(_)) => return true,
+            Ok(None) if Instant::now() < deadline => std::thread::sleep(POLL),
+            Ok(None) | Err(_) => return false,
+        }
+    }
 }
 
 /// `SIGKILL` to the group `leader` leads, and to `leader` itself, which may have left its group;
@@ -389,3 +415,6 @@ impl Drop for ChildPeer {
         self.kill();
     }
 }
+
+#[cfg(test)]
+mod tests;

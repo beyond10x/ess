@@ -78,7 +78,7 @@ The first request is the handshake. It names the versions this `ess` reads and t
 answer names the one version the adapter speaks and the implementation, which the report names.
 `name` and `version` are each at most 256 bytes, and a longer one fails the handshake. Where either
 holds a control, line-separator or bidirectional-override character, the report shows it as an
-escape such as `\u{1b}`:
+escape such as `\u{1b}`, and it shows a backslash doubled:
 
 ```json
 {"id": 0, "op": "handshake", "limit_ms": 30000,
@@ -136,8 +136,9 @@ for `--target-timeout`, and the next scenario's restart handshake too, so a run 
 scenario times out takes about scenarios × `--target-timeout`. Lower the option for a quicker
 feedback loop while you build the adapter.
 
-If `ess` receives SIGINT, SIGTERM or SIGHUP during a run, it kills the adapter's process group,
-reaps it and exits with 128 plus the signal number (130, 143 or 129), writing no report. SIGKILL
+If `ess` receives SIGINT, SIGTERM or SIGHUP during a run, it kills the adapter's process group and
+then ends by that signal, writing no report, so a shell reports 128 plus the signal number (130,
+143 or 129) and a Ctrl-C still stops a shell loop over runs. SIGKILL
 cannot be handled; an adapter whose `ess` was killed that way, or crashed, ends only because its
 standard input closes.
 
