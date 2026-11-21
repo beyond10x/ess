@@ -14,7 +14,7 @@ use ess_primitives::node::Node;
 use serde::Serialize;
 
 use super::exact::{self, exact_opt, Bad, ExactMap, ExactNode, Kind, Value};
-use super::HandshakeSuite;
+use super::{HandshakeRefusal, HandshakeSuite, MAX_IDENTITY, MAX_TARGET_TEXT};
 use crate::scenario::{
     ActorRef, BindingRef, CommandRef, Elapsed, EntityRef, ErrorRef, EventRef, OutcomeRef, ViewRef,
 };
@@ -225,17 +225,79 @@ fn named<T: serde::de::DeserializeOwned>(value: &Value) -> Result<T, Bad> {
     exact::serde(value)
 }
 
-pub(crate) fn handshake_answer(value: &Value) -> Result<(String, ImplementationIdentity), Bad> {
+// ---- target-supplied text ------------------------------------------------------------------------
+
+/// Whether `c` can steer a terminal or reorder the text around it: a control character (general
+/// category Cc), a line or paragraph separator, or a bidirectional override or isolate.
+fn steers(c: char) -> bool {
+    c.is_control()
+        || matches!(
+            c,
+            '\u{2028}' | '\u{2029}' | '\u{202a}'..='\u{202e}' | '\u{2066}'..='\u{2069}'
+        )
+}
+
+/// `text` with every character that [`steers`] written as its escape, `\u{1b}` style, so a string
+/// a target supplied prints as one line of plain text wherever it is shown.
+fn printable(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    for c in text.chars() {
+        if steers(c) {
+            out.extend(c.escape_unicode());
+        } else {
+            out.push(c);
+        }
+    }
+    out
+}
+
+/// A handshake's implementation `name` or `version`: refused past [`MAX_IDENTITY`] bytes, and
+/// stored [`printable`].
+fn identity_text(member: &'static str, text: &str) -> Result<String, HandshakeRefusal> {
+    if text.len() > MAX_IDENTITY {
+        return Err(HandshakeRefusal::IdentityTooLong {
+            member,
+            bytes: text.len(),
+        });
+    }
+    Ok(printable(text))
+}
+
+/// A string of a `target_error` answer: past [`MAX_TARGET_TEXT`] bytes cut at a character
+/// boundary, ending ` … (<n> bytes more)`, and the rest [`printable`]. The bound counts the bytes
+/// the target sent, before escaping.
+fn target_text(value: &Value) -> Result<String, Bad> {
+    let text = exact::text(value)?;
+    let mut cut = text.len().min(MAX_TARGET_TEXT);
+    while !text.is_char_boundary(cut) {
+        cut -= 1;
+    }
+    let mut out = printable(&text[..cut]);
+    if cut < text.len() {
+        use std::fmt::Write as _;
+        let _ = write!(out, " … ({} bytes more)", text.len() - cut);
+    }
+    Ok(out)
+}
+
+// ---- answers, read -----------------------------------------------------------------------------
+
+/// A handshake's `speaks`, and the implementation it names or why that name is refused.
+pub(crate) type Handshook = (String, Result<ImplementationIdentity, HandshakeRefusal>);
+
+pub(crate) fn handshake_answer(value: &Value) -> Result<Handshook, Bad> {
     let members = exact::object(value, &["speaks", "implementation"], &[])?;
     let speaks = exact::text(members.req("speaks"))?;
     let implementation = exact::object(members.req("implementation"), &["name", "version"], &[])?;
-    Ok((
-        speaks,
-        ImplementationIdentity::new(
-            exact::text(implementation.req("name"))?,
-            exact::text(implementation.req("version"))?,
-        ),
-    ))
+    let name = exact::text(implementation.req("name"))?;
+    let version = exact::text(implementation.req("version"))?;
+    let identity = identity_text("name", &name).and_then(|name| {
+        Ok(ImplementationIdentity::new(
+            name,
+            identity_text("version", &version)?,
+        ))
+    });
+    Ok((speaks, identity))
 }
 
 pub(crate) fn target_error(value: &Value) -> Result<TargetError, Bad> {
@@ -247,21 +309,21 @@ pub(crate) fn target_error(value: &Value) -> Result<TargetError, Bad> {
         Some("unsupported") => {
             let members = exact::object(value, &["kind", "observation", "why"], &[])?;
             Ok(TargetError::unsupported(
-                exact::text(members.req("observation"))?,
-                exact::text(members.req("why"))?,
+                target_text(members.req("observation"))?,
+                target_text(members.req("why"))?,
             ))
         }
         Some("unavailable") => {
             let members = exact::object(value, &["kind", "operation", "detail"], &[])?;
             Ok(TargetError::unavailable(
-                exact::text(members.req("operation"))?,
-                exact::text(members.req("detail"))?,
+                target_text(members.req("operation"))?,
+                target_text(members.req("detail"))?,
             ))
         }
         Some("not_granted") => {
             let members = exact::object(value, &["kind"], &["actor"])?;
             Ok(TargetError::NotGranted {
-                actor: members.opt("actor").map(exact::text).transpose()?,
+                actor: members.opt("actor").map(target_text).transpose()?,
             })
         }
         _ => Err(Bad::Shape(value.at)),
@@ -696,7 +758,7 @@ fn opt_map(
 
 pub(crate) fn entity_request(value: &Value) -> Result<EntitySetupRequest, Bad> {
     let map = exact::open_object(value)?;
-    let mut request: EntitySetupRequest = exact::serde(value)?;
+    let mut request: EntitySetupRequest = exact::request(value)?;
     request.identity = exact::node(member(map, "identity", value)?);
     request.fields = exact::node_map(member(map, "fields", value)?)?;
     Ok(request)
@@ -704,7 +766,7 @@ pub(crate) fn entity_request(value: &Value) -> Result<EntitySetupRequest, Bad> {
 
 pub(crate) fn command_request(value: &Value) -> Result<SemanticCommandRequest, Bad> {
     let map = exact::open_object(value)?;
-    let mut request: SemanticCommandRequest = exact::serde(value)?;
+    let mut request: SemanticCommandRequest = exact::request(value)?;
     request.input = exact::node_map(member(map, "input", value)?)?;
     request.caller = opt_map(map, "caller")?;
     Ok(request)
@@ -712,21 +774,21 @@ pub(crate) fn command_request(value: &Value) -> Result<SemanticCommandRequest, B
 
 pub(crate) fn absent_input_request(value: &Value) -> Result<AbsentInputRequest, Bad> {
     let map = exact::open_object(value)?;
-    let mut request: AbsentInputRequest = exact::serde(value)?;
+    let mut request: AbsentInputRequest = exact::request(value)?;
     request.caller = opt_map(map, "caller")?;
     Ok(request)
 }
 
 pub(crate) fn view_request(value: &Value) -> Result<SemanticViewRequest, Bad> {
     let map = exact::open_object(value)?;
-    let mut request: SemanticViewRequest = exact::serde(value)?;
+    let mut request: SemanticViewRequest = exact::request(value)?;
     request.params = opt_map(map, "params")?.unwrap_or_default();
     Ok(request)
 }
 
 pub(crate) fn scan_request(value: &Value) -> Result<OrderedScanRequest, Bad> {
     let map = exact::open_object(value)?;
-    let mut request: OrderedScanRequest = exact::serde(value)?;
+    let mut request: OrderedScanRequest = exact::request(value)?;
     request.params = opt_map(map, "params")?.unwrap_or_default();
     Ok(request)
 }
@@ -738,7 +800,7 @@ pub(crate) fn reader(value: &Value) -> Result<ActorRef, Bad> {
 
 pub(crate) fn delivery_request(value: &Value) -> Result<EventDeliveryRequest, Bad> {
     let map = exact::open_object(value)?;
-    let mut request: EventDeliveryRequest = exact::serde(value)?;
+    let mut request: EventDeliveryRequest = exact::request(value)?;
     request.payload = exact::node_map(member(map, "payload", value)?)?;
     request.context = exact::node_map(member(map, "context", value)?)?;
     Ok(request)
@@ -746,7 +808,7 @@ pub(crate) fn delivery_request(value: &Value) -> Result<EventDeliveryRequest, Ba
 
 pub(crate) fn await_request(value: &Value) -> Result<AwaitRequest, Bad> {
     let map = exact::open_object(value)?;
-    let mut request: AwaitRequest = exact::serde(value)?;
+    let mut request: AwaitRequest = exact::request(value)?;
     request.instance = exact::node(member(map, "instance", value)?);
     request.compared = exact::node_map(member(map, "compared", value)?)?;
     Ok(request)
@@ -762,7 +824,7 @@ pub(crate) fn fixture_request(
 ) -> Result<(ScenarioContext, crate::fixtures::Contract), Bad> {
     let map = exact::open_object(value)?;
     Ok((
-        exact::serde(member(map, "scenario", value)?)?,
-        exact::serde(member(map, "contract", value)?)?,
+        exact::request(member(map, "scenario", value)?)?,
+        exact::request(member(map, "contract", value)?)?,
     ))
 }

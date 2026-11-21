@@ -8,16 +8,83 @@
 //!
 //! Every way a process ends here signals its whole process group before the child is reaped, so the
 //! group id cannot have been reused and a server the program started in its group dies with it.
+//!
+//! # A signalled `ess`
+//!
+//! The child's own process group does not receive the interrupt a terminal sends to `ess`'s, and
+//! `ess` dying of a signal would run no `Drop`. So from the first spawn on, a thread of its own
+//! waits for `SIGINT`, `SIGTERM` and `SIGHUP` ([`watch_signals`]). On one it kills the group of
+//! the target alive then, reaps it, and exits with status 128 plus the signal's number, writing no
+//! report. `SIGKILL` cannot be handled; a target whose `ess` was killed exits when its standard
+//! input closes, as the design requires of every target.
+//!
+//! The group alive is [`ALIVE`], and nothing changes it outside its lock: a spawn registers its
+//! child before the lock is released, and a reap clears it before the lock is released. The
+//! signal thread takes the same lock and never releases it, so it sees either no target or one
+//! that is registered and not yet reaped (its group id therefore not reusable), and no target is
+//! spawned after it.
 
 use std::ffi::OsString;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdout, Command, Stdio};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, SyncSender};
+use std::sync::{Mutex, MutexGuard, OnceLock, PoisonError};
 use std::time::{Duration, Instant};
 
 use ess_conformance::process::{Exit, Peer, PeerFault, MAX_LINE};
 use rustix::process::{Pid, Signal, WaitId, WaitIdOptions};
+use signal_hook::consts::{SIGHUP, SIGINT, SIGTERM};
+
+/// The signals that end `ess` and, with it, the target.
+const ENDING: [i32; 3] = [SIGINT, SIGTERM, SIGHUP];
+
+/// The leader of the target's process group while one is alive: registered by a spawn and cleared
+/// by a reap, each under this lock (see the [module documentation](self)).
+static ALIVE: Mutex<Option<Pid>> = Mutex::new(None);
+
+fn alive() -> MutexGuard<'static, Option<Pid>> {
+    ALIVE.lock().unwrap_or_else(PoisonError::into_inner)
+}
+
+/// Starts the thread that ends the target when `ess` is signalled, once per process; before the
+/// first spawn, so no target is ever alive without it.
+fn watch_signals() -> std::io::Result<()> {
+    static WATCHING: OnceLock<Result<(), std::io::ErrorKind>> = OnceLock::new();
+    let watching = WATCHING.get_or_init(|| {
+        let mut signals =
+            signal_hook::iterator::Signals::new(ENDING).map_err(|error| error.kind())?;
+        std::thread::Builder::new()
+            .name("ess-target-signals".to_owned())
+            .spawn(move || {
+                if let Some(signal) = signals.forever().next() {
+                    end_on(signal);
+                }
+            })
+            .map(drop)
+            .map_err(|error| error.kind())
+    });
+    watching.map_err(std::io::Error::from)
+}
+
+/// Kills and reaps the target alive, then exits `128 + signal`. The lock is never released, so
+/// nothing is spawned after this.
+fn end_on(signal: i32) -> ! {
+    let alive = alive();
+    if let Some(pid) = *alive {
+        kill_group(pid);
+        let _ = rustix::process::waitid(WaitId::Pid(pid), WaitIdOptions::EXITED);
+    }
+    std::process::exit(128 + signal);
+}
+
+/// `SIGKILL` to the group `leader` leads, and to `leader` itself, which may have left its group;
+/// either way the reap that follows cannot wait forever. `leader` must not have been reaped yet.
+fn kill_group(leader: Pid) {
+    // ESRCH: the whole group has already exited, and the child waits to be reaped.
+    let _ = rustix::process::kill_process_group(leader, Signal::KILL);
+    let _ = rustix::process::kill_process(leader, Signal::KILL);
+}
 
 /// How long `ess` waits for the program to exit after closing its standard input at the end of a
 /// run, before it kills the group.
@@ -78,8 +145,14 @@ impl Program {
         if let Some(dir) = &self.dir {
             command.current_dir(dir);
         }
+        watch_signals()?;
+        // Spawned and registered under one lock: a signal in between waits for the registration
+        // and then kills this child's group.
+        let mut alive = alive();
         let mut child = command.spawn()?;
         let pid = Pid::from_child(&child);
+        *alive = Some(pid);
+        drop(alive);
         let (stdin, stdout) = (child.stdin.take(), child.stdout.take());
         let (Some(stdin), Some(stdout)) = (stdin, stdout) else {
             let mut running = Running::bare(child, pid);
@@ -205,13 +278,16 @@ impl Running {
     }
 
     /// Kills the process group, then reaps the child: in this order, so the group id is still the
-    /// child's when it is signalled.
+    /// child's when it is signalled. Under [`ALIVE`]'s lock, cleared before it is released.
     fn kill(&mut self) {
         self.requests = None;
         self.lines = None;
-        // ESRCH: the whole group has already exited, and the child waits to be reaped.
-        let _ = rustix::process::kill_process_group(self.pid, Signal::KILL);
+        let mut alive = alive();
+        kill_group(self.pid);
         let _ = self.child.wait();
+        if *alive == Some(self.pid) {
+            *alive = None;
+        }
     }
 }
 

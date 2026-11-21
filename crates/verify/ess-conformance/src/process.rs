@@ -15,6 +15,12 @@
 //! offset only ([`ProtocolFault`]): nothing this module returns, displays or debug-prints holds a
 //! byte of an answer line that broke the protocol.
 //!
+//! The strings a target supplies that are shown as text, the handshake's implementation `name` and
+//! `version` and every string of a `target_error`, are bounded ([`MAX_IDENTITY`], refused past it;
+//! [`MAX_TARGET_TEXT`], cut past it) and have every control character (Cc), line or paragraph
+//! separator and bidirectional override or isolate written as its escape, `\u{1b}` style, before
+//! they are kept. An in-process target's strings are not touched.
+//!
 //! # Lifecycle
 //!
 //! A fault ends the current scenario: the peer is killed, every further call of that scenario answers
@@ -56,6 +62,14 @@ pub const READS: &[&str] = &[TARGET_FORMAT];
 
 /// The longest answer line read, in bytes before its `\n`: 16 MiB.
 pub const MAX_LINE: usize = 16_777_216;
+
+/// The longest implementation `name` or `version` a handshake may name, in bytes; a longer one is
+/// [`HandshakeRefusal::IdentityTooLong`].
+pub const MAX_IDENTITY: usize = 256;
+
+/// The longest string of a `target_error` answer kept whole, in bytes; a longer one is cut at a
+/// character boundary and ends ` … (<n> bytes more)`.
+pub const MAX_TARGET_TEXT: usize = 4096;
 
 // ---- operations ----------------------------------------------------------------------------------
 
@@ -388,17 +402,25 @@ pub enum HandshakeRefusal {
     },
     /// A restarted target names another implementation than the first did.
     OtherImplementation,
+    /// The handshake's implementation `name` or `version` is longer than [`MAX_IDENTITY`] bytes.
+    IdentityTooLong {
+        /// `name` or `version`.
+        member: &'static str,
+        /// Its length in bytes.
+        bytes: usize,
+    },
 }
 
 impl HandshakeRefusal {
-    /// The refusal's kind: a fault kind's name, `version`, `target-error` or
-    /// `other-implementation`.
+    /// The refusal's kind: a fault kind's name, `version`, `target-error`, `other-implementation`
+    /// or `identity-too-long`.
     pub fn kind(&self) -> &'static str {
         match self {
             Self::Fault(fault) => fault.kind.name(),
             Self::Version { .. } => "version",
             Self::Refused { .. } => "target-error",
             Self::OtherImplementation => "other-implementation",
+            Self::IdentityTooLong { .. } => "identity-too-long",
         }
     }
 }
@@ -429,6 +451,11 @@ impl fmt::Display for HandshakeRefusal {
             Self::OtherImplementation => f.write_str(
                 "the restarted target names another implementation than the run's; one report \
                  names one implementation",
+            ),
+            Self::IdentityTooLong { member, bytes } => write!(
+                f,
+                "the target's handshake names an implementation {member} of {bytes} bytes; at \
+                 most {MAX_IDENTITY} are read"
             ),
         }
     }
@@ -650,7 +677,7 @@ fn handshake<P: Peer>(
     ) {
         Ok((speaks, identity)) => {
             if READS.contains(&speaks.as_str()) {
-                Ok(identity)
+                identity
             } else {
                 Err(HandshakeRefusal::Version {
                     speaks: version_of(&speaks),

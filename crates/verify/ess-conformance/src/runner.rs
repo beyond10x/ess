@@ -72,8 +72,8 @@ use ess_primitives::predicate::{Predicate, Truth};
 use ess_primitives::time::{Rfc3339Instant, Timestamp};
 
 use crate::report::{
-    quote, quote_input, CheckCode, CheckResult, ConformanceReport, Diagnostic, ScenarioResult,
-    Status,
+    quote, quote_input, quote_name, CheckCode, CheckResult, ConformanceReport, Diagnostic,
+    ScenarioResult, Status,
 };
 use crate::scenario::{
     ActorRef, BindingRef, CommandRef, ConformanceScenario, ConformanceSuite, Elapsed, EntityRef,
@@ -4266,11 +4266,12 @@ fn identity_witness(observed: &crate::value_invariant::ValueInvariants) -> bool 
     )
 }
 
-/// `field = value, …`, for a required or observed row.
+/// `field = value, …`, for a required or observed row. An observed row's names are the target's,
+/// so they print through [`quote_name`] as its values print through [`quote`].
 fn fields_of(fields: &BTreeMap<String, Node>) -> String {
     fields
         .iter()
-        .map(|(field, value)| format!("{field} = {}", quote(value)))
+        .map(|(field, value)| format!("{} = {}", quote_name(field), quote(value)))
         .collect::<Vec<_>>()
         .join(", ")
 }

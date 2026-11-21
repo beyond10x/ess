@@ -149,7 +149,11 @@ struct Served<'t, T: ConformanceTarget> {
     respawn_fault: Option<PeerFault>,
     respawns: std::rc::Rc<RefCell<usize>>,
     kills: std::rc::Rc<RefCell<usize>>,
+    rewrite: Option<Rewrite>,
 }
+
+/// What a peer does to each answer `serve` wrote before the target reads it.
+type Rewrite = Box<dyn Fn(&str) -> String>;
 
 impl<'t, T: ConformanceTarget> Served<'t, T> {
     fn new(target: &'t T) -> Self {
@@ -162,11 +166,18 @@ impl<'t, T: ConformanceTarget> Served<'t, T> {
             respawn_fault: None,
             respawns: std::rc::Rc::default(),
             kills: std::rc::Rc::default(),
+            rewrite: None,
         }
     }
 
     fn on(mut self, op: &str, nth: usize, reply: Reply) -> Self {
         self.overrides.push((op.to_owned(), nth, reply));
+        self
+    }
+
+    /// Every answer `serve` writes passed through `rewrite` before the target reads it.
+    fn rewriting(mut self, rewrite: impl Fn(&str) -> String + 'static) -> Self {
+        self.rewrite = Some(Box::new(rewrite));
         self
     }
 }
@@ -194,6 +205,9 @@ impl<T: ConformanceTarget> Peer for Served<'_, T> {
         let mut out = Vec::new();
         serve(self.target, format!("{line}\n").as_bytes(), &mut out).unwrap();
         assert_eq!(out.pop(), Some(b'\n'));
+        if let Some(rewrite) = &self.rewrite {
+            out = rewrite(std::str::from_utf8(&out).unwrap()).into_bytes();
+        }
         self.answer = Some(Ok(out));
         Ok(())
     }
@@ -1527,6 +1541,497 @@ fn serve_refuses_a_request_it_cannot_decode_by_kind_and_line() {
     assert_eq!(
         error.to_string(),
         "request line 2 is not a request of ess-conformance-target/1 at byte 0"
+    );
+}
+
+/// `serve` answers every request `exercise` sends as it answers that request with `member`, one
+/// `"name":value` pair, added first to its `request` object. Added as text: a round trip through
+/// `serde_json::Value` would round the requests' exact numbers.
+fn answers_to_every_operation(member: &str) {
+    let echo = Echo::default();
+    let peer = Served::new(&echo);
+    let log = peer.log.clone();
+    exercise(&connect(peer));
+    let mut seen = BTreeSet::new();
+    for (op, line) in log.borrow().iter() {
+        let (envelope, request) = line.split_once(r#""request":{"#).unwrap();
+        let comma = if request.starts_with('}') { "" } else { "," };
+        let wider = format!(r#"{envelope}"request":{{{member}{comma}{request}"#);
+        serde_json::from_str::<serde_json::Value>(&wider).expect("the widened line is JSON");
+        let answer = |line: &str| {
+            let mut out = Vec::new();
+            serve(&Echo::default(), format!("{line}\n").as_bytes(), &mut out)
+                .map(|()| String::from_utf8(out).unwrap())
+                .map_err(|error| error.kind())
+        };
+        assert_eq!(
+            answer(&wider),
+            answer(line),
+            "{op}: a request member serve does not know changes its answer"
+        );
+        seen.insert(Op::from_name(op).unwrap());
+    }
+    assert_eq!(seen, Op::ALL.iter().copied().collect::<BTreeSet<_>>());
+}
+
+/// Design "Requests are open": every operation's request object, at its top level.
+#[test]
+fn serve_drops_an_unknown_top_level_request_member_in_every_operation() {
+    answers_to_every_operation(r#""added_later":{"any":[1,"x",2.5]}"#);
+}
+
+/// Members whose value is data the target reads, a value map: a key added there is a value.
+const DATA: &[&str] = &[
+    "input", "caller", "params", "payload", "context", "compared", "identity", "instance",
+    "fields", "read",
+];
+/// Members whose value is a dictionary keyed by name: a key added there is an entry.
+const NAMED: &[&str] = &["mapping", "declarations", "variants"];
+
+/// Where each record of members in `value` opens, with its path: every object that is neither a
+/// value map nor a dictionary keyed by name, however deep.
+fn records(value: &exact::Value, member: Option<&str>, path: &str, out: &mut Vec<(String, usize)>) {
+    match &value.kind {
+        exact::Kind::Seq(items) => {
+            for (index, item) in items.iter().enumerate() {
+                records(item, None, &format!("{path}[{index}]"), out);
+            }
+        }
+        exact::Kind::Map(map) => {
+            if member.is_some_and(|member| DATA.contains(&member)) {
+                return;
+            }
+            let named = member.is_some_and(|member| NAMED.contains(&member));
+            if !named {
+                out.push((path.to_owned(), value.at));
+            }
+            for (key, item) in map {
+                let inner = (!named).then_some(key.as_str());
+                records(item, inner, &format!("{path}.{key}"), out);
+            }
+        }
+        _ => {}
+    }
+}
+
+/// What `serve` answers `line` with, and every request the target saw.
+fn served_by_echo(line: &str) -> (Result<String, &'static str>, Vec<Seen>) {
+    let echo = Echo::default();
+    let mut out = Vec::new();
+    let answer = serve(&echo, format!("{line}\n").as_bytes(), &mut out)
+        .map(|()| String::from_utf8(out).unwrap())
+        .map_err(|error| error.kind());
+    (answer, echo.log.into_inner())
+}
+
+/// Design "Requests are open", at every depth: one member added to any record of a request, a
+/// periodic check's host contract and a fixture contract's declared fields included, changes
+/// neither the answer nor what the target is handed. A value map and a dictionary keyed by name
+/// are not records: a key added there is data.
+#[test]
+fn serve_drops_an_unknown_request_member_at_every_depth_in_every_operation() {
+    let echo = Echo::default();
+    let peer = Served::new(&echo);
+    let log = peer.log.clone();
+    exercise(&connect(peer));
+    let mut lines = log.borrow().clone();
+    let (_, fixture) = lines
+        .iter()
+        .find(|(op, _)| op == "fixture_values")
+        .unwrap()
+        .clone();
+    let declared = fixture.replace(
+        r#"{"fields":[{"name":"principal-id","type":"Uuid"}],"declarations":{}}"#,
+        r#"{"fields":[{"name":"principal-id","type":"acme.Pair"}],"declarations":{"acme.Code":{"kind":"newtype","of":"String"},"acme.Mode":{"kind":"enum","variants":["on","off"]},"acme.Pair":{"kind":"struct","fields":[{"name":"left","type":"acme.Code"},{"name":"mode","type":"Optional<acme.Mode>","wire":"Mode"}]}}}"#,
+    );
+    assert_ne!(declared, fixture, "the fixture contract is replaced");
+    lines.push(("fixture_values".to_owned(), declared));
+    let mut points = BTreeSet::new();
+    for (op, line) in &lines {
+        let control = served_by_echo(line);
+        assert!(
+            control
+                .0
+                .as_ref()
+                .is_ok_and(|answer| !answer.contains(r#""fault""#)),
+            "{op}: {control:?}"
+        );
+        let tree = exact::parse(line).unwrap();
+        let exact::Kind::Map(envelope) = &tree.kind else {
+            panic!("{op}: {line}")
+        };
+        let mut at = Vec::new();
+        records(&envelope["request"], None, "request", &mut at);
+        for (path, offset) in at {
+            assert_eq!(line.as_bytes()[offset], b'{', "{op} {path}");
+            let rest = &line[offset + 1..];
+            let comma = if rest.starts_with('}') { "" } else { "," };
+            let wider = format!(
+                r#"{}{{"added_later":{{"any":[1]}}{comma}{rest}"#,
+                &line[..offset]
+            );
+            assert_eq!(
+                served_by_echo(&wider),
+                control,
+                "{op}: a member serve does not know, added at {path}, changes its answer"
+            );
+            points.insert(format!("{op} {path}"));
+        }
+    }
+    for deep in [
+        "open_periodic request.check.periodic.host",
+        "open_periodic request.check.periodic.host.read_fields[0]",
+        "open_periodic request.check.mapping.",
+        "fixture_values request.contract.fields[0]",
+        "fixture_values request.contract.declarations.acme.Pair",
+        "fixture_values request.contract.declarations.acme.Pair.fields[1]",
+        "observe_periodic request.scope",
+        "close_periodic request",
+    ] {
+        assert!(
+            points.iter().any(|point| point.starts_with(deep)),
+            "no member is added at {deep}: {points:#?}"
+        );
+    }
+}
+
+/// The suite vocabulary `serve` reads openly stays closed where it reads a suite document: a
+/// periodic scope, a periodic check and a fixture contract each refuse a member they do not know,
+/// at their top level and nested.
+#[test]
+fn a_suite_scope_check_or_contract_with_a_member_it_does_not_know_is_still_refused() {
+    fn refuses<T: serde::de::DeserializeOwned + std::fmt::Debug>(control: &str, wider: &str) {
+        serde_json::from_str::<T>(control).expect(control);
+        assert!(serde_json::from_str::<T>(wider).is_err(), "{wider}");
+    }
+    refuses::<Scope>(
+        r#"{"correlation":"billing-c-000001","binding":"poll-mailbox","lifetime":"l-1"}"#,
+        r#"{"correlation":"billing-c-000001","binding":"poll-mailbox","lifetime":"l-1","added_later":1}"#,
+    );
+    let contract = r#"{"fields":[{"name":"principal-id","type":"acme.Pair"}],"declarations":{"acme.Pair":{"kind":"struct","fields":[{"name":"left","type":"String"}]}}}"#;
+    for wider in [
+        r#"{"fields":[{"name":"principal-id","type":"acme.Pair"}],"declarations":{"acme.Pair":{"kind":"struct","fields":[{"name":"left","type":"String"}]}},"added_later":1}"#,
+        r#"{"fields":[{"name":"principal-id","type":"acme.Pair","added_later":1}],"declarations":{"acme.Pair":{"kind":"struct","fields":[{"name":"left","type":"String"}]}}}"#,
+        r#"{"fields":[{"name":"principal-id","type":"acme.Pair"}],"declarations":{"acme.Pair":{"kind":"struct","added_later":1,"fields":[{"name":"left","type":"String"}]}}}"#,
+        r#"{"fields":[{"name":"principal-id","type":"acme.Pair"}],"declarations":{"acme.Pair":{"kind":"struct","fields":[{"name":"left","type":"String","added_later":1}]}}}"#,
+    ] {
+        refuses::<crate::fixtures::Contract>(contract, wider);
+    }
+    let check = serde_json::to_value(periodic_check()).unwrap();
+    for path in [
+        "",
+        "/periodic",
+        "/periodic/host",
+        "/periodic/host/read_fields/0",
+    ] {
+        let mut wider = check.clone();
+        wider.pointer_mut(path).unwrap()["added_later"] = 1.into();
+        refuses::<crate::periodic::Check>(&check.to_string(), &wider.to_string());
+    }
+}
+
+/// A member a request's types know in one object and not in another is dropped only where it is
+/// unknown: a declaration's unknown `name` goes, every field's `name` before and after it stays.
+#[test]
+fn a_request_member_unknown_in_one_object_is_dropped_there_and_kept_where_it_is_known() {
+    let control = r#"{"fields":[{"name":"principal-id","type":"acme.Pair"}],"declarations":{"acme.Pair":{"kind":"struct","fields":[{"name":"left","type":"String"}]}}}"#;
+    let wider = r#"{"fields":[{"name":"principal-id","type":"acme.Pair"}],"declarations":{"acme.Pair":{"kind":"struct","fields":[{"name":"left","type":"String"}],"name":"later"}}}"#;
+    let read =
+        |line: &str| exact::request::<crate::fixtures::Contract>(&exact::parse(line).unwrap());
+    assert_eq!(read(wider), Ok(read(control).unwrap()));
+    let unknown_type = r#"{"fields":[{"name":"principal-id","type":"acme.Pair"}],"declarations":{"acme.Pair":{"kind":"later","fields":[]}}}"#;
+    assert!(read(unknown_type).is_err(), "only members are open");
+}
+
+// ---- target-supplied text ------------------------------------------------------------------------
+
+/// The identity a handshake naming `name` and `version` admits, or its refusal.
+fn handshaken(name: &str, version: &str) -> Result<ImplementationIdentity, HandshakeRefusal> {
+    let echo = Echo::default();
+    let answer = serde_json::json!({"id": 0, "ok": {"speaks": "ess-conformance-target/1",
+        "implementation": {"name": name, "version": version}}})
+    .to_string();
+    let peer = Served::new(&echo).on("handshake", 1, line(&answer));
+    ProcessTarget::connect(peer, suite(), TIMEOUT_MS).map(|target| target.implementation().clone())
+}
+
+/// Every character the boundary writes as text, with that text.
+const STEERING: &[(char, &str)] = &[
+    ('\u{0}', "\\u{0}"),
+    ('\u{7}', "\\u{7}"),
+    ('\u{8}', "\\u{8}"),
+    ('\t', "\\u{9}"),
+    ('\n', "\\u{a}"),
+    ('\r', "\\u{d}"),
+    ('\u{1b}', "\\u{1b}"),
+    ('\u{1f}', "\\u{1f}"),
+    ('\u{7f}', "\\u{7f}"),
+    ('\u{80}', "\\u{80}"),
+    ('\u{85}', "\\u{85}"),
+    ('\u{9b}', "\\u{9b}"),
+    ('\u{9f}', "\\u{9f}"),
+    ('\u{2028}', "\\u{2028}"),
+    ('\u{2029}', "\\u{2029}"),
+    ('\u{202a}', "\\u{202a}"),
+    ('\u{202b}', "\\u{202b}"),
+    ('\u{202c}', "\\u{202c}"),
+    ('\u{202d}', "\\u{202d}"),
+    ('\u{202e}', "\\u{202e}"),
+    ('\u{2066}', "\\u{2066}"),
+    ('\u{2067}', "\\u{2067}"),
+    ('\u{2068}', "\\u{2068}"),
+    ('\u{2069}', "\\u{2069}"),
+];
+
+/// Characters next to the escaped ones that stay as they are.
+const KEPT: &str = "a é\u{a0}\u{200b}\u{2027}\u{202f}\u{2065}\u{206a}\u{fe0f}𝄞\\";
+
+fn steering() -> (String, String) {
+    let mut raw = String::from(KEPT);
+    let mut written = String::from(KEPT);
+    for (c, text) in STEERING {
+        raw.push(*c);
+        raw.push('|');
+        written.push_str(text);
+        written.push('|');
+    }
+    (raw, written)
+}
+
+#[test]
+fn a_handshake_identity_has_every_steering_character_written_as_text() {
+    let (raw, written) = steering();
+    assert_eq!(
+        handshaken(&raw, &format!("1.0{raw}")),
+        Ok(ImplementationIdentity::new(
+            written.clone(),
+            format!("1.0{written}")
+        ))
+    );
+}
+
+#[test]
+fn a_handshake_name_or_version_past_256_bytes_is_refused_without_quoting_it() {
+    let at_bound = format!("{}é", "n".repeat(254));
+    assert_eq!(at_bound.len(), 256);
+    assert_eq!(
+        handshaken(&at_bound, &at_bound),
+        Ok(ImplementationIdentity::new(
+            at_bound.clone(),
+            at_bound.clone()
+        ))
+    );
+    let past = format!("{}é", "Q".repeat(255));
+    for (name, version, member) in [
+        (past.as_str(), "1", "name"),
+        ("echo", past.as_str(), "version"),
+    ] {
+        let refusal = handshaken(name, version).unwrap_err();
+        assert_eq!(
+            refusal,
+            HandshakeRefusal::IdentityTooLong { member, bytes: 257 }
+        );
+        assert_eq!(refusal.kind(), "identity-too-long");
+        let text = refusal.to_string();
+        assert_eq!(
+            text,
+            format!(
+                "the target's handshake names an implementation {member} of 257 bytes; at most \
+                 256 are read"
+            )
+        );
+        assert!(!text.contains("QQ"), "{text}");
+    }
+    // Bounded before escaping: 256 bytes of escapes are the target's 256 bytes.
+    let controls = "\u{1b}".repeat(256);
+    assert_eq!(
+        handshaken(&controls, "1").unwrap().name,
+        "\\u{1b}".repeat(256)
+    );
+}
+
+#[test]
+fn a_restarted_target_naming_the_same_steering_identity_is_the_same_implementation() {
+    let (raw, _) = steering();
+    let echo = Echo::default();
+    let answer = serde_json::json!({"id": 0, "ok": {"speaks": "ess-conformance-target/1",
+        "implementation": {"name": raw, "version": "1"}}})
+    .to_string();
+    let peer = Served::new(&echo)
+        .on("handshake", 1, line(&answer))
+        .on("handshake", 2, line(&answer))
+        .on("execute_command", 1, line("garbage"));
+    let respawns = peer.respawns.clone();
+    let target = connect(peer);
+    target.begin_scenario(&first()).unwrap();
+    target.execute_command(command_request()).unwrap_err();
+    assert_eq!(target.begin_scenario(&second()), Ok(()));
+    assert_eq!(*respawns.borrow(), 1);
+}
+
+/// What a query answered with `target_error` comes to.
+fn query_refused(target_error: &serde_json::Value) -> TargetError {
+    let text = serde_json::json!({"id": 2, "target_error": target_error}).to_string();
+    query_answered(&text).unwrap_err()
+}
+
+#[test]
+fn every_string_of_a_target_error_has_every_steering_character_written_as_text() {
+    let (raw, written) = steering();
+    assert_eq!(
+        query_refused(&serde_json::json!({"kind": "unsupported",
+            "observation": format!("o{raw}"), "why": format!("w{raw}")})),
+        TargetError::unsupported(format!("o{written}"), format!("w{written}"))
+    );
+    assert_eq!(
+        query_refused(&serde_json::json!({"kind": "unavailable",
+            "operation": format!("o{raw}"), "detail": format!("d{raw}")})),
+        TargetError::unavailable(format!("o{written}"), format!("d{written}"))
+    );
+    assert_eq!(
+        query_refused(&serde_json::json!({"kind": "not_granted", "actor": format!("a{raw}")})),
+        TargetError::NotGranted {
+            actor: Some(format!("a{written}"))
+        }
+    );
+}
+
+#[test]
+fn a_target_error_string_past_4096_bytes_is_cut_at_a_character_naming_what_was_cut() {
+    let at_bound = "w".repeat(4096);
+    assert_eq!(
+        query_refused(
+            &serde_json::json!({"kind": "unsupported", "observation": "rows",
+            "why": at_bound})
+        ),
+        TargetError::unsupported("rows", at_bound.clone())
+    );
+    // 4095 bytes, then a two-byte character the cut would split.
+    let long = format!("{}{}", "w".repeat(4095), "é".repeat(1000));
+    assert_eq!(
+        query_refused(
+            &serde_json::json!({"kind": "unavailable", "operation": "rows",
+            "detail": long})
+        ),
+        TargetError::unavailable("rows", format!("{} … (2000 bytes more)", "w".repeat(4095)))
+    );
+    // The bound is the target's bytes; what is kept is escaped after the cut.
+    let controls = format!("{}tail", "\u{1b}".repeat(4096));
+    let cut = match query_refused(&serde_json::json!({"kind": "not_granted", "actor": controls})) {
+        TargetError::NotGranted { actor: Some(actor) } => actor,
+        other => panic!("expected not_granted, got {other:?}"),
+    };
+    assert_eq!(cut, format!("{} … (4 bytes more)", "\\u{1b}".repeat(4096)));
+    for (kind, member, other) in [
+        ("unsupported", "observation", "why"),
+        ("unsupported", "why", "observation"),
+        ("unavailable", "operation", "detail"),
+        ("unavailable", "detail", "operation"),
+    ] {
+        let mut error = serde_json::json!({"kind": kind});
+        error[member] = "x".repeat(5000).into();
+        error[other] = "short".into();
+        let text = query_refused(&error).to_string();
+        assert!(
+            text.contains(&format!("{} … (904 bytes more)", "x".repeat(4096))),
+            "{member}: {text}"
+        );
+    }
+}
+
+#[test]
+fn a_report_through_a_process_target_writes_no_steering_character_the_target_sent() {
+    let (raw, _) = steering();
+    let echo = Echo::default();
+    let handshake = serde_json::json!({"id": 0, "ok": {"speaks": "ess-conformance-target/1",
+        "implementation": {"name": format!("n{raw}"), "version": format!("v{raw}")}}})
+    .to_string();
+    let refusal = serde_json::json!({"kind": "unsupported", "observation": format!("o{raw}"),
+        "why": format!("w{raw}")});
+    let peer = Served::new(&echo).on("handshake", 1, line(&handshake)).on(
+        "query_view",
+        1,
+        Reply::Line(Box::new(move |id| {
+            serde_json::json!({"id": id, "target_error": refusal})
+                .to_string()
+                .into_bytes()
+        })),
+    );
+    let target = connect(peer);
+    let identity = target.identity().unwrap();
+    let error = target
+        .begin_scenario(&first())
+        .and_then(|()| target.query_view(view_request()))
+        .unwrap_err();
+    let text = format!("{identity} {error}");
+    let steering: Vec<char> = text
+        .chars()
+        .filter(|c| STEERING.iter().any(|(s, _)| s == c))
+        .collect();
+    assert_eq!(steering, Vec::<char>::new(), "{text}");
+}
+
+/// The text report of a billing run through `serve`, every answer passed through `rewrite`.
+fn text_report_rewritten(rewrite: impl Fn(&str) -> String + 'static) -> String {
+    let admitted = billing();
+    let served = crate::reference::Billing::new();
+    let target = ProcessTarget::connect(
+        Served::new(&served).rewriting(rewrite),
+        HandshakeSuite::of(admitted),
+        TIMEOUT_MS,
+    )
+    .unwrap();
+    crate::Runner::for_suite(admitted.suite())
+        .run_admitted(admitted, &target)
+        .into_report()
+        .to_string()
+}
+
+/// A view row whose `total` the target renamed to `total_as` and whose `issued_at` it set to
+/// `issued_at`, both JSON text, as the text report quotes the row: a guard reading `total.amount`
+/// cannot be decided on it.
+fn quoted_row(total_as: &str, issued_at: &str) -> String {
+    let (total_as, issued_at) = (total_as.to_owned(), issued_at.to_owned());
+    text_report_rewritten(move |answer| {
+        answer
+            .replace(r#""total":"#, &format!("{total_as}:"))
+            .replace(
+                r#""issued_at":null"#,
+                &format!(r#""issued_at":{issued_at}"#),
+            )
+    })
+}
+
+/// A member name a target sent holding ESC reaches the text report escaped, never raw.
+#[test]
+fn a_text_report_writes_an_escape_in_a_row_member_name_as_text() {
+    let report = quoted_row(r#""to\u001btal""#, "null");
+    assert!(!report.contains('\u{1b}'), "{report}");
+    assert!(report.contains(r#"to\u001btal = {"amount""#), "{report}");
+}
+
+/// A value a target sent holding U+009B (CSI) or U+202E (right-to-left override) reaches the text
+/// report escaped, never raw.
+#[test]
+fn a_text_report_writes_a_c1_control_or_a_bidirectional_override_in_a_value_as_text() {
+    for raw in ['\u{9b}', '\u{202e}'] {
+        let escaped = format!("\\u{:04x}", u32::from(raw));
+        let report = quoted_row(r#""tootal""#, &format!(r#""text{escaped}text""#));
+        assert!(!report.contains(raw), "{report}");
+        assert!(
+            report.contains(&format!(r#"issued_at = "text{escaped}text""#)),
+            "{report}"
+        );
+    }
+}
+
+/// A member name and a value holding no such character print as they always printed.
+#[test]
+fn a_text_report_prints_an_ordinary_row_member_name_and_value_unchanged() {
+    let report = quoted_row(r#""tootal""#, r#""plain""#);
+    assert!(
+        report.contains(r#"{invoice_id = "00000000-0000-4000-8000-000000000001", issued_at = "plain", reminder_count = 0.0, tootal = {"amount":1.0,"currency":"amount.currency"}} binds nothing for total.amount"#),
+        "{report}"
     );
 }
 

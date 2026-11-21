@@ -195,7 +195,7 @@ fn answer<T: ConformanceTarget + ?Sized>(target: &T, value: &Value) -> Result<St
             line(id, answer.as_ref().map(ExactMap).map_err(Clone::clone))
         }
         Op::OpenPeriodic => {
-            let answer = target.open_periodic(exact::serde(request)?);
+            let answer = target.open_periodic(exact::request(request)?);
             line(
                 id,
                 answer
@@ -205,7 +205,7 @@ fn answer<T: ConformanceTarget + ?Sized>(target: &T, value: &Value) -> Result<St
             )
         }
         Op::ObservePeriodic => {
-            let answer = target.observe_periodic(exact::serde(request)?);
+            let answer = target.observe_periodic(exact::request(request)?);
             line(
                 id,
                 answer
@@ -214,10 +214,10 @@ fn answer<T: ConformanceTarget + ?Sized>(target: &T, value: &Value) -> Result<St
                     .map_err(Clone::clone),
             )
         }
-        Op::ClosePeriodic => line(id, target.close_periodic(exact::serde(request)?)),
-        Op::ObserveClockReading => line(id, target.observe_clock_reading(exact::serde(request)?)),
+        Op::ClosePeriodic => line(id, target.close_periodic(exact::request(request)?)),
+        Op::ObserveClockReading => line(id, target.observe_clock_reading(exact::request(request)?)),
         Op::EstablishEntity => unit(target.establish_entity(wire::entity_request(request)?)),
-        Op::BeginScenario => unit(target.begin_scenario(&exact::serde(request)?)),
+        Op::BeginScenario => unit(target.begin_scenario(&exact::request(request)?)),
         Op::ExecuteCommand => command(id, &target.execute_command(wire::command_request(request)?)),
         Op::ExecuteCommandWithoutInput => command(
             id,
@@ -233,7 +233,7 @@ fn answer<T: ConformanceTarget + ?Sized>(target: &T, value: &Value) -> Result<St
             &target.query_view_anonymous(wire::view_request(request)?),
         ),
         Op::ObserveEvents => {
-            let answer = target.observe_events(exact::serde(request)?);
+            let answer = target.observe_events(exact::request(request)?);
             line(
                 id,
                 answer
@@ -243,18 +243,18 @@ fn answer<T: ConformanceTarget + ?Sized>(target: &T, value: &Value) -> Result<St
             )
         }
         Op::ConfigureExternalOutcome => {
-            unit(target.configure_external_outcome(exact::serde(request)?))
+            unit(target.configure_external_outcome(exact::request(request)?))
         }
         Op::ConfigureExternalOutcomeRepeatedly => {
             unit(target.configure_external_outcome_repeatedly(
-                exact::serde(request)?,
+                exact::request(request)?,
                 wire::times(request)?,
             ))
         }
-        Op::RedeliverEvent => unit(target.redeliver_event(exact::serde(request)?)),
+        Op::RedeliverEvent => unit(target.redeliver_event(exact::request(request)?)),
         Op::DeliverEvent => unit(target.deliver_event(wire::delivery_request(request)?)),
         Op::ObserveInvocations => {
-            let answer = target.observe_invocations(exact::serde(request)?);
+            let answer = target.observe_invocations(exact::request(request)?);
             line(
                 id,
                 answer
@@ -268,9 +268,9 @@ fn answer<T: ConformanceTarget + ?Sized>(target: &T, value: &Value) -> Result<St
                     .map_err(Clone::clone),
             )
         }
-        Op::MarkInstant => unit(target.mark_instant(exact::serde(request)?)),
-        Op::HoldNow => unit(target.hold_now(exact::serde(request)?)),
-        Op::ObserveElapsed => line(id, target.observe_elapsed(exact::serde(request)?)),
+        Op::MarkInstant => unit(target.mark_instant(exact::request(request)?)),
+        Op::HoldNow => unit(target.hold_now(exact::request(request)?)),
+        Op::ObserveElapsed => line(id, target.observe_elapsed(exact::request(request)?)),
         Op::ScanView => line(id, target.scan_view(wire::scan_request(request)?)),
         Op::ScanViewAs => line(
             id,
@@ -287,7 +287,7 @@ fn answer<T: ConformanceTarget + ?Sized>(target: &T, value: &Value) -> Result<St
                     .map_err(Clone::clone),
             )
         }
-        Op::EndScenario => unit(target.end_scenario(&exact::serde(request)?)),
+        Op::EndScenario => unit(target.end_scenario(&exact::request(request)?)),
     })
 }
 

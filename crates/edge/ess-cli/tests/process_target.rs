@@ -379,6 +379,66 @@ fn an_answer_past_the_time_limit_is_an_error() {
     );
 }
 
+/// Kills `ess` when the case ends, red or green.
+struct Running(std::process::Child);
+
+impl Drop for Running {
+    fn drop(&mut self) {
+        let _ = self.0.kill();
+        let _ = self.0.wait();
+    }
+}
+
+/// A signal to `ess` while it waits for an answer: the target's group is killed, `ess` exits
+/// 128 plus the signal's number, and no report is written.
+#[test]
+fn a_sighup_to_ess_waiting_for_an_answer_ends_the_targets_group_and_writes_no_report() {
+    let dir = tempfile::tempdir().unwrap();
+    let pids = dir.path().join("pids");
+    let record = dir.path().join("record");
+    let report = dir.path().join("report.json");
+    let _reaper = Reaper(pids.clone());
+    let mut command = peer(&["--stall-in", MIDDLE], &pids);
+    command.push("--record".into());
+    command.push(record.clone().into());
+    let mut ess = Running(
+        Command::new(ESS)
+            .current_dir(root())
+            .args(["verify", "conform", "run", "--suite", SUITE])
+            .args(["--report-format", "2", "--report-out"])
+            .arg(&report)
+            .args(["--target-timeout", "600", "--target", "process", "--"])
+            .args(&command)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("ess starts"),
+    );
+    // Waiting: the peer has recorded the request it stalls on, and nothing after it.
+    let deadline = Instant::now() + Duration::from_secs(60);
+    let mut last = (String::new(), Instant::now());
+    loop {
+        assert!(Instant::now() < deadline, "the peer never stalled");
+        assert!(ess.0.try_wait().unwrap().is_none(), "ess is still running");
+        let seen = fs::read_to_string(&record).unwrap_or_default();
+        if seen != last.0 {
+            last = (seen, Instant::now());
+        } else if seen.ends_with("execute_command\n")
+            && last.1.elapsed() > Duration::from_millis(1000)
+        {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    let pid = rustix::process::Pid::from_child(&ess.0);
+    rustix::process::kill_process(pid, rustix::process::Signal::HUP).expect("ess is signalled");
+    let status = ess.0.wait().expect("ess exits");
+    assert_eq!(status.code(), Some(128 + 1), "{status:?}");
+    assert!(!report.exists(), "a signalled run writes no report");
+    assert_gone(&pids);
+}
+
 #[test]
 fn a_failed_restart_errors_every_remaining_scenario() {
     let dir = tempfile::tempdir().unwrap();
