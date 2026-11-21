@@ -169,6 +169,7 @@ pub mod one_time_response;
 pub mod outcome_shapes;
 pub mod periodic;
 pub mod presence;
+pub mod process;
 pub mod quoted_predicate_format;
 pub mod reading;
 pub mod record;

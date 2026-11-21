@@ -96,7 +96,7 @@ pub enum ReadingOrder {
 }
 
 /// Scope of facts requested from the actual target adapter.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct ReadingObservationRequest {
     /// The actual event occurrence/member and its claimed declaration to validate.
     pub reading: ReadingReference,

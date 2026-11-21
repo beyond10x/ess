@@ -1,6 +1,6 @@
 ---
 title: One-time response values
-sidebar_position: 6
+sidebar_position: 7
 description: Declare response fields whose values may be disclosed only by the response that first issues them.
 ---
 

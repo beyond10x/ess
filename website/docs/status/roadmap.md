@@ -31,10 +31,10 @@ The standing constraints are:
 - **Obligations as trackable records.** A synthesis obligation is an entry in the generated plan
   (`PLAN.md`, `plan.json`), not a record a task can own and evidence can close. Nothing blocks it;
   it has not been scheduled.
-- **A conformance target in another process.** `ess verify conform run` reaches only the targets
-  built into `ess`, and the `ess-conformance` crate is not published. A target speaking a wire
-  protocol, or a published runner crate, would let any implementation be held to a suite without
-  the generated Go or TypeScript package. It has not been scheduled
+- **A published runner crate.** The `ess-conformance` crate is not published, so a Rust target
+  can implement its `ConformanceTarget` trait only from a checkout of this repository.
+  `ess verify conform run --target process` already holds an implementation in any language to a
+  suite without the generated Go or TypeScript package. A published crate has not been scheduled
   ([A suite at every level of a test pyramid](../concepts/test-pyramid.md#commit-the-generated-runner)).
 
 Accepted designs live in the repository’s `docs/design/` tree. This site documents shipped behavior

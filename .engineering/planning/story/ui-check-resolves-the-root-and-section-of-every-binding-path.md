@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:ui-check-resolves-the-root-and-section-of-every-binding-path
 kind: story
-status: active
+status: implemented
 title: ui check resolves the root and the section of every binding path
 summary: ess ui check accepts an unknown binding root and a section path naming no section or no listed member, in a navigate parameter and a read's params, on 0.94.0 (adopter report)
 tags:
@@ -14,10 +14,11 @@ relations:
 - serves: vision:O2
 - decomposes: epic:ess-ui-renderer-neutral-ui
 - depends_on: story:a-sections-first-row-is-a-binding-in-the-reference-and-both-renderers-or-in-neither
-revision: 8
+revision: 9
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-12T21:27:16Z", actor: "human:timo", revision: 3, executor: "agent:b10x", correlation: "operator-2026-11-12-accept-16"}
 - {from: "proposed", to: "active", at: "2026-11-12T21:27:17Z", actor: "human:timo", revision: 4, executor: "agent:b10x", correlation: "operator-2026-11-12-accept-16"}
+- {from: "active", to: "implemented", at: "2026-11-13T18:27:24Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"test_result":1}}}
 ---
 ## Defect
 

@@ -55,6 +55,7 @@ semver.workspace = true
 fluent-uri = "0.4.1"
 # The edge owns descriptor-relative output admission, locking and same-mount publication.
 rustix = { version = "=1.1.4", features = ["fs", "process"] }
+signal-hook = { version = "=0.3.18", default-features = false, features = ["iterator"] }
 sha2 = "0.11"
 getrandom = "0.3"
 # The recovery profile admits ESS-generated charts only, so the chart payload is decoded through a
@@ -77,6 +78,13 @@ path = "tests/support/recovery_driver.rs"
 # restart rather than a replay.
 name = "ess-recovery-fake"
 path = "tests/support/fake_helm.rs"
+
+[[bin]]
+# Test-only. A protocol peer of `ess verify conform run --target process` over the billing
+# reference that exits, stalls, writes garbage or answers out of turn on request: the fault cases
+# need a target that misbehaves, which the public `ess verify conform serve` does not offer.
+name = "ess-conformance-peer"
+path = "tests/support/conformance_peer.rs"
 
 [dev-dependencies]
 tempfile = "3.27"

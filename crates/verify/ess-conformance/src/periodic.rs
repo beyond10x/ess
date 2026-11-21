@@ -65,7 +65,7 @@ pub struct Scope {
     pub lifetime: String,
 }
 /// Activation request. The target must bind and validate the named typed authority.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Open {
     /// The required source contract and controlled fixture.
     pub check: Check,
@@ -84,7 +84,7 @@ pub struct Opened {
     pub context: BTreeMap<String, Node>,
 }
 /// A complete held window on the same clock as the activation mark.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Observe {
     /// Exact capture scope.
     pub scope: Scope,

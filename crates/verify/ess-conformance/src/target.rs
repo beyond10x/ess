@@ -617,7 +617,7 @@ impl fmt::Display for ImplementationIdentity {
 }
 
 /// Actual entity fixture state to validate and establish in the isolated target.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct EntitySetupRequest {
     /// Declared entity contract the adapter must enforce.
     pub entity: crate::scenario::EntityRef,
@@ -636,7 +636,7 @@ pub struct EntitySetupRequest {
 /// Both fields come from the runner. The correlation id is minted by the runner's id source rather
 /// than by the target, which is §37's rule and the reason two runs of one suite can be compared: an
 /// id the target invented would differ between runs for no semantic reason.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct ScenarioContext {
     /// Which scenario.
     pub scenario: ScenarioId,
@@ -660,7 +660,9 @@ impl ScenarioContext {
 /// the *waiting* happens where §15 puts it. It is not a duration to sleep for: a target that can
 /// answer immediately answers immediately, and one that cannot returns what it has when this instant
 /// has passed.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, serde::Serialize)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize,
+)]
 pub struct Deadline(Timestamp);
 
 impl Deadline {
@@ -689,7 +691,7 @@ impl fmt::Display for Deadline {
 // ---- commands --------------------------------------------------------------------------------
 
 /// A command to invoke, as the specification names it (§9).
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct SemanticCommandRequest {
     /// Which command.
     pub command: CommandRef,
@@ -729,7 +731,7 @@ pub struct RecordedCommandCompletion {
 ///
 /// [`SemanticCommandRequest`] without its `input`, rather than that type with an empty map: an
 /// empty map is `{}`, which is the other request.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct AbsentInputRequest {
     /// Which command.
     pub command: CommandRef,
@@ -916,7 +918,7 @@ impl ObservedEvent {
 }
 
 /// A request to observe the occurrences of one event (§13).
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct EventObservationRequest {
     /// Which event the caller is waiting for.
     ///
@@ -932,7 +934,7 @@ pub struct EventObservationRequest {
 // ---- elapsed time ------------------------------------------------------------------------------
 
 /// Naming the instant the scenario has reached, so a later claim can be measured from it.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct InstantMark {
     /// What later claims call it.
     pub instant: InstantName,
@@ -941,12 +943,44 @@ pub struct InstantMark {
 }
 
 /// The instant the next command of a scenario is decided at ([`ConformanceTarget::hold_now`]).
+///
+/// Serialized as `{instant, correlation}` with the instant as RFC 3339 text in UTC
+/// ([`Rfc3339Instant::to_rfc3339`](ess_primitives::time::Rfc3339Instant::to_rfc3339)), the spelling
+/// `ess-conformance-target/1` sends.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NowHold {
     /// The instant to read as `now`, at whole-second precision.
     pub instant: ess_primitives::time::Rfc3339Instant,
     /// The scenario this belongs to.
     pub correlation: CorrelationId,
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
+struct NowHoldText {
+    instant: String,
+    correlation: CorrelationId,
+}
+
+impl serde::Serialize for NowHold {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        NowHoldText {
+            instant: self.instant.to_rfc3339(),
+            correlation: self.correlation.clone(),
+        }
+        .serialize(serializer)
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for NowHold {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let text = NowHoldText::deserialize(deserializer)?;
+        let instant = ess_primitives::time::Rfc3339Instant::parse_rfc3339(&text.instant)
+            .ok_or_else(|| serde::de::Error::custom("`instant` is not an RFC 3339 date-time"))?;
+        Ok(Self {
+            instant,
+            correlation: text.correlation,
+        })
+    }
 }
 
 /// A request for what a target's clock reads, and for what happened while it got there.
@@ -958,7 +992,7 @@ pub struct NowHold {
 /// first and truthfully answers `20000` from the second, having done nothing in between; the point
 /// of the hold is what runs *during* it. One request means the target that answers is the target
 /// that waited, and the answer is about the wait.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct ElapsedObservationRequest {
     /// The instant the window opens at, named by an earlier [`InstantMark`].
     pub instant: InstantName,
@@ -999,7 +1033,7 @@ pub struct ElapsedObservation {
 /// For an event delivered from an external channel ([`EventDeliveryRequest`]), the occurrence
 /// repeated is the most recent one delivered, and it carries the context that occurrence arrived
 /// with — not the context of any earlier delivery.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct RedeliveryRequest {
     /// Which event to deliver again.
     ///
@@ -1015,7 +1049,7 @@ pub struct RedeliveryRequest {
 ///
 /// A redelivery of the event afterwards ([`RedeliveryRequest`]) repeats the most recent occurrence
 /// delivered this way, and carries that occurrence's context.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct EventDeliveryRequest {
     /// Which event.
     pub event: EventRef,
@@ -1032,7 +1066,7 @@ pub struct EventDeliveryRequest {
 // ---- views -----------------------------------------------------------------------------------
 
 /// A request to read a view (§14).
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct SemanticViewRequest {
     /// Which view.
     pub view: ViewRef,
@@ -1101,7 +1135,7 @@ pub type ViewRow = BTreeMap<String, Node>;
 /// synchronous, object-unsafe-free and crosses a process boundary in the emitted Go runner. A number
 /// says the same thing in one direction: *a consumer takes this many and then says stop*. What comes
 /// back is what the target's own loop did with that, which is the only fact worth having.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct OrderedScanRequest {
     /// Which view to read, in the order it declares.
     pub view: ViewRef,
@@ -1145,7 +1179,7 @@ pub struct OrderedScan {
 // ---- invocations -----------------------------------------------------------------------------
 
 /// A request for the invocations one binding made (§16).
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct InvocationObservationRequest {
     /// Whose invocations.
     pub binding: BindingRef,
@@ -1190,7 +1224,7 @@ impl ObservedInvocation {
 
 /// A request for the outcome the system itself reached for a command it issues
 /// ([`ConformanceTarget::await_outcome`], beyond10x/ess#542).
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct AwaitRequest {
     /// The system-issued command.
     pub command: CommandRef,
@@ -1236,7 +1270,7 @@ pub enum AwaitAnswer {
 // ---- external outcomes -----------------------------------------------------------------------
 
 /// A request to force an outcome the input cannot decide (§12).
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct ExternalOutcomeControl {
     /// The outcome the adapter must produce next. The command is part of the reference.
     pub force: OutcomeRef,

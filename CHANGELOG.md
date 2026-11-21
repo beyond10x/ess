@@ -2,6 +2,50 @@
 
 ## [Unreleased]
 
+### Added
+
+- `ess verify conform run --target process [--target-dir <dir>] [--target-timeout <seconds>] --
+  <program> [args…]` runs a suite against a program written in any language, over the new
+  protocol `ess-conformance-target/1` (in no release yet). `ess` starts the program without a
+  shell, in its own process group and in `--target-dir` (the current directory when absent), asks
+  it each question of the conformance target as one JSON object per line on its standard input
+  and reads one answer per line from its standard output. The Rust runner judges the answers and
+  writes the report a built-in target writes; the report's implementation is the name and version
+  the program gave in its handshake. `--target-timeout` is the seconds `ess` waits for each
+  answer, 1 to 3600, 30 when absent, plus the time an operation is asked to let pass. A fault (the
+  program exits or closes its output, answers after the limit, answers a line that is not valid
+  for the operation, answers another request's `id`, writes a number binary64 cannot hold or a
+  line over 16 MiB) ends that scenario `error`, kills the program's process group and restarts the
+  program for the next scenario, which must name the same implementation. Exit statuses are the
+  run's own (0, 1 and 3 from the report and `--strict`), and 2 with no report for no command after
+  `--`, a command, `--target-dir` or `--target-timeout` with another target, a `--target-dir` that
+  is not a directory, `--known-failing`, a program that cannot be started and a first handshake
+  that fails or names a version `ess` does not read. When `ess` receives SIGINT, SIGTERM or SIGHUP
+  during the run it kills the program's process group and then ends by that signal, with no
+  report, so a shell reports 128 plus the signal number (130, 143, 129) and a Ctrl-C still stops a
+  shell loop. `ess verify conform mutate --target process` is refused with exit 2,
+  naming the `--emit`, `run`, `--collect` route. The guide page "An implementation in any language"
+  holds an adapter in Python that a test runs; the design is
+  `docs/design/conformance-target-process.md`.
+- `ess verify conform serve --target billing|oracle-fixture` answers `ess-conformance-target/1` for
+  a built-in reference on its standard input and output until input ends, as the reference peer
+  for an adapter's author: `ess verify conform run --target process -- ess verify conform serve
+  --target billing` writes the report `--target billing` writes. Exit 0 at the end of input, exit
+  2 at a request it cannot decode, naming the fault's kind and never the line. The library half is
+  public as `ess_conformance::process` (`ProcessTarget`, `serve`).
+
+### Fixed
+
+- The text report of `ess verify conform run` writes a C1 control, U+2028, U+2029, a
+  bidirectional override or isolate (U+202A to U+202E, U+2066 to U+2069) as `\uXXXX` in a value,
+  and applies the same escaping to member names, which it printed as they were: a name or value
+  a target under test reported could carry a terminal control sequence. Text without those
+  characters keeps its bytes. A process target's own strings are also bounded and escaped where
+  `ess` reads them: its implementation `name` and `version` are refused over 256 bytes
+  (`identity-too-long`), and every string of a `target_error` is cut at 4096 bytes, each with
+  control, line-separator and bidirectional characters written as escapes and a backslash
+  doubled, so the text `\u{1b}` and an escaped ESC never print the same.
+
 ## [0.96.0] — 2026-11-13
 
 ### Fixed

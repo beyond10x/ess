@@ -17,6 +17,7 @@
 //! comes from [`CheckCode`] rather than from the call site, so two failures of the same rule read the
 //! same way and a reader can grep for one.
 
+use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::fmt;
 
@@ -437,8 +438,70 @@ impl fmt::Display for Diagnostic {
 /// JSON, because the workspace's dynamic value already serialises that way and a second rendering
 /// would be a second thing to read. A value that cannot be written — which
 /// [`Node`] permits only for a non-finite number — is named rather than dropped.
+///
+/// A diagnostic reaches a terminal, and a value can come from the target under test, so no
+/// character in it is left to act on that terminal or reorder the line: JSON already writes a C0
+/// control as an escape, and a C1 control, a line or paragraph separator and a bidirectional
+/// override or isolate are written as `\uXXXX` too. Each is still the same JSON string.
 pub fn quote(value: &Node) -> String {
-    serde_json::to_string(value).unwrap_or_else(|_| "<unrenderable>".to_owned())
+    match serde_json::to_string(value) {
+        Ok(json) => escape_steering(json),
+        Err(_) => "<unrenderable>".to_owned(),
+    }
+}
+
+/// A member name the way a diagnostic prints one: as it is, unless it holds a character
+/// [`quote`] writes as an escape, which it writes in [`quote`]'s spelling. A name is printed bare,
+/// so a quote mark or a backslash in it stays as it is.
+pub(crate) fn quote_name(name: &str) -> Cow<'_, str> {
+    if !name.chars().any(|c| c < ' ' || steers(c)) {
+        return Cow::Borrowed(name);
+    }
+    let mut out = String::with_capacity(name.len() + 8);
+    for c in name.chars() {
+        match c {
+            '\u{8}' => out.push_str("\\b"),
+            '\t' => out.push_str("\\t"),
+            '\n' => out.push_str("\\n"),
+            '\u{c}' => out.push_str("\\f"),
+            '\r' => out.push_str("\\r"),
+            c if c < ' ' || steers(c) => push_escape(&mut out, c),
+            c => out.push(c),
+        }
+    }
+    Cow::Owned(out)
+}
+
+/// Whether `c` is one JSON leaves as it is that can act on a terminal or reorder the text around
+/// it: a C1 control, U+2028, U+2029, a bidirectional override or isolate.
+fn steers(c: char) -> bool {
+    matches!(
+        c,
+        '\u{80}'..='\u{9f}' | '\u{2028}' | '\u{2029}' | '\u{202a}'..='\u{202e}' | '\u{2066}'..='\u{2069}'
+    )
+}
+
+/// `c` as JSON's `\uXXXX`, lowercase as `serde_json` writes a C0 control.
+fn push_escape(out: &mut String, c: char) {
+    use std::fmt::Write as _;
+    let _ = write!(out, "\\u{:04x}", u32::from(c));
+}
+
+/// `json` with every character [`steers`] holds written as `\uXXXX`. Each sits inside a JSON
+/// string, the only place JSON text holds one, so the result is the same JSON.
+fn escape_steering(json: String) -> String {
+    if !json.chars().any(steers) {
+        return json;
+    }
+    let mut out = String::with_capacity(json.len() + 8);
+    for c in json.chars() {
+        if steers(c) {
+            push_escape(&mut out, c);
+        } else {
+            out.push(c);
+        }
+    }
+    out
 }
 
 /// Renders a command invocation the way §29 quotes one: `Command(field = value, …)`.

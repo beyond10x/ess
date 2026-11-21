@@ -1,6 +1,6 @@
 ---
 title: Explore command sequences and histories
-sidebar_position: 5
+sidebar_position: 6
 description: Random command sequences, concurrent-history checks, client-lane drawings and imported logs.
 ---
 

@@ -1,7 +1,7 @@
 ---
 title: Runners and reports
 sidebar_position: 3
-description: Run a suite against a built-in target, a generated Go or TypeScript package, or a Rust target, and read what the report counts and proves.
+description: Run a suite against a built-in target, a generated Go or TypeScript package, an adapter process in any language, or a Rust target, and read what the report counts and proves.
 ---
 
 # Runners and reports
@@ -19,10 +19,11 @@ $ ess verify conform run \
     --report-out target/billing-conformance.json
 ```
 
-The command executes the generated or committed scenarios against the selected reference target.
-The built-in choices are `billing`, `oracle-fixture` and `interpreted`; a production adapter must
-establish its own execution boundary. `billing` and `oracle-fixture` are hand-written reference
-implementations of their examples. `interpreted` selects the specification itself, named by
+The command executes the generated or committed scenarios against the selected target.
+The built-in choices are `billing`, `oracle-fixture` and `interpreted`, and the one other value,
+`process`, starts a program of yours instead ([below](#an-implementation-in-any-language)); a
+production adapter must establish its own execution boundary. `billing` and `oracle-fixture` are
+hand-written reference implementations of their examples. `interpreted` selects the specification itself, named by
 `--path`, and refuses one whose `spec_digest` is not the suite's. It executes commands from the
 model — outcomes, transitions, `sets:` writes, emitted events and declared refusals — and does not
 yet interpret views or bindings, so a scenario that reads one comes back as an unsatisfied
@@ -44,8 +45,10 @@ $ ess verify conform run \
 
 ## Hold your own implementation to the suite
 
-`ess verify conform run` runs a suite only against the targets built into `ess`. Your own
-implementation is held to its suite through a test package that `ess` writes in Go or TypeScript:
+`ess verify conform run` runs a suite against a target built into `ess`, or against a program of
+yours that answers its questions ([An implementation in any
+language](#an-implementation-in-any-language)). An implementation in Go or TypeScript can instead be
+held to its suite through a test package that `ess` writes in that language:
 
 ```shell-session
 $ ess verify conform synthesize --path spec --target go --out internal/conformance
@@ -139,10 +142,20 @@ complete TypeScript target for a small specification and runs it green. For sepa
 and skipped counts, see [explicit outcome counts](#opt-into-explicit-outcome-counts). A target
 reports what it observed; it must not report its own unobserved success.
 
+## An implementation in any language
+
+`ess verify conform run --target process` holds an implementation written in any language to its
+suite. `ess` starts a program you write, the adapter, asks it the suite's questions as one JSON
+object per line on its standard input, and judges the answers itself; the adapter reports what it
+observed, never a verdict. The command line is `ess verify conform run --suite suite.json --target
+process --report-format 2 --strict -- <program> [args…]`. [An implementation in any
+language](target-process.md) has the run, every message and a complete adapter in Python 3.
+
 ## A target in Rust
 
-The generated Go and TypeScript packages [above](#hold-your-own-implementation-to-the-suite) are the
-route for an implementation outside this repository. A Rust implementation can instead implement
+The generated Go and TypeScript packages [above](#hold-your-own-implementation-to-the-suite) and the
+[process target](#an-implementation-in-any-language) are the routes for an implementation outside
+this repository. A Rust implementation can instead implement
 the `ConformanceTarget` trait of the `ess-conformance` crate, which is what the built-in targets do.
 It must preserve scenario identity, request/response correlation and refusal semantics, and it must
 not report its own unobserved success.
