@@ -29,6 +29,7 @@
 
 mod arranged;
 
+use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
 
 use ess_compiler::ir::{
@@ -604,7 +605,7 @@ pub(super) fn synthesize(ir: &EssIr, seeds: &super::AdmittedSeeds) -> Synthesis 
             &mut acted_on_as_second,
         ) {
             Some(steps) => scenario.steps = steps,
-            None => whole.notes.push(unswapped(id, exhausted)),
+            None => whole.notes.push(unswapped(id, scenario, exhausted)),
         }
     }
     // A command need not read a credential to depend on shared state. In particular, a
@@ -642,7 +643,7 @@ pub(super) fn synthesize(ir: &EssIr, seeds: &super::AdmittedSeeds) -> Synthesis 
                 if let Err(exhausted) =
                     append(ir, (Some(&id), &mut scenario), again, &mut identities)
                 {
-                    whole.notes.push(unswapped(&id, exhausted));
+                    whole.notes.push(unswapped(&id, &scenario, exhausted));
                 }
             }
             whole
@@ -808,7 +809,7 @@ fn cross_single_command(
                     whole.notes.push(Note::CrossCallerUnswapped {
                         scenario: id.clone(),
                         mixed: true,
-                        reason: reason.to_owned(),
+                        reason: reason.into_owned(),
                     });
                 }
             } else {
@@ -992,7 +993,7 @@ fn arranged_by_callers(
                 continue;
             };
             if let Err(exhausted) = append(ir, (Some(&id), scenario), again, identities) {
-                whole.notes.push(unswapped(&id, exhausted));
+                whole.notes.push(unswapped(&id, scenario, exhausted));
             }
         }
     }
@@ -1289,8 +1290,14 @@ pub(super) fn append_independent(
     scenario: &mut ConformanceScenario,
     again: &ConformanceScenario,
 ) -> Result<(), &'static str> {
-    append_independent_about(ir, (None, scenario), again)
+    append_independent_about(ir, (None, scenario), again).map_err(|reason| match reason {
+        Cow::Borrowed(reason) => reason,
+        Cow::Owned(_) => EXHAUSTED,
+    })
 }
+
+/// The detail that refuses to compose a run no fresh identity could be drawn for.
+const EXHAUSTED: &str = "the follow-up arrangement exhausted its fresh identity witnesses";
 
 /// [`append_independent`] for a disclosure cell: where a set effect of `again` would select a row
 /// the origin's run left ([`shared_selection`]), the refusal names its filter, not the origin
@@ -1310,25 +1317,26 @@ pub(super) fn append_followup(
 }
 
 /// [`append_independent`] for the scenario `id` names, where given: the fresh values must keep its
-/// command under test on the branch the first run took (beyond10x/ess#672).
+/// command under test on the branch the first run took (beyond10x/ess#672). A run left out because
+/// an input is bound to the caller says so ([`Exhausted::bound`], beyond10x/ess#805).
 fn append_independent_about(
     ir: &EssIr,
     (id, scenario): (Option<&ScenarioId>, &mut ConformanceScenario),
     again: &ConformanceScenario,
-) -> Result<(), &'static str> {
+) -> Result<(), Cow<'static, str>> {
     // A row established by setup carries its literal identity, which is never renamed or drawn
     // afresh (beyond10x/ess#413): a second run would establish the same row twice.
     if established(&scenario.steps) || established(&again.steps) {
-        return Err(
+        return Err(Cow::Borrowed(
             "a row established by setup cannot be established again for the reversed callers",
-        );
+        ));
     }
     let mut identities = Identities::of(ir, [&*scenario, again]);
     let before = scenario.steps.len();
     append(ir, (id, scenario), again, &mut identities)
-        .map_err(|_| "the follow-up arrangement exhausted its fresh identity witnesses")?;
+        .map_err(|exhausted| exhausted.bound.map_or(Cow::Borrowed(EXHAUSTED), Cow::Owned))?;
     if scenario.steps.len() == before {
-        return Err(UNCOMPOSED);
+        return Err(Cow::Borrowed(UNCOMPOSED));
     }
     scenario.source.extend(again.source.iter().cloned());
     Ok(())
@@ -1384,7 +1392,7 @@ fn append(
         };
         Some((command, &command.outcomes[..reached]))
     });
-    let drawn = identities.drawn(&scenario.steps, &again.steps, tested)?;
+    let (drawn, kept) = identities.drawn(&scenario.steps, &again.steps, tested)?;
     let mut renamed = again.steps.clone();
     rename(&mut renamed);
     let Ok(mut value) = serde_json::to_value(&renamed) else {
@@ -1397,6 +1405,20 @@ fn append(
     let Some(mut steps) = recaptured(ir, steps) else {
         return Ok(());
     };
+    if let Some((Kept { input, type_ref }, filter)) =
+        kept_selects_first_rows(ir, &scenario.steps, &steps, &kept)
+    {
+        return Err(Exhausted {
+            bound: Some(format!(
+                "`{input}` is sent as the caller's attribute, which an input guard compares it \
+                 with, so no fresh value keeps the branch, and the caller's own value would let \
+                 the selector `{filter}` find the rows the first run left"
+            )),
+            input: input.clone(),
+            type_ref: type_ref.clone(),
+            one_value: false,
+        });
+    }
     cumulative(&scenario.steps, &mut steps);
     scenario.steps.extend(steps);
     Ok(())
@@ -1458,17 +1480,29 @@ fn established(steps: &[ScenarioStep]) -> bool {
         .any(|step| matches!(step, ScenarioStep::EstablishEntity { .. }))
 }
 
-/// The note for a swapped run left out of the scenario `id`.
-fn unswapped(
-    id: &ScenarioId,
-    Exhausted {
-        input, type_ref, ..
-    }: Exhausted,
-) -> Note {
-    Note::UnswappedCallers {
-        scenario: id.clone(),
+/// The note for a swapped run left out of `scenario`, named `id`.
+///
+/// Where an input is bound to the caller ([`Exhausted::bound`], beyond10x/ess#805), the existing
+/// note naming its reason (`CrossCallerUnswapped`), which says the scenario runs once without the
+/// appended run and why; `UnswappedCallers` would say the input's type has too few values.
+fn unswapped(id: &ScenarioId, scenario: &ConformanceScenario, exhausted: Exhausted) -> Note {
+    let Exhausted {
         input,
         type_ref,
+        bound,
+        ..
+    } = exhausted;
+    match bound {
+        Some(reason) => Note::CrossCallerUnswapped {
+            scenario: id.clone(),
+            mixed: crosses_callers(scenario),
+            reason,
+        },
+        None => Note::UnswappedCallers {
+            scenario: id.clone(),
+            input,
+            type_ref,
+        },
     }
 }
 
@@ -1767,6 +1801,152 @@ fn pinned_inputs(filter: &Predicate) -> Vec<&str> {
             _ => None,
         })
         .collect()
+}
+
+/// The caller attribute `value` is sent as, by name, where a step of `sending` sends it as its own
+/// caller's attribute and an input guard of the step's command reads both the input and that
+/// attribute (`writer != caller.principal`, either way round, under any connective): the value the
+/// guard binds to the caller (beyond10x/ess#805).
+fn caller_bound(sending: &[&Sent<'_, '_>], value: &Node) -> Option<String> {
+    sending.iter().find_map(|sent| {
+        let input = sent.field;
+        sent.caller
+            .iter()
+            .filter(|(_, held)| *held == value)
+            .find(|(attribute, _)| {
+                super::input_guards(sent.command).iter().any(|guard| {
+                    let paths = guard.fact_paths();
+                    let reads_input = paths.iter().any(|path| match path.segments() {
+                        [name] => name == input,
+                        [root, name] => root == INPUT_NAMESPACE && name == input,
+                        _ => false,
+                    });
+                    let reads_attribute = paths.iter().any(|path| {
+                        matches!(path.segments(), [root, name]
+                            if root == CALLER_NAMESPACE && name == *attribute)
+                    });
+                    reads_input && reads_attribute
+                })
+            })
+            .map(|(attribute, _)| attribute.clone())
+    })
+}
+
+/// Whether `value` standing for `field` leaves every input guard of `command` that the step's
+/// literal inputs decide deciding as before, where the step also sends an input only the run binds
+/// (a captured instance): [`super::keeps_branch`] cannot flatten such a step and decides nothing,
+/// so a guard reading `field` and the caller written into `command` (`writer != caller.principal`)
+/// would go unread (beyond10x/ess#805, adversary pass 2). Bound leaf by leaf
+/// ([`crate::input::flatten_partial`]), a guard reading the unbound input stays undecided both
+/// times, as before. A step [`super::keeps_branch`] flattens is left to it.
+fn keeps_literal_guards(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    input: &BTreeMap<String, Node>,
+    field: &str,
+    value: &Node,
+) -> bool {
+    if crate::input::flatten(ir, command, input).is_ok() {
+        return true;
+    }
+    let mut moved = input.clone();
+    moved.insert(field.to_owned(), value.clone());
+    let Ok(before) = crate::input::flatten_partial(ir, command, input) else {
+        return true;
+    };
+    let Ok(after) = crate::input::flatten_partial(ir, command, &moved) else {
+        return false;
+    };
+    super::input_guards(command).into_iter().all(|guard| {
+        std::mem::discriminant(&before.decide(guard))
+            == std::mem::discriminant(&after.decide(guard))
+    })
+}
+
+/// The declared type of `command`'s input `field`, by name; empty where none is declared.
+fn input_type_name(command: &ResolvedCommand, field: &str) -> String {
+    command
+        .input
+        .iter()
+        .find(|input| input.name == field)
+        .map(|input| input.type_ref.to_string())
+        .unwrap_or_default()
+}
+
+/// Every input of `command` a `when_related:` guard names its row by or reads in its test: a value
+/// kept as it was there names, or is compared with, the row the first run left.
+fn related_inputs(command: &ResolvedCommand) -> BTreeSet<String> {
+    let mut inputs = BTreeSet::new();
+    for outcome in &command.outcomes {
+        if let ResolvedCondition::Related { via, also, .. } = &outcome.condition {
+            for via in std::iter::once(via).chain(also.iter().map(|row| &row.via)) {
+                if let ResolvedRelatedVia::Input { field, .. } = via {
+                    inputs.insert(field.clone());
+                }
+            }
+        }
+        for (_, _, predicate) in outcome.condition.related_predicates() {
+            inputs.extend(super::row_set::input_reads(predicate).map(str::to_owned));
+        }
+    }
+    inputs
+}
+
+/// The input of `kept` and the selector that would find a row `first` left, where a step of the
+/// swapped run `steps` sends a command whose row-set selector or `forall:` test reads a kept input,
+/// and the selector pins no stored field to an input whose value there `first` carries nowhere
+/// ([`pinned_inputs`], as [`shared_selection`] reads a set effect): a value drawn afresh keeps the
+/// rows apart, a kept one does not (beyond10x/ess#805). `None` where every such selector does.
+fn kept_selects_first_rows<'k>(
+    ir: &EssIr,
+    first: &[ScenarioStep],
+    steps: &[ScenarioStep],
+    kept: &'k [Kept],
+) -> Option<(&'k Kept, String)> {
+    let first = serde_json::to_value(first).ok();
+    steps.iter().find_map(|step| {
+        let ScenarioStep::ExecuteCommand {
+            command: sent,
+            input,
+            ..
+        } = step
+        else {
+            return None;
+        };
+        let command = ir
+            .commands()
+            .values()
+            .find(|command| command.name.to_string() == sent.to_string())?;
+        command.outcomes.iter().find_map(|outcome| {
+            let ResolvedCondition::RelatedSet {
+                selection, test, ..
+            } = &outcome.condition
+            else {
+                return None;
+            };
+            let forall = match test {
+                ResolvedRowSetTest::Forall(predicate) => Some(predicate),
+                _ => None,
+            };
+            let reads: BTreeSet<&str> = std::iter::once(&selection.filter)
+                .chain(forall)
+                .flat_map(super::row_set::input_reads)
+                .collect();
+            let held = kept.iter().find(|kept| {
+                reads.contains(kept.input.as_str()) && input.contains_key(&kept.input)
+            })?;
+            let own = pinned_inputs(&selection.filter).iter().any(|name| {
+                matches!(
+                    input.get(*name),
+                    Some(ScenarioValue::Literal { value })
+                        if serde_json::to_value(value).is_ok_and(|value| {
+                            first.as_ref().is_some_and(|first| !carries(first, &value))
+                        })
+                )
+            });
+            (!own).then(|| (held, selection.filter.to_string()))
+        })
+    })
 }
 
 /// Whether `value` is `within` or any value nested in it.
@@ -2140,6 +2320,11 @@ struct Identities<'a> {
     /// The struct inputs of [`Self::inputs`] drawn afresh only in some members, by command and
     /// input, with those members' paths ([`selected`]); every other input is drawn whole.
     members: BTreeMap<String, BTreeMap<String, BTreeSet<String>>>,
+    /// The inputs of [`Self::inputs`] drawn afresh only because a row-set selector or its
+    /// `forall:` test reads them, or a branch writes them where one reads (`selected`), by
+    /// command: neither an identity nor an input a `when_related:` row is named by or tested
+    /// with. Only these may keep their caller's value in a swapped run ([`Kept`]).
+    keepable: BTreeMap<String, BTreeSet<String>>,
     /// Every declared field, input, event field and view column of an identity input's type, and
     /// every name the model copies an identity under whatever its type ([`derived`]): where a
     /// serialized run may carry a copy of an identity that is not text (see [`redraw`]).
@@ -2152,10 +2337,23 @@ struct Identities<'a> {
 
 /// Why a swapped run could not be given a fresh identity: the input and its type, and whether that
 /// type has one value — the one row of a singleton entity (beyond10x/ess#287).
+///
+/// `bound` is the reason where the input is sent as its caller's attribute, which an input guard
+/// compares it with (beyond10x/ess#805): no fresh value keeps that guard, and the caller's own
+/// value could not be kept either. The note then says so, not that the type has too few values.
 struct Exhausted {
     input: String,
     type_ref: String,
     one_value: bool,
+    bound: Option<String>,
+}
+
+/// An input a swapped run sends as it was, its caller's attribute, because no fresh value keeps the
+/// input guard comparing it with that attribute (beyond10x/ess#805): the input, by name, one entry
+/// for every input any step of the run sends a kept value under.
+struct Kept {
+    input: String,
+    type_ref: String,
 }
 
 impl<'a> Identities<'a> {
@@ -2166,6 +2364,7 @@ impl<'a> Identities<'a> {
         let selected_fields = row_fields_read(ir);
         let mut guarded_names = BTreeSet::new();
         let mut members: BTreeMap<String, BTreeMap<String, BTreeSet<String>>> = BTreeMap::new();
+        let mut keepable: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
         for command in ir.commands().values() {
             let created: BTreeSet<String> = command
                 .outcomes
@@ -2186,6 +2385,17 @@ impl<'a> Identities<'a> {
             // written where such a guard reads (beyond10x/ess#580): drawn afresh like an identity,
             // and redrawn under its own name, not under every name its type is declared at.
             let compared = selected(command, &selected_fields);
+            let related = related_inputs(command);
+            let keep: BTreeSet<String> = compared
+                .iter()
+                .filter(|(name, read)| {
+                    read.is_none() && !fields.contains(*name) && !related.contains(*name)
+                })
+                .map(|(name, _)| name.clone())
+                .collect();
+            if !keep.is_empty() {
+                keepable.insert(command.name.to_string(), keep);
+            }
             guarded_names.extend(compared.keys().cloned());
             for (name, read) in &compared {
                 if let (Some(paths), false) = (read, fields.contains(name)) {
@@ -2231,6 +2441,7 @@ impl<'a> Identities<'a> {
             creating,
             inputs,
             members,
+            keepable,
             keys,
             taken: BTreeSet::new(),
             next: 0,
@@ -2246,7 +2457,13 @@ impl<'a> Identities<'a> {
     fn sent<'s>(&self, steps: &'s [ScenarioStep]) -> Vec<Sent<'a, 's>> {
         let mut sent = Vec::new();
         for step in steps {
-            let ScenarioStep::ExecuteCommand { command, input, .. } = step else {
+            let ScenarioStep::ExecuteCommand {
+                command,
+                caller,
+                input,
+                ..
+            } = step
+            else {
                 continue;
             };
             let Some((sending, fields)) = self.inputs.get(&command.to_string()) else {
@@ -2267,6 +2484,7 @@ impl<'a> Identities<'a> {
                             field: name,
                             value,
                             input: literals.clone(),
+                            caller,
                         });
                     }
                 }
@@ -2289,6 +2507,9 @@ impl<'a> Identities<'a> {
     /// replaces; [`Exhausted`] where the type has too few values to keep one apart from every
     /// identity taken, in which case the scenario keeps its first run only.
     ///
+    /// Beside them, every input sent as it was ([`Kept`]): its caller's attribute, which an input
+    /// guard compares it with, where no fresh value keeps that guard (beyond10x/ess#805).
+    ///
     /// Where the scenario is about a branch of `tested`, a fresh value must also leave every guard
     /// of `tested` reading a row the run writes it into, and that `tested` addresses in the run,
     /// deciding as before ([`keeps_stored_branch`], beyond10x/ess#672).
@@ -2297,7 +2518,7 @@ impl<'a> Identities<'a> {
         first: &[ScenarioStep],
         again: &[ScenarioStep],
         tested: Option<(&ResolvedCommand, &[ResolvedOutcome])>,
-    ) -> Result<BTreeMap<String, serde_json::Value>, Exhausted> {
+    ) -> Result<(BTreeMap<String, serde_json::Value>, Vec<Kept>), Exhausted> {
         let tested =
             tested.map(|(command, branches)| Tested::of(self.ir, command, branches, again));
         let tested = tested.as_ref();
@@ -2310,21 +2531,19 @@ impl<'a> Identities<'a> {
             .chain(&sent)
             .map(|sent| key(sent.value))
             .collect();
+        let mut kept_values = BTreeSet::new();
+        let mut kept = Vec::new();
         for one in &sent {
             let old = key(one.value);
-            if drawn.contains_key(&old) {
+            if drawn.contains_key(&old) || kept_values.contains(&old) {
                 continue;
             }
             let (command, field) = (one.command, one.field);
             let exhausted = || Exhausted {
                 input: field.to_owned(),
-                type_ref: command
-                    .input
-                    .iter()
-                    .find(|input| input.name == field)
-                    .map(|input| input.type_ref.to_string())
-                    .unwrap_or_default(),
+                type_ref: input_type_name(command, field),
                 one_value: super::singleton::names_the_one_row(self.ir, command, field),
+                bound: None,
             };
             // Every step of the run sending this identity, each of which must take the branch it
             // took with the old one.
@@ -2337,15 +2556,57 @@ impl<'a> Identities<'a> {
                 .get(&command.name.to_string())
                 .and_then(|inputs| inputs.get(field))
                 .cloned();
-            let fresh = self
-                .draw(
-                    (command, field, one.value),
-                    members.as_ref(),
-                    &avoid,
-                    &sending,
-                    (tested, &runs),
-                )
-                .ok_or_else(exhausted)?;
+            let Some(fresh) = self.draw(
+                (command, field, one.value),
+                members.as_ref(),
+                &avoid,
+                &sending,
+                (tested, &runs),
+            ) else {
+                // No fresh value keeps the branch. Where a step sends the value as its caller's
+                // attribute, which an input guard compares the input with, the run keeps it: it is
+                // already the attribute of the caller this run sends the step as, and kept as it
+                // was it decides every guard as before (beyond10x/ess#805). Only an input drawn
+                // afresh for a row-set selector may be kept; [`append`] then refuses the run where
+                // a selector reading it would find the first run's rows.
+                //
+                // The value is kept for every input sending it or for none: every step of
+                // `sending`, under whichever input, sends it unchanged, so each of those inputs
+                // must be keepable and each is recorded, for [`append`] to check every selector
+                // reading any of them (beyond10x/ess#805, adversary D1).
+                let Some(attribute) = caller_bound(&sending, one.value) else {
+                    return Err(exhausted());
+                };
+                let unkeepable = sending.iter().find(|sent| {
+                    !self
+                        .keepable
+                        .get(&sent.command.name.to_string())
+                        .is_some_and(|inputs| inputs.contains(sent.field))
+                });
+                if let Some(sent) = unkeepable {
+                    return Err(Exhausted {
+                        bound: Some(format!(
+                            "`{field}` is sent as the caller's `{attribute}`, which an input guard \
+                             of `{}` compares it with, so no fresh value keeps the branch, and the \
+                             same value is sent as `{}` of `{}`, which names a row or is compared \
+                             with one by a `when_related:` guard, so the caller's own value would \
+                             name the first run's row",
+                            command.name, sent.field, sent.command.name
+                        )),
+                        ..exhausted()
+                    });
+                }
+                for sent in &sending {
+                    if !kept.iter().any(|held: &Kept| held.input == sent.field) {
+                        kept.push(Kept {
+                            input: sent.field.to_owned(),
+                            type_ref: input_type_name(sent.command, sent.field),
+                        });
+                    }
+                }
+                kept_values.insert(old);
+                continue;
+            };
             let new = key(&fresh);
             avoid.insert(new.clone());
             self.taken.insert(new);
@@ -2363,11 +2624,12 @@ impl<'a> Identities<'a> {
             }
             drawn.insert(old, serde_json::to_value(&fresh).map_err(|_| exhausted())?);
         }
-        Ok(drawn)
+        Ok((drawn, kept))
     }
 
     /// The first value of `field` that no identity taken or in `avoid` carries and that every step
-    /// in `sending` takes its branch with ([`super::keeps_branch`]): far witnesses first, past every
+    /// in `sending` takes its branch with, read over its own caller ([`super::keeps_branch`],
+    /// beyond10x/ess#805): far witnesses first, past every
     /// witness an arrangement numbers, then the near ones a bounded type's witnesses are spread
     /// over — the witness builder answers every far distance of a narrow range with one value —
     /// then the values inside the guards that read it ([`super::guided_values`]), where a far
@@ -2397,6 +2659,14 @@ impl<'a> Identities<'a> {
                 .and_then(|mut input| input.remove(field))
         });
         let guided = super::guided_values(self.ir, command, field);
+        // Each step's command with the caller it is sent as written in (beyond10x/ess#805): a guard
+        // comparing the input with a caller attribute (`writer != caller.principal`) is undecided
+        // over the input alone, before and after alike, so a fresh value it answers otherwise
+        // would pass for one keeping the branch. Read over the step's caller, it is decided.
+        let guarded: Vec<ResolvedCommand> = sending
+            .iter()
+            .map(|sent| written(self.ir, sent.command, sent.caller))
+            .collect();
         for value in witnesses.chain(guided) {
             let (value, fresh) = if let Some(paths) = members {
                 let Some(value) = only_members(old, &value, paths) else {
@@ -2417,8 +2687,9 @@ impl<'a> Identities<'a> {
             if self.taken.contains(&at) || avoid.contains(&at) || !fresh {
                 continue;
             }
-            if sending.iter().all(|sent| {
-                super::keeps_branch(self.ir, sent.command, &sent.input, sent.field, &value)
+            if sending.iter().zip(&guarded).all(|(sent, guarded)| {
+                super::keeps_branch(self.ir, guarded, &sent.input, sent.field, &value)
+                    && keeps_literal_guards(self.ir, guarded, &sent.input, sent.field, &value)
                     && tested
                         .is_none_or(|tested| keeps_stored_branch(self.ir, tested, sent, &value))
                     && keeps_listed_branch(self.ir, runs, sent, &value)
@@ -2431,12 +2702,14 @@ impl<'a> Identities<'a> {
 }
 
 /// One caller-supplied identity a step sends as a literal: the command, the input, the value, and
-/// every literal input of the step, against which a fresh value must keep the branch.
+/// every literal input of the step and the caller it is sent as, against which a fresh value must
+/// keep the branch.
 struct Sent<'a, 's> {
     command: &'a ResolvedCommand,
     field: &'s str,
     value: &'s Node,
     input: BTreeMap<String, Node>,
+    caller: &'s BTreeMap<String, Node>,
 }
 
 /// Every name the model copies a caller-supplied identity under, by where its value comes from
