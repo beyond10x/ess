@@ -29,7 +29,7 @@ scope:
   path: docs/design/related-rows-quantifier.md
 - confidence: inferred
   path: docs/design/set-effect-identity-filters.md
-revision: 2
+revision: 4
 ---
 ## Outcome
 
@@ -46,6 +46,25 @@ A downstream specification's writer, a small model running unattended on ESS 0.9
 file the diagnostic pointed at, left the system file at `ess/1`, and was refused four times until
 its budget was spent. Of 12 validate refusals in nine runs, 5 were this format-version class. The
 reporter noted that other hints already add "on the source that declares the system".
+
+The refusal as the writer read it (reported text, paths relative to the specification directory):
+
+```text
+- error[ESS-COMMAND-009]: subject-state outcome guards require specification format ess/3
+  `ess-domain` refuses this as `unsupported_format_version`
+  --> domains/list.yaml:74:5
+- error[ESS-COMMAND-009]: a list of held states in `when_subject_state` requires specification format ess/18
+  `ess-domain` refuses this as `unsupported_format_version`
+  help: declare `format: ess/18`
+  --> domains/list.yaml:93:9
+```
+
+Two things in it point at the domain file. The hint names no source, and the `-->` location is
+the domain file, which is where the construct is. The first of the two refusals carries no hint
+at all (`crates/specify/ess-domain/src/primitive_admission.rs:332`), so a writer who met only
+that one had the location arrow as the only place named. After the writer put `format: ess/18`
+on the domain file, the next run added
+`[missing_declaration] domains/list.yaml.system: this source sets system-level fields but does not declare system:`.
 
 The reporter's proposal, theirs and not the design: one place builds the location clause, all
 hints go through it, and a test fails if a format-version hint is emitted without the clause.
@@ -202,6 +221,10 @@ hints go through it, and a test fails if a format-version hint is emitted withou
   help at `crates/verify/ess-conformance/src/authored.rs:2403`: the 22 that already name the source, the 79 "declare" sites,
   `expression.rs:2740`, the two "from `format: ess/N`" hints, and each hint that names a version
   in prose as one to reach.
+- Every refusal with `ValidationCode::UnsupportedFormatVersion` that names the format to reach
+  carries that hint. The ones that carry no hint today get it; the reported `ess/3` refusal at
+  `crates/specify/ess-domain/src/primitive_admission.rs:332` is one, and the implementation lists
+  the others. A test fails when such a refusal is emitted without a hint.
 - A Rust test fails, naming the file and line, when a non-test string literal under
   `crates/specify/ess-domain/src` or `crates/verify/ess-conformance/src` spells `` `format: ess/``
   or `` `format: {`` outside that function. Literals continued with `\` are joined before the
