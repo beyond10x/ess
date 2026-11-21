@@ -1832,6 +1832,16 @@ fn caller_bound(sending: &[&Sent<'_, '_>], value: &Node) -> Option<String> {
     })
 }
 
+/// The declared type of `command`'s input `field`, by name; empty where none is declared.
+fn input_type_name(command: &ResolvedCommand, field: &str) -> String {
+    command
+        .input
+        .iter()
+        .find(|input| input.name == field)
+        .map(|input| input.type_ref.to_string())
+        .unwrap_or_default()
+}
+
 /// Every input of `command` a `when_related:` guard names its row by or reads in its test: a value
 /// kept as it was there names, or is compared with, the row the first run left.
 fn related_inputs(command: &ResolvedCommand) -> BTreeSet<String> {
@@ -2308,7 +2318,8 @@ struct Exhausted {
 }
 
 /// An input a swapped run sends as it was, its caller's attribute, because no fresh value keeps the
-/// input guard comparing it with that attribute (beyond10x/ess#805): the input, by name.
+/// input guard comparing it with that attribute (beyond10x/ess#805): the input, by name, one entry
+/// for every input any step of the run sends a kept value under.
 struct Kept {
     input: String,
     type_ref: String,
@@ -2499,12 +2510,7 @@ impl<'a> Identities<'a> {
             let (command, field) = (one.command, one.field);
             let exhausted = || Exhausted {
                 input: field.to_owned(),
-                type_ref: command
-                    .input
-                    .iter()
-                    .find(|input| input.name == field)
-                    .map(|input| input.type_ref.to_string())
-                    .unwrap_or_default(),
+                type_ref: input_type_name(command, field),
                 one_value: super::singleton::names_the_one_row(self.ir, command, field),
                 bound: None,
             };
@@ -2532,30 +2538,42 @@ impl<'a> Identities<'a> {
                 // was it decides every guard as before (beyond10x/ess#805). Only an input drawn
                 // afresh for a row-set selector may be kept; [`append`] then refuses the run where
                 // a selector reading it would find the first run's rows.
+                //
+                // The value is kept for every input sending it or for none: every step of
+                // `sending`, under whichever input, sends it unchanged, so each of those inputs
+                // must be keepable and each is recorded, for [`append`] to check every selector
+                // reading any of them (beyond10x/ess#805, adversary D1).
                 let Some(attribute) = caller_bound(&sending, one.value) else {
                     return Err(exhausted());
                 };
-                let keepable = self
-                    .keepable
-                    .get(&command.name.to_string())
-                    .is_some_and(|inputs| inputs.contains(field));
-                if !keepable {
+                let unkeepable = sending.iter().find(|sent| {
+                    !self
+                        .keepable
+                        .get(&sent.command.name.to_string())
+                        .is_some_and(|inputs| inputs.contains(sent.field))
+                });
+                if let Some(sent) = unkeepable {
                     return Err(Exhausted {
                         bound: Some(format!(
                             "`{field}` is sent as the caller's `{attribute}`, which an input guard \
-                             of `{}` compares it with, so no fresh value keeps the branch, and \
-                             `{field}` names a row or is compared with one by a `when_related:` \
-                             guard, so the caller's own value would name the first run's row",
-                            command.name
+                             of `{}` compares it with, so no fresh value keeps the branch, and the \
+                             same value is sent as `{}` of `{}`, which names a row or is compared \
+                             with one by a `when_related:` guard, so the caller's own value would \
+                             name the first run's row",
+                            command.name, sent.field, sent.command.name
                         )),
                         ..exhausted()
                     });
                 }
+                for sent in &sending {
+                    if !kept.iter().any(|held: &Kept| held.input == sent.field) {
+                        kept.push(Kept {
+                            input: sent.field.to_owned(),
+                            type_ref: input_type_name(sent.command, sent.field),
+                        });
+                    }
+                }
                 kept_values.insert(old);
-                kept.push(Kept {
-                    input: field.to_owned(),
-                    type_ref: exhausted().type_ref,
-                });
                 continue;
             };
             let new = key(&fresh);
