@@ -1832,6 +1832,37 @@ fn caller_bound(sending: &[&Sent<'_, '_>], value: &Node) -> Option<String> {
     })
 }
 
+/// Whether `value` standing for `field` leaves every input guard of `command` that the step's
+/// literal inputs decide deciding as before, where the step also sends an input only the run binds
+/// (a captured instance): [`super::keeps_branch`] cannot flatten such a step and decides nothing,
+/// so a guard reading `field` and the caller written into `command` (`writer != caller.principal`)
+/// would go unread (beyond10x/ess#805, adversary pass 2). Bound leaf by leaf
+/// ([`crate::input::flatten_partial`]), a guard reading the unbound input stays undecided both
+/// times, as before. A step [`super::keeps_branch`] flattens is left to it.
+fn keeps_literal_guards(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    input: &BTreeMap<String, Node>,
+    field: &str,
+    value: &Node,
+) -> bool {
+    if crate::input::flatten(ir, command, input).is_ok() {
+        return true;
+    }
+    let mut moved = input.clone();
+    moved.insert(field.to_owned(), value.clone());
+    let Ok(before) = crate::input::flatten_partial(ir, command, input) else {
+        return true;
+    };
+    let Ok(after) = crate::input::flatten_partial(ir, command, &moved) else {
+        return false;
+    };
+    super::input_guards(command).into_iter().all(|guard| {
+        std::mem::discriminant(&before.decide(guard))
+            == std::mem::discriminant(&after.decide(guard))
+    })
+}
+
 /// The declared type of `command`'s input `field`, by name; empty where none is declared.
 fn input_type_name(command: &ResolvedCommand, field: &str) -> String {
     command
@@ -2658,6 +2689,7 @@ impl<'a> Identities<'a> {
             }
             if sending.iter().zip(&guarded).all(|(sent, guarded)| {
                 super::keeps_branch(self.ir, guarded, &sent.input, sent.field, &value)
+                    && keeps_literal_guards(self.ir, guarded, &sent.input, sent.field, &value)
                     && tested
                         .is_none_or(|tested| keeps_stored_branch(self.ir, tested, sent, &value))
                     && keeps_listed_branch(self.ir, runs, sent, &value)

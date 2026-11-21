@@ -17,7 +17,10 @@
   draws every input a selector reads, and kept the fresh value because the guard, read without the
   caller, was undecided before and after; the target answered the caller guard where the suite
   expected another branch. A fresh value now has to decide every input guard as before with the
-  step's own caller written in. Where none does, the run sends the input as its own caller's
+  step's own caller written in, also on a step that sends a captured instance beside it (the row
+  a move command addresses, an input naming a row a `when_related:` guard reads): there every
+  guard its literal inputs and the caller decide is held, and a guard reading the captured input
+  stays undecided. Where none does, the run sends the input as its own caller's
   attribute, as the first run does, so the scenario keeps its run with the callers swapped or
   reversed. The suite of a model with this shape changes, so committed suites of such models must
   be re-pinned: it sends other values there than before. Only where a
