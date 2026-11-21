@@ -69,6 +69,7 @@ const sidebars: SidebarsConfig = {
             'guides/verify/cover-a-refusal',
             'guides/verify/observations',
             'guides/verify/runners',
+            'guides/verify/target-process',
             'guides/verify/one-time-responses',
             'guides/verify/mutation-audit',
             'guides/verify/explore',

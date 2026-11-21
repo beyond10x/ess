@@ -19,9 +19,11 @@ checked against.
    held state, retries, selection, periodic activity, clocks, event context and binding accessors.
 4. [Runners and reports](verify/runners.md) — run a suite against a built-in target, a generated Go
    or TypeScript package or a Rust target, and read the report.
-5. [Audit a suite with specification mutants](verify/mutation-audit.md) — measure whether the suite
+5. [An implementation in any language](verify/target-process.md) — hold a program in any language
+   to a suite over JSON lines on its standard input and output, with a complete adapter.
+6. [Audit a suite with specification mutants](verify/mutation-audit.md) — measure whether the suite
    notices a changed specification, against a built-in target or your own implementation.
-6. [Explore command sequences and histories](verify/explore.md) — random sequences and concurrent
+7. [Explore command sequences and histories](verify/explore.md) — random sequences and concurrent
    histories.
 
 ## Where each section went

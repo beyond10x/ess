@@ -1,7 +1,12 @@
 # A conformance run drives a target process (`ess-conformance-target/1`)
 
-Status: binding design, 2026-11-21, for
-`story:a-conformance-run-drives-a-target-process-in-any-language`. Nothing here is built yet.
+Status: binding design, written 2026-11-21 before the code, for
+`story:a-conformance-run-drives-a-target-process-in-any-language`. Built on the branch
+`unit/outside-conformance-target`, 2026-11-21: where the build differs from the first design this
+page states the build and cites it. Citations of code the build did not write (`target.rs`,
+`main.rs`, `runner.rs` and the like) keep the line numbers of the tree before it (commit
+`205d6c7339`); the build moved some of them. The code is `crates/verify/ess-conformance/src/
+process.rs` and `process/{wire,exact,serve}.rs`, and `crates/edge/ess-cli/src/target_process.rs`.
 
 **Decision in one line.** `ess verify conform run --target process -- <program> [args…]` starts the
 program once, asks it every question of `ConformanceTarget` as one JSON object per line on its
@@ -12,7 +17,9 @@ This page builds on [running-a-suite.md](running-a-suite.md): a level is a prope
 an unsupported scenario fails the run, and the out-of-process adapter is the open gap it names
 (`running-a-suite.md:96`). Those decisions are not restated here.
 
-## Where the seam is today
+## Where the seam was
+
+What follows describes the tree this design was written against.
 
 - `ConformanceTarget` is a Rust trait with 29 methods (`crates/verify/ess-conformance/src/
   target.rs:103-584`); the runner is synchronous and calls one at a time (`target.rs:68-76`).
@@ -45,7 +52,7 @@ Every other option of `run` (`main.rs:769-818`) keeps its meaning. `--path`, `--
 | `--target process` | a new value of `ReferenceTarget` (`main.rs:1208`), spelled `process`, with no doc comment for the reason `main.rs:1212-1213` gives |
 | `-- <program> [args…]` | the command, as an argv: everything after `--` (clap `last = true`). No shell: the program is executed directly, its arguments are passed as given, nothing is expanded |
 | `--target-dir <dir>` | the working directory the program starts in; default the current directory. `ess` itself does not change directory |
-| `--target-timeout <seconds>` | how long `ess` waits for one answer, an integer from 1 to 3600; default 30. See "Time limits" |
+| `--target-timeout <seconds>` | how long `ess` waits for one answer, an integer from 1 to 3600; 30 when absent. Clap checks the range, so 0 and a value over 3600 exit 2 (`main.rs:1242-1249`). The option has no clap default: 30 is applied in code (`main.rs:4434`) so that its presence with another target can be refused. See "Time limits" |
 
 How the program is found. A program containing `/` that is relative is joined to `--target-dir`
 and made absolute before it is spawned, so `-- ./adapter` names the adapter in the
@@ -74,7 +81,7 @@ Each refusal exits 2, writes no report and starts no scenario. `bail!` exits 1
 | `--target-dir` that is not an existing directory | the path |
 | `--known-failing` with `--target process` | that the declaration binds `ess`'s own build (`known_failures.rs:162-167`), which is not the target's; see "Open questions" |
 | the program cannot be spawned | the program and the OS error kind |
-| the first handshake fails in any way | the fault kind (below); for a version, the versions this `ess` reads |
+| the first handshake fails in any way | the fault kind (below); for a version, the versions this `ess` reads, never quoting what the target wrote; for an `implementation` `name` or `version` over 256 bytes, `identity-too-long` (`process.rs:405-411`) |
 | `ess verify conform mutate --target process` | the split route: `--emit DIR`, then `run --target process` per suite writing `report.json` beside it, then `--collect DIR` |
 
 `mutate` shares `ReferenceTarget` (`main.rs:991-992`, `:4533-4558`), so `process` becomes a value
@@ -87,6 +94,8 @@ Unchanged. `render_conformance_report` decides it from the report: with `--repor
 and 3 for passed, failed and error (`main.rs:4877-4881`). `--strict` still requires
 `--report-format 2` (`main.rs:4265-4267`), still conflicts with `--allow-incomplete`
 (`main.rs:798-802`), and still cannot pass a legacy suite with unknown coverage (`main.rs:798`).
+A signal to `ess` during a process-target run ends it with 128 plus the signal's number and no
+report (see "A signalled `ess`").
 Every failed, errored or unsupported scenario is listed under its own category in report/2's
 `outcomes` (`crates/verify/ess-conformance/src/counts.rs:117-125`, `:264-285`).
 
@@ -127,28 +136,47 @@ ess                                                  target process
 4. **Lockstep.** One request is outstanding at a time. `ess` writes a request, reads exactly one
    line, and writes nothing more until that line is decoded. `id` is 0 for the handshake and then
    1, 2, 3… per process; the answer repeats it. A line the target writes unasked is read as the
-   answer to the next request and fails it by `id`.
+   answer to the next request and fails it by `id`; one that carries the next request's own `id` is
+   accepted (see "Known limits").
 5. **Faults.** See the fault table. A fault ends the current scenario `error`, `ess` kills the
    process group and reaps the child, and every further call in that scenario answers without
    contacting anything: `end_scenario` answers success (the killed process closed the context, and
    the scenario already carries its one error check), every other call answers the same fault.
-6. **Restart.** The first call of the next scenario spawns a fresh process and handshakes again.
-   The restarted process must name the same `implementation` (name and version) as the first;
-   another identity is a failed handshake, because one report names one implementation. When a
-   restart's handshake fails, that scenario and every remaining one end `error` with that fault, and
-   `ess` does not restart again.
-7. **End.** When the run's last scenario has ended, `ess` closes the child's stdin. A target exits
-   when its standard input closes; that rule is also what ends a target whose `ess` died, because
-   the child's own process group does not receive a terminal's interrupt. `ess` waits up to 5 s for
-   the exit, then sends `SIGKILL` to the process group, and reaps the child. The child's exit status
-   is not part of the report.
+6. **Restart.** The first call of the next scenario spawns a fresh process and handshakes again
+   (`process.rs:615-646`). The restarted process must name the same `implementation` (name and
+   version) as the first; another identity is a failed handshake, because one report names one
+   implementation. A failed restart is a respawn that cannot start (fault kind `not-started`) or a
+   handshake that fails, and it is `Unavailable { operation: "handshake" }` carrying the refusal's
+   text (`process.rs:641`). That scenario and every remaining one end `error` with it, `ess` does
+   not restart again (`process.rs:642`), and `end_scenario` answers success, as it does after any
+   fault (`process.rs:997-1007`).
+7. **End.** When the run's last scenario has ended, `ess` closes the child's stdin, waits up to 5 s
+   for the exit, and then sends `SIGKILL` to the process group and reaps the child. The group is
+   killed after the wait always, even when the child has already exited, so a server it left in
+   its group dies too (`target_process.rs:312-318`; a group that is already gone is ignored,
+   `:84-87`). A target exits when its standard input closes. That rule ends a target whose `ess`
+   was killed with `SIGKILL` or crashed; any other signal to `ess` is handled (below). The child's
+   exit status is not part of the report.
 
 **No child left behind.** On a fault and at the end, `ess` signals the whole process group, so a
 server the adapter started in its own group dies with it. `ess` signals the group before it reaps
-the child, so the group id cannot have been reused (`waitid` with `NOWAIT` from `rustix`'s
-`process` feature, which `ess-cli` already enables, `crates/edge/ess-cli/Cargo.toml`; `NOWAIT`
-not verified). A process the adapter moved into another session or group is the adapter's to end.
-The released `ess` archives are Unix only (`.github/workflows/package.yml:78-84`).
+the child, so the group id cannot have been reused: it reads the child's status with `waitid` and
+`NOWAIT` (`rustix`'s `process` feature, which `ess-cli` already enables) without reaping it
+(`target_process.rs:244-257`), and reaps it only after the kill (`:280-291`). A process the adapter
+moved into another session or group is the adapter's to end. The released `ess` archives are Unix
+only (`.github/workflows/package.yml:78-84`).
+
+**A signalled `ess`.** The child's own process group does not receive the interrupt a terminal
+sends to `ess`'s, and a process that dies of a signal runs no `Drop`. From before the first spawn, a
+`signal-hook` iterator thread waits for `SIGINT`, `SIGTERM` and `SIGHUP`
+(`target_process.rs:50-68`). On one it kills the target's process group and its leader, reaps the
+child and exits `128 + the signal` (130, 143 and 129) with no report (`:70-79`). One lock orders
+this. A spawn registers the child under it before releasing it, and a kill, reap and clear all
+happen under it (`:148-155`, `:280-291`); the signal thread takes the same lock and never releases
+it, so it sees either no target or one that is registered and not yet reaped, and no target is
+spawned after it. `signal-hook` is a direct dependency of `ess-cli`
+(`crates/edge/ess-cli/Cargo.toml:58`); it was already locked through the terminal renderer, so
+`Cargo.lock` gains a dependency line and no package. `SIGKILL` cannot be handled.
 
 ### Time limits
 
@@ -193,13 +221,33 @@ Answer, target to `ess`: exactly one of `ok` and `target_error`.
 
 Reading rules:
 
-- **Answers are closed.** An unknown member, a missing required member, a duplicated member name
-  and a member of the wrong type make the answer invalid, at every depth outside a value map. A
-  value map (`input`, `payload`, `fields`, `response`, a row, `context`, `caller`, `compared`) holds
-  whatever names the target reports, and the runner judges them against the specification as it
-  judges a built-in target's.
-- **Requests are open.** A target ignores a request member it does not know. That is what lets a
-  later `ess` add an optional request member without a new version (see "Format consequences").
+- **Answers are closed.** An unknown member, a missing required member and a member of the wrong
+  type make the answer invalid, at every depth outside a value map (`exact::object`,
+  `exact.rs:339-357`). A value map (`input`, `payload`, `fields`, `response`, a row, `context`,
+  `caller`, `compared`) holds whatever names the target reports, and the runner judges them against
+  the specification as it judges a built-in target's.
+- **A repeated member name is refused at every depth**, value maps included: a map visitor keeps the
+  last value, so a repeated name would otherwise be read as one member (`exact.rs:184-189`, fault
+  `not-an-answer` at the repeated member's value).
+- **Integer members are read by value**: `20.0` is `20`, as `Number` compares (`exact.rs:381-392`).
+  A fraction, a negative number and a number past `u64` are refused where an unsigned integer is
+  required.
+- **`not_granted.actor` may be absent or `null`** in an answer (`wire.rs:322-327`,
+  `exact.rs:329-335`); both mean no actor.
+- **An answer holds exactly one of `ok` and `target_error`.** `{"ok": …, "target_error": null}` is
+  refused as it is with a non-null one (`process.rs:772-777`).
+- **`ElapsedObservation`, `OrderedScan` and `ImplementationIdentity` answers are decoded by hand**
+  (`wire.rs:288-300`, `:424-438`), because the types derive `Deserialize` without
+  `deny_unknown_fields` and would silently drop an unknown member.
+- **Requests are open, at every depth.** A target ignores a request member it does not know,
+  wherever it sits in the request. That is what lets a later `ess` add an optional request member
+  without a new version (see "Format consequences"). `ess` itself reads requests only in `serve`,
+  and `serve` implements the rule by dropping a member the typed decode refuses as `unknown field`
+  and decoding again, at most 256 members and 4096 reads per request (`exact.rs:436-466`); beyond
+  either bound the request is refused as not a request. The suite types keep
+  `deny_unknown_fields`, because they also read closed suite documents, and a test holds a
+  suite-side `Scope`, `Contract` and `Check` to that (`process/tests.rs:1702`). The decoder finds
+  the member from serde's `unknown field` wording; if that ever changes it fails closed.
 - **Optional members.** In requests `ess` writes `null` for an absent optional value, as the Rust
   `Serialize` does, and omits `params` when empty and `total` when absent, as the Rust types skip
   them (`target.rs:1045`, `:1070`, `:1109`). In answers an optional member may be omitted or `null`.
@@ -220,8 +268,14 @@ the wire uses that shape.
 | a protocol fault (table below) | `Unavailable { operation: <op>, detail: <fault> }`, minted by `ess` | records `error`; `ess` kills the process group; the next scenario restarts it | `error` |
 
 `unsupported` and `unavailable` strings are the target's own and reach the report as the
-in-process target's do. No message lets a target say a scenario passed: there is no verdict member
-anywhere in the format, and the status is the runner's fold of its checks (`runner.rs:537-540`).
+in-process target's do, with two bounds that an in-process target's strings do not get. Every
+string of a `target_error` (`observation`, `why`, `operation`, `detail`, `actor`) is cut at 4096
+bytes at a character boundary, ending ` … (<n> bytes more)`, where `<n>` counts the bytes cut, and
+has every control character (Cc), line or paragraph separator (U+2028, U+2029) and bidirectional
+override or isolate (U+202A to U+202E, U+2066 to U+2069) written as its escape, `\u{1b}` style
+(`wire.rs:240-282`, `process.rs:70-72`). The 4096 bound counts the bytes the target sent, before
+escaping. No message lets a target say a scenario passed: there is no verdict member anywhere in
+the format, and the status is the runner's fold of its checks (`runner.rs:537-540`).
 
 **An operation the target does not implement**, including an `op` it has never heard of, is
 answered `{"kind":"unsupported","observation":<op>,"why":<reason>}`. For four optional operations
@@ -238,24 +292,49 @@ A fault is described by kind, request `id`, operation and byte offset only. No d
 member, `detail` text or line on `ess`'s stderr quotes an answer line or a value from it.
 `serde_json`'s error text can quote a value (`invalid type: string "…"`) and
 `Node::from_json_exact`'s quotes a number token
-(`crates/specify/ess-primitives/src/node.rs:139-141`), so neither is ever displayed: the process target keeps only `serde_json::Error::classify()` and
-`column()`, which on a one-line document is the byte offset. A one-time scenario's checks are
-further replaced by the runner's fixed redacted diagnostic (`runner.rs:3311-3323`), unchanged.
+(`crates/specify/ess-primitives/src/node.rs:139-141`), so neither is ever displayed: the process
+target keeps only `serde_json::Error::classify()` and `column()`, which on a one-line document is
+the byte offset (`exact.rs:97-99`). A one-time scenario's checks are further replaced by the
+runner's fixed redacted diagnostic (`runner.rs:3311-3323`), unchanged.
 
 | kind | when | `detail` (example) |
 |---|---|---|
-| `exited` | the child exits while a request is outstanding | `target process exited (status 1) before answering 7 (execute_command)` |
-| `closed-stdout` | stdout reaches end of file while a request is outstanding | `target process closed its standard output before answering 7 (execute_command)` |
+| `exited` | the child exits while a request is outstanding, or a write to it fails and it exits within 500 ms | `target process exited (status 1) before answering 7 (execute_command)` |
+| `closed-stdout` | stdout ends while a request is outstanding, or a write fails, and no exit status appears within 500 ms | `target process closed its standard output before answering 7 (execute_command)` |
 | `timeout` | no complete line within `limit_ms` | `no answer to 7 (observe_events) within 30000 ms` |
 | `line-too-long` | 16 MiB read with no `\n` | `answer to 7 (query_view) exceeds 16777216 bytes` |
 | `not-utf8` | the line is not UTF-8 | `answer to 7 (query_view) is not UTF-8 at byte 412` |
-| `not-json` | the line is not one JSON value, or is blank | `answer to 7 (query_view) is not JSON at byte 0` |
+| `not-json` | the line is not one JSON value, or holds only whitespace (reported at byte 0, `exact.rs:83-85`) | `answer to 7 (query_view) is not JSON at byte 0` |
 | `not-an-answer` | valid JSON that breaks the envelope or the operation's answer shape | `answer to 7 (execute_command) does not match its operation at byte 88` |
 | `wrong-id` | `id` is not the outstanding request's | `answer names id 9 while 7 (execute_command) is outstanding` |
 | `number-out-of-range` | a number `Number::from_json_token` refuses (below) | `answer to 7 (execute_command) holds a number outside the domain at byte 121` |
+| `not-started` | a restart's respawn cannot start the program | `target process could not be started again (NotFound) before 0 (handshake)` |
+
+`not-started` is a fault of a restart only: it is a failed restart (lifecycle step 6), reported as
+`Unavailable { operation: "handshake" }` with this text (`process.rs:279-280`, `:374-377`,
+`:615-622`). A failed first start is not a fault but the refusal "cannot start the target program"
+(exit 2, `main.rs:4522-4530`).
+
+There is no `closed-stdin` kind. A failed write to the child's standard input is reported as
+`exited` or `closed-stdout` by the same 500 ms rule (`target_process.rs:322-336`).
 
 A handshake answer naming a version `ess` does not read is not a fault kind; it is the refusal
-`target speaks ess-conformance-target/2; this ess reads ess-conformance-target/1`.
+`target speaks ess-conformance-target/2; this ess reads ess-conformance-target/1`. The refusal never
+quotes `speaks`: its text names a version only when the value is `ess-conformance-target/` followed
+by one to nine decimal digits (`process.rs:437-446`, `:699-705`), and any other value is refused as
+`target speaks no version of ess-conformance-target; this ess reads ess-conformance-target/1`.
+
+### Writing, reading and the end of a stream
+
+`ChildPeer` hands each request line to a writer thread and reads answer lines on a reader thread
+(`target_process.rs:162-172`), so a target that stops reading its standard input cannot hold `ess`
+in a write, and every wait for an answer ends at `limit_ms` (`:338-368`). The reader passes lines
+over a channel of two (`:171`): a target that writes lines nobody asked for stalls on its own after
+two, and the next request reads the first of them as its answer and fails it by `id` (`wrong-id`).
+When stdout ends (end of file, a read error, or a last line with no `\n`) or a write fails, `ess`
+waits up to 500 ms for an exit status (`SETTLE`, `:93-95`, `:273-278`): `exited` when it has one,
+`closed-stdout` when it has none. A child that exits while another process holds its stdout open
+is found by looking at the child every 50 ms rather than by running to the limit (`:352-364`).
 
 ### Numbers
 
@@ -270,7 +349,14 @@ Values travel exactly, by value rather than by spelling.
   through `Node`'s `Deserialize`, which reads every non-integer through binary64
   (`node.rs:33-41`). An integer in `i64` is that integer; any other token keeps the value its digits
   spell (`facts.rs:588-602`). This is the exact decoding `target.rs:98-102` asks of a JSON adapter,
-  done once in Rust instead of in each adapter.
+  done once in Rust instead of in each adapter. The reader is `process/exact.rs`, which reads each
+  number token through `Number::from_json_token`, the door `Node::from_json_exact` uses
+  (`exact.rs:1-12`). It is two linear passes over a line: `serde_json` checks that it is one JSON
+  value, and a second pass builds the tree, so a line nested deep is not read again at every level
+  (the first reader parsed the rest of the line again at each level and visited 23,241,414 bytes for
+  a 180,294-byte line). A value nested past 128 levels below the line's own value is refused
+  (`exact.rs:26`, `process/exact/tests.rs:215-260`). An integer member is read by value, so `20.0`
+  is `20` (`exact.rs:381-392`).
 - **A number `ess` cannot hold exactly** is one `Number::from_json_token` refuses: outside
   binary64's magnitude, longer than 512 characters, or with an exponent past ±512
   (`facts.rs:594-602`). It is the fault `number-out-of-range`; the scenario is `error`, never a
@@ -380,7 +466,7 @@ called only by the mutation audit (`src/mutate.rs:5652`); the process target kee
   "reads": ["ess-conformance-target/1"],
   "suite": {"system": "tasks", "specification_version": "v1",
             "suite_version": "ess-conformance/34", "spec_digest": "5b1d0c…",
-            "suite_digest": "9e04aa…"}}}
+            "suite_digest": "sha256:9e04aa…"}}}
 ```
 
 ```json
@@ -391,11 +477,11 @@ called only by the mutation audit (`src/mutate.rs:5652`); the process target kee
 | member | JSON type | required | meaning |
 |---|---|---|---|
 | `request.reads` | array of string | yes | the versions this `ess` reads, oldest first |
-| `request.suite.system`, `.specification_version`, `.suite_version`, `.spec_digest` | string | yes | the suite's `SuiteProvenance` (`src/scenario.rs:466-503`) |
+| `request.suite.system`, `.specification_version`, `.suite_version`, `.spec_digest` | string | yes | the suite's `SuiteProvenance` (`src/scenario.rs:466-503`); `spec_digest` is bare hex, as the suite writes it |
 | `request.suite.component` | string | no | present when the suite is scoped to one component (`scenario.rs:499-500`) |
-| `request.suite.suite_digest` | string | yes | `AdmittedSuite::digest()`, `sha256-json-bytes/1` of the suite's bytes (`src/admission.rs:180-183`) |
+| `request.suite.suite_digest` | string | yes | `AdmittedSuite::digest()`, `sha256-json-bytes/1` of the suite's bytes, written `sha256:` and 64 lowercase hex digits, not bare hex (`src/admission.rs:154-160`, `:180-183`) |
 | `ok.speaks` | string | yes | the one version the target speaks; must be in `reads` |
-| `ok.implementation.name`, `.version` | string | yes | `ImplementationIdentity` (`target.rs:593-601`) |
+| `ok.implementation.name`, `.version` | string | yes | `ImplementationIdentity` (`target.rs:593-601`), each at most 256 bytes: a longer one is `identity-too-long` (`wire.rs:254-264`), and each is stored with control, line-separator and bidirectional characters written as escapes (`wire.rs:240-250`) |
 
 A target may refuse a suite it does not implement by answering the handshake with its identity and
 then answering what it can; the runner's verdict says the rest. A handshake answered with
@@ -743,105 +829,33 @@ not verified (`ReadingOrigin` was not read). Answer `ReadingEvidence`
 
 ## A minimal adapter in Python 3
 
-This adapter is documentation for adopters, not a checker in this repository: nothing here runs it,
-and `AGENTS.md`'s rule that everything executable is Rust is untouched. It serves the `tasks`
-specification from memory. The guide's tested example comes with the implementation.
+The adapter is in [the process-target guide
+page](../../website/docs/guides/verify/target-process.md#a-complete-adapter): Python 3 on
+the standard library, serving the `tasks` specification of [the first-specification
+tutorial](../../website/docs/start/first-specification.md) from memory. It is documentation that a
+test runs, and `AGENTS.md`'s rule that everything executable is Rust is untouched: no Python file is
+committed. `crates/edge/ess-cli/tests/process_target_guide.rs` takes the guide's code block out of
+the page byte for byte and takes the specification out of the tutorial page, synthesizes the suite
+with `--suite-format 5`, and runs the documented command under `--strict`. All 6 scenarios pass and
+the exit status is 0
+(`the_guides_python_adapter_passes_every_scenario_of_its_specification`). A second case changes one
+answer of the adapter and requires exit 1 with exactly `tasks.list.AddTask/outcome/rejected` failed,
+so the first cannot pass by accident
+(`the_guides_adapter_with_one_wrong_outcome_fails_that_scenario`). Both print a skip and pass where
+`python3` is not on `PATH`.
 
-```python
-#!/usr/bin/env python3
-"""An ess-conformance-target/1 adapter for the `tasks` specification, held in memory."""
-import json
-import sys
-import uuid
+The sketch this page held before the build is gone. It answered no outcome for `CompleteTask` of a
+task that does not exist, where the suite expects `already-done` (`wrong_state: true` covers a
+task that does not exist), and it failed 1 of the 6 scenarios. The guide's adapter answers
+`already-done` with empty `fields` there.
 
-SPEAKS = "ess-conformance-target/1"
-L = "tasks.list."
-
-
-class Unsupported(Exception):
-    pass
-
-
-class Tasks:
-    def handshake(self, request):
-        return {"speaks": SPEAKS, "implementation": {"name": "tasks-py", "version": "1.0.0"}}
-
-    def begin_scenario(self, request):
-        self.tasks, self.events, self.writes = {}, [], 0
-
-    def end_scenario(self, request):
-        self.tasks, self.events = {}, []
-
-    def execute_command(self, request):
-        command, values = request["command"], request["input"]
-        self.writes += 1
-        result = {"consistency": str(self.writes), "direct_events": []}
-
-        def took(outcome, error=None, fields=None, event=None):
-            result["outcome"] = {"command": command, "outcome": outcome}
-            if error:
-                result["error"] = {"error": L + error, "fields": fields}
-            if event:
-                published = {"event": L + event[0], "payload": event[1]}
-                result["direct_events"].append(published)
-                self.events.append(published)
-            return result
-
-        if command == L + "AddTask":
-            if values["priority"] < 0:
-                return took("rejected", "InvalidPriority", {"submitted": values["priority"]})
-            task_id = str(uuid.UUID(int=len(self.tasks) + 1, version=4))
-            self.tasks[task_id] = {"task_id": task_id, "title": values["title"],
-                                   "priority": values["priority"], "state": "Open"}
-            return took("added", event=("TaskAdded", {"task_id": task_id,
-                                                      "title": values["title"]}))
-        if command == L + "CompleteTask":
-            task = self.tasks.get(values["task_id"])
-            if task is None:
-                return {}  # an instance never created: no declared outcome covers it
-            if task["state"] == "Done":
-                return took("already-done", "AlreadyDone", {"state": "Done"})
-            task["state"] = "Done"
-            return took("completed", event=("TaskCompleted", {"task_id": task["task_id"]}))
-        raise Unsupported("this adapter does not serve " + command)
-
-    def query_view(self, request):
-        if request["view"] != L + "Tasks":
-            raise Unsupported("this adapter does not serve " + request["view"])
-        return {"rows": sorted(self.tasks.values(), key=lambda row: row["task_id"])}
-
-    def observe_events(self, request):
-        return [event for event in self.events if event["event"] == request["event"]]
-
-
-def main():
-    target = Tasks()
-    for line in sys.stdin:  # ends when ess closes standard input
-        message = json.loads(line)
-        answer = {"id": message["id"]}
-        method = getattr(target, message["op"], None)
-        try:
-            if method is None:
-                raise Unsupported("this adapter does not implement " + message["op"])
-            answer["ok"] = method(message["request"])
-        except Unsupported as why:
-            answer["target_error"] = {"kind": "unsupported", "observation": message["op"],
-                                      "why": str(why)}
-        print(json.dumps(answer), flush=True)
-
-
-if __name__ == "__main__":
-    main()
-```
-
-Run as `ess verify conform run --path spec --target process --report-format 2 --report-out
-report.json -- ./adapter.py`. Notes for authors: it answers every operation it lacks `unsupported`,
+Notes for authors that stand: the adapter answers every operation it lacks `unsupported`,
 `configure_external_outcome` and `redeliver_event` included, which this specification never reaches;
-it returns a consistency token from every command because `Tasks` is `read_your_writes`; its ids are
-deterministic, so two runs write identical reports. The `tasks` specification has no `Decimal`; an
-adapter for one reads with `json.loads(line, parse_float=decimal.Decimal)` and writes each decimal
-as its exact token (see "Numbers"), which the standard library's `json.dumps` does not do for
-`Decimal`.
+it returns a consistency token from every command because `Tasks` is `read_your_writes`; and its
+ids come from a counter, so two runs write identical reports. The `tasks` specification has no
+`Decimal`; an adapter for one reads with `json.loads(line, parse_float=decimal.Decimal)` and writes
+each decimal as its exact token (see "Numbers"), which the standard library's `json.dumps` does not
+do for `Decimal`.
 
 ## Test peer: `ess verify conform serve`
 
@@ -856,9 +870,10 @@ and no test may build a binary with cargo (`crates/edge/ess-xtask/tests/no_test_
   answers an unknown `op` `unsupported`, and returns at end of input.
 - `ess verify conform serve --target billing|oracle-fixture`, which serves that built-in reference
   on its standard input and output until input closes: exit 0 at end of input, exit 2 on a request
-  it cannot decode (stderr names the fault kind, never the line). `serve` fits the conform verbs
-  (`synthesize`, `run`, `report`, `mutate`, …; `main.rs:612-1107`) and takes its own two-value enum,
-  so `interpreted` and `process` are not offered.
+  it cannot decode (stderr names the fault kind, never the line: `serve.<kind>: …`,
+  `main.rs:4544-4568`). `serve` fits the conform verbs (`synthesize`, `run`, `report`, `mutate`, …;
+  `main.rs:612-1107`) and takes its own two-value enum, `ServedTarget` (`main.rs:1256-1263`), so
+  `interpreted` and `process` are not offered.
 
 It is the protocol's reference peer for adopters: an adapter author can run the billing suite
 against `ess verify conform serve --target billing` and compare transcripts. And the acceptance
@@ -872,9 +887,12 @@ plugin spells `serve`.
 **The fault cases need a peer that misbehaves**, which a public verb should not offer. They use a
 test-only executable, `ess-conformance-peer` (`crates/edge/ess-cli/tests/support/
 conformance_peer.rs`), declared as a `[[bin]]` the way `ess-recovery-driver` and
-`ess-recovery-fake` are (`crates/edge/ess-cli/Cargo.toml:67-80`). It wraps `serve` over `Billing`
-and injects one misbehaviour per option. It costs one more link of `ess-conformance` in the
-`ess-cli` test build.
+`ess-recovery-fake` are (`crates/edge/ess-cli/Cargo.toml:82-87`). It wraps `serve` over `Billing`
+and injects one misbehaviour per option: `--wrong-outcome`, `--exit-in`, `--garbage-in`,
+`--wrong-id-in`, `--stall-in`, `--unsupported`, `--speaks`, `--pid-file`, `--fail-restart` and
+`--record <file>`, which appends the `op` of each request it receives to the file, one per line,
+so a test can say which requests the peer saw (`conformance_peer.rs:9-22`). It costs one more link
+of `ess-conformance` in the `ess-cli` test build.
 
 ## Determinism
 
@@ -894,19 +912,21 @@ stronger equality. A restart changes nothing that is minted.
 
 ## What the implementation adds
 
-- `crates/verify/ess-conformance/src/process.rs` (and submodules): `TARGET_FORMAT`, `READS`, the
-  envelope, a request writer with exact numbers, an answer reader over `Node::from_json_exact` that
-  refuses duplicate member names (`serde`'s map visitors keep the last value, not verified for this
-  build), the fault kinds, a `Peer` trait (send a line, receive a line within a limit, kill and
-  reap, respawn), `ProcessTarget<P: Peer>` implementing `ConformanceTarget` with the default
-  fallbacks above, and `serve`.
+- `crates/verify/ess-conformance/src/process.rs` and `process/{wire,exact,serve}.rs`:
+  `TARGET_FORMAT`, `READS`, the envelope, a request writer with exact numbers, an answer reader
+  (`exact.rs`) that reads number tokens through `Number::from_json_token` and refuses repeated
+  member names (checked for this build, `exact.rs:184-189`), the fault kinds, a `Peer` trait (send a
+  line, receive a line within a limit, kill and reap, respawn), `ProcessTarget<P: Peer>`
+  implementing `ConformanceTarget` with the default fallbacks above, and `serve`.
 - `crates/edge/ess-cli/src/target_process.rs`: the `Peer` over a child process. It resolves the
-  program against `--target-dir`, spawns it with `process_group(0)`, reads stdout on a thread into
-  bounded lines, waits with `recv_timeout`, and signals the group with `rustix::process` before
-  reaping.
+  program against `--target-dir`, spawns it with `process_group(0)`, writes requests from a writer
+  thread, reads stdout on a thread into bounded lines, waits with `recv_timeout`, signals the group
+  with `rustix::process` before reaping, and ends the target when `ess` is signalled.
 - `crates/edge/ess-cli/src/main.rs`: `ReferenceTarget::Process`, `Run`'s `command`,
-  `target_dir` and `target_timeout`, the refusals, the dispatch at `:4321-4336`, the `mutate`
-  refusal, and the `Serve` verb.
+  `target_dir` and `target_timeout` (`ProcessArgs`, `:1237-1254`), the refusals
+  (`process_refusal`, `:4460-4511`), the dispatch (`run_target`, `:4388-4431`), the `mutate`
+  refusal (`:4649-4658`), and the `Serve` verb (`conform_serve`, `:4544-4568`).
+- `crates/edge/ess-cli/Cargo.toml`: `signal-hook` as a direct dependency (`:58`).
 - `serde` derives. Requests gain `Deserialize`, for `serve`: `ScenarioContext`,
   `SemanticCommandRequest`, `AbsentInputRequest`, `SemanticViewRequest`, `EventObservationRequest`,
   `Deadline`, `InstantMark`, `ElapsedObservationRequest`, `RedeliveryRequest`,
@@ -916,25 +936,32 @@ stronger equality. A restart changes nothing that is minted.
   text), `periodic::Open` (`periodic.rs:68`), `periodic::Observe` (`periodic.rs:87`) and
   `reading::ReadingObservationRequest` (`reading.rs:99`). Results gain decoders through the exact
   reader: `SemanticCommandResult`, `DeclaredErrorValue`, `ObservedEvent`, `SemanticViewResult`,
-  `ObservedInvocation`, `AwaitAnswer`, `TargetError`. `ElapsedObservation`, `OrderedScan`,
-  `ImplementationIdentity`, the periodic results and `ReadingEvidence` already derive both.
+  `ObservedInvocation`, `AwaitAnswer`, `TargetError`. `ElapsedObservation`, `OrderedScan` and
+  `ImplementationIdentity` already derive both but are decoded by hand too, so that an unknown
+  member is refused (`wire.rs:288-300`, `:424-438`). The periodic results and `ReadingEvidence`
+  already derive both, and the periodic result types deny unknown members (`periodic.rs:28`,
+  `:58`, `:77`, `:98`, `:173`, `:182`, `:195`).
   `InstantName`, `StateName`, the semantic refs and `BindingRef` already have hand-written
   `Deserialize` (`scenario.rs:1672-1677`, `crates/specify/ess-domain/src/entity.rs:124`,
   `refs.rs:94-101`, `:165-172`).
 - `crates/edge/ess-cli/tests/process_target.rs` and the test-only `ess-conformance-peer`.
-- Documentation: `website/docs/guides/verify/runners.md` gains "An implementation in any language"
-  with the adapter; `website/docs/reference/formats.md`, `FORMAT_RELEASES`, `CHANGELOG.md`.
+- Documentation: `website/docs/guides/verify/target-process.md` is "An implementation in any
+  language", with the adapter, and `runners.md` keeps a short section of that name;
+  `website/docs/reference/formats.md`, `FORMAT_RELEASES`, `CHANGELOG.md`.
 
 ## Tests the acceptance requires
 
-Each line is one acceptance statement of the story, in its order. CLI tests live in
-`crates/edge/ess-cli/tests/process_target.rs`; `peer` is `ess-conformance-peer`.
+Each line is one acceptance statement of the story, in its order, with the tests that exist. CLI
+tests live in `crates/edge/ess-cli/tests/process_target.rs` unless a file is named; `peer` is
+`ess-conformance-peer`, and `lib` is `crates/verify/ess-conformance/src/process/tests.rs`.
 
 1. Design page: this page; no test.
 2. `a_served_billing_reference_reports_what_the_built_in_one_reports`: runs
    `suites/generated/billing/suite.json` with `--target billing` and with `--target process --
    $CARGO_BIN_EXE_ess verify conform serve --target billing`, both `--report-format 2
-   --report-out`, and compares the two reports' `outcomes` and `counts`.
+   --report-out`, and compares the two reports' `outcomes` and `counts`. In `lib`,
+   `a_billing_run_through_serve_reports_what_the_built_in_run_reports` does the same through
+   `ProcessTarget` and `serve` with no process.
 3. `strict_exits_nonzero_unless_every_scenario_passed` and
    `each_non_passing_scenario_is_listed_under_its_own_category`: on a coverage suite from
    `--path examples/billing --suite-format 5` (strict cannot pass unknown coverage, `main.rs:798`),
@@ -943,48 +970,114 @@ Each line is one acceptance statement of the story, in its order. CLI tests live
 4. `one_wrong_outcome_fails_that_scenario_and_no_other`: `peer --wrong-outcome
    billing.invoice.CreateInvoice/outcome/accepted` answers `rejected` for that scenario's first
    command; `outcomes.failed` is exactly that id and every other scenario keeps the built-in run's
-   status.
+   status. `crates/edge/ess-cli/tests/process_target_guide.rs` repeats it for the guide's adapter:
+   `the_guides_adapter_with_one_wrong_outcome_fails_that_scenario`.
 5. One test per fault, each asserting that scenario is `error`, the scenarios after it keep their
    built-in status (the restart works), and the peer's pid and a grandchild's pid it wrote to
    `--pid-file` are gone once `ess` exits: `an_exit_mid_scenario_is_an_error` (`--exit-in`),
    `a_line_that_is_not_an_answer_is_an_error` (`--garbage-in`),
    `an_answer_to_another_request_is_an_error` (`--wrong-id-in`),
    `an_answer_past_the_time_limit_is_an_error` (`--stall-in`, with `--target-timeout 1`). Beside
-   them: `a_failed_restart_errors_every_remaining_scenario` (`--fail-restart`) and, in
-   `ess-conformance`, `a_fault_never_quotes_the_answer`, which feeds lines holding a marker secret
-   for every fault kind and asserts that no fault text contains it.
+   them: `a_failed_restart_errors_every_remaining_scenario` (`--fail-restart`),
+   `a_sighup_to_ess_waiting_for_an_answer_ends_the_targets_group_and_writes_no_report`, and, in
+   `crates/edge/ess-cli/tests/adversary_process_target_pass1.rs`,
+   `a_sigterm_to_ess_mid_run_leaves_no_process_of_the_targets_group_behind` and
+   `a_sigint_to_ess_mid_run_leaves_no_process_of_the_targets_group_behind`. In `lib`, one test per
+   fault kind (`an_exit_is_the_exited_fault`, `a_closed_stdout_is_the_closed_stdout_fault`,
+   `no_answer_in_time_is_the_timeout_fault`, `a_long_line_is_the_line_too_long_fault`,
+   `a_line_that_is_not_utf8_is_the_not_utf8_fault`, `a_blank_or_broken_line_is_the_not_json_fault`,
+   `a_shape_the_operation_does_not_have_is_the_not_an_answer_fault`,
+   `an_answer_to_another_request_is_the_wrong_id_fault`,
+   `a_number_outside_the_domain_is_the_number_out_of_range_fault`,
+   `a_target_that_cannot_be_started_again_is_the_not_started_fault`), the lifecycle
+   (`after_a_fault_the_scenario_answers_alone_and_the_next_one_restarts`,
+   `a_restart_naming_another_implementation_fails_every_remaining_scenario`,
+   `a_failed_restart_fails_every_remaining_scenario_without_respawning_again`), and
+   `a_fault_never_quotes_the_answer`, which feeds lines holding a marker secret for every fault kind
+   and asserts that no fault text contains it.
 6. `an_unsupported_answer_is_unsupported_with_its_reason`: `peer --unsupported query_view` makes
    each scenario that reads `unsupported`; the detailed `--format json` run carries the peer's
-   `why` in those checks' diagnostics, and the exit status is 1.
+   `why` in those checks' diagnostics, and the exit status is 1. In `lib`,
+   `an_unsupported_read_as_an_actor_falls_back_to_the_plain_read`,
+   `a_target_error_answer_is_the_targets_and_keeps_the_process` and, in
+   `crates/verify/ess-conformance/tests/adversary_process_target_pass1.rs`,
+   `an_unsupported_command_answer_is_unsupported_and_keeps_the_process`.
 7. `two_runs_write_identical_reports`: two runs against `serve --target billing` write equal
    report/2 bytes.
 8. `an_unread_protocol_version_is_refused_before_any_scenario`: `peer --speaks
    ess-conformance-target/2` exits 2, stderr names `ess-conformance-target/1`, no report is
-   written, and the peer recorded no `begin_scenario`.
-9. `task test-xtask`: the `FORMAT_RELEASES` row, the `formats.md` row and the runners guide
-   section. Also `cargo test -p ess-conformance --lib process` for the codec: a round trip of every
-   operation, exact numbers past binary64, refusal of unknown and duplicate answer members.
+   written, and the peer recorded no `begin_scenario` (`--record`). In `lib`,
+   `a_version_this_build_does_not_read_is_refused_naming_the_versions_read` and
+   `a_handshake_answered_with_a_target_error_or_a_fault_is_refused`.
+9. `task test-xtask`: the `FORMAT_RELEASES` row, the `formats.md` row and the process-target guide
+   section. In `lib`, the codec: `every_operation_round_trips_through_serve`,
+   `numbers_past_binary64_travel_exactly_both_ways`, the refusals of an unknown, repeated, missing
+   and mistyped answer member (`an_unknown_answer_member_is_refused`,
+   `a_repeated_member_name_is_refused`, `a_missing_answer_member_is_refused`,
+   `a_member_of_the_wrong_type_is_refused`), and
+   `a_value_map_holds_any_names_and_optional_members_may_be_absent`.
+   In `process/exact/tests.rs`: `every_line_reads_as_the_reader_it_replaced_read_it`,
+   `a_line_is_gone_over_once_however_deep_it_nests` and
+   `the_nesting_limit_is_128_levels_below_the_line`.
+
+Added by the review of the build, with the tests that pin them:
+
+- **The guide's adapter runs.** `process_target_guide.rs`:
+  `the_guides_python_adapter_passes_every_scenario_of_its_specification` (see "A minimal adapter in
+  Python 3").
+- **Requests are open at every depth.**
+  `serve_drops_an_unknown_top_level_request_member_in_every_operation`,
+  `serve_drops_an_unknown_request_member_at_every_depth_in_every_operation`,
+  `a_request_member_unknown_in_one_object_is_dropped_there_and_kept_where_it_is_known` and
+  `a_suite_scope_check_or_contract_with_a_member_it_does_not_know_is_still_refused` in `lib`, and
+  `serve_ignores_a_request_member_it_does_not_know_in_every_operation` in the `ess-conformance`
+  `adversary_process_target_pass1.rs`.
+- **What a target supplies is escaped and bounded.**
+  `a_handshake_identity_has_every_steering_character_written_as_text`,
+  `a_handshake_name_or_version_past_256_bytes_is_refused_without_quoting_it`,
+  `a_restarted_target_naming_the_same_steering_identity_is_the_same_implementation`,
+  `every_string_of_a_target_error_has_every_steering_character_written_as_text`,
+  `a_target_error_string_past_4096_bytes_is_cut_at_a_character_naming_what_was_cut`,
+  `a_report_through_a_process_target_writes_no_steering_character_the_target_sent` in `lib`, and
+  `the_text_report_prints_a_targets_implementation_name_without_control_characters` and
+  `the_text_report_prints_a_targets_unsupported_reason_without_control_characters` in the
+  `ess-conformance` `adversary_process_target_pass1.rs`.
+- **The text report escapes names and values.**
+  `a_text_report_writes_an_escape_in_a_row_member_name_as_text`,
+  `a_text_report_writes_a_c1_control_or_a_bidirectional_override_in_a_value_as_text` and
+  `a_text_report_prints_an_ordinary_row_member_name_and_value_unchanged` in `lib`.
+- **Numbers at the edges.** `numbers_at_the_edges_travel_exactly_through_a_process_target_both_ways`
+  and `a_number_past_the_domain_in_a_nested_answer_is_a_fault_not_a_value`
+  (`ess-conformance` `adversary_process_target_pass1.rs`).
+- **Refusals and `serve`.** `every_refusal_exits_2_and_writes_no_report`,
+  `mutate_refuses_the_process_target_naming_the_split_route`,
+  `a_relative_program_is_found_in_the_target_dir` and
+  `serve_ends_at_end_of_input_and_refuses_a_line_by_kind_only`; in `lib`,
+  `serve_answers_an_unknown_op_unsupported_and_returns_at_end_of_input` and
+  `serve_refuses_a_request_it_cannot_decode_by_kind_and_line`.
 
 ## Format consequences
 
-`FORMAT_RELEASES` (`crates/edge/ess-xtask/src/docs.rs:147`) gains `("ess-conformance-target", 1,
-None)` after `("ess-conformance-execution", 1, Some("0.53.0"))` (`docs.rs:281`), and the release
-that ships it fills the version in. The family has no `SUPPORTED_*` constant, so its row is read
-from the quoted literal in non-test source, as `docs.rs:116-121` describes.
-`website/docs/reference/formats.md` gains a row after `ess-conformance-execution/1`
-(`formats.md:394`), in the table whose columns are "Document and discriminator | Separate identity |
-Reader and byte contract" (`formats.md:353`):
+`FORMAT_RELEASES` (`crates/edge/ess-xtask/src/docs.rs:147`) has `("ess-conformance-target", 1,
+None)` after `("ess-conformance-execution", 1, Some("0.53.0"))` (`docs.rs:281-282`): the format is
+in no release, and the release that ships it fills the version in, as `("infra-ir", 4, None)` and
+`("ess-conformance", 64, None)` do until theirs. The family has no `SUPPORTED_*` constant, so
+`cargo xtask docs` reads its row from the quoted literal in non-test source, as `docs.rs:116-121`
+describes, and refused without the row.
 
-> | `ess-conformance-target/1` (handshake `speaks`) | The implementation identity a target names in
-> its handshake, and the suite it is asked to run (`suite_digest`, `spec_digest`, `suite_version`) |
-> Not yet in a release. The line protocol of `ess verify conform run --target process`: `ess`
-> starts the command given after `--` and exchanges one JSON object per line on its standard input
-> and output, request and answer in lockstep under a repeated `id`. Operations are
-> `ConformanceTarget`'s methods in snake_case with their Rust `serde` members; an operation the
-> target does not implement, or does not know, is answered `unsupported`. Answers are closed and
-> their numbers exact. A fault (the process exits, an invalid line, a wrong `id`, a line over
-> 16 MiB, no answer within the limit) ends the scenario `error` and restarts the process. Served by
-> `ess verify conform serve`. [Design](…) [Source][process] |
+`website/docs/reference/formats.md` has the row after `ess-conformance-execution/1`, in the table
+whose columns are "Document and discriminator | Separate identity | Reader and byte contract". It
+says what the format is, who writes and reads it, and its rules:
+
+- **Written and read by** `ess verify conform run --target process` (it writes requests and reads
+  answers) and `ess verify conform serve` (the other direction).
+- **Closed**: an answer's unknown member outside a value map, missing member, mistyped member, both
+  `ok` and `target_error`, member name repeated at any depth, number binary64 cannot hold, line over
+  16 MiB, and an implementation `name` or `version` over 256 bytes. Integers are read by value.
+- **Open**: a request's reader ignores a member it does not know, at every depth, and a value map
+  holds whatever names the specification gives.
+- **Escaped and bounded**: strings a target supplies that `ess` shows are escaped for control,
+  line-separator and bidirectional characters, and a `target_error` string is cut at 4096 bytes.
 
 **Within `/1`**, with no new version:
 
@@ -1018,18 +1111,44 @@ release `ess` may read both, `reads: ["…/1", "…/2"]`, and the target picks.
   equal to the Rust, Go and TypeScript ones, priced at about 66 KB per language
   (`story:java-conformance-target`), and it covers Python only.
 
+## Known limits
+
+Three things are deliberately left as they are in `/1`.
+
+- **A run in which every scenario times out takes scenarios × `--target-timeout`**, plus a restart
+  handshake for each: 17 minutes for the 34-scenario billing suite at the default 30 s (34 × 30 s),
+  and 34.2 s measured at `--target-timeout 1`. The guide tells an author to lower the option while
+  building an adapter.
+- **An answer written early with the next request's id is accepted**, and gains the target nothing.
+  The reader holds up to two unasked lines (`target_process.rs:171`); when the next request is
+  sent, the first of them is read as its answer, checked against that request's `id` and judged by
+  the runner against the specification like any other answer. A target that answers early can be
+  right or wrong, and cannot be passed for what it did not answer.
+- **`serve` answers a last line with no line feed although `ess` refuses one.** `ess`'s reader
+  treats a final line with no `\n` as the end of the stream (`target_process.rs:213-217`), and
+  `serve` decodes it and answers (`serve.rs:123-128`). An adapter must end every answer with `\n`.
+
 ## Open questions
+
+All four are settled by the build.
 
 1. **`--known-failing` with a process target.** The declaration binds the build that ran, and `run`
    binds the `ess` executable's SHA-256 (`known_failures.rs:162-167`), which says nothing about the
-   target. Default: refused, exit 2, in this version. Later, take the target's build from the
-   operator, as `report --implementation-build` does (`main.rs:886-889`).
+   target. Settled: refused, exit 2, with no report (`main.rs:4502-4511`), in this version. Later,
+   take the target's build from the operator, as `report --implementation-build` does
+   (`main.rs:886-889`).
 2. **`serve --target interpreted`.** It would make the model itself a protocol peer, a fake
    backend for any adapter's tests, but the interpreter decides `now` guards only with the runner's
-   clock (`main.rs:4326-4334`), which does not cross the wire. Default: not in this version.
-3. **Whether the runners guide's Python adapter is executed by a test.** `tutorial_page.rs` runs
-   the Start-here pages' `go` steps wherever `go` is on `PATH` and skips otherwise (`AGENTS.md`,
-   Gate). Default: the guide's adapter runs the same way, wherever `python3` is on `PATH`; it stays
-   documentation, not a checker.
-4. **The 16 MiB line bound and the 5 s end grace.** Neither is derived from the code. Default: keep
-   both fixed in `/1`; a view large enough to pass 16 MiB on one line is a suite worth narrowing.
+   clock (`main.rs:4326-4334`), which does not cross the wire. Settled: not offered; `ServedTarget`
+   has `billing` and `oracle-fixture` only (`main.rs:1256-1263`).
+3. **Whether the guide's Python adapter is executed by a test.** Settled: it is.
+   `crates/edge/ess-cli/tests/process_target_guide.rs` runs the guide's copy of the adapter,
+   wherever `python3` is on `PATH`, and prints a skip otherwise, as `tutorial_page.rs` does for
+   the `go` steps; it stays documentation, not a checker.
+4. **The 16 MiB line bound and the 5 s end grace.** Neither is derived from the code. Settled: both
+   are fixed in `/1`; a view large enough to pass 16 MiB on one line is a suite worth narrowing.
+   The other bounds the build added are chosen the same way and not derived from anything: 256
+   bytes for an implementation `name` or `version`, 4096 bytes for a `target_error` string, 500 ms
+   to wait for an exit status after a stream ends, and, in `serve`, 256 unknown request members and
+   4096 reads to find them. A different value is a change a later release may make, and one that
+   makes a previously valid answer invalid is a new version (see "Format consequences").

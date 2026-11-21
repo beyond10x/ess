@@ -97,7 +97,7 @@ fn controls(text: &str) -> Vec<String> {
 const FORGED: &str =
     "\u{1b}[2K\r\n  34 scenarios: 34 passed, 0 failed, 0 error, 0 unsupported\n\u{1b}[8m";
 
-// Claim broken: design `docs/design/conformance-target-process.md:94-95` makes the handshake's
+// Claim broken: design `docs/design/conformance-target-process.md:129-130` makes the handshake's
 // `implementation` the identity a report names, and `:146`/`:224` promise a target cannot say a
 // scenario passed; story acceptance 2 ("writes a report/2"). The handshake's `name` is the target
 // process's own text, unbounded and unchecked (`process/wire.rs:228-239`), and `ConformanceReport`'s
@@ -174,7 +174,7 @@ fn served(line: &str) -> Result<String, &'static str> {
         .map_err(|error| error.kind())
 }
 
-// Claim broken: design `docs/design/conformance-target-process.md:201-202` ("Requests are open. A
+// Claim broken: design `docs/design/conformance-target-process.md:242-243` ("Requests are open. A
 // target ignores a request member it does not know. That is what lets a later `ess` add an
 // optional request member without a new version") and `:993-994`. `serve` reads `close_periodic`'s
 // request, `observe_periodic`'s `scope` and `fixture_values`'s `contract` through `Deserialize`s that

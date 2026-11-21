@@ -1,6 +1,6 @@
 ---
 title: Observations
-sidebar_position: 7
+sidebar_position: 8
 description: "What a suite observes beyond an act's own answer: held-state outcomes, retries, selection, periodic activity and clocks, event context and binding accessors."
 ---
 

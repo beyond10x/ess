@@ -24,7 +24,11 @@ lede: What ESS deliberately does not infer, apply, or attest.
   boundary.
 - An implementation outside this repository is held to its suite through the generated Go or
   TypeScript package. A Rust implementation needs a checkout of this repository, because the
-  `ess-conformance` crate is not published. No runner reaches a target in another process.
+  `ess-conformance` crate is not published. `ess verify conform run --target process` also holds
+  a program in any language to a suite, over a line protocol on its standard input and output
+  ([an implementation in any language](../guides/verify/target-process.md)).
+  It does not accept `--known-failing`, and a run in which every scenario times out takes
+  scenarios × `--target-timeout`.
 - A scenario a target cannot answer is never a pass. With report/2, Rust and newly generated Go
   and TypeScript runners retain `unsupported` separately and fail execution. An ordinary adapter
   error is `error` and makes execution inconclusive unless a failure already dominates. Older

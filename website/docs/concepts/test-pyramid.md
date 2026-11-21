@@ -120,10 +120,10 @@ The cost is one copy per repository: a runner fix reaches you when you regenerat
 [Commit what a reviewer reads, regenerate the rest](../guides/commit-generated-files.md) lists
 the other generated files and whether each is committed.
 
-The alternatives are not available today:
+The alternatives, as they stand today:
 
 | Route | Today |
 |---|---|
 | Import the runner as a library | The `ess-conformance` crate is not published. A Rust target can implement its `ConformanceTarget` trait only from a checkout of this repository. |
-| Run a target in another process over a wire protocol | Not supported. `ess verify conform run` reaches only the targets built into `ess`. |
+| Run a target in another process over a wire protocol | `ess verify conform run --target process -- <program>` starts the program and speaks `ess-conformance-target/1` to it ([an implementation in any language](../guides/verify/target-process.md)). |
 | Run the specification itself (`--target interpreted`) | Runs a command's outcomes, transitions, `sets:`, events and invariants from the model; views, bindings, time, redelivery and established entities come back `unsupported`. It checks a specification, not your implementation. |

@@ -766,7 +766,7 @@ enum ConformCommand {
         #[arg(long)]
         out: PathBuf,
     },
-    /// Run a generated or committed suite against a built-in reference implementation.
+    /// Run a generated or committed suite against a built-in reference implementation or a target process.
     Run {
         /// The specification: synthesized when no suite is named, and executed by `interpreted`.
         ///

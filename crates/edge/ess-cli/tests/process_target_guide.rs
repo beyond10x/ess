@@ -1,8 +1,8 @@
-//! The runners guide's adapter runs, and holds the specification it serves to its suite.
+//! The process-target guide's adapter runs, and holds the specification it serves to its suite.
 //!
-//! `website/docs/guides/verify/runners.md`, section "An implementation in any language", shows one
-//! complete `ess --target process` adapter in Python 3, in the fenced block whose fence carries
-//! `title="adapter/adapter.py"`. It serves the `tasks` specification that the Start-here page
+//! `website/docs/guides/verify/target-process.md`, the page "An implementation in any language",
+//! shows one complete `ess --target process` adapter in Python 3, in the fenced block whose fence
+//! carries `title="adapter/adapter.py"`. It serves the `tasks` specification that the Start-here page
 //! `website/docs/start/first-specification.md` writes in its block carrying
 //! `file=tasks/spec/system.yaml`. This test takes the bytes of both blocks from the pages, so the
 //! documented adapter is the tested one, lays them out as the guide does, synthesizes the suite and
@@ -20,7 +20,7 @@ use std::process::{Command, Output};
 use serde_json::Value;
 
 const ESS: &str = env!("CARGO_BIN_EXE_ess");
-const GUIDE: &str = "website/docs/guides/verify/runners.md";
+const GUIDE: &str = "website/docs/guides/verify/target-process.md";
 const ADAPTER: &str = r#"title="adapter/adapter.py""#;
 const SPECIFICATION_PAGE: &str = "website/docs/start/first-specification.md";
 const SPECIFICATION: &str = "file=tasks/spec/system.yaml";
@@ -209,7 +209,7 @@ fn count(report: &Value, category: &str) -> u64 {
 #[test]
 fn the_guides_python_adapter_passes_every_scenario_of_its_specification() {
     if let Some(reason) = python_skipped() {
-        eprintln!("skipped: the runners guide's Python adapter does not run here: {reason}");
+        eprintln!("skipped: the guide's Python adapter does not run here: {reason}");
         return;
     }
     let run = run_guide("documented", &fenced(GUIDE, ADAPTER));
@@ -237,7 +237,7 @@ fn the_guides_python_adapter_passes_every_scenario_of_its_specification() {
 #[test]
 fn the_guides_adapter_with_one_wrong_outcome_fails_that_scenario() {
     if let Some(reason) = python_skipped() {
-        eprintln!("skipped: the runners guide's Python adapter does not run here: {reason}");
+        eprintln!("skipped: the guide's Python adapter does not run here: {reason}");
         return;
     }
     let documented = fenced(GUIDE, ADAPTER);
