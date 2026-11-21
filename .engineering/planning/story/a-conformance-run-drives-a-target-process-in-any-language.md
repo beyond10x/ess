@@ -23,7 +23,7 @@ scope:
   path: website/docs/guides/verify/runners.md
 - confidence: inferred
   path: website/docs/reference/formats.md
-revision: 7
+revision: 9
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-20T23:41:09Z", actor: "human:timo", revision: 2}
 - {from: "proposed", to: "active", at: "2026-11-21T02:34:03Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"approval":1}}}
@@ -91,10 +91,12 @@ nonzero exit when any scenario fails."
    R, grid O or the effect × target grid is opened, because nothing authored changes.
    - *Vocabulary.* The protocol's operations are the methods of `ConformanceTarget`
      (`target.rs:103-583`), spelled as the trait spells them; its request and answer members are
-     the ones the generated TypeScript `Target` already exchanges as plain JSON
-     (`crates/verify/ess-conformance/src/ts/`, the `Target` interface of `runtime.ts`). No second
-     spelling of a request is introduced. The request types already derive `serde::Serialize`
-     (`target.rs:1002-1217`).
+     the Rust `serde` shapes of the trait's types (`target.rs:639-1245`). The generated
+     TypeScript `Target` asks the same questions in another spelling; the 13 differences are
+     listed in `docs/design/conformance-target-process.md`, "Member spelling", which corrected
+     an earlier wording of this item. No second spelling of a request is introduced. Most
+     request types already derive `serde::Serialize`; five have no serde and none derives
+     `Deserialize` (the design page, "What the implementation adds").
    - *The verdict stays with the runner.* The target returns observations; `Runner::run`
      (`crates/verify/ess-conformance/src/runner.rs:377`) judges. This is ADR
      `architecture-decision-record:ess-evolution-09-independent-conformance` ("Targets return
@@ -165,21 +167,22 @@ nonzero exit when any scenario fails."
   how the process is started and ended, and what `mutate` does with such a target.
 - `ess verify conform run --suite <suite> --report-format 2 --report-out <file>` with the new
   target value and a command starts that command and writes a report/2 whose per-scenario outcomes
-  equal those of `--target billing` on the same suite, where the command is a test binary that
-  serves the built-in billing reference over the protocol. A test compares the two reports'
-  `outcomes` and `counts`.
+  equal those of `--target billing` on the same suite, where the command is
+  `ess verify conform serve --target billing`, the new verb that serves a built-in reference over
+  the protocol. A test compares the two reports' `outcomes` and `counts`.
 - The exit status follows the existing rules of `run`: with `--strict`, nonzero unless every
-  scenario passed; a failed, errored or unsupported scenario is named in the report under its own
+  scenario passed (tested on a `--suite-format 5` suite, because a legacy suite cannot pass
+  `--strict`); a failed, errored or unsupported scenario is named in the report under its own
   category.
 - A target that answers a command with the wrong outcome fails that scenario by name, and no other
   (a test with one mutated answer).
 - A target that exits early, writes a line that is not a protocol message, answers a request it
-  was not asked, or passes the deadline makes the scenario `error`, never `passed`; `ess` ends the
+  was not asked, or does not answer within the request's time limit makes the scenario `error`, never `passed`; `ess` ends the
   process and leaves no child behind. One test per fault.
 - An operation the target answers as unsupported makes the scenario `unsupported` with the target's
   reason in the report, and the run fails.
-- Two runs of one suite against one deterministic target write reports that differ in no member
-  except the completion instant.
+- Two runs of one suite against one deterministic target write byte-identical reports: the
+  completion instant comes from the runner's logical clock.
 - A handshake naming a protocol version this `ess` does not read is refused before the first
   scenario, exit 2, naming the versions it reads.
 - The protocol format is recorded in `FORMAT_RELEASES` and `website/docs/reference/formats.md`,
