@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Release: the GitHub release body of a release is the committed file `release-notes/<version>.md`, written by hand in the release-preparation commit beside the changelog section. `cargo xtask release notes <version>` validates and prints it instead of rendering the section, `cargo xtask release verify` refuses a release from 0.79.0 on without a valid file, and `cargo xtask release notes --check` validates every file present.
+
 ## [0.97.0] — 2026-11-21
 
 ### Added
