@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.97.1] — 2026-11-21
+
 ### Changed
 
 - Release: the GitHub release body of a release is the committed file `release-notes/<version>.md`, written by hand in the release-preparation commit beside the changelog section. `cargo xtask release notes <version>` validates and prints it instead of rendering the section, `cargo xtask release verify` refuses a release from 0.79.0 on without a valid file, and `cargo xtask release notes --check` validates every file present.
@@ -17,10 +19,11 @@
   expected another branch. A fresh value now has to decide every input guard as before with the
   step's own caller written in. Where none does, the run sends the input as its own caller's
   attribute, as the first run does, so the scenario keeps its run with the callers swapped or
-  reversed and the suite of such a model sends other values there than before. Only where a
-  selector reading that input pins no other stored field to a value drawn afresh, so it would find
-  the rows the first run left, or where the input names a `when_related:` row, does the scenario
-  run once; the note then names that selector or row instead of saying the input's type has too
+  reversed. The suite of a model with this shape changes, so committed suites of such models must
+  be re-pinned: it sends other values there than before. Only where a
+  selector reading that input, or any other input the run sends the same value in, pins no other
+  stored field to a value drawn afresh, so it would find the rows the first run left, or where one
+  of those inputs names a `when_related:` row, does the scenario run once; the note then names that selector or row instead of saying the input's type has too
   few values.
 
 ## [0.97.0] — 2026-11-21
