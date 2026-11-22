@@ -1,0 +1,11 @@
+format: ess/24
+system: vault
+version: v1
+
+summary: >-
+  A token component whose one-time secret is followed by a note command of another component, and
+  that note command updates a note nothing creates.
+
+domains:
+  - vault.tokens
+  - vault.notes

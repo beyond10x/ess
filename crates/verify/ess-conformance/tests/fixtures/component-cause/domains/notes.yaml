@@ -1,0 +1,45 @@
+domain: vault.notes
+
+summary: Notes that are edited, though nothing in the specification creates one.
+
+types:
+  - {name: vault.notes.NoteId, kind: newtype, of: Uuid}
+
+entities:
+  - name: vault.notes.Note
+    identity: {name: note_id, type: vault.notes.NoteId}
+    fields:
+      - {name: body, type: String}
+    lifecycle: {initial: Open, states: [Open], terminal: [Open]}
+
+actors:
+  - {name: vault.notes.Owner, may: [vault.tokens.IssueToken, vault.notes.EditNote, vault.notes.Notes]}
+  - {name: vault.notes.Guest, may: []}
+  - {name: vault.notes.Auditor, may: []}
+
+events:
+  - name: vault.notes.NoteEdited
+    fields:
+      - {name: note_id, type: vault.notes.NoteId}
+
+commands:
+  - name: vault.notes.EditNote
+    input:
+      - {name: note_id, type: vault.notes.NoteId}
+      - {name: body, type: String}
+    outcomes:
+      - name: edited
+        updates: vault.notes.Note
+        instance: note_id
+        sets: {body: input.body}
+        emits: [vault.notes.NoteEdited]
+        payload:
+          vault.notes.NoteEdited: {note_id: input.note_id}
+
+views:
+  - name: vault.notes.Notes
+    source: vault.notes.Note
+    consistency: read_your_writes
+    fields:
+      - {name: note_id, type: vault.notes.NoteId}
+      - {name: body, type: String}

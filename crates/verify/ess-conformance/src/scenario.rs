@@ -160,6 +160,33 @@ impl<'de> serde::Deserialize<'de> for ConformanceSuite {
     }
 }
 
+thread_local! {
+    static FEATURE_SCANS: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
+
+/// What `run` returns, and how many times the suite-format selection scanned a suite's steps for
+/// the constructs that raise its format on this thread while it ran: the work a test bounds where
+/// a wall-clock bound would depend on the machine. Not part of the suite.
+#[doc(hidden)]
+pub fn format_feature_scans<R>(run: impl FnOnce() -> R) -> (R, u64) {
+    let before = FEATURE_SCANS.with(std::cell::Cell::get);
+    let out = run();
+    (out, FEATURE_SCANS.with(std::cell::Cell::get) - before)
+}
+
+thread_local! {
+    static SERIALIZED: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
+
+/// What `run` returns, and how many times a suite was serialized to JSON on this thread while it
+/// ran ([`ConformanceSuite::to_canonical_json`], [`ConformanceSuite::to_compact_json`]).
+#[doc(hidden)]
+pub fn suites_serialized<R>(run: impl FnOnce() -> R) -> (R, u64) {
+    let before = SERIALIZED.with(std::cell::Cell::get);
+    let out = run();
+    (out, SERIALIZED.with(std::cell::Cell::get) - before)
+}
+
 impl ConformanceSuite {
     /// An empty suite for one specification.
     pub fn new(provenance: SuiteProvenance) -> Self {
@@ -223,6 +250,20 @@ impl ConformanceSuite {
         self.raise_for_counted_claims();
     }
 
+    /// [`select_fresh_format`](Self::select_fresh_format) without the counted-claim raise.
+    fn select_fresh_format_base(&mut self) {
+        self.provenance.scenario_initial_state = Some(ScenarioInitialState::Empty);
+        self.provenance.suite_version = SuiteFormat::parse(&format!(
+            "ess-conformance/{}",
+            if crate::synthesis_seeds::used_by(self) {
+                crate::synthesis_seeds::ORDINARY
+            } else {
+                34
+            }
+        ))
+        .expect("constant suite version");
+    }
+
     /// Raises the format to suite/44 when an act claims one event more than once
     /// (beyond10x/ess#427), to suite/46 when a response observation carries String-newtype
     /// constraints (beyond10x/ess#499), to suite/48 when a response observation ignores
@@ -237,7 +278,16 @@ impl ConformanceSuite {
     /// is cumulative over every major below it, so nothing
     /// may lower it.
     fn raise_for_counted_claims(&mut self) {
-        let floor = crate::member_paths::ordinary_floor(self)
+        let floor = self.counted_claims_floor();
+        self.raise_to(floor);
+    }
+
+    /// The format the steps' counted claims need: one scan of the steps. It is the same at every
+    /// point of one selection, because every floor above 44 is held only while the format is below
+    /// it and the selection starts below 44.
+    fn counted_claims_floor(&self) -> Option<u32> {
+        FEATURE_SCANS.with(|count| count.set(count.get() + 1));
+        crate::member_paths::ordinary_floor(self)
             .or_else(|| crate::entity_fixtures::ordinary_floor(self))
             .or_else(|| crate::exact_decimal::ordinary_floor(self))
             .or_else(|| crate::one_time_reader::ordinary_floor(self))
@@ -248,7 +298,10 @@ impl ConformanceSuite {
             .or_else(|| crate::hold_now::ordinary_floor(self))
             .or_else(|| crate::undeclared_fields::ordinary_floor(self))
             .or_else(|| crate::direct_response::constrained_ordinary_floor(self))
-            .or_else(|| crate::event_multiplicity::ordinary_floor(self));
+            .or_else(|| crate::event_multiplicity::ordinary_floor(self))
+    }
+
+    fn raise_to(&mut self, floor: Option<u32>) {
         if let Some(floor) = floor {
             if self.provenance.suite_version.major() < floor {
                 self.provenance.suite_version =
@@ -265,9 +318,12 @@ impl ConformanceSuite {
     /// Every caller that assembles a fresh suite from a model calls this one, so that a later
     /// selection over the same suite cannot lower the number again.
     pub fn select_fresh_format_for(&mut self, ir: &ess_compiler::EssIr) {
+        self.select_fresh_format_base();
+        let floor = self.counted_claims_floor();
+        self.raise_to(floor);
         self.select_model_format_for(ir);
         // Counted event claims (beyond10x/ess#427): `/44` is cumulative over everything below.
-        self.raise_for_counted_claims();
+        self.raise_to(floor);
         // A model that reaches a carried `Binary64` (suite/62, `crate::binary64_values`), whether
         // or not a scenario of this suite spells one: the floor is the model's, so a suite of one
         // model keeps one major.
@@ -282,7 +338,6 @@ impl ConformanceSuite {
 
     /// [`select_fresh_format_for`](Self::select_fresh_format_for) before the counted-claim floor.
     fn select_model_format_for(&mut self, ir: &ess_compiler::EssIr) {
-        self.select_fresh_format();
         // A seeded suite is suite/42 (beyond10x/ess#413), the newest pair, cumulative over every
         // vocabulary below it; nothing here may lower it.
         if crate::synthesis_seeds::used_by(self) {
@@ -402,6 +457,7 @@ impl ConformanceSuite {
     /// in this function.
     pub fn to_canonical_json(&self) -> Result<String, crate::admission::AdmissionError> {
         crate::admission::suite(self)?;
+        SERIALIZED.with(|count| count.set(count.get() + 1));
         let mut json = serde_json::to_string_pretty(self)
             .unwrap_or_else(|error| panic!("a conformance suite serialises: {error}"));
         json.push('\n');
@@ -415,6 +471,7 @@ impl ConformanceSuite {
     /// do not qualify this presentation. Existing admitted inputs retain their original bytes.
     pub fn to_compact_json(&self) -> Result<String, crate::admission::AdmissionError> {
         crate::admission::suite(self)?;
+        SERIALIZED.with(|count| count.set(count.get() + 1));
         let mut json = serde_json::to_string(self)
             .unwrap_or_else(|error| panic!("a conformance suite serialises: {error}"));
         json.push('\n');
@@ -527,6 +584,11 @@ impl SuiteProvenance {
     /// so the panic is how the two crates disagreeing becomes visible immediately rather than as an
     /// evidence record the protocol engine silently refuses later.
     pub fn of(ir: &EssIr) -> Self {
+        crate::synthesize::memoised_provenance(ir, || Self::computed(ir))
+    }
+
+    /// [`SuiteProvenance::of`], hashing the model.
+    fn computed(ir: &EssIr) -> Self {
         let projection = ess_gen::Provenance::of(ir);
         let digest = |value: &str| {
             SpecDigest::new(value).unwrap_or_else(|error| {

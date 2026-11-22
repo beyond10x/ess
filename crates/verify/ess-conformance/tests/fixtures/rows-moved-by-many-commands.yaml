@@ -1,0 +1,259 @@
+format: ess/37
+system: demo
+version: v1
+domain: demo.desk
+summary: Requests a reviewer settles, then records and closes, each move guarded by what the request already holds.
+types:
+  - {name: demo.desk.RequestId, kind: newtype, of: String}
+  - name: demo.desk.Verdict
+    kind: enum
+    variants: [granted, denied]
+  - name: demo.desk.Holder
+    kind: enum
+    variants: [person, rule, rule_final]
+  - name: demo.desk.Strength
+    kind: enum
+    ordered: true
+    variants: [none, weak, strong]
+  - name: demo.desk.Effect
+    kind: struct
+    fields:
+      - {name: verdict, type: Optional<demo.desk.Verdict>}
+      - {name: files, type: Optional<String>}
+  - name: demo.desk.Choice
+    kind: struct
+    fields:
+      - {name: letter, type: String}
+      - {name: effect, type: demo.desk.Effect}
+  - name: demo.desk.Filing
+    kind: struct
+    fields:
+      - {name: key, type: String}
+      - {name: revision, type: String}
+entities:
+  - name: demo.desk.Request
+    identity: {name: request_id, type: demo.desk.RequestId}
+    fields:
+      - {name: choices, type: "List<demo.desk.Choice>"}
+      - {name: holder, type: demo.desk.Holder}
+      - {name: eligible, type: "List<String>"}
+      - {name: strength, type: demo.desk.Strength}
+      - {name: on_silence, type: Boolean}
+      - {name: due_at, type: Optional<Timestamp>}
+      - {name: chosen, type: Optional<String>}
+      - {name: chosen_by, type: Optional<String>}
+      - {name: filing, type: Optional<demo.desk.Filing>}
+      - {name: closed_by, type: Optional<demo.desk.RequestId>}
+    lifecycle:
+      initial: Open
+      states: [Open, Settled, Closed]
+      terminal: [Closed]
+      transitions:
+        - {name: settle, from: [Open], to: Settled}
+        - {name: file, from: [Settled], to: Settled}
+        - {name: close, from: [Open, Settled], to: Closed}
+actors:
+  - name: demo.desk.Desk
+    may: [demo.desk.Open, demo.desk.Settle, demo.desk.Accept, demo.desk.File, demo.desk.Close]
+errors:
+  - name: demo.desk.TooFewChoices
+    fields:
+      - {name: request_id, type: demo.desk.RequestId}
+  - name: demo.desk.NotEligible
+    fields:
+      - {name: request_id, type: demo.desk.RequestId}
+  - name: demo.desk.NoSilence
+    fields:
+      - {name: request_id, type: demo.desk.RequestId}
+  - name: demo.desk.NotDue
+    fields:
+      - {name: request_id, type: demo.desk.RequestId}
+  - name: demo.desk.FilingConflict
+    fields:
+      - {name: request_id, type: demo.desk.RequestId}
+  - name: demo.desk.NothingToFile
+    fields:
+      - {name: request_id, type: demo.desk.RequestId}
+  - name: demo.desk.NoSuchRequest
+    fields:
+      - {name: request_id, type: demo.desk.RequestId}
+  - name: demo.desk.StateConflict
+    fields:
+      - {name: request_id, type: demo.desk.RequestId}
+commands:
+  - name: demo.desk.Open
+    input:
+      - {name: request_id, type: demo.desk.RequestId}
+      - {name: choices, type: "List<demo.desk.Choice>"}
+      - {name: holder, type: demo.desk.Holder}
+      - {name: eligible, type: "List<String>"}
+      - {name: due_at, type: Optional<Timestamp>}
+    outcomes:
+      - name: too-few-choices
+        when: choices.count < 2
+        error: demo.desk.TooFewChoices
+      - name: opened
+        creates: demo.desk.Request
+        instance: request_id
+        sets:
+          choices: input.choices
+          holder: input.holder
+          eligible: input.eligible
+          due_at: input.due_at
+          strength: none
+          on_silence: false
+        emits: [demo.desk.Opened]
+        payload:
+          demo.desk.Opened: {request_id: input.request_id}
+  - name: demo.desk.Settle
+    input:
+      - {name: request_id, type: demo.desk.RequestId}
+      - {name: choice, type: String}
+      - {name: principal, type: String}
+      - {name: by_rule, type: Boolean}
+    outcomes:
+      - name: no-request
+        unknown_instance: true
+        error: demo.desk.NoSuchRequest
+      - name: not-listed
+        when_subject:
+          predicate: {not: {exists: {in: eligible, as: p, that: p == input.principal}}}
+        error: demo.desk.NotEligible
+      - name: against-the-rule
+        when: by_rule == false
+        when_subject:
+          predicate:
+            any:
+              - holder == rule
+              - all:
+                  - holder == rule_final
+                  - {not: {exists: {in: choices, as: c, that: {all: [c.letter == input.choice, c.effect.verdict == denied]}}}}
+        error: demo.desk.NotEligible
+      - name: settled
+        moves: demo.desk.Request.settle
+        instance: request_id
+        sets:
+          chosen: input.choice
+          chosen_by: input.principal
+        emits: [demo.desk.Settled]
+        payload:
+          demo.desk.Settled: {request_id: input.request_id}
+      - name: wrong-state
+        wrong_state: true
+        error: demo.desk.StateConflict
+  - name: demo.desk.Accept
+    input:
+      - {name: request_id, type: demo.desk.RequestId}
+      - {name: principal, type: String}
+      - {name: silent, type: Boolean}
+      - {name: at, type: Timestamp}
+    outcomes:
+      - name: no-request
+        unknown_instance: true
+        error: demo.desk.NoSuchRequest
+      - name: not-strong
+        when_subject:
+          predicate: strength != strong
+        error: demo.desk.NotEligible
+      - name: no-silence
+        when: silent == true
+        when_subject:
+          predicate: on_silence == false
+        error: demo.desk.NoSilence
+      - name: not-due
+        when: silent == true
+        when_subject:
+          predicate: {any: [not defined(due_at), due_at > input.at]}
+        error: demo.desk.NotDue
+      - name: accepted
+        moves: demo.desk.Request.settle
+        instance: request_id
+        sets:
+          chosen_by: input.principal
+        emits: [demo.desk.Settled]
+        payload:
+          demo.desk.Settled: {request_id: input.request_id}
+      - name: wrong-state
+        wrong_state: true
+        error: demo.desk.StateConflict
+  - name: demo.desk.File
+    input:
+      - {name: request_id, type: demo.desk.RequestId}
+      - {name: filing, type: demo.desk.Filing}
+    outcomes:
+      - name: no-request
+        unknown_instance: true
+        error: demo.desk.NoSuchRequest
+      - name: already-filed
+        when_subject:
+          predicate: "coalesce(filing.key, \"\") == input.filing.key"
+        preserves: demo.desk.Request
+        instance: request_id
+      - name: filing-conflict
+        when_subject:
+          predicate: defined(filing)
+        error: demo.desk.FilingConflict
+      - name: nothing-to-file
+        when_subject:
+          predicate: {all: [defined(chosen), {not: {exists: {in: choices, as: c, that: {all: [c.letter == chosen, defined(c.effect.files)]}}}}]}
+        error: demo.desk.NothingToFile
+      - name: filed
+        moves: demo.desk.Request.file
+        instance: request_id
+        sets:
+          filing: input.filing
+        emits: [demo.desk.Filed]
+        payload:
+          demo.desk.Filed: {request_id: input.request_id}
+      - name: wrong-state
+        wrong_state: true
+        error: demo.desk.StateConflict
+  - name: demo.desk.Close
+    input:
+      - {name: request_id, type: demo.desk.RequestId}
+      - {name: closed_by, type: demo.desk.RequestId}
+    outcomes:
+      - name: no-request
+        unknown_instance: true
+        error: demo.desk.NoSuchRequest
+      - name: closed
+        moves: demo.desk.Request.close
+        instance: request_id
+        sets:
+          closed_by: input.closed_by
+        emits: [demo.desk.Closed]
+        payload:
+          demo.desk.Closed: {request_id: input.request_id}
+      - name: wrong-state
+        wrong_state: true
+        error: demo.desk.StateConflict
+events:
+  - name: demo.desk.Opened
+    fields:
+      - {name: request_id, type: demo.desk.RequestId}
+  - name: demo.desk.Settled
+    fields:
+      - {name: request_id, type: demo.desk.RequestId}
+  - name: demo.desk.Filed
+    fields:
+      - {name: request_id, type: demo.desk.RequestId}
+  - name: demo.desk.Closed
+    fields:
+      - {name: request_id, type: demo.desk.RequestId}
+views:
+  - name: demo.desk.Requests
+    source: demo.desk.Request
+    consistency: read_your_writes
+    fields:
+      - {name: request_id, type: demo.desk.RequestId}
+      - {name: state, type: demo.desk.Request.State}
+      - {name: choices, type: "List<demo.desk.Choice>"}
+      - {name: holder, type: demo.desk.Holder}
+      - {name: eligible, type: "List<String>"}
+      - {name: strength, type: demo.desk.Strength}
+      - {name: on_silence, type: Boolean}
+      - {name: due_at, type: Optional<Timestamp>}
+      - {name: chosen, type: Optional<String>}
+      - {name: chosen_by, type: Optional<String>}
+      - {name: filing, type: Optional<demo.desk.Filing>}
+      - {name: closed_by, type: Optional<demo.desk.RequestId>}

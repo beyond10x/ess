@@ -227,7 +227,19 @@ fn coverage_builder_records_the_complete_generated_inventory_and_component_omiss
             .cloned()
             .collect::<Vec<_>>()
     );
-    assert_eq!(inventory.outside.len(), old_component.outside.len());
+    // The declared inventory lists every scenario of the system the selection does not hold; the
+    // component's synthesis lists those of its own operations alone.
+    for outside in &old_component.outside {
+        assert!(
+            inventory
+                .outside
+                .iter()
+                .any(|listed| listed.scenario == outside.scenario && listed.needs == outside.needs),
+            "`{}` is in the inventory's outside list",
+            outside.scenario
+        );
+    }
+    assert!(inventory.outside.len() > old_component.outside.len());
     assert!(inventory.is_complete());
     assert!(build(
         &ir,
@@ -4202,33 +4214,39 @@ fn a_field_an_arrangement_step_overwrote_is_not_asserted_at_what_an_earlier_step
 // ---- one component's suite ------------------------------------------------------------------------
 
 /// The billing example declares two components. The suite for one of them holds exactly the
-/// scenarios that component can answer, names every other scenario with what it needs, and keeps
-/// the whole system's refusals — because scoping a suite does not make a construct say more.
+/// scenarios that component can answer, and names every other scenario of its own operations with
+/// what it needs; another component's scenarios, refusals and notes are that component's.
 #[test]
 fn a_suite_for_one_component_holds_only_what_that_component_realises() {
     let ir = example("billing");
     let whole = synthesize(&ir);
     let scoped = synthesize_for(&ir, "email-service").expect("billing declares email-service");
 
-    assert_eq!(
-        scoped.suite.len() + scoped.outside.len(),
-        whole.suite.len(),
-        "every scenario of the whole suite is either held or listed outside; none is dropped"
+    assert!(
+        scoped.suite.len() + scoped.outside.len() < whole.suite.len(),
+        "invoice-service's own scenarios are neither held nor listed"
     );
+    for id in scoped.suite.scenarios.keys() {
+        assert!(
+            whole.suite.scenarios.contains_key(id),
+            "`{id}` is the whole suite's"
+        );
+    }
     assert!(
         !scoped.suite.scenarios.is_empty(),
         "email-service has scenarios of its own"
-    );
-    assert!(
-        !scoped.outside.is_empty(),
-        "invoice-service's scenarios are not email-service's"
     );
     assert_eq!(
         scoped.suite.provenance.component.as_deref(),
         Some("email-service"),
         "the suite says which component it holds to the specification"
     );
-    assert_eq!(scoped.refusals, whole.refusals);
+    for refusal in &scoped.refusals {
+        assert!(
+            whole.refusals.contains(refusal),
+            "{refusal} is the whole system's"
+        );
+    }
 
     for (id, scenario) in &scoped.suite.scenarios {
         assert!(
@@ -4252,6 +4270,129 @@ fn a_suite_for_one_component_holds_only_what_that_component_realises() {
             outside.scenario
         );
     }
+}
+
+/// Scoped to a component, synthesis writes what the whole system's synthesis read down to that
+/// component holds: the same kept scenarios byte for byte, the same scenarios of its operations
+/// listed outside with the same needs, the same refusals and notes.
+#[test]
+fn a_component_synthesized_alone_is_the_whole_synthesis_read_down_to_it() {
+    for (ir, name) in [
+        (example("billing"), "billing"),
+        (component_scope(), "component-scope"),
+    ] {
+        for component in ir.components().keys() {
+            let component = component.as_str();
+            let alone = synthesize_for(&ir, component).expect("a declared component");
+            let read_down =
+                ess_conformance::synthesize::synthesize_for_from_whole(&ir, component).unwrap();
+            assert_eq!(
+                alone.suite.to_canonical_json().unwrap(),
+                read_down.suite.to_canonical_json().unwrap(),
+                "{name}, `{component}`: the kept suite"
+            );
+            assert_eq!(alone, read_down, "{name}, `{component}`");
+        }
+    }
+}
+
+/// A component's synthesis builds the scenarios of its own commands and no other's: of a model in
+/// which four components accept two commands each, `marks-1`'s synthesis takes two commands' outcome
+/// scenarios where the whole system's takes all eight. Before synthesis was scoped, a component's
+/// run synthesized the whole system and took all eight too. A work bound, not a clock.
+#[test]
+fn a_component_synthesizes_only_the_commands_it_accepts() {
+    use ess_conformance::synthesize::commands_synthesized;
+    let ir = component_scope();
+    let (whole, all) = commands_synthesized(|| synthesize(&ir));
+    assert_eq!(all, 8, "the whole system takes every command once");
+    let (scoped, taken) = commands_synthesized(|| synthesize_for(&ir, "marks-1").unwrap());
+    assert_eq!(
+        taken, 2,
+        "`marks-1` accepts `Mark1` and `Mark2`, and its synthesis took {taken} commands"
+    );
+    for (id, scenario) in &scoped.suite.scenarios {
+        assert_eq!(whole.suite.scenarios.get(id), Some(scenario), "`{id}`");
+    }
+    for outside in &scoped.outside {
+        let id = outside.scenario.to_string();
+        assert!(
+            id.contains("shop.desk.Mark1") || id.contains("shop.desk.Mark2"),
+            "`{id}` is listed outside `marks-1`, about another component's command"
+        );
+    }
+}
+
+/// A refusal of the component's own operation whose cause is another component's refusal stands
+/// as its own: `token-service`'s run does not report `EditNote`'s refusal, so its disclosure cells
+/// refused for that cause name no cause. Before, three of them kept naming the dropped refusal, and
+/// the text output counted them without printing them, since a derived refusal prints only under
+/// its cause.
+#[test]
+fn a_component_refusal_whose_cause_is_another_components_names_no_cause() {
+    let ir = example("../crates/verify/ess-conformance/tests/fixtures/component-cause");
+    let whole = synthesize(&ir);
+    let alone = synthesize_for(&ir, "token-service").unwrap();
+    let reported: BTreeSet<_> = alone
+        .refusals
+        .iter()
+        .filter_map(|refusal| refusal.scenario.clone())
+        .collect();
+    let dangling: Vec<String> = alone
+        .refusals
+        .iter()
+        .filter(|refusal| {
+            refusal
+                .caused_by
+                .as_ref()
+                .is_some_and(|cause| !reported.contains(cause))
+        })
+        .map(ToString::to_string)
+        .collect();
+    assert!(dangling.is_empty(), "{dangling:#?}");
+    let unlinked = alone
+        .refusals
+        .iter()
+        .filter(|refusal| {
+            refusal.caused_by.is_none()
+                && whole.refusals.iter().any(|linked| {
+                    linked.caused_by.is_some()
+                        && linked.scenario == refusal.scenario
+                        && linked.subject == refusal.subject
+                })
+        })
+        .count();
+    assert_eq!(unlinked, 3, "{:#?}", alone.refusals);
+}
+
+/// The operations no component realises are read off the component map, without synthesis: no
+/// component's run reports their refusals, so a run per component names them instead. Here the
+/// ledger's command and event belong to no component, and the whole system's three refusals are
+/// about them; `desk-service`'s run reports none.
+#[test]
+fn the_operations_no_component_realises_are_named() {
+    use ess_conformance::synthesize::unrealised;
+    let ir = example("../crates/verify/ess-conformance/tests/fixtures/component-unrealised");
+    let named: Vec<String> = unrealised(&ir).iter().map(ToString::to_string).collect();
+    assert_eq!(
+        named,
+        ["command shop.ledger.Close", "event shop.ledger.Closed"]
+    );
+    assert_eq!(synthesize(&ir).refusals.len(), 3);
+    let alone = synthesize_for(&ir, "desk-service").unwrap();
+    assert!(alone.refusals.is_empty(), "{:#?}", alone.refusals);
+    assert_eq!(
+        unrealised(&example("billing")),
+        [] as [ess_compiler::EssSemanticRef; 0]
+    );
+}
+
+fn component_scope() -> EssIr {
+    let text = include_str!("fixtures/component-scope.yaml");
+    let raw = RawSpecFile::parse(text).unwrap_or_else(|error| panic!("{error}"));
+    let spec = Specification::assemble([(Source::new("component-scope.yaml"), raw)])
+        .unwrap_or_else(|errors| panic!("{errors}"));
+    compile(&spec, &SourceMap::new()).unwrap_or_else(|error| panic!("{error:?}"))
 }
 
 /// A whole-system suite is the bytes it always was: the scoping field is absent, not `null`.

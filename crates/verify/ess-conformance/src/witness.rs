@@ -1986,6 +1986,12 @@ fn enumerate(
                 overrides.insert(path.clone(), alternatives[chosen - 1].clone());
             }
         }
+        // A choice no build reads leaves the input of the index without it, a smaller index already
+        // walked, whose pair is in `inputs` already: building it again would add nothing.
+        if shadowed(builder, &overrides) {
+            index += 1;
+            continue;
+        }
         for input in paired(builder, command, &overrides, presence_omits)? {
             if !inputs.contains(&input) {
                 inputs.push(input);
@@ -2007,6 +2013,41 @@ fn enumerate(
     // A pair can overshoot the bound by one; the absent half of a pair always comes first.
     inputs.truncate(MAX_CANDIDATES);
     Ok(inputs)
+}
+
+/// Whether `overrides` holds a choice that no build reads, so the input is the one built without
+/// it ([`enumerate`]). Such a choice lies under one of these:
+///
+/// - a list a guard reads into ([`Builder::lists`]) that the candidate builds empty: `overrides`
+///   gives it no `Elements` or `Keyed` choice and [`repair`] fixed no length for it. Its element is
+///   built and dropped, and every leaf it records was recorded by the base already.
+/// - an `Optional` member that `overrides` leaves out or sends as `null`, which is never built.
+///
+/// A `Keyed` choice is never counted as unread, because building it may fail where leaving it
+/// out does not.
+fn shadowed(builder: &Builder<'_>, overrides: &BTreeMap<FactPath, Choice>) -> bool {
+    let inside = |path: &FactPath, above: &FactPath| {
+        path.segments().len() > above.segments().len()
+            && path.segments().starts_with(above.segments())
+    };
+    let empty = |list: &FactPath| {
+        !matches!(
+            overrides.get(list),
+            Some(Choice::Elements(_) | Choice::Keyed(_))
+        ) && !matches!(builder.fixed.get(list), Some(Choice::Elements(_)))
+    };
+    overrides.iter().any(|(path, choice)| {
+        !matches!(choice, Choice::Keyed(_))
+            && (builder
+                .lists
+                .iter()
+                .any(|list| inside(path, list) && empty(list))
+                || overrides.iter().any(|(above, held)| {
+                    matches!(held, Choice::Omit | Choice::Null)
+                        && builder.optionals.contains(above)
+                        && inside(path, above)
+                }))
+    })
 }
 
 /// One candidate as `overrides` describe it: first with every presence-policy member left out
@@ -2880,6 +2921,23 @@ impl<'a, 'ir> Directed<'a, 'ir> {
 thread_local! {
     /// The steps [`Directed`] has taken on this thread ([`directed_steps`]).
     static STEPS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+thread_local! {
+    /// The whole inputs built on this thread ([`inputs_built`]).
+    static BUILT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+/// `run`'s result, and how many whole command inputs the witness search built on this thread
+/// while it ran, each candidate and each half of a candidate's pair counted once.
+///
+/// A count rather than a clock, so a test can hold the search to a work bound that a loaded host
+/// cannot trip.
+pub fn inputs_built<T>(run: impl FnOnce() -> T) -> (T, usize) {
+    let before = BUILT.with(std::cell::Cell::get);
+    let out = run();
+    let after = BUILT.with(std::cell::Cell::get);
+    (out, after.saturating_sub(before))
 }
 
 /// The scope [`under_test`] holds on this thread, as the key of what a search inside it made.
@@ -7004,6 +7062,7 @@ impl<'ir> Builder<'ir> {
         command: &ResolvedCommand,
         overrides: &BTreeMap<FactPath, Choice>,
     ) -> Result<BTreeMap<String, Node>, WitnessGap> {
+        BUILT.with(|built| built.set(built.get() + 1));
         // Examples are the base at the plain instance only: an example is one value, and rule 5
         // needs instances that differ.
         if self.distinction == Distinction::PLAIN {

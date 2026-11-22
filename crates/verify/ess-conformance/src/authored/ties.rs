@@ -24,12 +24,54 @@ use crate::interpret::execute::{
 };
 use crate::scenario::ScenarioValue;
 
+thread_local! {
+    /// How many times the interpreter ran for the tie check on this thread.
+    static REPLAYS: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
+
+/// What `run` returns, and how many times the interpreter ran for the tie check on this thread
+/// while it ran. A work counter for tests.
+#[doc(hidden)]
+pub fn replays_run<R>(run: impl FnOnce() -> R) -> (R, u64) {
+    let before = REPLAYS.with(std::cell::Cell::get);
+    let out = run();
+    (out, REPLAYS.with(std::cell::Cell::get) - before)
+}
+
 /// Two rows tying on every key of `order` and ranking first, in a read of `entity`.
 pub(super) struct Tie {
     /// The entity whose rows tie.
     pub(super) entity: String,
     /// The ranking keys, as written.
     pub(super) order: String,
+}
+
+/// Whether any outcome of the model reads a head under `ties: unordered`, in an event payload or
+/// an error payload, `sets:` or an `affects:` entry's `sets:`.
+fn holds_unordered_head(ir: &EssIr) -> bool {
+    use ess_compiler::ir::ResolvedPayloadValue;
+
+    fn unordered(value: &ResolvedPayloadValue) -> bool {
+        match value {
+            ResolvedPayloadValue::RelatedHead { ties, .. } => !ties.is_total(),
+            ResolvedPayloadValue::Struct { fields } => {
+                fields.iter().any(|field| unordered(&field.value))
+            }
+            _ => false,
+        }
+    }
+    ir.commands().values().any(|command| {
+        command.outcomes.iter().any(|outcome| {
+            outcome
+                .payload
+                .iter()
+                .flat_map(|payload| &payload.fields)
+                .chain(&outcome.error_payload)
+                .chain(&outcome.sets)
+                .chain(outcome.affects.iter().flat_map(|affect| &affect.sets))
+                .any(|field| unordered(&field.value))
+        })
+    })
 }
 
 /// The store the file's literals build so far; `None` once an act is one the replay cannot follow.
@@ -39,9 +81,13 @@ pub(super) struct Replay {
 
 impl Replay {
     /// An empty store, where nothing but the file's acts changes it.
+    ///
+    /// The replay exists only to find a tie, and a tie comes only from a head read under `ties:
+    /// unordered` (`Undetermined::UnorderedTie`, raised by the interpreter's `related_head`). A
+    /// model with none follows nothing: the interpreter runs for no act.
     pub(super) fn new(ir: &EssIr) -> Self {
         Self {
-            store: ir.bindings().is_empty().then(Store::default),
+            store: (ir.bindings().is_empty() && holds_unordered_head(ir)).then(Store::default),
         }
     }
 
@@ -80,6 +126,7 @@ impl Replay {
             .iter()
             .map(|(field, value)| Some((field.clone(), value.as_literal()?.clone())))
             .collect::<Option<_>>()?;
+        REPLAYS.with(|count| count.set(count.get() + 1));
         match execute_generating(
             ir,
             &store,

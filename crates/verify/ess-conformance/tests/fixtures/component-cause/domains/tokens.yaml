@@ -1,0 +1,31 @@
+domain: vault.tokens
+
+summary: Tokens whose secret is returned once.
+
+types:
+  - {name: vault.tokens.TokenId, kind: newtype, of: Uuid}
+
+entities:
+  - name: vault.tokens.Token
+    identity: {name: token_id, type: vault.tokens.TokenId}
+    lifecycle: {initial: Live, states: [Live], terminal: [Live]}
+
+events:
+  - name: vault.tokens.TokenIssued
+    fields:
+      - {name: token_id, type: vault.tokens.TokenId}
+
+commands:
+  - name: vault.tokens.IssueToken
+    input: []
+    response:
+      - {name: secret, type: String}
+    outcomes:
+      - name: issued
+        creates: vault.tokens.Token
+        instance: token_id
+        returns: true
+        one_time_response: [secret]
+        emits: [vault.tokens.TokenIssued]
+        payload:
+          vault.tokens.TokenIssued: {token_id: {generated: true}}
