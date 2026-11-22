@@ -1708,7 +1708,9 @@ fn minted_leaves(
         } if sent.is_some_and(|sent| !sends(sent, field)) => {
             found.insert(
                 path.to_owned(),
-                format!("`{{input: {field}, else: {{generated: true}}}}` and the act sends no `{field}`"),
+                format!(
+                    "`{{input: {field}, else: {{generated: true}}}}` and the act sends no `{field}`"
+                ),
             );
         }
         ResolvedPayloadValue::Struct { fields } => {
@@ -2394,14 +2396,18 @@ diagnostic_catalogue! {
              declaration order, and the default only where no `when:` holds";
         Self::GeneratedValuePinned { .. } => 42,
             "An act states an exact value for a field the outcome marks `{generated: true}`.",
-            "the implementation mints a `{generated: true}` field, so an exact value passes only \
-             where it happens to mint that one: in an event's payload or an error's fields, drop \
-             the field from the expectation, and the suite still checks its presence and type \
-             there, or relate it to another value with `capture:` on the event; in a view row, \
-             drop it and assert `satisfies: defined(<field>)` on the view, which requires it on \
-             every row and at least one row, or state its relation to an event's value with \
-             `{$observed: {event: …, field: …}}`; from `format: ess/30` an exact value there is \
-             the scenario's own claim, which the suite checks as written";
+            concat!(
+                "the implementation mints a `{generated: true}` field, so an exact value passes only \
+                where it happens to mint that one: in an event's payload or an error's fields, drop \
+                the field from the expectation, and the suite still checks its presence and type \
+                there, or relate it to another value with `capture:` on the event; in a view row, \
+                drop it and assert `satisfies: defined(<field>)` on the view, which requires it on \
+                every row and at least one row, or state its relation to an event's value with \
+                `{$observed: {event: …, field: …}}`; ",
+                ess_domain::declaration_hint!(30),
+                ", from which an exact value there is the scenario's own claim, which the suite \
+                 checks as written"
+            );
         Self::UnorderedTie { .. } => 43,
             "An act reads the head of an order declaring `ties: unordered`, and the arranged rows \
              tie on every key and rank first.",

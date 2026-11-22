@@ -366,6 +366,7 @@ impl Specification {
             .filter(|(_, file)| file.system.is_some())
             .map(|(_, file)| file.format)
             .collect();
+        collected.system_source = only_system_source(&files);
         let reads_input_namespace = matches!(
             headers.as_slice(),
             [Some(format)] if format.major() >= FormatVersion::V22.major()
@@ -1009,6 +1010,15 @@ pub(crate) fn mark(read: &mut Read, errors: &ValidationErrors, source: Option<&S
 /// Each pass marks in `read`, before it refuses anything in a file (or a group), that the refusals
 /// from there are that file's, so a refusal made here is cited where it was written and not at a
 /// copy of the same name assembly keeps from another file.
+/// The one source that names the system, when exactly one does.
+fn only_system_source(files: &[(Source, RawSpecFile)]) -> Option<Source> {
+    let mut systems = files.iter().filter(|(_, file)| file.system.is_some());
+    match (systems.next(), systems.next()) {
+        (Some((source, _)), None) => Some(source.clone()),
+        _ => None,
+    }
+}
+
 fn refuse_as_written(
     files: &mut [(Source, RawSpecFile)],
     errors: &mut ValidationErrors,
@@ -1156,6 +1166,9 @@ struct Collected {
     topology: crate::topology::Topology,
     /// Which file carried it, so a second one can be named in the refusal.
     topology_source: Option<Source>,
+    /// The one source that names the system, when exactly one does: the file a header key
+    /// written elsewhere belongs on.
+    system_source: Option<Source>,
     /// The domains the system header says it has, from whichever file carries the header.
     roster: Vec<QualifiedName>,
     /// Every name declared so far in the kinds that go through [`declare`], whether or not the
@@ -1255,16 +1268,22 @@ impl Collected {
                 || !file.domains.is_empty()
                 || !file.preconditions.is_empty()
             {
+                let hint = match &self.system_source {
+                    Some(system) => format!(
+                        "the source that carries the format, the version and the domain list is \
+                         the one that names the system: move these keys to `{system}`"
+                    ),
+                    None => "the source that carries the format, the version and the domain list \
+                             is the one that names the system"
+                        .to_owned(),
+                };
                 errors.push(
                     ValidationError::new(
                         ValidationCode::MissingDeclaration,
                         format!("{source}.system"),
                         "this source sets system-level fields but does not declare `system:`",
                     )
-                    .with_hint(
-                        "the source that carries the format, the version and the domain list is \
-                         the one that names the system",
-                    ),
+                    .with_hint(hint),
                 );
             }
             return None;
