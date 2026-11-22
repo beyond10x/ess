@@ -664,3 +664,91 @@ fn issue_283_a_moving_command_beside_wrong_state_reads_both_rows() {
         "{reversed:#?}"
     );
 }
+
+// ---- A creating branch reading several rows, arranged for other scenarios ----------------------
+
+const DESK: &str = include_str!("fixtures/a-creator-reading-several-related-rows.yaml");
+/// `elsewhere` as the fixture writes it: the link of the desk the grant is filed under, compared
+/// with the input naming the site.
+const LINK_GUARD: &str =
+    "        when_related: {via: input.desk_id, predicate: site_id != input.site_id}\n";
+/// The same branch reading the row beside instead: the site's label, compared with an input.
+const BESIDE_INPUT_GUARD: &str =
+    "        when_related: {via: input.site_id, predicate: label != input.label}\n";
+/// The branch's own scenarios, synthesized before the change too.
+const OWN: [&str; 4] = [
+    "shop.desk.IssueGrant/outcome/elsewhere",
+    "shop.desk.IssueGrant/outcome/issued",
+    "shop.desk.IssueGrant/outcome/no-desk",
+    "shop.desk.IssueGrant/outcome/no-site",
+];
+/// The scenarios that need a grant `IssueGrant/issued` creates: refused before the change. The
+/// `grant-refused` is in the suite too, though its three `any:` legs are refused.
+const DRIVEN: [&str; 7] = [
+    "shop.desk.ReceiveTicket/outcome/no-clerk",
+    "shop.desk.ReceiveTicket/outcome/grant-refused",
+    "shop.desk.ReceiveTicket/outcome/ignored",
+    "shop.desk.ReceiveTicket/outcome/received",
+    "shop.desk.RevokeGrant/outcome/revoked",
+    "shop.desk.Grant/transition/revoke/by/shop.desk.RevokeGrant/revoked",
+    "shop.desk.Grant/state/Revoked/refuses/shop.desk.RevokeGrant",
+];
+/// The outcome whose three `any:` legs are still refused: each needs a row in a named state with
+/// chosen field values.
+const LEGS: &str = "shop.desk.ReceiveTicket/outcome/grant-refused";
+
+fn every_status(result: &Synthesis, model: EssIr) -> BTreeMap<String, Status> {
+    let admitted =
+        AdmittedSuite::from_suite(&result.suite).unwrap_or_else(|error| panic!("{error}"));
+    Runner::for_suite(admitted.suite())
+        .run_admitted(&admitted, &Interpreted::for_model(model))
+        .into_report()
+        .scenarios
+        .into_iter()
+        .map(|run| (run.scenario.to_string(), run.status))
+        .collect()
+}
+
+/// The model synthesizes 17 scenarios: the branch's own and every scenario needing the row it
+/// creates, which were refused before the change, and every one passes against the interpreter.
+/// Three refusals remain, one per leg of the `any:` guard of `LEGS`.
+fn driven(label: &str, text: &str) {
+    let model = ir(text);
+    let result = ess_conformance::synthesize::synthesize(&model);
+    assert_eq!(result.suite.scenarios.len(), 17, "{label}: scenarios");
+    for id in OWN.iter().chain(DRIVEN.iter()) {
+        scenario(&result, id);
+    }
+    let refusals = refusals_for(&result, "shop.desk.");
+    // These three wait for the follow-up "a setup run arranges a related row in a named state with
+    // chosen field values"; when it lands this count becomes 0.
+    assert_eq!(refusals.len(), 3, "{label}: refusals: {refusals:#?}");
+    for refusal in &refusals {
+        assert!(
+            refusal.starts_with(&format!("ESS-SYNTH-003 [{LEGS}]: ")),
+            "{label}: a refusal of another target: {refusal}"
+        );
+    }
+    let passed = every_status(&result, model);
+    for id in DRIVEN {
+        assert_eq!(
+            passed.get(id),
+            Some(&Status::Passed),
+            "{label}: {id} runs and passes: {passed:#?}"
+        );
+    }
+    assert!(
+        passed.values().all(|status| *status == Status::Passed),
+        "{label}: every scenario passes against the interpreter: {passed:#?}"
+    );
+}
+
+#[test]
+fn a_creator_whose_owned_rows_link_is_compared_with_the_input_is_driven() {
+    driven("link", DESK);
+}
+
+#[test]
+fn a_creator_whose_row_beside_reads_the_input_is_driven() {
+    driven("beside", &replaced(DESK, LINK_GUARD, BESIDE_INPUT_GUARD));
+}
