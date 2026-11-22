@@ -10,7 +10,11 @@ scope:
 - confidence: inferred
   path: CHANGELOG.md
 - confidence: inferred
+  path: crates/edge/ess-cli/src/main.rs
+- confidence: inferred
   path: crates/edge/ess-xtask/src/docs.rs
+- confidence: inferred
+  path: crates/generate/ess-entity-runtime/tests/fixtures/lowered-definitions-table.tsv
 - confidence: cited
   path: crates/specify/ess-composition/src/conformance.rs
 - confidence: cited
@@ -29,7 +33,7 @@ scope:
   path: website/docs/reference/formats.md
 - confidence: cited
   path: website/docs/reference/spec-versions.md
-revision: 14
+revision: 17
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-22T18:13:08Z", actor: "human:timo", revision: 13}
 - {from: "proposed", to: "active", at: "2026-11-22T18:13:20Z", actor: "human:timo", revision: 14}
@@ -245,3 +249,21 @@ Recommended decision under the skill: **accept, redesigned**. The need is real; 
 "stricter presence for a message it emits" becomes a direction on the conformance entry, not a
 second presence key on the field, and it covers every narrowing a sender may do, not presence
 alone.
+
+## Scope
+
+Derived 2026-11-22 by `story-scoper`. Every line is **cited** (read from the story or the tree) or **inferred** (a reading that could be wrong).
+
+- **Primary surface:** `crates/specify/ess-composition` (`src/conformance.rs`, `src/lib.rs`) — cited
+- **Files:** `crates/specify/ess-composition/src/conformance.rs:291-300` (`Comparison::field_naming`, plus `references` ~l.739) and `src/lib.rs:628-713` (`TypeConformance`, `reader` key), `:2003-2070` (`validate_format`) — cited
+- **Symbols:** `Comparison` (gains `writer` beside `reader`), `TypeConformance` (gains `writer` kept as authored), `SUPPORTED_COMPOSITION_FORMATS`, `validate_format`, `CompositionCode::TypeConformanceDrift` catalogue text (`lib.rs:1160`) — cited
+- **Also likely:** `crates/specify/ess-composition/tests/writer_conformance.rs` (new; fixtures inline, or `tests/fixtures/writer-conformance/{demo,wire}`) — inferred (the story names the target; the fixture choice is a reading)
+- **Also likely:** `crates/edge/ess-xtask/src/docs.rs:259` (add `("ess-composition", 6, None)` to the format history, else `task test-xtask` reds) — inferred
+- **Also likely:** `crates/edge/ess-cli/src/main.rs:179` (help text "`/1` to `/5`") — inferred
+- **Also likely:** `crates/generate/ess-entity-runtime/tests/fixtures/lowered-definitions-table.tsv` (header `models=488 lines=669` plus two `ASSEMBLE` rows for each on-disk fixture system) — inferred
+- **Documents:** `docs/design/composition-type-conformance.md`, `docs/design/review-format-catalog.md`, `website/docs/reference/formats.md` (rows at l.188-195), `website/docs/reference/spec-versions.md` (~l.909), `website/docs/reference/diagnostics.md` (rendered from the catalogue by `crates/edge/ess-xtask/src/diagnostics.rs`, so regenerated, not hand-edited) — cited
+- **Documents:** `CHANGELOG.md` `[Unreleased]` — inferred
+- **Not touched:** `macro-guards.json` (no `ValidationCode`, no new diagnostic code; its pin is `validation_codes!`, not composition), generators, runtime, IR, `schemas/generated/` (no `RawSpecFile` change) — inferred (no composition hit in the guard file)
+- **Confidence:** high — the story cites the sites and the tree matches them; medium on the xtask and fixture-table lines
+- **Would collide with:** any unit editing `ess-composition`'s `conformance.rs`/`lib.rs` or the composition rows of `formats.md`, `spec-versions.md`, `diagnostics.md`, `docs.rs` history, or the `CHANGELOG.md` `[Unreleased]` block
+- **Safety fact:** a `/1`-`/5` document without `writer` serializes unchanged because `skip_serializing_if = "Option::is_none"` (`lib.rs:647-654`); a plain or `reader` entry keeps the `references` tolerance at `conformance.rs:739-740`, which only `writer` bypasses — step 2, unproven

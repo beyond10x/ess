@@ -2,26 +2,37 @@
 format: aep.planning-md/3
 id: story:a-setup-run-of-a-creating-branch-that-reads-several-related-rows-creates-its-row-with-the-field-values-another-scenario-chose
 kind: story
-status: draft
+status: active
 title: A setup run of a creating branch that reads several related rows creates its row with the field values another scenario chose
 relations:
 - serves: vision:O2
 scope:
+- confidence: inferred
+  path: CHANGELOG.md
 - confidence: cited
   path: crates/generate/ess-entity-runtime/tests/fixtures/lowered-definitions-table.tsv
 - confidence: cited
   path: crates/specify/ess-compiler/tests/fixtures/selection-precedence-table.tsv
 - confidence: cited
-  path: crates/verify/ess-conformance/src/synthesize/related_guard.rs
+  path: crates/verify/ess-conformance/src/synthesize.rs
 - confidence: inferred
+  path: crates/verify/ess-conformance/src/synthesize/created_memo.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/synthesize/related_guard.rs
+- confidence: cited
   path: crates/verify/ess-conformance/src/synthesize/subject_fact.rs
 - confidence: inferred
   path: crates/verify/ess-conformance/tests/fixtures/a-creator-chosen-values-beside-several-rows.yaml
 - confidence: cited
+  path: crates/verify/ess-conformance/tests/fixtures/a-creator-reading-several-related-rows.yaml
+- confidence: cited
   path: crates/verify/ess-conformance/tests/fixtures/synthesis-suite-bytes-table.tsv
 - confidence: cited
   path: crates/verify/ess-conformance/tests/related_guard_multiple_vias.rs
-revision: 8
+revision: 16
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-22T22:32:32Z", actor: "human:timo", revision: 15}
+- {from: "proposed", to: "active", at: "2026-11-22T22:32:33Z", actor: "human:timo", revision: 16}
 ---
 ## Outcome
 
@@ -120,3 +131,20 @@ Where the candidate set ends, reading `fd8a86bcf3`:
 - D3. The CPU cost the unit added on the adopter's specification (5 to 7 times).
   - A (recommended): measure in this story whether it comes from the 67 new scenarios or from failed fallback attempts, and bound the fallback by a memo keyed like `created_memo` if it is the latter.
   - B: accept it.
+
+## Scope
+
+Derived 2026-11-22 by `story-scoper`. Every line is **cited** or **inferred**.
+
+- **Primary surface:** `crates/verify/ess-conformance/src/synthesize/related_guard.rs` - cited (story Design: `drive_several`, the `input.is_none()` condition; read at line 2906)
+- **Files:** `related_guard.rs` `drive_several` (2880), `as_own_scenario` (2936), `own_scenario_applies` (2919) - cited
+- **Symbols:** `drive_several`, `as_own_scenario`, `arranged` (3711), `arranged_beside` (3776), `selects` (2079), `rows`, `own_opening`/`OWN_OPEN` (2837) - cited; `drive_toward` (2748) only if D2 = B - cited
+- **Also likely:** `crates/verify/ess-conformance/src/synthesize/created_memo.rs` or a memo local to `related_guard.rs`, for D3 A - inferred
+- **Read, not changed:** `subject_fact.rs` `make_creations` (5692) and `synthesize.rs` `created_owned_made` (8769) - cited; the store lists `subject_fact.rs` as inferred, and I read no change there (inferred)
+- **Tests:** `crates/verify/ess-conformance/tests/related_guard_multiple_vias.rs` (the 17-scenario / 3-refusal pin at 712-729, the `LEGS` const at 698); new fixture `tests/fixtures/a-creator-chosen-values-beside-several-rows.yaml` - cited / inferred
+- **Existing fixture whose row moves:** `tests/fixtures/a-creator-reading-several-related-rows.yaml` (`refusals=3` becomes 0) - cited
+- **Pin tables:** `crates/verify/ess-conformance/tests/fixtures/synthesis-suite-bytes-table.tsv` (new line plus the moved row), `crates/specify/ess-compiler/tests/fixtures/selection-precedence-table.tsv` and `crates/generate/ess-entity-runtime/tests/fixtures/lowered-definitions-table.tsv` (new line each) - cited, by `fd8a86bcf3`'s own diff
+- **Documents:** `CHANGELOG.md` `[Unreleased]` / Changed entry - inferred
+- **Confidence:** medium - the story names the sites and I read them; whether the overlay satisfies `selects` over several rows is unproven
+- **Would collide with:** any unit touching `drive_several`/`as_own_scenario` in `related_guard.rs`, `selects`, `beside_refused`, `arranged_beside`, or the same three pin tables and `related_guard_multiple_vias.rs`
+- **Safety fact:** the fallback applies only after the strict search fails (`drive_several` match arm), so runs the strict search finds keep their bytes - 2 (`related_guard.rs:2903-2913`), unproven
