@@ -753,7 +753,11 @@ impl<'a> Check<'a> {
                     |at| format!("iv::Fact::bytes(&{at})"),
                     |at| format!("iv::Fact::bytes({at})"),
                 ),
-                Primitive::Binary64 | Primitive::Json => {
+                Primitive::Binary64 => {
+                    let number = |at: &str| format!("iv::Fact::number(&{at}.to_string())");
+                    reach.and_then(number, number)
+                }
+                Primitive::Json => {
                     return Err(format!(
                         "`{path}` is a `{name}`, which the check does not read"
                     ));
