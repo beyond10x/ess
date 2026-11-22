@@ -1,23 +1,34 @@
 //! The ratchet of the documentation website's UI iteration loop, and the check of its findings.
 //!
 //! `website/ux/` measures the site: a Playwright run writes `round.json`, one number per scenario
-//! and metric key, every metric lower-is-better. This module decides whether those numbers may land.
-//! It fails on four things:
+//! and metric key, every metric lower-is-better, and the round's coverage. A scenario is one page
+//! configuration (`<path>@<viewport>/<theme>`) or one task run (`<task>/<viewport>[/keyboard]`).
+//! This module decides whether those numbers may land. It fails on:
 //!
-//! 1. a value worse than `website/ux/baseline.json` beyond the metric's tolerance;
-//! 2. a value better than the baseline beyond the metric's tolerance that was not taken into it: an
-//!    improvement becomes the baseline in the same change;
-//! 3. a value the baseline holds and the round does not (and a round value the baseline does not
-//!    hold);
-//! 4. a baseline made worse than the one on `main` without a decision id on the worsened entry.
+//! 1. a configuration or task run the round expected and did not measure (`coverage.unmeasured`);
+//!    no update takes it, a rerun that measures it is the only way past;
+//! 2. a value worse than `website/ux/baseline.json` beyond the metric's tolerance;
+//! 3. a value better than the baseline that was not taken into it, within the tolerance or not:
+//!    an improvement becomes the baseline in the same change;
+//! 4. a value the baseline holds and the round does not: lost coverage, a page set that shrank;
+//! 5. a new value: a page, task or metric the baseline does not hold, a scenario new to the
+//!    round's lane, or a content count that rose (a tolerance class `content`: more of the same on
+//!    a page, such as a new prose link). It is reported as new, not as worse, and `--update` takes
+//!    it without a decision;
+//! 6. a baseline made worse than the one on `main` without a decision id: a worse entry, a dropped
+//!    entry or a scenario a lane dropped.
+//!
+//! A round has a lane. `full` holds every scenario of the baseline to it; any other lane (the
+//! every-merge `gate`) holds only the scenarios the baseline lists under `lanes.<lane>`.
 //!
 //! The Playwright specs only measure; the decision is here because a checker in this repository is
 //! Rust. The same goes for the findings rule: no closed S1 or S2 record under `website/ux/findings/`
-//! without a regression asset that exists.
+//! without a regression asset that exists, and an asset that names a test names one its file
+//! declares.
 
 use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Write as _};
 use std::fs;
 use std::path::Path;
@@ -29,10 +40,13 @@ pub(crate) const BASELINE: &str = "website/ux/baseline.json";
 /// The finding records, relative to the repository root.
 pub(crate) const FINDINGS: &str = "website/ux/findings";
 
+/// The lane that holds every scenario of the baseline.
+pub(crate) const FULL: &str = "full";
+
 /// Comparison slack for floating-point values read from JSON.
 const EPSILON: f64 = 1e-9;
 
-/// How far a value may move before it counts as worse or as an improvement.
+/// How far a value may move before it counts as worse.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase", deny_unknown_fields)]
 pub(crate) enum Tolerance {
@@ -40,6 +54,8 @@ pub(crate) enum Tolerance {
     Absolute(f64),
     /// A share of the baseline value, `0.05` for 5 %.
     Relative(f64),
+    /// A count that grows with the content of a page: a rise is new content, not a worse value.
+    Content,
 }
 
 impl Tolerance {
@@ -47,6 +63,7 @@ impl Tolerance {
         match self {
             Tolerance::Absolute(amount) => amount,
             Tolerance::Relative(share) => base.abs() * share,
+            Tolerance::Content => 0.0,
         }
     }
 }
@@ -71,22 +88,56 @@ pub(crate) struct Entry {
 pub(crate) struct Baseline {
     /// What the file is, for a reader.
     pub about: String,
+    /// The scenarios each lane other than `full` measures.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub lanes: BTreeMap<String, BTreeSet<String>>,
     /// Scenario, then metric key, then the baselined value.
     pub scenarios: BTreeMap<String, BTreeMap<String, Entry>>,
+    /// What a decision dropped: `<scenario>`, `<scenario> <metric>` or `<lane>: <scenario>`, to
+    /// the decision id.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub dropped: BTreeMap<String, String>,
     /// Tolerance classes by name.
     pub tolerances: BTreeMap<String, Tolerance>,
+}
+
+/// What the round measured of what it expected.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+pub(crate) struct Coverage {
+    /// Every page configuration or task run the round expected and did not measure.
+    pub unmeasured: Vec<String>,
 }
 
 /// The part of `round.json` the ratchet reads; every other field is the report's.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 pub(crate) struct Round {
+    /// The lane the round ran, `full` when it does not say.
+    #[serde(default = "full_lane")]
+    pub lane: String,
     /// Scenario, then metric key, then the measured value.
     pub scenarios: BTreeMap<String, BTreeMap<String, f64>>,
+    /// Required: a round that does not say what it left unmeasured is not read.
+    pub coverage: Coverage,
+}
+
+fn full_lane() -> String {
+    FULL.to_owned()
+}
+
+/// Why a value is new.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum NewKind {
+    /// The baseline holds no value for this scenario and metric.
+    Key,
+    /// A content count rose.
+    Content,
 }
 
 /// One reason the ratchet fails.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum Breach {
+    /// The round expected this configuration or task run and did not measure it.
+    Unmeasured { unit: String },
     /// The round is worse than the baseline beyond the tolerance.
     Worse {
         scenario: String,
@@ -94,21 +145,24 @@ pub(crate) enum Breach {
         baseline: f64,
         value: f64,
     },
-    /// The round is better than the baseline beyond the tolerance and the baseline was not moved.
+    /// The round is better than the baseline and the baseline was not moved.
     ImprovementNotTaken {
         scenario: String,
         metric: String,
         baseline: f64,
         value: f64,
     },
-    /// The baseline holds a value the round does not.
+    /// The baseline holds a value the round does not; `*` for a lane scenario with no entry.
     Missing { scenario: String, metric: String },
-    /// The round holds a value the baseline does not.
-    Unbaselined {
+    /// A value the baseline does not hold, or a content count that rose.
+    New {
         scenario: String,
         metric: String,
         value: f64,
+        kind: NewKind,
     },
+    /// The baseline holds the scenario, and the round's lane measured it for the first time.
+    NewInLane { lane: String, scenario: String },
     /// An entry names a tolerance class the baseline does not define.
     UnknownTolerance {
         scenario: String,
@@ -122,24 +176,29 @@ pub(crate) enum Breach {
         main: f64,
         value: f64,
     },
-    /// An entry on `main` is gone from the baseline.
+    /// An entry on `main` is gone from the baseline without a new decision id.
     BaselineDropped { scenario: String, metric: String },
+    /// A scenario of a lane on `main` is gone from that lane without a new decision id.
+    LaneDropped { lane: String, scenario: String },
 }
 
 impl fmt::Display for Breach {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Breach::Unmeasured { unit } => write!(
+                f,
+                "{unit}: unmeasured: the round expected it and measured nothing; only a run that \
+                 measures it gets past"
+            ),
             Breach::Worse {
                 scenario,
                 metric,
                 baseline,
                 value,
-            } => {
-                write!(
-                    f,
-                    "{scenario} {metric}: {value} is worse than the baseline {baseline}"
-                )
-            }
+            } => write!(
+                f,
+                "{scenario} {metric}: {value} is worse than the baseline {baseline}"
+            ),
             Breach::ImprovementNotTaken {
                 scenario,
                 metric,
@@ -150,20 +209,34 @@ impl fmt::Display for Breach {
                 "{scenario} {metric}: {value} improves on the baseline {baseline}; take it into \
                  {BASELINE} in this change (--update)"
             ),
-            Breach::Missing { scenario, metric } => {
-                write!(
-                    f,
-                    "{scenario} {metric}: the baseline holds it and the round measured nothing"
-                )
-            }
-            Breach::Unbaselined {
+            Breach::Missing { scenario, metric } => write!(
+                f,
+                "{scenario} {metric}: lost coverage: the baseline holds it and the round measured \
+                 nothing"
+            ),
+            Breach::New {
                 scenario,
                 metric,
                 value,
+                kind: NewKind::Key,
             } => write!(
                 f,
-                "{scenario} {metric}: the round measured {value} and the baseline holds no value \
-                 (--update adds it)"
+                "{scenario} {metric}: new, {value}: the baseline holds no value; take it into \
+                 {BASELINE} (--update)"
+            ),
+            Breach::New {
+                scenario,
+                metric,
+                value,
+                kind: NewKind::Content,
+            } => write!(
+                f,
+                "{scenario} {metric}: new content, {value}: a count that grows with the page's \
+                 content rose; take it into {BASELINE} (--update)"
+            ),
+            Breach::NewInLane { lane, scenario } => write!(
+                f,
+                "{scenario}: new in lane {lane}; take it into the lane (--update)"
             ),
             Breach::UnknownTolerance {
                 scenario,
@@ -183,28 +256,47 @@ impl fmt::Display for Breach {
                 "{scenario} {metric}: the baseline moved from {main} on main to {value} without a new \
                  decision id (--update --decision <id>)"
             ),
-            Breach::BaselineDropped { scenario, metric } => {
-                write!(
-                    f,
-                    "{scenario} {metric}: main's baseline holds it and this baseline does not"
-                )
-            }
+            Breach::BaselineDropped { scenario, metric } => write!(
+                f,
+                "{scenario} {metric}: main's baseline holds it and this baseline dropped it without \
+                 a new decision id"
+            ),
+            Breach::LaneDropped { lane, scenario } => write!(
+                f,
+                "{scenario}: main's lane {lane} holds it and this baseline's does not, without a \
+                 new decision id"
+            ),
         }
     }
 }
 
-/// The tolerance class a new metric gets: the skill's counts 0, steps 5 %, layout shift 0.01.
+/// The tolerance class a new metric gets. The skill's classes: counts 0, steps 5 %, layout shift
+/// 0.01. Two more, decided here: `words` (5 %) for `reading_load`, a word count of the visible
+/// text that moves a little with any edit of a page, and `content` for a node count that grows with
+/// the page's content (`*_nodes`).
 pub(crate) fn tolerance_class(metric: &str) -> &'static str {
     if metric.starts_with("layout_shift") {
         "layout_shift"
-    } else if metric.starts_with("glance_cost")
-        || metric.starts_with("reading_load")
-        || metric.contains("time_to_act_steps")
-    {
+    } else if metric.starts_with("reading_load") {
+        "words"
+    } else if metric.ends_with("_nodes") {
+        "content"
+    } else if metric.starts_with("glance_cost") || metric.contains("time_to_act_steps") {
         "steps"
     } else {
         "count"
     }
+}
+
+/// The tolerance classes a new baseline starts with.
+pub(crate) fn default_tolerances() -> BTreeMap<String, Tolerance> {
+    BTreeMap::from([
+        ("content".to_owned(), Tolerance::Content),
+        ("count".to_owned(), Tolerance::Absolute(0.0)),
+        ("layout_shift".to_owned(), Tolerance::Absolute(0.01)),
+        ("steps".to_owned(), Tolerance::Relative(0.05)),
+        ("words".to_owned(), Tolerance::Relative(0.05)),
+    ])
 }
 
 fn tolerance_of(
@@ -224,10 +316,58 @@ fn tolerance_of(
         })
 }
 
-/// Compares a round with the baseline: worse, improved and not taken, missing, unbaselined.
+/// The scenarios a round of `lane` is held to: every one for `full`, the lane's list otherwise.
+fn scope<'a>(baseline: &'a Baseline, lane: &str) -> Option<&'a BTreeSet<String>> {
+    static EMPTY: BTreeSet<String> = BTreeSet::new();
+    (lane != FULL).then(|| baseline.lanes.get(lane).unwrap_or(&EMPTY))
+}
+
+fn judge(
+    scenario: &str,
+    metric: &str,
+    entry: &Entry,
+    tolerance: Tolerance,
+    value: f64,
+) -> Option<Breach> {
+    let (scenario, metric, base) = (scenario.to_owned(), metric.to_owned(), entry.value);
+    if value < base - EPSILON {
+        return Some(Breach::ImprovementNotTaken {
+            scenario,
+            metric,
+            baseline: base,
+            value,
+        });
+    }
+    if tolerance == Tolerance::Content {
+        return (value > base + EPSILON).then_some(Breach::New {
+            scenario,
+            metric,
+            value,
+            kind: NewKind::Content,
+        });
+    }
+    (value > base + tolerance.allowance(base) + EPSILON).then_some(Breach::Worse {
+        scenario,
+        metric,
+        baseline: base,
+        value,
+    })
+}
+
+/// Compares a round with the baseline.
 pub(crate) fn compare(baseline: &Baseline, round: &Round) -> Vec<Breach> {
-    let mut breaches = Vec::new();
+    let mut breaches: Vec<Breach> = round
+        .coverage
+        .unmeasured
+        .iter()
+        .map(|unit| Breach::Unmeasured { unit: unit.clone() })
+        .collect();
+    let lane = scope(baseline, &round.lane);
+    let in_scope = |scenario: &str| lane.is_none_or(|set| set.contains(scenario));
     for (scenario, entries) in &baseline.scenarios {
+        if !in_scope(scenario) {
+            continue;
+        }
         let measured = round.scenarios.get(scenario);
         for (metric, entry) in entries {
             let tolerance = match tolerance_of(baseline, scenario, metric, entry) {
@@ -237,42 +377,38 @@ pub(crate) fn compare(baseline: &Baseline, round: &Round) -> Vec<Breach> {
                     continue;
                 }
             };
-            let Some(&value) = measured.and_then(|values| values.get(metric)) else {
-                breaches.push(Breach::Missing {
+            match measured.and_then(|values| values.get(metric)) {
+                None => breaches.push(Breach::Missing {
                     scenario: scenario.clone(),
                     metric: metric.clone(),
-                });
-                continue;
-            };
-            let allowance = tolerance.allowance(entry.value);
-            if value > entry.value + allowance + EPSILON {
-                breaches.push(Breach::Worse {
-                    scenario: scenario.clone(),
-                    metric: metric.clone(),
-                    baseline: entry.value,
-                    value,
-                });
-            } else if value < entry.value - allowance - EPSILON {
-                breaches.push(Breach::ImprovementNotTaken {
-                    scenario: scenario.clone(),
-                    metric: metric.clone(),
-                    baseline: entry.value,
-                    value,
-                });
+                }),
+                Some(&value) => breaches.extend(judge(scenario, metric, entry, tolerance, value)),
             }
         }
     }
+    for scenario in lane.into_iter().flatten() {
+        if !baseline.scenarios.contains_key(scenario) && !round.scenarios.contains_key(scenario) {
+            breaches.push(Breach::Missing {
+                scenario: scenario.clone(),
+                metric: "*".to_owned(),
+            });
+        }
+    }
     for (scenario, values) in &round.scenarios {
+        let held = baseline.scenarios.get(scenario);
+        if held.is_some() && !in_scope(scenario) {
+            breaches.push(Breach::NewInLane {
+                lane: round.lane.clone(),
+                scenario: scenario.clone(),
+            });
+        }
         for (metric, &value) in values {
-            let held = baseline
-                .scenarios
-                .get(scenario)
-                .is_some_and(|entries| entries.contains_key(metric));
-            if !held {
-                breaches.push(Breach::Unbaselined {
+            if !held.is_some_and(|entries| entries.contains_key(metric)) {
+                breaches.push(Breach::New {
                     scenario: scenario.clone(),
                     metric: metric.clone(),
                     value,
+                    kind: NewKind::Key,
                 });
             }
         }
@@ -280,7 +416,13 @@ pub(crate) fn compare(baseline: &Baseline, round: &Round) -> Vec<Breach> {
     breaches
 }
 
-/// Compares this baseline with `main`'s: a worse entry needs a decision id `main`'s entry lacks.
+fn decided_anew(id: Option<&String>, on_main: Option<&String>) -> bool {
+    id.is_some_and(|id| !id.trim().is_empty() && on_main != Some(id))
+}
+
+/// Compares this baseline with `main`'s: a worse entry, a dropped entry and a scenario a lane
+/// dropped each need a decision id `main` does not already carry there. A content count that grew
+/// needs none: it was taken as new.
 pub(crate) fn compare_with_main(main: &Baseline, current: &Baseline) -> Vec<Breach> {
     let mut breaches = Vec::new();
     for (scenario, entries) in &main.scenarios {
@@ -290,10 +432,16 @@ pub(crate) fn compare_with_main(main: &Baseline, current: &Baseline) -> Vec<Brea
                 .get(scenario)
                 .and_then(|entries| entries.get(metric))
             else {
-                breaches.push(Breach::BaselineDropped {
-                    scenario: scenario.clone(),
-                    metric: metric.clone(),
-                });
+                let keys = [scenario.clone(), format!("{scenario} {metric}")];
+                if !keys
+                    .iter()
+                    .any(|key| decided_anew(current.dropped.get(key), main.dropped.get(key)))
+                {
+                    breaches.push(Breach::BaselineDropped {
+                        scenario: scenario.clone(),
+                        metric: metric.clone(),
+                    });
+                }
                 continue;
             };
             let tolerance = match tolerance_of(main, scenario, metric, old) {
@@ -303,12 +451,9 @@ pub(crate) fn compare_with_main(main: &Baseline, current: &Baseline) -> Vec<Brea
                     continue;
                 }
             };
-            let worse = new.value > old.value + tolerance.allowance(old.value) + EPSILON;
-            let decided = new
-                .decision
-                .as_ref()
-                .is_some_and(|id| !id.trim().is_empty() && old.decision.as_ref() != Some(id));
-            if worse && !decided {
+            let worse = tolerance != Tolerance::Content
+                && new.value > old.value + tolerance.allowance(old.value) + EPSILON;
+            if worse && !decided_anew(new.decision.as_ref(), old.decision.as_ref()) {
                 breaches.push(Breach::BaselineWorsened {
                     scenario: scenario.clone(),
                     metric: metric.clone(),
@@ -318,18 +463,49 @@ pub(crate) fn compare_with_main(main: &Baseline, current: &Baseline) -> Vec<Brea
             }
         }
     }
+    for (lane, scenarios) in &main.lanes {
+        for scenario in scenarios {
+            let kept = current
+                .lanes
+                .get(lane)
+                .is_some_and(|set| set.contains(scenario));
+            let key = format!("{lane}: {scenario}");
+            if !kept && !decided_anew(current.dropped.get(&key), main.dropped.get(&key)) {
+                breaches.push(Breach::LaneDropped {
+                    lane: lane.clone(),
+                    scenario: scenario.clone(),
+                });
+            }
+        }
+    }
     breaches
 }
 
-/// Takes a round into the baseline: improvements always, new keys always, worse values only under
-/// a decision id, which is written beside each of them. A missing value is never taken.
+/// What an update took into the baseline, by kind.
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub(crate) struct Taken {
+    pub improved: usize,
+    pub new: usize,
+    pub content: usize,
+    pub lane: usize,
+    pub worse: usize,
+    pub dropped: usize,
+}
+
+/// Takes a round into the baseline: improvements, new values, content that grew and scenarios new
+/// to the lane always; worse values and lost values only under a decision id, which is written
+/// beside each worse value and under `dropped` for each lost one. An unmeasured unit is never
+/// taken.
 pub(crate) fn update(
     baseline: &Baseline,
     round: &Round,
     decision: Option<&str>,
-) -> Result<Baseline, Vec<Breach>> {
+) -> Result<(Baseline, Taken), Vec<Breach>> {
+    let decision = decision.filter(|id| !id.trim().is_empty());
     let mut next = baseline.clone();
+    let mut taken = Taken::default();
     let mut refused = Vec::new();
+    let lane = (round.lane != FULL).then(|| round.lane.clone());
     for breach in compare(baseline, round) {
         match breach {
             Breach::ImprovementNotTaken {
@@ -338,27 +514,30 @@ pub(crate) fn update(
                 value,
                 ..
             } => {
-                if let Some(entry) = next
-                    .scenarios
-                    .get_mut(&scenario)
-                    .and_then(|entries| entries.get_mut(&metric))
-                {
-                    entry.value = value;
-                }
+                set_value(&mut next, &scenario, &metric, value);
+                taken.improved += 1;
             }
-            Breach::Unbaselined {
+            Breach::New {
                 scenario,
                 metric,
                 value,
+                kind: NewKind::Content,
             } => {
-                next.scenarios.entry(scenario).or_default().insert(
-                    metric.clone(),
-                    Entry {
-                        value,
-                        tolerance: tolerance_class(&metric).to_owned(),
-                        decision: None,
-                    },
-                );
+                set_value(&mut next, &scenario, &metric, value);
+                taken.content += 1;
+            }
+            Breach::New {
+                scenario,
+                metric,
+                value,
+                kind: NewKind::Key,
+            } => {
+                add_new(&mut next, lane.as_deref(), scenario, &metric, value);
+                taken.new += 1;
+            }
+            Breach::NewInLane { lane, scenario } => {
+                next.lanes.entry(lane).or_default().insert(scenario);
+                taken.lane += 1;
             }
             Breach::Worse {
                 scenario,
@@ -366,30 +545,104 @@ pub(crate) fn update(
                 value,
                 baseline: old,
             } => match decision {
-                Some(id) if !id.trim().is_empty() => {
+                Some(id) => {
+                    set_value(&mut next, &scenario, &metric, value);
                     if let Some(entry) = next
                         .scenarios
                         .get_mut(&scenario)
                         .and_then(|entries| entries.get_mut(&metric))
                     {
-                        entry.value = value;
                         entry.decision = Some(id.to_owned());
                     }
+                    taken.worse += 1;
                 }
-                _ => refused.push(Breach::Worse {
+                None => refused.push(Breach::Worse {
                     scenario,
                     metric,
                     baseline: old,
                     value,
                 }),
             },
+            Breach::Missing { scenario, metric } => match decision {
+                Some(id) => {
+                    drop_lost(&mut next, round, lane.as_deref(), &scenario, &metric, id);
+                    taken.dropped += 1;
+                }
+                None => refused.push(Breach::Missing { scenario, metric }),
+            },
             other => refused.push(other),
         }
     }
     if refused.is_empty() {
-        Ok(next)
+        Ok((next, taken))
     } else {
         Err(refused)
+    }
+}
+
+fn set_value(next: &mut Baseline, scenario: &str, metric: &str, value: f64) {
+    if let Some(entry) = next
+        .scenarios
+        .get_mut(scenario)
+        .and_then(|entries| entries.get_mut(metric))
+    {
+        entry.value = value;
+    }
+}
+
+/// Adds a value the baseline does not hold, with its tolerance class (defined from the defaults
+/// when the baseline lacks it), and to the round's lane.
+fn add_new(next: &mut Baseline, lane: Option<&str>, scenario: String, metric: &str, value: f64) {
+    if let Some(lane) = lane {
+        next.lanes
+            .entry(lane.to_owned())
+            .or_default()
+            .insert(scenario.clone());
+    }
+    let class = tolerance_class(metric);
+    if let Some(tolerance) = default_tolerances().remove(class) {
+        next.tolerances.entry(class.to_owned()).or_insert(tolerance);
+    }
+    next.scenarios.entry(scenario).or_default().insert(
+        metric.to_owned(),
+        Entry {
+            value,
+            tolerance: class.to_owned(),
+            decision: None,
+        },
+    );
+}
+
+/// Drops what a round no longer measures, under a decision: a whole scenario when the round has
+/// none of it, else one metric; for a lane round, the scenario from the lane.
+fn drop_lost(
+    next: &mut Baseline,
+    round: &Round,
+    lane: Option<&str>,
+    scenario: &str,
+    metric: &str,
+    id: &str,
+) {
+    if let Some(lane) = lane {
+        if let Some(set) = next.lanes.get_mut(lane) {
+            set.remove(scenario);
+        }
+        next.dropped
+            .insert(format!("{lane}: {scenario}"), id.to_owned());
+        return;
+    }
+    if round.scenarios.contains_key(scenario) {
+        if let Some(entries) = next.scenarios.get_mut(scenario) {
+            entries.remove(metric);
+        }
+        next.dropped
+            .insert(format!("{scenario} {metric}"), id.to_owned());
+    } else {
+        next.scenarios.remove(scenario);
+        for set in next.lanes.values_mut() {
+            set.remove(scenario);
+        }
+        next.dropped.insert(scenario.to_owned(), id.to_owned());
     }
 }
 
@@ -402,6 +655,75 @@ fn plain_number<S: serde::Serializer>(value: &f64, serializer: S) -> Result<S::O
     } else {
         serializer.serialize_f64(*value)
     }
+}
+
+fn json(text: &str) -> Result<String> {
+    Ok(serde_json::to_string(text)?)
+}
+
+/// The baseline as committed: one line per value, so a change reads as one line per value moved.
+pub(crate) fn to_text(baseline: &Baseline) -> Result<String> {
+    let mut out = String::from("{\n");
+    let _ = writeln!(out, "  \"about\": {},", json(&baseline.about)?);
+    if !baseline.lanes.is_empty() {
+        out.push_str("  \"lanes\": {\n");
+        for (i, (lane, scenarios)) in baseline.lanes.iter().enumerate() {
+            let _ = writeln!(out, "    {}: [", json(lane)?);
+            for (j, scenario) in scenarios.iter().enumerate() {
+                let comma = if j + 1 < scenarios.len() { "," } else { "" };
+                let _ = writeln!(out, "      {}{comma}", json(scenario)?);
+            }
+            let comma = if i + 1 < baseline.lanes.len() {
+                ","
+            } else {
+                ""
+            };
+            let _ = writeln!(out, "    ]{comma}");
+        }
+        out.push_str("  },\n");
+    }
+    out.push_str("  \"scenarios\": {\n");
+    for (i, (scenario, entries)) in baseline.scenarios.iter().enumerate() {
+        let _ = writeln!(out, "    {}: {{", json(scenario)?);
+        for (j, (metric, entry)) in entries.iter().enumerate() {
+            let comma = if j + 1 < entries.len() { "," } else { "" };
+            let entry = serde_json::to_string(entry)?
+                .replace("\":", "\": ")
+                .replace(",\"", ", \"");
+            let _ = writeln!(out, "      {}: {entry}{comma}", json(metric)?);
+        }
+        let comma = if i + 1 < baseline.scenarios.len() {
+            ","
+        } else {
+            ""
+        };
+        let _ = writeln!(out, "    }}{comma}");
+    }
+    out.push_str("  },\n");
+    if !baseline.dropped.is_empty() {
+        out.push_str("  \"dropped\": {\n");
+        for (i, (what, id)) in baseline.dropped.iter().enumerate() {
+            let comma = if i + 1 < baseline.dropped.len() {
+                ","
+            } else {
+                ""
+            };
+            let _ = writeln!(out, "    {}: {}{comma}", json(what)?, json(id)?);
+        }
+        out.push_str("  },\n");
+    }
+    out.push_str("  \"tolerances\": {\n");
+    for (i, (name, tolerance)) in baseline.tolerances.iter().enumerate() {
+        let comma = if i + 1 < baseline.tolerances.len() {
+            ","
+        } else {
+            ""
+        };
+        let tolerance = serde_json::to_string(tolerance)?.replace("\":", "\": ");
+        let _ = writeln!(out, "    {}: {tolerance}{comma}", json(name)?);
+    }
+    out.push_str("  }\n}\n");
+    Ok(out)
 }
 
 /// One finding record's header, from the front matter between the first two `---` lines.
@@ -477,15 +799,94 @@ pub(crate) fn parse_finding(file: &str, text: &str) -> Result<Finding, String> {
     })
 }
 
-/// The path part of a regression asset, `website/ux/specs/x.spec.ts › title` to its file.
+/// The path part of a regression asset, `website/ux/specs/x.spec.ts :: title` to its file.
 fn asset_path(asset: &str) -> Option<&str> {
     let first = asset.split_whitespace().next()?;
     let path = first.split("::").next()?.trim_end_matches(',');
     (path.contains('/') && !path.contains("://")).then_some(path)
 }
 
-/// Checks one record. `exists` answers whether a repository-relative path exists.
-pub(crate) fn check_finding(finding: &Finding, exists: &dyn Fn(&str) -> bool) -> Vec<String> {
+/// The test title an asset names after `::`, up to `, held by` or the end.
+pub(crate) fn asset_title(asset: &str) -> Option<&str> {
+    let (_, rest) = asset.split_once("::")?;
+    let title = rest.split(", held by").next().unwrap_or(rest).trim();
+    (!title.is_empty()).then_some(title)
+}
+
+/// The titles of the tests a spec file declares: the first argument of every `test(` call, a
+/// quoted or a template string, `${…}` kept as written.
+pub(crate) fn declared_titles(text: &str) -> Vec<String> {
+    let mut titles = Vec::new();
+    let mut rest = text;
+    while let Some(at) = rest.find("test(") {
+        let before = rest[..at].chars().next_back();
+        rest = &rest[at + "test(".len()..];
+        if before.is_some_and(|c| c.is_alphanumeric() || c == '_' || c == '.') {
+            continue;
+        }
+        let trimmed = rest.trim_start();
+        let Some(quote) = trimmed
+            .chars()
+            .next()
+            .filter(|c| matches!(c, '\'' | '"' | '`'))
+        else {
+            continue;
+        };
+        let body = &trimmed[1..];
+        let mut end = None;
+        let mut escaped = false;
+        for (i, c) in body.char_indices() {
+            if escaped {
+                escaped = false;
+            } else if c == '\\' {
+                escaped = true;
+            } else if c == quote {
+                end = Some(i);
+                break;
+            }
+        }
+        if let Some(end) = end {
+            titles.push(body[..end].replace("\\'", "'"));
+        }
+    }
+    titles
+}
+
+/// Whether `title` is an instance of `template`, each `${…}` standing for any text.
+pub(crate) fn title_matches(template: &str, title: &str) -> bool {
+    let mut parts = Vec::new();
+    let mut rest = template;
+    while let Some(open) = rest.find("${") {
+        parts.push(&rest[..open]);
+        rest = rest[open..]
+            .find('}')
+            .map_or("", |close| &rest[open + close + 1..]);
+    }
+    parts.push(rest);
+    if parts.len() == 1 {
+        return template == title;
+    }
+    let (first, last) = (parts[0], parts[parts.len() - 1]);
+    if !title.starts_with(first) || !title.ends_with(last) || title.len() < first.len() + last.len()
+    {
+        return false;
+    }
+    let mut middle = &title[first.len()..title.len() - last.len()];
+    for part in &parts[1..parts.len() - 1] {
+        match middle.find(part) {
+            Some(at) => middle = &middle[at + part.len()..],
+            None => return false,
+        }
+    }
+    true
+}
+
+/// Checks one record. `read` returns the text of a repository-relative file, or `None` when it
+/// does not exist.
+pub(crate) fn check_finding(
+    finding: &Finding,
+    read: &dyn Fn(&str) -> Option<String>,
+) -> Vec<String> {
     let file = &finding.file;
     let field = |key: &str| finding.fields.get(key).map_or("", String::as_str);
     let mut problems = Vec::new();
@@ -520,7 +921,10 @@ pub(crate) fn check_finding(finding: &Finding, exists: &dyn Fn(&str) -> bool) ->
         ));
     }
     let asset = field("regression_asset");
-    let no_asset = asset.is_empty() || asset.eq_ignore_ascii_case("none") || asset == "-";
+    let no_asset = asset.is_empty()
+        || asset.eq_ignore_ascii_case("none")
+        || asset.starts_with("none")
+        || asset == "-";
     if field("status") == "closed" && matches!(field("severity"), "S1" | "S2") && no_asset {
         problems.push(format!(
             "{file}: a closed {} finding needs a regression asset that failed before the fix",
@@ -528,8 +932,20 @@ pub(crate) fn check_finding(finding: &Finding, exists: &dyn Fn(&str) -> bool) ->
         ));
     }
     if let Some(path) = asset_path(asset) {
-        if !exists(path) {
-            problems.push(format!("{file}: regression asset `{path}` does not exist"));
+        match read(path) {
+            None => problems.push(format!("{file}: regression asset `{path}` does not exist")),
+            Some(text) => {
+                if let Some(title) = asset_title(asset) {
+                    if !declared_titles(&text)
+                        .iter()
+                        .any(|template| title_matches(template, title))
+                    {
+                        problems.push(format!(
+                            "{file}: regression asset `{path}` declares no test `{title}`"
+                        ));
+                    }
+                }
+            }
         }
     }
     problems
@@ -553,33 +969,64 @@ pub(crate) fn check_findings(root: &Path) -> Result<Vec<String>> {
         })
         .collect();
     files.sort();
-    let exists = |path: &str| root.join(path).exists();
+    let read = |path: &str| fs::read_to_string(root.join(path)).ok();
     let mut problems = Vec::new();
     for file in &files {
         let text =
             fs::read_to_string(directory.join(file)).with_context(|| format!("reading {file}"))?;
         match parse_finding(file, &text) {
-            Ok(finding) => problems.extend(check_finding(&finding, &exists)),
+            Ok(finding) => problems.extend(check_finding(&finding, &read)),
             Err(problem) => problems.push(problem),
         }
     }
     Ok(problems)
 }
 
-/// `main`'s baseline through git, or `None` when `main` has none yet.
-fn main_baseline(root: &Path) -> Result<Option<Baseline>> {
-    let output = Command::new("git")
+/// `main`'s baseline from what git answered: an error when `origin/main` itself cannot be read
+/// (a shallow or unfetched checkout must not skip the comparison silently), `None` only when
+/// `main` holds no baseline yet.
+pub(crate) fn read_main_baseline(
+    main_readable: bool,
+    file: Option<&[u8]>,
+) -> Result<Option<Baseline>> {
+    if !main_readable {
+        bail!(
+            "origin/main cannot be read, so the baseline cannot be compared with main's: fetch \
+             origin main first"
+        );
+    }
+    file.map(|bytes| serde_json::from_slice(bytes).context("parsing main's baseline"))
+        .transpose()
+}
+
+fn git(root: &Path, args: &[&str]) -> Result<std::process::Output> {
+    Command::new("git")
         .arg("-C")
         .arg(root)
-        .args(["show", &format!("origin/main:{BASELINE}")])
+        .args(args)
         .output()
-        .context("running git show for main's baseline")?;
-    if !output.status.success() {
-        return Ok(None);
-    }
-    serde_json::from_slice(&output.stdout)
-        .map(Some)
-        .context("parsing main's baseline")
+        .with_context(|| format!("running git {}", args.join(" ")))
+}
+
+/// `main`'s baseline through git.
+fn main_baseline(root: &Path) -> Result<Option<Baseline>> {
+    let readable = git(
+        root,
+        &["rev-parse", "--verify", "--quiet", "origin/main^{commit}"],
+    )?
+    .status
+    .success();
+    let spec = format!("origin/main:{BASELINE}");
+    let file = if readable && git(root, &["cat-file", "-e", &spec])?.status.success() {
+        let shown = git(root, &["show", &spec])?;
+        if !shown.status.success() {
+            bail!("git show {spec} failed");
+        }
+        Some(shown.stdout)
+    } else {
+        None
+    };
+    read_main_baseline(readable, file.as_deref())
 }
 
 /// The command: compare `round` with the baseline and with `main`'s, check the findings; with
@@ -596,18 +1043,32 @@ pub(crate) fn run(
             .with_context(|| format!("reading {}", baseline_path.display()))?,
     )
     .with_context(|| format!("parsing {}", baseline_path.display()))?;
+    let round_path = root.join(round);
     let measured: Round = serde_json::from_str(
-        &fs::read_to_string(round).with_context(|| format!("reading {}", round.display()))?,
+        &fs::read_to_string(&round_path)
+            .with_context(|| format!("reading {}", round_path.display()))?,
     )
-    .with_context(|| format!("parsing {}", round.display()))?;
+    .with_context(|| format!("parsing {}", round_path.display()))?;
+    let mut report = String::new();
     if update_baseline {
-        baseline = update(&baseline, &measured, decision).map_err(|refused| {
+        let (next, taken) = update(&baseline, &measured, decision).map_err(|refused| {
             anyhow::anyhow!("the baseline was not updated:\n{}", lines(&refused))
         })?;
-        let mut text = serde_json::to_string_pretty(&baseline)?;
-        text.push('\n');
-        fs::write(&baseline_path, text)
+        baseline = next;
+        fs::write(&baseline_path, to_text(&baseline)?)
             .with_context(|| format!("writing {}", baseline_path.display()))?;
+        let _ = writeln!(
+            report,
+            "ux ratchet: took {} improvement(s), {} new value(s), {} content rise(s), {} lane \
+             scenario(s); {} worse and {} dropped under decision {}",
+            taken.improved,
+            taken.new,
+            taken.content,
+            taken.lane,
+            taken.worse,
+            taken.dropped,
+            decision.unwrap_or("none")
+        );
     }
     let mut breaches = compare(&baseline, &measured);
     if let Some(main) = main_baseline(root)? {
@@ -635,10 +1096,13 @@ pub(crate) fn run(
         bail!(message.trim_end().to_owned());
     }
     let keys: usize = baseline.scenarios.values().map(BTreeMap::len).sum();
-    Ok(format!(
-        "ux ratchet: {keys} value(s) in {} scenario(s) hold the baseline\n",
+    let _ = writeln!(
+        report,
+        "ux ratchet: lane {}: {keys} value(s) in {} scenario(s) hold the baseline",
+        measured.lane,
         baseline.scenarios.len()
-    ))
+    );
+    Ok(report)
 }
 
 fn lines(breaches: &[Breach]) -> String {
@@ -658,8 +1122,15 @@ mod tests {
         serde_json::from_str(json).expect("canned baseline parses")
     }
 
+    /// A canned round. One without a `coverage` key is a complete round: the key is added with
+    /// nothing unmeasured, so each case states only what it is about.
     fn round(json: &str) -> Round {
-        serde_json::from_str(json).expect("canned round parses")
+        let json = if json.contains("\"coverage\"") {
+            json.to_owned()
+        } else {
+            json.replacen('{', r#"{"coverage": {"unmeasured": []}, "#, 1)
+        };
+        serde_json::from_str(&json).expect("canned round parses")
     }
 
     const BASE: &str = r#"{
@@ -722,7 +1193,27 @@ mod tests {
     }
 
     #[test]
-    fn a_missing_value_and_an_unbaselined_value_fail() {
+    fn an_improvement_within_its_tolerance_must_still_be_taken() {
+        let better = round(
+            r#"{"scenarios": {"install/desktop-1280":
+              {"screen_only.actions": 3, "glance_cost.p95": 1.95, "layout_shift.max": 0.02}}}"#,
+        );
+        let breaches = compare(&baseline(BASE), &better);
+        assert!(
+            matches!(breaches.as_slice(), [Breach::ImprovementNotTaken { metric, .. }] if metric == "glance_cost.p95"),
+            "{breaches:?}"
+        );
+        let (next, taken) =
+            update(&baseline(BASE), &better, None).expect("an improvement needs no decision");
+        assert_eq!(taken.improved, 1);
+        assert_eq!(
+            next.scenarios["install/desktop-1280"]["glance_cost.p95"].value,
+            1.95
+        );
+    }
+
+    #[test]
+    fn a_missing_value_and_a_new_value_fail() {
         let measured = round(
             r#"{"scenarios": {"install/desktop-1280": {"screen_only.actions": 3, "glance_cost.p95": 2.0},
               "limitations/mobile-390": {"screen_only.actions": 5}}}"#,
@@ -732,12 +1223,187 @@ mod tests {
             scenario: "install/desktop-1280".into(),
             metric: "layout_shift.max".into()
         }));
-        assert!(breaches.contains(&Breach::Unbaselined {
+        assert!(breaches.contains(&Breach::New {
             scenario: "limitations/mobile-390".into(),
             metric: "screen_only.actions".into(),
-            value: 5.0
+            value: 5.0,
+            kind: NewKind::Key,
         }));
         assert_eq!(breaches.len(), 2, "{breaches:?}");
+    }
+
+    #[test]
+    fn a_round_without_coverage_is_refused() {
+        let parsed = serde_json::from_str::<Round>(
+            r#"{"scenarios": {"install/desktop-1280": {"screen_only.actions": 3}}}"#,
+        );
+        assert!(
+            parsed.is_err(),
+            "a round that says nothing of its coverage was read"
+        );
+    }
+
+    #[test]
+    fn an_unmeasured_configuration_is_a_breach_that_update_never_takes() {
+        let measured = round(
+            r#"{"coverage": {"unmeasured": ["/ess/docs/reference/ess-ui@desktop-1280/light"]},
+              "scenarios": {"install/desktop-1280":
+              {"screen_only.actions": 3, "glance_cost.p95": 2.0, "layout_shift.max": 0.02}}}"#,
+        );
+        let breaches = compare(&baseline(BASE), &measured);
+        assert_eq!(breaches.len(), 1, "{breaches:?}");
+        assert!(
+            breaches[0].to_string().contains("unmeasured"),
+            "{}",
+            breaches[0]
+        );
+        assert!(update(&baseline(BASE), &measured, Some("D-1")).is_err());
+    }
+
+    #[test]
+    fn a_new_page_is_reported_as_new_and_taken_by_update() {
+        let measured = round(
+            r#"{"scenarios": {"install/desktop-1280":
+              {"screen_only.actions": 3, "glance_cost.p95": 2.0, "layout_shift.max": 0.02},
+              "/ess/docs/new@desktop-1280/light": {"axe.serious_critical_nodes": 4}}}"#,
+        );
+        let breaches = compare(&baseline(BASE), &measured);
+        assert_eq!(breaches.len(), 1, "{breaches:?}");
+        assert!(breaches[0].to_string().contains(": new"), "{}", breaches[0]);
+        let (next, taken) =
+            update(&baseline(BASE), &measured, None).expect("a new page needs no decision");
+        assert_eq!(taken.new, 1);
+        assert_eq!(
+            next.scenarios["/ess/docs/new@desktop-1280/light"]["axe.serious_critical_nodes"]
+                .tolerance,
+            "content"
+        );
+        assert_eq!(compare(&next, &measured), vec![]);
+    }
+
+    const CONTENT: &str = r#"{
+      "about": "canned",
+      "tolerances": {"count": {"absolute": 0}, "content": "content"},
+      "scenarios": {"/ess/docs/a@desktop-1280/light": {
+        "axe.serious_critical_rules": {"value": 1, "tolerance": "count"},
+        "axe.serious_critical_nodes": {"value": 10, "tolerance": "content"}
+      }}
+    }"#;
+
+    #[test]
+    fn a_content_count_that_rises_is_new_not_worse() {
+        let one_more_link = round(
+            r#"{"scenarios": {"/ess/docs/a@desktop-1280/light":
+              {"axe.serious_critical_rules": 1, "axe.serious_critical_nodes": 11}}}"#,
+        );
+        let breaches = compare(&baseline(CONTENT), &one_more_link);
+        assert!(
+            !breaches
+                .iter()
+                .any(|breach| matches!(breach, Breach::Worse { .. })),
+            "{breaches:?}"
+        );
+        assert!(
+            breaches
+                .iter()
+                .any(|breach| breach.to_string().contains(": new")),
+            "{breaches:?}"
+        );
+        let (next, _) =
+            update(&baseline(CONTENT), &one_more_link, None).expect("taken without a decision");
+        assert_eq!(compare(&next, &one_more_link), vec![]);
+        assert_eq!(compare_with_main(&baseline(CONTENT), &next), vec![]);
+        let another_rule = round(
+            r#"{"scenarios": {"/ess/docs/a@desktop-1280/light":
+              {"axe.serious_critical_rules": 2, "axe.serious_critical_nodes": 10}}}"#,
+        );
+        assert!(compare(&baseline(CONTENT), &another_rule)
+            .iter()
+            .any(|breach| matches!(breach, Breach::Worse { .. })));
+    }
+
+    const LANES: &str = r#"{
+      "about": "canned",
+      "tolerances": {"count": {"absolute": 0}},
+      "lanes": {"gate": ["/a@d/light", "/b@d/light"]},
+      "scenarios": {
+        "/a@d/light": {"layout.spills": {"value": 0, "tolerance": "count"}},
+        "/b@d/light": {"layout.spills": {"value": 0, "tolerance": "count"}},
+        "/c@d/light": {"layout.spills": {"value": 0, "tolerance": "count"}}
+      }
+    }"#;
+
+    #[test]
+    fn a_gate_round_is_held_to_the_gate_lane_and_a_page_it_lost_is_a_breach() {
+        let gate = round(
+            r#"{"lane": "gate", "scenarios": {"/a@d/light": {"layout.spills": 0},
+              "/b@d/light": {"layout.spills": 0}}}"#,
+        );
+        assert_eq!(compare(&baseline(LANES), &gate), vec![]);
+        let shrunk =
+            round(r#"{"lane": "gate", "scenarios": {"/a@d/light": {"layout.spills": 0}}}"#);
+        assert!(compare(&baseline(LANES), &shrunk)
+            .iter()
+            .any(|breach| breach.to_string().contains("/b@d/light")));
+        let full = round(
+            r#"{"lane": "full", "scenarios": {"/a@d/light": {"layout.spills": 0},
+              "/b@d/light": {"layout.spills": 0}}}"#,
+        );
+        assert!(compare(&baseline(LANES), &full)
+            .iter()
+            .any(|breach| breach.to_string().contains("/c@d/light")));
+    }
+
+    #[test]
+    fn a_scenario_new_to_the_gate_lane_is_new_and_update_adds_it_to_the_lane() {
+        let grown = round(
+            r#"{"lane": "gate", "scenarios": {"/a@d/light": {"layout.spills": 0},
+              "/b@d/light": {"layout.spills": 0}, "/c@d/light": {"layout.spills": 0}}}"#,
+        );
+        assert_eq!(
+            compare(&baseline(LANES), &grown),
+            vec![Breach::NewInLane {
+                lane: "gate".into(),
+                scenario: "/c@d/light".into()
+            }]
+        );
+        let (next, taken) = update(&baseline(LANES), &grown, None).expect("no decision needed");
+        assert_eq!(taken.lane, 1);
+        assert!(next.lanes["gate"].contains("/c@d/light"));
+        assert_eq!(compare(&next, &grown), vec![]);
+    }
+
+    #[test]
+    fn a_lane_that_drops_a_scenario_needs_a_decision_against_main() {
+        let main = baseline(LANES);
+        let shrunk =
+            round(r#"{"lane": "gate", "scenarios": {"/a@d/light": {"layout.spills": 0}}}"#);
+        assert!(update(&main, &shrunk, None).is_err());
+        let (next, _) = update(&main, &shrunk, Some("D-9")).expect("a decision drops it");
+        assert_eq!(next.dropped["gate: /b@d/light"], "D-9");
+        assert_eq!(compare_with_main(&main, &next), vec![]);
+        let mut undecided = next.clone();
+        undecided.dropped.clear();
+        assert_eq!(
+            compare_with_main(&main, &undecided),
+            vec![Breach::LaneDropped {
+                lane: "gate".into(),
+                scenario: "/b@d/light".into()
+            }]
+        );
+    }
+
+    #[test]
+    fn update_with_a_decision_replaces_a_baseline_whose_scenarios_are_gone() {
+        let measured = round(r#"{"scenarios": {"/ess/@d/light": {"layout.spills": 0}}}"#);
+        assert!(update(&baseline(BASE), &measured, None).is_err());
+        let (next, taken) = update(&baseline(BASE), &measured, Some("R-02-baseline"))
+            .expect("a decision replaces what the round no longer measures");
+        assert!(!next.scenarios.contains_key("install/desktop-1280"));
+        assert_eq!(next.dropped["install/desktop-1280"], "R-02-baseline");
+        assert_eq!(taken.dropped, 3);
+        assert_eq!(compare(&next, &measured), vec![]);
+        assert_eq!(compare_with_main(&baseline(BASE), &next), vec![]);
     }
 
     #[test]
@@ -801,7 +1467,7 @@ mod tests {
     }
 
     #[test]
-    fn dropping_an_entry_main_holds_fails() {
+    fn dropping_an_entry_main_holds_fails_without_a_decision() {
         let main = baseline(BASE);
         let mut dropped = main.clone();
         dropped
@@ -816,6 +1482,10 @@ mod tests {
                 metric: "layout_shift.max".into()
             }]
         );
+        dropped
+            .dropped
+            .insert("install/desktop-1280 layout_shift.max".into(), "D-3".into());
+        assert_eq!(compare_with_main(&main, &dropped), vec![]);
     }
 
     #[test]
@@ -829,20 +1499,31 @@ mod tests {
             matches!(refused.as_slice(), [Breach::Worse { metric, .. }] if metric == "glance_cost.p95"),
             "{refused:?}"
         );
-        let next = update(&baseline(BASE), &measured, Some("D-7"))
+        let (next, _) = update(&baseline(BASE), &measured, Some("D-7"))
             .expect("a decision takes the worse value");
         let entries = &next.scenarios["install/desktop-1280"];
         assert_eq!(entries["screen_only.actions"].value, 2.0);
         assert_eq!(entries["glance_cost.p95"].decision.as_deref(), Some("D-7"));
-        assert_eq!(entries["reading_load.max"].tolerance, "steps");
-        assert_eq!(compare(&next, &measured), vec![]);
+        assert_eq!(entries["reading_load.max"].tolerance, "words");
     }
 
     #[test]
-    fn update_refuses_a_missing_value() {
+    fn update_refuses_a_missing_value_without_a_decision() {
         let measured =
             round(r#"{"scenarios": {"install/desktop-1280": {"screen_only.actions": 3}}}"#);
-        assert!(update(&baseline(BASE), &measured, Some("D-1")).is_err());
+        assert!(update(&baseline(BASE), &measured, None).is_err());
+        let (next, _) = update(&baseline(BASE), &measured, Some("D-1")).expect("dropped under D-1");
+        assert_eq!(next.dropped["install/desktop-1280 layout_shift.max"], "D-1");
+    }
+
+    #[test]
+    fn mains_baseline_unreadable_is_an_error_and_absent_is_none() {
+        assert!(read_main_baseline(false, None).is_err());
+        assert!(read_main_baseline(true, None)
+            .expect("main readable")
+            .is_none());
+        let found = read_main_baseline(true, Some(BASE.as_bytes())).expect("parses");
+        assert_eq!(found, Some(baseline(BASE)));
     }
 
     #[test]
@@ -853,15 +1534,35 @@ mod tests {
     }
 
     #[test]
-    fn new_keys_get_the_skills_tolerance_classes() {
+    fn the_baseline_text_holds_one_value_per_line_and_reads_back() {
+        let mut base = baseline(LANES);
+        base.tolerances = default_tolerances();
+        base.dropped.insert("old/d".into(), "D-1".into());
+        let text = to_text(&base).expect("written");
+        assert!(
+            text.contains(r#""layout.spills": {"value": 0, "tolerance": "count"}"#),
+            "{text}"
+        );
+        assert!(text.contains(r#""content": "content""#), "{text}");
+        let back: Baseline = serde_json::from_str(&text).expect("reads back");
+        assert_eq!(back, base);
+    }
+
+    #[test]
+    fn new_keys_get_the_skills_tolerance_classes_and_two_decided_here() {
         assert_eq!(tolerance_class("screen_only.actions"), "count");
         assert_eq!(
             tolerance_class("screen_only.time_to_act_steps.max"),
             "steps"
         );
         assert_eq!(tolerance_class("glance_cost.median"), "steps");
-        assert_eq!(tolerance_class("layout_shift.max"), "layout_shift");
-        assert_eq!(tolerance_class("axe.serious_critical_nodes"), "count");
+        assert_eq!(tolerance_class("layout_shift.load"), "layout_shift");
+        assert_eq!(tolerance_class("reading_load.max"), "words");
+        assert_eq!(tolerance_class("axe.serious_critical_nodes"), "content");
+        assert_eq!(tolerance_class("axe.serious_critical_rules"), "count");
+        for class in ["content", "count", "layout_shift", "steps", "words"] {
+            assert!(default_tolerances().contains_key(class), "{class}");
+        }
     }
 
     fn record(status: &str, severity: &str, asset: &str) -> String {
@@ -872,11 +1573,16 @@ mod tests {
         )
     }
 
+    #[allow(clippy::unnecessary_wraps)]
+    fn any_file(_: &str) -> Option<String> {
+        Some(String::new())
+    }
+
     #[test]
     fn a_closed_s1_or_s2_record_without_an_asset_fails() {
         for severity in ["S1", "S2"] {
             let finding = parse_finding("UXF-001.md", &record("closed", severity, "none")).unwrap();
-            let problems = check_finding(&finding, &|_| true);
+            let problems = check_finding(&finding, &any_file);
             assert!(
                 problems
                     .iter()
@@ -885,9 +1591,9 @@ mod tests {
             );
         }
         let s3 = parse_finding("UXF-001.md", &record("closed", "S3", "none")).unwrap();
-        assert_eq!(check_finding(&s3, &|_| true), Vec::<String>::new());
+        assert_eq!(check_finding(&s3, &any_file), Vec::<String>::new());
         let open = parse_finding("UXF-001.md", &record("open", "S1", "none")).unwrap();
-        assert_eq!(check_finding(&open, &|_| true), Vec::<String>::new());
+        assert_eq!(check_finding(&open, &any_file), Vec::<String>::new());
     }
 
     #[test]
@@ -897,20 +1603,52 @@ mod tests {
             &record("closed", "S2", "website/ux/specs/gone.spec.ts › gate 1"),
         )
         .unwrap();
-        let problems = check_finding(&finding, &|path| path != "website/ux/specs/gone.spec.ts");
+        let problems = check_finding(&finding, &|path| {
+            (path != "website/ux/specs/gone.spec.ts").then(String::new)
+        });
         assert!(
             problems
                 .iter()
                 .any(|problem| problem.contains("does not exist")),
             "{problems:?}"
         );
-        assert_eq!(check_finding(&finding, &|_| true), Vec::<String>::new());
+        assert_eq!(check_finding(&finding, &any_file), Vec::<String>::new());
+    }
+
+    #[test]
+    fn an_asset_must_name_a_test_its_file_declares() {
+        let spec = "for (const path of pages) {\n  test(`L2 ${path} ${viewport.name}`, async () => {});\n}\n\
+                    test('L2 site search: every template page builds a search control (UXF-001)', () => {});\n\
+                    test.describe.configure({ mode: 'parallel' });\n";
+        let read = |_: &str| Some(spec.to_owned());
+        let named = |asset: &str| {
+            check_finding(
+                &parse_finding("UXF-001.md", &record("open", "S2", asset)).unwrap(),
+                &read,
+            )
+        };
+        assert_eq!(
+            named("website/ux/specs/l2-layout.spec.ts :: L2 /ess/docs/start/install desktop-1280"),
+            Vec::<String>::new()
+        );
+        assert_eq!(
+            named("website/ux/specs/l2-layout.spec.ts :: L2 site search: every template page builds a search control (UXF-001), held by website/ux/baseline.json"),
+            Vec::<String>::new()
+        );
+        let problems =
+            named("website/ux/specs/l2-layout.spec.ts :: L3 install desktop-1280 pointer");
+        assert!(
+            problems
+                .iter()
+                .any(|problem| problem.contains("declares no test")),
+            "{problems:?}"
+        );
     }
 
     #[test]
     fn a_record_without_its_header_fields_fails() {
         let finding = parse_finding("UXF-002.md", "---\nid: UXF-003\nclass: vibes\n---\n").unwrap();
-        let problems = check_finding(&finding, &|_| true);
+        let problems = check_finding(&finding, &any_file);
         assert!(
             problems
                 .iter()

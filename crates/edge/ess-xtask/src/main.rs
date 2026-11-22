@@ -17,6 +17,7 @@ mod scratch;
 mod scratch_leaks;
 mod site_data;
 mod support;
+mod ux_ratchet;
 mod whats_changed;
 
 use anyhow::{bail, Context, Result as AnyResult};
@@ -155,6 +156,20 @@ enum Command {
     },
     /// Accept one generated service placement against a disposable k3d cluster; needs Docker.
     InfraAcceptance(infra_acceptance::Args),
+    /// Hold a documentation-site UX round against `website/ux/baseline.json` and check the
+    /// findings under `website/ux/findings/`.
+    UxRatchet {
+        /// The round's `round.json`, relative to the repository root or absolute.
+        #[arg(long)]
+        round: PathBuf,
+        /// Take the round into the baseline first: improvements and new values always, worse or
+        /// missing values only with `--decision`.
+        #[arg(long)]
+        update: bool,
+        /// The decision id that accepts a worse or a missing value.
+        #[arg(long)]
+        decision: Option<String>,
+    },
     /// Verify or render release records.
     Release {
         #[command(subcommand)]
@@ -229,6 +244,12 @@ fn run(cli: Cli) -> Result<String, String> {
             infra_acceptance::run(&root, &args).map_err(|error| format!("{error:#}"))
         }
         Command::Admonitions => admonitions::run(&root).map_err(|error| format!("{error:#}")),
+        Command::UxRatchet {
+            round,
+            update,
+            decision,
+        } => ux_ratchet::run(&root, &round, update, decision.as_deref())
+            .map_err(|error| format!("{error:#}")),
         Command::SiteData { check, ess, ess_ui } => {
             site_data::run(&root, check, ess.as_deref(), ess_ui.as_deref())
                 .map_err(|error| format!("{error:#}"))
