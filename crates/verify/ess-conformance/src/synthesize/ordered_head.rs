@@ -203,25 +203,80 @@ pub(super) fn tied<R>(
 /// Whether some declared creation of `entity` writes the key `name` from its input: a field set
 /// straight from an input, or the identity published from one. `state` is never steered.
 pub(super) fn steerable(ir: &EssIr, entity: &EntityHandle, name: &str) -> bool {
-    let identity = is_identity(ir, entity, name);
-    ir.drivers().get(entity).is_some_and(|drivers| {
-        drivers
-            .iter()
+    Steering::new(ir, entity).steerable(name)
+}
+
+thread_local! {
+    /// The driver maps built, and the steerability checks made, on this thread by [`Steering`].
+    static STEERING_WORK: std::cell::Cell<(u64, u64)> = const { std::cell::Cell::new((0, 0)) };
+}
+
+/// What `run` returns, and how many driver maps were built and how many keys were checked for
+/// steerability on this thread while it ran: the work a test bounds.
+pub(super) fn steering_work<R>(run: impl FnOnce() -> R) -> (R, (u64, u64)) {
+    let (maps, checks) = STEERING_WORK.with(std::cell::Cell::get);
+    let out = run();
+    let (after_maps, after_checks) = STEERING_WORK.with(std::cell::Cell::get);
+    (out, (after_maps - maps, after_checks - checks))
+}
+
+/// The creations of one entity, found once, and the answer of [`steerable`] for each key asked,
+/// kept: a ranked view's keys are checked once each, however many later keys need the answer.
+pub(super) struct Steering<'a> {
+    ir: &'a EssIr,
+    entity: &'a EntityHandle,
+    creations: Vec<ess_compiler::ir::Driver<'a>>,
+    answers: std::collections::BTreeMap<String, bool>,
+}
+
+impl<'a> Steering<'a> {
+    pub(super) fn new(ir: &'a EssIr, entity: &'a EntityHandle) -> Self {
+        STEERING_WORK.with(|work| {
+            let (maps, checks) = work.get();
+            work.set((maps + 1, checks));
+        });
+        let creations = ir
+            .drivers()
+            .get(entity)
+            .into_iter()
+            .flatten()
             .filter(|driver| matches!(driver.effect, ResolvedEffect::Creates))
-            .any(|driver| {
-                if identity {
-                    return super::published_identity_input(driver.outcome).is_some();
-                }
-                driver.outcome.sets.iter().any(|set| {
-                    set.target == name
-                        && set.conversion.is_none()
-                        && matches!(
-                            set.value,
-                            ess_compiler::ir::ResolvedPayloadValue::InputField { .. }
-                        )
-                })
+            .copied()
+            .collect();
+        Self {
+            ir,
+            entity,
+            creations,
+            answers: std::collections::BTreeMap::new(),
+        }
+    }
+
+    /// [`steerable`] for the key `name`, computed the first time it is asked.
+    pub(super) fn steerable(&mut self, name: &str) -> bool {
+        if let Some(answer) = self.answers.get(name) {
+            return *answer;
+        }
+        STEERING_WORK.with(|work| {
+            let (maps, checks) = work.get();
+            work.set((maps, checks + 1));
+        });
+        let identity = is_identity(self.ir, self.entity, name);
+        let answer = self.creations.iter().any(|driver| {
+            if identity {
+                return super::published_identity_input(driver.outcome).is_some();
+            }
+            driver.outcome.sets.iter().any(|set| {
+                set.target == name
+                    && set.conversion.is_none()
+                    && matches!(
+                        set.value,
+                        ess_compiler::ir::ResolvedPayloadValue::InputField { .. }
+                    )
             })
-    })
+        });
+        self.answers.insert(name.to_owned(), answer);
+        answer
+    }
 }
 
 /// The reason a later key of a ranked view is not pinned by a tie where no creating command writes
@@ -267,7 +322,13 @@ pub(super) enum Tie {
 }
 
 /// What the key `order_by[at]` (`at` above zero) needs, from what the declared creations write.
-pub(super) fn tie(ir: &EssIr, entity: &EntityHandle, order_by: &[Ranking], at: usize) -> Tie {
+pub(super) fn tie(
+    ir: &EssIr,
+    entity: &EntityHandle,
+    steering: &mut Steering<'_>,
+    order_by: &[Ranking],
+    at: usize,
+) -> Tie {
     let earlier = &order_by[..at];
     if earlier
         .iter()
@@ -277,12 +338,12 @@ pub(super) fn tie(ir: &EssIr, entity: &EntityHandle, order_by: &[Ranking], at: u
     }
     if earlier
         .iter()
-        .any(|ranking| !steerable(ir, entity, &ranking.field))
+        .any(|ranking| !steering.steerable(&ranking.field))
     {
         return Tie::Gap(TIE_EARLIER_UNSTEERED);
     }
     let key = &order_by[at].field;
-    if is_identity(ir, entity, key) || steerable(ir, entity, key) {
+    if is_identity(ir, entity, key) || steering.steerable(key) {
         Tie::Row
     } else {
         Tie::Gap(TIE_KEY_UNSTEERED)

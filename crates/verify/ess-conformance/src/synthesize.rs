@@ -3428,6 +3428,46 @@ pub fn branch_selections_tried<R>(run: impl FnOnce() -> R) -> (R, u64) {
     made::picks(run)
 }
 
+/// What `run` returns, and how many traversals of the declared types the shorthand withdrawal made
+/// on this thread while it ran: the work a test bounds. Not part of the suite.
+#[doc(hidden)]
+pub fn shorthand_traversals<R>(run: impl FnOnce() -> R) -> (R, u64) {
+    shorthand::traversals(run)
+}
+
+/// Whether the declared types that reach a struct with a shorthand, found once for a run, are the
+/// ones a fresh traversal from each type finds. Not part of the suite.
+#[doc(hidden)]
+#[must_use]
+pub fn shorthand_reach_kept_equals_fresh(ir: &EssIr) -> bool {
+    let kept = shorthand::reaching_shorthand(ir);
+    ir.types()
+        .keys()
+        .all(|name| kept.contains(name) == shorthand::reaches_fresh(ir, name))
+}
+
+/// What `run` returns, and how many driver maps were built and how many ranking keys were checked
+/// for steerability on this thread while it ran: the work a test bounds. Not part of the suite.
+#[doc(hidden)]
+pub fn ranked_steering_work<R>(run: impl FnOnce() -> R) -> (R, (u64, u64)) {
+    ordered_head::steering_work(run)
+}
+
+/// Whether, for every key of every ranked view of `ir`, the answer a view's keys share is the one a
+/// fresh check gives. Not part of the suite.
+#[doc(hidden)]
+#[must_use]
+pub fn ranked_steering_kept_equals_fresh(ir: &EssIr) -> bool {
+    ir.views().values().all(|view| {
+        let mut kept = ordered_head::Steering::new(ir, &view.source);
+        view.order_by.iter().all(|ranking| {
+            let first = kept.steerable(&ranking.field);
+            first == ordered_head::steerable(ir, &view.source, &ranking.field)
+                && first == kept.steerable(&ranking.field)
+        })
+    })
+}
+
 /// [`synthesize`], with explicitly admitted synthesis seeds (beyond10x/ess#413,
 /// `docs/design/synthesis-seeds.md`).
 ///
@@ -11816,6 +11856,7 @@ fn arrange_ties(
     let filter = paging::with_bound_params(view, params)
         .and_then(|bound| bound.filter)
         .or_else(|| view.filter.clone());
+    let mut steering = ordered_head::Steering::new(ir, entity);
     for at in 1..view.order_by.len() {
         let key = &view.order_by[at].field;
         let gap = |reason: &'static str| {
@@ -11828,7 +11869,9 @@ fn arrange_ties(
                 }),
             )
         };
-        if let ordered_head::Tie::Gap(reason) = ordered_head::tie(ir, entity, &view.order_by, at) {
+        if let ordered_head::Tie::Gap(reason) =
+            ordered_head::tie(ir, entity, &mut steering, &view.order_by, at)
+        {
             refusals.push(gap(reason));
             continue;
         }

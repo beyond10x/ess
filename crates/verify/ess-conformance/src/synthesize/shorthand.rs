@@ -26,6 +26,7 @@ pub(super) fn withdraw_observed(ir: &EssIr, synthesis: &mut Synthesis) {
     if ir.shorthands().is_empty() {
         return;
     }
+    let reaching = reaching_shorthand(ir);
     let withdrawn: Vec<_> = synthesis
         .suite
         .scenarios
@@ -39,6 +40,10 @@ pub(super) fn withdraw_observed(ir: &EssIr, synthesis: &mut Synthesis) {
                 for origin in &trace.origins {
                     observed.extend(response_of(ir, origin.command.name()));
                 }
+            }
+            observed.retain(|name| reaching.contains(name));
+            if observed.is_empty() {
+                return None;
             }
             first_shorthand(ir, observed).map(|(name, field)| {
                 (
@@ -121,9 +126,60 @@ fn named(ty: &ess_compiler::ir::ResolvedTypeRef) -> Vec<QualifiedName> {
         .collect()
 }
 
+thread_local! {
+    /// How many traversals of the declared types ran on this thread.
+    static TRAVERSALS: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
+
+/// What `run` returns, and how many traversals of the declared types ran on this thread while it
+/// ran: the work a test bounds.
+pub(super) fn traversals<R>(run: impl FnOnce() -> R) -> (R, u64) {
+    let before = TRAVERSALS.with(std::cell::Cell::get);
+    let out = run();
+    (out, TRAVERSALS.with(std::cell::Cell::get) - before)
+}
+
+/// Every declared type from which a value reaches a struct with a shorthand, itself included: one
+/// traversal of the declared types against the reverse of their references, made once per run.
+pub(super) fn reaching_shorthand(ir: &EssIr) -> BTreeSet<QualifiedName> {
+    TRAVERSALS.with(|count| count.set(count.get() + 1));
+    let mut referrers: std::collections::BTreeMap<QualifiedName, Vec<QualifiedName>> =
+        std::collections::BTreeMap::new();
+    for (name, declared) in ir.types() {
+        let targets: Vec<QualifiedName> = match &declared.body {
+            ResolvedBody::Newtype { of, .. } => named(of),
+            ResolvedBody::Struct { fields, .. } => fields
+                .iter()
+                .flat_map(|field| named(&field.type_ref))
+                .collect(),
+            ResolvedBody::Union { variants, .. } => {
+                variants.values().flatten().flat_map(named).collect()
+            }
+            ResolvedBody::Enum { .. } => Vec::new(),
+        };
+        for target in targets {
+            referrers.entry(target).or_default().push(name.clone());
+        }
+    }
+    let mut reaching = BTreeSet::new();
+    let mut pending: Vec<QualifiedName> = ir
+        .types()
+        .keys()
+        .filter(|name| ir.shorthand(name).is_some())
+        .cloned()
+        .collect();
+    while let Some(name) = pending.pop() {
+        if reaching.insert(name.clone()) {
+            pending.extend(referrers.get(&name).into_iter().flatten().cloned());
+        }
+    }
+    reaching
+}
+
 /// The first struct with a shorthand, in name order, that a value of one of `roots` reaches, with
 /// the field it names.
 fn first_shorthand(ir: &EssIr, roots: BTreeSet<QualifiedName>) -> Option<(QualifiedName, String)> {
+    TRAVERSALS.with(|count| count.set(count.get() + 1));
     let mut seen = BTreeSet::new();
     let mut pending: Vec<_> = roots.into_iter().collect();
     let mut found = BTreeSet::new();
@@ -149,4 +205,9 @@ fn first_shorthand(ir: &EssIr, roots: BTreeSet<QualifiedName>) -> Option<(Qualif
         }
     }
     found.into_iter().next()
+}
+
+/// Whether a fresh traversal from `name` reaches a struct with a shorthand.
+pub(super) fn reaches_fresh(ir: &EssIr, name: &QualifiedName) -> bool {
+    first_shorthand(ir, BTreeSet::from([name.clone()])).is_some()
 }
