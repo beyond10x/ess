@@ -137,7 +137,7 @@ sequential-only: `exploreConcurrent` refuses options carrying `restartEvery`, an
 
 A suite and the explorer drive a target one call at a time, so a race between two clients never
 happens under them. `check-history` reads an
-`ess-history/1` document, one run of several clients with each call's invoke and return instants,
+`ess-history/1`, `/2` or `/3` document, one run of several clients with each call's invoke and return instants,
 and searches for an order of the calls that the specification's own model accepts, answer for
 answer.
 
@@ -155,8 +155,8 @@ $ ess verify conform check-history \
 | 2 | The specification did not load, or the history was refused, for example because it was recorded against another specification. |
 
 The search is split by subject: calls on different instances are checked apart. A call that never
-answered may have taken effect or not, and is placed after every other call. A history records no
-inputs, so a call is explained by any input the suite would submit for its command. A read of a view
+answered may have taken effect or not, and is placed after every other call. An operation that
+records no input (`ess-history/3` can) is explained by any input the suite would submit for its command. A read of a view
 that records its rows is judged at the consistency the view declares: under `read_your_writes` no
 client reads a state older than its own last write, and under `eventual` each client's reads converge
 once its first `--settle` reads after the last write (default 4) are past. Reads that cannot be judged

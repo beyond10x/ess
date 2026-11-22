@@ -14,8 +14,8 @@ committed, reviewed and drift-checked like source.
 
 ```shell-session
 $ ess generate --path examples/billing --kind openapi
-openapi/email-service.yaml — 4608 byte(s)
-openapi/invoice-service.yaml — 21077 byte(s)
+openapi/email-service.yaml — 7572 byte(s)
+openapi/invoice-service.yaml — 32258 byte(s)
 2 artifact(s), nothing written
 ```
 
@@ -63,8 +63,8 @@ previous file set.
 
 First generation refuses a destination file it does not already own, even when the bytes match.
 For existing output, generate a reference in a separate fresh directory, then use
-`ess output adopt` to enroll the chosen owner. Adoption requires exact reference bytes for every
-existing file it enrolls; unrelated files remain unowned. Use `ess output adopt --help` for the
+`ess generate output adopt` to enroll the chosen owner. Adoption requires exact reference bytes for every
+existing file it enrolls; unrelated files remain unowned. Use `ess generate output adopt --help` for the
 owner selector. Keep the reference and destination directories separate, with neither inside
 the other. An edited or interrupted reference cannot authorize adoption.
 
@@ -72,7 +72,7 @@ For example, adopt only the documentation projection in an existing tree:
 
 ```sh
 ess generate --path examples/billing --kind docs --out target/reference-docs
-ess output adopt --ownership-root target/projections \
+ess generate output adopt --ownership-root target/projections \
   --from target/reference-docs --owner projection:docs
 ```
 
@@ -85,7 +85,7 @@ If a write is interrupted, generation identifies the pending output root and ref
 operation. Recover it explicitly before generating again:
 
 ```sh
-ess output recover --ownership-root target/projections
+ess generate output recover --ownership-root target/projections
 ```
 
 Recovery uses the recorded operation, so it does not require the original model inputs. Before
@@ -908,9 +908,10 @@ Two questions to ask of any generated artifact, answered honestly for these:
   code generators emit two types. But both are `"type": "string"` on the wire, and a payload with
   the two values swapped validates clean. JSON Schema constrains structure; it cannot carry nominal
   identity.
-* **A command's HTTP path is a convention.** The model has no `exposures:` construct, so
+* **A command's HTTP path is a convention unless you state it.** Without an `ess-http/1` binding,
   `/invoices/commands/create-invoice` is a shape the generator chose — written into the generated
-  document's own `info.description` rather than left for a reader to infer.
+  document's own `info.description` rather than left for a reader to infer
+  ([HTTP routes](./http-routes.md)).
 
 And one check that is scoped rather than total, stated per projection:
 

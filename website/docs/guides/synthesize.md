@@ -40,7 +40,7 @@ carry each disposition and its reason:
 ```shell-session
 $ ess generate synthesize --path examples/billing --target rust | head -2
 48 capabilities: 41 generated, 3 obligation(s), 4 refused
-16 artifact(s), nothing written
+17 artifact(s), nothing written
 ```
 
 A refusal reads the same way and says what it cannot state: *"actor grants
@@ -151,7 +151,7 @@ runs the source-workspace tests and realization checks on every commit. Use the 
 `ess generate synthesize` command to write a target and review its output:
 
 * The committed billing suite, **unchanged**, passes the generated workspace linked with the
-  hand-written realization — 29 of 29 scenarios — and a deliberately corrupted linkage fails
+  hand-written realization — 34 of 34 scenarios — and a deliberately corrupted linkage fails
   exactly the scenario that exists to catch it.
 * Generator tests cover the structural contracts and deterministic bytes. The browser-specific
   `task site-build` gate additionally compiles the committed WebAssembly realization and runs a

@@ -32,7 +32,8 @@ of it.
 
 Declare the lowest version that admits every construct the specification uses. A build refuses a
 header newer than it implements, and refuses each construct under a header older than the one that
-introduced it with `unsupported_format_version`. A specification that uses none of a version's
+introduced it, with `unsupported_format_version` or with the refusal the construct always had, its
+hint naming the version that admits it. A specification that uses none of a version's
 constructs keeps its bytes and its compiled digest under the older header. `ess specify formats`
 prints the same history from the `ess` you run, offline.
 
@@ -805,8 +806,9 @@ a conversion is still refused (`ESS-AUTHOR-036`), as is every `Binary64` in the 
 
 `ess-conformance/64` and `ess-conformance/65`, added in 0.93.0, are open with no vocabulary of their own. Every
 reader admits them wherever it admits 62 and 63, 64 as the ordinary major and 65 as the one carrying declared
-coverage, and no synthesis writes them yet: a suite's major is still chosen by the features its
-specification uses.
+coverage. Synthesis writes `/65` for a coverage suite that holds an authored `covers:`
+(`ess-scenario/7`) or the refusal `ESS-SYNTH-025`; otherwise a suite's major is still chosen by the
+features its specification uses.
 
 For `ess/7`, generated held-state refusals include ordinary `wrong_state` outcomes:
 they compare the complete subject before and after the call and refuse every
@@ -853,6 +855,11 @@ refuse a dotted key as an undeclared field, and an older `ess` refuses the heade
 `ess-scenario/6` an act's literal input that its declared type refuses, at any depth, is
 `ESS-AUTHOR-015`; earlier versions check its shape only.
 
+`ess-scenario/7`, added in [0.93.0][r93], adds `covers:`, a list of exact scenario ids a generated
+synthesis refused. The refusal stays in the coverage suite, marked `covered_by` the authored
+scenario, which is written at `ess-conformance/65`; an id synthesis did not refuse is
+`covers.unknown-scenario`, and `covers:` below `/7` is refused as an unsupported key.
+
 ## `ess-normalization/` — normalization recipes
 
 | Version | Released in | What changed |
@@ -875,9 +882,9 @@ Generated maps for the earlier formats stay byte-identical at the same generator
 | `ess-impact/` | [0.19.0][r19] | `ess-impact/2` is the version [0.1.0][r1] shipped. `/3` versions the corrected dependency vocabulary and the embedded delta. |
 | `ess-conformance-run/` | [0.20.0][r20] | `/2` is the checked detailed run output. |
 | `ess-target-failure/` | [0.20.0][r20], [0.23.0][r23] | `/2`, then `/3` with the `accessor-resource` cause. |
-| `ess-scenario/` | [0.23.0][r23], [0.35.0][r35], [0.39.0][r39], [0.59.0][r59] | `/2` authored setup establishes typed, isolated backend entity rows. `/3`, added in [0.35.0][r35], adds typed `fixtures:` and `{$fixture: name}` references resolved before the scenario starts. `/4`, added in [0.39.0][r39], adds literal `response:` assertions on an act. `/5`, added in [0.59.0][r59], adds an act's `caller:` values. `/6` lets a claim name one nested member by its dotted path. |
+| `ess-scenario/` | [0.23.0][r23], [0.35.0][r35], [0.39.0][r39], [0.59.0][r59], [0.79.0][r79], [0.93.0][r93] | `/2` authored setup establishes typed, isolated backend entity rows. `/3`, added in [0.35.0][r35], adds typed `fixtures:` and `{$fixture: name}` references resolved before the scenario starts. `/4`, added in [0.39.0][r39], adds literal `response:` assertions on an act. `/5`, added in [0.59.0][r59], adds an act's `caller:` values. `/6` lets a claim name one nested member by its dotted path. `/7` adds `covers:`, retiring a synthesis refusal an authored scenario covers. |
 | `infra-observation/` | [0.1.0][r1], [0.33.0][r33] | `/2` is a reduced, deliberately partial recovery profile, not a superset of `/1`. `/3` is the full scan with each Secret value recorded as `{"present": true}`: the key name, no digest, no length. `/1` wrote each value's unsalted SHA-256 and byte length, which confirm a guessed low-entropy secret to anyone holding the file. Same fields, new meaning, so a `/1` reader must reject `/3`; this build still reads `/1` and discards its digests. |
-| `infra-ir/` | [0.33.0][r33] | `/3` records each Secret key as present and nothing derived from its value, and is what every full observation with a Secret key compiles to, `/1` included. An IR without a Secret key keeps `/1` and its bytes. A persisted `/1` still reads, returned as `/3` with its Secret digests dropped and a different model digest, so nothing derived from it chains to the `/1` file's own digest; so drift reports a Secret's added and removed keys and never a changed value. An older reader refuses `/3`. `/4` holds the cluster's HTTP edge and its cloud: Gateway API gateways and HTTP routes, a service account's cloud role and a service's load balancer, written only for a model that holds one of them (the maps scanned, even empty), so a model without one keeps `/3` or `/1`, its bytes and its digest. An older reader refuses `/4`. |
+| `infra-ir/` | [0.33.0][r33], [0.93.0][r93] | `/3` records each Secret key as present and nothing derived from its value, and is what every full observation with a Secret key compiles to, `/1` included. An IR without a Secret key keeps `/1` and its bytes. A persisted `/1` still reads, returned as `/3` with its Secret digests dropped and a different model digest, so nothing derived from it chains to the `/1` file's own digest; so drift reports a Secret's added and removed keys and never a changed value. An older reader refuses `/3`. `/4` holds the cluster's HTTP edge and its cloud: Gateway API gateways and HTTP routes, a service account's cloud role and a service's load balancer, written only for a model that holds one of them (the maps scanned, even empty), so a model without one keeps `/3` or `/1`, its bytes and its digest. An older reader refuses `/4`. |
 | `infra-drift/` | [0.33.0][r33] | `/2` is the namespace topology profile. `/3` is the full-scan comparison with one meaning changed: a Secret's `changed_keys` is always empty, so an empty list means the value is unknown, where under `/1` it meant not rotated. Serialize-only; `/1` documents already written keep their meaning. |
 | `ess-observed-bindings-report/` | [0.32.0][r32], [0.33.0][r33] | `ess-observed-bindings-report/1` and `ess-observed-bindings/1` were introduced in [0.21.0][r21]. `ess-observed-bindings-report/2` adds `OBS-BIND-008`: a container or native sidecar in a bound workload that no binding names is a violation. Same fields, new semantics; a document satisfied under `/1` can be violated under `/2`, so a `/1` reader must reject `/2`. The authored `ess-observed-bindings/1` input keeps its version and fields; it now claims the bound workload runs nothing else. `/3` adds each binding's `acknowledged` list, so a satisfied `OBS-BIND-008` no longer means every entry is bound; a `/2` reader must reject `/3`. |
 | `ess-observed-bindings/` | [0.33.0][r33] | `ess-observed-bindings/2` adds optional `foreign_containers`: per bound workload, containers this realization does not build, each with a `name` and a nonempty `reason`. `OBS-BIND-008` accounts for them without a binding; one running a declared image or artifact locator, or its `@sha256:` digest under another name, violates it, one naming no observed container or native sidecar leaves it unknown (plain init containers are not recorded), and one naming a bound container is refused. `/1` is read unchanged, acknowledges nothing and keeps its binding digest; a `/1` document carrying the key, even empty, is refused. An older reader refuses `/2`. The report moves to `ess-observed-bindings-report/3`, which adds each binding's `acknowledged` list; a satisfied `OBS-BIND-008` there no longer means every entry is bound, so a `/2` reader must reject `/3`. |
@@ -1047,10 +1054,20 @@ claiming a higher number. [Formats and digests](./formats.md) says what each doc
 | `ess-cli-artifacts/1`, `ess-cli-generation/1` | [0.21.0][r21] | The generated CLI package's manifest, and the report `ess generate cli` prints. |
 | `ess-execution-registry/1`, `ess-execution-authority/1` | [0.21.0][r21] | The deployment recovery registry, and one authority inside it. |
 | `ess-execution-store/1`, `ess-execution-lock/1`, `ess-execution-evidence/1` | [0.21.0][r21] | A recovery store's header, its per-cluster claim, and one journal entry. |
+| `ess-conformance-target/1` | [0.97.0][r97] | The line protocol `ess verify conform run --target process` speaks with a target program, and `ess verify conform serve` answers. |
+| `ess-conformance-results/1` | [0.48.0][r48] | One terminal status per scenario, read by `ess verify conform report`. |
+| `ess-known-failures/1` | [0.53.0][r53] | An external declaration of scenarios one build of an implementation is known to fail. |
+| `ess-conformance-execution/1` | [0.53.0][r53] | Host execution provenance beside a report/2. |
+| `ess-known-failure-accounting/1` | [0.53.0][r53] | The split of a run's failed scenarios into declared and unexpected. |
+| `ess-diff-acknowledgements/1` | [0.53.0][r53] | The changes of one comparison an `ess verify diff` caller acknowledges. |
+| `ess-suite-diff/1` | [0.63.0][r63] | The difference between two suites, written by `ess verify conform diff`. |
+| `ess-ui-check/1` | [0.47.0][r47] | The findings `ess ui check --format json` writes. |
+| `ess-ui-test/1` | [0.48.0][r48] | A UI test file read by `ess ui test`. |
+| `ess-ui-test-report/1` | [0.48.0][r48] | The report `ess ui test --format json` writes. |
 
 ## Release numbers this page cites
 
-Five versions appear in the [CHANGELOG][changelog] with no GitHub Release behind them.
+Six versions appear in the [CHANGELOG][changelog] with no GitHub Release behind them.
 
 | Version | Why | Where its code shipped |
 |---|---|---|
@@ -1059,6 +1076,7 @@ Five versions appear in the [CHANGELOG][changelog] with no GitHub Release behind
 | 0.15.0 | tagged in one clone, never pushed | 0.16.0 |
 | 0.21.0 | tag pushed; the tree does not pass the current gate, so no release can be cut from it | the tag itself |
 | 0.26.1 | never tagged | 0.27.0 |
+| 0.91.0 | tagged; its packaging refused the tag because the format history lacked `ess/36`'s release | 0.91.1 |
 
 Every format version first carried by the 0.21.0 tag is listed under 0.21.0, the tag itself.
 
@@ -1109,6 +1127,7 @@ published release that carries them.
 [r46]: https://github.com/beyond10x/ess/releases/tag/0.46.0
 [r461]: https://github.com/beyond10x/ess/releases/tag/0.46.1
 [r47]: https://github.com/beyond10x/ess/releases/tag/0.47.0
+[r48]: https://github.com/beyond10x/ess/releases/tag/0.48.0
 [r49]: https://github.com/beyond10x/ess/releases/tag/0.49.0
 [r52]: https://github.com/beyond10x/ess/releases/tag/0.52.0
 [r53]: https://github.com/beyond10x/ess/releases/tag/0.53.0
@@ -1132,3 +1151,4 @@ published release that carries them.
 [r89]: https://github.com/beyond10x/ess/releases/tag/0.89.0
 [r0-91-1]: https://github.com/beyond10x/ess/releases/tag/0.91.1
 [r93]: https://github.com/beyond10x/ess/releases/tag/0.93.0
+[r97]: https://github.com/beyond10x/ess/releases/tag/0.97.0

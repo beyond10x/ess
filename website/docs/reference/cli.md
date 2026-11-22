@@ -1,7 +1,7 @@
 ---
 title: CLI reference
 sidebar_position: 1
-description: The canonical ESS command, the five areas its first level is made of, and the flat spelling every verb keeps.
+description: The canonical ESS command, the five areas its first level is made of, and the flat spelling the older verbs keep.
 ---
 
 # CLI reference
@@ -291,7 +291,7 @@ ess generate release check-conformance \
 Replace `check-conformance` with `publish-conformance` and add `--to repository:tag` to qualify
 and upload the exact original report bytes through ORAS in the same process. Digest destinations
 are refused. Use `--expected-suite` instead of `--expected-suite-input` for an original unfiltered
-suite/5. The carrier route requires every original parent. A standalone report/2 and explicit
+declared-coverage suite (suite/5 or any later coverage version). The carrier route requires every original parent. A standalone report/2 and explicit
 model are required; report/1, generic logs and detailed run/2 documents refuse. Complete nonempty
 all-pass selection, full model/contract identity and canonical deployment context must agree.
 
@@ -326,7 +326,7 @@ the command reference. In addition to their help text:
   replay-checked `/2` bundle; `project-bundle` also emits the root's source qualification.
 - `types-bundle` emits data libraries, not an application decoder.
 - The `normalize-*` commands need at least one `--bundle` or `--model` source, and model roots
-  require version 3. With `normalize-generate`, protect model input trees; its TypeScript target
+  require recipe version 3 or later. With `normalize-generate`, protect model input trees; its TypeScript target
   emits a standalone JSON-text runtime with a fixed checked schema profile.
   `normalize-run` emits only a complete result and refuses duplicate input keys, numeric precision
   loss and input/output aliases.
@@ -344,9 +344,10 @@ listed under [`ess verify`](#ess-verify) in the command reference. In addition t
 
 - [`ess verify conform mutate`](#ess-verify-conform-mutate) `--emit DIR` writes `mutant.json` (the
   mutant's class, site and change) and `ir.json` beside each mutant's `suite.json`, and its
-  `ess-mutation-manifest/3` names each suite's synthesis refusals and each mutant's
-  `unsatisfiable_guard`. `--collect` scores `ess-conformance-report/1` or `/2` reports into
-  `ess-mutation-report/3`; an `ess-mutation-manifest/2` or `/1` emission still collects, naming no
+  manifest (`ess-mutation-manifest/3`, or `/4` to `/7` as listed under the command below) names
+  each suite's synthesis refusals and each mutant's `unsatisfiable_guard`. `--collect` scores
+  `ess-conformance-report/1` or `/2` reports into `ess-mutation-report/3` (`/4` to `/8`
+  likewise); an `ess-mutation-manifest/2` or `/1` emission still collects, naming no
   dead guard, and a `/1` one judges gained refusals by count.
 - [`ess verify conform web`](#ess-verify-conform-web) with `--history` exits 0 once the page is
   rendered.

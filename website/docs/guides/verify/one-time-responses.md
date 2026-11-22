@@ -193,8 +193,9 @@ was built, read as no actor, and the cells for `Operator` and `Viewer` were refu
 
 ## What the suite observes
 
-The ordinary `ess-conformance/34` and coverage `ess-conformance/35` formats carry the response
-authority and the event observation windows. The runner holds issued values privately for the
+`ess-conformance/34` (coverage `/35`), from 0.53.0, was the first pair to carry the response
+authority and the event observation windows; a suite synthesized today is `ess-conformance/52`
+(`/53`), which writes the authority and the event catalog once at the suite root. The runner holds issued values privately for the
 scenario and checks subsequent responses, view rows and independently observed events. It also
 checks unexpected JSON members and object keys: placing a value inside a larger string or under
 an extra field does not exempt it. Only the exact originating response field may contain the

@@ -23,8 +23,8 @@ lede: What ESS deliberately does not infer, apply, or attest.
   contract. A production adapter must establish its own independent execution and evidence
   boundary.
 - An implementation outside this repository is held to its suite through the generated Go or
-  TypeScript package. A Rust implementation needs a checkout of this repository, because the
-  `ess-conformance` crate is not published. `ess verify conform run --target process` also holds
+  TypeScript package. A Rust implementation depends on the `ess-conformance` crate from the release tag, because
+  it is not published to crates.io. `ess verify conform run --target process` also holds
   a program in any language to a suite, over a line protocol on its standard input and output
   ([an implementation in any language](../guides/verify/target-process.md)).
   It does not accept `--known-failing`, and a run in which every scenario times out takes
@@ -34,11 +34,11 @@ lede: What ESS deliberately does not infer, apply, or attest.
   error is `error` and makes execution inconclusive unless a failure already dominates. Older
   generated packages and report/1 retain their historical skipped/failed presentation; regenerate
   and use report/2 for precise outcome counts.
-- `--target interpreted` runs a command's outcomes, transitions, `sets:`, events and invariants
-  from the model. Views, bindings, time, redelivery and established entities come back
-  `unsupported`.
-- A mutation audit mutates the specification, not the implementation. Authored scenarios never
-  kill a mutant, so a survivor is answered in the model or as a synthesis gap.
+- `--target interpreted` runs a command's outcomes, transitions, `sets:`, events, invariants,
+  views, bindings, redelivery, time and entity setup from the model.
+- A mutation audit mutates the specification, not the implementation. Without
+  `--scenarios DIR --target interpreted`, authored scenarios never kill a mutant, so a survivor is
+  answered in the model or as a synthesis gap.
 - The explorer models a subset of commands and input types; everything else is listed as excluded.
 - A browser replay presents scenarios. It is not independent execution evidence.
 

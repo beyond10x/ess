@@ -64,7 +64,7 @@ the path the generated React project renders as `data-ui-path`. A path holds no 
 adding, removing or reordering a sibling leaves every other path unchanged.
 
 An item of a collection is its collection's path, `rows`, and the row's key: the value of the
-field the section's `live.match` names, else `id`. A node inside a row is addressed under the row:
+field the read's `key` names, else the section's `live.match`, else `id` (a row that is a plain string, read with `field: .`, is keyed by the string). A node inside a row is addressed under the row:
 
 | Path | Names |
 |---|---|
@@ -423,8 +423,11 @@ refuses:
 | `type` or `choose` at a field of a form group with `collapsed: true` | the generated app hides the group's body and no step opens it |
 | `advance` or `play` past the end of the clock | the move does not fit |
 | `advance` or `play` over more than `MAX_CYCLES_PER_ADVANCE` cycles of a looping script | every cycle's events are delivered one by one |
+| any step but `expect` at a host slot, or at a path below one that names no node of the document | the host draws it, so a test cannot act inside it |
 
 A path that names no node is not a refusal: it fails in both renderers.
+
+`text` or `not_text` at a host slot (other than a page) reads the terminal's label `<host>: <reason>`; the Playwright spec marks it `test.fixme`, because the generated app draws the host's component there.
 
 A choice whose `options` name an enum of the ESS model, rather than one the document declares
 under `types`, lists that enum's variants when the run is given the model:

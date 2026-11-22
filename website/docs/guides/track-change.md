@@ -23,7 +23,7 @@ compiled models, so comments and source-file layout do not themselves produce ch
 
 The report follows these rules:
 
-- Ten typed construct families are compared: system header, types, entities, commands, events,
+- Eleven typed construct families are compared: system header, domains, types, entities, commands, events,
   errors, views, actors, components and bindings. Residual model changes outside those typed
   comparisons produce `unclassified-changed`; they are not silently treated as equality.
 - Every part of a command outcome is compared on its own, one change per outcome. `ess-diff/12`
@@ -38,7 +38,7 @@ The report follows these rules:
 
 `--format` accepts `text` or `json`. JSON output is **`ess-diff/2`**, as it is for this pair,
 unless the delta carries a change kind introduced later; it then takes the newest version any of its
-changes needs, up to `ess-diff/12` (see the
+changes needs, up to `ess-diff/23` (see the
 [format history](../reference/spec-versions.md#ess-diff--what-moved-between-two-revisions)). The
 library retains the frozen `/1` vocabulary and reader support; explicit legacy writing refuses
 changes outside that vocabulary. The endpoint digests identify compact compiled models, not raw YAML
@@ -75,7 +75,7 @@ ess verify diff --from before --to after --fail-on breaking --acknowledgements r
 `--fail-on breaking` exits **4** when an unacknowledged change is breaking in a considered
 dimension; `--fail-on breaking-or-unknown` also fails on `unknown`. `--dimension callers` (repeatable)
 limits the dimensions considered. Without `--compatibility` or `--fail-on`, the output and the exit
-status are unchanged. With either, JSON output is `ess-diff/14`, and every change carries
+status are unchanged. With either, JSON output is `ess-diff/14` or later, and every change carries
 `compatibility`.
 
 An acknowledgements file lets reviewed changes pass. It is bound to the exact pair compared: take

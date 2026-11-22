@@ -138,7 +138,7 @@ grouping is a proposal for documentation and discovery; it does not rename curre
 | Documentation and contracts | Document models, rendered documentation and independently authored schema registries. |
 
 Within each group, show the progression from **authored input → resolved model → generated output
-or evidence**. The existing `specify`, `generate`, `verify`, and `infra` CLI areas remain useful
+or evidence**. The existing `specify`, `generate`, `verify`, `infra` and `ui` CLI areas remain useful
 action-oriented entrypoints.
 
 Several names deserve particular care:

@@ -217,6 +217,7 @@ A binding with an open route is refused, naming each operation whose path it lea
 nothing is written: a published document cannot carry a route nobody can send a request to. Give the
 server binding that fills it in, with the protocol binding as `--refines`.
 
-`--http` belongs to `--kind openapi` and is refused with any other `--kind`, including none, as
-`--transport` is refused without `--kind asyncapi`. `--refines` requires `--http`. The synthesized
-servers, `ess ui` and the other generated artifacts do not read a binding yet.
+`--http` is read by `--kind openapi`, `ess generate synthesize --target rust|go`,
+`ess generate types`, `ess generate ui` and `ess ui run`; `ess generate` refuses it with any other
+`--kind`, including none, as `--transport` is refused without `--kind asyncapi`. `--refines`
+requires `--http`.

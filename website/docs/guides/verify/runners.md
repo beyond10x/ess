@@ -25,10 +25,12 @@ The built-in choices are `billing`, `oracle-fixture` and `interpreted`, and the 
 production adapter must establish its own execution boundary. `billing` and `oracle-fixture` are
 hand-written reference implementations of their examples. `interpreted` selects the specification itself, named by
 `--path`, and refuses one whose `spec_digest` is not the suite's. It executes commands from the
-model — outcomes, transitions, `sets:` writes, emitted events and declared refusals — and does not
-yet interpret views or bindings, so a scenario that reads one comes back as an unsatisfied
-obligation, and a run over a suite holding at least one such scenario fails.
-A freshly synthesized suite is `ess-conformance/34`, which runs only with `--report-format 2`.
+model — outcomes, transitions, `sets:` writes, emitted events and declared refusals — projects
+declared views and dispatches bindings. A scenario that needs a fact the model does not determine
+and no scenario control supplies comes back as an unsatisfied obligation (`unsupported`), and a
+run over a suite holding at least one such scenario fails.
+A freshly synthesized suite of `examples/billing` is `ess-conformance/34`; suites from
+`ess-conformance/8` on, whatever the version a model needs, run only with `--report-format 2`.
 The default standalone report, `ess-conformance-report/1`, is for suites up to
 `ess-conformance/4`. Its historical `scenarios_failed` count includes every non-pass, including Go
 skips and Rust errors or unsupported results. Those legacy bytes and meanings remain unchanged.

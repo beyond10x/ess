@@ -205,7 +205,7 @@ A command whose every outcome the specification spells out gets a generated beha
 whose rows it determines gets a generated query, both written against storage and context ports the
 implementor can replace. Network-served components also get ephemeral stores and runnable entries
 with explicit caller modes; durable storage and production authentication remain ports. The generated billing workspace, linked with
-its hand-written realization, passes the committed 29-scenario suite unchanged — and a
+its hand-written realization, passes the committed 34-scenario suite unchanged — and a
 deliberately corrupted linkage fails exactly the scenario that exists to catch it. See
 [Synthesize code from a specification](../guides/synthesize.md).
 
@@ -241,7 +241,7 @@ three-valued — is reused for observed infrastructure, which is evidence that i
 a special case of application specifications.
 
 **Infrastructure.** The `infra-*` crates read an observation bundle from an external scanner and
-compile it to a content-addressed IR; a typed graph and twenty coded diagnosis rules read it; a
+compile it to a content-addressed IR; a typed graph and twenty-one coded diagnosis rules read it; a
 declared desired state (`infra-spec/1`, twelve expectation kinds) evaluates against a snapshot; and
 a gap projects back as a reviewable patch tree in which every value either came from the gap or is a
 named obligation for a human. Nothing reaches a cluster. See

@@ -22,16 +22,20 @@ disagree with the page today, and fails once it agrees, so the marker cannot out
 
 | Place | What the predicate reads | Notes |
 |---|---|---|
-| a command outcome's `when` | the command's input fields | A branch without `when` is the default. |
-| a command outcome's `when_subject: {predicate: …}` (`ess/9`) | the declared stored fields of the entity the command addresses, read just before the command selects a branch; from `ess/15` also the command's input, as `input.<field>` | `state` from `ess/18`, the held lifecycle state; not before. The input only through the `input.` prefix; see [comparing with the input](#comparing-a-stored-field-with-the-input). Conjunctive with `when`. A refusal may carry it without naming a subject; it reads the one its sibling branches name. |
+| a command outcome's `when` | the command's input fields; from `ess/16` also `caller.<attribute>`, compared by `==` or `!=` with a field of the same type (see [read the caller's credential](../guides/specify/values-and-views.md#read-the-callers-credential)) | A branch without `when` is the default. |
+| a command outcome's `when_subject: {predicate: …}` (`ess/9`) | the declared stored fields of the entity the command addresses, read just before the command selects a branch; from `ess/15` also the command's input, as `input.<field>`; from `ess/16` also `caller.<attribute>`, compared by `==` or `!=` with a field of the same type (see [read the caller's credential](../guides/specify/values-and-views.md#read-the-callers-credential)) | `state` from `ess/18`, the held lifecycle state; not before. The input only through the `input.` prefix; see [comparing with the input](#comparing-a-stored-field-with-the-input). Conjunctive with `when`. A refusal may carry it without naming a subject; it reads the one its sibling branches name. |
 | a command outcome's `when_related: {via: input.<field>, predicate: …}` (`ess/18`) | the declared stored fields of the row of another entity whose identity `input.<field>` carries, read just before the command selects a branch, and the command's input as `input.<field>` | `state` from `ess/20`, the related row's held lifecycle state; not before. From `ess/22` `input.<field>` may be `Optional<…>`: checked only when present, and an absent reference selects no `when_related` branch; and `via` may be a bare stored field of the addressed subject, read as it was before the branch (see [a stored reference](#a-stored-reference)). Keyed by that entity's identity only, one hop; from `ess/22` a lookup by any other field is the row-set form below. A missing row makes the predicate unknown, so it selects only the sibling `when_related: {via: …, exists: false}` branch, which the command must declare; from `ess/30` not over a stored reference the specification keeps present (see [a stored reference](#a-stored-reference)). Any branch may carry it, a `creates:` or a refusal naming no subject included; conjunctive with `when` except on the `exists: false` branch, which answers a missing row before any other below `ess/27`, and after the input refusals, the addressed record's existence and its held state from `ess/27` (the one precedence rule); from `ess/27` beside `unknown_instance:`, `when_subject:`, `when_subject_state:`, `when_state_changes:`, `input_absent:`, `wrong_state:` in any composition and an `external:` marked `before_row: true`, below it beside none of them. See [a guard over another entity's row](#a-guard-over-another-entitys-row). |
 | a command outcome's `when_related: {entity, where, …}` (`ess/22`) | the rows of `entity` that `where` selects: each candidate row's declared fields, identity and held lifecycle state `state` bare, the command's input as `input.<field>`, the addressed subject as it was before the branch as `subject.<field>`, and `now` as the decision's one instant; `forall` reads the same over each selected row | The rows are the store just before the branch is selected; no row the outcome writes is one of them. `exists` is a Boolean, `count` one comparison (`eq`, `ne`, `lt`, `lte`, `gt`, `gte`) with a whole number, `forall` a second predicate, true of no rows. Conjunctive with `when`; never beside `via` or a `when_subject*` guard. See [a guard over the rows a selector selects](#a-guard-over-the-rows-a-selector-selects). |
+| a set effect's `instances: {where}` or `affects:` entry `where` (`ess/16`) | the candidate row's declared fields, the input as `input.<field>`; from `ess/27` its identity, from `ess/30` its held `state` | no `now`, window, `trimmed` or function |
+| an aggregate's `where:` (`ess/22`) | the source row's fields | the rows of the group one measure reads |
 | an entity's `invariants` | the entity's own fields and its lifecycle `state` | Checked after every branch that creates or changes the entity. A required field an invariant reads must be set by every `creates:` branch, or declared `Optional<…>`; otherwise validate refuses it with `ESS-COMMAND-018`. |
 | a struct type's `invariants` | the struct's own fields | Same grammar, checked against the type. |
 | a newtype's `invariants` | the wrapped value, as `value` | For example `value != ""` on a newtype of `String`. |
 | a view's `filter` | the source entity's fields and its lifecycle `state`; from `ess/28` also a field, the identity or `state` of the row a reference of the source names, as `<reference>.<field>`, one hop | Selects the rows the view returns. A path through a reference is unknown where the reference is absent or names no row, and the row is then not shown; see [a view reads the row a reference names](../guides/specify/views.md#a-view-reads-the-row-a-reference-names). |
 | a binding cause's `where` (`ess/22`) | the triggering event's payload, as `event.<member>` | A bounded fragment: presence, `==`/`!=` of a String or enum leaf against a text literal and, from `ess/27`, of a Boolean leaf against `true` or `false`, and `all`/`any`/`not`. A bare Boolean path is no comparison. See [binding conditions](../guides/specify/binding-conditions.md). |
-| a binding selection's `where` | one list item's fields | A bounded fragment: presence, typed equality and inequality of a String or enum leaf and, from `ess/27`, of a Boolean leaf against `true` or `false`, and `all`/`any`/`not`. See [select ordered records in a binding](../guides/specify/binding-context.md#select-ordered-records-in-a-binding). |
+| a binding selection's `where` | one list item's fields | A bounded fragment: presence, typed equality and inequality of a String or enum leaf and, from `ess/27`, of a Boolean leaf against `true` or `false`, `starts_with`/`ends_with`/`contains` of a non-empty text literal of at most 4096 bytes, and `all`/`any`/`not`. See [select ordered records in a binding](../guides/specify/binding-context.md#select-ordered-records-in-a-binding). |
+
+The `where` of a `{related: {entity, where, …}}` value reads as a row-set guard's does.
 
 Two outcome keys that look like guards are **not** predicates:
 
@@ -202,6 +206,8 @@ Through `ess/21` a right-hand side without a dot is therefore never a field (fro
 struct and compare its members, for example `window.ends_at > window.starts_at`. See
 [order two instants](../guides/specify/fields-and-invariants.md#order-two-instants).
 
+From `ess/23` an enum fact whose enum declares `attributes:` reads one as `<fact>.<attribute>`, such as `channel.online == true`, in a guard, an invariant or a view filter; see [give enum variants typed attributes](../guides/specify/fields-and-invariants.md#give-enum-variants-typed-attributes).
+
 An equality whose text literal is the name of a declared field is refused rather than read as
 text. The refusal says the literal is the text and not the field. Quoting the word does not change
 this, and neither does the `eq` or shorthand spelling.
@@ -283,8 +289,8 @@ the command declares an input named `input`, which keeps being read as itself.
 A one-segment field on the right is written back as the explicit operand `{fact: depends_on}`
 (`task_id: {eq: {fact: depends_on}}`), because the compact `task_id == depends_on` reads as text
 in every earlier format. A dotted path and a binder keep their compact spelling. The explicit
-operand is an `ess/22` form: under `ess/21` and earlier it is refused as
-`unsupported_format_version`, and the bare word keeps its old meaning and its old refusal.
+operand is an `ess/22` form: under `ess/21` and earlier it is refused while the predicate is parsed
+(`unparsable_predicate`, "a comparison operand must be a scalar"), and the bare word keeps its old meaning and its old refusal.
 
 A comparison of two `Timestamp` fields is tagged to compare the instants they name, never their
 spellings: `valid_until > valid_from` is written back as
@@ -438,8 +444,9 @@ From `ess/27` (beyond10x/ess#584) a command outcome's guard — `when:`, `when_s
 | `sha256(x)` | a String (its UTF-8 bytes) or Bytes | the 32-byte SHA-256 digest (FIPS 180-4), Bytes |
 | `base64url(x)` | Bytes | base64url without padding (RFC 4648 § 5), a String |
 | `ascii(x)` | a String | its bytes where every character is ASCII; unknown otherwise |
+| `abs(x)`, `min(x, c)`, `max(x, c)` | an Integer or Decimal | the absolute value, or the smaller or larger of the fact and a constant, of the same type |
 
-The functions nest around one fact, and the result is compared with a value of the type it gives:
+The functions nest around one fact (`coalesce` is [below](#from-ess29-what-an-absent-value-compares-as)), and the result is compared with a value of the type it gives:
 `base64url(…)` with a String. A misuse is refused as `type_mismatch` naming the type the function
 takes, and a function anywhere but a command guard — an invariant, a view filter, a selector — as
 `unsupported_construct`. Quoted, `"base64url(…)"` is the text it spells in every format; unquoted
@@ -1001,7 +1008,8 @@ when:
       t: {starts_with: "vip"}
 ```
 
-The operand is the text it spells. It is never a number, a Boolean or a fact path, and quote
+The operand is the text it spells, or from `ess/22` one declared view parameter or command input
+written `{param: <name>}` or `{input: <name>}`. A literal is never a number, a Boolean or a fact path, and quote
 characters inside it are part of it: `{starts_with: "+44"}` tests for a leading `+44`, and
 `{starts_with: '"x"'}` for a leading `"`. Unquoted, YAML reads `+44` as the number 44, which is
 refused.
@@ -1206,8 +1214,8 @@ says how such a verdict is specified.
 From `ess/15`, a `when_subject` predicate may compare a stored field of the addressed entity with a
 field of the command's input, named with the `input.` prefix: `recording_id != input.recording_id`
 ignores a stop for a recording other than the one the call holds. The two sides must have
-comparable types, and the input field must be declared by the command. A bare word on the right of
-a comparison is a literal, as everywhere, so write the input operand on the right. Under an earlier
+comparable types, and the input field must be declared by the command. A bare word on the right never
+reads an input here (from `ess/22` one naming a stored field reads that field, see [a bare word names a field](#from-ess22-a-bare-word-names-a-field)), so write the input operand with its `input.` prefix. Under an earlier
 header it is refused as `unsupported_format_version`.
 
 The finite prover cannot enumerate two facts against each other, so a command with such a guard
