@@ -265,6 +265,8 @@ fn rust_case_with_source(
     let generated = synthesize_laid_out(&ir, Target::Rust, layout).expect("Rust generation");
     let root = PathBuf::from(env!("CARGO_TARGET_TMPDIR"))
         .join(format!("external-binding-{label}-{}", std::process::id()));
+    // A CI shard that unpacks a test archive into `target/` has not created this directory.
+    std::fs::create_dir_all(env!("CARGO_TARGET_TMPDIR")).expect("the test target directory");
     std::fs::create_dir(&root).expect("fresh owned fixture root");
     write(&generated, &root.join("renewal"));
     let harness = root.join("harness");
@@ -509,6 +511,8 @@ fn go_case_with_source(label: &str, cases: &[&str], model: &str, source: &str) {
         "external-binding-go-{label}-{}",
         std::process::id()
     ));
+    // A CI shard that unpacks a test archive into `target/` has not created this directory.
+    std::fs::create_dir_all(env!("CARGO_TARGET_TMPDIR")).expect("the test target directory");
     std::fs::create_dir(&root).expect("fresh owned fixture root");
     write(&generated, &root.join("renewal"));
     let harness = root.join("harness");
@@ -637,6 +641,8 @@ components:
 fn fresh_root(label: &str) -> PathBuf {
     let path = PathBuf::from(env!("CARGO_TARGET_TMPDIR"))
         .join(format!("external-binding-{label}-{}", std::process::id()));
+    // A CI shard that unpacks a test archive into `target/` has not created this directory.
+    std::fs::create_dir_all(env!("CARGO_TARGET_TMPDIR")).expect("the test target directory");
     std::fs::create_dir(&path).expect("fresh owned fixture root");
     path
 }
