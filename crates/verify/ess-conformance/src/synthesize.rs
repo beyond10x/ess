@@ -181,6 +181,8 @@ mod absent_input;
 mod aggregate;
 #[doc(hidden)]
 pub use aggregate::conditions_decided;
+#[doc(hidden)]
+pub use aggregate::literals_collected;
 mod binding_condition;
 mod binding_effects;
 mod bounded_retry;

@@ -55,6 +55,20 @@ pub fn conditions_decided<R>(run: impl FnOnce() -> R) -> (R, u64) {
     contrast::deciding(run)
 }
 
+thread_local! {
+    /// How many times the model's literals were collected on this thread ([`model_literals`]).
+    static LITERALS: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
+
+/// What `run` returns, and how many times the model's literals were collected for aggregate
+/// views on this thread while it ran: the work a test bounds where a wall-clock bound would
+/// depend on the machine. Not part of the suite.
+pub fn literals_collected<R>(run: impl FnOnce() -> R) -> (R, u64) {
+    let before = LITERALS.with(std::cell::Cell::get);
+    let out = run();
+    (out, LITERALS.with(std::cell::Cell::get) - before)
+}
+
 /// The most inputs the page's pattern keeps apart: seven, with a group of nine rows.
 const MAX_INPUTS: usize = 7;
 
@@ -69,7 +83,8 @@ pub(super) fn aggregates(
     suite: &mut ConformanceSuite,
     refusals: &mut Vec<Refusal>,
 ) {
-    let literals = model_literals(ir);
+    // Collected on the first aggregate view, never for a model that has none.
+    let mut literals = None;
     // The suite's own authority, established before this family runs: only a scenario that starts
     // from an empty logical namespace makes an exact count over every row it reads a claim about
     // this scenario alone (`docs/design/aggregate-group-selection.md`). Never inferred from an
@@ -82,7 +97,8 @@ pub(super) fn aggregates(
         let id = ScenarioId::Aggregate {
             view: ViewRef::new(view.name.clone()),
         };
-        match scenario(ir, view, aggregation, actors, &literals, isolated) {
+        let literals = literals.get_or_insert_with(|| model_literals(ir));
+        match scenario(ir, view, aggregation, actors, literals, isolated) {
             Ok(scenario) => insert(suite, id, scenario, refusals),
             Err(cause) => refusals.push(Refusal::about(&id, cause)),
         }
@@ -827,6 +843,7 @@ fn unwitnessed(view: &ResolvedView, reason: impl Into<String>) -> RefusalCause {
 /// Every text literal the model writes where a value is compared or set: guards, invariants, view
 /// filters, `sets:` and payload literals. A scoped value equal to one of them is moved past it.
 fn model_literals(ir: &EssIr) -> BTreeSet<String> {
+    LITERALS.with(|count| count.set(count.get() + 1));
     let mut out = BTreeSet::new();
     for command in ir.commands().values() {
         for outcome in &command.outcomes {
