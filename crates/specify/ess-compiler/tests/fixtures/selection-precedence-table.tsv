@@ -1,4 +1,4 @@
-#	models=402	commands=826
+#	models=403	commands=830
 crates/edge/ess-cli/tests/fixtures/adversary-shorthand-binary64/spec.yaml	ir=c87449d062a2da60a227a5a4fe21bf6e78c1108f81fca3463834272ed4c44788:14663
 crates/edge/ess-cli/tests/fixtures/adversary-shorthand-binary64/spec.yaml	tracker.ops.Record	default: recorded
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	ir=d47970055f083eda582673dfe528f0af87f902defa07339aa014f6c8d50be57f:5099
@@ -236,6 +236,11 @@ crates/ui/ess-ui-test/tests/fixtures/fixture-command-effect/spec/system.yaml	ASS
 crates/verify/ess-conformance/tests/fixtures/absent-optional-beside-stored-guard.yaml	ir=ce30f5dee85374e1c98ff2fb1df54789ef7ce953502eae811c4d923d1ca7cb4d:12178
 crates/verify/ess-conformance/tests/fixtures/absent-optional-beside-stored-guard.yaml	example.review.Annotate	held_state: not-accepted | default: annotated
 crates/verify/ess-conformance/tests/fixtures/absent-optional-beside-stored-guard.yaml	example.review.Record	input_refusal: incomplete, not-verified | existence: already-exists | default: recorded
+crates/verify/ess-conformance/tests/fixtures/absent-reference-identity-view.yaml	ir=ba17abceb5930c5070d442dfcbfb1f6339466060204836e36c9e3dfaf743a8b6:23774
+crates/verify/ess-conformance/tests/fixtures/absent-reference-identity-view.yaml	demo.depot.CloseShelf	existence: no-shelf | held_state: wrong-state | default: closed
+crates/verify/ess-conformance/tests/fixtures/absent-reference-identity-view.yaml	demo.depot.FileLabel	present_related: no-shelf, shelf-closed | default: filed
+crates/verify/ess-conformance/tests/fixtures/absent-reference-identity-view.yaml	demo.depot.FinishLabel	existence: no-label | held_state: wrong-state | default: finished
+crates/verify/ess-conformance/tests/fixtures/absent-reference-identity-view.yaml	demo.depot.OpenShelf	existence: shelf-exists | default: opened
 crates/verify/ess-conformance/tests/fixtures/adversary-0710/affects-past-creating-not-found.yaml	ir=91f7a59a3f68896dd4a5c06336882417f0d0912f3734023d87309584f6aeac2d:13316
 crates/verify/ess-conformance/tests/fixtures/adversary-0710/affects-past-creating-not-found.yaml	demo.w.CreateMember	default: created
 crates/verify/ess-conformance/tests/fixtures/adversary-0710/affects-past-creating-not-found.yaml	demo.w.OpenTicket	related_row: walk-in | default: opened

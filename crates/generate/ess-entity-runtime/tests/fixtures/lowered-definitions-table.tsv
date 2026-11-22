@@ -1,4 +1,4 @@
-#	models=484	lines=665
+#	models=485	lines=666
 crates/edge/ess-cli/tests/fixtures/adversary-shorthand-binary64/spec.yaml	components=1
 crates/edge/ess-cli/tests/fixtures/adversary-shorthand-binary64/spec.yaml	tracker-service	tracker.ops.Sample	definition=6994335e6a9e9266f5f0ce33a640350814ba12cce3c4ce7439fe61643a3a9cdb:5797
 crates/edge/ess-cli/tests/fixtures/adversary-shorthand-binary64/spec.yaml	tracker-service	tracker.ops.Sample	create	recorded
@@ -125,6 +125,7 @@ crates/ui/ess-ui-react/tests/fixtures/fixture-command-effect/spec/system.yaml	AS
 crates/ui/ess-ui-test/tests/fixtures/adversary-t3-fixture-command-effect/spec/system.yaml	ASSEMBLE
 crates/ui/ess-ui-test/tests/fixtures/fixture-command-effect/spec/system.yaml	ASSEMBLE
 crates/verify/ess-conformance/tests/fixtures/absent-optional-beside-stored-guard.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/absent-reference-identity-view.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/adversary-0710/affects-past-creating-not-found.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/adversary-0710/set-update-refuses-the-related-row-it-names.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/adversary-0710/set-update-second-creator-copies-another-field.yaml	components=0

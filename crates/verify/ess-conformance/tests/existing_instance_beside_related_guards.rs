@@ -825,3 +825,37 @@ fn every_shelf_one_scenario_opens_has_an_identity_of_its_own() {
     let distinct: std::collections::BTreeSet<&Node> = shelves.iter().collect();
     assert_eq!(distinct.len(), 3, "{shelves:?}");
 }
+
+/// A creating branch whose Optional reference is left out in a further run, beside a view read by
+/// the created row's identity (same story).
+const ABSENT_REFERENCE_IDENTITY_VIEW: &str =
+    include_str!("fixtures/absent-reference-identity-view.yaml");
+
+#[test]
+fn an_absent_reference_run_beside_an_identity_view_creates_a_label_of_its_own() {
+    let model = ir(ABSENT_REFERENCE_IDENTITY_VIEW);
+    let synthesis = ess_conformance::synthesize::synthesize(&model);
+    assert_eq!(refusals(&synthesis), Vec::<String>::new());
+    let filed = sends(
+        scenario(&synthesis, "demo.depot.FileLabel/outcome/filed"),
+        "demo.depot.FileLabel",
+        "filed",
+    );
+    let labels = literals(&filed, "label_id");
+    let distinct: std::collections::BTreeSet<&Node> = labels.iter().collect();
+    assert!(labels.len() >= 3, "{labels:?}");
+    assert_eq!(distinct.len(), labels.len(), "{labels:?}");
+    assert!(
+        filed.iter().any(|input| !input.contains_key("shelf_id")),
+        "no send leaves `shelf_id` out: {filed:?}"
+    );
+    assert_eq!(
+        repeating(&synthesis, "demo.depot.FileLabel", "filed", "label_id"),
+        Vec::<String>::new()
+    );
+    all_pass(
+        "absent reference beside an identity view",
+        model,
+        &synthesis,
+    );
+}
