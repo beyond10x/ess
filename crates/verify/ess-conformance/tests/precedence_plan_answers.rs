@@ -733,9 +733,19 @@ fn identity_and_row_set_guards_answer_in_step_4_order() {
             "from {from} to {to}"
         );
     }
-    // The row set declared above every named row's guard: a missing row answers before the
-    // occupied source in either order, so validation refuses that order, naming each missing-row
-    // branch declared below the row set.
+}
+
+/// The row set declared above every named row's guard: a missing row answers before the occupied
+/// source in either order, so validation refuses that order, naming each missing-row branch
+/// declared below the row set. Declared between them, it keeps step 4 order.
+#[test]
+fn a_row_set_declared_above_the_missing_row_branches_is_refused() {
+    let ir = ir_of(&identity_beside());
+    let (store, out_a) = port(&ir, &Store::default(), "output");
+    let (store, in_b) = port(&ir, &store, "input");
+    let (store, out_c) = port(&ir, &store, "output");
+    let (first, store) = connect(&ir, &store, &out_a, &in_b);
+    assert_eq!(first, "connected");
     let taken = "      - name: source-taken
         when_related:
           entity: wiring.board.Wire
