@@ -210,6 +210,7 @@ mod related_guard;
 mod related_list;
 mod repeated_identity;
 mod row_set;
+mod run_memo;
 mod seeds;
 mod self_admission;
 mod set_effects;
@@ -3504,6 +3505,21 @@ pub fn created_rows_made<R>(run: impl FnOnce() -> R) -> (R, u64, u64) {
 #[doc(hidden)]
 pub fn created_rows_unkept<R>(run: impl FnOnce() -> R) -> R {
     created_memo::unkept(run)
+}
+
+/// What `run` returns, how many branch runs the wrapped positions of value objects asked for on
+/// this thread, and how many of them were made rather than answered from memory: the work a test
+/// bounds. Not part of the suite.
+#[doc(hidden)]
+pub fn wrapped_runs_made<R>(run: impl FnOnce() -> R) -> (R, u64, u64) {
+    run_memo::counting(run)
+}
+
+/// What `run` returns with every branch run of a wrapped position made afresh, for a test
+/// comparing the suite with the one made from memory. Not part of the suite.
+#[doc(hidden)]
+pub fn wrapped_runs_unkept<R>(run: impl FnOnce() -> R) -> R {
+    run_memo::unkept(run)
 }
 
 /// [`synthesize`], with explicitly admitted synthesis seeds (beyond10x/ess#413,
@@ -20587,6 +20603,8 @@ fn invariants(
         }
     }
     if focus.is_whole() {
+        // Every wrapped position tries the same branches again: each run is made once.
+        let _runs = run_memo::remember(ir);
         value_object_invariants(ir, actors, suite, refusals);
     }
 }

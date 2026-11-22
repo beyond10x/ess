@@ -19,6 +19,9 @@ use ess_domain::{
     system::Source,
 };
 
+#[path = "created_rows_kept_work/wrapped.rs"]
+mod wrapped;
+
 const MODEL: &str = include_str!("fixtures/created-rows-kept.yaml");
 const STORED: &str = include_str!("fixtures/stored-rows-decided-once.yaml");
 
