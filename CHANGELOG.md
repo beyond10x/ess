@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Changed
+
+- CI: a pull request whose every changed path lies under `.engineering/`, none under `.engineering/repro/`, builds no test archive and starts none of the 20 test jobs, and `Gate` passes them skipped for that reason only and says so in its log. A `main` push, the nightly run, a `queue/` head, a merge-group run and the release gate never skip, so a run that skipped never stands in for a release's gate (story:the-test-step-meets-the-test-budget).
+
 ## [0.97.1] — 2026-11-21
 
 ### Changed
