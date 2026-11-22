@@ -173,3 +173,76 @@ fn count_cli_configuration_and_original_suite_refusals_preserve_destinations() {
         }
     }
 }
+
+fn entries(directory: &Path) -> Vec<String> {
+    let mut names: Vec<String> = std::fs::read_dir(directory)
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    names.sort();
+    names
+}
+
+#[test]
+fn a_report_replaces_an_earlier_report_with_its_canonical_bytes_and_leaves_nothing_beside_it() {
+    let directory = suite_files("replace");
+    let report = directory.join("report.json");
+    std::fs::write(&report, "earlier\n").unwrap();
+    let output = run_suite(
+        &directory,
+        &[
+            "--report-format",
+            "2",
+            "--report-out",
+            report.to_str().unwrap(),
+        ],
+    );
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let text = std::fs::read_to_string(&report).unwrap();
+    assert_ne!(text, "earlier\n");
+    let admitted = ess_conformance::AdmittedSuite::from_json(
+        &std::fs::read_to_string(directory.join("suite.json")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(
+        ess_conformance::CountReport::from_json(&text, &admitted)
+            .unwrap()
+            .to_canonical_json()
+            .unwrap(),
+        text
+    );
+    assert_eq!(entries(&directory), ["report.json", "suite.json"]);
+}
+
+#[test]
+fn a_report_onto_a_directory_fails_and_leaves_nothing_beside_it() {
+    let directory = suite_files("directory");
+    let report = directory.join("report.json");
+    std::fs::create_dir(&report).unwrap();
+    std::fs::write(report.join("keep.txt"), "keep\n").unwrap();
+    let output = run_suite(
+        &directory,
+        &[
+            "--report-format",
+            "2",
+            "--report-out",
+            report.to_str().unwrap(),
+        ],
+    );
+    assert_eq!(output.status.code(), Some(1));
+    assert_eq!(output.stdout, Vec::<u8>::new());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains(&format!("writing {}", report.display())),
+        "{stderr}"
+    );
+    assert_eq!(
+        std::fs::read_to_string(report.join("keep.txt")).unwrap(),
+        "keep\n"
+    );
+    assert_eq!(entries(&directory), ["report.json", "suite.json"]);
+}

@@ -20,6 +20,7 @@ mod observed_bindings;
 mod output_ownership;
 mod protocol;
 mod release_evidence;
+mod replace_file;
 mod requires;
 mod schema;
 mod schema_bundle;
@@ -3977,7 +3978,7 @@ fn conform_report(
             return ExitCode::from(REFUSED);
         }
     };
-    if let Err(error) = fs::write(report_out, text) {
+    if let Err(error) = replace_file::replace(report_out, text.as_bytes()) {
         eprintln!(
             "conform-report.unwritable: writing {}: {error}",
             report_out.display()
@@ -4993,7 +4994,8 @@ fn finish_mutation_audit(
 
     let json = report.to_canonical_json();
     if let Some(out) = report_out {
-        fs::write(out, &json).with_context(|| format!("writing {}", out.display()))?;
+        replace_file::replace(out, json.as_bytes())
+            .with_context(|| format!("writing {}", out.display()))?;
     }
     match format {
         Format::Text => print!("{}", report.render_text()),
@@ -5079,7 +5081,7 @@ fn render_conformance_report(
         let summary = ess_conformance::CountReport::from_run(report, admitted)?;
         let detailed = ess_conformance::CountRun::from_run(report, admitted)?;
         if let Some(path) = report_out {
-            fs::write(path, summary.to_canonical_json()?)
+            replace_file::replace(path, summary.to_canonical_json()?.as_bytes())
                 .with_context(|| format!("writing {}", path.display()))?;
         }
         match format {
@@ -5096,7 +5098,7 @@ fn render_conformance_report(
         }
     } else {
         if let Some(path) = report_out {
-            fs::write(path, report.standalone().to_canonical_json())
+            replace_file::replace(path, report.standalone().to_canonical_json().as_bytes())
                 .with_context(|| format!("writing {}", path.display()))?;
         }
         match format {
