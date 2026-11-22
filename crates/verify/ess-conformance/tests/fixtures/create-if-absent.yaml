@@ -1,0 +1,76 @@
+format: ess/37
+system: demo
+version: v1
+domain: demo.depot
+summary: A shelf is opened under an identity no shelf carries yet, and closed once.
+types:
+  - {name: demo.depot.ShelfId, kind: newtype, of: String}
+entities:
+  - name: demo.depot.Shelf
+    identity: {name: shelf_id, type: demo.depot.ShelfId}
+    fields:
+      - {name: label, type: String}
+    lifecycle:
+      initial: Open
+      states: [Open, Closed]
+      terminal: [Closed]
+      transitions:
+        - {name: close, from: [Open], to: Closed}
+actors:
+  - name: demo.depot.Keeper
+    may: [demo.depot.OpenShelf, demo.depot.CloseShelf]
+errors:
+  - name: demo.depot.ShelfExists
+    fields: [{name: shelf_id, type: demo.depot.ShelfId}]
+  - name: demo.depot.NoSuchShelf
+    fields: [{name: shelf_id, type: demo.depot.ShelfId}]
+  - name: demo.depot.ShelfStateConflict
+    fields: [{name: shelf_id, type: demo.depot.ShelfId}]
+commands:
+  - name: demo.depot.OpenShelf
+    input:
+      - {name: shelf_id, type: demo.depot.ShelfId}
+      - {name: label, type: String}
+    outcomes:
+      - name: opened
+        when_related: {via: input.shelf_id, exists: false}
+        creates: demo.depot.Shelf
+        instance: shelf_id
+        sets:
+          label: input.label
+        emits: [demo.depot.ShelfOpened]
+        payload:
+          demo.depot.ShelfOpened:
+            shelf_id: input.shelf_id
+      - name: shelf-exists
+        error: demo.depot.ShelfExists
+  - name: demo.depot.CloseShelf
+    input:
+      - {name: shelf_id, type: demo.depot.ShelfId}
+    outcomes:
+      - name: no-shelf
+        unknown_instance: true
+        error: demo.depot.NoSuchShelf
+      - name: closed
+        moves: demo.depot.Shelf.close
+        instance: shelf_id
+        emits: [demo.depot.ShelfClosed]
+        payload:
+          demo.depot.ShelfClosed:
+            shelf_id: input.shelf_id
+      - name: wrong-state
+        wrong_state: true
+        error: demo.depot.ShelfStateConflict
+events:
+  - name: demo.depot.ShelfOpened
+    fields: [{name: shelf_id, type: demo.depot.ShelfId}]
+  - name: demo.depot.ShelfClosed
+    fields: [{name: shelf_id, type: demo.depot.ShelfId}]
+views:
+  - name: demo.depot.Shelves
+    source: demo.depot.Shelf
+    consistency: read_your_writes
+    fields:
+      - {name: shelf_id, type: demo.depot.ShelfId}
+      - {name: label, type: String}
+      - {name: state, type: demo.depot.Shelf.State}
