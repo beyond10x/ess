@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- `ess verify conform synthesize` no longer slows down sharply with each command that moves the same entity, as an adopter reported: one domain of a downstream specification, a single entity of 36 fields moved through its states by seven commands, took 254 s of CPU time on 0.97.0. Every branch of a command that reads stored fields searched for its row anew, advancing every row by every move and checking every input for the branch it selects, although the branches asked the same search and differed only in the branch they look for. What a search reaches, depth by depth, and the branch each input selects on a row are now kept once per synthesis and context; the domain synthesizes in 70 to 88 s of CPU time on a loaded host, with 2.7 times fewer instructions (five of its commands 14 to 19 s instead of 55 s, 2.8 times fewer instructions). The synthesized suites are unchanged.
+
 ## [0.97.1] — 2026-11-21
 
 ### Changed

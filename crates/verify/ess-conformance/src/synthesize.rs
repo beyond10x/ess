@@ -3419,6 +3419,15 @@ pub fn creations_made<R>(run: impl FnOnce() -> R) -> (R, u64) {
     made::counting(run)
 }
 
+/// What `run` returns, and how many times a row and an input were checked on this thread for the
+/// stored-field branch they select while it ran, rather than answered from what the synthesis
+/// checked before: the work a test bounds where a wall-clock bound would depend on the machine.
+/// Not part of the suite.
+#[doc(hidden)]
+pub fn branch_selections_tried<R>(run: impl FnOnce() -> R) -> (R, u64) {
+    made::picks(run)
+}
+
 /// [`synthesize`], with explicitly admitted synthesis seeds (beyond10x/ess#413,
 /// `docs/design/synthesis-seeds.md`).
 ///
