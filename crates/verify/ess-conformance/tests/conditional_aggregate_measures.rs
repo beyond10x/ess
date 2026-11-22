@@ -1347,3 +1347,74 @@ fn the_generated_typescript_runtime_agrees_with_the_native_runner() {
     std::fs::remove_dir_all(&root).ok();
     assert_agrees("typescript", &observed);
 }
+
+/// A view of `sums` conditioned sums that all share one condition, over tickets of two teams.
+fn shared_condition(sums: usize) -> String {
+    let mut text = String::from(
+        "format: ess/22
+system: shop
+version: v1
+domain: shop.desk
+events:
+  - name: shop.desk.Opened
+    fields: [{name: ticket_id, type: Uuid}]
+entities:
+  - name: shop.desk.Ticket
+    identity: {name: ticket_id, type: Uuid}
+    fields:
+      - {name: team, type: String}
+      - {name: cents, type: Integer}
+      - {name: flag_3, type: Boolean}
+    lifecycle: {initial: Open, states: [Open], terminal: [Open]}
+commands:
+  - name: shop.desk.Open
+    input:
+      - {name: team, type: String}
+      - {name: cents, type: Integer}
+      - {name: flag_3, type: Boolean}
+    outcomes:
+      - name: opened
+        creates: shop.desk.Ticket
+        instance: ticket_id
+        sets: {team: input.team, cents: input.cents, flag_3: input.flag_3}
+        emits: [shop.desk.Opened]
+        payload: {shop.desk.Opened: {ticket_id: {generated: true}}}
+views:
+  - name: shop.desk.Board
+    source: shop.desk.Ticket
+    consistency: read_your_writes
+    group_by: [team]
+    fields:
+      - {name: team, type: String}
+",
+    );
+    for sum in 0..sums {
+        text.push_str(&format!(
+            "      - {{name: flagged_{sum:03}, type: Integer, aggregate: {{sum: cents, where: \
+             flag_3 == true}}}}\n"
+        ));
+    }
+    text
+}
+
+/// Sixteen sums under one condition decide it as often as one sum does: once per row the
+/// arrangement search projects and once per arranged row, not once per sum. Before, every sum
+/// decided it again, in the search and twice more per arranged row (the witness check and the
+/// expected value): over the 4 arranged rows 64 + 64 decisions for 16 sums against 4 + 4 for one,
+/// so the count for 16 sums was 16 times the count for one. A work bound, not a clock.
+#[test]
+fn sums_sharing_a_condition_decide_it_once_per_row() {
+    let decided = |sums: usize| {
+        let ir = ir(&shared_condition(sums));
+        let (result, decided) = ess_conformance::synthesize::conditions_decided(|| synthesize(&ir));
+        assert_eq!(aggregate_refusals(&result), Vec::<String>::new());
+        let board = scenario(&result.suite, "shop.desk.Board/aggregate");
+        assert!(!contains(board).is_empty(), "the view is read");
+        decided
+    };
+    let (one, sixteen) = (decided(1), decided(16));
+    assert!(
+        one > 0 && sixteen == one,
+        "a condition shared by 16 sums was decided {sixteen} times, by 1 sum {one} times"
+    );
+}

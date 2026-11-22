@@ -47,6 +47,14 @@ use crate::witness::{uuid_of, Distinction};
 
 mod contrast;
 
+/// What `run` returns, and how many times a conditioned measure's `where:` was decided for a
+/// row on this thread while it ran, rather than answered from what the same condition answered
+/// before: the work a test bounds where a wall-clock bound would depend on the machine. Not part
+/// of the suite.
+pub fn conditions_decided<R>(run: impl FnOnce() -> R) -> (R, u64) {
+    contrast::deciding(run)
+}
+
 /// The most inputs the page's pattern keeps apart: seven, with a group of nine rows.
 const MAX_INPUTS: usize = 7;
 
@@ -2672,6 +2680,8 @@ struct Arranged {
     /// The steps that create the related rows the row reads, run before any row is created
     /// ([`observe`]).
     prelude: Vec<ScenarioStep>,
+    /// What each measure's condition answered of the row ([`contrast::holds`]).
+    truths: contrast::Truths,
 }
 
 fn arrange_and_observe(
@@ -2792,6 +2802,7 @@ fn arrange_and_observe(
             row: attempt,
             arrangement: result.reached,
             prelude: result.prelude,
+            truths: contrast::Truths::default(),
         });
     }
     observe(plan, &arranged, &params)
