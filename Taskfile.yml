@@ -15,6 +15,7 @@ vars:
   UI_HTTP_SHELF_SERVER: '{{.ROOT_DIR}}/{{.NEXTEST_ARCHIVES}}/ui-http-shelf-server'
   UI_HTTP_ITEMS_SERVER: '{{.ROOT_DIR}}/{{.NEXTEST_ARCHIVES}}/ui-http-items-server'
   CLAP_SHARED_BINARY: '{{.ROOT_DIR}}/{{.NEXTEST_ARCHIVES}}/clap-shared-binary'
+  BINARY64_HARNESS: '{{.ROOT_DIR}}/{{.NEXTEST_ARCHIVES}}/binary64-harness'
   # The feature-off cases a pull request runs, when `FEATURE_OFF=number-semantics`: every package
   # but ess-cli, ess-cli's unit tests, and the ess-cli binaries about number semantics — every one
   # whose source names `arbitrary_precision` among them, which `ci_lanes.rs` checks. The `main`
@@ -82,12 +83,14 @@ tasks:
       ESS_UI_HTTP_SHELF_SERVER: '{{.UI_HTTP_SHELF_SERVER}}'
       ESS_UI_HTTP_ITEMS_SERVER: '{{.UI_HTTP_ITEMS_SERVER}}'
       ESS_CLAP_SHARED_BINARY: '{{.CLAP_SHARED_BINARY}}'
+      ESS_BINARY64_HARNESS: '{{.BINARY64_HARNESS}}'
     cmds:
       - task: integer-spellings-harness
       - task: append-set-harness
       - task: json-body-harnesses
       - task: ui-http-servers
       - task: clap-shared-binary
+      - task: binary64-harness
       - cargo test --workspace --exclude ess-xtask --locked
       # The workspace run has serde_json's `arbitrary_precision` on: entity-core enables it, and
       # ess-entity-runtime unifies it in. This run selects packages that do not depend on
@@ -110,12 +113,14 @@ tasks:
       ESS_UI_HTTP_SHELF_SERVER: '{{.UI_HTTP_SHELF_SERVER}}'
       ESS_UI_HTTP_ITEMS_SERVER: '{{.UI_HTTP_ITEMS_SERVER}}'
       ESS_CLAP_SHARED_BINARY: '{{.CLAP_SHARED_BINARY}}'
+      ESS_BINARY64_HARNESS: '{{.BINARY64_HARNESS}}'
     cmds:
       - task: integer-spellings-harness
       - task: append-set-harness
       - task: json-body-harnesses
       - task: ui-http-servers
       - task: clap-shared-binary
+      - task: binary64-harness
       - defer: { task: test-slowest }
       - |
         set -eu
@@ -153,6 +158,7 @@ tasks:
       - task: json-body-harnesses
       - task: ui-http-servers
       - task: clap-shared-binary
+      - task: binary64-harness
 
   # A test that runs cargo builds a crate graph inside its lane
   # (`crates/edge/ess-xtask/tests/no_test_builds.rs`), so the harness the `integer_spellings` test
@@ -180,6 +186,29 @@ tasks:
         cargo build --offline --quiet --manifest-path {{.WORK}}/harness/Cargo.toml --target-dir {{.WORK}}/target
       - cp {{.WORK}}/target/debug/harness {{.INTEGER_SPELLINGS_HARNESS}}
       # The generated server is in the binary; its build tree is not needed again.
+      - rm -rf {{.WORK}}
+
+  # The harness ess-synth's `binary64_rust` test runs against the generated Rust server, built
+  # here once for the reason `integer-spellings-harness` gives, and handed to the test as
+  # ESS_BINARY64_HARNESS.
+  binary64-harness:
+    desc: Build the Rust harness ess-synth's binary64_rust test runs, at BINARY64_HARNESS.
+    vars:
+      WORK: target/binary64-harness
+      FIXTURES: crates/generate/ess-synth/tests/fixtures
+    cmds:
+      - cargo build --workspace --exclude ess-xtask --locked --bin ess
+      - rm -rf {{.WORK}}
+      - mkdir -p {{.WORK}}/harness/src {{.NEXTEST_ARCHIVES}}
+      - cp {{.FIXTURES}}/binary64-served/model.yaml.in {{.WORK}}/model.yaml
+      - target/debug/ess generate synthesize --path {{.WORK}}/model.yaml --target rust --out {{.WORK}}/demo
+      - cp {{.FIXTURES}}/binary64-served-harness/harness.toml {{.WORK}}/harness/Cargo.toml
+      - cp {{.FIXTURES}}/binary64-served-harness/main.rs {{.WORK}}/harness/src/main.rs
+      - >-
+        env -u CARGO_TARGET_DIR -u CARGO_ENCODED_RUSTFLAGS -u RUSTC_WRAPPER
+        CARGO_INCREMENTAL=0 RUSTFLAGS='-D warnings'
+        cargo build --offline --quiet --manifest-path {{.WORK}}/harness/Cargo.toml --target-dir {{.WORK}}/target
+      - cp {{.WORK}}/target/debug/harness {{.BINARY64_HARNESS}}
       - rm -rf {{.WORK}}
 
   append-set-harness:
@@ -320,6 +349,7 @@ tasks:
       ESS_UI_HTTP_SHELF_SERVER: '{{.UI_HTTP_SHELF_SERVER}}'
       ESS_UI_HTTP_ITEMS_SERVER: '{{.UI_HTTP_ITEMS_SERVER}}'
       ESS_CLAP_SHARED_BINARY: '{{.CLAP_SHARED_BINARY}}'
+      ESS_BINARY64_HARNESS: '{{.BINARY64_HARNESS}}'
     cmds:
       - rm -f {{.NEXTEST_ARCHIVES}}/workspace-{{.OTHER_GROUP}}.tar.zst
       - cargo nextest list --archive-file {{.NEXTEST_ARCHIVES}}/workspace-{{.GROUP}}.tar.zst --workspace-remap . --extract-to . --extract-overwrite > /dev/null
