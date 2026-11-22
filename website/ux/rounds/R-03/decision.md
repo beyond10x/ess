@@ -30,3 +30,28 @@ Answer:
 
 On a yes the plugin's index step runs in `task site-build` and in `pages.yml`; on a no the request
 goes to the template's owner, where UXF-005 of its loop already holds it.
+
+## Ratchet decision `R-03-axe`: the visualise page's axe values rise with the repaired measurement
+
+Change 1 (UXF-021) made gate 5 check inside frames again. The only page with a frame,
+`/ess/docs/visualise`, now reports the violations inside its frame that R-02 never saw. Four values
+are worse than the R-02 baseline, all in the light theme, where the full rule set runs:
+
+| scenario | key | R-02 baseline | R-03 |
+| --- | --- | --- | --- |
+| `/ess/docs/visualise@desktop-1280/light` | `axe.serious_critical_nodes` | 3 | 10 |
+| `/ess/docs/visualise@desktop-1280/light` | `axe.serious_critical_rules` | 1 | 3 |
+| `/ess/docs/visualise@mobile-390/light` | `axe.serious_critical_nodes` | 2 | 11 |
+| `/ess/docs/visualise@mobile-390/light` | `axe.serious_critical_rules` | 1 | 4 |
+
+R-02's 3 and 2 nodes were `link-in-text-block` outside the frame, which change 4 removed. R-03's
+nodes are inside the frame: `color-contrast` 8 (UXF-006), `label-content-name-mismatch` 1
+(UXF-005), `nested-interactive` 1 (UXF-007), and at mobile-390 `scrollable-region-focusable` 1
+(UXF-008). The site did not change there; the measurement did. Taken with
+`cargo xtask ux-ratchet --round website/ux/rounds/R-03/round.json --update --decision R-03-axe`.
+
+Decided by the coordinator in the brief of R-03, 2026-11-22.
+
+Result, 2026-11-22: 819 values improved and were taken, 4 worse values carry `R-03-axe`, none
+dropped; the baseline holds 3,556 values in 578 scenarios, lane `full` and lane `gate` from R-03
+(the gate lane checked with `gate-5`, `--update`, and `gate-6`, clean).
