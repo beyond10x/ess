@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-creating-branchs-scenario-sends-every-row-it-creates-under-an-identity-of-its-own
 kind: story
-status: draft
+status: active
 title: A creating branch's scenario sends every row it creates under an identity of its own
 relations:
 - serves: vision:O2
@@ -21,7 +21,10 @@ scope:
   path: crates/verify/ess-conformance/tests/synthesis.rs
 - confidence: cited
   path: website/docs/reference/predicates.md
-revision: 8
+revision: 10
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-22T13:42:30Z", actor: "human:timo", revision: 9}
+- {from: "proposed", to: "active", at: "2026-11-22T13:42:32Z", actor: "human:timo", revision: 10}
 ---
 ## Outcome
 

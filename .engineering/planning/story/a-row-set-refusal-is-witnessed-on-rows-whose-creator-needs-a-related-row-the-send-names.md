@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-row-set-refusal-is-witnessed-on-rows-whose-creator-needs-a-related-row-the-send-names
 kind: story
-status: draft
+status: active
 title: A row-set refusal is witnessed on rows whose creator needs a related row the send names
 relations:
 - serves: vision:O2
@@ -17,7 +17,10 @@ scope:
   path: crates/verify/ess-conformance/tests/a_row_set_branch_arranges_rows_past_the_creators_guard.rs
 - confidence: inferred
   path: crates/verify/ess-conformance/tests/fixtures/synthesis-suite-bytes-table.tsv
-revision: 6
+revision: 8
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-22T13:42:33Z", actor: "human:timo", revision: 7}
+- {from: "proposed", to: "active", at: "2026-11-22T13:42:35Z", actor: "human:timo", revision: 8}
 ---
 ## Outcome
 
