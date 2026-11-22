@@ -10,6 +10,9 @@ export const AXE_TAGS = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa']
 export interface Watched {
   name: string;
   locator: Locator;
+  // The scroll states in which the element is gated; a failure in any other state is measured
+  // and reported, never gated. Every state when absent.
+  states?: string[];
 }
 
 export async function frame(page: Page): Promise<void> {
@@ -48,14 +51,17 @@ export async function checkAlwaysVisible(page: Page, watched: Watched[]): Promis
       // No waiting: an element the page has not rendered by now is missing.
       const handle = ((await w.locator.elementHandles()) as Array<import('@playwright/test').ElementHandle<Element>>)[0] ?? null;
       const v = handle ? await handle.evaluate(probeVisible) : await page.evaluate(probeVisible, null);
-      if (!v.present) failures.push({ element: w.name, state, problem: 'missing' });
-      else if (!v.inViewport) failures.push({ element: w.name, state, problem: 'out of viewport' });
-      else if (v.covered) failures.push({ element: w.name, state, problem: 'covered' });
+      const gating = !w.states || w.states.includes(state);
+      if (!v.present) failures.push({ element: w.name, state, problem: 'missing', gating });
+      else if (!v.inViewport) failures.push({ element: w.name, state, problem: 'out of viewport', gating });
+      else if (v.covered) failures.push({ element: w.name, state, problem: 'covered', gating });
     }
   }
   await page.evaluate(() => window.scrollTo({ top: 0, behavior: 'instant' }));
-  // A missing element is missing in every state: report it once.
-  return failures.filter((f, i) => f.problem !== 'missing' || failures.findIndex((g) => g.element === f.element && g.problem === 'missing') === i);
+  // A missing element is missing in every state: report it once, gated if any of its states is.
+  return failures
+    .map((f) => (f.problem === 'missing' ? { ...f, gating: failures.some((g) => g.element === f.element && g.problem === 'missing' && g.gating) } : f))
+    .filter((f, i, all) => f.problem !== 'missing' || all.findIndex((g) => g.element === f.element && g.problem === 'missing') === i);
 }
 
 // `full`: every rule of AXE_TAGS. `colour`: only the rules whose result depends on the colours,
@@ -100,7 +106,7 @@ export function gateFailures(config: L2Config): string[] {
   const where = `${config.viewport}/${config.theme}`;
   const out: string[] = [];
   for (const s of config.layout.spills) out.push(`gate 1 ${where}: ${s.kind} spill ${s.element} right ${s.right} > ${s.limit}`);
-  for (const f of config.alwaysVisible) out.push(`gate 2 ${where}: ${f.element} ${f.problem} at ${f.state}`);
+  for (const f of config.alwaysVisible.filter((f) => f.gating !== false)) out.push(`gate 2 ${where}: ${f.element} ${f.problem} at ${f.state}`);
   for (const t of config.layout.truncated) out.push(`truncation ${where}: ${t.element} "${t.text}"`);
   for (const v of config.axe ?? []) {
     if (v.impact === 'serious' || v.impact === 'critical') out.push(`gate 5 ${where}: axe ${v.id} (${v.impact}) ${v.nodes} node(s): ${v.targets.join(' | ')}`);

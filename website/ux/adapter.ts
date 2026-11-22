@@ -47,36 +47,78 @@ export function HYDRATED(): boolean {
   return !!button && !(button as HTMLButtonElement).disabled;
 }
 
-export type PageKind = 'landing' | 'doc' | 'doc-without-sidebar' | 'blog' | 'other';
+export type PageKind = 'landing' | 'doc' | 'doc-without-sidebar' | 'blog' | 'blog-without-sidebar' | 'other';
 
 // Pages under /docs that sit in no sidebar (Docusaurus renders them without one).
 const DOCS_WITHOUT_SIDEBAR = new Set(['/ess/docs/visualise']);
+// Release pages the blog renders without its recent-posts sidebar, by design.
+const BLOG_WITHOUT_SIDEBAR = new Set(['/ess/releases/archive']);
 
 export function pageKind(path: string): PageKind {
   const p = path.replace(/\/$/, '');
   if (p === '/ess' || p === '') return 'landing';
   if (p.startsWith('/ess/docs')) return DOCS_WITHOUT_SIDEBAR.has(p) ? 'doc-without-sidebar' : 'doc';
-  if (p.startsWith('/ess/releases')) return 'blog';
+  if (p.startsWith('/ess/releases')) return BLOG_WITHOUT_SIDEBAR.has(p) ? 'blog-without-sidebar' : 'blog';
   return 'other';
 }
 
-// The always-visible elements (gate 2): navbar and search everywhere; the theme toggle and the
-// sidebar at desktop sizes (Docusaurus moves the toggle and the sidebar into the menu below 997 px,
-// so there the menu button is what must stay visible).
+// The always-visible elements (gate 2): the navbar everywhere; the theme toggle and the sidebar at
+// desktop sizes (Docusaurus moves the toggle and the sidebar into the menu below 997 px, so there
+// the menu button is what must stay visible).
+// - Search is not one of them: this site configures no search plugin (`docusaurus.config.ts`), so
+//   there is nothing to keep in view. Its absence is one site finding, UXF-001, held by the L2 test
+//   "L2 site search" over the built template pages (`hasSearchControl`).
+// - The sidebar is gated at the top and the middle of a page. At the end the stock theme's sticky
+//   column stops where the footer starts, so the sidebar is pushed up while the reader is at the
+//   footer; that state is measured and reported, not gated (decision D15, rounds/R-02/decision.md).
+export const SIDEBAR_STATES = ['top', 'middle'];
 export function alwaysVisible(page: Page, viewport: Viewport, kind: PageKind | string): Watched[] {
-  const watched: Watched[] = [
-    { name: 'navbar', locator: page.getByRole('navigation', { name: 'Main' }) },
-    { name: 'search', locator: page.getByRole('searchbox').or(page.getByRole('button', { name: /search/i })) },
-  ];
+  const watched: Watched[] = [{ name: 'navbar', locator: page.getByRole('navigation', { name: 'Main' }) }];
   if (viewport.layout === 'desktop') {
     watched.push({ name: 'theme toggle', locator: page.getByRole('button', { name: /dark and light mode/i }) });
-    if (kind === 'doc') watched.push({ name: 'docs sidebar', locator: page.getByRole('navigation', { name: 'Docs sidebar' }) });
-    if (kind === 'blog') watched.push({ name: 'blog sidebar', locator: page.getByRole('navigation', { name: /blog recent posts/i }) });
+    if (kind === 'doc') watched.push({ name: 'docs sidebar', locator: page.getByRole('navigation', { name: 'Docs sidebar' }), states: SIDEBAR_STATES });
+    if (kind === 'blog') watched.push({ name: 'blog sidebar', locator: page.getByRole('navigation', { name: /blog recent posts/i }), states: SIDEBAR_STATES });
   } else {
     watched.push({ name: 'menu button', locator: page.getByRole('button', { name: /toggle navigation bar/i }) });
   }
   return watched;
 }
+
+// A search control in a built page: the classic theme's local search bar, an Algolia DocSearch
+// button, or any search input or landmark. Matched on the markup the plugins render, not on a
+// name containing "search" (which "Research notes" would match).
+const SEARCH_MARKUP = /class="[^"]*\b(navbar__search|DocSearch-Button|DocSearch)\b[^"]*"|<input[^>]*type="search"|role="search"/;
+export function hasSearchControl(html: string): boolean {
+  return SEARCH_MARKUP.test(html);
+}
+
+// The built HTML of a page path.
+export function builtPage(path: string): string {
+  const rel = path.replace(/^\/ess\/?/, '').replace(/\/$/, '');
+  const candidates = rel === '' ? ['index.html'] : [join(rel, 'index.html'), `${rel}.html`];
+  for (const c of candidates) {
+    try {
+      return readFileSync(join(BUILD, c), 'utf8');
+    } catch {
+      // the other spelling
+    }
+  }
+  throw new Error(`${path}: no built page under ${BUILD}`);
+}
+
+// Template pages: one page of each layout the site renders, so that every page template and every
+// always-visible element is checked on every merge. The full sitemap runs in the `slow` lane.
+export const TEMPLATE_PAGES: Array<{ path: string; why: string }> = [
+  { path: '/ess/', why: 'landing page (product template)' },
+  { path: '/ess/docs/start/install', why: 'doc page with sidebar and table of contents' },
+  { path: '/ess/docs/reference/spec-versions', why: 'long reference table page' },
+  { path: '/ess/docs/reference/diagnostics', why: 'generated reference page (cargo xtask diagnostics)' },
+  { path: '/ess/docs/status/where-this-stands', why: 'status page' },
+  { path: '/ess/docs/visualise', why: 'doc page without sidebar (interactive presentation)' },
+  { path: '/ess/releases', why: 'release list with the recent-posts sidebar' },
+  { path: '/ess/releases/conformance-in-any-language', why: 'release post' },
+  { path: '/ess/releases/archive', why: 'release archive, no sidebar by design' },
+];
 
 // Regions the screen-only user tells apart; the first match wins, so nested regions come first.
 // Primary: where a reader's eyes already are (the top bar and the article).

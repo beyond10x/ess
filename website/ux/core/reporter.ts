@@ -19,7 +19,11 @@ export interface AlwaysVisibleFailure {
   element: string;
   state: string;
   problem: 'missing' | 'out of viewport' | 'covered';
+  // false: a state the adapter does not gate (reported as measured only). Gated when absent.
+  gating?: boolean;
 }
+
+export const gated = (f: AlwaysVisibleFailure) => f.gating !== false;
 
 export interface AxeViolation {
   id: string;
@@ -174,7 +178,7 @@ export function summarize(l2In: L2Record[], l3In: L3Record[], expected: Expected
     scenarios[key] = {
       'layout.spills': c.layout.spills.length,
       'layout.truncated_texts': c.layout.truncated.length,
-      'always_visible.failures': c.alwaysVisible.length,
+      'always_visible.failures': c.alwaysVisible.filter(gated).length,
       'axe.serious_critical_rules': new Set(axe.map((v) => v.id)).size,
       'axe.serious_critical_nodes': sum(axe.map((v) => v.nodes)),
       // The page load is measured once per test, under its first theme.
@@ -195,9 +199,25 @@ export function summarize(l2In: L2Record[], l3In: L3Record[], expected: Expected
     result: pageGate(gate1Pages),
   };
   const byElement: Record<string, number> = {};
-  for (const { c } of configs) for (const f of c.alwaysVisible) byElement[`${f.element}: ${f.problem}`] = (byElement[`${f.element}: ${f.problem}`] ?? 0) + 1;
-  const gate2Pages = pagesWith((c) => c.alwaysVisible.length > 0);
-  const gate2 = { pages: gate2Pages, of, unmeasured: unmeasuredPages, failures: sum(Object.values(byElement)), by_element: byElement, result: pageGate(gate2Pages) };
+  const measuredOnly: Record<string, number> = {};
+  for (const { c } of configs) {
+    for (const f of c.alwaysVisible) {
+      const into = gated(f) ? byElement : measuredOnly;
+      const k = gated(f) ? `${f.element}: ${f.problem}` : `${f.element}: ${f.problem} at ${f.state}`;
+      into[k] = (into[k] ?? 0) + 1;
+    }
+  }
+  const gate2Pages = pagesWith((c) => c.alwaysVisible.some(gated));
+  const gate2 = {
+    pages: gate2Pages,
+    of,
+    unmeasured: unmeasuredPages,
+    failures: sum(Object.values(byElement)),
+    by_element: byElement,
+    // Failures in states the adapter does not gate: reported, never failing the gate.
+    measured_only: measuredOnly,
+    result: pageGate(gate2Pages),
+  };
 
   const byRule: Record<string, { nodes: number; pages: number; impact: string; help: string }> = {};
   const rulePages = new Map<string, Set<string>>();

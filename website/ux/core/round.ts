@@ -3,7 +3,7 @@
 // round.json does not hold. Shots are taken by the caller and passed in by file name.
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import type { Engine } from './engine';
-import { summarize, type L2Config, type L2Record, type Raw, type RunTiming, type Summary } from './reporter';
+import { gated, summarize, type L2Config, type L2Record, type Raw, type RunTiming, type Summary } from './reporter';
 
 export interface RunSummary {
   name: string;
@@ -87,7 +87,7 @@ function measuredOnlyRows(records: L2Record[], viewports: string[], expected: nu
       expected,
       page_scroll: configs.filter((c) => c.layout.spills.some((s) => s.kind === 'page')).length,
       spills: configs.filter((c) => c.layout.spills.length > 0).length,
-      always_visible: configs.filter((c) => c.alwaysVisible.length > 0).length,
+      always_visible: configs.filter((c) => c.alwaysVisible.some(gated)).length,
       truncated: configs.reduce((n, c) => n + c.layout.truncated.length, 0),
     };
   });
@@ -150,7 +150,7 @@ export function worstConfigs(l2: L2Record[], n: number): Array<{ rec: L2Record; 
       .map((c) => {
         const axe = (c.axe ?? []).filter((v) => v.impact === 'serious' || v.impact === 'critical');
         const axeNodes = axe.reduce((m, v) => m + v.nodes, 0);
-        const visible = c.alwaysVisible;
+        const visible = c.alwaysVisible.filter(gated);
         const score = axeNodes + 10 * c.layout.spills.length + 5 * visible.length + c.layout.truncated.length;
         const why = [
           axeNodes ? `axe ${axe.map((v) => `${v.id}×${v.nodes}`).join(', ')}` : '',
@@ -208,6 +208,7 @@ export function writeReport(dir: string, m: MeasuredRound, x: ReportExtras): voi
 
   out.push('## Gates', '');
   const byElement = Object.entries(g.gate2_always_visible.by_element).map(([k, v]) => `${k} ×${v}`).join('; ');
+  const measuredOnly = Object.entries(g.gate2_always_visible.measured_only).map(([k, v]) => `${k} ×${v}`).join('; ');
   const byRule = Object.entries(g.gate5_accessibility.by_rule).map(([k, v]) => `${k} (${v.impact}) ${v.nodes} nodes on ${v.pages} pages`).join('; ');
   const pagesOf = (n: number) => `${n} of ${g.gate1_no_horizontal_overflow.of} measured pages`;
   out.push(
@@ -215,7 +216,7 @@ export function writeReport(dir: string, m: MeasuredRound, x: ReportExtras): voi
       ['gate', 'result', 'counts'],
       [
         ['1 no horizontal overflow', RESULT(g.gate1_no_horizontal_overflow), `${pagesOf(g.gate1_no_horizontal_overflow.pages)}; ${g.gate1_no_horizontal_overflow.page_scroll} with page scroll; ${g.gate1_no_horizontal_overflow.spills} spills`],
-        ['2 always visible', RESULT(g.gate2_always_visible), `${pagesOf(g.gate2_always_visible.pages)}; ${byElement || 'none'}`],
+        ['2 always visible', RESULT(g.gate2_always_visible), `${pagesOf(g.gate2_always_visible.pages)}; ${byElement || 'none'}${measuredOnly ? `; measured only, not gated: ${measuredOnly}` : ''}`],
         ['3 unmissable completion', RESULT(g.gate3_unmissable_completion), `completion_miss ${g.gate3_unmissable_completion.completion_miss}, false_complete ${g.gate3_unmissable_completion.false_complete}`],
         ['4 screen-only user', RESULT(g.gate4_screen_only), `${g.gate4_screen_only.completed} of ${g.gate4_screen_only.tasks} pointer runs completed`],
         ['5 accessibility (axe)', RESULT(g.gate5_accessibility), `${g.gate5_accessibility.nodes} serious/critical nodes on ${pagesOf(g.gate5_accessibility.pages)}; ${byRule || 'none'}`],
@@ -309,7 +310,7 @@ export function writeReport(dir: string, m: MeasuredRound, x: ReportExtras): voi
   out.push('## Measured-only viewports', '');
   out.push(
     table(
-      ['viewport', 'pages measured', 'with page scroll', 'with a spill', 'with an always-visible element out of view, covered or missing', 'truncated texts'],
+      ['viewport', 'pages measured', 'with page scroll', 'with a spill', 'with an always-visible element out of view, covered or missing (in the states gate 2 gates)', 'truncated texts'],
       m.measured_only.map((r) => [r.viewport, `${r.configs} of ${r.expected}`, r.page_scroll, r.spills, r.always_visible, r.truncated]),
     ),
     '',

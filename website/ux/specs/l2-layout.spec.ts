@@ -4,7 +4,7 @@
 // and attaches what it measured even when it is cut off, so the reporter counts the rest as
 // unmeasured.
 import { expect, test } from '@playwright/test';
-import { BASE, GATING, ORIGIN, SITEMAP, THEMES, HYDRATED, alwaysVisible, pageKind } from '../adapter';
+import { BASE, GATING, ORIGIN, SITEMAP, TEMPLATE_PAGES, THEMES, HYDRATED, alwaysVisible, builtPage, hasSearchControl, pageKind } from '../adapter';
 import { checkConfig, frame, gateFailures, showTheme } from '../core/contract';
 import { makeHermetic } from '../core/hermetic';
 import { probeMotion, readLayoutShift } from '../core/probes';
@@ -22,6 +22,13 @@ let record: L2Record | null = null;
 test.afterEach(async ({}, testInfo) => {
   if (record) await testInfo.attach('ux-l2', { body: JSON.stringify(record), contentType: 'application/json' });
   record = null;
+});
+
+// UXF-001 as one finding: the built template pages hold a search control once a search plugin is
+// configured. Red while the site has none; no browser needed.
+test('L2 site search: every template page builds a search control (UXF-001)', () => {
+  const without = TEMPLATE_PAGES.map((p) => p.path).filter((path) => !hasSearchControl(builtPage(path)));
+  expect(without, `UXF-001: ${without.length} of ${TEMPLATE_PAGES.length} template pages build no search control (no search plugin is configured)`).toEqual([]);
 });
 
 for (const path of pages) {
