@@ -14,7 +14,8 @@
 use ess_compiler::{ir::EssIr, resolve::compile, source::SourceMap};
 use ess_conformance::synthesize::{
     branch_selections_tried, entity_view_indexes_built, kept_edges_equal_fresh,
-    kept_view_index_equals_fresh, lifecycle_edges_derived, synthesize, Synthesis,
+    kept_view_index_equals_fresh, lifecycle_edges_derived, related_selections_tried, synthesize,
+    Synthesis,
 };
 use ess_domain::{
     spec::{RawSpecFile, Specification},
@@ -27,6 +28,11 @@ const MODEL: &str = include_str!("fixtures/stored-rows-decided-once.yaml");
 /// The rows and inputs the whole synthesis may check for the branch they select: 204 when each
 /// command's pick on a row is kept for the synthesis, 348 when every search decides it anew.
 const BOUND: u64 = 260;
+
+/// The related rows and inputs the synthesis of [`dock`]`(2, 2)` may check for the branch they
+/// select: 324 when the pick on a row is kept for the synthesis, 846 when every refusal decides it
+/// anew.
+const RELATED_BOUND: u64 = 450;
 
 fn ir(text: &str) -> EssIr {
     let raw = RawSpecFile::parse(text).unwrap_or_else(|error| panic!("{error}\n{text}"));
@@ -111,6 +117,130 @@ fn chain(spares: usize) -> String {
         );
     }
     text
+}
+
+/// The model [`dock`] fills in: `TOOLS` and `MARKS` are the variants, `UNMARKED` the refusals of
+/// `OpenBay` and `LACKING` those of `PlaceLoad`.
+const DOCK: &str = r#"format: ess/37
+system: demo
+version: v1
+domain: demo.dock
+summary: A load needing a tool or a mark its bay lacks is refused by that name.
+types:
+  - {name: demo.dock.Tool, kind: enum, variants: [TOOLS]}
+  - {name: demo.dock.Mark, kind: enum, variants: [MARKS]}
+  - {name: demo.dock.BayName, kind: enum, variants: [bay_1, bay_2, bay_3, bay_4, bay_5, bay_6]}
+  - {name: demo.dock.LoadId, kind: newtype, of: Uuid}
+entities:
+  - name: demo.dock.Bay
+    identity: {name: bay, type: demo.dock.BayName}
+    fields:
+      - {name: tools, type: "List<demo.dock.Tool>"}
+      - {name: marks, type: "List<demo.dock.Mark>"}
+    lifecycle: {initial: Open, states: [Open], terminal: [Open]}
+  - name: demo.dock.Load
+    identity: {name: load, type: demo.dock.LoadId}
+    fields:
+      - {name: bay, type: demo.dock.BayName}
+    relations:
+      - {name: placed_in, kind: references, target: demo.dock.Bay, cardinality: one, via: bay}
+    lifecycle: {initial: Placed, states: [Placed], terminal: [Placed]}
+errors:
+  - name: demo.dock.BayMissing
+    fields: [{name: bay, type: demo.dock.BayName}]
+  - name: demo.dock.Lacking
+    fields: [{name: bay, type: demo.dock.BayName}]
+events:
+  - name: demo.dock.BayOpened
+    fields: [{name: bay, type: demo.dock.BayName}]
+  - name: demo.dock.LoadPlaced
+    fields: [{name: load, type: demo.dock.LoadId}, {name: bay, type: demo.dock.BayName}]
+commands:
+  - name: demo.dock.OpenBay
+    input:
+      - {name: bay, type: demo.dock.BayName}
+      - {name: tools, type: "List<demo.dock.Tool>"}
+      - {name: marks, type: "List<demo.dock.Mark>"}
+    outcomes:
+UNMARKED      - name: opened
+        creates: demo.dock.Bay
+        instance: bay
+        sets: {tools: input.tools, marks: input.marks}
+        emits: [demo.dock.BayOpened]
+        payload: {demo.dock.BayOpened: {bay: input.bay}}
+  - name: demo.dock.PlaceLoad
+    input:
+      - {name: bay, type: demo.dock.BayName}
+      - {name: tools, type: "List<demo.dock.Tool>"}
+      - {name: marks, type: "List<demo.dock.Mark>"}
+    outcomes:
+      - name: bay-missing
+        when_related: {via: input.bay, exists: false}
+        error: demo.dock.BayMissing
+        payload: {demo.dock.BayMissing: {bay: input.bay}}
+LACKING      - name: placed
+        creates: demo.dock.Load
+        instance: load
+        sets: {bay: input.bay}
+        emits: [demo.dock.LoadPlaced]
+        payload: {demo.dock.LoadPlaced: {load: {generated: true}, bay: input.bay}}
+"#;
+
+/// A bay opened with the tools and marks it holds, two of its names refused without a mark, and a
+/// load refused for each tool and each mark it needs that the bay lacks: `tools + marks` refusals
+/// guarding on the one related row, each beside an input guard over a list.
+fn dock(tools: usize, marks: usize) -> String {
+    let tool_names: Vec<String> = (1..=tools).map(|at| format!("tool_{at}")).collect();
+    let mark_names: Vec<String> = (1..=marks).map(|at| format!("mark_{at}")).collect();
+    let mut unmarked = String::new();
+    for (at, (bay, held)) in [("bay_1", "mark_1"), ("bay_2", "mark_2")]
+        .into_iter()
+        .enumerate()
+    {
+        let _ = write!(
+            unmarked,
+            "      - name: unmarked-{at}
+        when: {{all: [{{bay: [{bay}]}}, {{not: {{exists: {{in: marks, as: held, that: held == {held}}}}}}}]}}
+        error: demo.dock.Lacking
+        payload: {{demo.dock.Lacking: {{bay: input.bay}}}}
+"
+        );
+    }
+    let mut lacking = String::new();
+    for (list, names) in [("tools", &tool_names), ("marks", &mark_names)] {
+        for (at, name) in names.iter().enumerate() {
+            let _ = write!(
+                lacking,
+                "      - name: lacks-{list}-{at}
+        when: {{exists: {{in: {list}, as: needed, that: needed == {name}}}}}
+        when_related: {{via: input.bay, predicate: {{not: {{exists: {{in: {list}, as: held, that: held == {name}}}}}}}}}
+        error: demo.dock.Lacking
+        payload: {{demo.dock.Lacking: {{bay: input.bay}}}}
+"
+            );
+        }
+    }
+    DOCK.replace("TOOLS", &tool_names.join(", "))
+        .replace("MARKS", &mark_names.join(", "))
+        .replace("UNMARKED", &unmarked)
+        .replace("LACKING", &lacking)
+}
+
+/// Every refusal of `PlaceLoad` searches the same bays with the same inputs and accepts only its
+/// own branch, so the branch a bay and an input select is decided once for all of them. Decided
+/// anew per refusal, a downstream specification of 31 such refusals ran more than seven times as
+/// long as on 0.92.0, once 0.93.0 gave the bay's creator more candidates.
+#[test]
+fn a_related_row_many_refusals_read_is_decided_within_a_bound() {
+    let ir = ir(&dock(2, 2));
+    let (synthesis, tried) = related_selections_tried(|| synthesize(&ir));
+    assert!(
+        tried <= RELATED_BOUND,
+        "related rows and inputs were checked {tried} times for the branch they select, more than \
+         {RELATED_BOUND}\nscenarios: {:#?}\nrefusals: {:#?}",
+        ids(&synthesis),
+        refusals(&synthesis)
+    );
 }
 
 /// The seven-state chain has six edges. 46 searches rebuilt the graph each time (276 derivations);
