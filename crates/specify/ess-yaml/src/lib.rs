@@ -23,11 +23,33 @@
 
 #![forbid(unsafe_code)]
 
-pub use serde_norway::{
-    from_slice, from_str, from_value, Deserializer, Error, Mapping, Number, Value,
-};
+pub use serde_norway::{from_slice, from_value, Deserializer, Error, Mapping, Number, Value};
 
 use serde::Serialize;
+
+std::thread_local! {
+    /// How many texts [`from_str`] has read on this thread ([`documents_read`]).
+    static READS: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
+
+/// Reads a `T` from YAML text: the backend's `from_str`, counted ([`documents_read`]).
+///
+/// # Errors
+///
+/// What the backend's `from_str` refuses.
+pub fn from_str<'de, T: serde::Deserialize<'de>>(text: &'de str) -> Result<T, Error> {
+    READS.with(|count| count.set(count.get() + 1));
+    serde_norway::from_str(text)
+}
+
+/// What `run` returns, and how many texts [`from_str`] read on this thread while it ran: the work
+/// a test bounds where a wall-clock bound would depend on the machine. Not part of any document.
+#[doc(hidden)]
+pub fn documents_read<R>(run: impl FnOnce() -> R) -> (R, u64) {
+    let before = READS.with(std::cell::Cell::get);
+    let out = run();
+    (out, READS.with(std::cell::Cell::get) - before)
+}
 
 /// One step of a path into a document: a mapping key, or a position in a sequence.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]

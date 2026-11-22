@@ -1125,3 +1125,28 @@ views:
         .into_report();
     assert_eq!(report.status, ConformanceStatus::Passed, "{report:#?}");
 }
+
+// ---- the model is hashed once per run ----------------------------------------------------------
+
+/// A synthesis run hashes its model once, with a seed or without: the seed check, the suite's
+/// provenance and the closing restamp of a run share one pair of digests, and the digests a seeded
+/// run records equal a fresh computation's. The unfixed code hashed once without a seed and three
+/// times with one (seed check, suite provenance, closing restamp).
+#[test]
+fn a_synthesis_run_computes_the_models_digests_once_with_or_without_a_seed() {
+    let ir = ir();
+    let admitted = admitted(&ir, &issue_selections());
+    let (free, free_hashes) = ess_gen::provenance::provenances_computed(|| synthesize(&ir));
+    let (seeded, seeded_hashes) = ess_gen::provenance::provenances_computed(|| {
+        synthesize_with_seeds(&ir, &admitted).expect("the seeds belong to the model")
+    });
+    assert_eq!(free_hashes, 1, "a seed-free run hashes the model once");
+    assert_eq!(seeded_hashes, 1, "a seeded run hashes the model once");
+    let fresh = ess_conformance::SuiteProvenance::of(&ir);
+    assert_eq!(seeded.suite.provenance.spec_digest, fresh.spec_digest);
+    assert_eq!(
+        seeded.suite.provenance.contract_digest,
+        fresh.contract_digest
+    );
+    assert_eq!(free.suite.provenance.spec_digest, fresh.spec_digest);
+}

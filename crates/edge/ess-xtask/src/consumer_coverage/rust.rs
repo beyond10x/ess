@@ -683,7 +683,8 @@ fn external(path: &str) -> Option<usize> {
         | "std::boxed::Box"
         | "Vec"
         | "std::vec::Vec"
-        | "std::collections::BTreeSet" => Some(1),
+        | "std::collections::BTreeSet"
+        | "std::sync::OnceLock" => Some(1),
         "std::collections::BTreeMap" => Some(2),
         "String"
         | "std::string::String"

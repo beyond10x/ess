@@ -1,0 +1,202 @@
+format: ess/37
+system: shop
+version: v1
+domain: shop.order
+summary: Tickets two commands create and four commands mark, each refusing a mark already set.
+types:
+  - {name: shop.order.TicketId, kind: newtype, of: String}
+entities:
+  - name: shop.order.Ticket
+    identity: {name: ticket_id, type: shop.order.TicketId}
+    fields:
+      - {name: seats, type: Integer}
+      - {name: flag_1, type: Boolean}
+      - {name: flag_2, type: Boolean}
+      - {name: flag_3, type: Boolean}
+      - {name: flag_4, type: Boolean}
+    invariants:
+      - "seats >= 1"
+      - "seats <= 9"
+    lifecycle:
+      initial: Open
+      states: [Open, Closed]
+      terminal: [Closed]
+      transitions:
+        - {name: mark_1, from: [Open], to: Open}
+        - {name: mark_2, from: [Open], to: Open}
+        - {name: mark_3, from: [Open], to: Open}
+        - {name: mark_4, from: [Open], to: Open}
+        - {name: close, from: [Open], to: Closed}
+actors:
+  - name: shop.order.Clerk
+    may: [shop.order.OpenTicket, shop.order.ReserveTicket, shop.order.Close, shop.order.Mark1, shop.order.Mark2, shop.order.Mark3, shop.order.Mark4]
+errors:
+  - name: shop.order.NoSuchTicket
+    fields:
+      - {name: ticket_id, type: shop.order.TicketId}
+  - name: shop.order.AlreadyMarked
+    fields:
+      - {name: ticket_id, type: shop.order.TicketId}
+  - name: shop.order.StateConflict
+    fields:
+      - {name: ticket_id, type: shop.order.TicketId}
+events:
+  - name: shop.order.Opened
+    fields:
+      - {name: ticket_id, type: shop.order.TicketId}
+  - name: shop.order.Marked
+    fields:
+      - {name: ticket_id, type: shop.order.TicketId}
+  - name: shop.order.Closed
+    fields:
+      - {name: ticket_id, type: shop.order.TicketId}
+commands:
+  - name: shop.order.OpenTicket
+    input:
+      - {name: ticket_id, type: shop.order.TicketId}
+      - {name: seats, type: Integer}
+    outcomes:
+      - name: opened
+        creates: shop.order.Ticket
+        instance: ticket_id
+        sets:
+          seats: input.seats
+          flag_1: false
+          flag_2: false
+          flag_3: false
+          flag_4: false
+        emits: [shop.order.Opened]
+        payload:
+          shop.order.Opened: {ticket_id: input.ticket_id}
+  - name: shop.order.ReserveTicket
+    input:
+      - {name: ticket_id, type: shop.order.TicketId}
+    outcomes:
+      - name: reserved
+        creates: shop.order.Ticket
+        instance: ticket_id
+        sets:
+          seats: 1
+          flag_1: true
+          flag_2: false
+          flag_3: false
+          flag_4: false
+        emits: [shop.order.Opened]
+        payload:
+          shop.order.Opened: {ticket_id: input.ticket_id}
+  - name: shop.order.Mark1
+    input:
+      - {name: ticket_id, type: shop.order.TicketId}
+      - {name: on, type: Boolean}
+    outcomes:
+      - name: no-ticket
+        unknown_instance: true
+        error: shop.order.NoSuchTicket
+      - name: already-marked
+        when_subject:
+          predicate: flag_1 == true
+        error: shop.order.AlreadyMarked
+      - name: marked
+        moves: shop.order.Ticket.mark_1
+        instance: ticket_id
+        sets:
+          flag_1: input.on
+        emits: [shop.order.Marked]
+        payload:
+          shop.order.Marked: {ticket_id: input.ticket_id}
+      - name: wrong-state
+        wrong_state: true
+        error: shop.order.StateConflict
+  - name: shop.order.Mark2
+    input:
+      - {name: ticket_id, type: shop.order.TicketId}
+      - {name: on, type: Boolean}
+    outcomes:
+      - name: no-ticket
+        unknown_instance: true
+        error: shop.order.NoSuchTicket
+      - name: already-marked
+        when_subject:
+          predicate: flag_2 == true
+        error: shop.order.AlreadyMarked
+      - name: marked
+        moves: shop.order.Ticket.mark_2
+        instance: ticket_id
+        sets:
+          flag_2: input.on
+        emits: [shop.order.Marked]
+        payload:
+          shop.order.Marked: {ticket_id: input.ticket_id}
+      - name: wrong-state
+        wrong_state: true
+        error: shop.order.StateConflict
+  - name: shop.order.Mark3
+    input:
+      - {name: ticket_id, type: shop.order.TicketId}
+      - {name: on, type: Boolean}
+    outcomes:
+      - name: no-ticket
+        unknown_instance: true
+        error: shop.order.NoSuchTicket
+      - name: already-marked
+        when_subject:
+          predicate: flag_3 == true
+        error: shop.order.AlreadyMarked
+      - name: marked
+        moves: shop.order.Ticket.mark_3
+        instance: ticket_id
+        sets:
+          flag_3: input.on
+        emits: [shop.order.Marked]
+        payload:
+          shop.order.Marked: {ticket_id: input.ticket_id}
+      - name: wrong-state
+        wrong_state: true
+        error: shop.order.StateConflict
+  - name: shop.order.Mark4
+    input:
+      - {name: ticket_id, type: shop.order.TicketId}
+      - {name: on, type: Boolean}
+    outcomes:
+      - name: no-ticket
+        unknown_instance: true
+        error: shop.order.NoSuchTicket
+      - name: already-marked
+        when_subject:
+          predicate: flag_4 == true
+        error: shop.order.AlreadyMarked
+      - name: marked
+        moves: shop.order.Ticket.mark_4
+        instance: ticket_id
+        sets:
+          flag_4: input.on
+        emits: [shop.order.Marked]
+        payload:
+          shop.order.Marked: {ticket_id: input.ticket_id}
+      - name: wrong-state
+        wrong_state: true
+        error: shop.order.StateConflict
+  - name: shop.order.Close
+    input:
+      - {name: ticket_id, type: shop.order.TicketId}
+    outcomes:
+      - name: no-ticket
+        unknown_instance: true
+        error: shop.order.NoSuchTicket
+      - name: closed
+        moves: shop.order.Ticket.close
+        instance: ticket_id
+        emits: [shop.order.Closed]
+        payload:
+          shop.order.Closed: {ticket_id: input.ticket_id}
+      - name: wrong-state
+        wrong_state: true
+        error: shop.order.StateConflict
+views:
+  - name: shop.order.Tickets
+    source: shop.order.Ticket
+    consistency: read_your_writes
+    fields:
+      - {name: ticket_id, type: shop.order.TicketId}
+      - {name: state, type: shop.order.Ticket.State}
+      - {name: seats, type: Integer}

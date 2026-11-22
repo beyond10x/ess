@@ -24,6 +24,9 @@ pub struct AuthoredBatch {
     provenance: crate::SuiteProvenance,
     sources: Vec<CoverageSource>,
     candidates: Vec<Candidate>,
+    /// The generated refusals each accepted candidate's `covers:` names, beside it; read with the
+    /// candidate, so no source is read again for them.
+    covers: Vec<Vec<ScenarioId>>,
 }
 impl AuthoredBatch {
     /// Number of candidates this compilation accepted, before later final merging.
@@ -56,20 +59,26 @@ pub fn compile_sources(
     }
     let mut seen = BTreeMap::new();
     let mut candidates = Vec::new();
+    let mut covers = Vec::new();
     let mut sources = Vec::new();
     for source in ordered.values() {
         let raw = crate::authored::Source::new(source.identity.as_str(), &source.text);
-        let candidate = crate::authored::compile_one(ir, &raw, &seen);
+        let (candidate, covered) = match crate::authored::compile_covering(ir, &raw, &seen) {
+            Ok((id, scenario, covered)) => (Ok((id, scenario)), covered),
+            Err(refusals) => (Err(refusals), Vec::new()),
+        };
         if let Ok((id, _)) = &candidate {
             seen.insert(id.clone(), source.identity.as_str().into());
         }
         sources.push((*source).clone());
         candidates.push(candidate);
+        covers.push(covered);
     }
     Ok(AuthoredBatch {
         provenance: crate::SuiteProvenance::of(ir),
         sources,
         candidates,
+        covers,
     })
 }
 /// Merge separately compiled batches, retaining first ownership by checked source identity.
@@ -207,31 +216,33 @@ fn finish_inventory(
         ),
     };
     let mut ordered = BTreeMap::new();
+    let mut covered = BTreeMap::new();
     for batch in batches {
         if batch.provenance != crate::SuiteProvenance::of(ir) {
             return Err(coverage::error(
                 "authored batch belongs to a different model",
             ));
         }
-        for (source, candidate) in batch.sources.iter().zip(&batch.candidates) {
+        for ((source, candidate), covers) in batch
+            .sources
+            .iter()
+            .zip(&batch.candidates)
+            .zip(&batch.covers)
+        {
             if ordered
                 .insert(&source.identity, (source, candidate))
                 .is_some()
             {
                 return Err(coverage::error("repeated authored input identity"));
             }
+            covered.insert(&source.identity, covers);
         }
     }
     let covering: Vec<(SourceIdentity, ScenarioId, Vec<ScenarioId>)> = ordered
         .iter()
-        .filter_map(|(identity, (source, candidate))| {
+        .filter_map(|(identity, (_, candidate))| {
             let (id, _) = candidate.as_ref().ok()?;
-            let raw = crate::authored::Source::new(identity.as_str(), &source.text);
-            Some((
-                (*identity).clone(),
-                id.clone(),
-                crate::authored::covers_of(ir, &raw),
-            ))
+            Some(((*identity).clone(), id.clone(), covered[identity].clone()))
         })
         .filter(|(_, _, covers)| !covers.is_empty())
         .collect();
@@ -295,7 +306,7 @@ fn finish_inventory(
     suite.select_fresh_format_for(ir);
     suite.provenance.suite_version = coverage_version(ir, &suite, &inventory);
     let original = coverage::suite_document(&suite, &inventory)?;
-    AdmittedInput::from_suite(AdmittedSuite::from_json(&original)?)
+    AdmittedInput::from_suite(AdmittedSuite::produced(original, suite, inventory)?)
 }
 
 /// Files synthesis's refusals in the inventory, after the authored scenarios are merged.

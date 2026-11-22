@@ -39,6 +39,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
+use std::rc::Rc;
 use std::str::FromStr;
 
 use ess_primitives::error::{ParseError, ValidationCode, ValidationError, ValidationErrors};
@@ -1027,43 +1028,209 @@ fn build_registry(
     registry
 }
 
-/// Whether a type reference is inhabited, given what is known to be inhabited so far.
+/// The named type a reference waits on before it is inhabited, if any.
 ///
 /// `Optional`, `List` and `Map` are inhabited unconditionally: an absent value and an empty
 /// collection are base cases, so a type that reaches itself only through one of them still has
 /// values and a generator over it still terminates.
-fn reference_inhabited(reference: &TypeRef, inhabited: &BTreeSet<QualifiedName>) -> bool {
+fn waits_on(reference: &TypeRef) -> Option<&QualifiedName> {
     match reference {
         TypeRef::Primitive(_) | TypeRef::Optional(_) | TypeRef::List(_) | TypeRef::Map(_, _) => {
-            true
+            None
         }
-        TypeRef::Named(name) => inhabited.contains(name),
+        TypeRef::Named(name) => Some(name),
     }
 }
 
-/// Whether a declaration is inhabited, given what is known to be inhabited so far.
+/// What a declaration waits on: how many of the named types it lists must be inhabited before it
+/// is, and those names, each once per reference. Zero when it is inhabited outright.
 ///
 /// The union case is the whole point of this being about inhabitation rather than about cycles: a
 /// union needs **one** variant that can be built, not all of them. `Expr = union {leaf: Integer,
 /// pair: Pair}` with `Pair = struct {left: Expr, right: Expr}` describes a perfectly ordinary
 /// expression tree — every value of it bottoms out in a `leaf` — and a rule that refused every cycle
 /// of names would refuse it.
-fn body_inhabited(declared: &NamedType, inhabited: &BTreeSet<QualifiedName>) -> bool {
+fn requirements(declared: &NamedType) -> (usize, Vec<&QualifiedName>) {
     match &declared.body {
-        TypeBody::Newtype { of, .. } => reference_inhabited(of, inhabited),
+        TypeBody::Newtype { of, .. } => {
+            let named: Vec<&QualifiedName> = waits_on(of).into_iter().collect();
+            (named.len(), named)
+        }
         // Every field has to be buildable; a struct cannot omit one.
-        TypeBody::Struct { fields, .. } => fields
-            .iter()
-            .all(|field| reference_inhabited(&field.type_ref, inhabited)),
+        TypeBody::Struct { fields, .. } => {
+            let named: Vec<&QualifiedName> = fields
+                .iter()
+                .filter_map(|field| waits_on(&field.type_ref))
+                .collect();
+            (named.len(), named)
+        }
         // A variant is a name, not a reference to another type; an enum with no variants is refused
         // by `NamedType`'s own conversion, so anything reaching here has at least one.
-        TypeBody::Enum { .. } => true,
+        TypeBody::Enum { .. } => (0, Vec::new()),
         // One buildable variant is enough, and a unit variant (ess/22) is always buildable.
-        TypeBody::Union { variants, .. } => variants.values().any(|variant| {
-            variant
-                .as_ref()
-                .is_none_or(|variant| reference_inhabited(variant, inhabited))
-        }),
+        TypeBody::Union { variants, .. } => {
+            let mut named = Vec::new();
+            for variant in variants.values() {
+                match variant.as_ref().and_then(waits_on) {
+                    Some(name) => named.push(name),
+                    None => return (0, Vec::new()),
+                }
+            }
+            (1, named)
+        }
+    }
+}
+
+/// Every name a value can be built for: the least fixpoint, reached by a worklist.
+///
+/// Each declaration counts the requirements it still waits on, and each name knows the declarations
+/// that wait on it. Marking a name inhabited tells only those, so every declaration and every
+/// reference is looked at a bounded number of times, whatever order the names sort in. Rescanning
+/// the whole registry until nothing changed took one pass per link of a chain whose base sorted
+/// last. The least fixpoint is unique, so the order of the work does not change the set.
+fn least_fixpoint(registry: &TypeRegistry) -> BTreeSet<QualifiedName> {
+    let mut waiting: BTreeMap<&QualifiedName, usize> = BTreeMap::new();
+    let mut waiters: BTreeMap<&QualifiedName, Vec<&QualifiedName>> = BTreeMap::new();
+    let mut ready: Vec<&QualifiedName> = Vec::new();
+    for declared in registry.iter() {
+        visited();
+        let (needed, named) = requirements(declared);
+        if needed == 0 {
+            ready.push(&declared.name);
+            continue;
+        }
+        waiting.insert(&declared.name, needed);
+        for name in named {
+            waiters.entry(name).or_default().push(&declared.name);
+        }
+    }
+
+    let mut inhabited = BTreeSet::new();
+    while let Some(name) = ready.pop() {
+        inhabited.insert(name.clone());
+        for waiter in waiters.get(name).into_iter().flatten() {
+            visited();
+            // A union waits for one variant, so a second variant naming the same type finds it
+            // already at zero and changes nothing.
+            if let Some(remaining) = waiting.get_mut(waiter) {
+                if *remaining > 0 {
+                    *remaining -= 1;
+                    if *remaining == 0 {
+                        ready.push(waiter);
+                    }
+                }
+            }
+        }
+    }
+    inhabited
+}
+
+/// How much work the inhabitation check did: how many times it ran and how many declarations it
+/// examined. Counted per thread, for tests that bound the work rather than the time. Not part of
+/// any output.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) struct TypeCheckWork {
+    /// Runs of [`Inhabitation::of`] that computed the fixpoint.
+    pub(crate) runs: u64,
+    /// Declarations examined across those runs.
+    pub(crate) visits: u64,
+}
+
+std::thread_local! {
+    static TYPE_CHECK_WORK: std::cell::Cell<TypeCheckWork> =
+        const { std::cell::Cell::new(TypeCheckWork { runs: 0, visits: 0 }) };
+}
+
+/// One declaration examined by the inhabitation check.
+fn visited() {
+    TYPE_CHECK_WORK.with(|work| {
+        let mut counted = work.get();
+        counted.visits += 1;
+        work.set(counted);
+    });
+}
+
+/// What `run` returns, and the inhabitation work done on this thread while it ran.
+#[cfg(test)]
+pub(crate) fn type_check_work<R>(run: impl FnOnce() -> R) -> (R, TypeCheckWork) {
+    let before = TYPE_CHECK_WORK.with(std::cell::Cell::get);
+    let result = run();
+    let after = TYPE_CHECK_WORK.with(std::cell::Cell::get);
+    (
+        result,
+        TypeCheckWork {
+            runs: after.runs - before.runs,
+            visits: after.visits - before.visits,
+        },
+    )
+}
+
+/// How many registries [`Inhabitation::of`] keeps its conclusion for on one thread: the
+/// specification's registry with its lifecycle enums, and the declared types alone.
+const CHECKED_KEPT: usize = 2;
+
+/// One registry as the check read it, and what it concluded.
+type Checked = (Vec<Reads>, Rc<Inhabitation>);
+
+std::thread_local! {
+    /// What [`Inhabitation::of`] last concluded on this thread, newest first, with what it read.
+    static CHECKED: std::cell::RefCell<Vec<Checked>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// Everything the inhabitation check reads of one declaration: its name, its kind and the type
+/// references its body holds. Field names, tags, invariants and naming do not change what can be
+/// built, so a registry whose invariants were rewritten still reads the same.
+#[derive(Debug, PartialEq)]
+struct Reads {
+    name: QualifiedName,
+    kind: &'static str,
+    references: Vec<Option<TypeRef>>,
+}
+
+impl Reads {
+    /// What the check reads of a body: its kind and its references, in declaration order.
+    fn body(body: &TypeBody) -> (&'static str, Vec<Option<&TypeRef>>) {
+        match body {
+            TypeBody::Newtype { of, .. } => ("newtype", vec![Some(of)]),
+            TypeBody::Struct { fields, .. } => (
+                "struct",
+                fields.iter().map(|field| Some(&field.type_ref)).collect(),
+            ),
+            TypeBody::Enum { .. } => ("enum", Vec::new()),
+            TypeBody::Union { variants, .. } => {
+                ("union", variants.values().map(Option::as_ref).collect())
+            }
+        }
+    }
+
+    /// What the check reads of every declaration of `registry`, in its order.
+    fn of(registry: &TypeRegistry) -> Vec<Self> {
+        registry
+            .iter()
+            .map(|declared| {
+                let (kind, references) = Self::body(&declared.body);
+                Self {
+                    name: declared.name.clone(),
+                    kind,
+                    references: references
+                        .into_iter()
+                        .map(Option::<&TypeRef>::cloned)
+                        .collect(),
+                }
+            })
+            .collect()
+    }
+
+    /// Whether `registry` reads, declaration by declaration, as `reads`.
+    fn same(reads: &[Self], registry: &TypeRegistry) -> bool {
+        reads.len() == registry.len()
+            && reads.iter().zip(registry.iter()).all(|(read, declared)| {
+                let (kind, references) = Self::body(&declared.body);
+                read.name == declared.name
+                    && read.kind == kind
+                    && read.references.iter().map(Option::as_ref).eq(references)
+            })
     }
 }
 
@@ -1099,20 +1266,39 @@ impl Inhabitation {
     ///
     /// Stating it the other way round was a real defect, not a stylistic difference: treating every
     /// union variant as required refused the expression tree above.
-    pub(crate) fn of(registry: &TypeRegistry) -> Self {
-        let mut inhabited: BTreeSet<QualifiedName> = BTreeSet::new();
-        loop {
-            let mut grew = false;
-            for declared in registry.iter() {
-                if !inhabited.contains(&declared.name) && body_inhabited(declared, &inhabited) {
-                    inhabited.insert(declared.name.clone());
-                    grew = true;
-                }
+    ///
+    /// Answered from what this thread last concluded when the registry reads the same to the check
+    /// (see [`Reads`]): assembly checks the registry, and the validators after it, in assembly's
+    /// own validation and in the compiler's revalidation of the assembled specification, ask about
+    /// the same declarations again. `value_expression` asks about the system's declared types
+    /// without the lifecycle enums, a different registry, so that one is checked once on its own.
+    pub(crate) fn of(registry: &TypeRegistry) -> Rc<Self> {
+        CHECKED.with(|checked| {
+            let mut checked = checked.borrow_mut();
+            if let Some(at) = checked
+                .iter()
+                .position(|(reads, _)| Reads::same(reads, registry))
+            {
+                let entry = checked.remove(at);
+                let found = Rc::clone(&entry.1);
+                checked.insert(0, entry);
+                return found;
             }
-            if !grew {
-                break;
-            }
-        }
+            let found = Rc::new(Self::computed(registry));
+            checked.insert(0, (Reads::of(registry), Rc::clone(&found)));
+            checked.truncate(CHECKED_KEPT);
+            found
+        })
+    }
+
+    /// The fixpoint and the refused set, computed.
+    fn computed(registry: &TypeRegistry) -> Self {
+        TYPE_CHECK_WORK.with(|work| {
+            let mut counted = work.get();
+            counted.runs += 1;
+            work.set(counted);
+        });
+        let inhabited = least_fixpoint(registry);
         let refused = registry
             .iter()
             .filter(|declared| !inhabited.contains(&declared.name))
@@ -1156,7 +1342,7 @@ impl TypeRegistry {
     /// registry does not hold.
     #[must_use]
     pub fn without_finite_value(&self) -> BTreeSet<QualifiedName> {
-        Inhabitation::of(self).refused
+        Inhabitation::of(self).refused.clone()
     }
 }
 
@@ -2548,5 +2734,237 @@ mod format_version_tests {
                 "the schema accepts `{refused}`, which the parser refuses"
             );
         }
+    }
+}
+
+/// The inhabitation check is held to a work bound, not a clock: how many declarations it examines,
+/// whatever order their names sort in.
+#[cfg(test)]
+mod type_check_work_tests {
+    use super::*;
+    use crate::types::RawNamedType;
+
+    fn declared(yaml: &str) -> NamedType {
+        let raw: RawNamedType = ess_yaml::from_str(yaml).expect("the document is well formed");
+        NamedType::try_from(raw).expect("the declaration is well formed")
+    }
+
+    fn registry(declarations: &[String]) -> TypeRegistry {
+        let mut registry = TypeRegistry::new();
+        for yaml in declarations {
+            registry
+                .insert(declared(yaml))
+                .expect("one declaration per name");
+        }
+        registry
+    }
+
+    /// A chain of `length` newtypes, each over the next, the last over `String`. With `base_last`
+    /// the base's name sorts after every other name; otherwise before.
+    fn chain(length: usize, base_last: bool) -> TypeRegistry {
+        let declarations: Vec<String> = (0..length)
+            .map(|index| {
+                let of = match (base_last, index) {
+                    (true, last) if last + 1 == length => "String".to_owned(),
+                    (true, _) => format!("shop.order.Ticket{:04}", index + 1),
+                    (false, 0) => "String".to_owned(),
+                    (false, _) => format!("shop.order.Ticket{:04}", index - 1),
+                };
+                format!("{{name: shop.order.Ticket{index:04}, kind: newtype, of: {of}}}")
+            })
+            .collect();
+        registry(&declarations)
+    }
+
+    fn reference_inhabited(reference: &TypeRef, inhabited: &BTreeSet<QualifiedName>) -> bool {
+        match reference {
+            TypeRef::Primitive(_)
+            | TypeRef::Optional(_)
+            | TypeRef::List(_)
+            | TypeRef::Map(_, _) => true,
+            TypeRef::Named(name) => inhabited.contains(name),
+        }
+    }
+
+    fn body_inhabited(declared: &NamedType, inhabited: &BTreeSet<QualifiedName>) -> bool {
+        match &declared.body {
+            TypeBody::Newtype { of, .. } => reference_inhabited(of, inhabited),
+            TypeBody::Struct { fields, .. } => fields
+                .iter()
+                .all(|field| reference_inhabited(&field.type_ref, inhabited)),
+            TypeBody::Enum { .. } => true,
+            TypeBody::Union { variants, .. } => variants.values().any(|variant| {
+                variant
+                    .as_ref()
+                    .is_none_or(|variant| reference_inhabited(variant, inhabited))
+            }),
+        }
+    }
+
+    /// The fixpoint as it was first written: rescan every declaration until nothing new is marked.
+    /// The reference the check is compared against.
+    fn rescanned(registry: &TypeRegistry) -> BTreeSet<QualifiedName> {
+        let mut inhabited = BTreeSet::new();
+        loop {
+            let mut grew = false;
+            for declared in registry.iter() {
+                if !inhabited.contains(&declared.name) && body_inhabited(declared, &inhabited) {
+                    inhabited.insert(declared.name.clone());
+                    grew = true;
+                }
+            }
+            if !grew {
+                return inhabited;
+            }
+        }
+    }
+
+    #[test]
+    fn a_chain_is_checked_in_linear_work_whichever_way_its_names_sort() {
+        // Rescanning the registry until nothing changed examined 512 declarations for the base
+        // first, and 512 * 513 / 2 = 131,328 for the base last (one pass per link, each pass over
+        // every link not yet marked). The worklist examines each declaration once and follows
+        // each reference once: 2 * 512 - 1 = 1,023 either way.
+        const LENGTH: usize = 512;
+        let mut visits = Vec::new();
+        for base_last in [false, true] {
+            let types = chain(LENGTH, base_last);
+            let (found, work) = type_check_work(|| Inhabitation::of(&types));
+            assert_eq!(found.inhabited.len(), LENGTH, "every link has a value");
+            assert!(found.refused.is_empty());
+            assert!(
+                work.visits <= 3 * LENGTH as u64,
+                "a chain of {LENGTH} types with its base sorting {} took {} visits, more than {}",
+                if base_last { "last" } else { "first" },
+                work.visits,
+                3 * LENGTH
+            );
+            visits.push(work.visits);
+        }
+        assert_eq!(
+            visits[0], visits[1],
+            "the order names sort in costs nothing"
+        );
+    }
+
+    #[test]
+    fn the_check_concludes_what_the_rescanning_fixpoint_concludes() {
+        let cases: Vec<Vec<&str>> = vec![
+            vec![
+                "{name: shop.order.Zeta, kind: struct, fields: [{name: eta, type: shop.order.Eta}]}",
+                "{name: shop.order.Eta, kind: newtype, of: shop.order.Zeta}",
+                "{name: shop.order.Alpha, kind: struct, fields: [{name: beta, type: shop.order.Beta}, {name: n, type: Integer}]}",
+                "{name: shop.order.Beta, kind: union, tag: kind, variants: {one: shop.order.Alpha, two: shop.order.Gamma}}",
+                "{name: shop.order.Gamma, kind: newtype, of: shop.order.Beta}",
+                "{name: shop.order.Waits, kind: newtype, of: shop.order.Alpha}",
+                "{name: shop.order.Odd, kind: struct, fields: [{name: x, type: shop.order.Nowhere}, {name: y, type: shop.order.Ac}]}",
+                "{name: shop.order.Fine, kind: struct, fields: [{name: z, type: \"List<shop.order.Alpha>\"}, {name: w, type: shop.order.Aa}, {name: v, type: shop.order.Aa}]}",
+                "{name: shop.order.Aa, kind: newtype, of: shop.order.Ab}",
+                "{name: shop.order.Ab, kind: newtype, of: shop.order.Ac}",
+                "{name: shop.order.Ac, kind: newtype, of: String}",
+            ],
+            vec![
+                "{name: shop.order.Expr, kind: union, tag: kind, variants: {leaf: Integer, pair: shop.order.Pair}}",
+                "{name: shop.order.Pair, kind: struct, fields: [{name: left, type: shop.order.Expr}, {name: right, type: shop.order.Expr}]}",
+                "{name: shop.order.Tree, kind: union, tag: kind, variants: {node: shop.order.Node, also: shop.order.Node}}",
+                "{name: shop.order.Node, kind: struct, fields: [{name: kids, type: \"List<shop.order.Tree>\"}, {name: flag_3, type: shop.order.State}]}",
+                "{name: shop.order.State, kind: enum, variants: [Open, Done]}",
+                "{name: shop.order.Self, kind: newtype, of: shop.order.Self}",
+                "{name: shop.order.Unit, kind: union, tag: kind, variants: {none: null, more: shop.order.Self}}",
+                "{name: shop.order.Stuck, kind: union, tag: kind, variants: {a: shop.order.Self, b: shop.order.Self}}",
+            ],
+        ];
+        for case in cases {
+            let declarations: Vec<String> = case.iter().map(|yaml| (*yaml).to_owned()).collect();
+            let types = registry(&declarations);
+            let found = Inhabitation::of(&types);
+            assert_eq!(found.inhabited, rescanned(&types), "{case:#?}");
+        }
+    }
+}
+
+/// The inhabitation check runs once per registry of a model: assembly runs it, and every validator
+/// after it reads what assembly found instead of running it again.
+#[cfg(test)]
+mod type_check_runs_tests {
+    use super::*;
+    use crate::spec::{RawSpecFile, Specification};
+    use std::fmt::Write as _;
+
+    /// Every `.yaml` file of the billing example, as `ess specify validate` reads them.
+    fn billing() -> Vec<(Source, RawSpecFile)> {
+        let root =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../examples/billing");
+        let mut paths = Vec::new();
+        for directory in [root.clone(), root.join("domains")] {
+            for entry in std::fs::read_dir(&directory).expect("the example is readable") {
+                let path = entry.expect("the example is readable").path();
+                if path
+                    .extension()
+                    .is_some_and(|extension| extension == "yaml")
+                {
+                    paths.push(path);
+                }
+            }
+        }
+        paths.sort();
+        paths
+            .into_iter()
+            .map(|path| {
+                let text = std::fs::read_to_string(&path).expect("the file is readable");
+                let raw = RawSpecFile::parse(&text).expect("the file is well formed");
+                let label = path.strip_prefix(&root).expect("inside the example");
+                (Source::new(label.to_string_lossy()), raw)
+            })
+            .collect()
+    }
+
+    /// Assembles `files` and validates the result again, as `ess specify validate` does: the
+    /// compiler revalidates the assembled specification before it resolves it.
+    fn validated(files: Vec<(Source, RawSpecFile)>) -> TypeCheckWork {
+        let (validation, work) = type_check_work(|| {
+            Specification::assemble(files)
+                .expect("the model assembles")
+                .validate()
+        });
+        assert!(validation.is_empty(), "{validation}");
+        work
+    }
+
+    #[test]
+    fn validating_the_billing_example_checks_each_registry_once() {
+        // Two registries: the declared types with every entity's lifecycle enum, which assembly
+        // and every validator read, and the declared types alone, which `value_expression` reads.
+        // Before each caller ran the check itself: 9 runs, assembly's one and four in each of the
+        // two validations (`validate_payloads`, `validate_sets`, `value_expression::validate`,
+        // `validate_bindings_after`), the count a profile of `ess` on this example recorded.
+        let work = validated(billing());
+        assert_eq!(
+            work.runs, 2,
+            "the type check ran {} times for one model of two registries",
+            work.runs
+        );
+    }
+
+    #[test]
+    fn validating_a_model_of_types_alone_checks_it_once() {
+        // No entity, so the two registries read the same and one run serves all. Before: 9, as
+        // for the billing example, each of those four validators running it at its top.
+        let mut text =
+            String::from("format: ess/22\nsystem: shop\nversion: v1\ndomain: shop.order\ntypes:\n");
+        for index in 0..64 {
+            let of = if index == 63 {
+                "String".to_owned()
+            } else {
+                format!("shop.order.Ticket{:02}", index + 1)
+            };
+            let _ = writeln!(
+                text,
+                "  - {{name: shop.order.Ticket{index:02}, kind: newtype, of: {of}}}"
+            );
+        }
+        let raw = RawSpecFile::parse(&text).expect("the model is well formed");
+        let work = validated(vec![(Source::new("shop.yaml"), raw)]);
+        assert_eq!(work.runs, 1, "the type check ran {} times", work.runs);
     }
 }

@@ -1,0 +1,285 @@
+format: ess/37
+system: demo
+version: v1
+domain: demo.yard
+summary: Crates whose tags several commands set, each refusing a tag already set, beside spare fields no guard or view reads.
+types:
+  - {name: demo.yard.CrateId, kind: newtype, of: String}
+entities:
+  - name: demo.yard.Crate
+    identity: {name: crate_id, type: demo.yard.CrateId}
+    fields:
+      - {name: tag_1, type: Boolean}
+      - {name: tag_2, type: Boolean}
+      - {name: tag_3, type: Boolean}
+      - {name: tag_4, type: Boolean}
+      - {name: tag_5, type: Boolean}
+      - {name: tag_6, type: Boolean}
+      - {name: spare_1, type: Boolean}
+      - {name: spare_2, type: Boolean}
+      - {name: spare_3, type: Boolean}
+      - {name: spare_4, type: Boolean}
+      - {name: spare_5, type: Boolean}
+      - {name: spare_6, type: Boolean}
+      - {name: spare_7, type: Boolean}
+      - {name: spare_8, type: Boolean}
+      - {name: spare_9, type: Boolean}
+      - {name: spare_10, type: Boolean}
+      - {name: spare_11, type: Boolean}
+      - {name: spare_12, type: Boolean}
+      - {name: spare_13, type: Boolean}
+      - {name: spare_14, type: Boolean}
+      - {name: spare_15, type: Boolean}
+      - {name: spare_16, type: Boolean}
+      - {name: spare_17, type: Boolean}
+      - {name: spare_18, type: Boolean}
+      - {name: spare_19, type: Boolean}
+      - {name: spare_20, type: Boolean}
+      - {name: spare_21, type: Boolean}
+      - {name: spare_22, type: Boolean}
+      - {name: spare_23, type: Boolean}
+      - {name: spare_24, type: Boolean}
+    lifecycle:
+      initial: Open
+      states: [Open, Shut]
+      terminal: [Shut]
+      transitions:
+        - {name: tag_1, from: [Open], to: Open}
+        - {name: tag_2, from: [Open], to: Open}
+        - {name: tag_3, from: [Open], to: Open}
+        - {name: tag_4, from: [Open], to: Open}
+        - {name: tag_5, from: [Open], to: Open}
+        - {name: tag_6, from: [Open], to: Open}
+        - {name: shut, from: [Open], to: Shut}
+actors:
+  - name: demo.yard.Keeper
+    may: [demo.yard.Open, demo.yard.Shut, demo.yard.Tag1, demo.yard.Tag2, demo.yard.Tag3, demo.yard.Tag4, demo.yard.Tag5, demo.yard.Tag6]
+errors:
+  - name: demo.yard.NoSuchCrate
+    fields:
+      - {name: crate_id, type: demo.yard.CrateId}
+  - name: demo.yard.AlreadyTagged
+    fields:
+      - {name: crate_id, type: demo.yard.CrateId}
+  - name: demo.yard.WrongState
+    fields:
+      - {name: crate_id, type: demo.yard.CrateId}
+commands:
+  - name: demo.yard.Open
+    input:
+      - {name: crate_id, type: demo.yard.CrateId}
+    outcomes:
+      - name: opened
+        creates: demo.yard.Crate
+        instance: crate_id
+        sets:
+          tag_1: false
+          tag_2: false
+          tag_3: false
+          tag_4: false
+          tag_5: false
+          tag_6: false
+          spare_1: false
+          spare_2: false
+          spare_3: false
+          spare_4: false
+          spare_5: false
+          spare_6: false
+          spare_7: false
+          spare_8: false
+          spare_9: false
+          spare_10: false
+          spare_11: false
+          spare_12: false
+          spare_13: false
+          spare_14: false
+          spare_15: false
+          spare_16: false
+          spare_17: false
+          spare_18: false
+          spare_19: false
+          spare_20: false
+          spare_21: false
+          spare_22: false
+          spare_23: false
+          spare_24: false
+        emits: [demo.yard.Opened]
+        payload:
+          demo.yard.Opened: {crate_id: input.crate_id}
+  - name: demo.yard.Tag1
+    input:
+      - {name: crate_id, type: demo.yard.CrateId}
+      - {name: on, type: Boolean}
+    outcomes:
+      - name: no-crate
+        unknown_instance: true
+        error: demo.yard.NoSuchCrate
+      - name: already-tagged
+        when_subject:
+          predicate: tag_1 == true
+        error: demo.yard.AlreadyTagged
+      - name: tagged
+        moves: demo.yard.Crate.tag_1
+        instance: crate_id
+        sets:
+          tag_1: input.on
+        emits: [demo.yard.Tagged]
+        payload:
+          demo.yard.Tagged: {crate_id: input.crate_id}
+      - name: wrong-state
+        wrong_state: true
+        error: demo.yard.WrongState
+  - name: demo.yard.Tag2
+    input:
+      - {name: crate_id, type: demo.yard.CrateId}
+      - {name: on, type: Boolean}
+    outcomes:
+      - name: no-crate
+        unknown_instance: true
+        error: demo.yard.NoSuchCrate
+      - name: already-tagged
+        when_subject:
+          predicate: tag_2 == true
+        error: demo.yard.AlreadyTagged
+      - name: tagged
+        moves: demo.yard.Crate.tag_2
+        instance: crate_id
+        sets:
+          tag_2: input.on
+        emits: [demo.yard.Tagged]
+        payload:
+          demo.yard.Tagged: {crate_id: input.crate_id}
+      - name: wrong-state
+        wrong_state: true
+        error: demo.yard.WrongState
+  - name: demo.yard.Tag3
+    input:
+      - {name: crate_id, type: demo.yard.CrateId}
+      - {name: on, type: Boolean}
+    outcomes:
+      - name: no-crate
+        unknown_instance: true
+        error: demo.yard.NoSuchCrate
+      - name: already-tagged
+        when_subject:
+          predicate: tag_3 == true
+        error: demo.yard.AlreadyTagged
+      - name: tagged
+        moves: demo.yard.Crate.tag_3
+        instance: crate_id
+        sets:
+          tag_3: input.on
+        emits: [demo.yard.Tagged]
+        payload:
+          demo.yard.Tagged: {crate_id: input.crate_id}
+      - name: wrong-state
+        wrong_state: true
+        error: demo.yard.WrongState
+  - name: demo.yard.Tag4
+    input:
+      - {name: crate_id, type: demo.yard.CrateId}
+      - {name: on, type: Boolean}
+    outcomes:
+      - name: no-crate
+        unknown_instance: true
+        error: demo.yard.NoSuchCrate
+      - name: already-tagged
+        when_subject:
+          predicate: tag_4 == true
+        error: demo.yard.AlreadyTagged
+      - name: tagged
+        moves: demo.yard.Crate.tag_4
+        instance: crate_id
+        sets:
+          tag_4: input.on
+        emits: [demo.yard.Tagged]
+        payload:
+          demo.yard.Tagged: {crate_id: input.crate_id}
+      - name: wrong-state
+        wrong_state: true
+        error: demo.yard.WrongState
+  - name: demo.yard.Tag5
+    input:
+      - {name: crate_id, type: demo.yard.CrateId}
+      - {name: on, type: Boolean}
+    outcomes:
+      - name: no-crate
+        unknown_instance: true
+        error: demo.yard.NoSuchCrate
+      - name: already-tagged
+        when_subject:
+          predicate: tag_5 == true
+        error: demo.yard.AlreadyTagged
+      - name: tagged
+        moves: demo.yard.Crate.tag_5
+        instance: crate_id
+        sets:
+          tag_5: input.on
+        emits: [demo.yard.Tagged]
+        payload:
+          demo.yard.Tagged: {crate_id: input.crate_id}
+      - name: wrong-state
+        wrong_state: true
+        error: demo.yard.WrongState
+  - name: demo.yard.Tag6
+    input:
+      - {name: crate_id, type: demo.yard.CrateId}
+      - {name: on, type: Boolean}
+    outcomes:
+      - name: no-crate
+        unknown_instance: true
+        error: demo.yard.NoSuchCrate
+      - name: already-tagged
+        when_subject:
+          predicate: tag_6 == true
+        error: demo.yard.AlreadyTagged
+      - name: tagged
+        moves: demo.yard.Crate.tag_6
+        instance: crate_id
+        sets:
+          tag_6: input.on
+        emits: [demo.yard.Tagged]
+        payload:
+          demo.yard.Tagged: {crate_id: input.crate_id}
+      - name: wrong-state
+        wrong_state: true
+        error: demo.yard.WrongState
+  - name: demo.yard.Shut
+    input:
+      - {name: crate_id, type: demo.yard.CrateId}
+    outcomes:
+      - name: no-crate
+        unknown_instance: true
+        error: demo.yard.NoSuchCrate
+      - name: shut
+        moves: demo.yard.Crate.shut
+        instance: crate_id
+        emits: [demo.yard.Sealed]
+        payload:
+          demo.yard.Sealed: {crate_id: input.crate_id}
+      - name: wrong-state
+        wrong_state: true
+        error: demo.yard.WrongState
+events:
+  - name: demo.yard.Opened
+    fields:
+      - {name: crate_id, type: demo.yard.CrateId}
+  - name: demo.yard.Tagged
+    fields:
+      - {name: crate_id, type: demo.yard.CrateId}
+  - name: demo.yard.Sealed
+    fields:
+      - {name: crate_id, type: demo.yard.CrateId}
+views:
+  - name: demo.yard.Crates
+    source: demo.yard.Crate
+    consistency: read_your_writes
+    fields:
+      - {name: crate_id, type: demo.yard.CrateId}
+      - {name: state, type: demo.yard.Crate.State}
+      - {name: tag_1, type: Boolean}
+      - {name: tag_2, type: Boolean}
+      - {name: tag_3, type: Boolean}
+      - {name: tag_4, type: Boolean}
+      - {name: tag_5, type: Boolean}
+      - {name: tag_6, type: Boolean}

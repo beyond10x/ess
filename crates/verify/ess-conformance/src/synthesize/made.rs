@@ -10,12 +10,26 @@
 //! model and the thread's arrangement context, so they are kept per model, keyed on all of those,
 //! for as long as the model is being synthesized.
 //!
+//! The rows a stored-row search reaches, depth by depth, are kept the same way ([`reached`]): every
+//! branch of a command reading stored fields asks the same search and differs only in what it
+//! accepts, and advancing every row by every move again for each of them made a row several
+//! commands move cost minutes to synthesize.
+//!
+//! The branch a command selects on a stored row for an input is kept too ([`row_picks`]): it reads
+//! nothing but the model, the command, the row's state and fields and the input, and every
+//! search that advances that row asks it again — once per branch of the moving command, and once
+//! per search whose goal differs — which made a model of many such commands spend most of its
+//! synthesis deciding the same guards over the same rows.
+//!
 //! Answering from memory does not change what a search decides: the beside searches a computation
 //! cut ([`super::related_guard::cuts`]) count as cut again. The work counters a test reads
-//! (`directed_steps`, `row_set_arrangements_tried`) count only the work done.
+//! (`directed_steps`, `row_set_arrangements_tried`, `branch_selections_tried`) count only the
+//! work done.
 use std::cell::RefCell;
 use std::collections::BTreeMap;
+use std::rc::Rc;
 
+use super::subject_fact::{Reached, RowPicks, Selections};
 use super::{Arrangement, EssIr, RefusalCause};
 
 thread_local! {
@@ -29,6 +43,15 @@ struct Made {
     /// stack ([`Remembered`]), so the address cannot be reused by another model meanwhile.
     ir: *const EssIr,
     rows: BTreeMap<String, Entry>,
+    /// What each stored-row search reached, by its key ([`reached`]).
+    searches: BTreeMap<String, Reached>,
+    /// The branches a command's inputs select on a row, by their key ([`selections`]).
+    selections: BTreeMap<String, Rc<Selections>>,
+    /// The branch a command selects on a row for each input asked so far, by command and row
+    /// ([`row_picks`]).
+    picks: BTreeMap<String, Rc<RowPicks>>,
+    /// Values derived from the model alone and owning what they hold, by their key ([`kept`]).
+    kept: BTreeMap<String, Rc<dyn std::any::Any>>,
 }
 
 /// What one computation answered, and how many beside searches it cut.
@@ -51,6 +74,24 @@ pub(super) fn counting<R>(run: impl FnOnce() -> R) -> (R, u64) {
     (out, MAKES.with(std::cell::Cell::get) - before)
 }
 
+thread_local! {
+    /// How many times a row and an input were checked on this thread for the branch they select.
+    static PICKS: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
+
+/// What `run` returns, and how many times a row and an input were checked on this thread for the
+/// branch they select while it ran, rather than answered from memory.
+pub(super) fn picks<R>(run: impl FnOnce() -> R) -> (R, u64) {
+    let before = PICKS.with(std::cell::Cell::get);
+    let out = run();
+    (out, PICKS.with(std::cell::Cell::get) - before)
+}
+
+/// Counts one row and input checked for the branch they select ([`picks`]).
+pub(super) fn picking() {
+    PICKS.with(|count| count.set(count.get() + 1));
+}
+
 /// `make`'s rows, counted as made ([`counting`]).
 fn making(
     make: impl FnOnce() -> Result<Vec<Arrangement>, RefusalCause>,
@@ -67,16 +108,20 @@ pub(super) struct Remembered {
 impl Drop for Remembered {
     fn drop(&mut self) {
         if self.pushed {
-            MADE.with(|made| {
-                made.borrow_mut().pop();
-            });
+            let top = MADE.with(|made| made.borrow_mut().pop());
+            if let Some(top) = top {
+                park(top);
+            }
         }
     }
 }
 
 /// Remembers the rows made for `ir` until the returned guard drops. A model already remembered
-/// innermost keeps its memory.
+/// innermost keeps its memory, and a model [`Keeping`] holds gets back what it made before.
 pub(super) fn remember(ir: &EssIr) -> Remembered {
+    if let Some(recalled) = recall(ir) {
+        return recalled;
+    }
     let at = std::ptr::from_ref(ir);
     let pushed = MADE.with(|made| {
         let mut made = made.borrow_mut();
@@ -86,10 +131,109 @@ pub(super) fn remember(ir: &EssIr) -> Remembered {
         made.push(Made {
             ir: at,
             rows: BTreeMap::new(),
+            searches: BTreeMap::new(),
+            selections: BTreeMap::new(),
+            picks: BTreeMap::new(),
+            kept: BTreeMap::new(),
         });
         true
     });
     Remembered { pushed }
+}
+
+/// The value under `key`, derived by `make` the first time this model asks and kept for as long as
+/// the model is remembered. `None` where `ir` is not the model remembered innermost: the caller
+/// derives it afresh then, as it did before.
+pub(super) fn kept<T: 'static>(ir: &EssIr, key: &str, make: impl FnOnce() -> T) -> Option<Rc<T>> {
+    let held = MADE.with(|memory| {
+        let memory = memory.borrow();
+        let top = memory.last().filter(|top| std::ptr::eq(top.ir, ir))?;
+        Some(top.kept.get(key).cloned())
+    })?;
+    if let Some(held) = held {
+        return held.downcast::<T>().ok();
+    }
+    let value = Rc::new(make());
+    MADE.with(|made| {
+        if let Some(top) = made
+            .borrow_mut()
+            .last_mut()
+            .filter(|top| std::ptr::eq(top.ir, ir))
+        {
+            top.kept.insert(key.to_owned(), value.clone());
+        }
+    });
+    Some(value)
+}
+
+/// Whether `ir` is the model remembered innermost, whose searches are kept ([`reached`]).
+pub(super) fn remembers(ir: &EssIr) -> bool {
+    MADE.with(|made| {
+        made.borrow()
+            .last()
+            .is_some_and(|top| std::ptr::eq(top.ir, ir))
+    })
+}
+
+/// What the search under `key` reached when this model asked it before ([`Reached`]), if it did.
+pub(super) fn reached(ir: &EssIr, key: &str) -> Option<Reached> {
+    MADE.with(|made| {
+        made.borrow()
+            .last()
+            .filter(|top| std::ptr::eq(top.ir, ir))
+            .and_then(|top| top.searches.get(key).cloned())
+    })
+}
+
+/// The branches a command's inputs select on a row under `key` ([`Selections`]): the ones this
+/// model kept, else `make`'s, kept where `ir` is the model remembered innermost. They are filled
+/// in as later branches ask, through the shared handle.
+pub(super) fn selections(
+    ir: &EssIr,
+    key: String,
+    make: impl FnOnce() -> Selections,
+) -> Rc<Selections> {
+    let known = MADE.with(|made| {
+        made.borrow()
+            .last()
+            .filter(|top| std::ptr::eq(top.ir, ir))
+            .and_then(|top| top.selections.get(&key).cloned())
+    });
+    if let Some(known) = known {
+        return known;
+    }
+    // No borrow is held while making: the inputs below may ask the memory too.
+    let fresh = Rc::new(make());
+    MADE.with(|memory| {
+        if let Some(top) = memory.borrow_mut().last_mut() {
+            if std::ptr::eq(top.ir, ir) {
+                top.selections.insert(key, Rc::clone(&fresh));
+            }
+        }
+    });
+    fresh
+}
+
+/// The branches a command selects on one row under `key` ([`RowPicks`]), as far as the model
+/// remembered innermost has asked; `None` where `ir` is not that model. They are filled in as
+/// later searches ask, through the shared handle.
+pub(super) fn row_picks(ir: &EssIr, key: String) -> Option<Rc<RowPicks>> {
+    MADE.with(|made| {
+        let mut made = made.borrow_mut();
+        let top = made.last_mut().filter(|top| std::ptr::eq(top.ir, ir))?;
+        Some(Rc::clone(top.picks.entry(key).or_default()))
+    })
+}
+
+/// Keeps what the search under `key` has reached so far, for the searches after it.
+pub(super) fn reach(ir: &EssIr, key: String, reached: Reached) {
+    MADE.with(|made| {
+        if let Some(top) = made.borrow_mut().last_mut() {
+            if std::ptr::eq(top.ir, ir) {
+                top.searches.insert(key, reached);
+            }
+        }
+    });
 }
 
 /// `make`'s rows, from memory where this model asked under the same `key` before. A model not
@@ -135,4 +279,78 @@ pub(super) fn made(
         }
     });
     rows
+}
+
+thread_local! {
+    /// The models whose memory outlasts each synthesis of them ([`Keeping`]), innermost scope
+    /// last, by address: the memory while it is parked, `None` while the model is remembered.
+    static KEPT: RefCell<Vec<BTreeMap<usize, Option<Made>>>> = const { RefCell::new(Vec::new()) };
+}
+
+/// Keeps what is made for each model it holds past every synthesis of that model, until dropped.
+///
+/// A model whose actors carry attributes is read once per caller assignment, and every reading is
+/// a model of its own (`super::caller`); one reading is synthesized whole and again for each
+/// command focused on, and each time asked every search again. A model held here is the same model
+/// each time, so the next synthesis of it is answered from what the earlier ones made. The memory
+/// is keyed as before, so nothing a search decides changes. The guard holds the models, so no
+/// address it keeps can be taken by another model while their memory is parked.
+pub(super) struct Keeping {
+    models: Vec<Rc<EssIr>>,
+}
+
+impl Keeping {
+    /// A new innermost scope, holding no model yet.
+    pub(super) fn open() -> Self {
+        KEPT.with(|kept| kept.borrow_mut().push(BTreeMap::new()));
+        Self { models: Vec::new() }
+    }
+
+    /// Keeps what `ir` makes for as long as this guard lives.
+    pub(super) fn keep(&mut self, ir: &Rc<EssIr>) {
+        KEPT.with(|kept| {
+            if let Some(scope) = kept.borrow_mut().last_mut() {
+                scope.entry(address(ir)).or_insert(None);
+            }
+        });
+        self.models.push(Rc::clone(ir));
+    }
+}
+
+impl Drop for Keeping {
+    fn drop(&mut self) {
+        // The memories go before the models they are about.
+        KEPT.with(|kept| {
+            kept.borrow_mut().pop();
+        });
+    }
+}
+
+fn address(ir: &EssIr) -> usize {
+    std::ptr::from_ref(ir) as usize
+}
+
+/// `ir`'s parked memory, remembered innermost again, where [`Keeping`] holds it.
+fn recall(ir: &EssIr) -> Option<Remembered> {
+    let parked = KEPT.with(|kept| {
+        kept.borrow_mut()
+            .last_mut()
+            .and_then(|scope| scope.get_mut(&address(ir)))
+            .and_then(Option::take)
+    })?;
+    MADE.with(|made| made.borrow_mut().push(parked));
+    Some(Remembered { pushed: true })
+}
+
+/// Parks `made` where [`Keeping`] holds its model; drops it otherwise.
+fn park(made: Made) {
+    KEPT.with(|kept| {
+        if let Some(slot) = kept
+            .borrow_mut()
+            .last_mut()
+            .and_then(|scope| scope.get_mut(&(made.ir as usize)))
+        {
+            *slot = Some(made);
+        }
+    });
 }

@@ -1,0 +1,45 @@
+domain: shop.desk
+
+summary: Tickets.
+
+types:
+  - name: shop.desk.TicketId
+    kind: newtype
+    of: String
+
+entities:
+  - name: shop.desk.Ticket
+    identity:
+      name: ticket_id
+      type: shop.desk.TicketId
+    fields:
+      - name: flag_1
+        type: Boolean
+    lifecycle:
+      initial: Open
+      states: [Open]
+      terminal: [Open]
+      transitions: []
+
+commands:
+  - name: shop.desk.Open
+    input:
+      - name: ticket_id
+        type: shop.desk.TicketId
+    outcomes:
+      - name: opened
+        creates: shop.desk.Ticket
+        instance: ticket_id
+        sets:
+          flag_1: false
+        emits:
+          - shop.desk.Opened
+        payload:
+          shop.desk.Opened:
+            ticket_id: input.ticket_id
+
+events:
+  - name: shop.desk.Opened
+    fields:
+      - name: ticket_id
+        type: shop.desk.TicketId

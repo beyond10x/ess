@@ -1294,6 +1294,25 @@ impl FactPath {
         Self { segments }
     }
 
+    /// Appends `segment` in place: [`Self::child`] without copying the segments before it, for a
+    /// walk that descends one segment at a time and [`Self::pop`]s on the way back. Hidden: a
+    /// projection walk's tool, not part of the path's published shape.
+    #[doc(hidden)]
+    pub fn push(&mut self, segment: &str) {
+        self.segments.push(segment.to_owned());
+    }
+
+    /// Removes the last segment in place, undoing a [`Self::push`]. Called only after one: popping
+    /// a path of one segment is a mistake, asserted in debug builds, and keeps the segment
+    /// otherwise, so a path is never empty. Hidden, as [`Self::push`] is.
+    #[doc(hidden)]
+    pub fn pop(&mut self) {
+        debug_assert!(self.segments.len() > 1, "pop without a push before it");
+        if self.segments.len() > 1 {
+            self.segments.pop();
+        }
+    }
+
     /// The pattern published in generated JSON Schema.
     pub const PATTERN: &'static str = "^_*[A-Za-z][A-Za-z0-9_-]*(\\.[A-Za-z0-9_-]+)*$";
 }

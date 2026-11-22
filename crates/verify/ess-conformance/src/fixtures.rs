@@ -13,7 +13,48 @@ use ess_compiler::ir::EssIr;
 use ess_compiler::ir::{ResolvedOutcome, ResolvedPayloadValue};
 use ess_domain::{command::fixture_inputs::FixtureName, Field, QualifiedName, StateName, TypeRef};
 use ess_primitives::node::Node;
+use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
+
+thread_local! {
+    static FIXTURE_STEP_CLONES: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+    static PRECONDITION_STEP_CLONES: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
+
+/// What `run` returns, and how many steps fixture setup copied on this thread while it ran: the
+/// work a test bounds where a wall-clock bound would depend on the machine. Not part of the suite.
+#[doc(hidden)]
+pub fn fixture_step_clones<R>(run: impl FnOnce() -> R) -> (R, u64) {
+    let before = FIXTURE_STEP_CLONES.with(std::cell::Cell::get);
+    let out = run();
+    (out, FIXTURE_STEP_CLONES.with(std::cell::Cell::get) - before)
+}
+
+/// What `run` returns, and how many steps the preconditions' prelude was copied on this thread
+/// while it ran. Not part of the suite.
+#[doc(hidden)]
+pub fn precondition_step_clones<R>(run: impl FnOnce() -> R) -> (R, u64) {
+    let before = PRECONDITION_STEP_CLONES.with(std::cell::Cell::get);
+    let out = run();
+    (
+        out,
+        PRECONDITION_STEP_CLONES.with(std::cell::Cell::get) - before,
+    )
+}
+
+/// Copies the steps of the preconditions' prelude, counting each copied step.
+pub(crate) fn clone_precondition_steps<'a>(
+    steps: impl Iterator<Item = &'a ScenarioStep>,
+) -> Vec<ScenarioStep> {
+    steps
+        .inspect(|_| PRECONDITION_STEP_CLONES.with(|count| count.set(count.get() + 1)))
+        .cloned()
+        .collect()
+}
+
+fn count_fixture_step_clones(steps: usize) {
+    FIXTURE_STEP_CLONES.with(|count| count.set(count.get() + steps as u64));
+}
 
 /// The first ordinary suite major that carries fixture vocabulary.
 pub const ORDINARY: u32 = 18;
@@ -241,7 +282,7 @@ fn prelude(
         .into_iter()
         .map(|field| (field.name.clone(), field))
         .collect();
-    for step in &steps {
+    for step in steps.iter() {
         let ScenarioStep::ExecuteCommand { command, input, .. } = step else {
             continue;
         };
@@ -317,7 +358,10 @@ fn prelude(
         return Ok(None);
     }
     let contract = Contract::of_fields(ir, fields.into_values().collect())?;
-    Ok(Some((steps, contract)))
+    if matches!(steps, Cow::Borrowed(_)) {
+        count_fixture_step_clones(steps.len());
+    }
+    Ok(Some((steps.into_owned(), contract)))
 }
 
 /// The scenario's steps without the rows the deployment provides that its arrangement placed
@@ -329,7 +373,14 @@ fn prelude(
 /// keyed by identity) refuses the scenario, naming the row, as nothing would bind its name.
 fn provided_rows(
     scenario: &ConformanceScenario,
-) -> Result<(Vec<ScenarioStep>, Vec<FixtureField>), String> {
+) -> Result<(Cow<'_, [ScenarioStep]>, Vec<FixtureField>), String> {
+    // No inline resolution of provided rows: the steps stay as they are and are only read.
+    if !scenario.steps.iter().any(|step| {
+        matches!(step, ScenarioStep::ResolveFixtures { fixtures }
+            if fixtures.fields.iter().all(|field| field.entity.is_some()))
+    }) {
+        return Ok((Cow::Borrowed(&scenario.steps), Vec::new()));
+    }
     let mut rows: BTreeMap<FixtureName, FixtureField> = BTreeMap::new();
     let mut steps = Vec::with_capacity(scenario.steps.len());
     for step in &scenario.steps {
@@ -347,11 +398,14 @@ fn provided_rows(
                     rows.insert(field.name.clone(), field.clone());
                 }
             }
-            other => steps.push(other.clone()),
+            other => {
+                count_fixture_step_clones(1);
+                steps.push(other.clone());
+            }
         }
     }
     if rows.is_empty() {
-        return Ok((steps, Vec::new()));
+        return Ok((Cow::Owned(steps), Vec::new()));
     }
     let names: BTreeSet<&str> = rows.keys().map(FixtureName::as_str).collect();
     for step in &mut steps {
@@ -370,7 +424,7 @@ fn provided_rows(
             "the provided row `{name}` is named where no fixture value is read"
         ));
     }
-    Ok((steps, rows.into_values().collect()))
+    Ok((Cow::Owned(steps), rows.into_values().collect()))
 }
 
 /// The first instance in `names` a step still names, at any depth.

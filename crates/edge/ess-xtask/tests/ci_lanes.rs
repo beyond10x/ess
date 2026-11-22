@@ -5138,6 +5138,9 @@ fn run_plan_only_step(case: &Path, checkout: &Path) -> (String, String) {
         .arg(&script)
         .env("GITHUB_OUTPUT", &output_file)
         .env("RUNNER_TEMP", &temp)
+        // The checkout this test runs from can itself be a plan-only merge, so `git` must never
+        // look for a repository above the case directory.
+        .env("GIT_CEILING_DIRECTORIES", case)
         .output()
         .unwrap();
     let log = String::from_utf8_lossy(&output.stdout).into_owned()
