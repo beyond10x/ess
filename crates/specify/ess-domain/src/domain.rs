@@ -604,8 +604,8 @@ mod tests {
             .iter()
             .map(|domain| DomainSpec::new(name(domain)))
             .collect();
-        assert!(nesting_by_pairs(&domains).is_empty());
-        assert!(nesting_reported(&domains).is_empty());
+        assert_eq!(nesting_by_pairs(&domains), Vec::<String>::new());
+        assert_eq!(nesting_reported(&domains), Vec::<String>::new());
     }
 
     #[test]

@@ -11,6 +11,7 @@
 use ess_domain::spec::{RawSpecFile, Specification};
 use ess_domain::system::Source;
 use ess_domain::types::{Field, MapKeyNewtypes, Primitive, TypeRef};
+use std::fmt::Write as _;
 
 const HEADER: &str = "format: ess/14\nsystem: demo\nversion: v1\ndomain: demo.orders\n";
 
@@ -286,9 +287,10 @@ fn split(newtypes: usize, files: usize) -> Vec<String> {
     for part in 0..files {
         let mut text = String::from("domain: demo.orders\ntypes:\n");
         for label in part * per..((part + 1) * per).min(newtypes) {
-            text.push_str(&format!(
-                "  - {{name: demo.orders.Label{label}, kind: newtype, of: String}}\n"
-            ));
+            let _ = writeln!(
+                text,
+                "  - {{name: demo.orders.Label{label}, kind: newtype, of: String}}"
+            );
         }
         texts.push(text);
     }

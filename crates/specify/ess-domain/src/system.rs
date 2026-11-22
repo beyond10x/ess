@@ -2889,6 +2889,7 @@ mod type_check_work_tests {
 mod type_check_runs_tests {
     use super::*;
     use crate::spec::{RawSpecFile, Specification};
+    use std::fmt::Write as _;
 
     /// Every `.yaml` file of the billing example, as `ess specify validate` reads them.
     fn billing() -> Vec<(Source, RawSpecFile)> {
@@ -2957,9 +2958,10 @@ mod type_check_runs_tests {
             } else {
                 format!("shop.order.Ticket{:02}", index + 1)
             };
-            text.push_str(&format!(
-                "  - {{name: shop.order.Ticket{index:02}, kind: newtype, of: {of}}}\n"
-            ));
+            let _ = writeln!(
+                text,
+                "  - {{name: shop.order.Ticket{index:02}, kind: newtype, of: {of}}}"
+            );
         }
         let raw = RawSpecFile::parse(&text).expect("the model is well formed");
         let work = validated(vec![(Source::new("shop.yaml"), raw)]);
