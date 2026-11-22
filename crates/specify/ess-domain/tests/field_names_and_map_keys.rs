@@ -240,3 +240,81 @@ fn a_reader_of_one_file_adds_its_own_declarations_to_those_in_view() {
         "a duplicate is not guessed at"
     );
 }
+
+#[test]
+fn a_file_read_inside_a_scope_resolves_its_keys_as_the_scope_and_its_own_declarations_say() {
+    let declares = |of: &str| {
+        format!(
+            "{HEADER}types:\n  - {{name: demo.orders.ItemId, kind: newtype, of: {of}}}\nevents:\n  \
+             - name: demo.orders.Checked\n    fields:\n      - {{name: results, type: \
+             \"Map<demo.orders.ItemId, Boolean>\"}}\n"
+        )
+    };
+    let in_view = |of: &str| {
+        MapKeyNewtypes::from_documents([format!(
+            "types:\n  - {{name: demo.orders.ItemId, kind: newtype, of: {of}}}\n"
+        )
+        .as_str()])
+    };
+    let file = declares("String");
+    assert!(in_view("String")
+        .scope(|| RawSpecFile::parse(&file))
+        .is_ok());
+    assert!(MapKeyNewtypes::default()
+        .scope(|| RawSpecFile::parse(&file))
+        .is_ok());
+    let error = in_view("Integer")
+        .scope(|| RawSpecFile::parse(&file))
+        .expect_err("a second, different declaration resolves to nothing");
+    assert!(error.to_string().contains("map key"), "{error}");
+    let conflicting = in_view("String").scope(|| {
+        MapKeyNewtypes::from_documents([declares("Integer").as_str(), file.as_str()])
+            .scope(|| RawSpecFile::parse(&file))
+    });
+    assert!(conflicting.is_err(), "a conflict in view stays a conflict");
+}
+
+/// A specification of `files` files holding `newtypes` key newtypes between them, after a header
+/// file whose map is keyed by the last one.
+fn split(newtypes: usize, files: usize) -> Vec<String> {
+    let mut texts = vec![format!(
+        "{HEADER}events:\n  - name: demo.orders.Checked\n    fields:\n      - {{name: results, \
+         type: \"Map<demo.orders.Label{}, Boolean>\"}}\n",
+        newtypes - 1
+    )];
+    let per = newtypes.div_ceil(files);
+    for part in 0..files {
+        let mut text = String::from("domain: demo.orders\ntypes:\n");
+        for label in part * per..((part + 1) * per).min(newtypes) {
+            text.push_str(&format!(
+                "  - {{name: demo.orders.Label{label}, kind: newtype, of: String}}\n"
+            ));
+        }
+        texts.push(text);
+    }
+    texts
+}
+
+/// Each file used to be read with a copy of every key newtype in view, three times over: 3,584
+/// declarations copied for 512 newtypes in one file and 788,480 in 512 files, so splitting a
+/// specification across files made reading it quadratic. A work bound rather than a clock.
+#[test]
+fn reading_a_specification_copies_its_key_newtypes_once_however_many_files_declare_them() {
+    let copied = |files: usize| {
+        let texts = split(512, files);
+        let every = texts.iter().map(String::as_str).collect::<Vec<_>>();
+        let (results, copied) =
+            MapKeyNewtypes::declarations_copied(|| RawSpecFile::parse_all(&every));
+        for result in &results {
+            assert!(result.is_ok(), "{result:?}");
+        }
+        copied
+    };
+    let one = copied(1);
+    let many = copied(512);
+    assert!(
+        one <= 1024 && many <= 1024,
+        "reading 512 key newtypes copied {one} declarations from one file and {many} from 512 \
+         files; at most 1024 either way"
+    );
+}

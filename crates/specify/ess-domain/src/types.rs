@@ -272,7 +272,7 @@ impl TypeRef {
 /// later in the same document or in another file. So the declarations are collected first
 /// ([`Self::from_documents`]) and parsing runs inside [`Self::scope`]. Outside any scope, a named
 /// key is refused exactly as before.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Default, PartialEq, Eq)]
 pub struct MapKeyNewtypes {
     /// Every newtype declared, with the spelling of what it wraps; `None` for a name declared
     /// twice with different underlying types.
@@ -284,6 +284,18 @@ std::thread_local! {
     /// [`MapKeyNewtypes::scope`].
     static MAP_KEY_NEWTYPES: std::cell::RefCell<MapKeyNewtypes> =
         std::cell::RefCell::new(MapKeyNewtypes::default());
+    /// How many declarations [`MapKeyNewtypes`] copied on this thread
+    /// ([`MapKeyNewtypes::declarations_copied`]).
+    static COPIED: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
+
+impl Clone for MapKeyNewtypes {
+    fn clone(&self) -> Self {
+        COPIED.with(|count| count.set(count.get() + self.declared.len() as u64));
+        Self {
+            declared: self.declared.clone(),
+        }
+    }
 }
 
 impl MapKeyNewtypes {
@@ -344,6 +356,41 @@ impl MapKeyNewtypes {
         let mut keys = self.clone();
         keys.absorb(document);
         keys
+    }
+
+    /// `Self::current().with_value(document)`, or `None` when that is exactly what is in view
+    /// already: every newtype `document` declares is declared in view the same way, as when a
+    /// loader put a whole specification's in view ([`crate::spec::RawSpecFile::parse_all`]).
+    ///
+    /// What lets a reader of one file of many leave the keys in view as they are rather than copy
+    /// them once per file.
+    pub(crate) fn widened_by(document: &ess_yaml::Value) -> Option<Self> {
+        let mut own = Self::default();
+        own.absorb(document);
+        let unchanged = MAP_KEY_NEWTYPES.with(|cell| {
+            let current = cell.borrow();
+            own.declared
+                .iter()
+                .all(|(name, of)| match current.declared.get(name) {
+                    // Absorbing `document` would add the name.
+                    None => false,
+                    // Declared differently before: it stays resolved to nothing.
+                    Some(None) => true,
+                    // Stays only where `document` declares it the same way.
+                    Some(Some(seen)) => of.as_deref() == Some(seen.as_str()),
+                })
+        });
+        (!unchanged).then(|| Self::current().with_value(document))
+    }
+
+    /// What `run` returns, and how many declarations were copied on this thread from one set of
+    /// key newtypes into another while it ran: the work a test bounds where a wall-clock bound
+    /// would depend on the machine.
+    #[doc(hidden)]
+    pub fn declarations_copied<R>(run: impl FnOnce() -> R) -> (R, u64) {
+        let before = COPIED.with(std::cell::Cell::get);
+        let out = run();
+        (out, COPIED.with(std::cell::Cell::get) - before)
     }
 
     /// Adds the newtypes one document declares.

@@ -206,10 +206,11 @@ impl RawSpecFile {
         // A file that names its format reads the operand grammar of that format; one that does
         // not reads what its caller set, `ess/22`'s when nobody did (see `parse_all`).
         let format = written_format(&document);
-        let read = move || {
-            crate::types::MapKeyNewtypes::current()
-                .with_value(&document)
-                .scope(|| ess_yaml::from_value(document))
+        // The keys in view already hold this file's when a loader put every file's in view, and
+        // copying them once per file made reading a specification quadratic in its files.
+        let read = move || match crate::types::MapKeyNewtypes::widened_by(&document) {
+            None => ess_yaml::from_value(document),
+            Some(keys) => keys.scope(|| ess_yaml::from_value(document)),
         };
         let mut file: Self = match format {
             Some(format) => reading_format(format, read),
