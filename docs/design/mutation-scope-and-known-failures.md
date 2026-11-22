@@ -79,10 +79,12 @@ component's operation is in neither the baseline's nor a mutant's inventory, so 
 component-scoped mutant `unwitnessed`; the whole-system audit still reports it.
 
 For scoring an already in-scope mutant, use only refusal keys naming a scenario present in the
-union of its baseline and mutant component suites. Other refusals are reported as unscoped facts,
-not scored gained refusals. If a selected component has no executable scenario for a command
-site it accepts, report that source site separately as unavailable with reason
-`selected_command_without_scenario` when a synthesis refusal names that command/outcome. This is
+union of its baseline and mutant component suites. The scoped run's other refusals are not scored
+as gained refusals. Another component's refusals are not in a scoped synthesis at all, so a scoped
+run does not report them; `ess verify conform synthesize --component` says so in its `scope:` line
+and names the run without `--component`, which reports them. If a selected component has no
+executable scenario for a command site it accepts, report that source site separately as
+unavailable with reason `selected_command_without_scenario` when a synthesis refusal names that command/outcome. This is
 an explicit incomplete audit obligation, not an in-scope mutant or a kill. Match typed semantic
 command/outcome references from synthesis, not prefixes parsed from diagnostic prose. A refusal
 that cannot be attributed remains a global fact and cannot alone make a mutant in scope. Exercise
