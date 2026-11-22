@@ -19,6 +19,8 @@
 ### Fixed
 
 - Synthesis no longer repeats a witness search for a command equal to one already searched in the same model: the largest reported downstream specification synthesizes in 1,296e9 instructions instead of 1,782e9 on 0.97.3 (435 s of CPU time instead of 685 s), with the same suite.
+- `ess verify conform synthesize` witnesses a creating branch guarded on the absence of the row it creates (`when_related: {via: input.<id>, exists: false}` beside `creates:` with `instance: <id>`), where it withdrew that branch's scenario, and every scenario whose arrangement needed two such rows, as `ESS-SYNTH-001` "names one row per value": each row the branch creates for an arrangement carries its own identity. The further run that leaves an Optional reference out sends an identity no row of its scenario holds, also beside a view filtered on the created row's identity, whose expectation accepts the instance names of the distinctions that run retried. Every other suite is byte for byte unchanged.
+- Synthesis witnesses a row-set branch that needs rows present where the command creating those rows refuses a missing related row the send names (`when_related: {via: input.x, exists: false}` beside a selector comparing `x == input.x`). From `ess/23` a row's field naming a related row whose identity the scenario sends as a literal is compared with the input as that literal. Where the row-set command addresses the related row as its subject without an `owns` relation, the rows are created naming that subject, not a second row the send does not name. Such branches were refused as `ESS-SYNTH-001`. No format version changes.
 
 ## [0.97.4] — 2026-11-22
 

@@ -1371,13 +1371,17 @@ it the pair is refused as two branches selected), `when_subject:` sits beside `w
 guards cannot also declare wrong_state precedence"); each refusal below `ess/27` names `ess/27`.
 
 Synthesis sends the `exists: false` branch an identity no row carries, beside two rows of the entity
-that carry others and with an input an accepting `when:` branch would take. It sends every other
-branch the identity of a row it creates between two decoys, arranged so that each predicate is
-witnessed true in its own scenario and false in the default's, including a predicate over a stored
-field alone. A predicate with two or more `all`/`any` children is sent once more per child, on a
-row where that child alone decides it, so a target that drops one conjunct or one disjunct fails;
-where no row can isolate a child, synthesis reports `ESS-SYNTH-003` for the branch. Beside
-`existing_instance:` it sends a taken identity naming a related row that does not exist, and
+that carry others and with an input an accepting `when:` branch would take. Where that branch
+`creates:` the entity its `via:` names and takes the new row's identity from the same input
+(`instance:`), the guard is the creation's own existence test: every row synthesis creates through
+the branch for an arrangement carries an identity of its own, and the default branch is sent the
+identity of such a row, as beside `existing_instance:`. It sends every other branch the identity
+of a row it creates between two decoys, arranged so that each predicate is witnessed true in its
+own scenario and false in the default's, including a predicate over a stored field alone. A
+predicate with two or more `all`/`any` children is sent once more per child, on a row where that
+child alone decides it, so a target that drops one conjunct or one disjunct fails; where no row
+can isolate a child, synthesis reports `ESS-SYNTH-003` for the branch. Beside `existing_instance:`
+it sends a taken identity naming a related row that does not exist, and
 requires the `existing_instance:` refusal. Under an earlier header the key is refused as `unsupported_format_version`.
 
 ### An Optional reference
