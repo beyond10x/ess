@@ -11,6 +11,12 @@
 //! [`memoise`] holds each answer for as long as the model it was asked of is borrowed, so the
 //! second asking is a copy of the first answer. The suite is unchanged by construction: the answer
 //! returned is the one the search returned.
+//!
+//! A command is known by its content, not by its address ([`asked`]): the commands
+//! `synthesize::caller` builds for each caller question, and the acting commands of a caller
+//! reading searched against the arranging reading, are fresh values, and were searched again for
+//! every question although many are equal in every field. Every debug build checks the key: a
+//! sample of the answers given from memory is compared with the search run again ([`checked`]).
 
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
@@ -30,6 +36,8 @@ thread_local! {
     static MEMO: RefCell<Vec<Memo>> = const { RefCell::new(Vec::new()) };
     #[cfg(test)]
     static WORK: RefCell<Option<Work>> = const { RefCell::new(None) };
+    #[cfg(test)]
+    static GENERATIONS: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
 }
 
 /// The answers one model's searches gave, by command, distinction and midpoint flag, then by the
@@ -39,12 +47,51 @@ struct Memo {
     /// The model, compared by address only. It is borrowed for as long as this entry is on the
     /// stack ([`Memoised`]), so the address cannot be reused by another model meanwhile.
     ir: *const EssIr,
-    answers: BTreeMap<Question, Vec<(Vec<Predicate>, Searched)>>,
+    /// The `Debug` rendering of the model's own declaration of each name asked about by a command
+    /// that is not that declaration ([`asked`]), made once.
+    declared: BTreeMap<QualifiedName, String>,
+    /// Every command asked about that is not the model's own declaration of its name, by name,
+    /// each with its `Debug` rendering: [`Asked::Other`] is a position in its name's list.
+    others: BTreeMap<QualifiedName, Vec<(ResolvedCommand, String)>>,
+    /// Each answer with the guards it was searched over, and whether it was searched for the
+    /// model's own declaration found by its address, the only case the memory had before
+    /// commands were told apart by content.
+    answers: BTreeMap<Question, Vec<(Vec<Predicate>, Searched, bool)>>,
+    /// Which memory this is, counted on the thread: two models one after another may share an
+    /// address, and the test counter tells their searches apart by this.
+    #[cfg(test)]
+    generation: u64,
 }
 
-/// The command, distinction and midpoint flag a search was asked with, and the input paths the
-/// branch under test copies where it is a branch of that command ([`crate::witness::under_test`]).
-type Question = (QualifiedName, Distinction, bool, BTreeSet<FactPath>);
+impl Memo {
+    fn new(ir: *const EssIr) -> Self {
+        Self {
+            ir,
+            declared: BTreeMap::new(),
+            others: BTreeMap::new(),
+            answers: BTreeMap::new(),
+            #[cfg(test)]
+            generation: GENERATIONS.with(|count| {
+                count.set(count.get() + 1);
+                count.get()
+            }),
+        }
+    }
+}
+
+/// Which command of its name a search was asked about ([`asked`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum Asked {
+    /// The model's own declaration, or a command equal to it in every field.
+    Declared,
+    /// The command at this position of [`Memo::others`] for the name.
+    Other(usize),
+}
+
+/// The command, which of its name it is, the distinction and midpoint flag a search was asked
+/// with, and the input paths the branch under test copies where it is a branch of that command
+/// ([`crate::witness::under_test`]).
+type Question = (QualifiedName, Asked, Distinction, bool, BTreeSet<FactPath>);
 
 /// Holds witness answers for one model until dropped. See [`memoise`].
 pub(crate) struct Memoised<'ir> {
@@ -151,10 +198,7 @@ pub(crate) fn memoise(ir: &EssIr) -> Memoised<'_> {
         if memo.last().is_some_and(|top| std::ptr::eq(top.ir, at)) {
             return false;
         }
-        memo.push(Memo {
-            ir: at,
-            answers: BTreeMap::new(),
-        });
+        memo.push(Memo::new(at));
         true
     });
     Memoised {
@@ -163,18 +207,45 @@ pub(crate) fn memoise(ir: &EssIr) -> Memoised<'_> {
     }
 }
 
-/// Whether a search about `command` may be answered from memory: a model is being held and
-/// `command` is the one it declares under that name. A command built for one question
-/// (`synthesize::caller` probes with one) is searched every time.
-fn held(ir: &EssIr, command: &ResolvedCommand) -> bool {
-    ir.commands()
-        .get(&command.name)
-        .is_some_and(|declared| std::ptr::eq(declared, command))
-        && MEMO.with(|memo| {
-            memo.borrow()
-                .last()
-                .is_some_and(|top| std::ptr::eq(top.ir, ir))
-        })
+/// Which command `command` is among those asked of the held model, or `None` where no model is
+/// held or the one held is not `ir`: then the search is not answered from memory.
+///
+/// The model's own declaration of the name, by address, is [`Asked::Declared`] at no cost. Any
+/// other value is told apart by its whole content: its `Debug` rendering, which shows every field
+/// down to a number's spelling and the sign of a zero that `==` treats as one value, and `==`
+/// beside it. A command equal in both to the declaration is the declaration; one equal to a
+/// command asked before is that command. So a command `synthesize::caller` builds afresh for each
+/// question, or one read from another caller reading of the same model, shares the answers of
+/// every equal one, and two commands differing anywhere never do. The flag says whether
+/// `command` is the declaration by address.
+fn asked(ir: &EssIr, command: &ResolvedCommand) -> Option<(Asked, bool)> {
+    let declared = ir.commands().get(&command.name);
+    MEMO.with(|memo| {
+        let mut memo = memo.borrow_mut();
+        let top = memo.last_mut().filter(|top| std::ptr::eq(top.ir, ir))?;
+        if declared.is_some_and(|declared| std::ptr::eq(declared, command)) {
+            return Some((Asked::Declared, true));
+        }
+        let shown = format!("{command:?}");
+        if let Some(declared) = declared {
+            let declared_shown = top
+                .declared
+                .entry(command.name.clone())
+                .or_insert_with(|| format!("{declared:?}"));
+            if *declared_shown == shown && declared == command {
+                return Some((Asked::Declared, false));
+            }
+        }
+        let others = top.others.entry(command.name.clone()).or_default();
+        if let Some(at) = others
+            .iter()
+            .position(|(other, other_shown)| *other_shown == shown && other == command)
+        {
+            return Some((Asked::Other(at), false));
+        }
+        others.push((command.clone(), shown));
+        Some((Asked::Other(others.len() - 1), false))
+    })
 }
 
 /// `search`'s answer for this question: from memory where it was asked before, otherwise from
@@ -187,12 +258,13 @@ pub(crate) fn answer(
     between: bool,
     search: impl FnOnce() -> Searched,
 ) -> Searched {
-    if !held(ir, command) {
+    let Some((asked, by_address)) = asked(ir, command) else {
         executed(ir, command, guards, distinction, between);
         return search();
-    }
+    };
     let key = (
         command.name.clone(),
+        asked,
         distinction,
         between,
         crate::witness::copied_under_test(command),
@@ -205,12 +277,20 @@ pub(crate) fn answer(
             top.answers.get(&key).and_then(|asked| {
                 asked
                     .iter()
-                    .find(|(searched, _)| same(searched))
-                    .map(|(_, answer)| answer.clone())
+                    .find(|(searched, _, _)| same(searched))
+                    .map(|(_, answer, stored_by_address)| (answer.clone(), *stored_by_address))
             })
         })
     });
-    if let Some(known) = known {
+    if let Some((known, stored_by_address)) = known {
+        // An answer stored and asked for the declaration found by address is the memory as it was
+        // before commands were told apart by content; every other is checked, sampled.
+        #[cfg(debug_assertions)]
+        if (!by_address || !stored_by_address) && sampled() {
+            checked(command, &known, &search());
+        }
+        #[cfg(not(debug_assertions))]
+        let _ = stored_by_address;
         return known;
     }
     executed(ir, command, guards, distinction, between);
@@ -221,10 +301,52 @@ pub(crate) fn answer(
             top.answers.entry(key).or_default().push((
                 guards.iter().map(|guard| (*guard).clone()).collect(),
                 answer.clone(),
+                by_address,
             ));
         }
     });
     answer
+}
+
+/// How many answers from memory across two command values a thread has every one of checked by
+/// the debug guard ([`checked`]); after these, one in [`CHECK_EVERY`]. Counted per thread, so
+/// every test checks its first ones, and a test synthesizing many models, each reading of which is
+/// a memory of its own, does not search most of them twice.
+#[cfg(debug_assertions)]
+const CHECK_FIRST: usize = 64;
+
+/// After [`CHECK_FIRST`], every how many such answers of one thread are checked.
+#[cfg(debug_assertions)]
+const CHECK_EVERY: usize = 64;
+
+#[cfg(debug_assertions)]
+thread_local! {
+    /// How many answers from memory across two command values this thread gave ([`sampled`]).
+    static SHARED: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+/// Whether this answer from memory is one the debug guard checks, counting it.
+#[cfg(debug_assertions)]
+fn sampled() -> bool {
+    SHARED.with(|shared| {
+        shared.set(shared.get() + 1);
+        shared.get() <= CHECK_FIRST || shared.get() % CHECK_EVERY == 0
+    })
+}
+
+/// The key-completeness guard of every debug build and test: an answer from memory equals the
+/// search run again, down to its `Debug` rendering. A key that missed something the search reads
+/// gives a later question the answer of an earlier, different one, and fails here.
+#[cfg(debug_assertions)]
+fn checked(command: &ResolvedCommand, known: &Searched, again: &Searched) {
+    let (known, again) = (format!("{known:?}"), format!("{again:?}"));
+    assert!(
+        known == again,
+        "a witness search about `{}` answered from memory differs from the same search run \
+         again, so the memory's key misses something the search reads:\nremembered: \
+         {known}\nsearched again: {again}",
+        command.name
+    );
 }
 
 /// Records one search the witness module actually ran (a test-only work counter).
@@ -240,7 +362,13 @@ pub(crate) fn executed(
         if let Some(work) = work.borrow_mut().as_mut() {
             let key = Key {
                 ir: std::ptr::from_ref(ir) as usize,
-                command: command.name.to_string(),
+                generation: MEMO.with(|memo| {
+                    memo.borrow()
+                        .last()
+                        .filter(|top| std::ptr::eq(top.ir, ir))
+                        .map_or(0, |top| top.generation)
+                }),
+                command: format!("{command:?}"),
                 distinction,
                 between,
                 copied: crate::witness::copied_under_test(command),
@@ -271,6 +399,8 @@ pub(crate) fn executed(
 #[derive(PartialEq)]
 struct Key {
     ir: usize,
+    generation: u64,
+    /// The command's whole content, as its `Debug` rendering.
     command: String,
     distinction: Distinction,
     between: bool,
@@ -369,5 +499,90 @@ mod tests {
                  answered in the same synthesis"
             );
         }
+    }
+
+    /// Tickets a desk opens, owned by the opening caller's desk: every command but `Open` refuses
+    /// a caller who is not the owner, and `Open` copies a list of structs and a struct whole.
+    const DESK: &str = "format: ess/37\nsystem: shop\nversion: v1\ndomain: shop.desk\n\
+        summary: Tickets owned by the desk that opened them.\n\
+        types:\n\
+        \x20 - {name: shop.desk.TicketId, kind: newtype, of: String}\n\
+        \x20 - {name: shop.desk.DeskId, kind: newtype, of: String}\n\
+        \x20 - name: shop.desk.Line\n    kind: struct\n    fields:\n\
+        \x20     - {name: sku, type: String}\n      - {name: qty, type: Integer}\n\
+        \x20     - {name: memo, type: \"Optional<String>\"}\n\
+        \x20 - name: shop.desk.Place\n    kind: struct\n    fields:\n\
+        \x20     - {name: street, type: String}\n      - {name: zip, type: String}\n\
+        entities:\n  - name: shop.desk.Ticket\n    identity: {name: ticket_id, type: shop.desk.TicketId}\n\
+        \x20   fields:\n      - {name: desk_id, type: shop.desk.DeskId}\n\
+        \x20     - {name: lines, type: \"List<shop.desk.Line>\"}\n\
+        \x20     - {name: place, type: shop.desk.Place}\n\
+        \x20   lifecycle:\n      initial: Open\n      states: [Open, Closed]\n      terminal: [Closed]\n\
+        \x20     transitions:\n        - {name: move, from: [Open], to: Open}\n\
+        \x20       - {name: close, from: [Open], to: Closed}\n\
+        views:\n  - name: shop.desk.Tickets\n    source: shop.desk.Ticket\n    consistency: read_your_writes\n\
+        \x20   fields:\n      - {name: ticket_id, type: shop.desk.TicketId}\n\
+        \x20     - {name: desk_id, type: shop.desk.DeskId}\n\
+        \x20     - {name: lines, type: \"List<shop.desk.Line>\"}\n\
+        \x20     - {name: place, type: shop.desk.Place}\n\
+        \x20     - {name: state, type: shop.desk.Ticket.State}\n\
+        actors:\n  - name: shop.desk.Clerk\n    attributes:\n      - {name: desk_id, type: shop.desk.DeskId}\n\
+        \x20   may: [shop.desk.Open, shop.desk.Move, shop.desk.Close]\n\
+        errors:\n  - {name: shop.desk.NoSuchTicket, fields: [{name: ticket_id, type: shop.desk.TicketId}]}\n\
+        \x20 - {name: shop.desk.NotOwner, fields: [{name: ticket_id, type: shop.desk.TicketId}]}\n\
+        \x20 - {name: shop.desk.StateConflict, fields: [{name: ticket_id, type: shop.desk.TicketId}]}\n\
+        events:\n  - {name: shop.desk.Opened, fields: [{name: ticket_id, type: shop.desk.TicketId}]}\n\
+        \x20 - {name: shop.desk.Moved, fields: [{name: ticket_id, type: shop.desk.TicketId}, {name: place, type: shop.desk.Place}]}\n\
+        \x20 - {name: shop.desk.Closed, fields: [{name: ticket_id, type: shop.desk.TicketId}]}\n\
+        commands:\n  - name: shop.desk.Open\n    input:\n      - {name: ticket_id, type: shop.desk.TicketId}\n\
+        \x20     - {name: lines, type: \"List<shop.desk.Line>\"}\n      - {name: place, type: shop.desk.Place}\n\
+        \x20   outcomes:\n      - name: opened\n        creates: shop.desk.Ticket\n        instance: ticket_id\n\
+        \x20       sets: {desk_id: {caller: desk_id}, lines: input.lines, place: input.place}\n\
+        \x20       emits: [shop.desk.Opened]\n        payload: {shop.desk.Opened: {ticket_id: input.ticket_id}}\n\
+        \x20 - name: shop.desk.Move\n    input:\n      - {name: ticket_id, type: shop.desk.TicketId}\n\
+        \x20     - {name: place, type: shop.desk.Place}\n    outcomes:\n      - name: no-ticket\n\
+        \x20       unknown_instance: true\n        error: shop.desk.NoSuchTicket\n      - name: not-owner\n\
+        \x20       when_subject:\n          predicate: desk_id != caller.desk_id\n        error: shop.desk.NotOwner\n\
+        \x20       payload: {shop.desk.NotOwner: {ticket_id: input.ticket_id}}\n      - name: moved\n\
+        \x20       moves: shop.desk.Ticket.move\n        instance: ticket_id\n        sets: {place: input.place}\n\
+        \x20       emits: [shop.desk.Moved]\n        payload: {shop.desk.Moved: {ticket_id: input.ticket_id, place: input.place}}\n\
+        \x20     - name: wrong-state\n        wrong_state: true\n        error: shop.desk.StateConflict\n\
+        \x20 - name: shop.desk.Close\n    input:\n      - {name: ticket_id, type: shop.desk.TicketId}\n\
+        \x20   outcomes:\n      - name: no-ticket\n        unknown_instance: true\n        error: shop.desk.NoSuchTicket\n\
+        \x20     - name: not-owner\n        when_subject:\n          predicate: desk_id != caller.desk_id\n\
+        \x20       error: shop.desk.NotOwner\n        payload: {shop.desk.NotOwner: {ticket_id: input.ticket_id}}\n\
+        \x20     - name: closed\n        moves: shop.desk.Ticket.close\n        instance: ticket_id\n\
+        \x20       emits: [shop.desk.Closed]\n        payload: {shop.desk.Closed: {ticket_id: input.ticket_id}}\n\
+        \x20     - name: wrong-state\n        wrong_state: true\n        error: shop.desk.StateConflict\n";
+
+    fn compiled(text: &str) -> EssIr {
+        let raw = RawSpecFile::parse(text).unwrap_or_else(|error| panic!("{error}\n{text}"));
+        let specification = Specification::assemble([(Source::new("desk.yaml"), raw)])
+            .unwrap_or_else(|errors| panic!("{errors}\n{text}"));
+        compile(&specification, &SourceMap::new())
+            .unwrap_or_else(|diagnostics| panic!("{diagnostics}"))
+    }
+
+    /// The same work guard over a model whose actors carry an attribute its commands compare:
+    /// synthesis reads it once per caller assignment, and the commands of one reading are
+    /// searched against another's model and rebuilt for each caller question, fresh values each
+    /// time. A command equal in every field to one already searched over the same model is
+    /// answered from that search, so no search of one model runs twice for one question. On the
+    /// base, which knew a command only by address, 62 of 638 searches here repeated one.
+    #[test]
+    fn caller_readings_run_each_witness_search_of_a_model_once() {
+        let ir = compiled(DESK);
+        let (synthesis, executed, repeated) = counted(|| synthesize(&ir));
+        assert!(
+            synthesis.refusals.is_empty(),
+            "the desk synthesizes without refusals: {:#?}",
+            synthesis.refusals
+        );
+        assert!(executed > 0, "the desk ran no witness search at all");
+        assert_eq!(
+            repeated, 0,
+            "{repeated} of {executed} witness searches repeated a question already answered \
+             about the same model"
+        );
     }
 }
