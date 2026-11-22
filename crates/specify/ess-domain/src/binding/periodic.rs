@@ -184,11 +184,14 @@ pub fn validate_specification(spec: &crate::Specification) -> ValidationErrors {
         };
         let at = format!("binding.{}.when.periodic", binding.name);
         if spec.system().format.major() < 3 {
-            errors.push(ValidationError::new(
-                ValidationCode::UnsupportedFormatVersion,
-                &at,
-                "periodic binding causes require ess/3",
-            ));
+            errors.push(
+                ValidationError::new(
+                    ValidationCode::UnsupportedFormatVersion,
+                    &at,
+                    "periodic binding causes require ess/3",
+                )
+                .with_hint(crate::system::FormatVersion::V3.declaration_hint()),
+            );
         }
         if !spec.components().contains_key(&periodic.host.owner) {
             errors.push(ValidationError::new(

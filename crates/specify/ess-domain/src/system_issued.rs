@@ -66,7 +66,7 @@ pub(crate) fn validate_specification(spec: &crate::Specification) -> ValidationE
                     ValidationCode::UnsupportedFormatVersion,
                     "`await_within:` on a command requires specification format ess/27",
                 )
-                .with_hint("write `format: ess/27` on the source that declares the system"),
+                .with_hint(crate::system::FormatVersion::V27.declaration_hint()),
             );
             continue;
         }

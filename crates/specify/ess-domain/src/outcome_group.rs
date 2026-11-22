@@ -279,11 +279,14 @@ pub(crate) fn expand_marking(
         }
         if let Some(format) = declared.format {
             if format.major() < FormatVersion::V12.major() {
-                errors.push(ValidationError::new(
-                    ValidationCode::UnsupportedFormatVersion,
-                    format!("outcome_groups.{}", group.name),
-                    "outcome groups require specification format ess/12",
-                ));
+                errors.push(
+                    ValidationError::new(
+                        ValidationCode::UnsupportedFormatVersion,
+                        format!("outcome_groups.{}", group.name),
+                        "outcome groups require specification format ess/12",
+                    )
+                    .with_hint(FormatVersion::V12.declaration_hint()),
+                );
             }
         }
         let before = errors.len();

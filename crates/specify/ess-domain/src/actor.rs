@@ -94,7 +94,7 @@ impl ActorSpec {
                     ValidationCode::UnsupportedFormatVersion,
                     "`system: true` on an actor requires specification format ess/27",
                 )
-                .with_hint("write `format: ess/27` on the source that declares the system"),
+                .with_hint(crate::system::FormatVersion::V27.declaration_hint()),
             );
             return errors;
         }
@@ -142,7 +142,7 @@ impl ActorSpec {
                     ValidationCode::UnsupportedFormatVersion,
                     "`attributes` on an actor require specification format ess/16",
                 )
-                .with_hint("write `format: ess/16` on the source that declares the system"),
+                .with_hint(crate::system::FormatVersion::V16.declaration_hint()),
             );
             return errors;
         }
@@ -255,7 +255,7 @@ impl ActorSpec {
                             self.name
                         ),
                     )
-                    .with_hint("write `format: ess/22` on the source that declares the system"),
+                    .with_hint(crate::system::FormatVersion::V22.declaration_hint()),
                 );
             }
             let commanded = Self {

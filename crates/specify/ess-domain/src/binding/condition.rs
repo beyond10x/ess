@@ -396,8 +396,8 @@ fn literal_fits(
                 ),
             )
             .with_hint(format!(
-                "declare `format: ess/{}`, or test presence with `defined(...)`",
-                BOOLEAN_FORMAT.major()
+                "{}, or test presence with `defined(...)`",
+                BOOLEAN_FORMAT.declaration_hint()
             )))
         }
         (FactValue::Text(text), Leaf::Boolean) => {
@@ -524,7 +524,10 @@ pub fn validate_specification(spec: &crate::Specification) -> ValidationErrors {
                          specification format ess/22"
                     ),
                 )
-                .with_hint("declare `format: ess/22`, or remove `where:`"),
+                .with_hint(format!(
+                    "{raise}, or remove `where:`",
+                    raise = crate::system::FormatVersion::V22.declaration_hint()
+                )),
             );
         }
     }

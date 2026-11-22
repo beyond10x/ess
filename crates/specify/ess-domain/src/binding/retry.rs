@@ -227,10 +227,10 @@ pub fn validate_specification(spec: &crate::Specification) -> ValidationErrors {
                     at.clone(),
                     "a bounded retry requires specification format ess/16",
                 )
-                .with_hint(
-                    "write `format: ess/16` on the source that declares the system, or write \
-                     `on_failure: retry` with no block",
-                ),
+                .with_hint(format!(
+                    "{raise}, or write `on_failure: retry` with no block",
+                    raise = crate::system::FormatVersion::V16.declaration_hint()
+                )),
             );
         }
         // A command nobody declares is reported once, by the binding's own validation.
