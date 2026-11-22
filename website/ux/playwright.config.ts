@@ -9,6 +9,10 @@ import { LANE, ORIGIN, PORT, SLOW_L2_SLICES, WORKERS } from './adapter';
 // then writes the report from the round and the baseline the ratchet took it into (specs/round.spec.ts).
 const stage = process.env.UX_STAGE === 'round' || process.env.UX_STAGE === 'report' ? process.env.UX_STAGE : '';
 const report = stage !== '';
+// A project's grep is matched against the test's title path joined by spaces (project name, spec
+// file, title), never the title alone, so a stage's tests are those whose title starts with
+// `<stage>: ` after a space.
+export const stageGrep = (name: string): RegExp => new RegExp(`(^|\\s)${name}: `);
 const gate = [
   { name: 'l1', testMatch: /l1-.*\.spec\.ts/ },
   { name: 'l2', testMatch: /l2-.*\.spec\.ts/ },
@@ -43,7 +47,7 @@ export default defineConfig({
     serviceWorkers: 'block',
     launchOptions: process.env.UX_CHROMIUM ? { executablePath: process.env.UX_CHROMIUM } : {},
   },
-  projects: report ? [{ name: stage, testMatch: /round\.spec\.ts/, grep: new RegExp(`^${stage}: `) }] : LANE === 'gate' ? gate : slow,
+  projects: report ? [{ name: stage, testMatch: /round\.spec\.ts/, grep: stageGrep(stage) }] : LANE === 'gate' ? gate : slow,
   webServer: {
     command: `npx docusaurus serve --dir build --host 127.0.0.1 --port ${PORT} --no-open`,
     cwd: '..',

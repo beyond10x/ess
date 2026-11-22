@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { BASE, FINDINGS, GATING, REPOSITORY, ROOT, SITEMAP, TEMPLATE_PAGES, WORKERS, alwaysVisible, hasSearchControl, pageKind } from '../adapter';
 import { holdKnownFailures } from '../core/findings';
+import { stageGrep } from '../playwright.config';
 import { checkAlwaysVisible } from '../core/contract';
 import { sitemapPaths } from '../core/sitemap';
 
@@ -57,6 +58,18 @@ test('L1 one worker count: the config, package.json and Taskfile.yml run the lan
     const body = taskfile.slice(taskfile.indexOf(`\n  ${task}:\n`) + 1).split(/\n {2}\S/)[0];
     expect(body, `Taskfile.yml ${task}`).toContain('--workers={{.UX_WORKERS}}');
   }
+});
+
+// R-03: the stages' grep `^round: ` matched no test, because Playwright matches a project's grep
+// against the title path (`<project> <spec file> <title>`), so UX_STAGE=round found no test.
+test('L1 a round stage runs its own tests of round.spec.ts and no test of the other stage', () => {
+  const path = (stage: string, title: string) => `${stage} round.spec.ts ${title}`;
+  const round = ['round: merge the runs into round.json', 'round: worst moments', 'round: contact sheet, light theme'];
+  const report = ['report: report.md and the trend row from round.json and the committed baseline'];
+  expect(round.filter((t) => stageGrep('round').test(path('round', t)))).toEqual(round);
+  expect(report.filter((t) => stageGrep('round').test(path('round', t)))).toEqual([]);
+  expect(report.filter((t) => stageGrep('report').test(path('report', t)))).toEqual(report);
+  expect(round.filter((t) => stageGrep('report').test(path('report', t)))).toEqual([]);
 });
 
 test('L1 the template pages of the gate cover every page template and every always-visible element of the sitemap', async ({ page }) => {
