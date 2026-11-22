@@ -19812,6 +19812,21 @@ pub fn precedence_contradictions(ir: &EssIr, suite: &ConformanceSuite) -> Vec<Re
         .collect()
 }
 
+thread_local! {
+    /// How many sent inputs [`contradicted`] replayed into facts on this thread.
+    static PRECEDENCE_REPLAYS: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
+
+/// What `run` returns, and how many sent inputs [`precedence_contradictions`] replayed into facts
+/// on this thread while it ran: the work a test bounds where a clock would depend on the machine.
+/// Not part of the suite.
+#[doc(hidden)]
+pub fn precedence_replays<R>(run: impl FnOnce() -> R) -> (R, u64) {
+    let before = PRECEDENCE_REPLAYS.with(std::cell::Cell::get);
+    let out = run();
+    (out, PRECEDENCE_REPLAYS.with(std::cell::Cell::get) - before)
+}
+
 /// The first step of `steps` [`precedence_contradictions`] refuses, where one is.
 fn contradicted(ir: &EssIr, steps: &[ScenarioStep]) -> Option<RefusalCause> {
     let mut steps = steps.iter().peekable();
@@ -19853,11 +19868,27 @@ fn contradicted(ir: &EssIr, steps: &[ScenarioStep]) -> Option<RefusalCause> {
         {
             continue;
         }
+        // Every branch answered before it: the input-guarded refusals, then the accepting `when:`
+        // branches declared before an accepting `when:` or external one (beyond10x/ess#217).
+        let before: Vec<(&ResolvedOutcome, &Predicate)> =
+            sibling_refusals(ir.format(), command, outcome)
+                .chain(earlier_accepting_branches(ir.format(), command, outcome))
+                .filter_map(|first| when(first).map(|guard| (first, guard)))
+                .collect();
+        let own = match &outcome.condition {
+            ResolvedCondition::When { predicate } => Some(predicate),
+            _ => None,
+        };
+        // No guard to decide, so nothing the literals could contradict: the input is not replayed.
+        if before.is_empty() && own.is_none() {
+            continue;
+        }
         let opaque: BTreeSet<&str> = input
             .iter()
             .filter(|(_, value)| value.as_literal().is_none())
             .map(|(field, _)| field.as_str())
             .collect();
+        PRECEDENCE_REPLAYS.with(|count| count.set(count.get() + 1));
         let Ok(facts) = crate::input::replay_facts(ir, command, input) else {
             continue;
         };
@@ -19881,20 +19912,13 @@ fn contradicted(ir: &EssIr, steps: &[ScenarioStep]) -> Option<RefusalCause> {
                 input: sent_as_text(input),
             }
         };
-        // Every branch answered before it: the input-guarded refusals, then the accepting `when:`
-        // branches declared before an accepting `when:` or external one (beyond10x/ess#217).
-        let before = sibling_refusals(ir.format(), command, outcome)
-            .chain(earlier_accepting_branches(ir.format(), command, outcome));
-        for first in before {
-            let Some(guard) = when(first) else {
-                continue;
-            };
+        for (first, guard) in before {
             if matches!(decided(guard), Some(Decision::Satisfied)) {
                 return Some(contradiction(Some(first), guard));
             }
         }
         // The branch's own `when:` over the input, where that alone selects it.
-        if let ResolvedCondition::When { predicate } = &outcome.condition {
+        if let Some(predicate) = own {
             if matches!(decided(predicate), Some(Decision::Refuted(_))) {
                 return Some(contradiction(None, predicate));
             }

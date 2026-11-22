@@ -5,7 +5,9 @@
 //! synthesis to a count of how often the answer was derived: a work bound rather than a clock.
 
 use ess_compiler::{ir::EssIr, resolve::compile, source::SourceMap};
-use ess_conformance::synthesize::{absent_event_lists_built, synthesize, Synthesis};
+use ess_conformance::synthesize::{
+    absent_event_lists_built, precedence_replays, synthesize, Synthesis,
+};
 use ess_domain::{
     spec::{RawSpecFile, Specification},
     system::Source,
@@ -114,4 +116,32 @@ fn the_events_a_branch_must_not_publish_are_listed_once_per_emitted_list() {
         built <= 2,
         "the list was built {built} times for one emitted list"
     );
+}
+
+/// A command with no guard on any branch has nothing a sent input could contradict, so the
+/// precedence check replays none of its inputs; a guarded command's input is still replayed.
+/// Unfixed, each of the 8 scenarios' sent inputs was replayed: 8.
+#[test]
+fn an_unguarded_command_s_input_is_not_replayed_for_precedence() {
+    let ir_plain = ir(&filing(8, 4, "", "", ""));
+    let (synthesis, replays) = precedence_replays(|| synthesize(&ir_plain));
+    assert!(
+        refusals(&synthesis).is_empty(),
+        "refusals: {:#?}",
+        refusals(&synthesis)
+    );
+    assert_eq!(synthesis.suite.scenarios.len(), 8);
+    assert_eq!(
+        replays, 0,
+        "{replays} inputs of unguarded commands were replayed"
+    );
+
+    let guarded = filing(1, 1, "", "", "").replace(
+        "    outcomes:\n",
+        "    outcomes:\n      - name: blank\n        when: line_0 == \"\"\n        error: \
+         ticket.desk.Blank\n",
+    ) + "errors:\n  - {name: ticket.desk.Blank, fields: []}\n";
+    let ir_guarded = ir(&guarded);
+    let (_, replays) = precedence_replays(|| synthesize(&ir_guarded));
+    assert!(replays > 0, "the guarded command's input was not replayed");
 }
