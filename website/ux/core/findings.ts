@@ -6,7 +6,8 @@
 //   - the asset of an open finding passes: exit 1, and the finding is closed in the same change.
 // Playwright's own expected-failure mark (`testInfo.fail`) gives exactly these exit codes.
 //
-// An asset is `<spec path> :: <test title>`, the title ending at `, held by` or the end. An asset
+// An asset is `<spec path> :: <test title>`, the title ending at `, held by` or the end (a finding
+// may name several, `assetTests`). An asset
 // "held by" a file (the ratchet's baseline) is held by that file's values, not by the test's result,
 // so it is not an expected failure. Generic: the findings directory and the root that asset paths
 // are relative to are the caller's.
@@ -46,18 +47,27 @@ export function assetTest(asset: string): { spec: string; title: string } | null
   return { spec, title };
 }
 
+// The tests a regression_asset field names: one asset, or several when a finding one test cannot
+// cover (both gating viewports) separates them by `; ` before the next `<spec path> ::`. A field
+// whose first part names no test ("none yet; proposed: …") names none.
+export function assetTests(field: string): Array<{ spec: string; title: string }> {
+  const parts = field.split(/; (?=[^\s;]+\.spec\.ts :: )/);
+  if (!assetTest(parts[0])) return [];
+  return parts.map(assetTest).filter((t): t is { spec: string; title: string } => t !== null);
+}
+
 // Every open finding's asset that is an expected failure, one entry per test, sorted.
 export function knownFailures(findingsDir: string): KnownFailure[] {
   const byTest = new Map<string, KnownFailure>();
   for (const file of readdirSync(findingsDir).filter((f) => /^UXF-.*\.md$/.test(f)).sort()) {
     const fields = frontMatter(readFileSync(join(findingsDir, file), 'utf8'));
     if (fields.status !== 'open') continue;
-    const named = assetTest(fields.regression_asset ?? '');
-    if (!named) continue;
-    const key = `${named.spec} :: ${named.title}`;
-    const entry = byTest.get(key) ?? { ...named, findings: [] };
-    entry.findings.push(fields.id ?? file.replace(/\.md$/, ''));
-    byTest.set(key, entry);
+    for (const named of assetTests(fields.regression_asset ?? '')) {
+      const key = `${named.spec} :: ${named.title}`;
+      const entry = byTest.get(key) ?? { ...named, findings: [] };
+      entry.findings.push(fields.id ?? file.replace(/\.md$/, ''));
+      byTest.set(key, entry);
+    }
   }
   return [...byTest.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([, v]) => v);
 }

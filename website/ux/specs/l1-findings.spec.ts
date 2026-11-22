@@ -21,8 +21,16 @@ test('L1 known failures: an open finding asset is an expected failure; an accept
   writeFileSync(join(dir, 'UXF-005.md'), record('UXF-005', 'open', 'website/ux/specs/l3-screen-only.spec.ts :: L3 b mobile-390 pointer, held by gate 4: red at 4 of 3'));
   writeFileSync(join(dir, 'UXF-006.md'), record('UXF-006', 'open', 'none yet; proposed: an L2 assertion'));
   writeFileSync(join(dir, 'UXF-007.md'), record('UXF-007', 'open', 'website/ux/specs/l2-layout.spec.ts :: L2 /ess/ desktop-1280'));
+  // A finding at both gating viewports names both tests; a proposal after "none yet" names none.
+  writeFileSync(
+    join(dir, 'UXF-008.md'),
+    record('UXF-008', 'open', 'website/ux/specs/l2-layout.spec.ts :: L2 /ess/c desktop-1280; website/ux/specs/l2-layout.spec.ts :: L2 /ess/c mobile-390'),
+  );
+  writeFileSync(join(dir, 'UXF-009.md'), record('UXF-009', 'open', 'none yet; proposed: website/ux/specs/l1-probes.spec.ts :: L1 y'));
   expect(knownFailures(dir)).toEqual([
     { spec: 'website/ux/specs/l2-layout.spec.ts', title: 'L2 /ess/ desktop-1280', findings: ['UXF-001', 'UXF-007'] },
+    { spec: 'website/ux/specs/l2-layout.spec.ts', title: 'L2 /ess/c desktop-1280', findings: ['UXF-008'] },
+    { spec: 'website/ux/specs/l2-layout.spec.ts', title: 'L2 /ess/c mobile-390', findings: ['UXF-008'] },
     { spec: 'website/ux/specs/l3-screen-only.spec.ts', title: 'L3 b mobile-390 pointer', findings: ['UXF-005'] },
   ]);
 });
