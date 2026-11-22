@@ -142,11 +142,22 @@ jobs:
       - name: Fetch the annotated release record
         run: git fetch --tags --force --prune origin
 
+      - name: Read the pinned rustc
+        id: pin
+        shell: bash
+        run: |
+          toolchain=$(sed -n 's/^channel = "\([0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\)"$/\1/p' rust-toolchain.toml)
+          if [ -z "$toolchain" ] || [ "$(printf '%s\n' "$toolchain" | wc -l)" -ne 1 ]; then
+            echo "::error::rust-toolchain.toml does not pin exactly one rustc: '$toolchain'" >&2
+            exit 1
+          fi
+          echo "toolchain=$toolchain" >> "$GITHUB_OUTPUT"
+
       - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable
         with:
-          # `test-xtask` selects this reviewed compiler through RUSTUP_TOOLCHAIN, and the parked
-          # `task consumer-check` binds its initial eligibility to the same profile.
-          toolchain: 1.98.1
+          # rust-toolchain.toml pins this reviewed compiler; the parked `task consumer-check` binds
+          # its initial eligibility to the same profile.
+          toolchain: ${{ steps.pin.outputs.toolchain }}
           components: rustfmt, clippy
           targets: wasm32-unknown-unknown
 
@@ -253,11 +264,22 @@ jobs:
           fetch-depth: 0
           fetch-tags: true
 
+      - name: Read the pinned rustc
+        id: pin
+        shell: bash
+        run: |
+          toolchain=$(sed -n 's/^channel = "\([0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\)"$/\1/p' rust-toolchain.toml)
+          if [ -z "$toolchain" ] || [ "$(printf '%s\n' "$toolchain" | wc -l)" -ne 1 ]; then
+            echo "::error::rust-toolchain.toml does not pin exactly one rustc: '$toolchain'" >&2
+            exit 1
+          fi
+          echo "toolchain=$toolchain" >> "$GITHUB_OUTPUT"
+
       - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable
         with:
           # The shards run what this job compiles, and the tests that spawn `cargo` bake this
           # toolchain's path in, so every test job installs the same one.
-          toolchain: 1.98.1
+          toolchain: ${{ steps.pin.outputs.toolchain }}
           targets: wasm32-unknown-unknown
 
       - name: Install go-task
@@ -337,9 +359,20 @@ jobs:
           fetch-depth: 0
           fetch-tags: true
 
+      - name: Read the pinned rustc
+        id: pin
+        shell: bash
+        run: |
+          toolchain=$(sed -n 's/^channel = "\([0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\)"$/\1/p' rust-toolchain.toml)
+          if [ -z "$toolchain" ] || [ "$(printf '%s\n' "$toolchain" | wc -l)" -ne 1 ]; then
+            echo "::error::rust-toolchain.toml does not pin exactly one rustc: '$toolchain'" >&2
+            exit 1
+          fi
+          echo "toolchain=$toolchain" >> "$GITHUB_OUTPUT"
+
       - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable
         with:
-          toolchain: 1.98.1
+          toolchain: ${{ steps.pin.outputs.toolchain }}
           targets: wasm32-unknown-unknown
 
       - name: Install go-task
@@ -481,9 +514,20 @@ jobs:
 
       # The shards compile no test binary, but their tests do build: generated projects through
       # `cargo`, fixtures through `rustc`, the WASM realization and the TypeScript and Go runtimes.
+      - name: Read the pinned rustc
+        id: pin
+        shell: bash
+        run: |
+          toolchain=$(sed -n 's/^channel = "\([0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\)"$/\1/p' rust-toolchain.toml)
+          if [ -z "$toolchain" ] || [ "$(printf '%s\n' "$toolchain" | wc -l)" -ne 1 ]; then
+            echo "::error::rust-toolchain.toml does not pin exactly one rustc: '$toolchain'" >&2
+            exit 1
+          fi
+          echo "toolchain=$toolchain" >> "$GITHUB_OUTPUT"
+
       - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable
         with:
-          toolchain: 1.98.1
+          toolchain: ${{ steps.pin.outputs.toolchain }}
           components: clippy
           targets: wasm32-unknown-unknown
 
@@ -641,9 +685,20 @@ jobs:
         with:
           ref: ${{ inputs.checkout-ref || github.sha }}
 
+      - name: Read the pinned rustc
+        id: pin
+        shell: bash
+        run: |
+          toolchain=$(sed -n 's/^channel = "\([0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\)"$/\1/p' rust-toolchain.toml)
+          if [ -z "$toolchain" ] || [ "$(printf '%s\n' "$toolchain" | wc -l)" -ne 1 ]; then
+            echo "::error::rust-toolchain.toml does not pin exactly one rustc: '$toolchain'" >&2
+            exit 1
+          fi
+          echo "toolchain=$toolchain" >> "$GITHUB_OUTPUT"
+
       - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable
         with:
-          toolchain: 1.98.1
+          toolchain: ${{ steps.pin.outputs.toolchain }}
 
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
@@ -704,6 +759,8 @@ jobs:
           toolchain: ${{ steps.msrv.outputs.toolchain }}
 
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+        env:
+          RUSTUP_TOOLCHAIN: ${{ steps.msrv.outputs.toolchain }}
         with:
           key: msrv
           save-if: ${{ github.ref == 'refs/heads/main' && github.event_name != 'workflow_dispatch' || github.event_name == 'pull_request' }}
@@ -793,9 +850,20 @@ jobs:
         with:
           ref: ${{ inputs.checkout-ref || github.sha }}
 
+      - name: Read the pinned rustc
+        id: pin
+        shell: bash
+        run: |
+          toolchain=$(sed -n 's/^channel = "\([0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\)"$/\1/p' rust-toolchain.toml)
+          if [ -z "$toolchain" ] || [ "$(printf '%s\n' "$toolchain" | wc -l)" -ne 1 ]; then
+            echo "::error::rust-toolchain.toml does not pin exactly one rustc: '$toolchain'" >&2
+            exit 1
+          fi
+          echo "toolchain=$toolchain" >> "$GITHUB_OUTPUT"
+
       - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable
         with:
-          toolchain: 1.98.1
+          toolchain: ${{ steps.pin.outputs.toolchain }}
 
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
         with:
