@@ -2814,6 +2814,34 @@ impl<E: TypeEnvironment> Checker<'_, E> {
         ));
     }
 
+    /// Refuses an ordering over an enum, ordered or not: every evaluator would compare the variant
+    /// names as text by bytes, so `medium > high` would hold. Comparing by declared order is not in
+    /// the language. One refusal per comparison, naming the enum that declares the variants.
+    fn enum_ordering(&mut self, predicate: &Predicate, operands: [(&Operand, &ValueType); 2]) {
+        let Some((operand, typed)) = operands
+            .into_iter()
+            .find(|(_, typed)| typed.variants.is_some())
+        else {
+            return;
+        };
+        let enum_name = typed
+            .declaring_variants
+            .as_deref()
+            .unwrap_or(&typed.declared);
+        self.checked.errors.push(error(
+            self.owner,
+            ValidationCode::TypeMismatch,
+            operand.fact_path(),
+            None,
+            format!(
+                "`{predicate}`: `{enum_name}` is an enum, and an enum has no ordering, because its \
+                 variant names would be compared as text by bytes; comparing by declared order, \
+                 with or without `ordered: true`, is not in the language yet, so list the admitted \
+                 variants with `in: [...]`, or compare with `==` or `!=`"
+            ),
+        ));
+    }
+
     /// `distinct: {in, as, by}` (`docs/design/expression-family-source22.md`, `distinct`): from
     /// `ess/22`, over a `List` — a `Map` has no order to be distinct in, and a scalar nothing to
     /// walk — whose key, the element or the member `by` names under the binder, resolves to one
@@ -3116,6 +3144,7 @@ impl<E: TypeEnvironment> Checker<'_, E> {
             }
             if op.needs_ordering() {
                 self.duration_ordering(predicate, [(left, &left_type), (right, &right_type)]);
+                self.enum_ordering(predicate, [(left, &left_type), (right, &right_type)]);
             }
             if let Operand::Literal(value) = right {
                 self.enum_literal(predicate, &left_type, value);
