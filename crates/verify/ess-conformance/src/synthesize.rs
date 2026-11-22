@@ -3512,6 +3512,7 @@ fn synthesize_in(ir: &EssIr, seeds: &AdmittedSeeds) -> Synthesis {
     // Each witness search is run once per question for the whole synthesis (beyond10x/ess#301).
     let _memoised = crate::witness_memo::memoise(ir);
     let _remembered = made::remember(ir);
+    let _orderings = crate::now_offset::remember(ir);
     // ess/16 (#168): a model whose actors carry attributes is synthesized once per caller
     // assignment, each read with the caller's values written in (`caller::synthesize`). Seeds are
     // offered in the reading that sends every command as the caller their rows imply.
@@ -3677,6 +3678,7 @@ fn synthesize_invocations(models: &caller::InvocationModels<'_>, focus: Focus<'_
     // A caller assignment's model is another model: its answers are held apart and dropped with it.
     let _memoised = crate::witness_memo::memoise(ir);
     let _remembered = made::remember(ir);
+    let _orderings = crate::now_offset::remember(ir);
     let mut suite = ConformanceSuite::new(SuiteProvenance::of(ir));
     let mut refusals = Vec::new();
     // A Binary64 nothing a scenario sends or reads reaches is noted, not refused (`synthesize_in`);
