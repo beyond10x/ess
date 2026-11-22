@@ -205,3 +205,19 @@ fn a_fresh_coverage_suite_is_not_parsed_back_and_equals_its_reread() {
     assert_eq!(reread.coverage(), fresh.coverage());
     assert_eq!(reread.digest(), fresh.digest());
 }
+
+/// Each authored document is read as YAML once while a coverage suite is built: its `covers:` is
+/// taken from the read that compiled it, not from a second read of every accepted file (a
+/// downstream specification of 103 authored files read each twice). Unfixed: 12 reads for 6 files.
+#[test]
+fn each_authored_document_is_read_once() {
+    let ir = model();
+    let sources = sources(5);
+    let (input, read) = ess_conformance::authored::documents_read(|| {
+        coverage_build::build(&ir, &sources, Scope::System, Origins::GeneratedAndAuthored).unwrap()
+    });
+    let inventory = input.selected().coverage().unwrap();
+    assert_eq!(inventory.counts.authored, 6);
+    assert_eq!(inventory.refused[0].covered_by, Some(id(COVERING)));
+    assert_eq!(read, 6, "authored documents read for 6 files");
+}

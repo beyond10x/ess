@@ -2817,6 +2817,16 @@ pub(crate) fn compile_one(
     source: &Source,
     seen: &BTreeMap<ScenarioId, String>,
 ) -> Result<(ScenarioId, ConformanceScenario), Vec<Refusal>> {
+    compile_covering(ir, source, seen).map(|(id, scenario, _)| (id, scenario))
+}
+
+/// [`compile_one`], with the generated refusals the compiled document covers ([`declared_covers`]),
+/// taken from the one read that compiled it.
+pub(crate) fn compile_covering(
+    ir: &EssIr,
+    source: &Source,
+    seen: &BTreeMap<ScenarioId, String>,
+) -> Result<(ScenarioId, ConformanceScenario, Vec<ScenarioId>), Vec<Refusal>> {
     let bare = |cause: Cause| {
         vec![Refusal {
             origin: source.origin.clone(),
@@ -2902,6 +2912,7 @@ pub(crate) fn compile_one(
         other => unreachable!("`{other}` is an authored scenario id"),
     }));
     dependencies.extend(compiler.types.into_iter().map(EssSemanticRef::from));
+    let covers = declared_covers(&document);
     let mut scenario = ConformanceScenario::new(document.summary, compiler.steps, dependencies);
     crate::one_time_response::produce::attach(ir, &mut scenario).map_err(|detail| {
         vec![Refusal {
@@ -2910,7 +2921,7 @@ pub(crate) fn compile_one(
             cause: Cause::Unreadable { detail },
         }]
     })?;
-    Ok((id, scenario))
+    Ok((id, scenario, covers))
 }
 
 /// Whether `id` spells a generated scenario, the only kind a synthesis refusal names.
@@ -2918,15 +2929,9 @@ fn is_generated_id(id: &str) -> bool {
     ScenarioId::parse(id).is_ok_and(|id| !matches!(id, ScenarioId::Authored { .. }))
 }
 
-/// The generated refusals an authored document covers (`covers:`, `ess-scenario/7`), sorted and
-/// distinct, or none when the text is not a document this module compiles.
-pub(crate) fn covers_of(ir: &EssIr, source: &Source) -> Vec<ScenarioId> {
-    let Ok(document) = read_document(ir, &source.text) else {
-        return Vec::new();
-    };
-    if document_format_refusal(&document).is_some() {
-        return Vec::new();
-    }
+/// The generated refusals a compiled authored document covers (`covers:`, `ess-scenario/7`),
+/// sorted and distinct.
+fn declared_covers(document: &Document) -> Vec<ScenarioId> {
     document
         .covers
         .iter()
@@ -2951,6 +2956,19 @@ fn is_scenario_format(format: &str) -> bool {
     )
 }
 
+thread_local! {
+    static DOCUMENTS_READ: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
+
+/// What `run` returns, and how many times an authored document's text was read as YAML on this
+/// thread while it ran.
+#[doc(hidden)]
+pub fn documents_read<R>(run: impl FnOnce() -> R) -> (R, u64) {
+    let before = DOCUMENTS_READ.with(std::cell::Cell::get);
+    let out = run();
+    (out, DOCUMENTS_READ.with(std::cell::Cell::get) - before)
+}
+
 /// A document, its `type:` looked at before any other key is admitted.
 ///
 /// A document in another format is refused for its format, and one without a `type:` for the
@@ -2963,6 +2981,7 @@ fn is_scenario_format(format: &str) -> bool {
 /// (`input:`, `contains:` and the others), so it cannot tell. A repeated document or step key is
 /// a struct field the full read already refuses, and keeps that refusal.
 fn read_document(ir: &EssIr, text: &str) -> Result<Document, Box<Cause>> {
+    DOCUMENTS_READ.with(|count| count.set(count.get() + 1));
     let value = ess_yaml::from_str::<ess_yaml::Value>(text);
     if let Some(format) = header_type(text, value.as_ref()) {
         match &format {
