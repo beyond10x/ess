@@ -22,13 +22,27 @@ one.
 4. [Commands and outcomes](specify/commands-and-outcomes.md) — wrong-state answers, unknown
    instances, existence, filters, deletion and event value sources.
 5. [Values and credentials](specify/values-and-views.md) — value expressions and the caller's
-   credential; [Views](specify/views.md) — view consistency, paging and aggregates.
+   credential; [Views](specify/views.md) — view consistency, paging and derived fields;
+   [Aggregate views](specify/aggregate-views.md) — views with `group_by` that count, sum and bound
+   one entity's rows, and conditional measures.
 6. [Components and bindings](specify/bindings-and-components.md) — the layers above the domains
    and bindings between components.
 7. [Selections, periodic causes and delivery context](specify/binding-context.md) — what a binding
    reads besides its event payload, and clock-reading provenance.
 8. [Conversions and wire names](specify/wire-names.md) — conversions between contexts, wire
    spellings and error wire codes.
+9. [An input refused when absent is present afterwards](specify/narrowed-inputs.md) — an `Optional`
+   input reads as its value type in a branch only ever taken with the input present.
+10. [Changing selected records](specify/selection-effects.md) — an outcome that changes, moves or
+    deletes every record a filter selects.
+11. [Rules stored as data](specify/stored-rules.md) — a rule the system stores as rows is the
+    system's to evaluate; the specification types its parts and injects its verdict.
+12. [Tagged unions](specify/unions.md) — a value that is one of several shapes, declared with
+    `kind: union` and a tag.
+13. [Binding conditions](specify/binding-conditions.md) — invoke a binding only when its event
+    payload says so.
+14. [Read stored state in the command a binding invokes](specify/binding-stored-state.md) — why a
+    binding maps an identity and the invoked command reads the row.
 
 ## Where each section went
 

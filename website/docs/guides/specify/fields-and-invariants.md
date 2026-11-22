@@ -9,8 +9,9 @@ description: Why a refusable command declares outcomes, what an invariant may re
 ## What the model insists on
 
 These are the authoring decisions that surprise people coming from OpenAPI-first or prose designs.
-Each exists to keep a generated test honest. Every block below is an excerpt of
-`examples/billing/`, abridged to the construct being explained.
+Each exists to keep a generated test honest. The first blocks are excerpts of
+`examples/billing/`, abridged to the construct being explained; later blocks come from small
+examples of their own.
 
 ### A command that can be refused says so
 
@@ -73,7 +74,8 @@ A literal in `sets:` or `payload:` may also be written as the YAML value it mean
 `reminder_count: 0` over an `Integer` and `paused: false` over a `Boolean` compile to exactly what
 `"0"` and `"false"` do. An unquoted number or boolean over a text field or an enum is refused with
 the repair, `quote it: label: '0'`. Over any other type it gets the same refusal as its quoted form.
-A decimal such as `1.5` is never a literal, quoted or not; read it from an input.
+A decimal such as `1.5` is a literal only over a `Decimal` target, quoted or not (see
+[value expressions](values-and-views.md)); over an `Integer`, a text field or an enum it is refused.
 
 A literal cannot say that an `Optional` field holds nothing. `metrics: none` is not read as the
 field's type and synthesis drops it, and `lane_id: ""` is an empty string, which a reader tells
@@ -172,9 +174,10 @@ optional fields: it is a `kind: union` with a `tag:`, declared on [tagged unions
 
 ### Order two instants
 
-A right-hand side without a dot is a literal, so `when: ends_at > starts_at` compares `ends_at`
-with the text `"starts_at"`. Validation refuses it and names the spelling that reads a field:
-declare the two `Timestamp` fields in one struct and compare its members.
+Below `ess/22` a right-hand side without a dot is a literal, so `when: ends_at > starts_at`
+compares `ends_at` with the text `"starts_at"`, and validation refuses it. From `ess/22` the word
+names the field and two `Timestamp` fields compare as instants. Either way, two fields of one
+struct compare as the example below.
 
 ```yaml
 input:

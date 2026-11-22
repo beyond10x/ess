@@ -34,9 +34,10 @@ Each field declares its result type exactly, and validation names the one it exp
 for `count`, `count_distinct` and `sum` of an `Integer`; `Decimal` for `sum` of a `Decimal`;
 `Optional<T>` for `min` and `max`, keeping a newtype; `Optional<Decimal>` for `avg`, which is
 rounded to 6 fractional digits, ties to even. An aggregate reads one top-level field of the source
-(from `ess/36` also an expression of the row, below) that every row holds, so an `Optional`
-argument or group key is refused, and so is grouping by a `Timestamp` or ranking an aggregate view
-with `order_by:`.
+(from `ess/36` also an expression of the row, below). An `Optional` argument is refused unless the
+aggregate says `skip_absent: true` (from `ess/15`, below); an `Optional` group key is admitted from
+`ess/15` and the absent value is its own group. Grouping by a `Timestamp` and ranking an aggregate
+view with `order_by:` are refused.
 
 Conformance creates the rows itself, through the declared creating outcome, and asserts every
 group's exact numbers. Because a target may be shared, the rows are kept apart from every other

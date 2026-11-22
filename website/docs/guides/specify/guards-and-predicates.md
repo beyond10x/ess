@@ -210,8 +210,10 @@ components:
 The synthesized suite sends the blank code to an identity nothing stores and requires
 `no-session`, to a paused session and requires `not-active`, and to an active one and requires
 `invalid-code`. A target that checks the code before it looks the session up fails the first two.
-`when_subject_state: Active` beside the `when:` would read the same, but it is refused beside
-`wrong_state:` (`ESS-COMMAND-004`); write the predicate form.
+`when_subject_state: Active` beside the `when:` would read the same, but below `ess/27` it is
+refused beside `wrong_state:` (`ESS-COMMAND-004`), and from `ess/27` the sibling `paused` move is
+then refused because the guard leaves it a held state it cannot start from; write the predicate
+form.
 
 ### Two input refusals whose guards overlap
 
@@ -301,11 +303,11 @@ In a state the command does not move from, no branch is selected by the stored f
 refusal scenario sends the command as it does for a command without `when_subject`. The older
 `when_subject: {field, equals}` form keeps `ess/6`.
 
-A command that refuses a changed stored field and updates the record only while it is `Active`
-cannot write `when_subject_state: Active` on the update beside the `when_subject:` refusal: the
-two strategies stay apart, and the command is refused `ESS-COMMAND-004`, whose hint names this
-form. Read the held state in the predicate instead: `when_subject: {predicate: state != Active}`
-on a refusal declared before the update, which then needs no guard of its own:
+Below `ess/27` a command that refuses a changed stored field and updates the record only while it
+is `Active` cannot write `when_subject_state: Active` on the update beside the `when_subject:`
+refusal (`ESS-COMMAND-004`, whose hint names `ess/27`). From `ess/27` it can. The predicate form
+below works in every format: `when_subject: {predicate: state != Active}` on a refusal declared
+before the update, which then needs no guard of its own:
 
 ```yaml
 - name: seed-change-refused

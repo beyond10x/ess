@@ -101,18 +101,23 @@ specification is validated and generated with — an exact release, or a minor l
 
 ```yaml
 format: ess-inputs/2
-requires: ess 0.32     # or `ess 0.32.1` for exactly that release
+requires: ess 0.34     # or `ess 0.34.0` for exactly that release
 specification: [model/system.yaml, model/domains/invoice.yaml]
 scenarios: []
 ```
 
-An exact pin, `requires: ess 0.32.1`, decides which release runs: any `ess` run in that directory
-or below it runs 0.32.1 from the cache, installing it first when it is not cached, whatever release
+A release older than 0.34.0 cannot be named: it does not read `ess-inputs/2`, and an exact pin to
+one is refused. `requires: ess 0.32.1` prints `error: refused ess 0.32.1 (pin: ...): it predates
+ess 0.34.0, the first release that reads ess-inputs/2, so it cannot run under a pin; name 0.34.0
+or later`.
+
+An exact pin, `requires: ess 0.34.0`, decides which release runs: any `ess` run in that directory
+or below it runs 0.34.0 from the cache, installing it first when it is not cached, whatever release
 is on your `PATH`, and says on stderr that it delegated. `ess specify toolchain which` prints the
 release that would run and why. The pin applies from that directory and below, not above: run from
 the repository root, `ess` does not see a pin in `spec/`, so `which` names it there, and
 `ess specify validate --path spec` refuses, naming the manifest, `cd spec` and
-`ESS_TOOLCHAIN=0.32.1`, whether `ess` is older or newer. A minor line, `requires: ess 0.32`, leaves the release on your
+`ESS_TOOLCHAIN=0.34.0`, whether `ess` is older or newer. A minor line, `requires: ess 0.34`, leaves the release on your
 `PATH` to run, and that release checks the line: an older `ess` refuses with exit `1`, naming the
 required release and how to get it: `b10x upgrade`, or `/ess:upgrade` in an agent session. A newer
 `ess` prints one warning per command and continues; `--strict-requires` refuses instead, which is
@@ -163,7 +168,7 @@ same model, which on a large one is far longer than validating; text mode does n
 | `unanswered` | each question the specification does not answer, so no scenario is owed for it | `note:` |
 | `counts` | one count per list; `unscenarioed` equals the `refusal(s)` figure | the summary line |
 
-A model that conformance synthesis does not admit at all, such as one with a finite `Binary64`,
+A model that conformance synthesis does not admit at all, such as one whose actor attribute reaches a `Binary64`,
 carries `unsynthesizable` instead, with the `reason`, `path` and `detail` of each refusal. The billing
 example carries one `unanswered` note, about who enforces a grant. Gate on the codes, which are
 stable: for example, fail a pull request when `completeness.counts.unscenarioed` grows.
@@ -277,8 +282,9 @@ bindings:
   name: notify-on-invoice-created
 ```
 
-`--kind` is only needed when one name is used in two namespaces; the seven it accepts are `domain`,
-`type`, `command`, `event`, `error`, `binding` and `component`.
+A name used in two namespaces prints one block per namespace, headed by its family (`commands:`,
+`events:`, ...). `inspect` looks the name up in domains, types, entities, commands, events, errors,
+views, actors, bindings, components and workloads.
 
 ## Names
 
