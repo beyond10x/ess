@@ -1047,7 +1047,8 @@ impl<'a> Check<'a> {
                     wrap("Text", format!("{at}.Value()"))
                 }
                 Primitive::Bytes => wrap("Bytes", at.to_owned()),
-                Primitive::Binary64 | Primitive::Json => {
+                Primitive::Binary64 => wrap("NumberOf", format!("{at}.Decimal()")),
+                Primitive::Json => {
                     return Err(format!(
                         "`{path}` is a `{name}`, which the check does not read"
                     ));

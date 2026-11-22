@@ -224,6 +224,7 @@ impl<'a> Emit<'a> {
             Primitive::Timestamp => "NewTimestamp",
             Primitive::Duration => "NewDuration",
             Primitive::Uuid => "NewUuid",
+            Primitive::Binary64 => "NewBinary64",
             Primitive::Json => "NewJson",
             other => panic!("`{other:?}` maps onto a Go type directly and has no constructor"),
         };
@@ -336,7 +337,7 @@ pub fn workspace_bound(
 
     let mut artifacts = vec![
         module_file(&layout, provenance),
-        primitives_package(&layout, provenance, json::used(ir)),
+        primitives_package(&layout, provenance, json::used(ir), binary64::used(ir)),
     ];
     if let Some(helper) = reading::helper(ir, &layout, provenance) {
         artifacts.push(helper);
@@ -682,20 +683,31 @@ fn module_file(layout: &Layout, provenance: &Provenance) -> Artifact {
 /// Fixed per emitter version rather than derived from the specification, exactly as the Rust
 /// emitter's is: the same eight primitives get the same eight spellings whatever the system.
 /// `Json` is the ninth, and only in a model that uses it (see `json`), so every other model keeps
-/// these bytes.
-fn primitives_package(layout: &Layout, provenance: &Provenance, with_json: bool) -> Artifact {
+/// these bytes. `Binary64` likewise, wrapping a `float64`.
+fn primitives_package(
+    layout: &Layout,
+    provenance: &Provenance,
+    with_json: bool,
+    with_binary64: bool,
+) -> Artifact {
     let package = layout.primitives();
     let mut out = provenance.commented_for("//", REGENERATE);
     out.push('\n');
-    if with_json {
-        out.push_str(&json::with_json(
+    match (with_json, with_binary64) {
+        (false, false) => out.push_str(PRIMITIVES_DOC),
+        (true, true) => out.push_str(&json::with_json(
+            PRIMITIVES_DOC,
+            &[("The four below have no", "The six below have no")],
+        )),
+        _ => out.push_str(&json::with_json(
             PRIMITIVES_DOC,
             &[("The four below have no", "The five below have no")],
-        ));
-    } else {
-        out.push_str(PRIMITIVES_DOC);
+        )),
     }
     let _ = writeln!(out, "package {}", package.name);
+    if with_binary64 {
+        out.push_str(binary64::IMPORTS);
+    }
     for (type_name, what, rendering) in PRIMITIVES {
         let _ = write!(
             out,
@@ -712,6 +724,9 @@ fn primitives_package(layout: &Layout, provenance: &Provenance, with_json: bool)
     }
     if with_json {
         out.push_str(json::PRIMITIVE);
+    }
+    if with_binary64 {
+        out.push_str(binary64::PRIMITIVE);
     }
     Artifact::new(package.file(), out)
 }
