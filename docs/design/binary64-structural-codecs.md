@@ -2,8 +2,10 @@
 
 Binding for the standalone follow-up to [finite Binary64 model fields](model-binary64.md).
 Rust and Go structural targets implement the checked finite codec and raw-token
-container profile below. This is standalone data-library support; whole-system
-synthesis and conformance retain their existing refusals.
+container profile below. This is standalone data-library support. Whole-system
+synthesis carries a finite Binary64 through the Rust, Go and web targets
+([code-target-binary64.md](code-target-binary64.md)) and refuses it on Clap, and conformance
+carries a reached Binary64 from suite format 62 ([model-binary64.md](model-binary64.md)).
 
 The public structural source baseline is
 [`6c78676c35193423fe326b9dde21b8fc21681b8a`][baseline]. It establishes the existing

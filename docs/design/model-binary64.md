@@ -122,7 +122,7 @@ Additional surfaces not found by enumerating Primitive arms:
 1. Bind the primitive, authored-format gate, finite/signed-zero/equality policy, map-key refusal and old-reader tests.
 2. Implement model wire projection plus sealed Binary64 metadata and unchanged source-pin accounting.
 3. Support explicit Binary64 model inputs, floating defaults and newly computed floating outputs through reference and generated Rust/Go normalization, including the new version-gated expressions, declared paths, located missing-policy/unsupported-path refusals and finite value/output checks. Run the existing floating conversion corpus through a genuinely model-owned numeric field and add default/output-construction cases.
-4. Structural adapters report their representation/decoder obligations. Whole-system Rust/Go/web/clap synthesis and conformance either implement their finite wrappers/codecs/suite contract completely or refuse selected Binary64 surfaces before successful partial artifacts. A refusal is an explicit supported boundary, not a floating implementation claim.
+4. Structural adapters report their representation/decoder obligations. Whole-system Rust/Go/web/clap synthesis and conformance either implement their finite wrappers/codecs/suite contract completely or refuse selected Binary64 surfaces before successful partial artifacts. A refusal is an explicit supported boundary, not a floating implementation claim. The Rust, Go and web targets implement their wrappers and codecs for every position the suite carries ([code-target-binary64.md](code-target-binary64.md)). Clap refuses every Binary64.
 5. Add full-system codec support separately if it is required in the first published outcome. It needs local checked wrappers (private finite value, checked constructor, read access), rather than raw f64 aliases or exposing a mutable field that can hold NaN. Keep numeric equality (+0 == -0) separate from serialized signed-zero preservation. No invented default arithmetic or map-key support.
 
 A source/model/normalization path plus truthful refusals is a substantially smaller unit than completing every synthesized HTTP/browser/conformance surface. The story's final report must state which of those boundaries actually execute.
@@ -167,9 +167,10 @@ context, mappings or selection, or a declared conversion
 (`ess_compiler::binary64::reached_uses`). Conformance admission and synthesis refuse only
 reached positions. A position in a type nothing reaches is admitted, because no scenario
 sends or reads it, and synthesis writes a note naming it instead
-(`ess_compiler::binary64::unreached_locations`). Codecs that emit every declared type
-(`ess synthesize --target rust|go|web|clap`) still read the structural inventory
-(`ess_compiler::binary64::locations`) and refuse an unreached position too.
+(`ess_compiler::binary64::unreached_locations`). The Clap target emits every declared type, reads
+the structural inventory (`ess_compiler::binary64::locations`) and refuses an unreached position
+too. The Rust, Go and web targets carry an unreached position as a value and refuse only a reached
+one the suite does not carry.
 
 Old authored model and recipe meanings remain unchanged. Freeze the additional
 shared emitted sources required by the new expressions, and measure complete old
@@ -223,7 +224,10 @@ records with Binary64-reachable additional values retain a located Rust refusal.
 These standalone libraries discharge the finite-codec obligation while retaining
 schema constraints and their other reported runtime obligations.
 
-Whole-system Rust/Go/Web/Clap workspaces refuse before constructing artifacts.
+Whole-system Rust/Go/Web/Clap workspaces refuse before constructing artifacts. This first unit's
+boundary is superseded for Rust, Go and Web by [code-target-binary64.md](code-target-binary64.md):
+they carry every position the suite carries and refuse only a position it does not. Clap keeps the
+refusal of every position.
 Go/Clap `workspace` now return `Result<Emission, TargetFailure>`; this public Rust
 API change is accepted for the upcoming pre-1.0 minor release. New Go/Clap complete
 failures use `ess-target-failure/2`. Rust/Web retain their existing failure/1 bytes.
@@ -280,7 +284,9 @@ authoring keeps refusing them as `ESS-AUTHOR-036`. That code's help names the ca
 
 Routes outside the contract keep refusing every reached position, with unchanged messages and no
 artifact: the browser player, its replay and its execution bundle (`ess verify conform web`), the
-mutation run, and whole-system `ess synthesize --target rust|go|web|clap`.
+mutation run, and whole-system `ess generate synthesize --target clap`. Whole-system
+`--target rust|go|web` carry a finite `Binary64` in every carried position and refuse an uncarried
+one, with the detail named in [code-target-binary64.md](code-target-binary64.md) § 5.
 `admission::model_without_binary64` is that refusal; it is the inventory `admission::model` used
 before this section. No route writes a partial artifact set.
 

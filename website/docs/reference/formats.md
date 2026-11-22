@@ -646,7 +646,7 @@ digest, authenticate a publisher or fill the existing literal-assignment/view-ev
 New counts and timestamps use exact unsigned decimal u64 tokens. Go's selected execution adapter
 separately checks its host `int` width after admitting all parents, and its clock remains nonnegative
 int64; Rust timestamps retain the full u64 range. Declared Node payloads retain finite binary64
-meaning. Modeled Binary64 remains refused before conformance output. Impact with complete admitted
+meaning. A modeled Binary64 in a position the suite does not carry remains refused before conformance output. Impact with complete admitted
 input retains `ess-impact/3` and presents selection separately; unknown/incomplete input refuses.
 A format catalog alone does not establish an installed external consumer upgrade.
 
