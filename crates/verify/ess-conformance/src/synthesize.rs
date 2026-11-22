@@ -3446,6 +3446,15 @@ pub fn branch_selections_tried<R>(run: impl FnOnce() -> R) -> (R, u64) {
     made::picks(run)
 }
 
+/// What `run` returns, and how many times a related row and an input were checked on this thread
+/// for the `when_related:` branch they select while it ran, rather than answered from what the
+/// synthesis checked before: the work a test bounds where a wall-clock bound would depend on the
+/// machine. Not part of the suite.
+#[doc(hidden)]
+pub fn related_selections_tried<R>(run: impl FnOnce() -> R) -> (R, u64) {
+    made::related_picks(run)
+}
+
 /// What `run` returns, and how many traversals of the declared types the shorthand withdrawal made
 /// on this thread while it ran: the work a test bounds. Not part of the suite.
 #[doc(hidden)]
