@@ -24,8 +24,8 @@ use ess_domain::name::QualifiedName;
 use ess_domain::view::AssertionStyle;
 
 use super::{
-    bound, clipped, identity_of, input_types, insert, reachable_types, run, shown, shows_row,
-    Refusal, RefusalCause,
+    bound, clipped, identity_of, input_types, insert, reachable_types, shown, shows_row, Refusal,
+    RefusalCause,
 };
 use crate::scenario::{
     ActorRef, CommandRef, ConformanceScenario, ConformanceSuite, DeclaredTypeRef, EntityRef,
@@ -436,7 +436,7 @@ fn observed_at(
             // The scenario observes the value this branch copies, so an `Optional` input it copies
             // is sent present here (beyond10x/ess#546).
             let _under_test = crate::witness::under_test(ir, command, outcome);
-            let Ok(arranged) = run(ir, command, outcome, actors) else {
+            let Ok(arranged) = super::run_memo::run(ir, command, outcome, actors) else {
                 continue;
             };
             let Some(state) = arranged.after.clone() else {

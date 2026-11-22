@@ -1,0 +1,399 @@
+format: ess/37
+system: demo
+version: v1
+domain: demo.board
+summary: Cards whose flags several commands set, each refusing a flag already set.
+types:
+  - {name: demo.board.CardId, kind: newtype, of: String}
+entities:
+  - name: demo.board.Card
+    identity: {name: card_id, type: demo.board.CardId}
+    fields:
+      - {name: flag_1, type: Boolean}
+      - {name: flag_2, type: Boolean}
+      - {name: flag_3, type: Boolean}
+      - {name: flag_4, type: Boolean}
+      - {name: flag_5, type: Boolean}
+      - {name: flag_6, type: Boolean}
+      - {name: flag_7, type: Boolean}
+      - {name: flag_8, type: Boolean}
+      - {name: flag_9, type: Boolean}
+      - {name: flag_10, type: Boolean}
+      - {name: flag_11, type: Boolean}
+      - {name: flag_12, type: Boolean}
+    lifecycle:
+      initial: Open
+      states: [Open, Closed]
+      terminal: [Closed]
+      transitions:
+        - {name: mark_1, from: [Open], to: Open}
+        - {name: mark_2, from: [Open], to: Open}
+        - {name: mark_3, from: [Open], to: Open}
+        - {name: mark_4, from: [Open], to: Open}
+        - {name: mark_5, from: [Open], to: Open}
+        - {name: mark_6, from: [Open], to: Open}
+        - {name: mark_7, from: [Open], to: Open}
+        - {name: mark_8, from: [Open], to: Open}
+        - {name: mark_9, from: [Open], to: Open}
+        - {name: mark_10, from: [Open], to: Open}
+        - {name: mark_11, from: [Open], to: Open}
+        - {name: mark_12, from: [Open], to: Open}
+        - {name: close, from: [Open], to: Closed}
+actors:
+  - name: demo.board.Clerk
+    may: [demo.board.Open, demo.board.Close, demo.board.Mark1, demo.board.Mark2, demo.board.Mark3, demo.board.Mark4, demo.board.Mark5, demo.board.Mark6, demo.board.Mark7, demo.board.Mark8, demo.board.Mark9, demo.board.Mark10, demo.board.Mark11, demo.board.Mark12]
+errors:
+  - name: demo.board.NoSuchCard
+    fields:
+      - {name: card_id, type: demo.board.CardId}
+  - name: demo.board.AlreadyMarked
+    fields:
+      - {name: card_id, type: demo.board.CardId}
+  - name: demo.board.StateConflict
+    fields:
+      - {name: card_id, type: demo.board.CardId}
+commands:
+  - name: demo.board.Open
+    input:
+      - {name: card_id, type: demo.board.CardId}
+    outcomes:
+      - name: opened
+        creates: demo.board.Card
+        instance: card_id
+        sets:
+          flag_1: false
+          flag_2: false
+          flag_3: false
+          flag_4: false
+          flag_5: false
+          flag_6: false
+          flag_7: false
+          flag_8: false
+          flag_9: false
+          flag_10: false
+          flag_11: false
+          flag_12: false
+        emits: [demo.board.Opened]
+        payload:
+          demo.board.Opened: {card_id: input.card_id}
+  - name: demo.board.Mark1
+    input:
+      - {name: card_id, type: demo.board.CardId}
+      - {name: on, type: Boolean}
+    outcomes:
+      - name: no-card
+        unknown_instance: true
+        error: demo.board.NoSuchCard
+      - name: already-marked
+        when_subject:
+          predicate: flag_1 == true
+        error: demo.board.AlreadyMarked
+      - name: marked
+        moves: demo.board.Card.mark_1
+        instance: card_id
+        sets:
+          flag_1: input.on
+        emits: [demo.board.Marked]
+        payload:
+          demo.board.Marked: {card_id: input.card_id}
+      - name: wrong-state
+        wrong_state: true
+        error: demo.board.StateConflict
+  - name: demo.board.Mark2
+    input:
+      - {name: card_id, type: demo.board.CardId}
+      - {name: on, type: Boolean}
+    outcomes:
+      - name: no-card
+        unknown_instance: true
+        error: demo.board.NoSuchCard
+      - name: already-marked
+        when_subject:
+          predicate: flag_2 == true
+        error: demo.board.AlreadyMarked
+      - name: marked
+        moves: demo.board.Card.mark_2
+        instance: card_id
+        sets:
+          flag_2: input.on
+        emits: [demo.board.Marked]
+        payload:
+          demo.board.Marked: {card_id: input.card_id}
+      - name: wrong-state
+        wrong_state: true
+        error: demo.board.StateConflict
+  - name: demo.board.Mark3
+    input:
+      - {name: card_id, type: demo.board.CardId}
+      - {name: on, type: Boolean}
+    outcomes:
+      - name: no-card
+        unknown_instance: true
+        error: demo.board.NoSuchCard
+      - name: already-marked
+        when_subject:
+          predicate: flag_3 == true
+        error: demo.board.AlreadyMarked
+      - name: marked
+        moves: demo.board.Card.mark_3
+        instance: card_id
+        sets:
+          flag_3: input.on
+        emits: [demo.board.Marked]
+        payload:
+          demo.board.Marked: {card_id: input.card_id}
+      - name: wrong-state
+        wrong_state: true
+        error: demo.board.StateConflict
+  - name: demo.board.Mark4
+    input:
+      - {name: card_id, type: demo.board.CardId}
+      - {name: on, type: Boolean}
+    outcomes:
+      - name: no-card
+        unknown_instance: true
+        error: demo.board.NoSuchCard
+      - name: already-marked
+        when_subject:
+          predicate: flag_4 == true
+        error: demo.board.AlreadyMarked
+      - name: marked
+        moves: demo.board.Card.mark_4
+        instance: card_id
+        sets:
+          flag_4: input.on
+        emits: [demo.board.Marked]
+        payload:
+          demo.board.Marked: {card_id: input.card_id}
+      - name: wrong-state
+        wrong_state: true
+        error: demo.board.StateConflict
+  - name: demo.board.Mark5
+    input:
+      - {name: card_id, type: demo.board.CardId}
+      - {name: on, type: Boolean}
+    outcomes:
+      - name: no-card
+        unknown_instance: true
+        error: demo.board.NoSuchCard
+      - name: already-marked
+        when_subject:
+          predicate: flag_5 == true
+        error: demo.board.AlreadyMarked
+      - name: marked
+        moves: demo.board.Card.mark_5
+        instance: card_id
+        sets:
+          flag_5: input.on
+        emits: [demo.board.Marked]
+        payload:
+          demo.board.Marked: {card_id: input.card_id}
+      - name: wrong-state
+        wrong_state: true
+        error: demo.board.StateConflict
+  - name: demo.board.Mark6
+    input:
+      - {name: card_id, type: demo.board.CardId}
+      - {name: on, type: Boolean}
+    outcomes:
+      - name: no-card
+        unknown_instance: true
+        error: demo.board.NoSuchCard
+      - name: already-marked
+        when_subject:
+          predicate: flag_6 == true
+        error: demo.board.AlreadyMarked
+      - name: marked
+        moves: demo.board.Card.mark_6
+        instance: card_id
+        sets:
+          flag_6: input.on
+        emits: [demo.board.Marked]
+        payload:
+          demo.board.Marked: {card_id: input.card_id}
+      - name: wrong-state
+        wrong_state: true
+        error: demo.board.StateConflict
+  - name: demo.board.Mark7
+    input:
+      - {name: card_id, type: demo.board.CardId}
+      - {name: on, type: Boolean}
+    outcomes:
+      - name: no-card
+        unknown_instance: true
+        error: demo.board.NoSuchCard
+      - name: already-marked
+        when_subject:
+          predicate: flag_7 == true
+        error: demo.board.AlreadyMarked
+      - name: marked
+        moves: demo.board.Card.mark_7
+        instance: card_id
+        sets:
+          flag_7: input.on
+        emits: [demo.board.Marked]
+        payload:
+          demo.board.Marked: {card_id: input.card_id}
+      - name: wrong-state
+        wrong_state: true
+        error: demo.board.StateConflict
+  - name: demo.board.Mark8
+    input:
+      - {name: card_id, type: demo.board.CardId}
+      - {name: on, type: Boolean}
+    outcomes:
+      - name: no-card
+        unknown_instance: true
+        error: demo.board.NoSuchCard
+      - name: already-marked
+        when_subject:
+          predicate: flag_8 == true
+        error: demo.board.AlreadyMarked
+      - name: marked
+        moves: demo.board.Card.mark_8
+        instance: card_id
+        sets:
+          flag_8: input.on
+        emits: [demo.board.Marked]
+        payload:
+          demo.board.Marked: {card_id: input.card_id}
+      - name: wrong-state
+        wrong_state: true
+        error: demo.board.StateConflict
+  - name: demo.board.Mark9
+    input:
+      - {name: card_id, type: demo.board.CardId}
+      - {name: on, type: Boolean}
+    outcomes:
+      - name: no-card
+        unknown_instance: true
+        error: demo.board.NoSuchCard
+      - name: already-marked
+        when_subject:
+          predicate: flag_9 == true
+        error: demo.board.AlreadyMarked
+      - name: marked
+        moves: demo.board.Card.mark_9
+        instance: card_id
+        sets:
+          flag_9: input.on
+        emits: [demo.board.Marked]
+        payload:
+          demo.board.Marked: {card_id: input.card_id}
+      - name: wrong-state
+        wrong_state: true
+        error: demo.board.StateConflict
+  - name: demo.board.Mark10
+    input:
+      - {name: card_id, type: demo.board.CardId}
+      - {name: on, type: Boolean}
+    outcomes:
+      - name: no-card
+        unknown_instance: true
+        error: demo.board.NoSuchCard
+      - name: already-marked
+        when_subject:
+          predicate: flag_10 == true
+        error: demo.board.AlreadyMarked
+      - name: marked
+        moves: demo.board.Card.mark_10
+        instance: card_id
+        sets:
+          flag_10: input.on
+        emits: [demo.board.Marked]
+        payload:
+          demo.board.Marked: {card_id: input.card_id}
+      - name: wrong-state
+        wrong_state: true
+        error: demo.board.StateConflict
+  - name: demo.board.Mark11
+    input:
+      - {name: card_id, type: demo.board.CardId}
+      - {name: on, type: Boolean}
+    outcomes:
+      - name: no-card
+        unknown_instance: true
+        error: demo.board.NoSuchCard
+      - name: already-marked
+        when_subject:
+          predicate: flag_11 == true
+        error: demo.board.AlreadyMarked
+      - name: marked
+        moves: demo.board.Card.mark_11
+        instance: card_id
+        sets:
+          flag_11: input.on
+        emits: [demo.board.Marked]
+        payload:
+          demo.board.Marked: {card_id: input.card_id}
+      - name: wrong-state
+        wrong_state: true
+        error: demo.board.StateConflict
+  - name: demo.board.Mark12
+    input:
+      - {name: card_id, type: demo.board.CardId}
+      - {name: on, type: Boolean}
+    outcomes:
+      - name: no-card
+        unknown_instance: true
+        error: demo.board.NoSuchCard
+      - name: already-marked
+        when_subject:
+          predicate: flag_12 == true
+        error: demo.board.AlreadyMarked
+      - name: marked
+        moves: demo.board.Card.mark_12
+        instance: card_id
+        sets:
+          flag_12: input.on
+        emits: [demo.board.Marked]
+        payload:
+          demo.board.Marked: {card_id: input.card_id}
+      - name: wrong-state
+        wrong_state: true
+        error: demo.board.StateConflict
+  - name: demo.board.Close
+    input:
+      - {name: card_id, type: demo.board.CardId}
+    outcomes:
+      - name: no-card
+        unknown_instance: true
+        error: demo.board.NoSuchCard
+      - name: closed
+        moves: demo.board.Card.close
+        instance: card_id
+        emits: [demo.board.Closed]
+        payload:
+          demo.board.Closed: {card_id: input.card_id}
+      - name: wrong-state
+        wrong_state: true
+        error: demo.board.StateConflict
+events:
+  - name: demo.board.Opened
+    fields:
+      - {name: card_id, type: demo.board.CardId}
+  - name: demo.board.Marked
+    fields:
+      - {name: card_id, type: demo.board.CardId}
+  - name: demo.board.Closed
+    fields:
+      - {name: card_id, type: demo.board.CardId}
+views:
+  - name: demo.board.Cards
+    source: demo.board.Card
+    consistency: read_your_writes
+    fields:
+      - {name: card_id, type: demo.board.CardId}
+      - {name: state, type: demo.board.Card.State}
+      - {name: flag_1, type: Boolean}
+      - {name: flag_2, type: Boolean}
+      - {name: flag_3, type: Boolean}
+      - {name: flag_4, type: Boolean}
+      - {name: flag_5, type: Boolean}
+      - {name: flag_6, type: Boolean}
+      - {name: flag_7, type: Boolean}
+      - {name: flag_8, type: Boolean}
+      - {name: flag_9, type: Boolean}
+      - {name: flag_10, type: Boolean}
+      - {name: flag_11, type: Boolean}
+      - {name: flag_12, type: Boolean}

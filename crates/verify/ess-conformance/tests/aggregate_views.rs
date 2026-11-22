@@ -4,6 +4,7 @@
 //! number asserted here is the page's own worked example, read off the page and not off the
 //! implementation.
 use std::collections::BTreeMap;
+use std::fmt::Write as _;
 mod support_versions;
 
 use ess_compiler::{ir::EssIr, resolve::compile, source::SourceMap};
@@ -700,4 +701,43 @@ fn a_refusal_only_suite_carrying_an_aggregate_refusal_is_written_at_coverage_17(
     assert_ne!(older, original);
     let error = AdmittedSuite::from_json(&older).expect_err("an aggregate refusal needs suite/17");
     assert!(error.to_string().contains("suite/17"), "{error}");
+}
+
+/// A model with no aggregate view collects no literal for one: an entity's 240 invariants cost
+/// the aggregate family nothing. Before, every synthesis collected the model's literals once
+/// before it looked for an aggregate view (count 1 here). A work bound, not a clock.
+#[test]
+fn a_model_without_aggregate_views_collects_no_literals() {
+    let mut text = String::from(
+        "format: ess/27
+system: shop
+version: v1
+domain: shop.order
+entities:
+  - name: shop.order.Ticket
+    identity: {name: id, type: Uuid}
+    fields: [{name: code, type: String}]
+    lifecycle: {initial: Open, states: [Open], terminal: [Open]}
+    invariants:
+",
+    );
+    for invariant in 0..240 {
+        let _ = writeln!(text, "      - 'code != \"flag_{invariant}\"'");
+    }
+    text.push_str(
+        "events: [{name: shop.order.Done, fields: []}]
+commands:
+  - name: shop.order.Do
+    outcomes: [{name: done, emits: [shop.order.Done]}]
+",
+    );
+    let ir = ir(&text);
+    let (_, collected) = ess_conformance::synthesize::literals_collected(|| synthesize(&ir));
+    assert_eq!(collected, 0, "literals were collected {collected} times");
+    let ir = self::ir(METRICS);
+    let (_, collected) = ess_conformance::synthesize::literals_collected(|| synthesize(&ir));
+    assert!(
+        collected > 0,
+        "a model with aggregate views collects its literals"
+    );
 }

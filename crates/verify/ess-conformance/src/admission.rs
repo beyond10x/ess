@@ -105,6 +105,29 @@ fn payload_agrees_with_its_shape(suite: &ConformanceSuite) -> Result<(), Admissi
     Ok(())
 }
 
+thread_local! {
+    static SUITES_PARSED: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
+
+/// What `run` returns, and how many suite documents were parsed and admitted from their bytes on
+/// this thread while it ran.
+#[doc(hidden)]
+pub fn suites_parsed<R>(run: impl FnOnce() -> R) -> (R, u64) {
+    let before = SUITES_PARSED.with(std::cell::Cell::get);
+    let out = run();
+    (out, SUITES_PARSED.with(std::cell::Cell::get) - before)
+}
+
+/// The SHA-256 identity of `original` under sha256-json-bytes/1.
+fn digest(original: &str) -> String {
+    Sha256::digest(original.as_bytes())
+        .iter()
+        .fold("sha256:".to_owned(), |mut text, byte| {
+            write!(text, "{byte:02x}").expect("writing to String");
+            text
+        })
+}
+
 /// An immutable original suite and its admitted execution value.
 #[derive(Debug, Clone)]
 pub struct AdmittedSuite {
@@ -131,6 +154,7 @@ impl AdmittedSuite {
         Ok(admitted)
     }
     pub(crate) fn parse(original: &str) -> Result<Self, AdmissionError> {
+        SUITES_PARSED.with(|count| count.set(count.get() + 1));
         accessor_preflight(original)?;
         let (value, direct_profile) = Json::parse_suite(original)?;
         validate_suite(&value)?;
@@ -151,18 +175,48 @@ impl AdmittedSuite {
             .map(|c| crate::coverage::parse_inventory(c, &suite))
             .transpose()?;
         crate::synthesis_seeds::admit(&suite, coverage.as_ref())?;
-        let digest = Sha256::digest(original.as_bytes()).iter().fold(
-            "sha256:".to_owned(),
-            |mut text, byte| {
-                write!(text, "{byte:02x}").expect("writing to String");
-                text
-            },
-        );
         Ok(Self {
+            digest: digest(original),
             original: original.into(),
             suite,
-            digest,
             coverage,
+        })
+    }
+    /// Admit a coverage suite this process has just built, with `original` the document
+    /// [`crate::coverage::suite_document`] wrote from exactly `suite` and `coverage`.
+    ///
+    /// The typed checks [`Self::parse`] runs after decoding run here on the values themselves, so
+    /// a fresh suite is refused for what a reread would refuse it for; the bytes are not read
+    /// back. What only a reread checks is the spelling of foreign bytes (closed keys, integer
+    /// spellings, the vocabulary each major spells), and these bytes were written from these
+    /// values by the serializer the reader is derived from, after `admission::suite` held their
+    /// vocabulary to their major.
+    pub(crate) fn produced(
+        original: String,
+        suite: ConformanceSuite,
+        coverage: crate::coverage::Inventory,
+    ) -> Result<Self, AdmissionError> {
+        payload_agrees_with_its_shape(&suite)?;
+        entity_setup(&suite)?;
+        crate::fixtures::admit(&suite)
+            .map_err(|reason| AdmissionError::new("InvalidFixtures", "$suite.scenarios", reason))?;
+        coverage.validate(&suite)?;
+        crate::synthesis_seeds::admit(&suite, Some(&coverage))?;
+        if matches!(
+            coverage.selection.filter,
+            crate::coverage::Filter::Explicit { .. }
+        ) {
+            return Err(AdmissionError::new(
+                "MissingParent",
+                "$suite.coverage.selection.filter",
+                "explicit suite requires its complete admitted input carrier",
+            ));
+        }
+        Ok(Self {
+            digest: digest(&original),
+            original,
+            suite,
+            coverage: Some(coverage),
         })
     }
     /// Serialize once, then execute the value admitted from those exact bytes.

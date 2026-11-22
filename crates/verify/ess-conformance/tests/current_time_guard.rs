@@ -11,6 +11,7 @@ mod support_versions;
 
 use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, BTreeSet};
+use std::fmt::Write as _;
 
 use ess_compiler::{
     ir::EssIr,
@@ -950,5 +951,135 @@ fn adversary_586_a_target_without_hold_now_keeps_its_passing_run() {
             .iter()
             .map(|scenario| (scenario.scenario.to_string(), scenario.status))
             .collect::<Vec<_>>()
+    );
+}
+
+/// A model whose creating command takes `count` `Timestamp` inputs and writes each into the row,
+/// with two commands that move the row and one that closes it.
+fn many_instants(count: usize) -> String {
+    let declared: String = (0..count).fold(String::new(), |mut text, i| {
+        let _ = writeln!(text, "      - {{name: stamp_{i}, type: Timestamp}}");
+        text
+    });
+    let sets: String = (0..count).fold(String::new(), |mut text, i| {
+        let _ = writeln!(text, "          stamp_{i}: input.stamp_{i}");
+        text
+    });
+    let marks: String = (1..=2).fold(String::new(), |mut text, i| {
+        let _ = writeln!(
+            text,
+            "  - name: shop.desk.Mark{i}
+    input:
+      - {{name: ticket_id, type: shop.desk.TicketId}}
+    outcomes:
+      - {{name: no-ticket, unknown_instance: true, error: shop.desk.NoSuchTicket}}
+      - name: marked
+        moves: shop.desk.Ticket.mark_{i}
+        instance: ticket_id
+        sets: {{flag_{i}: true}}
+        emits: [shop.desk.Changed]
+        payload:
+          shop.desk.Changed: {{ticket_id: input.ticket_id}}
+      - {{name: wrong-state, wrong_state: true, error: shop.desk.NoSuchTicket}}"
+        );
+        text
+    });
+    format!(
+        "format: ess/37
+system: shop
+version: v1
+domain: shop.desk
+types:
+  - {{name: shop.desk.TicketId, kind: newtype, of: String}}
+entities:
+  - name: shop.desk.Ticket
+    identity: {{name: ticket_id, type: shop.desk.TicketId}}
+    fields:
+      - {{name: flag_1, type: Boolean}}
+      - {{name: flag_2, type: Boolean}}
+{declared}    lifecycle:
+      initial: Open
+      states: [Open, Closed]
+      terminal: [Closed]
+      transitions:
+        - {{name: mark_1, from: [Open], to: Open}}
+        - {{name: mark_2, from: [Open], to: Open}}
+        - {{name: close, from: [Open], to: Closed}}
+errors:
+  - name: shop.desk.NoSuchTicket
+    fields:
+      - {{name: ticket_id, type: shop.desk.TicketId}}
+commands:
+  - name: shop.desk.Open
+    input:
+      - {{name: ticket_id, type: shop.desk.TicketId}}
+{declared}    outcomes:
+      - name: opened
+        creates: shop.desk.Ticket
+        instance: ticket_id
+        sets:
+          flag_1: false
+          flag_2: false
+{sets}        emits: [shop.desk.Changed]
+        payload:
+          shop.desk.Changed: {{ticket_id: input.ticket_id}}
+{marks}  - name: shop.desk.Close
+    input:
+      - {{name: ticket_id, type: shop.desk.TicketId}}
+    outcomes:
+      - {{name: no-ticket, unknown_instance: true, error: shop.desk.NoSuchTicket}}
+      - name: closed
+        moves: shop.desk.Ticket.close
+        instance: ticket_id
+        emits: [shop.desk.Changed]
+        payload:
+          shop.desk.Changed: {{ticket_id: input.ticket_id}}
+      - {{name: wrong-state, wrong_state: true, error: shop.desk.NoSuchTicket}}
+events:
+  - name: shop.desk.Changed
+    fields:
+      - {{name: ticket_id, type: shop.desk.TicketId}}
+views:
+  - name: shop.desk.Tickets
+    source: shop.desk.Ticket
+    consistency: read_your_writes
+    fields:
+      - {{name: ticket_id, type: shop.desk.TicketId}}
+      - {{name: flag_1, type: Boolean}}
+      - {{name: flag_2, type: Boolean}}
+"
+    )
+}
+
+/// What a command's guards order against instants is a function of the model and the command, so
+/// one synthesis analyses it once per command: not once more for every `Timestamp` value a
+/// scenario sends it. A model of 24 instants and 10 commands analysed it 1,473 times, 1,404 of
+/// them for the command creating the row, 13.7 % of the run's instructions. A work bound rather
+/// than a clock.
+#[test]
+fn each_commands_orderings_against_instants_are_analysed_once_per_synthesis() {
+    let model = ir(&many_instants(12));
+    let (synthesis, analysed) = now_offset::orderings_analysed(|| synthesize(&model));
+    assert!(
+        synthesis.refusals.is_empty(),
+        "every scenario is synthesized: {:#?}",
+        synthesis.refusals
+    );
+    assert!(
+        synthesis
+            .suite
+            .scenarios
+            .values()
+            .flat_map(|scenario| &scenario.steps)
+            .any(
+                |step| matches!(step, ScenarioStep::ExecuteCommand { input, .. }
+                if input.contains_key("stamp_11"))
+            ),
+        "the scenarios send the instants"
+    );
+    let commands = u64::try_from(model.commands().len()).expect("a few commands");
+    assert!(
+        analysed <= commands,
+        "the orderings of {commands} commands were analysed {analysed} times"
     );
 }

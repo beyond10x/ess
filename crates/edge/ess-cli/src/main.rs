@@ -160,8 +160,9 @@ enum SpecifyCommand {
         #[command(flatten)]
         input: SpecPath,
         /// Report completeness for this declared component's suite, as `ess verify conform
-        /// synthesize --component` scopes it: the scenarios it holds outside are listed under
-        /// `completeness.outside`.
+        /// synthesize --component` scopes it: only the component's operations are synthesized,
+        /// their scenarios it holds outside are listed under `completeness.outside`, and
+        /// `unscenarioed` and `unanswered` are those of its operations.
         #[arg(long)]
         component: Option<String>,
     },
@@ -631,11 +632,13 @@ enum ConformCommand {
         out: Option<PathBuf>,
         /// Hold one component to the specification rather than the whole system.
         ///
-        /// Keeps only the scenarios whose every command, event and view this component accepts,
-        /// publishes or owns, and lists the rest with what they need — they belong in the suite of
-        /// the component that realises it. An implementation of one component answers
-        /// `ErrUnsupported` to the other's scenarios, and a run with skips in it cannot say it
-        /// passed.
+        /// Synthesizes only the operations this component realises: the commands it accepts, the
+        /// views it owns and the events it publishes. Keeps the scenarios whose every command,
+        /// event and view it accepts, publishes or owns, and lists the other scenarios of its
+        /// operations with what they need. Refusals and notes are those of its operations; the
+        /// whole system's are reported without `--component`. An implementation of one component
+        /// answers `ErrUnsupported` to the other's scenarios, and a run with skips in it cannot
+        /// say it passed.
         #[arg(long)]
         component: Option<String>,
         /// The `ess-scenario/1` documents to compile beside the generated scenarios.
@@ -5143,14 +5146,14 @@ fn write_suite(
     let (files, family) = match target {
         SuiteTarget::Ir => unreachable!("answered above"),
         SuiteTarget::Go => (
-            ess_conformance::go::emit_with_model(suite, ir)?
+            ess_conformance::go::emit_serialized_with_model(suite, json, ir)?
                 .into_iter()
                 .map(|file| (file.path, file.contents))
                 .collect::<Vec<_>>(),
             "conformance-go",
         ),
         SuiteTarget::Typescript => (
-            ess_conformance::ts::emit_with_model(suite, ir)?
+            ess_conformance::ts::emit_serialized_with_model(suite, json, ir)?
                 .into_iter()
                 .map(|file| (file.path, file.contents))
                 .collect::<Vec<_>>(),
@@ -5268,6 +5271,8 @@ fn file_authored(
     Ok(kept)
 }
 
+// One dispatch over format, target, scope, scenarios and check, in the order flags are refused.
+#[allow(clippy::too_many_lines)]
 fn synthesize_suite(
     input: &SpecPath,
     target: SuiteTarget,
@@ -5296,6 +5301,20 @@ fn synthesize_suite(
     ess_conformance::admission::model(&ir)?;
     // Every explicit seed is admitted before anything is synthesized or written.
     let seeds = synthesis_seeds(&ir, seeds)?;
+    // The authored files are read before anything is synthesized, so a `--scenarios` that cannot
+    // be read is refused at once rather than after the synthesis. What synthesis refuses before
+    // any work keeps its precedence: an unknown component, and seeds the model contradicts (read
+    // after synthesis as before whenever a seed is selected).
+    let declared = component.is_none_or(|name| {
+        ir.components()
+            .values()
+            .any(|declared| declared.name.as_str() == name)
+    });
+    let sources = if declared && seeds.is_empty() {
+        Some(authored_sources(scenarios)?)
+    } else {
+        None
+    };
     let mut synthesis = match component {
         None => ess_conformance::synthesize::synthesize_with_seeds(&ir, &seeds)?,
         Some(name) => {
@@ -5312,7 +5331,11 @@ fn synthesize_suite(
     // The authored half, compiled against the same model and filed in the same suite. Refused
     // rather than merged where a scenario names something the specification does not declare: a
     // suite carrying a check nobody can resolve is the artifact this whole verb exists to avoid.
-    let authoring = ess_conformance::authored::compile(&ir, &authored_sources(scenarios)?);
+    let sources = match sources {
+        Some(sources) => sources,
+        None => authored_sources(scenarios)?,
+    };
+    let authoring = ess_conformance::authored::compile(&ir, &sources);
     let complete = authoring.is_complete();
     // A connective's child an authored scenario witnesses is not refused (beyond10x/ess#619).
     ess_conformance::synthesize::withdraw_witnessed_children(
@@ -5328,21 +5351,30 @@ fn synthesize_suite(
         return Ok(ExitCode::from(1));
     }
     synthesis.suite.select_fresh_format_for(&ir);
-    let json = if compact {
-        synthesis.suite.to_compact_json()?
+    // Serialized once, and only where the bytes are used: written, emitted into a package or
+    // printed. Otherwise the suite is still held to the admission serializing starts with.
+    let json = if out.is_some() || matches!(input.format, Format::Json) {
+        Some(if compact {
+            synthesis.suite.to_compact_json()?
+        } else {
+            synthesis.suite.to_canonical_json()?
+        })
     } else {
-        synthesis.suite.to_canonical_json()?
+        ess_conformance::admission::suite(&synthesis.suite)?;
+        None
     };
 
     // Refusing to write without `--out` is the rule every generating verb here keeps: a verb that
     // scatters a tree over a working directory the first time somebody tries it is a verb nobody
     // tries twice.
-    let written = match &out {
-        None => None,
-        Some(out) => match write_suite(&synthesis.suite, &ir, target, &json, (out, check))? {
-            Some(summary) => Some(summary),
-            None => return Ok(ExitCode::from(1)),
-        },
+    let written = match (&out, &json) {
+        (Some(out), Some(json)) => {
+            match write_suite(&synthesis.suite, &ir, target, json, (out, check))? {
+                Some(summary) => Some(summary),
+                None => return Ok(ExitCode::from(1)),
+            }
+        }
+        _ => None,
     };
 
     match input.format {
@@ -5382,15 +5414,39 @@ fn synthesize_suite(
                     "{} scenario(s) ({authored} authored), {refused}, {written}",
                     synthesis.suite.len(),
                 ),
-                Some(name) => println!(
-                    "{} scenario(s) for `{name}` ({authored} authored), {} outside it, {refused}, \
-                     {written}",
-                    synthesis.suite.len(),
-                    synthesis.outside.len(),
-                ),
+                Some(name) => {
+                    // Only the component's own operations were synthesized: whether another
+                    // component's are refused is not known here, and the line says where it is.
+                    println!(
+                        "scope: only `{name}`'s operations are synthesized, so whether the system \
+                         refuses or notes anything about another component's is not known to this \
+                         run; `ess verify conform synthesize` without `--component` reports the \
+                         whole system's"
+                    );
+                    // What no component realises is reported by no component's run: named here
+                    // from the component map, so a run per component cannot pass it by silence.
+                    let unrealised = ess_conformance::synthesize::unrealised(&ir);
+                    if !unrealised.is_empty() {
+                        let names: Vec<String> =
+                            unrealised.iter().map(|name| format!("`{name}`")).collect();
+                        println!(
+                            "unrealised: {} operation(s) no component realises, so no \
+                             `--component` run reports their scenarios or refusals; `ess verify \
+                             conform synthesize` without `--component` does: {}",
+                            unrealised.len(),
+                            names.join(", ")
+                        );
+                    }
+                    println!(
+                        "{} scenario(s) for `{name}` ({authored} authored), {} outside it, \
+                         {refused}, {written}",
+                        synthesis.suite.len(),
+                        synthesis.outside.len(),
+                    );
+                }
             }
         }
-        Format::Json => print!("{json}"),
+        Format::Json => print!("{}", json.as_deref().unwrap_or_default()),
         Format::Yaml => render(&synthesis.suite, Format::Yaml)?,
     }
     Ok(ExitCode::SUCCESS)
@@ -5648,6 +5704,7 @@ pub(crate) fn synthesis_seeds(
         bail!("--synthesis-seed takes exactly FILE and INSTANCE");
     }
     let mut selections = Vec::new();
+    let mut acquired = input_discovery::Acquired::default();
     for pair in values.chunks(2) {
         let [file, instance] = pair else {
             bail!("--synthesis-seed takes exactly FILE and INSTANCE");
@@ -5664,9 +5721,9 @@ pub(crate) fn synthesis_seeds(
         }
         let instance = ess_conformance::InstanceName::new(instance)
             .map_err(|error| anyhow::anyhow!("synthesis seed instance `{instance}`: {error}"))?;
-        for input in input_discovery::acquire(path, input_discovery::Kind::Coverage)? {
+        for (identity, text) in acquired.once(file, input_discovery::Kind::Coverage)? {
             selections.push(ess_conformance::synthesize::SeedSelection {
-                source: ess_conformance::authored::Source::new(input.identity, input.text),
+                source: ess_conformance::authored::Source::new(identity.clone(), text.clone()),
                 instance: instance.clone(),
             });
         }
@@ -6863,5 +6920,90 @@ mod tests {
             "ESS dependency boundary was crossed:\n{}",
             violations.join("\n")
         );
+    }
+
+    fn billing() -> SpecPath {
+        SpecPath {
+            path: Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../examples/billing"),
+            format: Format::Text,
+        }
+    }
+
+    /// `conform synthesize` serializes its suite only where the bytes are used, and once: a text
+    /// summary without `--out` writes no JSON (a downstream specification spent 65M instructions
+    /// formatting a document nobody read), and a Go package with `--out` embeds the one document
+    /// the verb wrote rather than serializing the suite again. Unfixed: 1 and 2.
+    #[test]
+    fn conform_synthesize_serializes_its_suite_only_where_it_is_used_and_once() {
+        let (status, serialized) = ess_conformance::scenario::suites_serialized(|| {
+            synthesize_suite(
+                &billing(),
+                SuiteTarget::Ir,
+                None,
+                None,
+                None,
+                ("4", false, false),
+                &[],
+            )
+            .unwrap()
+        });
+        assert_eq!(status, ExitCode::SUCCESS);
+        assert_eq!(serialized, 0, "serializations for a text summary");
+
+        let scratch = TemporaryDirectory::create("ess-synthesize-serialized").unwrap();
+        let out = scratch.path().join("go");
+        let (status, serialized) = ess_conformance::scenario::suites_serialized(|| {
+            synthesize_suite(
+                &billing(),
+                SuiteTarget::Go,
+                Some(&out),
+                None,
+                None,
+                ("4", false, false),
+                &[],
+            )
+            .unwrap()
+        });
+        assert_eq!(status, ExitCode::SUCCESS);
+        assert_eq!(serialized, 1, "serializations for a Go package");
+        assert!(out.join("essconform/suite.json").is_file());
+    }
+
+    /// A `--scenarios` path that does not exist is refused before anything is synthesized, with
+    /// the text it is refused with after a synthesis: no synthesis starts. Unfixed: 1, the whole
+    /// synthesis of the model ran before the path was read.
+    #[test]
+    fn a_missing_scenarios_path_is_refused_before_synthesis() {
+        let ((), started) = ess_conformance::synthesize::syntheses_started(|| {
+            synthesize_suite(
+                &billing(),
+                SuiteTarget::Ir,
+                None,
+                None,
+                None,
+                ("4", false, false),
+                &[],
+            )
+            .unwrap();
+        });
+        assert_eq!(started, 1, "the counter sees billing's synthesis");
+
+        let missing = Path::new("no-such-scenarios.yaml");
+        let (refused, started) = ess_conformance::synthesize::syntheses_started(|| {
+            synthesize_suite(
+                &billing(),
+                SuiteTarget::Ir,
+                None,
+                None,
+                Some(missing),
+                ("4", false, false),
+                &[],
+            )
+        });
+        assert_eq!(
+            refused.unwrap_err().to_string(),
+            "no-such-scenarios.yaml is not a directory of scenarios"
+        );
+        assert_eq!(started, 0, "syntheses started before the refusal");
     }
 }

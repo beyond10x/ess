@@ -179,19 +179,28 @@
 
 mod absent_input;
 mod aggregate;
+#[doc(hidden)]
+pub use aggregate::conditions_decided;
+#[doc(hidden)]
+pub use aggregate::literals_collected;
 mod binding_condition;
 mod binding_effects;
 mod bounded_retry;
 mod caller;
+mod created_memo;
 mod delivery_context;
 mod disclosure;
 mod earlier_runs;
 mod established;
 mod existence;
 mod expression;
+mod first_kept;
+#[doc(hidden)]
+pub use first_kept::first_rows_made;
 mod grant;
 mod identity;
 mod made;
+mod model_memo;
 mod ordered_head;
 mod paging;
 pub(crate) mod precedence;
@@ -201,9 +210,14 @@ mod referenced_input;
 mod refusal_policy;
 mod related;
 mod related_guard;
+#[doc(hidden)]
+pub use related_guard::companion_work;
 mod related_list;
 mod repeated_identity;
 mod row_set;
+mod run_memo;
+#[doc(hidden)]
+pub use row_set::row_set_attempts;
 mod seeds;
 mod self_admission;
 mod set_effects;
@@ -216,7 +230,11 @@ mod value_invariant;
 mod view_grant;
 mod view_reference;
 
+pub(crate) use seeds::memoised_provenance;
 pub use seeds::{AdmittedSeeds, SeedAdmissionError, SeedSelection};
+
+#[doc(hidden)]
+pub use disclosure::followup_origins_built;
 
 pub(crate) use caller::reads as caller_reads;
 
@@ -3428,6 +3446,106 @@ pub fn branch_selections_tried<R>(run: impl FnOnce() -> R) -> (R, u64) {
     made::picks(run)
 }
 
+/// What `run` returns, and how many traversals of the declared types the shorthand withdrawal made
+/// on this thread while it ran: the work a test bounds. Not part of the suite.
+#[doc(hidden)]
+pub fn shorthand_traversals<R>(run: impl FnOnce() -> R) -> (R, u64) {
+    shorthand::traversals(run)
+}
+
+/// Whether the declared types that reach a struct with a shorthand, found once for a run, are the
+/// ones a fresh traversal from each type finds. Not part of the suite.
+#[doc(hidden)]
+#[must_use]
+pub fn shorthand_reach_kept_equals_fresh(ir: &EssIr) -> bool {
+    let kept = shorthand::reaching_shorthand(ir);
+    ir.types()
+        .keys()
+        .all(|name| kept.contains(name) == shorthand::reaches_fresh(ir, name))
+}
+
+/// What `run` returns, and how many driver maps were built and how many ranking keys were checked
+/// for steerability on this thread while it ran: the work a test bounds. Not part of the suite.
+#[doc(hidden)]
+pub fn ranked_steering_work<R>(run: impl FnOnce() -> R) -> (R, (u64, u64)) {
+    ordered_head::steering_work(run)
+}
+
+/// Whether, for every key of every ranked view of `ir`, the answer a view's keys share is the one a
+/// fresh check gives. Not part of the suite.
+#[doc(hidden)]
+#[must_use]
+pub fn ranked_steering_kept_equals_fresh(ir: &EssIr) -> bool {
+    ir.views().values().all(|view| {
+        let mut kept = ordered_head::Steering::new(ir, &view.source);
+        view.order_by.iter().all(|ranking| {
+            let first = kept.steerable(&ranking.field);
+            first == ordered_head::steerable(ir, &view.source, &ranking.field)
+                && first == kept.steerable(&ranking.field)
+        })
+    })
+}
+
+thread_local! {
+    static SYNTHESES: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
+
+/// What `run` returns, and how many whole syntheses of a model started on this thread while it
+/// ran. Not part of the suite.
+#[doc(hidden)]
+pub fn syntheses_started<R>(run: impl FnOnce() -> R) -> (R, u64) {
+    let before = SYNTHESES.with(std::cell::Cell::get);
+    let out = run();
+    (out, SYNTHESES.with(std::cell::Cell::get) - before)
+}
+
+/// What `run` returns, how many rows of creating branches it asked for on this thread, and how
+/// many of them were made rather than answered from what the synthesis made before: the work a
+/// test bounds. Not part of the suite.
+#[doc(hidden)]
+pub fn created_rows_made<R>(run: impl FnOnce() -> R) -> (R, u64, u64) {
+    created_memo::counting(run)
+}
+
+/// What `run` returns with every row of a creating branch made afresh, for a test comparing the
+/// suite with the one made from memory. Not part of the suite.
+#[doc(hidden)]
+pub fn created_rows_unkept<R>(run: impl FnOnce() -> R) -> R {
+    created_memo::unkept(run)
+}
+
+/// What `run` returns, how many branch runs the wrapped positions of value objects asked for on
+/// this thread, and how many of them were made rather than answered from memory: the work a test
+/// bounds. Not part of the suite.
+#[doc(hidden)]
+pub fn wrapped_runs_made<R>(run: impl FnOnce() -> R) -> (R, u64, u64) {
+    run_memo::counting(run)
+}
+
+/// What `run` returns with every branch run of a wrapped position made afresh, for a test
+/// comparing the suite with the one made from memory. Not part of the suite.
+#[doc(hidden)]
+pub fn wrapped_runs_unkept<R>(run: impl FnOnce() -> R) -> R {
+    run_memo::unkept(run)
+}
+
+/// What `run` returns, and how many stored fields of arranged rows were bound to facts on this
+/// thread while it ran, for the stored-field predicates decided over those rows: the work a test
+/// bounds where a wall-clock bound would depend on the machine. Not part of the suite.
+#[doc(hidden)]
+pub fn stored_fields_bound<R>(run: impl FnOnce() -> R) -> (R, u64) {
+    subject_fact::fields_bound(run)
+}
+
+/// What `run` returns, how many times an arranging branch's inputs toward a stored-field goal
+/// were asked for on this thread while it ran, and how many times they were made rather than
+/// answered from what the synthesis made before: the work a test bounds where a wall-clock bound
+/// would depend on the machine. Not part of the suite.
+#[doc(hidden)]
+pub fn branch_inputs_made<R>(run: impl FnOnce() -> R) -> (R, u64, u64) {
+    subject_fact::inputs_made(run)
+}
+
 /// [`synthesize`], with explicitly admitted synthesis seeds (beyond10x/ess#413,
 /// `docs/design/synthesis-seeds.md`).
 ///
@@ -3444,7 +3562,7 @@ pub fn synthesize_with_seeds(
     ir: &EssIr,
     seeds: &AdmittedSeeds,
 ) -> Result<Synthesis, SeedAdmissionError> {
-    seeds.bound_to(ir)?;
+    let _digested = seeds.bound_to(ir)?;
     let mut synthesis = synthesize_in(ir, seeds);
     seeds.attach(ir, &mut synthesis.suite);
     Ok(synthesis)
@@ -3462,16 +3580,22 @@ pub fn synthesize_for_with_seeds(
     component: &str,
     seeds: &AdmittedSeeds,
 ) -> Result<Synthesis, SeedAdmissionError> {
-    seeds.bound_to(ir)?;
+    let _digested = seeds.bound_to(ir)?;
     let mut synthesis = synthesize_for_in(ir, component, seeds)?;
     seeds.attach(ir, &mut synthesis.suite);
     Ok(synthesis)
 }
 
 fn synthesize_in(ir: &EssIr, seeds: &AdmittedSeeds) -> Synthesis {
+    SYNTHESES.with(|count| count.set(count.get() + 1));
     // Each witness search is run once per question for the whole synthesis (beyond10x/ess#301).
     let _memoised = crate::witness_memo::memoise(ir);
     let _remembered = made::remember(ir);
+    let _orderings = crate::now_offset::remember(ir);
+    // Each overlap is searched once, for generation and the check of the finished suite.
+    let _overlaps = keep_overlap_answers(ir);
+    let _kept = model_memo::keep(ir);
+    let _created = created_memo::remember(ir);
     // ess/16 (#168): a model whose actors carry attributes is synthesized once per caller
     // assignment, each read with the caller's values written in (`caller::synthesize`). Seeds are
     // offered in the reading that sends every command as the caller their rows imply.
@@ -3612,18 +3736,65 @@ enum Focus<'a> {
 }
 
 impl Focus<'_> {
-    /// Whether the scenarios of `command` are written.
+    /// Whether the scenarios of `command` are written: never for a command outside the component a
+    /// [`synthesize_for`] run is scoped to.
     fn takes(self, command: &QualifiedName) -> bool {
-        match self {
-            Self::Whole => true,
-            Self::About(focus) => focus == command,
-        }
+        in_scope(command)
+            && match self {
+                Self::Whole => true,
+                Self::About(focus) => focus == command,
+            }
     }
 
     /// Whether every scenario is written.
     fn is_whole(self) -> bool {
         matches!(self, Self::Whole)
     }
+}
+
+thread_local! {
+    /// The commands a synthesis scoped to one component writes scenarios for on this thread
+    /// ([`synthesize_for`]); `None` outside such a synthesis, where every command's are written.
+    static SCOPE: std::cell::RefCell<Option<BTreeSet<QualifiedName>>> =
+        const { std::cell::RefCell::new(None) };
+    /// How many commands' outcome scenarios were synthesized on this thread
+    /// ([`commands_synthesized`]).
+    static COMMANDS_TAKEN: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
+
+/// Whether the scenarios of `command` are written under the scope this thread holds.
+fn in_scope(command: &QualifiedName) -> bool {
+    SCOPE.with_borrow(|scope| {
+        scope
+            .as_ref()
+            .is_none_or(|commands| commands.contains(command))
+    })
+}
+
+/// Holds the scope [`scoped_to`] set until dropped, then restores the one before it.
+#[must_use = "the scope ends when this is dropped"]
+struct Scope(Option<BTreeSet<QualifiedName>>);
+
+impl Drop for Scope {
+    fn drop(&mut self) {
+        let previous = self.0.take();
+        SCOPE.with_borrow_mut(|scope| *scope = previous);
+    }
+}
+
+/// Scopes every synthesis on this thread to the scenarios of `commands` until the guard drops.
+fn scoped_to(commands: BTreeSet<QualifiedName>) -> Scope {
+    Scope(SCOPE.with_borrow_mut(|scope| scope.replace(commands)))
+}
+
+/// What `run` returns, and how many commands' outcome scenarios were synthesized on this thread
+/// while it ran: the work a component-scoped synthesis bounds where a wall-clock bound would
+/// depend on the machine. Not part of the suite.
+#[doc(hidden)]
+pub fn commands_synthesized<R>(run: impl FnOnce() -> R) -> (R, u64) {
+    let before = COMMANDS_TAKEN.get();
+    let result = run();
+    (result, COMMANDS_TAKEN.get() - before)
 }
 
 /// [`synthesize`], for a model in which nothing depends on who sends a command.
@@ -3637,6 +3808,9 @@ fn synthesize_invocations(models: &caller::InvocationModels<'_>, focus: Focus<'_
     // A caller assignment's model is another model: its answers are held apart and dropped with it.
     let _memoised = crate::witness_memo::memoise(ir);
     let _remembered = made::remember(ir);
+    let _orderings = crate::now_offset::remember(ir);
+    let _kept = model_memo::keep(ir);
+    let _created = created_memo::remember(ir);
     let mut suite = ConformanceSuite::new(SuiteProvenance::of(ir));
     let mut refusals = Vec::new();
     // A Binary64 nothing a scenario sends or reads reaches is noted, not refused (`synthesize_in`);
@@ -3661,6 +3835,7 @@ fn synthesize_invocations(models: &caller::InvocationModels<'_>, focus: Focus<'_
         if !focus.takes(&command.name) {
             continue;
         }
+        COMMANDS_TAKEN.set(COMMANDS_TAKEN.get() + 1);
         for outcome in &command.outcomes {
             // A wrong-state branch gets no scenario from here. §10 asks for one scenario per
             // *reachable* outcome, and the states this branch is reachable in are exactly the ones
@@ -3840,8 +4015,13 @@ fn synthesize_invocations(models: &caller::InvocationModels<'_>, focus: Focus<'_
 /// specification declares minus the branch's own, and an implementation can say it did not emit an
 /// event it has never heard of; requiring the component to publish it would empty every suite.
 ///
-/// The refusals are the whole system's, untouched: a refusal is a fact about the specification, and
-/// scoping the suite does not make a construct say more.
+/// Only the component's own operations are synthesized: the commands it handles, the views it owns
+/// and the events it publishes. Each of their scenarios is written exactly as
+/// [`synthesize`] writes it, so the kept suite is the one the whole system's suite filters to; a
+/// scenario of one of them that needs another component is listed outside; and the refusals and
+/// notes are those about the component's operations, with every fact about the model that names
+/// no operation. A scenario, refusal or note about another component's operation is not written:
+/// the whole system's are [`synthesize`]'s, and a run per component costs that component's work.
 ///
 /// # Errors
 ///
@@ -3856,32 +4036,189 @@ fn synthesize_for_in(
     component: &str,
     seeds: &AdmittedSeeds,
 ) -> Result<Synthesis, UnknownComponent> {
-    let Some(realised) = ir
-        .components()
+    let realised = component_named(ir, component)?;
+    Ok(split(
+        ir,
+        realised,
+        synthesize_operations_of(ir, realised, seeds),
+    ))
+}
+
+/// [`synthesize_for`], read off the whole system's synthesis rather than synthesized for the
+/// component alone: what a test compares the scoped synthesis with. Not part of the API.
+///
+/// # Errors
+///
+/// As [`synthesize_for`].
+#[doc(hidden)]
+pub fn synthesize_for_from_whole(
+    ir: &EssIr,
+    component: &str,
+) -> Result<Synthesis, UnknownComponent> {
+    let realised = component_named(ir, component)?;
+    Ok(split(
+        ir,
+        realised,
+        restricted(ir, realised, synthesize_in(ir, &seeds::EMPTY)),
+    ))
+}
+
+/// The declared component named `component`, or the refusal naming the ones declared.
+fn component_named<'a>(
+    ir: &'a EssIr,
+    component: &str,
+) -> Result<&'a ResolvedComponent, UnknownComponent> {
+    ir.components()
         .values()
         .find(|declared| declared.name.as_str() == component)
-    else {
-        return Err(UnknownComponent {
+        .ok_or_else(|| UnknownComponent {
             component: component.to_owned(),
             declared: ir
                 .components()
                 .keys()
                 .map(|name| name.as_str().to_owned())
                 .collect(),
-        });
-    };
+        })
+}
 
-    let whole = synthesize_in(ir, seeds);
-    let mut provenance = whole.suite.provenance.clone();
-    provenance.component = Some(component.to_owned());
+/// Every scenario about an operation `component` realises, whether its suite can hold it or not,
+/// with the refusals and notes [`synthesize_for`] keeps: the synthesis of the commands it handles
+/// alone where that writes each of those exactly as the whole synthesis does
+/// ([`scoping_reproduces`]), and the whole synthesis read down to them otherwise.
+pub(crate) fn synthesize_operations_of(
+    ir: &EssIr,
+    component: &ResolvedComponent,
+    seeds: &AdmittedSeeds,
+) -> Synthesis {
+    let synthesis = if scoping_reproduces(ir, component) {
+        let _scope = scoped_to(scope_of(ir, component));
+        synthesize_in(ir, seeds)
+    } else {
+        synthesize_in(ir, seeds)
+    };
+    restricted(ir, component, synthesis)
+}
+
+/// The commands whose scenarios a synthesis for `component` writes: those it handles, and, where
+/// the model has actors, every other command whose branch has a subject one of those writes.
+///
+/// A refused send of a command no grant admits is cut from the scenario of the finished suite that
+/// ends sending it best (`grant::denied`), and a scenario of another command ends sending it
+/// where it arranges a row beside that command's subject after the command's own send. Such a
+/// scenario is written so the refused send is cut from the same one; it is not the component's,
+/// so [`restricted`] drops it again.
+fn scope_of(ir: &EssIr, component: &ResolvedComponent) -> BTreeSet<QualifiedName> {
+    let handled: BTreeSet<QualifiedName> = ir
+        .commands()
+        .keys()
+        .filter(|command| handles(ir, component, command))
+        .cloned()
+        .collect();
+    if ir.actors().is_empty() {
+        return handled;
+    }
+    let subject = |command: &ResolvedCommand| -> BTreeSet<EntityHandle> {
+        command
+            .outcomes
+            .iter()
+            .filter_map(|outcome| {
+                outcome
+                    .subject
+                    .as_ref()
+                    .map(|subject| subject.entity.clone())
+            })
+            .collect()
+    };
+    let written: BTreeSet<EntityHandle> = handled
+        .iter()
+        .filter_map(|name| ir.commands().get(name))
+        .flat_map(subject)
+        .collect();
+    let mut scope = handled;
+    scope.extend(
+        ir.commands()
+            .values()
+            .filter(|command| !subject(command).is_disjoint(&written))
+            .map(|command| command.name.clone()),
+    );
+    scope
+}
+
+/// Whether the synthesis of the commands `component` handles alone writes every scenario about its
+/// operations as the whole synthesis does.
+///
+/// Every family files a command's scenarios from its loop over that command, so leaving another
+/// command out leaves its scenarios out and nothing else. Two passes instead borrow steps from
+/// whichever scenario of the finished suite fits best, and that may be one of another component's
+/// commands: a one-time-response cell, and the read of a read-granted view with parameters. Where
+/// the component's suite holds either, the whole system is synthesized and read down.
+fn scoping_reproduces(ir: &EssIr, component: &ResolvedComponent) -> bool {
+    if crate::one_time_response::marked_model(ir) {
+        return false;
+    }
+    !(ir.grants_reads()
+        && ir.views().iter().any(|(name, view)| {
+            !view.params.is_empty() && ir.read_granted(name) && owns_view(ir, component, name)
+        }))
+}
+
+/// `synthesis` read down to `component`'s operations: every scenario its suite can hold, every
+/// other scenario about one of its operations ([`of_component`]), and the refusals and notes about
+/// them or about no operation at all.
+///
+/// A kept refusal whose cause (`caused_by`) is a refusal about another component's operation
+/// loses that link: the cause is not reported here, so the refusal stands as its own.
+fn restricted(ir: &EssIr, component: &ResolvedComponent, mut synthesis: Synthesis) -> Synthesis {
+    synthesis.suite.scenarios.retain(|id, scenario| {
+        of_component(ir, component, id) || needs_of(ir, component, scenario).is_empty()
+    });
+    let mut dropped: BTreeSet<ScenarioId> = BTreeSet::new();
+    synthesis.refusals.retain(|refusal| {
+        let kept = match &refusal.scenario {
+            Some(id) => of_component(ir, component, id),
+            None => subject_of_component(ir, component, &refusal.subject),
+        };
+        if !kept {
+            dropped.extend(refusal.scenario.iter().cloned());
+        }
+        kept
+    });
+    let reported: BTreeSet<&ScenarioId> = synthesis
+        .refusals
+        .iter()
+        .filter_map(|refusal| refusal.scenario.as_ref())
+        .collect();
+    let orphaned: BTreeSet<ScenarioId> = dropped
+        .into_iter()
+        .filter(|cause| !reported.contains(cause))
+        .collect();
+    for refusal in &mut synthesis.refusals {
+        if refusal
+            .caused_by
+            .as_ref()
+            .is_some_and(|cause| orphaned.contains(cause))
+        {
+            refusal.caused_by = None;
+        }
+    }
+    synthesis
+        .notes
+        .retain(|note| note_of_component(ir, component, note));
+    synthesis
+}
+
+/// `synthesis`'s suite split into what `component`'s suite holds and what it lists outside.
+fn split(ir: &EssIr, component: &ResolvedComponent, synthesis: Synthesis) -> Synthesis {
+    let mut provenance = synthesis.suite.provenance.clone();
+    provenance.component = Some(component.name.as_str().to_owned());
     let mut suite = ConformanceSuite::new(provenance);
     let mut outside = Vec::new();
-    for (id, scenario) in whole.suite.scenarios {
-        let needs = needs_of(ir, realised, &scenario);
+    for (id, scenario) in synthesis.suite.scenarios {
+        let needs = needs_of(ir, component, &scenario);
         if needs.is_empty() {
             suite
                 .insert(id, scenario)
-                .expect("the whole suite held each id once, so its subset does too");
+                .expect("the synthesized suite held each id once, so its subset does too");
         } else {
             outside.push(Outside {
                 scenario: id,
@@ -3890,12 +4227,146 @@ fn synthesize_for_in(
         }
     }
     suite.select_fresh_format_for(ir);
-    Ok(Synthesis {
+    Synthesis {
         suite,
-        refusals: whole.refusals,
+        refusals: synthesis.refusals,
         outside,
-        notes: whole.notes,
-    })
+        notes: synthesis.notes,
+    }
+}
+
+/// Whether the scenario `id` is about an operation `component` realises: the command whose branch,
+/// transition, refusal, invariant, grant or one-time response it proves is one the component
+/// handles, the view it reads a value, an aggregate, a grant or a reference of is one it owns, or
+/// the command a binding invokes is one it handles. An authored id names no operation: synthesis
+/// writes none, and the caller filing authored scenarios lists each one outside the component's
+/// suite by its needs alone.
+pub(crate) fn of_component(ir: &EssIr, component: &ResolvedComponent, id: &ScenarioId) -> bool {
+    match id {
+        ScenarioId::Outcome { outcome } | ScenarioId::HeldOutcome { outcome, .. } => {
+            handles(ir, component, outcome.command.name())
+        }
+        ScenarioId::Transition { by, .. } => handles(ir, component, by.command.name()),
+        ScenarioId::Refusal { command, .. }
+        | ScenarioId::Grant { command }
+        | ScenarioId::GrantAdmitted { command, .. } => handles(ir, component, command.name()),
+        ScenarioId::Invariant { after, .. } => handles(ir, component, after.command.name()),
+        ScenarioId::Disclosure { cell } => handles(ir, component, cell.origin.command.name()),
+        ScenarioId::ValueInvariant { at, .. } | ScenarioId::ValueInvariantWrapped { at, .. } => {
+            owns_view(ir, component, at.name())
+        }
+        ScenarioId::Aggregate { view }
+        | ScenarioId::ReadGrant { view }
+        | ScenarioId::ReadGrantAdmitted { view, .. }
+        | ScenarioId::ViewReference { view, .. } => owns_view(ir, component, view.name()),
+        ScenarioId::Binding { binding, .. } | ScenarioId::BindingRefusal { binding, .. } => {
+            invokes_handled(ir, component, binding)
+        }
+        ScenarioId::Authored { .. } => false,
+    }
+}
+
+/// The commands, events, views and bindings no declared component realises, in order: no
+/// [`synthesize_for`] run writes their scenarios, refusals or notes, so only [`synthesize`] reports
+/// them. Read off the component map alone; nothing is synthesized. Empty where the specification
+/// declares no component.
+#[must_use]
+pub fn unrealised(ir: &EssIr) -> Vec<EssSemanticRef> {
+    let components: Vec<&ResolvedComponent> = ir.components().values().collect();
+    if components.is_empty() {
+        return Vec::new();
+    }
+    let by_none = |realises: &dyn Fn(&ResolvedComponent) -> bool| {
+        !components.iter().any(|component| realises(component))
+    };
+    let mut unrealised: BTreeSet<EssSemanticRef> = BTreeSet::new();
+    for name in ir.commands().keys() {
+        if by_none(&|component| handles(ir, component, name)) {
+            unrealised.insert(CommandRef::new(name.clone()).into());
+        }
+    }
+    for name in ir.events().keys() {
+        if by_none(&|component| emits(ir, component, name)) {
+            unrealised.insert(EventRef::new(name.clone()).into());
+        }
+    }
+    for name in ir.views().keys() {
+        if by_none(&|component| owns_view(ir, component, name)) {
+            unrealised.insert(ViewRef::new(name.clone()).into());
+        }
+    }
+    for name in ir.bindings().keys() {
+        let binding = BindingRef::new(name.clone());
+        if by_none(&|component| invokes_handled(ir, component, &binding)) {
+            unrealised.insert(binding.into());
+        }
+    }
+    unrealised.into_iter().collect()
+}
+
+/// Whether the command `binding` invokes is one `component` handles.
+fn invokes_handled(ir: &EssIr, component: &ResolvedComponent, binding: &BindingRef) -> bool {
+    ir.bindings()
+        .get(binding.name())
+        .is_some_and(|declared| handles(ir, component, &ir.command(&declared.command).name))
+}
+
+/// Whether a refusal about no one scenario, about `subject`, is `component`'s: a command, branch,
+/// event, view or binding by [`of_component`]'s rule; anything else names no operation, so it is a
+/// fact about the model every component's synthesis reports.
+fn subject_of_component(
+    ir: &EssIr,
+    component: &ResolvedComponent,
+    subject: &EssSemanticRef,
+) -> bool {
+    match subject {
+        EssSemanticRef::Command { name } => handles(ir, component, name.name()),
+        EssSemanticRef::Outcome { name } => handles(ir, component, name.command.name()),
+        EssSemanticRef::Event { name } => emits(ir, component, name.name()),
+        EssSemanticRef::View { name } => owns_view(ir, component, name.name()),
+        EssSemanticRef::Binding { name } => invokes_handled(ir, component, name),
+        EssSemanticRef::Domain { .. }
+        | EssSemanticRef::Type { .. }
+        | EssSemanticRef::Entity { .. }
+        | EssSemanticRef::Error { .. }
+        | EssSemanticRef::Actor { .. }
+        | EssSemanticRef::Transition { .. }
+        | EssSemanticRef::Component { .. } => true,
+    }
+}
+
+/// Whether `note` is `component`'s: about a scenario, command, branch or view by
+/// [`of_component`]'s rule, or about no operation at all.
+fn note_of_component(ir: &EssIr, component: &ResolvedComponent, note: &Note) -> bool {
+    match note {
+        Note::PartialObservation { scenario, .. }
+        | Note::UnseparatedSources { scenario, .. }
+        | Note::UnwitnessedOverlap { scenario, .. }
+        | Note::UnswappedCallers { scenario, .. }
+        | Note::CrossCallerUnswapped { scenario, .. }
+        | Note::CrossCallerUnwitnessed { scenario, .. }
+        | Note::UnaccompaniedRelatedCopy { scenario, .. }
+        | Note::ProvidedRelatedRow { scenario, .. }
+        | Note::UnobservedNoOp { scenario, .. }
+        | Note::UnspreadCollection { scenario, .. }
+        | Note::UnspreadInputList { scenario, .. } => of_component(ir, component, scenario),
+        Note::UnknownInstanceUnanswered { command }
+        | Note::UnknownInstanceAmbiguous { command, .. }
+        | Note::GrantedToEveryActor { command }
+        | Note::GrantedToNoActor { command, .. }
+        | Note::GrantDeniedUnwitnessed { command }
+        | Note::GrantRotationSkipped { command, .. } => handles(ir, component, command.name()),
+        Note::ReadGrantedToEveryActor { view } | Note::ReadGrantUnwitnessed { view } => {
+            owns_view(ir, component, view.name())
+        }
+        Note::ConvertedFieldUnasserted { outcome, .. } => {
+            handles(ir, component, outcome.command.name())
+        }
+        Note::GrantEnforcedByCaller
+        | Note::ReadGrantEnforcedByCaller
+        | Note::UnreachedBinary64 { .. }
+        | Note::UnreachedValueInvariant { .. } => true,
+    }
 }
 
 /// What `scenario` asks of an implementation that `component` does not realise, in name order;
@@ -3913,21 +4384,7 @@ pub fn needs_outside(
     component: &str,
     scenario: &ConformanceScenario,
 ) -> Result<Vec<EssSemanticRef>, UnknownComponent> {
-    let Some(realised) = ir
-        .components()
-        .values()
-        .find(|declared| declared.name.as_str() == component)
-    else {
-        return Err(UnknownComponent {
-            component: component.to_owned(),
-            declared: ir
-                .components()
-                .keys()
-                .map(|name| name.as_str().to_owned())
-                .collect(),
-        });
-    };
-    Ok(needs_of(ir, realised, scenario))
+    Ok(needs_of(ir, component_named(ir, component)?, scenario))
 }
 
 /// A scenario a component's suite does not hold, and what it would need the component to realise.
@@ -4788,7 +5245,7 @@ fn exercise_run_in(
 ) -> Option<(Vec<ScenarioStep>, BTreeSet<EssSemanticRef>, Run)> {
     let ir = models.arrangement;
     let emitted: Vec<EventRef> = outcome.emits.iter().map(EventRef::from).collect();
-    let absent = not_emitted(ir, &emitted);
+    let absent = absent_events(ir, &emitted);
     let actor = run.actor.clone();
     // The row at rest once the bindings this branch sets off on it have run, read eventually
     // (beyond10x/ess#266): never the state a binding is about to move it out of.
@@ -4877,7 +5334,7 @@ fn exercise_run_in(
     }
     // §10's first-class negative assertion: without it the refusal case passes against an
     // implementation that refuses the command and emits the success event anyway.
-    for event in &absent {
+    for event in &*absent {
         steps.push(ScenarioStep::ExpectNoEvent {
             event: event.clone(),
         });
@@ -8240,6 +8697,43 @@ fn created_owned(
     owner: Option<&(String, Arrangement)>,
     input: Option<&BTreeMap<String, Node>>,
 ) -> Result<Arrangement, Unreachable> {
+    // Asked again by every scenario that acts on such a row: made once per model and context.
+    created_memo::created_owned(
+        ir,
+        entity,
+        creator,
+        actors,
+        distinction,
+        arranging,
+        owner,
+        input,
+        || {
+            created_owned_made(
+                ir,
+                entity,
+                creator,
+                actors,
+                distinction,
+                arranging,
+                owner,
+                input,
+            )
+        },
+    )
+}
+
+/// [`created_owned`], made afresh.
+#[allow(clippy::too_many_arguments)]
+fn created_owned_made(
+    ir: &EssIr,
+    entity: &EntityHandle,
+    creator: &Driver<'_>,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    distinction: Distinction,
+    arranging: &[&EntityHandle],
+    owner: Option<&(String, Arrangement)>,
+    input: Option<&BTreeMap<String, Node>>,
+) -> Result<Arrangement, Unreachable> {
     created_by(ir, entity, creator, distinction, owner, |bound, steps| {
         // Mid-arrangement of `entity`: a creator that needs a related row of an entity already
         // being arranged stops there (ess/18).
@@ -9138,21 +9632,43 @@ fn born<'a>(ir: &'a EssIr, creator: &Driver<'a>) -> &'a StateName {
         .unwrap_or_else(|| &ir.entity(&subject(creator).entity).lifecycle.initial)
 }
 
-/// [`route`], from `start` rather than from where the lifecycle starts.
-fn route_from<'a>(
-    ir: &EssIr,
-    entity: &EntityHandle,
-    drivers: &[Driver<'a>],
-    start: &StateName,
-    target: &StateName,
-) -> Option<Vec<Driver<'a>>> {
-    let _ = ir.entity(entity);
-    if start == target {
-        return Some(Vec::new());
-    }
+/// The edges out of each state of one entity's lifecycle, as positions in its drivers.
+type Edges = BTreeMap<StateName, Vec<(StateName, usize)>>;
 
-    let mut edges: BTreeMap<StateName, Vec<(StateName, Driver<'a>)>> = BTreeMap::new();
-    for driver in drivers {
+thread_local! {
+    /// How many edges [`derive_edges`] derived on this thread.
+    static DERIVED_EDGES: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+    /// How many entity-to-view indexes [`build_entity_view_index`] built on this thread.
+    static BUILT_VIEW_INDEXES: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
+
+/// What `run` returns, and how many lifecycle edges were derived on this thread while it ran: the
+/// work a test bounds where a clock would depend on the machine. Not part of the suite.
+#[doc(hidden)]
+pub fn lifecycle_edges_derived<R>(run: impl FnOnce() -> R) -> (R, u64) {
+    let before = DERIVED_EDGES.with(std::cell::Cell::get);
+    let out = run();
+    (out, DERIVED_EDGES.with(std::cell::Cell::get) - before)
+}
+
+/// Whether the lifecycle graph kept for each entity of `ir` equals one derived afresh. A test
+/// reads it; it is not part of the suite.
+#[doc(hidden)]
+#[must_use]
+pub fn kept_edges_equal_fresh(ir: &EssIr) -> bool {
+    let _remembered = made::remember(ir);
+    let all = ir.drivers();
+    all.iter().all(|(entity, drivers)| {
+        let fresh = derive_edges(ir, drivers);
+        *lifecycle_edges(ir, entity, drivers) == fresh
+    })
+}
+
+/// The lifecycle graph of `drivers`, the drivers of one entity: from each state, the states one
+/// move reaches, in a fixed order, as positions in `drivers`.
+fn derive_edges(ir: &EssIr, drivers: &[Driver<'_>]) -> Edges {
+    let mut edges = Edges::new();
+    for (at, driver) in drivers.iter().enumerate() {
         let Some(transition) = driver.effect.transition() else {
             continue;
         };
@@ -9170,11 +9686,13 @@ fn route_from<'a>(
             let Some(to) = binding_effects::resting(ir, driver.outcome, &transition.to) else {
                 continue;
             };
-            edges.entry(from.clone()).or_default().push((to, *driver));
+            DERIVED_EDGES.with(|count| count.set(count.get() + 1));
+            edges.entry(from.clone()).or_default().push((to, at));
         }
     }
     for outgoing in edges.values_mut() {
-        outgoing.sort_by_key(|(to, driver)| {
+        outgoing.sort_by_key(|(to, at)| {
+            let driver = &drivers[*at];
             (
                 driver
                     .effect
@@ -9187,12 +9705,43 @@ fn route_from<'a>(
             )
         });
     }
+    edges
+}
+
+/// [`derive_edges`], kept for the model while it is synthesized: it reads nothing but the model and
+/// the entity's drivers, which are a function of the model.
+fn lifecycle_edges(
+    ir: &EssIr,
+    entity: &EntityHandle,
+    drivers: &[Driver<'_>],
+) -> std::rc::Rc<Edges> {
+    made::kept(ir, &format!("lifecycle-edges:{entity}"), || {
+        derive_edges(ir, drivers)
+    })
+    .unwrap_or_else(|| std::rc::Rc::new(derive_edges(ir, drivers)))
+}
+
+/// [`route`], from `start` rather than from where the lifecycle starts.
+fn route_from<'a>(
+    ir: &EssIr,
+    entity: &EntityHandle,
+    drivers: &[Driver<'a>],
+    start: &StateName,
+    target: &StateName,
+) -> Option<Vec<Driver<'a>>> {
+    let _ = ir.entity(entity);
+    if start == target {
+        return Some(Vec::new());
+    }
+
+    let edges = lifecycle_edges(ir, entity, drivers);
 
     let mut came: BTreeMap<StateName, (StateName, Driver<'a>)> = BTreeMap::new();
     let mut seen: BTreeSet<StateName> = [start.clone()].into();
     let mut queue: VecDeque<StateName> = [start.clone()].into();
     while let Some(state) = queue.pop_front() {
-        for (to, driver) in edges.get(&state).map(Vec::as_slice).unwrap_or_default() {
+        for (to, at) in edges.get(&state).map(Vec::as_slice).unwrap_or_default() {
+            let driver = &drivers[*at];
             if !seen.insert(to.clone()) {
                 continue;
             }
@@ -10647,13 +11196,29 @@ fn rendered(guards: &[&Predicate], satisfy: bool) -> String {
 /// be enforcing a rule no document wrote. The model closes a *branch's* emissions, not the
 /// system's output.
 fn not_emitted(ir: &EssIr, emitted: &[EventRef]) -> Vec<EventRef> {
-    ir.events()
-        .values()
-        .map(|event| EventRef::new(event.name.clone()))
-        .filter(|event| !emitted.contains(event))
-        .collect::<BTreeSet<_>>()
-        .into_iter()
-        .collect()
+    std::rc::Rc::try_unwrap(absent_events(ir, emitted)).unwrap_or_else(|kept| (*kept).clone())
+}
+
+/// [`not_emitted`], built once per model and `emitted` list and shared: every branch emitting the
+/// same events reads one list (24 commands emitting one event of 160 built it 24 times before).
+fn absent_events(ir: &EssIr, emitted: &[EventRef]) -> std::rc::Rc<Vec<EventRef>> {
+    model_memo::absent_events(ir, emitted, || {
+        ir.events()
+            .values()
+            .map(|event| EventRef::new(event.name.clone()))
+            .filter(|event| !emitted.contains(event))
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect()
+    })
+}
+
+/// What `run` returns, and how many lists of the events a branch must not publish were built on
+/// this thread while it ran rather than read from the ones kept for the model: the work a test
+/// bounds where a clock would depend on the machine. Not part of the suite.
+#[doc(hidden)]
+pub fn absent_event_lists_built<R>(run: impl FnOnce() -> R) -> (R, u64) {
+    model_memo::absent_built(run)
 }
 
 /// The payload values this branch's `payload:` declaration determines, where the scenario knows
@@ -11252,15 +11817,15 @@ fn view_expectations(
             None => identifying(ir, subject, instance, view),
         }
     };
-    let projections = row_projections(ir);
-    let Some(views) = projections.get(&subject.entity) else {
+    let views = entity_views(ir, &subject.entity);
+    if views.is_empty() {
         return out;
-    };
+    }
 
     // Decided first, and for every view, because the companions one ranked view needs land in every
     // other view of the same entity — so what each view holds cannot be settled one view at a time.
     let mut decided: Vec<(&&ResolvedView, bool)> = Vec::new();
-    for view in views {
+    for view in &views {
         match shows_row(
             ir,
             view,
@@ -11761,6 +12326,7 @@ fn arrange_ties(
     let filter = paging::with_bound_params(view, params)
         .and_then(|bound| bound.filter)
         .or_else(|| view.filter.clone());
+    let mut steering = ordered_head::Steering::new(ir, entity);
     for at in 1..view.order_by.len() {
         let key = &view.order_by[at].field;
         let gap = |reason: &'static str| {
@@ -11773,7 +12339,9 @@ fn arrange_ties(
                 }),
             )
         };
-        if let ordered_head::Tie::Gap(reason) = ordered_head::tie(ir, entity, &view.order_by, at) {
+        if let ordered_head::Tie::Gap(reason) =
+            ordered_head::tie(ir, entity, &mut steering, &view.order_by, at)
+        {
             refusals.push(gap(reason));
             continue;
         }
@@ -14709,7 +15277,7 @@ fn arrange_beside(
             },
         );
     }
-    arrange_first(ir, entity, &admitted, actors, distinction, &[])
+    first_kept::arranged_first(ir, entity, &admitted, actors, distinction)
 }
 
 /// One further instance whose *fields* a view's filter admits, where no state alone does
@@ -17718,17 +18286,17 @@ fn preconditions(models: &caller::InvocationModels<'_>, suite: &mut ConformanceS
             .iter()
             .position(|(_, creates)| recreates(&scenario.steps, creates))
             .unwrap_or(chunks.len());
-        let prelude: Vec<ScenarioStep> = chunks[..kept]
-            .iter()
-            .flat_map(|(steps, _)| steps.iter().cloned())
-            .collect();
+        let prelude: Vec<ScenarioStep> = crate::fixtures::clone_precondition_steps(
+            chunks[..kept].iter().flat_map(|(steps, _)| steps.iter()),
+        );
         if prelude.is_empty() {
             continue;
         }
-        let mut steps = prelude.clone();
+        let prelude_len = prelude.len();
+        let mut steps = prelude;
         steps.append(&mut scenario.steps);
         scenario.steps = steps;
-        for step in &prelude {
+        for step in &scenario.steps[..prelude_len] {
             match step {
                 ScenarioStep::ExecuteCommand { command, .. } => {
                     scenario.source.insert(command.clone().into());
@@ -19390,6 +19958,139 @@ fn overlap_witness(
     })
 }
 
+thread_local! {
+    /// The first candidate found in each overlap, per model, innermost model last
+    /// ([`keep_overlap_answers`]).
+    static OVERLAP_ANSWERS: std::cell::RefCell<Vec<OverlapAnswers>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+    /// How many overlaps were searched for their first candidate on this thread
+    /// ([`overlap_searches`]).
+    static OVERLAP_SEARCHES: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
+
+/// What one model's overlaps answered ([`first_in_overlap`]): by command, the branch taken first,
+/// the other branch and the input paths the branch under test copies
+/// ([`crate::witness::copied_under_test`]), then by the guards searched over, compared one by one.
+struct OverlapAnswers {
+    /// The model, compared by address only. It is borrowed for as long as this entry is on the
+    /// stack ([`OverlapAnswersKept`]), so the address cannot be reused by another model meanwhile.
+    ir: *const EssIr,
+    #[allow(clippy::type_complexity)] // The key and the answer, as the search reads them.
+    answers: BTreeMap<
+        (QualifiedName, OutcomeName, OutcomeName, BTreeSet<FactPath>),
+        Vec<(Vec<Predicate>, Option<BTreeMap<String, Node>>)>,
+    >,
+}
+
+/// Keeps the overlap answers of one model until dropped. See [`keep_overlap_answers`].
+struct OverlapAnswersKept {
+    pushed: bool,
+}
+
+impl Drop for OverlapAnswersKept {
+    fn drop(&mut self) {
+        if self.pushed {
+            OVERLAP_ANSWERS.with(|answers| {
+                answers.borrow_mut().pop();
+            });
+        }
+    }
+}
+
+/// Keeps each overlap's first candidate for `ir` until the returned guard drops, so the check of
+/// the finished suite ([`unwitnessed_overlaps`]) reads what generation searched. A model already
+/// kept innermost keeps its answers.
+fn keep_overlap_answers(ir: &EssIr) -> OverlapAnswersKept {
+    let at = std::ptr::from_ref(ir);
+    let pushed = OVERLAP_ANSWERS.with(|answers| {
+        let mut answers = answers.borrow_mut();
+        if answers.last().is_some_and(|top| std::ptr::eq(top.ir, at)) {
+            return false;
+        }
+        answers.push(OverlapAnswers {
+            ir: at,
+            answers: BTreeMap::new(),
+        });
+        true
+    });
+    OverlapAnswersKept { pushed }
+}
+
+/// What `run` returns, and how many overlaps of two input guards were searched for their first
+/// candidate on this thread while it ran, rather than answered from what the synthesis searched
+/// before: the work a test bounds where a wall-clock bound would depend on the machine. Not part
+/// of the suite.
+#[doc(hidden)]
+pub fn overlap_searches<R>(run: impl FnOnce() -> R) -> (R, u64) {
+    let before = OVERLAP_SEARCHES.with(std::cell::Cell::get);
+    let out = run();
+    (out, OVERLAP_SEARCHES.with(std::cell::Cell::get) - before)
+}
+
+/// The first candidate in `overlap` ([`overlap_witness`] with no further guard or condition).
+///
+/// A function of the model, the command, the overlap's guards and the input paths the branch under
+/// test copies, and nothing else: generation sends it, and [`unwitnessed_overlaps`] asks the same
+/// question of the finished suite. Where `command` is `ir`'s own declaration and `ir` is the model
+/// kept innermost ([`keep_overlap_answers`]), each is searched once.
+fn first_in_overlap(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    overlap: &Overlap<'_>,
+) -> Option<BTreeMap<String, Node>> {
+    let kept = ir
+        .commands()
+        .get(&command.name)
+        .is_some_and(|declared| std::ptr::eq(declared, command))
+        && OVERLAP_ANSWERS.with(|answers| {
+            answers
+                .borrow()
+                .last()
+                .is_some_and(|top| std::ptr::eq(top.ir, ir))
+        });
+    let searched = overlap.searched();
+    let key = kept.then(|| {
+        (
+            command.name.clone(),
+            overlap.first.name.clone(),
+            overlap.other.name.clone(),
+            crate::witness::copied_under_test(command),
+        )
+    });
+    let same = |asked: &[Predicate]| {
+        asked.len() == searched.len() && asked.iter().zip(&searched).all(|(a, b)| a == *b)
+    };
+    if let Some(key) = &key {
+        let known = OVERLAP_ANSWERS.with(|answers| {
+            answers.borrow().last().and_then(|top| {
+                top.answers.get(key).and_then(|asked| {
+                    asked
+                        .iter()
+                        .find(|(guards, _)| same(guards))
+                        .map(|(_, answer)| answer.clone())
+                })
+            })
+        });
+        if let Some(known) = known {
+            return known;
+        }
+    }
+    OVERLAP_SEARCHES.with(|count| count.set(count.get() + 1));
+    // No borrow is held across the search.
+    let answer = overlap_witness(ir, command, overlap, &[], |_| true);
+    if let Some(key) = key {
+        OVERLAP_ANSWERS.with(|answers| {
+            if let Some(top) = answers.borrow_mut().last_mut() {
+                top.answers.entry(key).or_default().push((
+                    searched.iter().map(|guard| (*guard).clone()).collect(),
+                    answer.clone(),
+                ));
+            }
+        });
+    }
+    answer
+}
+
 /// The inputs a branch is further witnessed at because it is the `first` of an [`Overlap`]: one
 /// per overlap, the first candidate in it, each sent once.
 ///
@@ -19417,8 +20118,8 @@ fn overlap_inputs(
         .into_iter()
         .chain(refusal_pair_overlaps(ir.format(), command, outcome))
     {
-        if let Some(input) = overlap_witness(ir, command, &overlap, &[], |_| true)
-            .filter(|input| !rows.contains(input))
+        if let Some(input) =
+            first_in_overlap(ir, command, &overlap).filter(|input| !rows.contains(input))
         {
             rows.push(input);
         }
@@ -19436,8 +20137,8 @@ pub(super) fn refusal_pair_inputs(
 ) -> Vec<BTreeMap<String, Node>> {
     let mut rows = Vec::new();
     for overlap in refusal_pair_overlaps(ir.format(), command, outcome) {
-        if let Some(input) = overlap_witness(ir, command, &overlap, &[], |_| true)
-            .filter(|input| !rows.contains(input))
+        if let Some(input) =
+            first_in_overlap(ir, command, &overlap).filter(|input| !rows.contains(input))
         {
             rows.push(input);
         }
@@ -19555,6 +20256,21 @@ pub fn precedence_contradictions(ir: &EssIr, suite: &ConformanceSuite) -> Vec<Re
         .collect()
 }
 
+thread_local! {
+    /// How many sent inputs [`contradicted`] replayed into facts on this thread.
+    static PRECEDENCE_REPLAYS: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
+
+/// What `run` returns, and how many sent inputs [`precedence_contradictions`] replayed into facts
+/// on this thread while it ran: the work a test bounds where a clock would depend on the machine.
+/// Not part of the suite.
+#[doc(hidden)]
+pub fn precedence_replays<R>(run: impl FnOnce() -> R) -> (R, u64) {
+    let before = PRECEDENCE_REPLAYS.with(std::cell::Cell::get);
+    let out = run();
+    (out, PRECEDENCE_REPLAYS.with(std::cell::Cell::get) - before)
+}
+
 /// The first step of `steps` [`precedence_contradictions`] refuses, where one is.
 fn contradicted(ir: &EssIr, steps: &[ScenarioStep]) -> Option<RefusalCause> {
     let mut steps = steps.iter().peekable();
@@ -19570,11 +20286,8 @@ fn contradicted(ir: &EssIr, steps: &[ScenarioStep]) -> Option<RefusalCause> {
         let Some(ScenarioStep::ExpectOutcome { outcome: required }) = steps.peek() else {
             continue;
         };
-        let Some(command) = ir
-            .commands()
-            .values()
-            .find(|command| &command.name == invoked.name())
-        else {
+        // Looked up by the name the map is keyed by: one read, not one per command before it.
+        let Some(command) = ir.commands().get(invoked.name()) else {
             continue;
         };
         let Some(outcome) = command
@@ -19596,11 +20309,27 @@ fn contradicted(ir: &EssIr, steps: &[ScenarioStep]) -> Option<RefusalCause> {
         {
             continue;
         }
+        // Every branch answered before it: the input-guarded refusals, then the accepting `when:`
+        // branches declared before an accepting `when:` or external one (beyond10x/ess#217).
+        let before: Vec<(&ResolvedOutcome, &Predicate)> =
+            sibling_refusals(ir.format(), command, outcome)
+                .chain(earlier_accepting_branches(ir.format(), command, outcome))
+                .filter_map(|first| when(first).map(|guard| (first, guard)))
+                .collect();
+        let own = match &outcome.condition {
+            ResolvedCondition::When { predicate } => Some(predicate),
+            _ => None,
+        };
+        // No guard to decide, so nothing the literals could contradict: the input is not replayed.
+        if before.is_empty() && own.is_none() {
+            continue;
+        }
         let opaque: BTreeSet<&str> = input
             .iter()
             .filter(|(_, value)| value.as_literal().is_none())
             .map(|(field, _)| field.as_str())
             .collect();
+        PRECEDENCE_REPLAYS.with(|count| count.set(count.get() + 1));
         let Ok(facts) = crate::input::replay_facts(ir, command, input) else {
             continue;
         };
@@ -19624,20 +20353,13 @@ fn contradicted(ir: &EssIr, steps: &[ScenarioStep]) -> Option<RefusalCause> {
                 input: sent_as_text(input),
             }
         };
-        // Every branch answered before it: the input-guarded refusals, then the accepting `when:`
-        // branches declared before an accepting `when:` or external one (beyond10x/ess#217).
-        let before = sibling_refusals(ir.format(), command, outcome)
-            .chain(earlier_accepting_branches(ir.format(), command, outcome));
-        for first in before {
-            let Some(guard) = when(first) else {
-                continue;
-            };
+        for (first, guard) in before {
             if matches!(decided(guard), Some(Decision::Satisfied)) {
                 return Some(contradiction(Some(first), guard));
             }
         }
         // The branch's own `when:` over the input, where that alone selects it.
-        if let ResolvedCondition::When { predicate } = &outcome.condition {
+        if let Some(predicate) = own {
             if matches!(decided(predicate), Some(Decision::Refuted(_))) {
                 return Some(contradiction(None, predicate));
             }
@@ -19706,7 +20428,7 @@ fn unwitnessed_overlaps(ir: &EssIr, suite: &ConformanceSuite) -> Vec<Note> {
                 {
                     continue;
                 }
-                let gap = if overlap_witness(ir, command, &overlap, &[], |_| true).is_some() {
+                let gap = if first_in_overlap(ir, command, &overlap).is_some() {
                     OverlapGap::Unsent
                 } else if crate::witness::exhausts(ir, command, &overlap.searched())
                     || crate::witness::duplicate_capped_below_two(&overlap.both)
@@ -20235,6 +20957,8 @@ fn invariants(
         }
     }
     if focus.is_whole() {
+        // Every wrapped position tries the same branches again: each run is made once.
+        let _runs = run_memo::remember(ir);
         value_object_invariants(ir, actors, suite, refusals);
     }
 }
@@ -20921,6 +21645,25 @@ fn input_types(ir: &EssIr, command: &ResolvedCommand) -> BTreeSet<DeclaredTypeRe
     types
 }
 
+thread_local! {
+    /// How many publishing branches were tried as a binding's trigger on this thread
+    /// ([`binding_triggers_tried`]).
+    static BINDING_TRIGGERS_TRIED: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
+
+/// What `run` returns, and how many publishing branches were tried as a binding's trigger on this
+/// thread while it ran: the work a test bounds where a wall-clock bound would depend on the
+/// machine. Not part of the suite.
+#[doc(hidden)]
+pub fn binding_triggers_tried<R>(run: impl FnOnce() -> R) -> (R, u64) {
+    let before = BINDING_TRIGGERS_TRIED.with(std::cell::Cell::get);
+    let out = run();
+    (
+        out,
+        BINDING_TRIGGERS_TRIED.with(std::cell::Cell::get) - before,
+    )
+}
+
 /// The four claims a binding makes, one scenario each (§16, §17, §18).
 ///
 /// Every one of them starts the same way — make the event happen — and that alone is more than a
@@ -20930,6 +21673,7 @@ fn input_types(ir: &EssIr, command: &ResolvedCommand) -> BTreeSet<DeclaredTypeRe
 /// Where the trigger cannot be produced at all, the refusal is about the **binding** rather than
 /// about one of its four scenarios: none of the four exists, and four copies of one reason is a
 /// diagnostic a reader has to deduplicate by hand.
+#[allow(clippy::too_many_lines)] // One binding, its publishers tried in order.
 fn bindings(
     ir: &EssIr,
     actors: &BTreeMap<QualifiedName, ActorRef>,
@@ -20974,7 +21718,17 @@ fn bindings(
         // the fewest refused, the earlier on a tie.
         let mut chosen: Option<(ConformanceSuite, Vec<Refusal>, Vec<Note>)> = None;
         let mut first_failure = None;
+        // The on-failure aspect refused because no branch of the invoked command can be forced to
+        // fail reads nothing of the publisher, so every publisher leaves it refused: once one
+        // leaves nothing else refused, no later one leaves fewer.
+        let fewest = usize::from(
+            binding.refusal_policy.is_none()
+                && binding.retry.is_none()
+                && !matches!(binding.on_failure(), ResolvedFailure::Drop)
+                && forced_failure(ir, ir.command(&binding.command)).is_err(),
+        );
         for (publisher, published_by) in publishing {
+            BINDING_TRIGGERS_TRIED.with(|count| count.set(count.get() + 1));
             let run =
                 match binding_effects::trigger_run(ir, binding, publisher, published_by, actors) {
                     Ok(run) => run,
@@ -21010,7 +21764,11 @@ fn bindings(
             {
                 chosen = Some((tried, refused, remarks));
             }
-            if witnessed {
+            if witnessed
+                || chosen
+                    .as_ref()
+                    .is_some_and(|(_, refused, _)| refused.len() <= fewest)
+            {
                 break;
             }
         }
@@ -21578,6 +22336,28 @@ fn delivery(
 /// | `escalate` | the declared escalation event | since gate G2 the model names it, so this is a reading rather than a hope |
 /// | `drop` on a row read before the trigger | one attempt with the mapped input, no retry in the window, the row unchanged | [`binding_effects::dropped`], beyond10x/ess#267 |
 /// | `drop` on nothing that can be read so | refused | "give up silently" leaves nothing else to observe |
+/// The refusal of `invoked` a failure policy forces, or why none can be: read from the model and the
+/// invoked command alone, so it is the same whichever branch publishes the trigger.
+fn forced_failure<'c>(
+    ir: &EssIr,
+    invoked: &'c ResolvedCommand,
+) -> Result<&'c ResolvedOutcome, BindingGap> {
+    let forced = invoked
+        .outcomes
+        .iter()
+        // A refusal: an `external:` branch that accepts is no failure to force.
+        .find(|outcome| {
+            outcome.test_strategy == TestStrategy::InjectFault && outcome.error.is_some()
+        })
+        .ok_or_else(|| BindingGap::NoForcibleFailure {
+            command: CommandRef::new(invoked.name.clone()),
+        })?;
+    if let Some(gap) = forced_eligibility(ir.format(), invoked, forced) {
+        return Err(gap);
+    }
+    Ok(forced)
+}
+
 fn on_failure(
     ir: &EssIr,
     binding: &ResolvedBinding,
@@ -21593,19 +22373,7 @@ fn on_failure(
         let prepared = prepared.as_ref().map_err(Clone::clone)?;
         return binding_effects::dropped(ir, binding, invoked, prepared, trigger, event);
     }
-    let forced = invoked
-        .outcomes
-        .iter()
-        // A refusal: an `external:` branch that accepts is no failure to force.
-        .find(|outcome| {
-            outcome.test_strategy == TestStrategy::InjectFault && outcome.error.is_some()
-        })
-        .ok_or_else(|| BindingGap::NoForcibleFailure {
-            command: CommandRef::new(invoked.name.clone()),
-        })?;
-    if let Some(gap) = forced_eligibility(ir.format(), invoked, forced) {
-        return Err(gap);
-    }
+    let forced = forced_failure(ir, invoked)?;
     let prepared = prepared.as_ref().map_err(Clone::clone)?;
     let forced_ref = OutcomeRef::new(CommandRef::new(invoked.name.clone()), forced.name.clone());
 
@@ -21864,6 +22632,66 @@ fn row_projections(ir: &EssIr) -> BTreeMap<&EntityHandle, Vec<&ResolvedView>> {
     }
     out.retain(|_, views| !views.is_empty());
     out
+}
+
+/// The entity-to-view index of [`row_projections`], owning the names of the views, by entity.
+type EntityViewIndex = BTreeMap<EntityHandle, Vec<QualifiedName>>;
+
+fn build_entity_view_index(ir: &EssIr) -> EntityViewIndex {
+    BUILT_VIEW_INDEXES.with(|count| count.set(count.get() + 1));
+    row_projections(ir)
+        .into_iter()
+        .map(|(entity, views)| {
+            (
+                entity.clone(),
+                views.into_iter().map(|view| view.name.clone()).collect(),
+            )
+        })
+        .collect()
+}
+
+fn entity_view_index(ir: &EssIr) -> std::rc::Rc<EntityViewIndex> {
+    made::kept(ir, "entity-view-index", || build_entity_view_index(ir))
+        .unwrap_or_else(|| std::rc::Rc::new(build_entity_view_index(ir)))
+}
+
+/// The row views of `entity` ([`row_projections`]' entry for it), from the index built once per
+/// model for the synthesis.
+fn entity_views<'a>(ir: &'a EssIr, entity: &EntityHandle) -> Vec<&'a ResolvedView> {
+    entity_view_index(ir)
+        .get(entity)
+        .into_iter()
+        .flatten()
+        .map(|name| &ir.views()[name])
+        .collect()
+}
+
+/// What `run` returns, and how many entity-to-view indexes were built through [`entity_views`] on
+/// this thread while it ran. Not part of the suite.
+#[doc(hidden)]
+pub fn entity_view_indexes_built<R>(run: impl FnOnce() -> R) -> (R, u64) {
+    let before = BUILT_VIEW_INDEXES.with(std::cell::Cell::get);
+    let out = run();
+    (out, BUILT_VIEW_INDEXES.with(std::cell::Cell::get) - before)
+}
+
+/// Whether the index kept for `ir` names, for every entity, the views [`row_projections`] holds.
+/// A test reads it; it is not part of the suite.
+#[doc(hidden)]
+#[must_use]
+pub fn kept_view_index_equals_fresh(ir: &EssIr) -> bool {
+    let _remembered = made::remember(ir);
+    let fresh = row_projections(ir);
+    let kept = entity_view_index(ir);
+    kept.len() == fresh.len()
+        && fresh.iter().all(|(entity, views)| {
+            let kept_views = entity_views(ir, entity);
+            kept_views.len() == views.len()
+                && kept_views
+                    .iter()
+                    .zip(views)
+                    .all(|(a, b)| std::ptr::eq(*a, *b))
+        })
 }
 
 /// The construct a scenario id is about.

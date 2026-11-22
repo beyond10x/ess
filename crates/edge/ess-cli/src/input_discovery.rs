@@ -3,7 +3,7 @@
 //! An immediate `ess-inputs.yaml` opts an explicit directory into exact role selection.
 //! The configuration is never an authored source or a persisted provenance document.
 use std::{
-    collections::BTreeSet,
+    collections::{BTreeMap, BTreeSet},
     fs,
     path::{Path, PathBuf},
 };
@@ -112,23 +112,47 @@ pub(crate) fn listed_scenarios(path: &Path) -> Result<Option<Vec<Input>>> {
     acquire(path, Kind::Authored).map(Some)
 }
 
+/// Documents of one run, acquired once per spelled path: a path named again answers from here.
+#[derive(Default)]
+pub(crate) struct Acquired(BTreeMap<String, Vec<(String, String)>>);
+impl Acquired {
+    /// The `(identity, text)` of every input at `path`, read on the first call only. A refusal is
+    /// not kept: the run ends with it.
+    pub(crate) fn once(&mut self, path: &str, kind: Kind) -> Result<&[(String, String)]> {
+        if !self.0.contains_key(path) {
+            let inputs = acquire(Path::new(path), kind)?
+                .into_iter()
+                .map(|input| (input.identity, input.text))
+                .collect();
+            self.0.insert(path.to_string(), inputs);
+        }
+        Ok(&self.0[path])
+    }
+}
+#[cfg(test)]
+thread_local! {
+    static ACQUIRES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
 pub(crate) fn acquire(path: &Path, kind: Kind) -> Result<Vec<Input>> {
+    #[cfg(test)]
+    ACQUIRES.set(ACQUIRES.get() + 1);
     // Keep the requested spelling until manifest-mode link policy has been applied.
     // Direct files do not consult parent or ancestor configuration.
     if path.is_dir() {
         let manifest = path.join(MANIFEST);
         match fs::symlink_metadata(&manifest) {
             Ok(metadata) => {
+                // Read once: the release pin and the selection below both come from it.
+                let configuration = (metadata.is_file() && !metadata.file_type().is_symlink())
+                    .then(|| manifest_lists(&manifest));
                 // The release pin is decided before any selected file is read. A manifest that
                 // does not parse is left to the refusal below, which says how to repair it.
-                if metadata.is_file() && !metadata.file_type().is_symlink() {
-                    if let Ok(Manifest {
-                        requires: Some(requires),
-                        ..
-                    }) = manifest_lists(&manifest)
-                    {
-                        crate::requires::check(&manifest, &requires)?;
-                    }
+                if let Some(Ok(Manifest {
+                    requires: Some(requires),
+                    ..
+                })) = &configuration
+                {
+                    crate::requires::check(&manifest, requires)?;
                 }
                 let repair = || {
                     format!(
@@ -138,10 +162,10 @@ pub(crate) fn acquire(path: &Path, kind: Kind) -> Result<Vec<Input>> {
                 )
                 };
                 return (|| {
-                    if !metadata.is_file() || metadata.file_type().is_symlink() {
+                    let Some(configuration) = configuration else {
                         bail!("{MANIFEST} must be a regular non-symlink file");
-                    }
-                    manifest_inputs(path, &manifest, kind)
+                    };
+                    manifest_inputs(path, configuration?, kind)
                 })()
                 .map_err(|error: anyhow::Error| anyhow::anyhow!("{}: {error:#}", repair()));
             }
@@ -332,8 +356,7 @@ fn parse_manifest(text: &str) -> Result<Manifest> {
     Ok(configuration)
 }
 
-fn manifest_selection(manifest: &Path, kind: Kind) -> Result<Vec<String>> {
-    let configuration = manifest_lists(manifest)?;
+fn manifest_selection(configuration: Manifest, kind: Kind) -> Result<Vec<String>> {
     let mut names = BTreeSet::new();
     for (role, entries) in [
         ("specification", &configuration.specification),
@@ -357,8 +380,8 @@ fn manifest_selection(manifest: &Path, kind: Kind) -> Result<Vec<String>> {
     Ok(selected)
 }
 
-fn manifest_inputs(path: &Path, manifest: &Path, kind: Kind) -> Result<Vec<Input>> {
-    let selected = manifest_selection(manifest, kind)?;
+fn manifest_inputs(path: &Path, configuration: Manifest, kind: Kind) -> Result<Vec<Input>> {
+    let selected = manifest_selection(configuration, kind)?;
     // Components discard only redundant trailing separators / `.` so `linked-root/` cannot
     // hide the selected root's symlink from lstat. Parent components remain unresolved.
     let requested_root: PathBuf = path.components().collect();

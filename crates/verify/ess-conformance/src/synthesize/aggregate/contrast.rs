@@ -26,6 +26,7 @@
 //! values and is checked again ([`decisive`]), so a move or a guard that changes what was chosen
 //! is a named refusal, never an assertion that a dropped condition also passes.
 
+use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, BTreeSet};
 
 use ess_compiler::ir::{ResolvedAggregate, ResolvedTypeRef};
@@ -413,6 +414,7 @@ fn truths(
 ) -> Option<Vec<bool>> {
     rows.iter()
         .map(|row| {
+            DECIDED.with(|count| count.set(count.get() + 1));
             row_truth(
                 plan.ir,
                 plan.view,
@@ -425,6 +427,24 @@ fn truths(
             .ok()
         })
         .collect()
+}
+
+/// [`truths`], answered from `decided` where the same condition was asked of these rows before:
+/// measures sharing a condition, and the swaps that try one measure's condition in another's
+/// place, ask it once per pattern.
+fn truths_once<'c>(
+    plan: &Plan<'_>,
+    decided: &mut Vec<(&'c Predicate, Option<Vec<bool>>)>,
+    predicate: &'c Predicate,
+    rows: &[Projected],
+    params: &BTreeMap<String, ScenarioValue>,
+) -> Option<Vec<bool>> {
+    if let Some((_, held)) = decided.iter().find(|(seen, _)| *seen == predicate) {
+        return held.clone();
+    }
+    let held = truths(plan, predicate, rows, params);
+    decided.push((predicate, held.clone()));
+    held
 }
 
 /// How a pattern fares: every conditioned measure decisive (`hard`), and every swap of two
@@ -447,6 +467,7 @@ fn judge(
     }
     let measures = conditioned(plan);
     let mut soft = true;
+    let mut decided = Vec::new();
     for (_, aggregate) in &measures {
         let Some(condition) = &aggregate.r#where else {
             continue;
@@ -460,7 +481,7 @@ fn judge(
                     .map_or(Node::Null, |input| row.value(&input.name))
             })
             .collect();
-        let Some(holds) = truths(plan, condition, rows, params) else {
+        let Some(holds) = truths_once(plan, &mut decided, condition, rows, params) else {
             return (false, false);
         };
         if !separates(plan, aggregate, &inputs, &holds) || !rounds(aggregate, &inputs, &holds) {
@@ -479,7 +500,7 @@ fn judge(
             }
         }
         for other in others {
-            let Some(swapped) = truths(plan, other, rows, params) else {
+            let Some(swapped) = truths_once(plan, &mut decided, other, rows, params) else {
                 soft = false;
                 continue;
             };
@@ -695,6 +716,34 @@ fn apply(rows: &mut [Row], dimensions: &[Dimension], choice: Vec<(usize, Vec<usi
     }
 }
 
+/// What each condition a row was asked about answered, by the condition and the read's
+/// parameters: sixteen measures under one condition ask it of each row once, not sixteen times,
+/// and the expected values ask what the witness check already asked ([`holds`]). An arranged row
+/// does not change once [`super::observe`] reads it, so an answer stays true for the row's life.
+#[derive(Default)]
+pub(super) struct Truths(RefCell<Vec<Truth>>);
+
+/// One condition's answer for one row under one read.
+struct Truth {
+    condition: Predicate,
+    params: BTreeMap<String, ScenarioValue>,
+    answer: Result<bool, Vec<FactPath>>,
+}
+
+thread_local! {
+    /// How many times a measure's condition was decided for a row on this thread: a row the
+    /// arrangement search projects ([`truths`]), or an arranged row not answered from [`Truths`].
+    static DECIDED: Cell<u64> = const { Cell::new(0) };
+}
+
+/// What `run` returns, and how many times a measure's condition was decided for a row on this
+/// thread while it ran ([`DECIDED`]).
+pub(super) fn deciding<R>(run: impl FnOnce() -> R) -> (R, u64) {
+    let before = DECIDED.with(Cell::get);
+    let out = run();
+    (out, DECIDED.with(Cell::get) - before)
+}
+
 /// Whether `condition` holds of the arranged row `index` for a read sending `params`; a condition
 /// nothing decides is refused by name rather than read as false.
 pub(super) fn holds(
@@ -706,16 +755,32 @@ pub(super) fn holds(
     params: &BTreeMap<String, ScenarioValue>,
 ) -> Result<bool, super::super::RefusalCause> {
     let row = &arranged[index].arrangement;
-    row_truth(
-        plan.ir,
-        plan.view,
-        condition,
-        &row.state,
-        &row.settled,
-        Some(&row.identity()),
-        params,
-    )
-    .map_err(|unknown| {
+    let kept = arranged[index]
+        .truths
+        .0
+        .borrow()
+        .iter()
+        .find(|truth| truth.condition == *condition && truth.params == *params)
+        .map(|truth| truth.answer.clone());
+    let answer = kept.unwrap_or_else(|| {
+        DECIDED.with(|count| count.set(count.get() + 1));
+        let answer = row_truth(
+            plan.ir,
+            plan.view,
+            condition,
+            &row.state,
+            &row.settled,
+            Some(&row.identity()),
+            params,
+        );
+        arranged[index].truths.0.borrow_mut().push(Truth {
+            condition: condition.clone(),
+            params: params.clone(),
+            answer: answer.clone(),
+        });
+        answer
+    });
+    answer.map_err(|unknown| {
         let unknown: Vec<String> = unknown.iter().map(|path| format!("`{path}`")).collect();
         plan.unwitnessed(format!(
             "{}: the condition of `{field}` for row `{}` is unknown: nothing answers {}",

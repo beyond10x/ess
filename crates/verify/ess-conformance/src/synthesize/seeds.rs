@@ -215,6 +215,63 @@ impl From<super::UnknownComponent> for SeedAdmissionError {
     }
 }
 
+thread_local! {
+    /// The models a run is hashing, innermost last, each with its provenance once computed.
+    static DIGESTED: std::cell::RefCell<Vec<(*const EssIr, Option<SuiteProvenance>)>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// Keeps one model's provenance (both digests) computed once while it is held: the seed check, the
+/// suite's provenance and the closing restamp of one synthesis run all read it
+/// ([`memoised_provenance`]). A seed-free run computes the pair once and a seeded run did so three
+/// times before.
+pub(crate) struct Digested {
+    /// The model, compared by address only. It is borrowed for as long as this guard lives, so the
+    /// address cannot be reused by a rewritten copy meanwhile.
+    ir: *const EssIr,
+}
+
+impl Digested {
+    fn of(ir: &EssIr) -> Self {
+        let ir: *const EssIr = ir;
+        DIGESTED.with(|stack| stack.borrow_mut().push((ir, None)));
+        Self { ir }
+    }
+}
+
+impl Drop for Digested {
+    fn drop(&mut self) {
+        DIGESTED.with(|stack| {
+            let mut stack = stack.borrow_mut();
+            if let Some(at) = stack.iter().rposition(|(ir, _)| *ir == self.ir) {
+                stack.remove(at);
+            }
+        });
+    }
+}
+
+/// The provenance of `ir`, from the guard that holds it where one does, else `compute`d.
+pub(crate) fn memoised_provenance(
+    ir: &EssIr,
+    compute: impl FnOnce() -> SuiteProvenance,
+) -> SuiteProvenance {
+    let ir: *const EssIr = ir;
+    let held = DIGESTED.with(|stack| stack.borrow().iter().rposition(|(held, _)| *held == ir));
+    let Some(at) = held else {
+        return compute();
+    };
+    if let Some(known) = DIGESTED.with(|stack| stack.borrow()[at].1.clone()) {
+        return known;
+    }
+    let computed = compute();
+    DIGESTED.with(|stack| {
+        if let Some(entry) = stack.borrow_mut().get_mut(at) {
+            entry.1 = Some(computed.clone());
+        }
+    });
+    computed
+}
+
 impl Default for AdmittedSeeds {
     fn default() -> Self {
         Self::empty()
@@ -277,16 +334,20 @@ impl AdmittedSeeds {
 
     /// Refuse a nonempty set compiled against another model, or whose rows contradict the one
     /// caller a caller model's seeded run is sent as ([`super::caller::implied`]).
-    pub(crate) fn bound_to(&self, ir: &EssIr) -> Result<(), SeedAdmissionError> {
+    ///
+    /// Returns the guard under which the model's digests are computed once for the whole run
+    /// ([`Digested`]): the caller holds it until the run ends.
+    pub(crate) fn bound_to(&self, ir: &EssIr) -> Result<Digested, SeedAdmissionError> {
+        let digested = Digested::of(ir);
         if self.is_empty() {
-            return Ok(());
+            return Ok(digested);
         }
         let provenance = SuiteProvenance::of(ir);
         if self.binding.as_ref() != Some(&(provenance.spec_digest, provenance.contract_digest)) {
             return Err(SeedAdmissionError::WrongModel);
         }
         super::caller::implied(ir, self)?;
-        Ok(())
+        Ok(digested)
     }
 
     /// Record the seeds on a finished suite: every source and selection, and every use the

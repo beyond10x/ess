@@ -403,6 +403,12 @@ const WITHOUT_RELEASE: &[(&str, &str)] = &[(
     "its tree records no release for `ess/36` in FORMAT_HISTORY, so `cargo xtask release verify \
      0.91.0` refuses it and release run 42528706040 could not package it. A consumer already \
      binds the tag, so it stays public; 0.91.1 carries the same content with `ess/36` recorded.",
+), (
+    "0.97.2",
+    "release run 45011465684 failed `ess-compiler::selection_precedence_table` and \
+     `ess-entity-runtime::lowered_definitions_table`: their tables did not pin the fixture models \
+     0.97.2 added, so the release was never prepared. A pushed tag is not moved, so it stays \
+     public; 0.97.3 carries the same content with both tables re-pinned.",
 )];
 
 /// The release record: what the workspace claims, and what the remote actually carries.

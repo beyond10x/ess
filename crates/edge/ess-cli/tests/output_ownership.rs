@@ -386,3 +386,44 @@ fn an_incompatible_output_type_is_named_once() {
         "the refusal names the output once: {stderr}"
     );
 }
+
+#[test]
+// Unfixed, a check of an unchanged file read it 3 times (differing, generated_drift, plan): 18
+// reads for these 6 files. The bound below is 6.
+fn a_check_reads_each_generated_file_once() {
+    let _serial = serial();
+    let f = Fixture::new();
+    let root = f.0.join("pkg");
+    let files: Vec<(String, String)> = (0..6)
+        .map(|n| (format!("dir/file_{n}.ts"), format!("content {n}")))
+        .collect();
+    let files: Vec<(&str, &str)> = files.iter().map(|(a, b)| (&**a, &**b)).collect();
+    ownership::probe::publish(&root, &files, &mut |_| Ok(())).unwrap();
+
+    let before = ownership::probe::reads();
+    let drifted = ownership::probe::drift(&root, &files).unwrap();
+    let reads = ownership::probe::reads() - before;
+    assert_eq!(drifted, 0);
+    assert_eq!(
+        reads,
+        files.len(),
+        "reads of {} unchanged files",
+        files.len()
+    );
+
+    let changed: Vec<(&str, &str)> = files
+        .iter()
+        .map(|&(p, b)| {
+            if p.contains("file_1") {
+                (p, "new")
+            } else {
+                (p, b)
+            }
+        })
+        .collect();
+    let before = ownership::probe::reads();
+    let drifted = ownership::probe::drift(&root, &changed).unwrap();
+    let reads = ownership::probe::reads() - before;
+    assert!(drifted >= 1, "the changed file drifts: {drifted}");
+    assert_eq!(reads, files.len());
+}

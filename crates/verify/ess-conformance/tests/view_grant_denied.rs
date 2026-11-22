@@ -455,6 +455,274 @@ fn the_denied_read_falls_back_to_the_lowest_named_actor() {
     );
 }
 
+/// A model of `views` read-granted views over one entity, each with a parameter, so each borrows
+/// the arrangement of the scenario that reads every one of them after the creating command.
+fn shelves(views: usize) -> String {
+    let mut text = String::from(
+        "format: ess/22
+system: shop
+version: v1
+domain: shop.orders
+entities:
+  - name: shop.orders.Order
+    identity: {name: id, type: String}
+    fields:
+      - {name: title, type: String}
+    lifecycle: {initial: Open, states: [Open], terminal: [Open], transitions: []}
+events:
+  - name: shop.orders.Placed
+    fields:
+      - {name: id, type: String}
+commands:
+  - name: shop.orders.PlaceOrder
+    input:
+      - {name: id, type: String}
+      - {name: title, type: String}
+    outcomes:
+      - name: placed
+        creates: shop.orders.Order
+        instance: id
+        sets: {title: input.title}
+        emits: [shop.orders.Placed]
+        payload:
+          shop.orders.Placed: {id: input.id}
+views:
+",
+    );
+    text.extend((0..views).map(|view| {
+        format!(
+            "  - name: shop.orders.Shelf{view:02}
+    source: shop.orders.Order
+    consistency: read_your_writes
+    params: [{{name: title, type: String}}]
+    filter: title == param.title
+    fields:
+      - {{name: id, type: String}}
+      - {{name: title, type: String}}
+"
+        )
+    }));
+    text.push_str(
+        "actors:\n  - name: shop.orders.Clerk\n    may:\n      - shop.orders.PlaceOrder\n",
+    );
+    text.extend((0..views).map(|view| format!("      - shop.orders.Shelf{view:02}\n")));
+    text.push_str(
+        "  - name: shop.orders.Watcher
+    may:
+      - shop.orders.PlaceOrder
+components:
+  - component: shop-service
+    owns: {domains: [shop.orders]}
+    accepts: {commands: [shop.orders.PlaceOrder]}
+    publishes: {events: [shop.orders.Placed]}
+    reached_by: network
+",
+    );
+    text
+}
+
+/// The view a step reads or requires something of, if any.
+fn view_named(step: &ScenarioStep) -> Option<String> {
+    match step {
+        ScenarioStep::QueryView { view, .. }
+        | ScenarioStep::EventuallyView { view, .. }
+        | ScenarioStep::ExpectView { view, .. }
+        | ScenarioStep::ExpectHalt { view, .. }
+        | ScenarioStep::EventuallyHalt { view, .. }
+        | ScenarioStep::SnapshotView { view }
+        | ScenarioStep::ExpectViewUnchanged { view }
+        | ScenarioStep::SnapshotSubject { view, .. }
+        | ScenarioStep::ExpectSubjectUnchanged { view }
+        | ScenarioStep::ExpectSubjectAbsent { view, .. }
+        | ScenarioStep::SnapshotCompleteSubject { view, .. }
+        | ScenarioStep::ExpectCompleteSubjectUnchanged { view } => Some(view.to_string()),
+        _ => None,
+    }
+}
+
+/// The most steps any read-grant scenario of a `views`-view model holds, after checking that none
+/// of them reads a view other than the one its grant is about.
+fn longest_read_grant(views: usize) -> usize {
+    let ir = compiled(&shelves(views));
+    let synthesis = ess_conformance::synthesize(&ir);
+    let mut longest = 0;
+    let mut filed = 0;
+    for (id, scenario) in &synthesis.suite.scenarios {
+        let (ScenarioId::ReadGrant { view } | ScenarioId::ReadGrantAdmitted { view, .. }) = id
+        else {
+            continue;
+        };
+        filed += 1;
+        let granted = view.to_string();
+        let others: Vec<String> = scenario
+            .steps
+            .iter()
+            .filter_map(view_named)
+            .filter(|read| *read != granted)
+            .collect();
+        assert!(
+            others.is_empty(),
+            "`{id}` reads views its grant does not name: {others:?}"
+        );
+        longest = longest.max(scenario.steps.len());
+    }
+    assert_eq!(filed, 2 * views, "a denied and an admitted read per view");
+    let admitted = AdmittedSuite::from_suite(&synthesis.suite).expect("admits");
+    let report =
+        Runner::for_suite(&synthesis.suite).run_admitted(&admitted, &Interpreted::for_model(ir));
+    assert!(
+        report
+            .scenarios
+            .iter()
+            .all(|scenario| scenario.status == Status::Passed),
+        "{:#?}",
+        report.scenarios
+    );
+    longest
+}
+
+/// A read-grant scenario borrows its arrangement from the scenario that reads every view of the
+/// entity after the command, and keeps none of those other reads: they stand, with the same
+/// expectations under the same arranged state, in the scenario they were borrowed from. So the
+/// steps of a read-grant scenario do not grow with the number of views.
+///
+/// Before, the scenario of the k-th view copied the reads of the k views before it: with 8 views
+/// the 16 read-grant scenarios held 112 steps naming another view (56 queries) and the longest
+/// held 24 steps, 12 with 2 views; at 96 views 9,120 such queries. Now the longest holds 10 at
+/// any count: the command, its outcome and event, the reader in force, and the denied tail.
+#[test]
+fn a_read_grant_scenario_reads_only_the_view_its_grant_names() {
+    assert_eq!(longest_read_grant(2), 10);
+    assert_eq!(longest_read_grant(8), 10);
+}
+
+/// A view showing a struct a target may answer in its short form, read before a read-granted view
+/// with a parameter: no runner decodes the short form, so every scenario observing the struct is
+/// withdrawn (`shorthand::withdraw_observed`).
+const SHORT_FORM_BESIDE_GRANT: &str = "format: ess/27
+system: shop
+version: v1
+domain: shop.parts
+types:
+  - name: shop.parts.Spec
+    kind: struct
+    shorthand: label
+    fields:
+      - {name: label, type: String}
+      - {name: note, type: \"Optional<String>\"}
+entities:
+  - name: shop.parts.Part
+    identity: {name: id, type: String}
+    fields:
+      - {name: title, type: String}
+      - {name: spec, type: shop.parts.Spec}
+    lifecycle: {initial: Open, states: [Open], terminal: [Open], transitions: []}
+events:
+  - name: shop.parts.PartAdded
+    fields:
+      - {name: id, type: String}
+commands:
+  - name: shop.parts.AddPart
+    input:
+      - {name: id, type: String}
+      - {name: title, type: String}
+      - {name: spec, type: shop.parts.Spec}
+    outcomes:
+      - name: added
+        creates: shop.parts.Part
+        instance: id
+        sets: {title: input.title, spec: input.spec}
+        emits: [shop.parts.PartAdded]
+        payload:
+          shop.parts.PartAdded: {id: input.id}
+views:
+  - name: shop.parts.AllParts
+    source: shop.parts.Part
+    consistency: read_your_writes
+    fields:
+      - {name: id, type: String}
+      - {name: spec, type: shop.parts.Spec}
+  - name: shop.parts.ByTitle
+    source: shop.parts.Part
+    consistency: read_your_writes
+    params: [{name: title, type: String}]
+    filter: title == param.title
+    fields:
+      - {name: id, type: String}
+      - {name: title, type: String}
+actors:
+  - name: shop.parts.Clerk
+    may:
+      - shop.parts.AddPart
+      - shop.parts.ByTitle
+  - name: shop.parts.Watcher
+    may:
+      - shop.parts.AddPart
+components:
+  - component: parts-service
+    owns: {domains: [shop.parts]}
+    accepts: {commands: [shop.parts.AddPart]}
+    publishes: {events: [shop.parts.PartAdded]}
+    reached_by: network
+";
+
+/// The read-grant scenarios of `ByTitle` no longer copy the read of `AllParts`, so they no longer
+/// observe the short-form struct and are no longer withdrawn for it. Before, the suite held no
+/// scenario and four refusals, two of them these scenarios; now it holds both, which observe
+/// nothing of the struct and pass, and the two refusals left are the scenarios that read
+/// `AllParts` themselves. The ordinary suite keeps the format it was selected at.
+#[test]
+fn a_read_grant_scenario_is_not_withdrawn_for_a_read_it_no_longer_copies() {
+    let ir = compiled(SHORT_FORM_BESIDE_GRANT);
+    let synthesis = ess_conformance::synthesize(&ir);
+    assert_eq!(
+        synthesis
+            .suite
+            .scenarios
+            .keys()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>(),
+        [
+            "shop.parts.ByTitle/grant/read/admitted/shop.parts.Clerk",
+            "shop.parts.ByTitle/grant/read/denied",
+        ]
+    );
+    let refused: Vec<String> = synthesis
+        .refusals
+        .iter()
+        .filter_map(|refusal| refusal.scenario.as_ref().map(ToString::to_string))
+        .collect();
+    assert_eq!(
+        refused,
+        [
+            "shop.parts.AddPart/grant/admitted/shop.parts.Watcher",
+            "shop.parts.AddPart/outcome/added",
+        ]
+    );
+    for (id, scenario) in &synthesis.suite.scenarios {
+        let read: Vec<String> = scenario.steps.iter().filter_map(view_named).collect();
+        assert!(
+            read.iter().all(|view| view == "shop.parts.ByTitle"),
+            "`{id}` reads {read:?}"
+        );
+    }
+    assert_eq!(
+        synthesis.suite.provenance.suite_version.to_string(),
+        "ess-conformance/34"
+    );
+    let admitted = AdmittedSuite::from_suite(&synthesis.suite).expect("admits");
+    let report =
+        Runner::for_suite(&synthesis.suite).run_admitted(&admitted, &Interpreted::for_model(ir));
+    assert!(
+        report
+            .scenarios
+            .iter()
+            .all(|scenario| scenario.status == Status::Passed),
+        "{:#?}",
+        report.scenarios
+    );
+}
+
 /// Every ungranted actor of the view's domain is read as, lowest-named first, then no actor; an
 /// ungranted actor of another domain is not.
 #[test]

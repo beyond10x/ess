@@ -3218,11 +3218,20 @@ pub(super) fn prepare(
     // of a nonempty set is witnessed on one wherever some arrangement stands with it
     // (story:row-set-beside-named-rows-suite-tells-every-order-apart).
     let mut unselected = None;
+    // Where the attempts beside named rows ran the linked one, the searches it cut: it did not
+    // stand selected there, so it is not tried again below, where it would answer the same.
+    let mut linked_ran: Option<usize> = None;
+    let fresh = ATTEMPTS.with(|work| work.get().1);
     if super::related_guard::uses(command)
         && super::related_guard::several_present(models.arrangement.format())
     {
         for arranging in beside_attempts(models.arrangement.format(), command, outcome) {
-            match prepare_with(models, command, outcome, actors, arranging) {
+            let before = super::related_guard::cuts();
+            let tried = prepare_with(models, command, outcome, actors, arranging);
+            if arranging == Arranging::LINKED && !fresh {
+                linked_ran = Some(super::related_guard::cuts().saturating_sub(before));
+            }
+            match tried {
                 Ok((prepared, true)) => return Ok(prepared),
                 Ok((prepared, false)) => {
                     unselected.get_or_insert(prepared);
@@ -3251,6 +3260,10 @@ pub(super) fn prepare(
                     Arranging::HELD_UNDER,
                     Arranging::SEND_ROWS,
                 ] {
+                    if let (Arranging::LINKED, Some(cut)) = (arranging, linked_ran) {
+                        super::related_guard::add_cuts(cut);
+                        continue;
+                    }
                     if let Ok((linked, true)) =
                         prepare_with(models, command, outcome, actors, arranging)
                     {
@@ -3268,10 +3281,19 @@ pub(super) fn prepare(
     let Some(link) = link() else {
         return Err(refused);
     };
-    attempt(Arranging::LINKED)
-        .or_else(|_| attempt(Arranging::HELD_UNDER))
-        .or_else(|_| attempt(Arranging::SEND_ROWS))
-        .map_err(|_| {
+    // Here the linked attempt beside named rows, where it ran, failed: had it stood, unselected or
+    // not, it would have been returned above.
+    let linked = match linked_ran {
+        Some(cut) => {
+            super::related_guard::add_cuts(cut);
+            Err(())
+        }
+        None => attempt(Arranging::LINKED).map_err(|_| ()),
+    };
+    linked
+        .or_else(|()| attempt(Arranging::HELD_UNDER).map_err(|_| ()))
+        .or_else(|()| attempt(Arranging::SEND_ROWS).map_err(|_| ()))
+        .map_err(|()| {
             guarded_creator(
                 models.arrangement,
                 (command, outcome),
@@ -3282,8 +3304,27 @@ pub(super) fn prepare(
         })
 }
 
+thread_local! {
+    /// How many arrangements [`prepare_with`] was asked for on this thread, and whether the linked
+    /// attempt is tried again after it ran beside named rows ([`row_set_attempts`]).
+    static ATTEMPTS: std::cell::Cell<(u64, bool)> = const { std::cell::Cell::new((0, false)) };
+}
+
+/// `run`'s result, with how many arrangements [`prepare_with`] was asked for on this thread while
+/// it ran. Where `fresh` is set, the linked attempt is tried again after it ran beside named rows,
+/// as before. The work a test bounds; not part of the suite.
+#[doc(hidden)]
+pub fn row_set_attempts<R>(fresh: bool, run: impl FnOnce() -> R) -> (R, u64) {
+    let (asked, was) = ATTEMPTS.with(std::cell::Cell::get);
+    ATTEMPTS.with(|work| work.set((asked, fresh)));
+    let out = run();
+    let (after, _) = ATTEMPTS.with(std::cell::Cell::get);
+    ATTEMPTS.with(|work| work.set((after, was)));
+    (out, after - asked)
+}
+
 /// How one arrangement of [`prepare_with`] is tried.
-#[derive(Clone, Copy, Default)]
+#[derive(Clone, Copy, Default, PartialEq, Eq)]
 struct Arranging {
     /// The related rows the selectors link are arranged first ([`linked`]).
     link: bool,
@@ -3538,6 +3579,10 @@ fn prepare_with(
     actors: &BTreeMap<QualifiedName, ActorRef>,
     attempt: Arranging,
 ) -> Result<(Prepared, bool), RefusalCause> {
+    ATTEMPTS.with(|work| {
+        let (asked, fresh) = work.get();
+        work.set((asked + 1, fresh));
+    });
     let ir = models.arrangement;
     let link = attempt.link;
     let selections = selections_of(command)?;

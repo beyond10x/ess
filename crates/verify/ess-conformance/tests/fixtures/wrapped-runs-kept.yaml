@@ -1,0 +1,56 @@
+format: ess/24
+system: shop
+version: v1
+domain: shop.order
+types:
+  - {name: shop.order.TicketId, kind: newtype, of: Uuid}
+  - name: shop.order.Tag
+    kind: newtype
+    of: String
+    alphabet: "abcdefghijklmnopqrstuvwxyz0123456789.-"
+    invariants: ["value != \"\""]
+entities:
+  - name: shop.order.Ticket
+    identity: {name: ticket_id, type: shop.order.TicketId}
+    fields:
+      - {name: tags, type: 'List<shop.order.Tag>'}
+      - {name: aliases, type: 'List<shop.order.Tag>'}
+      - {name: label, type: 'Optional<shop.order.Tag>'}
+    lifecycle:
+      initial: Open
+      states: [Open]
+      terminal: [Open]
+events:
+  - name: shop.order.TicketOpened
+    fields:
+      - {name: ticket_id, type: shop.order.TicketId}
+commands:
+  - name: shop.order.OpenTicket
+    input:
+      - {name: tags, type: 'List<shop.order.Tag>'}
+      - {name: aliases, type: 'List<shop.order.Tag>'}
+      - {name: label, type: 'Optional<shop.order.Tag>'}
+    outcomes:
+      - name: opened
+        creates: shop.order.Ticket
+        instance: ticket_id
+        sets: {tags: input.tags, aliases: input.aliases, label: input.label}
+        emits: [shop.order.TicketOpened]
+        payload:
+          shop.order.TicketOpened: {ticket_id: {generated: true}}
+views:
+  - name: shop.order.Tickets
+    source: shop.order.Ticket
+    consistency: read_your_writes
+    fields:
+      - {name: ticket_id, type: shop.order.TicketId}
+      - {name: tags, type: 'List<shop.order.Tag>'}
+      - {name: aliases, type: 'List<shop.order.Tag>'}
+      - {name: label, type: 'Optional<shop.order.Tag>'}
+  - name: shop.order.TicketTags
+    source: shop.order.Ticket
+    consistency: read_your_writes
+    fields:
+      - {name: ticket_id, type: shop.order.TicketId}
+      - {name: tags, type: 'List<shop.order.Tag>'}
+      - {name: aliases, type: 'List<shop.order.Tag>'}
