@@ -5646,6 +5646,7 @@ pub(crate) fn synthesis_seeds(
         bail!("--synthesis-seed takes exactly FILE and INSTANCE");
     }
     let mut selections = Vec::new();
+    let mut acquired = input_discovery::Acquired::default();
     for pair in values.chunks(2) {
         let [file, instance] = pair else {
             bail!("--synthesis-seed takes exactly FILE and INSTANCE");
@@ -5662,9 +5663,9 @@ pub(crate) fn synthesis_seeds(
         }
         let instance = ess_conformance::InstanceName::new(instance)
             .map_err(|error| anyhow::anyhow!("synthesis seed instance `{instance}`: {error}"))?;
-        for input in input_discovery::acquire(path, input_discovery::Kind::Coverage)? {
+        for (identity, text) in acquired.once(file, input_discovery::Kind::Coverage)? {
             selections.push(ess_conformance::synthesize::SeedSelection {
-                source: ess_conformance::authored::Source::new(input.identity, input.text),
+                source: ess_conformance::authored::Source::new(identity.clone(), text.clone()),
                 instance: instance.clone(),
             });
         }

@@ -3,7 +3,7 @@
 //! An immediate `ess-inputs.yaml` opts an explicit directory into exact role selection.
 //! The configuration is never an authored source or a persisted provenance document.
 use std::{
-    collections::BTreeSet,
+    collections::{BTreeMap, BTreeSet},
     fs,
     path::{Path, PathBuf},
 };
@@ -112,7 +112,30 @@ pub(crate) fn listed_scenarios(path: &Path) -> Result<Option<Vec<Input>>> {
     acquire(path, Kind::Authored).map(Some)
 }
 
+/// Documents of one run, acquired once per spelled path: a path named again answers from here.
+#[derive(Default)]
+pub(crate) struct Acquired(BTreeMap<String, Vec<(String, String)>>);
+impl Acquired {
+    /// The `(identity, text)` of every input at `path`, read on the first call only. A refusal is
+    /// not kept: the run ends with it.
+    pub(crate) fn once(&mut self, path: &str, kind: Kind) -> Result<&[(String, String)]> {
+        if !self.0.contains_key(path) {
+            let inputs = acquire(Path::new(path), kind)?
+                .into_iter()
+                .map(|input| (input.identity, input.text))
+                .collect();
+            self.0.insert(path.to_string(), inputs);
+        }
+        Ok(&self.0[path])
+    }
+}
+#[cfg(test)]
+thread_local! {
+    static ACQUIRES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
 pub(crate) fn acquire(path: &Path, kind: Kind) -> Result<Vec<Input>> {
+    #[cfg(test)]
+    ACQUIRES.set(ACQUIRES.get() + 1);
     // Keep the requested spelling until manifest-mode link policy has been applied.
     // Direct files do not consult parent or ancestor configuration.
     if path.is_dir() {

@@ -172,3 +172,24 @@ fn acquiring_a_specification_reads_its_manifest_once() {
     );
     assert_eq!(read, 1, "the manifest was read {read} times");
 }
+
+#[test]
+// Unfixed, each of the 16 rows acquired the file again: 16 acquisitions. The bound is 1.
+fn a_seed_file_named_for_many_rows_is_acquired_once() {
+    let tree = tempfile::tempdir().unwrap();
+    write(tree.path(), "seeds.yaml", "scenario: seed\n");
+    let path = tree.path().join("seeds.yaml").display().to_string();
+    let fresh = super::acquire(Path::new(&path), super::Kind::Coverage).unwrap();
+    let before = super::ACQUIRES.get();
+    let mut acquired = super::Acquired::default();
+    for _ in 0..16 {
+        let rows = acquired.once(&path, super::Kind::Coverage).unwrap();
+        assert_eq!(rows.len(), fresh.len());
+        assert_eq!(rows[0], (fresh[0].identity.clone(), fresh[0].text.clone()));
+    }
+    assert_eq!(
+        super::ACQUIRES.get() - before,
+        1,
+        "acquisitions for 16 rows"
+    );
+}
