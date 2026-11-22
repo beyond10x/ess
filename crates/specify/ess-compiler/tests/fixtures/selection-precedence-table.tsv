@@ -1,4 +1,4 @@
-#	models=405	commands=836
+#	models=406	commands=842
 crates/edge/ess-cli/tests/fixtures/adversary-shorthand-binary64/spec.yaml	ir=c87449d062a2da60a227a5a4fe21bf6e78c1108f81fca3463834272ed4c44788:14663
 crates/edge/ess-cli/tests/fixtures/adversary-shorthand-binary64/spec.yaml	tracker.ops.Record	default: recorded
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	ir=d47970055f083eda582673dfe528f0af87f902defa07339aa014f6c8d50be57f:5099
@@ -233,6 +233,13 @@ crates/ui/ess-ui-check/tests/fixtures/model/system.yaml	ASSEMBLE
 crates/ui/ess-ui-react/tests/fixtures/fixture-command-effect/spec/system.yaml	ASSEMBLE
 crates/ui/ess-ui-test/tests/fixtures/adversary-t3-fixture-command-effect/spec/system.yaml	ASSEMBLE
 crates/ui/ess-ui-test/tests/fixtures/fixture-command-effect/spec/system.yaml	ASSEMBLE
+crates/verify/ess-conformance/tests/fixtures/a-creator-reading-several-related-rows.yaml	ir=84a4e46f221f1b6b278253b0e3b05aa1b3d37d30ca056b0b77429d2d70d00d34:35666
+crates/verify/ess-conformance/tests/fixtures/a-creator-reading-several-related-rows.yaml	shop.desk.AddClerk	default: added
+crates/verify/ess-conformance/tests/fixtures/a-creator-reading-several-related-rows.yaml	shop.desk.IssueGrant	present_related: no-site, no-desk, elsewhere | default: issued
+crates/verify/ess-conformance/tests/fixtures/a-creator-reading-several-related-rows.yaml	shop.desk.OpenDesk	present_related: no-site | default: opened
+crates/verify/ess-conformance/tests/fixtures/a-creator-reading-several-related-rows.yaml	shop.desk.OpenSite	default: opened
+crates/verify/ess-conformance/tests/fixtures/a-creator-reading-several-related-rows.yaml	shop.desk.ReceiveTicket	present_related: no-clerk, no-grant, grant-refused, ignored | default: received
+crates/verify/ess-conformance/tests/fixtures/a-creator-reading-several-related-rows.yaml	shop.desk.RevokeGrant	existence: no-grant | held_state: wrong-state | default: revoked
 crates/verify/ess-conformance/tests/fixtures/absent-optional-beside-stored-guard.yaml	ir=ce30f5dee85374e1c98ff2fb1df54789ef7ce953502eae811c4d923d1ca7cb4d:12178
 crates/verify/ess-conformance/tests/fixtures/absent-optional-beside-stored-guard.yaml	example.review.Annotate	held_state: not-accepted | default: annotated
 crates/verify/ess-conformance/tests/fixtures/absent-optional-beside-stored-guard.yaml	example.review.Record	input_refusal: incomplete, not-verified | existence: already-exists | default: recorded

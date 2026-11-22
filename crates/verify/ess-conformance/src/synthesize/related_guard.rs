@@ -1392,15 +1392,30 @@ pub(super) fn add_cuts(more: usize) {
 }
 
 /// The searches for a row beside open on this thread, as the key of what a search inside them
-/// made ([`super::made`]): which of them [`opening`] cuts depends on it.
+/// made ([`super::made`]): which of them [`opening`] cuts depends on it. An arrangement of a setup
+/// run as its own scenario ([`own_opening`]) cuts the same arrangement inside it, so the open ones
+/// are part of the key too.
 pub(super) fn open_key() -> String {
-    BESIDE_OPEN.with(|open| {
+    let beside = BESIDE_OPEN.with(|open| {
         open.borrow()
             .open
             .iter()
             .map(|(model, command, field)| format!("{model:p}:{command}:{field}"))
             .collect::<Vec<_>>()
             .join(",")
+    });
+    OWN_OPEN.with(|open| {
+        let open = open.borrow();
+        if open.is_empty() {
+            beside
+        } else {
+            let own = open
+                .iter()
+                .map(|(model, command, outcome)| format!("{model:p}:{command}/{outcome}"))
+                .collect::<Vec<_>>()
+                .join(",");
+            format!("{beside}|own:{own}")
+        }
     })
 }
 
@@ -2816,6 +2831,139 @@ fn resteer_beside(
     }
 }
 
+thread_local! {
+    /// The setup runs arranged as their branch's own scenario open on this thread, innermost
+    /// last ([`own_opening`]).
+    static OWN_OPEN: RefCell<Vec<(*const EssIr, QualifiedName, String)>> =
+        const { RefCell::new(Vec::new()) };
+}
+
+/// One setup run arranged as its branch's own scenario, open until dropped ([`own_opening`]).
+struct OwnOpened;
+
+impl Drop for OwnOpened {
+    fn drop(&mut self) {
+        OWN_OPEN.with(|open| {
+            open.borrow_mut().pop();
+        });
+    }
+}
+
+/// Opens the arrangement of `driver`'s run as its own scenario ([`as_own_scenario`]), or `None`
+/// where that same arrangement is already open further up: its own scenario's rows would need
+/// the row it is creating, and the arrangement would never end.
+fn own_opening(ir: &EssIr, driver: &super::Driver<'_>) -> Option<OwnOpened> {
+    OWN_OPEN.with(|open| {
+        let mut open = open.borrow_mut();
+        let run = (
+            std::ptr::from_ref(ir),
+            driver.command.name.clone(),
+            driver.outcome.name.to_string(),
+        );
+        if open.contains(&run) {
+            return None;
+        }
+        open.push(run);
+        Some(OwnOpened)
+    })
+}
+
+/// [`drive`] on a command reading several rows (beyond10x/ess#283): [`drive_several_strict`],
+/// and where that finds no run for a creating branch, the run arranged as the branch's own
+/// scenario is ([`as_own_scenario`]). A row beside whose guard reads the input holds for no
+/// input but some, and a link of the row the creation is filed under compared with the input
+/// naming another row needs both rows under one owner. The strict search admits neither, and
+/// the branch's own scenario arranges both. Where both fail, the strict search's refusal is the
+/// answer, so every run the strict search finds, and every refusal it gives, stays as it was.
+// One argument per thing an arranging run is told, as [`drive`] takes them.
+#[allow(clippy::too_many_arguments)]
+fn drive_several(
+    ir: &EssIr,
+    driver: &super::Driver<'_>,
+    instance: Option<&crate::scenario::InstanceName>,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    distinction: Distinction,
+    (bound, known): (
+        &BTreeMap<String, crate::scenario::InstanceName>,
+        &[super::ScenarioStep],
+    ),
+    input: Option<&BTreeMap<String, Node>>,
+    arranging: &[&EntityHandle],
+) -> Result<super::Invocation, RefusalCause> {
+    let strict = drive_several_strict(
+        ir,
+        driver,
+        instance,
+        actors,
+        distinction,
+        (bound, known),
+        input,
+        arranging,
+    );
+    match strict {
+        Err(cause)
+            if instance.is_none()
+                && input.is_none()
+                && known.is_empty()
+                && own_scenario_applies(driver, bound, arranging) =>
+        {
+            as_own_scenario(ir, driver, actors, distinction, bound).map_err(|_| cause)
+        }
+        other => other,
+    }
+}
+
+/// Whether a setup run of `driver` may be arranged as its own scenario: a creating branch,
+/// every row it reads named by an input the caller has not bound, of an entity no arrangement
+/// around the run is already arranging.
+fn own_scenario_applies(
+    driver: &super::Driver<'_>,
+    bound: &BTreeMap<String, crate::scenario::InstanceName>,
+    arranging: &[&EntityHandle],
+) -> bool {
+    matches!(driver.effect, ResolvedEffect::Creates)
+        && rows(driver.command).into_iter().all(|(via, entity)| {
+            matches!(via, ResolvedRelatedVia::Input { .. })
+                && !bound.contains_key(via.field())
+                && !arranging.contains(&entity)
+        })
+}
+
+/// The run of `driver` arranged as its own scenario is ([`arranged`]), at the caller's
+/// `distinction`: the rows the arrangement names joined to `bound`, its steps first, then the
+/// send of the input it chose. Refused where the same arrangement is already open
+/// ([`own_opening`]) or names a row through a field `bound` already binds.
+fn as_own_scenario(
+    ir: &EssIr,
+    driver: &super::Driver<'_>,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    distinction: Distinction,
+    bound: &BTreeMap<String, crate::scenario::InstanceName>,
+) -> Result<super::Invocation, RefusalCause> {
+    let _open = own_opening(ir, driver).ok_or_else(unarranged)?;
+    let models = super::caller::InvocationModels::plain(ir);
+    let (setup, input, _) = arranged(
+        &models,
+        driver.command,
+        driver.outcome,
+        actors,
+        distinction,
+        None,
+    )?;
+    let mut bound = bound.clone();
+    for (field, named) in &setup.bound {
+        if bound.insert(field.clone(), named.clone()).is_some() {
+            return Err(unarranged());
+        }
+    }
+    let mut invocation = super::invoke_with(ir, driver, None, actors, &bound, &input);
+    let mut steps = setup.steps;
+    steps.append(&mut invocation.steps);
+    invocation.steps = steps;
+    invocation.source.extend(setup.source);
+    Ok(invocation)
+}
+
 /// [`drive`] on a command reading several rows (beyond10x/ess#283): the run driven around one of
 /// them, every other row arranged beside it first so that nothing answering before the driven
 /// branch can hold there, whatever the input.
@@ -2827,7 +2975,7 @@ fn resteer_beside(
 /// one that leaves it out, as the cut search's failure reaches each run in turn on its way up.
 // One argument per thing an arranging run is told, as [`drive`] takes them.
 #[allow(clippy::too_many_arguments)]
-fn drive_several(
+fn drive_several_strict(
     ir: &EssIr,
     driver: &super::Driver<'_>,
     instance: Option<&crate::scenario::InstanceName>,
