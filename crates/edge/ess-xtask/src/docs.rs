@@ -1244,8 +1244,8 @@ mod tests {
             Vec::<String>::new()
         );
         let moved = page.replacen(
-            "| `ess/2` | [0.20.0][r20] |",
-            "| `ess/2` | [0.19.0][r19] |",
+            "| `ess/2` | <a id=\"ess-2\"></a>[0.20.0][r20] |",
+            "| `ess/2` | <a id=\"ess-2\"></a>[0.19.0][r19] |",
             1,
         );
         assert_ne!(moved, page, "the ess/2 row is where this test expects it");
@@ -1253,7 +1253,7 @@ mod tests {
             ess_release_mismatches(&moved, ess_domain::system::FORMAT_HISTORY),
             [format!(
                 "{HISTORY}: `ess/2` is introduced in 0.20.0 by FORMAT_HISTORY, and the page's \
-                 \"Introduced in\" cell says `[0.19.0][r19]`"
+                 \"Introduced in\" cell says `<a id=\"ess-2\"></a>[0.19.0][r19]`"
             )]
         );
         let missing = page
