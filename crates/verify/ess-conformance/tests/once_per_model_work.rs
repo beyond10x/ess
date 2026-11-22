@@ -6,8 +6,9 @@
 
 use ess_compiler::{ir::EssIr, resolve::compile, source::SourceMap};
 use ess_conformance::synthesize::{
-    absent_event_lists_built, precedence_replays, synthesize, Synthesis,
+    absent_event_lists_built, precedence_commands_read, precedence_replays, synthesize, Synthesis,
 };
+use ess_conformance::ScenarioStep;
 use ess_domain::{
     spec::{RawSpecFile, Specification},
     system::Source,
@@ -144,4 +145,31 @@ fn an_unguarded_command_s_input_is_not_replayed_for_precedence() {
     let ir_guarded = ir(&guarded);
     let (_, replays) = precedence_replays(|| synthesize(&ir_guarded));
     assert!(replays > 0, "the guarded command's input was not replayed");
+}
+
+/// Resolving the command a step sends reads that command, not every command declared before it.
+/// Unfixed, the 32 steps over 32 commands read 1 + 2 + ... + 32 = 528 commands.
+#[test]
+fn a_step_s_command_is_resolved_by_its_name() {
+    let ir = ir(&filing(32, 1, "", "", ""));
+    let (synthesis, read) = precedence_commands_read(|| synthesize(&ir));
+    assert!(
+        refusals(&synthesis).is_empty(),
+        "refusals: {:#?}",
+        refusals(&synthesis)
+    );
+    let sent = u64::try_from(
+        synthesis
+            .suite
+            .scenarios
+            .values()
+            .flat_map(|scenario| &scenario.steps)
+            .filter(|step| matches!(step, ScenarioStep::ExecuteCommand { .. }))
+            .count(),
+    )
+    .expect("the count fits");
+    assert!(
+        read <= sent,
+        "{read} commands were read to resolve the {sent} steps that send one"
+    );
 }

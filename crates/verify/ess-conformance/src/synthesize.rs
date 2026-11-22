@@ -19827,6 +19827,24 @@ pub fn precedence_replays<R>(run: impl FnOnce() -> R) -> (R, u64) {
     (out, PRECEDENCE_REPLAYS.with(std::cell::Cell::get) - before)
 }
 
+thread_local! {
+    /// How many declared commands [`contradicted`] read to resolve the command a step sends.
+    static PRECEDENCE_COMMANDS_READ: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
+
+/// What `run` returns, and how many declared commands [`precedence_contradictions`] read on this
+/// thread while it ran to resolve the command each step sends: the work a test bounds where a
+/// clock would depend on the machine. Not part of the suite.
+#[doc(hidden)]
+pub fn precedence_commands_read<R>(run: impl FnOnce() -> R) -> (R, u64) {
+    let before = PRECEDENCE_COMMANDS_READ.with(std::cell::Cell::get);
+    let out = run();
+    (
+        out,
+        PRECEDENCE_COMMANDS_READ.with(std::cell::Cell::get) - before,
+    )
+}
+
 /// The first step of `steps` [`precedence_contradictions`] refuses, where one is.
 fn contradicted(ir: &EssIr, steps: &[ScenarioStep]) -> Option<RefusalCause> {
     let mut steps = steps.iter().peekable();
@@ -19842,11 +19860,9 @@ fn contradicted(ir: &EssIr, steps: &[ScenarioStep]) -> Option<RefusalCause> {
         let Some(ScenarioStep::ExpectOutcome { outcome: required }) = steps.peek() else {
             continue;
         };
-        let Some(command) = ir
-            .commands()
-            .values()
-            .find(|command| &command.name == invoked.name())
-        else {
+        // Looked up by the name the map is keyed by: one read, not one per command before it.
+        PRECEDENCE_COMMANDS_READ.with(|count| count.set(count.get() + 1));
+        let Some(command) = ir.commands().get(invoked.name()) else {
             continue;
         };
         let Some(outcome) = command
