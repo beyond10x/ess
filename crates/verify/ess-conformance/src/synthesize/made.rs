@@ -108,16 +108,20 @@ pub(super) struct Remembered {
 impl Drop for Remembered {
     fn drop(&mut self) {
         if self.pushed {
-            MADE.with(|made| {
-                made.borrow_mut().pop();
-            });
+            let top = MADE.with(|made| made.borrow_mut().pop());
+            if let Some(top) = top {
+                park(top);
+            }
         }
     }
 }
 
 /// Remembers the rows made for `ir` until the returned guard drops. A model already remembered
-/// innermost keeps its memory.
+/// innermost keeps its memory, and a model [`Keeping`] holds gets back what it made before.
 pub(super) fn remember(ir: &EssIr) -> Remembered {
+    if let Some(recalled) = recall(ir) {
+        return recalled;
+    }
     let at = std::ptr::from_ref(ir);
     let pushed = MADE.with(|made| {
         let mut made = made.borrow_mut();
@@ -275,4 +279,78 @@ pub(super) fn made(
         }
     });
     rows
+}
+
+thread_local! {
+    /// The models whose memory outlasts each synthesis of them ([`Keeping`]), innermost scope
+    /// last, by address: the memory while it is parked, `None` while the model is remembered.
+    static KEPT: RefCell<Vec<BTreeMap<usize, Option<Made>>>> = const { RefCell::new(Vec::new()) };
+}
+
+/// Keeps what is made for each model it holds past every synthesis of that model, until dropped.
+///
+/// A model whose actors carry attributes is read once per caller assignment, and every reading is
+/// a model of its own (`super::caller`); one reading is synthesized whole and again for each
+/// command focused on, and each time asked every search again. A model held here is the same model
+/// each time, so the next synthesis of it is answered from what the earlier ones made. The memory
+/// is keyed as before, so nothing a search decides changes. The guard holds the models, so no
+/// address it keeps can be taken by another model while their memory is parked.
+pub(super) struct Keeping {
+    models: Vec<Rc<EssIr>>,
+}
+
+impl Keeping {
+    /// A new innermost scope, holding no model yet.
+    pub(super) fn open() -> Self {
+        KEPT.with(|kept| kept.borrow_mut().push(BTreeMap::new()));
+        Self { models: Vec::new() }
+    }
+
+    /// Keeps what `ir` makes for as long as this guard lives.
+    pub(super) fn keep(&mut self, ir: &Rc<EssIr>) {
+        KEPT.with(|kept| {
+            if let Some(scope) = kept.borrow_mut().last_mut() {
+                scope.entry(address(ir)).or_insert(None);
+            }
+        });
+        self.models.push(Rc::clone(ir));
+    }
+}
+
+impl Drop for Keeping {
+    fn drop(&mut self) {
+        // The memories go before the models they are about.
+        KEPT.with(|kept| {
+            kept.borrow_mut().pop();
+        });
+    }
+}
+
+fn address(ir: &EssIr) -> usize {
+    std::ptr::from_ref(ir) as usize
+}
+
+/// `ir`'s parked memory, remembered innermost again, where [`Keeping`] holds it.
+fn recall(ir: &EssIr) -> Option<Remembered> {
+    let parked = KEPT.with(|kept| {
+        kept.borrow_mut()
+            .last_mut()
+            .and_then(|scope| scope.get_mut(&address(ir)))
+            .and_then(Option::take)
+    })?;
+    MADE.with(|made| made.borrow_mut().push(parked));
+    Some(Remembered { pushed: true })
+}
+
+/// Parks `made` where [`Keeping`] holds its model; drops it otherwise.
+fn park(made: Made) {
+    KEPT.with(|kept| {
+        if let Some(slot) = kept
+            .borrow_mut()
+            .last_mut()
+            .and_then(|scope| scope.get_mut(&(made.ir as usize)))
+        {
+            *slot = Some(made);
+        }
+    });
 }
