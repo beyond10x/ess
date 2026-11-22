@@ -2928,6 +2928,24 @@ thread_local! {
     static BUILT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }
 
+thread_local! {
+    /// The copies of a whole input builder the witness search made on this thread
+    /// ([`builders_cloned`]).
+    static CLONED: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+/// `run`'s result, and how many copies of a whole input builder the witness search made on this
+/// thread while it ran: every map and set it records, keyed by fact path, copied at once.
+///
+/// A count rather than a clock, so a test can hold the search to a work bound that a loaded host
+/// cannot trip.
+pub fn builders_cloned<T>(run: impl FnOnce() -> T) -> (T, usize) {
+    let before = CLONED.with(std::cell::Cell::get);
+    let out = run();
+    let after = CLONED.with(std::cell::Cell::get);
+    (out, after.saturating_sub(before))
+}
+
 /// `run`'s result, and how many whole command inputs the witness search built on this thread
 /// while it ran, each candidate and each half of a candidate's pair counted once.
 ///
@@ -3979,7 +3997,7 @@ fn quantified_first(
     let ir = builder.ir;
     // The elements either side, built at positions 1 and 2 under the list so neither repeats the
     // deciding element built at position 0.
-    let mut probe = builder.clone();
+    let mut probe = builder.copy();
     let built: BTreeMap<&FactPath, (Node, Node)> = lists
         .iter()
         .filter_map(|list| {
@@ -5211,7 +5229,7 @@ fn admitted_witness(
     if admits_base(invariants, alphabet, witness) {
         return Some(witness.clone());
     }
-    let mut probe = builder.clone();
+    let mut probe = builder.copy();
     probe.leaves.get_mut(path)?.1 = witness.clone();
     let mut ladders = BTreeMap::new();
     invariant_ladders(&probe, &mut ladders);
@@ -6989,6 +7007,53 @@ struct Builder<'ir> {
     /// Each such leaf inside an `Optional`, numbered in the order the base witness first reaches
     /// it, so two of them are kept apart as well.
     apart_ordinals: BTreeMap<FactPath, usize>,
+    /// What each write made while an [`entry`](Self::entry) attempt is open replaced, newest last,
+    /// so an attempt that fails is undone in place rather than built on a copy of the whole
+    /// builder. Empty whenever no attempt is open.
+    journal: Vec<Undo>,
+    /// How many [`entry`](Self::entry) attempts are open: writes are journalled above zero only.
+    attempts: usize,
+}
+
+/// One write [`Builder::entry`]'s attempt made, with what it replaced: the key's prior value where
+/// the write may overwrite one, or nothing where it only ever adds the key.
+#[derive(Clone)]
+enum Undo {
+    Leaf(FactPath, Option<(Leaf, Node)>),
+    List(FactPath),
+    Element(FactPath, Option<ResolvedTypeRef>),
+    Map(FactPath),
+    Optional(FactPath),
+    Invariants(FactPath, Option<Vec<Predicate>>),
+    Alphabet(FactPath),
+    Prefix(FactPath),
+    StringLeaf(FactPath),
+    PlainText(FactPath, Option<String>),
+    Example(FactPath, Option<Node>),
+    Unexampled(FactPath, Option<Vec<Node>>),
+    LeftOut(FactPath),
+    StructInvariant,
+    Unrepaired(FactPath, Option<Node>),
+    ApartOrdinal(FactPath),
+}
+
+/// Puts `path` in `map` back to `prior`: its value before the write, or absent.
+fn restore<V>(map: &mut BTreeMap<FactPath, V>, path: FactPath, prior: Option<V>) {
+    match prior {
+        Some(value) => {
+            map.insert(path, value);
+        }
+        None => {
+            map.remove(&path);
+        }
+    }
+}
+
+#[cfg(debug_assertions)]
+thread_local! {
+    /// Whether [`Builder::entry`] runs as the clone-based reference its in-place build is checked
+    /// against, in debug builds only.
+    static REFERENCE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
 
 impl<'ir> Builder<'ir> {
@@ -7025,7 +7090,128 @@ impl<'ir> Builder<'ir> {
             unrepaired: BTreeMap::new(),
             optional_depth: 0,
             apart_ordinals: BTreeMap::new(),
+            journal: Vec::new(),
+            attempts: 0,
         }
+    }
+
+    /// Journals the write `undo` describes, while an [`entry`](Self::entry) attempt is open.
+    fn note(&mut self, undo: impl FnOnce() -> Undo) {
+        if self.attempts > 0 {
+            self.journal.push(undo());
+        }
+    }
+
+    /// Undoes every write journalled after the first `mark` entries, newest first.
+    fn undo_to(&mut self, mark: usize) {
+        while self.journal.len() > mark {
+            let Some(undo) = self.journal.pop() else {
+                break;
+            };
+            match undo {
+                Undo::Leaf(path, prior) => restore(&mut self.leaves, path, prior),
+                Undo::List(path) => {
+                    self.lists.remove(&path);
+                }
+                Undo::Element(path, prior) => restore(&mut self.elements, path, prior),
+                Undo::Map(path) => {
+                    self.maps.remove(&path);
+                }
+                Undo::Optional(path) => {
+                    self.optionals.remove(&path);
+                }
+                Undo::Invariants(path, prior) => restore(&mut self.invariants, path, prior),
+                Undo::Alphabet(path) => {
+                    self.alphabets.remove(&path);
+                }
+                Undo::Prefix(path) => {
+                    self.prefixes.remove(&path);
+                }
+                Undo::StringLeaf(path) => {
+                    self.strings.remove(&path);
+                }
+                Undo::PlainText(path, prior) => restore(&mut self.plain_texts, path, prior),
+                Undo::Example(path, prior) => restore(&mut self.examples, path, prior),
+                Undo::Unexampled(path, prior) => restore(&mut self.unexampled, path, prior),
+                Undo::LeftOut(path) => {
+                    self.left_out.remove(&path);
+                }
+                Undo::StructInvariant => {
+                    self.struct_invariants.pop();
+                }
+                Undo::Unrepaired(path, prior) => restore(&mut self.unrepaired, path, prior),
+                Undo::ApartOrdinal(path) => {
+                    self.apart_ordinals.remove(&path);
+                }
+            }
+        }
+    }
+
+    /// Whether `other` holds the same state as this builder: every field but the journal.
+    #[cfg(debug_assertions)]
+    fn same_state(&self, other: &Self) -> bool {
+        let Self {
+            ir,
+            distinction,
+            expand,
+            positional,
+            leaves,
+            lists,
+            elements,
+            maps,
+            building,
+            copied,
+            unfolded,
+            optionals,
+            invariants,
+            alphabets,
+            prefixes,
+            strings,
+            plain_texts,
+            examples,
+            unexampled,
+            left_out,
+            read,
+            struct_invariants,
+            fixed,
+            unrepaired,
+            optional_depth,
+            apart_ordinals,
+            journal: _,
+            attempts: _,
+        } = self;
+        std::ptr::eq(*ir, other.ir)
+            && *distinction == other.distinction
+            && *expand == other.expand
+            && *positional == other.positional
+            && *leaves == other.leaves
+            && *lists == other.lists
+            && *elements == other.elements
+            && *maps == other.maps
+            && *building == other.building
+            && *copied == other.copied
+            && *unfolded == other.unfolded
+            && *optionals == other.optionals
+            && *invariants == other.invariants
+            && *alphabets == other.alphabets
+            && *prefixes == other.prefixes
+            && *strings == other.strings
+            && *plain_texts == other.plain_texts
+            && *examples == other.examples
+            && *unexampled == other.unexampled
+            && *left_out == other.left_out
+            && *read == other.read
+            && *struct_invariants == other.struct_invariants
+            && *fixed == other.fixed
+            && *unrepaired == other.unrepaired
+            && *optional_depth == other.optional_depth
+            && *apart_ordinals == other.apart_ordinals
+    }
+
+    /// A copy of the whole builder, counted ([`builders_cloned`]).
+    fn copy(&self) -> Self {
+        CLONED.with(|cloned| cloned.set(cloned.get() + 1));
+        self.clone()
     }
 
     /// This builder, filling the example-absent members `read` reaches ([`Builder::read`]).
@@ -7048,7 +7234,8 @@ impl<'ir> Builder<'ir> {
         match self.fixed_value(path).cloned() {
             Some(fixed) => {
                 if record {
-                    self.unrepaired.insert(path.clone(), own);
+                    let prior = self.unrepaired.insert(path.clone(), own);
+                    self.note(|| Undo::Unrepaired(path.clone(), prior));
                 }
                 fixed
             }
@@ -7101,8 +7288,8 @@ impl<'ir> Builder<'ir> {
         record: bool,
     ) -> Result<Option<Node>, WitnessGap> {
         if type_ref.is_optional() {
-            if record {
-                self.optionals.insert(path.clone());
+            if record && self.optionals.insert(path.clone()) {
+                self.note(|| Undo::Optional(path.clone()));
             }
             // A member a struct's example (ess/33) leaves out, or writes `null`, is so in the
             // base too, unless a guard reads it: rule 1 fills an optional a guard reads, so the
@@ -7112,7 +7299,8 @@ impl<'ir> Builder<'ir> {
                 .iter()
                 .any(|at| at.segments().starts_with(path.segments()));
             if read && matches!(self.examples.get(path), Some(Node::Null)) {
-                self.examples.remove(path);
+                let prior = self.examples.remove(path);
+                self.note(|| Undo::Example(path.clone(), prior));
             }
             match overrides.get(path) {
                 Some(Choice::Omit) => return Ok(None),
@@ -7153,34 +7341,44 @@ impl<'ir> Builder<'ir> {
     fn primitive(&mut self, name: Primitive, path: &FactPath, record: bool) -> Node {
         let mut base = primitive_value(name, path, self.distinction);
         if self.optional_depth > 0 && has_apart(name) {
-            let next = self.apart_ordinals.len();
-            let ordinal = *self.apart_ordinals.entry(path.clone()).or_insert(next);
+            let ordinal = if let Some(&ordinal) = self.apart_ordinals.get(path) {
+                ordinal
+            } else {
+                let next = self.apart_ordinals.len();
+                self.apart_ordinals.insert(path.clone(), next);
+                self.note(|| Undo::ApartOrdinal(path.clone()));
+                next
+            };
             base = apart(name, self.distinction, ordinal);
         }
         base = self.declared_spelling(path, base);
         if name == Primitive::String {
             if let Node::Text(plain) = &base {
-                self.plain_texts.insert(path.clone(), plain.clone());
+                let prior = self.plain_texts.insert(path.clone(), plain.clone());
+                self.note(|| Undo::PlainText(path.clone(), prior));
             }
-            if record {
-                self.strings.insert(path.clone());
+            if record && self.strings.insert(path.clone()) {
+                self.note(|| Undo::StringLeaf(path.clone()));
             }
         }
-        if let Some(example) = self.examples.get(path) {
+        if let Some(example) = self.examples.get(path).cloned() {
             if record {
                 // The next instance's witness too, for an example that is the leaf's own witness:
                 // `PT1S` for a `Duration` is both (adversary pass 1 of
                 // story:a-text-inequality-against-an-example-is-refuted).
                 let next = Distinction::further(self.distinction.get() + 1);
                 let next = self.declared_spelling(path, primitive_value(name, path, next));
-                self.unexampled.insert(path.clone(), vec![base, next]);
+                let prior = self.unexampled.insert(path.clone(), vec![base, next]);
+                self.note(|| Undo::Unexampled(path.clone(), prior));
             }
-            base = example.clone();
+            base = example;
         }
         let base = self.repaired(path, base, record);
         if record {
-            self.leaves
+            let prior = self
+                .leaves
                 .insert(path.clone(), (Leaf::of_primitive(name), base.clone()));
+            self.note(|| Undo::Leaf(path.clone(), prior));
         }
         base
     }
@@ -7203,6 +7401,63 @@ impl<'ir> Builder<'ir> {
         if recursive && self.unfolded {
             return None;
         }
+        #[cfg(debug_assertions)]
+        if REFERENCE.with(std::cell::Cell::get) {
+            return self.entry_on_a_copy(recursive, of, path, overrides, depth, record);
+        }
+        // Checked in debug builds: the attempt below leaves this builder exactly as building the
+        // element on a copy, kept only on success, left it. Checked at the outermost attempt, whose
+        // copy-built reference builds every attempt inside it on a copy as well, so each nested
+        // attempt's effect is compared too and the check costs one more build, not one per level.
+        #[cfg(debug_assertions)]
+        let checked = (self.attempts == 0).then(|| {
+            let mut reference = self.clone();
+            REFERENCE.with(|flag| flag.set(true));
+            let expected = reference.entry_on_a_copy(recursive, of, path, overrides, depth, record);
+            REFERENCE.with(|flag| flag.set(false));
+            (expected, reference)
+        });
+        // Built on this builder itself; a failed attempt undoes what it wrote.
+        let unfolded = self.unfolded;
+        let mark = self.journal.len();
+        self.unfolded |= recursive;
+        self.attempts += 1;
+        let built = self.value(of, &path.child("0"), overrides, depth + 1, record);
+        self.attempts -= 1;
+        self.unfolded = unfolded;
+        let value = if let Ok(value) = built {
+            // Kept for an attempt still open around this one, which may yet be undone.
+            if self.attempts == 0 {
+                self.journal.clear();
+            }
+            Some(value)
+        } else {
+            self.undo_to(mark);
+            None
+        };
+        #[cfg(debug_assertions)]
+        if let Some((expected, reference)) = checked {
+            assert!(
+                value == expected && self.same_state(&reference),
+                "the element at {path} was built in place differently from on a copy"
+            );
+        }
+        value
+    }
+
+    /// [`entry`](Self::entry) as it was built before it built in place: on a copy of the whole
+    /// builder, which replaces this one only when the element builds. The reference the in-place
+    /// build is checked against in debug builds.
+    #[cfg(debug_assertions)]
+    fn entry_on_a_copy(
+        &mut self,
+        recursive: bool,
+        of: &ResolvedTypeRef,
+        path: &FactPath,
+        overrides: &BTreeMap<FactPath, Choice>,
+        depth: usize,
+        record: bool,
+    ) -> Option<Node> {
         let mut probe = self.clone();
         probe.unfolded |= recursive;
         let value = probe
@@ -7258,8 +7513,11 @@ impl<'ir> Builder<'ir> {
             }
             return Ok(Node::Seq(elements));
         }
-        self.lists.insert(path.clone());
-        self.elements.insert(path.clone(), of.clone());
+        if self.lists.insert(path.clone()) {
+            self.note(|| Undo::List(path.clone()));
+        }
+        let prior = self.elements.insert(path.clone(), of.clone());
+        self.note(|| Undo::Element(path.clone(), prior));
         // Built even where the base keeps the list empty, so its leaves are recorded
         // before any ladder is drawn.
         let element = self.value(of, &path.child("0"), overrides, depth + 1, record)?;
@@ -7297,7 +7555,7 @@ impl<'ir> Builder<'ir> {
     ) -> Result<Vec<Node>, WitnessGap> {
         let mut elements = vec![first];
         for ordinal in 1..keyed.held {
-            let mut further = self.clone();
+            let mut further = self.copy();
             further.distinction = Distinction::further(self.distinction.get() + ordinal);
             elements.push(further.value(
                 of,
@@ -7367,8 +7625,8 @@ impl<'ir> Builder<'ir> {
         let Some(value) = self.entry(of, path, overrides, depth, record) else {
             return Node::Map(BTreeMap::new());
         };
-        if record {
-            self.maps.insert(path.clone());
+        if record && self.maps.insert(path.clone()) {
+            self.note(|| Undo::Map(path.clone()));
         }
         let held = match overrides.get(path) {
             Some(Choice::Elements(held)) => *held,
@@ -7518,14 +7776,20 @@ impl<'ir> Builder<'ir> {
                 if !self.alphabets.contains_key(path) {
                     if let Some(alphabet) = chain_alphabet(ir, type_ref) {
                         self.alphabets.insert(path.clone(), alphabet);
+                        self.note(|| Undo::Alphabet(path.clone()));
                     }
                 }
                 if !self.prefixes.contains_key(path) {
                     if let Some(prefix) = chain_prefix(ir, type_ref) {
                         self.prefixes.insert(path.clone(), prefix);
+                        self.note(|| Undo::Prefix(path.clone()));
                     }
                 }
                 if record {
+                    if self.attempts > 0 {
+                        let prior = self.invariants.get(path).cloned();
+                        self.journal.push(Undo::Invariants(path.clone(), prior));
+                    }
                     let recorded = self.invariants.entry(path.clone()).or_default();
                     for invariant in invariants {
                         if !recorded.contains(&invariant.predicate) {
@@ -7552,7 +7816,7 @@ impl<'ir> Builder<'ir> {
                     .unwrap_or(Node::Text(variant));
                 let base = self.repaired(path, own, record);
                 if record {
-                    self.leaves.insert(
+                    let prior = self.leaves.insert(
                         path.clone(),
                         (
                             Leaf::Enum {
@@ -7564,6 +7828,7 @@ impl<'ir> Builder<'ir> {
                             base.clone(),
                         ),
                     );
+                    self.note(|| Undo::Leaf(path.clone(), prior));
                 }
                 Ok(chosen(base))
             }
@@ -7580,6 +7845,7 @@ impl<'ir> Builder<'ir> {
                         );
                         if !self.struct_invariants.contains(&moved) {
                             self.struct_invariants.push(moved);
+                            self.note(|| Undo::StructInvariant);
                         }
                     }
                 }
@@ -7607,10 +7873,16 @@ impl<'ir> Builder<'ir> {
                 let child = path.child(&field.name);
                 match example.get(&field.name) {
                     Some(member) => {
-                        self.examples.entry(child).or_insert_with(|| member.clone());
+                        if !self.examples.contains_key(&child) {
+                            self.note(|| Undo::Example(child.clone(), None));
+                            self.examples.insert(child, member.clone());
+                        }
                     }
                     None => {
-                        self.left_out.insert(child);
+                        if !self.left_out.contains(&child) {
+                            self.note(|| Undo::LeftOut(child.clone()));
+                            self.left_out.insert(child);
+                        }
                     }
                 }
             }
@@ -8248,5 +8520,107 @@ mod tests {
             let goal = Predicate::All(goal);
             assert!(!unsatisfiable(&goal), "{goal}");
         }
+    }
+
+    /// A copied list of `Pair`s: an element writes an optional leaf (numbered apart), a text leaf
+    /// and a nested struct's leaf before it reaches the newtype `Deep`, the deepest value.
+    const COPIED_PAIRS: &str = r"
+format: ess/32
+system: demo
+version: v1
+domain: demo.depot
+types:
+  - {name: demo.depot.Deep, kind: newtype, of: String}
+  - name: demo.depot.Inner
+    kind: struct
+    fields:
+      - {name: c, type: Integer}
+      - {name: d, type: demo.depot.Deep}
+  - name: demo.depot.Pair
+    kind: struct
+    fields:
+      - {name: w, type: Optional<Integer>}
+      - {name: a, type: String}
+      - {name: b, type: demo.depot.Inner}
+errors:
+  - {name: demo.depot.TooLarge, summary: Too large., fields: []}
+entities:
+  - name: demo.depot.Box
+    identity: {name: box_id, type: Uuid}
+    fields:
+      - {name: pairs, type: 'List<demo.depot.Pair>'}
+    lifecycle: {initial: Open, states: [Open], terminal: [Open]}
+events:
+  - name: demo.depot.Packed
+    fields: [{name: box_id, type: Uuid}]
+actors:
+  - {name: demo.depot.Clerk, may: [demo.depot.Pack]}
+commands:
+  - name: demo.depot.Pack
+    input:
+      - {name: pairs, type: 'List<demo.depot.Pair>'}
+      - {name: flag, type: Integer}
+    outcomes:
+      - name: too-large
+        when: input.flag > 5
+        error: demo.depot.TooLarge
+      - name: packed
+        creates: demo.depot.Box
+        instance: box_id
+        emits: [demo.depot.Packed]
+        payload:
+          demo.depot.Packed: {box_id: {generated: true}}
+        sets: {pairs: input.pairs}
+";
+
+    #[test]
+    fn a_failed_element_attempt_is_undone_in_place_and_a_kept_one_is_what_a_copy_kept() {
+        let raw = ess_domain::spec::RawSpecFile::parse(COPIED_PAIRS).expect("well formed");
+        let ir = crate::mutate::compile(
+            vec![(ess_domain::system::Source::new("depot.yaml"), raw)],
+            &ess_compiler::source::SourceMap::new(),
+        )
+        .unwrap_or_else(|stillborn| panic!("compiles: {} {}", stillborn.code, stillborn.cause));
+        let command = ir
+            .commands()
+            .get(&ess_domain::name::QualifiedName::new("demo.depot.Pack").expect("a valid name"))
+            .expect("declared");
+        let ResolvedTypeRef::List { of } = &command.input[0].type_ref else {
+            panic!("`pairs` is a list")
+        };
+        let mut builder = Builder::new(&ir, Distinction::PLAIN, BTreeSet::new(), BTreeMap::new());
+        // The base records the copied element at `pairs.0`, so an attempt there overwrites keys.
+        builder
+            .input(command, &BTreeMap::new())
+            .expect("the base builds");
+        assert!(builder.leaves.contains_key(&path("pairs.0.a")));
+        let none = BTreeMap::new();
+
+        // The attempt writes before it fails: `Deep`'s text lies one level past the limit.
+        let fails_at = MAX_TYPE_DEPTH - 3;
+        let mut unguarded = builder.clone();
+        assert!(unguarded
+            .value(of, &path("other.0"), &none, fails_at + 1, true)
+            .is_err());
+        for written in ["other.0.w", "other.0.a", "other.0.b.c"] {
+            assert!(unguarded.leaves.contains_key(&path(written)), "{written}");
+        }
+        assert!(unguarded.apart_ordinals.contains_key(&path("other.0.w")));
+        assert!(unguarded.invariants.contains_key(&path("other.0.b.d")));
+
+        for at in ["other", "pairs"] {
+            let before = builder.clone();
+            assert_eq!(builder.entry(of, &path(at), &none, fails_at, true), None);
+            assert!(
+                builder.same_state(&before),
+                "a failed attempt at {at} is undone"
+            );
+            assert!(builder.journal.is_empty());
+        }
+        let kept = builder.entry(of, &path("other"), &none, fails_at - 1, true);
+        assert!(kept.is_some(), "one level less builds");
+        assert!(builder.leaves.contains_key(&path("other.0.b.d")));
+        assert!(builder.journal.is_empty());
+        assert_eq!(builder.attempts, 0);
     }
 }
