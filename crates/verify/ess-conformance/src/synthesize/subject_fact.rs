@@ -5607,18 +5607,19 @@ fn selected_successors(
     if let Ok(Some(more)) = hinted(ir, entity, driver, hints, Distinction::PLAIN) {
         inputs.extend(more);
     }
+    let picks = row_picks(ir, driver.command, entity, arrangement);
     for input in inputs {
-        if selects(
+        if picked(
             ir,
             driver.command,
             entity,
             arrangement,
             &input,
-            Order::Unique,
+            picks.as_deref(),
         )
         .ok()
         .flatten()
-        .is_some_and(|branch| branch.name == driver.outcome.name)
+        .is_some_and(|name| name == driver.outcome.name)
         {
             let mut next = advanced(
                 ir,
@@ -5636,6 +5637,75 @@ fn selected_successors(
         }
     }
     out
+}
+
+/// The branch [`selects`] picks under [`Order::Unique`] for each input of one command on one row,
+/// as far as a search asked ([`super::made::row_picks`]).
+///
+/// [`selects`] reads only the model, the command, the row's state, stored fields and unwritten
+/// fields, and the input: never the steps that led to the row nor a thread's arrangement context.
+/// Every search that advances a row by a move of a command reading stored fields asks it for
+/// every input it offers — once for each of the command's moving branches, and again in each
+/// search whose goal differs — so it is kept for the length of a synthesis, by command and row.
+#[derive(Default)]
+pub(super) struct RowPicks {
+    /// The branch picked for each input asked so far, by name.
+    picked: std::cell::RefCell<BTreeMap<BTreeMap<String, Node>, Pick>>,
+}
+
+/// The name of the branch [`selects`] picked for one input ([`RowPicks`]).
+type Pick = Result<Option<OutcomeName>, RefusalCause>;
+
+/// The [`RowPicks`] of `command` on `arrangement`'s row, kept for the model remembered innermost;
+/// `None` for a command the model does not declare as such (one projected for a related guard),
+/// or a model not remembered.
+fn row_picks(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    entity: &EntityHandle,
+    arrangement: &Arrangement,
+) -> Option<std::rc::Rc<RowPicks>> {
+    let declared = ir
+        .commands()
+        .get(&command.name)
+        .is_some_and(|declared| std::ptr::eq(declared, command));
+    if !declared || !super::made::remembers(ir) {
+        return None;
+    }
+    let key = format!(
+        "{}|{entity:?}|{:?}|{:?}|{:?}",
+        command.name, arrangement.state, arrangement.settled, arrangement.unwritten
+    );
+    super::made::row_picks(ir, key)
+}
+
+/// The name of the branch [`selects`] picks under [`Order::Unique`] for `input` on `arrangement`'s
+/// row: from `picks` where that input was asked before, else decided and kept there.
+fn picked(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    entity: &EntityHandle,
+    arrangement: &Arrangement,
+    input: &BTreeMap<String, Node>,
+    picks: Option<&RowPicks>,
+) -> Pick {
+    let decide = || {
+        selects(ir, command, entity, arrangement, input, Order::Unique)
+            .map(|branch| branch.map(|branch| branch.name.clone()))
+    };
+    let Some(picks) = picks else {
+        return decide();
+    };
+    let known = picks.picked.borrow().get(input).cloned();
+    if let Some(known) = known {
+        return known;
+    }
+    let fresh = decide();
+    picks
+        .picked
+        .borrow_mut()
+        .insert(input.clone(), fresh.clone());
+    fresh
 }
 
 /// Every row one arranging branch can leave from `arrangement`, toward the hints.
@@ -6056,7 +6126,7 @@ fn search_rows<T>(
             let before = super::related_guard::cuts();
             let Reached { depths, nested, .. } = &mut reached;
             let level = match depth.checked_sub(1).map(|last| &depths[last].0) {
-                Some(Depth::Fresh(fresh)) => advance(
+                Some(Depth::Fresh(fresh, _)) => advance(
                     ir,
                     (entity, drivers),
                     actors,
@@ -6083,8 +6153,8 @@ fn search_rows<T>(
                 super::made::reach(ir, key.clone(), reached.clone());
             }
         }
-        let fresh = match &reached.depths[depth].0 {
-            Depth::Fresh(fresh) => fresh,
+        let (fresh, scores) = match &reached.depths[depth].0 {
+            Depth::Fresh(fresh, scores) => (fresh, scores),
             Depth::Exceeded(cause) => return Err(cause.clone()),
             Depth::Ended => break,
         };
@@ -6092,7 +6162,7 @@ fn search_rows<T>(
         for (index, node) in fresh.iter().enumerate() {
             match goal(node) {
                 Ok(Some(found)) => {
-                    let rank = score(&profile(ir, entity, node, hints, (&follow, &guards)));
+                    let rank = scores[index];
                     if best.as_ref().is_none_or(|(held, ..)| rank > *held) {
                         best = Some((rank, index, found));
                     }
@@ -6158,8 +6228,9 @@ pub(super) struct Reached {
 /// One depth of a search ([`Reached`]).
 #[derive(Clone)]
 enum Depth {
-    /// The rows first met at this depth, in the order met.
-    Fresh(Vec<Arrangement>),
+    /// The rows first met at this depth, in the order met, and the [`score`] of each one's
+    /// [`profile`], made once when the row is met rather than again by every goal it serves.
+    Fresh(Vec<Arrangement>, Vec<(usize, usize, usize)>),
     /// The rows met exceeded the search budget, [`MAX_NODES`]: the search refuses.
     Exceeded(RefusalCause),
     /// No row met at this depth was new: the search ends.
@@ -6178,14 +6249,15 @@ fn meet(
     reached: &mut Reached,
 ) -> Depth {
     let mut fresh = Vec::new();
+    let mut scores = Vec::new();
     for node in level {
         // Rows beyond the followed counter bound share a node, as on the creation search.
         reached.beyond |= follow.key(&node.settled).1;
-        if reached
-            .seen
-            .insert(profile(ir, entity, &node, hints, (follow, guards)))
-        {
+        let met = profile(ir, entity, &node, hints, (follow, guards));
+        let rank = score(&met);
+        if reached.seen.insert(met) {
             fresh.push(node);
+            scores.push(rank);
         }
         if reached.seen.len() > MAX_NODES {
             // Rows a followed counter tells apart fill the budget: no field lacks a value, so
@@ -6213,7 +6285,7 @@ fn meet(
     if fresh.is_empty() {
         Depth::Ended
     } else {
-        Depth::Fresh(fresh)
+        Depth::Fresh(fresh, scores)
     }
 }
 

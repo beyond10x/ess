@@ -15,6 +15,12 @@
 //! accepts, and advancing every row by every move again for each of them made a row several
 //! commands move cost minutes to synthesize.
 //!
+//! The branch a command selects on a stored row for an input is kept too ([`row_picks`]): it reads
+//! nothing but the model, the command, the row's state and fields and the input, and every
+//! search that advances that row asks it again — once per branch of the moving command, and once
+//! per search whose goal differs — which made a model of many such commands spend most of its
+//! synthesis deciding the same guards over the same rows.
+//!
 //! Answering from memory does not change what a search decides: the beside searches a computation
 //! cut ([`super::related_guard::cuts`]) count as cut again. The work counters a test reads
 //! (`directed_steps`, `row_set_arrangements_tried`, `branch_selections_tried`) count only the
@@ -23,7 +29,7 @@ use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::rc::Rc;
 
-use super::subject_fact::{Reached, Selections};
+use super::subject_fact::{Reached, RowPicks, Selections};
 use super::{Arrangement, EssIr, RefusalCause};
 
 thread_local! {
@@ -41,6 +47,9 @@ struct Made {
     searches: BTreeMap<String, Reached>,
     /// The branches a command's inputs select on a row, by their key ([`selections`]).
     selections: BTreeMap<String, Rc<Selections>>,
+    /// The branch a command selects on a row for each input asked so far, by command and row
+    /// ([`row_picks`]).
+    picks: BTreeMap<String, Rc<RowPicks>>,
 }
 
 /// What one computation answered, and how many beside searches it cut.
@@ -118,6 +127,7 @@ pub(super) fn remember(ir: &EssIr) -> Remembered {
             rows: BTreeMap::new(),
             searches: BTreeMap::new(),
             selections: BTreeMap::new(),
+            picks: BTreeMap::new(),
         });
         true
     });
@@ -170,6 +180,17 @@ pub(super) fn selections(
         }
     });
     fresh
+}
+
+/// The branches a command selects on one row under `key` ([`RowPicks`]), as far as the model
+/// remembered innermost has asked; `None` where `ir` is not that model. They are filled in as
+/// later searches ask, through the shared handle.
+pub(super) fn row_picks(ir: &EssIr, key: String) -> Option<Rc<RowPicks>> {
+    MADE.with(|made| {
+        let mut made = made.borrow_mut();
+        let top = made.last_mut().filter(|top| std::ptr::eq(top.ir, ir))?;
+        Some(Rc::clone(top.picks.entry(key).or_default()))
+    })
 }
 
 /// Keeps what the search under `key` has reached so far, for the searches after it.
