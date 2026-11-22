@@ -242,7 +242,7 @@ pub trait TypeEnvironment {
     /// (`docs/design/expression-family-source22.md`, A3). Below that format such a site answers
     /// [`Self::current_time`] as it did before — a site that does not admit the operand — so every
     /// other use of the word keeps the refusal or the meaning it had there.
-    fn current_time_later(&self) -> Option<&'static str> {
+    fn current_time_later(&self) -> Option<crate::system::FormatVersion> {
         None
     }
     /// Whether this site is a view's filter, where a refusal of the current time names the
@@ -487,6 +487,12 @@ impl ExpressionError {
     fn detail_mut(&mut self) -> &mut ExpressionErrorDetail {
         self.detail.get_or_insert_with(Box::default)
     }
+
+    /// This refusal with `hint`, the repair a newer format admits.
+    pub(crate) fn with_hint(mut self, hint: String) -> Self {
+        self.detail_mut().hint = Some(hint);
+        self
+    }
 }
 
 /// One read checked directly from the AST, including quantified bodies.
@@ -702,9 +708,9 @@ impl TypeEnvironment for DomainEnvironment<'_> {
             format: at(crate::system::FormatVersion::V16),
         }
     }
-    fn current_time_later(&self) -> Option<&'static str> {
+    fn current_time_later(&self) -> Option<crate::system::FormatVersion> {
         (self.current_time == CurrentTimeSite::Stored && !self.current_time().site)
-            .then_some("ess/22")
+            .then_some(crate::system::FormatVersion::V22)
     }
     fn is_view_filter(&self) -> bool {
         self.current_time == CurrentTimeSite::ViewFilter
@@ -1229,7 +1235,8 @@ fn text_length_refusal<E: TypeEnvironment>(
             Some(path),
             segments.get(position).map(String::as_str),
             format!("`{through}`: the length of a String requires specification format ess/11"),
-        ));
+        )
+        .with_hint(crate::system::FormatVersion::V11.declaration_hint()));
     }
     if let Some(next) = segments.get(position + 1) {
         return Err(error(
@@ -1296,7 +1303,8 @@ fn utf8_bytes_path<E: TypeEnvironment>(
                 "`{through}`: the UTF-8 byte length of a String requires specification format \
                  ess/22"
             ),
-        );
+        )
+        .with_hint(crate::system::FormatVersion::V22.declaration_hint());
     }
     if let Some(next) = segments.get(position + 1) {
         return error(
@@ -2196,16 +2204,19 @@ impl<E: TypeEnvironment> Checker<'_, E> {
         }
         let parent = derived.parent();
         if !self.environment.admits_root_facts() {
-            self.checked.errors.push(error(
-                self.owner,
-                ValidationCode::UnsupportedFormatVersion,
-                Some(parent),
-                None,
-                format!(
-                    "`{derived}`, the UTF-8 byte length of `{parent}`, requires specification \
+            self.checked.errors.push(
+                error(
+                    self.owner,
+                    ValidationCode::UnsupportedFormatVersion,
+                    Some(parent),
+                    None,
+                    format!(
+                        "`{derived}`, the UTF-8 byte length of `{parent}`, requires specification \
                      format ess/22"
-                ),
-            ));
+                    ),
+                )
+                .with_hint(crate::system::FormatVersion::V22.declaration_hint()),
+            );
             return None;
         }
         let resolved = self.read(parent, false)?;
@@ -2247,16 +2258,19 @@ impl<E: TypeEnvironment> Checker<'_, E> {
         use ess_primitives::expr::Kind;
         let parent = derived.parent();
         if !self.environment.admits_calls() {
-            self.checked.errors.push(error(
-                self.owner,
-                ValidationCode::UnsupportedFormatVersion,
-                Some(parent),
-                None,
-                format!(
+            self.checked.errors.push(
+                error(
+                    self.owner,
+                    ValidationCode::UnsupportedFormatVersion,
+                    Some(parent),
+                    None,
+                    format!(
                     "`{expr}` reads `{parent}` through a function, which requires specification \
                      format ess/27; below it, quote the text to compare with it"
                 ),
-            ));
+                )
+                .with_hint(crate::system::FormatVersion::V27.declaration_hint()),
+            );
             return None;
         }
         // A selector's `where:` compares `coalesce(<field>, <literal>)` with a literal from
@@ -2276,9 +2290,10 @@ impl<E: TypeEnvironment> Checker<'_, E> {
                 ),
             );
             if coalescing == Some(false) {
+                let raise = crate::system::FormatVersion::V30.declaration_hint();
                 refused.detail_mut().hint = Some(format!(
-                    "declare `format: ess/30`, where a selector's `where:` compares `{expr}` with \
-                     a literal, an absent `{parent}` reading as the default"
+                    "{raise}, where a selector's `where:` compares `{expr}` with a literal, an \
+                     absent `{parent}` reading as the default"
                 ));
             }
             self.checked.errors.push(refused);
@@ -2648,18 +2663,20 @@ impl<E: TypeEnvironment> Checker<'_, E> {
         let Some(required) = self.environment.current_time_later() else {
             return false;
         };
-        self.checked.errors.push(error(
-            self.owner,
-            ValidationCode::UnsupportedFormatVersion,
-            Some(path),
-            None,
-            format!(
-                "`{expression}` orders the stored Timestamp `{path}` against the current time, \
-                 `{text}`, which a `when_subject:` or `when_related:` predicate requires \
-                 specification format {required} for; write `format: {required}` on the source \
-                 that declares the system"
-            ),
-        ));
+        self.checked.errors.push(
+            error(
+                self.owner,
+                ValidationCode::UnsupportedFormatVersion,
+                Some(path),
+                None,
+                format!(
+                    "`{expression}` orders the stored Timestamp `{path}` against the current \
+                     time, `{text}`, which a `when_subject:` or `when_related:` predicate \
+                     requires specification format {required} for"
+                ),
+            )
+            .with_hint(required.declaration_hint()),
+        );
         true
     }
 
@@ -2713,7 +2730,7 @@ impl<E: TypeEnvironment> Checker<'_, E> {
                     "`{expression}` orders the Timestamp `{path}` against the current time, \
                      `{text}`, which requires specification format ess/16"
                 ),
-                "write `format: ess/16` on the source that declares the system".to_owned(),
+                crate::system::FormatVersion::V16.declaration_hint(),
             ),
             // A view filter below ess/30: no suite sets a clock for a read there, so the bound is
             // the caller's parameters, which keep it in the specification and checked.
@@ -2737,8 +2754,9 @@ impl<E: TypeEnvironment> Checker<'_, E> {
                     "declare the bounds as view parameters and filter on them, such as \
                      `params: [{{name: from, type: Timestamp}}, {{name: to, type: Timestamp}}]` \
                      with `{path} >= param.from` and `{path} < param.to`, so the caller sends the \
-                     window it means; or write `format: ess/30`, from which a view filter reads \
-                     `now` at the instant of the read"
+                     window it means; or {raise}, from which a view filter reads `now` at the \
+                     instant of the read",
+                    raise = crate::system::FormatVersion::V30.declaration_hint()
                 ),
             ),
             // A site that refuses the operand names where it is admitted, whatever else is wrong
@@ -2785,13 +2803,18 @@ impl<E: TypeEnvironment> Checker<'_, E> {
             ),
             _ => return false,
         };
-        self.checked.errors.push(error(
-            self.owner,
-            code,
-            Some(path),
-            None,
-            format!("{message}; {hint}"),
-        ));
+        let refused = if code == ValidationCode::UnsupportedFormatVersion {
+            error(self.owner, code, Some(path), None, message).with_hint(hint)
+        } else {
+            error(
+                self.owner,
+                code,
+                Some(path),
+                None,
+                format!("{message}; {hint}"),
+            )
+        };
+        self.checked.errors.push(refused);
         true
     }
 
@@ -2842,6 +2865,25 @@ impl<E: TypeEnvironment> Checker<'_, E> {
         ));
     }
 
+    /// A refusal of a form below `version`, at `path`, with the hint that raises the format.
+    fn format_refusal(
+        &mut self,
+        path: &FactPath,
+        message: String,
+        version: crate::system::FormatVersion,
+    ) {
+        self.checked.errors.push(
+            error(
+                self.owner,
+                ValidationCode::UnsupportedFormatVersion,
+                Some(path),
+                None,
+                message,
+            )
+            .with_hint(version.declaration_hint()),
+        );
+    }
+
     /// `distinct: {in, as, by}` (`docs/design/expression-family-source22.md`, `distinct`): from
     /// `ess/22`, over a `List` — a `Map` has no order to be distinct in, and a scalar nothing to
     /// walk — whose key, the element or the member `by` names under the binder, resolves to one
@@ -2849,15 +2891,14 @@ impl<E: TypeEnvironment> Checker<'_, E> {
     /// writes it into a source that left it out, and a kind written otherwise is refused.
     fn distinct(&mut self, predicate: &Predicate, distinct: &Distinct) {
         if !self.environment.admits_root_facts() {
-            self.checked.errors.push(error(
-                self.owner,
-                ValidationCode::UnsupportedFormatVersion,
-                Some(&distinct.over),
-                None,
+            self.format_refusal(
+                &distinct.over,
                 format!(
-                    "`{predicate}`: `distinct: {{in, as, by}}` requires specification format ess/22"
+                    "`{predicate}`: `distinct: {{in, as, by}}` requires specification format \
+                     ess/22"
                 ),
-            ));
+                crate::system::FormatVersion::V22,
+            );
             return;
         }
         let Some(target) = self.read(&distinct.over, true) else {
@@ -3052,16 +3093,19 @@ impl<E: TypeEnvironment> Checker<'_, E> {
             return true;
         }
         if !self.environment.admits_root_facts() {
-            self.checked.errors.push(error(
-                self.owner,
-                ValidationCode::UnsupportedFormatVersion,
-                left.fact_path(),
-                None,
-                format!(
-                    "`{predicate}` is tagged to compare instants, written `as: timestamp`, which \
-                     requires specification format ess/22"
-                ),
-            ));
+            self.checked.errors.push(
+                error(
+                    self.owner,
+                    ValidationCode::UnsupportedFormatVersion,
+                    left.fact_path(),
+                    None,
+                    format!(
+                        "`{predicate}` is tagged to compare instants, written `as: timestamp`, \
+                         which requires specification format ess/22"
+                    ),
+                )
+                .with_hint(crate::system::FormatVersion::V22.declaration_hint()),
+            );
             return false;
         }
         for operand in [left, right] {
@@ -3202,7 +3246,7 @@ impl<E: TypeEnvironment> Checker<'_, E> {
         let call = ess_primitives::expr::Expr::parse(text)
             .ok()
             .and_then(Derived::call);
-        let (code, message) = match call {
+        let (code, message, hint) = match call {
             Some(_) if !self.environment.admits_left_calls() => (
                 ValidationCode::UnsupportedFormatVersion,
                 format!(
@@ -3210,6 +3254,7 @@ impl<E: TypeEnvironment> Checker<'_, E> {
                      specification format ess/29; below it, write the structured form \
                      `{{compare: {{left: {{expr: \"{text}\"}}, op: …, right: …}}}}`"
                 ),
+                Some(crate::system::FormatVersion::V29.declaration_hint()),
             ),
             Some(_) => (
                 ValidationCode::UnsupportedConstruct,
@@ -3218,6 +3263,7 @@ impl<E: TypeEnvironment> Checker<'_, E> {
                      admitted only in a command outcome's guards (`when:`, `when_subject:`, \
                      `when_related:`)"
                 ),
+                None,
             ),
             None => (
                 ValidationCode::TypeMismatch,
@@ -3225,11 +3271,14 @@ impl<E: TypeEnvironment> Checker<'_, E> {
                     "`{text} {op} …`: the left side of a comparison is a fact path or a function \
                      of exactly one fact, such as `coalesce(retries, 0)`; `{text}` is neither"
                 ),
+                None,
             ),
         };
-        self.checked
-            .errors
-            .push(error(self.owner, code, None, None, message));
+        let refused = error(self.owner, code, None, None, message);
+        self.checked.errors.push(match hint {
+            Some(hint) => refused.with_hint(hint),
+            None => refused,
+        });
     }
 
     /// One constant offset on the right (`docs/design/expression-family-source22.md`, A2): from
@@ -3238,17 +3287,20 @@ impl<E: TypeEnvironment> Checker<'_, E> {
     /// operators are admitted. `Decimal` and `Binary64` are refused rather than coerced.
     fn offset(&mut self, predicate: &Predicate, left: &Operand, offset: &OffsetOperand) {
         if !self.environment.admits_root_facts() {
-            self.checked.errors.push(error(
-                self.owner,
-                ValidationCode::UnsupportedFormatVersion,
-                Some(&offset.base),
-                None,
-                format!(
-                    "`{predicate}` compares with one constant offset of `{}`, written `{offset}`, \
-                     which requires specification format ess/22",
-                    offset.base
-                ),
-            ));
+            self.checked.errors.push(
+                error(
+                    self.owner,
+                    ValidationCode::UnsupportedFormatVersion,
+                    Some(&offset.base),
+                    None,
+                    format!(
+                        "`{predicate}` compares with one constant offset of `{}`, written \
+                         `{offset}`, which requires specification format ess/22",
+                        offset.base
+                    ),
+                )
+                .with_hint(crate::system::FormatVersion::V22.declaration_hint()),
+            );
             return;
         }
         let Operand::Fact(_) = left else {
@@ -3374,16 +3426,19 @@ impl<E: TypeEnvironment> Checker<'_, E> {
         let name = path.namespace();
         let bound = self.bindings.iter().any(|binding| binding.name == name);
         if !bound && !self.environment.admits_root_facts() {
-            self.checked.errors.push(error(
-                self.owner,
-                ValidationCode::UnsupportedFormatVersion,
-                Some(path),
-                None,
-                format!(
-                    "`{predicate}` compares with the fact `{name}` on its right, written \
-                     `{{fact: {name}}}`, which requires specification format ess/22"
-                ),
-            ));
+            self.checked.errors.push(
+                error(
+                    self.owner,
+                    ValidationCode::UnsupportedFormatVersion,
+                    Some(path),
+                    None,
+                    format!(
+                        "`{predicate}` compares with the fact `{name}` on its right, written \
+                         `{{fact: {name}}}`, which requires specification format ess/22"
+                    ),
+                )
+                .with_hint(crate::system::FormatVersion::V22.declaration_hint()),
+            );
             return false;
         }
         if bound && self.environment.resolves_bare_words() && self.environment.root(name).is_some()
@@ -3547,16 +3602,19 @@ impl<E: TypeEnvironment> Checker<'_, E> {
     ) {
         let written = format!("{{{namespace}: {name}}}");
         if !self.environment.admits_root_facts() {
-            self.checked.errors.push(error(
-                self.owner,
-                ValidationCode::UnsupportedFormatVersion,
-                Some(path),
-                None,
-                format!(
-                    "`{predicate}` compares with `{written}`, which requires specification \
-                     format ess/22"
-                ),
-            ));
+            self.checked.errors.push(
+                error(
+                    self.owner,
+                    ValidationCode::UnsupportedFormatVersion,
+                    Some(path),
+                    None,
+                    format!(
+                        "`{predicate}` compares with `{written}`, which requires specification \
+                         format ess/22"
+                    ),
+                )
+                .with_hint(crate::system::FormatVersion::V22.declaration_hint()),
+            );
             return;
         }
         let rooted = |root: &str| {
@@ -3841,17 +3899,15 @@ impl<E: TypeEnvironment> Checker<'_, E> {
                 // an `Optional` aggregate is present or absent like an `Optional` scalar is.
                 if defined && optional {
                     if !self.environment.admits_aggregate_presence() {
-                        self.checked.errors.push(error(
-                            self.owner,
-                            ValidationCode::UnsupportedFormatVersion,
-                            Some(path),
-                            None,
+                        self.format_refusal(
+                            path,
                             format!(
                                 "`{predicate}`: `defined()` over an Optional aggregate (`{}`) \
                                  requires specification format ess/16",
                                 value.declared
                             ),
-                        ));
+                            crate::system::FormatVersion::V16,
+                        );
                     }
                     return;
                 }
@@ -3911,16 +3967,19 @@ impl<E: TypeEnvironment> Checker<'_, E> {
     fn window(&mut self, predicate: &Predicate, window: &CalendarWindow) {
         let path = window.at.fact_path();
         if !self.environment.admits_root_facts() {
-            self.checked.errors.push(error(
-                self.owner,
-                ValidationCode::UnsupportedFormatVersion,
-                path,
-                None,
-                format!(
-                    "`{predicate}` is a calendar window, which requires specification format \
-                     ess/22; write `format: ess/22` on the source that declares the system"
-                ),
-            ));
+            self.checked.errors.push(
+                error(
+                    self.owner,
+                    ValidationCode::UnsupportedFormatVersion,
+                    path,
+                    None,
+                    format!(
+                        "`{predicate}` is a calendar window, which requires specification format \
+                         ess/22"
+                    ),
+                )
+                .with_hint(crate::system::FormatVersion::V22.declaration_hint()),
+            );
             return;
         }
         if !self.environment.current_time().site {
