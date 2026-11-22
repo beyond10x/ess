@@ -621,6 +621,304 @@ fn leafwise(predicate: &Predicate, leaf: &dyn Fn(&Predicate) -> Truth) -> Truth 
     }
 }
 
+thread_local! {
+    /// How many stored fields of arranged rows were bound to facts on this thread ([`fields_bound`]).
+    static FIELDS_BOUND: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
+
+/// What `run` returns, and how many stored fields of arranged rows were bound to facts on this
+/// thread while it ran.
+pub(super) fn fields_bound<R>(run: impl FnOnce() -> R) -> (R, u64) {
+    let before = FIELDS_BOUND.with(std::cell::Cell::get);
+    let out = run();
+    (out, FIELDS_BOUND.with(std::cell::Cell::get) - before)
+}
+
+/// What of a stored row's binding no predicate changes, bound once for every predicate decided over
+/// the row ([`evaluate_row`]).
+///
+/// A predicate reads one or two of a row's fields, and binding the whole row again for each — every
+/// field, nested lists included — made each decision cost the width of the row, while a search
+/// decides many guards, hints and leaves over every row it meets. What one predicate binds
+/// otherwise is bound beside it ([`RowFacts`]).
+struct BoundRow {
+    /// The value each field holds: a literal the arrangement settled, a `now_offset` read at the
+    /// reference instant the guards are decided at, `null` for an `Optional` field no step wrote.
+    values: BTreeMap<String, Node>,
+    /// The fields holding a row the arrangement made, and which row.
+    instances: Vec<(String, super::InstanceName)>,
+    /// `values`, bound against the entity's declared fields.
+    bound: crate::input::BoundFields,
+    /// The values naming no declared field (a settled identity), which the binding refuses unless a
+    /// predicate leaves them out or binds them at a field of their own.
+    stray: Vec<String>,
+}
+
+impl BoundRow {
+    fn new(
+        ir: &EssIr,
+        entity: &EntityHandle,
+        settled: &BTreeMap<String, super::Determined>,
+        unwritten: &BTreeSet<String>,
+    ) -> Self {
+        let declared = ir.entity(entity);
+        let mut values: BTreeMap<String, Node> = settled
+            .iter()
+            .filter_map(|(name, determined)| match &determined.value {
+                ScenarioValue::NowOffset { seconds } => crate::now_offset::reference()
+                    .plus_seconds(*seconds)
+                    .map(|instant| (name.clone(), Node::Text(instant.to_rfc3339()))),
+                other => other
+                    .as_literal()
+                    .map(|value| (name.clone(), value.clone())),
+            })
+            .collect();
+        // An `Optional` field no step of the arrangement wrote holds nothing (beyond10x/ess#239):
+        // the row as its creator left it, which `{exists: false}` and `not defined()` select.
+        for field in unwritten {
+            if !settled.contains_key(field) {
+                values.insert(field.clone(), Node::Null);
+            }
+        }
+        let instances = settled
+            .iter()
+            .filter_map(|(name, determined)| match &determined.value {
+                ScenarioValue::Instance { instance } => Some((name.clone(), instance.clone())),
+                _ => None,
+            })
+            .collect();
+        let bound = crate::input::bind_fields(ir, &declared.fields, &values);
+        let stray: Vec<String> = values
+            .keys()
+            .filter(|name| !declared.fields.iter().any(|field| &field.name == *name))
+            .cloned()
+            .collect();
+        count_bound(values.len() - stray.len());
+        Self {
+            values,
+            instances,
+            bound,
+            stray,
+        }
+    }
+}
+
+/// Counts `fields` stored fields bound to facts ([`fields_bound`]).
+fn count_bound(fields: usize) {
+    let fields = u64::try_from(fields).unwrap_or(u64::MAX);
+    FIELDS_BOUND.with(|count| count.set(count.get().saturating_add(fields)));
+}
+
+/// The rows bound for one model ([`bound_row`]).
+#[derive(Default)]
+struct RowMemory {
+    /// The handle `made` keeps under [`ANCHOR`] for the model remembered innermost, held so its
+    /// address is no other model's while this memory lives: a model rewritten for a caller reading
+    /// may be built at the address of one dropped before it, and its rows bind otherwise.
+    anchor: Option<std::rc::Rc<RowPicks>>,
+    /// The rows bound so far, by [`row_key`].
+    rows: std::collections::HashMap<u64, Vec<KeptRow>>,
+    /// How many rows `rows` holds.
+    kept: usize,
+}
+
+/// One row [`RowMemory`] keeps: what it was bound from, and the binding.
+struct KeptRow {
+    entity: EntityHandle,
+    settled: Vec<(String, ScenarioValue)>,
+    unwritten: BTreeSet<String>,
+    row: std::rc::Rc<BoundRow>,
+}
+
+impl KeptRow {
+    fn holds(
+        &self,
+        entity: &EntityHandle,
+        settled: &BTreeMap<String, super::Determined>,
+        unwritten: &BTreeSet<String>,
+    ) -> bool {
+        self.entity == *entity
+            && self.settled.len() == settled.len()
+            && self.unwritten == *unwritten
+            && self
+                .settled
+                .iter()
+                .zip(settled)
+                .all(|((name, value), (other, determined))| {
+                    name == other && *value == determined.value
+                })
+    }
+}
+
+thread_local! {
+    /// The rows bound for the model remembered innermost ([`bound_row`]).
+    static ROWS: std::cell::RefCell<RowMemory> = std::cell::RefCell::new(RowMemory::default());
+}
+
+/// The key `made` keeps the handle a [`RowMemory`] is anchored on under. No command's row picks are
+/// kept under it: their keys start with the command's name.
+const ANCHOR: &str = "\u{0}bound rows";
+
+/// At most this many rows are kept for a model; past it the memory starts again.
+const MAX_KEPT_ROWS: usize = 4096;
+
+/// The binding of the row `settled` and `unwritten` describe: kept for the model `made` remembers
+/// innermost, so every predicate decided over the row reads one binding; bound anew for any other.
+fn bound_row(
+    ir: &EssIr,
+    entity: &EntityHandle,
+    settled: &BTreeMap<String, super::Determined>,
+    unwritten: &BTreeSet<String>,
+) -> std::rc::Rc<BoundRow> {
+    let Some(anchor) = super::made::row_picks(ir, ANCHOR.to_owned()) else {
+        return std::rc::Rc::new(BoundRow::new(ir, entity, settled, unwritten));
+    };
+    let key = row_key(entity, settled, unwritten);
+    let known = ROWS.with(|memory| {
+        let mut memory = memory.borrow_mut();
+        if !memory
+            .anchor
+            .as_ref()
+            .is_some_and(|held| std::rc::Rc::ptr_eq(held, &anchor))
+        {
+            *memory = RowMemory {
+                anchor: Some(std::rc::Rc::clone(&anchor)),
+                ..RowMemory::default()
+            };
+            return None;
+        }
+        memory
+            .rows
+            .get(&key)?
+            .iter()
+            .find(|kept| kept.holds(entity, settled, unwritten))
+            .map(|kept| std::rc::Rc::clone(&kept.row))
+    });
+    if let Some(known) = known {
+        return known;
+    }
+    let row = std::rc::Rc::new(BoundRow::new(ir, entity, settled, unwritten));
+    ROWS.with(|memory| {
+        let mut memory = memory.borrow_mut();
+        if memory.kept >= MAX_KEPT_ROWS {
+            memory.rows.clear();
+            memory.kept = 0;
+        }
+        memory.kept += 1;
+        memory.rows.entry(key).or_default().push(KeptRow {
+            entity: entity.clone(),
+            settled: settled
+                .iter()
+                .map(|(name, determined)| (name.clone(), determined.value.clone()))
+                .collect(),
+            unwritten: unwritten.clone(),
+            row: std::rc::Rc::clone(&row),
+        });
+    });
+    row
+}
+
+/// A hash of what a row is bound from. Rows of one hash are told apart by [`KeptRow::holds`], so
+/// two equal values hashing apart cost a second binding, never a wrong one.
+fn row_key(
+    entity: &EntityHandle,
+    settled: &BTreeMap<String, super::Determined>,
+    unwritten: &BTreeSet<String>,
+) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut hasher = std::hash::DefaultHasher::new();
+    entity.hash(&mut hasher);
+    for (name, determined) in settled {
+        name.hash(&mut hasher);
+        std::mem::discriminant(&determined.value).hash(&mut hasher);
+        match &determined.value {
+            ScenarioValue::Literal { value } => hash_node(value, &mut hasher),
+            ScenarioValue::NowOffset { seconds } => seconds.hash(&mut hasher),
+            ScenarioValue::Instance { instance } => instance.hash(&mut hasher),
+            _ => {}
+        }
+    }
+    unwritten.hash(&mut hasher);
+    hasher.finish()
+}
+
+fn hash_node(node: &Node, hasher: &mut impl std::hash::Hasher) {
+    use std::hash::Hash;
+    std::mem::discriminant(node).hash(hasher);
+    match node {
+        Node::Null => {}
+        Node::Bool(value) => value.hash(hasher),
+        Node::Number(number) => number.get().to_bits().hash(hasher),
+        Node::Text(text) => text.hash(hasher),
+        Node::Seq(items) => {
+            items.len().hash(hasher);
+            for item in items {
+                hash_node(item, hasher);
+            }
+        }
+        Node::Map(members) => {
+            members.len().hash(hasher);
+            for (name, value) in members {
+                name.hash(hasher);
+                hash_node(value, hasher);
+            }
+        }
+    }
+}
+
+/// An arranged row as one predicate reads it: the row's binding ([`BoundRow`]), with the fields the
+/// predicate binds otherwise — left out, or bound to a value of their own — read from `overlay`
+/// alone. A field's facts all lie under its name, so whole fields are replaced.
+struct RowFacts<'a> {
+    ir: &'a EssIr,
+    fields: &'a [ess_compiler::ir::ResolvedField],
+    base: &'a ess_primitives::facts::FactStore,
+    own: &'a BTreeMap<String, Option<Node>>,
+    overlay: ess_primitives::facts::FactStore,
+}
+
+impl RowFacts<'_> {
+    fn store(&self, path: &FactPath) -> &ess_primitives::facts::FactStore {
+        if self.own.contains_key(path.namespace()) {
+            &self.overlay
+        } else {
+            self.base
+        }
+    }
+}
+
+impl ess_primitives::facts::FactSource for RowFacts<'_> {
+    fn fact(&self, path: &FactPath) -> Option<ess_primitives::facts::FactValue> {
+        self.store(path).fact(path)
+    }
+
+    fn present(&self, path: &FactPath) -> bool {
+        self.store(path).present(path)
+    }
+
+    fn scales(&self) -> &ess_primitives::facts::Scales {
+        self.base.scales()
+    }
+
+    fn orders_as_instant(&self, path: &FactPath) -> bool {
+        crate::input::declared_as(
+            self.ir,
+            self.fields,
+            path,
+            ess_domain::types::Primitive::Timestamp,
+        )
+    }
+
+    fn orders_text_by_bytes(&self, path: &FactPath) -> bool {
+        !crate::input::declared_as(
+            self.ir,
+            self.fields,
+            path,
+            ess_domain::types::Primitive::Duration,
+        )
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 fn evaluate_row(
     ir: &EssIr,
@@ -632,78 +930,93 @@ fn evaluate_row(
     input: Option<(&ResolvedCommand, &BTreeMap<String, Node>)>,
     as_guard: bool,
 ) -> Truth {
+    evaluate_row_flat(
+        ir, entity, settled, unwritten, held, predicate, input, None, as_guard,
+    )
+}
+
+/// [`evaluate_row`], with `input` already flattened as `flat` where the caller holds it.
+#[allow(clippy::too_many_arguments)]
+fn evaluate_row_flat(
+    ir: &EssIr,
+    entity: &EntityHandle,
+    settled: &BTreeMap<String, super::Determined>,
+    unwritten: &BTreeSet<String>,
+    held: Option<&super::StateName>,
+    predicate: &Predicate,
+    input: Option<(&ResolvedCommand, &BTreeMap<String, Node>)>,
+    flat: Option<&crate::InputFacts<'_>>,
+    as_guard: bool,
+) -> Truth {
     let declared = ir.entity(entity);
-    let mut fields = declared.fields.clone();
+    let row = bound_row(ir, entity, settled, unwritten);
+    // What this predicate binds otherwise than the row: a field left out (`None`), or bound to a
+    // value of its own.
+    let mut own: BTreeMap<String, Option<Node>> = BTreeMap::new();
     // A stored instant the predicate orders against the current time is held only as a
     // `now_offset` its creator was sent, read at the reference instant the guards are decided at
     // (ess/22, A3); a literal one would be decided at the reference and not at a run, so it is
     // left undetermined, as a generated one is.
-    let now_roots: BTreeSet<&str> = crate::now_offset::now_compared(predicate)
+    for (path, _) in crate::now_offset::now_compared(predicate)
         .into_iter()
         .filter(|(_, whole)| *whole)
-        .filter_map(|(path, _)| {
-            declared
-                .fields
-                .iter()
-                .find(|field| field.name == path.namespace())
-                .map(|field| field.name.as_str())
-        })
-        .collect();
-    let mut values: BTreeMap<String, Node> = settled
-        .iter()
-        .filter_map(|(name, determined)| match &determined.value {
-            ScenarioValue::NowOffset { seconds } => crate::now_offset::reference()
-                .plus_seconds(*seconds)
-                .map(|instant| (name.clone(), Node::Text(instant.to_rfc3339()))),
-            ScenarioValue::Literal { value }
-                if now_roots.contains(name.as_str()) && *value != Node::Null =>
-            {
-                None
-            }
-            other => other
-                .as_literal()
-                .map(|value| (name.clone(), value.clone())),
-        })
-        .collect();
+    {
+        let root = path.namespace();
+        if declared.fields.iter().any(|field| field.name == root)
+            && matches!(
+                settled.get(root).map(|determined| &determined.value),
+                Some(ScenarioValue::Literal { value }) if *value != Node::Null
+            )
+        {
+            own.insert(root.to_owned(), None);
+        }
+    }
+    let holds = |own: &BTreeMap<String, Option<Node>>, name: &str| {
+        own.get(name)
+            .map_or_else(|| row.values.contains_key(name), Option::is_some)
+    };
     // A field holding a row the arrangement made — the review a later `updates:` stored — holds a
     // value, whichever identity that row is given: `defined()` is decided on it, and every other
     // reading stays undecided (beyond10x/ess#553).
-    for (name, determined) in settled {
-        if let ScenarioValue::Instance { instance } = &determined.value {
-            if !values.contains_key(name) && only_defined(predicate, name) {
-                if let Some(token) = row_token(ir, &declared.fields, name, instance) {
-                    values.insert(name.clone(), token);
-                }
+    for (name, instance) in &row.instances {
+        if !holds(&own, name) && only_defined(predicate, name) {
+            if let Some(token) = row_token(ir, &declared.fields, name, instance) {
+                own.insert(name.clone(), Some(token));
             }
-        }
-    }
-    // An `Optional` field no step of the arrangement wrote holds nothing (beyond10x/ess#239): the
-    // row as its creator left it, which `{exists: false}` and `not defined()` select.
-    for field in unwritten {
-        if !settled.contains_key(field) {
-            values.insert(field.clone(), Node::Null);
         }
     }
     // A link to the owner compared with an input naming an arranged owner is bound as that
     // owner's token, which the input carries too (beyond10x/ess#193).
     if let Some((command, sent)) = input {
-        values.extend(link_facts(ir, command, entity, settled, predicate, sent));
+        own.extend(
+            link_facts(ir, command, entity, settled, predicate, sent)
+                .into_iter()
+                .map(|(name, token)| (name, Some(token))),
+        );
     }
     for path in predicate.fact_paths() {
         let root = path.namespace();
-        if declared.fields.iter().any(|field| field.name == root) && !values.contains_key(root) {
+        if declared.fields.iter().any(|field| field.name == root) && !holds(&own, root) {
             return Truth::Unknown;
         }
     }
+    let mut fields = std::borrow::Cow::Borrowed(declared.fields.as_slice());
     // The identity, where the steps settled it and the predicate reads it, whole or a member of a
     // struct identity: a row-set selector over the identity (ess/23, beyond10x/ess#429, #463) reads
     // the row's own key. A predicate that does not read it is decided without it: the settled key
     // is not a stored field, and binding it there would leave every such predicate unknown.
-    if identity_selectors(ir) && values.contains_key(&declared.identity.name) {
-        if reads_key(predicate, &declared.identity.name) {
-            fields.push(declared.identity.clone());
+    let identity = &declared.identity.name;
+    if identity_selectors(ir) && holds(&own, identity) {
+        if reads_key(predicate, identity) {
+            fields.to_mut().push(declared.identity.clone());
+            let value = own
+                .get(identity)
+                .cloned()
+                .flatten()
+                .or_else(|| row.values.get(identity).cloned());
+            own.insert(identity.clone(), value);
         } else {
-            values.remove(&declared.identity.name);
+            own.insert(identity.clone(), None);
         }
     }
     // The held state is bound as `state` at the lifecycle's own type, beside the stored fields.
@@ -711,33 +1024,67 @@ fn evaluate_row(
         let Some(held) = held else {
             return Truth::Unknown;
         };
-        fields.push(declared.state_field());
-        values.insert(EntitySpec::STATE.to_owned(), Node::Text(held.to_string()));
+        fields.to_mut().push(declared.state_field());
+        own.insert(
+            EntitySpec::STATE.to_owned(),
+            Some(Node::Text(held.to_string())),
+        );
     }
-    let Ok(store) = crate::input::bind(ir, &fields, &values, crate::input::Completeness::Partial)
-    else {
+    // What binding the row and these values together refuses: a field no fact path names, a value
+    // not of its field's type, a value naming no field. The fields bound otherwise are bound here.
+    if row.bound.unnameable
+        || row.bound.refused.iter().any(|name| !own.contains_key(name))
+        || row.stray.iter().any(|name| !own.contains_key(name))
+    {
         return Truth::Unknown;
+    }
+    let values: BTreeMap<String, Node> = own
+        .iter()
+        .filter_map(|(name, value)| value.clone().map(|value| (name.clone(), value)))
+        .collect();
+    let overlay = if values.is_empty() {
+        ess_primitives::facts::FactStore::new()
+    } else {
+        let bound: Vec<ess_compiler::ir::ResolvedField> = fields
+            .iter()
+            .filter(|field| values.contains_key(&field.name))
+            .cloned()
+            .collect();
+        count_bound(values.len());
+        let Ok(store) =
+            crate::input::bind(ir, &bound, &values, crate::input::Completeness::Partial)
+        else {
+            return Truth::Unknown;
+        };
+        store
     };
-    let row = crate::input::TypedFacts::new(ir, &fields, store);
+    let row = RowFacts {
+        ir,
+        fields: &fields,
+        base: &row.bound.facts,
+        own: &own,
+        overlay,
+    };
     // An input that does not bind whole (an instance identity the scenario names, beyond10x/ess#727)
     // is bound leaf by leaf from `ess/23`, and a leaf it leaves out is undecided: never read as
     // absent, so a guard over it is not taken for false. Below `ess/23` such an input leaves the
     // predicate undecided, so the document keeps the suite it synthesized, refusals included.
     let mut partial = false;
     let input = match input {
-        Some((command, values)) if reads_input(ir, entity, predicate) => {
-            match flatten(ir, command, values) {
-                Ok(facts) => Some(facts),
+        Some((command, values)) if reads_input(ir, entity, predicate) => match flat {
+            Some(facts) => Some(std::borrow::Cow::Borrowed(facts)),
+            None => match flatten(ir, command, values) {
+                Ok(facts) => Some(std::borrow::Cow::Owned(facts)),
                 Err(_) if !identity_selectors(ir) => return Truth::Unknown,
                 Err(_) => match crate::input::flatten_partial(ir, command, values) {
                     Ok(facts) => {
                         partial = true;
-                        Some(facts)
+                        Some(std::borrow::Cow::Owned(facts))
                     }
                     Err(_) => return Truth::Unknown,
                 },
-            }
-        }
+            },
+        },
         _ => None,
     };
     let facts = RowAndInput { row, input };
@@ -1089,13 +1436,13 @@ fn input_path(path: &FactPath) -> Option<FactPath> {
 /// The arranged row, and the input a scenario sends read under `input.`: the one fact source a
 /// stored-field predicate over both is evaluated against, each half at its declared types.
 struct RowAndInput<'a> {
-    row: crate::input::TypedFacts<'a>,
-    input: Option<crate::InputFacts<'a>>,
+    row: RowFacts<'a>,
+    input: Option<std::borrow::Cow<'a, crate::InputFacts<'a>>>,
 }
 
 impl RowAndInput<'_> {
     fn split(&self, path: &FactPath) -> Option<(&crate::InputFacts<'_>, FactPath)> {
-        let input = self.input.as_ref()?;
+        let input = self.input.as_deref()?;
         input_path(path).map(|rest| (input, rest))
     }
 }
@@ -2598,7 +2945,8 @@ fn selects<'a>(
             continue;
         }
         if let Some(predicate) = stored(&branch.condition) {
-            match guard_truth_with(
+            // The input is flattened once above, for every branch.
+            match evaluate_row_flat(
                 ir,
                 entity,
                 &arrangement.settled,
@@ -2606,6 +2954,8 @@ fn selects<'a>(
                 Some(&arrangement.state),
                 &predicate,
                 Some((command, input)),
+                Some(&facts),
+                true,
             ) {
                 Truth::True => {}
                 Truth::False => continue,

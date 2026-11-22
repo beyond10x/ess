@@ -3529,6 +3529,14 @@ pub fn wrapped_runs_unkept<R>(run: impl FnOnce() -> R) -> R {
     run_memo::unkept(run)
 }
 
+/// What `run` returns, and how many stored fields of arranged rows were bound to facts on this
+/// thread while it ran, for the stored-field predicates decided over those rows: the work a test
+/// bounds where a wall-clock bound would depend on the machine. Not part of the suite.
+#[doc(hidden)]
+pub fn stored_fields_bound<R>(run: impl FnOnce() -> R) -> (R, u64) {
+    subject_fact::fields_bound(run)
+}
+
 /// [`synthesize`], with explicitly admitted synthesis seeds (beyond10x/ess#413,
 /// `docs/design/synthesis-seeds.md`).
 ///

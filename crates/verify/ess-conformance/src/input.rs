@@ -313,6 +313,57 @@ pub fn bind(
     }
 }
 
+/// A map of values bound field by field ([`bind_fields`]).
+pub(crate) struct BoundFields {
+    /// The facts of every field holding a value, each under the field's own name.
+    pub(crate) facts: FactStore,
+    /// The fields whose value is not one of the field's declared type.
+    pub(crate) refused: BTreeSet<String>,
+    /// Whether a field's name is one no fact path spells.
+    pub(crate) unnameable: bool,
+}
+
+/// [`bind`] under [`Completeness::Partial`], kept field by field: a field's facts lie under its own
+/// name, so a reader can leave one field out or bind it to another value without binding the rest
+/// again. What [`bind`] refuses is reported, not refused: a field's value not of its type, a field
+/// no fact path names. A value naming no field of `fields` is neither bound nor reported.
+pub(crate) fn bind_fields(
+    ir: &EssIr,
+    fields: &[ResolvedField],
+    values: &BTreeMap<String, Node>,
+) -> BoundFields {
+    let mut facts = FactStore::new();
+    let mut refused = BTreeSet::new();
+    let mut unnameable = false;
+    let mut errors = Vec::new();
+    for field in fields {
+        let Ok(path) = FactPath::new(&field.name) else {
+            unnameable = true;
+            continue;
+        };
+        if let Some(value) = values.get(&field.name) {
+            let before = errors.len();
+            project(
+                ir,
+                &field.type_ref,
+                value,
+                &path,
+                0,
+                &mut facts,
+                &mut errors,
+            );
+            if errors.len() > before {
+                refused.insert(field.name.clone());
+            }
+        }
+    }
+    BoundFields {
+        facts,
+        refused,
+        unnameable,
+    }
+}
+
 /// Project one actually observed value into an existing fact store at its declared path.
 /// Private execution contexts use this for known leaves without passing an incomplete abstract
 /// object through concrete input validation.
