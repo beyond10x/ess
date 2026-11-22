@@ -174,6 +174,19 @@ pub fn format_feature_scans<R>(run: impl FnOnce() -> R) -> (R, u64) {
     (out, FEATURE_SCANS.with(std::cell::Cell::get) - before)
 }
 
+thread_local! {
+    static SERIALIZED: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
+
+/// What `run` returns, and how many times a suite was serialized to JSON on this thread while it
+/// ran ([`ConformanceSuite::to_canonical_json`], [`ConformanceSuite::to_compact_json`]).
+#[doc(hidden)]
+pub fn suites_serialized<R>(run: impl FnOnce() -> R) -> (R, u64) {
+    let before = SERIALIZED.with(std::cell::Cell::get);
+    let out = run();
+    (out, SERIALIZED.with(std::cell::Cell::get) - before)
+}
+
 impl ConformanceSuite {
     /// An empty suite for one specification.
     pub fn new(provenance: SuiteProvenance) -> Self {
@@ -444,6 +457,7 @@ impl ConformanceSuite {
     /// in this function.
     pub fn to_canonical_json(&self) -> Result<String, crate::admission::AdmissionError> {
         crate::admission::suite(self)?;
+        SERIALIZED.with(|count| count.set(count.get() + 1));
         let mut json = serde_json::to_string_pretty(self)
             .unwrap_or_else(|error| panic!("a conformance suite serialises: {error}"));
         json.push('\n');
@@ -457,6 +471,7 @@ impl ConformanceSuite {
     /// do not qualify this presentation. Existing admitted inputs retain their original bytes.
     pub fn to_compact_json(&self) -> Result<String, crate::admission::AdmissionError> {
         crate::admission::suite(self)?;
+        SERIALIZED.with(|count| count.set(count.get() + 1));
         let mut json = serde_json::to_string(self)
             .unwrap_or_else(|error| panic!("a conformance suite serialises: {error}"));
         json.push('\n');

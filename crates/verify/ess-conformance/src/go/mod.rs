@@ -49,18 +49,34 @@ pub const PACKAGE: &str = "essconform";
 pub fn emit(suite: &ConformanceSuite) -> Result<Vec<GoArtifact>, crate::admission::AdmissionError> {
     refuse_unadmitted(suite, "Go")?;
     let json = suite.to_canonical_json()?;
+    Ok(package(suite, json))
+}
+
+/// [`emit_with_model`], with `json` the [`ConformanceSuite::to_canonical_json`] of `suite` its
+/// caller already wrote, so the suite is not serialized a second time.
+pub fn emit_serialized_with_model(
+    suite: &ConformanceSuite,
+    json: &str,
+    ir: &ess_compiler::EssIr,
+) -> Result<Vec<GoArtifact>, crate::admission::AdmissionError> {
+    refuse_unadmitted(suite, "Go")?;
+    Ok(with_model(package(suite, json.to_owned()), ir))
+}
+
+/// The package [`emit`] writes for `suite`, `json` its canonical document.
+fn package(suite: &ConformanceSuite, json: String) -> Vec<GoArtifact> {
     let file = |name: &str, contents: String| GoArtifact {
         path: format!("{PACKAGE}/{name}"),
         contents,
     };
 
-    Ok(vec![
+    vec![
         file("runtime.go", runtime()),
         file("predicate.go", include_str!("predicate.go").to_owned()),
         file("suite.go", SUITE_GO.to_owned()),
         file("suite.json", json),
         file("README.md", readme(suite)),
-    ])
+    ]
 }
 
 /// Emit an immutable suite/5 input with all exact original ancestors.

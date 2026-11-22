@@ -5141,14 +5141,14 @@ fn write_suite(
     let (files, family) = match target {
         SuiteTarget::Ir => unreachable!("answered above"),
         SuiteTarget::Go => (
-            ess_conformance::go::emit_with_model(suite, ir)?
+            ess_conformance::go::emit_serialized_with_model(suite, json, ir)?
                 .into_iter()
                 .map(|file| (file.path, file.contents))
                 .collect::<Vec<_>>(),
             "conformance-go",
         ),
         SuiteTarget::Typescript => (
-            ess_conformance::ts::emit_with_model(suite, ir)?
+            ess_conformance::ts::emit_serialized_with_model(suite, json, ir)?
                 .into_iter()
                 .map(|file| (file.path, file.contents))
                 .collect::<Vec<_>>(),
@@ -5326,21 +5326,30 @@ fn synthesize_suite(
         return Ok(ExitCode::from(1));
     }
     synthesis.suite.select_fresh_format_for(&ir);
-    let json = if compact {
-        synthesis.suite.to_compact_json()?
+    // Serialized once, and only where the bytes are used: written, emitted into a package or
+    // printed. Otherwise the suite is still held to the admission serializing starts with.
+    let json = if out.is_some() || matches!(input.format, Format::Json) {
+        Some(if compact {
+            synthesis.suite.to_compact_json()?
+        } else {
+            synthesis.suite.to_canonical_json()?
+        })
     } else {
-        synthesis.suite.to_canonical_json()?
+        ess_conformance::admission::suite(&synthesis.suite)?;
+        None
     };
 
     // Refusing to write without `--out` is the rule every generating verb here keeps: a verb that
     // scatters a tree over a working directory the first time somebody tries it is a verb nobody
     // tries twice.
-    let written = match &out {
-        None => None,
-        Some(out) => match write_suite(&synthesis.suite, &ir, target, &json, (out, check))? {
-            Some(summary) => Some(summary),
-            None => return Ok(ExitCode::from(1)),
-        },
+    let written = match (&out, &json) {
+        (Some(out), Some(json)) => {
+            match write_suite(&synthesis.suite, &ir, target, json, (out, check))? {
+                Some(summary) => Some(summary),
+                None => return Ok(ExitCode::from(1)),
+            }
+        }
+        _ => None,
     };
 
     match input.format {
@@ -5388,7 +5397,7 @@ fn synthesize_suite(
                 ),
             }
         }
-        Format::Json => print!("{json}"),
+        Format::Json => print!("{}", json.as_deref().unwrap_or_default()),
         Format::Yaml => render(&synthesis.suite, Format::Yaml)?,
     }
     Ok(ExitCode::SUCCESS)
@@ -6862,5 +6871,52 @@ mod tests {
             "ESS dependency boundary was crossed:\n{}",
             violations.join("\n")
         );
+    }
+
+    fn billing() -> SpecPath {
+        SpecPath {
+            path: Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../examples/billing"),
+            format: Format::Text,
+        }
+    }
+
+    /// `conform synthesize` serializes its suite only where the bytes are used, and once: a text
+    /// summary without `--out` writes no JSON (a downstream specification spent 65M instructions
+    /// formatting a document nobody read), and a Go package with `--out` embeds the one document
+    /// the verb wrote rather than serializing the suite again. Unfixed: 1 and 2.
+    #[test]
+    fn conform_synthesize_serializes_its_suite_only_where_it_is_used_and_once() {
+        let (status, serialized) = ess_conformance::scenario::suites_serialized(|| {
+            synthesize_suite(
+                &billing(),
+                SuiteTarget::Ir,
+                None,
+                None,
+                None,
+                ("4", false, false),
+                &[],
+            )
+            .unwrap()
+        });
+        assert_eq!(status, ExitCode::SUCCESS);
+        assert_eq!(serialized, 0, "serializations for a text summary");
+
+        let scratch = TemporaryDirectory::create("ess-synthesize-serialized").unwrap();
+        let out = scratch.path().join("go");
+        let (status, serialized) = ess_conformance::scenario::suites_serialized(|| {
+            synthesize_suite(
+                &billing(),
+                SuiteTarget::Go,
+                Some(&out),
+                None,
+                None,
+                ("4", false, false),
+                &[],
+            )
+            .unwrap()
+        });
+        assert_eq!(status, ExitCode::SUCCESS);
+        assert_eq!(serialized, 1, "serializations for a Go package");
+        assert!(out.join("essconform/suite.json").is_file());
     }
 }
