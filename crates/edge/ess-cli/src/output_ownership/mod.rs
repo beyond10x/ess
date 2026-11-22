@@ -156,6 +156,8 @@ const BLOCKED: &str = "regeneration refuses until the owned files named here are
 /// as a warning, not drift. An owner recorded without a model digest is the other: the command
 /// without `--check` records one ([`same_generation`]). A pending operation refuses, as it does
 /// for [`check`].
+// One shared-lock pass over each selected owner, its record and files, in publish order.
+#[allow(clippy::too_many_lines)]
 pub(crate) fn drift(anchor: &Path, publications: &[Publication]) -> Result<Vec<Drift>> {
     let path = filesystem::absolute(anchor)?;
     let locks = Locks::acquire(&[(path.clone(), Access::Shared)])?;

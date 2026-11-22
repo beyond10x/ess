@@ -5269,6 +5269,8 @@ fn file_authored(
     Ok(kept)
 }
 
+// One dispatch over format, target, scope, scenarios and check, in the order flags are refused.
+#[allow(clippy::too_many_lines)]
 fn synthesize_suite(
     input: &SpecPath,
     target: SuiteTarget,

@@ -483,10 +483,12 @@ pub(super) fn image(
 ) -> Result<(Image, Option<Vec<u8>>)> {
     image_within(root, Path::new(""), relative, mount)
 }
+/// One snapshot of an output path: its image and, for a file, its bytes.
+type Snapshot = (Image, Option<Vec<u8>>);
 /// Snapshots one read-only `--check` pass took, by output path. Nothing is written while a check
 /// holds its shared lock, so a second look at a path in the same pass sees the same bytes.
 #[derive(Default)]
-pub(super) struct Snapshots(std::cell::RefCell<BTreeMap<PathBuf, (Image, Option<Vec<u8>>)>>);
+pub(super) struct Snapshots(std::cell::RefCell<BTreeMap<PathBuf, Snapshot>>);
 /// [`image`], answered from `cache` when this pass already took it. A refusal is not kept.
 pub(super) fn image_cached(
     cache: Option<&Snapshots>,
