@@ -17842,17 +17842,17 @@ fn preconditions(models: &caller::InvocationModels<'_>, suite: &mut ConformanceS
             .iter()
             .position(|(_, creates)| recreates(&scenario.steps, creates))
             .unwrap_or(chunks.len());
-        let prelude: Vec<ScenarioStep> = chunks[..kept]
-            .iter()
-            .flat_map(|(steps, _)| steps.iter().cloned())
-            .collect();
+        let prelude: Vec<ScenarioStep> = crate::fixtures::clone_precondition_steps(
+            chunks[..kept].iter().flat_map(|(steps, _)| steps.iter()),
+        );
         if prelude.is_empty() {
             continue;
         }
-        let mut steps = prelude.clone();
+        let prelude_len = prelude.len();
+        let mut steps = prelude;
         steps.append(&mut scenario.steps);
         scenario.steps = steps;
-        for step in &prelude {
+        for step in &scenario.steps[..prelude_len] {
             match step {
                 ScenarioStep::ExecuteCommand { command, .. } => {
                     scenario.source.insert(command.clone().into());
