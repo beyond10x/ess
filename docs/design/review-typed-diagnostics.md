@@ -275,7 +275,10 @@ added. It rose to 63 with `ess/29`: `narrowed_external_format`, the format gate 
 branch narrowed by `when_subject:`, at the branch's `command <name>.outcomes.<outcome>.when_subject`
 site. No string-located site was added. It rose to 64 with `validate_step_order`, the `ess/29` rule
 holding every pair of steps to declaration order, refused at the branch's own
-`command <name>.outcomes.<outcome>` site. No string-located site was added.
+`command <name>.outcomes.<outcome>` site. No string-located site was added. It rose from 67 to 68
+with `validate_lead_below_present_related_refusal`: an `exists: false` branch over one row declared
+below a present-row refusal over another row, where one request holds both, is refused as
+`conflicting_declaration` at the branch's own `command <name>.outcomes.<outcome>` site.
 
 `types.rs` rose from 16 to 17 string-located sites, and its `types` head from 8 to 9 literals, with
 beyond10x/ess#426 and #448: a YAML boolean written as an enum variant is refused at
@@ -354,7 +357,7 @@ rises from 14 to 15 literals.
 accessor.rs 1 0
 actor.rs 3 4
 binding.rs 36 0
-command.rs 15 67
+command.rs 15 68
 component.rs 16 10
 domain.rs 5 0
 entity.rs 19 6

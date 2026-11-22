@@ -11,27 +11,7 @@ use std::path::{Path, PathBuf};
 
 /// Files a later unit of the same change converts. It only shrinks, and is empty when the change
 /// is complete.
-const PENDING: &[&str] = &[
-    "crates/specify/ess-domain/src/actor.rs",
-    "crates/specify/ess-domain/src/binding/condition.rs",
-    "crates/specify/ess-domain/src/binding/context.rs",
-    "crates/specify/ess-domain/src/binding/refusal.rs",
-    "crates/specify/ess-domain/src/binding/retry.rs",
-    "crates/specify/ess-domain/src/entity.rs",
-    "crates/specify/ess-domain/src/expression.rs",
-    "crates/specify/ess-domain/src/primitive_admission.rs",
-    "crates/specify/ess-domain/src/selection.rs",
-    "crates/specify/ess-domain/src/shorthand.rs",
-    "crates/specify/ess-domain/src/system_issued.rs",
-    "crates/specify/ess-domain/src/types.rs",
-    "crates/specify/ess-domain/src/undeclared_fields.rs",
-    "crates/specify/ess-domain/src/view.rs",
-    "crates/specify/ess-domain/src/view/absent.rs",
-    "crates/specify/ess-domain/src/view/from.rs",
-    "crates/specify/ess-domain/src/view/navigation.rs",
-    "crates/specify/ess-domain/src/view/paging.rs",
-    "crates/verify/ess-conformance/src/authored.rs",
-];
+const PENDING: &[&str] = &[];
 
 /// The two literals that are the instruction itself, each with the file that owns it.
 const EXEMPT: &[(&str, &str)] = &[
@@ -178,7 +158,6 @@ fn every_pending_file_exists() {
 /// source that declares the system, and none spells the instruction in its message. On
 /// 0.97.1 this corpus draws 802 such refusals from 197 files.
 #[test]
-#[ignore = "live once PENDING is empty: the coordinator removes this line at integration"]
 fn every_format_refusal_of_the_fixture_corpus_carries_the_hint() {
     use ess_domain::spec::{RawSpecFile, Specification};
     use ess_domain::system::Source;

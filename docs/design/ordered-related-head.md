@@ -216,7 +216,7 @@ are. A key refusal is reported at `….related.order_by[<i>]`.
 
 | condition | code | message names |
 | --- | --- | --- |
-| the shape below `ess/27` | `unsupported_format_version` | `ess/27`; hint `declare \`format: ess/27\`` |
+| the shape below `ess/27` | `unsupported_format_version` | `ess/27`; hint `write \`format: ess/27\` on the source that declares the system` |
 | `first:` beside `field:` | `conflicting_declaration` | that `field:` reads exactly one row and `first:` the head; write one |
 | `order_by:` with `field:` and no `first:` | `conflicting_declaration` | that an ordered selection is read with `first:` |
 | `first:` with no `order_by:` | `missing_declaration` | that the first of an unordered selection is no particular row |

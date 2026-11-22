@@ -65,7 +65,7 @@ field** take any expression over their row (G3).
 | operation | Integer | Decimal | Binary64 | Timestamp | Duration | String | enum | Boolean | identity | List / Map | today's row is decided at |
 |---|---|---|---|---|---|---|---|---|---|---|---|
 | `==` `!=` | yes | yes | yes | yes | yes | yes | yes | yes | yes | no | `dom/expression.rs:2566-2571`; identity `dom/expression/lexical.rs:990-1050` |
-| `<` `<=` `>` `>=` | yes | yes | yes | yes (instant, against Timestamp or literal) | no | yes (bytes) | I don't know | no | no | no | `dom/expression.rs:2585-2601, 2322-2337`; `prim/predicate.rs:1809-1928` |
+| `<` `<=` `>` `>=` | yes | yes | yes | yes (instant, against Timestamp or literal) | no | yes (bytes) | no (refused) | no | no | no | `dom/expression.rs:2585-2601, 2322-2337`; `prim/predicate.rs:1809-1928` |
 | `in` / `not in` | yes | yes | yes | yes | yes | yes | yes | yes | I don't know | no | `dom/expression.rs:3122-3155` |
 | `+ k` / `- k` constant offset, right side | yes | no | no | yes (`s`/`m`/`h`) | no | no | no | no | no | no | `dom/expression.rs:2544-2556, 2658-2691` |
 | fact `+ - * /` fact | no | no | no | no | no | no | no | no | no | no | `dom/expression.rs:1464-1481, 2700-2734` |

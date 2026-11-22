@@ -5,6 +5,16 @@
 ### Changed
 
 - CI: a pull request whose every changed path lies under `.engineering/`, none under `.engineering/repro/`, builds no test archive and starts none of the 20 test jobs, and `Gate` passes them skipped for that reason only and says so in its log. A `main` push, the nightly run, a `queue/` head, a merge-group run and the release gate never skip, so a run that skipped never stands in for a release's gate (story:the-test-step-meets-the-test-budget).
+- **Breaking.** Validation refuses an `exists: false` branch over one row declared below a `when_related` predicate or row-set refusal over another row, where one request can satisfy both, from `ess/27`: the `exists: false` branch answers first at step 4. Declare it before the refusal, or use `existing_instance:` for an identity that already exists.
+- **Breaking.** Validation refuses `<`, `<=`, `>` and `>=` where an operand is an enum, ordered or not, as `type_mismatch` naming the enum, at every format; list the admitted variants with `in: [...]`.
+- Every refusal that asks for a newer specification format says where the key goes: its hint
+  reads ``write `format: ess/N` on the source that declares the system``, where 79 hints said
+  ``declare `format: ess/N` `` and the file the diagnostic points at is often a domain file
+  that may not carry `format:`. The 43 such refusals that had no hint now carry one, among
+  them `subject-state outcome guards require specification format ess/3`; three current-time
+  and calendar-window refusals carry the instruction as their hint instead of at the end of
+  their message. A domain file that sets `format:`, `version:` or `domains:` without `system:`
+  is told the file that names the system. No format version changes.
 
 ## [0.97.3] — 2026-11-22
 
