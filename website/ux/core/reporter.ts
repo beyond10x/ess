@@ -58,6 +58,8 @@ export interface L2Record {
 
 export interface L3Record {
   viewport: string;
+  // The card's `max_actions`: a pointer run that completes with more actions fails gate 4.
+  limit?: number;
   run: TaskRun;
 }
 
@@ -242,6 +244,9 @@ export function summarize(l2In: L2Record[], l3In: L3Record[], expected: Expected
   const pointer = l3.filter(({ run }) => run.mode !== 'keyboard');
   const keyboard = l3.filter(({ run }) => run.mode === 'keyboard');
   const failed = pointer.filter(({ run }) => !run.completed).map(({ viewport, run }) => `${taskKey(run.task, viewport, run.mode)}: ${run.reason}`);
+  const overLimit = pointer
+    .filter(({ run, limit }) => run.completed && limit !== undefined && run.metrics['screen_only.actions'] > limit)
+    .map(({ viewport, run, limit }) => `${taskKey(run.task, viewport, run.mode)}: ${run.metrics['screen_only.actions']} actions, limit ${limit}`);
   const taskResult = (runs: number, failing: number, missing: number): Result => (runs === 0 && missing === 0 ? 'not run' : failing > 0 || missing > 0 ? 'fail' : 'pass');
   const completionMiss = sum(l3.map(({ run }) => run.completion_miss));
   const falseComplete = sum(l3.map(({ run }) => run.false_complete));
@@ -260,7 +265,8 @@ export function summarize(l2In: L2Record[], l3In: L3Record[], expected: Expected
       completed: pointer.length - failed.length,
       unmeasured: pointerMissing + (l3Cov.undeclared > 0 ? l3Cov.undeclared : 0),
       failed,
-      result: taskResult(pointer.length, failed.length, pointerMissing + l3Cov.undeclared),
+      over_limit: overLimit,
+      result: taskResult(pointer.length, failed.length + overLimit.length, pointerMissing + l3Cov.undeclared),
     },
     gate5_accessibility: {
       pages: gate5Pages,

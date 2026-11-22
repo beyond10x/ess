@@ -12,7 +12,8 @@
   ],
   "truth": {
     "path": "/ess/docs/reference/spec-versions",
-    "target": { "role": "cell", "name": "^ess/31$" }
+    "target": { "role": "cell", "name": "^ess/31$" },
+    "beside": { "role": "cell", "name": "^\\d+\\.\\d+\\.\\d+$" }
   },
   "expect": { "completion": "the ess/31 row of the format table is in view, its release cell beside it", "max_actions": 6 }
 }

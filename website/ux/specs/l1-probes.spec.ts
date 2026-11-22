@@ -83,14 +83,14 @@ test('L1 the screen-only user scrolls to a control below the fold and counts the
   expect(run.metrics['screen_only.actions']).toBe(run.states.reduce((n, s) => n + s.actions, 0));
 });
 
-test('L1 the screen-only user fails on a control nothing visible reveals', async ({ page }) => {
+test('L1 the screen-only user fails on a control nothing on screen reveals', async ({ page }) => {
   await page.route('http://ux.test/**', (route) => route.fulfill({ contentType: 'text/html', body: PAGE_A }));
   const run = await probeUser(page).run(
     { name: 'probe', start: '/a', steps: [{ click: { role: 'link', name: '^Hidden$' } }], truth: { path: '/b' } },
     'http://ux.test',
   );
   expect(run.completed).toBe(false);
-  expect(run.reason).toContain('nothing visible reveals it');
+  expect(run.reason).toContain('nothing on screen reveals it');
 });
 
 test('L1 metric functions', () => {

@@ -218,7 +218,7 @@ export function writeReport(dir: string, m: MeasuredRound, x: ReportExtras): voi
         ['1 no horizontal overflow', RESULT(g.gate1_no_horizontal_overflow), `${pagesOf(g.gate1_no_horizontal_overflow.pages)}; ${g.gate1_no_horizontal_overflow.page_scroll} with page scroll; ${g.gate1_no_horizontal_overflow.spills} spills`],
         ['2 always visible', RESULT(g.gate2_always_visible), `${pagesOf(g.gate2_always_visible.pages)}; ${byElement || 'none'}${measuredOnly ? `; measured only, not gated: ${measuredOnly}` : ''}`],
         ['3 unmissable completion', RESULT(g.gate3_unmissable_completion), `completion_miss ${g.gate3_unmissable_completion.completion_miss}, false_complete ${g.gate3_unmissable_completion.false_complete}`],
-        ['4 screen-only user', RESULT(g.gate4_screen_only), `${g.gate4_screen_only.completed} of ${g.gate4_screen_only.tasks} pointer runs completed`],
+        ['4 screen-only user', RESULT(g.gate4_screen_only), `${g.gate4_screen_only.completed} of ${g.gate4_screen_only.tasks} pointer runs completed, ${g.gate4_screen_only.over_limit.length} over the card's action limit`],
         ['5 accessibility (axe)', RESULT(g.gate5_accessibility), `${g.gate5_accessibility.nodes} serious/critical nodes on ${pagesOf(g.gate5_accessibility.pages)}; ${byRule || 'none'}`],
         ['5 keyboard only', RESULT(g.gate5_keyboard), `${g.gate5_keyboard.completed} of ${g.gate5_keyboard.tasks} keyboard runs completed`],
         ['truncation', RESULT(g.truncation), `${g.truncation.texts} texts on ${pagesOf(g.truncation.pages)}`],
@@ -229,6 +229,7 @@ export function writeReport(dir: string, m: MeasuredRound, x: ReportExtras): voi
     '',
   );
   if (g.gate4_screen_only.failed.length > 0) out.push('Failed task runs:', '', ...g.gate4_screen_only.failed.map((f) => `- ${f}`), '');
+  if (g.gate4_screen_only.over_limit.length > 0) out.push('Task runs over their card\'s limit:', '', ...g.gate4_screen_only.over_limit.map((f) => `- ${f}`), '');
 
   out.push('## Runs', '');
   out.push(`Every run of this round, with its own time against the ${m.budget_seconds} s step budget of the gate lane. A project that ran no test is not listed.`, '');
@@ -335,7 +336,7 @@ export function writeTrend(file: string, m: MeasuredRound): void {
   const g = m.gates;
   const tasks = Object.entries(m.scenarios).filter(([k]) => !k.startsWith('/') && !k.endsWith('/keyboard'));
   const sumOf = (key: string) => tasks.reduce((n, [, v]) => n + (v[key] ?? 0), 0);
-  const over = 'over_limit' in g.gate4_screen_only ? (g.gate4_screen_only as { over_limit: string[] }).over_limit.length : '–';
+  const over = g.gate4_screen_only.over_limit.length;
   const row = `| ${m.round} | ${m.date} | ${m.engine.commit} | ${m.coverage.pages.measured} of ${m.coverage.pages.expected} | ${m.coverage.unmeasured.length} | ${g.gate1_no_horizontal_overflow.pages} | ${g.gate2_always_visible.pages} | ${g.gate5_accessibility.nodes} | ${g.gate5_accessibility.pages} | ${g.gate4_screen_only.completed}/${g.gate4_screen_only.tasks} | ${over} | ${g.gate5_keyboard.completed}/${g.gate5_keyboard.tasks} | ${sumOf('screen_only.actions')} | ${sumOf('screen_only.steers')} |`;
   const existing = existsSync(file) ? readFileSync(file, 'utf8') : TREND_HEAD;
   const lines = existing.split('\n').filter((l) => !l.startsWith(`| ${m.round} |`));

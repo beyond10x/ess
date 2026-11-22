@@ -137,16 +137,12 @@ export const REGIONS: BotConfig['regions'] = [
 export const PRIMARY = ['navbar', 'main'];
 
 export const REVEALERS: Revealer[] = [
-  { inside: '.navbar-sidebar', hiddenWhen: 'nav.navbar:not(.navbar-sidebar--show)', toggle: { role: 'button', name: 'toggle navigation bar' } },
-  { inside: '.navbar-sidebar__items > .navbar-sidebar__item:first-child', hiddenWhen: '.navbar-sidebar__items--show-secondary', toggle: { role: 'button', name: 'back to main menu' } },
-  // Below 997 px the navbar's links and the docs sidebar are not shown in place; the menu renders
-  // them when opened.
-  { inside: 'nav.navbar .navbar__items', hiddenWhen: 'nav.navbar:not(.navbar-sidebar--show)', toggle: { role: 'button', name: 'toggle navigation bar' } },
-  { inside: 'aside.theme-doc-sidebar-container', hiddenWhen: 'nav.navbar:not(.navbar-sidebar--show)', toggle: { role: 'button', name: 'toggle navigation bar' } },
-  {
-    inside: '.menu__list-item--collapsed',
-    toggle: ':scope > .menu__list-item-collapsible > button.menu__caret, :scope > .menu__list-item-collapsible > a.menu__link--sublist-caret, :scope > a.menu__link--sublist-caret',
-  },
+  // Below 997 px the navbar's links, the theme toggle and the docs sidebar are not shown in place;
+  // the menu button opens the menu that holds them. On a doc page the menu opens on the sidebar,
+  // and "Back to main menu" shows the navbar's links. A collapsed sidebar category is not here:
+  // the screen-only user opens one only when the card names it.
+  { hiddenWhen: 'nav.navbar:not(.navbar-sidebar--show)', toggle: { role: 'button', name: 'toggle navigation bar' }, close: { role: 'button', name: 'close navigation bar' } },
+  { hiddenWhen: '.navbar-sidebar__items--show-secondary', toggle: { role: 'button', name: 'back to main menu' } },
 ];
 
 export function botConfig(mode: BotConfig['mode']): BotConfig {

@@ -1,6 +1,6 @@
 // L3 screen-only user (skill § 7): in the `slow` lane every task, in the `gate` lane the two anchor
 // tasks, at both gating viewports with the pointer, and the anchor tasks with the keyboard alone
-// (gate 5). Gate 4: every task completed to its truth.
+// (gate 5). Gate 4: every task completed to its truth within its card's `max_actions`.
 // Gate 3: no completion miss and no false completion. Each run declares itself before it runs, so
 // a run that never ends is counted as unmeasured.
 import { expect, test } from '@playwright/test';
@@ -31,11 +31,15 @@ for (const { scenario, viewport, mode } of runs) {
     await makeHermetic(context, ORIGIN);
     const page = await context.newPage();
     const run = await new ScreenOnlyUser(page, botConfig(mode)).run(scenario, ORIGIN);
-    const record: L3Record = { viewport: viewport.name, run };
+    // The card's limit holds the pointer user; the keyboard user is held to completion (gate 5).
+    const record: L3Record = { viewport: viewport.name, run, ...(mode === 'pointer' ? { limit: scenario.expect.max_actions } : {}) };
     await testInfo.attach('ux-l3', { body: JSON.stringify(record), contentType: 'application/json' });
     await context.close();
     expect(run.reason, `${scenario.name} at ${viewport.name} (${mode}) reaches its truth`).toBe('');
     expect(run.completed).toBe(true);
     expect({ completion_miss: run.completion_miss, false_complete: run.false_complete }).toEqual({ completion_miss: 0, false_complete: 0 });
+    if (mode === 'pointer') {
+      expect(run.metrics['screen_only.actions'], `${scenario.name} at ${viewport.name}: actions within the card's limit`).toBeLessThanOrEqual(scenario.expect.max_actions);
+    }
   });
 }
