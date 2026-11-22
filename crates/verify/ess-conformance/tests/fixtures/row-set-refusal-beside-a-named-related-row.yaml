@@ -1,0 +1,92 @@
+format: ess/37
+system: shop
+version: v1
+domain: shop.store
+summary: A ticket is pinned only to a shelf that exists, in rising order; a shelf is cleared only while no ticket is pinned to it.
+types:
+  - {name: shop.store.ShelfId, kind: newtype, of: String}
+  - {name: shop.store.TicketId, kind: newtype, of: String}
+entities:
+  - name: shop.store.Shelf
+    identity: {name: shelf_id, type: shop.store.ShelfId}
+    fields:
+      - {name: title, type: String}
+    lifecycle: {initial: Standing, states: [Standing], terminal: [Standing]}
+  - name: shop.store.Ticket
+    identity: {name: ticket_id, type: shop.store.TicketId}
+    fields:
+      - {name: shelf_id, type: shop.store.ShelfId}
+      - {name: seq, type: Integer}
+    lifecycle: {initial: Pinned, states: [Pinned], terminal: [Pinned]}
+errors:
+  - {name: shop.store.ShelfExists, summary: A shelf already carries this identity., fields: []}
+  - {name: shop.store.NoSuchShelf, summary: No shelf carries this identity., fields: []}
+  - {name: shop.store.OutOfOrder, summary: A ticket on the shelf has this sequence number or a later one., fields: []}
+  - {name: shop.store.TicketsPinned, summary: A ticket is still pinned to the shelf., fields: []}
+events:
+  - name: shop.store.ShelfBuilt
+    fields: [{name: shelf_id, type: shop.store.ShelfId}]
+  - name: shop.store.TicketPinned
+    fields: [{name: ticket_id, type: shop.store.TicketId}]
+actors:
+  - name: shop.store.Clerk
+    may: [shop.store.BuildShelf, shop.store.PinTicket, shop.store.ClearShelf]
+commands:
+  - name: shop.store.BuildShelf
+    input:
+      - {name: shelf_id, type: shop.store.ShelfId}
+      - {name: title, type: String}
+    outcomes:
+      - {name: shelf-exists, existing_instance: true, error: shop.store.ShelfExists}
+      - name: built
+        creates: shop.store.Shelf
+        instance: shelf_id
+        emits: [shop.store.ShelfBuilt]
+        payload: {shop.store.ShelfBuilt: {shelf_id: input.shelf_id}}
+        sets: {title: input.title}
+  - name: shop.store.PinTicket
+    input:
+      - {name: ticket_id, type: shop.store.TicketId}
+      - {name: shelf_id, type: shop.store.ShelfId}
+      - {name: seq, type: Integer}
+    outcomes:
+      - name: no-shelf
+        when_related: {via: input.shelf_id, exists: false}
+        error: shop.store.NoSuchShelf
+      - name: out-of-order
+        when_related:
+          entity: shop.store.Ticket
+          where: {all: [shelf_id == input.shelf_id, seq >= input.seq]}
+          exists: true
+        error: shop.store.OutOfOrder
+      - name: pinned
+        creates: shop.store.Ticket
+        instance: ticket_id
+        emits: [shop.store.TicketPinned]
+        payload: {shop.store.TicketPinned: {ticket_id: input.ticket_id}}
+        sets: {shelf_id: input.shelf_id, seq: input.seq}
+  - name: shop.store.ClearShelf
+    input:
+      - {name: shelf_id, type: shop.store.ShelfId}
+    outcomes:
+      - name: tickets-pinned
+        when_related:
+          entity: shop.store.Ticket
+          where: "shelf_id == input.shelf_id"
+          exists: true
+        error: shop.store.TicketsPinned
+      - {name: cleared, accepts: nothing}
+views:
+  - name: shop.store.Tickets
+    source: shop.store.Ticket
+    consistency: read_your_writes
+    fields:
+      - {name: ticket_id, type: shop.store.TicketId}
+      - {name: shelf_id, type: shop.store.ShelfId}
+      - {name: seq, type: Integer}
+  - name: shop.store.Shelves
+    source: shop.store.Shelf
+    consistency: read_your_writes
+    fields:
+      - {name: shelf_id, type: shop.store.ShelfId}
+      - {name: state, type: shop.store.Shelf.State}

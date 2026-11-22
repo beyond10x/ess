@@ -1,4 +1,4 @@
-#	models=485	lines=666
+#	models=487	lines=668
 crates/edge/ess-cli/tests/fixtures/adversary-shorthand-binary64/spec.yaml	components=1
 crates/edge/ess-cli/tests/fixtures/adversary-shorthand-binary64/spec.yaml	tracker-service	tracker.ops.Sample	definition=6994335e6a9e9266f5f0ce33a640350814ba12cce3c4ce7439fe61643a3a9cdb:5797
 crates/edge/ess-cli/tests/fixtures/adversary-shorthand-binary64/spec.yaml	tracker-service	tracker.ops.Sample	create	recorded
@@ -360,6 +360,8 @@ crates/verify/ess-conformance/tests/fixtures/restart.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/retained-commit.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/retained-replay.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/row-set-creator-predicate-guard.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/row-set-refusal-beside-a-named-related-row.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/row-set-refusal-beside-the-addressed-related-row.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/row-set-related-copy-identity.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/row-set-related-copy.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/row-set-struct-identity.yaml	components=1

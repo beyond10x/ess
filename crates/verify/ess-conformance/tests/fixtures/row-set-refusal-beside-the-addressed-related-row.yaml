@@ -1,0 +1,100 @@
+format: ess/37
+system: shop
+version: v1
+domain: shop.store
+summary: A ticket is pinned only to an open shelf that exists; a shelf is closed only while no ticket is pinned to it.
+types:
+  - {name: shop.store.ShelfId, kind: newtype, of: String}
+  - {name: shop.store.TicketId, kind: newtype, of: Uuid}
+entities:
+  - name: shop.store.Shelf
+    identity: {name: shelf_id, type: shop.store.ShelfId}
+    fields:
+      - {name: title, type: String}
+    lifecycle:
+      initial: Open
+      states: [Open, Closed]
+      terminal: [Closed]
+      transitions:
+        - {name: close, from: [Open], to: Closed}
+  - name: shop.store.Ticket
+    identity: {name: ticket_id, type: shop.store.TicketId}
+    fields:
+      - {name: shelf_id, type: shop.store.ShelfId}
+      - {name: note, type: String}
+    lifecycle: {initial: Pinned, states: [Pinned], terminal: [Pinned]}
+errors:
+  - {name: shop.store.NoSuchShelf, summary: No shelf carries this identity., fields: []}
+  - {name: shop.store.ShelfClosed, summary: The shelf is closed., fields: []}
+  - {name: shop.store.TicketsPinned, summary: A ticket is still pinned to the shelf., fields: []}
+  - {name: shop.store.ShelfStateConflict, summary: The shelf is not open., fields: []}
+events:
+  - name: shop.store.ShelfOpened
+    fields: [{name: shelf_id, type: shop.store.ShelfId}]
+  - name: shop.store.TicketPinned
+    fields: [{name: ticket_id, type: shop.store.TicketId}]
+  - name: shop.store.ShelfClosedEvent
+    fields: [{name: shelf_id, type: shop.store.ShelfId}]
+actors:
+  - name: shop.store.Clerk
+    may: [shop.store.OpenShelf, shop.store.PinTicket, shop.store.CloseShelf]
+commands:
+  - name: shop.store.OpenShelf
+    input:
+      - {name: shelf_id, type: shop.store.ShelfId}
+      - {name: title, type: String}
+    outcomes:
+      - name: opened
+        creates: shop.store.Shelf
+        instance: shelf_id
+        emits: [shop.store.ShelfOpened]
+        payload: {shop.store.ShelfOpened: {shelf_id: input.shelf_id}}
+        sets: {title: input.title}
+  - name: shop.store.PinTicket
+    input:
+      - {name: shelf_id, type: shop.store.ShelfId}
+      - {name: note, type: String}
+    outcomes:
+      - name: no-shelf
+        when_related: {via: input.shelf_id, exists: false}
+        error: shop.store.NoSuchShelf
+      - name: shelf-closed
+        when_related: {via: input.shelf_id, predicate: state == Closed}
+        error: shop.store.ShelfClosed
+      - name: pinned
+        creates: shop.store.Ticket
+        instance: ticket_id
+        emits: [shop.store.TicketPinned]
+        payload: {shop.store.TicketPinned: {ticket_id: {generated: true}}}
+        sets: {shelf_id: input.shelf_id, note: input.note}
+  - name: shop.store.CloseShelf
+    input:
+      - {name: shelf_id, type: shop.store.ShelfId}
+    outcomes:
+      - {name: no-shelf, unknown_instance: true, error: shop.store.NoSuchShelf}
+      - name: tickets-pinned
+        when_related:
+          entity: shop.store.Ticket
+          where: "shelf_id == input.shelf_id"
+          exists: true
+        error: shop.store.TicketsPinned
+      - name: closed
+        moves: shop.store.Shelf.close
+        instance: shelf_id
+        emits: [shop.store.ShelfClosedEvent]
+        payload: {shop.store.ShelfClosedEvent: {shelf_id: input.shelf_id}}
+      - {name: wrong-state, wrong_state: true, error: shop.store.ShelfStateConflict}
+views:
+  - name: shop.store.Tickets
+    source: shop.store.Ticket
+    consistency: read_your_writes
+    fields:
+      - {name: ticket_id, type: shop.store.TicketId}
+      - {name: shelf_id, type: shop.store.ShelfId}
+      - {name: note, type: String}
+  - name: shop.store.Shelves
+    source: shop.store.Shelf
+    consistency: read_your_writes
+    fields:
+      - {name: shelf_id, type: shop.store.ShelfId}
+      - {name: state, type: shop.store.Shelf.State}
