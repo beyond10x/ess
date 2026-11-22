@@ -30,7 +30,7 @@ scope:
   path: crates/generate/ess-synth/tests
 - confidence: inferred
   path: crates/verify/ess-conformance/tests
-revision: 11
+revision: 12
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T21:10:59Z", actor: "human:timo", revision: 5}
 - {from: "proposed", to: "active", at: "2026-11-21T21:11:00Z", actor: "human:timo", revision: 6}
@@ -388,3 +388,38 @@ No epic covers CI or the gate; like its siblings above, this story serves `visio
 - inferred: the test targets of step 4 under `crates/verify/ess-conformance/tests/`,
   `crates/generate/ess-synth/tests/` and `crates/edge/ess-cli/tests/`
 - inferred: `AGENTS.md` § Gate
+
+## Tests found over the bound after this story was written
+
+Eight test targets measured over the 60 s bound, or over the 2-minute step, on the shared
+development host (debug builds, one loaded machine, target or test times as the running session
+printed them; the logs are not in the tree). Every name below exists at `16f2fc88c2`. The table in
+Need lists two of them (`synthesis_suite_bytes_table` at 30 s and `tutorial_page` at 41 s) with
+times that are now out of date; the other six are not listed anywhere in this story.
+
+| target | test | seconds seen | in this story | how it spends the time (read in the source) |
+|---|---|---|---|---|
+| `ess-conformance` `synthesis_suite_bytes_table` | the target (2 tests) | 60 to 811 by host load | listed at 30 s | `synthesize(` at line 213, one suite per row of the table |
+| `ess-conformance` `enum_presence_guard` | `no_corpus_suite_requires_a_branch_the_precedence_takes_elsewhere` (line 709) | about 716 | no | `synthesize(` at line 167, called by the test |
+| `ess-conformance` `adversary_u22_pass1` | one of 8 tests | about 800 | no | `synthesize(` at line 338 |
+| `ess-conformance` `binding_trigger_row_predicate` | `a_target_that_retries_not_eligible_fails_the_refusal` (line 305) | about 105 | no | `synthesize(` at line 223 |
+| `ess-conformance` `adversary_ess0700a_identity_beside_row_set_2` | one of 11 tests, not named by the session | one test over 60 | no | `synthesize(` at line 497 |
+| `ess-synth` `generated_view_queries` | the target, seen twice | about 257 | no | spawns `cargo` (line 279), `go` (line 1095) and a built binary (line 1170), and calls `synthesize(` (line 414) |
+| `ess-cli` `tutorial_page` | 8 tests | 363 | listed at 41 s | `ess`, `go` and `npm` per test |
+| `ess-xtask` unit binary | the tests filtered to `docs::` | 216.73 | no | not read: `docs.rs` has 64 functions and no process spawn, so the time is in the tests that call into it or in the link |
+
+A file named `adversary_ess0700a_identity_beside_row_set_2.rs` exists in two crates,
+`crates/verify/ess-conformance/tests/` (11 tests, calls `synthesize(`) and
+`crates/specify/ess-domain/tests/`. The report did not say which crate; the first is the likely
+one and has to be confirmed with the test's own time before the story names it.
+
+Six of the eight are the mistake this story exists for: a suite synthesized inside the test, so
+its cost is paid once per test. The step 1 list (ten slowest tests, per target) replaces the
+numbers above with CI's, and the acceptance below holds each of them:
+
+- No test named in this section runs over 60 s in the test step, and the `ess-xtask` unit binary
+  runs `docs::` within the step's 120 s. A byte-pin target (`synthesis_suite_bytes_table`) that
+  cannot is in the `slow` lane of design step 5, with its sources digest, and the test step reads
+  the committed file instead.
+- `generated_view_queries` builds with cargo once, in a Taskfile task, and the test reads its path
+  (the accepted form named in Need); `no_test_builds.rs` covers the file it names.

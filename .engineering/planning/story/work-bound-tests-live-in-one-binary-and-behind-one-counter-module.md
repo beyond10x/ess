@@ -36,6 +36,8 @@ scope:
 - confidence: cited
   path: crates/verify/ess-conformance/src/synthesize/run_memo.rs
 - confidence: cited
+  path: crates/verify/ess-conformance/src/witness.rs
+- confidence: cited
   path: crates/verify/ess-conformance/src/witness_memo.rs
 - confidence: cited
   path: crates/verify/ess-conformance/tests/caller_readings_made_once_work.rs
@@ -63,7 +65,7 @@ scope:
   path: crates/verify/ess-conformance/tests/stored_rows_decided_once_work.rs
 - confidence: cited
   path: crates/verify/ess-conformance/tests/witness_unread_choices_work.rs
-revision: 28
+revision: 30
 ---
 ## Outcome
 
@@ -188,3 +190,51 @@ budget measurement). They belong to `story:the-test-step-meets-the-test-budget`,
 
 `related_guard_ranked_candidates_work` at 139 s is the one work-bound test over the 60 s bound; it
 is moved as it is and keeps its place in the budget story's list.
+
+## Findings of the review of the in-place entry change
+
+The review read commit `06ccef8771` (`perf(conformance): a copied list element is built without
+copying the input builder`; it touches `src/witness.rs` and `tests/witness_unread_choices_work.rs`)
+against the tree at `16f2fc88c2`. It found nothing that blocks a release: 26 fields and 18 write
+sites in 16 collections are all journalled. Four findings are about the work-bound test and its
+counter, which is why they belong here. Lines are at `16f2fc88c2`.
+
+1. **The work bound counts one function, not the property it names.**
+   `tests/witness_unread_choices_work.rs:182` asserts that `builders_cloned` is 0, and the counter
+   (`src/witness.rs:7212`, `Builder::copy`) only counts calls of `copy()`. `Builder::entry`
+   (`src/witness.rs:7392`) could take `let mut probe = self.clone()` again, as `entry_on_a_copy`
+   still does (`src/witness.rs:7461`), and the count would stay 0 and the test green. The test
+   holds "nobody calls `copy()` below `entry`", not "no whole-builder copy below `entry`". Fix:
+   count in `Clone for Builder` instead of in `copy()` (or make `copy()` the only way to clone and
+   derive no `Clone`), and add the mutation to the acceptance of this story: put the `clone` back
+   in `entry`, and the test fails.
+2. **In a debug build the counter counts the reference run's copies too.** At the outermost
+   attempt (`src/witness.rs:7412-7419`) a debug build runs `entry_on_a_copy` as a reference, and
+   that run reaches `keyed` (`src/witness.rs:7558`, `let mut further = self.copy()`) a second
+   time, so `builders_cloned` is higher in debug than in release for the same input. The test
+   does not reach it (its model has no `distinct` guard), so it is green in both, and a bound
+   written for a model that does reach it is not one number. Fix: the reference run does not
+   count (a switch read in `copy()`, set by the same `REFERENCE` cell), or the test pins the
+   release count and the debug count separately.
+3. **A public item of the crate exists only for a test.** `pub fn builders_cloned`
+   (`src/witness.rs:2942`) is added beside `inputs_built` (`src/witness.rs:2954`), the same shape
+   as the 42 `#[doc(hidden)]` items this story counts, and neither is `#[doc(hidden)]`. Both move
+   into `src/test_hooks.rs` behind the `test-hooks` feature of the design above, and the
+   `ess-xtask` check of the acceptance covers `witness.rs` too (it is not in the scope below and
+   is added).
+4. **The debug reference run slows the byte-pin tests.** Every debug test that synthesizes now
+   builds a copy-based reference at the outermost entry. The change's own notes measure
+   `synthesis_suite_bytes_table` 166 s before and 205 s after (it was over the 60 s bound
+   already), `external_beside_held_guard` 57.3 s and `adversary_related_values_all_bytes`
+   55.5 s, the last two within 10 % of the bound. Fix: the reference runs under a test-only
+   switch (`cfg(feature = "test-hooks")` of the design above, or a `debug_assertions` check the
+   byte-pin targets do not enable), and the two targets are timed before and after in the pull
+   request; their times belong to `story:the-test-step-meets-the-test-budget`, whose bound they
+   are near.
+
+Acceptance added: the mutation of finding 1 fails the work test; the debug and release counts of
+finding 2 are equal on a model with a `distinct` guard; `builders_cloned` and `inputs_built` are
+not in the crate's public API without the feature; `external_beside_held_guard` and
+`adversary_related_values_all_bytes` each run in under 50 s.
+
+Scope added: `crates/verify/ess-conformance/src/witness.rs` (cited).
