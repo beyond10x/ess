@@ -21,10 +21,15 @@
 //! per search whose goal differs — which made a model of many such commands spend most of its
 //! synthesis deciding the same guards over the same rows.
 //!
+//! The branch a command selects on a related row for an input is kept the same way, under a key
+//! of its own (`related_guard::row_picks`): every branch of a command guarding on that row searches
+//! the same rows with the same inputs and differs only in the branch it accepts, so a command of
+//! many `when_related:` refusals decided the same guards once per refusal.
+//!
 //! Answering from memory does not change what a search decides: the beside searches a computation
 //! cut ([`super::related_guard::cuts`]) count as cut again. The work counters a test reads
-//! (`directed_steps`, `row_set_arrangements_tried`, `branch_selections_tried`) count only the
-//! work done.
+//! (`directed_steps`, `row_set_arrangements_tried`, `branch_selections_tried`,
+//! `related_selections_tried`) count only the work done.
 use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::rc::Rc;
@@ -90,6 +95,25 @@ pub(super) fn picks<R>(run: impl FnOnce() -> R) -> (R, u64) {
 /// Counts one row and input checked for the branch they select ([`picks`]).
 pub(super) fn picking() {
     PICKS.with(|count| count.set(count.get() + 1));
+}
+
+thread_local! {
+    /// How many times a related row and an input were checked on this thread for the branch they
+    /// select.
+    static RELATED_PICKS: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
+
+/// What `run` returns, and how many times a related row and an input were checked on this thread
+/// for the branch they select while it ran, rather than answered from memory.
+pub(super) fn related_picks<R>(run: impl FnOnce() -> R) -> (R, u64) {
+    let before = RELATED_PICKS.with(std::cell::Cell::get);
+    let out = run();
+    (out, RELATED_PICKS.with(std::cell::Cell::get) - before)
+}
+
+/// Counts one related row and input checked for the branch they select ([`related_picks`]).
+pub(super) fn related_picking() {
+    RELATED_PICKS.with(|count| count.set(count.get() + 1));
 }
 
 /// `make`'s rows, counted as made ([`counting`]).

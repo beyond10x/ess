@@ -393,22 +393,60 @@ fn leaves_external(
 
 /// Whether the present row `row`, crossed with `input`, leaves `outcome` to answer: the branch
 /// [`selects`] picks there — or, for an external branch, which no row selects, the one no sibling
-/// claims ([`leaves_external`]).
+/// claims ([`leaves_external`]). The pick is read from `picks` where the row's picks are kept
+/// ([`row_picks`]).
 fn chooses(
     ir: &EssIr,
     command: &ResolvedCommand,
     outcome: &ResolvedOutcome,
     entity: &EntityHandle,
-    row: &Arrangement,
+    (row, picks): (&Arrangement, Option<&subject_fact::RowPicks>),
     input: &BTreeMap<String, Node>,
 ) -> bool {
     if is_external(outcome) {
         return leaves_external(ir, command, outcome, entity, row, input).unwrap_or(false);
     }
-    selects(ir, command, entity, Some(row), input)
-        .ok()
-        .flatten()
-        .is_some_and(|branch| branch.name == outcome.name)
+    let decide = || {
+        super::made::related_picking();
+        selects(ir, command, entity, Some(row), input)
+            .map(|branch| branch.map(|branch| branch.name.clone()))
+    };
+    match picks {
+        Some(picks) => picks.answer(input, decide),
+        None => decide(),
+    }
+    .ok()
+    .flatten()
+    .is_some_and(|name| name == outcome.name)
+}
+
+/// The branches `command` selects on `row` for each input asked so far, kept for the model
+/// remembered innermost ([`super::made::row_picks`]) under a key of their own; `None` for a
+/// command the model does not declare as such (one projected onto one row), or a model not
+/// remembered.
+///
+/// [`selects`] reads only the model, the command, the row's state, stored fields and unwritten
+/// fields, and the input. Every branch of a command guarding on one related row searches the same
+/// rows with the same inputs and differs only in the branch it accepts, so a command of many
+/// `when_related:` refusals decided the same guards once per refusal.
+fn row_picks(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    entity: &EntityHandle,
+    row: &Arrangement,
+) -> Option<std::rc::Rc<subject_fact::RowPicks>> {
+    let declared = ir
+        .commands()
+        .get(&command.name)
+        .is_some_and(|declared| std::ptr::eq(declared, command));
+    if !declared || !super::made::remembers(ir) {
+        return None;
+    }
+    let key = format!(
+        "\u{0}related|{}|{entity:?}|{:?}|{:?}|{:?}",
+        command.name, row.state, row.settled, row.unwritten
+    );
+    super::made::row_picks(ir, key)
 }
 
 /// The refusal for a family that has no related row to send the command for.
@@ -3126,9 +3164,19 @@ fn on_held(
     let (via, entity) = read(driver.command).ok_or_else(unarranged)?;
     let inputs = held_inputs(ir, driver.command, entity, row, chosen, distinction)?;
     let tried = inputs.len();
+    let picks = row_picks(ir, driver.command, entity, row);
     let input = inputs
         .into_iter()
-        .find(|input| chooses(ir, driver.command, driver.outcome, entity, row, input))
+        .find(|input| {
+            chooses(
+                ir,
+                driver.command,
+                driver.outcome,
+                entity,
+                (row, picks.as_deref()),
+                input,
+            )
+        })
         .ok_or_else(|| RefusalCause::GuardUnsatisfiable {
             predicate: format!(
                 "the row of `{}` the arrangement is advancing, named by `input.{}` of `{}`, does \
@@ -5272,12 +5320,20 @@ fn with_row_where(
         if !admits(node) {
             return Ok(None);
         }
+        let picks = row_picks(ir, command, entity, node);
         // The input as it is sent: every field naming a row whose identity a guard reads holds
         // that row's identity — this row's, and each row's beside it (beyond10x/ess#693).
         let decides = |input: &BTreeMap<String, Node>| {
             meets(node, input)
                 && around.is_none_or(|around| around.admits(ir, input))
-                && chooses(ir, command, outcome, entity, node, input)
+                && chooses(
+                    ir,
+                    command,
+                    outcome,
+                    entity,
+                    (node, picks.as_deref()),
+                    input,
+                )
                 && (!strict
                     || subject_fact::witnesses_elements(
                         ir,
