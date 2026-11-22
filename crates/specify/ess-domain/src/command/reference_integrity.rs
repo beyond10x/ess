@@ -56,8 +56,9 @@ pub(crate) fn lift(
                 (Ok(()), false) => {
                     let hint = error.hint.take().unwrap_or_default();
                     error.hint = Some(format!(
-                        "{hint}, or declare `format: ess/30`, which needs none here: every \
-                         write of the reference checks the row, and no command deletes one"
+                        "{hint}, or {raise}, which needs none here: every \
+                         write of the reference checks the row, and no command deletes one",
+                        raise = FormatVersion::V30.declaration_hint()
                     ));
                 }
                 (Err(defeats), true) => {

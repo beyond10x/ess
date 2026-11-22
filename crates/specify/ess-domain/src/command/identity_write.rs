@@ -96,7 +96,8 @@ fn refusal(
                 ),
             )
             .with_hint(format!(
-                "declare `format: ess/23` to rename the record, or drop `{identity}` from `sets:`"
+                "{raise} to rename the record, or drop `{identity}` from `sets:`",
+                raise = FormatVersion::V23.declaration_hint()
             )),
         );
     }

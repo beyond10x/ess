@@ -101,7 +101,7 @@ pub(super) fn check(
                 "a test over the rows of an entity — `exists: {in: {entity: <Entity>}, as, that}` \
                  in a selector — requires specification format ess/27",
             )
-            .with_hint("declare `format: ess/27`"),
+            .with_hint(FormatVersion::V27.declaration_hint()),
         );
         return errors;
     }

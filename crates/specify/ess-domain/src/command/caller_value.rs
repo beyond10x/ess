@@ -297,7 +297,7 @@ pub(super) fn check_source(
                 ValidationCode::UnsupportedFormatVersion,
                 "a `{caller: …}` source requires specification format ess/16",
             )
-            .with_hint("write `format: ess/16` on the source that declares the system"),
+            .with_hint(FormatVersion::V16.declaration_hint()),
         );
         return;
     }
@@ -430,7 +430,7 @@ fn check_guard(
                 ValidationCode::UnsupportedFormatVersion,
                 "a `caller.` operand requires specification format ess/16",
             )
-            .with_hint("write `format: ess/16` on the source that declares the system"),
+            .with_hint(FormatVersion::V16.declaration_hint()),
         );
         return;
     }

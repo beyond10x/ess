@@ -571,6 +571,21 @@ impl FormatVersion {
         self.0
     }
 
+    /// The repair of a refusal that needs this format, ``write `format: ess/N` on the source
+    /// that declares the system``.
+    ///
+    /// The `format:` key belongs to the one source that carries `system:`. A hint that names
+    /// only the version sends a writer to the file the diagnostic points at, which is the
+    /// construct's file and not the system's
+    /// (`story:every-format-version-hint-names-the-source-that-declares-the-system`). Every
+    /// hint that asks for a specification format is built here, or with
+    /// [`crate::declaration_hint!`] where a `&'static str` is needed;
+    /// `tests/format_hint_source_scan.rs` refuses any other literal that spells one.
+    #[must_use]
+    pub fn declaration_hint(self) -> String {
+        format!("write `format: {self}` on the source that declares the system")
+    }
+
     /// `true` when this build implements it.
     pub fn is_supported(self) -> bool {
         is_supported_format(self)
@@ -607,6 +622,20 @@ impl fmt::Display for FormatVersion {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}{}", Self::PREFIX, self.0)
     }
+}
+
+/// [`crate::system::FormatVersion::declaration_hint`] for a format written as a literal, as a
+/// `&'static str`, for a hint that must be a constant: `declaration_hint!(31)` is
+/// ``"write `format: ess/31` on the source that declares the system"``.
+#[macro_export]
+macro_rules! declaration_hint {
+    ($major:literal) => {
+        concat!(
+            "write `format: ess/",
+            $major,
+            "` on the source that declares the system"
+        )
+    };
 }
 
 impl FromStr for FormatVersion {
@@ -1814,6 +1843,22 @@ domains:
         assert!(!FormatVersion::parse("ess/99")
             .expect("parses")
             .is_supported());
+    }
+
+    #[test]
+    fn a_format_hint_names_the_source_that_declares_the_system() {
+        assert_eq!(
+            FormatVersion::V18.declaration_hint(),
+            "write `format: ess/18` on the source that declares the system"
+        );
+        assert_eq!(
+            FormatVersion::V18.declaration_hint(),
+            crate::declaration_hint!(18)
+        );
+        assert_eq!(
+            FormatVersion::V31.declaration_hint(),
+            crate::declaration_hint!(31)
+        );
     }
 
     #[test]

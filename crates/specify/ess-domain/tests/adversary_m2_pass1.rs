@@ -41,10 +41,11 @@ fn below_ess_25_the_key_is_refused_alone() {
     assert_eq!(
         lines,
         [
+            // Re-pinned by story:every-format-version-hint-names-the-source-that-declares-the-system.
             "[unsupported_format_version] command.demo.desk.SignIn.outcomes.bad-credential.\
              before_row: an external refusal answered before the row — `before_row: true` beside \
-             `external:` — requires specification format ess/25 (hint: declare `format: \
-             ess/25`, or drop `before_row:`)"
+             `external:` — requires specification format ess/25 (hint: write `format: ess/25` on \
+             the source that declares the system, or drop `before_row:`)"
         ],
         "{errors}"
     );
