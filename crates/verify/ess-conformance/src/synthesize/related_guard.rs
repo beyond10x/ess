@@ -2550,6 +2550,31 @@ fn is_absent(outcome: &ResolvedOutcome) -> bool {
     )
 }
 
+/// Whether `outcome` creates the row its own `exists: false` guard reads: `when_related: {via:
+/// input.f, exists: false}` on a `creates:` of the entity `f` names, whose new identity is `f`
+/// (story:a-creating-branchs-scenario-sends-every-row-it-creates-under-an-identity-of-its-own).
+///
+/// The guard is then the creation's own existence test, as `existing_instance:` beside it is. A
+/// row such a branch creates for an arrangement is created under the arrangement's own identity
+/// ([`drive`]), never under the one identity no row carries, which every such row would share.
+pub(super) fn creates_if_absent(outcome: &ResolvedOutcome) -> bool {
+    let ResolvedCondition::Related {
+        via: via @ ResolvedRelatedVia::Input { .. },
+        entity,
+        test: ResolvedRelatedTest::Absent,
+        also,
+        ..
+    } = &outcome.condition
+    else {
+        return false;
+    };
+    also.is_empty()
+        && outcome.subject.as_ref().is_some_and(|subject| {
+            subject.effect == ResolvedEffect::Creates && &subject.entity == entity
+        })
+        && super::existence::identity_input(outcome) == Some(via.field())
+}
+
 /// One run of a branch of a command reading a related row as an arranging act — a driver bringing
 /// its subject into existence or along its lifecycle for another scenario: the related row the
 /// branch needs arranged first, under a block of its own, and the input pointed at it, or at an
@@ -2640,6 +2665,15 @@ pub(super) fn drive(
                 chosen
             }
             None => without_row(ir, driver.command, entity, field, distinction)?,
+        };
+        // A creation guarded on its own row's absence creates that row, so the row is created
+        // under this arrangement's own identity, as any creating driver's row is: two rows of
+        // one scenario never share the identity no row carries
+        // (story:a-creating-branchs-scenario-sends-every-row-it-creates-under-an-identity-of-its-own).
+        let input = if creates_if_absent(driver.outcome) {
+            super::own_identity(ir, driver, distinction, input)
+        } else {
+            input
         };
         return Ok(super::invoke_with(
             ir, driver, instance, actors, bound, &input,

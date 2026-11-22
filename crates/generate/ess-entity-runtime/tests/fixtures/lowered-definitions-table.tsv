@@ -1,4 +1,4 @@
-#	models=483	lines=664
+#	models=484	lines=665
 crates/edge/ess-cli/tests/fixtures/adversary-shorthand-binary64/spec.yaml	components=1
 crates/edge/ess-cli/tests/fixtures/adversary-shorthand-binary64/spec.yaml	tracker-service	tracker.ops.Sample	definition=6994335e6a9e9266f5f0ce33a640350814ba12cce3c4ce7439fe61643a3a9cdb:5797
 crates/edge/ess-cli/tests/fixtures/adversary-shorthand-binary64/spec.yaml	tracker-service	tracker.ops.Sample	create	recorded
@@ -215,6 +215,7 @@ crates/verify/ess-conformance/tests/fixtures/component-scope.yaml	marks-2	REFUSE
 crates/verify/ess-conformance/tests/fixtures/component-scope.yaml	marks-3	REFUSED	c7976c663c63ae369f4d1c83aa71ae7b7bef7a4440225eadf93b0b3ebc393f9a:399
 crates/verify/ess-conformance/tests/fixtures/component-unrealised/system.yaml	ASSEMBLE
 crates/verify/ess-conformance/tests/fixtures/conditional-aggregate-measures.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/create-if-absent.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/create-or-update-beside-related-refusal.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/created-rows-kept.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/current-time-guard.yaml	components=0

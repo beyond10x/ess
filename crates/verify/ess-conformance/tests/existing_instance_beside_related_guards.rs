@@ -17,7 +17,9 @@
 //! creating branch's own scenario reaches it.
 //!
 //! The fixtures are inline: a YAML file anywhere in the repository is a row of
-//! `synthesis_suite_bytes_table`.
+//! `synthesis_suite_bytes_table`. The models of
+//! story:a-creating-branchs-scenario-sends-every-row-it-creates-under-an-identity-of-its-own are
+//! files under tests/fixtures/, so the byte-pin tables pin them too.
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
 
@@ -26,11 +28,12 @@ use ess_compiler::{resolve::compile, source::SourceMap};
 use ess_conformance::interpret::Interpreted;
 use ess_conformance::report::Status;
 use ess_conformance::synthesize::Synthesis;
-use ess_conformance::{AdmittedSuite, Runner};
+use ess_conformance::{AdmittedSuite, ConformanceScenario, Runner, ScenarioStep};
 use ess_domain::{
     spec::{RawSpecFile, Specification},
     system::Source,
 };
+use ess_primitives::node::Node;
 use sha2::{Digest, Sha256};
 
 /// Through an input: both guards.
@@ -700,4 +703,125 @@ fn existence_refusal_names_the_guards_in_the_way() {
             "names `{guard}`: {text}"
         );
     }
+}
+
+/// A creation guarded on its own row's absence: `existing_instance:` written as a `when_related:`
+/// guard (story:a-creating-branchs-scenario-sends-every-row-it-creates-under-an-identity-of-its-own).
+const CREATE_IF_ABSENT: &str = include_str!("fixtures/create-if-absent.yaml");
+
+/// The scenario `id` of `synthesis`.
+fn scenario<'s>(synthesis: &'s Synthesis, id: &str) -> &'s ConformanceScenario {
+    synthesis
+        .suite
+        .scenarios
+        .iter()
+        .find(|(key, _)| key.to_string() == id)
+        .map_or_else(
+            || panic!("no `{id}` in {:?}", ids(synthesis)),
+            |(_, scenario)| scenario,
+        )
+}
+
+/// Every send of `command` in `scenario` that the next step expects answered by `outcome`, as its
+/// input, in order.
+fn sends<'s>(
+    scenario: &'s ConformanceScenario,
+    command: &str,
+    outcome: &str,
+) -> Vec<&'s BTreeMap<String, ess_conformance::ScenarioValue>> {
+    let mut found = Vec::new();
+    let mut steps = scenario.steps.iter().peekable();
+    while let Some(step) = steps.next() {
+        let ScenarioStep::ExecuteCommand {
+            command: sent,
+            input,
+            ..
+        } = step
+        else {
+            continue;
+        };
+        if sent.to_string() != command {
+            continue;
+        }
+        if let Some(ScenarioStep::ExpectOutcome { outcome: answered }) = steps.peek() {
+            if answered.outcome.to_string() == outcome {
+                found.push(input);
+            }
+        }
+    }
+    found
+}
+
+/// The literal `field` of each of `sends`, a send naming a captured instance passed over.
+fn literals(sends: &[&BTreeMap<String, ess_conformance::ScenarioValue>], field: &str) -> Vec<Node> {
+    sends
+        .iter()
+        .filter_map(|input| {
+            input
+                .get(field)
+                .and_then(|value| value.as_literal())
+                .cloned()
+        })
+        .collect()
+}
+
+/// The ids of the scenarios whose sends of `command` answered by `outcome` carry one literal
+/// `field` twice.
+fn repeating(synthesis: &Synthesis, command: &str, outcome: &str, field: &str) -> Vec<String> {
+    synthesis
+        .suite
+        .scenarios
+        .iter()
+        .filter(|(_, scenario)| {
+            let sent = literals(&sends(scenario, command, outcome), field);
+            let distinct: std::collections::BTreeSet<&Node> = sent.iter().collect();
+            distinct.len() != sent.len()
+        })
+        .map(|(id, _)| id.to_string())
+        .collect()
+}
+
+/// Every scenario of `synthesis` passes against the interpreter.
+fn all_pass(label: &str, model: EssIr, synthesis: &Synthesis) {
+    let failing: Vec<_> = run(model, synthesis)
+        .into_iter()
+        .filter(|(_, status)| *status != Status::Passed)
+        .collect();
+    assert!(
+        failing.is_empty(),
+        "{label}: not passed against interpreted: {failing:?}"
+    );
+}
+
+#[test]
+fn a_creation_guarded_on_its_own_rows_absence_is_witnessed() {
+    let model = ir(CREATE_IF_ABSENT);
+    let synthesis = ess_conformance::synthesize::synthesize(&model);
+    assert_eq!(refusals(&synthesis), Vec::<String>::new());
+    let found = ids(&synthesis);
+    for id in [
+        "demo.depot.OpenShelf/outcome/opened",
+        "demo.depot.OpenShelf/outcome/shelf-exists",
+    ] {
+        assert!(
+            found.iter().any(|found| found == id),
+            "no `{id}` in {found:?}"
+        );
+    }
+    all_pass("create if absent", model, &synthesis);
+}
+
+#[test]
+fn every_shelf_one_scenario_opens_has_an_identity_of_its_own() {
+    let model = ir(CREATE_IF_ABSENT);
+    let synthesis = ess_conformance::synthesize::synthesize(&model);
+    assert_eq!(
+        repeating(&synthesis, "demo.depot.OpenShelf", "opened", "shelf_id"),
+        Vec::<String>::new()
+    );
+    let opened = scenario(&synthesis, "demo.depot.OpenShelf/outcome/opened");
+    let shelves = literals(&sends(opened, "demo.depot.OpenShelf", "opened"), "shelf_id");
+    assert_eq!(shelves.len(), 3, "{:?}", opened.steps);
+    let distinct: std::collections::BTreeSet<&Node> = shelves.iter().collect();
+    assert_eq!(distinct.len(), 3, "{shelves:?}");
 }
