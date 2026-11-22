@@ -112,7 +112,9 @@ export function buildRound(input: {
   return {
     round: input.round,
     date: input.date,
-    lane: merged.lane,
+    // The slow lane measures every page and every card: merged from its jobs it is the full round,
+    // which the ratchet holds every scenario of the baseline to.
+    lane: merged.lane === 'slow' ? 'full' : merged.lane,
     engine: { ...merged.engine, runs_agree: digests.size <= 1 },
     cards: input.cards,
     viewports: input.viewports,

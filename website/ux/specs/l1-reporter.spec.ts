@@ -3,7 +3,8 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, test } from '@playwright/test';
 import { engineDigest } from '../core/engine';
-import { mergeRecords, summarize, type Expected, type L2Config, type L2Record, type L3Record } from '../core/reporter';
+import { mergeRecords, summarize, type Expected, type L2Config, type L2Record, type L3Record, type Raw } from '../core/reporter';
+import { buildRound } from '../core/round';
 
 const config = (viewport: string, theme: string, over: Partial<L2Config> = {}): L2Config => ({
   viewport,
@@ -119,4 +120,11 @@ test('L1 engine: the digest follows the engine files and ignores the round recor
   expect(engineDigest(root)).toBe(first);
   writeFileSync(join(root, 'core', 'a.ts'), 'two');
   expect(engineDigest(root)).not.toBe(first);
+});
+
+test('L1 round: the slow lane, merged from its jobs, is the full round the ratchet holds every scenario to', () => {
+  const raw = (lane: string): Raw => ({ lane, engine: { digest: 'd', commit: 'c', dirty: false }, expected: [], l2: [], l3: [], measured: [], timing: { wall_s: 1, workers: 2, status: 'passed', projects: {}, slowest: [] } });
+  const round = (lane: string) => buildRound({ round: 'R-x', date: '2026-11-22', measurement: [{ name: 'a', raw: raw(lane) }, { name: 'b', raw: raw(lane) }], others: [{ name: 'g', raw: raw('gate') }], cards: { anchors: [], rotating: '' }, viewports: { gating: [], measured: [] }, budgetSeconds: 120 });
+  expect(round('slow').lane).toBe('full');
+  expect(round('gate').lane).toBe('gate');
 });
