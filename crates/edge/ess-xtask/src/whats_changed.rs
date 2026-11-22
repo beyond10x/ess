@@ -19,7 +19,7 @@ use std::fmt::Write as _;
 use std::fs;
 use std::path::Path;
 
-/// Where the fragments live. Also packaged by `.github/workflows/b10x-docs-bundle.yml`.
+/// Where the fragments live.
 const FRAGMENTS: &str = "changes";
 
 /// The rendered file.

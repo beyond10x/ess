@@ -30,8 +30,8 @@ const AREAS: &[&str] = &["specify", "generate", "verify", "infra", "ui", "edge"]
 /// record: `docs/design/` and `docs/reviews/` are argued at a moment and are not rewritten
 /// afterwards, so a path in one of them is a citation of the tree as it stood. `docs/plan/` is not
 /// dated — it is live, it is edited as the work moves, and a stale path in it is a defect like any
-/// other — so it is scanned. `website/docs/` is published adopter-facing source (`b10x.docs.yaml`
-/// declares `root: website`) and is scanned too; excluding by bare directory name would have taken
+/// other — so it is scanned. `website/docs/` is published adopter-facing source
+/// and is scanned too; excluding by bare directory name would have taken
 /// both of those out along with the record, which is how this scan first shipped.
 ///
 /// `.engineering/` is the plan store, whose journal is append-only: a path named in a journal line
