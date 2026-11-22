@@ -61,7 +61,7 @@ expressions:
     - {form: "selection.<field>",        note: the selected row(s) of the section}
     - {form: "draft.<field>",            note: the unsaved input of the enclosing form}
     - {form: "section.<name>.selection", note: another section's selection}
-    - {form: "section.<name>.row",       note: "the first row of a section that reads, as `header.title_from` reads it; absent while the section loads, when it is empty, and for a section without a read"}
+    - {form: "section.<name>.row",       note: "the first row of a section that reads, as `header.title_from` reads it; absent while the section loads and when it is empty; a section without a read, a choice, a read whose params read its own row, and sections that read each other's row are refused (`section_row`)"}
     - {form: "channel.<name>.<field>",   note: a named field of a channel}
     - {form: "shell.<name>",             note: shell state}
     - {form: "url.query.<name>",         note: a query parameter (guards only)}
@@ -234,7 +234,7 @@ constructs:
         - {container: [row_actions, bulk_actions, actions, item_actions, node_actions, edge_actions, alternatives], child_name: {first_present: [name, derived_action_name]}}
         - {container: [sections, item, choices, parts, metrics, toolbar, guards, tabs, groups, children, body, navigation_sections], child_name: name, note: lists of named nodes; order is meaningful}
         - {container: preload_views, child_name: view}
-        - {container: rows, child_name: {row_key: {first_present: [live.match, id]}}, note: runtime rows of a collection}
+        - {container: rows, child_name: {row_key: {first_present: [reads.key, live.match, id]}}, note: runtime rows of a collection}
       widget_instances: {expanded_body_path: "<instance path>/body/<node name>"}
       uniqueness: {scope: siblings, severity: error}
       stability: inserting, removing or reordering a sibling changes no other node's path
@@ -416,7 +416,7 @@ constructs:
       layout:    {type: PageLayout, default: stack, note: how sections are arranged}
       state:     {type: {map: {key: name, value: {optional: State}}}, note: page state}
       header:    {type: header, note: "title, total, actions, live status"}
-      sections:  {type: {list: Section}, required: true, note: "regions of the page, named, in declaration order; merged with the kind's by name"}
+      sections:  {type: {list: Section}, required: {unless: HostSlot}, note: "regions of the page, named, in declaration order; merged with the kind's by name"}
       overlays:  {type: {map: {key: name, value: {optional: overlay}}}, note: drawers and dialogs of the page (unordered)}
       profile:   {type: {enum: [thin, fat]}, note: placement for this page in a hybrid document}
       source:    {type: {list: string}, note: files the page was retrofitted from}
@@ -543,7 +543,7 @@ constructs:
       `title` is the heading a reader sees, which tells two sections over the same view apart.
     fields:
       name:       {type: name, required: true, note: node name among the page's sections}
-      component:  {type: {one_of: [{ref: composite_kind}, {ref: widget}]}, required: true, note: what the section renders}
+      component:  {type: {one_of: [{ref: composite_kind}, {ref: widget}]}, required: {unless: HostSlot}, note: what the section renders}
       title:      {type: string, note: "heading shown above the section; absent, none"}
       collapsed:  {type: boolean, default: false, note: "starts the section closed under its `title`, which a reader clicks to open; needs a `title`, since there is nothing else to click. A collapsed section with `load: on_visible` starts its read when opened"}
       reads:      {type: Reads, note: "the section's data; one per section; it is the composite's own `reads`"}
@@ -752,7 +752,7 @@ constructs:
       - {at: same_as, accepts: {ref: overlay}, expands_to: {merge_under: $value}}
     fields:
       kind:      {type: {enum: [drawer, dialog, fullscreen, popover]}, required: true, note: presentation hint; a TUI uses a full-screen pane}
-      component: {type: {one_of: [{ref: composite_kind}, {ref: widget}]}, required: true, note: what the overlay renders}
+      component: {type: {one_of: [{ref: composite_kind}, {ref: widget}]}, required: {unless: HostSlot}, note: what the overlay renders}
       title:     {type: string, note: "overlay title; a confirm shows it as its question"}
       params:    {type: {map: {key: name, value: expr}}, note: values passed by the opener}
       state:     {type: {map: {key: name, value: State}}, note: overlay-local state}
@@ -934,8 +934,8 @@ constructs:
     summary: Anything that can appear inside a section, composite or widget — a composite, a widget instance or a primitive.
     doc: Wherever a nested element is allowed (`item`, `children`, `body`, `parts`, `expand`, `choices`, `metrics`, `toolbar`), a Node is expected. In lists every node carries `name`; in the one map of nodes (board `widgets`) the key is its name. A `component` naming a member of the composite union is a composite; any other `component` names a widget.
     fields:
-      "(value)": {type: {one_of: [Composite, WidgetInstance, Primitive]}, note: exactly one of component or primitive}
-    exactly_one_of: [component, primitive]
+      "(value)": {type: {one_of: [Composite, WidgetInstance, Primitive, HostSlot]}, note: "exactly one of component, primitive or host"}
+    exactly_one_of: [component, primitive, host]
     example: {name: send, primitive: button, label: Send, tone: primary, action: {name: send, does: tickets.PostReply}}
 
   Field:
@@ -1265,12 +1265,12 @@ constructs:
       size until the per-page select chooses another, and a change to the read's params or to
       what its row filter reads (a search, a filter bar) returns it to page 1. Whenever the page
       size and the total are known, the footer shows the rows on the page as a range of the
-      total, `1-10 of 30`.
+      total, `1-10 of 30`. `paging: client` pages the rows the read returned whole; use it only for
+      a view whose rows fit one answer.
     shorthand:
       - {accepts: {ref: view}, expands_to: {view: $value}}
     exactly_one_of: [view, placeholder]
     constraints:
-      - {when: {paging: client}, requires: {view.bounded: true}, else: refuse}
       - {when: {placeholder: present}, requires: {fixture: present}, else: refuse}
       - {when: {filter: present}, requires: {paging: {one_of: [client, none]}}, else: refuse}
       - {when: {pager: present}, requires: {paging: {one_of: [server, client]}}, else: refuse}
@@ -1339,7 +1339,9 @@ constructs:
     summary: Sample data per view and event scripts per channel, so renderers run without a backend.
     doc: >
       In fixture mode a renderer answers every read from a fixture file and plays each channel's
-      script in a loop, honouring delivery and coalesce. A file holds one view or several;
+      script, honouring delivery and coalesce. A script file holds `events` (the entries below)
+      and may say `channel`, `session` and `loop: true`, which repeats the script from the start
+      after its last entry (default: it plays once). A file holds one view or several;
       `derived` answers ById views from a list fixture. Placeholders name their fixture on the
       read itself.
     fields:
@@ -1569,9 +1571,12 @@ constructs:
       refusals:
         - {when: {state.sensitive: true, store: [url, session_storage, local_storage]}, result: refuse}
         - {when: {state.class: credential, store_not_in: [memory, server_session]}, result: refuse}
-        - {when: {store: url, value_serializable: false}, result: refuse}
-        - {when: {store: url, value_bytes_over: 2048}, result: refuse}
-        - {when: {renderer.thin_only: true, resolved_by_profile: fat}, result: refuse}
+      not_checked:
+        reason: a renderer's concern; ess ui check does not run them
+        refusals:
+          - {when: {store: url, value_serializable: false}, result: refuse}
+          - {when: {store: url, value_bytes_over: 2048}, result: refuse}
+          - {when: {renderer.thin_only: true, resolved_by_profile: fat}, result: refuse}
     reload_and_reconnect:
       reload:
         memory: the section re-enters loading; a renderer warns on unload while a memory draft is dirty
@@ -1762,7 +1767,7 @@ checks:
     - {id: unbound_placeholder, subject: "**.reads.placeholder", must: bind_to_view, severity: warning}
     - {id: fixture_per_view,    subject: "**.reads.view", must_be_in: [fixtures.views, fixtures.derived], severity: warning}
     - {id: script_per_channel,  subject: "channels.*", must_be_in: [fixtures.scripts], severity: warning}
-    - {id: state_resolves,      subject: "**.state.*", must: resolve_to_store, refusals: PlacementProfile.resolution.refusals, severity: error}
+    - {id: state_resolves,      subject: "**.state.*", must: resolve_to_store, refusals: [sensitive_in_url_or_browser_storage, credential_outside_memory_or_server_session], severity: error}
     - {id: types_structural,    subject: "**.type", must_match: type_rule, forbidden: string_holding_a_type_expression, severity: error}
     - {id: unmapped_reported,   subject: "**", matches: unmapped_marker.pattern, action: report, severity: warning}
     - {id: token_values,        subject: ["tokens.color.*", "tokens.space.*", "tokens.radius.*", "tokens.type.*"], must_match: Tokens.grammar, severity: error}
@@ -1796,3 +1801,28 @@ checks:
     - {id: board_widget_kinds, subject: "**.board.reads fixture rows", must: have_a_widget_by_field_that_names_an_entry_of_widgets, severity: warning}
     - {id: expr_paths, subject: ["judged: state.<name>, params.<name> and shell.<name> inside an expr written in a page or in an overlay of a shell, against what is in scope there (a page overlay that declares params has the page's and its own, a shell overlay its own); and shell.<name> inside the rest of a shell (its regions and guards)", "not judged: page kinds, widget declarations, navigation, state.<name> and params.<name> inside the rest of a shell, and params.<name> inside an overlay that declares no params, whose opener hands it values"], must_resolve_in: ["the state, parameters and shell state in scope where the expression stands"], severity: error}
     - {id: expr_roots, subject: ["an unquoted dotted word inside an expr, outside the arguments of a call", "not judged: a read's filter and a dynamic menu entry's filter (held by the filter_* checks), and a widget argument whose parameter the widget does not substitute into an expr, where the word is shown as text"], must: begin_with_a_root_of_expressions.forms_or_be_quoted, severity: warning}
+    - {id: document_loads, subject: "every node", must: "the loader accepts the document; a refusal no other check names is reported under this id", severity: error}
+    - {id: layer_rules, subject: "every node", must: "a node stands only where its layer may (layers)", severity: error}
+    - {id: degrades_known, subject: "**.degrades", must: "a key names a capability, its value one of that capability's fallbacks", severity: error}
+    - {id: degrades_cover, subject: "**.degrades", must: "a renderer lacking a capability (ess ui check --lacks) finds a fallback that is not refuse", severity: error}
+    - {id: enum_values, subject: "every node", must: "a value written where the schema declares a closed enum is one of its values", severity: error}
+    - {id: frame_rules, subject: ["pages.*.layout", "pages.*.sections[]"], must: "title and collapsed belong to frame: shared; a collapsed frame or section has a title, a collapsed group a label; a shared frame holds consecutive sections", severity: error}
+    - {id: overlay_params, subject: "**.overlays.*.params", must: "every key of an overlay's params is read inside it as params.<key>", severity: error}
+    - {id: view_in_model, subject: "pages.*.sections[].reads.view", must: "with --model, a view named resolves in the model, and a reached_by: network component serves it", severity: error}
+    - {id: command_in_model, subject: "every does, commands and sends that names a command", must: "with --model, a command named resolves in the model, and a reached_by: network component serves it", severity: error}
+    - {id: event_in_model, subject: ["channels.*.carries", "pages.*.sections[].live.on"], must: "with --model, an event named resolves in the model", severity: error}
+    - {id: section_readable, subject: "pages.*.sections[]", must: "with --model, some actor may read the view the section reads (an approximation: ESS grants commands, not views)", severity: error}
+    - {id: actor_in_model, subject: "pages.*.actor", must: "with --model, actor names an actor of the model", severity: error}
+    - {id: page_actor_grants, subject: "pages.*", must: "with --model, every command a page with an actor sends is in that actor's may", severity: error}
+    - {id: read_params, subject: "pages.*.sections[].reads", must: "with --model, a read binds only parameters its view declares and leaves no required one unbound", severity: error}
+    - {id: type_in_model, subject: "pages.*.params.*", must: "with --model, a page parameter's named type resolves in the document, the schema or the model", severity: error}
+    - {id: field_in_model, subject: "every form field, bind key, column and row.<field> path", must: "with --model, form fields and bind keys are inputs of their command; columns, record fields and row.<field> paths are fields of the view read", severity: error}
+    - {id: row_fields, subject: ["**.group_by", "**.label_from", "**.title_from"], must: "with --model, group_by, an aggregate's field, label_from, a choice's value or label, title_from.field and section.<name>.row.<field> name a row field the view has", severity: error}
+    - {id: model_enum_values, subject: ["**.group_order", "**.options"], must: "with --model, a group_order value or a form choice's fixed option is a variant of the enum the field holds, and the options leave no variant out", severity: error}
+    - {id: metric_aggregate, subject: "**.aggregate", must: "aggregate reads rows, so it needs reads; every aggregate but count needs a field, and field means nothing without an aggregate", severity: error}
+    - {id: group_order, subject: ["**.group_order", "**.show_empty_groups"], must: "they order the groups of group_by, so a collection that has them has group_by", severity: error}
+    - {id: options_enum, subject: "**.options", must: "a choice's options name an enum of the document, or with --model exactly one enum of the model", severity: error}
+    - {id: choice_projection, subject: "a choice's value and label", must: "value and label name fields of the rows of reads, so a choice that has them has reads", severity: error}
+    - {id: header_record, subject: "**.header.title_from", must: "title_from.section names a section that reads: the title's record is its first row", severity: error}
+    - {id: export_selection, subject: "**.export.params", must: "an export's params read selection.<field> only on a bulk action, where the selection is in scope", severity: error}
+    - {id: section_row, subject: "pages.*.sections[]", must: "section.<name>.row is the first row of a section that reads: a section that reads nothing or is a choice holds none, and a read whose params read its own section's row, or sections that read each other's, never settle", severity: error}

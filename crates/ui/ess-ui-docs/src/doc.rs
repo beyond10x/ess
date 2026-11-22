@@ -359,7 +359,13 @@ impl Page<'_, '_> {
                 vec![
                     vec![name],
                     self.type_inlines(field.ty),
-                    vec![text(if field.required { "yes" } else { "" })],
+                    match (field.required, field.unless) {
+                        (true, Some(construct)) => {
+                            vec![text("yes, unless the node is a "), link(construct)]
+                        }
+                        (true, None) => vec![text("yes")],
+                        (false, _) => vec![text("")],
+                    },
                     vec![field
                         .default
                         .map_or_else(|| text(""), |value| code(flow(value)))],
