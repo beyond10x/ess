@@ -519,7 +519,7 @@ fn component_packages(ir: &EssIr, reserved: &[&str]) -> BTreeMap<ComponentName, 
 /// only when the model uses `Json`; see `super::json` for why it lives there.
 pub fn primitive(name: Primitive) -> &'static str {
     match name {
-        Primitive::Binary64 => unreachable!("Binary64 is refused before target rendering"),
+        Primitive::Binary64 => "crate::primitives::Binary64",
         Primitive::Json => "crate::json::Value",
         Primitive::String => "String",
         Primitive::Boolean => "bool",

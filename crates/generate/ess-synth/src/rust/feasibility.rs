@@ -110,12 +110,12 @@ impl Inventory {
     fn reference(&mut self, scope: &str, reference: &ResolvedTypeRef, source: &str) {
         match reference {
             ResolvedTypeRef::Primitive { name } => match name {
-                Primitive::Binary64 => unreachable!("Binary64 is refused before target rendering"),
                 Primitive::String => self.helper(scope, "String", source),
                 Primitive::Bytes => self.helper(scope, "Vec", source),
                 // `crate::json::Value`: spelled from the crate root, so no declaration in scope
                 // can shadow it — the same as the `crate::primitives` wrappers.
-                Primitive::Json
+                Primitive::Binary64
+                | Primitive::Json
                 | Primitive::Boolean
                 | Primitive::Integer
                 | Primitive::Decimal
