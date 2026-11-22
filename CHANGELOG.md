@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [0.97.3] — 2026-11-22
+
+### Fixed
+
+- Release: 0.97.2 was tagged but never released: its release gate failed on two tables that did not pin the fixture models the release added. 0.97.3 carries the same content, listed under 0.97.2 below, with its breaking changes: `--component` runs synthesize and report only the operations that component realises, mutation verdicts under `--component` can move from `unwitnessed` to `survived` or `inconclusive`, read-grant scenarios no longer copy the reads of other views, and synthesis and `ess specify validate` repeat less work. The 0.97.2 tag stays, without a release, and `task release-status` names it as such.
+
 ## [0.97.2] — 2026-11-22
 
 ### Changed
