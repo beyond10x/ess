@@ -11,15 +11,19 @@
 //! 3. a value better than the baseline that was not taken into it, within the tolerance or not:
 //!    an improvement becomes the baseline in the same change;
 //! 4. a value the baseline holds and the round does not: lost coverage, a page set that shrank;
-//! 5. a new value: a page, task or metric the baseline does not hold, a scenario new to the
-//!    round's lane, or a content count that rose (a tolerance class `content`: more of the same on
-//!    a page, such as a new prose link). It is reported as new, not as worse, and `--update` takes
-//!    it without a decision;
-//! 6. a baseline made worse than the one on `main` without a decision id: a worse entry, a dropped
-//!    entry or a scenario a lane dropped.
+//! 5. a new value: a page, task or metric the baseline does not hold, or a scenario new to the
+//!    round's lane. It is reported as new, not as worse, and `--update` takes it without a
+//!    decision; the values of a scenario new to the lane are judged in the same pass;
+//! 6. a baseline made worse than the one on `main` without a decision id: a worse entry of any
+//!    tolerance class, a dropped entry or a scenario a lane dropped;
+//! 7. a round measured by an engine with uncommitted changes (`engine.dirty`), or merged from runs
+//!    of different engines (`engine.runs_agree` false). No update takes it.
 //!
 //! A round has a lane. `full` holds every scenario of the baseline to it; any other lane (the
 //! every-merge `gate`) holds only the scenarios the baseline lists under `lanes.<lane>`.
+//!
+//! `--update` writes the baseline only after every comparison and the findings check passed, so a
+//! failed run leaves the file as it was.
 //!
 //! The Playwright specs only measure; the decision is here because a checker in this repository is
 //! Rust. The same goes for the findings rule: no closed S1 or S2 record under `website/ux/findings/`
@@ -54,7 +58,9 @@ pub(crate) enum Tolerance {
     Absolute(f64),
     /// A share of the baseline value, `0.05` for 5 %.
     Relative(f64),
-    /// A count that grows with the content of a page: a rise is new content, not a worse value.
+    /// A count that grows with the content of a page (`*_nodes`). Held like a count, with no
+    /// allowance: a rise is a worse value and needs a decision id (R-02's rule that took a rise as
+    /// new content let a page's serious axe nodes rise unseen, T17 of the R-02 report review).
     Content,
 }
 
@@ -118,19 +124,25 @@ pub(crate) struct Round {
     pub scenarios: BTreeMap<String, BTreeMap<String, f64>>,
     /// Required: a round that does not say what it left unmeasured is not read.
     pub coverage: Coverage,
+    /// Required: a round that does not say which engine measured it is not read.
+    pub engine: Engine,
+}
+
+/// The engine that measured a round, as `round.json` records it.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+pub(crate) struct Engine {
+    /// The last commit that changed an engine file.
+    #[serde(default)]
+    pub commit: String,
+    /// The engine's files differ from that commit.
+    pub dirty: bool,
+    /// Every run merged into the round used the same engine; only a merged round says.
+    #[serde(default)]
+    pub runs_agree: Option<bool>,
 }
 
 fn full_lane() -> String {
     FULL.to_owned()
-}
-
-/// Why a value is new.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum NewKind {
-    /// The baseline holds no value for this scenario and metric.
-    Key,
-    /// A content count rose.
-    Content,
 }
 
 /// One reason the ratchet fails.
@@ -138,6 +150,10 @@ pub(crate) enum NewKind {
 pub(crate) enum Breach {
     /// The round expected this configuration or task run and did not measure it.
     Unmeasured { unit: String },
+    /// The engine that measured the round had uncommitted changes.
+    DirtyEngine { commit: String },
+    /// The round merges runs of different engines.
+    RunsDisagree,
     /// The round is worse than the baseline beyond the tolerance.
     Worse {
         scenario: String,
@@ -154,12 +170,11 @@ pub(crate) enum Breach {
     },
     /// The baseline holds a value the round does not; `*` for a lane scenario with no entry.
     Missing { scenario: String, metric: String },
-    /// A value the baseline does not hold, or a content count that rose.
+    /// A value the baseline does not hold.
     New {
         scenario: String,
         metric: String,
         value: f64,
-        kind: NewKind,
     },
     /// The baseline holds the scenario, and the round's lane measured it for the first time.
     NewInLane { lane: String, scenario: String },
@@ -190,6 +205,15 @@ impl fmt::Display for Breach {
                 "{unit}: unmeasured: the round expected it and measured nothing; only a run that \
                  measures it gets past"
             ),
+            Breach::DirtyEngine { commit } => write!(
+                f,
+                "the round was measured by an engine with uncommitted changes (last engine commit \
+                 {commit}); commit the engine and measure again"
+            ),
+            Breach::RunsDisagree => write!(
+                f,
+                "the round merges runs of different engines; measure every run with one engine"
+            ),
             Breach::Worse {
                 scenario,
                 metric,
@@ -218,21 +242,10 @@ impl fmt::Display for Breach {
                 scenario,
                 metric,
                 value,
-                kind: NewKind::Key,
             } => write!(
                 f,
                 "{scenario} {metric}: new, {value}: the baseline holds no value; take it into \
                  {BASELINE} (--update)"
-            ),
-            Breach::New {
-                scenario,
-                metric,
-                value,
-                kind: NewKind::Content,
-            } => write!(
-                f,
-                "{scenario} {metric}: new content, {value}: a count that grows with the page's \
-                 content rose; take it into {BASELINE} (--update)"
             ),
             Breach::NewInLane { lane, scenario } => write!(
                 f,
@@ -273,7 +286,8 @@ impl fmt::Display for Breach {
 /// The tolerance class a new metric gets. The skill's classes: counts 0, steps 5 %, layout shift
 /// 0.01. Two more, decided here: `words` (5 %) for `reading_load`, a word count of the visible
 /// text that moves a little with any edit of a page, and `content` for a node count that grows with
-/// the page's content (`*_nodes`).
+/// the page's content (`*_nodes`), held like a count. Every committed value carries the class this
+/// function gives its metric (a test holds the committed baseline to it).
 pub(crate) fn tolerance_class(metric: &str) -> &'static str {
     if metric.starts_with("layout_shift") {
         "layout_shift"
@@ -338,14 +352,6 @@ fn judge(
             value,
         });
     }
-    if tolerance == Tolerance::Content {
-        return (value > base + EPSILON).then_some(Breach::New {
-            scenario,
-            metric,
-            value,
-            kind: NewKind::Content,
-        });
-    }
     (value > base + tolerance.allowance(base) + EPSILON).then_some(Breach::Worse {
         scenario,
         metric,
@@ -362,10 +368,20 @@ pub(crate) fn compare(baseline: &Baseline, round: &Round) -> Vec<Breach> {
         .iter()
         .map(|unit| Breach::Unmeasured { unit: unit.clone() })
         .collect();
+    if round.engine.dirty {
+        breaches.push(Breach::DirtyEngine {
+            commit: round.engine.commit.clone(),
+        });
+    }
+    if round.engine.runs_agree == Some(false) {
+        breaches.push(Breach::RunsDisagree);
+    }
     let lane = scope(baseline, &round.lane);
     let in_scope = |scenario: &str| lane.is_none_or(|set| set.contains(scenario));
     for (scenario, entries) in &baseline.scenarios {
-        if !in_scope(scenario) {
+        // A held scenario the lane measured for the first time is judged too, so a worse value
+        // cannot come into the lane with it.
+        if !in_scope(scenario) && !round.scenarios.contains_key(scenario) {
             continue;
         }
         let measured = round.scenarios.get(scenario);
@@ -408,7 +424,6 @@ pub(crate) fn compare(baseline: &Baseline, round: &Round) -> Vec<Breach> {
                     scenario: scenario.clone(),
                     metric: metric.clone(),
                     value,
-                    kind: NewKind::Key,
                 });
             }
         }
@@ -421,8 +436,7 @@ fn decided_anew(id: Option<&String>, on_main: Option<&String>) -> bool {
 }
 
 /// Compares this baseline with `main`'s: a worse entry, a dropped entry and a scenario a lane
-/// dropped each need a decision id `main` does not already carry there. A content count that grew
-/// needs none: it was taken as new.
+/// dropped each need a decision id `main` does not already carry there, in every tolerance class.
 pub(crate) fn compare_with_main(main: &Baseline, current: &Baseline) -> Vec<Breach> {
     let mut breaches = Vec::new();
     for (scenario, entries) in &main.scenarios {
@@ -451,8 +465,7 @@ pub(crate) fn compare_with_main(main: &Baseline, current: &Baseline) -> Vec<Brea
                     continue;
                 }
             };
-            let worse = tolerance != Tolerance::Content
-                && new.value > old.value + tolerance.allowance(old.value) + EPSILON;
+            let worse = new.value > old.value + tolerance.allowance(old.value) + EPSILON;
             if worse && !decided_anew(new.decision.as_ref(), old.decision.as_ref()) {
                 breaches.push(Breach::BaselineWorsened {
                     scenario: scenario.clone(),
@@ -486,16 +499,15 @@ pub(crate) fn compare_with_main(main: &Baseline, current: &Baseline) -> Vec<Brea
 pub(crate) struct Taken {
     pub improved: usize,
     pub new: usize,
-    pub content: usize,
     pub lane: usize,
     pub worse: usize,
     pub dropped: usize,
 }
 
-/// Takes a round into the baseline: improvements, new values, content that grew and scenarios new
-/// to the lane always; worse values and lost values only under a decision id, which is written
-/// beside each worse value and under `dropped` for each lost one. An unmeasured unit is never
-/// taken.
+/// Takes a round into the baseline: improvements, new values and scenarios new to the lane always;
+/// worse values (a content count that rose among them) and lost values only under a decision id,
+/// which is written beside each worse value and under `dropped` for each lost one. An unmeasured
+/// unit, a dirty engine and runs of different engines are never taken.
 pub(crate) fn update(
     baseline: &Baseline,
     round: &Round,
@@ -521,16 +533,6 @@ pub(crate) fn update(
                 scenario,
                 metric,
                 value,
-                kind: NewKind::Content,
-            } => {
-                set_value(&mut next, &scenario, &metric, value);
-                taken.content += 1;
-            }
-            Breach::New {
-                scenario,
-                metric,
-                value,
-                kind: NewKind::Key,
             } => {
                 add_new(&mut next, lane.as_deref(), scenario, &metric, value);
                 taken.new += 1;
@@ -1030,7 +1032,8 @@ fn main_baseline(root: &Path) -> Result<Option<Baseline>> {
 }
 
 /// The command: compare `round` with the baseline and with `main`'s, check the findings; with
-/// `update`, take the round into the baseline first.
+/// `update`, take the round into the baseline first, in memory, and write the file only once every
+/// comparison and the findings check passed against the updated baseline.
 pub(crate) fn run(
     root: &Path,
     round: &Path,
@@ -1055,15 +1058,12 @@ pub(crate) fn run(
             anyhow::anyhow!("the baseline was not updated:\n{}", lines(&refused))
         })?;
         baseline = next;
-        fs::write(&baseline_path, to_text(&baseline)?)
-            .with_context(|| format!("writing {}", baseline_path.display()))?;
         let _ = writeln!(
             report,
-            "ux ratchet: took {} improvement(s), {} new value(s), {} content rise(s), {} lane \
-             scenario(s); {} worse and {} dropped under decision {}",
+            "ux ratchet: took {} improvement(s), {} new value(s), {} lane scenario(s); {} worse \
+             and {} dropped under decision {}",
             taken.improved,
             taken.new,
-            taken.content,
             taken.lane,
             taken.worse,
             taken.dropped,
@@ -1093,7 +1093,14 @@ pub(crate) fn run(
                 findings.join("\n")
             );
         }
+        if update_baseline {
+            message.push_str("the baseline file was not written\n");
+        }
         bail!(message.trim_end().to_owned());
+    }
+    if update_baseline {
+        fs::write(&baseline_path, to_text(&baseline)?)
+            .with_context(|| format!("writing {}", baseline_path.display()))?;
     }
     let keys: usize = baseline.scenarios.values().map(BTreeMap::len).sum();
     let _ = writeln!(
@@ -1122,14 +1129,21 @@ mod tests {
         serde_json::from_str(json).expect("canned baseline parses")
     }
 
-    /// A canned round. One without a `coverage` key is a complete round: the key is added with
-    /// nothing unmeasured, so each case states only what it is about.
+    /// A canned round. One without a `coverage` key is a complete round, and one without an
+    /// `engine` key was measured by a committed engine: each key is added, so each case states
+    /// only what it is about.
     fn round(json: &str) -> Round {
-        let json = if json.contains("\"coverage\"") {
-            json.to_owned()
-        } else {
-            json.replacen('{', r#"{"coverage": {"unmeasured": []}, "#, 1)
-        };
+        let mut json = json.to_owned();
+        if !json.contains("\"coverage\"") {
+            json = json.replacen('{', r#"{"coverage": {"unmeasured": []}, "#, 1);
+        }
+        if !json.contains("\"engine\"") {
+            json = json.replacen(
+                '{',
+                r#"{"engine": {"digest": "d", "commit": "c", "dirty": false}, "#,
+                1,
+            );
+        }
         serde_json::from_str(&json).expect("canned round parses")
     }
 
@@ -1227,19 +1241,25 @@ mod tests {
             scenario: "limitations/mobile-390".into(),
             metric: "screen_only.actions".into(),
             value: 5.0,
-            kind: NewKind::Key,
         }));
         assert_eq!(breaches.len(), 2, "{breaches:?}");
     }
 
     #[test]
-    fn a_round_without_coverage_is_refused() {
+    fn a_round_without_coverage_or_engine_is_refused() {
         let parsed = serde_json::from_str::<Round>(
-            r#"{"scenarios": {"install/desktop-1280": {"screen_only.actions": 3}}}"#,
+            r#"{"engine": {"dirty": false}, "scenarios": {"install/desktop-1280": {"screen_only.actions": 3}}}"#,
         );
         assert!(
             parsed.is_err(),
             "a round that says nothing of its coverage was read"
+        );
+        let parsed = serde_json::from_str::<Round>(
+            r#"{"coverage": {"unmeasured": []}, "scenarios": {"install/desktop-1280": {"screen_only.actions": 3}}}"#,
+        );
+        assert!(
+            parsed.is_err(),
+            "a round that says nothing of its engine was read"
         );
     }
 
@@ -1290,27 +1310,31 @@ mod tests {
       }}
     }"#;
 
+    /// T17 of the R-02 report review: a rise of a `content` value was taken by `--update` with no
+    /// decision id. It is a worse value like any other.
     #[test]
-    fn a_content_count_that_rises_is_new_not_worse() {
+    fn a_content_count_that_rises_is_worse_and_needs_a_decision() {
         let one_more_link = round(
             r#"{"scenarios": {"/ess/docs/a@desktop-1280/light":
               {"axe.serious_critical_rules": 1, "axe.serious_critical_nodes": 11}}}"#,
         );
         let breaches = compare(&baseline(CONTENT), &one_more_link);
         assert!(
-            !breaches
-                .iter()
-                .any(|breach| matches!(breach, Breach::Worse { .. })),
+            matches!(breaches.as_slice(), [Breach::Worse { metric, .. }] if metric == "axe.serious_critical_nodes"),
             "{breaches:?}"
         );
         assert!(
-            breaches
-                .iter()
-                .any(|breach| breach.to_string().contains(": new")),
-            "{breaches:?}"
+            update(&baseline(CONTENT), &one_more_link, None).is_err(),
+            "a content rise was taken without a decision"
         );
         let (next, _) =
-            update(&baseline(CONTENT), &one_more_link, None).expect("taken without a decision");
+            update(&baseline(CONTENT), &one_more_link, Some("D-5")).expect("a decision takes it");
+        assert_eq!(
+            next.scenarios["/ess/docs/a@desktop-1280/light"]["axe.serious_critical_nodes"]
+                .decision
+                .as_deref(),
+            Some("D-5")
+        );
         assert_eq!(compare(&next, &one_more_link), vec![]);
         assert_eq!(compare_with_main(&baseline(CONTENT), &next), vec![]);
         let another_rule = round(
@@ -1320,6 +1344,117 @@ mod tests {
         assert!(compare(&baseline(CONTENT), &another_rule)
             .iter()
             .any(|breach| matches!(breach, Breach::Worse { .. })));
+    }
+
+    /// T17: the comparison with `main`'s baseline exempted the `content` class.
+    #[test]
+    fn a_content_value_worse_than_mains_needs_a_new_decision_id() {
+        let main = baseline(CONTENT);
+        let mut risen = main.clone();
+        risen
+            .scenarios
+            .get_mut("/ess/docs/a@desktop-1280/light")
+            .unwrap()
+            .get_mut("axe.serious_critical_nodes")
+            .unwrap()
+            .value = 11.0;
+        assert!(
+            matches!(compare_with_main(&main, &risen).as_slice(), [Breach::BaselineWorsened { metric, .. }] if metric == "axe.serious_critical_nodes"),
+            "{:?}",
+            compare_with_main(&main, &risen)
+        );
+    }
+
+    /// T22: a round measured by an engine with uncommitted changes is refused, by `compare` and
+    /// by `update` under any decision.
+    #[test]
+    fn a_round_from_a_dirty_engine_is_refused() {
+        let measured = round(
+            r#"{"engine": {"digest": "d", "commit": "c", "dirty": true},
+              "scenarios": {"install/desktop-1280":
+              {"screen_only.actions": 3, "glance_cost.p95": 2.0, "layout_shift.max": 0.02}}}"#,
+        );
+        let breaches = compare(&baseline(BASE), &measured);
+        assert!(
+            breaches
+                .iter()
+                .any(|breach| breach.to_string().contains("uncommitted")),
+            "{breaches:?}"
+        );
+        assert!(update(&baseline(BASE), &measured, Some("D-1")).is_err());
+    }
+
+    /// T22: a round merged from runs of different engines is refused.
+    #[test]
+    fn a_round_whose_runs_disagree_is_refused() {
+        let measured = round(
+            r#"{"engine": {"digest": "d", "commit": "c", "dirty": false, "runs_agree": false},
+              "scenarios": {"install/desktop-1280":
+              {"screen_only.actions": 3, "glance_cost.p95": 2.0, "layout_shift.max": 0.02}}}"#,
+        );
+        let breaches = compare(&baseline(BASE), &measured);
+        assert!(
+            breaches
+                .iter()
+                .any(|breach| breach.to_string().contains("different engines")),
+            "{breaches:?}"
+        );
+        assert!(update(&baseline(BASE), &measured, Some("D-1")).is_err());
+    }
+
+    /// T21: `run --update` wrote the baseline before its last comparison; a run that then failed
+    /// left the changed file behind. Here the findings check fails after an update that would
+    /// take an improvement.
+    #[test]
+    fn a_run_that_fails_leaves_the_baseline_file_as_it_was() {
+        let scratch = crate::scratch::Scratch::new("ess-ux-ratchet-run");
+        let root = scratch.path();
+        fs::create_dir_all(root.join(FINDINGS)).unwrap();
+        fs::write(root.join(BASELINE), BASE).unwrap();
+        fs::write(
+            root.join(FINDINGS).join("UXF-001.md"),
+            "---\nid: UXF-001\n---\n",
+        )
+        .unwrap();
+        fs::write(
+            root.join("round.json"),
+            r#"{"coverage": {"unmeasured": []},
+              "engine": {"digest": "d", "commit": "c", "dirty": false},
+              "scenarios": {"install/desktop-1280":
+              {"screen_only.actions": 2, "glance_cost.p95": 2.0, "layout_shift.max": 0.02}}}"#,
+        )
+        .unwrap();
+        let result = run(root, Path::new("round.json"), true, None);
+        assert!(result.is_err(), "{result:?}");
+        assert_eq!(
+            fs::read_to_string(root.join(BASELINE)).unwrap(),
+            BASE,
+            "a failed run changed the baseline file"
+        );
+    }
+
+    /// T24: every value of the committed baseline carries the tolerance class the code gives its
+    /// metric, so `reading_load` has one unit in code and baseline.
+    #[test]
+    fn every_committed_value_carries_the_class_its_metric_has() {
+        let root = repository_root();
+        let base: Baseline = serde_json::from_str(
+            &fs::read_to_string(root.join(BASELINE)).expect("the baseline reads"),
+        )
+        .expect("the baseline parses");
+        let mut wrong = BTreeSet::new();
+        for entries in base.scenarios.values() {
+            for (metric, entry) in entries {
+                if entry.tolerance != tolerance_class(metric) {
+                    wrong.insert(format!(
+                        "{metric}: `{}` in the baseline, `{}` in the code",
+                        entry.tolerance,
+                        tolerance_class(metric)
+                    ));
+                }
+            }
+        }
+        assert_eq!(wrong, BTreeSet::new());
     }
 
     const LANES: &str = r#"{
@@ -1371,6 +1506,25 @@ mod tests {
         assert_eq!(taken.lane, 1);
         assert!(next.lanes["gate"].contains("/c@d/light"));
         assert_eq!(compare(&next, &grown), vec![]);
+    }
+
+    /// The gap the R-02 report review confirmed: `--update` on a gate-lane run took a scenario
+    /// new to the lane without judging its values, so a worse value came in with it in one pass.
+    #[test]
+    fn update_judges_the_values_of_a_scenario_new_to_the_lane_in_the_same_pass() {
+        let grown_worse = round(
+            r#"{"lane": "gate", "scenarios": {"/a@d/light": {"layout.spills": 0},
+              "/b@d/light": {"layout.spills": 0}, "/c@d/light": {"layout.spills": 1}}}"#,
+        );
+        let breaches = compare(&baseline(LANES), &grown_worse);
+        assert!(
+            breaches.iter().any(|breach| matches!(breach, Breach::Worse { scenario, .. } if scenario == "/c@d/light")),
+            "{breaches:?}"
+        );
+        assert!(
+            update(&baseline(LANES), &grown_worse, None).is_err(),
+            "a worse value came into the lane without a decision"
+        );
     }
 
     #[test]

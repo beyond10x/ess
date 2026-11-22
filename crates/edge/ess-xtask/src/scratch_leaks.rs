@@ -28,6 +28,10 @@ const UNIT_SUITES: &[(&str, &str)] = &[
     ),
     ("src/site_data.rs", "site_data::tests::"),
     ("src/support.rs", "support::tests::adversary_actual_help_"),
+    (
+        "src/ux_ratchet.rs",
+        "ux_ratchet::tests::a_run_that_fails_leaves_the_baseline_file_as_it_was",
+    ),
 ];
 
 /// Each integration-test binary of this package that makes TMPDIR scratch.
