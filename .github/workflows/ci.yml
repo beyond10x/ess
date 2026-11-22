@@ -9,6 +9,7 @@
 #   build-tests        test-archive-workspace: the workspace test binaries, compiled once, in two archives
 #   build-feature-off  test-archive-feature-off: the feature-off test binaries, beside it
 #   test (m/20)        test-shard: part k/10 of workspace group a or b; test-feature-off: slice m/20
+#   diff               whether a pull request changes only the plan store, which skips the three above
 #
 # `crates/edge/ess-xtask/tests/ci_lanes.rs` fails when a step of `task check` runs in no job, when
 # the shards leave a partition unrun, or when `Gate` does not carry a job's result.
@@ -49,6 +50,82 @@ env:
   CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS: -C link-arg=-fuse-ld=lld
 
 jobs:
+  # A pull request whose every changed path lies in the plan store, `.engineering/`, and none in
+  # its reproductions, `.engineering/repro/`, which tests read, builds no test archive and starts
+  # no test shard: `build-tests`, `build-feature-off` and `test` wait for this job and are skipped
+  # on its `plan-only`, and `Gate` passes them skipped for that reason only. Only a pull request
+  # from an ordinary head or a fork decides. A `main` push, the nightly run, the pull request of a
+  # `queue/` head of this repository, a merge group and a call from `release.yml` leave the
+  # output empty and run everything, and they are the only runs a release reuses. The paths are
+  # those the merge commit Actions tests changes against its first parent, the base; anything the
+  # step cannot read decides `false`. The path patterns are written once, at the top of the
+  # `plan-only` step. `ci_lanes.rs` runs the step against real Git histories.
+  diff:
+    name: Changed paths
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      PLAN_ONLY_CANDIDATE: ${{ inputs.checkout-ref == '' && github.event_name == 'pull_request' && !(startsWith(github.head_ref, 'queue/') && github.event.pull_request.head.repo.full_name == github.repository) }}
+    outputs:
+      plan-only: ${{ steps.plan-only.outputs.plan-only }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        if: ${{ env.PLAN_ONLY_CANDIDATE == 'true' }}
+        with:
+          # The merge commit and its parents, trees only: the diff names paths and reads no file.
+          fetch-depth: 2
+          filter: blob:none
+          sparse-checkout: .github
+          persist-credentials: false
+
+      - name: Decide whether every changed path is in the plan store
+        id: plan-only
+        if: ${{ env.PLAN_ONLY_CANDIDATE == 'true' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          # The one list of what a plan-only diff may change: a changed path is plan-only when it
+          # matches a pattern of `plan` and none of `tested` (Bash patterns, `*` crosses `/`).
+          plan=('.engineering/?*')
+          tested=('.engineering/repro/*')
+          decide() {
+            echo "$2"
+            echo "plan-only=$1" >> "$GITHUB_OUTPUT"
+            exit 0
+          }
+          # Prints why path $1 is not plan-only; prints nothing when it is.
+          not_plan_only() {
+            local pattern
+            for pattern in "${tested[@]}"; do
+              # shellcheck disable=SC2053
+              if [[ "$1" == $pattern ]]; then
+                echo "tests read $1 ($pattern)"
+                return
+              fi
+            done
+            for pattern in "${plan[@]}"; do
+              # shellcheck disable=SC2053
+              [[ "$1" == $pattern ]] && return
+            done
+            echo "$1 matches none of ${plan[*]}"
+          }
+          parents=$(git rev-list --parents --max-count=1 HEAD 2> /dev/null) \
+            || decide false "running every job: HEAD cannot be read"
+          read -r -a commits <<< "$parents"
+          [ "${#commits[@]}" -eq 3 ] \
+            || decide false "running every job: HEAD is not the two-parent merge commit of a pull request"
+          list="$RUNNER_TEMP/changed-paths"
+          git diff --no-renames --name-only -z "HEAD^1" HEAD > "$list" \
+            || decide false "running every job: the paths HEAD changes against its base cannot be listed"
+          count=0
+          while IFS= read -r -d '' path; do
+            count=$((count + 1))
+            reason=$(not_plan_only "$path")
+            [ -z "$reason" ] || decide false "running every job: $reason"
+          done < "$list"
+          [ "$count" -gt 0 ] || decide false "running every job: the pull request changes no path"
+          decide true "skipping the test archives and the test shards: all $count changed paths match ${plan[*]} and none ${tested[*]}"
+
   checks:
     name: Checks
     runs-on: ubuntu-latest
@@ -160,6 +237,8 @@ jobs:
 
   build-tests:
     name: Build workspace test archive
+    needs: [diff]
+    if: ${{ needs.diff.outputs.plan-only != 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
@@ -235,6 +314,8 @@ jobs:
 
   build-feature-off:
     name: Build feature-off test archive
+    needs: [diff]
+    if: ${{ needs.diff.outputs.plan-only != 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
@@ -314,7 +395,8 @@ jobs:
 
   test:
     name: Test ${{ matrix.shard }}
-    needs: [build-tests, build-feature-off]
+    needs: [diff, build-tests, build-feature-off]
+    if: ${{ needs.diff.outputs.plan-only != 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 285
     strategy:
@@ -632,15 +714,18 @@ jobs:
 
   gate:
     name: Gate
-    needs: [checks, build-tests, build-feature-off, test, transport-network, msrv]
+    needs: [diff, checks, build-tests, build-feature-off, test, transport-network, msrv]
     # A skipped required check reads as passing, so this runs whatever the jobs did and fails
-    # unless every one of them succeeded.
+    # unless every one of them succeeded. The one exception is the three jobs a plan-only pull
+    # request skips (`diff`), skipped when `diff` succeeded and said so.
     if: ${{ always() }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - name: Require every job to have passed
         env:
+          DIFF: ${{ needs.diff.result }}
+          PLAN_ONLY: ${{ needs.diff.outputs.plan-only }}
           CHECKS: ${{ needs.checks.result }}
           BUILD_TESTS: ${{ needs.build-tests.result }}
           BUILD_FEATURE_OFF: ${{ needs.build-feature-off.result }}
@@ -649,12 +734,28 @@ jobs:
           MSRV: ${{ needs.msrv.result }}
         run: |
           status=0
-          for job in "checks=$CHECKS" "build-tests=$BUILD_TESTS" "build-feature-off=$BUILD_FEATURE_OFF" "test=$TEST" "transport-network=$TRANSPORT_NETWORK" "msrv=$MSRV"; do
+          plan_only=false
+          if [ "$DIFF" = success ] && [ "$PLAN_ONLY" = true ]; then
+            plan_only=true
+            echo "diff decided that the pull request changes only plan-only paths"
+          fi
+          for job in "diff=$DIFF" "checks=$CHECKS" "build-tests=$BUILD_TESTS" "build-feature-off=$BUILD_FEATURE_OFF" "test=$TEST" "transport-network=$TRANSPORT_NETWORK" "msrv=$MSRV"; do
             echo "$job"
-            if [ "${job#*=}" != "success" ]; then
-              echo "::error::the ${job%%=*} job finished with '${job#*=}', not 'success'" >&2
-              status=1
+            name="${job%%=*}"
+            result="${job#*=}"
+            if [ "$result" = success ]; then
+              continue
             fi
+            if [ "$result" = skipped ] && [ "$plan_only" = true ]; then
+              case "$name" in
+                build-tests | build-feature-off | test)
+                  echo "the $name job was skipped because the diff is plan-only"
+                  continue
+                  ;;
+              esac
+            fi
+            echo "::error::the $name job finished with '$result', not 'success'" >&2
+            status=1
           done
           exit "$status"
 

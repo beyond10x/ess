@@ -109,6 +109,19 @@ concurrent jobs, and shards waited 1,500–3,900 s. The pull-request run is the 
 required `Gate` reads and the one whose compile cache `rust-cache` saves, so it is the one kept,
 and it archives every feature-off case because the release tag reuses it (below).
 
+**A pull request that changes only the plan store runs no test job.** The `diff` job of `ci.yml`
+lists the paths the pull request's merge commit changes against its base. When every one lies
+under `.engineering/` and none under `.engineering/repro/` (tests in `ess-conformance`, `ess-domain`
+and `ess-synth` read those), `build-tests`, `build-feature-off` and the 20 test jobs are skipped,
+and `Gate` passes them skipped for that reason only and says so in its log; `Checks`, `msrv`, the
+transport job and the macOS witnesses still run. Only a pull request from an ordinary head or a
+fork decides: a `main` push, the nightly run, a `queue/**` head, a `merge_group` run and a call
+from `release.yml` never skip, and an error decides "not plan-only". Such a run never counts for a
+release, because `prior-gate` qualifies only runs that cannot skip. The path patterns are written
+once, as `plan` and `tested` at the top of the `plan-only` step. `ci_lanes.rs` runs the decision
+and `Gate`'s step against canned inputs, and fails when an archived test reads the plan store
+outside `.engineering/repro/`.
+
 Test builds carry line tables only (`[profile.dev] debug`), and `sha2`, `flate2` and `tar` are
 optimised in them. CI's Linux jobs link with lld through
 `CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS` in `ci.yml`, not `.cargo/config.toml`, so local

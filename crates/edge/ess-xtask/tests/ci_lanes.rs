@@ -4661,3 +4661,743 @@ fn the_msrv_job_checks_every_target_on_the_declared_rust_version() {
         }
     }
 }
+
+/// The jobs a plan-only pull request does not start: the two archive builds and the test shards.
+const PLAN_ONLY_SKIPS: [&str; 3] = ["build-tests", "build-feature-off", "test"];
+
+/// The job of `ci.yml` that decides whether a pull request's diff is plan-only.
+const PLAN_ONLY_JOB: &str = "diff";
+
+/// The condition each job of `PLAN_ONLY_SKIPS` carries, and no other job.
+const PLAN_ONLY_IF: &str = "${{ needs.diff.outputs.plan-only != 'true' }}";
+
+/// The condition every step of the deciding job carries: it decides only on a run that may skip.
+const PLAN_ONLY_STEP_IF: &str = "${{ env.PLAN_ONLY_CANDIDATE == 'true' }}";
+
+/// The part of the plan store a test binary reads: the reproductions committed with issues. A
+/// diff that touches it is not plan-only.
+const PLAN_ONLY_EXCEPT: &str = ".engineering/repro/";
+
+/// The tasks that build or run the test archives.
+const TEST_ARCHIVE_TASKS: [&str; 4] = [
+    "test-archive-workspace",
+    "test-archive-feature-off",
+    "test-shard",
+    "test-feature-off",
+];
+
+fn assert_plan_only_skips_exactly_the_test_jobs(ci: &Value) {
+    let skips: BTreeSet<String> = PLAN_ONLY_SKIPS.iter().map(|id| (*id).to_owned()).collect();
+    let testing: BTreeSet<String> = lane_invocations(ci)
+        .into_iter()
+        .filter(|lane| TEST_ARCHIVE_TASKS.contains(&lane.task.as_str()))
+        .map(|lane| lane.job)
+        .collect();
+    assert_eq!(
+        testing, skips,
+        "the jobs that build or run the test archives are not the jobs a plan-only diff skips"
+    );
+    for (id, job) in ci["jobs"].as_mapping().expect("ci.yml has jobs") {
+        let id = text(id);
+        let condition = text(&job["if"]);
+        if skips.contains(id) {
+            assert_eq!(
+                condition, PLAN_ONLY_IF,
+                "`{id}` is not skipped on a plan-only diff, or on something besides it"
+            );
+            assert!(
+                needs_of(job).contains(PLAN_ONLY_JOB),
+                "`{id}` does not wait for the plan-only decision of `{PLAN_ONLY_JOB}`"
+            );
+        } else {
+            assert!(
+                !condition.contains("plan-only"),
+                "`{id}` is skipped on a plan-only diff too: `{condition}`"
+            );
+        }
+    }
+}
+
+/// A pull request whose every changed path lies in the plan store, outside its reproductions,
+/// builds no test archive and starts no test shard. Exactly the jobs that build or run the
+/// archives carry the condition, and each carries exactly it; a job added to build or run them
+/// without it, or another job skipped by it, fails here.
+#[test]
+fn a_plan_only_pull_request_skips_exactly_the_test_archives_and_the_test_shards() {
+    let ci = yaml(".github/workflows/ci.yml");
+    assert_plan_only_skips_exactly_the_test_jobs(&ci);
+    for (output, runs) in [("true", false), ("false", true), ("", true)] {
+        let context = BTreeMap::from([("needs.diff.outputs.plan-only", output)]);
+        assert_eq!(
+            evaluate(PLAN_ONLY_IF, &context).truthy(),
+            runs,
+            "a decision of `{output}` runs the test jobs {}",
+            !runs
+        );
+    }
+
+    let mut dropped = ci.clone();
+    dropped["jobs"]["test"]["if"] = Value::Null;
+    let mut other = ci.clone();
+    other["jobs"]["build-feature-off"]["if"] =
+        Value::String("${{ needs.diff.outputs.plan-only == 'false' }}".to_owned());
+    let mut widened = ci.clone();
+    widened["jobs"]["checks"]["if"] = Value::String(PLAN_ONLY_IF.to_owned());
+    for (name, mutant) in [("dropped", dropped), ("other", other), ("widened", widened)] {
+        assert!(
+            std::panic::catch_unwind(|| assert_plan_only_skips_exactly_the_test_jobs(&mutant))
+                .is_err(),
+            "the {name} plan-only condition passes"
+        );
+    }
+}
+
+/// Whether the deciding job may decide at all for a run of `ci.yml` in `context`.
+fn plan_only_candidate(ci: &Value, context: &BTreeMap<&str, &str>) -> bool {
+    let job = &ci["jobs"][PLAN_ONLY_JOB];
+    let candidate = text(&job["env"]["PLAN_ONLY_CANDIDATE"]);
+    assert!(
+        !candidate.is_empty(),
+        "`{PLAN_ONLY_JOB}` sets no PLAN_ONLY_CANDIDATE"
+    );
+    match evaluate(candidate, context) {
+        ExpressionValue::Flag(flag) => flag,
+        ExpressionValue::Text(other) => {
+            panic!("PLAN_ONLY_CANDIDATE `{candidate}` is `{other}`, not true or false")
+        }
+    }
+}
+
+/// The expression context of a run of `ci.yml` in `owner/repository`: its event, `github.head_ref`
+/// and head repository (a pull request's, empty elsewhere), and `inputs.checkout-ref`.
+fn ci_context<'a>(
+    event: &'a str,
+    head_ref: &'a str,
+    head_repository: &'a str,
+    checkout: &'a str,
+) -> BTreeMap<&'static str, &'a str> {
+    BTreeMap::from([
+        ("github.event_name", event),
+        ("github.head_ref", head_ref),
+        (
+            "github.event.pull_request.head.repo.full_name",
+            head_repository,
+        ),
+        ("github.repository", "owner/repository"),
+        ("inputs.checkout-ref", checkout),
+    ])
+}
+
+/// The `qualifies` function of release.yml's `prior-gate` step, verbatim.
+fn prior_gate_qualifies(release: &Value) -> String {
+    let script = text(&prior_gate_step(release)["run"]);
+    let start = script
+        .find("qualifies() {")
+        .expect("the prior-gate step defines `qualifies`");
+    let end = script[start..]
+        .find("\n}\n")
+        .expect("the prior-gate step closes `qualifies`");
+    script[start..start + end + 3].to_owned()
+}
+
+/// Runs `function`, the `qualifies` function of `prior-gate`, on workflow run `id`, which `gh`
+/// describes as `run`, for `commit`. Returns whether the run qualifies; a run `qualifies` cannot
+/// read fails the case.
+fn run_prior_gate_qualifies(
+    case: &Path,
+    function: &str,
+    id: usize,
+    run: &serde_json::Value,
+    commit: &str,
+) -> bool {
+    let bin = case.join("bin");
+    let answers = case.join("responses");
+    fs::create_dir_all(&answers).unwrap();
+    if !bin.join("gh").exists() {
+        fs::create_dir_all(&bin).unwrap();
+        executable::install_bytes(&bin.join("gh"), GH_PATH_STUB.as_bytes()).unwrap();
+    }
+    let id = id.to_string();
+    fs::write(
+        answers.join(format!("{}.json", run_path(&id).replace('/', "_"))),
+        run.to_string(),
+    )
+    .unwrap();
+    let script = case.join(format!("qualifies-{id}.sh"));
+    fs::write(
+        &script,
+        format!("REPOSITORY=owner/repository\n{function}\nqualifies {id} {commit}\n"),
+    )
+    .unwrap();
+    let output = isolated("bash", case)
+        .args(["--noprofile", "--norc"])
+        .arg(&script)
+        .env(
+            "PATH",
+            format!(
+                "{}:{}",
+                bin.display(),
+                std::env::var("PATH").unwrap_or_default()
+            ),
+        )
+        .env("GH_STUB_RESPONSES", &answers)
+        .output()
+        .unwrap();
+    let log = String::from_utf8_lossy(&output.stdout).into_owned()
+        + &String::from_utf8_lossy(&output.stderr);
+    let code = output.status.code();
+    assert!(
+        matches!(code, Some(0 | 1)),
+        "`qualifies` could not read run {id} ({run}): {code:?} {log}"
+    );
+    code == Some(0)
+}
+
+/// A plan-only skip is never possible on a run that has to test everything: a `main` push, the
+/// nightly run, the pull request of a `queue/` head of this repository, a merge-group run, a
+/// backfill, and a call from `release.yml` (`checkout-ref` set). And no run that may skip ever
+/// stands in for a release's gate: the `qualifies` function of release.yml's `prior-gate` step,
+/// run here, accepts none of them, so a later widening of either side fails this case.
+#[test]
+fn no_run_that_must_test_everything_or_stands_in_for_a_release_can_skip_for_a_plan_only_diff() {
+    let ci = yaml(".github/workflows/ci.yml");
+    let release = yaml(".github/workflows/release.yml");
+    let job = &ci["jobs"][PLAN_ONLY_JOB];
+    assert!(job.is_mapping(), "ci.yml has no `{PLAN_ONLY_JOB}` job");
+    assert!(
+        job["if"].is_null(),
+        "`{PLAN_ONLY_JOB}` is conditional, so the jobs that wait for it would be skipped with it"
+    );
+    assert_eq!(
+        text(&job["outputs"]["plan-only"]),
+        "${{ steps.plan-only.outputs.plan-only }}",
+        "`{PLAN_ONLY_JOB}` reports a decision its `plan-only` step did not make"
+    );
+    let steps: Vec<&Value> = job["steps"].as_sequence().into_iter().flatten().collect();
+    assert!(
+        steps.iter().any(|step| text(&step["id"]) == "plan-only"),
+        "`{PLAN_ONLY_JOB}` has no `plan-only` step"
+    );
+    for step in &steps {
+        assert_eq!(
+            text(&step["if"]),
+            PLAN_ONLY_STEP_IF,
+            "a step of `{PLAN_ONLY_JOB}` runs on a run that may not skip: {step:?}"
+        );
+    }
+
+    let own = "owner/repository";
+    let commit = "3ec2deb977bb19c292a611dcf92a3e676352864a";
+    // The event, `github.head_ref`, the pull request's head repository, `inputs.checkout-ref`,
+    // and whether the run may skip.
+    let runs = [
+        ("push", "", "", "", false),
+        ("schedule", "", "", "", false),
+        ("pull_request", "queue/pr-119", own, "", false),
+        ("merge_group", "", "", "", false),
+        // A call from release.yml: a tag push, and a backfill dispatched from any branch.
+        ("push", "", "", commit, false),
+        ("workflow_dispatch", "", "", commit, false),
+        ("workflow_dispatch", "", "", "", false),
+        ("pull_request", "feat/x", own, commit, false),
+        // A pull request from an ordinary head, and from a fork, which can name a branch anything.
+        ("pull_request", "feat/x", own, "", true),
+        ("pull_request", "queue/pr-119", "fork/repository", "", true),
+        ("pull_request", "main", "fork/repository", "", true),
+    ];
+    let wrong: Vec<String> = runs
+        .iter()
+        .filter(|&&(event, head_ref, repository, checkout, may)| {
+            plan_only_candidate(&ci, &ci_context(event, head_ref, repository, checkout)) != may
+        })
+        .map(|run| format!("{run:?}"))
+        .collect();
+    assert!(
+        wrong.is_empty(),
+        "the plan-only decision may run wrongly on: {wrong:?}"
+    );
+
+    // The workflow runs `prior-gate` reads, each the ci.yml run it describes: event, head branch,
+    // head repository.
+    let described = [
+        ("push", "main", own),
+        ("schedule", "main", own),
+        ("pull_request", "queue/pr-119", own),
+        ("pull_request", "feat/x", own),
+        ("pull_request", "queue/pr-119", "fork/repository"),
+        ("merge_group", "gh-readonly-queue/main/pr-7", own),
+        ("workflow_dispatch", "main", own),
+        ("push", "queue/pr-119", own),
+    ];
+    let case = Scratch::new("plan-only-qualifies");
+    let function = prior_gate_qualifies(&release);
+    let mut qualifying = 0;
+    let mut skippable = 0;
+    let mut stands_in = Vec::new();
+    for (index, (event, branch, repository)) in described.into_iter().enumerate() {
+        let run = workflow_run(
+            ".github/workflows/ci.yml",
+            event,
+            Some(branch),
+            repository,
+            commit,
+        );
+        let qualifies = run_prior_gate_qualifies(&case.0, &function, 100 + index, &run, commit);
+        let (head_ref, head_repository) = if event == "pull_request" {
+            (branch, repository)
+        } else {
+            ("", "")
+        };
+        let may_skip = plan_only_candidate(&ci, &ci_context(event, head_ref, head_repository, ""));
+        qualifying += usize::from(qualifies);
+        skippable += usize::from(may_skip);
+        if qualifies && may_skip {
+            stands_in.push(format!("{event} {branch} {repository}"));
+        }
+    }
+    assert!(
+        qualifying > 0 && skippable > 0,
+        "the case reads nothing: {qualifying} qualifying runs, {skippable} that may skip"
+    );
+    assert!(
+        stands_in.is_empty(),
+        "a run that may skip its tests for a plan-only diff stands in for a release's gate: \
+         {stands_in:?}"
+    );
+}
+
+/// Runs `Gate`'s step with the results `results` gives each job it needs, and `plan_only` as the
+/// deciding job's output. Returns whether it passed, and its log.
+fn run_gate(case: &Path, results: &BTreeMap<String, String>, plan_only: &str) -> (bool, String) {
+    let ci = yaml(".github/workflows/ci.yml");
+    let gate = &ci["jobs"]["gate"];
+    let steps: Vec<&Value> = gate["steps"].as_sequence().into_iter().flatten().collect();
+    let [step] = steps.as_slice() else {
+        panic!("Gate runs {} steps, not one", steps.len())
+    };
+    let script = case.join("gate.sh");
+    fs::write(&script, text(&step["run"])).unwrap();
+    let mut command = isolated("bash", case);
+    command
+        .args(["--noprofile", "--norc", "-eo", "pipefail"])
+        .arg(&script);
+    for (name, value) in step["env"].as_mapping().into_iter().flatten() {
+        let value = text(value);
+        let supplied = if value == "${{ needs.diff.outputs.plan-only }}" {
+            plan_only.to_owned()
+        } else {
+            let need = value
+                .strip_prefix("${{ needs.")
+                .and_then(|rest| rest.strip_suffix(".result }}"))
+                .unwrap_or_else(|| panic!("Gate reads `{value}`, which this case cannot supply"));
+            results
+                .get(need)
+                .unwrap_or_else(|| {
+                    panic!("Gate reads the result of `{need}`, which it does not need")
+                })
+                .clone()
+        };
+        command.env(text(name), supplied);
+    }
+    let output = command.output().unwrap();
+    let log = String::from_utf8_lossy(&output.stdout).into_owned()
+        + &String::from_utf8_lossy(&output.stderr);
+    (output.status.success(), log)
+}
+
+/// `Gate` passes the archive builds and the test shards skipped only when the deciding job
+/// succeeded and said the diff is plan-only, and says so in its log. It fails on a failed or
+/// cancelled job whatever the decision, on any other job skipped, on a skipped test job without
+/// that decision, and when the deciding job itself did not succeed.
+#[test]
+fn the_gate_passes_skipped_test_jobs_only_for_a_plan_only_diff() {
+    let ci = yaml(".github/workflows/ci.yml");
+    let gate = &ci["jobs"]["gate"];
+    let needs = needs_of(gate);
+    assert!(
+        needs.contains(PLAN_ONLY_JOB),
+        "Gate does not wait for the plan-only decision"
+    );
+    let case = Scratch::new("plan-only-gate");
+    let all = |result: &str| -> BTreeMap<String, String> {
+        needs
+            .iter()
+            .map(|need| (need.clone(), result.to_owned()))
+            .collect()
+    };
+    let with = |changes: &[(&str, &str)]| {
+        let mut results = all("success");
+        for (job, result) in changes {
+            assert!(results.contains_key(*job), "Gate does not need `{job}`");
+            results.insert((*job).to_owned(), (*result).to_owned());
+        }
+        results
+    };
+    let skipped: Vec<(&str, &str)> = PLAN_ONLY_SKIPS
+        .iter()
+        .map(|job| (*job, "skipped"))
+        .collect();
+
+    let mut wrong = Vec::new();
+    let mut expect =
+        |name: String, results: BTreeMap<String, String>, plan_only: &str, pass: bool| {
+            let (passed, log) = run_gate(&case.0, &results, plan_only);
+            if passed != pass {
+                wrong.push(format!("{name}: passed {passed}, expected {pass}\n{log}"));
+            }
+            log
+        };
+
+    expect("every job passed".into(), all("success"), "", true);
+    let log = expect("a plan-only diff".into(), with(&skipped), "true", true);
+    for job in PLAN_ONLY_SKIPS {
+        assert!(
+            log.contains(&format!(
+                "the {job} job was skipped because the diff is plan-only"
+            )),
+            "Gate does not say why `{job}` was skipped: {log}"
+        );
+    }
+    for job in needs.iter().filter(|job| job.as_str() != PLAN_ONLY_JOB) {
+        let skippable = PLAN_ONLY_SKIPS.contains(&job.as_str());
+        expect(
+            format!("{job} skipped on a plan-only diff"),
+            with(&[(job.as_str(), "skipped")]),
+            "true",
+            skippable,
+        );
+        expect(
+            format!("{job} skipped without a plan-only diff"),
+            with(&[(job.as_str(), "skipped")]),
+            "",
+            false,
+        );
+        expect(
+            format!("{job} skipped on a `false` decision"),
+            with(&[(job.as_str(), "skipped")]),
+            "false",
+            false,
+        );
+        for result in ["failure", "cancelled"] {
+            let mut changes = skipped.clone();
+            changes.retain(|(skip, _)| *skip != job.as_str());
+            changes.push((job.as_str(), result));
+            expect(
+                format!("{job} {result} on a plan-only diff"),
+                with(&changes),
+                "true",
+                false,
+            );
+        }
+    }
+    for result in ["failure", "cancelled", "skipped"] {
+        let mut changes = skipped.clone();
+        changes.push((PLAN_ONLY_JOB, result));
+        expect(
+            format!("the deciding job {result}"),
+            with(&changes),
+            "true",
+            false,
+        );
+    }
+    assert!(
+        wrong.is_empty(),
+        "Gate decides wrongly:\n{}",
+        wrong.join("\n")
+    );
+}
+
+/// Runs the deciding job's `plan-only` step in `checkout` the way Actions does, and returns the
+/// decision it wrote and its log. The step must exit 0 whatever it finds: an error decides
+/// `false`, it never fails the job.
+fn run_plan_only_step(case: &Path, checkout: &Path) -> (String, String) {
+    let ci = yaml(".github/workflows/ci.yml");
+    let step = ci["jobs"][PLAN_ONLY_JOB]["steps"]
+        .as_sequence()
+        .into_iter()
+        .flatten()
+        .find(|step| text(&step["id"]) == "plan-only")
+        .expect("the deciding job has a `plan-only` step");
+    assert_eq!(
+        text(&step["shell"]),
+        "bash",
+        "the plan-only step is not bash"
+    );
+    assert!(
+        step["env"].is_null(),
+        "the plan-only step reads an environment this harness does not supply"
+    );
+    let temp = case.join("runner-temp");
+    fs::create_dir_all(&temp).unwrap();
+    let script = case.join("plan-only.sh");
+    fs::write(&script, text(&step["run"])).unwrap();
+    let output_file = case.join("github-output");
+    fs::write(&output_file, "").unwrap();
+    let output = isolated("bash", checkout)
+        .args(["--noprofile", "--norc", "-eo", "pipefail"])
+        .arg(&script)
+        .env("GITHUB_OUTPUT", &output_file)
+        .env("RUNNER_TEMP", &temp)
+        .output()
+        .unwrap();
+    let log = String::from_utf8_lossy(&output.stdout).into_owned()
+        + &String::from_utf8_lossy(&output.stderr);
+    assert!(
+        output.status.success(),
+        "the plan-only step failed the job instead of deciding: {log}"
+    );
+    let written = fs::read_to_string(&output_file).unwrap();
+    let decisions: Vec<&str> = written
+        .lines()
+        .filter_map(|line| line.strip_prefix("plan-only="))
+        .collect();
+    let [decision] = decisions.as_slice() else {
+        panic!("the plan-only step wrote {decisions:?}, not one decision: {log}")
+    };
+    assert!(
+        matches!(*decision, "true" | "false"),
+        "the plan-only step decided `{decision}`: {log}"
+    );
+    ((*decision).to_owned(), log)
+}
+
+/// A plan-only pull request, as the deciding job checks it out: the merge commit of the pull
+/// request at depth `depth`, `refs/pull/<n>/merge` in a real run.
+fn plan_only_checkout(root: &Path, origin: &Path, reference: &str, depth: u32) -> PathBuf {
+    let checkout = root.join(format!("checkout-{reference}-{depth}"));
+    fs::create_dir_all(&checkout).unwrap();
+    git(&checkout, &["init", "--quiet"]);
+    git(
+        &checkout,
+        &[
+            "fetch",
+            "--quiet",
+            "--no-tags",
+            &format!("--depth={depth}"),
+            &format!("file://{}", origin.display()),
+            reference,
+        ],
+    );
+    git(
+        &checkout,
+        &["checkout", "--quiet", "--detach", "FETCH_HEAD"],
+    );
+    checkout
+}
+
+/// What one pull request of the plan-only histories changes on its branch.
+type PlanChange<'a> = Box<dyn Fn() + 'a>;
+
+/// The plan-only decision is "every path the pull request changes lies under `.engineering/`,
+/// none under `.engineering/repro/`", read from the merge commit Actions tests against its first
+/// parent, the base it merges into. The step is run against real Git histories: a branch that
+/// left `main` before `main` moved on, merged with `--no-ff` as `refs/pull/<n>/merge` is. A rename
+/// counts with both of its paths, an empty change is not plan-only, and anything the step cannot
+/// read decides `false`.
+#[test]
+// One table of histories, which reads best whole.
+#[allow(clippy::too_many_lines)]
+fn the_plan_only_decision_is_every_changed_path_under_the_plan_store() {
+    let case = Scratch::new("plan-only-decision");
+    let origin = case.0.join("origin");
+    fs::create_dir_all(&origin).unwrap();
+    git(&origin, &["init", "--quiet", "--initial-branch=main"]);
+    // `crates/lib.rs` stays where it is, so moving `crates/a.rs` out is no directory rename that
+    // would carry `main`'s new `crates/b.rs` with it and stop the merge.
+    for (path, contents) in [
+        ("crates/a.rs", "a"),
+        ("crates/lib.rs", "lib"),
+        ("AGENTS.md", "agents"),
+        ("docs/x.md", "docs"),
+        (".engineering/planning/story/old.md", "old"),
+        (".engineering/repro/501/system.yaml", "repro"),
+    ] {
+        let file = origin.join(path);
+        fs::create_dir_all(file.parent().unwrap()).unwrap();
+        fs::write(file, contents).unwrap();
+    }
+    git(&origin, &["add", "--all"]);
+    git(&origin, &["commit", "--quiet", "--message", "base"]);
+    let base = git(&origin, &["rev-parse", "HEAD"]);
+    // `main` moves on after every branch below left it: its change is not the pull request's.
+    let moved = origin.join("crates/b.rs");
+    fs::write(&moved, "b").unwrap();
+    git(&origin, &["add", "--all"]);
+    git(
+        &origin,
+        &["commit", "--quiet", "--message", "main moves on"],
+    );
+
+    let write = |path: &str, contents: &str| {
+        let file = origin.join(path);
+        fs::create_dir_all(file.parent().unwrap()).unwrap();
+        fs::write(file, contents).unwrap();
+    };
+    let many: Vec<String> = (0..300)
+        .map(|n| format!(".engineering/evidence/run-{n:03}.md"))
+        .collect();
+    let cases: Vec<(&str, PlanChange<'_>, &str)> = vec![
+        (
+            "one story",
+            Box::new(|| write(".engineering/planning/story/x.md", "x")),
+            "true",
+        ),
+        (
+            "a story and AGENTS.md",
+            Box::new(|| {
+                write(".engineering/planning/story/x.md", "x");
+                write("AGENTS.md", "changed");
+            }),
+            "false",
+        ),
+        (
+            "docs only",
+            Box::new(|| write("docs/x.md", "changed")),
+            "false",
+        ),
+        (
+            "a sibling of the plan store",
+            Box::new(|| write(".engineeringx/y", "y")),
+            "false",
+        ),
+        (
+            "a rename into the plan store",
+            Box::new(|| {
+                git(&origin, &["mv", "crates/a.rs", ".engineering/a.rs"]);
+            }),
+            "false",
+        ),
+        (
+            "a reproduction a test reads",
+            Box::new(|| write(".engineering/repro/501/system.yaml", "changed")),
+            "false",
+        ),
+        (
+            "a story deleted",
+            Box::new(|| {
+                git(
+                    &origin,
+                    &["rm", "--quiet", ".engineering/planning/story/old.md"],
+                );
+            }),
+            "true",
+        ),
+        (
+            "a story with a non-ASCII name",
+            Box::new(|| write(".engineering/planning/story/\u{e4}.md", "x")),
+            "true",
+        ),
+        (
+            "300 changed files in the plan store",
+            Box::new(|| {
+                for path in &many {
+                    write(path, "evidence");
+                }
+            }),
+            "true",
+        ),
+        ("no change", Box::new(|| {}), "false"),
+    ];
+
+    let mut wrong = Vec::new();
+    for (index, (name, change, expected)) in cases.iter().enumerate() {
+        let branch = format!("case-{index}");
+        git(&origin, &["checkout", "--quiet", "-b", &branch, &base]);
+        change();
+        git(&origin, &["add", "--all"]);
+        git(
+            &origin,
+            &["commit", "--quiet", "--allow-empty", "--message", name],
+        );
+        git(&origin, &["checkout", "--quiet", "--detach", "main"]);
+        git(
+            &origin,
+            &["merge", "--quiet", "--no-ff", "--message", name, &branch],
+        );
+        git(&origin, &["branch", &format!("merge-{index}"), "HEAD"]);
+        let checkout = plan_only_checkout(&case.0, &origin, &format!("merge-{index}"), 2);
+        let (decision, log) = run_plan_only_step(&case.0, &checkout);
+        if decision != *expected {
+            wrong.push(format!("{name}: {decision}, expected {expected}\n{log}"));
+        }
+    }
+
+    // What the step cannot read decides `false`: a checkout too shallow to hold the base, a head
+    // that is no merge commit, and no repository at all.
+    let shallow = plan_only_checkout(&case.0, &origin, "merge-0", 1);
+    let plain = plan_only_checkout(&case.0, &origin, "case-0", 2);
+    let empty = case.0.join("no-repository");
+    fs::create_dir_all(&empty).unwrap();
+    for (name, checkout) in [
+        ("a checkout without the base", shallow),
+        ("a head that is no merge commit", plain),
+        ("no repository", empty),
+    ] {
+        let (decision, log) = run_plan_only_step(&case.0, &checkout);
+        if decision != "false" {
+            wrong.push(format!("{name}: {decision}, expected false\n{log}"));
+        }
+    }
+    assert!(
+        wrong.is_empty(),
+        "the plan-only step decides wrongly:\n{}",
+        wrong.join("\n")
+    );
+}
+
+/// A plan-only diff skips the test archives, so no test binary in them may read the plan store
+/// outside `.engineering/repro/`, the one part of it a plan-only diff never touches. `ess-xtask`'s
+/// tests run in `Checks`, which a plan-only diff does not skip, and are left out. A line that
+/// names the store only to skip it in a tree walk (beside `"target"`) is not a read.
+#[test]
+fn no_archived_test_reads_the_plan_store_outside_its_reproductions() {
+    fn walk(directory: &Path, into: &mut Vec<PathBuf>) {
+        for entry in fs::read_dir(directory).unwrap() {
+            let path = entry.unwrap().path();
+            let name = path.file_name().unwrap().to_string_lossy().into_owned();
+            if path.is_dir() {
+                if !matches!(name.as_str(), "target" | "node_modules" | ".git") {
+                    walk(&path, into);
+                }
+            } else {
+                into.push(path);
+            }
+        }
+    }
+    let root = workspace_root();
+    let xtask = root.join("crates/edge/ess-xtask");
+    let mut files = Vec::new();
+    walk(&root.join("crates"), &mut files);
+    let mut reproductions = 0;
+    let mut readers = Vec::new();
+    for file in files.iter().filter(|file| !file.starts_with(&xtask)) {
+        let Ok(source) = fs::read_to_string(file) else {
+            continue;
+        };
+        for (number, line) in source.lines().enumerate() {
+            let code = line.trim_start();
+            if code.starts_with("//") || code.starts_with('#') {
+                continue;
+            }
+            for (at, _) in line.match_indices(".engineering/") {
+                if line[at..].starts_with(PLAN_ONLY_EXCEPT) {
+                    reproductions += 1;
+                } else {
+                    readers.push(format!("{}:{}", file.display(), number + 1));
+                }
+            }
+            if line.contains("\".engineering\"") && !line.contains("\"target\"") {
+                readers.push(format!("{}:{}", file.display(), number + 1));
+            }
+        }
+    }
+    assert!(
+        reproductions > 0,
+        "the scan found no test reading a reproduction; it no longer sees what it exists to find"
+    );
+    assert!(
+        readers.is_empty(),
+        "these archived tests read the plan store outside {PLAN_ONLY_EXCEPT}, so a plan-only \
+         diff would skip the tests of what it changed: {readers:#?}"
+    );
+}
