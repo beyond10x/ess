@@ -2701,6 +2701,7 @@ struct Arranged {
     truths: contrast::Truths,
 }
 
+#[allow(clippy::too_many_lines)] // One arrangement and its observation, each measure in order.
 fn arrange_and_observe(
     plan: &Plan<'_>,
     creator: &Driver<'_>,

@@ -21673,6 +21673,7 @@ pub fn binding_triggers_tried<R>(run: impl FnOnce() -> R) -> (R, u64) {
 /// Where the trigger cannot be produced at all, the refusal is about the **binding** rather than
 /// about one of its four scenarios: none of the four exists, and four copies of one reason is a
 /// diagnostic a reader has to deduplicate by hand.
+#[allow(clippy::too_many_lines)] // One binding, its publishers tried in order.
 fn bindings(
     ir: &EssIr,
     actors: &BTreeMap<QualifiedName, ActorRef>,

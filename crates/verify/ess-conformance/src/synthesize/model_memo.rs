@@ -97,9 +97,9 @@ pub(super) fn absent_events(
         return known;
     }
     ABSENT_BUILT.with(|count| count.set(count.get() + 1));
-    let built = Rc::new(build());
+    let absent = Rc::new(build());
     with_kept(ir, |kept| {
-        kept.absent.insert(emitted.to_vec(), Rc::clone(&built));
+        kept.absent.insert(emitted.to_vec(), Rc::clone(&absent));
     });
-    built
+    absent
 }

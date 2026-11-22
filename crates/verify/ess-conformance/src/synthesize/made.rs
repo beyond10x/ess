@@ -145,9 +145,9 @@ pub(super) fn remember(ir: &EssIr) -> Remembered {
 /// the model is remembered. `None` where `ir` is not the model remembered innermost: the caller
 /// derives it afresh then, as it did before.
 pub(super) fn kept<T: 'static>(ir: &EssIr, key: &str, make: impl FnOnce() -> T) -> Option<Rc<T>> {
-    let held = MADE.with(|made| {
-        let made = made.borrow();
-        let top = made.last().filter(|top| std::ptr::eq(top.ir, ir))?;
+    let held = MADE.with(|memory| {
+        let memory = memory.borrow();
+        let top = memory.last().filter(|top| std::ptr::eq(top.ir, ir))?;
         Some(top.kept.get(key).cloned())
     })?;
     if let Some(held) = held {

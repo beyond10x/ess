@@ -29,6 +29,8 @@ pub fn followup_origins_built<R>(run: impl FnOnce() -> R) -> (R, u64) {
 /// branch and those actors and nothing of the cell but its id, named by the refusals it writes.
 /// Built for the first cell and, where every refusal it wrote is about that cell alone, handed to
 /// every later cell with those refusals written again about it.
+// One per marked branch, held for its cells only: the size of the kept run costs nothing.
+#[allow(clippy::large_enum_variant)]
 #[derive(Default)]
 enum SharedOrigin {
     /// Not built yet.
@@ -549,6 +551,7 @@ fn stateless(command: &ResolvedCommand, outcome: &ResolvedOutcome) -> bool {
         && !subject_fact::uses(command)
 }
 
+#[allow(clippy::too_many_lines)] // One pass over the marked branches, each cell in order.
 fn followups(
     ir: &EssIr,
     readings: Option<&Readings>,

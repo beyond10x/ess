@@ -183,7 +183,7 @@ pub(super) fn created_owned(
     // No borrow is held while making: the creations below ask the memory too.
     let before = super::related_guard::cuts();
     MADE.with(|count| count.set(count.get() + 1));
-    let made = make();
+    let created = make();
     let cuts = super::related_guard::cuts().saturating_sub(before);
     KEPT.with(|kept| {
         if let Some(top) = kept.borrow_mut().last_mut() {
@@ -191,12 +191,12 @@ pub(super) fn created_owned(
                 top.rows.insert(
                     key,
                     Entry {
-                        made: made.clone(),
+                        made: created.clone(),
                         cuts,
                     },
                 );
             }
         }
     });
-    made
+    created
 }

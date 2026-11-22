@@ -960,6 +960,7 @@ fn evaluate_row(
 
 /// [`evaluate_row`], with `input` already flattened as `flat` where the caller holds it.
 #[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_lines)] // One row bound once, then each override in order.
 fn evaluate_row_flat(
     ir: &EssIr,
     entity: &EntityHandle,
