@@ -35,6 +35,7 @@ export interface MeasuredRound {
   coverage: Summary['coverage'];
   gates: Summary['gates'];
   scenarios: Summary['scenarios'];
+  replaced: ReplacedValues;
   measured_only: MeasuredOnlyRow[];
   slowest: Array<{ run: string; title: string; project: string; seconds: number; status: string }>;
   slowest_pages: Array<{ path: string; viewport: string; phases: Record<string, number> }>;
@@ -46,10 +47,40 @@ export interface Shot {
   caption: string;
 }
 
-export function mergeRaws(raws: Raw[]): Raw {
+// Every run's engine, and the round's: dirty when any run's was, commit `unknown` when any run's
+// was (T25 of the R-03 report review: the round took the first run's and lost the rest).
+export function mergeEngines(engines: Engine[]): Engine {
+  if (engines.length === 0) return { digest: 'none', commit: 'none', dirty: false };
+  const commits = new Set(engines.map((e) => e.commit));
+  const commit = commits.has('unknown') ? 'unknown' : commits.size === 1 ? engines[0].commit : 'mixed';
+  return { digest: engines[0].digest, commit, dirty: engines.some((e) => e.dirty) };
+}
+
+// The values more than one run measured and measured differently: scenario, metric, every run's
+// value in run order. The merged round holds the last; the ratchet holds the worst (T27).
+export type ReplacedValues = Record<string, Record<string, Array<{ run: string; value: number }>>>;
+export function replacedValues(runs: Array<{ name: string; raw: Raw }>): ReplacedValues {
+  const seen: ReplacedValues = {};
+  for (const { name, raw } of runs) {
+    const { scenarios } = summarize(raw.l2, raw.l3, raw.expected, raw.measured);
+    for (const [scenario, values] of Object.entries(scenarios)) {
+      for (const [metric, value] of Object.entries(values)) ((seen[scenario] ??= {})[metric] ??= []).push({ run: name, value });
+    }
+  }
+  const out: ReplacedValues = {};
+  for (const scenario of Object.keys(seen).sort()) {
+    for (const [metric, values] of Object.entries(seen[scenario]).sort(([a], [b]) => a.localeCompare(b))) {
+      if (new Set(values.map((v) => v.value)).size > 1) (out[scenario] ??= {})[metric] = values;
+    }
+  }
+  return out;
+}
+
+export function mergeRaws(raws: Raw[]): Raw & { engines: Engine[] } {
   return {
     lane: raws[0]?.lane ?? 'none',
-    engine: raws[0]?.engine ?? { digest: 'none', commit: 'none', dirty: false },
+    engine: mergeEngines(raws.map((r) => r.engine)),
+    engines: raws.map((r) => r.engine),
     expected: raws.flatMap((r) => r.expected),
     l2: raws.flatMap((r) => r.l2),
     l3: raws.flatMap((r) => r.l3),
@@ -115,13 +146,14 @@ export function buildRound(input: {
     // The slow lane measures every page and every card: merged from its jobs it is the full round,
     // which the ratchet holds every scenario of the baseline to.
     lane: merged.lane === 'slow' ? 'full' : merged.lane,
-    engine: { ...merged.engine, runs_agree: digests.size <= 1 },
+    engine: { ...mergeEngines(all.map((m) => m.raw.engine)), runs_agree: digests.size <= 1 },
     cards: input.cards,
     viewports: input.viewports,
     runs: all.map((m) => runSummary(m.name, m.raw)),
     coverage: s.coverage,
     gates: s.gates,
     scenarios: s.scenarios,
+    replaced: replacedValues(input.measurement),
     measured_only: measuredOnlyRows(s.records.measured, input.viewports.measured, measuredExpected),
     slowest: input.measurement
       .flatMap((m) => m.raw.timing.slowest.map((t) => ({ run: m.name, ...t })))
@@ -335,6 +367,13 @@ export function writeReport(dir: string, m: MeasuredRound, x: ReportExtras): voi
     }
   }
   out.push(table(['scenario', 'key', 'this round', 'baseline', 'last round'], rows), '');
+
+  const replaced = Object.entries(m.replaced ?? {}).flatMap(([scenario, metrics]) => Object.entries(metrics).map(([metric, values]) => ({ scenario, metric, values })));
+  if (replaced.length > 0) {
+    out.push('## Values a rerun replaced', '');
+    out.push('A scenario more than one run measured, with every run\'s value. "This round" above is the last run\'s; the ratchet holds the worst of them unless a decision names the key.', '');
+    out.push(table(['scenario', 'key', 'values by run', 'held by the ratchet'], replaced.map((r) => [r.scenario, r.metric, r.values.map((v) => `${v.run} ${fmt(v.value)}`).join('; '), fmt(Math.max(...r.values.map((v) => v.value)))])), '');
+  }
 
   out.push('## Measured-only viewports', '');
   out.push(

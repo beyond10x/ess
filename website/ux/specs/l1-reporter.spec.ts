@@ -6,7 +6,7 @@ import { FINDINGS, REPOSITORY } from '../adapter';
 import { holdKnownFailures } from '../core/findings';
 import { engineDigest } from '../core/engine';
 import { mergeRecords, summarize, type Expected, type L2Config, type L2Record, type L3Record, type Raw } from '../core/reporter';
-import { buildRound, committedBaseline } from '../core/round';
+import { buildRound, committedBaseline, mergeRaws } from '../core/round';
 
 holdKnownFailures(test, FINDINGS, REPOSITORY);
 
@@ -126,11 +126,62 @@ test('L1 engine: the digest follows the engine files and ignores the round recor
   expect(engineDigest(root)).not.toBe(first);
 });
 
+// T26 of the R-03 report review: the ratchet holds every run's digest to the committed tree's,
+// which it computes from git with whole paths sorted (ux_ratchet.rs `engine_digest`, which pins
+// the same value). The engine walked directory by directory, which puts `core/b.ts` before
+// `core.ts`.
+test('L1 engine: the digest sorts whole paths, as the ratchet does', () => {
+  const root = test.info().outputPath('engine-order');
+  mkdirSync(join(root, 'core'), { recursive: true });
+  writeFileSync(join(root, 'core', 'b.ts'), 'two');
+  writeFileSync(join(root, 'core.ts'), 'one');
+  expect(engineDigest(root)).toBe('804bb99ed3bd75aa');
+});
+
 test('L1 round: the slow lane, merged from its jobs, is the full round the ratchet holds every scenario to', () => {
   const raw = (lane: string): Raw => ({ lane, engine: { digest: 'd', commit: 'c', dirty: false }, expected: [], l2: [], l3: [], measured: [], timing: { wall_s: 1, workers: 2, status: 'passed', projects: {}, slowest: [] } });
   const round = (lane: string) => buildRound({ round: 'R-x', date: '2026-11-22', measurement: [{ name: 'a', raw: raw(lane) }, { name: 'b', raw: raw(lane) }], others: [{ name: 'g', raw: raw('gate') }], cards: { anchors: [], rotating: '' }, viewports: { gating: [], measured: [] }, budgetSeconds: 120 });
   expect(round('slow').lane).toBe('full');
   expect(round('gate').lane).toBe('gate');
+});
+
+const rawOf = (engine: Raw['engine'], l2: L2Record[] = []): Raw => ({ lane: 'slow', engine, expected: [], l2, l3: [], measured: [], timing: { wall_s: 1, workers: 4, status: 'passed', projects: {}, slowest: [] } });
+const roundOf = (measurement: Array<{ name: string; raw: Raw }>) =>
+  buildRound({ round: 'R-x', date: '2026-11-22', measurement, others: [], cards: { anchors: [], rotating: '' }, viewports: { gating: [], measured: [] }, budgetSeconds: 120 });
+
+// T25 of the R-03 report review: the merged round took its engine from the first run, so the two
+// reruns from an engine copy outside Git (commit "unknown", dirty) left no trace in its engine.
+test('L1 round: a merged round keeps the engine of every run, and a dirty or unknown one marks the round', () => {
+  const merged = mergeRaws([rawOf({ digest: 'd', commit: 'c', dirty: false }), rawOf({ digest: 'd', commit: 'unknown', dirty: true })]);
+  expect(merged.engines).toEqual([
+    { digest: 'd', commit: 'c', dirty: false },
+    { digest: 'd', commit: 'unknown', dirty: true },
+  ]);
+  expect(merged.engine).toEqual({ digest: 'd', commit: 'unknown', dirty: true });
+  const round = roundOf([
+    { name: 'a', raw: rawOf({ digest: 'd', commit: 'c', dirty: false }) },
+    { name: 'b', raw: rawOf({ digest: 'd', commit: 'unknown', dirty: true }) },
+  ]);
+  expect(round.engine).toMatchObject({ commit: 'unknown', dirty: true, runs_agree: true });
+});
+
+// T27: a rerun replaced the first run's value of a configuration and nothing kept the first one
+// (layout_shift.load 0.0253, then 0.0000423, and round.json held 0).
+test('L1 round: a value a rerun replaced is kept beside the value that replaced it', () => {
+  const shifted = (shift: number) => ({ ...record('/p', 'm', [config('m', 'dark'), config('m', 'light')]), layoutShift: shift });
+  const round = roundOf([
+    { name: 'slow-l2-4', raw: rawOf({ digest: 'd', commit: 'c', dirty: false }, [shifted(0.0253)]) },
+    { name: 'rerun-shift', raw: rawOf({ digest: 'd', commit: 'c', dirty: false }, [shifted(0.0000423)]) },
+  ]);
+  expect(round.scenarios['/p@m/dark']['layout_shift.load']).toBe(0);
+  expect(round.replaced).toEqual({
+    '/p@m/dark': {
+      'layout_shift.load': [
+        { run: 'slow-l2-4', value: 0.0253 },
+        { run: 'rerun-shift', value: 0 },
+      ],
+    },
+  });
 });
 
 // T23 of the R-02 report review: the report's baseline column was read from whatever baseline.json

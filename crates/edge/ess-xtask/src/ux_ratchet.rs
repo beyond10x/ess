@@ -133,11 +133,52 @@ pub(crate) struct Round {
     pub coverage: Coverage,
     /// Required: a round that does not say which engine measured it is not read.
     pub engine: Engine,
+    /// Every run merged into the round, each with the engine that measured it.
+    #[serde(default)]
+    pub runs: Vec<RunEngine>,
+    /// The values a later run replaced: scenario, then metric key, then every run's value in run
+    /// order. Only a merged round has them.
+    #[serde(default)]
+    pub replaced: BTreeMap<String, BTreeMap<String, Vec<Replaced>>>,
+    /// The engine digest of the committed tree, computed by the ratchet (never read from the
+    /// round); `None` skips the digest check, as the canned rounds of the tests do.
+    #[serde(skip)]
+    pub committed_digest: Option<String>,
+}
+
+/// One run of a round and the engine that measured it.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+pub(crate) struct RunEngine {
+    /// The run's name.
+    pub name: String,
+    /// Its engine.
+    pub engine: Engine,
+}
+
+/// One run's value of a scenario and metric that more than one run measured.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+pub(crate) struct Replaced {
+    /// The run.
+    pub run: String,
+    /// Its value.
+    pub value: f64,
+}
+
+/// A decision: its id and the `<scenario> <metric>` keys it covers.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub(crate) struct Decision {
+    /// The id, written beside every value it takes.
+    pub id: String,
+    /// The keys it names.
+    pub keys: BTreeSet<String>,
 }
 
 /// The engine that measured a round, as `round.json` records it.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 pub(crate) struct Engine {
+    /// The digest of the engine files.
+    #[serde(default)]
+    pub digest: String,
     /// The last commit that changed an engine file.
     #[serde(default)]
     pub commit: String,
@@ -161,6 +202,8 @@ pub(crate) enum Breach {
     DirtyEngine { commit: String },
     /// The round merges runs of different engines.
     RunsDisagree,
+    /// A run (or the round) was not measured by the engine the committed tree holds.
+    Unattributable { run: String, why: String },
     /// The round is worse than the baseline beyond the tolerance.
     Worse {
         scenario: String,
@@ -220,6 +263,11 @@ impl fmt::Display for Breach {
             Breach::RunsDisagree => write!(
                 f,
                 "the round merges runs of different engines; measure every run with one engine"
+            ),
+            Breach::Unattributable { run, why } => write!(
+                f,
+                "{run}: not measured by the committed tree's engine: {why}; commit the engine and \
+                 measure again"
             ),
             Breach::Worse {
                 scenario,
@@ -367,8 +415,18 @@ fn judge(
     })
 }
 
-/// Compares a round with the baseline.
+/// Compares a round with the baseline, under no decision.
+#[cfg(test)]
 pub(crate) fn compare(baseline: &Baseline, round: &Round) -> Vec<Breach> {
+    compare_with(baseline, round, None)
+}
+
+/// Compares a round with the baseline; `decision` names the keys it decided.
+pub(crate) fn compare_with(
+    baseline: &Baseline,
+    round: &Round,
+    decision: Option<&Decision>,
+) -> Vec<Breach> {
     let mut breaches: Vec<Breach> = round
         .coverage
         .unmeasured
@@ -383,6 +441,10 @@ pub(crate) fn compare(baseline: &Baseline, round: &Round) -> Vec<Breach> {
     if round.engine.runs_agree == Some(false) {
         breaches.push(Breach::RunsDisagree);
     }
+    breaches.extend(unattributable(round));
+    let value_of = |scenario: &str, metric: &str, value: f64| {
+        held_value(round, decision, scenario, metric, value)
+    };
     let lane = scope(baseline, &round.lane);
     let in_scope = |scenario: &str| lane.is_none_or(|set| set.contains(scenario));
     for (scenario, entries) in &baseline.scenarios {
@@ -405,7 +467,13 @@ pub(crate) fn compare(baseline: &Baseline, round: &Round) -> Vec<Breach> {
                     scenario: scenario.clone(),
                     metric: metric.clone(),
                 }),
-                Some(&value) => breaches.extend(judge(scenario, metric, entry, tolerance, value)),
+                Some(&value) => breaches.extend(judge(
+                    scenario,
+                    metric,
+                    entry,
+                    tolerance,
+                    value_of(scenario, metric, value),
+                )),
             }
         }
     }
@@ -430,12 +498,73 @@ pub(crate) fn compare(baseline: &Baseline, round: &Round) -> Vec<Breach> {
                 breaches.push(Breach::New {
                     scenario: scenario.clone(),
                     metric: metric.clone(),
-                    value,
+                    value: value_of(scenario, metric, value),
                 });
             }
         }
     }
     breaches
+}
+
+/// The value the ratchet holds for a scenario and metric: the round's value, or the worst value
+/// any of its runs measured when a rerun replaced one (T27), unless the decision names the key.
+fn held_value(
+    round: &Round,
+    decision: Option<&Decision>,
+    scenario: &str,
+    metric: &str,
+    value: f64,
+) -> f64 {
+    if decision.is_some_and(|d| d.keys.contains(&format!("{scenario} {metric}"))) {
+        return value;
+    }
+    round
+        .replaced
+        .get(scenario)
+        .and_then(|metrics| metrics.get(metric))
+        .into_iter()
+        .flatten()
+        .map(|replaced| replaced.value)
+        .fold(value, f64::max)
+}
+
+/// The runs a round cannot be attributed to its committed tree by: a run, or the round itself,
+/// whose engine commit is unknown, whose engine was dirty, or whose engine digest is not the
+/// committed tree's (T25, T26). `round.engine.dirty` is reported by `DirtyEngine`.
+fn unattributable(round: &Round) -> Vec<Breach> {
+    let top = RunEngine {
+        name: "the round".to_owned(),
+        engine: Engine {
+            dirty: false,
+            ..round.engine.clone()
+        },
+    };
+    let mut out = Vec::new();
+    for run in std::iter::once(&top).chain(&round.runs) {
+        let engine = &run.engine;
+        let mut why = Vec::new();
+        if matches!(engine.commit.trim(), "" | "unknown" | "none") {
+            why.push(format!("its engine commit is `{}`", engine.commit));
+        }
+        if engine.dirty {
+            why.push("its engine had uncommitted changes".to_owned());
+        }
+        if let Some(committed) = &round.committed_digest {
+            if &engine.digest != committed {
+                why.push(format!(
+                    "its engine digest `{}` is not the committed tree's `{committed}`",
+                    engine.digest
+                ));
+            }
+        }
+        if !why.is_empty() {
+            out.push(Breach::Unattributable {
+                run: run.name.clone(),
+                why: why.join(", "),
+            });
+        }
+    }
+    out
 }
 
 fn decided_anew(id: Option<&String>, on_main: Option<&String>) -> bool {
@@ -515,17 +644,33 @@ pub(crate) struct Taken {
 /// worse values (a content count that rose among them) and lost values only under a decision id,
 /// which is written beside each worse value and under `dropped` for each lost one. An unmeasured
 /// unit, a dirty engine and runs of different engines are never taken.
+#[cfg(test)]
 pub(crate) fn update(
     baseline: &Baseline,
     round: &Round,
     decision: Option<&str>,
 ) -> Result<(Baseline, Taken), Vec<Breach>> {
-    let decision = decision.filter(|id| !id.trim().is_empty());
+    let decision = decision.map(|id| Decision {
+        id: id.to_owned(),
+        keys: BTreeSet::new(),
+    });
+    update_with(baseline, round, decision.as_ref())
+}
+
+/// [`update`] under a decision that names the keys it covers.
+pub(crate) fn update_with(
+    baseline: &Baseline,
+    round: &Round,
+    named: Option<&Decision>,
+) -> Result<(Baseline, Taken), Vec<Breach>> {
+    let decision = named
+        .map(|d| d.id.as_str())
+        .filter(|id| !id.trim().is_empty());
     let mut next = baseline.clone();
     let mut taken = Taken::default();
     let mut refused = Vec::new();
     let lane = (round.lane != FULL).then(|| round.lane.clone());
-    for breach in compare(baseline, round) {
+    for breach in compare_with(baseline, round, named) {
         match breach {
             Breach::ImprovementNotTaken {
                 scenario,
@@ -1049,6 +1194,85 @@ fn git(root: &Path, args: &[&str]) -> Result<std::process::Output> {
         .with_context(|| format!("running git {}", args.join(" ")))
 }
 
+/// The loop's root, relative to the repository root.
+pub(crate) const LOOP_ROOT: &str = "website/ux";
+
+/// What under [`LOOP_ROOT`] is not engine: dependencies, run output, and what the engine writes
+/// or the loop records. The same list as `NOT_ENGINE` in `website/ux/core/engine.ts`; a test
+/// holds the two equal.
+pub(crate) const NOT_ENGINE: &[&str] = &[
+    "node_modules",
+    ".out",
+    "rounds",
+    "findings",
+    "baseline.json",
+    "trend.md",
+];
+
+/// The engine digest of `website/ux/core/engine.ts`: SHA-256 over each engine file's path
+/// (relative to the loop's root, sorted) and content, each followed by a zero byte, as 16 hex
+/// digits.
+pub(crate) fn engine_digest(files: &BTreeMap<String, Vec<u8>>) -> String {
+    use sha2::{Digest, Sha256};
+    let mut hasher = Sha256::new();
+    for (path, content) in files {
+        hasher.update(path.as_bytes());
+        hasher.update([0]);
+        hasher.update(content);
+        hasher.update([0]);
+    }
+    hasher
+        .finalize()
+        .iter()
+        .take(8)
+        .fold(String::new(), |mut out, byte| {
+            let _ = write!(out, "{byte:02x}");
+            out
+        })
+}
+
+/// The engine digest of the tree `HEAD` commits, read from git, so a round is compared with the
+/// committed engine and not with the working copy.
+fn committed_engine_digest(root: &Path) -> Result<String> {
+    let listed = git(root, &["ls-tree", "-r", "-z", "HEAD", "--", LOOP_ROOT])?;
+    if !listed.status.success() {
+        bail!(
+            "git ls-tree HEAD -- {LOOP_ROOT} failed, so the committed engine is unknown: {}",
+            String::from_utf8_lossy(&listed.stderr).trim()
+        );
+    }
+    let prefix = format!("{LOOP_ROOT}/");
+    let mut files = BTreeMap::new();
+    for entry in listed.stdout.split(|byte| *byte == 0) {
+        let entry = String::from_utf8_lossy(entry);
+        let Some((meta, path)) = entry.split_once('\t') else {
+            continue;
+        };
+        let mut fields = meta.split_whitespace();
+        let (Some(_mode), Some("blob"), Some(object)) =
+            (fields.next(), fields.next(), fields.next())
+        else {
+            continue;
+        };
+        let Some(relative) = path.strip_prefix(&prefix) else {
+            continue;
+        };
+        let first = relative.split('/').next().unwrap_or(relative);
+        if NOT_ENGINE.contains(&first) {
+            continue;
+        }
+        let blob = git(root, &["cat-file", "blob", object])?;
+        if !blob.status.success() {
+            bail!("git cat-file blob {object} ({path}) failed");
+        }
+        files.insert(relative.to_owned(), blob.stdout);
+    }
+    if files.is_empty() {
+        bail!("HEAD holds no engine file under {LOOP_ROOT}");
+    }
+    Ok(engine_digest(&files))
+}
+
 /// `main`'s baseline through git.
 fn main_baseline(root: &Path) -> Result<Option<Baseline>> {
     let readable = git(
@@ -1091,11 +1315,18 @@ pub(crate) fn run(
             .with_context(|| format!("reading {}", round_path.display()))?,
     )
     .with_context(|| format!("parsing {}", round_path.display()))?;
+    let mut measured = measured;
+    measured.committed_digest = Some(committed_engine_digest(root)?);
+    let decision = decision.map(|id| Decision {
+        id: id.to_owned(),
+        keys: BTreeSet::new(),
+    });
     let mut report = String::new();
     if update_baseline {
-        let (next, taken) = update(&baseline, &measured, decision).map_err(|refused| {
-            anyhow::anyhow!("the baseline was not updated:\n{}", lines(&refused))
-        })?;
+        let (next, taken) =
+            update_with(&baseline, &measured, decision.as_ref()).map_err(|refused| {
+                anyhow::anyhow!("the baseline was not updated:\n{}", lines(&refused))
+            })?;
         baseline = next;
         let _ = writeln!(
             report,
@@ -1106,10 +1337,10 @@ pub(crate) fn run(
             taken.lane,
             taken.worse,
             taken.dropped,
-            decision.unwrap_or("none")
+            decision.as_ref().map_or("none", |d| d.id.as_str())
         );
     }
-    let mut breaches = compare(&baseline, &measured);
+    let mut breaches = compare_with(&baseline, &measured, decision.as_ref());
     if let Some(main) = main_baseline(root)? {
         breaches.extend(compare_with_main(&main, &baseline));
     }
@@ -1439,6 +1670,134 @@ mod tests {
             "{breaches:?}"
         );
         assert!(update(&baseline(BASE), &measured, Some("D-1")).is_err());
+    }
+
+    /// A canned round of `BASE`'s values, merged from `runs`, held to a committed tree whose engine
+    /// digest is `d`.
+    fn merged(runs: &str) -> Round {
+        let mut measured = round(&format!(
+            r#"{{"engine": {{"digest": "d", "commit": "c", "dirty": false}}, "runs": {runs},
+              "scenarios": {{"install/desktop-1280":
+              {{"screen_only.actions": 3, "glance_cost.p95": 2.0, "layout_shift.max": 0.02}}}}}}"#
+        ));
+        measured.committed_digest = Some("d".into());
+        measured
+    }
+
+    const CLEAN_RUN: &str =
+        r#"{"name": "slow-l2-1", "engine": {"digest": "d", "commit": "c", "dirty": false}}"#;
+
+    /// T26 of the R-03 report review: R-03 was measured by engine `bc3e06f44faa130b` while the
+    /// committed tree's engine was `93f932aacd3f4a09`, and nothing compared the two.
+    #[test]
+    fn a_run_measured_by_another_engine_than_the_committed_trees_is_refused() {
+        assert_eq!(
+            compare(&baseline(BASE), &merged(&format!("[{CLEAN_RUN}]"))),
+            vec![]
+        );
+        let older = merged(&format!(
+            r#"[{CLEAN_RUN}, {{"name": "rerun-essui", "engine": {{"digest": "e", "commit": "c", "dirty": false}}}}]"#
+        ));
+        let breaches = compare(&baseline(BASE), &older);
+        assert!(
+            breaches.iter().any(|breach| {
+                let text = breach.to_string();
+                text.contains("rerun-essui") && text.contains("committed tree")
+            }),
+            "{breaches:?}"
+        );
+        assert!(update(&baseline(BASE), &older, Some("D-1")).is_err());
+    }
+
+    /// T25: two reruns of R-03 ran from an engine copy outside Git (commit "unknown", dirty), and
+    /// the round took its engine from its first run only.
+    #[test]
+    fn a_run_whose_engine_commit_is_unknown_or_dirty_is_refused() {
+        for (case, engine) in [
+            (
+                "unknown",
+                r#"{"digest": "d", "commit": "unknown", "dirty": false}"#,
+            ),
+            ("dirty", r#"{"digest": "d", "commit": "c", "dirty": true}"#),
+        ] {
+            let outside = merged(&format!(
+                r#"[{CLEAN_RUN}, {{"name": "rerun-shift", "engine": {engine}}}]"#
+            ));
+            let breaches = compare(&baseline(BASE), &outside);
+            assert!(
+                breaches
+                    .iter()
+                    .any(|breach| breach.to_string().contains("rerun-shift")),
+                "{case}: {breaches:?}"
+            );
+            assert!(
+                update(&baseline(BASE), &outside, Some("D-1")).is_err(),
+                "{case}"
+            );
+        }
+    }
+
+    const SHIFT: &str = r#"{
+      "about": "canned",
+      "tolerances": {"layout_shift": {"absolute": 0.01}},
+      "scenarios": {"/p@m/dark": {"layout_shift.load": {"value": 0, "tolerance": "layout_shift"}}}
+    }"#;
+
+    const RERUN: &str = r#"{"scenarios": {"/p@m/dark": {"layout_shift.load": 0}},
+      "replaced": {"/p@m/dark": {"layout_shift.load": [
+        {"run": "slow-l2-4", "value": 0.0253}, {"run": "rerun-shift", "value": 0}]}}}"#;
+
+    /// T27: a rerun replaced `layout_shift.load` 0.0253 by 0 and the ratchet saw only the 0.
+    #[test]
+    fn a_value_a_rerun_replaced_is_held_at_the_worse_of_its_runs() {
+        let breaches = compare(&baseline(SHIFT), &round(RERUN));
+        assert!(
+            matches!(breaches.as_slice(), [Breach::Worse { value, .. }] if (*value - 0.0253).abs() < 1e-12),
+            "{breaches:?}"
+        );
+        assert!(update(&baseline(SHIFT), &round(RERUN), None).is_err());
+    }
+
+    /// T27: a decision that names the replaced value holds the rerun's value; one that names
+    /// another key does not.
+    #[test]
+    fn a_decision_that_names_a_replaced_value_holds_the_value_that_replaced_it() {
+        let named = Decision {
+            id: "R-04-shift".into(),
+            keys: BTreeSet::from(["/p@m/dark layout_shift.load".to_owned()]),
+        };
+        assert_eq!(
+            compare_with(&baseline(SHIFT), &round(RERUN), Some(&named)),
+            vec![]
+        );
+        let other = Decision {
+            id: "R-04-other".into(),
+            keys: BTreeSet::from(["/q@m/dark layout_shift.load".to_owned()]),
+        };
+        assert_ne!(
+            compare_with(&baseline(SHIFT), &round(RERUN), Some(&other)),
+            vec![]
+        );
+    }
+
+    /// The ratchet computes the committed tree's engine digest as `core/engine.ts` does: paths
+    /// sorted as whole strings (`core.ts` before `core/b.ts`); the same value is pinned by the
+    /// L1 test "L1 engine: the digest sorts whole paths, as the ratchet does".
+    #[test]
+    fn the_engine_digest_is_the_one_the_measuring_engine_writes() {
+        let files = BTreeMap::from([
+            ("core/b.ts".to_owned(), b"two".to_vec()),
+            ("core.ts".to_owned(), b"one".to_vec()),
+        ]);
+        assert_eq!(engine_digest(&files), "804bb99ed3bd75aa");
+        let engine = fs::read_to_string(repository_root().join(LOOP_ROOT).join("core/engine.ts"))
+            .expect("engine.ts reads");
+        let listed = engine
+            .lines()
+            .find(|line| line.contains("export const NOT_ENGINE"))
+            .expect("engine.ts declares NOT_ENGINE");
+        let names: Vec<&str> = listed.split('\'').skip(1).step_by(2).collect();
+        assert_eq!(names, NOT_ENGINE);
     }
 
     /// T21: `run --update` wrote the baseline before its last comparison; a run that then failed

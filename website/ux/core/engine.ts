@@ -26,7 +26,9 @@ export function engineFiles(root: string): string[] {
     }
   };
   walk(root);
-  return out;
+  // Whole paths sorted as strings: the ratchet computes the same digest from the committed tree's
+  // file list (crates/edge/ess-xtask/src/ux_ratchet.rs, `engine_digest`), T26 of the R-03 review.
+  return out.sort();
 }
 
 export function engineDigest(root: string): string {
