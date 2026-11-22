@@ -230,8 +230,8 @@ mod value_invariant;
 mod view_grant;
 mod view_reference;
 
-pub use seeds::{AdmittedSeeds, SeedAdmissionError, SeedSelection};
 pub(crate) use seeds::memoised_provenance;
+pub use seeds::{AdmittedSeeds, SeedAdmissionError, SeedSelection};
 
 #[doc(hidden)]
 pub use disclosure::followup_origins_built;
