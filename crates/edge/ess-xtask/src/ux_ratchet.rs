@@ -27,8 +27,12 @@
 //!
 //! The Playwright specs only measure; the decision is here because a checker in this repository is
 //! Rust. The same goes for the findings rule: no closed S1 or S2 record under `website/ux/findings/`
-//! without a regression asset that exists, and an asset that names a test names one its file
-//! declares.
+//! without a regression asset that exists, every asset that names a test names one its file
+//! declares, and an open record states the message its asset fails with (`failure_pattern`, `none`
+//! when the asset is no expected failure).
+//!
+//! A decision (`--decision <id>`) takes only the worse and lost values it lists in the round's
+//! `decision.md`, as backticked list items under the `## ` heading that names the id.
 
 use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};
@@ -515,7 +519,7 @@ fn held_value(
     metric: &str,
     value: f64,
 ) -> f64 {
-    if decision.is_some_and(|d| d.keys.contains(&format!("{scenario} {metric}"))) {
+    if decision.is_some_and(|d| covers(d, None, scenario, metric)) {
         return value;
     }
     round
@@ -643,18 +647,71 @@ pub(crate) struct Taken {
 /// Takes a round into the baseline: improvements, new values and scenarios new to the lane always;
 /// worse values (a content count that rose among them) and lost values only under a decision id,
 /// which is written beside each worse value and under `dropped` for each lost one. An unmeasured
-/// unit, a dirty engine and runs of different engines are never taken.
+/// unit, a dirty engine and runs of different engines are never taken. A decision is its id and
+/// the keys it names.
 #[cfg(test)]
 pub(crate) fn update(
     baseline: &Baseline,
     round: &Round,
-    decision: Option<&str>,
+    decision: Option<(&str, &[&str])>,
 ) -> Result<(Baseline, Taken), Vec<Breach>> {
-    let decision = decision.map(|id| Decision {
+    let decision = decision.map(|(id, keys)| Decision {
         id: id.to_owned(),
-        keys: BTreeSet::new(),
+        keys: keys.iter().map(|key| (*key).to_owned()).collect(),
     });
     update_with(baseline, round, decision.as_ref())
+}
+
+/// The decision `id` of a round's `decision.md`: the section whose `## ` heading names the id in
+/// backticks, and the keys its list items name in backticks.
+pub(crate) fn decision_of(text: &str, id: &str) -> Result<Decision, String> {
+    let named = format!("`{id}`");
+    let mut keys = BTreeSet::new();
+    let mut found = false;
+    let mut inside = false;
+    for line in text.lines() {
+        if let Some(heading) = line.strip_prefix("## ") {
+            inside = heading.contains(&named);
+            found |= inside;
+            continue;
+        }
+        if !inside {
+            continue;
+        }
+        if let Some(key) = line
+            .trim_start()
+            .strip_prefix("- `")
+            .and_then(|rest| rest.split_once('`'))
+            .map(|(key, _)| key.trim())
+        {
+            if !key.is_empty() {
+                keys.insert(key.to_owned());
+            }
+        }
+    }
+    if !found {
+        return Err(format!(
+            "the decision file has no `## ` heading that names {named}"
+        ));
+    }
+    if keys.is_empty() {
+        return Err(format!(
+            "decision {named} lists no key: list each value it takes as a list item \
+             `- `<scenario> <metric>``, `- `<scenario>`` or `- `<lane>: <scenario>``"
+        ));
+    }
+    Ok(Decision {
+        id: id.to_owned(),
+        keys,
+    })
+}
+
+/// Whether the decision lists the value: by `<scenario> <metric>`, by its whole `<scenario>`, or,
+/// for a scenario a lane dropped, by `<lane>: <scenario>`.
+fn covers(decision: &Decision, lane: Option<&str>, scenario: &str, metric: &str) -> bool {
+    decision.keys.contains(&format!("{scenario} {metric}"))
+        || decision.keys.contains(scenario)
+        || lane.is_some_and(|lane| decision.keys.contains(&format!("{lane}: {scenario}")))
 }
 
 /// [`update`] under a decision that names the keys it covers.
@@ -663,13 +720,17 @@ pub(crate) fn update_with(
     round: &Round,
     named: Option<&Decision>,
 ) -> Result<(Baseline, Taken), Vec<Breach>> {
-    let decision = named
-        .map(|d| d.id.as_str())
-        .filter(|id| !id.trim().is_empty());
+    let lane = (round.lane != FULL).then(|| round.lane.clone());
+    // The decision's id when it lists the value, else none: a decision takes only what it lists
+    // (T29 of the R-03 report review).
+    let decided = |scenario: &str, metric: &str| {
+        named
+            .filter(|d| !d.id.trim().is_empty() && covers(d, lane.as_deref(), scenario, metric))
+            .map(|d| d.id.as_str())
+    };
     let mut next = baseline.clone();
     let mut taken = Taken::default();
     let mut refused = Vec::new();
-    let lane = (round.lane != FULL).then(|| round.lane.clone());
     for breach in compare_with(baseline, round, named) {
         match breach {
             Breach::ImprovementNotTaken {
@@ -698,7 +759,7 @@ pub(crate) fn update_with(
                 metric,
                 value,
                 baseline: old,
-            } => match decision {
+            } => match decided(&scenario, &metric) {
                 Some(id) => {
                     set_value(&mut next, &scenario, &metric, value);
                     if let Some(entry) = next
@@ -717,7 +778,7 @@ pub(crate) fn update_with(
                     value,
                 }),
             },
-            Breach::Missing { scenario, metric } => match decision {
+            Breach::Missing { scenario, metric } => match decided(&scenario, &metric) {
                 Some(id) => {
                     drop_lost(&mut next, round, lane.as_deref(), &scenario, &metric, id);
                     taken.dropped += 1;
@@ -1117,11 +1178,15 @@ pub(crate) fn check_finding(
             field("severity")
         ));
     }
-    if let Some(path) = asset_path(asset) {
+    // Every asset of the field, not the first alone (T28 of the R-03 report review).
+    for one in assets(asset) {
+        let Some(path) = asset_path(one) else {
+            continue;
+        };
         match read(path) {
             None => problems.push(format!("{file}: regression asset `{path}` does not exist")),
             Some(text) => {
-                if let Some(title) = asset_title(asset) {
+                if let Some(title) = asset_title(one) {
                     if !declared_titles(&text)
                         .iter()
                         .any(|template| title_matches(template, title))
@@ -1134,7 +1199,90 @@ pub(crate) fn check_finding(
             }
         }
     }
+    if field("status") == "open" {
+        problems.extend(failure_pattern_problems(
+            file,
+            field("failure_pattern"),
+            asset,
+        ));
+    }
     problems
+}
+
+/// The assets a `regression_asset` field names: one, or several separated by `; ` before the next
+/// `<path>.spec.ts :: `, as `assetTests` in `website/ux/core/findings.ts` splits them.
+fn assets(field: &str) -> Vec<&str> {
+    let mut out = Vec::new();
+    let mut rest = field;
+    'parts: loop {
+        let mut from = 0;
+        while let Some(found) = rest[from..].find("; ") {
+            let at = from + found;
+            let next = &rest[at + 2..];
+            let token = next.split(char::is_whitespace).next().unwrap_or("");
+            if token.ends_with(".spec.ts")
+                && !token.contains(';')
+                && next[token.len()..].starts_with(" :: ")
+            {
+                out.push(&rest[..at]);
+                rest = next;
+                continue 'parts;
+            }
+            from = at + 2;
+        }
+        out.push(rest);
+        return out;
+    }
+}
+
+/// Whether an asset is a test the gate runs as an expected failure (`assetTest` in
+/// `website/ux/core/findings.ts`): it names a spec path and a title, and is not held by a file.
+fn names_expected_failure(asset: &str) -> bool {
+    let Some((spec, rest)) = asset.split_once("::") else {
+        return false;
+    };
+    let spec = spec.trim();
+    if !spec.contains('/') || spec.contains(char::is_whitespace) {
+        return false;
+    }
+    let (title, held) = match rest.find(", held by ") {
+        Some(at) => (&rest[..at], Some(&rest[at + ", held by ".len()..])),
+        None => (rest, None),
+    };
+    if title.trim().is_empty() {
+        return false;
+    }
+    !held.is_some_and(|by| {
+        by.split(|c: char| c.is_whitespace() || matches!(c, ',' | ';' | ':'))
+            .next()
+            .is_some_and(|token| token.contains('/'))
+    })
+}
+
+/// An open record states the message its asset fails with (T28 of the R-03 report review): a
+/// pattern where the asset is an expected failure, `none` where it is not.
+fn failure_pattern_problems(file: &str, pattern: &str, asset: &str) -> Vec<String> {
+    let parts = assets(asset);
+    let expected = parts
+        .first()
+        .is_some_and(|first| names_expected_failure(first));
+    if pattern.is_empty() {
+        return vec![format!(
+            "{file}: header field `failure_pattern` is missing or empty: an open record states the \
+             message its asset fails with, or `none` when its asset is no expected failure"
+        )];
+    }
+    match (expected, pattern == "none") {
+        (true, true) => vec![format!(
+            "{file}: its asset is an expected failure, so `failure_pattern` names the message it \
+             fails with, not `none`"
+        )],
+        (false, false) => vec![format!(
+            "{file}: its asset is no expected failure (no test, or a test held by a file), so \
+             `failure_pattern` is `none`, not `{pattern}`"
+        )],
+        _ => Vec::new(),
+    }
 }
 
 /// Checks every `UXF-*.md` under [`FINDINGS`].
@@ -1317,10 +1465,23 @@ pub(crate) fn run(
     .with_context(|| format!("parsing {}", round_path.display()))?;
     let mut measured = measured;
     measured.committed_digest = Some(committed_engine_digest(root)?);
-    let decision = decision.map(|id| Decision {
-        id: id.to_owned(),
-        keys: BTreeSet::new(),
-    });
+    // A decision is read from `decision.md` beside the round: its id's section lists what it takes.
+    let decision = match decision {
+        Some(id) => {
+            let file = round_path.with_file_name("decision.md");
+            let text = fs::read_to_string(&file).with_context(|| {
+                format!(
+                    "reading {}, which lists the values decision {id} takes",
+                    file.display()
+                )
+            })?;
+            Some(
+                decision_of(&text, id)
+                    .map_err(|why| anyhow::anyhow!("{}: {why}", file.display()))?,
+            )
+        }
+        None => None,
+    };
     let mut report = String::new();
     if update_baseline {
         let (next, taken) =
@@ -1547,7 +1708,12 @@ mod tests {
             "{}",
             breaches[0]
         );
-        assert!(update(&baseline(BASE), &measured, Some("D-1")).is_err());
+        assert!(update(
+            &baseline(BASE),
+            &measured,
+            Some(("D-1", &["install/desktop-1280"]))
+        )
+        .is_err());
     }
 
     #[test]
@@ -1597,8 +1763,15 @@ mod tests {
             update(&baseline(CONTENT), &one_more_link, None).is_err(),
             "a content rise was taken without a decision"
         );
-        let (next, _) =
-            update(&baseline(CONTENT), &one_more_link, Some("D-5")).expect("a decision takes it");
+        let (next, _) = update(
+            &baseline(CONTENT),
+            &one_more_link,
+            Some((
+                "D-5",
+                &["/ess/docs/a@desktop-1280/light axe.serious_critical_nodes"],
+            )),
+        )
+        .expect("a decision takes it");
         assert_eq!(
             next.scenarios["/ess/docs/a@desktop-1280/light"]["axe.serious_critical_nodes"]
                 .decision
@@ -1651,7 +1824,12 @@ mod tests {
                 .any(|breach| breach.to_string().contains("uncommitted")),
             "{breaches:?}"
         );
-        assert!(update(&baseline(BASE), &measured, Some("D-1")).is_err());
+        assert!(update(
+            &baseline(BASE),
+            &measured,
+            Some(("D-1", &["install/desktop-1280"]))
+        )
+        .is_err());
     }
 
     /// T22: a round merged from runs of different engines is refused.
@@ -1669,7 +1847,12 @@ mod tests {
                 .any(|breach| breach.to_string().contains("different engines")),
             "{breaches:?}"
         );
-        assert!(update(&baseline(BASE), &measured, Some("D-1")).is_err());
+        assert!(update(
+            &baseline(BASE),
+            &measured,
+            Some(("D-1", &["install/desktop-1280"]))
+        )
+        .is_err());
     }
 
     /// A canned round of `BASE`'s values, merged from `runs`, held to a committed tree whose engine
@@ -1706,7 +1889,12 @@ mod tests {
             }),
             "{breaches:?}"
         );
-        assert!(update(&baseline(BASE), &older, Some("D-1")).is_err());
+        assert!(update(
+            &baseline(BASE),
+            &older,
+            Some(("D-1", &["install/desktop-1280"]))
+        )
+        .is_err());
     }
 
     /// T25: two reruns of R-03 ran from an engine copy outside Git (commit "unknown", dirty), and
@@ -1731,7 +1919,12 @@ mod tests {
                 "{case}: {breaches:?}"
             );
             assert!(
-                update(&baseline(BASE), &outside, Some("D-1")).is_err(),
+                update(
+                    &baseline(BASE),
+                    &outside,
+                    Some(("D-1", &["install/desktop-1280"]))
+                )
+                .is_err(),
                 "{case}"
             );
         }
@@ -1931,7 +2124,8 @@ mod tests {
         let shrunk =
             round(r#"{"lane": "gate", "scenarios": {"/a@d/light": {"layout.spills": 0}}}"#);
         assert!(update(&main, &shrunk, None).is_err());
-        let (next, _) = update(&main, &shrunk, Some("D-9")).expect("a decision drops it");
+        let (next, _) = update(&main, &shrunk, Some(("D-9", &["gate: /b@d/light"])))
+            .expect("a decision drops it");
         assert_eq!(next.dropped["gate: /b@d/light"], "D-9");
         assert_eq!(compare_with_main(&main, &next), vec![]);
         let mut undecided = next.clone();
@@ -1949,8 +2143,12 @@ mod tests {
     fn update_with_a_decision_replaces_a_baseline_whose_scenarios_are_gone() {
         let measured = round(r#"{"scenarios": {"/ess/@d/light": {"layout.spills": 0}}}"#);
         assert!(update(&baseline(BASE), &measured, None).is_err());
-        let (next, taken) = update(&baseline(BASE), &measured, Some("R-02-baseline"))
-            .expect("a decision replaces what the round no longer measures");
+        let (next, taken) = update(
+            &baseline(BASE),
+            &measured,
+            Some(("R-02-baseline", &["install/desktop-1280"])),
+        )
+        .expect("a decision replaces what the round no longer measures");
         assert!(!next.scenarios.contains_key("install/desktop-1280"));
         assert_eq!(next.dropped["install/desktop-1280"], "R-02-baseline");
         assert_eq!(taken.dropped, 3);
@@ -2051,8 +2249,12 @@ mod tests {
             matches!(refused.as_slice(), [Breach::Worse { metric, .. }] if metric == "glance_cost.p95"),
             "{refused:?}"
         );
-        let (next, _) = update(&baseline(BASE), &measured, Some("D-7"))
-            .expect("a decision takes the worse value");
+        let (next, _) = update(
+            &baseline(BASE),
+            &measured,
+            Some(("D-7", &["install/desktop-1280 glance_cost.p95"])),
+        )
+        .expect("a decision takes the worse value");
         let entries = &next.scenarios["install/desktop-1280"];
         assert_eq!(entries["screen_only.actions"].value, 2.0);
         assert_eq!(entries["glance_cost.p95"].decision.as_deref(), Some("D-7"));
@@ -2092,7 +2294,18 @@ mod tests {
         let measured =
             round(r#"{"scenarios": {"install/desktop-1280": {"screen_only.actions": 3}}}"#);
         assert!(update(&baseline(BASE), &measured, None).is_err());
-        let (next, _) = update(&baseline(BASE), &measured, Some("D-1")).expect("dropped under D-1");
+        let (next, _) = update(
+            &baseline(BASE),
+            &measured,
+            Some((
+                "D-1",
+                &[
+                    "install/desktop-1280 glance_cost.p95",
+                    "install/desktop-1280 layout_shift.max",
+                ],
+            )),
+        )
+        .expect("dropped under D-1");
         assert_eq!(next.dropped["install/desktop-1280 layout_shift.max"], "D-1");
     }
 
@@ -2178,7 +2391,12 @@ mod tests {
         }
         let s3 = parse_finding("UXF-001.md", &record("closed", "S3", "none")).unwrap();
         assert_eq!(check_finding(&s3, &any_file), Vec::<String>::new());
-        let open = parse_finding("UXF-001.md", &record("open", "S1", "none")).unwrap();
+        let open = record("open", "S1", "none").replacen(
+            "regression_asset:",
+            "failure_pattern: none\nregression_asset:",
+            1,
+        );
+        let open = parse_finding("UXF-001.md", &open).unwrap();
         assert_eq!(check_finding(&open, &any_file), Vec::<String>::new());
     }
 
@@ -2209,7 +2427,7 @@ mod tests {
         let read = |_: &str| Some(spec.to_owned());
         let named = |asset: &str| {
             check_finding(
-                &parse_finding("UXF-001.md", &record("open", "S2", asset)).unwrap(),
+                &parse_finding("UXF-001.md", &record("closed", "S2", asset)).unwrap(),
                 &read,
             )
         };
@@ -2254,6 +2472,187 @@ mod tests {
             "{problems:?}"
         );
         assert!(parse_finding("UXF-002.md", "# no front matter\n").is_err());
+    }
+
+    /// T28 of the R-03 report review: a failure of an open finding's asset was held whatever its
+    /// message. An open record states the message its asset fails with, `failure_pattern`, and
+    /// says `none` when its asset is no expected failure (no test yet, or held by a file).
+    #[test]
+    fn an_open_record_states_the_message_its_asset_fails_with() {
+        let test_asset = "website/ux/specs/l2-layout.spec.ts :: L2 /ess/ desktop-1280";
+        let problems_of = |asset: &str, pattern: Option<&str>| {
+            let mut text = record("open", "S2", asset);
+            if let Some(pattern) = pattern {
+                text = text.replacen(
+                    "regression_asset:",
+                    &format!("failure_pattern: {pattern}\nregression_asset:"),
+                    1,
+                );
+            }
+            check_finding(&parse_finding("UXF-001.md", &text).unwrap(), &|_| {
+                Some("test(`L2 ${path} ${viewport.name}`, () => {});".to_owned())
+            })
+        };
+        let missing = problems_of(test_asset, None);
+        assert!(
+            missing.iter().any(|p| p.contains("`failure_pattern`")),
+            "{missing:?}"
+        );
+        let none = problems_of(test_asset, Some("none"));
+        assert!(
+            none.iter().any(|p| p.contains("expected failure")),
+            "{none:?}"
+        );
+        assert_eq!(
+            problems_of(test_asset, Some("axe label-content-name-mismatch")),
+            Vec::<String>::new()
+        );
+        let proposed = problems_of("none yet; proposed: an L2 probe", Some("gate 5"));
+        assert!(
+            proposed.iter().any(|p| p.contains("no expected failure")),
+            "{proposed:?}"
+        );
+        assert_eq!(
+            problems_of("none yet; proposed: an L2 probe", Some("none")),
+            Vec::<String>::new()
+        );
+        assert_eq!(
+            problems_of(
+                &format!("{test_asset}, held by website/ux/baseline.json"),
+                Some("none")
+            ),
+            Vec::<String>::new()
+        );
+        let closed = record("closed", "S2", test_asset);
+        assert_eq!(
+            check_finding(&parse_finding("UXF-001.md", &closed).unwrap(), &|_| {
+                Some("test(`L2 ${path} ${viewport.name}`, () => {});".to_owned())
+            }),
+            Vec::<String>::new()
+        );
+    }
+
+    /// T28: only the first asset of a record was checked against its spec file.
+    #[test]
+    fn every_asset_of_a_record_names_a_test_its_file_declares() {
+        let asset = "website/ux/specs/l2-layout.spec.ts :: L2 /ess/ desktop-1280; \
+                     website/ux/specs/gone.spec.ts :: L3 a mobile-390 pointer; \
+                     website/ux/specs/l2-layout.spec.ts :: L3 b mobile-390 pointer";
+        let text = record("open", "S2", asset).replacen(
+            "regression_asset:",
+            "failure_pattern: gate 5\nregression_asset:",
+            1,
+        );
+        let problems = check_finding(&parse_finding("UXF-001.md", &text).unwrap(), &|path| {
+            (path == "website/ux/specs/l2-layout.spec.ts")
+                .then(|| "test(`L2 ${path} ${viewport.name}`, () => {});".to_owned())
+        });
+        assert!(
+            problems.iter().any(
+                |p| p.contains("website/ux/specs/gone.spec.ts") && p.contains("does not exist")
+            ),
+            "{problems:?}"
+        );
+        assert!(
+            problems
+                .iter()
+                .any(|p| p.contains("declares no test `L3 b mobile-390 pointer`")),
+            "{problems:?}"
+        );
+    }
+
+    const TWO_WORSE: &str = r#"{"scenarios": {"install/desktop-1280":
+      {"screen_only.actions": 4, "glance_cost.p95": 2.5, "layout_shift.max": 0.02}}}"#;
+
+    /// T29 of the R-03 report review: a decision id took every worse value of the update. It
+    /// takes the values it lists, by `<scenario> <metric>` or by a whole `<scenario>`, and no
+    /// other.
+    #[test]
+    fn a_decision_takes_only_the_values_it_lists() {
+        let measured = round(TWO_WORSE);
+        let refused = update(
+            &baseline(BASE),
+            &measured,
+            Some(("D-2", &["install/desktop-1280 glance_cost.p95"])),
+        )
+        .unwrap_err();
+        assert!(
+            matches!(refused.as_slice(), [Breach::Worse { metric, .. }] if metric == "screen_only.actions"),
+            "{refused:?}"
+        );
+        let (next, taken) = update(
+            &baseline(BASE),
+            &measured,
+            Some((
+                "D-2",
+                &[
+                    "install/desktop-1280 glance_cost.p95",
+                    "install/desktop-1280 screen_only.actions",
+                ],
+            )),
+        )
+        .expect("a decision that lists both takes both");
+        assert_eq!(taken.worse, 2);
+        assert_eq!(
+            next.scenarios["install/desktop-1280"]["screen_only.actions"]
+                .decision
+                .as_deref(),
+            Some("D-2")
+        );
+        assert!(update(
+            &baseline(BASE),
+            &measured,
+            Some(("D-2", &["install/desktop-1280"]))
+        )
+        .is_ok());
+        let lost = round(r#"{"scenarios": {"install/desktop-1280": {"screen_only.actions": 3}}}"#);
+        assert!(
+            update(
+                &baseline(BASE),
+                &lost,
+                Some(("D-2", &["install/desktop-1280 glance_cost.p95"]))
+            )
+            .is_err(),
+            "a decision dropped a value it does not list"
+        );
+        let shrunk =
+            round(r#"{"lane": "gate", "scenarios": {"/a@d/light": {"layout.spills": 0}}}"#);
+        assert!(
+            update(
+                &baseline(LANES),
+                &shrunk,
+                Some(("D-9", &["gate: /c@d/light"]))
+            )
+            .is_err(),
+            "a decision dropped a lane scenario it does not list"
+        );
+    }
+
+    /// T29: the ratchet did not read `decision.md`. The keys of decision `<id>` are the backticked
+    /// list items of the section whose `## ` heading names the id in backticks.
+    #[test]
+    fn a_decision_is_read_from_its_section_of_the_decision_file() {
+        let text = "# R-04 decision\n\n## Ratchet decision `D-4`: two pages leave the gate\n\n\
+                    Prose that names `not/a key`.\n\n\
+                    - `gate: /ess/docs/reference/diagnostics@desktop-1280/light`: moved to the slow lane\n\
+                    - `/ess/@mobile-390/light axe.serious_critical_nodes`\n\n\
+                    ## Ratchet decision `D-5`\n\n- `other/desktop-1280`\n";
+        let decision = decision_of(text, "D-4").expect("D-4 is in the file");
+        assert_eq!(
+            decision.keys,
+            BTreeSet::from([
+                "gate: /ess/docs/reference/diagnostics@desktop-1280/light".to_owned(),
+                "/ess/@mobile-390/light axe.serious_critical_nodes".to_owned(),
+            ])
+        );
+        assert!(
+            decision_of(text, "D-6").is_err(),
+            "an id the file does not hold"
+        );
+        assert!(
+            decision_of("## Ratchet decision `D-7`\n\nNo list.\n", "D-7").is_err(),
+            "a decision that lists no key"
+        );
     }
 
     /// The repository root: the first ancestor of this crate that holds the findings directory.

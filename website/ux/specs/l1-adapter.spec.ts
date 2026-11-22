@@ -4,7 +4,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { BASE, FINDINGS, GATE_PAGE_ELEMENTS, GATING, REPOSITORY, ROOT, SITEMAP, TEMPLATE_PAGES, WORKERS, alwaysVisible, builtPage, hasSearchControl, pageKind } from '../adapter';
 import { holdKnownFailures } from '../core/findings';
-import { gateProjects, stageGrep } from '../playwright.config';
+import { gateProjects, slowProjects, stageGrep } from '../playwright.config';
 import { checkAlwaysVisible } from '../core/contract';
 import { sitemapPaths } from '../core/sitemap';
 
@@ -58,6 +58,19 @@ test('L1 one worker count: the config, package.json and Taskfile.yml run the lan
     const body = taskfile.slice(taskfile.indexOf(`\n  ${task}:\n`) + 1).split(/\n {2}\S/)[0];
     expect(body, `Taskfile.yml ${task}`).toContain('--workers={{.UX_WORKERS}}');
   }
+});
+
+// T31 of the R-03 report review: `ux-slow` ran every project in one task with `ignore_error` and no
+// named time, so under `slot task ux-slow` the whole lane was one pool job ended at 10 minutes, and
+// a failed project failed nothing. Each project is a pool job of its own that names its time, and
+// a failed project fails the task.
+test('L1 the slow lane runs each of its projects as a pool job that names its time, and a failed project fails the task (T31)', () => {
+  const taskfile = readFileSync(join(REPOSITORY, 'Taskfile.yml'), 'utf8');
+  const body = taskfile.slice(taskfile.indexOf('\n  ux-slow:\n') + 1).split(/\n {2}\S/)[0];
+  expect(body, 'ux-slow ignores no error').not.toContain('ignore_error');
+  const list = /- for: \[([^\]]*)\]/.exec(body)?.[1].split(',').map((s) => s.trim());
+  expect(list, 'ux-slow runs every project of the slow lane').toEqual(slowProjects.map((p) => p.name));
+  expect(body, 'each project one pool job that names its time').toMatch(/cmd: UX_OUT=\.out\/slow-\{\{\.ITEM\}\} slot --timeout 30m npx playwright test --project=\{\{\.ITEM\}\}/);
 });
 
 // R-03: the stages' grep `^round: ` matched no test, because Playwright matches a project's grep

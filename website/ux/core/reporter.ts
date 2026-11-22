@@ -8,6 +8,7 @@
 // no value and fails its gate. It prints the ten slowest tests, as the organization's test budget
 // asks.
 import { mkdirSync, writeFileSync } from 'node:fs';
+import { loadavg } from 'node:os';
 import { join, resolve } from 'node:path';
 import type { FullConfig, FullResult, Reporter, Suite, TestCase, TestResult } from '@playwright/test/reporter';
 import { engine, type Engine } from './engine';
@@ -107,9 +108,13 @@ export interface RunTiming {
   // Tests whose outcome was not the expected one: a new failure, or an open finding's asset that
   // passed. Any entry makes the run exit 1.
   unexpected?: string[];
+  // The host's 1, 5 and 15 minute load averages when the run began and when it ended, so a
+  // round's notes can cite the load of a run from round.json (T33 of the R-03 report review).
+  load?: { before: number[]; after: number[] };
 }
 
 type Result = 'pass' | 'fail' | 'not run';
+const hostLoad = () => loadavg().map((v) => r(v, 2));
 const serious = (v: AxeViolation) => v.impact === 'serious' || v.impact === 'critical';
 const sum = (values: number[]) => values.reduce((n, v) => n + v, 0);
 
@@ -347,9 +352,11 @@ export default class UxReporter implements Reporter {
   private workers = 0;
   private known: string[] = [];
   private unexpected: string[] = [];
+  private loadBefore: number[] = [];
 
   onBegin(config: FullConfig, suite: Suite): void {
     this.started = Date.now();
+    this.loadBefore = hostLoad();
     this.workers = config.workers;
     for (const test of suite.allTests()) {
       for (const a of test.annotations) if (a.type === EXPECT && a.description) this.expected.push(JSON.parse(a.description));
@@ -360,7 +367,9 @@ export default class UxReporter implements Reporter {
     const project = test.parent.project()?.name ?? '';
     this.timings.push({ title: test.title, project, duration: result.duration, start: result.startTime.getTime(), status: result.status });
     // Retries are 0, so each test ends once and its outcome is final.
-    if (test.outcome() === 'unexpected') this.unexpected.push(`[${project}] ${test.title} (${result.status}, expected ${test.expectedStatus})`);
+    // An asset that failed with a message its findings do not state says which (core/findings.ts).
+    const why = [...result.annotations, ...test.annotations].find((a) => a.type === 'new failure')?.description;
+    if (test.outcome() === 'unexpected') this.unexpected.push(`[${project}] ${test.title} (${result.status}, expected ${test.expectedStatus})${why ? `: ${why}` : ''}`);
     else if (test.expectedStatus === 'failed' && result.status === 'failed') this.known.push(`[${project}] ${test.title}`);
     for (const a of result.attachments) {
       if (!a.body) continue;
@@ -393,6 +402,7 @@ export default class UxReporter implements Reporter {
       slowest,
       known_failures: [...this.known].sort(),
       unexpected: [...this.unexpected].sort(),
+      load: { before: this.loadBefore, after: hostLoad() },
     };
     const raw: Raw = { lane: process.env.UX_LANE ?? 'gate', engine: engine(root), expected: this.expected, l2: this.l2, l3: this.l3, measured: this.measured, timing };
     writeFileSync(join(out, 'raw.json'), JSON.stringify(raw, null, 1) + '\n');
@@ -400,7 +410,7 @@ export default class UxReporter implements Reporter {
     writeFileSync(join(out, 'round.json'), JSON.stringify(measuredRound, null, 2) + '\n');
     const c = measuredRound.coverage;
     console.log(
-      `\nux: lane ${raw.lane}, engine ${raw.engine.commit}${raw.engine.dirty ? ' (dirty)' : ''} ${raw.engine.digest}; pages ${c.pages.measured} of ${c.pages.expected}, configurations ${c.configs.measured} of ${c.configs.expected}, task runs ${c.tasks.measured} of ${c.tasks.expected}, unmeasured ${c.unmeasured.length}; ${this.known.length} known failures, ${this.unexpected.length} new; wall ${timing.wall_s} s, ${timing.workers} workers`,
+      `\nux: lane ${raw.lane}, engine ${raw.engine.commit}${raw.engine.dirty ? ' (dirty)' : ''} ${raw.engine.digest}; pages ${c.pages.measured} of ${c.pages.expected}, configurations ${c.configs.measured} of ${c.configs.expected}, task runs ${c.tasks.measured} of ${c.tasks.expected}, unmeasured ${c.unmeasured.length}; ${this.known.length} known failures, ${this.unexpected.length} new; wall ${timing.wall_s} s, ${timing.workers} workers; 1-minute load ${this.loadBefore[0]} before, ${timing.load?.after[0]} after`,
     );
     for (const t of timing.known_failures ?? []) console.log(`ux: known failure (an open finding's asset): ${t}`);
     for (const t of timing.unexpected ?? []) console.log(`ux: NEW: ${t}`);

@@ -21,7 +21,7 @@ export const gateProjects = [
   { name: 'l2', testMatch: /l2-.*\.spec\.ts/ },
   { name: 'l1', testMatch: /l1-.*\.spec\.ts/ },
 ];
-const slow = [
+export const slowProjects = [
   ...Array.from({ length: SLOW_L2_SLICES }, (_, i) => ({ name: `l2-${i + 1}`, testMatch: /l2-layout\.spec\.ts/, grep: new RegExp(`@slice-${i + 1}(?!\\d)`) })),
   { name: 'l3', testMatch: /l3-.*\.spec\.ts/ },
   { name: 'measured', testMatch: /measured\.spec\.ts/ },
@@ -51,7 +51,7 @@ export default defineConfig({
     serviceWorkers: 'block',
     launchOptions: process.env.UX_CHROMIUM ? { executablePath: process.env.UX_CHROMIUM } : {},
   },
-  projects: report ? [{ name: stage, testMatch: /round\.spec\.ts/, grep: stageGrep(stage) }] : LANE === 'gate' ? gateProjects : slow,
+  projects: report ? [{ name: stage, testMatch: /round\.spec\.ts/, grep: stageGrep(stage) }] : LANE === 'gate' ? gateProjects : slowProjects,
   webServer: {
     command: `npx docusaurus serve --dir build --host 127.0.0.1 --port ${PORT} --no-open`,
     cwd: '..',

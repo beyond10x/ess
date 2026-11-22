@@ -226,6 +226,8 @@ export interface ReportExtras {
   l3: Raw['l3'];
   worst: Shot[];
   contact: Shot[];
+  // The round's hand-written notes (rounds/R-nn/notes.md), when it has some.
+  notes?: string;
 }
 
 const RESULT = (g: { result: string; unmeasured?: number }) => (g.unmeasured ? `${g.result} (${g.unmeasured} unmeasured)` : g.result);
@@ -393,7 +395,46 @@ export function writeReport(dir: string, m: MeasuredRound, x: ReportExtras): voi
   out.push('- L6 recorded live rounds and the questionnaire: no person took part in this round.');
   out.push('- Recordings (rrweb): none; the screen-only user\'s states are in the runs\' raw.json.');
   out.push('- L4 keyed replay, L5 discoverability probe, L7 review agents: run by the coordinator after this report.', '');
+  if (x.notes !== undefined) {
+    const missing = notesNumbersMissing(x.notes, m);
+    if (missing.length > 0) throw new Error(`notes.md holds numbers round.json does not: ${missing.join(', ')}; cite a value of round.json or drop the number`);
+    out.push('## Notes of the round (written by hand in notes.md; every number is one of round.json)', '', x.notes.trim(), '');
+  }
   writeFileSync(`${dir}/report.md`, out.join('\n'));
+}
+
+// A number of the notes: digits, a thousands separator or a fraction allowed, not part of a name.
+// Part of a name: next to a letter, a digit, `-`, `_`, `/`, `.`, `@` or `#` (UXF-006, R-03,
+// gate-4, mobile-390, l2-1, ess/31), or inside a code span.
+const NOTE_NUMBER = /(?<![\w\-/.@#])\d{1,3}(?:,\d{3})+(?:\.\d+)?(?![\w\-/@]|\.\d)|(?<![\w\-/.@#])\d+(?:\.\d+)?(?![\w\-/@]|\.\d)/g;
+const ANY_NUMBER = /\d+(?:\.\d+)?/g;
+
+// The numbers of a round's hand-written notes that round.json does not hold (T33 of the R-03
+// report review): the notes cite the round, they do not add to it. round.json holds a number as a
+// value, or inside a key or a string (a task run "25 of 6").
+export function notesNumbersMissing(notes: string, round: unknown): string[] {
+  const held = new Set<number>();
+  const fromText = (text: string) => {
+    for (const match of text.matchAll(ANY_NUMBER)) held.add(Number(match[0]));
+  };
+  const walk = (value: unknown): void => {
+    if (typeof value === 'number') held.add(value);
+    else if (typeof value === 'string') fromText(value);
+    else if (Array.isArray(value)) value.forEach(walk);
+    else if (value && typeof value === 'object') {
+      for (const [key, inner] of Object.entries(value)) {
+        fromText(key);
+        walk(inner);
+      }
+    }
+  };
+  walk(round);
+  const prose = notes.replace(/`[^`\n]*`/g, ' ');
+  const missing: string[] = [];
+  for (const match of prose.matchAll(NOTE_NUMBER)) {
+    if (!held.has(Number(match[0].replace(/,/g, ''))) && !missing.includes(match[0])) missing.push(match[0]);
+  }
+  return missing;
 }
 
 export const TREND_HEAD =

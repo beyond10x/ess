@@ -560,11 +560,11 @@ tasks:
       UX_LANE: slow
     cmds:
       - npm ci
-      # Every project runs whatever the one before found: a project's own exit code is not the
-      # round's result, the merged round is (UX_STAGE=round, then `ux-ratchet`).
+      # Run as `task ux-slow`, not under `slot`: each project is a pool job of its own that names
+      # its time, and a project that fails (a new failure, not an open finding's asset) fails the
+      # task.
       - for: [l2-1, l2-2, l2-3, l2-4, l2-5, l2-6, l3, measured, nested]
-        cmd: UX_OUT=.out/slow-{{.ITEM}} npx playwright test --project={{.ITEM}} --workers={{.UX_WORKERS}}
-        ignore_error: true
+        cmd: UX_OUT=.out/slow-{{.ITEM}} slot --timeout 30m npx playwright test --project={{.ITEM}} --workers={{.UX_WORKERS}}
 
   ux-ratchet:
     desc: Hold a UX round (ROUND, default the last gate run's round.json) to website/ux/baseline.json and check the finding records.

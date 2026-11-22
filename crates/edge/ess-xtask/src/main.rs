@@ -166,7 +166,9 @@ enum Command {
         /// missing values only with `--decision`.
         #[arg(long)]
         update: bool,
-        /// The decision id that accepts a worse or a missing value.
+        /// The decision id that accepts a worse or a missing value: the values it takes are the
+        /// backticked list items under the `## ` heading that names the id in `decision.md`
+        /// beside the round.
         #[arg(long)]
         decision: Option<String>,
     },

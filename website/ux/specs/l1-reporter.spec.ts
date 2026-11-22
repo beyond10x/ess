@@ -6,7 +6,7 @@ import { FINDINGS, REPOSITORY } from '../adapter';
 import { holdKnownFailures } from '../core/findings';
 import { engineDigest } from '../core/engine';
 import { mergeRecords, summarize, type Expected, type L2Config, type L2Record, type L3Record, type Raw } from '../core/reporter';
-import { buildRound, committedBaseline, mergeRaws } from '../core/round';
+import { buildRound, committedBaseline, mergeRaws, notesNumbersMissing } from '../core/round';
 
 holdKnownFailures(test, FINDINGS, REPOSITORY);
 
@@ -182,6 +182,25 @@ test('L1 round: a value a rerun replaced is kept beside the value that replaced 
       ],
     },
   });
+});
+
+// T33 of the R-03 report review: the report's hand-written notes held numbers neither round.json nor
+// the logs gave. A number of the notes is one round.json holds, as a value or inside a string; a
+// number that is part of a name (UXF-006, R-03, gate-4, mobile-390) or in a code span is not a
+// number of the notes. A run records the host load before and after it, so the notes can cite it.
+test('L1 report: the hand-written notes carry no number round.json does not hold (T33)', () => {
+  const round = {
+    runs: [{ name: 'gate-4', timing: { wall_s: 45.1, load: { before: [53.48, 52.1, 40.03], after: [50.19, 51.2, 40.5] } } }],
+    scenarios: { '/p@m/dark': { 'layout_shift.load': 0.0253 } },
+    gates: { gate4_screen_only: { over_limit: ['ess-31-release/desktop-1280: 25 of 6'] } },
+  };
+  const notes = [
+    '- Host load. `gate-4` took 45.1 s at a load of 53.48 before and 50.19 after it (UXF-025, R-03).',
+    '- `ess/31` at mobile-390 and l2-1: 25 actions of 6; layout shift 0.0253.',
+    '- Three runs were cut at 119 s, and the day cost 1,900 minutes.',
+  ].join('\n');
+  expect(notesNumbersMissing(notes, round)).toEqual(['119', '1,900']);
+  expect(notesNumbersMissing('No number here, only `R-04` and gate-5.', round)).toEqual([]);
 });
 
 // T23 of the R-02 report review: the report's baseline column was read from whatever baseline.json

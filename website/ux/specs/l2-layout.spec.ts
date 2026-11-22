@@ -90,7 +90,9 @@ for (const path of pages) {
       if (current.motion.running.length > 0 || current.motion.smoothScroll) {
         failures.push(`reduced motion: ${current.motion.running.length} running animation(s)${current.motion.smoothScroll ? ', smooth scrolling' : ''}`);
       }
-      expect(failures, `${path} at ${viewport.name}: hard gates 1, 2, 5, truncation and reduced motion`).toEqual([]);
+      // One error per failure, so a finding's failure pattern holds one failure and a second
+      // failure in the same test is an error of its own (T28 of the R-03 report review).
+      for (const failure of failures) expect.soft(failure, `${path} at ${viewport.name}: hard gates 1, 2, 5, truncation and reduced motion`).toBe('none');
     });
   }
 }

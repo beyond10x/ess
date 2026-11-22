@@ -5,7 +5,8 @@
 //   UX_STAGE=round   merges the runs into rounds/R-nn/round.json, and takes the worst-moment shots
 //                    and the contact sheets: four tests, each under the 60 s test bound.
 //   UX_STAGE=report  writes report.md and the trend row from round.json, the baseline the ratchet
-//                    took the round into, and the last round; no browser. Run it after
+//                    took the round into, the last round and the hand-written rounds/R-nn/notes.md,
+//                    whose every number round.json must hold (T33); no browser. Run it after
 //                    `cargo xtask ux-ratchet --round website/ux/rounds/R-nn/round.json --update`:
 //                    it refuses a baseline that does not hold this round (T23).
 // The round stage replaces only the shots it takes (worst-*, task-*, contact-*): other shots of the
@@ -152,6 +153,8 @@ test('report: report.md and the trend row from round.json and the committed base
     l3,
     worst: worstShots(l2, l3).shots,
     contact: contactShots,
+    // The hand-written notes: every number one of round.json (T33 of the R-03 report review).
+    notes: existsSync(join(dir, 'notes.md')) ? readFileSync(join(dir, 'notes.md'), 'utf8') : undefined,
   });
   writeTrend(join(ROOT, 'trend.md'), round);
 });
