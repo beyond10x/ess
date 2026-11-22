@@ -634,6 +634,21 @@ pub(super) fn fields_bound<R>(run: impl FnOnce() -> R) -> (R, u64) {
     (out, FIELDS_BOUND.with(std::cell::Cell::get) - before)
 }
 
+thread_local! {
+    /// How many times [`hinted`] was asked on this thread, and how many times it made its inputs
+    /// ([`inputs_made`]).
+    static INPUTS_MADE: std::cell::Cell<(u64, u64)> = const { std::cell::Cell::new((0, 0)) };
+}
+
+/// What `run` returns, how many times an arranging branch's inputs toward a goal were asked for on
+/// this thread while it ran, and how many times they were made.
+pub(super) fn inputs_made<R>(run: impl FnOnce() -> R) -> (R, u64, u64) {
+    let (asked, made) = INPUTS_MADE.with(std::cell::Cell::get);
+    let out = run();
+    let (now_asked, now_made) = INPUTS_MADE.with(std::cell::Cell::get);
+    (out, now_asked - asked, now_made - made)
+}
+
 /// What of a stored row's binding no predicate changes, bound once for every predicate decided over
 /// the row ([`evaluate_row`]).
 ///
@@ -720,6 +735,24 @@ struct RowMemory {
     rows: std::collections::HashMap<u64, Vec<KeptRow>>,
     /// How many rows `rows` holds.
     kept: usize,
+    /// The inputs [`hinted`] offered, by entity and branch, each with its hints and distinction.
+    hinted: BTreeMap<String, Vec<KeptInputs>>,
+}
+
+impl RowMemory {
+    /// Starts this memory again unless it belongs to the model `anchor` is kept for.
+    fn anchor_on(&mut self, anchor: &std::rc::Rc<RowPicks>) {
+        if !self
+            .anchor
+            .as_ref()
+            .is_some_and(|held| std::rc::Rc::ptr_eq(held, anchor))
+        {
+            *self = Self {
+                anchor: Some(std::rc::Rc::clone(anchor)),
+                ..Self::default()
+            };
+        }
+    }
 }
 
 /// One row [`RowMemory`] keeps: what it was bound from, and the binding.
@@ -776,17 +809,7 @@ fn bound_row(
     let key = row_key(entity, settled, unwritten);
     let known = ROWS.with(|memory| {
         let mut memory = memory.borrow_mut();
-        if !memory
-            .anchor
-            .as_ref()
-            .is_some_and(|held| std::rc::Rc::ptr_eq(held, &anchor))
-        {
-            *memory = RowMemory {
-                anchor: Some(std::rc::Rc::clone(&anchor)),
-                ..RowMemory::default()
-            };
-            return None;
-        }
+        memory.anchor_on(&anchor);
         memory
             .rows
             .get(&key)?
@@ -4609,19 +4632,96 @@ fn guarded_moves(
     read
 }
 
-/// The candidate inputs for one arranging branch, varied toward the stored-field goal.
-///
-/// Every hint is translated through the branch's `sets:` mappings onto its own input, and the
-/// translations are handed to the witness search beside the command's own guards: the literals the
-/// guard writes become the values the mapped input fields are tried at. `None` when the branch
-/// maps none of the fields the hints read, because then no choice of its input moves the row.
+/// The inputs [`hinted`] offered for one set of hints, one distinction and the input paths the
+/// branch under test copies ([`RowMemory`]).
+type KeptInputs = (Vec<Predicate>, Distinction, BTreeSet<FactPath>, Hinted);
+
+/// The inputs [`hinted`] offers.
+type Hinted = Result<Option<Vec<BTreeMap<String, Node>>>, RefusalCause>;
+
+/// The candidate inputs for one arranging branch, varied toward the stored-field goal
+/// ([`hinted_anew`]), kept for the model `made` remembers innermost by entity, branch, hints,
+/// distinction and the input paths the branch under test copies
+/// ([`crate::witness::copied_under_test`], which the witness search behind them reads), which is
+/// all they read: the search asks for them at every row it advances by the branch, and they are
+/// the same at every row. A branch the model does not declare as such (one projected for a related
+/// guard) is answered anew.
 fn hinted(
     ir: &EssIr,
     entity: &EntityHandle,
     driver: &Driver<'_>,
     hints: &[Predicate],
     at: Distinction,
-) -> Result<Option<Vec<BTreeMap<String, Node>>>, RefusalCause> {
+) -> Hinted {
+    INPUTS_MADE.with(|count| {
+        let (asked, made) = count.get();
+        count.set((asked + 1, made));
+    });
+    let declared = ir
+        .commands()
+        .get(&driver.command.name)
+        .is_some_and(|declared| std::ptr::eq(declared, driver.command))
+        && driver
+            .command
+            .outcomes
+            .iter()
+            .any(|outcome| std::ptr::eq(outcome, driver.outcome));
+    let anchor = if declared {
+        super::made::row_picks(ir, ANCHOR.to_owned())
+    } else {
+        None
+    };
+    let Some(anchor) = anchor else {
+        return hinted_anew(ir, entity, driver, hints, at);
+    };
+    let key = format!("{entity}|{}|{}", driver.command.name, driver.outcome.name);
+    let copied = crate::witness::copied_under_test(driver.command);
+    let known = ROWS.with(|memory| {
+        let mut memory = memory.borrow_mut();
+        memory.anchor_on(&anchor);
+        memory
+            .hinted
+            .get(&key)?
+            .iter()
+            .find(|(held, distinction, scope, _)| {
+                held.as_slice() == hints && *distinction == at && *scope == copied
+            })
+            .map(|(_, _, _, inputs)| inputs.clone())
+    });
+    if let Some(known) = known {
+        return known;
+    }
+    // No borrow is held while the inputs are made: the witness search below may decide guards.
+    let inputs = hinted_anew(ir, entity, driver, hints, at);
+    ROWS.with(|memory| {
+        let mut memory = memory.borrow_mut();
+        memory.anchor_on(&anchor);
+        memory
+            .hinted
+            .entry(key)
+            .or_default()
+            .push((hints.to_vec(), at, copied, inputs.clone()));
+    });
+    inputs
+}
+
+/// The candidate inputs for one arranging branch, varied toward the stored-field goal.
+///
+/// Every hint is translated through the branch's `sets:` mappings onto its own input, and the
+/// translations are handed to the witness search beside the command's own guards: the literals the
+/// guard writes become the values the mapped input fields are tried at. `None` when the branch
+/// maps none of the fields the hints read, because then no choice of its input moves the row.
+fn hinted_anew(
+    ir: &EssIr,
+    entity: &EntityHandle,
+    driver: &Driver<'_>,
+    hints: &[Predicate],
+    at: Distinction,
+) -> Hinted {
+    INPUTS_MADE.with(|count| {
+        let (asked, made) = count.get();
+        count.set((asked, made + 1));
+    });
     let mut mapping = mapped(driver.outcome);
     // A hint over the row's identity steers the input the creating branch publishes it from: a
     // related guard read off an input naming the row is decided on the identity the row is created

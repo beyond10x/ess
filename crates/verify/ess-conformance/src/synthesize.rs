@@ -3537,6 +3537,15 @@ pub fn stored_fields_bound<R>(run: impl FnOnce() -> R) -> (R, u64) {
     subject_fact::fields_bound(run)
 }
 
+/// What `run` returns, how many times an arranging branch's inputs toward a stored-field goal
+/// were asked for on this thread while it ran, and how many times they were made rather than
+/// answered from what the synthesis made before: the work a test bounds where a wall-clock bound
+/// would depend on the machine. Not part of the suite.
+#[doc(hidden)]
+pub fn branch_inputs_made<R>(run: impl FnOnce() -> R) -> (R, u64, u64) {
+    subject_fact::inputs_made(run)
+}
+
 /// [`synthesize`], with explicitly admitted synthesis seeds (beyond10x/ess#413,
 /// `docs/design/synthesis-seeds.md`).
 ///
