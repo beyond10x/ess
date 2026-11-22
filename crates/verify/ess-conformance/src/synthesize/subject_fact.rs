@@ -6099,8 +6099,25 @@ fn selected_successors(
 /// search whose goal differs — so it is kept for the length of a synthesis, by command and row.
 #[derive(Default)]
 pub(super) struct RowPicks {
-    /// The branch picked for each input asked so far, by name.
-    picked: std::cell::RefCell<BTreeMap<BTreeMap<String, Node>, Pick>>,
+    /// The branch picked for each input asked so far, by name, under a hash of the input
+    /// ([`input_key`]): an input is compared whole only with the inputs of its hash, where ordering
+    /// whole inputs compared each with several.
+    picked: std::cell::RefCell<std::collections::HashMap<u64, Picks>>,
+}
+
+/// The inputs of one hash a [`RowPicks`] keeps, each with the branch picked for it.
+type Picks = Vec<(BTreeMap<String, Node>, Pick)>;
+
+/// A hash of an input a command is sent. Inputs of one hash are told apart by comparing them, so
+/// two equal inputs hashing apart cost a second decision, never a wrong one.
+fn input_key(input: &BTreeMap<String, Node>) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut hasher = std::hash::DefaultHasher::new();
+    for (name, value) in input {
+        name.hash(&mut hasher);
+        hash_node(value, &mut hasher);
+    }
+    hasher.finish()
 }
 
 /// The name of the branch [`selects`] picked for one input ([`RowPicks`]).
@@ -6146,7 +6163,12 @@ fn picked(
     let Some(picks) = picks else {
         return decide();
     };
-    let known = picks.picked.borrow().get(input).cloned();
+    let key = input_key(input);
+    let known = picks.picked.borrow().get(&key).and_then(|kept| {
+        kept.iter()
+            .find(|(asked, _)| asked == input)
+            .map(|(_, pick)| pick.clone())
+    });
     if let Some(known) = known {
         return known;
     }
@@ -6154,7 +6176,9 @@ fn picked(
     picks
         .picked
         .borrow_mut()
-        .insert(input.clone(), fresh.clone());
+        .entry(key)
+        .or_default()
+        .push((input.clone(), fresh.clone()));
     fresh
 }
 
