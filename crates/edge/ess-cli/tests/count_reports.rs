@@ -246,3 +246,65 @@ fn a_report_onto_a_directory_fails_and_leaves_nothing_beside_it() {
     );
     assert_eq!(entries(&directory), ["report.json", "suite.json"]);
 }
+
+/// `--report-out /dev/stdout` wrote the report to standard output on 0.97.4 (`fs::write` opens
+/// the path). Standard output is a pipe here, as under `| jq`.
+#[cfg(target_os = "linux")]
+#[test]
+fn a_report_out_of_dev_stdout_writes_the_report_to_standard_output() {
+    let directory = suite_files("dev-stdout");
+    let output = run_suite(
+        &directory,
+        &["--report-format", "2", "--report-out", "/dev/stdout"],
+    );
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(String::from_utf8_lossy(&output.stdout).contains("\"conformance_status\""));
+}
+
+/// `--report-out /dev/null` discarded the report on 0.97.4. The helper creates its temporary
+/// file in the destination's directory, so a writer that may not create files in `/dev` fails,
+/// and one that may (root in a container) renames a regular file over the device.
+#[cfg(target_os = "linux")]
+#[test]
+fn a_report_out_of_dev_null_succeeds() {
+    let directory = suite_files("dev-null");
+    let output = run_suite(
+        &directory,
+        &["--report-format", "2", "--report-out", "/dev/null"],
+    );
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+/// A destination that is not a regular file and not a directory is not replaced by a regular
+/// file: on 0.97.4 the write to a socket failed and the socket stayed.
+#[cfg(unix)]
+#[test]
+fn a_report_out_of_a_non_regular_file_does_not_replace_it() {
+    use std::os::unix::fs::FileTypeExt;
+    let directory = suite_files("socket");
+    let socket = directory.join("report.sock");
+    let _listener = std::os::unix::net::UnixListener::bind(&socket).unwrap();
+    let _ = run_suite(
+        &directory,
+        &[
+            "--report-format",
+            "2",
+            "--report-out",
+            socket.to_str().unwrap(),
+        ],
+    );
+    let kind = std::fs::symlink_metadata(&socket).unwrap().file_type();
+    assert!(
+        kind.is_socket(),
+        "the socket at the destination was replaced: is_file={}",
+        kind.is_file()
+    );
+}
