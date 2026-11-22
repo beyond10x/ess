@@ -10,6 +10,7 @@
 //!    that honours the precedence is never asked to take the later branch for an input the earlier
 //!    one claims.
 use std::collections::{BTreeMap, BTreeSet};
+use std::fmt::Write as _;
 
 use ess_compiler::{ir::EssIr, resolve::compile, source::SourceMap};
 use ess_conformance::{
@@ -350,13 +351,13 @@ fn an_overlap_over_another_field_is_sent_and_requires_the_first_declared_branch(
 /// twice; the second pass took 9.5 % of the run's instructions. A work bound rather than a clock.
 #[test]
 fn each_overlap_of_two_accepting_guards_is_searched_once() {
-    let cases: String = (0..10)
-        .map(|i| {
-            format!(
-                "      - {{name: case-{i}, when: quantity == {i}, emits: [shop.order.Checked]}}\n"
-            )
-        })
-        .collect();
+    let cases: String = (0..10).fold(String::new(), |mut text, i| {
+        let _ = writeln!(
+            text,
+            "      - {{name: case-{i}, when: quantity == {i}, emits: [shop.order.Checked]}}"
+        );
+        text
+    });
     let model = ir(&format!(
         "format: ess/25
 system: shop

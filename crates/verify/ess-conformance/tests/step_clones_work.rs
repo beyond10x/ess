@@ -58,7 +58,7 @@ fn selecting_a_fresh_format_scans_the_unchanged_steps_once() {
         suite.select_fresh_format_for(&ir);
     });
     assert_eq!(scans, 1, "the steps were scanned {scans} times");
-    let kept = suite.provenance.suite_version.clone();
+    let kept = suite.provenance.suite_version;
     let mut again = synthesize(&ir).suite;
     again.select_fresh_format_for(&ir);
     assert_eq!(again.provenance.suite_version, kept);
@@ -92,7 +92,7 @@ fn a_precondition_prelude_is_copied_once_per_emitted_step() {
         .sum();
     assert!(emitted > 0);
     assert!(
-        copied as usize <= emitted,
+        usize::try_from(copied).is_ok_and(|copied| copied <= emitted),
         "{copied} step copies for {emitted} emitted precondition steps"
     );
 }

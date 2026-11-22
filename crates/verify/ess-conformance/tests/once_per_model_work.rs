@@ -4,6 +4,7 @@
 //! Each case builds a model whose commands all ask the same question of the model and holds a
 //! synthesis to a count of how often the answer was derived: a work bound rather than a clock.
 
+use std::fmt::Write as _;
 use std::path::Path;
 
 use ess_compiler::{
@@ -46,17 +47,19 @@ fn filing(
          commands:\n"
     );
     for command in 0..commands {
-        text.push_str(&format!(
+        let _ = write!(
+            text,
             "  - name: ticket.desk.File{command:03}\n    input:\n      - {{name: sequence, type: \
              Integer}}\n{extra}"
-        ));
+        );
         for input in 0..inputs {
-            text.push_str(&format!("      - {{name: line_{input}, type: String}}\n"));
+            let _ = writeln!(text, "      - {{name: line_{input}, type: String}}");
         }
-        text.push_str(&format!(
+        let _ = writeln!(
+            text,
             "    outcomes:\n      - name: filed\n        emits: [ticket.desk.Filed]\n        \
-             payload:\n          ticket.desk.Filed: {{sequence: input.sequence{payload}}}\n"
-        ));
+             payload:\n          ticket.desk.Filed: {{sequence: input.sequence{payload}}}"
+        );
     }
     text
 }
@@ -120,16 +123,15 @@ fn the_events_a_branch_must_not_publish_are_listed_once_per_emitted_list() {
         "format: ess/25\nsystem: ticket\nversion: v1\ndomain: ticket.desk\ncommands:\n",
     );
     for command in 0..12 {
-        text.push_str(&format!(
+        let _ = writeln!(
+            text,
             "  - name: ticket.desk.Raise{command}\n    outcomes: [{{name: raised, emits: \
-             [ticket.desk.Raised]}}]\n"
-        ));
+             [ticket.desk.Raised]}}]"
+        );
     }
     text.push_str("events:\n  - {name: ticket.desk.Raised, fields: []}\n");
     for event in 1..40 {
-        text.push_str(&format!(
-            "  - {{name: ticket.desk.Note{event}, fields: []}}\n"
-        ));
+        let _ = writeln!(text, "  - {{name: ticket.desk.Note{event}, fields: []}}");
     }
     let ir = ir(&text);
     let (synthesis, built) = absent_event_lists_built(|| synthesize(&ir));

@@ -7,6 +7,7 @@
 //! issue the value gets a cell rather than a refusal. Below suite/56 a read cell keeps the shape it
 //! always had: issued as `A`, read as no actor.
 use std::cell::RefCell;
+use std::fmt::Write as _;
 
 use ess_compiler::{resolve::compile, source::SourceMap, EssIr};
 use ess_conformance::interpret::Interpreted;
@@ -580,13 +581,13 @@ fn a_marked_branchs_own_run_is_built_once_for_all_its_follow_up_cells() {
         .map(|i| format!("{{name: secret_{i}, type: String}}"))
         .collect::<Vec<_>>()
         .join(", ");
-    let uses: String = (0..15)
-        .map(|i| {
-            format!(
-                "  - name: vault.api.Use{i}\n    outcomes: [{{name: done, emits: [vault.api.Used]}}]\n"
-            )
-        })
-        .collect();
+    let uses: String = (0..15).fold(String::new(), |mut text, i| {
+        let _ = writeln!(
+            text,
+            "  - name: vault.api.Use{i}\n    outcomes: [{{name: done, emits: [vault.api.Used]}}]"
+        );
+        text
+    });
     let ir = model(&format!(
         "format: ess/21
 system: vault

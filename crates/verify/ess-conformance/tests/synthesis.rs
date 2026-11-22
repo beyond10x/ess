@@ -4381,7 +4381,10 @@ fn the_operations_no_component_realises_are_named() {
     assert_eq!(synthesize(&ir).refusals.len(), 3);
     let alone = synthesize_for(&ir, "desk-service").unwrap();
     assert!(alone.refusals.is_empty(), "{:#?}", alone.refusals);
-    assert!(unrealised(&example("billing")).is_empty());
+    assert_eq!(
+        unrealised(&example("billing")),
+        [] as [ess_compiler::EssSemanticRef; 0]
+    );
 }
 
 fn component_scope() -> EssIr {

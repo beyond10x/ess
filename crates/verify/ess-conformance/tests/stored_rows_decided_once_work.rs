@@ -20,6 +20,7 @@ use ess_domain::{
     spec::{RawSpecFile, Specification},
     system::Source,
 };
+use std::fmt::Write as _;
 
 const MODEL: &str = include_str!("fixtures/stored-rows-decided-once.yaml");
 
@@ -76,10 +77,11 @@ fn chain(spares: usize) -> String {
          terminal: [State6]\n      transitions:\n",
     );
     for n in 1..=6 {
-        text.push_str(&format!(
-            "        - {{name: move-{n}, from: [State{}], to: State{n}}}\n",
+        let _ = writeln!(
+            text,
+            "        - {{name: move-{n}, from: [State{}], to: State{n}}}",
             n - 1
-        ));
+        );
     }
     text.push_str(
         "errors: [{name: shop.order.Conflict, fields: []}]\ncommands:\n  - name: shop.order.Create\n    \
@@ -87,12 +89,13 @@ fn chain(spares: usize) -> String {
          emits: [shop.order.Created]\n        payload: {shop.order.Created: {id: {generated: true}}}\n",
     );
     for n in 1..=6 {
-        text.push_str(&format!(
+        let _ = writeln!(
+            text,
             "  - name: shop.order.Move{n}\n    input: [{{name: id, type: shop.order.Id}}]\n    outcomes:\n      \
              - {{name: moved, moves: shop.order.Order.move-{n}, instance: id, emits: [shop.order.Moved], \
              payload: {{shop.order.Moved: {{id: input.id}}}}}}\n      \
-             - {{name: wrong-state, wrong_state: true, error: shop.order.Conflict}}\n"
-        ));
+             - {{name: wrong-state, wrong_state: true, error: shop.order.Conflict}}"
+        );
     }
     text.push_str(
         "events:\n  - {name: shop.order.Created, fields: [{name: id, type: shop.order.Id}]}\n  \
@@ -101,10 +104,11 @@ fn chain(spares: usize) -> String {
          fields: [{name: id, type: shop.order.Id}, {name: state, type: shop.order.Order.State}]}\n",
     );
     for n in 0..spares {
-        text.push_str(&format!(
+        let _ = writeln!(
+            text,
             "  - {{name: shop.order.Spares{n}, source: shop.order.Order, consistency: eventual, \
-             fields: [{{name: id, type: shop.order.Id}}]}}\n"
-        ));
+             fields: [{{name: id, type: shop.order.Id}}]}}"
+        );
     }
     text
 }

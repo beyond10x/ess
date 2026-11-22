@@ -12,6 +12,7 @@
 //! appended segments and the leaf).
 
 use std::collections::BTreeMap;
+use std::fmt::Write as _;
 
 use ess_compiler::{ir::EssIr, resolve::compile, source::SourceMap};
 use ess_conformance::input::{flatten, path_segments_copied};
@@ -43,10 +44,11 @@ fn model() -> String {
         } else {
             format!("demo.depth.Shell{}", level + 1)
         };
-        text.push_str(&format!(
+        let _ = writeln!(
+            text,
             "  - {{name: demo.depth.Shell{level}, kind: struct, fields: [{{name: inner, type: \
-             {inner}}}]}}\n"
-        ));
+             {inner}}}]}}"
+        );
     }
     text.push_str(
         "events:\n  - name: demo.depth.Noted\n    fields:\n      - {name: sequence, type: \

@@ -17,6 +17,7 @@ use ess_domain::{
     spec::{RawSpecFile, Specification},
     system::Source,
 };
+use std::fmt::Write as _;
 
 const KEYS: usize = 24;
 
@@ -29,10 +30,10 @@ fn ir(text: &str) -> EssIr {
 
 fn ranked(keys: usize) -> String {
     let names: Vec<String> = (0..keys).map(|at| format!("flag_{at:02}")).collect();
-    let fields: String = names
-        .iter()
-        .map(|name| format!("      - {{name: {name}, type: Integer}}\n"))
-        .collect();
+    let fields: String = names.iter().fold(String::new(), |mut text, name| {
+        let _ = writeln!(text, "      - {{name: {name}, type: Integer}}");
+        text
+    });
     let sets: Vec<String> = names
         .iter()
         .map(|name| format!("{name}: input.{name}"))
@@ -86,15 +87,17 @@ fn layered(unused_shorthand: bool, commands: usize) -> String {
         "format: ess/27\nsystem: demo\nversion: v1\ndomain: demo.work\ntypes:\n  - name: demo.work.Unused\n    kind: struct\n{shorthand}    fields: [{{name: tag, type: String}}]\n  - {{name: demo.work.Layer0, kind: struct, fields: [{{name: member, type: String}}]}}\n"
     );
     for at in 1..4 {
-        text += &format!(
-            "  - {{name: demo.work.Layer{at}, kind: struct, fields: [{{name: member, type: demo.work.Layer{}}}]}}\n",
+        let _ = writeln!(
+            text,
+            "  - {{name: demo.work.Layer{at}, kind: struct, fields: [{{name: member, type: demo.work.Layer{}}}]}}",
             at - 1
         );
     }
     text += "events: [{name: demo.work.Shared, fields: [{name: body, type: demo.work.Layer3}]}]\ncommands:\n";
     for at in 0..commands {
-        text += &format!(
-            "  - name: demo.work.Do{at}\n    input: [{{name: body, type: demo.work.Layer3}}]\n    outcomes: [{{name: done, emits: [demo.work.Shared], payload: {{demo.work.Shared: {{body: input.body}}}}}}]\n"
+        let _ = writeln!(
+            text,
+            "  - name: demo.work.Do{at}\n    input: [{{name: body, type: demo.work.Layer3}}]\n    outcomes: [{{name: done, emits: [demo.work.Shared], payload: {{demo.work.Shared: {{body: input.body}}}}}}]"
         );
     }
     text

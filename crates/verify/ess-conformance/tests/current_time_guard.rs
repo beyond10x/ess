@@ -11,6 +11,7 @@ mod support_versions;
 
 use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, BTreeSet};
+use std::fmt::Write as _;
 
 use ess_compiler::{
     ir::EssIr,
@@ -956,16 +957,18 @@ fn adversary_586_a_target_without_hold_now_keeps_its_passing_run() {
 /// A model whose creating command takes `count` `Timestamp` inputs and writes each into the row,
 /// with two commands that move the row and one that closes it.
 fn many_instants(count: usize) -> String {
-    let declared: String = (0..count)
-        .map(|i| format!("      - {{name: stamp_{i}, type: Timestamp}}\n"))
-        .collect();
-    let sets: String = (0..count)
-        .map(|i| format!("          stamp_{i}: input.stamp_{i}\n"))
-        .collect();
-    let marks: String = (1..=2)
-        .map(|i| {
-            format!(
-                "  - name: shop.desk.Mark{i}
+    let declared: String = (0..count).fold(String::new(), |mut text, i| {
+        let _ = writeln!(text, "      - {{name: stamp_{i}, type: Timestamp}}");
+        text
+    });
+    let sets: String = (0..count).fold(String::new(), |mut text, i| {
+        let _ = writeln!(text, "          stamp_{i}: input.stamp_{i}");
+        text
+    });
+    let marks: String = (1..=2).fold(String::new(), |mut text, i| {
+        let _ = writeln!(
+            text,
+            "  - name: shop.desk.Mark{i}
     input:
       - {{name: ticket_id, type: shop.desk.TicketId}}
     outcomes:
@@ -977,11 +980,10 @@ fn many_instants(count: usize) -> String {
         emits: [shop.desk.Changed]
         payload:
           shop.desk.Changed: {{ticket_id: input.ticket_id}}
-      - {{name: wrong-state, wrong_state: true, error: shop.desk.NoSuchTicket}}
-"
-            )
-        })
-        .collect();
+      - {{name: wrong-state, wrong_state: true, error: shop.desk.NoSuchTicket}}"
+        );
+        text
+    });
     format!(
         "format: ess/37
 system: shop

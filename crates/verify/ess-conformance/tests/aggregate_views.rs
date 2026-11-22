@@ -4,6 +4,7 @@
 //! number asserted here is the page's own worked example, read off the page and not off the
 //! implementation.
 use std::collections::BTreeMap;
+use std::fmt::Write as _;
 mod support_versions;
 
 use ess_compiler::{ir::EssIr, resolve::compile, source::SourceMap};
@@ -721,7 +722,7 @@ entities:
 ",
     );
     for invariant in 0..240 {
-        text.push_str(&format!("      - 'code != \"flag_{invariant}\"'\n"));
+        let _ = writeln!(text, "      - 'code != \"flag_{invariant}\"'");
     }
     text.push_str(
         "events: [{name: shop.order.Done, fields: []}]

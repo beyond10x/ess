@@ -14,6 +14,7 @@
 //! publishes its event once per changed row now has a row its filter selects arranged first.
 
 use std::collections::BTreeSet;
+use std::fmt::Write as _;
 
 use ess_compiler::{resolve::compile, source::SourceMap, EssIr};
 use ess_conformance::interpret::Interpreted;
@@ -162,38 +163,37 @@ fn a_trigger_publishing_once_per_changed_row_is_sent_with_a_selected_row() {
 /// `publishers` commands publishing the trigger of six bindings, each invoking a command with no
 /// branch a failure can be forced on.
 fn unforced(publishers: usize) -> EssIr {
-    let publishing: String = (0..publishers)
-        .map(|i| {
-            format!(
-                "  - name: shop.work.Publish{i:02}\n    outcomes: [{{name: published, emits: [shop.work.Created]}}]\n"
-            )
-        })
-        .collect();
-    let recording: String = (0..6)
-        .map(|i| {
-            format!(
-                "  - name: shop.work.Record{i}\n    input: [{{name: category, type: String}}]\n    outcomes: [{{name: recorded, emits: [shop.work.Recorded]}}]\n"
-            )
-        })
-        .collect();
+    let publishing: String = (0..publishers).fold(String::new(), |mut text, i| {
+        let _ = writeln!(
+            text,
+            "  - name: shop.work.Publish{i:02}\n    outcomes: [{{name: published, emits: [shop.work.Created]}}]"
+        );
+        text
+    });
+    let recording: String = (0..6).fold(String::new(), |mut text, i| {
+        let _ = writeln!(
+            text,
+            "  - name: shop.work.Record{i}\n    input: [{{name: category, type: String}}]\n    outcomes: [{{name: recorded, emits: [shop.work.Recorded]}}]"
+        );
+        text
+    });
     let accepted = (0..publishers)
         .map(|i| format!("shop.work.Publish{i:02}"))
         .chain((0..6).map(|i| format!("shop.work.Record{i}")))
         .collect::<Vec<_>>()
         .join(", ");
-    let bindings: String = (0..6)
-        .map(|i| {
-            format!(
-                "  - id: send-record-{i}
+    let bindings: String = (0..6).fold(String::new(), |mut text, i| {
+        let _ = writeln!(
+            text,
+            "  - id: send-record-{i}
     when: {{event: shop.work.Created}}
     invoke: {{command: shop.work.Record{i}}}
     mapping: {{category: note}}
     delivery: at_least_once
-    on_failure: retry
-"
-            )
-        })
-        .collect();
+    on_failure: retry"
+        );
+        text
+    });
     let text = format!(
         "format: ess/25
 system: shop

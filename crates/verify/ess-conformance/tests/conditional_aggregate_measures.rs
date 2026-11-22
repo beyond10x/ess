@@ -13,6 +13,7 @@
 //! defect at a time.
 use std::cell::{Cell, RefCell};
 use std::collections::BTreeMap;
+use std::fmt::Write as _;
 
 use ess_compiler::refs::{CommandRef, OutcomeRef};
 use ess_conformance::target::*;
@@ -1389,10 +1390,11 @@ views:
 ",
     );
     for sum in 0..sums {
-        text.push_str(&format!(
+        let _ = writeln!(
+            text,
             "      - {{name: flagged_{sum:03}, type: Integer, aggregate: {{sum: cents, where: \
-             flag_3 == true}}}}\n"
-        ));
+             flag_3 == true}}}}"
+        );
     }
     text
 }
