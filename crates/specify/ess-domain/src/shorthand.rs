@@ -187,7 +187,10 @@ pub(crate) fn validate(declared: &NamedType, registry: &TypeRegistry) -> Validat
                 ValidationCode::UnsupportedFormatVersion,
                 "`shorthand:` requires specification format ess/27",
             )
-            .with_hint("declare `format: ess/27`, or drop `shorthand:`"),
+            .with_hint(format!(
+                "{raise}, or drop `shorthand:`",
+                raise = crate::system::FormatVersion::V27.declaration_hint()
+            )),
         );
     }
     let Some(field) = fields.iter().find(|field| field.name == *shorthand) else {

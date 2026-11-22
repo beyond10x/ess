@@ -1105,7 +1105,7 @@ impl EntitySpec {
                     ValidationCode::UnsupportedFormatVersion,
                     "`provided: true` on an entity requires specification format ess/33",
                 )
-                .with_hint("write `format: ess/33` on the source that declares the system"),
+                .with_hint(crate::system::FormatVersion::V33.declaration_hint()),
             );
         }
         errors

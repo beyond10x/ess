@@ -317,7 +317,10 @@ pub(crate) fn below_format(
                 ValidationCode::UnsupportedFormatVersion,
                 "`undeclared_fields:` requires specification format ess/24",
             )
-            .with_hint("declare `format: ess/24`, or drop `undeclared_fields:`")
+            .with_hint(format!(
+                "{raise}, or drop `undeclared_fields:`",
+                raise = crate::system::FormatVersion::V24.declaration_hint()
+            ))
         })
 }
 

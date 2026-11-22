@@ -1268,7 +1268,7 @@ impl NamedType {
                     self.name
                 ),
             )
-            .with_hint("write `format: ess/36` on the source that declares the system"),
+            .with_hint(crate::system::FormatVersion::V36.declaration_hint()),
         )
     }
 
@@ -1286,8 +1286,7 @@ impl NamedType {
         (fields.is_empty() && below).then(|| {
             self.declares_nothing(
                 "fields",
-                "give it at least one, delete the declaration, or declare `format: ess/32`, \
-                 where a struct may declare no fields",
+                &format!("give it at least one, delete the declaration, or {}, where a struct may declare no fields", crate::system::FormatVersion::V32.declaration_hint()),
             )
         })
     }
@@ -1647,7 +1646,7 @@ impl NamedType {
                         self.name
                     ),
                 )
-                .with_hint("write `format: ess/23` on the source that declares the system"),
+                .with_hint(crate::system::FormatVersion::V23.declaration_hint()),
             );
             return errors;
         }

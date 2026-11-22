@@ -289,9 +289,12 @@ fn refusal(
         .and_then(|text| rewrite(text, entity, references));
     if let Some((via, read)) = resolved {
         let format = if below_ess_28 {
-            "declare `format: ess/28`, which reads it, and "
+            format!(
+                "{}, which reads it, and ",
+                FormatVersion::V28.declaration_hint()
+            )
         } else {
-            ""
+            String::new()
         };
         return refused(format!(
             "{field} writes {written}, which is not a key of a view field; `{read}` of the row \
