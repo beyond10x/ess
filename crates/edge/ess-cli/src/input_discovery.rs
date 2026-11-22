@@ -119,16 +119,17 @@ pub(crate) fn acquire(path: &Path, kind: Kind) -> Result<Vec<Input>> {
         let manifest = path.join(MANIFEST);
         match fs::symlink_metadata(&manifest) {
             Ok(metadata) => {
+                // Read once: the release pin and the selection below both come from it.
+                let configuration = (metadata.is_file() && !metadata.file_type().is_symlink())
+                    .then(|| manifest_lists(&manifest));
                 // The release pin is decided before any selected file is read. A manifest that
                 // does not parse is left to the refusal below, which says how to repair it.
-                if metadata.is_file() && !metadata.file_type().is_symlink() {
-                    if let Ok(Manifest {
-                        requires: Some(requires),
-                        ..
-                    }) = manifest_lists(&manifest)
-                    {
-                        crate::requires::check(&manifest, &requires)?;
-                    }
+                if let Some(Ok(Manifest {
+                    requires: Some(requires),
+                    ..
+                })) = &configuration
+                {
+                    crate::requires::check(&manifest, requires)?;
                 }
                 let repair = || {
                     format!(
@@ -138,10 +139,10 @@ pub(crate) fn acquire(path: &Path, kind: Kind) -> Result<Vec<Input>> {
                 )
                 };
                 return (|| {
-                    if !metadata.is_file() || metadata.file_type().is_symlink() {
+                    let Some(configuration) = configuration else {
                         bail!("{MANIFEST} must be a regular non-symlink file");
-                    }
-                    manifest_inputs(path, &manifest, kind)
+                    };
+                    manifest_inputs(path, configuration?, kind)
                 })()
                 .map_err(|error: anyhow::Error| anyhow::anyhow!("{}: {error:#}", repair()));
             }
@@ -332,8 +333,7 @@ fn parse_manifest(text: &str) -> Result<Manifest> {
     Ok(configuration)
 }
 
-fn manifest_selection(manifest: &Path, kind: Kind) -> Result<Vec<String>> {
-    let configuration = manifest_lists(manifest)?;
+fn manifest_selection(configuration: Manifest, kind: Kind) -> Result<Vec<String>> {
     let mut names = BTreeSet::new();
     for (role, entries) in [
         ("specification", &configuration.specification),
@@ -357,8 +357,8 @@ fn manifest_selection(manifest: &Path, kind: Kind) -> Result<Vec<String>> {
     Ok(selected)
 }
 
-fn manifest_inputs(path: &Path, manifest: &Path, kind: Kind) -> Result<Vec<Input>> {
-    let selected = manifest_selection(manifest, kind)?;
+fn manifest_inputs(path: &Path, configuration: Manifest, kind: Kind) -> Result<Vec<Input>> {
+    let selected = manifest_selection(configuration, kind)?;
     // Components discard only redundant trailing separators / `.` so `linked-root/` cannot
     // hide the selected root's symlink from lstat. Parent components remain unresolved.
     let requested_root: PathBuf = path.components().collect();

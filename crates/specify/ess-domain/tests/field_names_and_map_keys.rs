@@ -318,3 +318,53 @@ fn reading_a_specification_copies_its_key_newtypes_once_however_many_files_decla
          files; at most 1024 either way"
     );
 }
+
+/// Each text used to be read three times, for the header, the key newtypes and the typed file: 57
+/// reads for these 19 files. Only the last read reported an error, so one read keeps every
+/// file's error as it was.
+#[test]
+fn reading_a_specification_reads_each_file_once_and_keeps_each_files_error() {
+    let mut texts = split(16, 16);
+    texts.push("domain: demo.orders\ntypes:\n  - {name: [unclosed\n".to_owned());
+    texts.push("domain: demo.orders\ntypos: []\n".to_owned());
+    let every = texts.iter().map(String::as_str).collect::<Vec<_>>();
+    let (results, read) = ess_yaml::documents_read(|| RawSpecFile::parse_all(&every));
+    let errors = results
+        .iter()
+        .map(|result| result.as_ref().err().map(ToString::to_string))
+        .collect::<Vec<_>>();
+    let alone = every
+        .iter()
+        .map(|text| {
+            RawSpecFile::parse(text)
+                .err()
+                .map(|error| error.to_string())
+        })
+        .collect::<Vec<_>>();
+    assert!(errors[..17].iter().all(Option::is_none), "{errors:?}");
+    assert_eq!(errors[17..], alone[17..]);
+    assert_eq!(
+        errors[17..],
+        [
+            Some(
+                "did not find expected ',' or ']' at line 4 column 1, while parsing a flow \
+                 sequence at line 3 column 12"
+                    .to_owned()
+            ),
+            Some(
+                "unknown field `typos`, expected one of `format`, `system`, `version`, \
+                 `summary`, `domains`, `preconditions`, `domain`, `naming`, `types`, \
+                 `conversions`, `entities`, `commands`, `events`, `errors`, `views`, `actors`, \
+                 `components`, `bindings`, `topology`, `outcome_groups`"
+                    .to_owned()
+            ),
+        ],
+        "each file's error, at its line and column"
+    );
+    assert_eq!(
+        read,
+        every.len() as u64,
+        "{} files were read {read} times",
+        every.len()
+    );
+}

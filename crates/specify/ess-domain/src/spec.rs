@@ -192,7 +192,12 @@ impl RawSpecFile {
     /// deserialised directly rather than through here keeps every bare word the text it is
     /// spelled as, which is what every earlier format means by it.
     pub fn parse(text: &str) -> Result<Self, ess_yaml::Error> {
-        let mut document: ess_yaml::Value = ess_yaml::from_str(text)?;
+        Self::from_document(ess_yaml::from_str(text)?, text)
+    }
+
+    /// [`Self::parse`] of `text`, already read as `document`, so a reader that needs the document
+    /// first does not read the text twice.
+    fn from_document(mut document: ess_yaml::Value, text: &str) -> Result<Self, ess_yaml::Error> {
         // Read before anything is taken out of the document: the digits of a number are read back
         // out of `text` by walking it beside the document as it was read.
         let spelled = crate::expression::lexical::Written::from_document(&document, text);
@@ -228,16 +233,31 @@ impl RawSpecFile {
     /// The same as [`Self::parse`] on each, except that a newtype declared in any of the files may
     /// key a map in any other: validity must not depend on which file declares what. A file that
     /// names no format reads the operand grammar of the one its system header names.
+    ///
+    /// Each text is read once: the header, the key newtypes and the typed file all come from that
+    /// one document.
     pub fn parse_all(texts: &[&str]) -> Vec<Result<Self, ess_yaml::Error>> {
-        let headers: Vec<Option<FormatVersion>> = texts
+        let documents: Vec<Result<ess_yaml::Value, ess_yaml::Error>> =
+            texts.iter().map(|text| ess_yaml::from_str(text)).collect();
+        let headers: Vec<Option<FormatVersion>> = documents
             .iter()
-            .filter_map(|text| ess_yaml::from_str::<ess_yaml::Value>(text).ok())
+            .filter_map(|document| document.as_ref().ok())
             .filter(|document| document.get("system").is_some())
-            .map(|document| written_format(&document))
+            .map(written_format)
             .collect();
+        let keys = crate::types::MapKeyNewtypes::from_values(
+            documents
+                .iter()
+                .filter_map(|document| document.as_ref().ok()),
+        );
         let read = || {
-            crate::types::MapKeyNewtypes::from_documents(texts.iter().copied())
-                .scope(|| texts.iter().map(|text| Self::parse(text)).collect())
+            keys.scope(|| {
+                documents
+                    .into_iter()
+                    .zip(texts)
+                    .map(|(document, text)| Self::from_document(document?, text))
+                    .collect()
+            })
         };
         match headers.as_slice() {
             [header] => reading_format(header.unwrap_or(FormatVersion::V1), read),

@@ -315,6 +315,17 @@ impl MapKeyNewtypes {
         keys
     }
 
+    /// [`Self::from_documents`] of texts already read, each as its document.
+    pub(crate) fn from_values<'a>(
+        documents: impl IntoIterator<Item = &'a ess_yaml::Value>,
+    ) -> Self {
+        let mut keys = Self::default();
+        for document in documents {
+            keys.absorb(document);
+        }
+        keys
+    }
+
     /// Newtypes given as `(name, what it wraps as written)` pairs, by a reader that has them in
     /// hand rather than as source text — a compiled model, whose newtype `String`s and chains are
     /// the same ones the specification was read with.

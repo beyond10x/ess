@@ -148,3 +148,27 @@ fn acquisition_coverage_direct_file() {
 fn acquisition_coverage_omitted_scenarios() {
     assert!(omitted(true).is_empty());
 }
+
+/// The manifest used to be read twice, once for its release pin and once for its selection.
+#[test]
+fn acquiring_a_specification_reads_its_manifest_once() {
+    let tree = tempfile::tempdir().unwrap();
+    write(tree.path(), "system.yaml", "system: demo\n");
+    write(tree.path(), "domains/a.yaml", "domain: demo.a\n");
+    write(
+        tree.path(),
+        "ess-inputs.yaml",
+        "format: ess-inputs/1\nspecification: [system.yaml, domains/a.yaml]\nscenarios: []\n",
+    );
+    let (inputs, read) = ess_yaml::documents_read(|| {
+        super::acquire(tree.path(), super::Kind::Specification).unwrap()
+    });
+    assert_eq!(
+        inputs
+            .iter()
+            .map(|input| input.identity.as_str())
+            .collect::<Vec<_>>(),
+        ["domains/a.yaml", "system.yaml"]
+    );
+    assert_eq!(read, 1, "the manifest was read {read} times");
+}
