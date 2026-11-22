@@ -6,10 +6,6 @@
 //! compared with that file, byte for byte, so a regenerated artifact the page was not updated for
 //! fails here rather than on a reader. A block with no `file=` fails too: the page makes the claim
 //! for everything below its introduction, so a new block cannot opt out by saying nothing.
-//!
-//! The page also renders on two sites — this repository's own and the unified documentation site —
-//! and the second compiles plain Markdown only, so the page may not import a component, and the
-//! documentation manifest may not exclude it.
 
 use std::path::{Path, PathBuf};
 
@@ -154,47 +150,4 @@ fn every_block_on_the_example_page_is_the_file_it_names() {
         }
     }
     assert!(failures.is_empty(), "{}", failures.join("\n"));
-}
-
-#[test]
-fn the_example_page_is_plain_markdown() {
-    let text = page();
-    let mut in_fence = false;
-    let mut failures = Vec::new();
-    for (index, line) in text.lines().enumerate() {
-        if line.starts_with("```") {
-            in_fence = !in_fence;
-            continue;
-        }
-        if in_fence {
-            continue;
-        }
-        let trimmed = line.trim_start();
-        let component = trimmed
-            .strip_prefix('<')
-            .and_then(|rest| rest.chars().next())
-            .is_some_and(|c| c.is_ascii_uppercase());
-        if trimmed.starts_with("import ") || trimmed.starts_with("export ") || component {
-            failures.push(format!("{PAGE}:{}: `{line}`", index + 1));
-        }
-    }
-    assert!(
-        failures.is_empty(),
-        "the unified documentation site compiles plain Markdown, so the page may not import or \
-         render a component; the lab has its own page on this site:\n{}",
-        failures.join("\n")
-    );
-}
-
-#[test]
-fn the_documentation_manifest_publishes_the_example_page() {
-    let manifest = std::fs::read_to_string(repository_root().join("b10x.docs.yaml"))
-        .expect("the documentation manifest exists");
-    let relative = PAGE
-        .strip_prefix("website/")
-        .expect("the page is under the site root");
-    assert!(
-        !manifest.contains(relative),
-        "b10x.docs.yaml still names {relative}, which keeps the example page off the unified site"
-    );
 }

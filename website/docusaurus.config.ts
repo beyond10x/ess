@@ -1,7 +1,6 @@
 import type {Config} from '@docusaurus/types';
 import type * as Preset from '@docusaurus/preset-classic';
 import {withProductSite} from '@beyond10x/docs-system/product-site';
-import canonicalToUnifiedDocs from './src/canonical';
 
 const config: Config = {
   title: 'ESS',
@@ -24,7 +23,6 @@ const config: Config = {
   },
   themes: ['@docusaurus/theme-mermaid'],
   plugins: [
-    canonicalToUnifiedDocs,
     [
       '@docusaurus/plugin-client-redirects',
       {

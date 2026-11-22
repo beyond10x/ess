@@ -19,6 +19,7 @@
   and calendar-window refusals carry the instruction as their hint instead of at the end of
   their message. A domain file that sets `format:`, `version:` or `domains:` without `system:`
   is told the file that names the system. No format version changes.
+- Documentation: it is published only at the project site, and the unified-docs manifest and its two workflows are removed.
 
 ### Fixed
 
