@@ -1,0 +1,450 @@
+{
+  "round": "R-01",
+  "pages": 139,
+  "gates": {
+    "gate1_no_horizontal_overflow": {
+      "pages": 0,
+      "page_scroll": 0,
+      "spills": 0,
+      "by_viewport": {}
+    },
+    "gate2_always_visible": {
+      "pages": 138,
+      "failures": 821,
+      "by_element": {
+        "search: missing": 548,
+        "docs sidebar: out of viewport": 136,
+        "blog sidebar: out of viewport": 135,
+        "blog sidebar: missing": 2
+      }
+    },
+    "gate3_unmissable_completion": {
+      "completion_miss": 0,
+      "false_complete": 0
+    },
+    "gate4_screen_only": {
+      "tasks": 18,
+      "completed": 18,
+      "failed": []
+    },
+    "gate5_accessibility": {
+      "pages": 104,
+      "nodes": 2733,
+      "by_rule": {
+        "label-content-name-mismatch": {
+          "nodes": 6,
+          "pages": 2,
+          "impact": "serious",
+          "help": "Elements must have their visible text as part of their accessible name"
+        },
+        "link-in-text-block": {
+          "nodes": 2702,
+          "pages": 102,
+          "impact": "serious",
+          "help": "Links must be distinguishable without relying on color"
+        },
+        "color-contrast": {
+          "nodes": 22,
+          "pages": 2,
+          "impact": "serious",
+          "help": "Elements must meet minimum color contrast ratio thresholds"
+        },
+        "nested-interactive": {
+          "nodes": 2,
+          "pages": 1,
+          "impact": "serious",
+          "help": "Interactive controls must not be nested"
+        },
+        "scrollable-region-focusable": {
+          "nodes": 1,
+          "pages": 1,
+          "impact": "serious",
+          "help": "Scrollable region must have keyboard access"
+        }
+      },
+      "keyboard_tasks": 4,
+      "keyboard_completed": 4
+    },
+    "truncation": {
+      "pages": 2,
+      "texts": 6
+    },
+    "reduced_motion": {
+      "pages": 0
+    }
+  },
+  "scenarios": {
+    "diagnostic-type-009/desktop-1280": {
+      "screen_only.actions": 6,
+      "screen_only.looks": 3,
+      "screen_only.steers": 2,
+      "screen_only.time_to_act_steps.max": 3,
+      "glance_cost.median": 2,
+      "glance_cost.p95": 3,
+      "reading_load.max": 256,
+      "reading_load.median": 202,
+      "completion_miss": 0,
+      "false_complete": 0
+    },
+    "diagnostic-type-009/mobile-390": {
+      "screen_only.actions": 7,
+      "screen_only.looks": 3,
+      "screen_only.steers": 2,
+      "screen_only.time_to_act_steps.max": 2,
+      "glance_cost.median": 3,
+      "glance_cost.p95": 3,
+      "reading_load.max": 142,
+      "reading_load.median": 120,
+      "completion_miss": 0,
+      "false_complete": 0
+    },
+    "ess-31-release/desktop-1280": {
+      "screen_only.actions": 26,
+      "screen_only.looks": 3,
+      "screen_only.steers": 1,
+      "screen_only.time_to_act_steps.max": 2,
+      "glance_cost.median": 2,
+      "glance_cost.p95": 3,
+      "reading_load.max": 291,
+      "reading_load.median": 202,
+      "completion_miss": 0,
+      "false_complete": 0
+    },
+    "ess-31-release/mobile-390": {
+      "screen_only.actions": 35,
+      "screen_only.looks": 3,
+      "screen_only.steers": 4,
+      "screen_only.time_to_act_steps.max": 3,
+      "glance_cost.median": 3,
+      "glance_cost.p95": 3,
+      "reading_load.max": 142,
+      "reading_load.median": 117,
+      "completion_miss": 0,
+      "false_complete": 0
+    },
+    "first-conformance-run/desktop-1280": {
+      "screen_only.actions": 2,
+      "screen_only.looks": 1,
+      "screen_only.steers": 0,
+      "screen_only.time_to_act_steps.max": 1,
+      "glance_cost.median": 1,
+      "glance_cost.p95": 2,
+      "reading_load.max": 190,
+      "reading_load.median": 189,
+      "completion_miss": 0,
+      "false_complete": 0
+    },
+    "first-conformance-run/desktop-1280/keyboard": {
+      "screen_only.actions": 23,
+      "screen_only.looks": 1,
+      "screen_only.steers": 0,
+      "screen_only.time_to_act_steps.max": 1,
+      "glance_cost.median": 1,
+      "glance_cost.p95": 2,
+      "reading_load.max": 190,
+      "reading_load.median": 189,
+      "completion_miss": 0,
+      "false_complete": 0
+    },
+    "first-conformance-run/mobile-390": {
+      "screen_only.actions": 4,
+      "screen_only.looks": 2,
+      "screen_only.steers": 2,
+      "screen_only.time_to_act_steps.max": 2,
+      "glance_cost.median": 3,
+      "glance_cost.p95": 3,
+      "reading_load.max": 108,
+      "reading_load.median": 99,
+      "completion_miss": 0,
+      "false_complete": 0
+    },
+    "first-conformance-run/mobile-390/keyboard": {
+      "screen_only.actions": 26,
+      "screen_only.looks": 2,
+      "screen_only.steers": 2,
+      "screen_only.time_to_act_steps.max": 2,
+      "glance_cost.median": 3,
+      "glance_cost.p95": 3,
+      "reading_load.max": 108,
+      "reading_load.median": 99,
+      "completion_miss": 0,
+      "false_complete": 0
+    },
+    "go-runner/desktop-1280": {
+      "screen_only.actions": 2,
+      "screen_only.looks": 2,
+      "screen_only.steers": 0,
+      "screen_only.time_to_act_steps.max": 1,
+      "glance_cost.median": 2,
+      "glance_cost.p95": 2,
+      "reading_load.max": 199,
+      "reading_load.median": 190,
+      "completion_miss": 0,
+      "false_complete": 0
+    },
+    "go-runner/mobile-390": {
+      "screen_only.actions": 3,
+      "screen_only.looks": 2,
+      "screen_only.steers": 1,
+      "screen_only.time_to_act_steps.max": 2,
+      "glance_cost.median": 2,
+      "glance_cost.p95": 3,
+      "reading_load.max": 145,
+      "reading_load.median": 99,
+      "completion_miss": 0,
+      "false_complete": 0
+    },
+    "install-linux-x86_64/desktop-1280": {
+      "screen_only.actions": 2,
+      "screen_only.looks": 1,
+      "screen_only.steers": 0,
+      "screen_only.time_to_act_steps.max": 1,
+      "glance_cost.median": 1,
+      "glance_cost.p95": 2,
+      "reading_load.max": 190,
+      "reading_load.median": 182,
+      "completion_miss": 0,
+      "false_complete": 0
+    },
+    "install-linux-x86_64/desktop-1280/keyboard": {
+      "screen_only.actions": 21,
+      "screen_only.looks": 1,
+      "screen_only.steers": 0,
+      "screen_only.time_to_act_steps.max": 1,
+      "glance_cost.median": 1,
+      "glance_cost.p95": 2,
+      "reading_load.max": 182,
+      "reading_load.median": 165,
+      "completion_miss": 0,
+      "false_complete": 0
+    },
+    "install-linux-x86_64/mobile-390": {
+      "screen_only.actions": 4,
+      "screen_only.looks": 2,
+      "screen_only.steers": 2,
+      "screen_only.time_to_act_steps.max": 2,
+      "glance_cost.median": 3,
+      "glance_cost.p95": 3,
+      "reading_load.max": 120,
+      "reading_load.median": 99,
+      "completion_miss": 0,
+      "false_complete": 0
+    },
+    "install-linux-x86_64/mobile-390/keyboard": {
+      "screen_only.actions": 24,
+      "screen_only.looks": 2,
+      "screen_only.steers": 2,
+      "screen_only.time_to_act_steps.max": 2,
+      "glance_cost.median": 3,
+      "glance_cost.p95": 3,
+      "reading_load.max": 120,
+      "reading_load.median": 99,
+      "completion_miss": 0,
+      "false_complete": 0
+    },
+    "limitations/desktop-1280": {
+      "screen_only.actions": 2,
+      "screen_only.looks": 1,
+      "screen_only.steers": 0,
+      "screen_only.time_to_act_steps.max": 1,
+      "glance_cost.median": 1,
+      "glance_cost.p95": 2,
+      "reading_load.max": 165,
+      "reading_load.median": 164,
+      "completion_miss": 0,
+      "false_complete": 0
+    },
+    "limitations/mobile-390": {
+      "screen_only.actions": 4,
+      "screen_only.looks": 2,
+      "screen_only.steers": 2,
+      "screen_only.time_to_act_steps.max": 2,
+      "glance_cost.median": 3,
+      "glance_cost.p95": 3,
+      "reading_load.max": 106,
+      "reading_load.median": 86,
+      "completion_miss": 0,
+      "false_complete": 0
+    },
+    "page-a-view/desktop-1280": {
+      "screen_only.actions": 4,
+      "screen_only.looks": 3,
+      "screen_only.steers": 0,
+      "screen_only.time_to_act_steps.max": 1,
+      "glance_cost.median": 2,
+      "glance_cost.p95": 2,
+      "reading_load.max": 230,
+      "reading_load.median": 214.5,
+      "completion_miss": 0,
+      "false_complete": 0
+    },
+    "page-a-view/mobile-390": {
+      "screen_only.actions": 10,
+      "screen_only.looks": 4,
+      "screen_only.steers": 3,
+      "screen_only.time_to_act_steps.max": 2,
+      "glance_cost.median": 3,
+      "glance_cost.p95": 3,
+      "reading_load.max": 147,
+      "reading_load.median": 104.5,
+      "completion_miss": 0,
+      "false_complete": 0
+    },
+    "site/desktop-1280/dark": {
+      "layout.page_scroll_pages": 0,
+      "layout.spill_pages": 0,
+      "layout.always_visible_pages": 135,
+      "layout.truncated_texts": 0,
+      "axe.serious_critical_nodes": 676,
+      "axe.serious_critical_pages": 102
+    },
+    "site/desktop-1280/light": {
+      "layout.page_scroll_pages": 0,
+      "layout.spill_pages": 0,
+      "layout.always_visible_pages": 138,
+      "layout.truncated_texts": 0,
+      "axe.serious_critical_nodes": 696,
+      "axe.serious_critical_pages": 104
+    },
+    "site/load": {
+      "layout_shift.max": 0.0183,
+      "reduced_motion.pages": 0
+    },
+    "site/mobile-390/dark": {
+      "layout.page_scroll_pages": 0,
+      "layout.spill_pages": 0,
+      "layout.always_visible_pages": 137,
+      "layout.truncated_texts": 3,
+      "axe.serious_critical_nodes": 670,
+      "axe.serious_critical_pages": 102
+    },
+    "site/mobile-390/light": {
+      "layout.page_scroll_pages": 0,
+      "layout.spill_pages": 0,
+      "layout.always_visible_pages": 138,
+      "layout.truncated_texts": 3,
+      "axe.serious_critical_nodes": 691,
+      "axe.serious_critical_pages": 104
+    },
+    "target-process/desktop-1280": {
+      "screen_only.actions": 6,
+      "screen_only.looks": 2,
+      "screen_only.steers": 1,
+      "screen_only.time_to_act_steps.max": 2,
+      "glance_cost.median": 2,
+      "glance_cost.p95": 3,
+      "reading_load.max": 252,
+      "reading_load.median": 213,
+      "completion_miss": 0,
+      "false_complete": 0
+    },
+    "target-process/mobile-390": {
+      "screen_only.actions": 8,
+      "screen_only.looks": 2,
+      "screen_only.steers": 2,
+      "screen_only.time_to_act_steps.max": 2,
+      "glance_cost.median": 3,
+      "glance_cost.p95": 3,
+      "reading_load.max": 122,
+      "reading_load.median": 113,
+      "completion_miss": 0,
+      "false_complete": 0
+    },
+    "theme-dark-and-back/desktop-1280": {
+      "screen_only.actions": 3,
+      "screen_only.looks": 0,
+      "screen_only.steers": 0,
+      "screen_only.time_to_act_steps.max": 1,
+      "glance_cost.median": 1,
+      "glance_cost.p95": 1,
+      "reading_load.max": 215,
+      "reading_load.median": 215,
+      "completion_miss": 0,
+      "false_complete": 0
+    },
+    "theme-dark-and-back/mobile-390": {
+      "screen_only.actions": 4,
+      "screen_only.looks": 2,
+      "screen_only.steers": 1,
+      "screen_only.time_to_act_steps.max": 2,
+      "glance_cost.median": 2.5,
+      "glance_cost.p95": 3,
+      "reading_load.max": 194,
+      "reading_load.median": 174.5,
+      "completion_miss": 0,
+      "false_complete": 0
+    }
+  },
+  "timing": {
+    "wall_s": 1699.9,
+    "projects": {
+      "l1": {
+        "tests": 8,
+        "wall_s": 5.3,
+        "sum_s": 6.9
+      },
+      "l2": {
+        "tests": 184,
+        "wall_s": 1641.3,
+        "sum_s": 2639.7
+      }
+    },
+    "status": "timedout",
+    "coverage": {
+      "configs_expected": 556,
+      "configs_measured": 548
+    },
+    "continuations": [
+      {
+        "wall_s": 1698.8,
+        "projects": {
+          "l2": {
+            "tests": 76,
+            "wall_s": 1688.5,
+            "sum_s": 2473.8
+          }
+        },
+        "status": "timedout",
+        "coverage": {
+          "configs_expected": 152,
+          "configs_measured": 142
+        }
+      },
+      {
+        "wall_s": 263.4,
+        "projects": {
+          "l2": {
+            "tests": 23,
+            "wall_s": 260.5,
+            "sum_s": 409.2
+          }
+        },
+        "status": "failed",
+        "coverage": {
+          "configs_expected": 46,
+          "configs_measured": 42
+        }
+      }
+    ]
+  },
+  "date": "2026-11-22",
+  "commit": "6b580819542f",
+  "cards": {
+    "anchors": [
+      "first-conformance-run",
+      "install-linux-x86_64"
+    ],
+    "rotating": "diagnostic-type-009"
+  },
+  "viewports": {
+    "gating": [
+      "desktop-1280",
+      "mobile-390"
+    ],
+    "measured": [
+      "desktop-1440",
+      "desktop-1024",
+      "tablet-768"
+    ]
+  }
+}

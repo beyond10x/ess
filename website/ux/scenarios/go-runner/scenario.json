@@ -1,0 +1,18 @@
+{
+  "name": "go-runner",
+  "card": "rotating",
+  "persona": "A Go developer who has a synthesized suite and wants to run it against a Go service.",
+  "task": "Find the Go runner page.",
+  "twists": ["The runner pages sit in a nested category.", "Starts on the docs introduction."],
+  "start": "/ess/docs",
+  "steps": [
+    { "open": { "role": "button", "name": "^Runners$" } },
+    { "click": { "role": "link", "name": "^The Go runner$" } },
+    { "reveal": { "role": "heading", "name": "^The Go runner$" } }
+  ],
+  "truth": {
+    "path": "/ess/docs/start/runners/go",
+    "target": { "role": "heading", "name": "^The Go runner$" }
+  },
+  "expect": { "completion": "the page heading is in view", "max_actions": 3 }
+}

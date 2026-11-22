@@ -1,0 +1,1054 @@
+{
+  "about": "UX ratchet baseline of the ESS documentation website, lower is better; written by cargo xtask ux-ratchet --update from rounds/R-01/round.json (548 of 556 page configurations: /ess/docs/reference/ess-ui unmeasured, UXF-014)",
+  "scenarios": {
+    "diagnostic-type-009/desktop-1280": {
+      "completion_miss": {
+        "value": 0,
+        "tolerance": "count"
+      },
+      "false_complete": {
+        "value": 0,
+        "tolerance": "count"
+      },
+      "glance_cost.median": {
+        "value": 2,
+        "tolerance": "steps"
+      },
+      "glance_cost.p95": {
+        "value": 3,
+        "tolerance": "steps"
+      },
+      "reading_load.max": {
+        "value": 256,
+        "tolerance": "steps"
+      },
+      "reading_load.median": {
+        "value": 202,
+        "tolerance": "steps"
+      },
+      "screen_only.actions": {
+        "value": 6,
+        "tolerance": "count"
+      },
+      "screen_only.looks": {
+        "value": 3,
+        "tolerance": "count"
+      },
+      "screen_only.steers": {
+        "value": 2,
+        "tolerance": "count"
+      },
+      "screen_only.time_to_act_steps.max": {
+        "value": 3,
+        "tolerance": "steps"
+      }
+    },
+    "diagnostic-type-009/mobile-390": {
+      "completion_miss": {
+        "value": 0,
+        "tolerance": "count"
+      },
+      "false_complete": {
+        "value": 0,
+        "tolerance": "count"
+      },
+      "glance_cost.median": {
+        "value": 3,
+        "tolerance": "steps"
+      },
+      "glance_cost.p95": {
+        "value": 3,
+        "tolerance": "steps"
+      },
+      "reading_load.max": {
+        "value": 142,
+        "tolerance": "steps"
+      },
+      "reading_load.median": {
+        "value": 120,
+        "tolerance": "steps"
+      },
+      "screen_only.actions": {
+        "value": 7,
+        "tolerance": "count"
+      },
+      "screen_only.looks": {
+        "value": 3,
+        "tolerance": "count"
+      },
+      "screen_only.steers": {
+        "value": 2,
+        "tolerance": "count"
+      },
+      "screen_only.time_to_act_steps.max": {
+        "value": 2,
+        "tolerance": "steps"
+      }
+    },
+    "ess-31-release/desktop-1280": {
+      "completion_miss": {
+        "value": 0,
+        "tolerance": "count"
+      },
+      "false_complete": {
+        "value": 0,
+        "tolerance": "count"
+      },
+      "glance_cost.median": {
+        "value": 2,
+        "tolerance": "steps"
+      },
+      "glance_cost.p95": {
+        "value": 3,
+        "tolerance": "steps"
+      },
+      "reading_load.max": {
+        "value": 291,
+        "tolerance": "steps"
+      },
+      "reading_load.median": {
+        "value": 202,
+        "tolerance": "steps"
+      },
+      "screen_only.actions": {
+        "value": 26,
+        "tolerance": "count"
+      },
+      "screen_only.looks": {
+        "value": 3,
+        "tolerance": "count"
+      },
+      "screen_only.steers": {
+        "value": 1,
+        "tolerance": "count"
+      },
+      "screen_only.time_to_act_steps.max": {
+        "value": 2,
+        "tolerance": "steps"
+      }
+    },
+    "ess-31-release/mobile-390": {
+      "completion_miss": {
+        "value": 0,
+        "tolerance": "count"
+      },
+      "false_complete": {
+        "value": 0,
+        "tolerance": "count"
+      },
+      "glance_cost.median": {
+        "value": 3,
+        "tolerance": "steps"
+      },
+      "glance_cost.p95": {
+        "value": 3,
+        "tolerance": "steps"
+      },
+      "reading_load.max": {
+        "value": 142,
+        "tolerance": "steps"
+      },
+      "reading_load.median": {
+        "value": 117,
+        "tolerance": "steps"
+      },
+      "screen_only.actions": {
+        "value": 35,
+        "tolerance": "count"
+      },
+      "screen_only.looks": {
+        "value": 3,
+        "tolerance": "count"
+      },
+      "screen_only.steers": {
+        "value": 4,
+        "tolerance": "count"
+      },
+      "screen_only.time_to_act_steps.max": {
+        "value": 3,
+        "tolerance": "steps"
+      }
+    },
+    "first-conformance-run/desktop-1280": {
+      "completion_miss": {
+        "value": 0,
+        "tolerance": "count"
+      },
+      "false_complete": {
+        "value": 0,
+        "tolerance": "count"
+      },
+      "glance_cost.median": {
+        "value": 1,
+        "tolerance": "steps"
+      },
+      "glance_cost.p95": {
+        "value": 2,
+        "tolerance": "steps"
+      },
+      "reading_load.max": {
+        "value": 190,
+        "tolerance": "steps"
+      },
+      "reading_load.median": {
+        "value": 189,
+        "tolerance": "steps"
+      },
+      "screen_only.actions": {
+        "value": 2,
+        "tolerance": "count"
+      },
+      "screen_only.looks": {
+        "value": 1,
+        "tolerance": "count"
+      },
+      "screen_only.steers": {
+        "value": 0,
+        "tolerance": "count"
+      },
+      "screen_only.time_to_act_steps.max": {
+        "value": 1,
+        "tolerance": "steps"
+      }
+    },
+    "first-conformance-run/desktop-1280/keyboard": {
+      "completion_miss": {
+        "value": 0,
+        "tolerance": "count"
+      },
+      "false_complete": {
+        "value": 0,
+        "tolerance": "count"
+      },
+      "glance_cost.median": {
+        "value": 1,
+        "tolerance": "steps"
+      },
+      "glance_cost.p95": {
+        "value": 2,
+        "tolerance": "steps"
+      },
+      "reading_load.max": {
+        "value": 190,
+        "tolerance": "steps"
+      },
+      "reading_load.median": {
+        "value": 189,
+        "tolerance": "steps"
+      },
+      "screen_only.actions": {
+        "value": 23,
+        "tolerance": "count"
+      },
+      "screen_only.looks": {
+        "value": 1,
+        "tolerance": "count"
+      },
+      "screen_only.steers": {
+        "value": 0,
+        "tolerance": "count"
+      },
+      "screen_only.time_to_act_steps.max": {
+        "value": 1,
+        "tolerance": "steps"
+      }
+    },
+    "first-conformance-run/mobile-390": {
+      "completion_miss": {
+        "value": 0,
+        "tolerance": "count"
+      },
+      "false_complete": {
+        "value": 0,
+        "tolerance": "count"
+      },
+      "glance_cost.median": {
+        "value": 3,
+        "tolerance": "steps"
+      },
+      "glance_cost.p95": {
+        "value": 3,
+        "tolerance": "steps"
+      },
+      "reading_load.max": {
+        "value": 108,
+        "tolerance": "steps"
+      },
+      "reading_load.median": {
+        "value": 99,
+        "tolerance": "steps"
+      },
+      "screen_only.actions": {
+        "value": 4,
+        "tolerance": "count"
+      },
+      "screen_only.looks": {
+        "value": 2,
+        "tolerance": "count"
+      },
+      "screen_only.steers": {
+        "value": 2,
+        "tolerance": "count"
+      },
+      "screen_only.time_to_act_steps.max": {
+        "value": 2,
+        "tolerance": "steps"
+      }
+    },
+    "first-conformance-run/mobile-390/keyboard": {
+      "completion_miss": {
+        "value": 0,
+        "tolerance": "count"
+      },
+      "false_complete": {
+        "value": 0,
+        "tolerance": "count"
+      },
+      "glance_cost.median": {
+        "value": 3,
+        "tolerance": "steps"
+      },
+      "glance_cost.p95": {
+        "value": 3,
+        "tolerance": "steps"
+      },
+      "reading_load.max": {
+        "value": 108,
+        "tolerance": "steps"
+      },
+      "reading_load.median": {
+        "value": 99,
+        "tolerance": "steps"
+      },
+      "screen_only.actions": {
+        "value": 26,
+        "tolerance": "count"
+      },
+      "screen_only.looks": {
+        "value": 2,
+        "tolerance": "count"
+      },
+      "screen_only.steers": {
+        "value": 2,
+        "tolerance": "count"
+      },
+      "screen_only.time_to_act_steps.max": {
+        "value": 2,
+        "tolerance": "steps"
+      }
+    },
+    "go-runner/desktop-1280": {
+      "completion_miss": {
+        "value": 0,
+        "tolerance": "count"
+      },
+      "false_complete": {
+        "value": 0,
+        "tolerance": "count"
+      },
+      "glance_cost.median": {
+        "value": 2,
+        "tolerance": "steps"
+      },
+      "glance_cost.p95": {
+        "value": 2,
+        "tolerance": "steps"
+      },
+      "reading_load.max": {
+        "value": 199,
+        "tolerance": "steps"
+      },
+      "reading_load.median": {
+        "value": 190,
+        "tolerance": "steps"
+      },
+      "screen_only.actions": {
+        "value": 2,
+        "tolerance": "count"
+      },
+      "screen_only.looks": {
+        "value": 2,
+        "tolerance": "count"
+      },
+      "screen_only.steers": {
+        "value": 0,
+        "tolerance": "count"
+      },
+      "screen_only.time_to_act_steps.max": {
+        "value": 1,
+        "tolerance": "steps"
+      }
+    },
+    "go-runner/mobile-390": {
+      "completion_miss": {
+        "value": 0,
+        "tolerance": "count"
+      },
+      "false_complete": {
+        "value": 0,
+        "tolerance": "count"
+      },
+      "glance_cost.median": {
+        "value": 2,
+        "tolerance": "steps"
+      },
+      "glance_cost.p95": {
+        "value": 3,
+        "tolerance": "steps"
+      },
+      "reading_load.max": {
+        "value": 145,
+        "tolerance": "steps"
+      },
+      "reading_load.median": {
+        "value": 99,
+        "tolerance": "steps"
+      },
+      "screen_only.actions": {
+        "value": 3,
+        "tolerance": "count"
+      },
+      "screen_only.looks": {
+        "value": 2,
+        "tolerance": "count"
+      },
+      "screen_only.steers": {
+        "value": 1,
+        "tolerance": "count"
+      },
+      "screen_only.time_to_act_steps.max": {
+        "value": 2,
+        "tolerance": "steps"
+      }
+    },
+    "install-linux-x86_64/desktop-1280": {
+      "completion_miss": {
+        "value": 0,
+        "tolerance": "count"
+      },
+      "false_complete": {
+        "value": 0,
+        "tolerance": "count"
+      },
+      "glance_cost.median": {
+        "value": 1,
+        "tolerance": "steps"
+      },
+      "glance_cost.p95": {
+        "value": 2,
+        "tolerance": "steps"
+      },
+      "reading_load.max": {
+        "value": 190,
+        "tolerance": "steps"
+      },
+      "reading_load.median": {
+        "value": 182,
+        "tolerance": "steps"
+      },
+      "screen_only.actions": {
+        "value": 2,
+        "tolerance": "count"
+      },
+      "screen_only.looks": {
+        "value": 1,
+        "tolerance": "count"
+      },
+      "screen_only.steers": {
+        "value": 0,
+        "tolerance": "count"
+      },
+      "screen_only.time_to_act_steps.max": {
+        "value": 1,
+        "tolerance": "steps"
+      }
+    },
+    "install-linux-x86_64/desktop-1280/keyboard": {
+      "completion_miss": {
+        "value": 0,
+        "tolerance": "count"
+      },
+      "false_complete": {
+        "value": 0,
+        "tolerance": "count"
+      },
+      "glance_cost.median": {
+        "value": 1,
+        "tolerance": "steps"
+      },
+      "glance_cost.p95": {
+        "value": 2,
+        "tolerance": "steps"
+      },
+      "reading_load.max": {
+        "value": 182,
+        "tolerance": "steps"
+      },
+      "reading_load.median": {
+        "value": 165,
+        "tolerance": "steps"
+      },
+      "screen_only.actions": {
+        "value": 21,
+        "tolerance": "count"
+      },
+      "screen_only.looks": {
+        "value": 1,
+        "tolerance": "count"
+      },
+      "screen_only.steers": {
+        "value": 0,
+        "tolerance": "count"
+      },
+      "screen_only.time_to_act_steps.max": {
+        "value": 1,
+        "tolerance": "steps"
+      }
+    },
+    "install-linux-x86_64/mobile-390": {
+      "completion_miss": {
+        "value": 0,
+        "tolerance": "count"
+      },
+      "false_complete": {
+        "value": 0,
+        "tolerance": "count"
+      },
+      "glance_cost.median": {
+        "value": 3,
+        "tolerance": "steps"
+      },
+      "glance_cost.p95": {
+        "value": 3,
+        "tolerance": "steps"
+      },
+      "reading_load.max": {
+        "value": 120,
+        "tolerance": "steps"
+      },
+      "reading_load.median": {
+        "value": 99,
+        "tolerance": "steps"
+      },
+      "screen_only.actions": {
+        "value": 4,
+        "tolerance": "count"
+      },
+      "screen_only.looks": {
+        "value": 2,
+        "tolerance": "count"
+      },
+      "screen_only.steers": {
+        "value": 2,
+        "tolerance": "count"
+      },
+      "screen_only.time_to_act_steps.max": {
+        "value": 2,
+        "tolerance": "steps"
+      }
+    },
+    "install-linux-x86_64/mobile-390/keyboard": {
+      "completion_miss": {
+        "value": 0,
+        "tolerance": "count"
+      },
+      "false_complete": {
+        "value": 0,
+        "tolerance": "count"
+      },
+      "glance_cost.median": {
+        "value": 3,
+        "tolerance": "steps"
+      },
+      "glance_cost.p95": {
+        "value": 3,
+        "tolerance": "steps"
+      },
+      "reading_load.max": {
+        "value": 120,
+        "tolerance": "steps"
+      },
+      "reading_load.median": {
+        "value": 99,
+        "tolerance": "steps"
+      },
+      "screen_only.actions": {
+        "value": 24,
+        "tolerance": "count"
+      },
+      "screen_only.looks": {
+        "value": 2,
+        "tolerance": "count"
+      },
+      "screen_only.steers": {
+        "value": 2,
+        "tolerance": "count"
+      },
+      "screen_only.time_to_act_steps.max": {
+        "value": 2,
+        "tolerance": "steps"
+      }
+    },
+    "limitations/desktop-1280": {
+      "completion_miss": {
+        "value": 0,
+        "tolerance": "count"
+      },
+      "false_complete": {
+        "value": 0,
+        "tolerance": "count"
+      },
+      "glance_cost.median": {
+        "value": 1,
+        "tolerance": "steps"
+      },
+      "glance_cost.p95": {
+        "value": 2,
+        "tolerance": "steps"
+      },
+      "reading_load.max": {
+        "value": 165,
+        "tolerance": "steps"
+      },
+      "reading_load.median": {
+        "value": 164,
+        "tolerance": "steps"
+      },
+      "screen_only.actions": {
+        "value": 2,
+        "tolerance": "count"
+      },
+      "screen_only.looks": {
+        "value": 1,
+        "tolerance": "count"
+      },
+      "screen_only.steers": {
+        "value": 0,
+        "tolerance": "count"
+      },
+      "screen_only.time_to_act_steps.max": {
+        "value": 1,
+        "tolerance": "steps"
+      }
+    },
+    "limitations/mobile-390": {
+      "completion_miss": {
+        "value": 0,
+        "tolerance": "count"
+      },
+      "false_complete": {
+        "value": 0,
+        "tolerance": "count"
+      },
+      "glance_cost.median": {
+        "value": 3,
+        "tolerance": "steps"
+      },
+      "glance_cost.p95": {
+        "value": 3,
+        "tolerance": "steps"
+      },
+      "reading_load.max": {
+        "value": 106,
+        "tolerance": "steps"
+      },
+      "reading_load.median": {
+        "value": 86,
+        "tolerance": "steps"
+      },
+      "screen_only.actions": {
+        "value": 4,
+        "tolerance": "count"
+      },
+      "screen_only.looks": {
+        "value": 2,
+        "tolerance": "count"
+      },
+      "screen_only.steers": {
+        "value": 2,
+        "tolerance": "count"
+      },
+      "screen_only.time_to_act_steps.max": {
+        "value": 2,
+        "tolerance": "steps"
+      }
+    },
+    "page-a-view/desktop-1280": {
+      "completion_miss": {
+        "value": 0,
+        "tolerance": "count"
+      },
+      "false_complete": {
+        "value": 0,
+        "tolerance": "count"
+      },
+      "glance_cost.median": {
+        "value": 2,
+        "tolerance": "steps"
+      },
+      "glance_cost.p95": {
+        "value": 2,
+        "tolerance": "steps"
+      },
+      "reading_load.max": {
+        "value": 230,
+        "tolerance": "steps"
+      },
+      "reading_load.median": {
+        "value": 214.5,
+        "tolerance": "steps"
+      },
+      "screen_only.actions": {
+        "value": 4,
+        "tolerance": "count"
+      },
+      "screen_only.looks": {
+        "value": 3,
+        "tolerance": "count"
+      },
+      "screen_only.steers": {
+        "value": 0,
+        "tolerance": "count"
+      },
+      "screen_only.time_to_act_steps.max": {
+        "value": 1,
+        "tolerance": "steps"
+      }
+    },
+    "page-a-view/mobile-390": {
+      "completion_miss": {
+        "value": 0,
+        "tolerance": "count"
+      },
+      "false_complete": {
+        "value": 0,
+        "tolerance": "count"
+      },
+      "glance_cost.median": {
+        "value": 3,
+        "tolerance": "steps"
+      },
+      "glance_cost.p95": {
+        "value": 3,
+        "tolerance": "steps"
+      },
+      "reading_load.max": {
+        "value": 147,
+        "tolerance": "steps"
+      },
+      "reading_load.median": {
+        "value": 104.5,
+        "tolerance": "steps"
+      },
+      "screen_only.actions": {
+        "value": 10,
+        "tolerance": "count"
+      },
+      "screen_only.looks": {
+        "value": 4,
+        "tolerance": "count"
+      },
+      "screen_only.steers": {
+        "value": 3,
+        "tolerance": "count"
+      },
+      "screen_only.time_to_act_steps.max": {
+        "value": 2,
+        "tolerance": "steps"
+      }
+    },
+    "site/desktop-1280/dark": {
+      "axe.serious_critical_nodes": {
+        "value": 676,
+        "tolerance": "count"
+      },
+      "axe.serious_critical_pages": {
+        "value": 102,
+        "tolerance": "count"
+      },
+      "layout.always_visible_pages": {
+        "value": 135,
+        "tolerance": "count"
+      },
+      "layout.page_scroll_pages": {
+        "value": 0,
+        "tolerance": "count"
+      },
+      "layout.spill_pages": {
+        "value": 0,
+        "tolerance": "count"
+      },
+      "layout.truncated_texts": {
+        "value": 0,
+        "tolerance": "count"
+      }
+    },
+    "site/desktop-1280/light": {
+      "axe.serious_critical_nodes": {
+        "value": 696,
+        "tolerance": "count"
+      },
+      "axe.serious_critical_pages": {
+        "value": 104,
+        "tolerance": "count"
+      },
+      "layout.always_visible_pages": {
+        "value": 138,
+        "tolerance": "count"
+      },
+      "layout.page_scroll_pages": {
+        "value": 0,
+        "tolerance": "count"
+      },
+      "layout.spill_pages": {
+        "value": 0,
+        "tolerance": "count"
+      },
+      "layout.truncated_texts": {
+        "value": 0,
+        "tolerance": "count"
+      }
+    },
+    "site/load": {
+      "layout_shift.max": {
+        "value": 0.0183,
+        "tolerance": "layout_shift"
+      },
+      "reduced_motion.pages": {
+        "value": 0,
+        "tolerance": "count"
+      }
+    },
+    "site/mobile-390/dark": {
+      "axe.serious_critical_nodes": {
+        "value": 670,
+        "tolerance": "count"
+      },
+      "axe.serious_critical_pages": {
+        "value": 102,
+        "tolerance": "count"
+      },
+      "layout.always_visible_pages": {
+        "value": 137,
+        "tolerance": "count"
+      },
+      "layout.page_scroll_pages": {
+        "value": 0,
+        "tolerance": "count"
+      },
+      "layout.spill_pages": {
+        "value": 0,
+        "tolerance": "count"
+      },
+      "layout.truncated_texts": {
+        "value": 3,
+        "tolerance": "count"
+      }
+    },
+    "site/mobile-390/light": {
+      "axe.serious_critical_nodes": {
+        "value": 691,
+        "tolerance": "count"
+      },
+      "axe.serious_critical_pages": {
+        "value": 104,
+        "tolerance": "count"
+      },
+      "layout.always_visible_pages": {
+        "value": 138,
+        "tolerance": "count"
+      },
+      "layout.page_scroll_pages": {
+        "value": 0,
+        "tolerance": "count"
+      },
+      "layout.spill_pages": {
+        "value": 0,
+        "tolerance": "count"
+      },
+      "layout.truncated_texts": {
+        "value": 3,
+        "tolerance": "count"
+      }
+    },
+    "target-process/desktop-1280": {
+      "completion_miss": {
+        "value": 0,
+        "tolerance": "count"
+      },
+      "false_complete": {
+        "value": 0,
+        "tolerance": "count"
+      },
+      "glance_cost.median": {
+        "value": 2,
+        "tolerance": "steps"
+      },
+      "glance_cost.p95": {
+        "value": 3,
+        "tolerance": "steps"
+      },
+      "reading_load.max": {
+        "value": 252,
+        "tolerance": "steps"
+      },
+      "reading_load.median": {
+        "value": 213,
+        "tolerance": "steps"
+      },
+      "screen_only.actions": {
+        "value": 6,
+        "tolerance": "count"
+      },
+      "screen_only.looks": {
+        "value": 2,
+        "tolerance": "count"
+      },
+      "screen_only.steers": {
+        "value": 1,
+        "tolerance": "count"
+      },
+      "screen_only.time_to_act_steps.max": {
+        "value": 2,
+        "tolerance": "steps"
+      }
+    },
+    "target-process/mobile-390": {
+      "completion_miss": {
+        "value": 0,
+        "tolerance": "count"
+      },
+      "false_complete": {
+        "value": 0,
+        "tolerance": "count"
+      },
+      "glance_cost.median": {
+        "value": 3,
+        "tolerance": "steps"
+      },
+      "glance_cost.p95": {
+        "value": 3,
+        "tolerance": "steps"
+      },
+      "reading_load.max": {
+        "value": 122,
+        "tolerance": "steps"
+      },
+      "reading_load.median": {
+        "value": 113,
+        "tolerance": "steps"
+      },
+      "screen_only.actions": {
+        "value": 8,
+        "tolerance": "count"
+      },
+      "screen_only.looks": {
+        "value": 2,
+        "tolerance": "count"
+      },
+      "screen_only.steers": {
+        "value": 2,
+        "tolerance": "count"
+      },
+      "screen_only.time_to_act_steps.max": {
+        "value": 2,
+        "tolerance": "steps"
+      }
+    },
+    "theme-dark-and-back/desktop-1280": {
+      "completion_miss": {
+        "value": 0,
+        "tolerance": "count"
+      },
+      "false_complete": {
+        "value": 0,
+        "tolerance": "count"
+      },
+      "glance_cost.median": {
+        "value": 1,
+        "tolerance": "steps"
+      },
+      "glance_cost.p95": {
+        "value": 1,
+        "tolerance": "steps"
+      },
+      "reading_load.max": {
+        "value": 215,
+        "tolerance": "steps"
+      },
+      "reading_load.median": {
+        "value": 215,
+        "tolerance": "steps"
+      },
+      "screen_only.actions": {
+        "value": 3,
+        "tolerance": "count"
+      },
+      "screen_only.looks": {
+        "value": 0,
+        "tolerance": "count"
+      },
+      "screen_only.steers": {
+        "value": 0,
+        "tolerance": "count"
+      },
+      "screen_only.time_to_act_steps.max": {
+        "value": 1,
+        "tolerance": "steps"
+      }
+    },
+    "theme-dark-and-back/mobile-390": {
+      "completion_miss": {
+        "value": 0,
+        "tolerance": "count"
+      },
+      "false_complete": {
+        "value": 0,
+        "tolerance": "count"
+      },
+      "glance_cost.median": {
+        "value": 2.5,
+        "tolerance": "steps"
+      },
+      "glance_cost.p95": {
+        "value": 3,
+        "tolerance": "steps"
+      },
+      "reading_load.max": {
+        "value": 194,
+        "tolerance": "steps"
+      },
+      "reading_load.median": {
+        "value": 174.5,
+        "tolerance": "steps"
+      },
+      "screen_only.actions": {
+        "value": 4,
+        "tolerance": "count"
+      },
+      "screen_only.looks": {
+        "value": 2,
+        "tolerance": "count"
+      },
+      "screen_only.steers": {
+        "value": 1,
+        "tolerance": "count"
+      },
+      "screen_only.time_to_act_steps.max": {
+        "value": 2,
+        "tolerance": "steps"
+      }
+    }
+  },
+  "tolerances": {
+    "count": {
+      "absolute": 0.0
+    },
+    "layout_shift": {
+      "absolute": 0.01
+    },
+    "steps": {
+      "relative": 0.05
+    }
+  }
+}

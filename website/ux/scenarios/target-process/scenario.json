@@ -1,0 +1,18 @@
+{
+  "name": "target-process",
+  "card": "rotating",
+  "persona": "A Python developer whose service is not Rust, Go or TypeScript and who saw `--target process` in a CLI listing.",
+  "task": "Find what `--target process` does.",
+  "twists": ["Does not know the page's title.", "Starts on the docs introduction."],
+  "start": "/ess/docs",
+  "steps": [
+    { "click": { "role": "link", "name": "^Verify conformance$" } },
+    { "click": { "role": "link", "name": "^An implementation in any language$" } },
+    { "reveal": { "role": "heading", "name": "^An implementation in any language$" } }
+  ],
+  "truth": {
+    "path": "/ess/docs/guides/verify/target-process",
+    "target": { "role": "heading", "name": "^An implementation in any language$" }
+  },
+  "expect": { "completion": "the page heading is in view", "max_actions": 4 }
+}
