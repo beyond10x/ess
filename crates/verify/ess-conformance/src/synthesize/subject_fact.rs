@@ -2224,15 +2224,95 @@ fn reach_linked(
     accept: &dyn Fn(&Arrangement, &BTreeMap<String, Node>) -> bool,
     order: Order,
 ) -> Result<Option<BTreeMap<String, Node>>, RefusalCause> {
-    for input in linked_inputs(ir, command, entity, arrangement)? {
-        if selects(ir, command, entity, arrangement, &input, order)?
-            .is_some_and(|branch| branch.name == outcome.name)
-            && accept(arrangement, &input)
-        {
-            return Ok(Some(input));
+    let Some(key) = super::made::remembers(ir)
+        .then(|| selected_key(ir, command, entity, arrangement, order))
+        .flatten()
+    else {
+        for input in linked_inputs(ir, command, entity, arrangement)? {
+            if selects(ir, command, entity, arrangement, &input, order)?
+                .is_some_and(|branch| branch.name == outcome.name)
+                && accept(arrangement, &input)
+            {
+                return Ok(Some(input));
+            }
+        }
+        return Ok(None);
+    };
+    let known = super::made::selections(ir, key, || {
+        let before = super::related_guard::cuts();
+        let inputs = linked_inputs(ir, command, entity, arrangement);
+        Selections {
+            inputs,
+            cuts: super::related_guard::cuts().saturating_sub(before),
+            picked: std::cell::RefCell::new(Vec::new()),
+        }
+    });
+    super::related_guard::add_cuts(known.cuts);
+    let inputs = known.inputs.as_ref().map_err(Clone::clone)?;
+    for (index, input) in inputs.iter().enumerate() {
+        let read = known.picked.borrow().get(index).cloned();
+        let picked = if let Some((picked, cuts)) = read {
+            super::related_guard::add_cuts(cuts);
+            picked
+        } else {
+            let before = super::related_guard::cuts();
+            let picked = selects(ir, command, entity, arrangement, input, order)
+                .map(|branch| branch.map(|branch| branch.name.clone()));
+            let cuts = super::related_guard::cuts().saturating_sub(before);
+            let mut kept = known.picked.borrow_mut();
+            if kept.len() == index {
+                kept.push((picked.clone(), cuts));
+            }
+            picked
+        };
+        if picked?.is_some_and(|name| name == outcome.name) && accept(arrangement, input) {
+            return Ok(Some(input.clone()));
         }
     }
     Ok(None)
+}
+
+/// The inputs [`reach_linked`] offers one row for one command, and the branch [`selects`] picks
+/// for each, as far as a branch asked: every branch of the command asks the same, and only which
+/// branch it looks for differs. Kept for the length of a synthesis ([`super::made::selections`]).
+pub(super) struct Selections {
+    /// The inputs, [`linked_inputs`].
+    inputs: Result<Vec<BTreeMap<String, Node>>, RefusalCause>,
+    /// How many searches for a row beside were cut while they were made, counted as cut again
+    /// when they are read back ([`super::related_guard::cuts`]).
+    cuts: usize,
+    /// The branch picked for each input so far, in input order, and the searches it cut.
+    picked: std::cell::RefCell<Vec<Picked>>,
+}
+
+/// The branch [`selects`] picked for one input ([`Selections`]), and how many searches for a row
+/// beside it cut.
+type Picked = (Result<Option<OutcomeName>, RefusalCause>, usize);
+
+/// The key [`Selections`] are remembered by: the command, the row, the order, and every
+/// thread-local the inputs read, as [`reached_key`] keys a search. `None` for a command the model
+/// does not declare as such (one projected for a related guard).
+fn selected_key(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    entity: &EntityHandle,
+    arrangement: &Arrangement,
+    order: Order,
+) -> Option<String> {
+    ir.commands()
+        .get(&command.name)
+        .is_some_and(|declared| std::ptr::eq(declared, command))
+        .then(|| {
+            format!(
+                "{}|{entity:?}|{order:?}|{arrangement:?}|{}|{:?}|{}|{}|{}",
+                command.name,
+                held_key(ir),
+                super::earlier_runs::captured(),
+                crate::witness::under_test_key(),
+                super::related_guard::open_key(),
+                super::dropped_key(),
+            )
+        })
 }
 
 /// The owners the chosen `input` names through a link comparison, as `Setup::bound` sends them, and
@@ -2493,6 +2573,7 @@ fn selects<'a>(
     input: &BTreeMap<String, Node>,
     order: Order,
 ) -> Result<Option<&'a ResolvedOutcome>, RefusalCause> {
+    super::made::picking();
     let wrong = order != Order::Overlap
         && ir
             .wrong_states(command)
@@ -5951,49 +6032,62 @@ fn search_rows<T>(
     hints: &[Predicate],
     field: &str,
     arranging: &[&EntityHandle],
-    mut level: Vec<Arrangement>,
+    level: Vec<Arrangement>,
     goal: &mut impl FnMut(&Arrangement) -> Result<Option<T>, RefusalCause>,
 ) -> Result<(Arrangement, T), RefusalCause> {
     let follow = Follow::new(ir, entity, hints);
     let guards = guarded_moves(ir, entity);
-    // Rows beyond the followed counter bound share a node, as on the creation search.
-    let mut beyond = false;
-    let mut nested = false;
-    let mut seen = BTreeSet::new();
+    // The rows each depth holds do not depend on the goal: a search asked before with the same
+    // arguments in the same context is read back as far as it went, and advanced further only
+    // where this goal asks for more (`Reached`).
+    let key = super::made::remembers(ir)
+        .then(|| reached_key(ir, entity, drivers, actors, hints, field, arranging, &level))
+        .flatten();
+    let mut reached = key
+        .as_deref()
+        .and_then(|key| super::made::reached(ir, key))
+        .unwrap_or_default();
+    let mut start = Some(level);
     let mut first: Option<RefusalCause> = None;
-    loop {
-        let mut fresh = Vec::new();
-        for node in level {
-            beyond |= follow.key(&node.settled).1;
-            if seen.insert(profile(ir, entity, &node, hints, (&follow, &guards))) {
-                fresh.push(node);
-            }
-            if seen.len() > MAX_NODES {
-                // Rows a followed counter tells apart fill the budget: no field lacks a value, so
-                // this is the counter's bound, `ESS-SYNTH-003`, not a type without a finite value
-                // (beyond10x/ess#226).
-                if !follow.is_empty() {
-                    return Err(RefusalCause::GuardUnsatisfiable {
-                        predicate: format!(
-                            "`{entity}` stored {field} selecting this branch: the rows the \
-                             followed counters leave exceed the search budget of {MAX_NODES} \
-                             rows; {}",
-                            beyond_reach(&follow.names())
-                        ),
-                        tried: seen.len(),
-                        cut: 0,
-                    });
-                }
-                return Err(missing(
-                    entity,
-                    field,
-                    "subject fact arrangement exceeds 64 lifecycle/fact combinations",
-                ));
+    for depth in 0.. {
+        if let Some((_, cuts)) = reached.depths.get(depth) {
+            super::related_guard::add_cuts(*cuts);
+        } else {
+            let before = super::related_guard::cuts();
+            let Reached { depths, nested, .. } = &mut reached;
+            let level = match depth.checked_sub(1).map(|last| &depths[last].0) {
+                Some(Depth::Fresh(fresh)) => advance(
+                    ir,
+                    (entity, drivers),
+                    actors,
+                    hints,
+                    arranging,
+                    &follow,
+                    fresh,
+                    nested,
+                ),
+                _ => start.take().unwrap_or_default(),
+            };
+            let met = meet(
+                ir,
+                entity,
+                hints,
+                field,
+                (&follow, &guards),
+                level,
+                &mut reached,
+            );
+            let cuts = super::related_guard::cuts().saturating_sub(before);
+            reached.depths.push((met, cuts));
+            if let Some(key) = &key {
+                super::made::reach(ir, key.clone(), reached.clone());
             }
         }
-        if fresh.is_empty() {
-            break;
-        }
+        let fresh = match &reached.depths[depth].0 {
+            Depth::Fresh(fresh) => fresh,
+            Depth::Exceeded(cause) => return Err(cause.clone()),
+            Depth::Ended => break,
+        };
         let mut best: Option<((usize, usize, usize), usize, T)> = None;
         for (index, node) in fresh.iter().enumerate() {
             match goal(node) {
@@ -6011,31 +6105,8 @@ fn search_rows<T>(
         }
         if let Some((_, index, found)) = best {
             vacuous(ir, entity, &fresh[index], hints)?;
-            return Ok((fresh.swap_remove(index), found));
+            return Ok((fresh[index].clone(), found));
         }
-        let mut next = Vec::new();
-        for node in &fresh {
-            let _held = holding(ir, entity, node);
-            for driver in drivers {
-                if matches!(
-                    driver.effect,
-                    ResolvedEffect::Creates | ResolvedEffect::Preserves
-                ) || driver
-                    .effect
-                    .transition()
-                    .is_some_and(|transition| !transition.from.contains(&node.state))
-                {
-                    continue;
-                }
-                let moved = successors(ir, entity, driver, node, actors, hints, arranging, &follow);
-                // A move reading a related row of this entity, which left no row: the one-level
-                // bound on such a row ([`super::related_guard`]) is what stopped it (#229).
-                nested |=
-                    moved.is_empty() && super::related_guard::reads_entity(driver.command, entity);
-                next.extend(moved);
-            }
-        }
-        level = next;
     }
     // Every field the guards read can be set (`unarrangeable` checked that first), so what failed
     // is the search for values that decide the guard: a guard the candidate values cannot
@@ -6047,18 +6118,183 @@ fn search_rows<T>(
             format!(
                 "`{entity}` stored {field} selecting this branch, over the rows {} bounded \
                  arrangements left{}{}",
-                seen.len(),
-                if beyond {
+                reached.seen.len(),
+                if reached.beyond {
                     format!("; {}", beyond_reach(&follow.names()))
                 } else {
                     String::new()
                 },
-                nested_bound(entity, nested && super::related_guard::nests(ir)),
+                nested_bound(entity, reached.nested && super::related_guard::nests(ir)),
             ),
-            seen.len(),
+            reached.seen.len(),
             0,
         )
     }))
+}
+
+/// What one stored-row search reached, depth by depth, as far as any goal asked it to go
+/// ([`search_rows`]).
+///
+/// Every branch of a command reading stored fields searches for its row with the same arguments —
+/// the entity, the command's guards as hints, the rows the creating branches leave — and only what
+/// the branch accepts differs. Which rows each depth holds depends on the arguments and the
+/// thread's arrangement context, never on the goal, so it is kept for the length of a synthesis
+/// ([`super::made::reached`]), and a later search asking the same question reads the depths back
+/// instead of advancing every row by every move again: with each command that moves the row, a
+/// search costs more and is asked more often.
+#[derive(Clone, Default)]
+pub(super) struct Reached {
+    /// Each depth, and how many searches for a row beside were cut while it was made
+    /// ([`super::related_guard::cuts`]), counted as cut again when it is read back.
+    depths: Vec<(Depth, usize)>,
+    /// The profiles of every row met so far: a row met again is no new node.
+    seen: BTreeSet<Profile>,
+    /// Whether a row met so far lies past the followed counter bound.
+    beyond: bool,
+    /// Whether a move reading a related row of this entity left no row.
+    nested: bool,
+}
+
+/// One depth of a search ([`Reached`]).
+#[derive(Clone)]
+enum Depth {
+    /// The rows first met at this depth, in the order met.
+    Fresh(Vec<Arrangement>),
+    /// The rows met exceeded the search budget, [`MAX_NODES`]: the search refuses.
+    Exceeded(RefusalCause),
+    /// No row met at this depth was new: the search ends.
+    Ended,
+}
+
+/// The rows of `level` not met before, in order, recorded as met ([`Reached`]); or the refusal
+/// once the rows met exceed [`MAX_NODES`].
+fn meet(
+    ir: &EssIr,
+    entity: &EntityHandle,
+    hints: &[Predicate],
+    field: &str,
+    (follow, guards): (&Follow, &[(Predicate, BTreeSet<super::StateName>)]),
+    level: Vec<Arrangement>,
+    reached: &mut Reached,
+) -> Depth {
+    let mut fresh = Vec::new();
+    for node in level {
+        // Rows beyond the followed counter bound share a node, as on the creation search.
+        reached.beyond |= follow.key(&node.settled).1;
+        if reached
+            .seen
+            .insert(profile(ir, entity, &node, hints, (follow, guards)))
+        {
+            fresh.push(node);
+        }
+        if reached.seen.len() > MAX_NODES {
+            // Rows a followed counter tells apart fill the budget: no field lacks a value, so
+            // this is the counter's bound, `ESS-SYNTH-003`, not a type without a finite value
+            // (beyond10x/ess#226).
+            if !follow.is_empty() {
+                return Depth::Exceeded(RefusalCause::GuardUnsatisfiable {
+                    predicate: format!(
+                        "`{entity}` stored {field} selecting this branch: the rows the \
+                         followed counters leave exceed the search budget of {MAX_NODES} \
+                         rows; {}",
+                        beyond_reach(&follow.names())
+                    ),
+                    tried: reached.seen.len(),
+                    cut: 0,
+                });
+            }
+            return Depth::Exceeded(missing(
+                entity,
+                field,
+                "subject fact arrangement exceeds 64 lifecycle/fact combinations",
+            ));
+        }
+    }
+    if fresh.is_empty() {
+        Depth::Ended
+    } else {
+        Depth::Fresh(fresh)
+    }
+}
+
+/// Every row the declared moves of `drivers` leave from the rows `fresh`, in order
+/// ([`search_rows`]); `nested` is set where a move reading a related row of this entity left none.
+#[allow(clippy::too_many_arguments)]
+fn advance(
+    ir: &EssIr,
+    (entity, drivers): (&EntityHandle, &[Driver<'_>]),
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    hints: &[Predicate],
+    arranging: &[&EntityHandle],
+    follow: &Follow,
+    fresh: &[Arrangement],
+    nested: &mut bool,
+) -> Vec<Arrangement> {
+    let mut next = Vec::new();
+    for node in fresh {
+        let _held = holding(ir, entity, node);
+        for driver in drivers {
+            if matches!(
+                driver.effect,
+                ResolvedEffect::Creates | ResolvedEffect::Preserves
+            ) || driver
+                .effect
+                .transition()
+                .is_some_and(|transition| !transition.from.contains(&node.state))
+            {
+                continue;
+            }
+            let moved = successors(ir, entity, driver, node, actors, hints, arranging, follow);
+            // A move reading a related row of this entity, which left no row: the one-level
+            // bound on such a row ([`super::related_guard`]) is what stopped it (#229).
+            *nested |=
+                moved.is_empty() && super::related_guard::reads_entity(driver.command, entity);
+            next.extend(moved);
+        }
+    }
+    next
+}
+
+/// The key a search is remembered by ([`Reached`]): its arguments and every thread-local the
+/// rows it reaches read, as [`creations`] keys the rows a creating branch leaves. `None` where a
+/// driver is a branch the model does not declare as such (one projected for a related guard),
+/// which has no stable name to be remembered by.
+#[allow(clippy::too_many_arguments)]
+fn reached_key(
+    ir: &EssIr,
+    entity: &EntityHandle,
+    drivers: &[Driver<'_>],
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    hints: &[Predicate],
+    field: &str,
+    arranging: &[&EntityHandle],
+    level: &[Arrangement],
+) -> Option<String> {
+    let mut named = Vec::with_capacity(drivers.len());
+    for driver in drivers {
+        let declared = ir
+            .commands()
+            .get(&driver.command.name)
+            .is_some_and(|command| std::ptr::eq(command, driver.command));
+        let outcome = driver
+            .command
+            .outcomes
+            .iter()
+            .position(|outcome| std::ptr::eq(outcome, driver.outcome))
+            .filter(|_| declared)?;
+        named.push(format!(
+            "{}|{outcome}|{:?}",
+            driver.command.name, driver.effect
+        ));
+    }
+    Some(format!(
+        "{entity:?}|{named:?}|{actors:?}|{hints:?}|{field}|{arranging:?}|{level:?}|{}|{:?}|{}|{}|{}",
+        held_key(ir),
+        super::earlier_runs::captured(),
+        crate::witness::under_test_key(),
+        super::related_guard::open_key(),
+        super::dropped_key(),
+    ))
 }
 
 /// Delete the actual row a create-or-refuse segment already stored. No creation or deletion is

@@ -10,12 +10,20 @@
 //! model and the thread's arrangement context, so they are kept per model, keyed on all of those,
 //! for as long as the model is being synthesized.
 //!
+//! The rows a stored-row search reaches, depth by depth, are kept the same way ([`reached`]): every
+//! branch of a command reading stored fields asks the same search and differs only in what it
+//! accepts, and advancing every row by every move again for each of them made a row several
+//! commands move cost minutes to synthesize.
+//!
 //! Answering from memory does not change what a search decides: the beside searches a computation
 //! cut ([`super::related_guard::cuts`]) count as cut again. The work counters a test reads
-//! (`directed_steps`, `row_set_arrangements_tried`) count only the work done.
+//! (`directed_steps`, `row_set_arrangements_tried`, `branch_selections_tried`) count only the
+//! work done.
 use std::cell::RefCell;
 use std::collections::BTreeMap;
+use std::rc::Rc;
 
+use super::subject_fact::{Reached, Selections};
 use super::{Arrangement, EssIr, RefusalCause};
 
 thread_local! {
@@ -29,6 +37,10 @@ struct Made {
     /// stack ([`Remembered`]), so the address cannot be reused by another model meanwhile.
     ir: *const EssIr,
     rows: BTreeMap<String, Entry>,
+    /// What each stored-row search reached, by its key ([`reached`]).
+    searches: BTreeMap<String, Reached>,
+    /// The branches a command's inputs select on a row, by their key ([`selections`]).
+    selections: BTreeMap<String, Rc<Selections>>,
 }
 
 /// What one computation answered, and how many beside searches it cut.
@@ -49,6 +61,24 @@ pub(super) fn counting<R>(run: impl FnOnce() -> R) -> (R, u64) {
     let before = MAKES.with(std::cell::Cell::get);
     let out = run();
     (out, MAKES.with(std::cell::Cell::get) - before)
+}
+
+thread_local! {
+    /// How many times a row and an input were checked on this thread for the branch they select.
+    static PICKS: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
+
+/// What `run` returns, and how many times a row and an input were checked on this thread for the
+/// branch they select while it ran, rather than answered from memory.
+pub(super) fn picks<R>(run: impl FnOnce() -> R) -> (R, u64) {
+    let before = PICKS.with(std::cell::Cell::get);
+    let out = run();
+    (out, PICKS.with(std::cell::Cell::get) - before)
+}
+
+/// Counts one row and input checked for the branch they select ([`picks`]).
+pub(super) fn picking() {
+    PICKS.with(|count| count.set(count.get() + 1));
 }
 
 /// `make`'s rows, counted as made ([`counting`]).
@@ -86,10 +116,71 @@ pub(super) fn remember(ir: &EssIr) -> Remembered {
         made.push(Made {
             ir: at,
             rows: BTreeMap::new(),
+            searches: BTreeMap::new(),
+            selections: BTreeMap::new(),
         });
         true
     });
     Remembered { pushed }
+}
+
+/// Whether `ir` is the model remembered innermost, whose searches are kept ([`reached`]).
+pub(super) fn remembers(ir: &EssIr) -> bool {
+    MADE.with(|made| {
+        made.borrow()
+            .last()
+            .is_some_and(|top| std::ptr::eq(top.ir, ir))
+    })
+}
+
+/// What the search under `key` reached when this model asked it before ([`Reached`]), if it did.
+pub(super) fn reached(ir: &EssIr, key: &str) -> Option<Reached> {
+    MADE.with(|made| {
+        made.borrow()
+            .last()
+            .filter(|top| std::ptr::eq(top.ir, ir))
+            .and_then(|top| top.searches.get(key).cloned())
+    })
+}
+
+/// The branches a command's inputs select on a row under `key` ([`Selections`]): the ones this
+/// model kept, else `make`'s, kept where `ir` is the model remembered innermost. They are filled
+/// in as later branches ask, through the shared handle.
+pub(super) fn selections(
+    ir: &EssIr,
+    key: String,
+    make: impl FnOnce() -> Selections,
+) -> Rc<Selections> {
+    let known = MADE.with(|made| {
+        made.borrow()
+            .last()
+            .filter(|top| std::ptr::eq(top.ir, ir))
+            .and_then(|top| top.selections.get(&key).cloned())
+    });
+    if let Some(known) = known {
+        return known;
+    }
+    // No borrow is held while making: the inputs below may ask the memory too.
+    let fresh = Rc::new(make());
+    MADE.with(|memory| {
+        if let Some(top) = memory.borrow_mut().last_mut() {
+            if std::ptr::eq(top.ir, ir) {
+                top.selections.insert(key, Rc::clone(&fresh));
+            }
+        }
+    });
+    fresh
+}
+
+/// Keeps what the search under `key` has reached so far, for the searches after it.
+pub(super) fn reach(ir: &EssIr, key: String, reached: Reached) {
+    MADE.with(|made| {
+        if let Some(top) = made.borrow_mut().last_mut() {
+            if std::ptr::eq(top.ir, ir) {
+                top.searches.insert(key, reached);
+            }
+        }
+    });
 }
 
 /// `make`'s rows, from memory where this model asked under the same `key` before. A model not
