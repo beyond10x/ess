@@ -1,11 +1,12 @@
 // L3 screen-only user (skill § 7): every task at both gating viewports with the pointer, and the
 // two anchor tasks with the keyboard alone (gate 5). Gate 4: every task completed to its truth.
-// Gate 3: no completion miss and no false completion.
+// Gate 3: no completion miss and no false completion. Each run declares itself before it runs, so
+// a run that never ends is counted as unmeasured.
 import { expect, test } from '@playwright/test';
 import { GATING, ORIGIN, botConfig, scenarios } from '../adapter';
 import { ScreenOnlyUser } from '../core/bot';
 import { makeHermetic } from '../core/hermetic';
-import type { L3Record } from '../core/reporter';
+import { EXPECT, type Expected, type L3Record } from '../core/reporter';
 
 test.describe.configure({ mode: 'parallel' });
 
@@ -17,7 +18,8 @@ const runs = scenarios().flatMap((scenario) =>
 );
 
 for (const { scenario, viewport, mode } of runs) {
-  test(`L3 ${scenario.name} ${viewport.name} ${mode}`, async ({ browser }, testInfo) => {
+  const expected: Expected = { kind: 'l3', task: scenario.name, viewport: viewport.name, mode, total: runs.length };
+  test(`L3 ${scenario.name} ${viewport.name} ${mode}`, { annotation: { type: EXPECT, description: JSON.stringify(expected) } }, async ({ browser }, testInfo) => {
     const context = await browser.newContext({
       viewport: { width: viewport.width, height: viewport.height },
       colorScheme: 'light',

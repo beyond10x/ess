@@ -77,11 +77,22 @@ export async function runAxe(page: Page, scope: 'full' | 'colour' = 'full'): Pro
 
 export async function checkConfig(
   page: Page,
-  options: { viewport: string; theme: string; gating: boolean; watched: Watched[]; axe: 'full' | 'colour' | false },
+  options: { viewport: string; theme: string; gating: boolean; watched: Watched[]; axe: 'full' | 'colour' | false; phases?: Record<string, number> },
 ): Promise<L2Config> {
-  const layout = await page.evaluate(probeLayout);
-  const alwaysVisible = await checkAlwaysVisible(page, options.watched);
-  const axe = options.axe ? await runAxe(page, options.axe) : null;
+  // Each step's milliseconds, per theme, so a slow page says where its time went.
+  const timed = async <T>(name: string, step: () => Promise<T>): Promise<T> => {
+    const start = Date.now();
+    // -1 until the step ends: a test cut off inside a step shows which.
+    if (options.phases) options.phases[`${name} ${options.theme}`] = -1;
+    try {
+      return await step();
+    } finally {
+      if (options.phases) options.phases[`${name} ${options.theme}`] = Date.now() - start;
+    }
+  };
+  const layout = await timed('layout', () => page.evaluate(probeLayout));
+  const alwaysVisible = await timed('visible', () => checkAlwaysVisible(page, options.watched));
+  const axe = options.axe ? await timed('axe', () => runAxe(page, options.axe as 'full' | 'colour')) : null;
   return { viewport: options.viewport, theme: options.theme, gating: options.gating, layout, alwaysVisible, axe, axeScope: options.axe || 'none' };
 }
 

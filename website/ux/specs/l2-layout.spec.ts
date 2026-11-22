@@ -1,15 +1,18 @@
 // L2 layout contract: every page of the built sitemap, at both gating viewports, in both themes.
 // One test per page and viewport, one navigation each; the theme changes in place (the site follows
-// the emulated colour scheme). The reporter merges a page's two records.
+// the emulated colour scheme). Each test declares what it is expected to measure before it runs,
+// and attaches what it measured even when it is cut off, so the reporter counts the rest as
+// unmeasured.
 import { expect, test } from '@playwright/test';
 import { BASE, GATING, ORIGIN, SITEMAP, THEMES, HYDRATED, alwaysVisible, pageKind } from '../adapter';
 import { checkConfig, frame, gateFailures, showTheme } from '../core/contract';
 import { makeHermetic } from '../core/hermetic';
 import { probeMotion, readLayoutShift } from '../core/probes';
-import type { L2Record } from '../core/reporter';
+import { EXPECT, type Expected, type L2Record } from '../core/reporter';
 import { sitemapPaths } from '../core/sitemap';
 
 const pages = sitemapPaths(SITEMAP).filter((p) => p.startsWith(BASE.replace(/\/$/, '')));
+const total = pages.length * GATING.length * THEMES.length;
 
 test.describe.configure({ mode: 'parallel' });
 
@@ -23,7 +26,28 @@ test.afterEach(async ({}, testInfo) => {
 
 for (const path of pages) {
   for (const viewport of GATING) {
-    test(`L2 ${path} ${viewport.name}`, async ({ browser }) => {
+    const expected: Expected = { kind: 'l2', path, viewport: viewport.name, themes: [...THEMES], total };
+    test(`L2 ${path} ${viewport.name}`, { annotation: { type: EXPECT, description: JSON.stringify(expected) } }, async ({ browser }) => {
+      const current: L2Record = {
+        path,
+        kind: pageKind(path),
+        viewport: viewport.name,
+        layoutShift: 0,
+        motion: { running: [], smoothScroll: false },
+        blocked: {},
+        configs: [],
+        phases: {},
+      };
+      record = current;
+      const phase = async <T>(name: string, step: () => Promise<T>): Promise<T> => {
+        const start = Date.now();
+        current.phases![name] = -1; // until the step ends: a cut test shows where
+        try {
+          return await step();
+        } finally {
+          current.phases![name] = Date.now() - start;
+        }
+      };
       const context = await browser.newContext({
         viewport: { width: viewport.width, height: viewport.height },
         colorScheme: THEMES[0],
@@ -31,24 +55,19 @@ for (const path of pages) {
       });
       const hermetic = await makeHermetic(context, ORIGIN);
       const page = await context.newPage();
-      const response = await page.goto(ORIGIN + path, { waitUntil: 'load' });
+      const response = await phase('goto', () => page.goto(ORIGIN + path, { waitUntil: 'load' }));
       expect(response?.status(), `${path} answers`).toBeLessThan(400);
-      await page.waitForFunction(HYDRATED, undefined, { timeout: 10_000 });
-      await frame(page);
-      const current: L2Record = {
-        path,
-        kind: pageKind(path),
-        layoutShift: await page.evaluate(readLayoutShift),
-        motion: await page.evaluate(probeMotion),
-        blocked: {},
-        configs: [],
-      };
-      record = current;
+      await phase('hydrate', async () => {
+        await page.waitForFunction(HYDRATED, undefined, { timeout: 10_000 });
+        await frame(page);
+      });
+      current.layoutShift = await page.evaluate(readLayoutShift);
+      current.motion = await page.evaluate(probeMotion);
       for (const theme of THEMES) {
-        await showTheme(page, theme);
+        await phase(`theme ${theme}`, () => showTheme(page, theme));
         const watched = alwaysVisible(page, viewport, current.kind);
         current.configs.push(
-          await checkConfig(page, { viewport: viewport.name, theme, gating: true, watched, axe: theme === THEMES[0] ? 'full' : 'colour' }),
+          await checkConfig(page, { viewport: viewport.name, theme, gating: true, watched, axe: theme === THEMES[0] ? 'full' : 'colour', phases: current.phases }),
         );
       }
       current.blocked = Object.fromEntries(hermetic.blocked);

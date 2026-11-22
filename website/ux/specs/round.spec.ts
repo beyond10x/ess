@@ -1,14 +1,16 @@
-// The round command's last stage (UX_STAGE=report, UX_ROUND=R-nn): reads the measurement in
-// .out/, takes the worst-moment shots and the contact sheets, and writes rounds/R-nn/ and trend.md.
-import { execFileSync } from 'node:child_process';
+// The round command's last stage (UX_STAGE=report, UX_ROUND=R-nn, UX_RUNS=<dir>,<dir>,...): merges
+// the round's runs, each a directory under .out/ holding a raw.json, into rounds/R-nn/round.json;
+// takes the worst-moment shots and the contact sheets; and writes report.md and the trend row from
+// round.json. Runs of the gate lane are reported for their time and result; every other run is
+// the round's measurement, merged configuration by configuration (a rerun replaces, never adds).
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { test, type Browser, type Page } from '@playwright/test';
 import { GATING, MEASURED, MOMENTS, ORIGIN, ROOT, ROUND, cards, scenarios, type Moment } from '../adapter';
 import { frame, showTheme } from '../core/contract';
 import { makeHermetic } from '../core/hermetic';
-import { summarize } from '../core/reporter';
-import { worstConfigs, writeReport, writeTrend, type MeasuredRound, type Raw, type Shot } from '../core/round';
+import { mergeRecords, mergeTaskRuns, type Raw } from '../core/reporter';
+import { buildRound, mergeRaws, worstConfigs, writeReport, writeTrend, type MeasuredRound, type Shot } from '../core/round';
 
 test.setTimeout(120_000);
 
@@ -52,23 +54,25 @@ async function moment(browser: Browser, m: Moment, theme: 'light' | 'dark'): Pro
 
 test('round report', async ({ browser }) => {
   if (!ROUND) throw new Error('set UX_ROUND=R-nn');
-  const out = join(ROOT, '.out');
-  const raw: Raw = JSON.parse(readFileSync(join(out, 'raw.json'), 'utf8'));
-  const measured: MeasuredRound = JSON.parse(readFileSync(join(out, 'round.json'), 'utf8'));
-  // The measured-only viewports run apart from the gate (UX_OUT=.out/measured), so the gate's own
-  // run time stays its own.
-  const measuredOnly = join(out, 'measured', 'raw.json');
-  if (existsSync(measuredOnly)) raw.measured = (JSON.parse(readFileSync(measuredOnly, 'utf8')) as Raw).measured;
-  // UX_L3_FROM=.out/l3: take L1 and L3 from a run of their own (after a fix to the screen-only user
-  // alone) and recompute the gates and metrics from the merged records.
-  if (process.env.UX_L3_FROM) {
-    const other: Raw = JSON.parse(readFileSync(join(ROOT, process.env.UX_L3_FROM, 'raw.json'), 'utf8'));
-    raw.l3 = other.l3;
-    raw.l3Timing = other.timing;
-    const merged = summarize(raw.l2, raw.l3);
-    measured.scenarios = merged.scenarios;
-    measured.gates = merged.gates;
-  }
+  const names = (process.env.UX_RUNS ?? '').split(',').map((s) => s.trim()).filter(Boolean);
+  if (names.length === 0) throw new Error('set UX_RUNS to the run directories under .out/, comma-separated');
+  const runs = names.map((name) => ({ name, raw: JSON.parse(readFileSync(join(ROOT, '.out', name, 'raw.json'), 'utf8')) as Raw }));
+  const measurement = runs.filter((r) => r.raw.lane !== 'gate');
+  const others = runs.filter((r) => r.raw.lane === 'gate');
+  const date = new Date().toISOString().slice(0, 10);
+  const round: MeasuredRound = buildRound({
+    round: ROUND,
+    date,
+    measurement,
+    others,
+    cards: cards(ROUND),
+    viewports: { gating: GATING.map((v) => v.name), measured: MEASURED.map((v) => v.name) },
+    budgetSeconds: 120,
+  });
+  const merged = mergeRaws(measurement.map((m) => m.raw));
+  const l2 = mergeRecords(merged.l2);
+  const l3 = mergeTaskRuns(merged.l3);
+
   const dir = join(ROOT, 'rounds', ROUND);
   const shots = join(dir, 'shots');
   rmSync(shots, { recursive: true, force: true });
@@ -76,18 +80,16 @@ test('round report', async ({ browser }) => {
 
   // Worst moments: the three worst page configurations, and every failed task where it stopped.
   const worst: Shot[] = [];
-  for (const [i, w] of worstConfigs(raw.l2, 3).entries()) {
+  for (const [i, w] of worstConfigs(l2, 3).entries()) {
     const page = await open(browser, w.rec.path, w.c.viewport, w.c.theme as 'light' | 'dark');
-    const selectors = [
-      ...(w.c.axe ?? []).filter((v) => v.impact === 'serious' || v.impact === 'critical').flatMap((v) => v.targets),
-    ].filter((s) => !s.includes(' iframe'));
+    const selectors = (w.c.axe ?? []).filter((v) => v.impact === 'serious' || v.impact === 'critical').flatMap((v) => v.targets).filter((s) => !s.includes(' iframe'));
     await mark(page, selectors);
     const file = `worst-${i + 1}-${w.c.viewport}-${w.c.theme}.png`;
     await page.screenshot({ path: join(shots, file), animations: 'disabled' });
     await page.context().close();
     worst.push({ file, caption: `${w.rec.path} at ${w.c.viewport}, ${w.c.theme}: ${w.why} (magenta outline: the first axe nodes)` });
   }
-  for (const { viewport, run } of raw.l3.filter((r) => !r.run.completed)) {
+  for (const { viewport, run } of l3.filter((r) => !r.run.completed)) {
     const page = await open(browser, run.path, viewport, 'light');
     const file = `task-${run.task}-${viewport}-${run.mode}.png`;
     await page.screenshot({ path: join(shots, file), animations: 'disabled' });
@@ -102,9 +104,11 @@ test('round report', async ({ browser }) => {
     for (const m of MOMENTS) frames.push({ name: `${m.name} (${m.viewport.name})`, data: (await moment(browser, m, theme)).toString('base64'), mobile: m.viewport.layout === 'mobile' });
     const context = await browser.newContext({ viewport: { width: 1320, height: 400 } });
     const sheet = await context.newPage();
-    await sheet.setContent(`<body style="margin:8px;font:12px sans-serif;background:#888;display:flex;flex-wrap:wrap;gap:8px">${frames
-      .map((f) => `<figure style="margin:0;background:#fff;padding:4px"><img src="data:image/png;base64,${f.data}" style="height:${f.mobile ? 300 : 200}px;display:block"><figcaption>${f.name}</figcaption></figure>`)
-      .join('')}</body>`);
+    await sheet.setContent(
+      `<body style="margin:8px;font:12px sans-serif;background:#888;display:flex;flex-wrap:wrap;gap:8px">${frames
+        .map((f) => `<figure style="margin:0;background:#fff;padding:4px"><img src="data:image/png;base64,${f.data}" style="height:${f.mobile ? 300 : 200}px;display:block"><figcaption>${f.name}</figcaption></figure>`)
+        .join('')}</body>`,
+    );
     const file = `contact-${theme}.png`;
     await sheet.screenshot({ path: join(shots, file), fullPage: true });
     await context.close();
@@ -116,29 +120,14 @@ test('round report', async ({ browser }) => {
   const rounds = readdirSync(join(ROOT, 'rounds')).filter((d) => /^R-\d+$/.test(d) && d < ROUND).sort();
   const last = rounds.at(-1);
   const previous = last && existsSync(join(ROOT, 'rounds', last, 'round.json')) ? JSON.parse(readFileSync(join(ROOT, 'rounds', last, 'round.json'), 'utf8')) : null;
-  const date = new Date().toISOString().slice(0, 10);
-  const commit = execFileSync('git', ['rev-parse', '--short=12', 'HEAD'], { cwd: ROOT }).toString().trim();
-  const all = scenarios();
-  const roundCards = cards(ROUND);
-  writeFileSync(
-    join(dir, 'round.json'),
-    JSON.stringify({ ...measured, round: ROUND, date, commit, cards: roundCards, viewports: { gating: GATING.map((v) => v.name), measured: MEASURED.map((v) => v.name) } }, null, 2) + '\n',
-  );
-  writeReport(dir, {
-    round: ROUND,
-    date,
-    commit,
-    raw,
-    measured,
+  writeFileSync(join(dir, 'round.json'), JSON.stringify(round, null, 2) + '\n');
+  writeReport(dir, round, {
     baseline,
     previous,
-    cards: roundCards,
-    expectations: Object.fromEntries(all.map((s) => [s.name, s.expect.max_actions])),
-    gating: GATING.map((v) => v.name),
-    measuredViewports: MEASURED.map((v) => v.name),
+    expectations: Object.fromEntries(scenarios().map((s) => [s.name, s.expect.max_actions])),
+    l3,
     worst,
     contact,
-    budgetSeconds: 120,
   });
-  writeTrend(join(ROOT, 'trend.md'), ROUND, date, measured);
+  writeTrend(join(ROOT, 'trend.md'), round);
 });
