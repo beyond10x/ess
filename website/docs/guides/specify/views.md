@@ -71,9 +71,9 @@ topology:
 ```
 
 Placed beside a domain that declares `directory.accounts.Account`, this validates. Each
-environment's values belong to its `ess-environment/1` document. The specification does not say
-which instance is the write-primary, and it does not express read-your-writes at a named instance: a
-component is a logical boundary, not a placement, and a view declares one consistency. A workload
+environment's values belong to its `ess-environment/1` document. Which instance is the
+write-primary, and read-your-writes at a named instance, are out of scope: a component is a logical
+boundary, not a placement, and a view declares one consistency. A workload
 has no `environments:` key. Two stateful instances with no shared store are `ESS-TOPOLOGY-004`. A
 second component for the replica that owns nothing is `ESS-COMPONENT-007`.
 

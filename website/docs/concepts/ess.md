@@ -224,8 +224,9 @@ limits:
   rather than one per subject;
 - an unanswered call may or may not have taken effect.
 
-`ess verify conform check-history` reads a recorded run of several clients and searches for that
-order, and the Go and TypeScript concurrent explorers record such runs. A suite drives one call at a time, so a single-client suite cannot see a race. See
+The `check-history` verb of `ess verify conform` reads a recorded run of several clients and
+searches for that order, and the Go and TypeScript concurrent explorers record such runs. A suite
+drives one call at a time, so a single-client suite cannot see a race. See
 [check a concurrent history](../guides/verify/explore.md#check-a-concurrent-history).
 
 ## The same pattern, pointed somewhere else
