@@ -1,12 +1,15 @@
 //! `cargo xtask pr-watch <number>`: wait for a pull request's check runs and say how they ended.
 //!
 //! The command reads the head commit of the pull request once, then polls that commit's check
-//! runs until every one has completed. Exit statuses:
+//! runs until every one has completed and every required check (`Gate` and the two
+//! `Output ownership (…)` witnesses) exists. Exit statuses:
 //!
-//! - **0**: every check run ended `success`, `neutral` or `skipped`;
-//! - **1**: some check run ended any other way; each is printed with its conclusion, its URL and
-//!   the failing task its annotations name;
-//! - **2**: a timeout, a `gh` failure or unreadable JSON.
+//! - **0**: every required check exists and ended `success`, and every other check run ended
+//!   `success`, `neutral` or `skipped`;
+//! - **1**: some check run ended any other way, or a required check ended `neutral` or `skipped`;
+//!   each is printed with its conclusion, its URL and the failing task its annotations name;
+//! - **2**: a timeout (a required check that never appeared counts as unfinished), a `gh`
+//!   failure or unreadable JSON.
 //!
 //! It reads GitHub through `gh` and writes nothing, to GitHub or to disk.
 
@@ -41,9 +44,9 @@ pub(crate) struct CheckRun {
 /// What one read of the check runs says.
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum Verdict {
-    /// No run yet, or at least one run not `completed`.
+    /// No run yet, at least one run not `completed`, or a required check not created yet.
     Pending { completed: usize, total: usize },
-    /// Every run completed with a passing conclusion.
+    /// Every run completed with a passing conclusion and every required check is present.
     Passed { total: usize },
     /// Every run completed and these did not pass, sorted by name.
     Failed(Vec<CheckRun>),
@@ -67,6 +70,14 @@ pub(crate) enum Outcome {
 
 /// The conclusions that pass. Any other conclusion, or none, fails.
 const PASSING: &[&str] = &["success", "neutral", "skipped"];
+
+/// The checks the ruleset requires of a pull request, as the `prior-gate` step of `release.yml`
+/// spells them. Each must be present and end `success`; for these `skipped` and `neutral` fail.
+const REQUIRED: &[&str] = &[
+    "Gate",
+    "Output ownership (macos-15)",
+    "Output ownership (macos-15-intel)",
+];
 
 /// Reads the check-runs document of one commit.
 pub(crate) fn parse_check_runs(json: &str) -> Result<Vec<CheckRun>, String> {
@@ -123,13 +134,25 @@ pub(crate) fn decide(runs: &[CheckRun]) -> Verdict {
     let mut failed: Vec<CheckRun> = runs
         .iter()
         .filter(|run| {
-            run.conclusion
-                .as_deref()
-                .is_none_or(|conclusion| !PASSING.contains(&conclusion))
+            let conclusion = run.conclusion.as_deref();
+            if REQUIRED.contains(&run.name.as_str()) {
+                conclusion != Some("success")
+            } else {
+                conclusion.is_none_or(|conclusion| !PASSING.contains(&conclusion))
+            }
         })
         .cloned()
         .collect();
     if failed.is_empty() {
+        if REQUIRED
+            .iter()
+            .any(|name| !runs.iter().any(|run| run.name == *name))
+        {
+            return Verdict::Pending {
+                completed,
+                total: runs.len(),
+            };
+        }
         return Verdict::Passed { total: runs.len() };
     }
     failed.sort_by(|a, b| a.name.cmp(&b.name).then(a.id.cmp(&b.id)));
@@ -373,14 +396,159 @@ mod tests {
         format!(r#"{{"message":"task: Failed to run task \"{task}\": exit status 1"}}"#)
     }
 
+    /// The three required checks, each completed with `success`, with ids 101 to 103.
+    fn required_green() -> Vec<String> {
+        vec![
+            run(101, "Gate", "completed", Some("success")),
+            run(
+                102,
+                "Output ownership (macos-15)",
+                "completed",
+                Some("success"),
+            ),
+            run(
+                103,
+                "Output ownership (macos-15-intel)",
+                "completed",
+                Some("success"),
+            ),
+        ]
+    }
+
+    fn with(mut runs: Vec<String>, more: &[String]) -> Vec<String> {
+        runs.extend_from_slice(more);
+        runs
+    }
+
     #[test]
-    fn every_run_successful_neutral_or_skipped_passes() {
-        let verdict = decided(&[
-            run(1, "Gate", "completed", Some("success")),
-            run(2, "Docs", "completed", Some("neutral")),
-            run(3, "Test 1/20", "completed", Some("skipped")),
-        ]);
-        assert_eq!(verdict, Verdict::Passed { total: 3 });
+    fn a_shard_alone_is_pending_until_the_required_checks_exist() {
+        let verdict = decided(&[run(1, "test (1/20)", "completed", Some("success"))]);
+        assert_eq!(
+            verdict,
+            Verdict::Pending {
+                completed: 1,
+                total: 1
+            }
+        );
+    }
+
+    #[test]
+    fn the_required_checks_green_beside_other_green_checks_pass() {
+        let verdict = decided(&with(
+            required_green(),
+            &[
+                run(2, "Docs", "completed", Some("neutral")),
+                run(3, "Test 1/20", "completed", Some("skipped")),
+                run(4, "Test 2/20", "completed", Some("success")),
+            ],
+        ));
+        assert_eq!(verdict, Verdict::Passed { total: 6 });
+    }
+
+    #[test]
+    fn a_skipped_gate_is_red() {
+        let mut runs = required_green();
+        runs[0] = run(101, "Gate", "completed", Some("skipped"));
+        let verdict = decided(&runs);
+        let Verdict::Failed(red) = verdict else {
+            panic!("expected Failed, got {verdict:?}");
+        };
+        assert_eq!(red.len(), 1);
+        assert_eq!(red[0].name, "Gate");
+    }
+
+    #[test]
+    fn a_neutral_required_check_is_red() {
+        let mut runs = required_green();
+        runs[1] = run(
+            102,
+            "Output ownership (macos-15)",
+            "completed",
+            Some("neutral"),
+        );
+        let verdict = decided(&runs);
+        assert!(matches!(verdict, Verdict::Failed(_)), "got {verdict:?}");
+    }
+
+    #[test]
+    fn a_missing_gate_beside_green_checks_is_pending() {
+        let runs = with(
+            required_green().split_off(1),
+            &[run(4, "Test 2/20", "completed", Some("success"))],
+        );
+        assert_eq!(
+            decided(&runs),
+            Verdict::Pending {
+                completed: 3,
+                total: 3
+            }
+        );
+    }
+
+    #[test]
+    fn a_missing_witness_beside_a_green_gate_is_pending() {
+        let mut runs = required_green();
+        runs.pop();
+        assert_eq!(
+            decided(&runs),
+            Verdict::Pending {
+                completed: 2,
+                total: 2
+            }
+        );
+    }
+
+    #[test]
+    fn a_required_check_still_running_is_pending() {
+        let mut runs = required_green();
+        runs[0] = run(101, "Gate", "in_progress", None);
+        assert_eq!(
+            decided(&runs),
+            Verdict::Pending {
+                completed: 2,
+                total: 3
+            }
+        );
+    }
+
+    #[test]
+    fn a_red_check_that_is_not_required_is_red_beside_green_required_checks() {
+        let verdict = decided(&with(
+            required_green(),
+            &[run(2, "Test 11/20", "completed", Some("failure"))],
+        ));
+        let Verdict::Failed(red) = verdict else {
+            panic!("expected Failed, got {verdict:?}");
+        };
+        assert_eq!(red.len(), 1);
+        assert_eq!(red[0].id, 2);
+    }
+
+    #[test]
+    fn a_red_check_is_red_while_a_required_check_is_missing() {
+        let verdict = decided(&[run(2, "Test 11/20", "completed", Some("failure"))]);
+        assert!(matches!(verdict, Verdict::Failed(_)), "got {verdict:?}");
+    }
+
+    #[test]
+    fn the_required_names_are_the_ones_release_yml_spells() {
+        let root = crate::workspace_root().unwrap();
+        let release = std::fs::read_to_string(root.join(".github/workflows/release.yml")).unwrap();
+        let line = release
+            .lines()
+            .find(|line| line.trim_start().starts_with("required=("))
+            .expect("release.yml lists the required checks in a `required=(…)` line");
+        let list = line
+            .trim_start()
+            .strip_prefix("required=(")
+            .and_then(|rest| rest.strip_suffix(')'))
+            .expect("the `required=(…)` line is closed on the same line");
+        let spelled: Vec<&str> = list
+            .split('"')
+            .enumerate()
+            .filter_map(|(index, part)| (index % 2 == 1).then_some(part))
+            .collect();
+        assert_eq!(spelled, REQUIRED);
     }
 
     #[test]
@@ -518,10 +686,10 @@ mod tests {
 
     #[test]
     fn watch_passes_and_exits_0() {
-        let json = runs_json(&[
-            run(1, "A", "completed", Some("success")),
-            run(2, "B", "completed", Some("success")),
-        ]);
+        let json = runs_json(&with(
+            required_green(),
+            &[run(2, "B", "completed", Some("success"))],
+        ));
         let mut waits = 0;
         let outcome = watch(
             &mut || Ok(json.clone()),
@@ -530,9 +698,9 @@ mod tests {
             &mut |_, _| {},
             &mut || waits += 1,
         );
-        assert_eq!(outcome, Outcome::Passed { total: 2 });
+        assert_eq!(outcome, Outcome::Passed { total: 4 });
         assert_eq!(exit_status(&outcome), 0);
-        assert_eq!(report(&outcome), "pr-watch: all 2 check runs passed\n");
+        assert_eq!(report(&outcome), "pr-watch: all 4 check runs passed\n");
         assert_eq!(waits, 0);
     }
 
