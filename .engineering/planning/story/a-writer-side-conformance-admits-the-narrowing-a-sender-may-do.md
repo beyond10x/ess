@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-writer-side-conformance-admits-the-narrowing-a-sender-may-do
 kind: story
-status: draft
+status: active
 title: A writer-side conformance admits the narrowing a sender may do
 relations:
 - serves: vision:O2
@@ -29,7 +29,10 @@ scope:
   path: website/docs/reference/formats.md
 - confidence: cited
   path: website/docs/reference/spec-versions.md
-revision: 12
+revision: 14
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-22T18:13:08Z", actor: "human:timo", revision: 13}
+- {from: "proposed", to: "active", at: "2026-11-22T18:13:20Z", actor: "human:timo", revision: 14}
 ---
 ## Outcome
 
