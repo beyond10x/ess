@@ -6,6 +6,10 @@
 
 - CI: a pull request whose every changed path lies under `.engineering/`, none under `.engineering/repro/`, builds no test archive and starts none of the 20 test jobs, and `Gate` passes them skipped for that reason only and says so in its log. A `main` push, the nightly run, a `queue/` head, a merge-group run and the release gate never skip, so a run that skipped never stands in for a release's gate (story:the-test-step-meets-the-test-budget).
 
+### Fixed
+
+- `ess verify conform synthesize` no longer slows down sharply with each command that moves the same entity, as an adopter reported: one domain of a downstream specification, a single entity of 36 fields moved through its states by seven commands, took 254 s of CPU time on 0.97.0. Every branch of a command that reads stored fields searched for its row anew, advancing every row by every move and checking every input for the branch it selects, although the branches asked the same search and differed only in the branch they look for. What a search reaches, depth by depth, and the branch each input selects on a row are now kept once per synthesis and context; the domain synthesizes in 70 to 88 s of CPU time on a loaded host, with 2.7 times fewer instructions (five of its commands 14 to 19 s instead of 55 s, 2.8 times fewer instructions). The synthesized suites are unchanged.
+
 ## [0.97.1] — 2026-11-21
 
 ### Changed
