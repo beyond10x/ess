@@ -2,9 +2,13 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, test } from '@playwright/test';
+import { FINDINGS, REPOSITORY } from '../adapter';
+import { holdKnownFailures } from '../core/findings';
 import { engineDigest } from '../core/engine';
 import { mergeRecords, summarize, type Expected, type L2Config, type L2Record, type L3Record, type Raw } from '../core/reporter';
-import { buildRound } from '../core/round';
+import { buildRound, committedBaseline } from '../core/round';
+
+holdKnownFailures(test, FINDINGS, REPOSITORY);
 
 const config = (viewport: string, theme: string, over: Partial<L2Config> = {}): L2Config => ({
   viewport,
@@ -127,4 +131,16 @@ test('L1 round: the slow lane, merged from its jobs, is the full round the ratch
   const round = (lane: string) => buildRound({ round: 'R-x', date: '2026-11-22', measurement: [{ name: 'a', raw: raw(lane) }, { name: 'b', raw: raw(lane) }], others: [{ name: 'g', raw: raw('gate') }], cards: { anchors: [], rotating: '' }, viewports: { gating: [], measured: [] }, budgetSeconds: 120 });
   expect(round('slow').lane).toBe('full');
   expect(round('gate').lane).toBe('gate');
+});
+
+// T23 of the R-02 report review: the report's baseline column was read from whatever baseline.json
+// held when the report was written, before the ratchet took the round in.
+test('L1 report: the baseline column is the baseline the ratchet took this round into, never an older one', () => {
+  const baseline = (sources: Record<string, string> | undefined) =>
+    JSON.stringify({ about: 'canned', ...(sources ? { sources } : {}), scenarios: { 't/d': { 'screen_only.actions': { value: 2, tolerance: 'count' } } }, tolerances: {} });
+  const taken = committedBaseline(baseline({ full: 'R-03', gate: 'R-03' }), 'R-03');
+  expect(taken.scenarios['t/d']['screen_only.actions'].value).toBe(2);
+  expect(taken.about).toBe('canned');
+  expect(() => committedBaseline(baseline({ full: 'R-02' }), 'R-03')).toThrow(/R-02/);
+  expect(() => committedBaseline(baseline(undefined), 'R-03')).toThrow(/ux-ratchet/);
 });

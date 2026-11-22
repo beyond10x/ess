@@ -1,7 +1,8 @@
 // The layout contract for one loaded page at one viewport and theme: gate 1 (no horizontal
 // overflow), gate 2 (always-visible elements), truncation, gate 5 (axe-core).
 import AxeBuilder from '@axe-core/playwright';
-import type { Locator, Page } from '@playwright/test';
+import type { Frame, Locator, Page } from '@playwright/test';
+import axe from 'axe-core';
 import { probeLayout, probeVisible } from './probes';
 import type { AlwaysVisibleFailure, AxeViolation, L2Config } from './reporter';
 
@@ -79,21 +80,41 @@ export async function runAxe(page: Page, scope: 'full' | 'colour' = 'full'): Pro
   // Legacy mode runs axe in the top document only: it never enters a frame. The default mode runs
   // each frame partly and aggregates the results in a new blank page, which covers frames but on
   // the 17,337-element ess-ui reference page took 92 to 112 s for one rule, against 16 to 30 s for
-  // every rule in legacy mode (R-02, under load 55 to 85). So: the default mode on a page that holds
-  // a frame, legacy mode on one that holds none, where the two report the same. R-02 ran legacy
-  // mode everywhere and lost every violation inside the visualise page's frame (UXF-021).
-  const framed = page.mainFrame().childFrames().length > 0;
-  const builder = new AxeBuilder({ page }).setLegacyMode(!framed).options({ resultTypes: ['violations'] });
-  const result = await (scope === 'full' ? builder.withTags(AXE_TAGS) : builder.withRules(COLOUR_RULES)).analyze();
-  return result.violations
-    .map((v) => ({
-      id: v.id,
-      impact: v.impact ?? 'unknown',
-      nodes: v.nodes.length,
-      help: v.help,
-      targets: v.nodes.slice(0, 3).map((n) => n.target.join(' ')),
-    }))
-    .sort((a, b) => a.id.localeCompare(b.id));
+  // every rule in legacy mode (R-02, under load 55 to 85). R-02 ran legacy mode alone and lost every
+  // violation inside the visualise page's frame (UXF-021).
+  // R-03 first used the default mode on a framed page; under load it reported nothing for the frame
+  // in 2 of 6 runs, because @axe-core/playwright drops a frame whose run fails without a word. So
+  // each frame runs axe on its own document, in legacy mode's way, and an error there fails the test.
+  const builder = new AxeBuilder({ page }).setLegacyMode(true).options({ resultTypes: ['violations'] });
+  const top = (await (scope === 'full' ? builder.withTags(AXE_TAGS) : builder.withRules(COLOUR_RULES)).analyze()).violations;
+  const framed: axe.Result[] = [];
+  for (const child of page.frames().filter((f) => f !== page.mainFrame() && !f.isDetached() && !f.url().startsWith('chrome-error:'))) {
+    framed.push(...(await axeInFrame(child, scope)));
+  }
+  const byId = new Map<string, AxeViolation>();
+  for (const v of [...top, ...framed]) {
+    const seen = byId.get(v.id);
+    const targets = v.nodes.map((n) => n.target.join(' '));
+    if (seen) {
+      seen.nodes += v.nodes.length;
+      seen.targets = [...seen.targets, ...targets].slice(0, 3);
+    } else {
+      byId.set(v.id, { id: v.id, impact: v.impact ?? 'unknown', nodes: v.nodes.length, help: v.help, targets: targets.slice(0, 3) });
+    }
+  }
+  return [...byId.values()].sort((a, b) => a.id.localeCompare(b.id));
+}
+
+// axe-core in one frame's own document; the frames inside it are found by page.frames().
+async function axeInFrame(child: Frame, scope: 'full' | 'colour'): Promise<axe.Result[]> {
+  await child.evaluate((source) => {
+    if (!(window as unknown as { axe?: unknown }).axe) (0, eval)(source);
+  }, axe.source);
+  const runOnly = scope === 'full' ? { type: 'tag' as const, values: AXE_TAGS } : { type: 'rule' as const, values: COLOUR_RULES };
+  return child.evaluate(
+    (options) => (window as unknown as { axe: typeof axe }).axe.run(document, options as axe.RunOptions).then((r) => r.violations),
+    { runOnly, resultTypes: ['violations'], iframes: false },
+  );
 }
 
 export async function checkConfig(

@@ -4,12 +4,14 @@
 // Gate 3: no completion miss and no false completion. Each run declares itself before it runs, so
 // a run that never ends is counted as unmeasured.
 import { expect, test } from '@playwright/test';
-import { GATING, LANE, ORIGIN, botConfig, scenarios } from '../adapter';
+import { FINDINGS, GATING, LANE, ORIGIN, REPOSITORY, botConfig, scenarios } from '../adapter';
+import { holdKnownFailures } from '../core/findings';
 import { ScreenOnlyUser } from '../core/bot';
 import { makeHermetic } from '../core/hermetic';
 import { EXPECT, type Expected, type L3Record } from '../core/reporter';
 
 test.describe.configure({ mode: 'parallel' });
+holdKnownFailures(test, FINDINGS, REPOSITORY);
 
 const runs = scenarios()
   .filter((scenario) => LANE === 'slow' || scenario.card === 'anchor')

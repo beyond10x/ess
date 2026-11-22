@@ -2,7 +2,8 @@
 // in the site's default dark theme, no axe. Like L2, each test declares what it is expected to
 // measure and attaches what it measured even when it is cut off.
 import { test } from '@playwright/test';
-import { BASE, MEASURED, ORIGIN, SITEMAP, alwaysVisible, pageKind } from '../adapter';
+import { BASE, FINDINGS, MEASURED, ORIGIN, REPOSITORY, SITEMAP, alwaysVisible, pageKind } from '../adapter';
+import { holdKnownFailures } from '../core/findings';
 import { checkConfig, frame, showTheme } from '../core/contract';
 import { makeHermetic } from '../core/hermetic';
 import { EXPECT, type Expected, type L2Record } from '../core/reporter';
@@ -12,6 +13,7 @@ const pages = sitemapPaths(SITEMAP).filter((p) => p.startsWith(BASE.replace(/\/$
 const THEME = 'dark';
 
 test.describe.configure({ mode: 'parallel' });
+holdKnownFailures(test, FINDINGS, REPOSITORY);
 
 let record: L2Record | null = null;
 

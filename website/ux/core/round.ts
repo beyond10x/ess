@@ -170,8 +170,25 @@ export function worstConfigs(l2: L2Record[], n: number): Array<{ rec: L2Record; 
   return scored.filter((s) => s.score > 0 && !seen.has(s.rec.path) && seen.add(s.rec.path)).slice(0, n);
 }
 
+// The baseline the report's baseline column is read from: the one the ratchet took this round
+// into (`sources.full`, written by `cargo xtask ux-ratchet --update`), which is committed with the
+// report. An older baseline is refused, so the column cannot show a baseline the round replaced
+// (T23 of the R-02 report review).
+export interface CommittedBaseline {
+  about: string;
+  scenarios: Record<string, Record<string, { value: number }>>;
+}
+export function committedBaseline(text: string, round: string): CommittedBaseline {
+  const parsed = JSON.parse(text) as CommittedBaseline & { sources?: Record<string, string> };
+  const full = parsed.sources?.full;
+  const take = `run cargo xtask ux-ratchet --round website/ux/rounds/${round}/round.json --update first`;
+  if (full === undefined) throw new Error(`baseline.json names no round its values were taken from: ${take}`);
+  if (full !== round) throw new Error(`baseline.json holds round ${full}'s values, not ${round}'s: ${take}`);
+  return { about: parsed.about, scenarios: parsed.scenarios };
+}
+
 export interface ReportExtras {
-  baseline: Record<string, Record<string, { value: number }>> | null;
+  baseline: CommittedBaseline;
   previous: MeasuredRound | null;
   expectations: Record<string, number>;
   l3: Raw['l3'];
@@ -234,10 +251,13 @@ export function writeReport(dir: string, m: MeasuredRound, x: ReportExtras): voi
   if (g.gate4_screen_only.over_limit.length > 0) out.push('Task runs over their card\'s limit:', '', ...g.gate4_screen_only.over_limit.map((f) => `- ${f}`), '');
 
   out.push('## Runs', '');
-  out.push(`Every run of this round, with its own time against the ${m.budget_seconds} s step budget of the gate lane. A project that ran no test is not listed.`, '');
+  out.push(
+    `Every run of this round, with its own time against the ${m.budget_seconds} s step budget of the gate lane. A project that ran no test is not listed. "Known" failures are the regression assets of open findings, expected to fail; "new" failures are every other failed test and every open finding's asset that passed: a run exits 1 on any new failure.`,
+    '',
+  );
   out.push(
     table(
-      ['run', 'lane', 'engine', 'workers', 'wall s', 'status', 'projects (tests, wall s)', 'pages', 'task runs', 'unmeasured'],
+      ['run', 'lane', 'engine', 'workers', 'wall s', 'status', 'failed: known, new', 'projects (tests, wall s)', 'pages', 'task runs', 'unmeasured'],
       m.runs.map((r) => [
         r.name,
         r.lane,
@@ -245,6 +265,7 @@ export function writeReport(dir: string, m: MeasuredRound, x: ReportExtras): voi
         r.timing.workers,
         r.timing.wall_s,
         r.timing.status,
+        r.timing.known_failures ? `${r.timing.known_failures.length}, ${r.timing.unexpected?.length ?? 0}` : '–',
         Object.entries(r.timing.projects).map(([p, v]) => `${p} ${v.tests}, ${v.wall_s}`).join('; ') || 'none',
         r.coverage.pages,
         r.coverage.tasks,
@@ -286,6 +307,7 @@ export function writeReport(dir: string, m: MeasuredRound, x: ReportExtras): voi
   const tasks = Object.entries(m.scenarios).filter(([k]) => !k.startsWith('/'));
   const pages = Object.entries(m.scenarios).filter(([k]) => k.startsWith('/'));
   out.push(`All lower is better. ${pages.length} page configurations and ${tasks.length} task runs hold values; the page values are summed per viewport and theme here, every value is in round.json.`, '');
+  out.push(`The baseline column is \`baseline.json\` as committed with this round, after the ratchet took the round in: ${x.baseline.about}`, '');
   const rows: Array<Array<string | number>> = [];
   const groups = new Map<string, Record<string, number>>();
   for (const [scenario, values] of pages) {
@@ -300,12 +322,16 @@ export function writeReport(dir: string, m: MeasuredRound, x: ReportExtras): voi
     const these = Object.entries(prev).filter(([s]) => s.startsWith('/') && s.endsWith(`@${key}`));
     return these.length ? these.reduce((n, [, v]) => n + (v[metric] ?? 0), 0) : undefined;
   };
+  const baseGroup = (key: string, metric: string) => {
+    const these = Object.entries(x.baseline.scenarios).filter(([s]) => s.startsWith('/') && s.endsWith(`@${key}`));
+    return these.length ? these.reduce((n, [, v]) => n + (v[metric]?.value ?? 0), 0) : undefined;
+  };
   for (const [key, values] of [...groups.entries()].sort()) {
-    for (const [metric, value] of Object.entries(values)) rows.push([`pages @${key} (sum)`, metric, fmt(value), '–', fmt(prevGroup(key, metric))]);
+    for (const [metric, value] of Object.entries(values)) rows.push([`pages @${key} (sum)`, metric, fmt(value), fmt(baseGroup(key, metric)), fmt(prevGroup(key, metric))]);
   }
   for (const [scenario, values] of tasks) {
     for (const [metric, value] of Object.entries(values)) {
-      rows.push([scenario, metric, fmt(value), fmt(x.baseline?.[scenario]?.[metric]?.value), fmt(x.previous?.scenarios?.[scenario]?.[metric])]);
+      rows.push([scenario, metric, fmt(value), fmt(x.baseline.scenarios[scenario]?.[metric]?.value), fmt(x.previous?.scenarios?.[scenario]?.[metric])]);
     }
   }
   out.push(table(['scenario', 'key', 'this round', 'baseline', 'last round'], rows), '');

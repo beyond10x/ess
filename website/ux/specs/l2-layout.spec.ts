@@ -6,7 +6,8 @@
 // and attaches what it measured even when it is cut off, so the reporter counts the rest as
 // unmeasured.
 import { expect, test } from '@playwright/test';
-import { BASE, GATING, LANE, ORIGIN, SITEMAP, SLOW_L2_SLICES, TEMPLATE_PAGES, THEMES, HYDRATED, alwaysVisible, builtPage, hasSearchControl, pageKind } from '../adapter';
+import { BASE, FINDINGS, GATING, LANE, ORIGIN, REPOSITORY, SITEMAP, SLOW_L2_SLICES, TEMPLATE_PAGES, THEMES, HYDRATED, alwaysVisible, builtPage, hasSearchControl, pageKind } from '../adapter';
+import { holdKnownFailures } from '../core/findings';
 import { checkConfig, frame, gateFailures, showTheme } from '../core/contract';
 import { makeHermetic } from '../core/hermetic';
 import { probeMotion, readLayoutShift } from '../core/probes';
@@ -17,6 +18,7 @@ const pages = LANE === 'gate' ? TEMPLATE_PAGES.map((p) => p.path) : sitemapPaths
 const total = pages.length * GATING.length * THEMES.length;
 
 test.describe.configure({ mode: 'parallel' });
+holdKnownFailures(test, FINDINGS, REPOSITORY);
 
 // What a test measured so far; attached after the test even when it timed out.
 let record: L2Record | null = null;

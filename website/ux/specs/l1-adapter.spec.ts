@@ -1,10 +1,14 @@
 // L1: the adapter states what this site has, and gate 2 gates only what the adapter gates.
 import { expect, test } from '@playwright/test';
-import { BASE, GATING, SITEMAP, TEMPLATE_PAGES, alwaysVisible, hasSearchControl, pageKind } from '../adapter';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { BASE, FINDINGS, GATING, REPOSITORY, ROOT, SITEMAP, TEMPLATE_PAGES, WORKERS, alwaysVisible, hasSearchControl, pageKind } from '../adapter';
+import { holdKnownFailures } from '../core/findings';
 import { checkAlwaysVisible } from '../core/contract';
 import { sitemapPaths } from '../core/sitemap';
 
 test.use({ viewport: { width: 400, height: 600 } });
+holdKnownFailures(test, FINDINGS, REPOSITORY);
 
 test('L1 adapter: search is not an always-visible element; the site has none (UXF-001, one finding)', async ({ page }) => {
   await page.setContent('<body></body>');
@@ -41,6 +45,18 @@ test('L1 the site-search check finds a built search control and its absence', ()
   expect(hasSearchControl('<nav class="navbar"><a class="navbar__item">Docs</a><button>Research notes</button></nav>')).toBe(false);
   expect(hasSearchControl('<div class="navbar__search"><input type="search" class="navbar__search-input"></div>')).toBe(true);
   expect(hasSearchControl('<button type="button" class="DocSearch DocSearch-Button" aria-label="Search">')).toBe(true);
+});
+
+// T19 of the R-02 report review: the gate was timed at 6 workers while its command said 4.
+test('L1 one worker count: the config, package.json and Taskfile.yml run the lanes with the same workers', () => {
+  const pkg = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')) as { scripts: Record<string, string> };
+  expect(pkg.scripts.gate).toBe(`playwright test --workers=${WORKERS}`);
+  const taskfile = readFileSync(join(REPOSITORY, 'Taskfile.yml'), 'utf8');
+  expect(taskfile.match(/^ {2}UX_WORKERS: '(\d+)'$/m)?.[1], 'Taskfile.yml UX_WORKERS').toBe(String(WORKERS));
+  for (const task of ['ux-gate', 'ux-slow']) {
+    const body = taskfile.slice(taskfile.indexOf(`\n  ${task}:\n`) + 1).split(/\n {2}\S/)[0];
+    expect(body, `Taskfile.yml ${task}`).toContain('--workers={{.UX_WORKERS}}');
+  }
 });
 
 test('L1 the template pages of the gate cover every page template and every always-visible element of the sitemap', async ({ page }) => {

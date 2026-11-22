@@ -1,10 +1,13 @@
 // L1: the screen-only user is held to what is on screen and to each card's limit. Doctored pages
 // served from a fake origin; no site, no server.
 import { expect, test, type Page } from '@playwright/test';
+import { FINDINGS, REPOSITORY } from '../adapter';
+import { holdKnownFailures } from '../core/findings';
 import { ScreenOnlyUser, type Revealer, type Task } from '../core/bot';
 import { summarize, type L3Record } from '../core/reporter';
 
 test.use({ viewport: { width: 400, height: 600 } });
+holdKnownFailures(test, FINDINGS, REPOSITORY);
 
 const user = (page: Page, revealers: Revealer[] = []) =>
   new ScreenOnlyUser(page, { regions: [{ name: 'main', selector: 'main' }], primary: ['main'], revealers, mode: 'pointer', maxSteers: 20, maxTabs: 20 });

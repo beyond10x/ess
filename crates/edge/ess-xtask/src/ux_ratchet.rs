@@ -92,8 +92,12 @@ pub(crate) struct Entry {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Baseline {
-    /// What the file is, for a reader.
+    /// What the file is, for a reader: written by every update from [`Baseline::sources`] and the
+    /// counts, so it never names a round the values no longer come from.
     pub about: String,
+    /// The round each lane was last taken from, by lane.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub sources: BTreeMap<String, String>,
     /// The scenarios each lane other than `full` measures.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub lanes: BTreeMap<String, BTreeSet<String>>,
@@ -117,6 +121,9 @@ pub(crate) struct Coverage {
 /// The part of `round.json` the ratchet reads; every other field is the report's.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 pub(crate) struct Round {
+    /// The round's name (`R-nn`), or the lane's for a run outside a round.
+    #[serde(default, rename = "round")]
+    pub name: String,
     /// The lane the round ran, `full` when it does not say.
     #[serde(default = "full_lane")]
     pub lane: String,
@@ -576,10 +583,33 @@ pub(crate) fn update(
         }
     }
     if refused.is_empty() {
+        let name = if round.name.trim().is_empty() {
+            round.lane.clone()
+        } else {
+            round.name.clone()
+        };
+        next.sources.insert(round.lane.clone(), name);
+        next.about = about(&next);
         Ok((next, taken))
     } else {
         Err(refused)
     }
+}
+
+/// The baseline's `about`: what the file is, the round each lane was taken from, and its size.
+pub(crate) fn about(baseline: &Baseline) -> String {
+    let lanes = baseline
+        .sources
+        .iter()
+        .map(|(lane, round)| format!("lane {lane} from round {round}"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let values: usize = baseline.scenarios.values().map(BTreeMap::len).sum();
+    format!(
+        "UX ratchet baseline of the ESS documentation website, lower is better; written by cargo \
+         xtask ux-ratchet --update: {lanes}; {values} values in {} scenario(s)",
+        baseline.scenarios.len()
+    )
 }
 
 fn set_value(next: &mut Baseline, scenario: &str, metric: &str, value: f64) {
@@ -667,6 +697,15 @@ fn json(text: &str) -> Result<String> {
 pub(crate) fn to_text(baseline: &Baseline) -> Result<String> {
     let mut out = String::from("{\n");
     let _ = writeln!(out, "  \"about\": {},", json(&baseline.about)?);
+    if !baseline.sources.is_empty() {
+        let _ = writeln!(
+            out,
+            "  \"sources\": {},",
+            serde_json::to_string(&baseline.sources)?
+                .replace("\":", "\": ")
+                .replace(",\"", ", \"")
+        );
+    }
     if !baseline.lanes.is_empty() {
         out.push_str("  \"lanes\": {\n");
         for (i, (lane, scenarios)) in baseline.lanes.iter().enumerate() {
@@ -1661,6 +1700,34 @@ mod tests {
         assert_eq!(entries["reading_load.max"].tolerance, "words");
     }
 
+    /// T23 of the R-02 report review: `about` still named the R-01 round after R-02 replaced every
+    /// value. An update writes which round each lane was taken from, and `about` says it.
+    #[test]
+    fn an_update_names_the_round_each_lane_was_taken_from() {
+        let full = round(
+            r#"{"round": "R-03", "lane": "full", "scenarios": {"install/desktop-1280":
+              {"screen_only.actions": 2, "glance_cost.p95": 2.0, "layout_shift.max": 0.02}}}"#,
+        );
+        let (next, _) = update(&baseline(BASE), &full, None).expect("an improvement");
+        assert!(
+            next.about.contains("lane full from round R-03")
+                && next.about.contains("3 values in 1 scenario"),
+            "{}",
+            next.about
+        );
+        let gate = round(
+            r#"{"round": "R-04", "lane": "gate", "scenarios": {"install/desktop-1280":
+              {"screen_only.actions": 2, "glance_cost.p95": 2.0, "layout_shift.max": 0.02}}}"#,
+        );
+        let (later, _) = update(&next, &gate, None).expect("a lane addition");
+        assert!(
+            later.about.contains("lane full from round R-03")
+                && later.about.contains("lane gate from round R-04"),
+            "{}",
+            later.about
+        );
+    }
+
     #[test]
     fn update_refuses_a_missing_value_without_a_decision() {
         let measured =
@@ -1692,7 +1759,13 @@ mod tests {
         let mut base = baseline(LANES);
         base.tolerances = default_tolerances();
         base.dropped.insert("old/d".into(), "D-1".into());
+        base.sources.insert("full".into(), "R-03".into());
+        base.sources.insert("gate".into(), "R-03".into());
         let text = to_text(&base).expect("written");
+        assert!(
+            text.contains(r#""sources": {"full": "R-03", "gate": "R-03"},"#),
+            "{text}"
+        );
         assert!(
             text.contains(r#""layout.spills": {"value": 0, "tolerance": "count"}"#),
             "{text}"

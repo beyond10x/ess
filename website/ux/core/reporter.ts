@@ -102,6 +102,11 @@ export interface RunTiming {
   // Only projects that ran a test are listed.
   projects: Record<string, { tests: number; wall_s: number; sum_s: number }>;
   slowest: Array<{ title: string; project: string; seconds: number; status: string }>;
+  // Tests that failed as expected: the regression assets of open findings (core/findings.ts).
+  known_failures?: string[];
+  // Tests whose outcome was not the expected one: a new failure, or an open finding's asset that
+  // passed. Any entry makes the run exit 1.
+  unexpected?: string[];
 }
 
 type Result = 'pass' | 'fail' | 'not run';
@@ -340,7 +345,8 @@ export default class UxReporter implements Reporter {
   private timings: TestTiming[] = [];
   private started = Date.now();
   private workers = 0;
-  private failedTests = 0;
+  private known: string[] = [];
+  private unexpected: string[] = [];
 
   onBegin(config: FullConfig, suite: Suite): void {
     this.started = Date.now();
@@ -353,7 +359,9 @@ export default class UxReporter implements Reporter {
   onTestEnd(test: TestCase, result: TestResult): void {
     const project = test.parent.project()?.name ?? '';
     this.timings.push({ title: test.title, project, duration: result.duration, start: result.startTime.getTime(), status: result.status });
-    if (result.status !== 'passed' && result.status !== 'skipped') this.failedTests += 1;
+    // Retries are 0, so each test ends once and its outcome is final.
+    if (test.outcome() === 'unexpected') this.unexpected.push(`[${project}] ${test.title} (${result.status}, expected ${test.expectedStatus})`);
+    else if (test.expectedStatus === 'failed' && result.status === 'failed') this.known.push(`[${project}] ${test.title}`);
     for (const a of result.attachments) {
       if (!a.body) continue;
       if (a.name === 'ux-l2') this.l2.push(JSON.parse(a.body.toString()));
@@ -377,15 +385,25 @@ export default class UxReporter implements Reporter {
       .sort((a, b) => b.duration - a.duration)
       .slice(0, 10)
       .map((t) => ({ title: t.title, project: t.project, seconds: r(t.duration / 1000, 1), status: t.status }));
-    const timing: RunTiming = { wall_s: r((Date.now() - this.started) / 1000, 1), workers: this.workers, status: result.status, projects, slowest };
+    const timing: RunTiming = {
+      wall_s: r((Date.now() - this.started) / 1000, 1),
+      workers: this.workers,
+      status: result.status,
+      projects,
+      slowest,
+      known_failures: [...this.known].sort(),
+      unexpected: [...this.unexpected].sort(),
+    };
     const raw: Raw = { lane: process.env.UX_LANE ?? 'gate', engine: engine(root), expected: this.expected, l2: this.l2, l3: this.l3, measured: this.measured, timing };
     writeFileSync(join(out, 'raw.json'), JSON.stringify(raw, null, 1) + '\n');
     const measuredRound = roundOf(raw, process.env.UX_ROUND ?? raw.lane);
     writeFileSync(join(out, 'round.json'), JSON.stringify(measuredRound, null, 2) + '\n');
     const c = measuredRound.coverage;
     console.log(
-      `\nux: lane ${raw.lane}, engine ${raw.engine.commit}${raw.engine.dirty ? ' (dirty)' : ''} ${raw.engine.digest}; pages ${c.pages.measured} of ${c.pages.expected}, configurations ${c.configs.measured} of ${c.configs.expected}, task runs ${c.tasks.measured} of ${c.tasks.expected}, unmeasured ${c.unmeasured.length}; ${this.failedTests} failed tests; wall ${timing.wall_s} s, ${timing.workers} workers`,
+      `\nux: lane ${raw.lane}, engine ${raw.engine.commit}${raw.engine.dirty ? ' (dirty)' : ''} ${raw.engine.digest}; pages ${c.pages.measured} of ${c.pages.expected}, configurations ${c.configs.measured} of ${c.configs.expected}, task runs ${c.tasks.measured} of ${c.tasks.expected}, unmeasured ${c.unmeasured.length}; ${this.known.length} known failures, ${this.unexpected.length} new; wall ${timing.wall_s} s, ${timing.workers} workers`,
     );
+    for (const t of timing.known_failures ?? []) console.log(`ux: known failure (an open finding's asset): ${t}`);
+    for (const t of timing.unexpected ?? []) console.log(`ux: NEW: ${t}`);
     for (const [name, p] of Object.entries(projects)) console.log(`ux: project ${name}: ${p.tests} tests, wall ${p.wall_s} s`);
     console.log('ux: ten slowest tests');
     for (const t of slowest) console.log(`  ${t.seconds.toFixed(1).padStart(6)} s  [${t.project}] ${t.title} (${t.status})`);

@@ -13,6 +13,13 @@ export const BASE = '/ess/';
 export const ORIGIN = `http://127.0.0.1:${PORT}`;
 export const SITEMAP = join(BUILD, 'sitemap.xml');
 export const ROUND = process.env.UX_ROUND ?? '';
+// The finding records, and the repository root their regression assets' paths are relative to.
+// An open finding's asset is an expected failure of the gate (core/findings.ts).
+export const FINDINGS = join(ROOT, 'findings');
+export const REPOSITORY = join(ROOT, '..', '..');
+// The worker count of every lane: the same in package.json's `gate` script, Taskfile.yml's
+// `UX_WORKERS` and every timed run of a round (T19 of the R-02 report review).
+export const WORKERS = 4;
 // The lane (UX_LANE): `gate` on every merge (the template pages and the anchor cards, 120 s), `slow`
 // for the whole sitemap, every card and the measured-only viewports, as SLOW_L2_SLICES + 2 pool jobs.
 export const LANE: 'gate' | 'slow' = process.env.UX_LANE === 'slow' ? 'slow' : 'gate';

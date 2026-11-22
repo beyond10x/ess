@@ -1,12 +1,15 @@
 // L1: every check can fail. Each probe meets a page built to break it, and a page built to pass it;
 // the metric functions meet canned states. No server, no site.
 import { expect, test } from '@playwright/test';
+import { FINDINGS, REPOSITORY } from '../adapter';
+import { holdKnownFailures } from '../core/findings';
 import { ScreenOnlyUser } from '../core/bot';
 import { checkAlwaysVisible, runAxe } from '../core/contract';
 import { median, percentile, taskMetrics } from '../core/metrics';
 import { probeLayout, probeMotion } from '../core/probes';
 
 test.use({ viewport: { width: 400, height: 600 } });
+holdKnownFailures(test, FINDINGS, REPOSITORY);
 
 test('L1 gate 1 finds a horizontal page scroll and an element past its box', async ({ page }) => {
   await page.setContent(`<body style="margin:0"><main><div style="width:200px"><p style="width:300px">wide</p></div>
@@ -49,12 +52,14 @@ test('L1 gate 2 finds a missing, an out-of-viewport and a covered element', asyn
 // UXF-021: the R-02 engine ran axe in legacy mode, which checks the top document only, so the
 // violations inside the visualise page's frame (UXF-007, UXF-008) went unreported.
 test('L1 gate 5 reports a control nested in a control and a scroll region the keyboard cannot reach, inside a frame (UXF-021)', async ({ page }) => {
-  const framed = `<!doctype html><html lang="en"><head><title>framed</title></head><body><main>
+  // Everything in the frame's view: text cut off at the frame's edge makes color-contrast incomplete.
+  const framed = `<!doctype html><html lang="en"><head><title>framed</title></head><body style="margin:4px"><main>
+    <p style="color:#aaa;background:#fff;margin:0">faint text</p>
     <div role="button" tabindex="0">outer <button>inner</button></div>
     <div style="height:60px;overflow:auto">${'<div>a line in a scrolling region with nothing focusable</div>'.repeat(12)}</div>
-    <p style="color:#aaa;background:#fff">faint text</p></main></body></html>`;
-  await page.setContent(`<!doctype html><html lang="en"><head><title>host</title></head><body><main><h1>host</h1>
-    <iframe title="framed" srcdoc="${framed.replace(/"/g, '&quot;')}"></iframe></main></body></html>`);
+    </main></body></html>`;
+  await page.setContent(`<!doctype html><html lang="en"><head><title>host</title></head><body style="margin:0"><main><h1 style="margin:0">host</h1>
+    <iframe title="framed" style="width:380px;height:300px" srcdoc="${framed.replace(/"/g, '&quot;')}"></iframe></main></body></html>`);
   await page.frameLocator('iframe').getByRole('button', { name: 'inner', exact: true }).waitFor();
   const full = (await runAxe(page, 'full')).map((v) => v.id);
   expect(full).toEqual(expect.arrayContaining(['color-contrast', 'nested-interactive', 'scrollable-region-focusable']));

@@ -23,6 +23,9 @@ vars:
   FEATURE_OFF_NUMBER_SEMANTICS: >-
     not package(ess-cli) | kind(lib) | kind(bin) | binary(/^(binary64|normalization|schema|execution_recovery)/)
   WORKSPACE_GROUP_A: package(ess-conformance) & binary(/^[a-m]/)
+  # The worker count of the documentation site's UX lanes: the same as `WORKERS` in
+  # website/ux/adapter.ts and the `gate` script of website/ux/package.json (an L1 test holds them).
+  UX_WORKERS: '4'
 
 tasks:
   fmt-check:
@@ -536,6 +539,39 @@ tasks:
       - task: web-check
       - npm --prefix website ci
       - npm --prefix website run build
+
+  # The documentation site's UI loop (website/ux/), run against the site `site-build` built. Not
+  # part of `check` and in no CI job yet. `ux-gate` exits 0 when only the regression assets of open
+  # findings fail, 1 on any other failure and 1 when an open finding's asset passes. Its run writes
+  # website/ux/.out/round.json, which `ux-ratchet` holds to website/ux/baseline.json.
+  ux-gate:
+    desc: Run the documentation site's every-merge UX gate (template pages, anchor cards; 120 s budget) against the built site.
+    dir: website/ux
+    env:
+      UX_LANE: gate
+    cmds:
+      - npm ci
+      - npx playwright test --workers={{.UX_WORKERS}}
+
+  ux-slow:
+    desc: Run the documentation site's slow UX lane (every page, every card, the measured-only viewports), one Playwright run per project, each writing website/ux/.out/slow-<project>.
+    dir: website/ux
+    env:
+      UX_LANE: slow
+    cmds:
+      - npm ci
+      # Every project runs whatever the one before found: a project's own exit code is not the
+      # round's result, the merged round is (UX_STAGE=round, then `ux-ratchet`).
+      - for: [l2-1, l2-2, l2-3, l2-4, l2-5, l2-6, l3, measured]
+        cmd: UX_OUT=.out/slow-{{.ITEM}} npx playwright test --project={{.ITEM}} --workers={{.UX_WORKERS}}
+        ignore_error: true
+
+  ux-ratchet:
+    desc: Hold a UX round (ROUND, default the last gate run's round.json) to website/ux/baseline.json and check the finding records.
+    vars:
+      ROUND: '{{.ROUND | default "website/ux/.out/round.json"}}'
+    cmds:
+      - cargo xtask ux-ratchet --round {{.ROUND}}
 
   support-check:
     desc: Check the complete current-source support matrix against offline CLI output and metadata.
