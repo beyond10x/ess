@@ -3385,6 +3385,11 @@ pub struct EssIr {
     /// keeps its bytes and compiled digest under any header.
     #[serde(skip)]
     format: ess_domain::system::FormatVersion,
+    /// What scanning the model for `Binary64` found, kept for the model's lifetime: an IR never
+    /// changes once built, so the first scan's answer is every later one's. Not serialized, and
+    /// equal on every IR, so a model keeps its bytes, digest and equality.
+    #[serde(skip)]
+    binary64: crate::binary64::Scan,
 }
 
 /// One ambient command invocation, with its command and actor resolved (ess/15,
@@ -3456,7 +3461,13 @@ impl EssIr {
             workloads: parts.workloads,
             preconditions: parts.preconditions,
             format: parts.format,
+            binary64: crate::binary64::Scan::default(),
         }
+    }
+
+    /// What scanning this model for `Binary64` found so far ([`crate::binary64`]).
+    pub(crate) fn binary64_scan(&self) -> &crate::binary64::Scan {
+        &self.binary64
     }
 
     /// The primitive a binding constant over `target` is read as, when it is one a literal spells

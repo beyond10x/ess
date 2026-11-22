@@ -8,7 +8,50 @@ use crate::refs::{
 };
 use ess_domain::name::QualifiedName;
 use ess_domain::Primitive;
+use std::cell::Cell;
 use std::collections::{BTreeMap, BTreeSet};
+use std::sync::OnceLock;
+
+/// What scanning one model for `Binary64` found: its positions ([`uses`]) and the declared types a
+/// conformance run reaches ([`reached_types`]), each filled by its first asking. Held by the
+/// [`EssIr`] it describes, which never changes once built, so synthesis, admission and the
+/// generators read one scan however often they ask (seven times per synthesis before).
+///
+/// Every `Scan` equals every other: it is a cache of the model, not part of it.
+#[derive(Clone, Default)]
+pub(crate) struct Scan {
+    uses: OnceLock<BTreeMap<String, EssSemanticRef>>,
+    reached: OnceLock<BTreeSet<QualifiedName>>,
+}
+
+impl PartialEq for Scan {
+    fn eq(&self, _: &Self) -> bool {
+        true
+    }
+}
+
+impl Eq for Scan {}
+
+impl std::fmt::Debug for Scan {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Scan").finish_non_exhaustive()
+    }
+}
+
+thread_local! {
+    /// How many times a model was scanned for `Binary64` positions on this thread ([`scans`]).
+    static SCANS: Cell<u64> = const { Cell::new(0) };
+}
+
+/// What `run` returns, and how many times a model was scanned for its `Binary64` positions on this
+/// thread while it ran: the work a test bounds where a clock would depend on the machine. Not
+/// part of any output.
+#[doc(hidden)]
+pub fn scans<R>(run: impl FnOnce() -> R) -> (R, u64) {
+    let before = SCANS.with(Cell::get);
+    let out = run();
+    (out, SCANS.with(Cell::get) - before)
+}
 
 /// Every directly declared Binary64 position in the checked model, in stable source order.
 pub fn locations(ir: &EssIr) -> BTreeSet<String> {
@@ -18,7 +61,13 @@ pub fn locations(ir: &EssIr) -> BTreeSet<String> {
 /// Each concrete Binary64 position and its compiler-owned semantic owner.
 /// Named references need no expansion: their checked declarations occur exactly once.
 pub fn uses(ir: &EssIr) -> BTreeMap<String, EssSemanticRef> {
-    uses_of(ir, Primitive::Binary64)
+    ir.binary64_scan()
+        .uses
+        .get_or_init(|| {
+            SCANS.with(|count| count.set(count.get() + 1));
+            uses_of(ir, Primitive::Binary64)
+        })
+        .clone()
 }
 
 /// The Binary64 positions of [`uses`] a conformance run reaches, in stable source order.
@@ -97,7 +146,10 @@ enum Roots {
 /// synthesis for a value type's invariants, so a type nothing a scenario sends or reads names is
 /// noted rather than refused by both.
 pub fn reached_types(ir: &EssIr) -> BTreeSet<QualifiedName> {
-    types_reached_from(ir, Roots::All)
+    ir.binary64_scan()
+        .reached
+        .get_or_init(|| types_reached_from(ir, Roots::All))
+        .clone()
 }
 
 fn types_reached_from(ir: &EssIr, which: Roots) -> BTreeSet<QualifiedName> {
