@@ -98,3 +98,18 @@ test('L1 gate 3 can fail: a target that arrives under a sticky bar is a completi
   expect(run.completion_miss).toBe(1);
   expect(summarize([], [{ viewport: 'd', run }]).gates.gate3_unmissable_completion.result).toBe('fail');
 });
+
+test('L1 the screen-only user reads a state\'s words once the page it acts on has rendered', async ({ page }) => {
+  // A client-side navigation: the URL changes at once, the new page renders 400 ms later.
+  await serve(page, {
+    '/a': `<body style="margin:0"><main><p>one two three</p><a href="/b" id="go">Go</a></main><script>
+      document.getElementById('go').onclick = (e) => { e.preventDefault(); history.pushState({}, '', '/b'); document.querySelector('main').innerHTML = '';
+        setTimeout(() => { document.querySelector('main').innerHTML = '<h1>Arrived</h1><p>' + 'word '.repeat(50) + '</p>'; }, 400); };</script></body>`,
+  });
+  const run = await user(page).run(
+    { name: 'render', start: '/a', steps: [{ click: { role: 'link', name: '^Go$' } }, { reveal: { role: 'heading', name: '^Arrived$' } }], truth: { path: '/b', target: { role: 'heading', name: '^Arrived$' } } },
+    'http://ux.test',
+  );
+  expect(run.reason).toBe('');
+  expect(run.states[1].words).toBe(51);
+});

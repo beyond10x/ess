@@ -347,13 +347,13 @@ export class ScreenOnlyUser {
   // Use a control: look, and when it is not on screen seek it, then use it. `done`: the control is
   // in the wanted state already (an open category), so it is not pressed.
   private async click(control: Control, label: string, done?: (h: Handle) => Promise<boolean>): Promise<StateRecord> {
+    // The first look waits for a client-side navigation to render the page; the state's words are
+    // read after it, so they are the words of the page the reader acts on.
+    const seen = await look(this.page, control, 2_000);
     const words = await this.page.evaluate(probeReadingLoad);
     this.tabsSpent = 0;
     let glance: 1 | 2 | 3 | null = null;
-    if (this.config.mode === 'pointer') {
-      const first = (await look(this.page, control, 2_000)).usable[0];
-      if (first) glance = await this.glanceOf(first, 0);
-    }
+    if (this.config.mode === 'pointer' && seen.usable[0]) glance = await this.glanceOf(seen.usable[0], 0);
     const direct = await this.use(control, 2_000, done);
     if (direct) return { step: label, glance: glance ?? (direct.actions > 1 ? 3 : await this.glanceOf(direct.handle, 0)), actions: direct.actions, steers: 0, words };
     const sought = await this.seek(control, true);
@@ -380,8 +380,8 @@ export class ScreenOnlyUser {
   }
 
   private async reveal(target: Control, label: string): Promise<StateRecord> {
-    const words = await this.page.evaluate(probeReadingLoad);
     const first = (await look(this.page, target, 2_000)).usable[0];
+    const words = await this.page.evaluate(probeReadingLoad);
     if (first) return { step: label, glance: await this.glanceOf(first, 0), actions: 0, steers: 0, words };
     // On arrival the target is on screen but under something: the reader can miss it (gate 3).
     await this.arrivedCovered(target);
