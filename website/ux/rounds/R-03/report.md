@@ -403,12 +403,14 @@ The baseline column is `baseline.json` as committed with this round, after the r
 
 ## Notes of the round (written by hand after the report stage)
 
-- Host load. The machine ran at a 1-minute load of 40 to 165 on 20 cores during the round (other
-  sessions' builds). The gate runs `gate-4` to `gate-6` took 119.6 (cut at the 120 s budget), 100.7
-  and 93.6 s at load 61 to 92. A same-load comparison at load 41 to 48 ran the gate's L2 and L3
+- Host load. The machine ran at a logged 1-minute load of 35.07 to 162.10 on 20 cores during the
+  round (other sessions' builds). The gate runs `gate-4` to `gate-6` took 119.6 (cut at the 120 s
+  budget), 100.7 and 93.6 s; the 1-minute load logged before and after them was 69.39 and 61.24. A
+  same-load comparison at load 41 to 48 ran the gate's L2 and L3
   projects in 35.8 and 36.4 s with the R-02 engine and 45.2 s with this one; L1 took 10 to 21 s,
-  most of it the three nested Playwright runs of the known-failure tests. Before the last engine
-  commit, three runs at load 105 were cut at 119 s, and one without the cut took 220.7 s.
+  42 to 50 % of it the three nested Playwright runs of the known-failure tests (`gate-8`,
+  `gate-9`). Before the last engine commit, three runs were cut at 119 s (their load: not kept),
+  and one without the cut took 220.7 s.
 - Reruns. The heavy reference pages (`cli`, `ess-ui`, `formats`) ran into the 60 s test bound or
   the hydration wait at load 90 to 160; `rerun-*` measured them again, each replacing only its own
   configurations. `ess-ui` passed at load 49 (47 and 45 s). `rerun-essui` and `rerun-shift` ran
@@ -416,8 +418,10 @@ The baseline column is `baseline.json` as committed with this round, after the r
   `bc3e06f44faa130b`, so commit "unknown"), because the tree had moved on to a fix of the round
   stage's test selection that does not touch measurement.
 - `/ess/releases/outcome-shapes@mobile-390/dark` measured `layout_shift.load` 0.0253 in `slow-l2-4`
-  (baseline 0) and 0.00004 in `rerun-shift`; the rerun's value is in `round.json`.
+  (baseline 0) and 0.0000423 in `rerun-shift`; `round.json` holds 0 (values are rounded to 4
+  places), and the first value 0.0253 is in no committed file (T27, UXF-026).
 - Known failures. Six open findings named one regression asset where their failure is at both
   gating viewports or on two pages (UXF-006, UXF-010 to UXF-013, UXF-022), so the first runs showed
   those tests as new failures; the findings name every such test now (a finding may name several).
-  UXF-023 is closed as not reproduced: `/ess/` reports no `color-contrast` node.
+  UXF-023 was closed as not reproduced on a raw record outside the tree; `round.json` alone does
+  not show which rule the landing page's nodes are, so R-04 reopened it.

@@ -358,7 +358,7 @@ export function writeReport(dir: string, m: MeasuredRound, x: ReportExtras): voi
 }
 
 export const TREND_HEAD =
-  '# UX trend: ESS documentation website\n\nOne row per round. Lower is better in every column but "measured" and "done".\n\n| round | date | engine | pages measured | unmeasured | gate 1 pages | gate 2 pages | axe serious/critical nodes | axe pages | pointer runs done | over the card limit | keyboard runs done | actions (sum, pointer) | steers (sum) |\n| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |\n';
+  '# UX trend: ESS documentation website\n\nOne row per round. Lower is better in every column but "measured" and "done".\n\n| round | date | engine | pages measured | unmeasured | gate 1 pages | gate 2 pages | axe serious/critical nodes | axe pages | pointer runs done | over the card limit | keyboard runs done | actions (sum, pointer) | steers (sum, pointer) |\n| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |\n';
 
 export function writeTrend(file: string, m: MeasuredRound): void {
   const g = m.gates;
