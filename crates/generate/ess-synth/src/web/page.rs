@@ -148,6 +148,33 @@ function primitive(name) {
   if (name === "json") return jsonControl();
   if (name === "boolean") {"#;
 
+/// Where the fixed script builds the `Integer` control, the anchor of the `Binary64` one.
+const INTEGER_PRIMITIVE: &str = "  if (name === \"integer\") {";
+
+/// The same, with a `Binary64` control ahead of it.
+///
+/// A number input that accepts any step; it reads as the finite number it holds, and
+/// otherwise marks itself invalid and reads as absent, so the bridge names the missing value
+/// rather than receiving `Infinity` or text. The page holds the value as a JavaScript number
+/// (see the `Binary64` weakening in `TARGET.md`).
+const BINARY64_PRIMITIVE: &str = r#"  if (name === "binary64") {
+    const node = /** @type {HTMLInputElement} */ (element("input", { type: "number", step: "any", value: "0" }));
+    return {
+      node,
+      read: () => {
+        const value = node.valueAsNumber;
+        if (Number.isFinite(value)) {
+          node.setCustomValidity("");
+          return value;
+        }
+        node.setCustomValidity("a finite number");
+        node.reportValidity();
+        return undefined;
+      },
+    };
+  }
+  if (name === "integer") {"#;
+
 /// Where the fixed script builds the control for the union variant chosen.
 const UNION_SHOW: &str = "    held = control(declaration.variants[choice.value].type);\n";
 
@@ -186,6 +213,9 @@ fn script(bridge: &Bridge<'_>) -> String {
     };
     if crate::rust::json::used(bridge.ir) {
         script = script.replacen(PRIMITIVE, JSON_PRIMITIVE, 1);
+    }
+    if crate::rust::binary64::used(bridge.ir) {
+        script = script.replacen(INTEGER_PRIMITIVE, BINARY64_PRIMITIVE, 1);
     }
     if has_unit_variant(bridge.ir) {
         script = script.replacen(UNION_SHOW, UNIT_UNION_SHOW, 1);
@@ -732,6 +762,13 @@ mod tests {
         assert_eq!(SCRIPT.matches(PRIMITIVE).count(), 1);
         assert!(JSON_PRIMITIVE.ends_with(&PRIMITIVE["function primitive(name) {".len()..]));
         assert!(!SCRIPT.contains("jsonControl"));
+    }
+
+    #[test]
+    fn the_binary64_control_replaces_exactly_the_integer_branch_the_script_writes() {
+        assert_eq!(SCRIPT.matches(INTEGER_PRIMITIVE).count(), 1);
+        assert!(BINARY64_PRIMITIVE.ends_with(INTEGER_PRIMITIVE));
+        assert!(!SCRIPT.contains("binary64"));
     }
 
     #[test]
