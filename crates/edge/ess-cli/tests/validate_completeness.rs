@@ -291,40 +291,93 @@ fn validate_json_reports_unanswered_notes() {
 
 #[test]
 fn validate_json_reports_outside_scenarios() {
+    // The ping's scenario is `ping-service`'s operation: `item-service`'s run neither synthesizes
+    // nor lists it, and says that it reports its own operations alone.
     let root = nothing_owed("outside");
     let printed = synthesized(&root, &["--component", "item-service"]);
-    let outside = lines_after(&printed, "outside: ");
-    assert_eq!(outside.len(), 1, "{printed}");
-
+    assert!(lines_after(&printed, "outside: ").is_empty(), "{printed}");
+    assert!(
+        printed.contains("scope: only `item-service`'s operations are synthesized"),
+        "{printed}"
+    );
     let (output, report) = validated(&root, &["--component", "item-service"]);
+    assert!(output.status.success(), "{output:?}");
+    assert!(report.get("completeness").is_none(), "{report}");
+
+    // `email-service` handles the command the binding invokes, so the binding's scenarios, which
+    // need `invoice-service`'s, are listed outside its suite.
+    let billing = repo().join("examples/billing");
+    let printed = synthesized(&billing, &["--component", "email-service"]);
+    let outside = lines_after(&printed, "outside: ");
+    let (output, report) = validated(&billing, &["--component", "email-service"]);
     assert!(output.status.success(), "{output:?}");
     let listed = report["completeness"]["outside"]
         .as_array()
         .unwrap_or_else(|| panic!("{report}"));
-    assert_eq!(listed.len(), 1, "{report}");
-    assert_eq!(listed[0]["scenario"], "two.ping.Ping/outcome/pinged");
-    let needs: Vec<&str> = listed[0]["needs"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|need| need.as_str().unwrap())
-        .collect();
-    assert_eq!(needs, ["command two.ping.Ping", "event two.ping.Pinged"]);
-    // As `conform synthesize --component` prints it.
-    let rendered: Vec<String> = needs.iter().map(|need| format!("`{need}`")).collect();
+    assert!(!listed.is_empty(), "{report}");
+    assert_eq!(listed.len(), outside.len(), "{printed}\n{report}");
+    for (listed, printed) in listed.iter().zip(&outside) {
+        let scenario = listed["scenario"].as_str().unwrap();
+        assert!(
+            scenario.starts_with("notify-on-invoice-created/binding/"),
+            "{scenario}"
+        );
+        let rendered: Vec<String> = listed["needs"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|need| format!("`{}`", need.as_str().unwrap()))
+            .collect();
+        // As `conform synthesize --component` prints it.
+        assert_eq!(
+            *printed,
+            format!("`{scenario}` needs {}", rendered.join(", "))
+        );
+    }
     assert_eq!(
-        outside[0],
-        format!(
-            "`{}` needs {}",
-            listed[0]["scenario"].as_str().unwrap(),
-            rendered.join(", ")
-        )
+        report["completeness"]["counts"]["outside"].as_u64(),
+        Some(outside.len() as u64),
+        "{report}"
     );
-    assert_eq!(report["completeness"]["counts"]["outside"], 1, "{report}");
 
     // Without a component nothing is held outside, and here nothing else is owed either.
     let (_, whole) = validated(&root, &[]);
     assert!(whole.get("completeness").is_none(), "{whole}");
+}
+
+/// A component's run names the operations no component realises, after its `scope:` line: their
+/// refusals are in no component's run, so a run per component cannot report the specification
+/// clean by leaving them out. The whole system's run reports their three refusals.
+#[test]
+fn a_component_run_names_the_operations_no_component_realises() {
+    let root = repo().join("crates/verify/ess-conformance/tests/fixtures/component-unrealised");
+    let printed = synthesized(&root, &["--component", "desk-service"]);
+    let unrealised = lines_after(&printed, "unrealised: ");
+    assert_eq!(
+        unrealised,
+        ["2 operation(s) no component realises, so no `--component` run reports their scenarios \
+          or refusals; `ess verify conform synthesize` without `--component` does: `command \
+          shop.ledger.Close`, `event shop.ledger.Closed`"],
+        "{printed}"
+    );
+    let lines: Vec<&str> = printed.lines().collect();
+    let scope = lines
+        .iter()
+        .position(|line| line.starts_with("scope: "))
+        .unwrap();
+    assert!(lines[scope + 1].starts_with("unrealised: "), "{printed}");
+    assert!(lines_after(&printed, "refused: ").is_empty(), "{printed}");
+    let whole = synthesized(&root, &[]);
+    assert_eq!(lines_after(&whole, "refused: ").len(), 3, "{whole}");
+    assert!(lines_after(&whole, "unrealised: ").is_empty(), "{whole}");
+    let billing = synthesized(
+        &repo().join("examples/billing"),
+        &["--component", "email-service"],
+    );
+    assert!(
+        lines_after(&billing, "unrealised: ").is_empty(),
+        "{billing}"
+    );
 }
 
 /// An authored scenario that drives only `two.ping.Ping`.

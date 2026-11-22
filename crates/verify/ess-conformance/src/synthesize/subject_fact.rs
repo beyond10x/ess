@@ -621,6 +621,327 @@ fn leafwise(predicate: &Predicate, leaf: &dyn Fn(&Predicate) -> Truth) -> Truth 
     }
 }
 
+thread_local! {
+    /// How many stored fields of arranged rows were bound to facts on this thread ([`fields_bound`]).
+    static FIELDS_BOUND: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
+
+/// What `run` returns, and how many stored fields of arranged rows were bound to facts on this
+/// thread while it ran.
+pub(super) fn fields_bound<R>(run: impl FnOnce() -> R) -> (R, u64) {
+    let before = FIELDS_BOUND.with(std::cell::Cell::get);
+    let out = run();
+    (out, FIELDS_BOUND.with(std::cell::Cell::get) - before)
+}
+
+thread_local! {
+    /// How many times [`hinted`] was asked on this thread, and how many times it made its inputs
+    /// ([`inputs_made`]).
+    static INPUTS_MADE: std::cell::Cell<(u64, u64)> = const { std::cell::Cell::new((0, 0)) };
+}
+
+/// What `run` returns, how many times an arranging branch's inputs toward a goal were asked for on
+/// this thread while it ran, and how many times they were made.
+pub(super) fn inputs_made<R>(run: impl FnOnce() -> R) -> (R, u64, u64) {
+    let (asked, made) = INPUTS_MADE.with(std::cell::Cell::get);
+    let out = run();
+    let (now_asked, now_made) = INPUTS_MADE.with(std::cell::Cell::get);
+    (out, now_asked - asked, now_made - made)
+}
+
+/// What of a stored row's binding no predicate changes, bound once for every predicate decided over
+/// the row ([`evaluate_row`]).
+///
+/// A predicate reads one or two of a row's fields, and binding the whole row again for each — every
+/// field, nested lists included — made each decision cost the width of the row, while a search
+/// decides many guards, hints and leaves over every row it meets. What one predicate binds
+/// otherwise is bound beside it ([`RowFacts`]).
+struct BoundRow {
+    /// The value each field holds: a literal the arrangement settled, a `now_offset` read at the
+    /// reference instant the guards are decided at, `null` for an `Optional` field no step wrote.
+    values: BTreeMap<String, Node>,
+    /// The fields holding a row the arrangement made, and which row.
+    instances: Vec<(String, super::InstanceName)>,
+    /// `values`, bound against the entity's declared fields.
+    bound: crate::input::BoundFields,
+    /// The values naming no declared field (a settled identity), which the binding refuses unless a
+    /// predicate leaves them out or binds them at a field of their own.
+    stray: Vec<String>,
+}
+
+impl BoundRow {
+    fn new(
+        ir: &EssIr,
+        entity: &EntityHandle,
+        settled: &BTreeMap<String, super::Determined>,
+        unwritten: &BTreeSet<String>,
+    ) -> Self {
+        let declared = ir.entity(entity);
+        let mut values: BTreeMap<String, Node> = settled
+            .iter()
+            .filter_map(|(name, determined)| match &determined.value {
+                ScenarioValue::NowOffset { seconds } => crate::now_offset::reference()
+                    .plus_seconds(*seconds)
+                    .map(|instant| (name.clone(), Node::Text(instant.to_rfc3339()))),
+                other => other
+                    .as_literal()
+                    .map(|value| (name.clone(), value.clone())),
+            })
+            .collect();
+        // An `Optional` field no step of the arrangement wrote holds nothing (beyond10x/ess#239):
+        // the row as its creator left it, which `{exists: false}` and `not defined()` select.
+        for field in unwritten {
+            if !settled.contains_key(field) {
+                values.insert(field.clone(), Node::Null);
+            }
+        }
+        let instances = settled
+            .iter()
+            .filter_map(|(name, determined)| match &determined.value {
+                ScenarioValue::Instance { instance } => Some((name.clone(), instance.clone())),
+                _ => None,
+            })
+            .collect();
+        let bound = crate::input::bind_fields(ir, &declared.fields, &values);
+        let stray: Vec<String> = values
+            .keys()
+            .filter(|name| !declared.fields.iter().any(|field| &field.name == *name))
+            .cloned()
+            .collect();
+        count_bound(values.len() - stray.len());
+        Self {
+            values,
+            instances,
+            bound,
+            stray,
+        }
+    }
+}
+
+/// Counts `fields` stored fields bound to facts ([`fields_bound`]).
+fn count_bound(fields: usize) {
+    let fields = u64::try_from(fields).unwrap_or(u64::MAX);
+    FIELDS_BOUND.with(|count| count.set(count.get().saturating_add(fields)));
+}
+
+/// The rows bound for one model ([`bound_row`]).
+#[derive(Default)]
+struct RowMemory {
+    /// The handle `made` keeps under [`ANCHOR`] for the model remembered innermost, held so its
+    /// address is no other model's while this memory lives: a model rewritten for a caller reading
+    /// may be built at the address of one dropped before it, and its rows bind otherwise.
+    anchor: Option<std::rc::Rc<RowPicks>>,
+    /// The rows bound so far, by [`row_key`].
+    rows: std::collections::HashMap<u64, Vec<KeptRow>>,
+    /// How many rows `rows` holds.
+    kept: usize,
+    /// The inputs [`hinted`] offered, by entity and branch, each with its hints and distinction.
+    hinted: BTreeMap<String, Vec<KeptInputs>>,
+}
+
+impl RowMemory {
+    /// Starts this memory again unless it belongs to the model `anchor` is kept for.
+    fn anchor_on(&mut self, anchor: &std::rc::Rc<RowPicks>) {
+        if !self
+            .anchor
+            .as_ref()
+            .is_some_and(|held| std::rc::Rc::ptr_eq(held, anchor))
+        {
+            *self = Self {
+                anchor: Some(std::rc::Rc::clone(anchor)),
+                ..Self::default()
+            };
+        }
+    }
+}
+
+/// One row [`RowMemory`] keeps: what it was bound from, and the binding.
+struct KeptRow {
+    entity: EntityHandle,
+    settled: Vec<(String, ScenarioValue)>,
+    unwritten: BTreeSet<String>,
+    row: std::rc::Rc<BoundRow>,
+}
+
+impl KeptRow {
+    fn holds(
+        &self,
+        entity: &EntityHandle,
+        settled: &BTreeMap<String, super::Determined>,
+        unwritten: &BTreeSet<String>,
+    ) -> bool {
+        self.entity == *entity
+            && self.settled.len() == settled.len()
+            && self.unwritten == *unwritten
+            && self
+                .settled
+                .iter()
+                .zip(settled)
+                .all(|((name, value), (other, determined))| {
+                    name == other && *value == determined.value
+                })
+    }
+}
+
+thread_local! {
+    /// The rows bound for the model remembered innermost ([`bound_row`]).
+    static ROWS: std::cell::RefCell<RowMemory> = std::cell::RefCell::new(RowMemory::default());
+}
+
+/// The key `made` keeps the handle a [`RowMemory`] is anchored on under. No command's row picks are
+/// kept under it: their keys start with the command's name.
+const ANCHOR: &str = "\u{0}bound rows";
+
+/// At most this many rows are kept for a model; past it the memory starts again.
+const MAX_KEPT_ROWS: usize = 4096;
+
+/// The binding of the row `settled` and `unwritten` describe: kept for the model `made` remembers
+/// innermost, so every predicate decided over the row reads one binding; bound anew for any other.
+fn bound_row(
+    ir: &EssIr,
+    entity: &EntityHandle,
+    settled: &BTreeMap<String, super::Determined>,
+    unwritten: &BTreeSet<String>,
+) -> std::rc::Rc<BoundRow> {
+    let Some(anchor) = super::made::row_picks(ir, ANCHOR.to_owned()) else {
+        return std::rc::Rc::new(BoundRow::new(ir, entity, settled, unwritten));
+    };
+    let key = row_key(entity, settled, unwritten);
+    let known = ROWS.with(|memory| {
+        let mut memory = memory.borrow_mut();
+        memory.anchor_on(&anchor);
+        memory
+            .rows
+            .get(&key)?
+            .iter()
+            .find(|kept| kept.holds(entity, settled, unwritten))
+            .map(|kept| std::rc::Rc::clone(&kept.row))
+    });
+    if let Some(known) = known {
+        return known;
+    }
+    let row = std::rc::Rc::new(BoundRow::new(ir, entity, settled, unwritten));
+    ROWS.with(|memory| {
+        let mut memory = memory.borrow_mut();
+        if memory.kept >= MAX_KEPT_ROWS {
+            memory.rows.clear();
+            memory.kept = 0;
+        }
+        memory.kept += 1;
+        memory.rows.entry(key).or_default().push(KeptRow {
+            entity: entity.clone(),
+            settled: settled
+                .iter()
+                .map(|(name, determined)| (name.clone(), determined.value.clone()))
+                .collect(),
+            unwritten: unwritten.clone(),
+            row: std::rc::Rc::clone(&row),
+        });
+    });
+    row
+}
+
+/// A hash of what a row is bound from. Rows of one hash are told apart by [`KeptRow::holds`], so
+/// two equal values hashing apart cost a second binding, never a wrong one.
+fn row_key(
+    entity: &EntityHandle,
+    settled: &BTreeMap<String, super::Determined>,
+    unwritten: &BTreeSet<String>,
+) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut hasher = std::hash::DefaultHasher::new();
+    entity.hash(&mut hasher);
+    for (name, determined) in settled {
+        name.hash(&mut hasher);
+        std::mem::discriminant(&determined.value).hash(&mut hasher);
+        match &determined.value {
+            ScenarioValue::Literal { value } => hash_node(value, &mut hasher),
+            ScenarioValue::NowOffset { seconds } => seconds.hash(&mut hasher),
+            ScenarioValue::Instance { instance } => instance.hash(&mut hasher),
+            _ => {}
+        }
+    }
+    unwritten.hash(&mut hasher);
+    hasher.finish()
+}
+
+fn hash_node(node: &Node, hasher: &mut impl std::hash::Hasher) {
+    use std::hash::Hash;
+    std::mem::discriminant(node).hash(hasher);
+    match node {
+        Node::Null => {}
+        Node::Bool(value) => value.hash(hasher),
+        Node::Number(number) => number.get().to_bits().hash(hasher),
+        Node::Text(text) => text.hash(hasher),
+        Node::Seq(items) => {
+            items.len().hash(hasher);
+            for item in items {
+                hash_node(item, hasher);
+            }
+        }
+        Node::Map(members) => {
+            members.len().hash(hasher);
+            for (name, value) in members {
+                name.hash(hasher);
+                hash_node(value, hasher);
+            }
+        }
+    }
+}
+
+/// An arranged row as one predicate reads it: the row's binding ([`BoundRow`]), with the fields the
+/// predicate binds otherwise — left out, or bound to a value of their own — read from `overlay`
+/// alone. A field's facts all lie under its name, so whole fields are replaced.
+struct RowFacts<'a> {
+    ir: &'a EssIr,
+    fields: &'a [ess_compiler::ir::ResolvedField],
+    base: &'a ess_primitives::facts::FactStore,
+    own: &'a BTreeMap<String, Option<Node>>,
+    overlay: ess_primitives::facts::FactStore,
+}
+
+impl RowFacts<'_> {
+    fn store(&self, path: &FactPath) -> &ess_primitives::facts::FactStore {
+        if self.own.contains_key(path.namespace()) {
+            &self.overlay
+        } else {
+            self.base
+        }
+    }
+}
+
+impl ess_primitives::facts::FactSource for RowFacts<'_> {
+    fn fact(&self, path: &FactPath) -> Option<ess_primitives::facts::FactValue> {
+        self.store(path).fact(path)
+    }
+
+    fn present(&self, path: &FactPath) -> bool {
+        self.store(path).present(path)
+    }
+
+    fn scales(&self) -> &ess_primitives::facts::Scales {
+        self.base.scales()
+    }
+
+    fn orders_as_instant(&self, path: &FactPath) -> bool {
+        crate::input::declared_as(
+            self.ir,
+            self.fields,
+            path,
+            ess_domain::types::Primitive::Timestamp,
+        )
+    }
+
+    fn orders_text_by_bytes(&self, path: &FactPath) -> bool {
+        !crate::input::declared_as(
+            self.ir,
+            self.fields,
+            path,
+            ess_domain::types::Primitive::Duration,
+        )
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 fn evaluate_row(
     ir: &EssIr,
@@ -632,78 +953,94 @@ fn evaluate_row(
     input: Option<(&ResolvedCommand, &BTreeMap<String, Node>)>,
     as_guard: bool,
 ) -> Truth {
+    evaluate_row_flat(
+        ir, entity, settled, unwritten, held, predicate, input, None, as_guard,
+    )
+}
+
+/// [`evaluate_row`], with `input` already flattened as `flat` where the caller holds it.
+#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_lines)] // One row bound once, then each override in order.
+fn evaluate_row_flat(
+    ir: &EssIr,
+    entity: &EntityHandle,
+    settled: &BTreeMap<String, super::Determined>,
+    unwritten: &BTreeSet<String>,
+    held: Option<&super::StateName>,
+    predicate: &Predicate,
+    input: Option<(&ResolvedCommand, &BTreeMap<String, Node>)>,
+    flat: Option<&crate::InputFacts<'_>>,
+    as_guard: bool,
+) -> Truth {
     let declared = ir.entity(entity);
-    let mut fields = declared.fields.clone();
+    let row = bound_row(ir, entity, settled, unwritten);
+    // What this predicate binds otherwise than the row: a field left out (`None`), or bound to a
+    // value of its own.
+    let mut own: BTreeMap<String, Option<Node>> = BTreeMap::new();
     // A stored instant the predicate orders against the current time is held only as a
     // `now_offset` its creator was sent, read at the reference instant the guards are decided at
     // (ess/22, A3); a literal one would be decided at the reference and not at a run, so it is
     // left undetermined, as a generated one is.
-    let now_roots: BTreeSet<&str> = crate::now_offset::now_compared(predicate)
+    for (path, _) in crate::now_offset::now_compared(predicate)
         .into_iter()
         .filter(|(_, whole)| *whole)
-        .filter_map(|(path, _)| {
-            declared
-                .fields
-                .iter()
-                .find(|field| field.name == path.namespace())
-                .map(|field| field.name.as_str())
-        })
-        .collect();
-    let mut values: BTreeMap<String, Node> = settled
-        .iter()
-        .filter_map(|(name, determined)| match &determined.value {
-            ScenarioValue::NowOffset { seconds } => crate::now_offset::reference()
-                .plus_seconds(*seconds)
-                .map(|instant| (name.clone(), Node::Text(instant.to_rfc3339()))),
-            ScenarioValue::Literal { value }
-                if now_roots.contains(name.as_str()) && *value != Node::Null =>
-            {
-                None
-            }
-            other => other
-                .as_literal()
-                .map(|value| (name.clone(), value.clone())),
-        })
-        .collect();
+    {
+        let root = path.namespace();
+        if declared.fields.iter().any(|field| field.name == root)
+            && matches!(
+                settled.get(root).map(|determined| &determined.value),
+                Some(ScenarioValue::Literal { value }) if *value != Node::Null
+            )
+        {
+            own.insert(root.to_owned(), None);
+        }
+    }
+    let holds = |own: &BTreeMap<String, Option<Node>>, name: &str| {
+        own.get(name)
+            .map_or_else(|| row.values.contains_key(name), Option::is_some)
+    };
     // A field holding a row the arrangement made — the review a later `updates:` stored — holds a
     // value, whichever identity that row is given: `defined()` is decided on it, and every other
     // reading stays undecided (beyond10x/ess#553).
-    for (name, determined) in settled {
-        if let ScenarioValue::Instance { instance } = &determined.value {
-            if !values.contains_key(name) && only_defined(predicate, name) {
-                if let Some(token) = row_token(ir, &declared.fields, name, instance) {
-                    values.insert(name.clone(), token);
-                }
+    for (name, instance) in &row.instances {
+        if !holds(&own, name) && only_defined(predicate, name) {
+            if let Some(token) = row_token(ir, &declared.fields, name, instance) {
+                own.insert(name.clone(), Some(token));
             }
-        }
-    }
-    // An `Optional` field no step of the arrangement wrote holds nothing (beyond10x/ess#239): the
-    // row as its creator left it, which `{exists: false}` and `not defined()` select.
-    for field in unwritten {
-        if !settled.contains_key(field) {
-            values.insert(field.clone(), Node::Null);
         }
     }
     // A link to the owner compared with an input naming an arranged owner is bound as that
     // owner's token, which the input carries too (beyond10x/ess#193).
     if let Some((command, sent)) = input {
-        values.extend(link_facts(ir, command, entity, settled, predicate, sent));
+        own.extend(
+            link_facts(ir, command, entity, settled, predicate, sent)
+                .into_iter()
+                .map(|(name, token)| (name, Some(token))),
+        );
     }
     for path in predicate.fact_paths() {
         let root = path.namespace();
-        if declared.fields.iter().any(|field| field.name == root) && !values.contains_key(root) {
+        if declared.fields.iter().any(|field| field.name == root) && !holds(&own, root) {
             return Truth::Unknown;
         }
     }
+    let mut fields = std::borrow::Cow::Borrowed(declared.fields.as_slice());
     // The identity, where the steps settled it and the predicate reads it, whole or a member of a
     // struct identity: a row-set selector over the identity (ess/23, beyond10x/ess#429, #463) reads
     // the row's own key. A predicate that does not read it is decided without it: the settled key
     // is not a stored field, and binding it there would leave every such predicate unknown.
-    if identity_selectors(ir) && values.contains_key(&declared.identity.name) {
-        if reads_key(predicate, &declared.identity.name) {
-            fields.push(declared.identity.clone());
+    let identity = &declared.identity.name;
+    if identity_selectors(ir) && holds(&own, identity) {
+        if reads_key(predicate, identity) {
+            fields.to_mut().push(declared.identity.clone());
+            let value = own
+                .get(identity)
+                .cloned()
+                .flatten()
+                .or_else(|| row.values.get(identity).cloned());
+            own.insert(identity.clone(), value);
         } else {
-            values.remove(&declared.identity.name);
+            own.insert(identity.clone(), None);
         }
     }
     // The held state is bound as `state` at the lifecycle's own type, beside the stored fields.
@@ -711,33 +1048,67 @@ fn evaluate_row(
         let Some(held) = held else {
             return Truth::Unknown;
         };
-        fields.push(declared.state_field());
-        values.insert(EntitySpec::STATE.to_owned(), Node::Text(held.to_string()));
+        fields.to_mut().push(declared.state_field());
+        own.insert(
+            EntitySpec::STATE.to_owned(),
+            Some(Node::Text(held.to_string())),
+        );
     }
-    let Ok(store) = crate::input::bind(ir, &fields, &values, crate::input::Completeness::Partial)
-    else {
+    // What binding the row and these values together refuses: a field no fact path names, a value
+    // not of its field's type, a value naming no field. The fields bound otherwise are bound here.
+    if row.bound.unnameable
+        || row.bound.refused.iter().any(|name| !own.contains_key(name))
+        || row.stray.iter().any(|name| !own.contains_key(name))
+    {
         return Truth::Unknown;
+    }
+    let values: BTreeMap<String, Node> = own
+        .iter()
+        .filter_map(|(name, value)| value.clone().map(|value| (name.clone(), value)))
+        .collect();
+    let overlay = if values.is_empty() {
+        ess_primitives::facts::FactStore::new()
+    } else {
+        let bound: Vec<ess_compiler::ir::ResolvedField> = fields
+            .iter()
+            .filter(|field| values.contains_key(&field.name))
+            .cloned()
+            .collect();
+        count_bound(values.len());
+        let Ok(store) =
+            crate::input::bind(ir, &bound, &values, crate::input::Completeness::Partial)
+        else {
+            return Truth::Unknown;
+        };
+        store
     };
-    let row = crate::input::TypedFacts::new(ir, &fields, store);
+    let row = RowFacts {
+        ir,
+        fields: &fields,
+        base: &row.bound.facts,
+        own: &own,
+        overlay,
+    };
     // An input that does not bind whole (an instance identity the scenario names, beyond10x/ess#727)
     // is bound leaf by leaf from `ess/23`, and a leaf it leaves out is undecided: never read as
     // absent, so a guard over it is not taken for false. Below `ess/23` such an input leaves the
     // predicate undecided, so the document keeps the suite it synthesized, refusals included.
     let mut partial = false;
     let input = match input {
-        Some((command, values)) if reads_input(ir, entity, predicate) => {
-            match flatten(ir, command, values) {
-                Ok(facts) => Some(facts),
+        Some((command, values)) if reads_input(ir, entity, predicate) => match flat {
+            Some(facts) => Some(std::borrow::Cow::Borrowed(facts)),
+            None => match flatten(ir, command, values) {
+                Ok(facts) => Some(std::borrow::Cow::Owned(facts)),
                 Err(_) if !identity_selectors(ir) => return Truth::Unknown,
                 Err(_) => match crate::input::flatten_partial(ir, command, values) {
                     Ok(facts) => {
                         partial = true;
-                        Some(facts)
+                        Some(std::borrow::Cow::Owned(facts))
                     }
                     Err(_) => return Truth::Unknown,
                 },
-            }
-        }
+            },
+        },
         _ => None,
     };
     let facts = RowAndInput { row, input };
@@ -1089,13 +1460,13 @@ fn input_path(path: &FactPath) -> Option<FactPath> {
 /// The arranged row, and the input a scenario sends read under `input.`: the one fact source a
 /// stored-field predicate over both is evaluated against, each half at its declared types.
 struct RowAndInput<'a> {
-    row: crate::input::TypedFacts<'a>,
-    input: Option<crate::InputFacts<'a>>,
+    row: RowFacts<'a>,
+    input: Option<std::borrow::Cow<'a, crate::InputFacts<'a>>>,
 }
 
 impl RowAndInput<'_> {
     fn split(&self, path: &FactPath) -> Option<(&crate::InputFacts<'_>, FactPath)> {
-        let input = self.input.as_ref()?;
+        let input = self.input.as_deref()?;
         input_path(path).map(|rest| (input, rest))
     }
 }
@@ -2224,15 +2595,95 @@ fn reach_linked(
     accept: &dyn Fn(&Arrangement, &BTreeMap<String, Node>) -> bool,
     order: Order,
 ) -> Result<Option<BTreeMap<String, Node>>, RefusalCause> {
-    for input in linked_inputs(ir, command, entity, arrangement)? {
-        if selects(ir, command, entity, arrangement, &input, order)?
-            .is_some_and(|branch| branch.name == outcome.name)
-            && accept(arrangement, &input)
-        {
-            return Ok(Some(input));
+    let Some(key) = super::made::remembers(ir)
+        .then(|| selected_key(ir, command, entity, arrangement, order))
+        .flatten()
+    else {
+        for input in linked_inputs(ir, command, entity, arrangement)? {
+            if selects(ir, command, entity, arrangement, &input, order)?
+                .is_some_and(|branch| branch.name == outcome.name)
+                && accept(arrangement, &input)
+            {
+                return Ok(Some(input));
+            }
+        }
+        return Ok(None);
+    };
+    let known = super::made::selections(ir, key, || {
+        let before = super::related_guard::cuts();
+        let inputs = linked_inputs(ir, command, entity, arrangement);
+        Selections {
+            inputs,
+            cuts: super::related_guard::cuts().saturating_sub(before),
+            picked: std::cell::RefCell::new(Vec::new()),
+        }
+    });
+    super::related_guard::add_cuts(known.cuts);
+    let inputs = known.inputs.as_ref().map_err(Clone::clone)?;
+    for (index, input) in inputs.iter().enumerate() {
+        let read = known.picked.borrow().get(index).cloned();
+        let picked = if let Some((picked, cuts)) = read {
+            super::related_guard::add_cuts(cuts);
+            picked
+        } else {
+            let before = super::related_guard::cuts();
+            let picked = selects(ir, command, entity, arrangement, input, order)
+                .map(|branch| branch.map(|branch| branch.name.clone()));
+            let cuts = super::related_guard::cuts().saturating_sub(before);
+            let mut kept = known.picked.borrow_mut();
+            if kept.len() == index {
+                kept.push((picked.clone(), cuts));
+            }
+            picked
+        };
+        if picked?.is_some_and(|name| name == outcome.name) && accept(arrangement, input) {
+            return Ok(Some(input.clone()));
         }
     }
     Ok(None)
+}
+
+/// The inputs [`reach_linked`] offers one row for one command, and the branch [`selects`] picks
+/// for each, as far as a branch asked: every branch of the command asks the same, and only which
+/// branch it looks for differs. Kept for the length of a synthesis ([`super::made::selections`]).
+pub(super) struct Selections {
+    /// The inputs, [`linked_inputs`].
+    inputs: Result<Vec<BTreeMap<String, Node>>, RefusalCause>,
+    /// How many searches for a row beside were cut while they were made, counted as cut again
+    /// when they are read back ([`super::related_guard::cuts`]).
+    cuts: usize,
+    /// The branch picked for each input so far, in input order, and the searches it cut.
+    picked: std::cell::RefCell<Vec<Picked>>,
+}
+
+/// The branch [`selects`] picked for one input ([`Selections`]), and how many searches for a row
+/// beside it cut.
+type Picked = (Result<Option<OutcomeName>, RefusalCause>, usize);
+
+/// The key [`Selections`] are remembered by: the command, the row, the order, and every
+/// thread-local the inputs read, as [`reached_key`] keys a search. `None` for a command the model
+/// does not declare as such (one projected for a related guard).
+fn selected_key(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    entity: &EntityHandle,
+    arrangement: &Arrangement,
+    order: Order,
+) -> Option<String> {
+    ir.commands()
+        .get(&command.name)
+        .is_some_and(|declared| std::ptr::eq(declared, command))
+        .then(|| {
+            format!(
+                "{}|{entity:?}|{order:?}|{arrangement:?}|{}|{:?}|{}|{}|{}",
+                command.name,
+                held_key(ir),
+                super::earlier_runs::captured(),
+                crate::witness::under_test_key(),
+                super::related_guard::open_key(),
+                super::dropped_key(),
+            )
+        })
 }
 
 /// The owners the chosen `input` names through a link comparison, as `Setup::bound` sends them, and
@@ -2493,6 +2944,7 @@ fn selects<'a>(
     input: &BTreeMap<String, Node>,
     order: Order,
 ) -> Result<Option<&'a ResolvedOutcome>, RefusalCause> {
+    super::made::picking();
     let wrong = order != Order::Overlap
         && ir
             .wrong_states(command)
@@ -2517,7 +2969,8 @@ fn selects<'a>(
             continue;
         }
         if let Some(predicate) = stored(&branch.condition) {
-            match guard_truth_with(
+            // The input is flattened once above, for every branch.
+            match evaluate_row_flat(
                 ir,
                 entity,
                 &arrangement.settled,
@@ -2525,6 +2978,8 @@ fn selects<'a>(
                 Some(&arrangement.state),
                 &predicate,
                 Some((command, input)),
+                Some(&facts),
+                true,
             ) {
                 Truth::True => {}
                 Truth::False => continue,
@@ -4178,19 +4633,96 @@ fn guarded_moves(
     read
 }
 
-/// The candidate inputs for one arranging branch, varied toward the stored-field goal.
-///
-/// Every hint is translated through the branch's `sets:` mappings onto its own input, and the
-/// translations are handed to the witness search beside the command's own guards: the literals the
-/// guard writes become the values the mapped input fields are tried at. `None` when the branch
-/// maps none of the fields the hints read, because then no choice of its input moves the row.
+/// The inputs [`hinted`] offered for one set of hints, one distinction and the input paths the
+/// branch under test copies ([`RowMemory`]).
+type KeptInputs = (Vec<Predicate>, Distinction, BTreeSet<FactPath>, Hinted);
+
+/// The inputs [`hinted`] offers.
+type Hinted = Result<Option<Vec<BTreeMap<String, Node>>>, RefusalCause>;
+
+/// The candidate inputs for one arranging branch, varied toward the stored-field goal
+/// ([`hinted_anew`]), kept for the model `made` remembers innermost by entity, branch, hints,
+/// distinction and the input paths the branch under test copies
+/// ([`crate::witness::copied_under_test`], which the witness search behind them reads), which is
+/// all they read: the search asks for them at every row it advances by the branch, and they are
+/// the same at every row. A branch the model does not declare as such (one projected for a related
+/// guard) is answered anew.
 fn hinted(
     ir: &EssIr,
     entity: &EntityHandle,
     driver: &Driver<'_>,
     hints: &[Predicate],
     at: Distinction,
-) -> Result<Option<Vec<BTreeMap<String, Node>>>, RefusalCause> {
+) -> Hinted {
+    INPUTS_MADE.with(|count| {
+        let (asked, made) = count.get();
+        count.set((asked + 1, made));
+    });
+    let declared = ir
+        .commands()
+        .get(&driver.command.name)
+        .is_some_and(|declared| std::ptr::eq(declared, driver.command))
+        && driver
+            .command
+            .outcomes
+            .iter()
+            .any(|outcome| std::ptr::eq(outcome, driver.outcome));
+    let anchor = if declared {
+        super::made::row_picks(ir, ANCHOR.to_owned())
+    } else {
+        None
+    };
+    let Some(anchor) = anchor else {
+        return hinted_anew(ir, entity, driver, hints, at);
+    };
+    let key = format!("{entity}|{}|{}", driver.command.name, driver.outcome.name);
+    let copied = crate::witness::copied_under_test(driver.command);
+    let known = ROWS.with(|memory| {
+        let mut memory = memory.borrow_mut();
+        memory.anchor_on(&anchor);
+        memory
+            .hinted
+            .get(&key)?
+            .iter()
+            .find(|(held, distinction, scope, _)| {
+                held.as_slice() == hints && *distinction == at && *scope == copied
+            })
+            .map(|(_, _, _, inputs)| inputs.clone())
+    });
+    if let Some(known) = known {
+        return known;
+    }
+    // No borrow is held while the inputs are made: the witness search below may decide guards.
+    let inputs = hinted_anew(ir, entity, driver, hints, at);
+    ROWS.with(|memory| {
+        let mut memory = memory.borrow_mut();
+        memory.anchor_on(&anchor);
+        memory
+            .hinted
+            .entry(key)
+            .or_default()
+            .push((hints.to_vec(), at, copied, inputs.clone()));
+    });
+    inputs
+}
+
+/// The candidate inputs for one arranging branch, varied toward the stored-field goal.
+///
+/// Every hint is translated through the branch's `sets:` mappings onto its own input, and the
+/// translations are handed to the witness search beside the command's own guards: the literals the
+/// guard writes become the values the mapped input fields are tried at. `None` when the branch
+/// maps none of the fields the hints read, because then no choice of its input moves the row.
+fn hinted_anew(
+    ir: &EssIr,
+    entity: &EntityHandle,
+    driver: &Driver<'_>,
+    hints: &[Predicate],
+    at: Distinction,
+) -> Hinted {
+    INPUTS_MADE.with(|count| {
+        let (asked, made) = count.get();
+        count.set((asked, made + 1));
+    });
     let mut mapping = mapped(driver.outcome);
     // A hint over the row's identity steers the input the creating branch publishes it from: a
     // related guard read off an input naming the row is decided on the identity the row is created
@@ -5526,18 +6058,19 @@ fn selected_successors(
     if let Ok(Some(more)) = hinted(ir, entity, driver, hints, Distinction::PLAIN) {
         inputs.extend(more);
     }
+    let picks = row_picks(ir, driver.command, entity, arrangement);
     for input in inputs {
-        if selects(
+        if picked(
             ir,
             driver.command,
             entity,
             arrangement,
             &input,
-            Order::Unique,
+            picks.as_deref(),
         )
         .ok()
         .flatten()
-        .is_some_and(|branch| branch.name == driver.outcome.name)
+        .is_some_and(|name| name == driver.outcome.name)
         {
             let mut next = advanced(
                 ir,
@@ -5555,6 +6088,99 @@ fn selected_successors(
         }
     }
     out
+}
+
+/// The branch [`selects`] picks under [`Order::Unique`] for each input of one command on one row,
+/// as far as a search asked ([`super::made::row_picks`]).
+///
+/// [`selects`] reads only the model, the command, the row's state, stored fields and unwritten
+/// fields, and the input: never the steps that led to the row nor a thread's arrangement context.
+/// Every search that advances a row by a move of a command reading stored fields asks it for
+/// every input it offers — once for each of the command's moving branches, and again in each
+/// search whose goal differs — so it is kept for the length of a synthesis, by command and row.
+#[derive(Default)]
+pub(super) struct RowPicks {
+    /// The branch picked for each input asked so far, by name, under a hash of the input
+    /// ([`input_key`]): an input is compared whole only with the inputs of its hash, where ordering
+    /// whole inputs compared each with several.
+    picked: std::cell::RefCell<std::collections::HashMap<u64, Picks>>,
+}
+
+/// The inputs of one hash a [`RowPicks`] keeps, each with the branch picked for it.
+type Picks = Vec<(BTreeMap<String, Node>, Pick)>;
+
+/// A hash of an input a command is sent. Inputs of one hash are told apart by comparing them, so
+/// two equal inputs hashing apart cost a second decision, never a wrong one.
+fn input_key(input: &BTreeMap<String, Node>) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut hasher = std::hash::DefaultHasher::new();
+    for (name, value) in input {
+        name.hash(&mut hasher);
+        hash_node(value, &mut hasher);
+    }
+    hasher.finish()
+}
+
+/// The name of the branch [`selects`] picked for one input ([`RowPicks`]).
+type Pick = Result<Option<OutcomeName>, RefusalCause>;
+
+/// The [`RowPicks`] of `command` on `arrangement`'s row, kept for the model remembered innermost;
+/// `None` for a command the model does not declare as such (one projected for a related guard),
+/// or a model not remembered.
+fn row_picks(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    entity: &EntityHandle,
+    arrangement: &Arrangement,
+) -> Option<std::rc::Rc<RowPicks>> {
+    let declared = ir
+        .commands()
+        .get(&command.name)
+        .is_some_and(|declared| std::ptr::eq(declared, command));
+    if !declared || !super::made::remembers(ir) {
+        return None;
+    }
+    let key = format!(
+        "{}|{entity:?}|{:?}|{:?}|{:?}",
+        command.name, arrangement.state, arrangement.settled, arrangement.unwritten
+    );
+    super::made::row_picks(ir, key)
+}
+
+/// The name of the branch [`selects`] picks under [`Order::Unique`] for `input` on `arrangement`'s
+/// row: from `picks` where that input was asked before, else decided and kept there.
+fn picked(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    entity: &EntityHandle,
+    arrangement: &Arrangement,
+    input: &BTreeMap<String, Node>,
+    picks: Option<&RowPicks>,
+) -> Pick {
+    let decide = || {
+        selects(ir, command, entity, arrangement, input, Order::Unique)
+            .map(|branch| branch.map(|branch| branch.name.clone()))
+    };
+    let Some(picks) = picks else {
+        return decide();
+    };
+    let key = input_key(input);
+    let known = picks.picked.borrow().get(&key).and_then(|kept| {
+        kept.iter()
+            .find(|(asked, _)| asked == input)
+            .map(|(_, pick)| pick.clone())
+    });
+    if let Some(known) = known {
+        return known;
+    }
+    let fresh = decide();
+    picks
+        .picked
+        .borrow_mut()
+        .entry(key)
+        .or_default()
+        .push((input.clone(), fresh.clone()));
+    fresh
 }
 
 /// Every row one arranging branch can leave from `arrangement`, toward the hints.
@@ -5901,7 +6527,7 @@ pub(super) fn holding(ir: &EssIr, entity: &EntityHandle, row: &Arrangement) -> H
 
 /// The rows of `ir` held on this thread ([`holding`]), as the key of what a search under them
 /// made ([`super::made`]).
-fn held_key(ir: &EssIr) -> String {
+pub(super) fn held_key(ir: &EssIr) -> String {
     HELD.with(|held| {
         held.borrow()
             .iter()
@@ -5951,54 +6577,67 @@ fn search_rows<T>(
     hints: &[Predicate],
     field: &str,
     arranging: &[&EntityHandle],
-    mut level: Vec<Arrangement>,
+    level: Vec<Arrangement>,
     goal: &mut impl FnMut(&Arrangement) -> Result<Option<T>, RefusalCause>,
 ) -> Result<(Arrangement, T), RefusalCause> {
     let follow = Follow::new(ir, entity, hints);
     let guards = guarded_moves(ir, entity);
-    // Rows beyond the followed counter bound share a node, as on the creation search.
-    let mut beyond = false;
-    let mut nested = false;
-    let mut seen = BTreeSet::new();
+    // The rows each depth holds do not depend on the goal: a search asked before with the same
+    // arguments in the same context is read back as far as it went, and advanced further only
+    // where this goal asks for more (`Reached`).
+    let key = super::made::remembers(ir)
+        .then(|| reached_key(ir, entity, drivers, actors, hints, field, arranging, &level))
+        .flatten();
+    let mut reached = key
+        .as_deref()
+        .and_then(|key| super::made::reached(ir, key))
+        .unwrap_or_default();
+    let mut start = Some(level);
     let mut first: Option<RefusalCause> = None;
-    loop {
-        let mut fresh = Vec::new();
-        for node in level {
-            beyond |= follow.key(&node.settled).1;
-            if seen.insert(profile(ir, entity, &node, hints, (&follow, &guards))) {
-                fresh.push(node);
-            }
-            if seen.len() > MAX_NODES {
-                // Rows a followed counter tells apart fill the budget: no field lacks a value, so
-                // this is the counter's bound, `ESS-SYNTH-003`, not a type without a finite value
-                // (beyond10x/ess#226).
-                if !follow.is_empty() {
-                    return Err(RefusalCause::GuardUnsatisfiable {
-                        predicate: format!(
-                            "`{entity}` stored {field} selecting this branch: the rows the \
-                             followed counters leave exceed the search budget of {MAX_NODES} \
-                             rows; {}",
-                            beyond_reach(&follow.names())
-                        ),
-                        tried: seen.len(),
-                        cut: 0,
-                    });
-                }
-                return Err(missing(
-                    entity,
-                    field,
-                    "subject fact arrangement exceeds 64 lifecycle/fact combinations",
-                ));
+    for depth in 0.. {
+        if let Some((_, cuts)) = reached.depths.get(depth) {
+            super::related_guard::add_cuts(*cuts);
+        } else {
+            let before = super::related_guard::cuts();
+            let Reached { depths, nested, .. } = &mut reached;
+            let level = match depth.checked_sub(1).map(|last| &depths[last].0) {
+                Some(Depth::Fresh(fresh, _)) => advance(
+                    ir,
+                    (entity, drivers),
+                    actors,
+                    hints,
+                    arranging,
+                    &follow,
+                    fresh,
+                    nested,
+                ),
+                _ => start.take().unwrap_or_default(),
+            };
+            let met = meet(
+                ir,
+                entity,
+                hints,
+                field,
+                (&follow, &guards),
+                level,
+                &mut reached,
+            );
+            let cuts = super::related_guard::cuts().saturating_sub(before);
+            reached.depths.push((met, cuts));
+            if let Some(key) = &key {
+                super::made::reach(ir, key.clone(), reached.clone());
             }
         }
-        if fresh.is_empty() {
-            break;
-        }
+        let (fresh, scores) = match &reached.depths[depth].0 {
+            Depth::Fresh(fresh, scores) => (fresh, scores),
+            Depth::Exceeded(cause) => return Err(cause.clone()),
+            Depth::Ended => break,
+        };
         let mut best: Option<((usize, usize, usize), usize, T)> = None;
         for (index, node) in fresh.iter().enumerate() {
             match goal(node) {
                 Ok(Some(found)) => {
-                    let rank = score(&profile(ir, entity, node, hints, (&follow, &guards)));
+                    let rank = scores[index];
                     if best.as_ref().is_none_or(|(held, ..)| rank > *held) {
                         best = Some((rank, index, found));
                     }
@@ -6011,31 +6650,8 @@ fn search_rows<T>(
         }
         if let Some((_, index, found)) = best {
             vacuous(ir, entity, &fresh[index], hints)?;
-            return Ok((fresh.swap_remove(index), found));
+            return Ok((fresh[index].clone(), found));
         }
-        let mut next = Vec::new();
-        for node in &fresh {
-            let _held = holding(ir, entity, node);
-            for driver in drivers {
-                if matches!(
-                    driver.effect,
-                    ResolvedEffect::Creates | ResolvedEffect::Preserves
-                ) || driver
-                    .effect
-                    .transition()
-                    .is_some_and(|transition| !transition.from.contains(&node.state))
-                {
-                    continue;
-                }
-                let moved = successors(ir, entity, driver, node, actors, hints, arranging, &follow);
-                // A move reading a related row of this entity, which left no row: the one-level
-                // bound on such a row ([`super::related_guard`]) is what stopped it (#229).
-                nested |=
-                    moved.is_empty() && super::related_guard::reads_entity(driver.command, entity);
-                next.extend(moved);
-            }
-        }
-        level = next;
     }
     // Every field the guards read can be set (`unarrangeable` checked that first), so what failed
     // is the search for values that decide the guard: a guard the candidate values cannot
@@ -6047,18 +6663,185 @@ fn search_rows<T>(
             format!(
                 "`{entity}` stored {field} selecting this branch, over the rows {} bounded \
                  arrangements left{}{}",
-                seen.len(),
-                if beyond {
+                reached.seen.len(),
+                if reached.beyond {
                     format!("; {}", beyond_reach(&follow.names()))
                 } else {
                     String::new()
                 },
-                nested_bound(entity, nested && super::related_guard::nests(ir)),
+                nested_bound(entity, reached.nested && super::related_guard::nests(ir)),
             ),
-            seen.len(),
+            reached.seen.len(),
             0,
         )
     }))
+}
+
+/// What one stored-row search reached, depth by depth, as far as any goal asked it to go
+/// ([`search_rows`]).
+///
+/// Every branch of a command reading stored fields searches for its row with the same arguments —
+/// the entity, the command's guards as hints, the rows the creating branches leave — and only what
+/// the branch accepts differs. Which rows each depth holds depends on the arguments and the
+/// thread's arrangement context, never on the goal, so it is kept for the length of a synthesis
+/// ([`super::made::reached`]), and a later search asking the same question reads the depths back
+/// instead of advancing every row by every move again: with each command that moves the row, a
+/// search costs more and is asked more often.
+#[derive(Clone, Default)]
+pub(super) struct Reached {
+    /// Each depth, and how many searches for a row beside were cut while it was made
+    /// ([`super::related_guard::cuts`]), counted as cut again when it is read back.
+    depths: Vec<(Depth, usize)>,
+    /// The profiles of every row met so far: a row met again is no new node.
+    seen: BTreeSet<Profile>,
+    /// Whether a row met so far lies past the followed counter bound.
+    beyond: bool,
+    /// Whether a move reading a related row of this entity left no row.
+    nested: bool,
+}
+
+/// One depth of a search ([`Reached`]).
+#[derive(Clone)]
+enum Depth {
+    /// The rows first met at this depth, in the order met, and the [`score`] of each one's
+    /// [`profile`], made once when the row is met rather than again by every goal it serves.
+    Fresh(Vec<Arrangement>, Vec<(usize, usize, usize)>),
+    /// The rows met exceeded the search budget, [`MAX_NODES`]: the search refuses.
+    Exceeded(RefusalCause),
+    /// No row met at this depth was new: the search ends.
+    Ended,
+}
+
+/// The rows of `level` not met before, in order, recorded as met ([`Reached`]); or the refusal
+/// once the rows met exceed [`MAX_NODES`].
+fn meet(
+    ir: &EssIr,
+    entity: &EntityHandle,
+    hints: &[Predicate],
+    field: &str,
+    (follow, guards): (&Follow, &[(Predicate, BTreeSet<super::StateName>)]),
+    level: Vec<Arrangement>,
+    reached: &mut Reached,
+) -> Depth {
+    let mut fresh = Vec::new();
+    let mut scores = Vec::new();
+    for node in level {
+        // Rows beyond the followed counter bound share a node, as on the creation search.
+        reached.beyond |= follow.key(&node.settled).1;
+        let met = profile(ir, entity, &node, hints, (follow, guards));
+        let rank = score(&met);
+        if reached.seen.insert(met) {
+            fresh.push(node);
+            scores.push(rank);
+        }
+        if reached.seen.len() > MAX_NODES {
+            // Rows a followed counter tells apart fill the budget: no field lacks a value, so
+            // this is the counter's bound, `ESS-SYNTH-003`, not a type without a finite value
+            // (beyond10x/ess#226).
+            if !follow.is_empty() {
+                return Depth::Exceeded(RefusalCause::GuardUnsatisfiable {
+                    predicate: format!(
+                        "`{entity}` stored {field} selecting this branch: the rows the \
+                         followed counters leave exceed the search budget of {MAX_NODES} \
+                         rows; {}",
+                        beyond_reach(&follow.names())
+                    ),
+                    tried: reached.seen.len(),
+                    cut: 0,
+                });
+            }
+            return Depth::Exceeded(missing(
+                entity,
+                field,
+                "subject fact arrangement exceeds 64 lifecycle/fact combinations",
+            ));
+        }
+    }
+    if fresh.is_empty() {
+        Depth::Ended
+    } else {
+        Depth::Fresh(fresh, scores)
+    }
+}
+
+/// Every row the declared moves of `drivers` leave from the rows `fresh`, in order
+/// ([`search_rows`]); `nested` is set where a move reading a related row of this entity left none.
+#[allow(clippy::too_many_arguments)]
+fn advance(
+    ir: &EssIr,
+    (entity, drivers): (&EntityHandle, &[Driver<'_>]),
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    hints: &[Predicate],
+    arranging: &[&EntityHandle],
+    follow: &Follow,
+    fresh: &[Arrangement],
+    nested: &mut bool,
+) -> Vec<Arrangement> {
+    let mut next = Vec::new();
+    for node in fresh {
+        let _held = holding(ir, entity, node);
+        for driver in drivers {
+            if matches!(
+                driver.effect,
+                ResolvedEffect::Creates | ResolvedEffect::Preserves
+            ) || driver
+                .effect
+                .transition()
+                .is_some_and(|transition| !transition.from.contains(&node.state))
+            {
+                continue;
+            }
+            let moved = successors(ir, entity, driver, node, actors, hints, arranging, follow);
+            // A move reading a related row of this entity, which left no row: the one-level
+            // bound on such a row ([`super::related_guard`]) is what stopped it (#229).
+            *nested |=
+                moved.is_empty() && super::related_guard::reads_entity(driver.command, entity);
+            next.extend(moved);
+        }
+    }
+    next
+}
+
+/// The key a search is remembered by ([`Reached`]): its arguments and every thread-local the
+/// rows it reaches read, as [`creations`] keys the rows a creating branch leaves. `None` where a
+/// driver is a branch the model does not declare as such (one projected for a related guard),
+/// which has no stable name to be remembered by.
+#[allow(clippy::too_many_arguments)]
+fn reached_key(
+    ir: &EssIr,
+    entity: &EntityHandle,
+    drivers: &[Driver<'_>],
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    hints: &[Predicate],
+    field: &str,
+    arranging: &[&EntityHandle],
+    level: &[Arrangement],
+) -> Option<String> {
+    let mut named = Vec::with_capacity(drivers.len());
+    for driver in drivers {
+        let declared = ir
+            .commands()
+            .get(&driver.command.name)
+            .is_some_and(|command| std::ptr::eq(command, driver.command));
+        let outcome = driver
+            .command
+            .outcomes
+            .iter()
+            .position(|outcome| std::ptr::eq(outcome, driver.outcome))
+            .filter(|_| declared)?;
+        named.push(format!(
+            "{}|{outcome}|{:?}",
+            driver.command.name, driver.effect
+        ));
+    }
+    Some(format!(
+        "{entity:?}|{named:?}|{actors:?}|{hints:?}|{field}|{arranging:?}|{level:?}|{}|{:?}|{}|{}|{}",
+        held_key(ir),
+        super::earlier_runs::captured(),
+        crate::witness::under_test_key(),
+        super::related_guard::open_key(),
+        super::dropped_key(),
+    ))
 }
 
 /// Delete the actual row a create-or-refuse segment already stored. No creation or deletion is

@@ -483,6 +483,32 @@ pub(super) fn image(
 ) -> Result<(Image, Option<Vec<u8>>)> {
     image_within(root, Path::new(""), relative, mount)
 }
+/// One snapshot of an output path: its image and, for a file, its bytes.
+type Snapshot = (Image, Option<Vec<u8>>);
+/// Snapshots one read-only `--check` pass took, by output path. Nothing is written while a check
+/// holds its shared lock, so a second look at a path in the same pass sees the same bytes.
+#[derive(Default)]
+pub(super) struct Snapshots(std::cell::RefCell<BTreeMap<PathBuf, Snapshot>>);
+/// [`image`], answered from `cache` when this pass already took it. A refusal is not kept.
+pub(super) fn image_cached(
+    cache: Option<&Snapshots>,
+    root: &File,
+    relative: &Path,
+    mount: &Mount,
+) -> Result<(Image, Option<Vec<u8>>)> {
+    let Some(cache) = cache else {
+        return image(root, relative, mount);
+    };
+    if let Some(known) = cache.0.borrow().get(relative) {
+        return Ok(known.clone());
+    }
+    let taken = image(root, relative, mount)?;
+    cache
+        .0
+        .borrow_mut()
+        .insert(relative.to_path_buf(), taken.clone());
+    Ok(taken)
+}
 /// [`image`] of `name` in `directory`, which is `within` relative to the output root (such as
 /// `.ess-output`): the refusal still names the file relative to the output root.
 pub(super) fn image_within(
@@ -491,13 +517,18 @@ pub(super) fn image_within(
     name: &Path,
     mount: &Mount,
 ) -> Result<(Image, Option<Vec<u8>>)> {
-    snapshot(directory, name, mount).with_context(|| {
+    let taken = snapshot(directory, name, mount).with_context(|| {
         format!(
             "ess {} refused output {}",
             env!("CARGO_PKG_VERSION"),
             within.join(name).display()
         )
-    })
+    })?;
+    #[cfg(test)]
+    if within.as_os_str().is_empty() && matches!(taken.0, Image::File { .. }) {
+        replay::record_read();
+    }
+    Ok(taken)
 }
 fn snapshot(root: &File, relative: &Path, mount: &Mount) -> Result<(Image, Option<Vec<u8>>)> {
     let Some((parent, name)) = parent(root, relative, mount)? else {
@@ -634,6 +665,14 @@ pub(crate) mod replay {
     thread_local! {
         static ELIDED: Cell<Option<usize>> = const { Cell::new(None) };
         static PERFORMED: Cell<usize> = const { Cell::new(0) };
+        static READS: Cell<usize> = const { Cell::new(0) };
+    }
+    /// Regular files this thread has read whole into a snapshot.
+    pub(crate) fn reads() -> usize {
+        READS.get()
+    }
+    pub(super) fn record_read() {
+        READS.set(READS.get() + 1);
     }
     /// Actual fsync syscalls this thread has made, so a test can tell a control run from a replay.
     pub(crate) fn performed() -> usize {

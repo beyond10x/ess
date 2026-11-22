@@ -1,4 +1,4 @@
-#	models=473	lines=644
+#	models=483	lines=664
 crates/edge/ess-cli/tests/fixtures/adversary-shorthand-binary64/spec.yaml	components=1
 crates/edge/ess-cli/tests/fixtures/adversary-shorthand-binary64/spec.yaml	tracker-service	tracker.ops.Sample	definition=6994335e6a9e9266f5f0ce33a640350814ba12cce3c4ce7439fe61643a3a9cdb:5797
 crates/edge/ess-cli/tests/fixtures/adversary-shorthand-binary64/spec.yaml	tracker-service	tracker.ops.Sample	create	recorded
@@ -207,8 +207,16 @@ crates/verify/ess-conformance/tests/fixtures/claim-search/row-set-gt-0.yaml	comp
 crates/verify/ess-conformance/tests/fixtures/claim-search/row-set-gt-1.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/coalesce-guard.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/coalesce-selector.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/component-cause/system.yaml	ASSEMBLE
+crates/verify/ess-conformance/tests/fixtures/component-scope.yaml	components=4
+crates/verify/ess-conformance/tests/fixtures/component-scope.yaml	front	REFUSED	6bf0e21b1d1c22f9871f542eea2ff7af6cbd85437811a32e55a324d4bce91b9b:199
+crates/verify/ess-conformance/tests/fixtures/component-scope.yaml	marks-1	REFUSED	98f09b121d7097127fe80d9930f944ba7abb70ede116b095f6d702da1ac84d6c:399
+crates/verify/ess-conformance/tests/fixtures/component-scope.yaml	marks-2	REFUSED	b59e15c0698ba72060fa6e4582ec4502f69a548819b82b271c9173be2c59594a:399
+crates/verify/ess-conformance/tests/fixtures/component-scope.yaml	marks-3	REFUSED	c7976c663c63ae369f4d1c83aa71ae7b7bef7a4440225eadf93b0b3ebc393f9a:399
+crates/verify/ess-conformance/tests/fixtures/component-unrealised/system.yaml	ASSEMBLE
 crates/verify/ess-conformance/tests/fixtures/conditional-aggregate-measures.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/create-or-update-beside-related-refusal.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/created-rows-kept.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/current-time-guard.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/declared-behaviour.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/defined-over-optional-aggregates.yaml	components=0
@@ -355,6 +363,7 @@ crates/verify/ess-conformance/tests/fixtures/row-set-related-copy.yaml	component
 crates/verify/ess-conformance/tests/fixtures/row-set-struct-identity.yaml	components=1
 crates/verify/ess-conformance/tests/fixtures/row-set-struct-identity.yaml	vault-lib	REFUSED	bccabb45b72adc4e53e56a40e11f47886c7a6388102c64b527ae8406928bd29d:563
 crates/verify/ess-conformance/tests/fixtures/row-set-upsert.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/rows-moved-by-many-commands.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/set-effect-binding-causes/system.yaml	ASSEMBLE
 crates/verify/ess-conformance/tests/fixtures/set-effect-fresh-input/system.yaml	ASSEMBLE
 crates/verify/ess-conformance/tests/fixtures/set-effect-identity-pin.yaml	components=0
@@ -372,6 +381,8 @@ crates/verify/ess-conformance/tests/fixtures/set-update-written-input-against-li
 crates/verify/ess-conformance/tests/fixtures/state-in-subject-predicate.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/state-scoped-refusals.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/stored-field-guards.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/stored-row-bound-once.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/stored-rows-decided-once.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/structured-instances.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/subject-fact-complete-refusal.yaml	components=1
 crates/verify/ess-conformance/tests/fixtures/subject-fact-complete-refusal.yaml	instances	REFUSED	221f6bff572ea0aa17fa8cd2ec9f91fc8eb299fba2e5062ee07373393bcd08fe:215
@@ -398,6 +409,7 @@ crates/verify/ess-conformance/tests/fixtures/view-paging.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/view-param-binding.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/when-subject-eventual.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/when-subject-fallback-refusal.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/wrapped-runs-kept.yaml	components=0
 crates/verify/ess-conformance/tests/support_explore_optional_unknown/baseline.yaml	components=0
 crates/verify/ess-diff/tests/fixtures/narrowed/added-refusal.yaml	components=0
 crates/verify/ess-diff/tests/fixtures/narrowed/required-input.yaml	components=0
@@ -567,6 +579,14 @@ system-dir:crates/verify/ess-conformance/tests/fixtures/caller-model-seed/attr	c
 system-dir:crates/verify/ess-conformance/tests/fixtures/caller-model-seed/attr	svc	REFUSED	5c37f1e3cc700a54d36bfc25d1052c2d29e4901b1746b323f8531f9e0263a8ce:776
 system-dir:crates/verify/ess-conformance/tests/fixtures/caller-model-seed/plain	components=1
 system-dir:crates/verify/ess-conformance/tests/fixtures/caller-model-seed/plain	svc	REFUSED	c2ec73ca7d377aa0c4996c557b15b389e09f26fba2ae84d12b208618f8610a4e:324
+system-dir:crates/verify/ess-conformance/tests/fixtures/component-cause	components=2
+system-dir:crates/verify/ess-conformance/tests/fixtures/component-cause	note-service	vault.notes.Note	definition=f00c4ff22ade778c7aa2fef5f68816164a9ec83cd368a4bed8478b60aab69b21:1859
+system-dir:crates/verify/ess-conformance/tests/fixtures/component-cause	note-service	vault.notes.Note	vault.notes.EditNote	edited
+system-dir:crates/verify/ess-conformance/tests/fixtures/component-cause	token-service	vault.tokens.Token	definition=14f4a20352e456693a276561337bb3955021251fd99bcb27a1737c1168a8d3c5:1902
+system-dir:crates/verify/ess-conformance/tests/fixtures/component-cause	token-service	vault.tokens.Token	create	issued
+system-dir:crates/verify/ess-conformance/tests/fixtures/component-unrealised	components=1
+system-dir:crates/verify/ess-conformance/tests/fixtures/component-unrealised	desk-service	shop.desk.Ticket	definition=bd2e1f0a8df2fb050e4b002add4265122e634da93f6593116ea8a26dfb841e48:1597
+system-dir:crates/verify/ess-conformance/tests/fixtures/component-unrealised	desk-service	shop.desk.Ticket	create	opened
 system-dir:crates/verify/ess-conformance/tests/fixtures/predicate-refusal-policy-arranged-row	components=1
 system-dir:crates/verify/ess-conformance/tests/fixtures/predicate-refusal-policy-arranged-row	svc	REFUSED	9e084f9f47b1fc62c01affbbe5eeab805330fff3785c58d7e37e14450fa6250a:1070
 system-dir:crates/verify/ess-conformance/tests/fixtures/recursive-fixtures	components=0

@@ -55,16 +55,96 @@ pub(crate) struct Memoised<'ir> {
 impl Drop for Memoised<'_> {
     fn drop(&mut self) {
         if self.pushed {
-            MEMO.with(|memo| {
-                memo.borrow_mut().pop();
-            });
+            let top = MEMO.with(|memo| memo.borrow_mut().pop());
+            if let Some(top) = top {
+                park(top);
+            }
         }
     }
+}
+
+thread_local! {
+    /// The models whose answers outlast each synthesis of them ([`Keeping`]), innermost scope
+    /// last, by address: the answers while they are parked, `None` while the model is held.
+    static KEPT: RefCell<Vec<BTreeMap<usize, Option<Memo>>>> = const { RefCell::new(Vec::new()) };
+}
+
+/// Keeps the answers about each model it holds past every synthesis of that model, until dropped:
+/// a caller reading synthesized whole and again per command it focuses on asks the same searches
+/// of the same model (`synthesize::caller`). The guard holds the models, so no address it keeps can
+/// be taken by another model while their answers are parked.
+pub(crate) struct Keeping {
+    models: Vec<std::rc::Rc<EssIr>>,
+}
+
+impl Keeping {
+    /// A new innermost scope, holding no model yet.
+    pub(crate) fn open() -> Self {
+        KEPT.with(|kept| kept.borrow_mut().push(BTreeMap::new()));
+        Self { models: Vec::new() }
+    }
+
+    /// Keeps the answers about `ir` for as long as this guard lives.
+    pub(crate) fn keep(&mut self, ir: &std::rc::Rc<EssIr>) {
+        KEPT.with(|kept| {
+            if let Some(scope) = kept.borrow_mut().last_mut() {
+                scope.entry(address(ir)).or_insert(None);
+            }
+        });
+        self.models.push(std::rc::Rc::clone(ir));
+    }
+}
+
+impl Drop for Keeping {
+    fn drop(&mut self) {
+        // The answers go before the models they are about.
+        KEPT.with(|kept| {
+            kept.borrow_mut().pop();
+        });
+    }
+}
+
+fn address(ir: &EssIr) -> usize {
+    std::ptr::from_ref(ir) as usize
+}
+
+/// `ir`'s parked answers, held innermost again, where [`Keeping`] holds it.
+fn recall(ir: &EssIr) -> bool {
+    let parked = KEPT.with(|kept| {
+        kept.borrow_mut()
+            .last_mut()
+            .and_then(|scope| scope.get_mut(&address(ir)))
+            .and_then(Option::take)
+    });
+    let Some(parked) = parked else {
+        return false;
+    };
+    MEMO.with(|memo| memo.borrow_mut().push(parked));
+    true
+}
+
+/// Parks `memo` where [`Keeping`] holds its model; drops it otherwise.
+fn park(memo: Memo) {
+    KEPT.with(|kept| {
+        if let Some(slot) = kept
+            .borrow_mut()
+            .last_mut()
+            .and_then(|scope| scope.get_mut(&(memo.ir as usize)))
+        {
+            *slot = Some(memo);
+        }
+    });
 }
 
 /// Answers each witness search about `ir` once while the result is held, and again from the first
 /// answer after that. Nested for the same model, the outer holder keeps answering.
 pub(crate) fn memoise(ir: &EssIr) -> Memoised<'_> {
+    if recall(ir) {
+        return Memoised {
+            pushed: true,
+            model: PhantomData,
+        };
+    }
     let at = std::ptr::from_ref(ir);
     let pushed = MEMO.with(|memo| {
         let mut memo = memo.borrow_mut();
