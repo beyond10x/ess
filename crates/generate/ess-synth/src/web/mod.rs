@@ -431,13 +431,43 @@ fn regenerate() -> String {
 /// unsafe.
 ///
 /// A model that uses `Json` gets a seventh, stated only there so every other model's `TARGET.md`
-/// keeps its bytes: [`json_weakening`].
+/// keeps its bytes: [`json_weakening`]. A model that uses `Binary64` gets one more the same way:
+/// [`binary64_weakening`].
 fn weakenings(ir: &EssIr) -> Vec<TargetWeakening> {
     let mut out = fixed_weakenings();
     if crate::rust::json::used(ir) {
         out.push(json_weakening());
     }
+    if crate::rust::binary64::used(ir) {
+        out.push(binary64_weakening());
+    }
     out
+}
+
+/// What the page does to a `Binary64` value, which the bridge does not.
+///
+/// The bridge carries it as the Rust types crate's `primitives::Binary64` and writes it as the
+/// Rust server does. The page's glue parses every answer with `JSON.parse` and sends with
+/// `JSON.stringify`, so on the page the value is a JavaScript number.
+fn binary64_weakening() -> TargetWeakening {
+    TargetWeakening {
+        guarantee: "a `Binary64` value crosses with its sign of zero and in its shortest digits, \
+                    as the Rust server writes it"
+            .to_owned(),
+        instead: "the bridge carries it unchanged, as the Rust types crate's \
+                  `primitives::Binary64`; the page holds it as a JavaScript number, so a negative \
+                  zero shows and is sent as `0`, and a number shows in ECMAScript's spelling \
+                  (`1e+21`, `0.000001`). A number control that holds no finite number reads as \
+                  absent, and the bridge names the missing value"
+            .to_owned(),
+        affects: vec![
+            CapabilityKind::DomainType,
+            CapabilityKind::CommandContract,
+            CapabilityKind::EventType,
+            CapabilityKind::ErrorType,
+            CapabilityKind::ViewType,
+        ],
+    }
 }
 
 /// What the page does to a `Json` value, which the bridge does not.
