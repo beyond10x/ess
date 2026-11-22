@@ -28,10 +28,9 @@ use support_row_sets::model;
 const REPRO: &str =
     include_str!("../../../specify/ess-domain/tests/fixtures/identity-beside-row-set.yaml");
 
-const NO_SOURCE: &str = "      - name: no-source
-        when_related: {via: input.from_port, exists: false}
-        error: wiring.board.SourceNotFound
-";
+/// The first place a row-set refusal may be declared: below every `exists: false` branch over a
+/// named row, which answers before it in either order (`ess/27`, `conflicting_declaration`).
+const ABOVE_PREDICATES: &str = "      - name: source-not-output\n";
 const SOURCE_TAKEN: &str = "      - name: source-taken
         when_related:
           entity: wiring.board.Wire
@@ -484,8 +483,8 @@ fn adversary_u4_when_same_port_beside_a_named_refusal_orders_are_told_apart() {
             shape,
         },
         Variant {
-            label: "when same beside sink-not-input, row set declared first",
-            text: moved(&same, SOURCE_TAKEN, NO_SOURCE),
+            label: "when same beside sink-not-input, row set above the predicates",
+            text: moved(&same, SOURCE_TAKEN, ABOVE_PREDICATES),
             rule: vec![NS, NK, ST, SON, SNI],
             pairs,
             shape,
@@ -514,8 +513,8 @@ fn adversary_u4_when_apart_beside_the_source_refusal_orders_are_told_apart() {
             shape,
         },
         Variant {
-            label: "when apart beside source-not-output, row set declared first",
-            text: moved(&apart, SOURCE_TAKEN, NO_SOURCE),
+            label: "when apart beside source-not-output, row set above the predicates",
+            text: moved(&apart, SOURCE_TAKEN, ABOVE_PREDICATES),
             rule: vec![NS, NK, ST, SON, SNI],
             pairs,
             shape,
@@ -584,8 +583,8 @@ fn adversary_u4_two_when_refusals_beside_the_row_set_orders_are_told_apart() {
             shape,
         },
         Variant {
-            label: "two when refusals, row set declared first",
-            text: moved(&both, SOURCE_TAKEN, NO_SOURCE),
+            label: "two when refusals, row set above the predicates",
+            text: moved(&both, SOURCE_TAKEN, ABOVE_PREDICATES),
             rule: vec![NS, NK, ST, SON, SNI],
             pairs,
             shape,
@@ -1168,17 +1167,12 @@ fn security_u4_named_refusal_with_when_over_a_plain_input_is_witnessed_soundly()
         when: input.strict == false
 ",
     );
-    let first = edited(&on, SOURCE_TAKEN, "");
-    let first = edited(
-        &first,
-        "      - name: no-source\n",
-        &format!("{SOURCE_TAKEN}      - name: no-source\n"),
-    );
+    let first = moved(&on, SOURCE_TAKEN, ABOVE_PREDICATES);
     sound(&[
         ("strict sink refusal", on),
         ("lenient sink refusal", off),
         ("strict sink, lenient source", both),
-        ("strict sink, row set declared first", first),
+        ("strict sink, row set above the predicates", first),
     ]);
 }
 

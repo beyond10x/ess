@@ -844,8 +844,12 @@ fn with_folder() -> String {
     let text = replaced(
         &text,
         "      - name: created\n        creates: demo.d.Child\n",
-        &format!("{FOLDER_GUARDS}      - name: created\n        creates: demo.d.Child\n"),
+        &format!(
+            "{}      - name: created\n        creates: demo.d.Child\n",
+            folder_tenant_guard()
+        ),
     );
+    let text = missing_beside_the_parent(&text, folder_missing_guard());
     let text = replaced(
         &text,
         "sets: {child_id: input.child_id, parent_id: input.parent_id, tenant: input.tenant}",
@@ -1011,6 +1015,24 @@ fn folder_tenant_guard() -> &'static str {
     &FOLDER_GUARDS[at..]
 }
 
+/// The folder's missing-row refusal of [`FOLDER_GUARDS`].
+fn folder_missing_guard() -> &'static str {
+    &FOLDER_GUARDS[..FOLDER_GUARDS.len() - folder_tenant_guard().len()]
+}
+
+/// `CreateChild`'s missing-parent refusal.
+const PARENT_MISSING: &str = "      - name: parent-not-found
+        when_related: {via: input.parent_id, exists: false}
+        error: demo.d.NotFound
+";
+
+/// `text` with the missing-row refusal `missing` declared right below the missing parent's, above
+/// every refusal over a present row: from `ess/27` it answers before them in either order, and
+/// declared below one of them it is refused (`conflicting_declaration`).
+fn missing_beside_the_parent(text: &str, missing: &str) -> String {
+    replaced(text, PARENT_MISSING, &format!("{PARENT_MISSING}{missing}"))
+}
+
 /// [`with_folder`] without the parent guard, the folder's tenant guard `folder_guard` instead.
 fn folder_guarded(folder_guard: &str) -> String {
     let text = replaced(&with_folder(), CREATOR_GUARD, "");
@@ -1041,12 +1063,14 @@ fn with_shelf() -> String {
     );
     let text = replaced(
         &text,
-        FOLDER_GUARDS,
+        folder_tenant_guard(),
         &format!(
-            "{FOLDER_GUARDS}{}",
-            FOLDER_GUARDS.replace("folder", "shelf")
+            "{}{}",
+            folder_tenant_guard(),
+            folder_tenant_guard().replace("folder", "shelf")
         ),
     );
+    let text = missing_beside_the_parent(&text, &folder_missing_guard().replace("folder", "shelf"));
     let text = replaced(
         &text,
         "      - {name: child_id, type: demo.d.ChildId}\n      - {name: folder_id, type: \

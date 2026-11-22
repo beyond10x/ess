@@ -1343,7 +1343,7 @@ fn run_cascade_witnessed(model: &str) {
 
 #[test]
 fn a_cascade_onto_rows_whose_creator_needs_the_subject_active_and_a_second_row_is_witnessed() {
-    let model = graph(&[UNKNOWN_RUN, RUN_NOT_ACTIVE, UNKNOWN_NODE]);
+    let model = graph(&[UNKNOWN_RUN, UNKNOWN_NODE, RUN_NOT_ACTIVE]);
     run_cascade_witnessed(&model);
     run_cascade_witnessed(&at_format(&model, "ess/32"));
 }

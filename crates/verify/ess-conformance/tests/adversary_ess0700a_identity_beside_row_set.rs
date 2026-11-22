@@ -9,6 +9,9 @@ use ess_conformance::interpret::Interpreted;
 use ess_conformance::report::Status;
 use ess_conformance::synthesize::{synthesize, Synthesis};
 use ess_conformance::target::*;
+use ess_domain::spec::{RawSpecFile, Specification};
+use ess_domain::system::Source;
+use ess_primitives::error::ValidationCode;
 use support_row_sets::{model, rows};
 
 const REPRO: &str =
@@ -78,14 +81,6 @@ fn adversary_a_variants_synthesize_every_branch_and_pass() {
 ";
     let variants: Vec<(&str, String)> = vec![
         (
-            "row set declared first",
-            moved(SOURCE_TAKEN, "      - name: no-source\n"),
-        ),
-        (
-            "row set between the named rows",
-            moved(SOURCE_TAKEN, NO_SINK),
-        ),
-        (
             "row set above the predicates",
             moved(SOURCE_TAKEN, SOURCE_NOT_OUTPUT),
         ),
@@ -145,6 +140,47 @@ fn adversary_a_variants_synthesize_every_branch_and_pass() {
         }
     }
     assert!(report.is_empty(), "{}", report.join("\n"));
+}
+
+/// The row set declared above a missing-row branch is an order the rule refuses (`ess/27`): a
+/// missing row answers before the occupied source in either order, so validation names each
+/// missing-row branch declared below the row set, and nothing else.
+#[test]
+fn adversary_a_row_set_above_a_missing_row_branch_is_refused() {
+    let orders: [(&str, String, &[&str]); 2] = [
+        (
+            "row set declared first",
+            moved(SOURCE_TAKEN, "      - name: no-source\n"),
+            &["no-source", "no-sink"],
+        ),
+        (
+            "row set between the named rows",
+            moved(SOURCE_TAKEN, NO_SINK),
+            &["no-sink"],
+        ),
+    ];
+    for (label, text, below) in orders {
+        let raw = RawSpecFile::parse(&text).unwrap_or_else(|error| panic!("{error}"));
+        let Err(errors) = Specification::assemble([(Source::new("fixture.yaml"), raw)]) else {
+            panic!("{label}: the row set above a missing-row branch is refused");
+        };
+        for lead in below {
+            let at = format!("command.wiring.board.Connect.outcomes.{lead}");
+            assert!(
+                errors.as_slice().iter().any(|error| {
+                    error.code == ValidationCode::ConflictingDeclaration
+                        && error.location.ends_with(&at)
+                        && error.message.contains("`source-taken`")
+                }),
+                "{label}: `{lead}` declared below `source-taken` is refused:\n{errors}"
+            );
+        }
+        assert_eq!(
+            errors.len(),
+            below.len(),
+            "{label}: one refusal per missing-row branch:\n{errors}"
+        );
+    }
 }
 
 /// Within step 4 declaration order decides between a refusal over a present named row and a

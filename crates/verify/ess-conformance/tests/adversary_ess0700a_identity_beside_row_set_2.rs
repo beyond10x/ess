@@ -48,6 +48,9 @@ const CONNECTED: &str = "      - name: connected
         payload: {wiring.board.Connected: {wire_id: {generated: true}}}
         sets: {from_port: input.from_port, to_port: input.to_port}
 ";
+/// The first place a row-set refusal may be declared: below every `exists: false` branch over a
+/// named row, which answers before it in either order (`ess/27`, `conflicting_declaration`).
+const ABOVE_PREDICATES: &str = "      - name: source-not-output\n";
 const MAY: &str = "    may: [wiring.board.AddPort, wiring.board.Connect]\n";
 const VIEWS: &str = "views:\n";
 
@@ -580,8 +583,8 @@ fn adversary_a2_every_step_4_order_is_told_apart_across_declaration_orders() {
             shape: PLAIN,
         },
         Variant {
-            label: "row set declared first",
-            text: moved(REPRO, SOURCE_TAKEN, NO_SOURCE),
+            label: "row set above the predicates",
+            text: moved(REPRO, SOURCE_TAKEN, ABOVE_PREDICATES),
             rule: vec![NS, NK, ST, SON, SNI],
             pairs: source_sink_pairs(),
             shape: PLAIN,
@@ -631,11 +634,11 @@ fn adversary_a2_count_row_set_orders_are_told_apart() {
             },
         },
         Variant {
-            label: "count gte 2 declared first",
+            label: "count gte 2 above the predicates",
             text: moved(
                 &count,
                 &SOURCE_TAKEN.replace("          exists: true\n", "          count: {gte: 2}\n"),
-                NO_SOURCE,
+                ABOVE_PREDICATES,
             ),
             rule: vec![NS, NK, ST, SON, SNI],
             pairs: source_sink_pairs(),
@@ -705,8 +708,8 @@ fn adversary_a2_row_set_over_a_missing_named_row_orders_are_told_apart() {
             shape,
         },
         Variant {
-            label: "imported wires, row set declared first",
-            text: moved(&import, SOURCE_TAKEN, NO_SOURCE),
+            label: "imported wires, row set above the predicates",
+            text: moved(&import, SOURCE_TAKEN, ABOVE_PREDICATES),
             rule: vec![NS, NK, ST, SON, SNI],
             pairs: all,
             shape,
@@ -854,8 +857,8 @@ fn adversary_a2_when_beside_a_named_refusal_orders_are_told_apart() {
             shape,
         },
         Variant {
-            label: "when: beside a named refusal, row set declared first",
-            text: moved(&apart, SOURCE_TAKEN, NO_SOURCE),
+            label: "when: beside a named refusal, row set above the predicates",
+            text: moved(&apart, SOURCE_TAKEN, ABOVE_PREDICATES),
             rule: vec![NS, NK, ST, SON, SNI],
             pairs: source_sink_pairs(),
             shape,
@@ -971,7 +974,7 @@ fn adversary_a2_forall_without_named_rows_kills_forall_mutants_at_ess_31() {
 fn adversary_a2_synthesis_is_deterministic_across_variants() {
     let texts = [
         REPRO.to_owned(),
-        moved(REPRO, SOURCE_TAKEN, NO_SOURCE),
+        moved(REPRO, SOURCE_TAKEN, ABOVE_PREDICATES),
         edited(
             REPRO,
             "          exists: true\n",
