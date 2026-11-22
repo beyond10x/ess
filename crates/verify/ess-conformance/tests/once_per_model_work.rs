@@ -4,14 +4,20 @@
 //! Each case builds a model whose commands all ask the same question of the model and holds a
 //! synthesis to a count of how often the answer was derived: a work bound rather than a clock.
 
-use ess_compiler::{ir::EssIr, resolve::compile, source::SourceMap};
-use ess_conformance::synthesize::{
-    absent_event_lists_built, precedence_commands_read, precedence_replays, synthesize, Synthesis,
+use std::path::Path;
+
+use ess_compiler::{
+    ir::{EssIr, ResolvedTypeRef},
+    resolve::compile,
+    source::SourceMap,
 };
-use ess_conformance::ScenarioStep;
+use ess_conformance::synthesize::{
+    absent_event_lists_built, precedence_replays, synthesize, Synthesis,
+};
 use ess_domain::{
     spec::{RawSpecFile, Specification},
     system::Source,
+    Primitive,
 };
 
 fn ir(text: &str) -> EssIr {
@@ -82,6 +88,28 @@ fn a_model_is_scanned_for_binary64_once() {
         );
         assert_eq!(scans, 1, "the model was scanned for Binary64 {scans} times");
     }
+
+    // A copy with rewritten commands scans for itself: here its command gains a Binary64 input
+    // the original's scan never saw.
+    let ir = ir(&filing(1, 1, "", "", ""));
+    assert!(ess_compiler::binary64::locations(&ir).is_empty());
+    let rewritten = ir.with_commands_rewritten(|command| {
+        let mut command = command.clone();
+        let mut added = command.input[0].clone();
+        added.name = "weight".to_owned();
+        added.type_ref = ResolvedTypeRef::Primitive {
+            name: Primitive::Binary64,
+        };
+        command.input.push(added);
+        command
+    });
+    let (found, scans) =
+        ess_compiler::binary64::scans(|| ess_compiler::binary64::locations(&rewritten));
+    assert_eq!(scans, 1, "the rewritten model was scanned {scans} times");
+    assert_eq!(
+        found.into_iter().collect::<Vec<_>>(),
+        ["command.ticket.desk.File000.input.weight"]
+    );
 }
 
 /// Twelve commands emitting one event of forty: the events none of them may publish are listed
@@ -147,29 +175,26 @@ fn an_unguarded_command_s_input_is_not_replayed_for_precedence() {
     assert!(replays > 0, "the guarded command's input was not replayed");
 }
 
-/// Resolving the command a step sends reads that command, not every command declared before it.
-/// Unfixed, the 32 steps over 32 commands read 1 + 2 + ... + 32 = 528 commands.
+/// Resolving the command a step sends is one lookup in the map keyed by command name, not a scan
+/// comparing the name with every command declared before it: 64 commands took 2,080 comparisons.
+/// A counter beside the lookup counts the same for both, so the precedence check's source is read,
+/// as `ess-compiler`'s `sealed_state` reads the IR's.
 #[test]
 fn a_step_s_command_is_resolved_by_its_name() {
-    let ir = ir(&filing(32, 1, "", "", ""));
-    let (synthesis, read) = precedence_commands_read(|| synthesize(&ir));
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/synthesize.rs");
+    let source = std::fs::read_to_string(&path)
+        .unwrap_or_else(|error| panic!("read {}: {error}", path.display()));
+    let body = source
+        .split("\nfn contradicted(")
+        .nth(1)
+        .expect("the precedence check exists");
+    let body = &body[..body.find("\n}\n").expect("the precedence check ends")];
     assert!(
-        refusals(&synthesis).is_empty(),
-        "refusals: {:#?}",
-        refusals(&synthesis)
+        body.contains("ir.commands().get(invoked.name())"),
+        "the precedence check does not look the command up by its name:\n{body}"
     );
-    let sent = u64::try_from(
-        synthesis
-            .suite
-            .scenarios
-            .values()
-            .flat_map(|scenario| &scenario.steps)
-            .filter(|step| matches!(step, ScenarioStep::ExecuteCommand { .. }))
-            .count(),
-    )
-    .expect("the count fits");
     assert!(
-        read <= sent,
-        "{read} commands were read to resolve the {sent} steps that send one"
+        !body.contains("command.name == invoked.name()"),
+        "the precedence check compares the name with each command:\n{body}"
     );
 }

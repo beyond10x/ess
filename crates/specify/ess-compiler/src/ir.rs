@@ -3386,8 +3386,9 @@ pub struct EssIr {
     #[serde(skip)]
     format: ess_domain::system::FormatVersion,
     /// What scanning the model for `Binary64` found, kept for the model's lifetime: an IR never
-    /// changes once built, so the first scan's answer is every later one's. Not serialized, and
-    /// equal on every IR, so a model keeps its bytes, digest and equality.
+    /// changes once built, so the first scan's answer is every later one's, and
+    /// [`EssIr::with_commands_rewritten`] gives its rewritten copy an empty scan. Not serialized,
+    /// and equal on every IR, so a model keeps its bytes, digest and equality.
     #[serde(skip)]
     binary64: crate::binary64::Scan,
 }
@@ -3569,6 +3570,8 @@ impl EssIr {
         rewrite: impl Fn(&ResolvedCommand) -> ResolvedCommand,
     ) -> Self {
         let mut rewritten = self.clone();
+        // A rewritten command may hold another input, so the copy scans for itself.
+        rewritten.binary64 = crate::binary64::Scan::default();
         for command in rewritten.commands.values_mut() {
             *command = rewrite(command);
         }

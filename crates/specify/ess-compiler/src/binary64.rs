@@ -14,8 +14,9 @@ use std::sync::OnceLock;
 
 /// What scanning one model for `Binary64` found: its positions ([`uses`]) and the declared types a
 /// conformance run reaches ([`reached_types`]), each filled by its first asking. Held by the
-/// [`EssIr`] it describes, which never changes once built, so synthesis, admission and the
-/// generators read one scan however often they ask (seven times per synthesis before).
+/// [`EssIr`] it describes, which never changes once built (a copy with rewritten commands starts
+/// with an empty one), so synthesis, admission and the generators read one scan however often
+/// they ask (seven times per synthesis before).
 ///
 /// Every `Scan` equals every other: it is a cache of the model, not part of it.
 #[derive(Clone, Default)]
