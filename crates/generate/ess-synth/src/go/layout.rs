@@ -1214,7 +1214,7 @@ impl Layout {
         imports: &mut BTreeSet<String>,
     ) -> String {
         let wrapper = match primitive {
-            Primitive::Binary64 => unreachable!("Binary64 is refused before target rendering"),
+            Primitive::Binary64 => "Binary64",
             // The document's text in a wrapper, emitted only for a model that uses `Json` (see
             // `super::json` for why not `json.RawMessage`).
             Primitive::Json => "Json",

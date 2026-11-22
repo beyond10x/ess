@@ -538,6 +538,12 @@ fn wire_file(
             response_encoder(&mut body, &emit, command, members);
         }
     }
+    if super::binary64::used(ir) {
+        body.push_str(&super::binary64::wire_helper(
+            &emit.primitive_type(Primitive::Binary64),
+            &emit.primitive_ctor(Primitive::Binary64),
+        ));
+    }
     emit.file_at(format!("{}/{WIRE}.go", package.dir), provenance, "", &body)
 }
 
@@ -995,7 +1001,7 @@ fn encode_into(
 /// One primitive, in the rendering the published contracts fix.
 fn encode_primitive(primitive: Primitive, source: &str) -> String {
     match primitive {
-        Primitive::Binary64 => unreachable!("Binary64 is refused before target rendering"),
+        Primitive::Binary64 => format!("json.Number({source}.Token())"),
         Primitive::Json => {
             // Embedded as it is spelled: members in order, numbers as written (beyond10x/ess#224).
             format!("json.RawMessage({source}.Value())")
@@ -1011,7 +1017,7 @@ fn encode_primitive(primitive: Primitive, source: &str) -> String {
 /// One map key, as the text a JSON object key has to be.
 fn encode_key(primitive: Primitive, source: &str) -> String {
     match primitive {
-        Primitive::Binary64 => unreachable!("Binary64 is refused before target rendering"),
+        Primitive::Binary64 => unreachable!("ess-domain refuses a Binary64 map key"),
         Primitive::Json => unreachable!("ess-domain refuses a Json map key"),
         Primitive::String => source.to_owned(),
         Primitive::Boolean => format!("strconv.FormatBool({source})"),
@@ -1176,7 +1182,7 @@ fn decode_into(
 /// target's words (`rust::wire::decode_primitive`), so the two servers refuse one value alike.
 fn decode_primitive(primitive: Primitive) -> (&'static str, &'static str) {
     match primitive {
-        Primitive::Binary64 => unreachable!("Binary64 is refused before target rendering"),
+        Primitive::Binary64 => ("binary64At", "a finite Binary64 number"),
         Primitive::Json => ("jsonAt", "any JSON value"),
         Primitive::String => ("textAt", "a string"),
         Primitive::Boolean => ("boolAt", "a boolean"),
@@ -1201,7 +1207,7 @@ fn decode_key(
 ) -> String {
     let held = format!("key{}", next(slot));
     match primitive {
-        Primitive::Binary64 => unreachable!("Binary64 is refused before target rendering"),
+        Primitive::Binary64 => unreachable!("ess-domain refuses a Binary64 map key"),
         Primitive::Json => unreachable!("ess-domain refuses a Json map key"),
         Primitive::String => return source.to_owned(),
         Primitive::Boolean => {
