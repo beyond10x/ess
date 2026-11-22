@@ -153,21 +153,60 @@ impl fmt::Display for TargetFailure {
 
 impl std::error::Error for TargetFailure {}
 
-pub(crate) fn binary64(
-    ir: &ess_compiler::EssIr,
-    plan: &SynthesisPlan,
-    target: Target,
-) -> Result<(), TargetFailure> {
-    let causes = ess_compiler::binary64::locations(ir)
+/// The detail of a `Binary64` position a target with no codec for it refuses.
+const NO_BINARY64_CODEC: &str = "this target has no qualified finite Binary64 codec";
+
+/// The detail of a `Binary64` position a target with a codec still does not carry.
+const UNCARRIED_BINARY64: &str = "a Binary64 here is a key, a lookup or a delivery route, which \
+    this target does not carry; it carries one in entity fields, command input and response, \
+    event and error fields, and view fields and row";
+
+/// Whether `target` carries a finite `Binary64`: each target's own switch, so the unit that
+/// lands a codec flips one constant in a file it owns.
+fn carries_binary64(target: Target) -> bool {
+    match target {
+        Target::Rust => crate::rust::binary64::CARRIED,
+        Target::Go => crate::go::binary64::CARRIED,
+        Target::Web => crate::rust::binary64::CARRIED && crate::web::binary64::CARRIED,
+        Target::Clap => false,
+    }
+}
+
+/// One cause per `Binary64` position the target refuses: every position where it has no codec,
+/// and where it has one, every position the suite contract does not carry either
+/// (`ess_compiler::binary64::uncarried_uses`).
+fn binary64_causes(ir: &ess_compiler::EssIr, carried: bool) -> Vec<TargetFailureCause> {
+    let (locations, detail): (Vec<String>, &str) = if carried {
+        (
+            ess_compiler::binary64::uncarried_uses(ir)
+                .into_keys()
+                .collect(),
+            UNCARRIED_BINARY64,
+        )
+    } else {
+        (
+            ess_compiler::binary64::locations(ir).into_iter().collect(),
+            NO_BINARY64_CODEC,
+        )
+    };
+    locations
         .into_iter()
         .map(|at| {
             TargetFailureCause::new(
                 TargetFailureCode::MissingRepresentation,
                 vec![at],
-                "this target has no qualified finite Binary64 codec".to_owned(),
+                detail.to_owned(),
             )
         })
-        .collect::<Vec<_>>();
+        .collect()
+}
+
+pub(crate) fn binary64(
+    ir: &ess_compiler::EssIr,
+    plan: &SynthesisPlan,
+    target: Target,
+) -> Result<(), TargetFailure> {
+    let causes = binary64_causes(ir, carries_binary64(target));
     if causes.is_empty() {
         Ok(())
     } else {
@@ -360,5 +399,51 @@ pub(crate) fn shorthand(
         Ok(())
     } else {
         Err(TargetFailure::new(ir, target, plan, causes))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const MODEL: &str = "format: ess/2\nsystem: demo\nversion: v1\ndomains: [demo.core]\ndomain: demo.core\ntypes:\n  - {name: demo.core.Ratio, kind: newtype, of: Binary64}\nentities:\n  - name: demo.core.Gauge\n    identity: {name: gauge_id, type: Binary64}\n    fields:\n      - {name: level, type: demo.core.Ratio}\n    lifecycle: {initial: Open, states: [Open], terminal: [Open], transitions: []}\n";
+
+    fn ir() -> ess_compiler::EssIr {
+        let spec = ess_domain::Specification::assemble([(
+            ess_domain::system::Source::new("spec.yaml"),
+            ess_domain::spec::RawSpecFile::parse(MODEL).expect("well formed"),
+        )])
+        .expect("validates");
+        let mut sources = ess_compiler::source::SourceMap::new();
+        sources.insert("spec.yaml", MODEL);
+        ess_compiler::resolve::compile(&spec, &sources).expect("compiles")
+    }
+
+    #[test]
+    fn a_carrying_target_refuses_only_the_uncarried_binary64() {
+        let causes = binary64_causes(&ir(), true);
+        assert_eq!(causes.len(), 1, "{causes:?}");
+        assert_eq!(causes[0].sources(), ["entity demo.core.Gauge.identity"]);
+        assert_eq!(causes[0].detail(), UNCARRIED_BINARY64);
+        assert_eq!(causes[0].code(), TargetFailureCode::MissingRepresentation);
+    }
+
+    #[test]
+    fn a_target_without_a_codec_refuses_every_binary64() {
+        let causes = binary64_causes(&ir(), false);
+        let sources: Vec<&str> = causes
+            .iter()
+            .flat_map(|cause| cause.sources().iter().map(String::as_str))
+            .collect();
+        assert_eq!(
+            sources,
+            [
+                "entity demo.core.Gauge.identity",
+                "types.demo.core.Ratio.of"
+            ]
+        );
+        assert!(causes
+            .iter()
+            .all(|cause| cause.detail() == NO_BINARY64_CODEC));
     }
 }

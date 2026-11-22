@@ -92,10 +92,9 @@ fn changing_clock_encoding_changes_contract_digest_without_erasing_legacy_primit
 
 #[test]
 fn existing_target_refusals_on_reading_models_use_failure3() {
-    let source = include_str!("fixtures/clock-reading.yaml").replace(
-        "      - {name: offset",
-        "      - {name: unsupported, type: Binary64}\n      - {name: offset",
-    );
+    let original = include_str!("fixtures/clock-reading.yaml");
+    let source = original.replacen("\nevents:\n", "\nentities:\n  - name: chronology.reading.Gauge\n    identity: {name: gauge_id, type: Binary64}\n    fields: []\n    lifecycle: {initial: Open, states: [Open], terminal: [Open], transitions: []}\nevents:\n", 1);
+    assert_ne!(source, original);
     for target in [Target::Rust, Target::Go] {
         let failure = synthesize_for(&fixture_text(&source), target)
             .err()

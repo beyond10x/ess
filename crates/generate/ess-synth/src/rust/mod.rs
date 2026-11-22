@@ -29,6 +29,7 @@
 mod accessor;
 mod actor;
 pub(crate) mod behaviour;
+pub(crate) mod binary64;
 mod condition;
 mod context;
 mod entity;

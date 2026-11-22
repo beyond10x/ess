@@ -890,7 +890,7 @@ pub(crate) enum Step {
 /// What a path reads, as a guard compares it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum Kind {
-    /// An `Integer` or `Decimal` (or a count), compared by value.
+    /// An `Integer`, `Decimal` or `Binary64` (or a count), compared by value.
     Number(Primitive),
     /// A `String` or `Uuid`, compared for equality by its text.
     Text,
@@ -1137,7 +1137,9 @@ fn walk(
                     return Err(unknown());
                 }
                 let kind = match name {
-                    Primitive::Integer | Primitive::Decimal => Kind::Number(*name),
+                    Primitive::Integer | Primitive::Decimal | Primitive::Binary64 => {
+                        Kind::Number(*name)
+                    }
                     Primitive::String | Primitive::Uuid => Kind::Text,
                     Primitive::Boolean => Kind::Bool,
                     // From ess/22 a `Timestamp` compares by its instant (decision 2); below it, it
@@ -1326,6 +1328,13 @@ pub(crate) fn supported(ir: &EssIr, env: &Env<'_>, predicate: &Predicate) -> Res
         }
         Predicate::AnyOf { path, values } | Predicate::NoneOf { path, values } => {
             let kind = resolve(ir, env, path)?.kind;
+            // A generated guard tests membership by the text it reads, and `1` and `1.0` name one
+            // binary64: no membership over one is generated.
+            if kind == Kind::Number(Primitive::Binary64) {
+                return Err(format!(
+                    "`{predicate}`, membership over a Binary64, which no generated guard compares"
+                ));
+            }
             values
                 .iter()
                 .try_for_each(|value| literal_matches(&kind, Some(value)))

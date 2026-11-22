@@ -98,11 +98,9 @@ fn go_accessor_root_uses_the_allocated_event_member_identity() {
 
 #[test]
 fn old_cause_failures_on_accessor_models_use_failure3_while_legacy_bytes_keep_their_major() {
-    let text = include_str!("fixtures/bounded-accessor.yaml").replacen(
-        "name: result\n        type: String",
-        "name: result\n        type: Binary64",
-        1,
-    );
+    let original = include_str!("fixtures/bounded-accessor.yaml");
+    let text = original.replacen("\nevents:\n", "\nentities:\n  - name: projection.core.Gauge\n    identity: {name: gauge_id, type: Binary64}\n    fields: []\n    lifecycle: {initial: Open, states: [Open], terminal: [Open], transitions: []}\nevents:\n", 1);
+    assert_ne!(text, original);
     for target in [Target::Rust, Target::Go, Target::Web, Target::Clap] {
         let failure = synthesize_for(&fixture_text(&text), target).err().unwrap();
         let json = serde_json::to_value(&failure).unwrap();
