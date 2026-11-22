@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:validation-refuses-an-exists-false-branch-declared-below-a-refusal-it-answers-before
 kind: story
-status: draft
+status: active
 title: 'Validation refuses an exists: false branch declared below a present-row refusal over another row that it answers before'
 relations:
 - serves: vision:O2
@@ -19,7 +19,10 @@ scope:
   path: crates/specify/ess-domain/tests/held_state_order.rs
 - confidence: inferred
   path: website/docs/reference/predicates.md
-revision: 7
+revision: 9
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-22T04:48:03Z", actor: "human:timo", revision: 8}
+- {from: "proposed", to: "active", at: "2026-11-22T04:48:05Z", actor: "human:timo", revision: 9}
 ---
 ## Outcome
 

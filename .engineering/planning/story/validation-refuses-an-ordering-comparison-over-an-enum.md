@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:validation-refuses-an-ordering-comparison-over-an-enum
 kind: story
-status: draft
+status: active
 title: Validation refuses an ordering comparison over an enum instead of letting every evaluator order its variant names by bytes
 relations:
 - serves: vision:O2
@@ -19,7 +19,10 @@ scope:
   path: docs/design/language-grids.md
 - confidence: inferred
   path: website/docs/reference/predicates.md
-revision: 7
+revision: 9
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-22T04:48:01Z", actor: "human:timo", revision: 8}
+- {from: "proposed", to: "active", at: "2026-11-22T04:48:02Z", actor: "human:timo", revision: 9}
 ---
 ## Outcome
 
