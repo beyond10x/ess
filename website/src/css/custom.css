@@ -1,0 +1,5 @@
+/* A link inside running text is underlined in both themes, so it is told apart without colour
+   (WCAG 1.4.1, axe link-in-text-block). Navigation, cards and heading anchors keep their own look. */
+.markdown :is(p, li, td, th, dd, blockquote) a:not(.hash-link) {
+  text-decoration: underline;
+}
