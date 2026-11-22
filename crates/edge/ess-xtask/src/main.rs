@@ -9,6 +9,7 @@ mod format_history;
 #[path = "../../ess-cli/src/git_checkout.rs"]
 mod git_checkout;
 mod infra_acceptance;
+mod pr_watch;
 mod presentation;
 mod release_notes;
 #[cfg(test)]
@@ -160,6 +161,10 @@ enum Command {
         #[command(subcommand)]
         command: ReleaseCommand,
     },
+    /// Wait for a pull request's check runs to end; exit 1 naming each red run and its
+    /// failing task, 2 on a timeout or a `gh` failure. Reads GitHub through `gh`, writes
+    /// nothing.
+    PrWatch(pr_watch::Args),
 }
 
 #[derive(Debug, Subcommand)]
@@ -184,7 +189,11 @@ enum ReleaseCommand {
 }
 
 fn main() -> ExitCode {
-    match run(Cli::parse()) {
+    let cli = Cli::parse();
+    if let Command::PrWatch(args) = &cli.command {
+        return pr_watch::main(args);
+    }
+    match run(cli) {
         Ok(output) => {
             if !output.is_empty() {
                 print!("{output}");
@@ -277,6 +286,7 @@ fn run(cli: Cli) -> Result<String, String> {
             let stranded = tags_off_main(&root, &tags)?;
             release_status(&root, &version, &changelog, &tags, &releases, &stranded)
         }
+        Command::PrWatch(_) => Err("pr-watch is dispatched by main, not by run".to_owned()),
     }
 }
 
