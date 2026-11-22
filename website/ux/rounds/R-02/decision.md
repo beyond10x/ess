@@ -18,6 +18,11 @@ lane `full`), through `cargo xtask ux-ratchet --round website/ux/rounds/R-02/rou
 --decision R-02-baseline`: worse values carry the decision id, and every R-01 scenario R-02 no
 longer measures (the per-site `site/*` keys, replaced by one scenario per page configuration) is
 listed under `dropped` with it. The gate lane's scope is then taken from the gate's own run
-(`--round website/ux/.out/gate-1/round.json --update`).
+(`--round website/ux/.out/gate-7/round.json --update`, the first of the three timed gate runs).
 
 Decided by the coordinator in the brief of R-02, 2026-11-22.
+
+Result, 2026-11-22: the baseline holds 3,556 values in 578 scenarios (556 page configurations, 22
+task runs); 23 values worse than R-01's carry `R-02-baseline`, and R-01's 26 lost values are listed
+under `dropped` (5 entries). The gate lane holds 44 scenarios, taken from `gate-7`; `gate-8` and the
+round check clean against it.

@@ -1,7 +1,8 @@
 # UX trend: ESS documentation website
 
-One row per round. Lower is better in every column but "tasks done".
+One row per round. Lower is better in every column but "measured" and "done".
 
-| round | date | pages | gate 1 pages | gate 2 pages | axe serious/critical nodes | axe pages | tasks done | keyboard done | actions (sum, gating) | steers (sum) |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| R-01 | 2026-11-22 | 139 | 0 | 138 | 2733 | 104 | 18/18 | 4/4 | 132 | 23 |
+| round | date | engine | pages measured | unmeasured | gate 1 pages | gate 2 pages | axe serious/critical nodes | axe pages | pointer runs done | over the card limit | keyboard runs done | actions (sum, pointer) | steers (sum) |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| R-01 | 2026-11-22 | 70fa9ba08409 | 138 of 139 | – | 0 | 138 | 2733 | 104 | 18/18 | – | 4/4 | 132 | 23 |
+| R-02 | 2026-11-22 | 21e8c21e0346 | 139 of 139 | 0 | 0 | 2 | 2732 | 105 | 18/18 | 10 | 4/4 | 131 | 89 |
