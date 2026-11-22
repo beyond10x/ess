@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [0.97.2] — 2026-11-22
+
+### Fixed
+
+- `ess verify conform synthesize` and `ess generate synthesize` no longer take minutes for a domain whose entity is moved by many commands, as an adopter reported: one domain of one entity with 8 commands that move it took 198 to 254 s on 0.97.1 and now takes under 10 s. Every branch of a command that reads stored fields searched for its row anew, advancing every row by every move and checking every input for the branch it selects, although the branches asked the same search and differed only in the branch they look for. What a search reaches, depth by depth, and the branch each input selects on a row are now kept once per synthesis and context. The synthesized suites are byte for byte the same.
+
 ## [0.97.1] — 2026-11-21
 
 ### Changed
