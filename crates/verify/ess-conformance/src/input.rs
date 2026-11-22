@@ -1663,11 +1663,65 @@ fn variant_names(variants: &[ess_domain::types::EnumVariant]) -> Vec<String> {
 }
 
 /// Binds `value` at `path`, and records it as present where it is an aggregate ([`mark_aggregate`]).
+///
+/// The walk below descends with one path it extends and shortens in place
+/// ([`FactPath::push`]): a path is copied only where a fact or a presence mark is bound to it.
+/// Extending a copy of the whole path at every member made the work of a nested value grow with
+/// its depth at every level.
 fn project(
     ir: &EssIr,
     type_ref: &ResolvedTypeRef,
     value: &Node,
     path: &FactPath,
+    depth: usize,
+    facts: &mut FactStore,
+    errors: &mut Vec<ShapeError>,
+) {
+    let mut at = copied(path);
+    project_at(ir, type_ref, value, &mut at, depth, facts, errors);
+}
+
+thread_local! {
+    /// How many path segments the projection copied or appended on this thread
+    /// ([`path_segments_copied`]).
+    static SEGMENTS_COPIED: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
+
+/// What `run` returns, and how many path segments projecting values into facts copied or appended
+/// on this thread while it ran: the work a test bounds where a wall-clock bound would depend on
+/// the machine. Not part of any output.
+#[doc(hidden)]
+pub fn path_segments_copied<R>(run: impl FnOnce() -> R) -> (R, u64) {
+    let before = SEGMENTS_COPIED.with(std::cell::Cell::get);
+    let out = run();
+    (out, SEGMENTS_COPIED.with(std::cell::Cell::get) - before)
+}
+
+/// Counts `segments` path segments copied or appended ([`path_segments_copied`]).
+fn count_segments(segments: usize) {
+    let segments = u64::try_from(segments).unwrap_or(u64::MAX);
+    SEGMENTS_COPIED.with(|count| count.set(count.get().saturating_add(segments)));
+}
+
+/// A copy of `path`, counted ([`path_segments_copied`]).
+fn copied(path: &FactPath) -> FactPath {
+    count_segments(path.segments().len());
+    path.clone()
+}
+
+/// `path` with `segment` appended in place, counted ([`path_segments_copied`]).
+fn pushed(path: &mut FactPath, segment: &str) {
+    count_segments(1);
+    path.push(segment);
+}
+
+/// [`project`] at a path the walk extends in place: `path` holds what it held on the way in when
+/// this returns.
+fn project_at(
+    ir: &EssIr,
+    type_ref: &ResolvedTypeRef,
+    value: &Node,
+    path: &mut FactPath,
     depth: usize,
     facts: &mut FactStore,
     errors: &mut Vec<ShapeError>,
@@ -1702,7 +1756,7 @@ fn project_value(
     ir: &EssIr,
     type_ref: &ResolvedTypeRef,
     value: &Node,
-    path: &FactPath,
+    path: &mut FactPath,
     depth: usize,
     facts: &mut FactStore,
     errors: &mut Vec<ShapeError>,
@@ -1714,7 +1768,7 @@ fn project_value(
         });
         return;
     }
-    let wrong = |errors: &mut Vec<ShapeError>, expected: String| {
+    let wrong = |errors: &mut Vec<ShapeError>, path: &FactPath, expected: String| {
         errors.push(ShapeError::WrongShape {
             at: path.to_string(),
             expected,
@@ -1727,7 +1781,7 @@ fn project_value(
         // error in it. The guard reading it then refuses as `ValueAbsent`.
         ResolvedTypeRef::Optional { of } => {
             if !matches!(value, Node::Null) {
-                project(ir, of, value, path, depth + 1, facts, errors);
+                project_at(ir, of, value, path, depth + 1, facts, errors);
             }
         }
         // Any JSON value, and no fact: a predicate reads nothing from one (beyond10x/ess#138).
@@ -1735,15 +1789,15 @@ fn project_value(
             name: Primitive::Json,
         } => {}
         ResolvedTypeRef::Primitive { name } => match primitive_value(*name, value) {
-            Some(fact) => facts.set(path.clone(), fact),
-            None => wrong(errors, name.to_string()),
+            Some(fact) => facts.set(copied(path), fact),
+            None => wrong(errors, path, name.to_string()),
         },
         // A list publishes its size as `<path>.count` and each element under `<path>.<index>`,
         // the convention `FactSource::cardinality` reads for an observed collection — so a
         // quantifier and a `.count` guard over command input are decided (ess#94).
         ResolvedTypeRef::List { of } => match value {
             Node::Seq(items) => project_list(ir, of, items.iter(), path, depth, facts, errors),
-            _ => wrong(errors, format!("{type_ref}")),
+            _ => wrong(errors, path, format!("{type_ref}")),
         },
         // A map publishes its size as `<path>.count`, as a list does, so a `.count` guard over one
         // is decided (beyond10x/ess#196), and its values under `<path>.<index>` in key order — what
@@ -1751,7 +1805,7 @@ fn project_value(
         // is decided (beyond10x/ess#240). No path reaches a key.
         ResolvedTypeRef::Map { value: of, .. } => match value {
             Node::Map(map) => project_list(ir, of, map.values(), path, depth, facts, errors),
-            _ => wrong(errors, format!("{type_ref}")),
+            _ => wrong(errors, path, format!("{type_ref}")),
         },
         ResolvedTypeRef::Declared { name } => {
             let declared = ir.named_type(name);
@@ -1759,11 +1813,11 @@ fn project_value(
                 // Transparent: a newtype wraps a representation rather than naming a member, so
                 // there is no segment for the inside of one and the path does not grow.
                 ResolvedBody::Newtype { of, .. } => {
-                    project(ir, of, value, path, depth + 1, facts, errors);
+                    project_at(ir, of, value, path, depth + 1, facts, errors);
                 }
                 ResolvedBody::Enum { variants } => match value.as_text() {
                     Some(text) if variants.iter().any(|variant| variant == text) => {
-                        facts.set(path.clone(), FactValue::text(text));
+                        facts.set(copied(path), FactValue::text(text));
                     }
                     // A string that is not one of the variants is a different mistake from a
                     // number where a name was wanted, and only the first can be answered by
@@ -1778,6 +1832,7 @@ fn project_value(
                     }),
                     None => wrong(
                         errors,
+                        path,
                         format!("one of {}", variant_names(variants).join(", ")),
                     ),
                 },
@@ -1787,7 +1842,7 @@ fn project_value(
                     Node::Map(entries) => {
                         errors.extend(unit_variant_payload(tag, variants, entries, path));
                     }
-                    _ => wrong(errors, format!("{name} as a mapping")),
+                    _ => wrong(errors, path, format!("{name} as a mapping")),
                 },
                 ResolvedBody::Struct { fields, .. } => match value.as_map() {
                     Some(entries) => {
@@ -1802,7 +1857,7 @@ fn project_value(
                             errors,
                         );
                     }
-                    None => wrong(errors, format!("{name} as a mapping")),
+                    None => wrong(errors, path, format!("{name} as a mapping")),
                 },
             }
         }
@@ -1816,16 +1871,17 @@ fn project_struct(
     name: &ess_domain::QualifiedName,
     fields: &[ResolvedField],
     entries: &BTreeMap<String, Node>,
-    path: &FactPath,
+    path: &mut FactPath,
     depth: usize,
     facts: &mut FactStore,
     errors: &mut Vec<ShapeError>,
 ) {
     for field in fields {
-        let child = path.child(&field.name);
         match entries.get(&field.name) {
             Some(inner) => {
-                project(ir, &field.type_ref, inner, &child, depth + 1, facts, errors);
+                pushed(path, &field.name);
+                project_at(ir, &field.type_ref, inner, path, depth + 1, facts, errors);
+                path.pop();
             }
             None if admits_absence(ir, &field.type_ref, 0) => {}
             None => errors.push(ShapeError::MissingField {
@@ -1868,7 +1924,7 @@ fn mark_aggregate(
         }
     );
     if matches!(value, Node::Map(_) | Node::Seq(_)) || (json && !matches!(value, Node::Null)) {
-        facts.mark_present(path.clone());
+        facts.mark_present(copied(path));
     }
 }
 
@@ -1878,22 +1934,18 @@ fn project_list<'n>(
     ir: &EssIr,
     of: &ResolvedTypeRef,
     elements: impl ExactSizeIterator<Item = &'n Node>,
-    path: &FactPath,
+    path: &mut FactPath,
     depth: usize,
     facts: &mut FactStore,
     errors: &mut Vec<ShapeError>,
 ) {
-    facts.set(path.child("count"), FactValue::count(elements.len()));
+    pushed(path, "count");
+    facts.set(copied(path), FactValue::count(elements.len()));
+    path.pop();
     for (index, element) in elements.enumerate() {
-        project(
-            ir,
-            of,
-            element,
-            &path.child(&index.to_string()),
-            depth + 1,
-            facts,
-            errors,
-        );
+        pushed(path, &index.to_string());
+        project_at(ir, of, element, path, depth + 1, facts, errors);
+        path.pop();
     }
 }
 
