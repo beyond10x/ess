@@ -161,7 +161,7 @@ pub(super) fn misread_mapping(
                 target.name, target.type_ref
             ),
         )
-        .with_hint("declare `format: ess/31`")
+        .with_hint(FormatVersion::V31.declaration_hint())
     } else {
         ValidationError::at(
             at.clone(),

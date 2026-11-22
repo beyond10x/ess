@@ -359,7 +359,7 @@ pub(super) fn below_ess_27(at: &ConstructRef) -> ValidationError {
         "the head of an ordered selection — `{related: {entity, where, order_by, first}}` — \
          requires specification format ess/27",
     )
-    .with_hint("declare `format: ess/27`")
+    .with_hint(crate::system::FormatVersion::V27.declaration_hint())
 }
 
 /// Why a nested mapping refused over a field that is no struct is a head read written without its

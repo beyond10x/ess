@@ -386,13 +386,17 @@ pub fn validate_shape(command: &CommandSpec, types: Option<&TypeRegistry>) -> Va
                 ),
             )
             .with_hint(if identity {
-                "declare `format: ess/32`, where the one precedence rule answers the named rows' \
+                format!(
+                    "{raise}, where the one precedence rule answers the named rows' \
                  `exists: false` first and then every refusal over a present row or a row set in \
                  declaration order, guard the command on the row set alone, or move the other \
-                 guard to a command of its own"
+                 guard to a command of its own",
+                    raise = FormatVersion::V32.declaration_hint()
+                )
             } else {
                 "guard the command on the row set alone, or move the other guard to a command of \
                  its own"
+                    .to_owned()
             }),
         );
         return errors;
@@ -586,10 +590,11 @@ fn below_ess_22(at: ConstructRef) -> ValidationError {
         "a guard over the rows a selector selects — `when_related: {entity, where, exists | count \
          | forall}` — requires specification format ess/22",
     )
-    .with_hint(
-        "declare `format: ess/22`, or guard on one row named by an input identity with \
-         `when_related: {via: input.<field>, …}`",
-    )
+    .with_hint(format!(
+        "{raise}, or guard on one row named by an input identity with \
+         `when_related: {{via: input.<field>, …}}`",
+        raise = FormatVersion::V22.declaration_hint()
+    ))
 }
 
 /// `name` is no declared entity.

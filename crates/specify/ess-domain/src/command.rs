@@ -3758,11 +3758,12 @@ impl CommandSpec {
                                 outcome.name, related.name
                             ),
                         )
-                        .with_hint(
-                            "declare `format: ess/27`, where the one precedence rule answers \
+                        .with_hint(format!(
+                            "{raise}, where the one precedence rule answers \
                              `before_row:` at step 1 and the related row at step 4, or drop \
                              `before_row:`, or the `when_related:` guard",
-                        ),
+                            raise = crate::system::FormatVersion::V27.declaration_hint()
+                        )),
                     );
                 } else if let Some(earlier) = later {
                     errors.push(
@@ -4606,9 +4607,9 @@ fn check_payload_entry(
                 .with_hint(if from_27 {
                     format!(
                         "from specification format ess/27 this branch reads `input.{}` present, \
-                         since its `when_related:` reads the row through it: declare `format: \
-                         ess/27`",
-                        read.name
+                         since its `when_related:` reads the row through it: {raise}",
+                        read.name,
+                        raise = crate::system::FormatVersion::V27.declaration_hint()
                     )
                 } else {
                     format!(
@@ -4706,7 +4707,7 @@ fn error_payload_contract(
                 ValidationCode::UnsupportedFormatVersion,
                 format!("`payload:` for the error `{error}` requires specification format ess/19"),
             )
-            .with_hint("declare `format: ess/19`"),
+            .with_hint(crate::system::FormatVersion::V19.declaration_hint()),
         );
     }
     for (field, source) in &outcome.error_payload {
@@ -4748,7 +4749,10 @@ fn compensation_format(
             "a refusal that declares its compensating change — `compensates: true` beside \
              `error:` — requires specification format ess/22",
         )
-        .with_hint("declare `format: ess/22`, or drop `compensates:` and the change it declares")
+        .with_hint(format!(
+            "{raise}, or drop `compensates:` and the change it declares",
+            raise = crate::system::FormatVersion::V22.declaration_hint()
+        ))
     })
 }
 
@@ -4766,7 +4770,10 @@ fn before_row_format(
             "an external refusal answered before the row — `before_row: true` beside \
              `external:` — requires specification format ess/25",
         )
-        .with_hint("declare `format: ess/25`, or drop `before_row:`")
+        .with_hint(format!(
+            "{raise}, or drop `before_row:`",
+            raise = crate::system::FormatVersion::V25.declaration_hint()
+        ))
     })
 }
 
@@ -4796,10 +4803,11 @@ fn narrowed_external_format(
                 outcome.name
             ),
         )
-        .with_hint(
-            "declare `format: ess/29`, where `when_subject: {predicate: …}` narrows an \
+        .with_hint(format!(
+            "{raise}, where `when_subject: {{predicate: …}}` narrows an \
              `external:` branch to the records it selects, or drop one of the two",
-        )
+            raise = crate::system::FormatVersion::V29.declaration_hint()
+        ))
     })
 }
 
@@ -4854,10 +4862,11 @@ fn compensating_delete_format(
                 outcome.name
             ),
         )
-        .with_hint(
-            "declare `format: ess/34`, where a compensating refusal may delete its addressed row, \
+        .with_hint(format!(
+            "{raise}, where a compensating refusal may delete its addressed row, \
              or declare the change with `moves:` or `updates:` and `sets:`",
-        )
+            raise = crate::system::FormatVersion::V34.declaration_hint()
+        ))
     })
 }
 
@@ -4876,10 +4885,11 @@ fn narrowed_compensation_format(
         && matches!(outcome.condition, OutcomeCondition::ExternalSubject { .. })
         && format.major() < crate::system::FormatVersion::V30.major())
     .then(|| {
-        not_external_compensation(outcome, error, at).with_hint(
-            "declare `format: ess/30`, where a race narrowed by `when_subject:` may compensate, \
+        not_external_compensation(outcome, error, at).with_hint(format!(
+            "{raise}, where a race narrowed by `when_subject:` may compensate, \
              or drop `compensates:` and the change it declares",
-        )
+            raise = crate::system::FormatVersion::V30.declaration_hint()
+        ))
     })
 }
 
@@ -5016,18 +5026,24 @@ pub(crate) fn validate_response_contracts(spec: &crate::Specification) -> Valida
         if spec.system().format.major() < crate::system::FormatVersion::V13.major()
             && !command.fixture_inputs.is_empty()
         {
-            errors.push(ValidationError::at(
-                command.site().key("fixture_inputs"),
-                ValidationCode::UnsupportedFormatVersion,
-                "fixture input declarations require specification format ess/13",
-            ));
+            errors.push(
+                ValidationError::at(
+                    command.site().key("fixture_inputs"),
+                    ValidationCode::UnsupportedFormatVersion,
+                    "fixture input declarations require specification format ess/13",
+                )
+                .with_hint(crate::system::FormatVersion::V13.declaration_hint()),
+            );
         }
         if !modern && !command.response.is_empty() {
-            errors.push(ValidationError::at(
-                command.site().key("response"),
-                ValidationCode::UnsupportedFormatVersion,
-                "typed response declarations require specification format ess/4",
-            ));
+            errors.push(
+                ValidationError::at(
+                    command.site().key("response"),
+                    ValidationCode::UnsupportedFormatVersion,
+                    "typed response declarations require specification format ess/4",
+                )
+                .with_hint(crate::system::FormatVersion::V4.declaration_hint()),
+            );
         }
         errors.extend(crate::undeclared_fields::on_command(spec, command));
         for outcome in &command.outcomes {
@@ -5036,11 +5052,14 @@ pub(crate) fn validate_response_contracts(spec: &crate::Specification) -> Valida
             if outcome.returns
                 && spec.system().format.major() < crate::system::FormatVersion::V17.major()
             {
-                errors.push(ValidationError::at(
-                    at.clone().key("returns"),
-                    ValidationCode::UnsupportedFormatVersion,
-                    "direct return outcomes require specification format ess/17",
-                ));
+                errors.push(
+                    ValidationError::at(
+                        at.clone().key("returns"),
+                        ValidationCode::UnsupportedFormatVersion,
+                        "direct return outcomes require specification format ess/17",
+                    )
+                    .with_hint(crate::system::FormatVersion::V17.declaration_hint()),
+                );
             }
             for refused in marker_formats(spec.system().format, outcome, &at) {
                 errors.push(refused);
@@ -5072,25 +5091,36 @@ pub(crate) fn validate_response_contracts(spec: &crate::Specification) -> Valida
                             PayloadSource::ResponseField { .. } | PayloadSource::Generated { .. }
                         )
                     {
-                        errors.push(ValidationError::at(at.clone().key("payload").named(event.to_string()).named(field), ValidationCode::UnsupportedFormatVersion, "explicit response/generated payload sources require specification format ess/4"));
+                        errors.push(ValidationError::at(at.clone().key("payload").named(event.to_string()).named(field), ValidationCode::UnsupportedFormatVersion, "explicit response/generated payload sources require specification format ess/4").with_hint(crate::system::FormatVersion::V4.declaration_hint()));
                     }
                 }
             }
             if modern {
-                for name in &outcome.emits {
-                    let Some(event) = spec.events().get(name) else {
-                        continue;
-                    };
-                    for field in &event.fields {
-                        if !outcome
-                            .payload
-                            .get(name)
-                            .is_some_and(|fields| fields.contains_key(&field.name))
-                        {
-                            errors.push(ValidationError::at(at.clone().key("payload").named(name.to_string()).named(&field.name), ValidationCode::MissingDeclaration, "emitted payload field has no source; declare a mapping or {generated: true} ownership"));
-                        }
-                    }
-                }
+                errors.extend(emitted_payload_completeness(spec, outcome, &at));
+            }
+        }
+    }
+    errors
+}
+
+/// Every field of an event an outcome emits has a source in the outcome's `payload:`.
+fn emitted_payload_completeness(
+    spec: &crate::Specification,
+    outcome: &Outcome,
+    at: &ConstructRef,
+) -> ValidationErrors {
+    let mut errors = ValidationErrors::new();
+    for name in &outcome.emits {
+        let Some(event) = spec.events().get(name) else {
+            continue;
+        };
+        for field in &event.fields {
+            if !outcome
+                .payload
+                .get(name)
+                .is_some_and(|fields| fields.contains_key(&field.name))
+            {
+                errors.push(ValidationError::at(at.clone().key("payload").named(name.to_string()).named(&field.name), ValidationCode::MissingDeclaration, "emitted payload field has no source; declare a mapping or {generated: true} ownership"));
             }
         }
     }
@@ -5699,7 +5729,7 @@ fn check_empty_list_target(
                      ess/31"
                 ),
             )
-            .with_hint("declare `format: ess/31`"),
+            .with_hint(crate::system::FormatVersion::V31.declaration_hint()),
         );
     }
     if matches!(held.type_ref, TypeRef::List(_)) {
@@ -6228,8 +6258,11 @@ fn list_example_admitted(
 ) -> Option<Result<(), ExampleRefusal>> {
     const LIST: &str = "a list example is a list each of whose elements is a value of the \
                         element type";
-    const BELOW: &str = "an example sits on a scalar input below ess/31; declare `format: \
-                         ess/31` to give a list input one";
+    const BELOW: &str = concat!(
+        "an example sits on a scalar input below ess/31; ",
+        crate::declaration_hint!(31),
+        " to give a list input one"
+    );
     if matches!(example, Node::Null)
         || !matches!(types.newtype_layers(declared).terminal, TypeRef::List(_))
     {
@@ -6304,8 +6337,11 @@ fn structured_example_admitted(
                               struct names every member it requires and an open one may name \
                               more, a map holds values of its value type, and Json is any value \
                               but null";
-    const BELOW: &str = "an example sits on a scalar or list input below ess/33; declare \
-                         `format: ess/33` to give a struct, map or Json input one";
+    const BELOW: &str = concat!(
+        "an example sits on a scalar or list input below ess/33; ",
+        crate::declaration_hint!(33),
+        " to give a struct, map or Json input one"
+    );
     if matches!(example, Node::Null) {
         return None;
     }
@@ -7781,9 +7817,12 @@ impl TryFrom<RawOutcome> for Outcome {
                 return Err(conflict(
                     "when_subject",
                     "a subject fact has one selection authority".into(),
-                    "from `format: ess/29` an `external:` branch may be narrowed to the records \
-                     `when_subject: {predicate: <field> == <value>}` selects; write the field \
+                    &format!(
+                        "{raise}, from which an `external:` branch may be narrowed to the records \
+                     `when_subject: {{predicate: <field> == <value>}}` selects; write the field \
                      test as that predicate",
+                        raise = crate::system::FormatVersion::V29.declaration_hint()
+                    ),
                 ));
             }
             (Some(RawSubjectFact::Predicate(_)), Some(cause)) => Some(cause.clone()),
