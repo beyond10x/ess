@@ -12,6 +12,9 @@ can be compiled into deterministic intermediate representation, inspected as a g
 semantically across revisions, projected into supported concrete formats, and used to generate the
 conformance scenarios an implementation must satisfy.
 
+[Verify conformance](./guides/verify-conformance.md) checks an implementation you already have
+against its specification.
+
 The command is `ess`. Its first level is four areas:
 
 ```shell-session

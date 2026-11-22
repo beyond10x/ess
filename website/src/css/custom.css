@@ -3,3 +3,24 @@
 .markdown :is(p, li, td, th, dd, blockquote) a:not(.hash-link) {
   text-decoration: underline;
 }
+
+/* On a page shorter than its sidebar, the sidebar stays in view, below the navbar, halfway down
+   the page (UXF-022). A sticky sidebar can only move inside its column, so the docs sidebar is as
+   tall as its links (up to the viewport) and a short page's column is taller than the viewport;
+   the blog sidebar's row likewise. Only a page shorter than that minimum gets longer. */
+@media (min-width: 997px) {
+  .theme-doc-sidebar-container > div:first-child,
+  .theme-doc-sidebar-container > div:first-child > div:first-child {
+    height: auto;
+    max-height: 100vh;
+  }
+  .theme-doc-sidebar-container nav.menu {
+    min-height: 0;
+  }
+  html.docs-doc-page .main-wrapper {
+    min-height: calc(100vh + 10rem);
+  }
+  html.blog-wrapper .main-wrapper .container > .row:has(> aside) {
+    min-height: calc(100vh + 16rem);
+  }
+}
