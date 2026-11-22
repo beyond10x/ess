@@ -135,6 +135,50 @@ pub struct DomainSpec {
     pub naming: Naming,
 }
 
+/// Who declares each name, over a set of domains, built once for many lookups.
+///
+/// [`DomainSpec::kind_of`] and `SystemSpec::owner_of` scan every member they hold, so asking for
+/// each of n names costs n scans. This index borrows the domains it was built from, so it cannot
+/// outlive a change to them. It answers as the scans do: the first domain in the order given that
+/// declares the name, and the first kind it declares it as.
+#[derive(Debug, Clone)]
+pub struct DeclarationIndex<'a> {
+    declared: BTreeMap<&'a QualifiedName, (&'a DomainSpec, MemberKind)>,
+}
+
+impl<'a> DeclarationIndex<'a> {
+    /// Indexes every member of `domains`.
+    pub fn new(domains: &'a [DomainSpec]) -> Self {
+        let mut declared = BTreeMap::new();
+        for domain in domains {
+            for (kind, name) in domain.declared() {
+                if cfg!(test) {
+                    DECLARATIONS_EXAMINED.with(|n| n.set(n.get() + 1));
+                }
+                declared.entry(name).or_insert((domain, kind));
+            }
+        }
+        Self { declared }
+    }
+
+    /// The domain that declares `name`, as `SystemSpec::owner_of` answers it.
+    pub fn owner_of(&self, name: &QualifiedName) -> Option<&'a DomainSpec> {
+        self.declared.get(name).map(|(domain, _)| *domain)
+    }
+
+    /// What `name` is declared as, and by which domain, as `SystemSpec::declaration_of` answers it.
+    pub fn declaration_of(&self, name: &QualifiedName) -> Option<(&'a DomainSpec, MemberKind)> {
+        self.declared.get(name).copied()
+    }
+}
+
+thread_local! {
+    /// Declarations looked at while answering `kind_of`, for the work-bound test.
+    static DECLARATIONS_EXAMINED: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+    /// Pairs of domains checked for containment, for the work-bound test.
+    static CONTAINMENT_CHECKS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
 impl DomainSpec {
     /// A domain that owns nothing yet.
     pub fn new(name: QualifiedName) -> Self {
@@ -278,7 +322,27 @@ impl DomainSpec {
         let mut owner: BTreeMap<&QualifiedName, (&QualifiedName, MemberKind)> = BTreeMap::new();
         let mut declared_domains: BTreeSet<&QualifiedName> = BTreeSet::new();
 
-        for domain in domains {
+        // Which domains sit inside each one, in the order given: a domain's namespaces are its
+        // only possible containers, so each is looked up by name instead of every pair compared.
+        let mut by_name: BTreeMap<&QualifiedName, Vec<usize>> = BTreeMap::new();
+        for (position, domain) in domains.iter().enumerate() {
+            by_name.entry(&domain.name).or_default().push(position);
+        }
+        let mut inside: Vec<Vec<usize>> = vec![Vec::new(); domains.len()];
+        for (position, other) in domains.iter().enumerate() {
+            let mut namespace = other.name.namespace();
+            while let Some(candidate) = namespace {
+                if cfg!(test) {
+                    CONTAINMENT_CHECKS.with(|n| n.set(n.get() + 1));
+                }
+                for &container in by_name.get(&candidate).into_iter().flatten() {
+                    inside[container].push(position);
+                }
+                namespace = candidate.namespace();
+            }
+        }
+
+        for (position, domain) in domains.iter().enumerate() {
             errors.extend(domain.validate());
 
             if !declared_domains.insert(&domain.name) {
@@ -289,22 +353,21 @@ impl DomainSpec {
                 ));
             }
 
-            for other in domains {
-                if other.name != domain.name && domain.contains(&other.name) {
-                    errors.push(
-                        // Two different names, neither declared twice: `ConflictingDeclaration` is
-                        // what "each is well formed and they cannot both hold" is called.
-                        ValidationError::new(
-                            ValidationCode::ConflictingDeclaration,
-                            format!("domain {}", other.name),
-                            format!(
-                                "`{}` sits inside `{}`, so a name under it would have two owners",
-                                other.name, domain.name
-                            ),
-                        )
-                        .with_hint("domains do not nest; give it a namespace of its own"),
-                    );
-                }
+            for &other in &inside[position] {
+                let other = &domains[other];
+                errors.push(
+                    // Two different names, neither declared twice: `ConflictingDeclaration` is
+                    // what "each is well formed and they cannot both hold" is called.
+                    ValidationError::new(
+                        ValidationCode::ConflictingDeclaration,
+                        format!("domain {}", other.name),
+                        format!(
+                            "`{}` sits inside `{}`, so a name under it would have two owners",
+                            other.name, domain.name
+                        ),
+                    )
+                    .with_hint("domains do not nest; give it a namespace of its own"),
+                );
             }
 
             for (kind, name) in domain.declared() {
@@ -428,6 +491,138 @@ mod tests {
 
     fn name(value: &str) -> QualifiedName {
         QualifiedName::new(value).expect("a valid name")
+    }
+
+    #[test]
+    fn looking_up_every_event_of_one_domain_does_not_rescan_its_declarations() {
+        // The scans this replaced examined 512 * 513 / 2 = 131,328 declarations here.
+        let count = 512;
+        let domains = vec![DomainSpec {
+            events: (0..count)
+                .map(|index| name(&format!("shop.order.Event{index}")))
+                .collect(),
+            ..DomainSpec::new(name("shop.order"))
+        }];
+        DECLARATIONS_EXAMINED.with(|n| n.set(0));
+        let index = DeclarationIndex::new(&domains);
+        for position in 0..count {
+            let event = name(&format!("shop.order.Event{position}"));
+            assert_eq!(
+                index.declaration_of(&event).map(|(_, kind)| kind),
+                domains[0].kind_of(&event)
+            );
+            assert!(index.owner_of(&event).is_some());
+        }
+        let unknown = name("shop.order.Unknown");
+        assert!(index.owner_of(&unknown).is_none());
+        assert!(index.declaration_of(&unknown).is_none());
+        let examined = DECLARATIONS_EXAMINED.with(std::cell::Cell::get);
+        eprintln!("declarations examined for {count} lookups: {examined}");
+        assert!(
+            examined <= 2 * count,
+            "{examined} declarations examined for {count} lookups"
+        );
+    }
+
+    #[test]
+    fn the_index_answers_as_the_scans_do_for_a_name_declared_twice() {
+        let both = name("shop.order.Placed");
+        let first = DomainSpec {
+            events: vec![both.clone()],
+            entities: vec![both.clone()],
+            ..DomainSpec::new(name("shop.order"))
+        };
+        let second = DomainSpec {
+            commands: vec![both.clone()],
+            ..DomainSpec::new(name("shop.cart"))
+        };
+        let domains = vec![first, second];
+        let index = DeclarationIndex::new(&domains);
+        let (owner, kind) = index.declaration_of(&both).expect("declared");
+        assert_eq!(owner.name, name("shop.order"));
+        assert_eq!(kind, MemberKind::Entity);
+        assert_eq!(kind, owner.kind_of(&both).expect("declared"));
+        let scanned = domains.iter().find(|domain| domain.declares(&both));
+        assert_eq!(
+            index.owner_of(&both).map(|d| &d.name),
+            scanned.map(|d| &d.name)
+        );
+    }
+
+    /// The pairwise rule as it read before: the diagnostics every model must still produce.
+    fn nesting_by_pairs(domains: &[DomainSpec]) -> Vec<String> {
+        let mut found = Vec::new();
+        for domain in domains {
+            for other in domains {
+                if other.name != domain.name && domain.contains(&other.name) {
+                    found.push(format!("{} in {}", other.name, domain.name));
+                }
+            }
+        }
+        found
+    }
+
+    fn nesting_reported(domains: &[DomainSpec]) -> Vec<String> {
+        DomainSpec::validate_all(domains)
+            .as_slice()
+            .iter()
+            .filter(|error| error.message.contains("would have two owners"))
+            .map(|error| {
+                let (inner, outer) = error
+                    .message
+                    .strip_prefix('`')
+                    .and_then(|rest| rest.split_once("` sits inside `"))
+                    .and_then(|(inner, rest)| Some((inner, rest.split_once('`')?.0)))
+                    .expect("the nesting message");
+                format!("{inner} in {outer}")
+            })
+            .collect()
+    }
+
+    #[test]
+    fn nested_domains_are_reported_for_the_same_pairs_in_the_same_order() {
+        let domains: Vec<DomainSpec> = [
+            "shop.order.line",
+            "shop.order",
+            "shop.cart",
+            "shop.order.line.tax",
+            "shop.billing",
+            "shop.cart.item",
+            "shop",
+        ]
+        .iter()
+        .map(|domain| DomainSpec::new(name(domain)))
+        .collect();
+        let expected = nesting_by_pairs(&domains);
+        assert_eq!(expected.len(), 10, "{expected:?}");
+        assert_eq!(nesting_reported(&domains), expected);
+    }
+
+    #[test]
+    fn peer_domains_report_no_nesting() {
+        let domains: Vec<DomainSpec> = ["shop.order", "shop.cart", "shop.ordering", "shop.order2"]
+            .iter()
+            .map(|domain| DomainSpec::new(name(domain)))
+            .collect();
+        assert!(nesting_by_pairs(&domains).is_empty());
+        assert!(nesting_reported(&domains).is_empty());
+    }
+
+    #[test]
+    fn checking_peer_domains_for_nesting_does_not_compare_every_pair() {
+        // The pairwise check this replaced made 512 * 512 = 262,144 comparisons here.
+        let count = 512;
+        let domains: Vec<DomainSpec> = (0..count)
+            .map(|index| DomainSpec::new(name(&format!("shop.peer{index}"))))
+            .collect();
+        CONTAINMENT_CHECKS.with(|n| n.set(0));
+        assert!(DomainSpec::validate_all(&domains).is_empty());
+        let checks = CONTAINMENT_CHECKS.with(std::cell::Cell::get);
+        eprintln!("containment checks for {count} domains: {checks}");
+        assert!(
+            checks <= 4 * count,
+            "{checks} containment checks for {count} domains"
+        );
     }
 
     fn invoice() -> DomainSpec {
