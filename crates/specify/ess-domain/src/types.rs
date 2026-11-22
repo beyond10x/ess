@@ -272,7 +272,7 @@ impl TypeRef {
 /// later in the same document or in another file. So the declarations are collected first
 /// ([`Self::from_documents`]) and parsing runs inside [`Self::scope`]. Outside any scope, a named
 /// key is refused exactly as before.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Default, PartialEq, Eq)]
 pub struct MapKeyNewtypes {
     /// Every newtype declared, with the spelling of what it wraps; `None` for a name declared
     /// twice with different underlying types.
@@ -284,6 +284,18 @@ std::thread_local! {
     /// [`MapKeyNewtypes::scope`].
     static MAP_KEY_NEWTYPES: std::cell::RefCell<MapKeyNewtypes> =
         std::cell::RefCell::new(MapKeyNewtypes::default());
+    /// How many declarations [`MapKeyNewtypes`] copied on this thread
+    /// ([`MapKeyNewtypes::declarations_copied`]).
+    static COPIED: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
+
+impl Clone for MapKeyNewtypes {
+    fn clone(&self) -> Self {
+        COPIED.with(|count| count.set(count.get() + self.declared.len() as u64));
+        Self {
+            declared: self.declared.clone(),
+        }
+    }
 }
 
 impl MapKeyNewtypes {
@@ -299,6 +311,17 @@ impl MapKeyNewtypes {
             if let Ok(document) = ess_yaml::from_str::<ess_yaml::Value>(text) {
                 keys.absorb(&document);
             }
+        }
+        keys
+    }
+
+    /// [`Self::from_documents`] of texts already read, each as its document.
+    pub(crate) fn from_values<'a>(
+        documents: impl IntoIterator<Item = &'a ess_yaml::Value>,
+    ) -> Self {
+        let mut keys = Self::default();
+        for document in documents {
+            keys.absorb(document);
         }
         keys
     }
@@ -344,6 +367,41 @@ impl MapKeyNewtypes {
         let mut keys = self.clone();
         keys.absorb(document);
         keys
+    }
+
+    /// `Self::current().with_value(document)`, or `None` when that is exactly what is in view
+    /// already: every newtype `document` declares is declared in view the same way, as when a
+    /// loader put a whole specification's in view ([`crate::spec::RawSpecFile::parse_all`]).
+    ///
+    /// What lets a reader of one file of many leave the keys in view as they are rather than copy
+    /// them once per file.
+    pub(crate) fn widened_by(document: &ess_yaml::Value) -> Option<Self> {
+        let mut own = Self::default();
+        own.absorb(document);
+        let unchanged = MAP_KEY_NEWTYPES.with(|cell| {
+            let current = cell.borrow();
+            own.declared
+                .iter()
+                .all(|(name, of)| match current.declared.get(name) {
+                    // Absorbing `document` would add the name.
+                    None => false,
+                    // Declared differently before: it stays resolved to nothing.
+                    Some(None) => true,
+                    // Stays only where `document` declares it the same way.
+                    Some(Some(seen)) => of.as_deref() == Some(seen.as_str()),
+                })
+        });
+        (!unchanged).then(|| Self::current().with_value(document))
+    }
+
+    /// What `run` returns, and how many declarations were copied on this thread from one set of
+    /// key newtypes into another while it ran: the work a test bounds where a wall-clock bound
+    /// would depend on the machine.
+    #[doc(hidden)]
+    pub fn declarations_copied<R>(run: impl FnOnce() -> R) -> (R, u64) {
+        let before = COPIED.with(std::cell::Cell::get);
+        let out = run();
+        (out, COPIED.with(std::cell::Cell::get) - before)
     }
 
     /// Adds the newtypes one document declares.
@@ -2508,6 +2566,11 @@ pub struct ConversionRegistry {
     declared: BTreeSet<Conversion>,
 }
 
+thread_local! {
+    /// Earlier conversions looked at while registering, for the work-bound test.
+    static CONVERSIONS_EXAMINED: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
 impl ConversionRegistry {
     /// An empty registry: nothing crosses.
     pub fn new() -> Self {
@@ -2516,9 +2579,22 @@ impl ConversionRegistry {
 
     /// Records one, reporting a second declaration of the same crossing.
     pub fn insert(&mut self, conversion: Conversion) -> Result<(), ValidationError> {
+        // The set is ordered by (from, to, because) and a second reason for one crossing is
+        // refused, so the first entry at or after (from, to, "") is the only possible duplicate.
+        let probe = Conversion {
+            from: conversion.from.clone(),
+            to: conversion.to.clone(),
+            because: String::new(),
+        };
         if let Some(existing) = self
             .declared
-            .iter()
+            .range(probe..)
+            .take(1)
+            .inspect(|_| {
+                if cfg!(test) {
+                    CONVERSIONS_EXAMINED.with(|n| n.set(n.get() + 1));
+                }
+            })
             .find(|candidate| candidate.from == conversion.from && candidate.to == conversion.to)
         {
             return Err(ValidationError::new(
@@ -2906,6 +2982,54 @@ pub fn is_assignable(source: &TypeRef, target: &TypeRef) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn crossing(index: usize, because: &str) -> Conversion {
+        Conversion {
+            from: TypeRef::parse(&format!("shop.From{index}")).expect("a type"),
+            to: TypeRef::parse(&format!("shop.To{index}")).expect("a type"),
+            because: because.to_owned(),
+        }
+    }
+
+    #[test]
+    fn registering_conversions_examines_a_bounded_number_of_earlier_ones() {
+        // The scan this replaced examined 256 * 255 / 2 = 32,640 earlier conversions here.
+        let count = 256;
+        CONVERSIONS_EXAMINED.with(|n| n.set(0));
+        let mut registry = ConversionRegistry::new();
+        for index in 0..count {
+            registry
+                .insert(crossing(index, "unique"))
+                .expect("new crossing");
+        }
+        let examined = CONVERSIONS_EXAMINED.with(std::cell::Cell::get);
+        eprintln!("conversions examined for {count}: {examined}");
+        assert!(
+            examined <= 2 * count,
+            "{examined} earlier conversions examined for {count} insertions"
+        );
+        assert_eq!(registry.len(), count);
+    }
+
+    #[test]
+    fn a_second_crossing_names_the_first_reason_and_the_same_diagnostic() {
+        let mut registry = ConversionRegistry::new();
+        registry.insert(crossing(1, "zeta")).expect("new");
+        registry.insert(crossing(0, "first")).expect("new");
+        let error = registry
+            .insert(crossing(1, "alpha"))
+            .expect_err("duplicate");
+        assert_eq!(error.code, ValidationCode::DuplicateDeclaration);
+        assert_eq!(error.location, "conversions.shop.From1 -> shop.To1");
+        assert!(
+            error.message.contains("because `zeta`"),
+            "{}",
+            error.message
+        );
+        assert_eq!(registry.len(), 2);
+        let order: Vec<_> = registry.iter().map(|c| c.because.as_str()).collect();
+        assert_eq!(order, ["first", "zeta"]);
+    }
 
     fn name(value: &str) -> QualifiedName {
         QualifiedName::new(value).expect("a valid name")

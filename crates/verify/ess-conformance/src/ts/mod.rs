@@ -83,12 +83,28 @@ fn refuse_unadmitted(suite: &ConformanceSuite) -> Result<(), crate::admission::A
 pub fn emit(suite: &ConformanceSuite) -> Result<Vec<TsArtifact>, crate::admission::AdmissionError> {
     refuse_unadmitted(suite)?;
     let json = suite.to_canonical_json()?;
+    Ok(package(suite, json))
+}
+
+/// [`emit_with_model`], with `json` the [`ConformanceSuite::to_canonical_json`] of `suite` its
+/// caller already wrote, so the suite is not serialized a second time.
+pub fn emit_serialized_with_model(
+    suite: &ConformanceSuite,
+    json: &str,
+    ir: &ess_compiler::EssIr,
+) -> Result<Vec<TsArtifact>, crate::admission::AdmissionError> {
+    refuse_unadmitted(suite)?;
+    Ok(with_model(package(suite, json.to_owned()), ir))
+}
+
+/// The package [`emit`] writes for `suite`, `json` its canonical document.
+fn package(suite: &ConformanceSuite, json: String) -> Vec<TsArtifact> {
     let mut files = sources(RUNTIME_TS.to_owned());
     files.push(file("suite.json", json));
     files.push(file("package.json", manifest()));
     files.push(file("tsconfig.json", tsconfig()));
     files.push(file("README.md", readme(suite)));
-    Ok(files)
+    files
 }
 
 /// [`emit`], plus the model-based explorer: `src/explore.ts`, the compact model it interprets as

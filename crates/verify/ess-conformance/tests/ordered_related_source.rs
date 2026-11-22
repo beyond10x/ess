@@ -880,3 +880,72 @@ fn author_refuses_a_scenario_arranging_a_tie_the_order_leaves_unordered() {
     let compiled = author(MODEL, &tied);
     assert!(compiled.is_complete(), "{:#?}", compiled.refusals);
 }
+
+/// The fixture with the unordered head only in `Pick`'s `sets:`: its event payload heads keep a total order.
+fn ties_unordered_in_sets_only() -> String {
+    let sets_only = MODEL.replace(
+        "\n              order_by: [element_score desc, membership_id]\n",
+        "\n              order_by: [element_score desc]\n              ties: unordered\n",
+    );
+    assert_eq!(
+        sets_only.matches("ties: unordered").count(),
+        1,
+        "{sets_only}"
+    );
+    sets_only
+}
+
+/// A head under `ties: unordered` standing only in `sets:` still leaves a tie to be refused: the
+/// replay runs, and the scenario is refused with ESS-AUTHOR-043 as before.
+#[test]
+fn a_tie_in_a_sets_only_head_is_still_refused() {
+    let model = ties_unordered_in_sets_only();
+    let tied = authored(
+        "",
+        &[
+            join_act(1, S1, 30),
+            join_act(2, S2, 30),
+            join_act(3, S3, 10),
+            pick_act(4),
+        ]
+        .concat(),
+    );
+    let (compiled, runs) = ess_conformance::authored::replays_run(|| author(&model, &tied));
+    let codes: Vec<String> = compiled
+        .refusals
+        .iter()
+        .map(|refusal| refusal.code().to_string())
+        .collect();
+    assert_eq!(codes, vec!["ESS-AUTHOR-043".to_owned()], "{compiled:#?}");
+    assert!(runs > 0, "the replay ran");
+}
+
+/// The tie check replays an authored file through the interpreter only where the model holds a
+/// head read a tie could leave undecided: none under a total order (0 interpreter runs for the 4
+/// acts, the same acceptance), one run per act under `ties: unordered`. The unfixed code ran the
+/// interpreter 4 times under the total order too.
+#[test]
+fn the_tie_check_replays_only_a_model_with_an_unordered_head() {
+    let acts = [
+        join_act(1, S1, 30),
+        join_act(2, S2, 30),
+        join_act(3, S3, 10),
+        pick_act(4),
+    ]
+    .concat();
+    let text = authored("", &acts);
+
+    let (total, total_runs) = ess_conformance::authored::replays_run(|| author(MODEL, &text));
+    assert!(total.is_complete(), "{:#?}", total.refusals);
+    assert_eq!(total_runs, 0, "a total order cannot tie");
+
+    let (unordered, unordered_runs) =
+        ess_conformance::authored::replays_run(|| author(&ties_unordered(), &text));
+    assert_eq!(unordered_runs, 4, "one interpreter run per act");
+    let codes: Vec<String> = unordered
+        .refusals
+        .iter()
+        .map(|refusal| refusal.code().to_string())
+        .collect();
+    assert_eq!(codes, vec!["ESS-AUTHOR-043".to_owned()]);
+}

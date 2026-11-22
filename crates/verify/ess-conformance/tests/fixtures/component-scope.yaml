@@ -1,0 +1,189 @@
+format: ess/37
+system: shop
+version: v1
+domain: shop.desk
+summary: Tickets whose flags four components' commands set, each component accepting its own.
+types:
+  - {name: shop.desk.TicketId, kind: newtype, of: String}
+entities:
+  - name: shop.desk.Ticket
+    identity: {name: ticket_id, type: shop.desk.TicketId}
+    fields:
+      - {name: flag_1, type: Boolean}
+      - {name: flag_2, type: Boolean}
+      - {name: flag_3, type: Boolean}
+      - {name: flag_4, type: Boolean}
+      - {name: flag_5, type: Boolean}
+      - {name: flag_6, type: Boolean}
+    lifecycle:
+      initial: Open
+      states: [Open, Closed]
+      terminal: [Closed]
+      transitions:
+        - {name: mark_1, from: [Open], to: Open}
+        - {name: mark_2, from: [Open], to: Open}
+        - {name: mark_3, from: [Open], to: Open}
+        - {name: mark_4, from: [Open], to: Open}
+        - {name: mark_5, from: [Open], to: Open}
+        - {name: mark_6, from: [Open], to: Open}
+        - {name: close, from: [Open], to: Closed}
+errors:
+  - name: shop.desk.NoSuchTicket
+    fields:
+      - {name: ticket_id, type: shop.desk.TicketId}
+  - name: shop.desk.AlreadyMarked
+    fields:
+      - {name: ticket_id, type: shop.desk.TicketId}
+  - name: shop.desk.StateConflict
+    fields:
+      - {name: ticket_id, type: shop.desk.TicketId}
+commands:
+  - name: shop.desk.Open
+    input:
+      - {name: ticket_id, type: shop.desk.TicketId}
+    outcomes:
+      - name: opened
+        creates: shop.desk.Ticket
+        instance: ticket_id
+        sets: {flag_1: false, flag_2: false, flag_3: false, flag_4: false, flag_5: false, flag_6: false}
+        emits: [shop.desk.Opened]
+        payload:
+          shop.desk.Opened: {ticket_id: input.ticket_id}
+  - name: shop.desk.Mark1
+    input:
+      - {name: ticket_id, type: shop.desk.TicketId}
+      - {name: on, type: Boolean}
+    outcomes:
+      - {name: no-ticket, unknown_instance: true, error: shop.desk.NoSuchTicket}
+      - {name: already-marked, when_subject: {predicate: flag_1 == true}, error: shop.desk.AlreadyMarked}
+      - name: marked
+        moves: shop.desk.Ticket.mark_1
+        instance: ticket_id
+        sets: {flag_1: input.on}
+        emits: [shop.desk.Marked]
+        payload:
+          shop.desk.Marked: {ticket_id: input.ticket_id}
+      - {name: wrong-state, wrong_state: true, error: shop.desk.StateConflict}
+  - name: shop.desk.Mark2
+    input:
+      - {name: ticket_id, type: shop.desk.TicketId}
+      - {name: on, type: Boolean}
+    outcomes:
+      - {name: no-ticket, unknown_instance: true, error: shop.desk.NoSuchTicket}
+      - {name: already-marked, when_subject: {predicate: flag_2 == true}, error: shop.desk.AlreadyMarked}
+      - name: marked
+        moves: shop.desk.Ticket.mark_2
+        instance: ticket_id
+        sets: {flag_2: input.on}
+        emits: [shop.desk.Marked]
+        payload:
+          shop.desk.Marked: {ticket_id: input.ticket_id}
+      - {name: wrong-state, wrong_state: true, error: shop.desk.StateConflict}
+  - name: shop.desk.Mark3
+    input:
+      - {name: ticket_id, type: shop.desk.TicketId}
+      - {name: on, type: Boolean}
+    outcomes:
+      - {name: no-ticket, unknown_instance: true, error: shop.desk.NoSuchTicket}
+      - {name: already-marked, when_subject: {predicate: flag_3 == true}, error: shop.desk.AlreadyMarked}
+      - name: marked
+        moves: shop.desk.Ticket.mark_3
+        instance: ticket_id
+        sets: {flag_3: input.on}
+        emits: [shop.desk.Marked]
+        payload:
+          shop.desk.Marked: {ticket_id: input.ticket_id}
+      - {name: wrong-state, wrong_state: true, error: shop.desk.StateConflict}
+  - name: shop.desk.Mark4
+    input:
+      - {name: ticket_id, type: shop.desk.TicketId}
+      - {name: on, type: Boolean}
+    outcomes:
+      - {name: no-ticket, unknown_instance: true, error: shop.desk.NoSuchTicket}
+      - {name: already-marked, when_subject: {predicate: flag_4 == true}, error: shop.desk.AlreadyMarked}
+      - name: marked
+        moves: shop.desk.Ticket.mark_4
+        instance: ticket_id
+        sets: {flag_4: input.on}
+        emits: [shop.desk.Marked]
+        payload:
+          shop.desk.Marked: {ticket_id: input.ticket_id}
+      - {name: wrong-state, wrong_state: true, error: shop.desk.StateConflict}
+  - name: shop.desk.Mark5
+    input:
+      - {name: ticket_id, type: shop.desk.TicketId}
+      - {name: on, type: Boolean}
+    outcomes:
+      - {name: no-ticket, unknown_instance: true, error: shop.desk.NoSuchTicket}
+      - {name: already-marked, when_subject: {predicate: flag_5 == true}, error: shop.desk.AlreadyMarked}
+      - name: marked
+        moves: shop.desk.Ticket.mark_5
+        instance: ticket_id
+        sets: {flag_5: input.on}
+        emits: [shop.desk.Marked]
+        payload:
+          shop.desk.Marked: {ticket_id: input.ticket_id}
+      - {name: wrong-state, wrong_state: true, error: shop.desk.StateConflict}
+  - name: shop.desk.Mark6
+    input:
+      - {name: ticket_id, type: shop.desk.TicketId}
+      - {name: on, type: Boolean}
+    outcomes:
+      - {name: no-ticket, unknown_instance: true, error: shop.desk.NoSuchTicket}
+      - {name: already-marked, when_subject: {predicate: flag_6 == true}, error: shop.desk.AlreadyMarked}
+      - name: marked
+        moves: shop.desk.Ticket.mark_6
+        instance: ticket_id
+        sets: {flag_6: input.on}
+        emits: [shop.desk.Marked]
+        payload:
+          shop.desk.Marked: {ticket_id: input.ticket_id}
+      - {name: wrong-state, wrong_state: true, error: shop.desk.StateConflict}
+  - name: shop.desk.Close
+    input:
+      - {name: ticket_id, type: shop.desk.TicketId}
+    outcomes:
+      - {name: no-ticket, unknown_instance: true, error: shop.desk.NoSuchTicket}
+      - name: closed
+        moves: shop.desk.Ticket.close
+        instance: ticket_id
+        emits: [shop.desk.Closed]
+        payload:
+          shop.desk.Closed: {ticket_id: input.ticket_id}
+      - {name: wrong-state, wrong_state: true, error: shop.desk.StateConflict}
+events:
+  - name: shop.desk.Opened
+    fields:
+      - {name: ticket_id, type: shop.desk.TicketId}
+  - name: shop.desk.Marked
+    fields:
+      - {name: ticket_id, type: shop.desk.TicketId}
+  - name: shop.desk.Closed
+    fields:
+      - {name: ticket_id, type: shop.desk.TicketId}
+views:
+  - name: shop.desk.Tickets
+    source: shop.desk.Ticket
+    consistency: read_your_writes
+    fields:
+      - {name: ticket_id, type: shop.desk.TicketId}
+      - {name: state, type: shop.desk.Ticket.State}
+      - {name: flag_1, type: Boolean}
+      - {name: flag_2, type: Boolean}
+      - {name: flag_3, type: Boolean}
+      - {name: flag_4, type: Boolean}
+      - {name: flag_5, type: Boolean}
+      - {name: flag_6, type: Boolean}
+components:
+  - component: front
+    accepts: {commands: [shop.desk.Open, shop.desk.Close]}
+    publishes: {events: [shop.desk.Opened, shop.desk.Closed]}
+  - component: marks-1
+    accepts: {commands: [shop.desk.Mark1, shop.desk.Mark2]}
+    publishes: {events: [shop.desk.Marked]}
+  - component: marks-2
+    accepts: {commands: [shop.desk.Mark3, shop.desk.Mark4]}
+    publishes: {events: [shop.desk.Marked]}
+  - component: marks-3
+    accepts: {commands: [shop.desk.Mark5, shop.desk.Mark6]}
+    publishes: {events: [shop.desk.Marked]}

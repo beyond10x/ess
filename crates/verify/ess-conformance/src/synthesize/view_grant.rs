@@ -154,10 +154,38 @@ fn arrangement(ir: &EssIr, view: &QualifiedName, suite: &ConformanceSuite) -> Op
         })
         .min_by_key(|(scenario, at)| (*at, scenario.steps.len()))
         .map(|(scenario, at)| Arranged {
-            steps: scenario.steps[..at].to_vec(),
+            steps: scenario.steps[..at]
+                .iter()
+                .filter(|step| named_view(step).is_none_or(|named| named.name() == view))
+                .cloned()
+                .collect(),
             read: scenario.steps[at].clone(),
             source: scenario.source.clone(),
         })
+}
+
+/// The view a step reads or requires something of, if it names one.
+///
+/// A borrowed arrangement keeps none of the steps naming another view: that scenario reads every
+/// view of the entity after each command, and those reads stand, with the same expectations under
+/// the same arranged state and reader, in the scenario they are borrowed from. Copied into each
+/// read-grant scenario they asserted nothing new and grew it with every view of the model.
+fn named_view(step: &ScenarioStep) -> Option<&ViewRef> {
+    match step {
+        ScenarioStep::QueryView { view, .. }
+        | ScenarioStep::EventuallyView { view, .. }
+        | ScenarioStep::ExpectView { view, .. }
+        | ScenarioStep::ExpectHalt { view, .. }
+        | ScenarioStep::EventuallyHalt { view, .. }
+        | ScenarioStep::SnapshotView { view }
+        | ScenarioStep::ExpectViewUnchanged { view }
+        | ScenarioStep::SnapshotSubject { view, .. }
+        | ScenarioStep::ExpectSubjectUnchanged { view }
+        | ScenarioStep::ExpectSubjectAbsent { view, .. }
+        | ScenarioStep::SnapshotCompleteSubject { view, .. }
+        | ScenarioStep::ExpectCompleteSubjectUnchanged { view } => Some(view),
+        _ => None,
+    }
 }
 
 /// A read of a view, and what has to happen before it.

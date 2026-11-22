@@ -159,9 +159,16 @@ same model, which on a large one is far longer than validating; text mode does n
 | Key | What it lists | `ess verify conform synthesize` prints it as |
 |---|---|---|
 | `unscenarioed` | each construct synthesis gives no scenario: `code` (such as `ESS-SYNTH-011`), `subject`, `scenario`, and `caused_by` on a derived scenario refused for the cause of the scenario it names | `refused:`, one block per cause |
-| `outside` | with `--component <name>`, each scenario that component's suite does not hold: `scenario`, `needs` | `outside:` |
+| `outside` | with `--component <name>`, each scenario of that component's own operations its suite does not hold: `scenario`, `needs` | `outside:` |
 | `unanswered` | each question the specification does not answer, so no scenario is owed for it | `note:` |
 | `counts` | one count per list; `unscenarioed` equals the `refusal(s)` figure | the summary line |
+
+With `--component <name>`, only that component's operations are synthesized (the commands it
+accepts or whose domain it owns, the views it owns, the events it publishes), so `unscenarioed` and
+`unanswered` are about those operations and facts of the whole model; another component's refusals
+are not listed. Validate without `--component` to see the whole system's. The text output of
+`ess verify conform synthesize --component` names the operations no component realises on an
+`unrealised:` line; this report has no field for them.
 
 A model that conformance synthesis does not admit at all, such as one with a finite `Binary64`,
 carries `unsynthesizable` instead, with the `reason`, `path` and `detail` of each refusal. The billing

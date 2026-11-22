@@ -152,7 +152,7 @@ impl Readings {
 }
 
 /// Which of the two callers sends a command.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
 enum Who {
     First,
     Second,
@@ -337,6 +337,79 @@ impl Callers {
             }
         }
         Some(callers)
+    }
+}
+
+/// The model read under each assignment asked so far, one model per distinct reading.
+///
+/// [`synthesize`] reads the model whole as each caller, and twice more per command its two callers
+/// send differently, focused on that command (`about_command`, `cross_single_command`). A command
+/// that reads no caller is the same under either caller, so most of those readings are the model
+/// read wholly as `first` or wholly as `second`. Rewritten afresh each time, each was a model at a
+/// new address whose syntheses asked every search the whole reading had answered again. Here an
+/// assignment is told apart only by who sends the commands it rewrites, those two models are made
+/// once, and what each synthesis of one makes is kept for the next ([`super::made::Keeping`],
+/// [`crate::witness_memo::Keeping`]).
+struct Assigned<'a> {
+    ir: &'a EssIr,
+    callers: &'a Callers,
+    /// The commands whose reading depends on who sends them, in name order.
+    rewritten: Vec<QualifiedName>,
+    models: std::cell::RefCell<BTreeMap<Vec<Who>, std::rc::Rc<EssIr>>>,
+    made: std::cell::RefCell<super::made::Keeping>,
+    witnessed: std::cell::RefCell<crate::witness_memo::Keeping>,
+}
+
+impl<'a> Assigned<'a> {
+    fn new(ir: &'a EssIr, callers: &'a Callers) -> Self {
+        let rewritten = ir
+            .commands()
+            .values()
+            .filter(|command| {
+                [Who::First, Who::Second].into_iter().any(|who| {
+                    written(ir, command, &callers.for_command(ir, who, &command.name)) != **command
+                })
+            })
+            .map(|command| command.name.clone())
+            .collect();
+        Self {
+            ir,
+            callers,
+            rewritten,
+            models: std::cell::RefCell::new(BTreeMap::new()),
+            made: std::cell::RefCell::new(super::made::Keeping::open()),
+            witnessed: std::cell::RefCell::new(crate::witness_memo::Keeping::open()),
+        }
+    }
+
+    /// The model with every caller read written as `who` sends each command.
+    ///
+    /// Only the two readings sending every rewritten command as one caller are kept: every
+    /// focused run of a command that reads no caller is one of them. A reading sending one such
+    /// command as the other caller serves that command's few runs, and keeping it would hold
+    /// another model and its memory per caller-reading command for the whole synthesis.
+    fn model(&self, who: Assignment<'_>) -> std::rc::Rc<EssIr> {
+        let key: Vec<Who> = self.rewritten.iter().map(who).collect();
+        if let Some(model) = self.models.borrow().get(&key) {
+            return std::rc::Rc::clone(model);
+        }
+        let (ir, callers) = (self.ir, self.callers);
+        let model = std::rc::Rc::new(ir.with_commands_rewritten(|command| {
+            written(
+                ir,
+                command,
+                &callers.for_command(ir, who(&command.name), &command.name),
+            )
+        }));
+        if key.windows(2).any(|pair| pair[0] != pair[1]) {
+            return model;
+        }
+        self.made.borrow_mut().keep(&model);
+        self.witnessed.borrow_mut().keep(&model);
+        self.models
+            .borrow_mut()
+            .insert(key, std::rc::Rc::clone(&model));
+        model
     }
 }
 
@@ -580,8 +653,9 @@ pub(super) fn synthesize(ir: &EssIr, seeds: &super::AdmittedSeeds) -> Synthesis 
     };
     let reading = reading(ir, &callers);
     let rotated = grant::rotated(ir);
-    let mut whole = run_seeded(ir, &callers, &|_| Who::First, Focus::Whole, seeds);
-    let swapped = run(ir, &callers, &|_| Who::Second, Focus::Whole);
+    let assigned = Assigned::new(ir, &callers);
+    let mut whole = run_seeded(&assigned, &|_| Who::First, Focus::Whole, seeds);
+    let swapped = run(&assigned, &|_| Who::Second, Focus::Whole);
     let mut identities = Identities::of(ir, whole.suite.scenarios.values());
     // The model read with one command sent as `second` and every other as `first`, by command:
     // read only for a scenario acting on the one row of a singleton entity.
@@ -597,8 +671,7 @@ pub(super) fn synthesize(ir: &EssIr, seeds: &super::AdmittedSeeds) -> Synthesis 
             continue;
         };
         match one_row_acted_on(
-            ir,
-            &callers,
+            &assigned,
             id,
             &exhausted,
             &identities,
@@ -628,7 +701,7 @@ pub(super) fn synthesize(ir: &EssIr, seeds: &super::AdmittedSeeds) -> Synthesis 
             }
         };
         let back = |name: &QualifiedName| sent(name).other();
-        let (other, back) = about_command(ir, (&callers, seeds), (&sent, &back), command, &rotated);
+        let (other, back) = about_command((&assigned, seeds), (&sent, &back), command, &rotated);
         for (id, mut scenario) in other.suite.scenarios {
             if !about(&id, command) {
                 continue;
@@ -652,7 +725,7 @@ pub(super) fn synthesize(ir: &EssIr, seeds: &super::AdmittedSeeds) -> Synthesis 
             whole.suite.scenarios.insert(id, scenario);
         }
     }
-    cross_single_command(ir, (&callers, seeds), &mut whole);
+    cross_single_command((&assigned, seeds), &mut whole);
     arranged_by_callers(ir, &callers, &reading, &mut identities, &mut whole);
     seeded_unswapped(ir, seeds, &reading, &mut whole);
     // Every reading above is synthesized from a rewritten copy of the model, whose digests are not
@@ -737,24 +810,12 @@ fn seeded_unswapped(
 
 /// Upserts and duplicate-identity controls arrange and act with the same command name.
 fn cross_single_command(
-    ir: &EssIr,
-    (callers, seeds): (&Callers, &super::AdmittedSeeds),
+    (assigned, seeds): (&Assigned<'_>, &super::AdmittedSeeds),
     whole: &mut Synthesis,
 ) {
-    let first = ir.with_commands_rewritten(|command| {
-        written(
-            ir,
-            command,
-            &callers.for_command(ir, Who::First, &command.name),
-        )
-    });
-    let second = ir.with_commands_rewritten(|command| {
-        written(
-            ir,
-            command,
-            &callers.for_command(ir, Who::Second, &command.name),
-        )
-    });
+    let (ir, callers) = (assigned.ir, assigned.callers);
+    let first = assigned.model(&|_| Who::First);
+    let second = assigned.model(&|_| Who::Second);
     let forward = InvocationModels {
         arrangement: &first,
         acting: &second,
@@ -867,8 +928,7 @@ type Assignment<'a> = &'a dyn Fn(&QualifiedName) -> Who;
 /// each actor granted it ([`grant::rotated`]) is sent by turn across every scenario sending it. A
 /// kept scenario sending one is read from the whole runs, as before.
 fn about_command(
-    ir: &EssIr,
-    (callers, seeds): (&Callers, &super::AdmittedSeeds),
+    (assigned, seeds): (&Assigned<'_>, &super::AdmittedSeeds),
     (sent, back): (Assignment<'_>, Assignment<'_>),
     command: &QualifiedName,
     rotated: &BTreeSet<QualifiedName>,
@@ -876,13 +936,13 @@ fn about_command(
     #[cfg(test)]
     if tests::UNFOCUSED.get() {
         return (
-            run_seeded(ir, callers, sent, Focus::Whole, seeds),
-            run(ir, callers, back, Focus::Whole),
+            run_seeded(assigned, sent, Focus::Whole, seeds),
+            run(assigned, back, Focus::Whole),
         );
     }
     let focus = Focus::About(command);
-    let other = run_seeded(ir, callers, sent, focus, seeds);
-    let back_run = run(ir, callers, back, focus);
+    let other = run_seeded(assigned, sent, focus, seeds);
+    let back_run = run(assigned, back, focus);
     let turned = [&other, &back_run].iter().any(|synthesis| {
         synthesis
             .suite
@@ -892,8 +952,8 @@ fn about_command(
     });
     if turned {
         return (
-            run_seeded(ir, callers, sent, Focus::Whole, seeds),
-            run(ir, callers, back, Focus::Whole),
+            run_seeded(assigned, sent, Focus::Whole, seeds),
+            run(assigned, back, Focus::Whole),
         );
     }
     (other, back_run)
@@ -901,20 +961,14 @@ fn about_command(
 
 /// The model read under one assignment, synthesized, with every command step marked with the
 /// caller it is sent as.
-fn run(
-    ir: &EssIr,
-    callers: &Callers,
-    who: &dyn Fn(&QualifiedName) -> Who,
-    focus: Focus<'_>,
-) -> Synthesis {
-    run_seeded(ir, callers, who, focus, &super::seeds::EMPTY)
+fn run(assigned: &Assigned<'_>, who: Assignment<'_>, focus: Focus<'_>) -> Synthesis {
+    run_seeded(assigned, who, focus, &super::seeds::EMPTY)
 }
 
 /// [`run`], offering `seeds` where ordinary arrangement leaves a row unmet.
 fn run_seeded(
-    ir: &EssIr,
-    callers: &Callers,
-    who: &dyn Fn(&QualifiedName) -> Who,
+    assigned: &Assigned<'_>,
+    who: Assignment<'_>,
     focus: Focus<'_>,
     seeds: &super::AdmittedSeeds,
 ) -> Synthesis {
@@ -922,13 +976,8 @@ fn run_seeded(
     if focus.is_whole() {
         tests::WHOLE.set(tests::WHOLE.get() + 1);
     }
-    let written = ir.with_commands_rewritten(|command| {
-        written(
-            ir,
-            command,
-            &callers.for_command(ir, who(&command.name), &command.name),
-        )
-    });
+    let (ir, callers) = (assigned.ir, assigned.callers);
+    let written = assigned.model(who);
     let mut synthesis =
         super::synthesize_invocations(&InvocationModels::seeded(&written, seeds), focus);
     for scenario in synthesis.suite.scenarios.values_mut() {
@@ -1517,8 +1566,7 @@ fn unswapped(id: &ScenarioId, scenario: &ConformanceScenario, exhausted: Exhaust
 /// still sends both callers. `None` — the note — where the identity is the one the command under
 /// test creates, which has no row to act on, or where that assignment has no such scenario.
 fn one_row_acted_on(
-    ir: &EssIr,
-    callers: &Callers,
+    assigned: &Assigned<'_>,
     id: &ScenarioId,
     exhausted: &Exhausted,
     identities: &Identities<'_>,
@@ -1539,8 +1587,7 @@ fn one_row_acted_on(
         .entry(command.clone())
         .or_insert_with(|| {
             run(
-                ir,
-                callers,
+                assigned,
                 &|name| {
                     if name.to_string() == command {
                         Who::Second

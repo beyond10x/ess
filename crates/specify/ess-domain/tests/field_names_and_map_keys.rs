@@ -11,6 +11,7 @@
 use ess_domain::spec::{RawSpecFile, Specification};
 use ess_domain::system::Source;
 use ess_domain::types::{Field, MapKeyNewtypes, Primitive, TypeRef};
+use std::fmt::Write as _;
 
 const HEADER: &str = "format: ess/14\nsystem: demo\nversion: v1\ndomain: demo.orders\n";
 
@@ -238,5 +239,134 @@ fn a_reader_of_one_file_adds_its_own_declarations_to_those_in_view() {
         conflicting.get(&item),
         None,
         "a duplicate is not guessed at"
+    );
+}
+
+#[test]
+fn a_file_read_inside_a_scope_resolves_its_keys_as_the_scope_and_its_own_declarations_say() {
+    let declares = |of: &str| {
+        format!(
+            "{HEADER}types:\n  - {{name: demo.orders.ItemId, kind: newtype, of: {of}}}\nevents:\n  \
+             - name: demo.orders.Checked\n    fields:\n      - {{name: results, type: \
+             \"Map<demo.orders.ItemId, Boolean>\"}}\n"
+        )
+    };
+    let in_view = |of: &str| {
+        MapKeyNewtypes::from_documents([format!(
+            "types:\n  - {{name: demo.orders.ItemId, kind: newtype, of: {of}}}\n"
+        )
+        .as_str()])
+    };
+    let file = declares("String");
+    assert!(in_view("String")
+        .scope(|| RawSpecFile::parse(&file))
+        .is_ok());
+    assert!(MapKeyNewtypes::default()
+        .scope(|| RawSpecFile::parse(&file))
+        .is_ok());
+    let error = in_view("Integer")
+        .scope(|| RawSpecFile::parse(&file))
+        .expect_err("a second, different declaration resolves to nothing");
+    assert!(error.to_string().contains("map key"), "{error}");
+    let conflicting = in_view("String").scope(|| {
+        MapKeyNewtypes::from_documents([declares("Integer").as_str(), file.as_str()])
+            .scope(|| RawSpecFile::parse(&file))
+    });
+    assert!(conflicting.is_err(), "a conflict in view stays a conflict");
+}
+
+/// A specification of `files` files holding `newtypes` key newtypes between them, after a header
+/// file whose map is keyed by the last one.
+fn split(newtypes: usize, files: usize) -> Vec<String> {
+    let mut texts = vec![format!(
+        "{HEADER}events:\n  - name: demo.orders.Checked\n    fields:\n      - {{name: results, \
+         type: \"Map<demo.orders.Label{}, Boolean>\"}}\n",
+        newtypes - 1
+    )];
+    let per = newtypes.div_ceil(files);
+    for part in 0..files {
+        let mut text = String::from("domain: demo.orders\ntypes:\n");
+        for label in part * per..((part + 1) * per).min(newtypes) {
+            let _ = writeln!(
+                text,
+                "  - {{name: demo.orders.Label{label}, kind: newtype, of: String}}"
+            );
+        }
+        texts.push(text);
+    }
+    texts
+}
+
+/// Each file used to be read with a copy of every key newtype in view, three times over: 3,584
+/// declarations copied for 512 newtypes in one file and 788,480 in 512 files, so splitting a
+/// specification across files made reading it quadratic. A work bound rather than a clock.
+#[test]
+fn reading_a_specification_copies_its_key_newtypes_once_however_many_files_declare_them() {
+    let copied = |files: usize| {
+        let texts = split(512, files);
+        let every = texts.iter().map(String::as_str).collect::<Vec<_>>();
+        let (results, copied) =
+            MapKeyNewtypes::declarations_copied(|| RawSpecFile::parse_all(&every));
+        for result in &results {
+            assert!(result.is_ok(), "{result:?}");
+        }
+        copied
+    };
+    let one = copied(1);
+    let many = copied(512);
+    assert!(
+        one <= 1024 && many <= 1024,
+        "reading 512 key newtypes copied {one} declarations from one file and {many} from 512 \
+         files; at most 1024 either way"
+    );
+}
+
+/// Each text used to be read three times, for the header, the key newtypes and the typed file: 57
+/// reads for these 19 files. Only the last read reported an error, so one read keeps every
+/// file's error as it was.
+#[test]
+fn reading_a_specification_reads_each_file_once_and_keeps_each_files_error() {
+    let mut texts = split(16, 16);
+    texts.push("domain: demo.orders\ntypes:\n  - {name: [unclosed\n".to_owned());
+    texts.push("domain: demo.orders\ntypos: []\n".to_owned());
+    let every = texts.iter().map(String::as_str).collect::<Vec<_>>();
+    let (results, read) = ess_yaml::documents_read(|| RawSpecFile::parse_all(&every));
+    let errors = results
+        .iter()
+        .map(|result| result.as_ref().err().map(ToString::to_string))
+        .collect::<Vec<_>>();
+    let alone = every
+        .iter()
+        .map(|text| {
+            RawSpecFile::parse(text)
+                .err()
+                .map(|error| error.to_string())
+        })
+        .collect::<Vec<_>>();
+    assert!(errors[..17].iter().all(Option::is_none), "{errors:?}");
+    assert_eq!(errors[17..], alone[17..]);
+    assert_eq!(
+        errors[17..],
+        [
+            Some(
+                "did not find expected ',' or ']' at line 4 column 1, while parsing a flow \
+                 sequence at line 3 column 12"
+                    .to_owned()
+            ),
+            Some(
+                "unknown field `typos`, expected one of `format`, `system`, `version`, \
+                 `summary`, `domains`, `preconditions`, `domain`, `naming`, `types`, \
+                 `conversions`, `entities`, `commands`, `events`, `errors`, `views`, `actors`, \
+                 `components`, `bindings`, `topology`, `outcome_groups`"
+                    .to_owned()
+            ),
+        ],
+        "each file's error, at its line and column"
+    );
+    assert_eq!(
+        read,
+        every.len() as u64,
+        "{} files were read {read} times",
+        every.len()
     );
 }

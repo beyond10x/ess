@@ -49,6 +49,7 @@ use ess_domain::command::{
 };
 use ess_domain::command::{PayloadSource, RelatedTest, RelatedVia};
 use ess_domain::component::{ComponentName, ComponentSpec};
+use ess_domain::domain::DeclarationIndex;
 use ess_domain::entity::{EntitySpec, StateMachine};
 use ess_domain::name::QualifiedName;
 use ess_domain::spec::{Provenance, Specification, Traced};
@@ -1579,6 +1580,8 @@ struct Resolver<'a> {
     registry: TypeRegistry,
     /// Set when a reference in a layer `ess-domain` validates names something undeclared.
     off_contract: bool,
+    /// Who declares each name, built once: `owner` is asked for every event, error and command.
+    owners: DeclarationIndex<'a>,
     diagnostics: Diagnostics,
 }
 
@@ -1641,6 +1644,7 @@ impl<'a> Resolver<'a> {
             locator,
             registry,
             off_contract: false,
+            owners: DeclarationIndex::new(&spec.system().domains),
             diagnostics: Diagnostics::new(),
         }
     }
@@ -2175,7 +2179,7 @@ impl<'a> Resolver<'a> {
     /// A member with no owner is refused in *its own* family — `ESS-COMMAND-001` for a command —
     /// because that is where `ess-domain` reports it too, and one defect keeps one code.
     fn owner(&mut self, code: Code, name: &QualifiedName, kind: &str) -> Option<DomainHandle> {
-        if let Some(domain) = self.spec.system().owner_of(name) {
+        if let Some(domain) = self.owners.owner_of(name) {
             return Some(DomainHandle::new(domain.name.clone()));
         }
         let available = self.declared_domains();
@@ -7053,6 +7057,37 @@ mod tests {
         assert_eq!(diagnostic.code, codes::COMMAND_UNDECLARED_REFERENCE);
         let span = diagnostic.span.as_ref().expect("a span");
         assert_eq!(span.located.expect("located").line, 5);
+    }
+
+    /// The resolver answers `owner` from one index built with it. Asking `SystemSpec::owner_of`
+    /// for each of N names scanned every member of every domain N times (for 512 events in one
+    /// domain, 131,328 declarations examined); the index examines each declaration once, and
+    /// `ess-domain`'s `looking_up_every_event_of_one_domain_does_not_rescan_its_declarations` holds
+    /// that count. Here the answers through the resolver are held equal to the scan's.
+    #[test]
+    fn the_resolver_names_the_owner_of_every_member_as_the_scan_does() {
+        let text =
+            include_str!("../../../verify/ess-conformance/tests/fixtures/delivery-context.yaml");
+        let raw = ess_domain::spec::RawSpecFile::parse(text).expect("the model parses");
+        let spec = Specification::assemble([(ess_domain::system::Source::new("inbox.yaml"), raw)])
+            .unwrap_or_else(|errors| panic!("the model is admitted: {errors}"));
+        let sources = SourceMap::new();
+        let mut resolver = Resolver::new(&spec, Locator::new(&sources, &[] as &[&str]));
+        let mut asked = 0;
+        for domain in &spec.system().domains {
+            for (_, name) in domain.declared() {
+                let scanned = spec.system().owner_of(name).map(|d| d.name.clone());
+                let found = resolver.owner(codes::EVENT_UNDECLARED_REFERENCE, name, "event");
+                assert_eq!(found, scanned.map(DomainHandle::new), "{name}");
+                asked += 1;
+            }
+        }
+        assert!(asked > 0);
+        let nobody = QualifiedName::new("demo.inbox.NobodyDeclaresThis").expect("a name");
+        assert!(resolver
+            .owner(codes::EVENT_UNDECLARED_REFERENCE, &nobody, "event")
+            .is_none());
+        assert!(spec.system().owner_of(&nobody).is_none());
     }
 
     /// A binding condition reads the event payload and never a delivery context, so it proves no

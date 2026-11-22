@@ -27,12 +27,15 @@
 //! value kind and refuses the suite by version; the Go and TypeScript runtimes execute both majors
 //! and resolve it (beyond10x/ess#188). A suite without one keeps its format and bytes.
 
+use std::cell::{Cell, RefCell};
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
+use std::rc::Rc;
 
 use ess_compiler::ir::{
     EntityHandle, EssIr, ResolvedCommand, ResolvedCondition, ResolvedPayloadValue,
 };
+use ess_domain::name::QualifiedName;
 use ess_primitives::facts::{FactPath, FactValue};
 use ess_primitives::node::Node;
 use ess_primitives::predicate::{CompareOp, Operand, Predicate};
@@ -106,12 +109,105 @@ struct Orderings {
     quantified: Vec<FactPath>,
 }
 
+thread_local! {
+    /// The orderings analysed per model, innermost model last ([`remember`]).
+    static ANALYSED: RefCell<Vec<Analysed>> = const { RefCell::new(Vec::new()) };
+    /// How many times a command's orderings were analysed on this thread ([`orderings_analysed`]).
+    static ANALYSES: Cell<u64> = const { Cell::new(0) };
+}
+
+/// The orderings analysed for one model, by command.
+struct Analysed {
+    /// The model, compared by address only. It is borrowed for as long as this entry is on the
+    /// stack ([`Remembered`]), so the address cannot be reused by another model meanwhile.
+    ir: *const EssIr,
+    orderings: BTreeMap<QualifiedName, Rc<Orderings>>,
+}
+
+/// Keeps the orderings analysed for one model until dropped. See [`remember`].
+pub(crate) struct Remembered {
+    pushed: bool,
+}
+
+impl Drop for Remembered {
+    fn drop(&mut self) {
+        if self.pushed {
+            ANALYSED.with(|analysed| {
+                analysed.borrow_mut().pop();
+            });
+        }
+    }
+}
+
+/// Remembers each command's orderings for `ir` until the returned guard drops, so every value a
+/// command is sent and every scenario sending it reads one analysis: they are a function of the
+/// model and the command alone. A model already remembered innermost keeps its memory.
+pub(crate) fn remember(ir: &EssIr) -> Remembered {
+    let at = std::ptr::from_ref(ir);
+    let pushed = ANALYSED.with(|analysed| {
+        let mut analysed = analysed.borrow_mut();
+        if analysed.last().is_some_and(|top| std::ptr::eq(top.ir, at)) {
+            return false;
+        }
+        analysed.push(Analysed {
+            ir: at,
+            orderings: BTreeMap::new(),
+        });
+        true
+    });
+    Remembered { pushed }
+}
+
+/// What `run` returns, and how many times a command's orderings against instants were analysed on
+/// this thread while it ran, rather than answered from what the synthesis analysed before: the
+/// work a test bounds where a wall-clock bound would depend on the machine. Not part of the suite.
+#[doc(hidden)]
+pub fn orderings_analysed<R>(run: impl FnOnce() -> R) -> (R, u64) {
+    let before = ANALYSES.with(Cell::get);
+    let out = run();
+    (out, ANALYSES.with(Cell::get) - before)
+}
+
 impl Orderings {
+    /// [`Self::analyse`], answered from memory where `command` is `ir`'s own declaration and `ir`
+    /// is the model remembered innermost ([`remember`]).
+    fn of(ir: &EssIr, command: &ResolvedCommand) -> Rc<Self> {
+        let own = ir
+            .commands()
+            .get(&command.name)
+            .is_some_and(|declared| std::ptr::eq(declared, command));
+        let remembered = |analysed: &[Analysed]| {
+            analysed
+                .last()
+                .is_some_and(|top| std::ptr::eq(top.ir, std::ptr::from_ref(ir)))
+        };
+        if !own || !ANALYSED.with(|analysed| remembered(&analysed.borrow())) {
+            return Rc::new(Self::analyse(ir, command));
+        }
+        if let Some(known) = ANALYSED.with(|analysed| {
+            analysed
+                .borrow()
+                .last()
+                .and_then(|top| top.orderings.get(&command.name).cloned())
+        }) {
+            return known;
+        }
+        let fresh = Rc::new(Self::analyse(ir, command));
+        ANALYSED.with(|analysed| {
+            if let Some(top) = analysed.borrow_mut().last_mut() {
+                top.orderings
+                    .insert(command.name.clone(), Rc::clone(&fresh));
+            }
+        });
+        fresh
+    }
+
     /// The orderings `command`'s input guards write: the plain `when:` and the input half of every
     /// other condition, which `ess-domain` admits the operand in — and, from `ess/22`, the
     /// orderings a stored row's predicate writes over a field `command` writes from a whole input
     /// field ([`Self::stored`]).
-    fn of(ir: &EssIr, command: &ResolvedCommand) -> Self {
+    fn analyse(ir: &EssIr, command: &ResolvedCommand) -> Self {
+        ANALYSES.with(|count| count.set(count.get() + 1));
         let mut found = Self::default();
         for outcome in &command.outcomes {
             if let Some(predicate) = input_predicate(&outcome.condition) {
@@ -848,7 +944,8 @@ fn at_boundary(
     let declared = ir.commands().get(command.name())?;
     let bounds = Orderings::of(ir, declared)
         .bounds
-        .remove(&FactPath::new(field).ok()?)?;
+        .get(&FactPath::new(field).ok()?)?
+        .clone();
     let mut side = None;
     for bound in bounds {
         match bound {

@@ -1,0 +1,55 @@
+domain: shop.ledger
+
+summary: Ledger entries that are closed, though nothing in the specification creates one.
+
+types:
+  - name: shop.ledger.EntryId
+    kind: newtype
+    of: String
+
+errors:
+  - name: shop.ledger.StateConflict
+    fields:
+      - name: entry_id
+        type: shop.ledger.EntryId
+
+entities:
+  - name: shop.ledger.Entry
+    identity:
+      name: entry_id
+      type: shop.ledger.EntryId
+    fields:
+      - name: flag_2
+        type: Boolean
+    lifecycle:
+      initial: Open
+      states: [Open, Closed]
+      terminal: [Closed]
+      transitions:
+        - {name: close, from: [Open], to: Closed}
+
+commands:
+  - name: shop.ledger.Close
+    input:
+      - name: entry_id
+        type: shop.ledger.EntryId
+    outcomes:
+      - name: closed
+        moves: shop.ledger.Entry.close
+        instance: entry_id
+        sets:
+          flag_2: true
+        emits:
+          - shop.ledger.Closed
+        payload:
+          shop.ledger.Closed:
+            entry_id: input.entry_id
+      - name: wrong-state
+        wrong_state: true
+        error: shop.ledger.StateConflict
+
+events:
+  - name: shop.ledger.Closed
+    fields:
+      - name: entry_id
+        type: shop.ledger.EntryId

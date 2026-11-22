@@ -1,0 +1,24 @@
+components:
+  - component: token-service
+    summary: Issues tokens.
+    owns:
+      domains:
+        - vault.tokens
+    accepts:
+      commands:
+        - vault.tokens.IssueToken
+    publishes:
+      events:
+        - vault.tokens.TokenIssued
+
+  - component: note-service
+    summary: Edits notes.
+    owns:
+      domains:
+        - vault.notes
+    accepts:
+      commands:
+        - vault.notes.EditNote
+    publishes:
+      events:
+        - vault.notes.NoteEdited
