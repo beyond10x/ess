@@ -13,6 +13,10 @@ export const BASE = '/ess/';
 export const ORIGIN = `http://127.0.0.1:${PORT}`;
 export const SITEMAP = join(BUILD, 'sitemap.xml');
 export const ROUND = process.env.UX_ROUND ?? '';
+// The lane (UX_LANE): `gate` on every merge (the template pages and the anchor cards, 120 s), `slow`
+// for the whole sitemap, every card and the measured-only viewports, as SLOW_L2_SLICES + 2 pool jobs.
+export const LANE: 'gate' | 'slow' = process.env.UX_LANE === 'slow' ? 'slow' : 'gate';
+export const SLOW_L2_SLICES = 6;
 
 export interface Viewport {
   name: string;

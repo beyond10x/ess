@@ -23,9 +23,17 @@ export async function frame(page: Page): Promise<void> {
 
 // The site follows the emulated colour scheme while no theme is stored, so a theme changes in
 // place, through the site's own colour-mode code, without a reload.
-export async function showTheme(page: Page, theme: 'light' | 'dark'): Promise<void> {
+// `hydrated`: the caller has waited for the site's code, so the change can only be slow (a large
+// page re-renders in seconds under load), never missed: wait for it and do not reload. R-01 cut
+// that wait at 3 s and reloaded, which cost 6 to 16 s per theme on the long reference pages.
+export async function showTheme(page: Page, theme: 'light' | 'dark', options: { hydrated?: boolean } = {}): Promise<void> {
   await page.emulateMedia({ colorScheme: theme, reducedMotion: 'reduce' });
   const shows = (timeout: number) => page.waitForFunction((t) => document.documentElement.dataset.theme === t, theme, { timeout });
+  if (options.hydrated) {
+    await shows(30_000);
+    await frame(page);
+    return;
+  }
   // Before hydration the site does not listen yet; a reload then reads the scheme at start.
   await shows(3_000).catch(async () => {
     await page.reload({ waitUntil: 'networkidle' });
@@ -68,7 +76,10 @@ export async function checkAlwaysVisible(page: Page, watched: Watched[]): Promis
 // for the second theme of a viewport whose structure the full run has already checked.
 export const COLOUR_RULES = ['color-contrast', 'link-in-text-block'];
 export async function runAxe(page: Page, scope: 'full' | 'colour' = 'full'): Promise<AxeViolation[]> {
-  const builder = new AxeBuilder({ page }).options({ resultTypes: ['violations'] });
+  // Legacy mode runs axe in the page. The default mode runs each frame partly and aggregates the
+  // results in a new blank page: on the 17,337-element ess-ui reference page that took 92 to 112 s
+  // for one rule, against 16 to 30 s for every rule in the page (R-02, under load 55 to 85).
+  const builder = new AxeBuilder({ page }).setLegacyMode(true).options({ resultTypes: ['violations'] });
   const result = await (scope === 'full' ? builder.withTags(AXE_TAGS) : builder.withRules(COLOUR_RULES)).analyze();
   return result.violations
     .map((v) => ({

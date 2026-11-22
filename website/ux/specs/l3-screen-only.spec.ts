@@ -1,21 +1,24 @@
-// L3 screen-only user (skill § 7): every task at both gating viewports with the pointer, and the
-// two anchor tasks with the keyboard alone (gate 5). Gate 4: every task completed to its truth.
+// L3 screen-only user (skill § 7): in the `slow` lane every task, in the `gate` lane the two anchor
+// tasks, at both gating viewports with the pointer, and the anchor tasks with the keyboard alone
+// (gate 5). Gate 4: every task completed to its truth.
 // Gate 3: no completion miss and no false completion. Each run declares itself before it runs, so
 // a run that never ends is counted as unmeasured.
 import { expect, test } from '@playwright/test';
-import { GATING, ORIGIN, botConfig, scenarios } from '../adapter';
+import { GATING, LANE, ORIGIN, botConfig, scenarios } from '../adapter';
 import { ScreenOnlyUser } from '../core/bot';
 import { makeHermetic } from '../core/hermetic';
 import { EXPECT, type Expected, type L3Record } from '../core/reporter';
 
 test.describe.configure({ mode: 'parallel' });
 
-const runs = scenarios().flatMap((scenario) =>
-  GATING.flatMap((viewport) => [
-    { scenario, viewport, mode: 'pointer' as const },
-    ...(scenario.card === 'anchor' ? [{ scenario, viewport, mode: 'keyboard' as const }] : []),
-  ]),
-);
+const runs = scenarios()
+  .filter((scenario) => LANE === 'slow' || scenario.card === 'anchor')
+  .flatMap((scenario) =>
+    GATING.flatMap((viewport) => [
+      { scenario, viewport, mode: 'pointer' as const },
+      ...(scenario.card === 'anchor' ? [{ scenario, viewport, mode: 'keyboard' as const }] : []),
+    ]),
+  );
 
 for (const { scenario, viewport, mode } of runs) {
   const expected: Expected = { kind: 'l3', task: scenario.name, viewport: viewport.name, mode, total: runs.length };

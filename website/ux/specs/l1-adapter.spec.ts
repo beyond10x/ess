@@ -1,7 +1,8 @@
 // L1: the adapter states what this site has, and gate 2 gates only what the adapter gates.
 import { expect, test } from '@playwright/test';
-import { GATING, alwaysVisible, hasSearchControl, pageKind } from '../adapter';
+import { BASE, GATING, SITEMAP, TEMPLATE_PAGES, alwaysVisible, hasSearchControl, pageKind } from '../adapter';
 import { checkAlwaysVisible } from '../core/contract';
+import { sitemapPaths } from '../core/sitemap';
 
 test.use({ viewport: { width: 400, height: 600 } });
 
@@ -40,4 +41,15 @@ test('L1 the site-search check finds a built search control and its absence', ()
   expect(hasSearchControl('<nav class="navbar"><a class="navbar__item">Docs</a><button>Research notes</button></nav>')).toBe(false);
   expect(hasSearchControl('<div class="navbar__search"><input type="search" class="navbar__search-input"></div>')).toBe(true);
   expect(hasSearchControl('<button type="button" class="DocSearch DocSearch-Button" aria-label="Search">')).toBe(true);
+});
+
+test('L1 the template pages of the gate cover every page template and every always-visible element of the sitemap', async ({ page }) => {
+  await page.setContent('<body></body>');
+  const sitemap = sitemapPaths(SITEMAP).filter((p) => p.startsWith(BASE.replace(/\/$/, '')));
+  const templates = TEMPLATE_PAGES.map((t) => t.path);
+  const kinds = (paths: string[]) => [...new Set(paths.map(pageKind))].sort();
+  const elements = (paths: string[]) => [...new Set(paths.flatMap((p) => GATING.flatMap((v) => alwaysVisible(page, v, pageKind(p)).map((w) => `${v.name} ${w.name}`))))].sort();
+  expect(templates.filter((p) => !sitemap.includes(p)), 'every template page is a page of the site').toEqual([]);
+  expect(kinds(templates)).toEqual(kinds(sitemap));
+  expect(elements(templates)).toEqual(elements(sitemap));
 });
