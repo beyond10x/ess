@@ -34,19 +34,22 @@ mapping:
 
 The record type must declare those fields and enum variants. Exclusion removes a
 selected list occurrence by its original index, so equal-valued records remain
-distinct. References point backward; `first_present` alternatives use the same
+distinct. References point backward. `first_present` alternatives use the same
 list. The result is optional and must fit the command input's declared type.
-Whole records use `path: []`; field paths reuse bounded accessor rules.
+Whole records use `path: []`. Field paths reuse bounded accessor rules.
 
 Malformed records are refused before selection, including records after an early
 match. Executable selection currently refuses inputs with unsupported declared
 invariants or clock-reading attachments, including nested members and list
-aliases, instead of dropping their constraints. Predicates use a bounded declared fragment: defined checks, typed literal
-equality/inequality (a Boolean item leaf against `true` or `false` from `ess/27`) and Boolean
-combinations. Selection does not sort or invent
-values. If the event carries a different representation, declare the exact
+aliases, instead of dropping their constraints.
+
+Predicates use a bounded declared fragment: defined checks, typed literal
+equality and inequality, and Boolean combinations. From `ess/27` a Boolean item leaf
+may be compared against `true` or `false`. Selection does not sort or invent values.
+
+If the event carries a different representation, declare the exact
 conversion to the local list type. The host prepares that value once and can
-pass it to generated Rust/Go selection helpers; the local list is not a new
+pass it to generated Rust/Go selection helpers. The local list is not a new
 field on the wire.
 
 ## Declare a periodic host cause
@@ -80,17 +83,17 @@ delivery: at_most_once
 on_failure: drop
 ```
 
-Context is constant for the host lifetime; reads are fresh for each eligible
+Context is constant for the host lifetime. Reads are fresh for each eligible
 occurrence. The first tick follows one period, work is serial, and excess busy
 ticks coalesce to one pending tick. Stop acknowledgement means the loop and its
 work have quiesced. Native generation reports `PeriodicHostRequired` until that
-real host capability is supplied; it does not fabricate a scheduler or event.
+real host capability is supplied. It does not fabricate a scheduler or event.
 
 ## Read the channel an event arrived on
 
 Some events do not carry their recipient in the payload. For example, a service subscribes to
 `accounts/{account_id}/messages` for each account, and the recipient is the subscription the
-event arrived on. `ess/18` lets an event binding declare that delivery context and read it:
+event arrived on. From `ess/18` an event binding declares that delivery context and reads it:
 
 ```yaml
 when:
@@ -107,8 +110,8 @@ delivery: at_least_once
 on_failure: retry
 ```
 
-`context_fields` is a typed record separate from the payload. `context_authority` names the
-external channel whose authority binds it. It is a name, not a credential, and each key
+`context_fields` is a typed record separate from the payload. `context_authority` is the name of
+the external channel whose authority binds it. It is not a credential, and each key
 requires the other. `context.<field>` reads one declared field. The field's type must fit the
 input, or a declared conversion must cross it. The host binds the context from the channel the
 occurrence arrived on and supplies it with that occurrence. A redelivery carries the context
@@ -147,10 +150,10 @@ literal `Z`, and exact integer Unix seconds. A literal `Z` on local text does no
 establish UTC. The observation adapter supplies the process instance, clock
 epoch, origin and actual formatter offset for the particular occurrence.
 Comparison requires the same observed source and epoch. Unknown evidence and
-cross-source calibration remain unsupported; generic input predicates cannot
+cross-source calibration remain unsupported. Generic input predicates cannot
 silently discard the attachment.
 
 Normalization accepts years 1970–9999 and fixed offsets within ±14:00. Offset
-text allows no fraction or exactly three millisecond digits; local literal-Z
+text allows no fraction or exactly three millisecond digits. Local literal-Z
 text requires exactly three. Other precision, leap seconds and inferred host
 timezone settings are outside this bounded contract.

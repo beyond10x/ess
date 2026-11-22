@@ -33,7 +33,9 @@ passes the filter. Every field without `aggregate:` must be listed in `group_by`
 Each field declares its result type exactly, and validation names the one it expects: `Integer`
 for `count`, `count_distinct` and `sum` of an `Integer`; `Decimal` for `sum` of a `Decimal`;
 `Optional<T>` for `min` and `max`, keeping a newtype; `Optional<Decimal>` for `avg`, which is
-rounded to 6 fractional digits, ties to even. An aggregate reads one top-level field of the source
+rounded to 6 fractional digits, ties to even.
+
+An aggregate reads one top-level field of the source
 (from `ess/36` also an expression of the row, below). An `Optional` argument is refused unless the
 aggregate says `skip_absent: true` (from `ess/15`, below); an `Optional` group key is admitted from
 `ess/15` and the absent value is its own group. Grouping by a `Timestamp` and ranking an aggregate
@@ -42,9 +44,11 @@ view with `order_by:` are refused.
 Conformance creates the rows itself, through the declared creating outcome, and asserts every
 group's exact numbers. Because a target may be shared, the rows are kept apart from every other
 scenario's by a group key or a parameter compared with one (`queue_id == param.queue_id`) that is a
-`String` or `Uuid` the creating command sets from its input. An ungrouped view with no parameter
+`String` or `Uuid` the creating command sets from its input.
+
+An ungrouped view with no parameter
 is over every row, including other scenarios' rows, so conformance reads it before creating its rows
-and asserts only how much each `count` and `sum` changed; its other aggregates are not asserted. A
+and asserts only how much each `count` and `sum` changed. Its other aggregates are not asserted. A
 grouped view with neither, or an ungrouped one with no `count` or `sum`, gets no scenario and the
 refusal `ESS-SYNTH-016`.
 
@@ -62,21 +66,23 @@ is a condition over one source row and the view's parameters, written as a filte
       - {name: escalated_cost, type: Integer, aggregate: {sum: cents, where: escalated == true}}
 ```
 
-The filter still decides which rows exist and which groups they form; each measure then reads the
+The filter still decides which rows exist and which groups they form. Each measure then reads the
 rows of its group its own condition holds for. A group stays in the result when a condition selects
 none of its rows: that measure's `count`, `count_distinct` and `sum` are `0`, its `min`, `max` and
-`avg` absent, and a `sum` with `skip_absent: true` absent. A condition reads the source row, never a
-result or another measure, and never `now`. A condition whose truth is unknown for some row — it
-compares an absent value — makes the whole read undetermined rather than counting the row out.
-`where: true` is a condition, not an omitted one; `null`, empty text and an empty list or map are
-refused. A parameter read only by a condition is a parameter of the view; a paging parameter may not
+`avg` absent, and a `sum` with `skip_absent: true` absent.
+
+A condition reads the source row, never a
+result or another measure, and never `now`. A condition whose truth is unknown for some row, because
+it compares an absent value, makes the whole read undetermined. The row is not counted out.
+`where: true` is a condition, not an omitted one. `null`, empty text and an empty list or map are
+refused. A parameter read only by a condition is a parameter of the view. A paging parameter may not
 be read by one.
 
-Conformance arranges, in one group, rows its condition admits and rows it refuses — varying the
-fields it reads that the creating command sets and the lifecycle state — so that each measure's
-exact value would change if its condition were dropped or inverted, and refuses the view
+Conformance arranges, in one group, rows its condition admits and rows it refuses, varying the
+fields it reads that the creating command sets and the lifecycle state, so that each measure's
+exact value would change if its condition were dropped or inverted. It refuses the view
 (`ESS-SYNTH-017`) where no arrangement does. Such a suite is written as `ess-conformance/38` or
-`/39`. A view a binding or precondition changes the rows of is refused by name.
+`/39`. A view a binding or precondition changes the rows of is refused.
 
 ### Measures over expressions and ordered enums
 
@@ -108,10 +114,13 @@ views:
       - {name: worst, type: Optional<incident.ImpactLevel>, aggregate: {max: level}}
 ```
 
-The result type follows what the expression computes: `sum` of an `Integer`, `Decimal` or
-`Duration` is that type; `avg` of any of them is `Optional<Decimal>`, a `Duration`'s mean in
-seconds; `min` and `max` of an `Integer`, `Decimal`, `String`, `Timestamp` or `Duration` are
-`Optional` of it. A quotient or an `Optional` read may be absent, so a measure over one needs
+The result type follows what the expression computes:
+
+- `sum` of an `Integer`, `Decimal` or `Duration` is that type.
+- `avg` of any of them is `Optional<Decimal>`, a `Duration`'s mean in seconds.
+- `min` and `max` of an `Integer`, `Decimal`, `String`, `Timestamp` or `Duration` are `Optional` of it.
+
+A quotient or an `Optional` read may be absent, so a measure over one needs
 `skip_absent: true`. `now` is refused: a figure read at the current time has no clock a suite fixes.
 
 An enum orders its values only where it declares `ordered: true`: `min` and `max` then read the
@@ -121,8 +130,10 @@ naming the flag. A `Duration` field takes `sum`, `avg`, `min` and `max` as an ex
 
 Conformance varies every field the expression reads and asserts the figure the expression
 computes per row, so a target that reads one field of a difference, ignores an attribute, or orders
-an enum's variants as words fails. A measure over an expression that also declares `skip_absent:`
-or `where:` gets no scenario yet and is refused by name (`ESS-SYNTH-017`), and so is a `sum` whose
+an enum's variants as words fails.
+
+A measure over an expression that also declares `skip_absent:`
+or `where:` gets no scenario yet and is refused (`ESS-SYNTH-017`). So is a `sum` whose
 values are `Duration`s, such as `downtime` above, and an `avg` of a `Duration` field where no arrangement of whole
 seconds tells rounding from truncation: their figure is not yet asserted. Generated Rust and Go
 view queries keep a view with an expression measure, a `Duration` measure or an ordered enum's
@@ -134,7 +145,9 @@ A read that selects the rows whose key is in a list the caller sends declares th
 `List` and asks for membership with a quantifier: `exists: {in: param.queues, as: q, that: queue_id
 == q}` holds for a row whose `queue_id` is one of the values sent, and a value no row holds selects
 nothing. Where an empty list means every queue, a second disjunct says so: `param.queues.count ==
-0`. A switch the caller may leave out is an `Optional<Boolean>` parameter, and what it means when
+0`.
+
+A switch the caller may leave out is an `Optional<Boolean>` parameter, and what it means when
 absent is written as a disjunct over `not defined(param.abandoned)`.
 
 ```yaml
@@ -193,16 +206,17 @@ views:
 
 `default:` on a parameter and `{in: param.queues}` are not admitted. `default:` is an unknown
 field. `in`, `any_of`, `one_of`, `not_in` and `none_of` hold literal values only, so `queue_id: {in:
-param.queues}` would compare with the text `param.queues`; it is refused as `type_mismatch`, naming
+param.queues}` would compare with the text `param.queues`. It is refused as `type_mismatch`, naming
 the `exists` form for a list and `queue_id == param.queue` for a single value, and so is a command
 input written the same way (`{in: input.allowed}`) and `in_ignore_case`.
 
 Conformance sends a list parameter over a group key one arranged key at a time, as a list of one,
 and asserts that group exactly and every other arranged group absent. It then sends every arranged
 key in one list, the first of them not the first group's, so a target that reads only the first
-element answers fewer groups; and, where the `param.queues.count == 0` disjunct is written, `[]`,
-asserting every group. Like any group selection this needs the suite's empty initial state. The
-switch is not witnessed: its parameter is read twice, and the view keeps the refusal
+element answers fewer groups. Where the `param.queues.count == 0` disjunct is written, it sends `[]`,
+asserting every group. Like any group selection this needs the suite's empty initial state.
+
+The switch is not witnessed: its parameter is read twice, and the view keeps the refusal
 `ESS-SYNTH-017`. The `OpenAPI` document states a list parameter as its query key repeated,
 `queues=1&queues=2` (`style: form`, `explode: true`).
 
@@ -211,7 +225,9 @@ switch is not witnessed: its parameter is read twice, and the view keeps the ref
 A view returns the numbers a suite can check exactly, and the consumer computes what follows from
 them. There is no ratio or difference between two measures: return both operands as measures of one
 row, `queued` as `{count: {}}` beside `abandoned` as `{count: {}, where: abandoned == true}`, and
-let the consumer divide, round and decide what a zero denominator reads as. A filter moves a
+let the consumer divide, round and decide what a zero denominator reads as.
+
+A filter moves a
 parameter by one constant at most (`duration_ms > param.limit_ms + 1000`); declare the parameter in
 the unit the field is stored in, and convert at the adapter. The same applies to a latest row per
 group, a unit, a total kept per key and a field of another entity: each has an idiom with the

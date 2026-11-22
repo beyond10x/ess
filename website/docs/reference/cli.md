@@ -7,42 +7,49 @@ description: The canonical ESS command, the five areas its first level is made o
 # CLI reference
 
 `ess` is the canonical command. It exits `0` on success and non-zero on invalid input, unresolved
-semantics, unsupported projection, or a failed check.
+semantics, unsupported projection or a failed check.
 
-Its first level is the five areas ESS is built out of, one per crate directory, and `ess --help`
-lists exactly those: [`ess specify`](#ess-specify), [`ess generate`](#ess-generate),
-[`ess verify`](#ess-verify), [`ess infra`](#ess-infra) and [`ess ui`](#ess-ui). The
-[command reference](#command-reference) at the end of this page lists every command under them,
-with every argument, its default and its help text. It is generated from the command definition
-`ess` itself parses with, so it names exactly what the shipped command accepts.
-What each error code and refusal name `ess` prints means, and how to repair it, is in
-[Diagnostics](diagnostics.md).
+Its first level is the five areas ESS is built out of, one per crate directory: [`ess specify`](#ess-specify),
+[`ess generate`](#ess-generate), [`ess verify`](#ess-verify), [`ess infra`](#ess-infra) and
+[`ess ui`](#ess-ui). `ess --help` lists exactly those.
+
+The [command reference](#command-reference)
+at the end of this page lists every command under them, with every argument, its default and its
+help text. It is generated from the command definition `ess` itself parses with, so it lists
+exactly what the shipped command accepts. [Diagnostics](diagnostics.md) explains what each error
+code and refusal name `ess` prints means, and how to repair it.
 
 The agent guidance for these commands is the `ess` plugin in
 [`beyond10x/agentplugins`](https://github.com/beyond10x/agentplugins); `ess` itself carries none.
 
 ## Flat spellings
 
-Existing verbs retain their flat spellings at the top level, exactly as before the areas existed:
+Existing verbs keep their flat spellings at the top level, as before the areas existed:
 `ess validate --path .` is `ess specify validate --path .`, `ess conform run …` is
-`ess verify conform run …`, and `ess import openapi …` is `ess infra import openapi …`. A flat
-spelling is the same command with the same arguments, and it prints no notice of any kind: when the
-command runs, both spellings produce the same stdout, the same stderr and the same exit status, so
-a caller that reads the output is unaffected. For a refusal `ess` itself did not write — a missing
-required argument, which the argument parser answers — and for `--help`, only the `Usage:` line
-differs: it names the path you typed. It is left out of `--help` only so the listing stays the five
-areas. Nothing is deprecated and no pinned caller needs changing.
+`ess verify conform run …`, and `ess import openapi …` is `ess infra import openapi …`.
+
+A flat
+spelling is the same command with the same arguments, and it prints no notice. When the command
+runs, both spellings produce the same stdout, the same stderr and the same exit status, so a caller
+that reads the output is unaffected.
+
+Only the `Usage:` line differs, and only for `--help` and for a refusal `ess` itself did not write,
+such as the argument parser's answer to a missing required argument. There the line shows the path
+you typed. Flat spellings are left out of `--help` so the listing stays the five areas. Nothing is
+deprecated and no pinned caller needs changing.
 
 The additive `ess specify cli` and `ess generate cli` routes are available only
 under their areas. Their shared leaf name has two distinct purposes, so neither
 claims a flat `ess cli` spelling.
 
-Two verbs share the name of the area they sit in, so their flat spelling is one level shorter
-rather than one word: `ess generate --path …` is `ess generate generate --path …`, and
-`ess infra diagnose …` is `ess infra infra diagnose …`. `ess generate --help` therefore offers the
-verb's options beside the area's subcommands, and the two cannot be written together —
-`ess generate --path PATH synthesize` names a specification for a verb that takes one and is
-refused with exit 2 rather than run against the current directory.
+Two verbs share the name of the area they sit in, so their flat spelling is one level shorter:
+`ess generate --path …` is `ess generate generate --path …`, and `ess infra diagnose …` is
+`ess infra infra diagnose …`.
+
+`ess generate --help` therefore offers the verb's options beside the
+area's subcommands. The two cannot be written together: `ess generate --path PATH synthesize` names
+a specification for a verb that takes one, and it is refused with exit 2 instead of running against
+the current directory.
 
 ## Directory input selection
 
@@ -51,38 +58,41 @@ where it reads two). The path is one of:
 
 | `--path` names | What is read |
 |---|---|
-| a file | that file alone, whatever its extension; no parent directory is consulted |
+| a file | that file alone, whatever its extension, and no parent directory is consulted |
 | a directory with an `ess-inputs.yaml` | exactly the files its `specification:` list names |
 | a directory with a `system.yaml` and no `ess-inputs.yaml` | every lowercase `.yaml` and `.yml` file below it |
 
 [`ess-inputs.yaml`](formats.md#directory-input-configuration), introduced in 0.21.0, lets a
-specification share its directory with generated output and authored scenarios: only the listed
-files are opened, in sorted order, and nothing else in the directory is scanned. Input selection reads it only in
-the directory you name; only the release pin below is looked up in parent directories. A malformed manifest is
-refused rather than ignored. `--scenarios` reads the same manifest's `scenarios:` list, and
-`ess specify validate` also compiles a nonempty `scenarios:` list and reports its `ESS-AUTHOR-*`
-refusals.
+specification share its directory with generated output and authored scenarios. Only the listed
+files are opened, in sorted order, and nothing else in the directory is scanned. Input selection
+reads the manifest only in the directory you name, and only the release pin below is looked up in
+parent directories. A malformed manifest is refused.
+
+`--scenarios` reads the same manifest's
+`scenarios:` list, and `ess specify validate` also compiles a nonempty `scenarios:` list and
+reports its `ESS-AUTHOR-*` refusals.
 
 `format: ess-inputs/2` can pin the `ess` release with `requires:`. An older `ess` refuses and a
-newer one warns; the global `--strict-requires`, accepted in any position, refuses instead. An exact
-pin of another release in a manifest below the working directory is refused by name in both cases,
-because `ess` does not run it from there. See
+newer one warns. The global `--strict-requires`, accepted in any position, makes a newer one refuse
+too. An exact pin of another release in a manifest below the working directory is refused in both
+cases, because `ess` does not run it from there. See
 [the release a project runs](#the-release-a-project-runs).
 
-A manifest selects inputs; it does not permit writing generated output into the specification's
+A manifest selects inputs. It does not permit writing generated output into the specification's
 directory, and the commands that refuse to write inside their input still refuse. Inputs that are
-not specifications — a committed suite given to `ess verify conform run --suite`, an OpenAPI `--ir`,
-build and runtime IR, infrastructure observations — are read as given and never through a manifest.
+not specifications are read as given and never through a manifest: a committed suite given to
+`ess verify conform run --suite`, an OpenAPI `--ir`, build and runtime IR, and infrastructure
+observations.
 
 ## `ess specify` — a system, resolved
 
-The `ess specify` commands load, resolve and validate a specification and render what it says:
-`validate` also compiles the authored scenarios its `ess-inputs.yaml` lists, and `compose` compiles
+The `ess specify` commands load, resolve and validate a specification and render what it says.
+`validate` also compiles the authored scenarios its `ess-inputs.yaml` lists. `compose` compiles
 selected component surfaces into composition IR, a client plan and a Rust client with byte-buffer
 transport. Their arguments are listed under [`ess specify`](#ess-specify) in the command reference.
 
 `ess specify toolchain install X.Y.Z` fetches only from `https://` or a local directory, and its
-`--pin` writes `requires: ess X.Y.Z` (0.34.0 or later). `ess specify toolchain which` names the
+`--pin` writes `requires: ess X.Y.Z` (0.34.0 or later). `ess specify toolchain which` reports the
 reason for its answer: `ESS_TOOLCHAIN`, the pin, or this `ess`.
 
 ### The release a project runs
@@ -91,21 +101,25 @@ When the nearest `ess-inputs.yaml` above the working directory carries an exact
 `requires: ess X.Y.Z` naming another release, or `ESS_TOOLCHAIN=X.Y.Z` is set, any `ess` runs that
 release from its cache (`$XDG_CACHE_HOME/ess/toolchains/X.Y.Z/ess`, else
 `~/.cache/ess/toolchains/`) with the same arguments and environment, installing it first when it is
-not cached. A minor line `ess X.Y`, or no pin, runs the `ess` you called. Every delegated command
-prints one note on stderr naming the dispatcher, the release it delegated to and why
-(`ESS_TOOLCHAIN_QUIET=1` silences it); stdout is the delegated release's alone, and `ess --version`
-prints both releases' lines. A release that cannot be installed is refused,
-naming the newest cached one. This walk upwards reads only the pin; input selection still reads
-only the manifest of the directory it is given. The `toolchain` commands always run in the `ess`
-you called.
+not cached. A minor line `ess X.Y`, or no pin, runs the `ess` you called.
 
-A pin in a manifest below the working directory decides nothing: run from the repository root,
-`ess` stays on the release you called. `ess specify toolchain which` names the one it finds below,
-with the `cd` and the `ESS_TOOLCHAIN=X.Y.Z` that run it, and refuses when two manifests below pin
-different releases. A command given a path to such a manifest (`ess specify validate --path spec`)
-refuses where its exact pin names another release than this `ess`, older or newer, naming the
-manifest, `cd <directory>` and `ESS_TOOLCHAIN=X.Y.Z`. A minor line `ess X.Y`, and a command run
-under `ESS_TOOLCHAIN`, keep the checks above.
+Every delegated command prints one note on stderr that names the dispatcher, the release it
+delegated to and the reason, and `ESS_TOOLCHAIN_QUIET=1` silences it. Stdout is the delegated release's
+alone, and `ess --version` prints both releases' lines. A release that cannot be installed is
+refused, and the refusal reports the newest cached one.
+
+This walk upwards reads only the pin. Input selection still reads only the manifest of the
+directory it is given. The `toolchain` commands always run in the `ess` you called.
+
+A pin in a manifest below the working directory decides nothing. Run from the repository root,
+`ess` stays on the release you called. `ess specify toolchain which` reports the release pin it
+finds below, with the `cd` and the `ESS_TOOLCHAIN=X.Y.Z` that run it, and refuses when two
+manifests below pin different releases.
+
+A command given a path to such a manifest
+(`ess specify validate --path spec`) refuses where its exact pin names another release than this
+`ess`, older or newer. The refusal names the manifest, `cd <directory>` and `ESS_TOOLCHAIN=X.Y.Z`.
+A minor line `ess X.Y`, and a command run under `ESS_TOOLCHAIN`, keep the checks above.
 
 ### CLI presentation bindings
 
@@ -113,11 +127,15 @@ An independently authored `ess-cli/1` or `ess-cli/2` document selects typed loca
 service-forwarded operations or dynamic schema-selected calls. It declares CLI
 paths, finite aliases, argument sources and process context without moving
 operation ownership or changing the ESS semantic format. `ess-cli/1` requires all
-three global flags, `config`, `state` and `output`; `ess-cli/2` requires only
-`state` and compiles to `ess-cli-plan/2`. An omitted global is no flag at all, and
-a CLI without `output` writes JSON only. `null`, `~` and `""` are refused naming
-the global, in either version. A binding is its own
-grammar: its command paths are not checked against a component's `cli:` block,
+three global flags, `config`, `state` and `output`. `ess-cli/2` requires only
+`state` and compiles to `ess-cli-plan/2`.
+
+An omitted global is no flag at all, and
+a CLI without `output` writes JSON only. `null`, `~` and `""` are refused in either
+version, and the refusal names the global.
+
+A binding is its own
+grammar. Its command paths are not checked against a component's `cli:` block,
 which drives the separate Clap grammar route, so a binding may present a path no
 `cli:` group declares.
 
@@ -129,10 +147,12 @@ ess generate cli --path model --binding cli.yaml --out generated/cli --check
 
 The generator emits a standalone Rust/Clap package, resolved binding, help and
 completion artifacts. The generated adapter validates input and handler output
-types; dynamic schema validation and application actions remain explicit runtime
-obligations. A result field may be `Json` (alone or under `Optional`, `List` or a
-`String`-keyed `Map`), written as JSON rather than JSON text; an input or error field
-may not. A callable's `invalid_input: <code>` names one of its declared errors
+types. Dynamic schema validation and application actions remain runtime
+obligations.
+
+A result field may be `Json` (alone or under `Optional`, `List` or a
+`String`-keyed `Map`), written as JSON rather than JSON text. An input or error field
+may not. A callable's `invalid_input: <code>` selects one of its declared errors
 as the answer, with `{}` data, for every invalid input in place of `cli_input` and
 `cli_dynamic_input`. Its default handler reports unavailable. It does not install an
 adapter, store credentials or contact a provider merely because parsing succeeds.
@@ -140,10 +160,12 @@ adapter, store credentials or contact a provider merely because parsing succeeds
 Unsupported model projections and invalid bindings refuse before output mutation.
 Output must stay outside model inputs. Generation uses the existing output
 ownership protocol with family `cli-binding`. Regeneration refuses an owned file
-whose bytes differ from the ownership record, naming the files and the re-enroll
-route; unowned destinations refuse. `--check` detects drift
-without writing or recovery. See [repeated generation and recovery](../guides/generate-artifacts.md#repeated-generation-and-recovery).
-`--check` compares generated bytes without replacing them. See the
+whose bytes differ from the ownership record, and the refusal names the files and the re-enroll
+route. Unowned destinations refuse, and `--check` compares generated bytes to detect drift
+without writing or recovery.
+
+See [repeated generation and recovery](../guides/generate-artifacts.md#repeated-generation-and-recovery).
+See the
 [binding design](https://github.com/beyond10x/ess/blob/main/docs/design/cli-presentation-binding.md)
 for the complete input and handler contracts. CLI presentation bindings were
 introduced in 0.21.0.
@@ -152,8 +174,8 @@ introduced in 0.21.0.
 
 Composition checks an import's exact system, specification version, **compiled-model digest** and
 selected component against the supplied compiled ESS model. Commands come from that component's
-`accepts`; queries come from views in domains it owns. A reference to a command that exists elsewhere
-in the same model is refused with `ReferenceOutsideComponent`; a mismatched imported digest is
+`accepts`, and queries come from views in domains it owns. A reference to a command that exists elsewhere
+in the same model is refused with `ReferenceOutsideComponent`. A mismatched imported digest is
 refused with `DigestMismatch`. The digest identifies compiled semantics, not raw YAML bytes,
 client-plan bytes or the service currently running at an endpoint.
 
@@ -162,7 +184,7 @@ complete payload definitions or codecs. Named-type traversal follows command inp
 fields and query row shapes/fields recursively. It does **not** traverse view parameters, so the
 listed names do not establish complete query payload closure.
 
-For a concrete example, the repository's [Todo/Usage composition][composition-example] imports two
+The repository's [Todo/Usage composition][composition-example] imports two
 components from one compiled model. From the ESS repository root, emit its client with:
 
 ```sh
@@ -179,10 +201,10 @@ ess specify compose --path "$fixture/compositions/workbench.yaml" \
 
 Writing composition outputs requires `--ownership-root` enclosing every selected file and client
 directory. These outputs share one owner: omitting a previously selected output on a later run
-retires its owned files. Listing composition without output destinations remains nonwriting.
+retires its owned files. Listing composition without output destinations is nonwriting.
 
 The emitted Rust client exposes `service_todo::COMMAND_CREATE_LIST`. `Operation` has private fields
-and a private constructor, constraining normal downstream Rust callers to emitted descriptors.
+and a private constructor, so normal downstream Rust callers can use only emitted descriptors.
 `Client::execute` takes an operation and `&[u8]`, forwards them to `Transport<Authority>`, then returns
 the transport's `Vec<u8>` unchanged. It does no payload admission or response decoding.
 
@@ -206,7 +228,7 @@ client.execute(
 | `{"details":{"title":"Inbox"}}` | String title matches the declaration | Exact bytes reach `todo` / `workbench.todo.CreateList`. |
 | `{"details":{"title":7}}` | Numeric title conflicts with the String declaration | The same selected operation receives these exact bytes too. |
 
-The example independently checks the selected service identity and operation descriptor, the
+The example checks the selected service identity and operation descriptor, the
 separate authority argument, and the unchanged arbitrary binary response `[0, 255, 82, 10]`.
 It also checks that a missing endpoint returns `ClientError::MissingEndpoint` before authority
 lookup or transport execution, and a transport error returns as `ClientError::Transport`.
@@ -218,9 +240,11 @@ cargo test --locked -p ess-composition \
   generated_rust_client_executes_the_byte_transport_boundary -- --exact --nocapture
 ```
 
-Endpoint, authority and transport providers are application-owned. Authority is passed separately;
-the application must establish its validity. Injection does not verify authority or perform a live
-endpoint/model-digest handshake. The client generates no authentication operands, but its opaque
+Endpoint, authority and transport providers are application-owned. Authority is passed separately,
+and the application must establish its validity. Injection does not verify authority or perform a live
+endpoint/model-digest handshake.
+
+The client generates no authentication operands, but its opaque
 payload can contain application-chosen data, including authentication coordinates: it is not
 inspected or sanitized. Payload admission, codecs, response interpretation and live service
 compatibility belong to the application and transport contract. Successful composition and byte
@@ -234,10 +258,10 @@ forwarding alone do not establish end-to-end typed payload compatibility.
 ## `ess generate` — artifacts and explicit delivery executors
 
 The `ess generate` commands, with every argument, are listed under
-[`ess generate`](#ess-generate) in the command reference; `--help` on any of them prints the same.
+[`ess generate`](#ess-generate) in the command reference. `--help` on any of them prints the same.
 
 `ess generate --kind` selects one deterministic projection. `site` writes HTML and local assets at
-the output root; `docs-ir` writes `docs-ir/document.json` carrying `ess-docs/1`. The
+the output root. `docs-ir` writes `docs-ir/document.json` carrying `ess-docs/1`. The
 `ess generate output` commands are also available as `ess output …`.
 
 The [current-source support matrix](../status/where-this-stands.md#support-boundaries) records
@@ -251,11 +275,14 @@ without writing them.
 neither, and a specification without components projects to `0 artifact(s)`. That is legal, and
 `--kind openapi`, `--kind asyncapi`, no `--kind` and `ess generate project openapi --path …` each
 print `note: no component owns <domain>; declare it in components.yaml` on stderr for every such
-domain, and exit 0. `--strict` makes the same condition a refusal: the line reads `refused:`,
-nothing is written, and the exit is 1. The other kinds do not read components and print no note. The repository-only `cargo xtask generate` command reconciles the committed
-`generated/` projection tree; `cargo xtask generate --check` compares it without writing.
+domain, and exit 0.
 
-Generated tree outputs use their output root as the ownership root; a standalone generated file
+`--strict` makes the same condition a refusal: the line reads `refused:`,
+nothing is written, and the exit is 1. The other kinds do not read components and print no note.
+The repository-only `cargo xtask generate` command reconciles the committed
+`generated/` projection tree. `cargo xtask generate --check` compares it without writing.
+
+Generated tree outputs use their output root as the ownership root, and a standalone generated file
 uses its parent. Existing unowned destinations refuse. See [repeated generation and recovery](../guides/generate-artifacts.md#repeated-generation-and-recovery)
 for adoption, stale-file retirement, and the filesystem contract. Output-management commands were introduced in 0.21.0.
 
@@ -265,18 +292,18 @@ A component is delivered by [`ess generate component compile`](#ess-generate-com
 [`ess generate build execute`](#ess-generate-build-execute), which compiles and retains the
 BuildKit projection and then invokes Docker Buildx Bake, the `ess generate release` commands and
 [`ess generate deployment reconcile`](#ess-generate-deployment-reconcile). `release publish`
-prints the published OCI manifest digest; `release fetch` takes a digest-pinned reference,
+prints the published OCI manifest digest. `release fetch` takes a digest-pinned reference,
 revalidates the bundle and caches its canonical bytes.
 
 `deployment reconcile` applies only added or changed Helm releases, in rollout order. `--current`
-is an admitted baseline desired deployment, not a record of what was applied. `--authority` names
+is an admitted baseline desired deployment, not a record of what was applied. `--authority` selects
 one entry of the protected recovery registry and is **required** for execution: without it the
-command refuses before any external call, cache write or recovery write. `--dry-run` remains a
+command refuses before any external call, cache write or recovery write. `--dry-run` is a
 local unverified preview and needs no authority.
 
 The seven release routes also have identical flat `ess release …` aliases. Existing canonical
-JSON/YAML streams and output files keep their bytes. Text success describes consistency; fetch
-additionally describes OCI content identity. Qualification diagnostics go to stderr. Both
+JSON/YAML streams and output files keep their bytes. Text success describes consistency, and fetch
+also describes OCI content identity. Qualification diagnostics go to stderr. Both
 publishers end stdout with `<destination> — published at <OCI manifest digest>` so the final token
 remains the published manifest digest. `check-conformance` succeeds with empty stdout.
 
@@ -291,20 +318,23 @@ ess generate release check-conformance \
 Replace `check-conformance` with `publish-conformance` and add `--to repository:tag` to qualify
 and upload the exact original report bytes through ORAS in the same process. Digest destinations
 are refused. Use `--expected-suite` instead of `--expected-suite-input` for an original unfiltered
-declared-coverage suite (suite/5 or any later coverage version). The carrier route requires every original parent. A standalone report/2 and explicit
-model are required; report/1, generic logs and detailed run/2 documents refuse. Complete nonempty
+declared-coverage suite (suite/5 or any later coverage version).
+
+The carrier route requires every original parent. A standalone report/2 and explicit
+model are required, and report/1, generic logs and detailed run/2 documents refuse. Complete nonempty
 all-pass selection, full model/contract identity and canonical deployment context must agree.
 
 Existing bundle `publish` accepts the all-or-none group `--spec`, `--report` and exactly one of
 `--expected-suite` / `--expected-suite-input`. It obtains deployment context from its admitted
-canonical `--path` bundle. Omitting the group preserves consistency-only publication. Either
-optional raw-byte pin, `--report-sha256 sha256:…` or `--expected-input-sha256 sha256:…`, requires
+canonical `--path` bundle. Omitting the group preserves consistency-only publication.
+
+Either optional raw-byte pin, `--report-sha256 sha256:…` or `--expected-input-sha256 sha256:…`, requires
 the qualification group. Pins cover the complete original files, not an OCI manifest or the
-carrier's selected inner-suite digest. Invalid CLI groups are usage errors; admission or positive
+carrier's selected inner-suite digest. Invalid CLI groups are usage errors. Admission or positive
 qualification failures exit 1 before publication effects.
 
 Success qualifies only the supplied exact declared selection. Attachment binding, producer origin
-and artifact execution remain **unverified**; signature verification remains **unsupported**.
+and artifact execution remain **unverified**, and signature verification remains **unsupported**.
 See [component delivery](../concepts/component-delivery.md#release-a-component-with-the-action)
 for the breaking action inputs and old/new action/ESS compatibility.
 
@@ -317,24 +347,24 @@ print the affected set without contacting external systems. See
 ### Adopter-owned schema contracts
 
 These commands are available in the current source. Their presence does not identify which remote
-release contains a particular change; see the [dated release observation](../status/where-this-stands.md).
+release contains a particular change. See the [dated release observation](../status/where-this-stands.md).
 
 The `ess generate schema` commands and [`ess generate types`](#ess-generate-types) are listed in
 the command reference. In addition to their help text:
 
 - `import-document` retains the document root and its local definition closure in a
-  replay-checked `/2` bundle; `project-bundle` also emits the root's source qualification.
+  replay-checked `/2` bundle. `project-bundle` also emits the root's source qualification.
 - `types-bundle` emits data libraries, not an application decoder.
 - The `normalize-*` commands need at least one `--bundle` or `--model` source, and model roots
-  require recipe version 3 or later. With `normalize-generate`, protect model input trees; its TypeScript target
-  emits a standalone JSON-text runtime with a fixed checked schema profile.
+  require recipe version 3 or later. With `normalize-generate`, protect model input trees. Its
+  TypeScript target emits a standalone JSON-text runtime with a fixed checked schema profile.
   `normalize-run` emits only a complete result and refuses duplicate input keys, numeric precision
   loss and input/output aliases.
 - `ess generate types` realizes checked ESS model types through the shared wire mapping and data
-  targets, retaining model schema selection and typed provenance; its output must be outside the
+  targets and retains model schema selection and typed provenance. Its output must be outside the
   specification tree.
 
-These operations are offline. Schema identity comes from `$id`; filenames only locate documents.
+These operations are offline. Schema identity comes from `$id`, and filenames only locate documents.
 `--check` compares an existing generated module byte for byte without rewriting it.
 
 ## `ess verify` — held to what was declared
@@ -343,11 +373,11 @@ The `ess verify` commands, with every argument and, where they have them, their 
 listed under [`ess verify`](#ess-verify) in the command reference. In addition to their help text:
 
 - [`ess verify conform mutate`](#ess-verify-conform-mutate) `--emit DIR` writes `mutant.json` (the
-  mutant's class, site and change) and `ir.json` beside each mutant's `suite.json`, and its
-  manifest (`ess-mutation-manifest/3`, or `/4` to `/7` as listed under the command below) names
+  mutant's class, site and change) and `ir.json` beside each mutant's `suite.json`. Its
+  manifest (`ess-mutation-manifest/3`, or `/4` to `/7` as listed under the command below) lists
   each suite's synthesis refusals and each mutant's `unsatisfiable_guard`. `--collect` scores
   `ess-conformance-report/1` or `/2` reports into `ess-mutation-report/3` (`/4` to `/8`
-  likewise); an `ess-mutation-manifest/2` or `/1` emission still collects, naming no
+  likewise). An `ess-mutation-manifest/2` or `/1` emission still collects, naming no
   dead guard, and a `/1` one judges gained refusals by count.
 - [`ess verify conform web`](#ess-verify-conform-web) with `--history` exits 0 once the page is
   rendered.
@@ -364,15 +394,15 @@ Sources come in through `ess infra import` and leave through
 
 - `ess infra import openapi` reads an OpenAPI 3.0 or 3.1 subset into `ess-openapi-import/1`, with
   the retained source, its SHA-256 and durable accounting. `--format` selects the terminal
-  presentation; `--out` always writes the canonical import envelope.
+  presentation, and `--out` always writes the canonical import envelope.
 - `ess infra import kubernetes` turns a sanitized bundle, or an explicitly selected live cluster,
-  into infrastructure IR. `--out` writes the IR as JSON whatever the file extension; `--format`
+  into infrastructure IR. `--out` writes the IR as JSON whatever the file extension, and `--format`
   selects only the report printed to stdout. What a full scan reads, and what it leaves out, is
   listed in
   [What a full scan observes](../guides/check-infrastructure.md#what-a-full-scan-observes-and-what-it-does-not).
 - [`ess generate project openapi`](#ess-generate-project-openapi) projects a checked import
   envelope (`--ir`) or a native ESS specification (`--path`) to OpenAPI. `--ir` refuses semantic
-  gaps, unresolved references or legacy interface-only input before output; reimport the original
+  gaps, unresolved references or legacy interface-only input before output. Reimport the original
   OpenAPI to replace legacy files.
 - [`ess generate project kubernetes`](#ess-generate-project-kubernetes) turns infrastructure intent
   and observation into manifests and obligations.
@@ -381,8 +411,8 @@ The commands under `ess generate project` write artifacts only. They do not call
 manifest, or mutate a target.
 
 `ess infra infra` contains `diagnose`, `graph`, and `diff` operations over sanitized infrastructure
-IR — the same three as `ess infra diagnose`, `ess infra graph` and `ess infra diff`, which are their
-flat spellings. Live or bundle scanning is under `ess infra import kubernetes`; manifest generation
+IR. `ess infra diagnose`, `ess infra graph` and `ess infra diff` are their flat spellings. Live or
+bundle scanning is under `ess infra import kubernetes`, and manifest generation
 is under `ess generate project kubernetes`. Their arguments are listed under
 [`ess infra`](#ess-infra) in the command reference.
 
@@ -392,27 +422,39 @@ An `ess-ui/1` document ([reference](ess-ui.md)) describes an application's pages
 channels without naming a renderer. `ess ui load` loads one and prints how many pages and addressed
 nodes it holds, or exits `1` naming the node that refuses it. `ess ui check` runs every check the
 schema declares and, with `--model`, checks the document's views, commands and events against an
-ESS specification; each finding names its node path, and any error exits `1`. `ess ui docs` renders the `ess-ui/1`
-reference from its schema, and `--check` fails when a written copy is stale. `ess ui run --tui`
-runs a document in the terminal against its fixtures, or with `--model` and `--base-url` against
-the HTTP surface that specification serves, showing a refusal where the user acted; the
-`Authorization` header comes from `ESS_UI_AUTHORIZATION`. `ess generate ui --target react` writes a
-React + TypeScript project from one whose only runtime dependencies are `react` and `react-dom`,
-with its routing generated into it and one esbuild step to build it; with `--model` the project
-is bound to the HTTP surface that specification serves, reading and commanding its paths and
-showing a refusal where the user acted. `ess generate ui --target tui --model` writes a Rust
-terminal application crate holding the document, its binding and a clap command line
-(`--base-url`, and `--screen-once <width>x<height>`, at most `1000x1000`, to print one rendered
-frame without a terminal). `--screen-once` exits `0` when every read of the page it shows
-answered; when one failed it still prints the frame, writes one stderr line naming each failed
-read, and exits `3` (a refusal before the frame exits `1`, a usage error `2`). It holds no renderer
-code: it depends on `ess-ui-tui` at the Git tag of the ESS release that generated it, so generate
-with a released `ess`, whose tag exists. Each generated file opens with a `generated by ess
-generate ui --target tui` line. An `--out` holding a file of the same name without that line, or a
-symbolic link or a non-directory where the crate puts a file or `src/`, is refused before anything
-is written; a document that opens with that line, such as the crate's own `src/ui.yaml`, is
-embedded without it. None of these has a flat
-spelling. Their arguments are listed under [`ess ui`](#ess-ui) and
+ESS specification. Each finding names its node path, and any error exits `1`.
+
+`ess ui docs` renders
+the `ess-ui/1` reference from its schema, and `--check` fails when a written copy is stale.
+
+`ess ui run --tui` runs a document in the terminal against its fixtures. With `--model` and
+`--base-url` it runs against the HTTP surface that specification serves and shows a refusal where
+the user acted. The `Authorization` header comes from `ESS_UI_AUTHORIZATION`.
+
+`ess generate ui --target react` writes a React + TypeScript project from a document. The project's
+only runtime dependencies are `react` and `react-dom`, its routing is generated into it, and one
+esbuild step builds it. With `--model` the project is bound to the HTTP surface that specification
+serves, reading and commanding its paths and showing a refusal where the user acted.
+
+`ess generate ui --target tui --model` writes a Rust terminal application crate holding the
+document, its binding and a clap command line (`--base-url`, and `--screen-once <width>x<height>`,
+at most `1000x1000`, to print one rendered frame without a terminal).
+
+`--screen-once` exits `0` when
+every read of the page it shows answered. When one failed it still prints the frame, writes one
+stderr line naming each failed read, and exits `3`. A refusal before the frame exits `1`, and a
+usage error exits `2`.
+
+The crate holds no renderer code. It depends on `ess-ui-tui` at the Git tag of the ESS release that
+generated it, so generate with a released `ess`, whose tag exists.
+
+Each generated file opens with a
+`generated by ess generate ui --target tui` line. An `--out` holding a file of the same name
+without that line, or a symbolic link or a non-directory where the crate puts a file or `src/`, is
+refused before anything is written. A document that opens with that line, such as the crate's own
+`src/ui.yaml`, is embedded without it.
+
+None of these has a flat spelling. Their arguments are listed under [`ess ui`](#ess-ui) and
 [`ess generate ui`](#ess-generate-ui) in the command reference.
 
 ## Command reference

@@ -11,7 +11,7 @@ unversioned, and two different shapes can share a marker. A successful JSON or Y
 necessarily validate the document's claims.
 
 A format version such as `ess/1`, a specification version such as `v3`, and a software release
-such as `0.18.0` identify different things. Specification versions are major-only; typed IR serializes
+such as `0.18.0` identify different things. Specification versions are major-only, and typed IR serializes
 that major as a number. Delivery release versions and constraints use SemVer independently.
 [Version owners][versions], [specification format support][system].
 
@@ -42,9 +42,9 @@ model digest. Generated artifact bytes retain their existing identities.
 
 The reader accepts canonical sorted-key JSON with a final LF and rejects unknown versions,
 fields, duplicate keys, noncanonical bytes, unsafe paths and contradictory inventories.
-`UnixBytes1` encodes native path components as lowercase hexadecimal; it preserves native names
+`UnixBytes1` encodes native path components as lowercase hexadecimal. It preserves native names
 without interpreting them as UTF-8. File digests use lowercase SHA-256. The checkpoint checksum
-covers its canonical payload without the checksum member and detects inconsistent bytes; it
+covers its canonical payload without the checksum member and detects inconsistent bytes. It
 does not authenticate another writer.
 
 Recovery follows the recorded staging, prepared, committed or restored decision and retains it
@@ -54,39 +54,50 @@ protocol for this format.
 
 A checkpoint with a pending transaction records the root's absolute path and directory identity,
 and refuses at any other root. A settled (idle) checkpoint records neither, so a committed
-`.ess-output/state.json` names nothing about the machine that wrote it. A settled checkpoint is
-admitted in any root, the one that generated it or a clone or second worktree of it, when every
-owned file present has its recorded length and digest, and refused otherwise, naming the
-differing files and the route that re-enrolls the root.
+`.ess-output/state.json` holds nothing about the machine that wrote it.
+
+A settled checkpoint is admitted in any root, the one that generated it or a clone or second
+worktree of it, when every owned file present has its recorded length and digest. Otherwise it
+is refused, and the refusal lists the differing files and the route that re-enrolls the root.
 
 `ess-output-state/2` (added in 0.34.0) is `/1` plus one required nonempty string, `producer`: the `ess`
-release that last published into the root, as `ess X.Y.Z`. Every publication writes `/2`; the
+release that last published into the root, as `ess X.Y.Z`. Every publication writes `/2`, and the
 reader accepts `/1` without `producer` and `/2` with it, and refuses either shape under the other
-version. A publication that changes the root and finds a different recorded producer prints a
+version.
+
+A publication that changes the root and finds a different recorded producer prints a
 `note:` naming both releases. Recovery and adoption keep the producer they found. Releases before
 `/2` refuse a `/2` checkpoint as an unsupported output-state version.
 
 `ess-output-state/3` is `/2` with the root binding (`root`, `directory`) present only while a
-transaction is pending. Every publication writes `/3`; the reader accepts `/1`, `/2` and `/3`,
+transaction is pending. Every publication writes `/3`, the reader accepts `/1`, `/2` and `/3`,
 and refuses a `/1` or `/2` checkpoint without the binding, a settled `/3` checkpoint with it and
-a pending `/3` checkpoint without it. A generation that finds a settled `/1` or `/2` checkpoint
-rewrites it as `/3` even when no file changes, keeping its owners and producer. With `--check`
-it reports no drift for it and prints one warning naming `root` and `directory`. Recovery and
-adoption settle as `/3` too, keeping a recorded producer. A `state.next` left by an interrupted
-run, which may hold a pending checkpoint and its binding, is never authoritative: a write-mode
-command that finds the root settled removes it, and `--check` reports it. Releases before `/3` refuse a `/3` checkpoint before
-writing: a settled one as an invalid output state missing `root`, a pending one as an
-unsupported output-state version.
+a pending `/3` checkpoint without it.
+
+A generation that finds a settled `/1` or `/2` checkpoint rewrites it as `/3` even when no file
+changes, and keeps its owners and producer. With `--check` it reports no drift for it and prints
+one warning naming `root` and `directory`. Recovery and adoption settle as `/3` too and keep a
+recorded producer.
+
+A `state.next` left by an interrupted run, which may hold a pending checkpoint and its binding,
+is never authoritative: a write-mode command that finds the root settled removes it, and
+`--check` reports it. Releases before `/3` refuse a `/3` checkpoint before writing: a settled
+one as an invalid output state missing `root`, a pending one as an unsupported output-state
+version.
 
 `ess-output-state/4` (added in 0.89.0) adds an optional `model` on each owner to the previous
 version: the digest of the whole compiled model an `ess generate` projection was generated from, 64 lowercase hex
 characters. A generated file carries only the digest of the model slice it derives from, so this
-record is where a generation's whole-model digest lives. Every publication writes `/4`; the reader
-accepts `/1` to `/4` and refuses `model` under any earlier version. An adopted owner, and an owner
-of a generator that names no model, records none. A generation over an owner recorded without a
-model digest records one, which is a publication even when no file changes; `--check` does not
-report that as drift. A recorded model digest that differs from the model being generated is
-drift: `--check` reports `.ess-output/state.json` as recording another generation. Releases before
+record is where a generation's whole-model digest lives.
+
+The reader accepts `/1` to `/4` and refuses `model` under any
+earlier version, and all publications write `/4`. An adopted owner, and an owner of a generator
+that names no model, records none.
+
+A generation over an owner recorded without a model digest records one. That is a publication
+even when no file changes, and `--check` does not report it as drift. A recorded model digest
+that differs from the model being generated is drift: `--check` reports
+`.ess-output/state.json` as recording another generation. Releases before
 `/4` refuse a `/4` checkpoint as an unsupported output-state version.
 [Design](https://github.com/beyond10x/ess/blob/main/docs/design/specification-requires-release.md). See [the generation workflow](../guides/generate-artifacts.md#repeated-generation-and-recovery)
 for the filesystem assumptions and recovery command.
@@ -98,7 +109,7 @@ This format was introduced in 0.21.0.
 `format`, `specification` and `scenarios`. The latter two are lists of strings. Nulls, wrong types,
 unknown fields, duplicate mapping keys, multiple YAML documents and other format versions refuse.
 This is optional immediate-directory acquisition configuration, not an authored ESS fragment or a
-persisted IR. Pass its containing directory; passing the file itself keeps ordinary direct-file
+persisted IR. Pass its containing directory: passing the file itself keeps ordinary direct-file
 reader behavior. [Reader][input-discovery].
 
 Each path is a nonempty UTF-8 identity relative to that root. Split on `/`: empty, `.` and `..`
@@ -107,12 +118,14 @@ segments refuse, as do backslashes, colons and control characters. Case and Unic
 roles refuse. There are no globs, includes, remote expansion or inherited configuration.
 
 Only the active role resolves filesystem entries. Its list must be nonempty. The root, manifest,
-selected files and intermediate directories below that root must not be symlinks; selected inputs
-must be regular files whose canonical targets stay inside the root and are not repeated. Inactive
-paths receive structural checks only and may name missing files. Unlisted files are not enumerated,
-inspected or read. `ess specify validate` treats a nonempty `scenarios` list as active beside
-`specification`, so its files must exist and compile against the model. Distinct copied or
-hardlinked files retain separate identities and can trigger existing semantic duplicate refusals.
+selected files and intermediate directories below that root must not be symlinks. Selected inputs
+must be regular files whose canonical targets stay inside the root and are not repeated.
+
+Inactive paths receive structural checks only and may name missing files. Unlisted files are not
+enumerated, inspected or read. `ess specify validate` treats a nonempty `scenarios` list as
+active beside `specification`, so its files must exist and compile against the model. Distinct
+copied or hardlinked files retain separate identities and can trigger existing semantic
+duplicate refusals.
 
 Selected original UTF-8 text is retained without newline conversion. Entries are read in sorted
 identity order. Model Source/SourceMap and suite/5 source identities are the listed relative paths;
@@ -122,33 +135,36 @@ and semantic digests keep their existing, separate meanings.
 
 An invalid reserved filename refuses without legacy fallback. Rename an older ESS fragment named
 `ess-inputs.yaml` or adopt this configuration. Older readers do not understand this format and
-refuse it; some old conformance semantic-refusal paths can retain incomplete diagnostic outputs.
+refuse it. Some old conformance semantic-refusal paths can retain incomplete diagnostic outputs.
 The direct-file, recursive-model (`system.yaml`) and shallow-scenario layouts remain supported when
 configuration is absent. Manifest selection does not infer generation, authorship or ownership.
 
 The named ESS model describes the closed fields, singleton format enum, lists and string values.
 Its projection does not enforce complete path grammar, cross-list uniqueness, active-role cardinality,
 filesystem facts, deterministic acquisition or exact source-byte custody. The CLI reader owns those
-checks; declaration validation alone is not discovery evidence.
+checks. Declaration validation alone is not discovery evidence.
 
 `format: ess-inputs/2` (added in 0.34.0) is `/1` plus one optional string, `requires`: `ess X.Y.Z` for
-exactly that release, or `ess X.Y` for any `X.Y.*`. Components are decimal without leading zeros;
-any other spelling refuses. `requires` in a `/1` document refuses, naming `/2`. A minor-line pin
-(`ess X.Y`) is checked by the running `ess`: an older one refuses before any selected file is read
-and names `b10x upgrade` and `/ess:upgrade`; a newer one warns once per command, and the global
-`--strict-requires` makes that a refusal. An exact pin (`ess X.Y.Z`) in the working directory or
-above makes any `ess` run that release from its verified cache, installing it on first use; given
-through `--path` from outside that directory, it refuses, naming `cd <directory>` and
-`ESS_TOOLCHAIN=X.Y.Z`. `/2` without `requires` behaves exactly as `/1`. Releases before `/2` refuse it as an
-unsupported format. The named model admits the field and both versions; the version grammar and
-the `/1` exclusion are the reader's.
+exactly that release, or `ess X.Y` for any `X.Y.*`. Components are decimal without leading zeros, and any
+other spelling refuses. `requires` in a `/1` document refuses, naming `/2`.
+
+A minor-line pin (`ess X.Y`) is checked by the running `ess`. An older one refuses before any
+selected file is read and names `b10x upgrade` and `/ess:upgrade`. A newer one warns once per
+command, and the global `--strict-requires` makes that a refusal.
+
+An exact pin (`ess X.Y.Z`) in the working directory or above makes any `ess` run that release
+from its verified cache, and installs it on first use. Given through `--path` from outside that
+directory, it refuses, naming `cd <directory>` and `ESS_TOOLCHAIN=X.Y.Z`. `/2` without `requires`
+behaves exactly as `/1`. Releases before `/2` refuse it as an unsupported format. The named
+model admits the field and both versions. The version grammar and the `/1` exclusion are the
+reader's.
 [Design](https://github.com/beyond10x/ess/blob/main/docs/design/specification-requires-release.md).
 
 ## Specifications and implementation plans
 
 “Closed DTO” below means unknown fields are refused. The named compile or validation step still
 checks semantics. “Pretty JSON” means the writer's deterministic rendering with a final LF unless
-the row says otherwise; it does not imply that those bytes are hashed.
+the row says otherwise. It does not imply that those bytes are hashed.
 
 | Document and discriminator | Version/identity carried separately | Reader and byte contract |
 |---|---|---|
@@ -219,43 +235,48 @@ the row says otherwise; it does not imply that those bytes are hashed.
 
 Composition selects commands from the component's `accepts` and views from its owned domains.
 Its named-type traversal covers command inputs, event/error fields and query row shapes/fields,
-but not view parameters; from `ess-composition/2` a reference may also name any type the
+but not view parameters. From `ess-composition/2` a reference may also name any type the
 component's owned domains declare, without adding it to that traversal. The imported digest
-identifies compiled semantics, not raw YAML, plan bytes or a running endpoint. The generated
-Rust client restricts normal callers to selected
-operation descriptors while forwarding `&[u8]` requests and `Vec<u8>` responses unchanged through
-`Transport<Authority>`. Provider injection adds no authority verification or live model handshake;
-the client does no payload admission, decoding or sanitization.
+identifies compiled semantics, not raw YAML, plan bytes or a running endpoint.
+
+The generated Rust client restricts normal callers to selected operation descriptors and
+forwards `&[u8]` requests and `Vec<u8>` responses unchanged through `Transport<Authority>`.
+Provider injection adds no authority verification or live model handshake. The client does no
+payload admission, decoding or sanitization.
 See the [executed Todo example](cli.md#composition-clients-selected-operations-and-byte-transport),
 where both a String title and an incompatible numeric title reach the same selected command.
 
 `ess_synth::synthesize` and `synthesize_for` return `Result<Synthesis, TargetFailure>`.
 The direct `rust::workspace` and `web::workspace` APIs return `Result<Vec<Artifact>, TargetFailure>`
 and `Result<web::Emission, TargetFailure>` respectively. Go and Clap workspace APIs
-now also return `Result<Emission, TargetFailure>` in ESS 0.20.0. Rust checks allocation and representation
-before rendering; Web checks its Rust prerequisite and Web codec allocation. `Err` withholds the
-whole requested workspace, even if some modules could be emitted. `Ok` retains the existing
-`Synthesis` fields and neutral plan bytes; partial Go/Web/Clap reports remain successful values.
-`Synthesis` itself has no serialized envelope.
+also return `Result<Emission, TargetFailure>` as of ESS 0.20.0.
+
+Rust checks allocation and representation before rendering. Web checks its Rust prerequisite
+and Web codec allocation. `Err` withholds the whole requested workspace, even if some modules
+could be emitted. `Ok` retains the existing `Synthesis` fields and neutral plan bytes.
+Partial Go/Web/Clap reports remain successful values. `Synthesis` itself has no serialized
+envelope.
 [Facade][synthesis], [Rust][rust-workspace], [Web][web-workspace].
 
-Each failure cause has a `code`, nonempty sorted unique `sources`, and nonempty `detail`; causes
-are also sorted and deduplicated. Current codes are `invalid-identifier`, `symbol-collision`,
-`path-collision`, `recursive-layout`, `binding-assignment`, `missing-type-owner`, `wire-collision`
-and `missing-representation`. Format /3 also admits `accessor-resource`
-when bounded accessor generation exceeds its output budget, and `selection-constraint`
-when list selection requires invariant or reading validation outside its supported capability. A plan with zero capabilities can still fail. The typed error
-implements `Display` and `std::error::Error`; it carries no independent digest.
+Each failure cause has a `code`, nonempty sorted unique `sources`, and nonempty `detail`.
+Causes are also sorted and deduplicated. Current codes are `invalid-identifier`,
+`symbol-collision`, `path-collision`, `recursive-layout`, `binding-assignment`,
+`missing-type-owner`, `wire-collision` and `missing-representation`. Format /3 also admits
+`accessor-resource` when bounded accessor generation exceeds its output budget, and
+`selection-constraint` when list selection requires invariant or reading validation outside its
+supported capability. A plan with zero capabilities can still fail. The typed error
+implements `Display` and `std::error::Error`. It carries no independent digest.
+
 Go checks every named type against the actual domain type rosters before package allocation,
 including unreferenced types. A missing owner returns `missing-type-owner` with that qualified
-type as its source; the existing Binary64 refusal takes precedence.
-These checks do not constitute a universal compiler proof; internal coverage assertions remain,
+type as its source. The existing Binary64 refusal takes precedence.
+These checks are not a universal compiler proof. Internal coverage assertions remain,
 and direct workspace calls require the plan for the supplied IR.
 [Error][target-failure], [API limits][synthesis].
 
 For a complete target failure, `ess generate synthesize` prints the text error or JSON/YAML envelope to
 stdout and exits 1 before writing artifacts. It creates no output directory and leaves an existing
-destination untouched. Successful text output still counts the neutral plan; partial target notes
+destination untouched. Successful text output still counts the neutral plan. Partial target notes
 are in `TARGET.md`/`target.json`. Later I/O failures have no new rollback guarantee.
 [CLI][cli].
 
@@ -282,11 +303,11 @@ implement a model's lifecycle, and normalization executes only an explicitly che
 | `format: ess-normalization-target/3` | Report for every format-4, format-5 or format-6 recipe. The embedded canonical recipe and its digest bind input policies; first-stage schemas describe the prepared representation. Same report fields, new semantics; older readers must reject this version. No general report-admission API exists. Formats 1–5 preserve generated file maps through frozen legacy templates; generator versions remain truthful across releases. [Source][normalization-target] |
 
 The TypeScript normalization writer adds a package-bearing configuration
-arm local to normalization; structural TypeScript configuration remains separate.
+arm local to normalization. Structural TypeScript configuration remains separate.
 Recipes 1/2 retain target report 1, recipe 3 uses report 2, and recipes 4/5/6 use
 report 3. These are serialize-only reports, so the additional target needs no new
 report version. Its fixed schema profile and runtime files enter the existing
-file-digest map; unsupported constraints refuse before a report exists. Complete
+file-digest map. Unsupported constraints refuse before a report exists. Complete
 Rust/Go maps retain exact bytes at a fixed generator version.
 
 Format-5/6 static checking adds equality for two typed Binary64 operands. The
@@ -306,15 +327,15 @@ The following hashes are bare lowercase SHA-256, but have different input domain
   their separately defined semantic domains. [Model projection][model-data]
 - Normalization `recipe_digest`: checked `Plan::to_json()` bytes, including final LF.
 - Normalization `schema_digest` and `files` values: exact emitted UTF-8 file bytes.
-  `normalization-report.json` is deliberately excluded from its own file-digest map.
+  `normalization-report.json` is excluded from its own file-digest map.
 
 ## Component delivery
 
 Every marker here uses the `format` key. Build/runtime/component inputs are closed DTOs followed
 by compilation. Persisted IR, release, bundle, catalog and lock readers validate through generic
-Serde as well as convenience readers; nested documents cross that boundary too. Revalidate mutable
+Serde as well as convenience readers. Nested documents cross that boundary too. Revalidate mutable
 values before use. These checks establish local consistency, with additional checks where authority
-inputs are supplied; they do not prove remote artifact contents or authenticity.
+inputs are supplied. They do not prove remote artifact contents or authenticity.
 [Validation owner][delivery-validation].
 
 | Document | Independent version or identity | Reader / canonical digest |
@@ -340,12 +361,12 @@ Release and bundle `/1` wire fields, canonical bytes and four required evidence 
 Their validators establish consistency of declared metadata and relationships. **Evidence.digest
 is the OCI attachment manifest digest**, not the SHA-256 of a report file. Provenance, SBOM,
 signature and conformance entries remain declared attachments: attachment binding, producer origin
-and artifact execution are unverified; signature verification is unsupported. Fetch additionally
+and artifact execution are unverified, and signature verification is unsupported. Fetch additionally
 checks OCI content identity without authenticating the evidence references inside a bundle.
 
 Local release qualification uses existing report/2 plus an independent original suite/5 or fully
 admitted input/1 carrier and an explicit model/deployment context. It creates no new envelope or
-persisted assessment. Only the supplied nonempty complete all-pass selection qualifies; legacy
+persisted assessment. Only the supplied nonempty complete all-pass selection qualifies. Legacy
 report/1 readers remain unchanged and cannot satisfy this positive gate. Optional CLI/action raw
 pins cover the complete original report and selected suite/carrier files. They do not change any
 format's canonical digest profile or provide remote attachment proof. See the
@@ -450,7 +471,7 @@ format's canonical digest profile or provide remote attachment proof. See the
 
 For retained-result Integer observations, the actual target adapter must preserve
 the handler's exact integer before constructing its typed response. JSON adapters
-must decode it losslessly or report Unsupported; parity of typed observations
+must decode it losslessly or report Unsupported. Parity of typed observations
 does not certify arbitrary JSON numeric spellings or a generic floating-point
 conversion. Existing numeric bytes remain unchanged.
 
@@ -461,9 +482,9 @@ source formats keep their existing canonical witnesses.
 
 The complete pair is `snapshot_complete_subject` followed by
 `expect_complete_subject_unchanged`. Its required `shape` contains
-`identity_field`, typed `fields` and reachable `declarations`; it supplies
+`identity_field`, typed `fields` and reachable `declarations`. It supplies
 schema authority, not expected target values. Both actual rows must satisfy that
-shape; missing required fields or incompatible values fail execution. Invalid
+shape. Missing required fields or incompatible values fail execution. Invalid
 pairings or unsupported recursive observers refuse admission. Extra top-level row fields remain
 permitted and participate in exact comparison. Legacy `snapshot_subject` and
 `expect_subject_unchanged` retain their original semantics, including inside a
@@ -482,7 +503,7 @@ and the [impact implementation][impact].
 `Result` with a located `AdmissionError` for unsupported Binary64 contracts. The
 model producer/CLI guard also checks sparse models whose unsupported fields would
 be absent from the suite. Suite readers and serializers reject the primitive
-under a suite major below /62; from `ess-conformance/62` a modeled `Binary64` is carried and
+under a suite major below /62, and from `ess-conformance/62` a modeled `Binary64` is carried and
 compared by its nearest binary64. Existing admitted canonical suites retain their bytes.
 
 ## Generated documents and external formats
@@ -502,8 +523,8 @@ compared by its nearest binary64. Existing admitted canonical suites retain thei
 | Go HTTP startup JSON lines: **`log: ess/1`** | Shared specification facts plus Go runtime fields | Separate generated writer using shared startup facts; no log-admission reader or cross-language byte promise. [Source][go-http] |
 
 `web::browser_catalog(ir, plan) -> BrowserCatalog` remains a separate semantic catalog API with
-unchanged `ess-browser-catalog/1` bytes. It does not run the workspace's fatal feasibility gate;
-catalog availability does not establish that a Rust/Web workspace can be emitted. When a Web
+unchanged `ess-browser-catalog/1` bytes. It does not run the workspace's fatal feasibility gate.
+Catalog availability does not establish that a Rust/Web workspace can be emitted. When a Web
 workspace is emitted, its catalog uses the same bytes. [Catalog API][web-workspace].
 
 Generated artifact maps, validation/refusal/adapter summaries, inspected declarations, interaction
@@ -513,13 +534,15 @@ general ESS reader for those report files or an implicit whole-report digest.
 [CLI owners][cli], [schema reports][schema-cli], [infrastructure diagnosis][diagnosis].
 
 Markdown, HTML, generated source code and build manifests follow their individual writers.
-Kubernetes `apiVersion`/`kind`, Helm artifacts and BuildKit inputs use their external contracts;
-they do not introduce another ESS format marker. Adopter-owned JSON Schema `$id` identifies its
+Kubernetes `apiVersion`/`kind`, Helm artifacts and BuildKit inputs use their external contracts.
+They do not introduce another ESS format marker. Adopter-owned JSON Schema `$id` identifies its
 schema resource independently of any digest. Neither the contract nor syntax schema generator
-assigns that ID or a hosted schema endpoint. The
+assigns that ID or a hosted schema endpoint.
+
+The
 [local registry workflow](../guides/generate-artifacts.md#generated-schemas-in-a-local-registry)
 adds only root IDs to separate copies and uses strict application envelopes with absolute payload
-references. Original generated bytes, dialects, constraints and provenance remain intact; a copied
+references. Original generated bytes, dialects, constraints and provenance remain intact. A copied
 resource's model or slice digest is not its file checksum. Registry validation resolves the supplied
 resources offline, and its successful records identify the selected envelopes. It does not establish
 whole-system semantic validity or support in the separate restricted TypeScript projector.
@@ -528,27 +551,33 @@ whole-system semantic validity or support in the separate restricted TypeScript 
 
 The `ess verify bindings` command, introduced in 0.21.0, connects admitted realization selections to
 native infrastructure observations. `ess-observed-bindings/1` and `/2` are closed authored
-JSON/YAML DTOs; the binding digest hashes compact typed JSON after sorting bindings by id and
+JSON/YAML DTOs. The binding digest hashes compact typed JSON after sorting bindings by id and
 sorting declared evidence, and, for `/2`, sorting `foreign_containers` by workload and container
-name. It retains all authored image expectations and the exact realization digest. `/2` adds
-optional `foreign_containers`: per bound workload, containers this realization does not build,
-each with a `name` and a nonempty `reason` and no image. `/1` is read unchanged and acknowledges
-nothing; its binding digest is the one earlier releases computed, and a `/1` document carrying
-`foreign_containers` is refused. Earlier readers refuse `/2` by its format.
+name. It retains all authored image expectations and the exact realization digest.
+
+`/2` adds optional `foreign_containers`: per bound workload, containers this realization does
+not build, each with a `name` and a nonempty `reason` and no image. `/1` is read unchanged and
+acknowledges nothing. Its binding digest is the one earlier releases computed, and a `/1`
+document carrying `foreign_containers` is refused. Earlier readers refuse `/2` by its format.
+
 `ess-observed-bindings-report/3` is serialize-only, deterministic pretty JSON plus LF with no
 whole-report digest or report-admission reader. `/2` added the `OBS-BIND-008` check (an unbound
 container or native sidecar in a bound workload violates), so the same input can be satisfied
 under `/1` and violated under `/2`. `/3` adds each binding's `acknowledged` list (`container`,
-`reason`) of acknowledged foreign containers observed in its workload; a satisfied `OBS-BIND-008`
-now means each entry is bound or acknowledged. An acknowledged container running a declared
-image or artifact locator, or its `@sha256:` digest under another name, violates it, and an acknowledgement naming no observed container or
-native sidecar leaves it unknown, since plain init containers are not recorded. A `/1` reader must reject `/2`, and a `/2` reader `/3`. It carries that binding digest, realization digest,
+`reason`) of acknowledged foreign containers observed in its workload. With it, a satisfied
+`OBS-BIND-008` means each entry is bound or acknowledged.
+
+An acknowledged container running a declared image or artifact locator, or its `@sha256:` digest
+under another name, violates it. An acknowledgement naming no observed container or native
+sidecar leaves it unknown, since plain init containers are not recorded.
+
+A `/1` reader must reject `/2`, and a `/2` reader `/3`. The report carries that binding digest, realization digest,
 observation model digest and provenance, per-binding results and explicit exclusions. These
-identities name different bytes. Missing evidence produces unknown, never an empty successful
-comparison. [Binding guide](../guides/check-infrastructure.md#connect-implementation-selections-to-observed-workloads).
+identities cover different bytes. Missing evidence produces unknown, never an empty
+successful comparison. [Binding guide](../guides/check-infrastructure.md#connect-implementation-selections-to-observed-workloads).
 
 The namespace topology profile adds `infra-observation/2`, `infra-ir/2`, `infra-graph/2`,
-`infra-drift/2` and `infra-simulation/2`. Its closed coverage claim names the namespace and
+`infra-drift/2` and `infra-simulation/2`. Its closed coverage claim states the namespace and
 `namespace_topology` profile. IR coverage belongs to the canonical model and its digest;
 graph and drift retain that coverage, and simulation retains it in its typed unknown reason.
 Version 1 bytes remain unchanged, and version 1 cannot carry version 2 qualifications.
@@ -589,10 +618,12 @@ of the same number, so an `ess-cli/1` binding compiles to the same `ess-cli-plan
 ## Deployment recovery records
 
 `ess generate deployment reconcile --authority UUID` reads and writes five record formats. The
-registry and its authorities live under the protected root `/etc/ess/recovery`; the store header,
+registry and its authorities live under the protected root `/etc/ess/recovery`. The store header,
 lock and journal live under the `state_root` the selected authority names. All five were
 introduced in 0.21.0, and each has exactly one admitted version: a record naming any other is
-refused. The bytes are canonical JSON: recursively sorted keys, array order kept, no duplicate
+refused.
+
+The bytes are canonical JSON: recursively sorted keys, array order kept, no duplicate
 key, no floating-point number, and exactly one trailing newline. [Source][recovery-model]
 
 | Document | What it is |
@@ -608,49 +639,56 @@ key, no floating-point number, and exactly one trailing newline. [Source][recove
 Use the owning reader's validation API. The stamp reader accepts complete authoritative envelopes
 and supported profiles, including matching comment/structured copies where the writer emits both.
 Generic String deserialization does not perform that check. Cargo synthesis stamp recognition does
-not validate TOML, and a docs document has per-page stamps rather than one artifact stamp.
+not validate TOML, and a docs document has per-page stamps and no single artifact stamp.
 [Stamp reader][stamp].
 
 Explicit report **/2** and detailed **ess-conformance-run/2** pair admitted original suite/1–65
 bytes under `sha256-json-bytes/1`. Ordinary suite/1–4, /6, /8, /10 and /12 coverage remains unknown, including all-pass runs.
+
 Suite **/5** adds a closed declared inventory: exact selection, origin/source ownership, outside
 scenarios and every refusal occurrence. Only nonempty all-pass execution with complete inventory
 and no in-scope refusal qualifies for that exact selection. Suite/7 retains these rules with
-extended observation/setup vocabulary; suite/9 adds typed command-response observation,
+extended observation/setup vocabulary, and suite/9 adds typed command-response observation,
 suite/11 adds independent subject snapshots, and suite/13 adds retained-result comparison.
-Legacy defaults remain suite/4, report/1 and diagnostic execution;
-an extended suite requires explicit report/2. Suites /5 to /65 with report/1 refuse before execution, including without an
+
+Legacy defaults remain suite/4, report/1 and diagnostic execution.
+An extended suite requires explicit report/2. Suites /5 to /65 with report/1 refuse before execution, including without an
 output destination or with allow-incomplete. Report/1 keeps its historical non-pass aggregate and
 does not establish exact suite-byte identity. [Coverage workflow](../guides/verify/runners.md#opt-into-declared-coverage).
 
-A runner outside ESS reports through `ess-conformance-results/1` rather than by writing report/2
+A runner outside ESS reports through `ess-conformance-results/1` and does not write report/2
 itself. `ess verify conform report` admits the suite the runner executed and takes coverage, the
 suite reference and policy from that admission, so the report it writes qualifies exactly as one
 ESS's own run would. Its `producer_profile`, `external-scenario-status/1`, says that ESS executed
-nothing; a reader that admits only `rust-scenario-status/1` and `go-scenario-status/1` refuses it.
+nothing. A reader that admits only `rust-scenario-status/1` and `go-scenario-status/1` refuses it.
 `message` is read and not carried into the report.
 
 Generated Go and TypeScript count reports use `go-scenario-status/2` to distinguish a
 failed assertion, an execution error, an unsupported required observation and an explicit skip.
-An unsupported observation makes execution fail; an error or skip makes it inconclusive unless
+An unsupported observation makes execution fail. An error or skip makes it inconclusive unless
 another scenario failed or was unsupported. Counts and outcome lists retain each category.
+
 The older `go-scenario-status/1` remains readable with its original passed/failed/skipped
-categories; it cannot carry error or unsupported outcomes. Unknown producer profiles are refused.
+categories. It cannot carry error or unsupported outcomes. Unknown producer profiles are refused.
 Legacy report/1 keeps its diagnostic presentation and does not establish this count-profile parity.
 
 `ess-conformance-input/1` has exactly `format`, original selected `suite_json` and nearest-first
 `parent_suites` strings. Every explicit child needs its complete original parent chain. The selected
-inner string is hashed, never the carrier or the reduced execution DTO; all surviving definitions,
-dependencies, source mappings and refusal occurrences must agree. `ess-conformance-replay/1` pairs
+inner string is hashed, never the carrier or the reduced execution DTO. All surviving definitions,
+dependencies, source mappings and refusal occurrences must agree.
+
+`ess-conformance-replay/1` pairs
 that input with the exact SuiteReference and a closed typed reduced model before browser state is
-created. The player displays coverage but emits no evidence; it does not reconstruct the full model
+created. The player displays coverage but emits no evidence. It does not reconstruct the full model
 digest, authenticate a publisher or fill the existing literal-assignment/view-evaluation omissions.
 
 New counts and timestamps use exact unsigned decimal u64 tokens. Go's selected execution adapter
 separately checks its host `int` width after admitting all parents, and its clock remains nonnegative
-int64; Rust timestamps retain the full u64 range. Declared Node payloads retain finite binary64
-meaning. Modeled Binary64 is carried from suite/62; one reached through an identity, a view parameter, an actor attribute, a binding or a conversion is still refused before conformance output (`ESS-AUTHOR-036`). Impact with complete admitted
-input retains `ess-impact/3` and presents selection separately; unknown/incomplete input refuses.
+int64. Rust timestamps retain the full u64 range. Declared Node payloads retain finite binary64
+meaning.
+
+Modeled Binary64 is carried from suite/62, and one reached through an identity, a view parameter, an actor attribute, a binding or a conversion is still refused before conformance output (`ESS-AUTHOR-036`). Impact with complete admitted
+input retains `ess-impact/3` and presents selection separately. With unknown/incomplete input it refuses.
 A format catalog alone does not establish an installed external consumer upgrade.
 
 [versions]: https://github.com/beyond10x/ess/blob/main/crates/specify/ess-domain/src/name.rs

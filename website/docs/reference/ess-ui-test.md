@@ -17,7 +17,7 @@ ess ui test --path ui.yaml tests/*.yaml --format json
 ess ui test --path ui.yaml tests/*.yaml --playwright e2e/ui.spec.ts
 ```
 
-The first form runs every test and prints one line per test; the second prints an
+The first form runs every test and prints one line per test. The second prints an
 `ess-ui-test-report/1` report. Either exits 1 when a test fails. The third writes the Playwright spec
 and runs nothing.
 
@@ -51,7 +51,7 @@ tests:
 | `tests` | The tests, run in order, each from a freshly opened application. |
 | `tests[].name` | The name the report uses. |
 | `tests[].fixtures` | Optional. Replaces fixture data for this test only (see [Fixtures](#fixtures)). |
-| `tests[].latency` | Optional duration, or a map of view to duration. How long every read (or the named view's) takes on the virtual clock; `loading` is visible until it passes. |
+| `tests[].latency` | Optional duration, or a map of view to duration. How long every read (or the named view's) takes on the virtual clock. `loading` is visible until it passes. |
 | `tests[].steps` | The steps. The first step that does not hold fails the test, and later steps do not run. |
 
 The example application's own tests are in `examples/partner-portal/tests/`.
@@ -64,7 +64,7 @@ the path the generated React project renders as `data-ui-path`. A path holds no 
 adding, removing or reordering a sibling leaves every other path unchanged.
 
 An item of a collection is its collection's path, `rows`, and the row's key: the value of the
-field the read's `key` names, else the section's `live.match`, else `id` (a row that is a plain string, read with `field: .`, is keyed by the string). A node inside a row is addressed under the row:
+field the read's `key` names, else the section's `live.match`, else `id`. A row that is a plain string, read with `field: .`, is keyed by the string. A node inside a row is addressed under the row:
 
 | Path | Names |
 |---|---|
@@ -79,13 +79,13 @@ field the read's `key` names, else the section's `live.match`, else `id` (a row 
 | `pages/partners.list/overlays/create/fields/name` | a form field in an overlay |
 
 An inline confirm (`confirm: {title: …}`) is the overlay at its action's path and
-`confirm/overlay`; a row action's, and a graph editor's node or edge action's, is addressed under the row that opened it (`<editor>/rows/<key>/node_actions/<action>/confirm/overlay`). Confirming runs
+`confirm/overlay`. A row action's inline confirm, and a graph editor's node or edge action's, is addressed under the row that opened it, as `<editor>/rows/<key>/node_actions/<action>/confirm/overlay`. Confirming runs
 the action that opened the confirm, inline or `confirm: <overlay>`, whether or not the confirm
 declares `does`.
 
-A path that names no node fails its step with `no node at <path>`; a row key the collection does
-not hold fails with `no row <key> in <collection>`. A path on a page other than the one shown fails
-naming both pages.
+A path that names no node fails its step with `no node at <path>`. A row key the collection does
+not hold fails with `no row <key> in <collection>`. A path on a page other than the one shown fails,
+and the failure reports both pages.
 
 ## Steps
 
@@ -94,7 +94,7 @@ A step is a map with one key, its keyword. Most steps fit on one line.
 ### open
 
 Opens a page, with its params. `state` opens it as a link carrying page state in its query does:
-each entry is a state the page keeps in the URL (`store: url`); any other state fails the step.
+each entry is a state the page keeps in the URL (`store: url`). Any other state fails the step.
 
 ```yaml
 - open: partners.list
@@ -134,9 +134,9 @@ the field holds.
 ### choose
 
 Picks an option of a choice, by its value or its label: a filter bar's choice, a choice that is a
-section of its own, or a form field drawn `as: choice` (at the field or at its `choice` node). In a
+section of its own, or a form field drawn `as: choice`, at the field or at its `choice` node. In a
 multiple choice a second pick of the same option removes it. At a form field drawn `as: toggle` the
-option is `true` or `false`; at a filter bar itself it is a preset of the bar's time `window`.
+option is `true` or `false`. At a filter bar itself it is a preset of the bar's time `window`.
 
 ```yaml
 - choose: {at: pages/tickets.list/sections/filters/choices/priority, option: urgent}
@@ -148,17 +148,20 @@ declares a default for it.
 ### act
 
 Runs an action: a row's action, a header action, a section's action, a bulk action. On an open
-overlay's own path it runs the overlay's primary action — a confirm confirms, a form submits. On a
+overlay's own path it runs the overlay's primary action: a confirm confirms, a form submits. On a
 section whose body is a form it submits the form. On a collection's column
 (`…/columns/<name>`) it sorts by that column as a click on its header does: ascending, or
-descending when the collection is already sorted by it ascending; the column is `sortable`. A
-form that saves on change (`save: on_change`) sends its command on every change a step makes,
-without `act`, and has no submit: `act` on such a form (a section's, or an overlay's not opened from a row) is refused in
-both renderers. A group that saves on
-change sends its own `does` (the form's when it names none) on every change to one of its fields,
-and the form keeps its submit for its other fields. At a page header's help (`pages/<page>/header/help`) it opens the help: the
-terminal and the generated app draw it open, so the step only checks that no overlay covers it,
-and an app that draws the help closed (a disclosure beside the title) opens it there. `expect`
+descending when the collection is already sorted by it ascending, and the column is `sortable`.
+
+A form that saves on change (`save: on_change`) sends its command on every change a step makes,
+without `act`, and has no submit. `act` on such a form, a section's or an overlay's not opened from
+a row, is refused in both renderers. A group that saves on
+change sends its own `does`, or the form's when it names none, on every change to one of its fields,
+and the form keeps its submit for its other fields.
+
+At a page header's help (`pages/<page>/header/help`) it opens the help. The
+terminal and the generated app draw it open, so the step only checks that no overlay covers it.
+An app that draws the help closed, such as a disclosure beside the title, opens it there. `expect`
 reads the help's text at the same path.
 
 ```yaml
@@ -209,23 +212,23 @@ Checks a node. Every key given must hold.
 | `checked` | `true` or `false`: the form field `as: toggle` at `at` (`…/fields/<f>`, in a group `…/groups/<g>/fields/<f>`, in a tab `…/tabs/<t>/fields/<f>`) of a section's or an overlay's own form is on or off. The terminal reads the toggle it draws on the field's line (`[x]`, `[ ]`, or empty before it has a value, read as off); the browser reads the field's checkbox. At any other node the step is refused in both renderers |
 
 `text` never reads a wider area than the node's own. A node the terminal does not draw on cells of
-its own — a field inside an overlay, a node inside a row's `item` — fails the step naming its
-path, rather than being satisfied by what a neighbour shows. A row, a cell, a column header and an
+its own, such as a field inside an overlay or a node inside a row's `item`, fails the step, and the
+failure names its path. What a neighbour shows does not satisfy it. A row, a cell, a column header and an
 action are read whole, as the browser shows them, even where the terminal's screen cuts the value
 at the column's width.
 
 A number of four or more digits in `text` or `not_text` compares by value, not by spelling: the
 terminal prints `1840`, the browser groups it by its locale (`1,840`), and either spelling in the
 test matches either on the screen. A comma, a no-break space or a narrow no-break space between
-groups of three digits is grouping; a full stop is not, since it is also a decimal point.
+groups of three digits is grouping. A full stop is not, since it is also a decimal point.
 
-`stale` is the badge a section carries while a channel feeding it is stale; it outranks `ready` and
+`stale` is the badge a section carries while a channel feeding it is stale. It outranks `ready` and
 `empty`. `ready` means shown and fresh.
 
 ### play
 
 Runs the clock to the next moment the fixture scripts play an event or a lifecycle beat. `with`
-narrows to an event whose payload has these fields; a lifecycle beat names its channel.
+narrows to an event whose payload has these fields. A lifecycle beat names its channel.
 
 ```yaml
 - play: {event: tickets.TicketOpened, with: {id: tk-07}}
@@ -259,13 +262,14 @@ Holds when the command has been sent, with at least the input fields given.
 ```
 
 Input values compare as JSON values with their types: `7500` holds only for the number, `'7500'`
-only for the string. An object holds when every field it names holds, at any depth; a list holds
+only for the string. An object holds when every field it names holds, at any depth. A list holds
 item by item. A dotted field name reaches into nested objects: `limits.cents: 7500` is
 `limits: {cents: 7500}`.
 
-A command never sent fails naming the commands that were; a command sent with other input fails
-showing the input it was sent with and, for each send, the first field that differs with both
-values and their types (`at website it sent string "7500", expected number 7500`).
+A command never sent fails, and the failure lists the commands that were sent. A command sent with
+other input fails, and the failure shows the input it was sent with and, for each send, the first
+field that differs with both values and their types
+(`at website it sent string "7500", expected number 7500`).
 
 ### expect_export
 
@@ -279,7 +283,7 @@ params given. Params compare as `expect_command`'s input does.
 ## Fixtures
 
 A test starts from the document's fixtures. `fixtures.views` replaces a view's data, in the shape a
-fixture file holds it; views derived from it (`same_as`, `by_id_from`) follow.
+fixture file holds it. Views derived from it (`same_as`, `by_id_from`) follow.
 `fixtures.scripts` replaces a channel's event script.
 
 ```yaml
@@ -326,29 +330,33 @@ tests:
         example.order.Cancel: {refuses: already_cancelled}
 ```
 
-An unknown key under `fixtures` is refused with the file, the test and the key. In the Playwright
-spec the same keys are routes: a list of view answers is one handler that answers the first entry
-whose `by_params` equal the request's params, else the entry without `by_params`, else no rows;
-`fails` is status 500 with the message; a refused command is a 422 answer with
+An unknown key under `fixtures` is refused with the file, the test and the key.
+
+In the Playwright
+spec the same keys are routes. A list of view answers is one handler that answers the first entry
+whose `by_params` equal the request's params, else the entry without `by_params`, else no rows.
+`fails` is status 500 with the message. A refused command is a 422 answer with
 `{outcome: refused, published: [], error, payload?}`, the body both HTTP data adapters read as a
-refusal (the command is still captured for `expect_command`). The plain adapter of an unbound
-build shows the error code in the failed-command notice (`<command> failed: <error code>`; it has
-no refusal note), the bound adapter the binding's display text beside the action; the payload is
-shown only bound. A latency per view holds that view's route for its duration on the page clock.
-None of these marks a test `test.fixme`.
+refusal. The command is still captured for `expect_command`.
+
+The plain adapter of an unbound
+build shows the error code in the failed-command notice (`<command> failed: <error code>`), and it
+has no refusal note. The bound adapter shows the binding's display text beside the action, and the
+payload is shown only bound. A latency per view holds that view's route for its duration on the
+page clock. None of these marks a test `test.fixme`.
 
 `tests[].latency` is one duration for every read, or a map of view to duration: a view not named
 answers at once.
 
 The signed-in actor of a fixture run is the first row of the first view the home page's shell
-preloads; with no preload, `actor.account_id` is null. A shell `preload` of the session view
+preloads. With no preload, `actor.account_id` is null. A shell `preload` of the session view
 therefore sets it, and `actor: from_session` signs it in.
 
 ## Time and live events
 
 Both renderers play every channel's fixture script on one clock that starts at zero when the
-application opens; anything due at zero has played before the first step. `advance` moves the
-clock; `play` moves it to the moment a beat plays, which also plays everything due before it.
+application opens. Anything due at zero has played before the first step. `advance` moves the
+clock, and `play` moves it to the moment a beat plays, which also plays everything due before it.
 Looping scripts repeat. A test therefore names an event by what it is, not by when it happens,
 and runs in no real time.
 
@@ -373,7 +381,7 @@ and runs in no real time.
 ```
 
 `tests` is in file order. `step` counts from 1 and is present only on a failed test whose step
-failed; a test whose fixtures do not load fails without one.
+failed. A test whose fixtures do not load fails without one.
 
 ## In the terminal
 
@@ -395,16 +403,18 @@ Every step goes through what a reader of the terminal has: key presses and the d
 The terminal renderer records where each frame drew each node, by path (`ess_ui_tui::App::regions`):
 the page header, its actions and its help, section boxes and their children, the open overlay, and for a
 section's or an overlay's collection a table's column headers, each row line keyed by the row's
-key, each cell (not for cards, a list or a tree with an `item`), and each row action a row offers.
+key, each cell, and each row action a row offers. Cards, a list or a tree with an `item` have no
+cell regions.
+
 A region also carries the node's whole text where the screen cuts it (`Region::text`).
 Rows are counted and found by those keys, so rows that show the same values are still told apart.
 
 ## One verdict in both renderers
 
 A test file means the same in the terminal and in the browser. **Wherever the terminal refuses a
-step, the Playwright spec for that test is `test.fixme` with the same reason**, at that step: the
-two renderers never give one file different verdicts silently. Both read the refusals from one
-place (`ess-ui-test`'s parity rules and clock), so the lists cannot drift apart. The terminal
+step, the Playwright spec for that test is `test.fixme` with the same reason**, at that step. The
+two renderers never give one file different verdicts without saying so. Both read the refusals from
+one place, `ess-ui-test`'s parity rules and clock, so the lists cannot drift apart. The terminal
 refuses:
 
 | Step | Refused because |
@@ -427,13 +437,13 @@ refuses:
 
 A path that names no node is not a refusal: it fails in both renderers.
 
-`text` or `not_text` at a host slot (other than a page) reads the terminal's label `<host>: <reason>`; the Playwright spec marks it `test.fixme`, because the generated app draws the host's component there.
+`text` or `not_text` at a host slot (other than a page) reads the terminal's label `<host>: <reason>`. The Playwright spec marks it `test.fixme`, because the generated app draws the host's component there.
 
-A choice whose `options` name an enum of the ESS model, rather than one the document declares
+A choice whose `options` name an enum of the ESS model, not one the document declares
 under `types`, lists that enum's variants when the run is given the model:
 `ess ui test --model <specification>`. Reads still come from the fixtures. Without `--model` the
-run starts, and a test fails at the step that leaves a page showing such a choice on screen,
-naming where its `options` are written.
+run starts, and a test fails at the step that leaves a page showing such a choice on screen. The
+failure names where its `options` are written.
 
 ## In the browser
 
@@ -462,8 +472,8 @@ its path, so the spec's `baseURL` is the generated project served by `npm run de
 `select` does not click the row with the pointer: a click lands on the row's centre, which may be a
 link or a button in a cell, and would navigate where the terminal only moves its cursor.
 
-A test that replaces view fixtures routes exactly `/views/<view>` (not every view whose name starts
-with it), and the views derived from a replaced view (`same_as`, `by_id_from`) answer from the
+A test that replaces view fixtures routes exactly `/views/<view>`, not every view whose name starts
+with it, and the views derived from a replaced view (`same_as`, `by_id_from`) answer from the
 replacement as they do in the terminal. One that expects commands routes
 `/commands/<command>`: run the app with `setDataAdapter(httpAdapter(<base>))` for these. A test that
 replaces a channel script is emitted as `test.fixme`, because the generated app plays its own
@@ -481,28 +491,30 @@ each ties the test to something the test is not about:
 | Visible text (`getByText("Delete")`) | the copy, in one language | a reworded label, a translation, two elements with the same text |
 
 A node path is none of these. It is the node's address in the document, derived from names the
-document already gives its sections, fields and actions. Nothing is added for the test's sake,
-there is nothing to forget, and every renderer computes the same path: the terminal renderer from
+document already gives its sections, fields and actions. Nothing is added for the test's sake
+and there is nothing to forget. Every renderer computes the same path: the terminal renderer from
 the document, the React project as `data-ui-path`. What it removes:
 
-- **Restyling and re-layout do not break tests.** The path holds no index and no markup; a section
+- **Restyling and re-layout do not break tests.** The path holds no index and no markup. A section
   moved to another column keeps its path.
-- **Rewording does not break tests.** Steps address nodes, not labels; only `expect: {text}` looks
+- **Rewording does not break tests.** Steps address nodes, not labels. Only `expect: {text}` looks
   at copy, and only when copy is what is being tested.
 - **One test, every renderer.** The same file drives the terminal headless and a browser through
   the generated spec.
 - **Rows by identity, not position.** `rows/<key>` names a row by its data key, so a new row at the
   top, a sort or a live insert does not move the test onto the wrong row.
 - **A broken path is found as a broken path.** A path is resolved against the document before a key
-  is pressed; a renamed section fails with `no node at <path>`, not with a timeout.
+  is pressed. A renamed section fails with `no node at <path>`, not with a timeout.
 - **Backend state and time are declared.** Fixtures replace views per test and the clock is
   virtual, so live updates, staleness and loading are tested without a server or real waiting.
 
 **Limits.** The terminal runner addresses rows of a section's or an overlay's collection, types into
 filter bars, collection filters and form fields, chooses in filter-bar choices and form choice
-fields, and shows a record's tabs; other targets fail naming the step. A collection nested in a
-record, a tab or a node, and a tab's nested node, are drawn but refused as step targets in both
-renderers (see [One verdict in both renderers](#one-verdict-in-both-renderers)). `expect text` at a
-node the terminal does not draw on cells of its own fails naming the path. The browser spec is
-generated and not run by `ess ui test`; its fixture and command routes assume the HTTP
+fields, and shows a record's tabs. Other targets fail, and the failure names the step. A collection nested
+in a record, a tab or a node, and a tab's nested node, are drawn but refused as step targets in both
+renderers. See [One verdict in both renderers](#one-verdict-in-both-renderers). `expect text` at a
+node the terminal does not draw on cells of its own fails, and the failure names the path.
+
+The browser spec is
+generated and not run by `ess ui test`. Its fixture and command routes assume the HTTP
 data adapter.

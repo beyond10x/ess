@@ -7,13 +7,13 @@ description: How a value that is one of several shapes is declared with kind uni
 # Tagged unions
 
 A value that is exactly one of several shapes, each with its own payload, is a **union**. An order
-is open, blocked for a reason, or complete with an outcome; it is never two of those at once, and a
+is open, blocked for a reason, or complete with an outcome. It is never two of those at once, and a
 blocked order has a reason where a complete one has an outcome. A union says that in the model, so
 the projections and the generated types hold a value to one variant and to that variant's payload.
 
 ## Declare a union
 
-`kind: union` names the member that carries the variant (`tag:`) and lists the variants
+`kind: union` declares the member that carries the variant (`tag:`) and lists the variants
 (`variants:`), each label with the type of the payload it carries. A label with no type is a
 **unit variant**: it carries nothing. Unit variants need `format: ess/22` or later.
 
@@ -41,24 +41,25 @@ types:
 an entity field, a command input or a view field may be typed `demo.work.Status`, and
 `List<demo.work.Status>` or `Optional<demo.work.Status>` wrap it as they wrap any type.
 
-A union declares at least one variant; `variants: {}` is refused as `empty_declaration`. A union
+A union declares at least one variant. `variants: {}` is refused as `empty_declaration`. A union
 of only unit variants is admitted.
 
 ## A union is always tagged
 
-There is no untagged union. A union without `tag:` is refused (`missing field` at parse time, and
-an empty `tag: ""` as `empty_declaration`, whose hint says an untagged union cannot be decoded
-without guessing).
+There is no untagged union. A union without `tag:` is refused with `missing field` at parse time.
+An empty `tag: ""` is refused as `empty_declaration`, and its hint says an untagged union cannot be
+decoded without guessing.
 
-The reason is the way back. An untagged union does not round-trip, because
+An untagged union does not round-trip, because
 two variants of the same shape cannot be told apart. With `Blocked: String` and a second variant
 `Cancelled: String`, the untagged values of both are a bare string, and a reader handed
-`"supplier late"` has no way to say which variant it was written as. JSON Schema, OpenAPI and a generated decoder would each have to guess,
-and they need not guess alike. The tag makes the variant part of the value, so every reader decodes
-what the writer wrote.
+`"supplier late"` has no way to say which variant it was written as.
+
+JSON Schema, OpenAPI and a generated decoder would each have to guess, and they need not guess
+alike. The tag makes the variant part of the value, so every reader decodes what the writer wrote.
 
 The tag sits beside the payload, not inside it. A payload variant carries its payload under the
-content key `value`; where the tag is itself named `value`, the content key is `content`. A unit
+content key `value`. Where the tag is itself named `value`, the content key is `content`. A unit
 variant is the tag alone, with no content member at all: `{"kind": "Open", "value": null}` is
 refused, and so is a payload variant without its content member, unless its payload is
 `Optional<…>`.
@@ -68,7 +69,7 @@ refused, and so is a payload variant without its content member, unless its payl
 Each variant is one branch of a JSON Schema `oneOf`. Its branch pins the tag with `const`, requires
 the tag and, for a payload variant, the content member, and is closed
 (`additionalProperties: false`). The table and the definition below are generated from the
-declaration above; nothing in them is written by hand.
+declaration above and are not written by hand.
 
 [ess-union-wire-begin]: # (generated from the declaration above by ess generate --kind schema; regenerate with ESS_UNION_PAGE=write cargo test -p ess-cli --test union_page)
 
@@ -150,7 +151,7 @@ empty struct variant in Go, and each codec refuses a content member on it.
 ## When to choose a union
 
 Choose a union over a struct of optional fields when the value is one of several cases and each
-case has its own data. The struct form says less than it seems to:
+case has its own data. The struct form:
 
 ```yaml
 - name: demo.work.StatusFields
@@ -167,7 +168,7 @@ case has its own data. The struct form says less than it seems to:
   is a value like any other. In the union, an outcome exists only under `Complete` and a reason only
   under `Blocked`, each typed by its variant.
 - **The case has no name.** Which case a struct value is in has to be inferred from which members
-  happen to be present; a union value names it in the tag, so every reader of the value reads it
+  happen to be present. A union value carries the case in the tag, so every reader reads it
   directly.
 
 Keep a struct when the members are independent facts that may each be present or absent on their
@@ -175,7 +176,8 @@ own: a `note` and a `due_date` that may both be set are fields, not variants.
 
 **Union or enum.** A union of only unit variants and an enum both name one of a fixed set of labels
 and differ only on the wire: an enum value is a string (`"Open"`), a union value an object
-(`{"kind": "Open"}`). Prefer an enum for a closed set of names. Declare a union when at least one
-variant carries a payload, or when a payload variant is expected to join later: turning a unit
-variant into a payload variant keeps the tag, whereas turning an enum into a union changes every
-value's JSON type.
+(`{"kind": "Open"}`). Prefer an enum for a closed set of names.
+
+Declare a union when at least one variant carries a payload, or when a payload variant is expected
+to join later. Turning a unit variant into a payload variant keeps the tag, whereas turning an enum
+into a union changes every value's JSON type.

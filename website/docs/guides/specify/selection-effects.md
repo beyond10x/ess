@@ -22,10 +22,12 @@ selects instead of the one an input names. Write `instances: {where: <predicate>
 
 The predicate is the stored-field grammar of `when_subject:`: the entity's fields, compared with
 literals or with the command's input as `input.<field>`. A `moves:` changes the selected records
-resting in the transition's `from` states and skips the others; no selected record at all is an
-accepted answer. `sets:` applies to every changed record and takes a literal, `input.<field>`,
-`{input: …, else: …}`, `{generated: true}` or `{cleared: true}`; a source reading one record
-(`{subject: …}`, `{related: …}`, `{increment: …}`) or the caller is refused by name.
+resting in the transition's `from` states and skips the others. No selected record at all is an
+accepted answer.
+
+`sets:` applies to every changed record and takes a literal, `input.<field>`,
+`{input: …, else: …}`, `{generated: true}` or `{cleared: true}`. A source reading one record
+(`{subject: …}`, `{related: …}`, `{increment: …}`) or the caller is refused.
 `{count: changed}` fills an `Integer` payload field with the number of records the outcome changed,
 and is refused anywhere but a `payload:` field of such an outcome. `instance:` beside `instances:`,
 and `instances:` on `creates:` or `preserves:`, are refused. A set outcome accepts, and is selected
@@ -48,10 +50,10 @@ An outcome with one existing subject can also change other records, with `affect
 ```
 
 Each entry changes every record of `entity` its `where:` selects. `where:` reads that entity's
-fields, `input.<field>` and `subject.<field>` — the subject as it was before the outcome. Where
+fields, `input.<field>` and `subject.<field>`, the subject as it was before the outcome. Where
 `entity` is the subject's own, the subject itself is not among the records. `sets:` takes the
 sources `instances:` does. `affects:` sits beside `moves:`, `updates:` or, from `ess/23`, `deletes:`
-with `instance:`, never beside `instances:`.
+with `instance:`. It never sits beside `instances:`.
 
 From `ess/22` an entry may also move the records it selects (beyond10x/ess#229): deactivating a
 user ends that user's live sessions.
@@ -72,29 +74,34 @@ user ends that user's live sessions.
 
 `moves:` names a transition of the entry's own `entity`, written `<Entity>.<transition>`, and
 `sets:` beside it is optional. A selected record resting in one of the transition's `from` states
-takes it and comes to hold what `sets:` writes; one resting elsewhere is left as it is, as under
+takes it and comes to hold what `sets:` writes. One resting elsewhere is left as it is, as under
 `instances:`. The move counts as the transition's cause, but a state only it reaches is not one the
-suite can arrange for another scenario. Below `ess/22` the move is refused, naming `ess/22`. One
-outcome moves the records of one entity at most once: a second entry with `moves:` over the same
+suite can arrange for another scenario. Below `ess/22` the move is refused, naming `ess/22`.
+
+One outcome moves the records of one entity at most once: a second entry with `moves:` over the same
 entity is refused. Entries that only set fields may sit beside it, and apply in the order written.
 A record whose filter reads an `Optional<…>` field holding nothing is not selected.
 
 The suite arranges, for each, three records the filter selects, one record per conjunct of the
-filter that fails only that conjunct (or one failing the whole filter), and — for a `moves:` — one
-it selects resting outside the transition's `from` states; runs the command; and reads every record
+filter that fails only that conjunct (or one failing the whole filter), and, for a `moves:`, one
+it selects resting outside the transition's `from` states. It runs the command and reads every record
 back from an immediate, unfiltered view that publishes the identity, the state and every field the
 effect writes: the changed ones in their new state with what `sets:` wrote, the others as they
 were, and `{count: changed}` equal to the records changed. It then sends the command again with an
 input the filter selects no record by, and requires the same outcome, a count of 0 and no record
-changed. Where no such view exists the scenario is refused by name. The records are arranged by the
+changed. Where no such view exists the scenario is refused.
+
+The records are arranged by the
 declared commands, so every field the filter reads must be written by one of them: from an input,
 or from a caller attribute (`{caller: user_id}`), in which case each arranging command is sent as a
 caller whose attribute carries the value its record needs. A filter reading a field no declared
 command writes is refused naming that field and saying no declared command writes it. An
 `affects:` entry and a `when_related:` row set are arranged the same way. A `sets:` entry writing the
 entity's identity is refused. No new
-suite step is used. Every generated code target (Rust, Go, Web, Clap) refuses both constructs by
-name, and Entity Runtime lowering refuses them with `SetEffectUnsupported`. Below `ess/16` both are
+suite step is used.
+
+The generated Rust, Go, Web and Clap code targets refuse both constructs, and Entity
+Runtime lowering refuses them with `SetEffectUnsupported`. Below `ess/16` both are
 refused with `unsupported_format_version`. Atomicity, partial failure and the order in which records
 change are not part of either.
 
@@ -135,8 +142,10 @@ outcome: deleting a user removes its tokens.
 
 Another entity than the entry's, `sets:` or `moves:` in a deleting entry, a deleting entry beside
 any other entry over the same entity, and a deleting entry over an entity another domain owns are
-refused; over different entities of the outcome's domain they may sit side by side. The suite reads every removed record absent from each immediate view of its entity and
-every other record as arranged; for `instances:` it then sends the command again selecting nothing,
+refused. Over different entities of the outcome's domain they may sit side by side.
+
+The suite reads every removed record absent from each immediate view of its entity and
+every other record as arranged. For `instances:` it then sends the command again selecting nothing,
 and requires a count of 0. Below `ess/23` each form keeps the refusal it had, naming `ess/23`.
 
 ## Removal in other domains is one binding per domain
@@ -146,8 +155,10 @@ domain owns is refused, naming this idiom. To remove records another domain owns
 record here is deleted, the deleting command emits one event, and each receiving domain gets one
 binding on it: one binding per receiving domain, each with its own `delivery:` and `on_failure:`
 ([bindings](bindings-and-components.md)), invoking a command of that domain that deletes its own
-records with `instances:`. ESS states no order between bindings of one event, so no receiving
-domain may rely on another having run first; there is no order between bindings to declare. A
+records with `instances:`.
+
+ESS states no order between bindings of one event, so no receiving
+domain may rely on another having run first. There is no order between bindings to declare. A
 failure in one is that binding's `on_failure:` to answer, and atomicity across domains is not part
 of the specification.
 
@@ -155,7 +166,7 @@ of the specification.
 ## Write one record per element of an input list
 
 From `format: ess/23` (beyond10x/ess#459), an `affects:` entry can write one record per element of
-a list the command carries, rather than select stored records. Write `each:` and
+a list the command carries, instead of selecting stored records. Write `each:` and
 `instance: <name>.<member>` in place of `where:`: for each element, the record its member names is
 updated if one is held and created in its lifecycle's `initial` state if not.
 
@@ -211,8 +222,9 @@ commands:
 
 `each: {in: input.<list>, as: <name>}` reads a `List` of a struct from the input.
 `instance: <name>.<member>` names a member holding the entity's identity type, and a `sets:` source
-may read `<name>.<member>` at the field's own type, beside the sources every entry takes. Unless
-the entry declares `repeated: last_wins` (below), the list must be held free of repeated
+may read `<name>.<member>` at the field's own type, beside the sources every entry takes.
+
+Unless the entry declares `repeated: last_wins` (below), the list must be held free of repeated
 identities by a declared `distinct:` over that member: a refusal
 whose plain `when:` is `{not: {distinct: {in: <list>, as: x, by: x.<member>}}}`, as above, or the
 `distinct:` in the branch's own `when:`. A refusal that also reads the stored record
@@ -220,26 +232,33 @@ whose plain `when:` is `{not: {distinct: {in: <list>, as: x, by: x.<member>}}}`,
 elements could name one record and the result would depend on their order, so validation refuses
 the entry.
 
-Writing is per element, so an empty list writes nothing; a record the list does not name is not
+Writing is per element, so an empty list writes nothing. A record the list does not name is not
 removed, and an updated record keeps every field the entry does not write. An element naming the
 branch's own subject is skipped: the subject keeps what its branch writes. A refused run writes
-none of the records. `each:` beside `where:` is refused, and below `ess/27` so is `each:` beside
-`moves:` or `deletes:` (next section); so is an entry
-on a branch without a subject: `affects:` sits beside a branch that moves or updates one named
+none of the records.
+
+`each:` beside `where:` is refused, and below `ess/27` so is `each:` beside
+`moves:` or `deletes:` (next section). An entry on a branch without a subject is refused too:
+`affects:` sits beside a branch that moves or updates one named
 record. Below `ess/23` `each:` is refused, naming `ess/23`.
 
 From `format: ess/35` (beyond10x/ess#748) a service that accepts a list naming one record twice,
 and applies the list in order, says so on the entry instead of declaring `distinct:`:
 `each: {in: input.applied, as: doc, repeated: last_wins}`. The elements then apply one after
-another in list order, each to the record as the elements before it left it. An updating entry's
-repeat writes over what an earlier element wrote, so the last element's values stay; a moving
-entry's repeat takes the transition only from a state in its `from`, and is skipped otherwise; a
-removing entry's repeat names no record and is skipped; `where:` inside `each:` selects the
-elements first. `last_wins` is the only value. List order holds inside one entry, so the key is
+another in list order, each to the record as the elements before it left it:
+
+- an updating entry's repeat writes over what an earlier element wrote, so the last element's values stay;
+- a moving entry's repeat takes the transition only from a state in its `from`, and is skipped otherwise;
+- a removing entry's repeat names no record and is skipped.
+
+`where:` inside `each:` selects the elements first. `last_wins` is the only value. List order holds
+inside one entry, so the key is
 refused as `conflicting_declaration` where another `each:` entry of the branch writes the same
 entity: write those records through one entry. Below `ess/35` the key is
 refused as `unsupported_format_version` naming `ess/35`, and an entry without it keeps the
-`distinct:` requirement. The suite then sends the record's element twice, the stale values first,
+`distinct:` requirement.
+
+The suite then sends the record's element twice, the stale values first,
 and reads back the last element's values. Generated Rust and Go keep the command an obligation
 naming the key, and `ess verify diff` reports declaring it as a widening and dropping it as a
 narrowing.
@@ -250,7 +269,8 @@ then sends it with one element naming that record and one naming a new identity,
 updated record with the field it kept, the created one in `initial`, the decoy as it was, and
 exactly one record per identity. Each refusal of the command is then read to have written no
 record its list named.
-Every generated code target (Rust, Go, Web, Clap) refuses the entry by name, and Entity Runtime
+
+The generated Rust, Go, Web and Clap code targets refuse the entry, and Entity Runtime
 lowering refuses it with `SetEffectUnsupported`.
 
 ## Move each named record by its own answer
@@ -323,13 +343,15 @@ commands:
       - {name: wrong-state, wrong_state: true, error: demo.batch.WrongState}
 ```
 
-The entries apply in the order written, each to the elements its `where:` selects; the `where:`
+The entries apply in the order written, each to the elements its `where:` selects. The `where:`
 reads `<name>.<member>` and `input.<field>`. A selected element moves the record it names along the
 entry's transition, or removes it under `deletes: <Entity>`. An element naming no record is
 skipped, and so is one whose record rests outside the transition's `from` states, as a record under
-`instances:` is; nothing is created. The `distinct:` over the identity member is required as for
+`instances:` is, and nothing is created.
+
+The `distinct:` over the identity member is required as for
 every `each:` entry, and a refused run moves nothing. Two such entries may move records of one
-entity; a `where:` on the entry itself beside `each:` stays refused. Below `ess/27` the entry's
+entity, and a `where:` on the entry itself beside `each:` stays refused. Below `ess/27` the entry's
 `moves:` or `deletes:` is refused as before, its hint naming `ess/27`, and a `where:` inside `each:`
 is refused naming `ess/27`.
 

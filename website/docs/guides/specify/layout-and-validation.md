@@ -23,7 +23,7 @@ and the members, and splitting into a directory later changes nothing about invo
 at most one `domain:`, so the one-file form is for a one-domain system; `components:`, `bindings:`
 and `topology:` can sit in it as well.
 
-The header's `domains:` list is checked in both directions, and both refusals name the fix:
+The header's `domains:` list is checked in both directions, and both refusals carry a hint with the fix:
 
 ```text
 - [undeclared_reference] system.domains: `tiny.audit` is listed as a domain of the system, and no source declares it (hint: declared domains: tiny.core)
@@ -84,12 +84,13 @@ Each key is present only when it has something to report.
 Both lists are required and checked for valid, distinct relative paths, even when one role is
 inactive. Only files in the active role must exist. An empty active list refuses. Paths are literal,
 case-sensitive UTF-8 identities: no empty or dot segments, backslashes, colons or control characters.
+
 The selected root, manifest, listed files and intermediate directories below the root must not be
 symlinks. Use real contained files. The manifest declares selection, not file ownership or authorship.
 
 Without an immediate manifest, existing recursive model discovery still requires `system.yaml`
 and reads every lowercase `.yaml`/`.yml` below the directory. Use a separate model input directory
-for that layout. An explicit file is always one source, independent of its extension; it never
+for that layout. An explicit file is always one source, independent of its extension. It never
 searches its parent for configuration. A malformed or unsupported `ess-inputs.yaml` refuses without
 falling back: rename a legacy source with that reserved filename or adopt this configuration.
 See the [complete input format](../../reference/formats.md#directory-input-configuration).
@@ -97,7 +98,7 @@ See the [complete input format](../../reference/formats.md#directory-input-confi
 ### Name the `ess` release the specification is maintained with
 
 `format: ess-inputs/2` adds one optional field, `requires`, naming the `ess` release the
-specification is validated and generated with — an exact release, or a minor line:
+specification is validated and generated with, either an exact release or a minor line:
 
 ```yaml
 format: ess-inputs/2
@@ -114,14 +115,20 @@ or later`.
 An exact pin, `requires: ess 0.34.0`, decides which release runs: any `ess` run in that directory
 or below it runs 0.34.0 from the cache, installing it first when it is not cached, whatever release
 is on your `PATH`, and says on stderr that it delegated. `ess specify toolchain which` prints the
-release that would run and why. The pin applies from that directory and below, not above: run from
+release that would run and why.
+
+The pin applies from that directory and below, not above: run from
 the repository root, `ess` does not see a pin in `spec/`, so `which` names it there, and
 `ess specify validate --path spec` refuses, naming the manifest, `cd spec` and
-`ESS_TOOLCHAIN=0.34.0`, whether `ess` is older or newer. A minor line, `requires: ess 0.34`, leaves the release on your
+`ESS_TOOLCHAIN=0.34.0`, whether `ess` is older or newer.
+
+A minor line, `requires: ess 0.34`, leaves the release on your
 `PATH` to run, and that release checks the line: an older `ess` refuses with exit `1`, naming the
 required release and how to get it: `b10x upgrade`, or `/ess:upgrade` in an agent session. A newer
-`ess` prints one warning per command and continues; `--strict-requires` refuses instead, which is
-the spelling for CI. Without `requires` nothing changes. Generated output records the release that
+`ess` prints one warning per command and continues. `--strict-requires` refuses instead, which is
+the spelling for CI.
+
+Without `requires` nothing changes. Generated output records the release that
 produced it, and a regeneration by a different release that changes the output prints a `note:`
 naming both.
 
@@ -133,8 +140,8 @@ billing v3 — 5 file(s), valid
 ```
 
 Break a reference and the refusal names what was available. Take a copy of `examples/billing/`,
-misspell `InvoiceCreated` as `InvoiceRaised` in the `accepted` branch's `emits:` and `payload:` —
-those two occurrences only, not every one in the file — and run it:
+misspell `InvoiceCreated` as `InvoiceRaised` in the `accepted` branch's `emits:` and `payload:`,
+those two occurrences only and not every one in the file, and run it:
 
 ```shell-session
 $ COPY=$(mktemp -d)/billing && cp -r examples/billing "$COPY"
@@ -148,7 +155,7 @@ $ ess specify validate --path "$COPY"
   … structured diagnostics continue with source locations and repair hints …
 ```
 
-Every problem is reported in one run — one typo, two consequences, both stated, and the exit code is
+Every problem is reported in one run: one typo, two consequences, both stated. The exit code is
 `1`. The second is the more useful of the two: the branch says it creates an invoice and publishes
 its identity in an emitted event, and the misspelling took away the event that was carrying it.
 
@@ -156,7 +163,9 @@ its identity in an emitted event, and the misspelling took away the event that w
 
 A valid specification can still leave things undecided. `ess specify validate --format json` (or
 `yaml`) answers how much, as data a merge can be gated on: when conformance synthesis owes
-anything, the report carries a `completeness` object. It is advisory: the exit status and the text
+anything, the report carries a `completeness` object.
+
+It is advisory: the exit status and the text
 output do not change, and the object is left out when nothing is owed. To answer, `json` and
 `yaml` run conformance synthesis, so they take as long as `ess verify conform synthesize` on the
 same model, which on a large one is far longer than validating; text mode does not synthesize.
@@ -173,7 +182,7 @@ carries `unsynthesizable` instead, with the `reason`, `path` and `detail` of eac
 example carries one `unanswered` note, about who enforces a grant. Gate on the codes, which are
 stable: for example, fail a pull request when `completeness.counts.unscenarioed` grows.
 
-Two things are deliberately not in it. What a target leaves to the implementation depends on the
+Two things are not in it. What a target leaves to the implementation depends on the
 target: `ess generate synthesize` writes each capability's disposition, obligations included, to
 `plan.json` for the target it is asked for
 ([the plan](../synthesize.md#the-plan-every-capability-gets-exactly-one-disposition)). And
@@ -196,12 +205,14 @@ warning[ESS-ENTITY-019]: `probe.staff.Agent` stores `pool`, typed `probe.staff.P
   named type that identifies exactly one entity, with no `references` on it and no `owns` carried
   by it. An aggregate view's group key is one of its source entity's fields, so it is reported
   there.
-- `ESS-COMMAND-019`: a `when_related:` row whose `via` a field carries — a stored field of the
-  addressed subject, or the field the branch fills from the input — and that its named identity
+- `ESS-COMMAND-019`: a `when_related:` row whose `via` a field carries, namely a stored field of the
+  addressed subject or the field the branch fills from the input, and that its named identity
   type alone settled, because no relation on that field says which entity it names.
 
-Declaring the relation the hint names silences the warning; the hint offers the target's `owns` only
-for a field typed exactly its identity, the only field an `owns` is carried by. An entity whose
+Declaring the relation the hint names silences the warning. The hint offers the target's `owns` only
+for a field typed exactly its identity, the only field an `owns` is carried by.
+
+An entity whose
 identity an `updates:` rewrites (`ess/23`) is never the target: a relation carrying its identity
 refuses the rename, so nothing is reported. Neither shape changes the exit status, the compiled
 model or anything generated. A field or `via` typed as a bare primitive such
@@ -216,9 +227,8 @@ list contains references into that map. Adapters should consume those declaratio
 no second YAML reader is needed. `--out <file>` writes the same canonical JSON bytes.
 
 `ess specify validate` says the document holds together. `ess specify inspect` shows what one
-declaration *became*,
-with every reference in it resolved — the fastest way to find out whether the thing you meant is the
-thing the model read:
+declaration *became*, with every reference in it resolved. It is the fastest way to find out whether
+the thing you meant is the thing the model read:
 
 ```shell-session
 $ ess specify inspect --path examples/billing billing.invoice.CreateInvoice
@@ -256,7 +266,9 @@ commands:
 
 `kind: otherwise` is the line to read: the specification names no condition for that branch, and the
 model derived one. `construct_input` and `default_branch` say how a generated scenario will reach
-each branch, before any suite exists. The actual YAML includes the resolved payload and subject
+each branch, before any suite exists.
+
+The actual YAML includes the resolved payload and subject
 records as well; the excerpt above keeps only the fields relevant to that question.
 
 On a binding it resolves the crossing as well, reason included:

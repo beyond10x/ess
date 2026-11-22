@@ -8,9 +8,9 @@ description: "Hold a program written in any language to a suite: ess starts your
 
 `ess verify conform run --target process` holds an implementation written in any language to its
 suite. `ess` starts a program you write, the adapter, and asks it the suite's questions as one JSON
-object per line on its standard input; the adapter answers each with one JSON line on its standard
+object per line on its standard input. The adapter answers each with one JSON line on its standard
 output, by driving your implementation. `ess` judges the answers itself and writes the report a
-built-in target gets: the adapter reports what it observed, never a verdict.
+built-in target gets. The adapter reports what it observed and gives no verdict.
 
 ## Run it
 
@@ -51,7 +51,7 @@ after `--`, a program that cannot be started, or a failed handshake.
 ## The messages
 
 `ess` sends one request and reads its answer before it sends the next. On the wire each message is
-one line; they are shown wrapped here, with correlation ids and digests shortened:
+one line. They are shown wrapped here, with correlation ids and digests shortened:
 
 ```json
 {"id": 2, "op": "execute_command", "limit_ms": 30000,
@@ -67,15 +67,17 @@ one line; they are shown wrapped here, with correlation ids and digests shortene
                                                 "title": "title"}}]}}
 ```
 
-`id` is 0 for the handshake, then 1, 2, 3…, and the answer repeats it. `op` names the operation,
+`id` is 0 for the handshake, then 1, 2, 3…, and the answer repeats it. `op` is the operation,
 `request` holds its members, and `limit_ms` is how many milliseconds `ess` waits for this answer.
 An answer holds exactly one of `ok`, the result (`null` for an operation that returns nothing), and
-`target_error`. Requests are open at every depth: ignore a member you do not know, wherever it sits
-in the request. Answers are closed: an unknown member, a missing required one, a member name
-repeated in one object or a wrong type is a fault.
+`target_error`.
 
-The first request is the handshake. It names the versions this `ess` reads and the suite; the
-answer names the one version the adapter speaks and the implementation, which the report names.
+Requests are open at every depth: ignore a member you do not know, wherever it sits in the request.
+Answers are closed: an unknown member, a missing required one, a member name repeated in one object
+or a wrong type is a fault.
+
+The first request is the handshake. It lists the versions this `ess` reads and describes the suite.
+The answer gives the one version the adapter speaks and the implementation, which the report shows.
 `name` and `version` are each at most 256 bytes, and a longer one fails the handshake. Where either
 holds a control, line-separator or bidirectional-override character, the report shows it as an
 escape such as `\u{1b}`, and it shows a backslash doubled:
@@ -95,7 +97,7 @@ escape such as `\u{1b}`, and it shows a backslash doubled:
 
 Besides the handshake, seven operations are required: `begin_scenario`, `execute_command`,
 `query_view`, `observe_events`, `configure_external_outcome`, `redeliver_event` and `end_scenario`.
-A suite sends only the ones its specification needs; the `tasks` suite sends `begin_scenario`,
+A suite sends only the ones its specification needs. The `tasks` suite sends `begin_scenario`,
 `execute_command`, `query_view` and `end_scenario`. Answer every operation you do not implement,
 required or optional, and an `op` you have never heard of, `unsupported` with a reason:
 
@@ -106,7 +108,9 @@ required or optional, and an `op` you have never heard of, `unsupported` with a 
 
 Each scenario that reaches it is reported `unsupported` with that reason, which fails the run. Every
 string of a `target_error` is cut at 4096 bytes, ending ` … (<n> bytes more)`, and shown with the
-same escapes. `query_view_as` and `query_view_anonymous` answered `unsupported` are sent again as `query_view`,
+same escapes.
+
+`query_view_as` and `query_view_anonymous` answered `unsupported` are sent again as `query_view`,
 and `scan_view_as` and `scan_view_anonymous` as `scan_view`, so an adapter that checks no read
 grant fails the suite's `<view>/grant/read/denied` scenarios.
 
@@ -120,16 +124,18 @@ error:
 ```
 
 A command or read the actor is not granted is answered under `target_error` with
-`{"kind": "not_granted", "actor": …}`, naming the refused actor, or `null` for a read sent as no
-actor.
+`{"kind": "not_granted", "actor": …}`, where `actor` is the refused actor, or `null` for a read sent
+as no actor.
 
 A fault is an answer `ess` cannot take: a line that is not JSON or does not match its operation,
 another `id`, a number `ess` cannot hold exactly, no answer within `limit_ms`, or the adapter
 exiting or closing its standard output before it answers. The scenario ends `error`, `ess` kills
 the adapter's whole process group, and the next scenario starts a fresh process, which must answer
-the handshake with the same implementation. So the adapter must be restartable at any point, and it
-must exit when its standard input closes: that is how `ess` ends it after the last scenario, and
-`ess` kills the process group 5 seconds later if it has not exited.
+the handshake with the same implementation.
+
+The adapter must therefore be restartable at any point, and it must exit when its standard input
+closes. That is how `ess` ends it after the last scenario, and `ess` kills the process group
+5 seconds later if it has not exited.
 
 A fault costs the scenario's wait: an adapter that never answers holds each scenario it is asked in
 for `--target-timeout`, and the next scenario's restart handshake too, so a run in which every
@@ -139,7 +145,7 @@ feedback loop while you build the adapter.
 If `ess` receives SIGINT, SIGTERM or SIGHUP during a run, it kills the adapter's process group and
 then ends by that signal, writing no report, so a shell reports 128 plus the signal number (130,
 143 or 129) and a Ctrl-C still stops a shell loop over runs. SIGKILL
-cannot be handled; an adapter whose `ess` was killed that way, or crashed, ends only because its
+cannot be handled. An adapter whose `ess` was killed that way, or crashed, ends only because its
 standard input closes.
 
 `begin_scenario` and `end_scenario` bracket each scenario, with the scenario's id and its
@@ -149,7 +155,7 @@ reset or partition your implementation's state in `begin_scenario`, so nothing o
 satisfies another, and release it in `end_scenario`.
 
 Numbers travel by exact value: `ess` writes each number as the token of its exact value, and a
-number in an answer that it cannot hold exactly ends the scenario `error`, never a rounded pass. If
+number in an answer that it cannot hold exactly ends the scenario `error`, not a rounded pass. If
 your language parses JSON numbers as binary64, read them as decimals (Python:
 `json.loads(line, parse_float=decimal.Decimal)`) and write each as its exact token.
 
@@ -171,7 +177,7 @@ page](https://github.com/beyond10x/ess/blob/main/docs/design/conformance-target-
 ## A complete adapter
 
 This adapter serves the `tasks` specification and holds the tasks in memory, so here it is itself
-the implementation under test; a real adapter calls your service, command or library in each
+the implementation under test. A real adapter calls your service, command or library in each
 method instead. It answers every operation it does not define `unsupported`, returns a consistency
 token from every command because the `Tasks` view is `read_your_writes`, and mints identities from
 a counter, so two runs write the same report.

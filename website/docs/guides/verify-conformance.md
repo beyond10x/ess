@@ -12,24 +12,23 @@ checked against.
 
 ## Pages in this guide
 
-1. [Synthesize a suite](verify/synthesize-a-suite.md) — generate the suite a specification requires.
-2. [Author scenarios](verify/author-scenarios.md) — add scenarios a person wrote, compile them on
+1. [Synthesize a suite](verify/synthesize-a-suite.md)
+2. [Author scenarios](verify/author-scenarios.md): add scenarios a person wrote, compile them on
    their own, run a chosen subset, and what they can arrange and expect.
-3. [Observations](verify/observations.md) — what a suite observes beyond an act's own answer:
+3. [Observations](verify/observations.md): what a suite observes beyond an act's own answer, namely
    held state, retries, selection, periodic activity, clocks, event context and binding accessors.
-4. [Runners and reports](verify/runners.md) — run a suite against a built-in target, a generated Go
+4. [Runners and reports](verify/runners.md): run a suite against a built-in target, a generated Go
    or TypeScript package or a Rust target, and read the report.
-5. [An implementation in any language](verify/target-process.md) — hold a program in any language
+5. [An implementation in any language](verify/target-process.md): hold a program in any language
    to a suite over JSON lines on its standard input and output, with a complete adapter.
-6. [Audit a suite with specification mutants](verify/mutation-audit.md) — measure whether the suite
+6. [Audit a suite with specification mutants](verify/mutation-audit.md): measure whether the suite
    notices a changed specification, against a built-in target or your own implementation.
-7. [Explore command sequences and histories](verify/explore.md) — random sequences and concurrent
-   histories.
+7. [Explore command sequences and histories](verify/explore.md)
 
 ## Where each section went
 
-This guide used to be a single page. Each of its sections is listed here under its old anchor, so
-an older link still finds it.
+This guide used to be a single page. Its sections are listed here under their old anchors, so an
+older link still lands on its section.
 
 - <a id="generate-the-suite"></a>[Generate the suite](verify/synthesize-a-suite.md#generate-the-suite)
 - <a id="select-authored-scenarios-explicitly"></a>[Select authored scenarios explicitly](verify/author-scenarios.md#select-authored-scenarios-explicitly)

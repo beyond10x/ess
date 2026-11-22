@@ -30,59 +30,78 @@ if err != nil { t.Fatal(err) }
 essconform.AssertExplored(t, result, essconform.AssertOptions{})
 ```
 
-`seeds` sequences run, seeded 1 to `seeds`, each on a fresh target; `steps` is the number of
-commands in each (defaults 200 and 60). A failure names its seed, and `seed` runs exactly that one
+`seeds` sequences run, seeded 1 to `seeds`, each on a fresh target. `steps` is the number of
+commands in each (defaults 200 and 60). A failure reports its seed, and `seed` runs exactly that one
 sequence again. One seed draws the same sequence in both languages.
 
 After every step the explorer compares the outcome, the error, the direct events and every payload
-field the specification determines, then every view without parameters over an entity: its row
-count, identities, determined fields and `order_by`. A `read_your_writes` view is read once with the
-command's consistency token; an `eventual` view is polled until it agrees, up to the eight attempts
-an `eventually` step allows. Last, every invariant is evaluated over the model's records; a record
-that breaks one is reported as a specification defect, because the guards allowed a sequence the
-invariants forbid. A failure is shrunk by removing steps while the shorter trace still fails the
-same way, for at most 1,000 replays.
+field the specification determines. It then compares every view without parameters over an entity:
+its row count, identities, determined fields and `order_by`. A `read_your_writes` view is read once
+with the command's consistency token. An `eventual` view is polled until it agrees, up to the eight
+attempts an `eventually` step allows.
+
+Last, every invariant is evaluated over the model's records. A record that breaks one is reported
+as a specification defect, because the guards allowed a sequence the invariants forbid. A failure
+is shrunk by removing steps while the shorter trace still fails the same way, for at most 1,000
+replays.
 
 `assertExplored` (`AssertExplored`) fails on a disagreement, on a declared outcome of an included
-command that no sequence reached, and on the outcomes of an excluded command. The explorer models a
-subset: `when`, `otherwise`, `wrong_state`, `unknown_instance`, `existing_instance` and external
-conditions, and the conditions read from the stored row — `when_subject_state`,
-`when_state_changes` and `when_subject` (a stored field or a predicate over the stored fields);
-`creates` with an observed identity, `moves`/`updates`/`preserves` of a supplied subject, and
-`moves`/`updates` of the rows an `instances: {where: …}` filter selects, applied with their `sets:`
-to every selected row; integer, decimal, boolean, string and UUID inputs (a decimal is drawn as an
-integer is), their newtypes, enums and structs of them. Anything else is excluded with
-the reason in `excluded` — `when_related`, which reads another entity's row, among them — and
-accepting that is an explicit `allowExcluded`. A command the target answers `unsupported`
-(`ErrUnsupported`) is left out only in the state of the row that step addressed, and drawn in every
-other: each such (command, state) is listed in `refused` with the target's reason and the number of
-steps not sent, and an outcome only those steps would have taken is in `excludedOutcomes`; the
-assertion fails on a refusal unless `allowExcluded` accepts it. A command refused in every state it
-was drawn in is in `excluded`, as is a view the target refuses. Where two guards both hold — which
-the model admits over an infinite domain — the draw is reported in `ambiguous` and redrawn rather
-than decided; a view filter, invariant or stored-row guard over a field no command set, or one the
-row holds as null, is reported in `undetermined` and the command stays in exploration. Neither
-fails.
+command that no sequence reached, and on the outcomes of an excluded command.
+
+The explorer models a subset:
+
+- `when`, `otherwise`, `wrong_state`, `unknown_instance`, `existing_instance` and external
+  conditions;
+- the conditions read from the stored row: `when_subject_state`, `when_state_changes` and
+  `when_subject`, which tests a stored field or a predicate over the stored fields;
+- `creates` with an observed identity, `moves`/`updates`/`preserves` of a supplied subject, and
+  `moves`/`updates` of the rows an `instances: {where: …}` filter selects, applied with their
+  `sets:` to every selected row;
+- integer, decimal, boolean, string and UUID inputs, their newtypes, enums and structs of them. A
+  decimal is drawn as an integer is.
+
+Anything else is excluded with the reason in `excluded`, and `when_related`, which reads another
+entity's row, is among them. Accepting that is an explicit `allowExcluded`.
+
+A command the target answers `unsupported` (`ErrUnsupported`) is left out only in the state of the
+row that step addressed, and drawn in every other. Each such (command, state) is listed in
+`refused` with the target's reason and the number of steps not sent. An outcome only those steps
+would have taken is in `excludedOutcomes`.
+
+The assertion fails on a refusal unless `allowExcluded`
+accepts it. A command refused in every state it was drawn in is in `excluded`, as is a view the
+target refuses.
+
+Where two guards both hold, which the model admits over an infinite domain, the draw is reported in
+`ambiguous` and redrawn, not decided. A view filter, invariant or stored-row guard over a field no
+command set, or one the row holds as null, is reported in `undetermined` and the command stays in
+exploration. Neither fails.
 
 A text input is drawn from `""`, `"a"`, `"b"`, the text literals of the command's guards and its
-own `example:`; for every `.count` a guard compares it with, say `secret.count < 12`, it is also
+own `example:`. For every `.count` a guard compares it with, say `secret.count < 12`, it is also
 drawn at 11, 12 and 13 characters, cut from its example, or from its own name where it has none.
-An Integer or enum input also draws its `example:`. These draws are part of what a seed names, so a
-failure recorded under a release before beyond10x/ess#221 and #223 replays a different sequence
-wherever a command reads its stored row, declares `existing_instance:`, or has a text input with an
-`example:` or a `.count` guard: replay it with the release that recorded it.
+An Integer or enum input also draws its `example:`.
+
+These draws are part of what a seed determines, so a failure recorded under a release before
+beyond10x/ess#221 and #223 replays a different sequence wherever a command reads its stored row,
+declares `existing_instance:`, or has a text input with an `example:` or a `.count` guard. Replay it
+with the release that recorded it.
 
 The model decides which outcome a step expects in the order Entity Runtime and synthesis use:
 
-1. an input-guarded refusal (an outcome with a `when:` and an `error:`), the first declared whose
-   guard holds, before the record, its state or an external branch is read;
+1. an input-guarded refusal, that is an outcome with a `when:` and an `error:`, the first declared
+   whose guard holds, before the record, its state or an external branch is read;
+
 2. then existence: `existing_instance:` where a creation names an identity a record already
    carries, and `unknown_instance:` where a command reading its stored row names one none carries;
+
 3. then the branches selected by the stored row (`when_subject_state:`, `when_state_changes:`,
-   `when_subject:`), the first declared that holds, before any accepting guard; validation refuses
+   `when_subject:`), the first declared that holds, before any accepting guard. Validation refuses
    an accepting `when:` or external branch declared before them that one request can satisfy
    together with them, so declaration order gives the same answer;
+
 4. otherwise the one accepting `when:` that holds, or the default when none does;
+
 5. then `wrong_state`, where the outcome from step 3 or 4 moves the subject from a state no move of the
    command starts from. An outcome that moves nothing answers in every state, an eligible external
    branch included.
@@ -92,8 +111,8 @@ A target that answers `wrong_state` to an input a refusal claims disagrees with 
 as disagreeing.
 
 The model is `ir.json`, the compact IR the suite's `spec_digest` is taken over. The explorer refuses
-a package whose `ir.json` does not hash to `suite.json`'s digest; regenerate the package rather than
-editing either file.
+a package whose `ir.json` does not hash to `suite.json`'s digest. Regenerate the package. Do not
+edit either file.
 
 ### Restart the target between commands
 
@@ -116,7 +135,9 @@ result, err := essconform.Explore(func() essconform.Target { return newTarget() 
 After every `restartEvery` commands of a sequence the explorer restarts the target and reads every
 view again. A row the restart lost fails at the `restart` step of the trace, and a later creation
 that mints an identity a record already carries fails as a reused identity. A restart draws no
-random number, so a seed runs the same commands with restarts as without. A restart is a check
+random number, so a seed runs the same commands with restarts as without.
+
+A restart is a check
 only once a command has followed it: a restart after the last command of a sequence is followed by
 one more drawn command, and only a restart a command followed counts as performed.
 
@@ -150,19 +171,23 @@ $ ess verify conform check-history \
 | exit | meaning |
 |---|---|
 | 0 | `Linearizable`: some order of the calls explains every recorded answer. |
-| 1 | `Violation`: no order does. The report names the longest partial order found and a shrunk history that is still a violation. |
+| 1 | `Violation`: no order does. The report gives the longest partial order found and a shrunk history that is still a violation. |
 | 3 | `Unknown`: the search spent `--budget` model executions (default 1,000,000) first. Unknown is not a pass. |
 | 2 | The specification did not load, or the history was refused, for example because it was recorded against another specification. |
 
 The search is split by subject: calls on different instances are checked apart. A call that never
 answered may have taken effect or not, and is placed after every other call. An operation that
-records no input (`ess-history/3` can) is explained by any input the suite would submit for its command. A read of a view
-that records its rows is judged at the consistency the view declares: under `read_your_writes` no
-client reads a state older than its own last write, and under `eventual` each client's reads converge
-once its first `--settle` reads after the last write (default 4) are past. Reads that cannot be judged
-are listed with their reason. The same history and budget always print the same report;
-`--format json` prints it as JSON. What the check holds a history to, and the limits of that
-promise, is [when commands race](../../concepts/ess.md#when-commands-race).
+records no input (`ess-history/3` can) is explained by any input the suite would submit for its
+command.
+
+A read of a view that records its rows is judged at the consistency the view declares: under
+`read_your_writes` no client reads a state older than its own last write, and under `eventual` each
+client's reads converge once its first `--settle` reads after the last write (default 4) are past.
+Reads that cannot be judged are listed with their reason.
+
+The same history and budget always print the same report. `--format json` prints it as JSON. What
+the check holds a history to, and the limits of that promise, is
+[when commands race](../../concepts/ess.md#when-commands-race).
 
 ### Draw a history as client lanes
 
@@ -176,15 +201,19 @@ $ ess verify conform web \
 `web --history` checks the history as `check-history` does and writes one `index.html`, or prints
 it when `--out` is absent. Each client is a lane, each call a bar from its invoke to its return, and
 each call the search placed carries its position in the order found. A history that declares more
-than 16 clients draws a lane for each client that made a call and counts the rest in one row. For a violation, the page
-marks the call where the search failed. Where one other call explains the failure, it names that
-call too, with the state each of the two needed and the state the other order left. Below that is
-the shrunk history, drawn the same way. The page carries its stylesheet and no script, so it opens
-from disk and fetches nothing. The same history renders to the same bytes. It exits 0 whatever the
-verdict; the verdict as an exit status is `check-history`'s.
+than 16 clients draws a lane for each client that made a call and counts the rest in one row.
+
+For a violation, the page marks the call where the search failed. Where one other call explains the
+failure, the page also shows that call, with the state each of the two needed and the state the
+other order left. Below that is the shrunk history, drawn the same way.
+
+The page carries its stylesheet and no script, so it opens from disk and fetches nothing. The same
+history renders to the same bytes. It exits 0 whatever the verdict. The verdict as an exit status is
+`check-history`'s.
 
 `--out` replaces the files `ess` owns in that directory, including a scenario player's, so write
 history pages and the player to different directories.
+
 ### Import a recorded log
 
 A service that logs its calls can be judged from its log. `import-history` reads a JSON Lines log,
@@ -212,10 +241,10 @@ $ ess verify conform check-history --path examples/billing --history target/hist
 ```
 
 Every field is either a JSON pointer or `absent`. Nothing is guessed. If a line lacks a field that
-the call cannot be judged without, the import is refused (exit 2) and each such field is named on
-its line. Those fields are the client, command, subject, invoke instant and completion, plus the
-return instant and outcome of a `Returned` call. Refusals name the log line and the field. Other
-fields can be missing, and each case is reported as a `coverage-gap`:
+the call cannot be judged without, the import is refused (exit 2), and the refusal gives the log
+line and each such field. Those fields are the client, command, subject, invoke instant and
+completion, plus the return instant and outcome of a `Returned` call. Other fields can be missing,
+and each case is reported as a `coverage-gap`:
 
 - A missing `operation_id` is given a generated version-8 UUID. No ESS writer uses version 8, so a
   generated ID cannot collide with a carried one.
@@ -224,7 +253,8 @@ fields can be missing, and each case is reported as a `coverage-gap`:
 - The document's `seed` is never carried and is written as 0.
 
 Gaps are printed on stderr. With `--output FILE`, they are also written as a JSON array to
-`FILE.gaps.json`. This file is always written; it is never empty because `seed` is always a gap.
+`FILE.gaps.json`. This file is always written, and it is never empty because `seed` is always a gap.
+
 A history imported with gaps carries seed 0 and generated IDs by construction, and only the gaps
 file records which values were not in the log. An `--output` is refused if it or its gaps file is
 the `--log` or `--adapter` file (hard links included) or a file of the `--path` specification.

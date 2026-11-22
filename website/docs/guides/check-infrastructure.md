@@ -7,9 +7,9 @@ description: Turn a sanitized Kubernetes observation into typed infrastructure I
 # Import and project Kubernetes infrastructure
 
 The Kubernetes adapter imports existing observation bundles or reads an explicitly selected live
-kubeconfig context. Legacy cluster observations produce `infra-ir/1`; the namespace topology
-profile produces qualified `infra-ir/2`. Only the adapter
-touches cluster authority; downstream analysis reads data.
+kubeconfig context. Legacy cluster observations produce `infra-ir/1`, and the namespace topology
+profile produces qualified `infra-ir/2`. Only the adapter touches cluster authority. Downstream
+analysis reads data.
 
 ## Import the committed observation
 
@@ -20,14 +20,14 @@ $ ess infra import kubernetes \
 ```
 
 The importer reports coverage and unresolved references. It does not invent missing ownership,
-policy, or topology semantics. `--out` writes the IR as JSON whatever the file extension;
+policy, or topology semantics. `--out` writes the IR as JSON whatever the file extension, and
 `--format` selects only the report printed to stdout.
 
 ## Diagnose and graph the IR
 
-The `infra` verb sits in the `infra` area, which is why the word appears twice: `ess infra infra
-diagnose` is the area path, and `ess infra diagnose` is its flat spelling — the same command, the
-same bytes. See [Flat spellings](../reference/cli.md#flat-spellings).
+`ess infra infra diagnose` is the area path: the `infra` verb in the `infra` area.
+`ess infra diagnose` is its flat spelling. Both run the same command and produce the same bytes.
+See [Flat spellings](../reference/cli.md#flat-spellings).
 
 ```shell-session
 $ ess infra infra diagnose --path target/cluster.ir.json
@@ -50,8 +50,7 @@ $ ess infra infra diff \
     --to examples/k3d-dev-cluster/observation.drifted.json
 ```
 
-Snapshot diff compares observed systems. It is distinct from projecting desired infrastructure
-intent.
+Snapshot diff compares observed systems. It does not project desired infrastructure intent.
 
 ## Project manifests without applying them
 
@@ -77,11 +76,13 @@ $ ess infra import kubernetes \
 Live access is outside the offline repository gate. Raw Secret `data`, `stringData`, and
 last-applied configuration values are sanitized before serialization. A full scan writes
 `infra-observation/3`, where each Secret `data`/`stringData` entry keeps its key name and
-`{"present": true}` and nothing derived from the value, not even a digest or a length; compiling it
+`{"present": true}` and nothing derived from the value, not even a digest or a length. Compiling it
 writes `infra-ir/3` with the same marker, or `infra-ir/4` when the model holds a Gateway API kind, a
-service account's cloud identity or a service's load balancer. Failed reads stop collection;
-ESS never retries a failed cluster read in the current namespace. Keep the observation output
-for review; do not treat sanitization as authority to publish operational topology.
+service account's cloud identity or a service's load balancer.
+
+Failed reads stop collection, and ESS never retries a failed cluster read in the current
+namespace. Keep the observation output for review. Sanitization is not authority to publish
+operational topology.
 
 ## What a full scan observes, and what it does not
 
@@ -91,12 +92,14 @@ A full scan (`--context` without `--namespace`) reads 17 kinds, each with one
 `secrets`, `serviceaccounts`, `persistentvolumeclaims`, `poddisruptionbudgets` and
 `horizontalpodautoscalers`, plus the two Gateway API kinds `gateways.gateway.networking.k8s.io`
 and `httproutes.gateway.networking.k8s.io`. A required kind the API server does not serve fails
-its read, and the scan stops; a Gateway API kind the server does not serve is left out of the
-bundle and printed as `not served`. The scan then calls `kubectl api-resources --verbs=list` once
+its read, and the scan stops. A Gateway API kind the server does not serve is left out of the
+bundle and printed as `not served`.
+
+The scan then calls `kubectl api-resources --verbs=list` once
 and records every served kind of a watched API group that it does not read (network policy,
 Istio, the AWS load balancer controller, cert-manager, external secrets, the secrets store CSI
 driver, autoscaling, KEDA, Karpenter, Argo, the Prometheus operator) as the observation's
-`unobserved_kinds`; the import report lists each under `coverage_gaps` as `served but not read`.
+`unobserved_kinds`. The import report lists each under `coverage_gaps` as `served but not read`.
 
 What the two files keep:
 
@@ -120,12 +123,12 @@ What the model does not read, so diagnosis, the graph and drift cannot see it:
 
 - **Storage behind a claim.** A PersistentVolumeClaim keeps its storage class name, access modes,
   requested size and phase. StorageClass and PersistentVolume objects are not scanned.
-- **NetworkPolicy.** Not scanned; the graph says what references what, not what may reach what.
+- **NetworkPolicy.** Not scanned. The graph says what references what, not what may reach what.
 - **Custom resources.** No custom resource beyond the Gateway API is scanned, such as cert-manager
   `Certificate`, external-secrets `ExternalSecret`, or AWS Controllers for Kubernetes database
-  kinds; a served one in a watched group is named under `coverage_gaps`.
+  kinds. A served one in a watched group is listed under `coverage_gaps`.
 - **Other annotations.** The model reads an object's name, namespace, uid, labels and owner
-  references, and the two annotations named above. An external-dns hostname annotation, for one,
+  references, and the two annotations above. An external-dns hostname annotation, for one,
   is not in the IR.
 - **External dependencies.** Container images are kept and parsed into registry, repository, tag
   and digest for diagnosis (`INFRA-DIAG-006` reports an unpinned image), but a registry is not a
@@ -149,34 +152,34 @@ The reads are sequential, not an atomic snapshot of the API.
 This profile omits ConfigMap and Secret keys/values, literal environment entries, probe definitions,
 annotations, commands, arguments and unmodeled API fields before writing. Structural identities,
 labels, images, selectors, references, resource envelopes and modeled runtime state remain.
-Labels are structural data; the profile is not a general secret detector. Unsupported selector
+Labels are structural data, and the profile is not a general secret detector. Unsupported selector
 terms, including `matchExpressions`, are refused instead of becoming match-all selectors.
 
 The resulting `infra-observation/2` and `infra-ir/2` retain a typed `coverage` claim. The IR includes
 that claim in its semantic digest. Native graph and drift exports use version 2 and retain it too.
 Drift requires the same context, namespace and profile. An empty change list means no change in
-the compared topology; omitted content is still unobserved. Node membership in this profile is the
-set of referenced nodes, so it does not report cluster node additions or removals.
+the compared topology, and omitted content is still unobserved. Node membership in this profile is
+the set of referenced nodes, so it does not report cluster node additions or removals.
 Changes outside the detailed drift rules produce `topology_digest_changed`, retaining the exact
 before/after model digests instead of reporting no change.
 
 Diagnosis reports the limited observation, intent simulation returns unknown, and manifest
 projection refuses this profile. These consumers cannot treat omitted values or probes as absent.
 Existing version 1 documents remain readable without reclassification as complete observations.
-Upgrade readers before selecting this profile; older readers reject version 2.
+Upgrade readers before selecting this profile, because older readers reject version 2.
 
 ## Connect implementation selections to observed workloads
 
 `ess verify bindings` was introduced in 0.21.0. The service owns its semantic
-model and realization; the system owns environment-specific `ess-observed-bindings/1` or `/2` declarations.
-Infrastructure remains a separate observed authority. A monolith may assign several components
-to one implementation and bind that implementation to several named deployment roles.
+model and realization, and the system owns environment-specific `ess-observed-bindings/1` or `/2`
+declarations. Infrastructure remains a separate observed authority. A monolith may assign several
+components to one implementation and bind that implementation to several named deployment roles.
 
 Compile the service's realization to obtain its exact `realization_digest`. Existing
 `ess-realization/1` requires a primary executable entrypoint. Use explicit `ess-realization/2`
 when only source implementation membership is evidenced: components and implementations remain
 nonempty, while entrypoints and actors are empty and conformance is absent. Do not invent an
-executable interface. Version 2 has a separate digest domain; old readers reject it.
+executable interface. Version 2 has a separate digest domain, and old readers reject it.
 
 ```yaml
 format: ess-observed-bindings/1
@@ -197,7 +200,7 @@ bindings:
 
 Component membership is inherited from the exact admitted realization. Supported workload kinds
 are `deployment`, `statefulset` and `daemonset`. Optional per-binding `evidence` entries contain
-`repository`, an exact 40-character Git `revision`, and relative `path`; they record attribution
+`repository`, an exact 40-character Git `revision`, and relative `path`. They record attribution
 without fetching or verifying those files. Unknown fields, duplicate targets, empty selections
 and invalid references are refused before collection.
 
@@ -211,16 +214,16 @@ $ ess verify bindings --spec service/model --realization service/realization.yam
 
 Output parents must exist and output files must be new. Live observations must be outside Git
 checkouts. Live mode performs a fresh namespace-topology read with the document's explicit context
-and namespace; collection failure produces an unknown report without falling back to an old file.
-Offline mode is byte-deterministic for the same inputs and uses the observation's timestamp.
+and namespace, and a collection failure produces an unknown report without falling back to an old
+file. Offline mode is byte-deterministic for the same inputs and uses the observation's timestamp.
 Neither mode changes a cluster or promotes observations into an accepted baseline.
 
 The report checks scope, workload, container and exact workload-template image reference.
 Missing targets within admitted scope and changed images violate the declaration. A bound
 workload is bound as a whole: a container, or a native sidecar (an `initContainers` entry with
 `restartPolicy: Always`), that no binding names violates `OBS-BIND-008`, and the finding names
-it. Bind every container and native sidecar the workload runs; a binding names a native sidecar
-the same way it names a container. Plain init containers finish before the pod starts and are
+it. Bind every container and native sidecar the workload runs, and name a native sidecar in a
+binding the same way as a container. Plain init containers finish before the pod starts and are
 not checked, and the report says so.
 
 A container the service does not build, such as a service-mesh proxy or a vendor agent, is not an
@@ -244,6 +247,7 @@ report lists it under the binding's `acknowledged`, not as a binding. Its image 
 with your own: an acknowledged container running a binding's declared image or an
 implementation's artifact locator, or the same `@sha256:` digest under another repository or tag,
 violates `OBS-BIND-008`, because that is your code. Tags alone are not compared.
+
 Acknowledgements are refused before collection when their workload is not bound, when they name
 a container a binding also names, or when a reason is empty. One that names no observed
 container or native sidecar leaves `OBS-BIND-008` `unknown` and the finding names it: the
@@ -252,7 +256,7 @@ one for a plain init container. Remove an acknowledgement when its container goe
 `ess-observed-bindings/1` document is read unchanged and acknowledges nothing.
 
 An observation or IR written by ESS 0.31.0 or earlier never
-recorded init containers, so over it `OBS-BIND-008` is `unknown` rather than satisfied; take a new
+recorded init containers, so over it `OBS-BIND-008` is `unknown` rather than satisfied. Take a new
 live read to settle it. Wrong context or missing/different namespace coverage leaves the result
 unknown. A digest-pinned container artifact and identical digest-pinned template reference can
 establish immutable reference agreement. Source artifacts and tag-only images leave that check
@@ -265,9 +269,9 @@ which source built it.
 | 1 | `violated` | A check violated the declaration or the authored contract was refused. |
 | 2 | `unknown` | Required evidence or acquisition is unavailable, with no known violation. |
 
-A violation takes precedence over unknown; all applicable findings remain in the JSON report.
+A violation takes precedence over unknown, and all applicable findings remain in the JSON report.
 Syntax/argument errors can terminate at the CLI parser before a report exists. The report and
-generated Markdown explicitly exclude running Pod image IDs, source-to-image build attestations,
+generated Markdown exclude running Pod image IDs, source-to-image build attestations,
 runtime behavior, profile-specific operation exposure, health, replicas and omitted secret/config
 values. A satisfied reference check is not runtime conformance. These checks can run unchanged
-in a scheduled job; no AI interpretation is part of the verdict.
+in a scheduled job, and no AI interpretation is part of the verdict.

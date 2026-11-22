@@ -10,12 +10,12 @@ description: Why a refusable command declares outcomes, what an invariant may re
 
 These are the authoring decisions that surprise people coming from OpenAPI-first or prose designs.
 Each exists to keep a generated test honest. The first blocks are excerpts of
-`examples/billing/`, abridged to the construct being explained; later blocks come from small
+`examples/billing/`, abridged to the construct being explained. Later blocks come from small
 examples of their own.
 
 ### A command that can be refused says so
 
-Not an `emits` list — **outcomes**. From `domains/invoice.yaml`:
+The command declares **outcomes**, not an `emits` list. From `domains/invoice.yaml`:
 
 ```yaml
 outcomes:
@@ -34,7 +34,9 @@ A command with a precondition has at least two results. A specification recordin
 generates a suite that never checks the branch where the money does not move.
 
 Two guards may both hold of one input. A refusal with a `when:` over the input is taken before any
-accepting branch whose guard it overlaps, whatever order they are written in. With `closed: open ==
+accepting branch whose guard it overlaps, whatever order they are written in.
+
+With `closed: open ==
 false` and `id-required: ticket_id == ""`, the input `{ticket_id: "", open: false}` is refused as
 `id-required`, and the generated suite sends it and requires that. An accepting branch cannot read
 the identity to step aside, so this precedence is how such a command is written.
@@ -42,8 +44,10 @@ the identity to step aside, so this precedence is how such a command is written.
 Two accepting branches may overlap as well. The first declared whose guard holds answers: with
 `small: amount < 100` written before `flagged: amount > 50`, the input `{amount: 75}` takes
 `small`, and the generated suite sends an input in that overlap and requires `small`. Write the
-narrower branch first when it should win. An `external:` branch takes its place in the same order: written after
-`small`, it is asked only for an input `small` does not claim.
+narrower branch first when it should win.
+
+An `external:` branch takes its place in the same order: written after `small`, it is asked only for
+an input `small` does not claim.
 
 Two refusals with a `when:` over the input follow declaration order too: the first declared whose
 guard holds answers, and the suite sends their overlap apart from the first refusal's own witness
@@ -87,9 +91,10 @@ apart from an absent value and which a struct cannot hold at all. To empty a fie
 Since 0.23.0 a command may omit its default when its input guards
 select exactly one outcome for every value of a required, closed enum. For example,
 if `status` has the declared variants `Ready` and `Stopped`, the two guards
-`status == Ready` and `status == Stopped` cover that input. Synthesis uses the same
-declared domain to construct a witness for each reachable branch. An omitted value
-or overlapping guards produce a concrete failing assignment. Required `Boolean`
+`status == Ready` and `status == Stopped` cover that input.
+
+Synthesis uses the same declared domain to construct a witness for each reachable branch. An omitted
+value or overlapping guards produce a concrete failing assignment. Required `Boolean`
 inputs also form a closed domain: `pause == true` and `pause == false` cover every
 value without a default. Their witnesses carry Boolean values, not text.
 
@@ -103,16 +108,16 @@ named as `coupon = absent` or `coupon = present`. The pair is not proved beside
 This proof is bounded to 64 joint assignments and 128 predicate nodes. Required
 enum and Boolean fields, transparent wrappers, equality, membership, Boolean truthiness,
 `defined(…)` of an `Optional` path and supported Boolean combinations participate.
-Every referenced input must fit that finite domain; an `Optional` path compared by
+Every referenced input must fit that finite domain. An `Optional` path compared by
 value (`token == a`, even beside `defined(token)`), open types, unsupported
 expressions and unknown results retain the requirement for a default. Existing
 defaults and external outcomes keep their behavior.
 
 ### Give enum variants typed attributes
 
-When each key of a closed set carries facts known as the specification is written — an operator
-takes a number, a plan allows 50 seats — declare them on the enum rather than repeating the table
-in every guard. From `ess/23` an enum declares `attributes:` in the `{name, type}` shape of
+When each key of a closed set carries facts known as the specification is written, such as an
+operator that takes a number or a plan that allows 50 seats, declare them on the enum and not in a
+table repeated in every guard. From `ess/23` an enum declares `attributes:` in the `{name, type}` shape of
 `fields:`, and each variant gives every one a typed literal under its own `attributes:`:
 
 ```yaml
@@ -152,7 +157,7 @@ commands:
 ```
 
 An attribute is a `Boolean`, an `Integer`, a `Decimal`, a `String`, a newtype of one, an enum, or
-an `Optional` of these; a `List` attribute is refused by name. Each value is checked by the rule
+an `Optional` of these; a `List` attribute is refused. Each value is checked by the rule
 `sets:` types a literal by, every variant fills every attribute that is not `Optional`, and a value
 for an attribute the enum does not declare is refused. Below `ess/23` the declaration is refused
 as `unsupported_format_version`.
@@ -160,10 +165,12 @@ as `unsupported_format_version`.
 A guard, an invariant or a view filter reads an attribute as `<fact>.<attribute>`. The comparison
 is lowered to membership over the variants that satisfy it: `operator.takes_number == true` is
 exactly `operator: {any_of: [GreaterThan, LessThan]}`, so the coverage proof, synthesis, suites and
-every runner see only variants. A comparison with another fact, `seats >= plan.max_seats`, expands
-to one branch per variant, within the 128 predicate nodes the coverage proof allows; past that it
-is refused by name. An `Optional` attribute a variant leaves out satisfies no comparison. Reading
-an attribute as a value — `sets: {x: input.plan.max_seats}` — is refused in this cut.
+every runner see only variants.
+
+A comparison with another fact, `seats >= plan.max_seats`, expands to one branch per variant, within
+the 128 predicate nodes the coverage proof allows. Past that it is refused. An `Optional` attribute a
+variant leaves out satisfies no comparison. Reading an attribute as a value, such as
+`sets: {x: input.plan.max_seats}`, is refused in this cut.
 
 The JSON Schema and OpenAPI projections annotate the enum with `x-ess-attributes`, the generated
 documentation lists each variant's values, and the types-only Rust, Go and TypeScript outputs give
@@ -216,24 +223,29 @@ commands:
 
 Every character of a value is one of the alphabet's, compared exactly, with no normalization or case
 folding. Synthesis builds the input's witness from those characters, and a guard such as
-`keys.count > 64` from texts of 65 and 64 characters. An `example:` on a command input is the value
-the first witness starts from. It is not a constraint, it has to be a value of the input's type, and
-only a scalar input takes one, or from `ess/31` a list input, whose example is a list of element
-values, `example: [websocket]`, sent as written wherever no guard reads into the list. The published JSON Schema, OpenAPI and AsyncAPI assert the alphabet
+`keys.count > 64` from texts of 65 and 64 characters.
+
+An `example:` on a command input is the value the first witness starts from. It is not a constraint,
+it has to be a value of the input's type, and only a scalar input takes one, or from `ess/31` a list
+input, whose example is a list of element values, `example: [websocket]`, sent as written wherever
+no guard reads into the list.
+
+The published JSON Schema, OpenAPI and AsyncAPI assert the alphabet
 as an anchored `pattern` beside the `x-ess-alphabet` annotation, so a schema validator refuses a
 value outside it: `0123456789abcdef` is `^[0-9a-f]*$`, and every character other than an ASCII
 letter or digit is written as a four-digit `\u` escape. An alphabet holding a character outside the
 Basic Multilingual Plane stays an annotation, since no class reads it alike with and without the
 `u` flag. Generated code documents an alphabet and does not enforce it, and Entity Runtime refuses
-both an alphabet and a text length by name.
+both an alphabet and a text length.
 
 A `.count` bound against an integer literal is published as `minLength` and `maxLength`, which count
 the same Unicode scalar values. It applies to a `String` newtype through `value.count`, and to a
 `String` field of a struct or an entity, including an `Optional` one, through `<field>.count`:
 `value.count == 64` publishes both keywords as 64, and `value.count: {gte: 1, lte: 10}` publishes
-`minLength: 1` and `maxLength: 10`, as the two comparisons written apart do. `utf8_bytes`, `!=`
-and the `.count` of a field typed by a newtype stay in `x-ess-invariants` only; the newtype's own
-definition carries its bounds.
+`minLength: 1` and `maxLength: 10`, as the two comparisons written apart do.
+
+`utf8_bytes`, `!=` and the `.count` of a field typed by a newtype stay in `x-ess-invariants` only.
+The newtype's own definition carries its bounds.
 
 ### Say what a text starts with
 
@@ -250,11 +262,12 @@ types:
 
 The prefix is literal text, not a pattern. The published JSON Schema carries it as an anchored
 `pattern` (`^/`), every witness synthesis builds starts with it (`/channel` for a field named
-`channel`), and a literal written for the field that does not start with it is refused. Beside an
-`alphabet:` every character of the prefix has to be in the alphabet, and the two are one pattern
-(`^0x[0-9a-fx]*$` for the prefix `0x` and the alphabet `0123456789abcdefx`). A newtype of a newtype may
-declare a longer prefix that starts with the inner one. Entity Runtime lowers the prefix to a
-`starts_with` rule.
+`channel`), and a literal written for the field that does not start with it is refused.
+
+Beside an `alphabet:` every character of the prefix has to be in the alphabet, and the two are one
+pattern (`^0x[0-9a-fx]*$` for the prefix `0x` and the alphabet `0123456789abcdefx`). A newtype of a
+newtype may declare a longer prefix that starts with the inner one. Entity Runtime lowers the prefix
+to a `starts_with` rule.
 
 ### A value type's invariants hold wherever a view publishes one
 
@@ -280,7 +293,9 @@ views:
 
 A direct position is asserted on the row: `value.count >= 1` at a field `tag` becomes `satisfies:
 tag.count >= 1` over every row, and a text's `.count` read this way takes suite format
-`ess-conformance/40`. Any other position is observed by the `value_invariants` expectation (suite
+`ess-conformance/40`.
+
+Any other position is observed by the `value_invariants` expectation (suite
 format `ess-conformance/52`): the runner checks every actual element of `tags` against the type's
 invariants and against its `alphabet:` and `prefix:`, so an empty element or one outside the alphabet
 fails, and so does a bad element after a good one. An empty list, an absent `Optional` and another
@@ -291,7 +306,7 @@ position, so a target that publishes none fails too. The scenario is
 The reference runner behind `ess verify conform run`, the interpreted target and the browser product
 execute the observation. The generated Go and TypeScript runners admit the suite and report that
 scenario `unsupported`, naming `value_invariants`. A position reached only across a recursive type is
-refused by name (ESS-SYNTH-001), as is one whose arranged row the scenario does not know (ESS-SYNTH-013).
+refused with ESS-SYNTH-001, as is one whose arranged row the scenario does not know (ESS-SYNTH-013).
 
 Declare a rule of every element on the element's type, as above. The same rule written as an entity
 invariant over the list, `forall: {in: tags, as: t, that: 't != ""'}`, reads the list element by
@@ -311,7 +326,9 @@ types:
 It projects to the empty JSON Schema, which every value satisfies, and a suite compares it
 structurally: an object with the same members in another order is the same value. It is never a map
 key, a predicate never reads one, and no literal spells one, so a payload fills a `Json` field from
-an input. Entity Runtime stores it as its own JSON field kind. The Rust code target represents it
+an input.
+
+Entity Runtime stores it as its own JSON field kind. The Rust code target represents it
 as the generated types crate's dependency-free `json::Value`, and the Go code target as the
 generated `primitives.Json`, which carries the document text unchanged. The web code target
 carries the Rust value through its bridge, and its page holds it as `JSON.parse` answers it. The
@@ -334,7 +351,7 @@ types:
     of: Binary64
 ```
 
-`Integer` retains exact signed integer identity; `Decimal` retains its patterned
+`Integer` retains exact signed integer identity. `Decimal` retains its patterned
 string representation. Neither implicitly assigns to `Binary64`. Map keys cannot
 be Binary64. Format 1 refuses the new primitive, including fields in headerless
 fragments. Authored numeric predicates may compare Binary64 to numeric literals,
@@ -344,19 +361,20 @@ floating value.
 Binary64 values are executed through
 [normalization recipes](../generate-artifacts.md#binary64-inputs-and-integer-conversion) (`ess-normalization/5`).
 Standalone structural Rust/Go codecs and whole-system targets refuse Binary64;
-TypeScript structural output reports the finite codec obligation. A conformance
+TypeScript structural output reports the finite codec obligation.
+
+A conformance
 suite carries a Binary64 in an entity's fields, a command's input and response, an
 event's and an error's fields, and a view's fields, from `ess-conformance/62`. An
-authored scenario writes a Binary64 literal below 2^53 in magnitude; a larger one
+authored scenario writes a Binary64 literal below 2^53 in magnitude. A larger one
 is refused as `ESS-AUTHOR-015`, because a view row carries no type and compares an
-integer exactly.
-Adding a Binary64 type to a model selected in full therefore requires checking
+integer exactly. Adding a Binary64 type to a model selected in full therefore requires checking
 every intended target's support before adopting it.
 
 ### Numbers are finite
 
 `Decimal` and `Binary64` hold finite values only. A `Decimal` is its patterned decimal string, and
-a JSON number has no token for NaN or an infinity; a `Binary64` stores a finite bit pattern, and
+a JSON number has no token for NaN or an infinity. A `Binary64` stores a finite bit pattern, and
 NaN and both infinities refuse construction and decoding. So a NaN or an infinity never reaches
 the domain, and an outcome that refuses one cannot be reached through the specification.
 

@@ -20,104 +20,136 @@ $ ess verify conform mutate \
 
 It changes the **specification**, one edit per mutant, and runs each mutant's freshly synthesized
 suite against the unchanged reference target. A mutant is *killed* when its suite fails there. A
-*survivor* is a declared rule that no synthesized scenario pins down. The fourteen classes are
+*survivor* is a declared rule that no synthesized scenario pins down.
+
+The fourteen classes are
 `from-drop`, `transition-to`, `guard-boundary`, `sets-retarget`, `guard-negate`,
 `guard-connective`, `error-swap`, `emit-drop`, `order-flip`, `sets-drop`, `precedence-swap`,
-`emit-swap`, `grant-drop` and `grant-add`;
-`--class` selects some of them and repeats. Every class *changes* the specification rather than
-weakening it: a mutant that only says less could never be killed by a correct target.
+`emit-swap`, `grant-drop` and `grant-add`. `--class` selects some of them and repeats. Every class
+*changes* the specification: a mutant that only said less could never be killed by a correct target.
 
-- `guard-boundary` moves a boundary three ways: it swaps the strictness of `<`, `<=`, `>` or `>=`;
-  it moves the integer literal of a `>=` or `<=` one step outward (`amount >= 10` becomes
-  `amount >= 9`), the direction the swap does not take; and it flips `==`↔`!=` on a comparison that
+- `guard-boundary` moves a boundary three ways. It swaps the strictness of `<`, `<=`, `>` or `>=`.
+  It moves the integer literal of a `>=` or `<=` one step outward (`amount >= 10` becomes
+  `amount >= 9`), the direction the swap does not take. It flips `==`↔`!=` on a comparison that
   is not the whole guard, which `guard-negate` already covers.
+
 - `order-flip` flips one key of a view's `order_by:`. The suite kills the flip of a key after the
   first because synthesis arranges, for that key, two rows equal on every key before it and
-  different on it. Where it cannot (an earlier key is the identity, or no creating command writes a
-  key from its input), synthesis lists a refusal naming the view and the key, and the flip is
-  *unwitnessed* (`ESS-MUTATE-004`, that refusal under `baseline_refusals`) unless a scenario kills it.
+  different on it. Synthesis cannot do this where an earlier key is the identity, or where no
+  creating command writes a key from its input. There it lists a refusal for the view and the key,
+  and the flip is *unwitnessed* (`ESS-MUTATE-004`, that refusal under `baseline_refusals`) unless a
+  scenario kills it.
+
 - `guard-boundary`, `guard-negate` and `guard-connective` edit the predicate of a `when_subject:`
   over the stored subject, and the predicate of a `when_related:` over the row an input identity
-  names, as they edit a `when:`. Such a mutant's id names the key after the outcome:
+  names, as they edit a `when:`. Such a mutant's id puts the key after the outcome:
   `guard-negate/<command>/<outcome>/when_subject`,
   `guard-boundary/<command>/<outcome>/when_related/0`. A `when:` mutant keeps the id it had. The
   `{field, equals}` form of `when_subject:` and a row set's `where`, `count` and `forall` are not
-  edited this way; a row set's `count:` bound has its own `guard-boundary` mutant.
+  edited this way. A row set's `count:` bound has its own `guard-boundary` mutant.
+
 - `error-swap` makes a refusal report another error of the command's domain, the first in byte
   order of name. Where the refusal's `payload:` says where its error's fields come from, the entry
   is re-keyed to the new error when both errors have exactly the same fields (names and types),
-  and dropped otherwise; there the first error that compiles in its place is taken, and a refusal
+  and dropped otherwise. There the first error that compiles in its place is taken, and a refusal
   none compiles for is listed as `no_compatible_error_alternative`. The change then says what
   became of the entry.
+
 - `sets-drop` removes one `sets: field: input.x` entry from a branch that updates or moves an
   existing row. There the drop is not weaker: the field keeps what the row held instead of taking
   the input. Synthesis sends an input no `sets:` entry reads apart from what the row holds in the
-  field of the same name and type, so a view reading the field tells the two apart. Where the
+  field of the same name and type, so a view reading the field tells the two apart.
+
+  Where the
   dropped input feeds a field of another name that already holds the same value, the mutant can
-  survive: that survivor is a weak witness, not a correct implementation. Every other `sets:`
-  entry has no site, and the audit says why of each one: after its own output, on stderr and in
-  every format, `--target` and `--emit` print one note per entry, such as
-  `note: sets-drop/<command>/<outcome>/<field> has no mutant (creates_row): …`. The reasons are
-  `creates_row` (a creating branch: a dropped write only leaves the value to the implementation, a
-  weaker rule no correct target fails, and an outcome whose guard synthesis arranges through the
-  field loses its scenario), `source_not_input` (a literal or any other source than `input.<f>`,
-  which synthesis cannot send apart from what the row held), and `optional_field` (a row nothing
-  wrote holds an `Optional` field absent, and no scenario asserts an absence). A model whose every
-  write is on a creating branch therefore has no `sets-drop` mutant, and `--class sets-drop`
-  refuses with `ESS-MUTATE-003` and then names each entry. The report and the manifest list each
-  such entry too (below).
+  survive. That survivor is a weak witness, not a correct implementation.
+
+  Every other `sets:` entry has no site, and the audit says why of each one. After its own output,
+  on stderr and in every format, `--target` and `--emit` print one note per entry, such as
+  `note: sets-drop/<command>/<outcome>/<field> has no mutant (creates_row): …`. The reasons are:
+
+  - `creates_row`: a creating branch. A dropped write only leaves the value to the implementation,
+    a weaker rule no correct target fails, and an outcome whose guard synthesis arranges through
+    the field loses its scenario.
+  - `source_not_input`: a literal or any other source than `input.<f>`, which synthesis cannot
+    send apart from what the row held.
+  - `optional_field`: a row nothing wrote holds an `Optional` field absent, and no scenario
+    asserts an absence.
+
+  A model whose every write is on a creating branch therefore has no `sets-drop` mutant, and
+  `--class sets-drop` refuses with `ESS-MUTATE-003` and then lists each entry. The report and the
+  manifest list each such entry too (below).
+
 - `sets-retarget` points one `sets: field: input.x` entry at another input of the same type. A
   write on a creating branch, or to an `Optional` field, with no such sibling input is retargeted
-  to a literal of the field's type instead, the first the model admits: `-7919`, else `7919`, for
-  an `Integer`; `-7919.5`, else `7919.5`, for a `Decimal`; `"mutant-literal"` for a `String`. A
-  write of another type, or one no literal is admitted for, is listed as `no_retarget_source`. A
-  write to a field nothing in the model reads (no view, guard, derivation or other write names
-  it) is listed as `unobserved_field`: no target's answer tells the literal from the input, so
-  its mutant could never be killed. The audit decides it by renaming the field where it is
-  declared and written and compiling the copy; a copy the model refuses counts as read.
+  to a literal of the field's type instead, the first the model admits. For an `Integer` it is
+  `-7919`, else `7919`. For a `Decimal` it is `-7919.5`, else `7919.5`. For a `String` it is
+  `"mutant-literal"`.
+
+  A write of another type, or one no literal is admitted for, is listed as
+  `no_retarget_source`.
+
+  A write to a field nothing in the model reads is listed as `unobserved_field`. No view, guard,
+  derivation or other write names such a field, and no target's answer tells the literal from the
+  input, so its mutant could never be killed. The audit decides it by renaming the field where it
+  is declared and written and compiling the copy. A copy the model refuses counts as read.
+
 - `transition-to` sends a transition to another declared state: the first, in declared order, that
   the model admits as its target. A transition no other state can be the target of, such as the
-  only step of a linear lifecycle, is listed as `no_admissible_state` rather than left stillborn.
+  only step of a linear lifecycle, is listed as `no_admissible_state`. It is not left stillborn.
+
 - `precedence-swap` swaps two adjacent branches guarded by their input alone, both accepting or
   both refusing, so the second answers where both guards hold. Where no input satisfies both
   guards, the swap decides nothing and is *equivalent* (below). A branch the held state, a stored
   or related row, a provider or a replay also decides is left out.
+
 - `emit-swap` replaces the only event of an outcome that names no error with another declared
-  event: one with exactly the same fields (names, and types down to the named type, `Optional` and
-  containers), published by every component that accepts the command, the first such in byte order
-  of name that compiles in its place. The outcome's `payload:` entry is renamed and keeps its
-  values. A site where no event qualifies, including every site of a model that declares no
-  component, is *unavailable* (`no_compatible_event_alternative`): no mutant exists, so the event
-  there is not audited by substitution, and the audit cannot succeed (below).
+  event. The replacement has exactly the same fields, meaning names and types down to the named
+  type, `Optional` and containers. Every component that accepts the command publishes it. It is the
+  first such event in byte order of name that compiles in its place. The outcome's `payload:` entry
+  is renamed and keeps its values.
+
+  A site where no event qualifies, including every site of a model
+  that declares no component, is *unavailable* (`no_compatible_event_alternative`). No mutant
+  exists there, so the event is not audited by substitution, and the audit cannot succeed (below).
+
 - `grant-drop` removes one command a served component (`reached_by: network`) accepts from one
-  actor's `may:`, and `grant-add` gives an actor one such command its `may:` lacks; the system's own
+  actor's `may:`. `grant-add` gives an actor one such command its `may:` lacks. The system's own
   actor is left out. Where either class is selected, the baseline and every mutant's suite keep the
   `<command>/grant/denied` scenarios synthesis writes, so a target that admits the actor that lost
-  the grant, or refuses the one that gained it, fails the mutant's suite. A `grant-drop` mutant's
+  the grant, or refuses the one that gained it, fails the mutant's suite.
+
+  A `grant-drop` mutant's
   refusal is sent as the actor that lost the grant, not as the lowest-named actor lacking it,
-  which a correct target refuses too. A `grant-add` mutant's suite sends the command as the actor
-  that gained it: in the scenarios synthesis sends in turn as each holder, or, where an actor
-  carrying attributes holds the command and those scenarios keep the actor synthesis chose, in a
-  `grant/admitted/<actor>` copy of the simplest of them sent as the gaining actor. Where the
-  gaining actor carries attributes too, or the command reads one, that copy would not ask what
-  it asked the holder, and the site is listed as `attributed_holder`. A grant `grant-drop` leaves
-  alone is listed too: the system actor's (`system_actor`) and one of a command no served
-  component accepts (`command_not_served`). Without a grant class the baseline leaves the
-  `grant/denied` scenarios out, as before: no other class alters a grant.
+  which a correct target refuses too.
+
+  A `grant-add` mutant's suite sends the command as the actor that gained it, in the scenarios
+  synthesis sends in turn as each holder. Where an actor carrying attributes holds the command,
+  those scenarios keep the actor synthesis chose. The command is then sent as the gaining actor in a
+  `grant/admitted/<actor>` copy of the simplest of them.
+
+  Where the gaining actor carries attributes
+  too, or the command reads one, that copy would not ask what it asked the holder, and the site is
+  listed as `attributed_holder`. A grant `grant-drop` leaves alone is listed too: the system
+  actor's (`system_actor`) and one of a command no served component accepts
+  (`command_not_served`). Without a grant class the baseline leaves the `grant/denied` scenarios
+  out, as before. No other class alters a grant.
 
 A mutant the model refuses is *stillborn*, with the refusing check's own code. For example,
-dropping the only event of an outcome that names no error is stillborn (`ESS-COMMAND-007`);
+dropping the only event of an outcome that names no error is stillborn (`ESS-COMMAND-007`).
 `emit-swap` audits those outcomes instead, or lists them as unavailable. A stillborn mutant says
 something about the operator, not about the suite, and does not change the exit status unless
 `--fail-on-unmutated` is given (below).
 
-A site a selected class excludes, or where it finds no edit the model admits, is *unmutated*: the
+A site a selected class excludes, or where it finds no edit the model admits, is *unmutated*. The
 report and the manifest list it under `unmutated_sites` as `{class, id, reason, unaudited}`, beside
 the stillborn mutants. The reasons are the `sets-drop` ones above, `no_admissible_state`
 (`transition-to`), `no_retarget_source` and `unobserved_field` (`sets-retarget`),
 `no_compatible_error_alternative` (`error-swap`), `system_actor` and `command_not_served`
 (`grant-drop`) and `attributed_holder` (`grant-add`). Each reason belongs to one class. An
-unmutated site is not a mutant and is not counted in `counts`. Where the selected classes find
+unmutated site is not a mutant and is not counted in `counts`.
+
+Where the selected classes find
 only unmutated sites, the audit refuses with `ESS-MUTATE-003`, writes no report, and prints each
 site's `unmutated <id> (<reason>): …` line after the refusal.
 
@@ -128,67 +160,86 @@ passing is not a survivor. Its entry lists each refusal it added, by code and sc
 the entry of a killed mutant that added one.
 
 Where a guard mutant leaves its outcome's guard satisfied by no input, the mutant is *equivalent*
-(`ESS-MUTATE-005`) unless a scenario still kills it: turning `any: [status == Paid, status ==
+(`ESS-MUTATE-005`) unless a scenario still kills it. Turning `any: [status == Paid, status ==
 Shipped]` into `all:` writes a rule that can never be taken, so there is nothing for a scenario to
-catch. Its entry names the guard as `unsatisfiable_guard`. The guard is decided only for
-equality, membership and truth tests of input fields against literals, and `defined` tests of
-input fields, by trying every combination of each field's values that could matter: a boolean's
-two, an enum's variants the guard names and one it does not (any other variant answers alike),
-and for any other field its literals and one value none of them equals,
-plus absence for an `Optional` field, up to 64 combinations. A `precedence-swap` of two branches
-no input selects together, such as `defined(x)` and `not defined(x)`, is equivalent on the same
-rule. So is a guard mutant whose `when:` sits beside a `when_subject:` predicate that can hold
-only by comparing a stored field with an input field the mutated `when:` leaves absent, as
-`not defined(expected_version)` beside `version != input.expected_version` does: a comparison with
-an absent input is unknown on every row, never true, and the entry names the `when:` and the
-stored predicate together. A mutant of the `when_subject:` predicate itself is decided the same
-way where a `when:` sits beside it; one with no `when:` beside it, and every mutant of a
-`when_related:` predicate, is not decided and is scored as before. An
-ordering, a text match, a quantifier, or a guard with more combinations is not decided, and such a
-mutant is scored as before, except in a `precedence-swap`, where a part of the two guards that
-decides is enough: two pinned values that contradict each other (`flag == false` and
-`flag == true`) decide it whatever an ordering or a text match beside them says, an enum attribute
-is read over the enum's variants, and an `any:` is decided where each of its alternatives is. An
-`Optional` input that is absent and compared with a literal in both guards selects neither branch.
-The entry names the part that decides. A swap where one guard holds while the other is unknown
-keeps its scoring: read first, the unknown guard refuses the request the other would have
-answered. A mutant with a changed scenario that was not scored stays
-*inconclusive*: that scenario might have killed it.
+catch. Its entry reports the guard as `unsatisfiable_guard`.
+
+The guard is decided only for equality, membership and truth tests of input fields against
+literals, and `defined` tests of input fields. The audit tries every combination of each field's
+values that could matter, up to 64 combinations:
+
+- a boolean's two values;
+- an enum's variants the guard names, and one it does not, since any other variant answers alike;
+- for any other field, its literals and one value none of them equals;
+- absence, for an `Optional` field.
+
+A `precedence-swap` of two branches no input selects together, such as `defined(x)` and
+`not defined(x)`, is equivalent on the same rule. So is a guard mutant whose `when:` sits beside a
+`when_subject:` predicate that can hold only by comparing a stored field with an input field the
+mutated `when:` leaves absent, as `not defined(expected_version)` beside
+`version != input.expected_version` does. A comparison with an absent input is unknown on every
+row, never true, and the entry lists the `when:` and the stored predicate together.
+
+A mutant of the `when_subject:` predicate itself is decided the same way where a `when:` sits
+beside it. One with no `when:` beside it, and every mutant of a `when_related:` predicate, is not
+decided and is scored as before.
+
+An ordering, a text match, a quantifier, or a guard with more
+combinations is not decided, and such a mutant is scored as before. A `precedence-swap` is the
+exception: a part of the two guards that decides is enough. Two pinned values that contradict each
+other (`flag == false` and `flag == true`) decide it whatever an ordering or a text match beside
+them says.
+
+An enum attribute is read over the enum's variants, and an `any:` is decided where each
+of its alternatives is. An `Optional` input that is absent and compared with a literal in both
+guards selects neither branch. The entry reports the part that decides.
+
+A swap where one guard holds while the other is unknown keeps its scoring: read first, the unknown
+guard refuses the request the other would have answered. A mutant with a changed scenario that was
+not scored stays *inconclusive*: that scenario might have killed it.
 
 A `precedence-swap` of two branches that answer alike is equivalent too, unless a scenario still
-kills it: the same error, the same or no payload, and neither branch changing state, setting or
-emitting anything, so either order gives the caller the same answer where both guards hold. Its
-entry names that answer as `identical_answer`, apart from `unsatisfiable_guard`, so a reader
-tells "these guards never overlap" from "these answers are identical". Two refusals that differ in
-error or payload are scored as before, and so are two that a binding invoking the command answers
+kills it. Both branches give the same error and the same or no payload, and neither changes state,
+sets or emits anything, so either order gives the caller the same answer where both guards hold.
+Its entry reports that answer as `identical_answer`, apart from `unsatisfiable_guard`, so a reader
+tells "these guards never overlap" from "these answers are identical".
+
+Two refusals that differ in
+error or payload are scored as before. So are two that a binding invoking the command answers
 differently: a failure policy that drops one and escalates the other, or a bounded retry that
 names only one of them `final`, since the binding then publishes or retries differently whichever
 branch answers.
 
 A `precedence-swap` whose overlap is already taken is equivalent as well, unless a scenario still
-kills it: where every input both branches select also selects a branch answered before both, the
+kills it. Where every input both branches select also selects a branch answered before both, the
 two never answer the same request. With `done-paused-default` (`pause == true` and `code` absent or
 `""`) declared before `done-paused` (`pause == true`) and `done-default` (`code` absent or `""`),
-swapping the last two decides nothing. Only branches selected by their input guard alone are
-counted, decided as a dead guard is; a branch the held state, a stored or related row, a provider
-or a replay also decides is not, and a swap whose overlap is partly left keeps its scoring. Two
-branches acting on different stored rows, or one on a stored row and the other on none, keep their
-scoring too: on a command that reads a row set, their order decides which row a request neither
-of them takes reads. The entry names those branches as `overlap_taken_by`, apart from `unsatisfiable_guard` and
-`identical_answer`.
+swapping the last two decides nothing.
+
+Only branches selected by their input guard alone are
+counted, decided as a dead guard is. A branch the held state, a stored or related row, a provider
+or a replay also decides is not counted, and a swap whose overlap is partly left keeps its scoring.
+
+Two branches acting on different stored rows, or one on a stored row and the other on none, keep
+their scoring too: on a command that reads a row set, their order decides which row a request
+neither of them takes reads. The entry lists those branches as `overlap_taken_by`, apart from
+`unsatisfiable_guard` and `identical_answer`.
 
 A mutant on an outcome whose scenario the baseline suite already refuses, such as a branch no
 arrangement reaches (`ESS-SYNTH-003`), cannot be killed by either suite. It is *unwitnessed* as
-well, and its entry names the baseline refusal as `baseline_refusals`. So is a `from-drop` or
+well, and its entry lists the baseline refusal as `baseline_refusals`. So is a `from-drop` or
 `transition-to` mutant on a transition that only such outcomes perform.
 
 A mutant whose synthesized suite is the baseline's, scenario for scenario and step for step (the
-digests aside), is *unwitnessed* too, where it would otherwise have survived or been inconclusive:
-run on the target, that suite asks exactly what the baseline asked, so no scenario of it could kill
+digests aside), is *unwitnessed* too, where it would otherwise have survived or been inconclusive.
+
+Run on the target, that suite asks exactly what the baseline asked, so no scenario of it could kill
 the mutant. Turning `expiry < now` into `expiry <= now` is one: the two differ only where the
 stored expiry is the target's `now`, and synthesis keeps its witnesses a second from that
 boundary. Its entry carries `unchanged_suite: true` and its text line ends `— ESS-MUTATE-004: the
-suite does not change`. A killed or equivalent mutant keeps its verdict, and a run with authored
+suite does not change`.
+
+A killed or equivalent mutant keeps its verdict, and a run with authored
 `--scenarios` never makes one, since those run on the mutant's own interpreter. So a survivor
 always has a suite that differs from the baseline's and still passes
 (beyond10x/ess#586).
@@ -196,17 +247,21 @@ always has a suite that differs from the baseline's and still passes
 The baseline is red only when a scenario failed or ended `error`. A scenario the target reports
 `unsupported`, or the runner `skipped`, is listed as not scored, and every mutant is scored on the
 scenarios the baseline executed. The scenarios the baseline did not execute are listed, not scored:
-a mutant scenario the baseline did not execute is excluded and listed on the mutant. A mutant that
+a mutant scenario the baseline did not execute is excluded and listed on the mutant.
+
+A mutant that
 nothing killed is *inconclusive*, not a survivor, when an excluded scenario is one it changed: that
-scenario might have killed it. An excluded scenario the mutant holds exactly as the baseline does
+scenario might have killed it.
+
+An excluded scenario the mutant holds exactly as the baseline does
 asks the target what the baseline asked, so it cannot, and the mutant can still survive. A
 scenario new to a mutant's suite is scored. A baseline that executed nothing scores nothing.
 
 **A survivor, or a mutant whose suite does not change, is first answered in the specification.**
-Declare what makes the rule observable,
-such as a view projecting the field a `sets` entry writes, or file a synthesis gap. An authored
-scenario put in a mutant's suite could not answer it: its expectations are its author's, not the
-model's, so against the unchanged target it runs identically in every mutant's suite.
+Declare what makes the rule observable, such as a view projecting the field a `sets` entry writes,
+or file a synthesis gap. An authored scenario put in a mutant's suite could not answer it: its
+expectations are its author's, not the model's, so against the unchanged target it runs
+identically in every mutant's suite.
 
 | Exit | When |
 |---|---|
@@ -214,13 +269,14 @@ model's, so against the unchanged target it runs identically in every mutant's s
 | 1 | The specification did not load, or at least one mutant survived. |
 | 3 | `ESS-MUTATE-001` (a baseline scenario failed or ended `error`), nothing scored (the baseline executed no scenario), `ESS-MUTATE-003` (no site), or no survivor and at least one mutant unwitnessed or inconclusive or a selected site unavailable, or every mutant stillborn or equivalent, or, under `--fail-on-unmutated`, any stillborn mutant or unmutated site. |
 
-Unmutated sites and stillborn mutants do not change the exit status by default. `--fail-on-unmutated`
-makes each one block exit 0, as an unavailable `emit-swap` site does; it applies to `--target` and `--collect`.
+Unmutated sites and stillborn mutants do not change the exit status by default.
+`--fail-on-unmutated` makes each one block exit 0, as an unavailable `emit-swap` site does. It
+applies to `--target` and `--collect`.
 
 ### Run your authored scenarios against each mutant
 
-Some rules no synthesized scenario reaches: a counter limit farther than synthesis follows a
-counter, for example, makes the baseline refuse the outcome's scenario, and every mutant on that
+Some rules no synthesized scenario reaches. A counter limit farther than synthesis follows a
+counter makes the baseline refuse the outcome's scenario, for example, and every mutant on that
 outcome is unwitnessed. An `ess-scenario/1` scenario you wrote can reach it. `--scenarios DIR`
 runs those scenarios with `--target interpreted`:
 
@@ -232,22 +288,30 @@ $ ess verify conform mutate \
 ```
 
 `DIR` is read, and its documents refused, exactly as `ess verify conform run --scenarios` reads
-them; a refused document exits 1 before anything runs. Each authored scenario runs against the
+them. A refused document exits 1 before anything runs.
+
+An authored scenario runs against the
 interpreter of your specification as part of the baseline, and against the interpreter of each
-mutant beside that mutant's synthesized suite, on the clock `run --target interpreted` uses: a
-`now` guard is decided at the instant of the step, so a scenario `run` passes executes here too.
-The synthesized scenarios of `--target interpreted` run on that clock as well, authored scenarios
-or not. The interpreter of a mutant is an implementation of the mutant, so an authored scenario that fails
-there kills it, and the report names it among the killers as it names a synthesized scenario
+mutant beside that mutant's synthesized suite. The clock is the one `run --target interpreted`
+uses: a `now` guard is decided at the instant of the step, so a scenario `run` passes executes here
+too. The synthesized scenarios of `--target interpreted` run on that clock as well, authored
+scenarios or not.
+
+The interpreter of a mutant is an implementation of the mutant, so an authored scenario that fails
+there kills it. The report lists it among the killers as it lists a synthesized scenario
 (`killed … — by <domain>/authored/<scenario>`). An authored scenario the baseline fails refuses the
-audit with `ESS-MUTATE-001`, as a synthesized one does. An authored scenario the baseline executed that requires an outcome makes that
-outcome witnessed, so a mutant on it is scored on what the scenarios observed rather than being unwitnessed
-for the baseline's refusal alone; one that passes against the mutant leaves it surviving. One the
-baseline did not execute (`unsupported` or `skipped`) witnesses nothing, and since it would have run
-against the mutant's interpreter, it leaves a mutant nothing killed `inconclusive` rather than
-surviving. A `precedence-swap` reported `equivalent` because both branches give the same answer stays
-equivalent: an authored scenario that fails against it differs only in the outcome's name, which
-names the branch and is no part of the answer.
+audit with `ESS-MUTATE-001`, as a synthesized one does.
+
+An authored scenario the baseline executed that requires an outcome makes that outcome witnessed.
+A mutant on it is scored on what the scenarios observed instead of being unwitnessed for the
+baseline's refusal alone, and one that passes against the mutant leaves it surviving.
+
+One the
+baseline did not execute (`unsupported` or `skipped`) witnesses nothing. It would have run against
+the mutant's interpreter, so it leaves a mutant nothing killed `inconclusive` rather than
+surviving. A `precedence-swap` reported `equivalent` because both branches give the same answer
+stays equivalent: an authored scenario that fails against it differs only in the outcome's name,
+which identifies the branch and is no part of the answer.
 
 `--scenarios` is refused with `--target billing` and `--target oracle-fixture`, which implement no
 mutant, and with `--emit`, `--collect` and `--known-failing`: a runner of your own implements the
@@ -258,7 +322,8 @@ authored scenario runs, and the report is what it was.
 
 `--target` runs only the targets built into `ess`: `billing` and `oracle-fixture` each pass only
 their own example specification, and `interpreted` runs the specification you name. A program of
-your own is not a `--target` (`--target process` is refused). For your implementation, split the audit in two and run the suites yourself:
+your own is not a `--target` (`--target process` is refused). For your implementation, split the
+audit in two and run the suites yourself:
 
 ```shell-session
 $ ess verify conform mutate --path examples/billing --emit target/mutants \
@@ -270,18 +335,21 @@ run each <dir>/suite.json and write its conformance report to <dir>/report.json,
 `--emit` runs nothing. It needs a new or empty directory and writes:
 
 - `baseline/suite.json`, the unmutated suite;
+
 - one directory per mutant, named by its id (`guard-negate/billing.invoice.PayInvoice/settled/`),
   holding its `suite.json`, the compact model `ir.json` a generated Go or TypeScript package
   embeds beside the suite, and `mutant.json` describing the change;
+
 - `manifest.json`, an `ess-mutation-manifest/3` listing all of them, or `/4` where it holds a
   `sets-drop`, `precedence-swap` or `emit-swap` mutant or an unavailable site, or names a component.
-  A stillborn mutant has an entry and no suite; an unavailable site is listed under
+
+  A stillborn mutant has an entry and no suite. An unavailable site is listed under
   `unavailable_sites` and has no directory. The manifest is `/7` where it lists an unmutated site
   under `unmutated_sites`, which `--collect` carries into the report.
 
 Run your runner over every `suite.json` and write its conformance report to `report.json` in the
-same directory. The generated Go and TypeScript packages write the report named by
-`ESS_REPORT_OUT` (`ESS_REPORT_FORMAT=2` for report/2); either report version is accepted. Then
+same directory. The generated Go and TypeScript packages write the report to the path in
+`ESS_REPORT_OUT` (`ESS_REPORT_FORMAT=2` for report/2). Either report version is accepted. Then
 score the reports:
 
 ```shell-session
@@ -295,9 +363,11 @@ killed guard-boundary/billing.invoice.CreateInvoice/accepted/0: `amount.amount >
 That run used the built-in runner (`ess verify conform run --suite … --target billing
 --report-out …`) as "your runner" and deleted one mutant's report on purpose. A mutant whose
 report is missing, unreadable, written for another suite, or answered by another implementation
-than the baseline's is inconclusive, and the JSON report says why under `unscored`. Each report is
+than the baseline's is inconclusive, and the JSON report says why under `unscored`.
+
+A report is
 scored only against the suite beside it. The baseline report must have passed, as with `--target`,
-and the exit statuses are the ones in the table above: this run exits 3, because nothing survived
+and the exit statuses are the ones in the table above. This run exits 3, because nothing survived
 and one mutant is inconclusive.
 
 ### Audit one component
@@ -312,18 +382,24 @@ $ ess verify conform mutate --path examples/billing --emit target/mutants \
 
 Every suite is then the component's, exactly as `ess verify conform synthesize --component
 invoice-service` writes it. A mutant is the component's when the site it mutates belongs to the
-component, by the same membership that command uses: an outcome's guard, `sets`, error or events
-and two outcomes' order belong to the component that handles the command (accepts it, or owns its
-domain), a view's ranking to the component that owns the view, and a transition to a component
-that handles a command performing it. Such a mutant is scored, and a survivor there is counted and
-exits 1 like any other. A mutant on another component's site is that component's to answer: it is
-marked `out_of_scope` in the `ess-mutation-manifest/4`, gets no suite, and `--collect` lists it in
-an `ess-mutation-report/4` naming the component instead of scoring it. Out-of-scope mutants do not
-change the exit status. An unavailable `emit-swap` site whose command another component handles is
-listed with `outside_component` instead, and does not change the exit status either.
+component, by the same membership that command uses:
+
+- an outcome's guard, `sets`, error or events and two outcomes' order belong to the component that
+  handles the command, meaning one that accepts it or owns its domain;
+- a view's ranking belongs to the component that owns the view;
+- a transition belongs to a component that handles a command performing it.
+
+Such a mutant is scored, and a survivor there is counted and exits 1 like any other.
+
+A mutant on
+another component's site is that component's to answer. It is marked `out_of_scope` in the
+`ess-mutation-manifest/4` and gets no suite, and `--collect` lists it in an `ess-mutation-report/4`
+that records the component instead of scoring it. Out-of-scope mutants do not change the exit
+status. An unavailable `emit-swap` site whose command another component handles is listed with
+`outside_component` instead, and does not change the exit status either.
+
 `--collect --component NAME` refuses an emission made for another component or for the whole
-system, and `--target` takes no `--component`: the built-in targets
-implement whole systems.
+system. `--target` takes no `--component`, because the built-in targets implement whole systems.
 
 ### Audit past known failures
 
@@ -359,42 +435,60 @@ and never takes from the target. Scenario IDs match exactly. Pass it with `--kno
   `DIR/known-failures.json` and binds it in an `ess-mutation-manifest/4`. Run each suite with your
   runner and also write the host's
   [`ess-conformance-execution/1`](../../reference/formats.md#change-and-conformance-records) beside
-  each `report.json` as `execution.json`; the generated Go and TypeScript runners do when
-  `ESS_IMPLEMENTATION_BUILD` and `ESS_EXECUTION_CONTEXT_OUT` are set. `--collect DIR` then scores
+  each `report.json` as `execution.json`. The generated Go and TypeScript runners do when
+  `ESS_IMPLEMENTATION_BUILD` and `ESS_EXECUTION_CONTEXT_OUT` are set.
+
+  `--collect DIR` then scores
   under the bound declaration only: a different file given again, or one given to an emission that
   bound none, is refused, so the audit cannot change after its reports exist.
 - `--target … --known-failing FILE` binds the running `ess` executable's SHA-256 as the build.
 
 Each declared scenario must have failed in the baseline. One that passed is stale and refused, and
-one that ended `error`, `unsupported` or `skipped` is refused; a failure the declaration does not
-name still refuses with `ESS-MUTATE-001`. Each mutant is then scored on the scenarios the baseline
+one that ended `error`, `unsupported` or `skipped` is refused. A failure the declaration does not
+list still refuses with `ESS-MUTATE-001`. Each mutant is then scored on the scenarios the baseline
 passed and nothing else: a declared scenario never kills, nor does a scenario the baseline's suite
-does not hold. Such a scenario that the mutant changed, or added, could have killed it had the
-baseline passed it, so the mutant is inconclusive instead of a survivor; one with no eligible
-scenario at all is inconclusive, unless a gained or baseline synthesis refusal makes it unwitnessed. The report is an `ess-mutation-report/4` naming the declaration
-and each mutant's `exclusions`, the text lists every known failure straight after its summary line,
-and a refused declaration exits 2.
+does not hold.
+
+Such a scenario that the mutant changed, or added, could have killed it had the
+baseline passed it, so the mutant is inconclusive instead of a survivor. One with no eligible
+scenario at all is inconclusive, unless a gained or baseline synthesis refusal makes it
+unwitnessed.
+
+The report is an `ess-mutation-report/4` that records the declaration and each mutant's
+`exclusions`. The text lists every known failure straight after its summary line. A refused
+declaration exits 2.
 
 A matching declaration never makes conformance pass. `ess verify conform run` and `report` take the
 same `--known-failing FILE` with `--accounting-out FILE` and write the failures, split into the
 declared and the unexpected, in a separate
-[`ess-known-failure-accounting/1`](../../reference/formats.md#change-and-conformance-records); the
-report, its verdict and the exit status are what they are without it. For a report a generated
+[`ess-known-failure-accounting/1`](../../reference/formats.md#change-and-conformance-records). The
+report, its verdict and the exit status are what they are without it.
+
+For a report a generated
 runner wrote with its execution context, `ess verify conform report --suite SUITE --observed-report
 REPORT --execution-context CONTEXT --known-failing FILE --accounting-out FILE` writes the
 accounting alone and rewrites nothing.
 
 ## Read the output
 
-The text output prints one summary line, then any declared known failures, then the baseline
-scenarios not scored, then out-of-scope mutants, then survivors, unwitnessed and inconclusive
-mutants, then unavailable sites, then equivalent and stillborn mutants, then unmutated sites, then
-killed mutants, one line each. An
-unavailable site's line reads `unavailable <id>: no_compatible_event_alternative — single-event
+The text output prints, in order:
+
+1. one summary line;
+2. any declared known failures;
+3. the baseline scenarios not scored;
+4. out-of-scope mutants;
+5. survivors, unwitnessed and inconclusive mutants;
+6. unavailable sites;
+7. equivalent and stillborn mutants;
+8. unmutated sites;
+9. killed mutants, one line each.
+
+An unavailable site's line reads `unavailable <id>: no_compatible_event_alternative — single-event
 substitution was not audited here: …`, and the summary line ends `; N unavailable`. An unmutated
 site's line reads `unmutated <id> (<reason>): …`. After the baseline's counts the summary line
 gives the coverage, `; S of N site(s) scored`: the sites with a killed or survived mutant out of
 every mutant, unmutated site and in-scope unavailable site.
+
 `--report-out` writes an
 [`ess-mutation-report/3`](../../reference/formats.md#change-and-conformance-records) document, or
 `/4` with a component, a known-failure declaration or `unavailable_sites`, or `/8` with

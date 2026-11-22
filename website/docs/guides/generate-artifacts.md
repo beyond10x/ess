@@ -23,17 +23,16 @@ openapi/invoice-service.yaml — 32258 byte(s)
 |---|---|---|
 | `docs` | Markdown with Mermaid diagrams (lifecycles as state diagrams, bindings as flowcharts) | the cheapest completeness check: a construct with no rendering is a hole in a page a person reads |
 | `site` | HTML pages, navigation, CSS and a locally bundled Mermaid renderer | a browsable projection of the same documentation model |
-| `schema` | JSON Schema for command inputs, messages, named types, and entities | the type system projected without losing its distinctions — newtypes stay separate definitions |
-| `openapi` | one OpenAPI 3.1 document per component | the specification *is* the HTTP contract, not a document beside it. Only a `reached_by: network` component's document is a surface callers reach: it carries `info.x-ess-reached-by: network`, and every other document says in its first paragraph that no request reaches its paths. Select the served documents by that key |
+| `schema` | JSON Schema for command inputs, messages, named types, and entities | the type system projected with its distinctions intact: newtypes stay separate definitions |
+| `openapi` | one OpenAPI 3.1 document per component | the specification is the HTTP contract. Only a `reached_by: network` component's document is a surface callers reach: it carries `info.x-ess-reached-by: network`, and every other document says in its first paragraph that no request reaches its paths. Select the served documents by that key |
 | `asyncapi` | one AsyncAPI 3.0 document per component | the same for messaging, including what happens when a binding fails |
 
-Omit `--kind` and all five are produced together. The CLI prints the exact artifact inventory; it
-does not hide a projection that produced nothing.
+Omit `--kind` to produce all five together. The CLI prints the artifact inventory, including a
+projection that produced nothing.
 
-Without `--out` you get a listing and nothing is written — a command that looks read-only does not
-write into whatever directory you happened to be in. **`--out` names the root of the tree, not one
-projection's directory**: each artifact's path already begins with its projection, so the committed
-output of the whole set is one command.
+Without `--out` the command lists the artifacts and writes nothing. **`--out` is the root of the
+tree, not one projection's directory**: each artifact's path already begins with its projection,
+so one command writes the whole set.
 
 ```shell-session
 $ ess generate --path examples/billing --out target/projections
@@ -41,11 +40,12 @@ $ ess generate --path examples/billing --out target/projections
 
 Every artifact carries provenance: the system and its specification version, the digest of the
 model slice it derives from, and the regeneration command. The digest is over the *model*, not the
-source files, so it does not move when a comment does — a digest that moves for no reason is one
-every reader learns to ignore. For the same reason a file does not carry the digest of the whole
-model: a change to one entity rewrites the pages, schemas and contracts that derive from it and
-leaves every other file byte for byte. The whole-model digest a generation ran from is recorded
-once, on each projection's owner in `.ess-output/state.json`.
+source files, so it does not move when a comment does.
+
+A file does not carry the digest of the whole model: a change to one entity rewrites the pages,
+schemas and contracts that derive from it and leaves every other file byte for byte. The
+whole-model digest a generation ran from is recorded once, on each projection's owner in
+`.ess-output/state.json`.
 
 See [the billing example](https://github.com/beyond10x/ess/tree/main/examples/billing) for one command's source next to
 each generated document.
@@ -53,22 +53,25 @@ each generated document.
 ## Repeated generation and recovery
 
 Output ownership was introduced in 0.21.0. Generation records the files it owns beneath
-the output root in `.ess-output`. Repeating a command replaces that owner's files and removes
-its obsolete files, while preserving authored neighbours. It replaces only bytes it recorded: an
-owned file that was edited since refuses the command before anything is written, naming the file
-and the way back (below), and a deleted owned file is recreated. A selected projection updates only
-its own files; generating all five projections publishes their combined change as one
-recoverable operation. Changing a synthesis or data-library target replaces that generator's
-previous file set.
+the output root in `.ess-output`. Repeating a command replaces that owner's files, removes its
+obsolete files and preserves authored neighbours. It replaces only bytes it recorded: an owned
+file edited since refuses the command before anything is written, reporting the file and the way
+back (below), and a deleted owned file is recreated.
+
+A selected projection updates only its own files. Generating all five projections publishes their
+combined change as one recoverable operation. Changing a synthesis or data-library target replaces
+that generator's previous file set.
 
 First generation refuses a destination file it does not already own, even when the bytes match.
 For existing output, generate a reference in a separate fresh directory, then use
-`ess generate output adopt` to enroll the chosen owner. Adoption requires exact reference bytes for every
-existing file it enrolls; unrelated files remain unowned. Use `ess generate output adopt --help` for the
-owner selector. Keep the reference and destination directories separate, with neither inside
-the other. An edited or interrupted reference cannot authorize adoption.
+`ess generate output adopt` to enroll the chosen owner.
 
-For example, adopt only the documentation projection in an existing tree:
+Adoption requires exact reference bytes for every existing file it enrolls, and unrelated files
+remain unowned. `ess generate output adopt --help` shows the owner selector. Keep the reference
+and destination directories separate, neither inside the other. An edited or interrupted
+reference cannot authorize adoption.
+
+To adopt only the documentation projection in an existing tree:
 
 ```sh
 ess generate --path examples/billing --kind docs --out target/reference-docs
@@ -77,12 +80,12 @@ ess generate output adopt --ownership-root target/projections \
 ```
 
 Repeat adoption for each generator family you intend to manage. Adoption accepts first enrollment
-or an exact repetition of that owner's inventory; it cannot discard an existing inventory by
+or an exact repetition of that owner's inventory. It cannot discard an existing inventory by
 using a smaller reference. Standalone file owners additionally require `--file NAME`, matching
 the generated filename in both directories.
 
 If a write is interrupted, generation identifies the pending output root and refuses a new
-operation. Recover it explicitly before generating again:
+operation. Recover it before generating again:
 
 ```sh
 ess generate output recover --ownership-root target/projections
@@ -92,59 +95,64 @@ Recovery uses the recorded operation, so it does not require the original model 
 commit it restores the actual previous files, including prior edits or missing owned files.
 After commit it keeps the complete new result and finishes cleanup. Recovery can itself be
 repeated after interruption. Preserve `.ess-output` and any reported recovery files until
-recovery finishes; copying or deleting the state directory alone is not an ownership transfer.
+recovery finishes: copying or deleting the state directory alone is not an ownership transfer.
 
-What does carry ownership is the whole generated tree: a clone of a repository that commits its
+What carries ownership is the whole generated tree: a clone of a repository that commits its
 output with `.ess-output`, a second worktree, a moved checkout, CI, or a copy of the complete
-output directory. Generation there keeps the recorded owners, so it still replaces only the files
+output directory. Generation there keeps the recorded owners, so it replaces only the files
 those owners wrote. A regeneration that changes nothing writes nothing, `.ess-output/state.json`
 included, whatever umask the checkout was made with. A settled `state.json` records no absolute
-path, device or inode, so committing it publishes nothing about the machine that wrote it. If
-files the state records have different bytes, in the root that generated them or in a copy,
+path, device or inode, so committing it publishes nothing about the machine that wrote it.
+
+If files the state records have different bytes, in the root that generated them or in a copy,
 generation refuses and prints the way back: move those files aside, remove `.ess-output`, adopt
-each named owner from a fresh reference, then regenerate. An output root with an interrupted
-operation refuses in any other location and names the root it was recorded at; recover it there
-before copying, committing or moving it. A `state.json` written before this rule still records
-its root; the next generation rewrites it without the path even when no file changes, and
-`--check` warns about it rather than reporting drift.
+each named owner from a fresh reference, then regenerate.
+
+An output root with an interrupted operation refuses in any other location and reports the root it
+was recorded at. Recover it there before copying, committing or moving it. A `state.json` written
+before this rule still records its root. The next generation rewrites it without the path even
+when no file changes, and `--check` warns about it instead of reporting drift.
 
 This contract applies to cooperating ESS writers on one local mounted filesystem on Linux or
-macOS, with controlled parent directories. Each file replacement is atomic; readers can see
+macOS, with controlled parent directories. Each file replacement is atomic, and readers can see
 intermediate changes across several files. Synchronization failures are reported and retained
-for recovery. Storage must honor synchronization calls; this is not an unconditional guarantee
+for recovery. Storage must honor synchronization calls, so this is not an unconditional guarantee
 against hardware failure. Older ESS versions do not participate in this protocol.
 
 No-output and check modes do not create ownership state or recover pending writes. This
 repository's own `cargo xtask generate` inventory refuses an intersecting ownership tree
 before writing or pruning it.
 
-A refusal of an existing output names the file, relative to the output root, and the `ess`
+A refusal of an existing output carries the file, relative to the output root, and the `ess`
 release that refused it: `ess X.Y.Z refused output site/index.html: output has extended metadata
-outside the ordinary snapshot contract: user.note`. Generated bytes do not name the producing
-release, because a version in every stamp would rewrite every committed artifact on each release;
-`.ess-output` records the release that last wrote the tree. To fix the producing release for
-everyone who regenerates, pin it in `ess-inputs.yaml` with `requires: ess X.Y.Z`; see
+outside the ordinary snapshot contract: user.note`. Generated bytes do not carry the producing
+release, because a version in every stamp would rewrite every committed artifact on each release.
+`.ess-output` records the release that last wrote the tree.
+
+To fix the producing release for everyone who regenerates, pin it in `ess-inputs.yaml` with
+`requires: ess X.Y.Z`. See
 [name the `ess` release](./specify/layout-and-validation.md#name-the-ess-release-the-specification-is-maintained-with).
 
 ## Generated schemas in a local registry
 
 By default the generated contract schemas and `schemas/generated/ess.schema.json` have no root
-`$id`. They are usable by schema tooling, but passing either original to `ess generate schema validate`
-as a registry resource produces `missing_schema_id`. ESS does not assign them a public schema
-endpoint. To use this registry, the adopter chooses resource IDs and supplies the resources locally.
+`$id`. Schema tooling can use them, but passing either original to `ess generate schema validate`
+as a registry resource produces `missing_schema_id`. ESS assigns no public schema endpoint. To use
+a registry, the adopter chooses resource IDs and supplies the resources locally.
 
 `ess generate --kind schema --schema-id-base <URI>` writes the contract schemas with IDs: every
 document gets a root `$id` of the base followed by its path under `schema/`, placed after
 `$schema`. The base is an absolute URI ending in `/` or `:` with no query or fragment, such as
-`https://schemas.example.org/billing/` (giving
-`https://schemas.example.org/billing/types/billing.invoice.Money.schema.json`) or
-`urn:example:billing:`. The base is yours to choose and keep; pass the same one to `--check`.
-Only `--kind schema` takes it. Without it, nothing in the output moves.
+`https://schemas.example.org/billing/` or `urn:example:billing:`. The first gives
+`https://schemas.example.org/billing/types/billing.invoice.Money.schema.json`.
+
+The base is yours to choose and keep, and `--check` takes the same one. Only `--kind schema`
+takes it. Without it, nothing in the output moves.
 
 Instances may be written in YAML: a file ending `.yaml` or `.yml` is read as the JSON value it
 denotes, by the YAML reader ESS sources are read with. A tag, a key that is not a string, a
 number that is not finite, a key written twice or a second document has no JSON value and is
-refused, naming the file. The same holds for `validate-bundle`.
+refused with the file named. The same holds for `validate-bundle`.
 
 This example runs from an ESS repository checkout with `ess` and `jq` installed. It reads the
 committed generated schemas and creates separate copies, adding only a root `$id` to each.
@@ -168,11 +176,11 @@ ess generate schema validate "$sample/instances" --schemas "$sample/registry" --
 ```
 
 The command exits 0 with four schema resources, two accepted instances and no issues. The accepted
-records name `urn:example:invoice-submission:1` and `urn:example:ess-source-submission:1`, with their
-selector-schema filenames. They identify the selected envelopes; the payload resources are reached
-through each envelope's `$ref`. Filenames are not registry identities.
+records carry `urn:example:invoice-submission:1` and `urn:example:ess-source-submission:1`, with
+their selector-schema filenames. They identify the selected envelopes, and each envelope's `$ref`
+reaches its payload resource. Filenames are not registry identities.
 
-For example, `invoice-selector.schema.json` is a separate application resource:
+`invoice-selector.schema.json` is a separate application resource:
 
 ```json
 {
@@ -194,7 +202,7 @@ This preserves the payload's JSON value, not its original whitespace or number s
 application envelope example, not a universal ESS envelope or conformance-evidence format.
 
 Keep both payload resources separate from their envelopes. The syntax resource retains draft-07
-and its `#/definitions` references; the command resource retains draft 2020-12 and `#/$defs`.
+and its `#/definitions` references, and the command resource retains draft 2020-12 and `#/$defs`.
 Inlining an ID-less schema under `properties.payload` would change where those root fragments
 resolve. Keep all constraints and `x-ess-*` provenance annotations when copying. Removing only the
 added `$id` recovers the original parsed schema, but the copied file has different bytes: its model
@@ -202,15 +210,17 @@ and slice digests are not checksums of that new file.
 
 These `urn:example:` IDs illustrate an adopter's immutable logical names. Choose distinct IDs for
 payloads and envelopes, and define ownership, uniqueness, versioning and publication before sharing
-them. The CLI detects duplicate exact ID strings in the supplied registry; it supplies no historical
-immutability ledger, URI-alias equivalence guarantee, organization namespace or hosted resolver.
-All resources are compiled offline before any instance is checked. A missing reference or invalid
-registry leaves the report's `valid` list empty. Later instance failures can coexist with accepted
-instances, so an exit of 1 does not always mean that list is empty.
+them. The CLI detects duplicate exact ID strings in the supplied registry. It supplies no
+historical immutability ledger, URI-alias equivalence guarantee, organization namespace or hosted
+resolver.
 
-Schema acceptance also does not assemble an ESS system. The syntax example deliberately names
-`shop.cart` without defining that domain. Its envelope validates above, while this actual semantic
-validation command exits 1 with an unsatisfied `system.domains` diagnostic:
+All resources are compiled offline before any instance is checked. A missing reference
+or invalid registry leaves the report's `valid` list empty. Later instance failures can coexist
+with accepted instances, so an exit of 1 does not always mean that list is empty.
+
+Schema acceptance does not assemble an ESS system. The syntax example names `shop.cart` without
+defining that domain. Its envelope validates above, while this semantic validation command exits 1
+with an unsatisfied `system.domains` diagnostic:
 
 ```sh
 ess specify validate --path "$fixtures/source/semantic-invalid.json" --format json
@@ -220,12 +230,12 @@ The separate `schema typescript` command supports a restricted structural vocabu
 `urn:example:widget:1` fixture can be projected, but the generated command's annotations and the
 envelope's external `$ref` are refused before output is written. Do not strip annotations to make a
 projection appear supported. Adding `$id` also supplies no original-text numeric admission or
-`ModelTypes` authority; the bundle and normalization paths below keep their own contracts.
+`ModelTypes` authority. The bundle and normalization paths below keep their own contracts.
 
 ## What `site` means
 
-`site` renders the same document IR as `docs`, without parsing generated Markdown back
-into a second description of the model. It emits HTML pages and local presentation assets.
+`site` renders the same document IR as `docs` and emits HTML pages and local presentation assets.
+It does not parse generated Markdown back into a second description of the model.
 For example:
 
 ```shell-session
@@ -235,39 +245,41 @@ $ ess generate --path examples/billing --kind site --out target/projections
 produces `target/projections/index.html`, the domain pages, the interaction and topology pages,
 and `target/projections/assets/` with CSS, the bundled Mermaid renderer and its licence.
 
-The `README.md` beside the specification supplies the front-page introduction. Additional
-authored Markdown pages are explicitly included with `--include <page-id>=<path>`,
-for example `--include operations/runbook=docs/runbook.md`. The page id determines
-the output location, in this case `operations/runbook.html`.
+The `README.md` beside the specification supplies the front-page introduction. Include authored
+Markdown pages with `--include <page-id>=<path>`, for example
+`--include operations/runbook=docs/runbook.md`. The page id determines the output location, in
+this case `operations/runbook.html`.
 
 Authored `mermaid` fences and model-generated diagrams use the same local renderer.
-Their escaped source remains readable when JavaScript is disabled; non-Mermaid fences
+Their escaped source remains readable when JavaScript is disabled, and non-Mermaid fences
 remain code listings. This authored-fence support is available in ESS 0.20.0.
 
 The publisher resolves relative links using the included documents' source
 locations, even when their output paths differ. `--front-page docs/README.md` overrides
-the default front page without moving it. Declare UTF-8 downloads explicitly, for example
-`--asset contracts/api.json=contracts/api.json`; they are copied verbatim, and their
+the default front page without moving it. Declare UTF-8 downloads, for example
+`--asset contracts/api.json=contracts/api.json`. They are copied verbatim, and their
 destinations cannot collide with generated pages or assets. Binary downloads are refused.
 
 Use `--strict-links` to fail on local targets that are not included pages or declared
-downloads. Diagnostics name the authored file and line, and no output is written on this
+downloads. Diagnostics carry the authored file and line, and no output is written on this
 failure. Without that flag, unpublished links retain their original destinations for
-compatibility. The publisher never discovers or copies unselected sibling files. Queries
-and fragments survive source-to-output mapping; strict mode checks fragments against
+compatibility.
+
+The publisher never discovers or copies unselected sibling files. Queries
+and fragments survive source-to-output mapping, and strict mode checks fragments against
 the generated and authored page headings. Download fragments retain their file-format
 meaning and are not interpreted as HTML anchors.
 
-This is **specification to documentation**, not documentation to specification. ESS still accepts a
-typed ESS YAML document or directory as input; it does not parse prose or Markdown into model
-semantics. The projection emits a static site, but does not deploy it or configure hosting.
-Use the `docs` projection instead when another documentation system owns presentation.
+ESS reads a typed ESS YAML document or directory as input and does not parse prose or Markdown
+into model semantics. The `site` projection emits a static site and does not deploy it or
+configure hosting. Use the `docs` projection instead when another documentation system owns
+presentation.
 
 ## Schema-only Bundles
 
 The `schema import-bundle` adapter selects named structural contracts from
 `components/schemas` without asserting that the envelope is a valid HTTP service.
-Its structural dialect must be supplied explicitly:
+Supply its structural dialect explicitly:
 
 ```sh
 ess generate schema import-bundle --path components.json --component Settings \
@@ -280,15 +292,17 @@ ess generate schema validate-bundle --bundle settings.bundle.json --root Setting
 Repeat `--component` to select additional roots. The import retains the original source
 bytes, their SHA-256, declared and selected dialects, explicit adapter accounting and
 the complete reference closure in `ess-schema-bundle/1`. Reload reimports that source
-and checks the entire result; changing a projected definition or dropping qualifications
-does not become a successful checked import. This checks integrity, not an author's signature.
+and checks the entire result, so changing a projected definition or dropping qualifications
+is not a successful checked import. This checks integrity, not an author's signature.
 
 Projection emits only the chosen root's transitive closure. URI/JSON Pointer references
 are rewritten only at schema positions, never inside defaults or examples. Constraints,
 nullability, unions, tuple schemas and object openness retain JSON Schema 2020-12 semantics.
-Defaults and formats are annotations; validation neither fills missing fields nor enables
+Defaults and formats are annotations: validation neither fills missing fields nor enables
 the optional format-assertion vocabulary. `x-ess-source` records the projected contract's
-qualification. The `x-ess-*` annotations ESS itself projects are retained as written and never
+qualification.
+
+The `x-ess-*` annotations ESS itself projects are retained as written and never
 asserted, so a document `ess generate --kind schema` wrote imports as it stands. An `x-ess-*`
 keyword the projector does not write (`x-ess-binary64`, `x-ess-source`) is refused, so an import
 cannot mint a codec or an import record. Other unknown keywords, nested resource/anchor
@@ -305,14 +319,15 @@ ess generate schema project-bundle --bundle record.bundle.json --root Record \
   --schema-id urn:example:record:1 --out projected.schema.json
 ```
 
-`--definition` is optional and repeatable; it admits additional independently
+`--definition` is optional and repeatable, and admits additional independently
 selectable `$defs` roots. References from the document root are included automatically.
 Local `#` recursion and `#/$defs/Name` references retain source identity. The root name
 must not collide with a source definition. `$id`, anchors, nested resources, external
 references and contradictory declared dialects refuse rather than change resolution.
+
 This adapter writes `ess-schema-bundle/2`, whose explicit `document_root` distinguishes
 the source root from its definitions. Component imports still write unchanged `/1`
-envelopes; old strict readers refuse `/2`. Both formats support replay, root-selected
+envelopes, and old strict readers refuse `/2`. Both formats support replay, root-selected
 validation and all three data targets. Findings point to original schema positions,
 including the empty JSON Pointer for the document root.
 
@@ -338,10 +353,11 @@ ess generate schema types-bundle --bundle settings.bundle.json --root Settings \
 Each target emits declarations (`types.ts`, `types.rs` or `types.go`),
 `types-report.json` and the replay-checked `source.bundle.json`. Native targets add
 `Cargo.toml` or `go.mod` for standalone library builds.
+
 Repeat `--root` for multiple admitted roots. The report carries source and bundle
-digests, generator version, typed target configuration, declaration names, retained annotations and source-located
-runtime obligations. Name collisions, unsupported shapes and unguarded alias cycles
-refuse before output is written. This path does not change the legacy
+digests, generator version, typed target configuration, declaration names, retained annotations
+and source-located runtime obligations. Name collisions, unsupported shapes and unguarded alias
+cycles refuse before output is written. This path does not change the legacy
 `schema typescript` command or full application synthesis.
 
 TypeScript preserves required versus nullable fields, JSON wire keys, recursive
@@ -354,40 +370,45 @@ schema refinements remain explicit validation obligations. Defaults are not appl
 Rust and Go supply typed JSON codecs with independent presence/null representations,
 exact JSON numbers, recursive records, retained typed extra fields, finite string enums,
 unions and fixed prefix tuples. Native unions select the first structurally decodable
-branch; schema exclusivity and refinements remain report obligations, not application
+branch. Schema exclusivity and refinements remain report obligations, not application
 dispatch. Unsupported native intersections, non-string literals and variable prefix
-layouts refuse before publication. Go uses only its standard library; the Rust manifest requires Serde
-and serde_json, and `time` where a type holds a timestamp, as `^` ranges at the versions
-ESS tests, so a workspace that already locks newer compatible releases keeps them. Where the selected types hold JSON numbers
-in serde_json (`serde_json::Number`, `serde_json::Value`, or a union decoded through a
-`Value` whose alternatives can hold a number), the manifest declares a default-on `exact-numbers` crate feature that enables
+layouts refuse before publication.
+
+Go uses only its standard library. The Rust manifest requires Serde and serde_json, and `time`
+where a type holds a timestamp, as `^` ranges at the versions ESS tests, so a workspace that
+already locks newer compatible releases keeps them.
+
+Where the selected types hold JSON numbers in serde_json, namely `serde_json::Number`,
+`serde_json::Value` or a union decoded through a `Value` whose alternatives can hold a number,
+the manifest declares a default-on `exact-numbers` crate feature that enables
 serde_json's `arbitrary_precision`. A consumer that depends on the library with
-`default-features = false` gets those numbers as binary64, and the report names each
+`default-features = false` gets those numbers as binary64, and the report lists each
 affected value under the `rust_exact_numbers` rule. A library whose types hold none
 declares no feature and leaves serde_json's number handling to its consumer.
 
 A `Json` value can instead keep its exact JSON text: `--rust-raw-json <type>` realizes each
 `Json` field of that model type, and `--rust-raw-json <type>.<field>` one field, as `EssRawJson`,
 a `Box<serde_json::value::RawValue>`. Its bytes round-trip with or without `exact-numbers`, it does
-not count toward that feature, and the report names it under `rust_raw_json`. A location that
-names no selected type or field, or no `Json` value, is refused; other targets refuse the option.
+not count toward that feature, and the report lists it under `rust_raw_json`. A location that
+matches no selected type or field, or no `Json` value, is refused, and other targets refuse the
+option.
 
 Four more Rust options are off by default. Without them the library and the report are
 exactly what the target writes otherwise, and other targets refuse each of them.
 
 - `--rust-derive <DERIVE>` adds `Eq`, `Hash`, `PartialOrd`, `Ord` or `Default` to every
-  generated type; `--rust-derive <type>=<DERIVE>` adds it to that type and the anonymous types
+  generated type. `--rust-derive <type>=<DERIVE>` adds it to that type and the anonymous types
   it holds. Repeat it for more. A derive a type cannot satisfy is refused before anything is
-  written, as `rust_derive_unsatisfied`, naming the type and the field that blocks it: `Eq` or
+  written, as `rust_derive_unsatisfied`, reporting the type and the field that blocks it: `Eq` or
   `Hash` over a `Binary64` field, `Default` on an enum, or a field whose own type was not given
   the derive. `Ord` needs `Eq` and `PartialOrd` given beside it.
 - `--rust-fold-null` decodes an explicit `null` in an optional field as the missing member.
-  Encoding still omits an absent member. The report names each such field under
+  Encoding still omits an absent member. The report lists each such field under
   `rust_fold_null`.
 - `--rust-drop-unknown-members` decodes an open object with declared fields without keeping the
   members it does not declare, so its type has no `ess_extra` field and encoding writes the
   declared fields only. An object without declared fields is a map and keeps its members. The
-  report names each such object under `rust_drop_unknown_members`, in place of
+  report lists each such object under `rust_drop_unknown_members`, in place of
   `open_object_storage`.
 - `--rust-box-only-recursion` holds a named type by value and boxes a reference only where it
   closes a cycle of by-value fields: `Optional<Self>` stays `EssPresence<Box<Self>>`, both
@@ -396,8 +417,8 @@ exactly what the target writes otherwise, and other targets refuse each of them.
   `Vec<Self>`.
 
 `--declared-field-order` lists a model type's fields in the order the specification declares
-them, for Rust, Go and TypeScript; without it they are in wire-name order. Rust then encodes
-members in that order, and a derived `PartialOrd` or `Ord` compares fields in it; decoding
+them, for Rust, Go and TypeScript, and in wire-name order without it. Rust then encodes
+members in that order, and a derived `PartialOrd` or `Ord` compares fields in it. Decoding
 accepts members in any order. Go's encoded bytes do not change. A bundle carries no
 declaration order, so `ess generate schema types-bundle` refuses the option as
 `declared_field_order_bundle`.
@@ -425,52 +446,55 @@ ess generate types --path examples/billing --all-types \
   --target typescript --out target/billing-typescript
 ```
 
-Repeat `--root` for a shared closure, or explicitly choose `--all-types`, never both.
+Repeat `--root` for a shared closure, or choose `--all-types`, never both.
 The output directory must be outside the input specification tree. The model path
 reuses ESS's existing JSON wire mapping: decimal strings, wire field names, optional
 object properties, nullable collection values, map-key spellings and adjacent tagged
 unions. Missing roots and colliding wire field names refuse before output.
 
-`source.schema.json` retains the exact selected definitions and model provenance;
-the report identifies the system, specification version and model/contract/projection
+`source.schema.json` retains the exact selected definitions and model provenance.
+The report identifies the system, specification version and model/contract/projection
 digests separately from bundle identity. This is a definitions document, not a root
 instance validator: choose the relevant `$defs` reference for schema validation.
+
 Invariant predicates and map-key grammars remain explicit validation obligations.
 TypeScript's structural aliases do not enforce nominal model identities, which its
-report names for each selected newtype. Full synthesis remains unchanged. Model-field
+report lists for each selected newtype. Full synthesis remains unchanged. Model-field
 bindings to imported schemas and application-specific decoder semantics remain pending.
 
 #### Finite model codecs
 
 Standalone Rust and Go model targets support compiler-owned `Binary64` fields
 from `ess/2`. Rust emits `EssBinary64::new(f64)` with checked finite
-construction and `.get()` access; Go emits `NewEssBinary64(float64)` and `.Float64()`.
+construction and `.get()` access. Go emits `NewEssBinary64(float64)` and `.Float64()`.
 Their JSON codecs retain the original numeric token through supported aliases,
 recursive containers and union branches. They preserve signed zero, subnormals,
-signed underflow and nearest-even rounding; wrong JSON kinds and overflow refuse.
+signed underflow and nearest-even rounding, and wrong JSON kinds and overflow refuse.
 Go's zero wrapper value represents positive zero.
 
 Rust decoding requires original source text through `serde_json::from_str` or
 `from_slice`, with the generated `raw_value` feature enabled. Deserializing an
 already parsed `serde_json::Value` cannot recover original numeric spelling and
-is outside this codec contract. A pure map with Binary64 values is supported;
-a Rust record combining declared fields with Binary64-containing extra values
+is outside this codec contract.
+
+A pure map with Binary64 values is supported.
+A Rust record combining declared fields with Binary64-containing extra values
 refuses as `rust_binary64_open_record` before files are written. Ordinary schema
 refinements, union exclusivity and map-key constraints remain report obligations.
-The helpers and required features appear only for selected Binary64 closures;
-older non-Binary64 output maps stay unchanged at the same generator version.
+The helpers and required features appear only for selected Binary64 closures,
+and older non-Binary64 output maps stay unchanged at the same generator version.
 
 ### Explicit Normalization
 
 The Rust library `schema_contract::realize::normalize` separates
 transformations from structural declarations. `Root::pin` identifies an admitted
 schema-bundle root by the complete canonical bundle digest. `Plan::read` checks a
-strict `ess-normalization/1` recipe against supplied checked bundles; `Plan::run`
+strict `ess-normalization/1` recipe against supplied checked bundles. `Plan::run`
 selects an explicitly named external branch and evaluates its ordered stages.
 
 Each stage validates input, checks authored requirements, constructs a new value and
 validates output. Missing fields remain distinct from null. Defaults apply only via
-explicit fallback or conditional expressions; zero, false and empty strings are not
+explicit fallback or conditional expressions, and zero, false and empty strings are not
 absence. Scalar equality, exact case-sensitive string-prefix selection,
 signed-integer arithmetic with explicit overflow policy,
 ordered choices, list mapping and distinct string-category counts have defined
@@ -492,7 +516,7 @@ the reference engine and standalone Rust target:
 
 Empty text/list constructions return empty values. All branches and operand types
 still check before execution, including unselected branches. Nested collection scopes
-rebind the index; an unbound index refuses. Version 1 recipes cannot opt into these
+rebind the index, and an unbound index refuses. Version 1 recipes cannot opt into these
 operations without explicitly changing their format. Numeric admission is unchanged:
 binary64 decoding must be explicitly declared as described below.
 
@@ -502,18 +526,19 @@ Version 2 optionally declares `binary64_inputs`, mapping exact branch names to
 paths through their first input root. A path uses `{kind: field, name: KEY}` for
 an object member and `{kind: items}` for every array element. An empty path selects
 a numeric root. Only selected numeric values round to binary64, nearest with ties
-to even; undeclared numbers retain the exact admission policy. Missing/null values
-are neither defaulted nor coerced. Unknown branches, duplicate paths, undeclared
-fields and nonnumeric leaves refuse. Underflow preserves signed zero; infinity
+to even, and undeclared numbers retain the exact admission policy.
+
+Missing/null values are neither defaulted nor coerced. Unknown branches, duplicate paths,
+undeclared fields and nonnumeric leaves refuse. Underflow preserves signed zero, and infinity
 refuses. The declaration is forbidden in version 1, even when empty.
 
 `binary64_to_integer {value, steps, out_of_range: reject}` explicitly converts a
 required numeric value to binary64, applies ordered `multiply`, `minimum` and
 `maximum` steps, then truncates toward zero into signed 64-bit representation.
 Each step has a `value` containing a finite JSON numeric token **as a string**,
-retaining authored decimal provenance. Multiplication rounds after each step;
+retaining authored decimal provenance. Multiplication rounds after each step, and
 intermediate infinity refuses. Minimum/maximum retain signed-zero semantics.
-The final range is `[-2^63, 2^63)`, not host-dependent saturation or wrapping.
+The final range is `[-2^63, 2^63)`, with no host-dependent saturation or wrapping.
 Subsequent integer arithmetic separately declares its overflow policy.
 
 For example, a branch whose first input root is numeric can declare
@@ -531,7 +556,7 @@ For example, a branch whose first input root is numeric can declare
 Input `1.001` yields integer `1000`: binary64 multiplication precedes truncation.
 Exact decimal multiplication would yield a different result and is not substituted.
 Schema boundaries validate the decoded value, not the original decimal token.
-The value-based API cannot restore precision already lost by a caller's parser;
+The value-based API cannot restore precision already lost by a caller's parser, so
 use the raw JSON API for declared decoding. All constants and paths check before
 execution, including those in an unselected branch.
 
@@ -546,7 +571,7 @@ ess generate schema normalize-run --recipe checked.normalize.json \
 ```
 
 Omit `--out` for JSON-only stdout. Repeat `--bundle` for all source identities used
-by the recipe; bundles are replay-checked, and missing or changed identities refuse.
+by the recipe. Bundles are replay-checked, and missing or changed identities refuse.
 No successful value is written on a failed check, requirement or schema boundary.
 Outputs cannot replace the recipe, a bundle or the input instance. Existing output
 link/alias containment checks apply.
@@ -554,16 +579,19 @@ link/alias containment checks apply.
 The input JSON boundary rejects duplicate object keys, excessive nesting, trailing
 data, and numeric tokens that cannot round-trip through the reference representation
 without changing their decimal value. Integer literals within signed range retain
-their exact representation; fractional/exponent tokens are not silently made eligible
+their exact representation, and fractional/exponent tokens are not silently made eligible
 for integer operations. This is precision-loss refusal, not arbitrary-precision
 arithmetic. Only explicitly declared version 2 paths opt into binary64 rounding.
-Raw JSON library consumers use `Plan::run_json`; `Plan::run` accepts an
+
+Raw JSON library consumers use `Plan::run_json`. `Plan::run` accepts an
 already-decoded value and cannot recover precision lost by the caller's parser.
 
 The library API `Plan::rust(package)` emits a standalone Cargo normalization crate,
 with checked root schemas and the same recipe/execution/input logic as the reference
-engine. It has no ESS runtime dependency. `Normalizer::new()` prepares the embedded
-validators; `normalize(branch, input_json)` checks and executes one explicit branch.
+engine. It has no ESS runtime dependency.
+
+`Normalizer::new()` prepares the embedded
+validators, and `normalize(branch, input_json)` checks and executes one explicit branch.
 `normalize_value(branch, value)` also accepts decoded values with the same
 caller-owned precision qualification as the reference `Plan::run` API.
 The `ess-normalization-target/1` report records the canonical recipe, source roots,
@@ -571,11 +599,12 @@ schemas and emitted-file digests, excluding the report itself. Generated-crate c
 cover default serde_json features and consumer-enabled arbitrary precision.
 
 The library API `Plan::go(package, module)` emits a standalone Go 1.26
-module with the same source-pinned report. `New()` prepares offline validators;
+module with the same source-pinned report. `New()` prepares offline validators.
 `Normalize(branch, input)` accepts JSON bytes and returns a complete `json.RawMessage`
 or a typed `Refused`. It preserves exact integer tokens, explicitly declared
 binary64 decoding, ordered collection operations and lazy first-match evaluation.
-Schema findings are sorted by escaped instance pointer, retaining duplicates;
+
+Schema findings are sorted by escaped instance pointer, retaining duplicates, and
 Rust retains its validator's traversal order. Go uses pinned JSON token and schema
 libraries. The exact base64 pattern below is qualified against the pinned reference
 for bundle schemas and model `Bytes` wire projections:
@@ -584,7 +613,7 @@ for bundle schemas and model `Bytes` wire projections:
 ^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$
 ```
 
-It admits empty strings and checks the ASCII alphabet and padding placement; it
+It admits empty strings and checks the ASCII alphabet and padding placement. It
 does not decode bytes or require zero unused pad bits. Every other selected pattern
 refuses generation with `go_schema_pattern` at its source pointer, including
 equivalent spellings of this expression. `contentEncoding` alone does not qualify
@@ -608,7 +637,7 @@ $ ess generate schema normalize-generate --recipe normalization.json \
 
 Every branch and target checks before files are written. The command protects its
 recipe and bundle inputs and preflights the complete generated destination set.
-`--check` compares every planned file without writing; missing or stale files return
+`--check` compares every planned file without writing, and missing or stale files return
 a nonzero exit. Neither mode deletes unrelated or obsolete files. Output preflight
 assumes controlled parent directories and does not provide rollback for later I/O
 failure. The output includes `normalization-report.json` with the exact library-API
@@ -616,7 +645,7 @@ provenance and file identities.
 
 Model-owned records use the `ess-normalization/3` format.
 `Root::pin_model` pins a root explicitly admitted by a sealed
-`ess_gen::schema::ModelTypes` selection; `Plan::check_with_models` accepts these
+`ess_gen::schema::ModelTypes` selection. `Plan::check_with_models` accepts these
 selections alongside replay-checked bundles. Identity includes the system,
 specification version, source/contract/projection digests and selected root set.
 Matching JSON field shapes alone cannot substitute for any of those coordinates.
@@ -635,14 +664,15 @@ $ ess generate schema normalize-generate --recipe model.normalize.json \
 Outputs cannot replace a model input or reside inside a model input directory.
 Version 3 targets retain complete selected model schemas and provenance in a
 version 2 normalization target report. Wire names, optional properties, newtype
-definitions and refinements come from the existing model projection. Selected
-model invariant statements refuse normalization planning because the engine does
+definitions and refinements come from the existing model projection.
+
+Selected model invariant statements refuse normalization planning because the engine does
 not execute those predicates. Go's pattern refusal also applies to model-derived
 patterns outside the exact qualified `Bytes` expression above. Bundle-only versions
 1 and 2 keep their canonical recipe representation and version 1 report envelope.
 
 The `ess-normalization/4` format adds explicit lexical capture through
-`raw_json_inputs`. Each branch maps to a list of field/items selectors; an empty
+`raw_json_inputs`. Each branch maps to a list of field/items selectors, and an empty
 path selects the root token:
 
 ```json
@@ -652,13 +682,14 @@ path selects the root token:
 }
 ```
 
-This is a recipe-member excerpt; branches and source-pinned stages are still
+This is a recipe-member excerpt, and branches and source-pinned stages are still
 required. The first input schema describes the captured representation: a selected
 leaf must be string-shaped, normally model `Bytes`. At the text edge, the complete
-selected token becomes canonical standard base64 before validation. Whitespace
-outside the token is excluded; interior whitespace, quotes, escapes, member order,
-duplicate members and number spelling remain exact. Huge numbers are retained
-without numeric conversion. Capturing `null` produces `bnVsbA==`; an absent member
+selected token becomes canonical standard base64 before validation.
+
+Whitespace outside the token is excluded, while interior whitespace, quotes, escapes, member
+order, duplicate members and number spelling remain exact. Huge numbers are retained
+without numeric conversion. Capturing `null` produces `bnVsbA==`. An absent member
 stays absent, and null intermediate containers are not traversed.
 
 Capture requires valid JSON, strict Unicode and at most 64 levels of nesting,
@@ -680,13 +711,14 @@ These accept unquoted base64 text, require canonical standard encoding and UTF-8
 then pass unchanged JSON text to normal execution. Failures occur in order:
 `input_base64`, `input_utf8`, then normal text-edge findings. They do not parse and
 reserialize the retained document or automatically decode a nested field. Each
-recipe retains its own source identities; callers own their composition.
+recipe retains its own source identities, and callers own their composition.
 
 Format 4 uses target report version 3. Versions 1–3 refuse `raw_json_inputs`, even
 an empty map, and retain their canonical recipes, generated code and file maps.
 Across package releases, reports still record the actual generator version.
+
 Expanded recursive shapes, tuples and
-intersections refuse in the earlier checker profiles; format 6 adds only the
+intersections refuse in the earlier checker profiles, and format 6 adds only the
 explicit closed-tuple support described below. Schema bounds and other refinements are
 checked at runtime boundaries, not proven by structural checking. Integer arithmetic
 requires exact signed-64-bit integral JSON tokens. Equality is scalar-only and has
@@ -716,7 +748,7 @@ Use explicit floating construction for defaults and computed outputs:
 
 `binary64_literal` keeps its numeric token string in recipe identity and checks
 grammar and finiteness in every branch. `binary64` takes a numeric `value` and
-ordered `steps` using the existing multiply/minimum/maximum vocabulary; it returns
+ordered `steps` using the existing multiply/minimum/maximum vocabulary, and returns
 a finite floating value without truncating. An empty steps list is an explicit
 integer/general-number conversion. Float-to-integer conversion still requires
 `binary64_to_integer`. An integral floating result does not become an integer
@@ -725,7 +757,7 @@ operand. A later conversion cannot recover an input token refused at the text ed
 Reference and generated Rust/Go preserve positive/negative zero, signed underflow,
 subnormals and nearest-even rounding. Overflow and nonfinite values refuse.
 Format-5 `equal` compares two typed Binary64 operands using IEEE equality, so
-positive and negative zero compare equal; it does not cast mixed scalar kinds.
+positive and negative zero compare equal. It does not cast mixed scalar kinds.
 Explicit raw capture and retained-document helpers from format 4 remain available.
 Format 5 uses target report version 3. Frozen templates preserve the complete
 emitted Rust/Go file maps of formats 1–4.
@@ -758,7 +790,7 @@ This excerpt adds a two-slot policy to an otherwise complete checked recipe:
 }
 ```
 
-Every displayed declaration member is required; this version admits only these
+Every displayed declaration member is required, and this version admits only these
 policy values. A missing field stays missing, null produces empty strings, short
 arrays are padded and excess elements are discarded. Consumed elements must be
 strings or null. Discarded tokens still pass complete JSON grammar, Unicode and
@@ -777,20 +809,21 @@ A checked `position` expression reads one slot and can map it to a named field:
 
 The operand must have one proven exact tuple arity and the index must be in range.
 Missing tuples propagate missing. Heterogeneous closed tuples can be read with the
-type of their selected slot; nullable tuples, ambiguous source tuple unions,
+type of their selected slot. Nullable tuples, ambiguous source tuple unions,
 homogeneous arrays and open or variable prefixes refuse. Homogeneous list
 operations retain their earlier behavior.
 
 Policies select only field, homogeneous-item or root boundaries and run at the
 external original-text edge before first-stage schema validation. Overlap with
-raw capture, Binary64 policies or other positional declarations refuses. Active
-positional policies require an original-text entrypoint (`Plan::run_json`, Rust
+raw capture, Binary64 policies or other positional declarations refuses.
+
+Active positional policies require an original-text entrypoint (`Plan::run_json`, Rust
 `Normalizer::normalize`, Go `Normalizer.Normalize`, or CLI `normalize-run`) or a
 retained-base64 helper. `Plan::run` and Rust `normalize_value` refuse them even
 when the selected field is absent.
 The existing normalize check/run/generate commands and Rust/Go/TypeScript targets apply.
-Format 6 keeps `ess-normalization-target/3`, its report fields and digest domains;
-formats 1–5 keep their complete generated maps at the same generator version.
+Format 6 keeps `ess-normalization-target/3`, its report fields and digest domains,
+and formats 1–5 keep their complete generated maps at the same generator version.
 
 #### Standalone TypeScript normalization
 
@@ -807,7 +840,7 @@ $ tsc --project tsconfig.json
 
 Generation installs nothing. TypeScript 6.0.3 and Node 22.23.1 are the qualified
 compiler/runtime. Package names use lowercase ASCII parts beginning with a letter,
-optionally `@scope/name`; parts can also contain digits, `-`, `_` and `.` and the
+optionally `@scope/name`. Parts can also contain digits, `-`, `_` and `.`, and the
 complete identity is at most 214 bytes. `--module` is Go-only and refuses here.
 Import the emitted root entrypoint after compiling:
 
@@ -824,32 +857,35 @@ if (result.ok) {
 ```
 
 The branch and input must match the checked recipe. Successful output is compact
-JSON text; refusals carry `pointer`, `rule` and `detail`, with no partial output.
+JSON text, and refusals carry `pointer`, `rule` and `detail`, with no partial output.
+
 `normalizeBase64Json(branch, encoded)` accepts strict canonical base64 containing
-UTF-8 JSON. A decoded BOM is preserved and then fails normal JSON grammar; invalid
+UTF-8 JSON. A decoded BOM is preserved and then fails normal JSON grammar, and invalid
 UTF-8 and lone Unicode surrogates are rejected. No decoded-object API is offered.
-Internal bigint preserves integer precision; ordinary JSON.parse on the returned
+Internal bigint preserves integer precision, and ordinary JSON.parse on the returned
 text would transfer responsibility for that precision to the caller.
 
 The fixed `schema-profile.json` is hashed with the runtime and retained sources.
 It includes tuple `prefixItems` and array/string lengths, exact numeric bounds,
 source enums and the frozen Bytes pattern. It does not widen the existing Plan
 shape checker: some numeric type/enum and allOf intersections still refuse there.
+
 `uniqueItems: true`, unqualified patterns and other unsupported constraints refuse
 before files are returned. Formats/content encodings are annotations and defaults
 do not run. Schema findings retain the full reference multiset, sorted by escaped
-Unicode-scalar pointer; non-schema findings retain their located rule and detail.
+Unicode-scalar pointer, and non-schema findings retain their located rule and detail.
 
 Recipe formats 1/2 use target report 1, format 3 uses report 2, and formats 4/5/6
 use report 3. The new language needs no new recipe/report version. Report files
-include all emitted runtime/profile inputs; consumer-built `dist/` is not hashed.
+include all emitted runtime/profile inputs, and consumer-built `dist/` is not hashed.
 Existing Rust/Go emitted maps remain unchanged at the same generator version.
 
 Static equality checking adds two typed Binary64 operands in formats 5/6 and keeps
 Binary64 output provenance distinct. The frozen evaluator also compares any two
 floating representations numerically in these formats, even when an Integer
 source schema admitted integral floats. For example, an admitted Integer equality
-can compare `1.0` with `1.0`; mixed `1`/`1.0` still refuses integer eligibility.
+can compare `1.0` with `1.0`, and mixed `1`/`1.0` still refuses integer eligibility.
+
 TypeScript preserves this runtime limitation. It does not make a general Number
 expression comparable or allow implicit Binary64 output conversion. A separate
 core-contract change would need its own compatibility decision.
@@ -861,8 +897,8 @@ core-contract change would need its own compatibility decision.
 | `--format` | Output |
 |---|---|
 | `dot` | Graphviz, for `dot -Tsvg` |
-| `mermaid` (default) | a `flowchart`, unfenced — redirect into a Markdown file or paste into a PR |
-| `json`, `yaml` | the nodes, edges and groups themselves — 13 nodes, 7 edges and 3 groups for `examples/billing` |
+| `mermaid` (default) | a `flowchart`, unfenced: redirect into a Markdown file or paste into a PR |
+| `json`, `yaml` | the nodes, edges and groups themselves: 13 nodes, 7 edges and 3 groups for `examples/billing` |
 
 One renderer produces both the CLI's diagram and the documentation's: `ess specify graph --path
 examples/billing --format mermaid` emits exactly the bytes fenced under *The system as a graph* in
@@ -880,18 +916,19 @@ generated/openapi/invoice-service.yaml differs from the generated bytes; regener
 
 `--check` regenerates in memory and writes nothing, and passing means the same command without it
 would change nothing. It compares every file the selected projections would write, byte for byte,
-and every file `.ess-output` records for them, so a committed file no projection produces any more
+and every file `.ess-output` records for them. A committed file no projection produces any more
 fails too, and so does a missing `.ess-output` record or one regeneration would rewrite. It exits 0
-when the tree is current, and 1 with one line per drifted file. It requires `--out`. Run the same
-command without `--check` to reconcile the tree, review the diff, and commit it with the
-specification change. A generated file edited by hand is the exception: its line names the
-re-enroll route instead, because regeneration refuses a file whose bytes `.ess-output` does not
+when the tree is current, and 1 with one line per drifted file. It requires `--out`.
+
+To reconcile the tree, run the same command without `--check`, review the diff, and commit it
+with the specification change. A generated file edited by hand is the exception: its line gives
+the re-enroll route instead, because regeneration refuses a file whose bytes `.ess-output` does not
 record.
 [Commit what a reviewer reads, regenerate the rest](./commit-generated-files.md) says which
 projections to commit.
 
 A committed type library is checked the same way: `ess generate types` with the arguments that
-wrote it plus `--check` compares the library with `--out`, writes nothing, and names
+wrote it plus `--check` compares the library with `--out`, writes nothing, and prints
 `ess generate types` in each line. A copy of the library at another path checks clean, because
 `.ess-output` records no absolute path.
 
@@ -901,17 +938,15 @@ and infrastructure fixtures are exercised by their Rust tests in `task check`.
 
 ## What a projection can quietly destroy
 
-Two questions to ask of any generated artifact, answered honestly for these:
+Two questions to ask of any generated artifact, answered for these:
 
 * **A newtype collapses on the wire.** `billing.invoice.Email` and `billing.email.EmailAddress`
-  stay separate schema definitions — each carries `"x-ess-kind": "newtype"` and its own name — so
+  stay separate schema definitions, each with `"x-ess-kind": "newtype"` and its own name, so
   code generators emit two types. But both are `"type": "string"` on the wire, and a payload with
-  the two values swapped validates clean. JSON Schema constrains structure; it cannot carry nominal
-  identity.
+  the two values swapped validates clean. JSON Schema cannot carry nominal identity.
 * **A command's HTTP path is a convention unless you state it.** Without an `ess-http/1` binding,
-  `/invoices/commands/create-invoice` is a shape the generator chose — written into the generated
-  document's own `info.description` rather than left for a reader to infer
-  ([HTTP routes](./http-routes.md)).
+  `/invoices/commands/create-invoice` is a shape the generator chose. It is written into the
+  generated document's own `info.description` ([HTTP routes](./http-routes.md)).
 
 And one check that is scoped rather than total, stated per projection:
 
@@ -921,7 +956,7 @@ And one check that is scoped rather than total, stated per projection:
 | `openapi` | every **embedded** schema is validated against the same meta-schema, because OpenAPI 3.1's dialect *is* 2020-12 | the envelope, checked against an enumerated list by hand |
 | `asyncapi` | the envelope is checked as a skeleton: version, `info`, `channels`, `operations`, and every operation's `action` | the payloads. They are AsyncAPI Schema Objects and declare no `schemaFormat`, so validating them against 2020-12 would assert a dialect the document does not claim |
 
-What closes the two gaps is vendoring the OpenAPI 3.1 and AsyncAPI 3.0 meta-schemas, which is an
-open decision rather than an oversight: neither ships with anything here, and a test may not fetch
-one — the validator is built with `default-features = false` and has no retriever, so it could not
+Vendoring the OpenAPI 3.1 and AsyncAPI 3.0 meta-schemas would close the two gaps. It is an
+open decision, not an oversight: neither ships with anything here, and a test may not fetch
+one. The validator is built with `default-features = false` and has no retriever, so it could not
 reach the network if it tried.

@@ -6,7 +6,7 @@ description: Invoke a binding only when its event payload says so, and the expec
 
 # Invoke only when the payload says so
 
-`ess/22` lets an event binding carry a condition over the event payload. The binding invokes its
+From `ess/22` an event binding carries a condition over the event payload. The binding invokes its
 command only for an occurrence the condition holds for:
 
 ```yaml
@@ -25,9 +25,11 @@ on_failure: retry
 of structs and Optional structs. It admits `true`, `false`, `defined(...)`, `missing(...)`, `==`
 and `!=` of a String or enum leaf against a literal, from `ess/27` `==` and `!=` of a Boolean
 leaf against `true` or `false`, and `all`, `any` and `not` of those. An enum literal must name a
-variant. Outcome names, command input, stored rows, the caller and the
-delivery context cannot be read. Two branches that publish the same payload cannot be told apart
-by a binding. Add the field its consumers need to the event.
+variant.
+
+Outcome names, command input, stored rows, the caller and the delivery context cannot be read. A
+binding cannot tell apart two branches that publish the same payload, so add the field its
+consumers need to the event.
 
 The condition is evaluated before selections, conversions and mapping:
 
@@ -52,10 +54,14 @@ The rules:
 
 Conformance witnesses both sides. Every branch that publishes the event is a candidate trigger,
 and a value it writes as a literal counts as written. A member it fills from its own input is
-varied by sending another input. A member it fills from the row an input names,
+varied by sending another input.
+
+A member it fills from the row an input names,
 `{related: {via: input.<field>, field: <field>}}`, is varied by creating that row with another
 value through its creating command, which must store the field from its input unchanged and not
-guard on it; the trigger must not guard on that row either. The flow, mapping, delivery and failure
+guard on it. The trigger must not guard on that row either.
+
+The flow, mapping, delivery and failure
 scenarios publish a payload the condition holds for. Two more scenarios follow the event and
 require zero invocations for the whole window:
 
@@ -65,19 +71,21 @@ require zero invocations for the whole window:
   that level out. For `defined(event.order.note)` that is one occurrence without the order and
   one with an order but no note.
 
-A witness whose own bindings would publish the event again is refused by name, because zero
-invocations could not be required of it. Each negative witness also requires every unconditioned
-binding beside it on the event to invoke, since a condition skips its own binding alone. Each
-scenario needs suite/36 or /37. For an event from an external channel the suite chooses the
+A witness whose own bindings would publish the event again is refused, and the message gives the
+witness, because zero invocations could not be required of it. Each negative witness also requires
+every unconditioned binding beside it on the event to invoke, since a condition skips its own
+binding alone. Each scenario needs suite/36 or /37. For an event from an external channel the suite chooses the
 delivered payload: one the condition holds for, one it fails for, and one per proved level left
 out.
 
 The generated Rust, Go and web targets evaluate the condition in their dispatch, before the
 transformation and the invocation. An Unknown condition is that binding's unmet obligation and is
 not retried. A required input copied or read from a member the condition proves present is checked
-rather than unwrapped, in a selection binding too. A delivery-context field is never proved
-present: the condition reads the payload only. `ess verify diff` reports an added,
-changed or removed condition as `predicate-changed`, an `ess-diff/14` change.
+instead of unwrapped, in a selection binding too. A delivery-context field is never proved
+present: the condition reads the payload only.
+
+`ess verify diff` reports an added, changed or removed condition as `predicate-changed`, an
+`ess-diff/14` change.
 
 ## Compare a Boolean flag the event carries
 

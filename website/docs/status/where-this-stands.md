@@ -10,10 +10,10 @@ source: Capabilities generated from website/data/status.json by cargo xtask site
 
 ## Latest release
 
-Latest published release observed on 22 November 2026:
+The latest published release observed on 22 November 2026 is
 [0.97.1](https://github.com/beyond10x/ess/releases/tag/0.97.1). Its release record lists archives
-for Linux and macOS on x86-64 and ARM64, plus SHA256SUMS. This is a dated observation of the asset
-list: it does not claim that the archives were downloaded, their checksums verified, or the binary
+for Linux and macOS on x86-64 and ARM64, plus SHA256SUMS. This is a dated observation of the asset list.
+It does not claim that the archives were downloaded, their checksums verified, or the binary
 installed or run.
 
 The last five releases:
@@ -68,8 +68,8 @@ Generated from `website/data/status.json`, the file the landing page's status se
 ### Support boundaries
 
 These rows describe the source checkout. Dated conformance evidence remains scoped to its original
-release observation; publishing a newer source tag does not re-run that evidence.
-Output and CLI metadata checks establish kinds, versions and availability; the linked owners and
+release observation, and publishing a newer source tag does not re-run that evidence.
+Output and CLI metadata checks establish kinds, versions and availability. The linked owners and
 tests establish the bounded support and refusals. The offline `cargo xtask support --check` compares
 this complete maintained block. It does not verify remote release records.
 
