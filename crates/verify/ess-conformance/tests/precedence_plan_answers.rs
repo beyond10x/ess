@@ -733,9 +733,9 @@ fn identity_and_row_set_guards_answer_in_step_4_order() {
             "from {from} to {to}"
         );
     }
-    // The row set declared above every named row's guard: a missing sink still answers before the
-    // occupied source, and among refusals over present rows declaration order decides, so the
-    // occupied source answers before the wrong-facing sink.
+    // The row set declared above every named row's guard: a missing row answers before the
+    // occupied source in either order, so validation refuses that order, naming each missing-row
+    // branch declared below the row set.
     let taken = "      - name: source-taken
         when_related:
           entity: wiring.board.Wire
@@ -744,15 +744,59 @@ fn identity_and_row_set_guards_answer_in_step_4_order() {
         error: wiring.board.SourceTaken
 ";
     let model = identity_beside();
-    let reordered = model.replacen(taken, "", 1).replacen(
-        "      - name: no-source\n",
-        &format!("{taken}      - name: no-source\n"),
-        1,
+    let above = |anchor: &str| {
+        model.replacen(taken, "", 1).replacen(
+            &format!("      - name: {anchor}\n"),
+            &format!("{taken}      - name: {anchor}\n"),
+            1,
+        )
+    };
+    let first = above("no-source");
+    assert_ne!(first, model);
+    let raw = RawSpecFile::parse(&first).unwrap_or_else(|error| panic!("{error}"));
+    let Err(errors) = Specification::assemble([(Source::new("model.yaml"), raw)]) else {
+        panic!("the row set declared above the missing-row branches is refused");
+    };
+    for lead in ["no-source", "no-sink"] {
+        let at = format!("command.wiring.board.Connect.outcomes.{lead}");
+        assert!(
+            errors.as_slice().iter().any(|error| {
+                error.code == ess_primitives::error::ValidationCode::ConflictingDeclaration
+                    && error.location.ends_with(&at)
+                    && error.message.contains("`source-taken`")
+            }),
+            "`{lead}` declared below `source-taken` is refused as conflicting_declaration:\n{errors}"
+        );
+    }
+    assert_eq!(
+        errors.len(),
+        2,
+        "one refusal per missing-row branch:\n{errors}"
     );
+    // Declared below the missing-row branches and above the wrong-facing rows, it validates: a
+    // missing sink still answers before the occupied source, and among refusals over present rows
+    // declaration order decides, so the occupied source answers before the wrong-facing sink.
+    let reordered = above("source-not-output");
     assert_ne!(reordered, model);
     let ir = ir_of(&reordered);
-    for (to, expected) in [(NO_PORT, "no-sink"), (out_c.as_str(), "source-taken")] {
+    for (to, expected, holding) in [
+        (
+            NO_PORT,
+            "no-sink",
+            &["no-sink", "source-taken", "connected"][..],
+        ),
+        (
+            out_c.as_str(),
+            "source-taken",
+            &["sink-not-input", "source-taken", "connected"][..],
+        ),
+    ] {
         let (interpreter, _) = connect(&ir, &store, &out_a, to);
         assert_eq!(interpreter, expected, "declared first, to {to}");
+        assert_eq!(
+            plan_first(&ir, "wiring.board.Connect", holding),
+            interpreter,
+            "declared first, to {to}"
+        );
     }
 }

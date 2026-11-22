@@ -923,7 +923,7 @@ crates/verify/ess-conformance/tests/fixtures/related-guard-owner-link.yaml	mini.
 crates/verify/ess-conformance/tests/fixtures/related-guard-owner-link.yaml	mini.m.CreateOwner	default: created
 crates/verify/ess-conformance/tests/fixtures/related-guard-owner-link.yaml	mini.m.Start	related_row: no-item | accepting: other-owner | default: started
 crates/verify/ess-conformance/tests/fixtures/related-guard-owner-link.yaml	mini.m.Stop	held_state: not-running | default: stopped
-crates/verify/ess-conformance/tests/fixtures/related-guard-ranked-candidates.yaml	ir=a6869ad4125e0be888b6c9fb6bdbec8db7486bf2c11143e983e6e935e5c9b5ba:42098
+crates/verify/ess-conformance/tests/fixtures/related-guard-ranked-candidates.yaml	ir=11efa46bb2875e179b88542f9a4da1b0877f50a4886f92fe385588d42d012b8c:42098
 crates/verify/ess-conformance/tests/fixtures/related-guard-ranked-candidates.yaml	demo.fit.Build	present_related: no-graph, not-checked | default: built
 crates/verify/ess-conformance/tests/fixtures/related-guard-ranked-candidates.yaml	demo.fit.Check	existence: no-graph | held_state: unknown-node, not-loaded | default: checked
 crates/verify/ess-conformance/tests/fixtures/related-guard-ranked-candidates.yaml	demo.fit.Complete	existence: no-run | held_state: finished | default: completed
