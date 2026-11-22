@@ -9,7 +9,9 @@
 //! every arrangement of that branch.
 
 use ess_compiler::{ir::EssIr, resolve::compile, source::SourceMap};
-use ess_conformance::synthesize::{companion_work, row_set_attempts, synthesize, Synthesis};
+use ess_conformance::synthesize::{
+    companion_work, first_rows_made, row_set_attempts, synthesize, Synthesis,
+};
 use ess_domain::{
     spec::{RawSpecFile, Specification},
     system::Source,
@@ -174,4 +176,21 @@ fn a_linked_row_set_attempt_that_ran_beside_named_rows_is_not_tried_again() {
         asked < fresh_asked,
         "{asked} row-set arrangements asked for, {fresh_asked} when the linked one is tried again"
     );
+}
+
+/// The plain row of the ticket a decoy or companion of `Place` is steered by, asked for at the
+/// same distinction by every arrangement of the command, is arranged once per context: before,
+/// every ask arranged it (the `fresh` run below still does: `made == asked` there).
+#[test]
+fn a_further_row_asked_again_in_the_same_context_is_arranged_once() {
+    let ir = ir(MODEL);
+    let (kept, asked, made) = first_rows_made(false, || synthesize(&ir));
+    let (fresh, fresh_asked, fresh_made) = first_rows_made(true, || synthesize(&ir));
+    assert_eq!(asked, fresh_asked, "further rows asked for");
+    assert_eq!(fresh_made, fresh_asked, "every row arranged afresh");
+    assert!(
+        made < asked,
+        "{made} further rows arranged for {asked} asked: none answered from memory"
+    );
+    assert_eq!(shown(&kept), shown(&fresh), "the suite changed");
 }

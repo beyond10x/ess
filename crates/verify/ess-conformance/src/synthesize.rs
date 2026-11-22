@@ -194,6 +194,9 @@ mod earlier_runs;
 mod established;
 mod existence;
 mod expression;
+mod first_kept;
+#[doc(hidden)]
+pub use first_kept::first_rows_made;
 mod grant;
 mod identity;
 mod made;
@@ -14927,7 +14930,7 @@ fn arrange_beside(
             },
         );
     }
-    arrange_first(ir, entity, &admitted, actors, distinction, &[])
+    first_kept::arranged_first(ir, entity, &admitted, actors, distinction)
 }
 
 /// One further instance whose *fields* a view's filter admits, where no state alone does

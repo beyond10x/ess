@@ -3233,6 +3233,16 @@ fn row_at(
     arranging: &[&EntityHandle],
 ) -> Option<Arrangement> {
     let initial = ir.entity(entity).lifecycle.initial.clone();
+    if arranging.is_empty() {
+        return super::first_kept::arranged_first(
+            ir,
+            entity,
+            std::slice::from_ref(&initial),
+            actors,
+            Distinction::further(at),
+        )
+        .ok();
+    }
     arrange_first(
         ir,
         entity,
