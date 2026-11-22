@@ -91,7 +91,7 @@ pub(crate) const DELETES: &str = "`deletes:`";
 pub(crate) const INTO: &str = "a creation `into:` a state";
 pub(crate) const ACCEPTS_NOTHING: &str = "`accepts: nothing`";
 pub(crate) const INPUT_ABSENT: &str = "`input_absent:`";
-pub(crate) const NOW: &str = "`now` in a guard";
+pub(crate) const NOW: &str = "`now` in a guard or, from ess/30, a view filter";
 pub(crate) const EXISTENCE: &str =
     "a branch chosen by existence (`unknown_instance:` on a creation, `existing_instance:`)";
 pub(crate) const CALLER: &str = "the caller (`{caller: …}`, `caller.<attribute>`)";
@@ -111,7 +111,8 @@ pub(crate) const COMPENSATING_REFUSAL: &str =
 pub(crate) const IDENTITY_CHANGE: &str = "a re-key (`updates:` writing the identity, ess/23)";
 pub(crate) const EXPRESSION: &str = "an expression value (`{expr: …}`, ess/27)";
 pub(crate) const FUNCTION_CALL: &str =
-    "a function of a fact in a guard (`sha256(…)`, `base64url(…)`, `ascii(…)`, ess/27)";
+    "a function of a fact in a guard (`sha256(…)`, `base64url(…)`, `ascii(…)`, `coalesce(…)`, \
+     `abs(…)`, `min(…)`, `max(…)`, ess/27)";
 pub(crate) const STATE_WIRE_NAME: &str =
     "a lifecycle state's wire spelling (`states: [{name, wire}]`, ess/32)";
 pub(crate) const INPUT_RULE: &str =
@@ -681,7 +682,7 @@ pub const CONSTRUCTS: &[Construct] = &[
     refused(
         FUNCTION_CALL,
         LoweringCode::FunctionCallUnsupported,
-        Needs::EntityCore("a digest and encoding operand: SHA-256, base64url, ASCII bytes"),
+        Needs::EntityCore("an operand computed from a fact (digest, encoding, default, arithmetic)"),
         &["tests/digest_guard.rs::a_guard_reading_a_fact_through_a_function_is_refused_by_name"],
     ),
     refused(
@@ -948,7 +949,7 @@ impl LoweringCode {
             Self::CurrentTimeUnsupported => (
                 "CurrentTimeUnsupported",
                 NOW,
-                "A guard orders a `Timestamp` against the current time.",
+                "A guard or a view filter orders a `Timestamp` against the current time.",
             ),
             Self::ExistenceSelectionUnsupported => (
                 "ExistenceSelectionUnsupported",
@@ -1013,7 +1014,7 @@ impl LoweringCode {
             Self::FunctionCallUnsupported => (
                 "FunctionCallUnsupported",
                 FUNCTION_CALL,
-                "A guard reads a fact through a digest or encoding function.",
+                "A guard reads a fact through a function.",
             ),
             Self::StateWireNameUnsupported => (
                 "StateWireNameUnsupported",

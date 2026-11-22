@@ -18,6 +18,8 @@ pub(crate) struct Field<'a> {
     pub(crate) name: &'a str,
     pub(crate) ty: &'a Value,
     pub(crate) required: bool,
+    /// The construct whose use lifts the requirement, `required: {unless: HostSlot}`.
+    pub(crate) unless: Option<&'a str>,
     pub(crate) default: Option<&'a Value>,
     pub(crate) note: &'a str,
     /// Keys beside `type`, `required`, `default` and `note`, in schema order.
@@ -484,7 +486,9 @@ fn read_construct<'a>(
                 fields.push(Field {
                     name: field,
                     ty,
-                    required: spec["required"].as_bool().unwrap_or(false),
+                    required: matches!(spec["required"], Value::Mapping(_))
+                        || spec["required"].as_bool().unwrap_or(false),
+                    unless: spec["required"]["unless"].as_str(),
                     default: spec.get("default"),
                     note,
                     extras: extras(spec, FIELD_KEYS),

@@ -1247,7 +1247,7 @@ ess generate release publish [OPTIONS] --path <PATH> --to <TO>
 | `--to` | `<TO>` | yes |  | Tagged OCI destination. Consumers must use the digest printed by this command |
 | `--spec` | `<SPEC>` | no |  | Explicit authored ESS model root, loaded once |
 | `--report` | `<REPORT>` | no |  | Original standalone ess-conformance-report/2 JSON; never a generic check log |
-| `--expected-suite` | `<EXPECTED_SUITE>` | no |  | Independently supplied original unfiltered coverage suite/5 or /7 JSON |
+| `--expected-suite` | `<EXPECTED_SUITE>` | no |  | Independently supplied original unfiltered declared-coverage suite JSON (suite/5 or later) |
 | `--expected-suite-input` | `<EXPECTED_SUITE_INPUT>` | no |  | Independently supplied original input/1 carrier, including every parent suite |
 | `--report-sha256` | `<REPORT_SHA256>` | no |  | Optional SHA-256 pin of the raw report bytes, distinct from the OCI manifest digest |
 | `--expected-input-sha256` | `<EXPECTED_INPUT_SHA256>` | no |  | Optional SHA-256 pin of the raw selected suite file or complete input carrier file |
@@ -1278,7 +1278,7 @@ ess generate release check-conformance [OPTIONS] --component-ir <COMPONENT_IR> -
 |---|---|---|---|---|
 | `--spec` | `<SPEC>` | no |  | Explicit authored ESS model root, loaded once |
 | `--report` | `<REPORT>` | no |  | Original standalone ess-conformance-report/2 JSON; never a generic check log |
-| `--expected-suite` | `<EXPECTED_SUITE>` | no |  | Independently supplied original unfiltered coverage suite/5 or /7 JSON |
+| `--expected-suite` | `<EXPECTED_SUITE>` | no |  | Independently supplied original unfiltered declared-coverage suite JSON (suite/5 or later) |
 | `--expected-suite-input` | `<EXPECTED_SUITE_INPUT>` | no |  | Independently supplied original input/1 carrier, including every parent suite |
 | `--report-sha256` | `<REPORT_SHA256>` | no |  | Optional SHA-256 pin of the raw report bytes, distinct from the OCI manifest digest |
 | `--expected-input-sha256` | `<EXPECTED_INPUT_SHA256>` | no |  | Optional SHA-256 pin of the raw selected suite file or complete input carrier file |
@@ -1298,7 +1298,7 @@ ess generate release publish-conformance [OPTIONS] --component-ir <COMPONENT_IR>
 |---|---|---|---|---|
 | `--spec` | `<SPEC>` | no |  | Explicit authored ESS model root, loaded once |
 | `--report` | `<REPORT>` | no |  | Original standalone ess-conformance-report/2 JSON; never a generic check log |
-| `--expected-suite` | `<EXPECTED_SUITE>` | no |  | Independently supplied original unfiltered coverage suite/5 or /7 JSON |
+| `--expected-suite` | `<EXPECTED_SUITE>` | no |  | Independently supplied original unfiltered declared-coverage suite JSON (suite/5 or later) |
 | `--expected-suite-input` | `<EXPECTED_SUITE_INPUT>` | no |  | Independently supplied original input/1 carrier, including every parent suite |
 | `--report-sha256` | `<REPORT_SHA256>` | no |  | Optional SHA-256 pin of the raw report bytes, distinct from the OCI manifest digest |
 | `--expected-input-sha256` | `<EXPECTED_INPUT_SHA256>` | no |  | Optional SHA-256 pin of the raw selected suite file or complete input carrier file |
@@ -1527,7 +1527,7 @@ ess verify conform diff [OPTIONS] --from <FROM> --to <TO>
 
 #### `ess verify conform select`
 
-Narrow a coverage suite/5, /7 or /9 by explicit IDs, retaining every exact original parent
+Narrow a declared-coverage suite (suite/5 or later) by explicit IDs, retaining every exact original parent
 
 ```text
 ess verify conform select [OPTIONS] --ids <IDS> --out <OUT>
@@ -1537,7 +1537,7 @@ ess verify conform select [OPTIONS] --ids <IDS> --out <OUT>
 |---|---|---|---|---|
 | `--suite` | `<SUITE>` | no |  |  |
 | `--suite-input` | `<SUITE_INPUT>` | no |  |  |
-| `--ids` | `<IDS>` | yes |  | JSON array of sorted distinct IDs; an empty array is explicit |
+| `--ids` | `<IDS>` | yes |  | A file holding a JSON array of sorted distinct IDs; an empty array is explicit |
 | `--out` | `<OUT>` | yes |  | Destination for the complete ess-conformance-input/1 carrier |
 
 #### `ess verify conform run`
@@ -1553,13 +1553,13 @@ ess verify conform run [OPTIONS] --target <TARGET> [-- <COMMAND>...]
 | `<COMMAND>`… |  | no |  | With `--target process`: the program to start and its arguments. It is executed directly, without a shell, and answers `ess-conformance-target/1` on its standard input and output |
 | `--path` | `<PATH>` | no |  | The specification: synthesized when no suite is named, and executed by `interpreted`.<br /><br />Defaults to `.` for the other targets. `--target interpreted` requires it, because the interpreter executes this model and refuses one the suite was not synthesized from. |
 | `--suite` | `<SUITE>` | no |  |  |
-| `--suite-input` | `<SUITE_INPUT>` | no |  | Original coverage suite/5, /7 or /9 and its complete original parent chain |
+| `--suite-input` | `<SUITE_INPUT>` | no |  | Original declared-coverage suite (suite/5 or later) and its complete original parent chain |
 | `--suite-format` | `<SUITE_FORMAT>` | no |  | Fresh ordinary (4) or declared coverage (5); accessors select 6 or 7. Loaded versions stay unchanged. One of `4`, `5`. |
 | `--scenarios` | `<SCENARIOS>` | no |  | The `ess-scenario/1` documents to run beside the generated scenarios.<br /><br />Read only where the suite is synthesized rather than named by `--suite`: a committed suite already holds whatever was compiled into it. |
 | `--target` | `<TARGET>` | yes |  | One of `billing`, `oracle-fixture`, `interpreted`, `process`. |
 | `--target-dir` | `<DIR>` | no |  | With `--target process`: the directory the command after `--` starts in, the current directory when absent. A relative program containing `/` is found there |
 | `--target-timeout` | `<SECONDS>` | no |  | With `--target process`: how many seconds to wait for each answer, 1 to 3600; 30 when absent. A request that asks the target to let time pass adds that time |
-| `--report-out` | `<REPORT_OUT>` | no |  | Standalone JSON destination; suites/5-/7 require explicit report/2, even without this option |
+| `--report-out` | `<REPORT_OUT>` | no |  | Standalone JSON destination; every suite from /5 on requires explicit report/2, even without this option |
 | `--report-format` | `<REPORT_FORMAT>` | no | `1` | Report contract version; JSON/YAML detailed v2 is ess-conformance-run/2. One of `1`, `2`. |
 | `--strict` |  | no |  | Require passed complete conformance (unavailable for legacy unknown coverage) |
 | `--allow-incomplete` |  | no |  | Explicitly retain diagnostic execution exit behavior |
@@ -1629,7 +1629,7 @@ grant-drop removes one command a served component accepts from one actor's `may:
 
 A selected site that its class excludes, or where it finds no edit the model admits or a target could tell apart, is listed as unmutated with its reason, in the text and in the report and manifest (`unmutated_sites`): a sets-drop entry on a creating branch or of an Optional field, a transition no other state can be the target of (`no_admissible_state`), a write with no sibling input and no admissible literal (`no_retarget_source`) or to a field nothing reads (`unobserved_field`), a refusal carrying its error's payload where no other error compiles (`no_compatible_error_alternative`), a grant of the system actor (`system_actor`) or of a command nothing serves (`command_not_served`), and a grant-add no scenario can be sent for, the command held by an actor carrying attributes and the gaining actor carrying attributes or the command reading one (`attributed_holder`). The summary ends its counts with how many of the sites considered have a scored mutant (killed or survived). Listed sites do not change the exit status; `--fail-on-unmutated` makes a stillborn mutant or an unmutated site exit 3. Where the classes find only unmutated sites, ESS-MUTATE-003 refuses and prints each one after the refusal.
 
-Exit 0: no baseline scenario failed or ended error, at least one mutant ran and was not equivalent, every scored mutant was killed or equivalent, none is inconclusive or unwitnessed, and no selected in-scope site is unavailable. Exit 1: the specification did not load, or at least one mutant survived. Exit 3: a baseline scenario failed or ended error (ESS-MUTATE-001), the baseline executed nothing (nothing scored), the classes found no site (ESS-MUTATE-003), or no mutant survived and at least one was unwitnessed or inconclusive, a selected in-scope site was unavailable, or none ran that was not equivalent. Exit 2: the `--known-failing` declaration was refused. Known failures are listed first in the text and never count as a pass: the audit makes no conformance claim.
+Exit 0: no baseline scenario failed or ended error, at least one mutant ran and was not equivalent, every scored mutant was killed or equivalent, none is inconclusive or unwitnessed, and no selected in-scope site is unavailable. Exit 1: the specification did not load, or at least one mutant survived. Exit 3: a baseline scenario failed or ended error (ESS-MUTATE-001), the baseline executed nothing (nothing scored), the classes found no site (ESS-MUTATE-003), or no mutant survived and at least one was unwitnessed or inconclusive, a selected in-scope site was unavailable, or none ran that was not equivalent. Exit 2: the `--known-failing` declaration was refused, or `--target process` was given. Known failures are listed first in the text and never count as a pass: the audit makes no conformance claim.
 
 For an implementation of your own, split the audit in two. `--emit DIR` writes the baseline suite to `DIR/baseline/suite.json`, every mutant's suite to `DIR/<mutant-id>/suite.json` and a manifest, and runs nothing (exit 0, or 3 on ESS-MUTATE-003). Run your runner over each suite and write its conformance report to `report.json` beside it. `--collect DIR` scores those reports with the exit statuses above; a missing report makes its mutant inconclusive. `--emit` writes an ess-mutation-manifest/3, or /4 where it holds a sets-drop, precedence-swap or emit-swap mutant or an unavailable site, or names a component, /5 where a precedence-swap mutant's two branches give an identical answer, /6 where branches answered before both take their overlap, and /7 where it lists an unmutated site or holds a grant-drop or grant-add mutant; `--collect` also reads the /2 and /1 manifests earlier releases wrote.
 
@@ -1642,7 +1642,7 @@ ess verify conform mutate [OPTIONS] <--target <TARGET>|--emit <EMIT>|--collect <
 | Argument | Value | Required | Default | Description |
 |---|---|---|---|---|
 | `--path` | `<PATH>` | no | `.` |  |
-| `--target` | `<TARGET>` | no |  | The reference implementation every suite runs against. One of `billing`, `oracle-fixture`, `interpreted`, `process`. |
+| `--target` | `<TARGET>` | no |  | The reference implementation every suite runs against; `process` is refused (exit 2): use `--emit`, `run --target process`, `--collect`. One of `billing`, `oracle-fixture`, `interpreted`, `process`. |
 | `--class` | `<CLASS>`… | no |  | Only these classes; every class when absent. One of `from-drop`, `transition-to`, `guard-boundary`, `sets-retarget`, `guard-negate`, `guard-connective`, `error-swap`, `emit-drop`, `order-flip`, `sets-drop`, `precedence-swap`, `emit-swap`, `grant-drop`, `grant-add`. |
 | `--emit` | `<EMIT>` | no |  | Write the baseline's and every mutant's suite, and a manifest, into this new or empty directory; run nothing |
 | `--collect` | `<COLLECT>` | no |  | Score the `report.json` a runner wrote beside each suite of an emitted directory |

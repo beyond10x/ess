@@ -98,28 +98,14 @@ pub struct Check {
     pub id: &'static str,
     /// The severity of every finding it reports.
     pub severity: Severity,
-    /// `true` when the schema's `checks.list` declares it (with this id and severity).
-    pub from_schema: bool,
 }
 
 const fn schema_check(id: &'static str, severity: Severity) -> Check {
-    Check {
-        id,
-        severity,
-        from_schema: true,
-    }
+    Check { id, severity }
 }
 
-const fn rule(id: &'static str) -> Check {
-    Check {
-        id,
-        severity: Severity::Error,
-        from_schema: false,
-    }
-}
-
-/// Every check, in the schema's order, then the rules the schema states elsewhere, then the
-/// model checks.
+/// Every check, in the order of the schema's `checks.list`, which declares each with this id and
+/// severity.
 pub const CHECKS: &[Check] = &[
     schema_check("names_unique", Severity::Error),
     schema_check("nav_resolves", Severity::Error),
@@ -173,68 +159,68 @@ pub const CHECKS: &[Check] = &[
     schema_check("expr_paths", Severity::Error),
     schema_check("expr_roots", Severity::Warning),
     // The loader refused the document for a reason no other check names.
-    rule("document_loads"),
+    schema_check("document_loads", Severity::Error),
     // `layers`: a node stands where its layer may not.
-    rule("layer_rules"),
+    schema_check("layer_rules", Severity::Error),
     // `Degrades.fields.(capability)`: a key names a capability, its value one of its fallbacks.
-    rule("degrades_known"),
+    schema_check("degrades_known", Severity::Error),
     // `Degrades.rule`: a renderer lacking a capability finds a fallback that is not `refuse`.
-    rule("degrades_cover"),
+    schema_check("degrades_cover", Severity::Error),
     // A value written where the schema declares a closed enum is one of its values.
-    rule("enum_values"),
+    schema_check("enum_values", Severity::Error),
     // `PageLayout`: `title` and `collapsed` belong to `frame: shared`, a collapsed frame or
     // section has a `title`, a collapsed group has a `label`, and a shared frame holds
     // consecutive sections.
-    rule("frame_rules"),
+    schema_check("frame_rules", Severity::Error),
     // Every key of an overlay's `params` is read inside it as `params.<key>`.
-    rule("overlay_params"),
+    schema_check("overlay_params", Severity::Error),
     // With `--model`: the names the document resolves in the ESS model; a view or command no
     // `reached_by: network` component serves is refused under the first two.
-    rule("view_in_model"),
-    rule("command_in_model"),
-    rule("event_in_model"),
-    rule("section_readable"),
+    schema_check("view_in_model", Severity::Error),
+    schema_check("command_in_model", Severity::Error),
+    schema_check("event_in_model", Severity::Error),
+    schema_check("section_readable", Severity::Error),
     // With `--model`: a page's `actor` names an actor of the model (beyond10x/ess#284).
-    rule("actor_in_model"),
+    schema_check("actor_in_model", Severity::Error),
     // With `--model`: every command a page with an `actor` sends is in that actor's `may`
     // (beyond10x/ess#284).
-    rule("page_actor_grants"),
+    schema_check("page_actor_grants", Severity::Error),
     // With `--model`: a read binds a parameter its view does not declare, or leaves a required
     // one unbound.
-    rule("read_params"),
+    schema_check("read_params", Severity::Error),
     // With `--model`: a page parameter's named type resolves in the document, the schema or
     // the model.
-    rule("type_in_model"),
+    schema_check("type_in_model", Severity::Error),
     // With `--model`: form fields and `bind` keys are inputs of their command; columns, record
     // fields and `row.<field>` paths are fields of the view read.
-    rule("field_in_model"),
+    schema_check("field_in_model", Severity::Error),
     // With `--model`: a `group_by`, an aggregate's `field`, a `label_from`, or a choice's `value`
     // or `label` names a row field the view does not have.
-    rule("row_fields"),
+    schema_check("row_fields", Severity::Error),
     // With `--model`: a `group_order` value, or a form choice's fixed option, is no variant of the
     // enum the field holds, or the options leave a variant out.
-    rule("model_enum_values"),
+    schema_check("model_enum_values", Severity::Error),
     // `metric`: `aggregate` reads rows, so it needs `reads`; every aggregate but `count` needs a
     // `field`, and `field` means nothing without one.
-    rule("metric_aggregate"),
+    schema_check("metric_aggregate", Severity::Error),
     // `collection`: `group_order` and `show_empty_groups` order the groups of `group_by`.
-    rule("group_order"),
+    schema_check("group_order", Severity::Error),
     // A choice's `options` name an enum of the document, or with `--model` exactly one enum of
     // the model (beyond10x/ess#330).
-    rule("options_enum"),
+    schema_check("options_enum", Severity::Error),
     // `choice`: `value` and `label` name fields of the rows of `reads`, so they need `reads`
     // (beyond10x/ess#328).
-    rule("choice_projection"),
+    schema_check("choice_projection", Severity::Error),
     // `header.title_from` names a section that reads: the title's record is its first row
     // (beyond10x/ess#354).
-    rule("header_record"),
+    schema_check("header_record", Severity::Error),
     // An export's params read `selection.<field>` only on a bulk action, where the selection is
     // in scope (beyond10x/ess#723).
-    rule("export_selection"),
+    schema_check("export_selection", Severity::Error),
     // `section.<name>.row` is the first row of a section that reads: a section that reads nothing
     // holds none, and a read whose params read its own section's row, or sections that read
     // each other's, never settle.
-    rule("section_row"),
+    schema_check("section_row", Severity::Error),
 ];
 
 fn severity_of(id: &str) -> Severity {
