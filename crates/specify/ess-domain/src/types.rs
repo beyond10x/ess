@@ -2566,6 +2566,11 @@ pub struct ConversionRegistry {
     declared: BTreeSet<Conversion>,
 }
 
+thread_local! {
+    /// Earlier conversions looked at while registering, for the work-bound test.
+    static CONVERSIONS_EXAMINED: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
 impl ConversionRegistry {
     /// An empty registry: nothing crosses.
     pub fn new() -> Self {
@@ -2574,9 +2579,22 @@ impl ConversionRegistry {
 
     /// Records one, reporting a second declaration of the same crossing.
     pub fn insert(&mut self, conversion: Conversion) -> Result<(), ValidationError> {
+        // The set is ordered by (from, to, because) and a second reason for one crossing is
+        // refused, so the first entry at or after (from, to, "") is the only possible duplicate.
+        let probe = Conversion {
+            from: conversion.from.clone(),
+            to: conversion.to.clone(),
+            because: String::new(),
+        };
         if let Some(existing) = self
             .declared
-            .iter()
+            .range(probe..)
+            .take(1)
+            .inspect(|_| {
+                if cfg!(test) {
+                    CONVERSIONS_EXAMINED.with(|n| n.set(n.get() + 1));
+                }
+            })
             .find(|candidate| candidate.from == conversion.from && candidate.to == conversion.to)
         {
             return Err(ValidationError::new(
@@ -2964,6 +2982,54 @@ pub fn is_assignable(source: &TypeRef, target: &TypeRef) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn crossing(index: usize, because: &str) -> Conversion {
+        Conversion {
+            from: TypeRef::parse(&format!("shop.From{index}")).expect("a type"),
+            to: TypeRef::parse(&format!("shop.To{index}")).expect("a type"),
+            because: because.to_owned(),
+        }
+    }
+
+    #[test]
+    fn registering_conversions_examines_a_bounded_number_of_earlier_ones() {
+        // The scan this replaced examined 256 * 255 / 2 = 32,640 earlier conversions here.
+        let count = 256;
+        CONVERSIONS_EXAMINED.with(|n| n.set(0));
+        let mut registry = ConversionRegistry::new();
+        for index in 0..count {
+            registry
+                .insert(crossing(index, "unique"))
+                .expect("new crossing");
+        }
+        let examined = CONVERSIONS_EXAMINED.with(std::cell::Cell::get);
+        eprintln!("conversions examined for {count}: {examined}");
+        assert!(
+            examined <= 2 * count,
+            "{examined} earlier conversions examined for {count} insertions"
+        );
+        assert_eq!(registry.len(), count);
+    }
+
+    #[test]
+    fn a_second_crossing_names_the_first_reason_and_the_same_diagnostic() {
+        let mut registry = ConversionRegistry::new();
+        registry.insert(crossing(1, "zeta")).expect("new");
+        registry.insert(crossing(0, "first")).expect("new");
+        let error = registry
+            .insert(crossing(1, "alpha"))
+            .expect_err("duplicate");
+        assert_eq!(error.code, ValidationCode::DuplicateDeclaration);
+        assert_eq!(error.location, "conversions.shop.From1 -> shop.To1");
+        assert!(
+            error.message.contains("because `zeta`"),
+            "{}",
+            error.message
+        );
+        assert_eq!(registry.len(), 2);
+        let order: Vec<_> = registry.iter().map(|c| c.because.as_str()).collect();
+        assert_eq!(order, ["first", "zeta"]);
+    }
 
     fn name(value: &str) -> QualifiedName {
         QualifiedName::new(value).expect("a valid name")
