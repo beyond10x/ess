@@ -643,9 +643,9 @@ fn from_ess_32_an_identity_guard_beside_a_row_set_validates() {
     );
     assert_ne!(without_default, source);
     refusals(&without_default, ValidationCode::NonExhaustiveBranches, "");
-    // A row-set refusal declared above a named row's `exists: false` validates: a marker declared
-    // below a guarded branch is not refused (ess/29), and the missing row still answers first
-    // (`precedence_plan_answers.rs`, `identity_and_row_set_guards_answer_in_step_4_order`).
+    // A row-set refusal declared above a named row's `exists: false` is refused: the missing row
+    // answers first at step 4 (`precedence_plan_answers.rs`,
+    // `identity_and_row_set_guards_answer_in_step_4_order`), and one request can satisfy both.
     let taken = "      - name: source-taken
         when_related:
           entity: wiring.board.Wire
@@ -659,7 +659,12 @@ fn from_ess_32_an_identity_guard_beside_a_row_set_validates() {
         1,
     );
     assert_ne!(reordered, source);
-    validates(&reordered);
+    let lines = refusals(
+        &reordered,
+        ValidationCode::ConflictingDeclaration,
+        "answers at step 4 before `source-taken`, declared above it",
+    );
+    assert_eq!(lines.len(), 2, "{lines:#?}");
 }
 
 #[test]

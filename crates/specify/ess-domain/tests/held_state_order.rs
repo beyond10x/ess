@@ -894,3 +894,147 @@ fn below_format_29_only_the_held_state_and_before_row_rules_apply() {
 fn the_guard_pair_corpus_validates_at_format_29() {
     pairs_at("ess/29").unwrap_or_else(|errors| panic!("{errors}"));
 }
+
+// ---- step 4: an `exists: false` over another row, declared below a present-row refusal ------
+
+/// `PlaceOrder` at `format`, declaring `branches`, then a default.
+fn place_order(format: &str, branches: &[&str]) -> String {
+    format!(
+        "format: {format}
+system: shop
+version: v1
+domain: shop.order
+types:
+  - {{name: shop.order.CustomerId, kind: newtype, of: String}}
+  - {{name: shop.order.OrderId, kind: newtype, of: String}}
+entities:
+  - name: shop.order.Customer
+    identity: {{name: customer_id, type: shop.order.CustomerId}}
+    fields:
+      - {{name: blocked, type: Boolean}}
+    lifecycle: {{initial: Active, states: [Active], terminal: [Active]}}
+  - name: shop.order.Order
+    identity: {{name: order_id, type: shop.order.OrderId}}
+    fields: []
+    lifecycle: {{initial: Placed, states: [Placed], terminal: [Placed]}}
+events:
+  - name: shop.order.CustomerOpened
+    fields: [{{name: customer_id, type: shop.order.CustomerId}}]
+  - name: shop.order.OrderPlaced
+    fields: [{{name: order_id, type: shop.order.OrderId}}]
+errors:
+  - name: shop.order.Refused
+    fields: [{{name: customer_id, type: shop.order.CustomerId}}]
+  - name: shop.order.Duplicate
+    fields: [{{name: order_id, type: shop.order.OrderId}}]
+actors:
+  - name: shop.order.Clerk
+    may: [shop.order.OpenCustomer, shop.order.PlaceOrder]
+commands:
+  - name: shop.order.OpenCustomer
+    input:
+      - {{name: customer_id, type: shop.order.CustomerId}}
+      - {{name: blocked, type: Boolean}}
+    outcomes:
+      - name: opened
+        creates: shop.order.Customer
+        instance: customer_id
+        sets: {{blocked: input.blocked}}
+        emits: [shop.order.CustomerOpened]
+        payload:
+          shop.order.CustomerOpened: {{customer_id: input.customer_id}}
+  - name: shop.order.PlaceOrder
+    input:
+      - {{name: order_id, type: shop.order.OrderId}}
+      - {{name: customer_id, type: shop.order.CustomerId}}
+    outcomes:
+{}",
+        branches.concat()
+    )
+}
+
+const NO_CUSTOMER: &str = "      - name: no-customer
+        when_related: {via: input.customer_id, exists: false}
+        error: shop.order.Refused
+";
+const BLOCKED: &str = "      - name: blocked
+        when_related: {via: input.customer_id, predicate: blocked == true}
+        error: shop.order.Refused
+";
+const BLOCKED_ROWS: &str = "      - name: blocked
+        when_related:
+          entity: shop.order.Customer
+          where: {all: [\"customer_id == input.customer_id\", \"blocked == true\"]}
+          exists: true
+        error: shop.order.Refused
+";
+const PLACED_NEW: &str = "      - name: placed
+        when_related: {via: input.order_id, exists: false}
+        creates: shop.order.Order
+        instance: order_id
+        emits: [shop.order.OrderPlaced]
+        payload:
+          shop.order.OrderPlaced: {order_id: input.order_id}
+";
+const PLACED: &str = "      - name: placed
+        creates: shop.order.Order
+        instance: order_id
+        emits: [shop.order.OrderPlaced]
+        payload:
+          shop.order.OrderPlaced: {order_id: input.order_id}
+";
+const DUPLICATE: &str = "      - name: duplicate
+        error: shop.order.Duplicate
+";
+const DUPLICATE_EXISTING: &str = "      - name: duplicate
+        existing_instance: true
+        error: shop.order.Duplicate
+";
+
+#[test]
+fn an_exists_false_over_another_row_declared_below_a_present_row_refusal_is_refused() {
+    for blocked in [BLOCKED, BLOCKED_ROWS] {
+        let branches = [NO_CUSTOMER, blocked, PLACED_NEW, DUPLICATE];
+        let errors = refusal(&place_order("ess/37", &branches));
+        assert!(errors.contains("conflicting_declaration"), "{errors}");
+        assert!(
+            errors.contains("`placed` answers at step 4 before `blocked`, declared above it"),
+            "{errors}"
+        );
+        assert!(
+            errors.contains("declare `placed` before `blocked`")
+                && errors.contains("declare `existing_instance:` and drop the `when_related`"),
+            "{errors}"
+        );
+    }
+}
+
+#[test]
+fn the_exists_false_over_another_row_is_refused_at_every_format_that_places_it_at_step_4() {
+    for format in ["ess/27", "ess/28", "ess/29", "ess/37"] {
+        let branches = [NO_CUSTOMER, BLOCKED, PLACED_NEW, DUPLICATE];
+        let errors = refusal(&place_order(format, &branches));
+        assert!(
+            errors.contains("`placed` answers at step 4 before `blocked`"),
+            "{format}: {errors}"
+        );
+    }
+}
+
+#[test]
+fn an_exists_false_beside_a_present_row_refusal_that_keeps_the_declared_answer_validates() {
+    let valid = |format: &str, branches: &[&str]| {
+        spec(&place_order(format, branches)).unwrap_or_else(|errors| panic!("{format}: {errors}"));
+    };
+    for format in ["ess/28", "ess/37"] {
+        // The same row, in either order.
+        valid(format, &[BLOCKED, NO_CUSTOMER, DUPLICATE_EXISTING, PLACED]);
+        valid(format, &[NO_CUSTOMER, BLOCKED, DUPLICATE_EXISTING, PLACED]);
+        // `placed` above `blocked`.
+        valid(format, &[PLACED_NEW, NO_CUSTOMER, BLOCKED, DUPLICATE]);
+        // The identity refusal spelled `existing_instance:`.
+        valid(format, &[NO_CUSTOMER, BLOCKED, DUPLICATE_EXISTING, PLACED]);
+        // No `when_related` over the order.
+        valid(format, &[NO_CUSTOMER, BLOCKED, PLACED]);
+    }
+}

@@ -3151,6 +3151,7 @@ impl CommandSpec {
             errors.extend(self.validate_before_row_order(types));
         }
         if let Some(types) = types {
+            errors.extend(self.validate_lead_below_present_related_refusal(types));
             errors.extend(self.validate_implied_input_guards(types));
         }
         errors.extend(outcome_shapes::validate_command(
@@ -4021,6 +4022,114 @@ impl CommandSpec {
                     earlier.name,
                     step(place.phase)
                 )),
+            );
+        }
+        errors
+    }
+
+    /// Refuses an `exists: false` over one row, declared below a present-row refusal over another,
+    /// where one request can satisfy both, on every format whose plan places the first at the lead
+    /// of [`precedence::Phase::PresentRelated`] (`ess/27` and later for a row the input names; any
+    /// format for one a stored field names).
+    ///
+    /// [`Self::validate_step_order`] compares branches of different steps only, and skips a branch
+    /// that is not read in declaration order, on the premise that it answers its step's question.
+    /// That holds for an `exists: false` over the row the refusal above it reads (the row is missing
+    /// or present). Over another row both hold, and the plan answers the `exists: false` first
+    /// (`docs/design/generic-language-features.md` § G4, step 4). Two rows are the same when the
+    /// branches share a `via` field; a row-set refusal reads no single row, so it differs.
+    fn validate_lead_below_present_related_refusal(
+        &self,
+        types: &TypeRegistry,
+    ) -> ValidationErrors {
+        let mut errors = ValidationErrors::new();
+        let Some(format) = types.format() else {
+            return errors;
+        };
+        let environment = crate::expression::DomainEnvironment::new(types, &self.input);
+        let together = |first: Option<&Predicate>, second: Option<&Predicate>| {
+            let (Some(first), Some(second)) = (first, second) else {
+                return true;
+            };
+            finite::analyze(&environment, &[first, second]).is_none_or(|cases| {
+                cases
+                    .iter()
+                    .any(|case| case.selected.contains(&0) && case.selected.contains(&1))
+            })
+        };
+        let vias = |outcome: &Outcome| -> Option<Vec<String>> {
+            match &outcome.condition {
+                OutcomeCondition::Related { via, also, .. } => Some(
+                    std::iter::once(via.field().to_owned())
+                        .chain(also.iter().map(|row| row.via.field().to_owned()))
+                        .collect(),
+                ),
+                _ => None,
+            }
+        };
+        let composition = self.composition(Some(types));
+        let placed: Vec<(&Outcome, precedence::Place)> = self
+            .outcomes
+            .iter()
+            .map(|outcome| {
+                (
+                    outcome,
+                    precedence::place(&precedence::BranchShape::of(outcome), &composition),
+                )
+            })
+            .collect();
+        let step = precedence::Phase::PresentRelated
+            .step_in(format)
+            .map_or_else(String::new, |step| step.to_string());
+        for (index, (outcome, place)) in placed.iter().enumerate() {
+            if place.phase != precedence::Phase::PresentRelated
+                || place.rank != precedence::Rank::Lead
+                || !matches!(
+                    outcome.condition,
+                    OutcomeCondition::Related {
+                        test: related_guard::RelatedTest::Absent,
+                        ..
+                    }
+                )
+            {
+                continue;
+            }
+            let own = vias(outcome).unwrap_or_default();
+            let Some((earlier, _)) = placed[..index].iter().find(|(earlier, read)| {
+                read.phase == precedence::Phase::PresentRelated
+                    && read.rank == precedence::Rank::Declared
+                    && vias(earlier).is_none_or(|rows| !rows.iter().any(|row| own.contains(row)))
+                    && together(earlier.condition.predicate(), outcome.condition.predicate())
+            }) else {
+                continue;
+            };
+            let creates_it = match (&outcome.condition, &outcome.subject) {
+                (OutcomeCondition::Related { via, .. }, Some(subject)) => {
+                    subject.effect == Effect::Creates && subject.instance == via.field()
+                }
+                _ => false,
+            };
+            let mut hint = format!(
+                "declare `{}` before `{}`: step {step} answers first in either order",
+                outcome.name, earlier.name
+            );
+            if creates_it {
+                hint.push_str(
+                    "; for a refusal of an identity that already exists, declare \
+                     `existing_instance:` and drop the `when_related`",
+                );
+            }
+            errors.push(
+                ValidationError::at(
+                    self.site().key("outcomes").named(outcome.name.as_str()),
+                    ValidationCode::ConflictingDeclaration,
+                    format!(
+                        "`{}` answers at step {step} before `{}`, declared above it, wherever both \
+                         hold; the declaration order and the precedence order disagree",
+                        outcome.name, earlier.name
+                    ),
+                )
+                .with_hint(hint),
             );
         }
         errors
