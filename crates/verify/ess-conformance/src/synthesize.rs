@@ -3473,6 +3473,19 @@ pub fn ranked_steering_kept_equals_fresh(ir: &EssIr) -> bool {
     })
 }
 
+thread_local! {
+    static SYNTHESES: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
+
+/// What `run` returns, and how many whole syntheses of a model started on this thread while it
+/// ran. Not part of the suite.
+#[doc(hidden)]
+pub fn syntheses_started<R>(run: impl FnOnce() -> R) -> (R, u64) {
+    let before = SYNTHESES.with(std::cell::Cell::get);
+    let out = run();
+    (out, SYNTHESES.with(std::cell::Cell::get) - before)
+}
+
 /// [`synthesize`], with explicitly admitted synthesis seeds (beyond10x/ess#413,
 /// `docs/design/synthesis-seeds.md`).
 ///
@@ -3514,6 +3527,7 @@ pub fn synthesize_for_with_seeds(
 }
 
 fn synthesize_in(ir: &EssIr, seeds: &AdmittedSeeds) -> Synthesis {
+    SYNTHESES.with(|count| count.set(count.get() + 1));
     // Each witness search is run once per question for the whole synthesis (beyond10x/ess#301).
     let _memoised = crate::witness_memo::memoise(ir);
     let _remembered = made::remember(ir);

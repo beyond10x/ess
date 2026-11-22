@@ -5294,6 +5294,20 @@ fn synthesize_suite(
     ess_conformance::admission::model(&ir)?;
     // Every explicit seed is admitted before anything is synthesized or written.
     let seeds = synthesis_seeds(&ir, seeds)?;
+    // The authored files are read before anything is synthesized, so a `--scenarios` that cannot
+    // be read is refused at once rather than after the synthesis. What synthesis refuses before
+    // any work keeps its precedence: an unknown component, and seeds the model contradicts (read
+    // after synthesis as before whenever a seed is selected).
+    let declared = component.is_none_or(|name| {
+        ir.components()
+            .values()
+            .any(|declared| declared.name.as_str() == name)
+    });
+    let sources = if declared && seeds.is_empty() {
+        Some(authored_sources(scenarios)?)
+    } else {
+        None
+    };
     let mut synthesis = match component {
         None => ess_conformance::synthesize::synthesize_with_seeds(&ir, &seeds)?,
         Some(name) => {
@@ -5310,7 +5324,11 @@ fn synthesize_suite(
     // The authored half, compiled against the same model and filed in the same suite. Refused
     // rather than merged where a scenario names something the specification does not declare: a
     // suite carrying a check nobody can resolve is the artifact this whole verb exists to avoid.
-    let authoring = ess_conformance::authored::compile(&ir, &authored_sources(scenarios)?);
+    let sources = match sources {
+        Some(sources) => sources,
+        None => authored_sources(scenarios)?,
+    };
+    let authoring = ess_conformance::authored::compile(&ir, &sources);
     let complete = authoring.is_complete();
     // A connective's child an authored scenario witnesses is not refused (beyond10x/ess#619).
     ess_conformance::synthesize::withdraw_witnessed_children(
@@ -6918,5 +6936,43 @@ mod tests {
         assert_eq!(status, ExitCode::SUCCESS);
         assert_eq!(serialized, 1, "serializations for a Go package");
         assert!(out.join("essconform/suite.json").is_file());
+    }
+
+    /// A `--scenarios` path that does not exist is refused before anything is synthesized, with
+    /// the text it is refused with after a synthesis: no synthesis starts. Unfixed: 1, the whole
+    /// synthesis of the model ran before the path was read.
+    #[test]
+    fn a_missing_scenarios_path_is_refused_before_synthesis() {
+        let ((), started) = ess_conformance::synthesize::syntheses_started(|| {
+            synthesize_suite(
+                &billing(),
+                SuiteTarget::Ir,
+                None,
+                None,
+                None,
+                ("4", false, false),
+                &[],
+            )
+            .unwrap();
+        });
+        assert_eq!(started, 1, "the counter sees billing's synthesis");
+
+        let missing = Path::new("no-such-scenarios.yaml");
+        let (refused, started) = ess_conformance::synthesize::syntheses_started(|| {
+            synthesize_suite(
+                &billing(),
+                SuiteTarget::Ir,
+                None,
+                None,
+                Some(missing),
+                ("4", false, false),
+                &[],
+            )
+        });
+        assert_eq!(
+            refused.unwrap_err().to_string(),
+            "no-such-scenarios.yaml is not a directory of scenarios"
+        );
+        assert_eq!(started, 0, "syntheses started before the refusal");
     }
 }
