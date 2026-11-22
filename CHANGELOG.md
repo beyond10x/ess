@@ -16,6 +16,14 @@
   their message. A domain file that sets `format:`, `version:` or `domains:` without `system:`
   is told the file that names the system. No format version changes.
 
+## [0.97.4] — 2026-11-22
+
+### Fixed
+
+- `ess verify conform synthesize` and `ess generate synthesize` decide the branch a related row and an input select once per synthesis, where they decided it again for every refusal of the command. Since 0.93.0 the witness search offers more candidates for a list input guard, and the repetition grew with them: a downstream specification of 31 `when_related:` refusals beside list input guards synthesizes in 18.3 s of CPU time instead of 491.9 s on 0.97.3 (88.1e9 instructions instead of 2,536.5e9), faster than on 0.92.0 (71.6 s, 336.5e9).
+- The witness walk builds the element of a copied list, and the value of a map's entry, on its input builder and undoes an attempt that fails, where it copied the whole builder for each element at every nesting level: a generic model of a copied nested list went from 3.52e9 to 1.12e9 instructions, and the largest reported downstream specification synthesizes in 415.9 s of CPU time instead of 716.5 s on 0.97.3 (1,250.0e9 instructions instead of 1,782.1e9).
+- Synthesized suites, refusals and notes are byte for byte as on 0.97.3. The release build was compared with the released 0.97.3 in 216 runs of 8 commands over `examples/billing`, 21 specifications the reviewers wrote, 3 models of the fixes and two downstream specifications: all are identical in standard output, standard error, exit status and every written file. The downstream specification of 31 refusals writes the same suite, standard output and standard error, and the largest the same suite.
+
 ## [0.97.3] — 2026-11-22
 
 ### Fixed

@@ -6122,7 +6122,33 @@ fn input_key(input: &BTreeMap<String, Node>) -> u64 {
 }
 
 /// The name of the branch [`selects`] picked for one input ([`RowPicks`]).
-type Pick = Result<Option<OutcomeName>, RefusalCause>;
+pub(super) type Pick = Result<Option<OutcomeName>, RefusalCause>;
+
+impl RowPicks {
+    /// The pick kept for `input`, else `decide`'s, kept for the next ask.
+    pub(super) fn answer(
+        &self,
+        input: &BTreeMap<String, Node>,
+        decide: impl FnOnce() -> Pick,
+    ) -> Pick {
+        let key = input_key(input);
+        let known = self.picked.borrow().get(&key).and_then(|kept| {
+            kept.iter()
+                .find(|(asked, _)| asked == input)
+                .map(|(_, pick)| pick.clone())
+        });
+        if let Some(known) = known {
+            return known;
+        }
+        let fresh = decide();
+        self.picked
+            .borrow_mut()
+            .entry(key)
+            .or_default()
+            .push((input.clone(), fresh.clone()));
+        fresh
+    }
+}
 
 /// The [`RowPicks`] of `command` on `arrangement`'s row, kept for the model remembered innermost;
 /// `None` for a command the model does not declare as such (one projected for a related guard),
@@ -6161,26 +6187,10 @@ fn picked(
         selects(ir, command, entity, arrangement, input, Order::Unique)
             .map(|branch| branch.map(|branch| branch.name.clone()))
     };
-    let Some(picks) = picks else {
-        return decide();
-    };
-    let key = input_key(input);
-    let known = picks.picked.borrow().get(&key).and_then(|kept| {
-        kept.iter()
-            .find(|(asked, _)| asked == input)
-            .map(|(_, pick)| pick.clone())
-    });
-    if let Some(known) = known {
-        return known;
+    match picks {
+        Some(picks) => picks.answer(input, decide),
+        None => decide(),
     }
-    let fresh = decide();
-    picks
-        .picked
-        .borrow_mut()
-        .entry(key)
-        .or_default()
-        .push((input.clone(), fresh.clone()));
-    fresh
 }
 
 /// Every row one arranging branch can leave from `arrangement`, toward the hints.
