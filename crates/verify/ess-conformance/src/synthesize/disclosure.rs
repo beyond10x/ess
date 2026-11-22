@@ -2,11 +2,98 @@
 use super::caller::{InvocationModels, Readings};
 use super::{
     exercise, granted_actors, has_subject_guards, purpose, related_guard, subject_fact, ActorRef,
-    BTreeMap, CommandRef, ConformanceScenario, Distinction, EssIr, EventRef, OutcomeRef,
-    QualifiedName, Refusal, RefusalCause, ResolvedCommand, ResolvedCondition, ResolvedOutcome,
-    ScenarioId, ScenarioStep, ScenarioValue, Synthesis, ViewRef, WitnessGap,
+    BTreeMap, BTreeSet, CommandRef, ConformanceScenario, Distinction, EssIr, EssSemanticRef,
+    EventRef, OutcomeRef, QualifiedName, Refusal, RefusalCause, ResolvedCommand, ResolvedCondition,
+    ResolvedOutcome, ScenarioId, ScenarioStep, ScenarioValue, Synthesis, ViewRef, WitnessGap,
 };
 use crate::one_time_response::{Aspect, Cell};
+
+thread_local! {
+    /// How many times a marked branch's own run was built for its follow-up cells on this thread
+    /// ([`followup_origins_built`]).
+    static ORIGINS_BUILT: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
+
+/// What `run` returns, and how many times a marked branch's own run was built for the follow-up
+/// cells of its fields on this thread while it ran, rather than taken from the first cell's: the
+/// work a test bounds where a wall-clock bound would depend on the machine. Not part of the suite.
+#[doc(hidden)]
+pub fn followup_origins_built<R>(run: impl FnOnce() -> R) -> (R, u64) {
+    let before = ORIGINS_BUILT.with(std::cell::Cell::get);
+    let out = run();
+    (out, ORIGINS_BUILT.with(std::cell::Cell::get) - before)
+}
+
+/// The marked branch's own run every follow-up cell of its fields starts with
+/// ([`followups`]): `exercise` of the origin under the default actors, which reads the model, the
+/// branch and those actors and nothing of the cell but its id, named by the refusals it writes.
+/// Built for the first cell and, where every refusal it wrote is about that cell alone, handed to
+/// every later cell with those refusals written again about it.
+#[derive(Default)]
+enum SharedOrigin {
+    /// Not built yet.
+    #[default]
+    Unbuilt,
+    /// Built for the cell `id`, which every refusal in `refused` is about.
+    Kept {
+        id: ScenarioId,
+        built: Option<(Vec<ScenarioStep>, BTreeSet<EssSemanticRef>, super::Run)>,
+        refused: Vec<Refusal>,
+    },
+    /// Built once and wrote a refusal about something else: built again for each cell.
+    PerCell,
+}
+
+impl SharedOrigin {
+    /// The origin's run for the cell `id`, and its refusals about `id` in `refusals`, as
+    /// `exercise(ir, origin, outcome, defaults, id, refusals)` gives them.
+    fn exercise(
+        &mut self,
+        ir: &EssIr,
+        (origin, outcome): (&ResolvedCommand, &ResolvedOutcome),
+        defaults: &BTreeMap<QualifiedName, ActorRef>,
+        id: &ScenarioId,
+        refusals: &mut Vec<Refusal>,
+    ) -> Option<(Vec<ScenarioStep>, BTreeSet<EssSemanticRef>, super::Run)> {
+        if let Self::Kept {
+            id: first,
+            built,
+            refused,
+        } = self
+        {
+            let subject = super::subject_of(first);
+            refusals.extend(refused.iter().map(|refusal| Refusal {
+                subject: if refusal.subject == subject {
+                    super::subject_of(id)
+                } else {
+                    refusal.subject.clone()
+                },
+                scenario: Some(id.clone()),
+                ..refusal.clone()
+            }));
+            return built.clone();
+        }
+        ORIGINS_BUILT.with(|count| count.set(count.get() + 1));
+        let before = refusals.len();
+        let built = exercise(ir, origin, outcome, defaults, id, refusals);
+        if matches!(self, Self::Unbuilt) {
+            let refused = refusals[before..].to_vec();
+            *self = if refused
+                .iter()
+                .all(|refusal| refusal.scenario.as_ref() == Some(id) && refusal.caused_by.is_none())
+            {
+                Self::Kept {
+                    id: id.clone(),
+                    built: built.clone(),
+                    refused,
+                }
+            } else {
+                Self::PerCell
+            };
+        }
+        built
+    }
+}
 
 pub(super) fn augment(ir: &EssIr, synthesis: &mut Synthesis) {
     if !crate::one_time_response::marked_model(ir) {
@@ -91,6 +178,7 @@ pub(super) fn augment(ir: &EssIr, synthesis: &mut Synthesis) {
                     }
                 }
             }
+            let mut shared = SharedOrigin::default();
             for field in &outcome.one_time_response {
                 followups(
                     ir,
@@ -98,6 +186,7 @@ pub(super) fn augment(ir: &EssIr, synthesis: &mut Synthesis) {
                     synthesis,
                     (command, outcome, field),
                     &defaults,
+                    &mut shared,
                 );
             }
         }
@@ -466,6 +555,7 @@ fn followups(
     synthesis: &mut Synthesis,
     (origin, outcome, field): (&ResolvedCommand, &ResolvedOutcome, &str),
     defaults: &BTreeMap<QualifiedName, ActorRef>,
+    shared: &mut SharedOrigin,
 ) {
     let actors: Vec<_> = if ir.actors().is_empty() {
         vec![None]
@@ -506,9 +596,13 @@ fn followups(
                     )),
                     actor.clone(),
                 );
-                let Some((steps, source, origin_run)) =
-                    exercise(ir, origin, outcome, defaults, &id, &mut synthesis.refusals)
-                else {
+                let Some((steps, source, origin_run)) = shared.exercise(
+                    ir,
+                    (origin, outcome),
+                    defaults,
+                    &id,
+                    &mut synthesis.refusals,
+                ) else {
                     continue;
                 };
                 let mut scenario =

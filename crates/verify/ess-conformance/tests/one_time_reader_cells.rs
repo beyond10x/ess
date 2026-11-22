@@ -565,3 +565,58 @@ fn the_cell_identity_is_unchanged() {
     );
     assert_eq!(cell.to_string(), id);
 }
+
+/// Every follow-up cell of a marked branch starts with that branch's own run under the default
+/// actors, whichever field, follow-up command or actor the cell is about, so it is built once per
+/// marked branch. A branch marking 8 fields beside 15 follow-up commands built the same three setup
+/// steps 128 times, 5.0 % of the run's instructions. A work bound rather than a clock.
+#[test]
+fn a_marked_branchs_own_run_is_built_once_for_all_its_follow_up_cells() {
+    let marked = (0..8)
+        .map(|i| format!("secret_{i}"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let response = (0..8)
+        .map(|i| format!("{{name: secret_{i}, type: String}}"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let uses: String = (0..15)
+        .map(|i| {
+            format!(
+                "  - name: vault.api.Use{i}\n    outcomes: [{{name: done, emits: [vault.api.Used]}}]\n"
+            )
+        })
+        .collect();
+    let ir = model(&format!(
+        "format: ess/21
+system: vault
+version: v1
+domain: vault.api
+events: [{{name: vault.api.Used, fields: []}}]
+commands:
+  - name: vault.api.Issue
+    response: [{response}]
+    outcomes: [{{name: issued, returns: true, one_time_response: [{marked}]}}]
+{uses}"
+    ));
+    let (synthesis, built) =
+        ess_conformance::synthesize::followup_origins_built(|| ess_conformance::synthesize(&ir));
+    assert!(
+        synthesis.refusals.is_empty(),
+        "every cell is synthesized: {:#?}",
+        synthesis.refusals
+    );
+    let followups = synthesis
+        .suite
+        .scenarios
+        .keys()
+        .filter(|id| {
+            matches!(id, ScenarioId::Disclosure { cell } if matches!(cell.aspect, Aspect::Command(_)))
+        })
+        .count();
+    assert_eq!(followups, 8 * 16, "a cell per field and follow-up branch");
+    assert_eq!(
+        built, 1,
+        "the marked branch's own run was built {built} times"
+    );
+}

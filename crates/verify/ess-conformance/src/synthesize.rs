@@ -218,6 +218,9 @@ mod view_reference;
 
 pub use seeds::{AdmittedSeeds, SeedAdmissionError, SeedSelection};
 
+#[doc(hidden)]
+pub use disclosure::followup_origins_built;
+
 pub(crate) use caller::reads as caller_reads;
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
