@@ -50,6 +50,8 @@ struct Made {
     /// The branch a command selects on a row for each input asked so far, by command and row
     /// ([`row_picks`]).
     picks: BTreeMap<String, Rc<RowPicks>>,
+    /// Values derived from the model alone and owning what they hold, by their key ([`kept`]).
+    kept: BTreeMap<String, Rc<dyn std::any::Any>>,
 }
 
 /// What one computation answered, and how many beside searches it cut.
@@ -128,10 +130,36 @@ pub(super) fn remember(ir: &EssIr) -> Remembered {
             searches: BTreeMap::new(),
             selections: BTreeMap::new(),
             picks: BTreeMap::new(),
+            kept: BTreeMap::new(),
         });
         true
     });
     Remembered { pushed }
+}
+
+/// The value under `key`, derived by `make` the first time this model asks and kept for as long as
+/// the model is remembered. `None` where `ir` is not the model remembered innermost: the caller
+/// derives it afresh then, as it did before.
+pub(super) fn kept<T: 'static>(ir: &EssIr, key: &str, make: impl FnOnce() -> T) -> Option<Rc<T>> {
+    let held = MADE.with(|made| {
+        let made = made.borrow();
+        let top = made.last().filter(|top| std::ptr::eq(top.ir, ir))?;
+        Some(top.kept.get(key).cloned())
+    })?;
+    if let Some(held) = held {
+        return held.downcast::<T>().ok();
+    }
+    let value = Rc::new(make());
+    MADE.with(|made| {
+        if let Some(top) = made
+            .borrow_mut()
+            .last_mut()
+            .filter(|top| std::ptr::eq(top.ir, ir))
+        {
+            top.kept.insert(key.to_owned(), value.clone());
+        }
+    });
+    Some(value)
 }
 
 /// Whether `ir` is the model remembered innermost, whose searches are kept ([`reached`]).

@@ -9138,21 +9138,43 @@ fn born<'a>(ir: &'a EssIr, creator: &Driver<'a>) -> &'a StateName {
         .unwrap_or_else(|| &ir.entity(&subject(creator).entity).lifecycle.initial)
 }
 
-/// [`route`], from `start` rather than from where the lifecycle starts.
-fn route_from<'a>(
-    ir: &EssIr,
-    entity: &EntityHandle,
-    drivers: &[Driver<'a>],
-    start: &StateName,
-    target: &StateName,
-) -> Option<Vec<Driver<'a>>> {
-    let _ = ir.entity(entity);
-    if start == target {
-        return Some(Vec::new());
-    }
+/// The edges out of each state of one entity's lifecycle, as positions in its drivers.
+type Edges = BTreeMap<StateName, Vec<(StateName, usize)>>;
 
-    let mut edges: BTreeMap<StateName, Vec<(StateName, Driver<'a>)>> = BTreeMap::new();
-    for driver in drivers {
+thread_local! {
+    /// How many edges [`derive_edges`] derived on this thread.
+    static DERIVED_EDGES: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+    /// How many entity-to-view indexes [`build_entity_view_index`] built on this thread.
+    static BUILT_VIEW_INDEXES: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
+
+/// What `run` returns, and how many lifecycle edges were derived on this thread while it ran: the
+/// work a test bounds where a clock would depend on the machine. Not part of the suite.
+#[doc(hidden)]
+pub fn lifecycle_edges_derived<R>(run: impl FnOnce() -> R) -> (R, u64) {
+    let before = DERIVED_EDGES.with(std::cell::Cell::get);
+    let out = run();
+    (out, DERIVED_EDGES.with(std::cell::Cell::get) - before)
+}
+
+/// Whether the lifecycle graph kept for each entity of `ir` equals one derived afresh. A test
+/// reads it; it is not part of the suite.
+#[doc(hidden)]
+#[must_use]
+pub fn kept_edges_equal_fresh(ir: &EssIr) -> bool {
+    let _remembered = made::remember(ir);
+    let all = ir.drivers();
+    all.iter().all(|(entity, drivers)| {
+        let fresh = derive_edges(ir, drivers);
+        *lifecycle_edges(ir, entity, drivers) == fresh
+    })
+}
+
+/// The lifecycle graph of `drivers`, the drivers of one entity: from each state, the states one
+/// move reaches, in a fixed order, as positions in `drivers`.
+fn derive_edges(ir: &EssIr, drivers: &[Driver<'_>]) -> Edges {
+    let mut edges = Edges::new();
+    for (at, driver) in drivers.iter().enumerate() {
         let Some(transition) = driver.effect.transition() else {
             continue;
         };
@@ -9170,11 +9192,13 @@ fn route_from<'a>(
             let Some(to) = binding_effects::resting(ir, driver.outcome, &transition.to) else {
                 continue;
             };
-            edges.entry(from.clone()).or_default().push((to, *driver));
+            DERIVED_EDGES.with(|count| count.set(count.get() + 1));
+            edges.entry(from.clone()).or_default().push((to, at));
         }
     }
     for outgoing in edges.values_mut() {
-        outgoing.sort_by_key(|(to, driver)| {
+        outgoing.sort_by_key(|(to, at)| {
+            let driver = &drivers[*at];
             (
                 driver
                     .effect
@@ -9187,12 +9211,43 @@ fn route_from<'a>(
             )
         });
     }
+    edges
+}
+
+/// [`derive_edges`], kept for the model while it is synthesized: it reads nothing but the model and
+/// the entity's drivers, which are a function of the model.
+fn lifecycle_edges(
+    ir: &EssIr,
+    entity: &EntityHandle,
+    drivers: &[Driver<'_>],
+) -> std::rc::Rc<Edges> {
+    made::kept(ir, &format!("lifecycle-edges:{entity}"), || {
+        derive_edges(ir, drivers)
+    })
+    .unwrap_or_else(|| std::rc::Rc::new(derive_edges(ir, drivers)))
+}
+
+/// [`route`], from `start` rather than from where the lifecycle starts.
+fn route_from<'a>(
+    ir: &EssIr,
+    entity: &EntityHandle,
+    drivers: &[Driver<'a>],
+    start: &StateName,
+    target: &StateName,
+) -> Option<Vec<Driver<'a>>> {
+    let _ = ir.entity(entity);
+    if start == target {
+        return Some(Vec::new());
+    }
+
+    let edges = lifecycle_edges(ir, entity, drivers);
 
     let mut came: BTreeMap<StateName, (StateName, Driver<'a>)> = BTreeMap::new();
     let mut seen: BTreeSet<StateName> = [start.clone()].into();
     let mut queue: VecDeque<StateName> = [start.clone()].into();
     while let Some(state) = queue.pop_front() {
-        for (to, driver) in edges.get(&state).map(Vec::as_slice).unwrap_or_default() {
+        for (to, at) in edges.get(&state).map(Vec::as_slice).unwrap_or_default() {
+            let driver = &drivers[*at];
             if !seen.insert(to.clone()) {
                 continue;
             }
@@ -11252,15 +11307,15 @@ fn view_expectations(
             None => identifying(ir, subject, instance, view),
         }
     };
-    let projections = row_projections(ir);
-    let Some(views) = projections.get(&subject.entity) else {
+    let views = entity_views(ir, &subject.entity);
+    if views.is_empty() {
         return out;
-    };
+    }
 
     // Decided first, and for every view, because the companions one ranked view needs land in every
     // other view of the same entity — so what each view holds cannot be settled one view at a time.
     let mut decided: Vec<(&&ResolvedView, bool)> = Vec::new();
-    for view in views {
+    for view in &views {
         match shows_row(
             ir,
             view,
@@ -21864,6 +21919,66 @@ fn row_projections(ir: &EssIr) -> BTreeMap<&EntityHandle, Vec<&ResolvedView>> {
     }
     out.retain(|_, views| !views.is_empty());
     out
+}
+
+/// The entity-to-view index of [`row_projections`], owning the names of the views, by entity.
+type EntityViewIndex = BTreeMap<EntityHandle, Vec<QualifiedName>>;
+
+fn build_entity_view_index(ir: &EssIr) -> EntityViewIndex {
+    BUILT_VIEW_INDEXES.with(|count| count.set(count.get() + 1));
+    row_projections(ir)
+        .into_iter()
+        .map(|(entity, views)| {
+            (
+                entity.clone(),
+                views.into_iter().map(|view| view.name.clone()).collect(),
+            )
+        })
+        .collect()
+}
+
+fn entity_view_index(ir: &EssIr) -> std::rc::Rc<EntityViewIndex> {
+    made::kept(ir, "entity-view-index", || build_entity_view_index(ir))
+        .unwrap_or_else(|| std::rc::Rc::new(build_entity_view_index(ir)))
+}
+
+/// The row views of `entity` ([`row_projections`]' entry for it), from the index built once per
+/// model for the synthesis.
+fn entity_views<'a>(ir: &'a EssIr, entity: &EntityHandle) -> Vec<&'a ResolvedView> {
+    entity_view_index(ir)
+        .get(entity)
+        .into_iter()
+        .flatten()
+        .map(|name| &ir.views()[name])
+        .collect()
+}
+
+/// What `run` returns, and how many entity-to-view indexes were built through [`entity_views`] on
+/// this thread while it ran. Not part of the suite.
+#[doc(hidden)]
+pub fn entity_view_indexes_built<R>(run: impl FnOnce() -> R) -> (R, u64) {
+    let before = BUILT_VIEW_INDEXES.with(std::cell::Cell::get);
+    let out = run();
+    (out, BUILT_VIEW_INDEXES.with(std::cell::Cell::get) - before)
+}
+
+/// Whether the index kept for `ir` names, for every entity, the views [`row_projections`] holds.
+/// A test reads it; it is not part of the suite.
+#[doc(hidden)]
+#[must_use]
+pub fn kept_view_index_equals_fresh(ir: &EssIr) -> bool {
+    let _remembered = made::remember(ir);
+    let fresh = row_projections(ir);
+    let kept = entity_view_index(ir);
+    kept.len() == fresh.len()
+        && fresh.iter().all(|(entity, views)| {
+            let kept_views = entity_views(ir, entity);
+            kept_views.len() == views.len()
+                && kept_views
+                    .iter()
+                    .zip(views)
+                    .all(|(a, b)| std::ptr::eq(*a, *b))
+        })
 }
 
 /// The construct a scenario id is about.
