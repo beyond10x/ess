@@ -5,7 +5,7 @@
 //! synthesis to a count of how often the answer was derived: a work bound rather than a clock.
 
 use ess_compiler::{ir::EssIr, resolve::compile, source::SourceMap};
-use ess_conformance::synthesize::{synthesize, Synthesis};
+use ess_conformance::synthesize::{absent_event_lists_built, synthesize, Synthesis};
 use ess_domain::{
     spec::{RawSpecFile, Specification},
     system::Source,
@@ -79,4 +79,39 @@ fn a_model_is_scanned_for_binary64_once() {
         );
         assert_eq!(scans, 1, "the model was scanned for Binary64 {scans} times");
     }
+}
+
+/// Twelve commands emitting one event of forty: the events none of them may publish are listed
+/// once, for the one list of emitted events they share. Unfixed, once per command: 12.
+#[test]
+fn the_events_a_branch_must_not_publish_are_listed_once_per_emitted_list() {
+    let mut text = String::from(
+        "format: ess/25\nsystem: ticket\nversion: v1\ndomain: ticket.desk\ncommands:\n",
+    );
+    for command in 0..12 {
+        text.push_str(&format!(
+            "  - name: ticket.desk.Raise{command}\n    outcomes: [{{name: raised, emits: \
+             [ticket.desk.Raised]}}]\n"
+        ));
+    }
+    text.push_str("events:\n  - {name: ticket.desk.Raised, fields: []}\n");
+    for event in 1..40 {
+        text.push_str(&format!(
+            "  - {{name: ticket.desk.Note{event}, fields: []}}\n"
+        ));
+    }
+    let ir = ir(&text);
+    let (synthesis, built) = absent_event_lists_built(|| synthesize(&ir));
+    assert!(
+        refusals(&synthesis).is_empty(),
+        "refusals: {:#?}",
+        refusals(&synthesis)
+    );
+    assert_eq!(synthesis.suite.scenarios.len(), 12);
+    // One list per distinct emitted list: `[Raised]`, and at most the empty list a refusal path
+    // reads.
+    assert!(
+        built <= 2,
+        "the list was built {built} times for one emitted list"
+    );
 }

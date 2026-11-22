@@ -192,6 +192,7 @@ mod expression;
 mod grant;
 mod identity;
 mod made;
+mod model_memo;
 mod ordered_head;
 mod paging;
 pub(crate) mod precedence;
@@ -3518,6 +3519,7 @@ fn synthesize_in(ir: &EssIr, seeds: &AdmittedSeeds) -> Synthesis {
     let _orderings = crate::now_offset::remember(ir);
     // Each overlap is searched once, for generation and the check of the finished suite.
     let _overlaps = keep_overlap_answers(ir);
+    let _kept = model_memo::keep(ir);
     // ess/16 (#168): a model whose actors carry attributes is synthesized once per caller
     // assignment, each read with the caller's values written in (`caller::synthesize`). Seeds are
     // offered in the reading that sends every command as the caller their rows imply.
@@ -3684,6 +3686,7 @@ fn synthesize_invocations(models: &caller::InvocationModels<'_>, focus: Focus<'_
     let _memoised = crate::witness_memo::memoise(ir);
     let _remembered = made::remember(ir);
     let _orderings = crate::now_offset::remember(ir);
+    let _kept = model_memo::keep(ir);
     let mut suite = ConformanceSuite::new(SuiteProvenance::of(ir));
     let mut refusals = Vec::new();
     // A Binary64 nothing a scenario sends or reads reaches is noted, not refused (`synthesize_in`);
@@ -4835,7 +4838,7 @@ fn exercise_run_in(
 ) -> Option<(Vec<ScenarioStep>, BTreeSet<EssSemanticRef>, Run)> {
     let ir = models.arrangement;
     let emitted: Vec<EventRef> = outcome.emits.iter().map(EventRef::from).collect();
-    let absent = not_emitted(ir, &emitted);
+    let absent = absent_events(ir, &emitted);
     let actor = run.actor.clone();
     // The row at rest once the bindings this branch sets off on it have run, read eventually
     // (beyond10x/ess#266): never the state a binding is about to move it out of.
@@ -4924,7 +4927,7 @@ fn exercise_run_in(
     }
     // §10's first-class negative assertion: without it the refusal case passes against an
     // implementation that refuses the command and emits the success event anyway.
-    for event in &absent {
+    for event in &*absent {
         steps.push(ScenarioStep::ExpectNoEvent {
             event: event.clone(),
         });
@@ -10749,13 +10752,29 @@ fn rendered(guards: &[&Predicate], satisfy: bool) -> String {
 /// be enforcing a rule no document wrote. The model closes a *branch's* emissions, not the
 /// system's output.
 fn not_emitted(ir: &EssIr, emitted: &[EventRef]) -> Vec<EventRef> {
-    ir.events()
-        .values()
-        .map(|event| EventRef::new(event.name.clone()))
-        .filter(|event| !emitted.contains(event))
-        .collect::<BTreeSet<_>>()
-        .into_iter()
-        .collect()
+    std::rc::Rc::try_unwrap(absent_events(ir, emitted)).unwrap_or_else(|kept| (*kept).clone())
+}
+
+/// [`not_emitted`], built once per model and `emitted` list and shared: every branch emitting the
+/// same events reads one list (24 commands emitting one event of 160 built it 24 times before).
+fn absent_events(ir: &EssIr, emitted: &[EventRef]) -> std::rc::Rc<Vec<EventRef>> {
+    model_memo::absent_events(ir, emitted, || {
+        ir.events()
+            .values()
+            .map(|event| EventRef::new(event.name.clone()))
+            .filter(|event| !emitted.contains(event))
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect()
+    })
+}
+
+/// What `run` returns, and how many lists of the events a branch must not publish were built on
+/// this thread while it ran rather than read from the ones kept for the model: the work a test
+/// bounds where a clock would depend on the machine. Not part of the suite.
+#[doc(hidden)]
+pub fn absent_event_lists_built<R>(run: impl FnOnce() -> R) -> (R, u64) {
+    model_memo::absent_built(run)
 }
 
 /// The payload values this branch's `payload:` declaration determines, where the scenario knows
