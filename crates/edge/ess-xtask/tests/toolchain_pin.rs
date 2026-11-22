@@ -230,7 +230,10 @@ fn every_pin_step_is_the_same_script() {
 }
 
 fn run_pin(script: &str, directory: &Path) -> (bool, String) {
-    let output_file = directory.join("github-output");
+    let scratch = Path::new(env!("CARGO_TARGET_TMPDIR"))
+        .join(format!("toolchain-pin-out-{}", std::process::id()));
+    fs::create_dir_all(&scratch).expect("the output directory is created");
+    let output_file = scratch.join("github-output");
     let _ = fs::remove_file(&output_file);
     let status = Command::new("bash")
         .arg("-c")
@@ -241,6 +244,7 @@ fn run_pin(script: &str, directory: &Path) -> (bool, String) {
         .status()
         .expect("bash runs");
     let written = fs::read_to_string(&output_file).unwrap_or_default();
+    fs::remove_dir_all(&scratch).expect("the output directory is removed");
     (status.success(), written)
 }
 
