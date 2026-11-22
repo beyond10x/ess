@@ -18,7 +18,7 @@ use std::collections::BTreeSet;
 use ess_compiler::{resolve::compile, source::SourceMap, EssIr};
 use ess_conformance::interpret::Interpreted;
 use ess_conformance::report::Status;
-use ess_conformance::synthesize::{synthesize, Synthesis};
+use ess_conformance::synthesize::{binding_triggers_tried, synthesize, Synthesis};
 use ess_conformance::{AdmittedSuite, Runner};
 use ess_domain::{spec::RawSpecFile, system::Source, Specification};
 use serde_json::Value;
@@ -157,4 +157,88 @@ fn a_trigger_publishing_once_per_changed_row_is_sent_with_a_selected_row() {
         "{mapping:#?}"
     );
     assert_eq!(not_passed(ir, &synthesis), Vec::<String>::new());
+}
+
+/// `publishers` commands publishing the trigger of six bindings, each invoking a command with no
+/// branch a failure can be forced on.
+fn unforced(publishers: usize) -> EssIr {
+    let publishing: String = (0..publishers)
+        .map(|i| {
+            format!(
+                "  - name: shop.work.Publish{i:02}\n    outcomes: [{{name: published, emits: [shop.work.Created]}}]\n"
+            )
+        })
+        .collect();
+    let recording: String = (0..6)
+        .map(|i| {
+            format!(
+                "  - name: shop.work.Record{i}\n    input: [{{name: category, type: String}}]\n    outcomes: [{{name: recorded, emits: [shop.work.Recorded]}}]\n"
+            )
+        })
+        .collect();
+    let accepted = (0..publishers)
+        .map(|i| format!("shop.work.Publish{i:02}"))
+        .chain((0..6).map(|i| format!("shop.work.Record{i}")))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let bindings: String = (0..6)
+        .map(|i| {
+            format!(
+                "  - id: send-record-{i}
+    when: {{event: shop.work.Created}}
+    invoke: {{command: shop.work.Record{i}}}
+    mapping: {{category: note}}
+    delivery: at_least_once
+    on_failure: retry
+"
+            )
+        })
+        .collect();
+    let text = format!(
+        "format: ess/25
+system: shop
+version: v1
+domain: shop.work
+commands:
+{publishing}{recording}events: [{{name: shop.work.Created, fields: []}}, {{name: shop.work.Recorded, fields: []}}]
+components:
+  - component: svc
+    owns: {{domains: [shop.work]}}
+    accepts: {{commands: [{accepted}]}}
+    publishes: {{events: [shop.work.Created, shop.work.Recorded]}}
+bindings:
+{bindings}"
+    );
+    let raw = RawSpecFile::parse(&text).unwrap_or_else(|error| panic!("{error}\n{text}"));
+    let spec = Specification::assemble([(Source::new("work.yaml"), raw)])
+        .unwrap_or_else(|errors| panic!("{errors}\n{text}"));
+    compile(&spec, &SourceMap::new()).unwrap_or_else(|d| panic!("{d}"))
+}
+
+/// A refusal that reads nothing of the publisher is not tried again per publisher: where the
+/// invoked command has no branch a failure can be forced on, every publisher leaves the binding's
+/// on-failure aspect refused, so once one leaves nothing else refused, the publishers after it are
+/// not tried. Twelve eligible publishers built the scenarios of each binding twelve times, 72
+/// builds where one publisher took 6, for the same scenarios and refusals. A work bound rather than
+/// a clock.
+#[test]
+fn a_refusal_no_publisher_changes_is_not_tried_again_per_publisher() {
+    let (one, tried_one) = binding_triggers_tried(|| synthesize(&unforced(1)));
+    let (twelve, tried) = binding_triggers_tried(|| synthesize(&unforced(12)));
+    let bindings = |synthesis: &Synthesis| -> (Vec<String>, Vec<String>) {
+        (
+            synthesis
+                .suite
+                .scenarios
+                .keys()
+                .map(ToString::to_string)
+                .filter(|id| id.contains("/binding/"))
+                .collect(),
+            synthesis.refusals.iter().map(ToString::to_string).collect(),
+        )
+    };
+    assert_eq!(bindings(&twelve), bindings(&one));
+    assert_eq!(twelve.refusals.len(), 6, "{:#?}", twelve.refusals);
+    assert_eq!(tried_one, 6);
+    assert_eq!(tried, 6, "six bindings tried {tried} publishers");
 }

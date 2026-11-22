@@ -21159,6 +21159,25 @@ fn input_types(ir: &EssIr, command: &ResolvedCommand) -> BTreeSet<DeclaredTypeRe
     types
 }
 
+thread_local! {
+    /// How many publishing branches were tried as a binding's trigger on this thread
+    /// ([`binding_triggers_tried`]).
+    static BINDING_TRIGGERS_TRIED: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
+
+/// What `run` returns, and how many publishing branches were tried as a binding's trigger on this
+/// thread while it ran: the work a test bounds where a wall-clock bound would depend on the
+/// machine. Not part of the suite.
+#[doc(hidden)]
+pub fn binding_triggers_tried<R>(run: impl FnOnce() -> R) -> (R, u64) {
+    let before = BINDING_TRIGGERS_TRIED.with(std::cell::Cell::get);
+    let out = run();
+    (
+        out,
+        BINDING_TRIGGERS_TRIED.with(std::cell::Cell::get) - before,
+    )
+}
+
 /// The four claims a binding makes, one scenario each (§16, §17, §18).
 ///
 /// Every one of them starts the same way — make the event happen — and that alone is more than a
@@ -21212,7 +21231,17 @@ fn bindings(
         // the fewest refused, the earlier on a tie.
         let mut chosen: Option<(ConformanceSuite, Vec<Refusal>, Vec<Note>)> = None;
         let mut first_failure = None;
+        // The on-failure aspect refused because no branch of the invoked command can be forced to
+        // fail reads nothing of the publisher, so every publisher leaves it refused: once one
+        // leaves nothing else refused, no later one leaves fewer.
+        let fewest = usize::from(
+            binding.refusal_policy.is_none()
+                && binding.retry.is_none()
+                && !matches!(binding.on_failure(), ResolvedFailure::Drop)
+                && forced_failure(ir, ir.command(&binding.command)).is_err(),
+        );
         for (publisher, published_by) in publishing {
+            BINDING_TRIGGERS_TRIED.with(|count| count.set(count.get() + 1));
             let run =
                 match binding_effects::trigger_run(ir, binding, publisher, published_by, actors) {
                     Ok(run) => run,
@@ -21248,7 +21277,11 @@ fn bindings(
             {
                 chosen = Some((tried, refused, remarks));
             }
-            if witnessed {
+            if witnessed
+                || chosen
+                    .as_ref()
+                    .is_some_and(|(_, refused, _)| refused.len() <= fewest)
+            {
                 break;
             }
         }
@@ -21816,6 +21849,28 @@ fn delivery(
 /// | `escalate` | the declared escalation event | since gate G2 the model names it, so this is a reading rather than a hope |
 /// | `drop` on a row read before the trigger | one attempt with the mapped input, no retry in the window, the row unchanged | [`binding_effects::dropped`], beyond10x/ess#267 |
 /// | `drop` on nothing that can be read so | refused | "give up silently" leaves nothing else to observe |
+/// The refusal of `invoked` a failure policy forces, or why none can be: read from the model and the
+/// invoked command alone, so it is the same whichever branch publishes the trigger.
+fn forced_failure<'c>(
+    ir: &EssIr,
+    invoked: &'c ResolvedCommand,
+) -> Result<&'c ResolvedOutcome, BindingGap> {
+    let forced = invoked
+        .outcomes
+        .iter()
+        // A refusal: an `external:` branch that accepts is no failure to force.
+        .find(|outcome| {
+            outcome.test_strategy == TestStrategy::InjectFault && outcome.error.is_some()
+        })
+        .ok_or_else(|| BindingGap::NoForcibleFailure {
+            command: CommandRef::new(invoked.name.clone()),
+        })?;
+    if let Some(gap) = forced_eligibility(ir.format(), invoked, forced) {
+        return Err(gap);
+    }
+    Ok(forced)
+}
+
 fn on_failure(
     ir: &EssIr,
     binding: &ResolvedBinding,
@@ -21831,19 +21886,7 @@ fn on_failure(
         let prepared = prepared.as_ref().map_err(Clone::clone)?;
         return binding_effects::dropped(ir, binding, invoked, prepared, trigger, event);
     }
-    let forced = invoked
-        .outcomes
-        .iter()
-        // A refusal: an `external:` branch that accepts is no failure to force.
-        .find(|outcome| {
-            outcome.test_strategy == TestStrategy::InjectFault && outcome.error.is_some()
-        })
-        .ok_or_else(|| BindingGap::NoForcibleFailure {
-            command: CommandRef::new(invoked.name.clone()),
-        })?;
-    if let Some(gap) = forced_eligibility(ir.format(), invoked, forced) {
-        return Err(gap);
-    }
+    let forced = forced_failure(ir, invoked)?;
     let prepared = prepared.as_ref().map_err(Clone::clone)?;
     let forced_ref = OutcomeRef::new(CommandRef::new(invoked.name.clone()), forced.name.clone());
 
