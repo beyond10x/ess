@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-creating-branch-that-reads-several-related-rows-arranges-its-row-for-other-scenarios-wherever-its-own-scenario-is-witnessed
 kind: story
-status: draft
+status: active
 title: A creating branch that reads several related rows arranges its row for other scenarios wherever its own scenario is witnessed
 relations:
 - serves: vision:O2
@@ -23,7 +23,10 @@ scope:
   path: crates/verify/ess-conformance/tests/fixtures/synthesis-suite-bytes-table.tsv
 - confidence: cited
   path: docs/design/cross-record-and-stored-field-guards.md
-revision: 9
+revision: 11
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-22T20:21:30Z", actor: "human:timo", revision: 10}
+- {from: "proposed", to: "active", at: "2026-11-22T20:21:32Z", actor: "human:timo", revision: 11}
 ---
 ## Outcome
 
