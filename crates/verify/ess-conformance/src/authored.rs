@@ -269,6 +269,9 @@ use crate::synthesize::{payload_shape, reachable_types};
 mod non_finite;
 mod ties;
 
+#[doc(hidden)]
+pub use ties::replays_run;
+
 // ---- the diagnostic catalogue ------------------------------------------------------------------
 
 /// Declares a refusal type's diagnostic catalogue and the exhaustive match that maps a value to its
