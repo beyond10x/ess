@@ -4611,15 +4611,49 @@ fn companion(
     let every = |node: &Arrangement| copied.iter().all(|field| differs(node, named, field));
     let any = |node: &Arrangement| copied.iter().any(|field| differs(node, named, field));
     let passes: [Pass<'_>; 3] = [(&ordered, &on_side), (&plain, &every), (&plain, &any)];
+    // Which passes take the same rows: `on_side` takes what `every` takes where no copied field has
+    // a value on a side, and `every` what `any` takes where one field is copied.
+    let takes_alike = |earlier: usize, later: usize| {
+        let sides = targets.iter().all(|(_, target)| target.is_none());
+        let one = copied.len() == 1;
+        match (earlier, later) {
+            (0, 1) => sides,
+            (1, 2) => one,
+            (0, 2) => sides && one,
+            _ => false,
+        }
+    };
     let owner = super::owner_of_row(ir, entity, &named.settled).map(|(_, owner)| owner);
     let unders: Vec<subject_fact::Under<'_>> = owner
         .into_iter()
         .map(|owner| Some((owner, false)))
         .chain([None])
         .collect();
-    for (steers, accepts) in passes {
+    let fresh = COMPANION_WORK.with(|work| work.get().2);
+    COMPANION_WORK.with(|work| {
+        let (asked, searched, fresh) = work.get();
+        work.set((asked + 1, searched, fresh));
+    });
+    // Each pass that found nothing, with the searches it cut ([`cuts`]).
+    let mut empty: Vec<(usize, usize)> = Vec::new();
+    for (index, (steers, accepts)) in passes.into_iter().enumerate() {
+        // A pass steered toward the same values as one that found nothing, taking the same rows,
+        // runs the same searches and finds nothing either: only the searches they cut are counted.
+        let repeated = empty
+            .iter()
+            .find(|(earlier, _)| passes[*earlier].0 == steers && takes_alike(*earlier, index));
+        if let (Some((_, cut)), false) = (repeated, fresh) {
+            add_cuts(*cut);
+            empty.push((index, *cut));
+            continue;
+        }
+        let before = cuts();
         let hints = steered(&predicates, steers);
         for under in &unders {
+            COMPANION_WORK.with(|work| {
+                let (asked, searched, fresh) = work.get();
+                work.set((asked, searched + 1, fresh));
+            });
             let found = search_rows(ir, entity, actors, (at, *under), &hints, |node| {
                 Ok(selects(ir, command, entity, Some(node), input)?
                     .is_some_and(|branch| branch.name == outcome.name)
@@ -4629,8 +4663,30 @@ fn companion(
                 return found;
             }
         }
+        empty.push((index, cuts().saturating_sub(before)));
     }
     None
+}
+
+thread_local! {
+    /// How many times [`companion`] was asked and how many stored-row searches it ran on this
+    /// thread, and whether a pass alike to one that found nothing is searched again
+    /// ([`companion_work`]).
+    static COMPANION_WORK: std::cell::Cell<(u64, u64, bool)> = const { std::cell::Cell::new((0, 0, false)) };
+}
+
+/// `run`'s result, with how many times a companion row was searched for ([`companion`]) and how
+/// many stored-row searches that took on this thread while it ran. Where `fresh` is set, a pass
+/// alike to one that found nothing is searched again, as every pass was before. The work a test
+/// bounds; not part of the suite.
+#[doc(hidden)]
+pub fn companion_work<R>(fresh: bool, run: impl FnOnce() -> R) -> (R, u64, u64) {
+    let (asked, searched, was) = COMPANION_WORK.with(std::cell::Cell::get);
+    COMPANION_WORK.with(|work| work.set((asked, searched, fresh)));
+    let out = run();
+    let (after_asked, after_searched, _) = COMPANION_WORK.with(std::cell::Cell::get);
+    COMPANION_WORK.with(|work| work.set((after_asked, after_searched, was)));
+    (out, after_asked - asked, after_searched - searched)
 }
 
 /// One pass of the [`companion`] search: the values its rows are steered toward, and what it takes.

@@ -207,6 +207,8 @@ mod referenced_input;
 mod refusal_policy;
 mod related;
 mod related_guard;
+#[doc(hidden)]
+pub use related_guard::companion_work;
 mod related_list;
 mod repeated_identity;
 mod row_set;
