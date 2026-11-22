@@ -4029,8 +4029,10 @@ impl CommandSpec {
 
     /// Refuses an `exists: false` over one row, declared below a present-row refusal over another,
     /// where one request can satisfy both, on every format whose plan places the first at the lead
-    /// of [`precedence::Phase::PresentRelated`] (`ess/27` and later for a row the input names; any
-    /// format for one a stored field names).
+    /// of [`precedence::Phase::PresentRelated`] (`ess/27` and later for a row the input names). The
+    /// plan places an `exists: false` over a stored field's row there at every format, but a
+    /// command with such a branch reads no other row below `ess/32`, so the refusal first applies
+    /// at `ess/32`, beside a row set.
     ///
     /// [`Self::validate_step_order`] compares branches of different steps only, and skips a branch
     /// that is not read in declaration order, on the premise that it answers its step's question.
