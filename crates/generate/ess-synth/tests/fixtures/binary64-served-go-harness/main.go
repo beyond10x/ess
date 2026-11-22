@@ -221,24 +221,7 @@ func handle(line []byte, scenario ports, routes map[string][2]string, port int) 
 		if err != nil {
 			return nil, err
 		}
-		return []byte(fmt.Sprintf(`{"status":%d,"body":%s}`, status, refused(bytes.TrimSpace(answer)))), nil
+		return []byte(fmt.Sprintf(`{"status":%d,"body":%s}`, status, bytes.TrimSpace(answer))), nil
 	}
 	return nil, fmt.Errorf("no operation in `%s`", strings.TrimSpace(string(line)))
-}
-
-// refused adds the `refusal` member the line protocol reads a declared error from, ahead of the
-// served body, which stays otherwise verbatim.
-func refused(body []byte) []byte {
-	var declared struct {
-		Error   json.RawMessage `json:"error"`
-		Payload json.RawMessage `json:"payload"`
-	}
-	if len(body) == 0 || body[0] != '{' || json.Unmarshal(body, &declared) != nil || declared.Error == nil {
-		return body
-	}
-	payload := declared.Payload
-	if payload == nil {
-		payload = json.RawMessage("null")
-	}
-	return []byte(fmt.Sprintf(`{"refusal":{"error":%s,"payload":%s},%s`, declared.Error, payload, body[1:]))
 }

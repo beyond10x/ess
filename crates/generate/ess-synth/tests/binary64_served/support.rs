@@ -393,7 +393,8 @@ impl ConformanceTarget for Served {
                 .parse()
                 .map_err(|_| failure(&observation, &answer))?,
         );
-        let error = match answer.get("refusal") {
+        let flat = answer.get("error").map(|_| &answer);
+        let error = match answer.get("refusal").or(flat) {
             Some(refusal) => {
                 let name: ErrorRef = refusal["error"]
                     .as_str()
