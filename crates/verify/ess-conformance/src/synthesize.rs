@@ -3513,6 +3513,8 @@ fn synthesize_in(ir: &EssIr, seeds: &AdmittedSeeds) -> Synthesis {
     let _memoised = crate::witness_memo::memoise(ir);
     let _remembered = made::remember(ir);
     let _orderings = crate::now_offset::remember(ir);
+    // Each overlap is searched once, for generation and the check of the finished suite.
+    let _overlaps = keep_overlap_answers(ir);
     // ess/16 (#168): a model whose actors carry attributes is synthesized once per caller
     // assignment, each read with the caller's values written in (`caller::synthesize`). Seeds are
     // offered in the reading that sends every command as the caller their rows imply.
@@ -19490,6 +19492,139 @@ fn overlap_witness(
     })
 }
 
+thread_local! {
+    /// The first candidate found in each overlap, per model, innermost model last
+    /// ([`keep_overlap_answers`]).
+    static OVERLAP_ANSWERS: std::cell::RefCell<Vec<OverlapAnswers>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+    /// How many overlaps were searched for their first candidate on this thread
+    /// ([`overlap_searches`]).
+    static OVERLAP_SEARCHES: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
+
+/// What one model's overlaps answered ([`first_in_overlap`]): by command, the branch taken first,
+/// the other branch and the input paths the branch under test copies
+/// ([`crate::witness::copied_under_test`]), then by the guards searched over, compared one by one.
+struct OverlapAnswers {
+    /// The model, compared by address only. It is borrowed for as long as this entry is on the
+    /// stack ([`OverlapAnswersKept`]), so the address cannot be reused by another model meanwhile.
+    ir: *const EssIr,
+    #[allow(clippy::type_complexity)] // The key and the answer, as the search reads them.
+    answers: BTreeMap<
+        (QualifiedName, OutcomeName, OutcomeName, BTreeSet<FactPath>),
+        Vec<(Vec<Predicate>, Option<BTreeMap<String, Node>>)>,
+    >,
+}
+
+/// Keeps the overlap answers of one model until dropped. See [`keep_overlap_answers`].
+struct OverlapAnswersKept {
+    pushed: bool,
+}
+
+impl Drop for OverlapAnswersKept {
+    fn drop(&mut self) {
+        if self.pushed {
+            OVERLAP_ANSWERS.with(|answers| {
+                answers.borrow_mut().pop();
+            });
+        }
+    }
+}
+
+/// Keeps each overlap's first candidate for `ir` until the returned guard drops, so the check of
+/// the finished suite ([`unwitnessed_overlaps`]) reads what generation searched. A model already
+/// kept innermost keeps its answers.
+fn keep_overlap_answers(ir: &EssIr) -> OverlapAnswersKept {
+    let at = std::ptr::from_ref(ir);
+    let pushed = OVERLAP_ANSWERS.with(|answers| {
+        let mut answers = answers.borrow_mut();
+        if answers.last().is_some_and(|top| std::ptr::eq(top.ir, at)) {
+            return false;
+        }
+        answers.push(OverlapAnswers {
+            ir: at,
+            answers: BTreeMap::new(),
+        });
+        true
+    });
+    OverlapAnswersKept { pushed }
+}
+
+/// What `run` returns, and how many overlaps of two input guards were searched for their first
+/// candidate on this thread while it ran, rather than answered from what the synthesis searched
+/// before: the work a test bounds where a wall-clock bound would depend on the machine. Not part
+/// of the suite.
+#[doc(hidden)]
+pub fn overlap_searches<R>(run: impl FnOnce() -> R) -> (R, u64) {
+    let before = OVERLAP_SEARCHES.with(std::cell::Cell::get);
+    let out = run();
+    (out, OVERLAP_SEARCHES.with(std::cell::Cell::get) - before)
+}
+
+/// The first candidate in `overlap` ([`overlap_witness`] with no further guard or condition).
+///
+/// A function of the model, the command, the overlap's guards and the input paths the branch under
+/// test copies, and nothing else: generation sends it, and [`unwitnessed_overlaps`] asks the same
+/// question of the finished suite. Where `command` is `ir`'s own declaration and `ir` is the model
+/// kept innermost ([`keep_overlap_answers`]), each is searched once.
+fn first_in_overlap(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    overlap: &Overlap<'_>,
+) -> Option<BTreeMap<String, Node>> {
+    let kept = ir
+        .commands()
+        .get(&command.name)
+        .is_some_and(|declared| std::ptr::eq(declared, command))
+        && OVERLAP_ANSWERS.with(|answers| {
+            answers
+                .borrow()
+                .last()
+                .is_some_and(|top| std::ptr::eq(top.ir, ir))
+        });
+    let searched = overlap.searched();
+    let key = kept.then(|| {
+        (
+            command.name.clone(),
+            overlap.first.name.clone(),
+            overlap.other.name.clone(),
+            crate::witness::copied_under_test(command),
+        )
+    });
+    let same = |asked: &[Predicate]| {
+        asked.len() == searched.len() && asked.iter().zip(&searched).all(|(a, b)| a == *b)
+    };
+    if let Some(key) = &key {
+        let known = OVERLAP_ANSWERS.with(|answers| {
+            answers.borrow().last().and_then(|top| {
+                top.answers.get(key).and_then(|asked| {
+                    asked
+                        .iter()
+                        .find(|(guards, _)| same(guards))
+                        .map(|(_, answer)| answer.clone())
+                })
+            })
+        });
+        if let Some(known) = known {
+            return known;
+        }
+    }
+    OVERLAP_SEARCHES.with(|count| count.set(count.get() + 1));
+    // No borrow is held across the search.
+    let answer = overlap_witness(ir, command, overlap, &[], |_| true);
+    if let Some(key) = key {
+        OVERLAP_ANSWERS.with(|answers| {
+            if let Some(top) = answers.borrow_mut().last_mut() {
+                top.answers.entry(key).or_default().push((
+                    searched.iter().map(|guard| (*guard).clone()).collect(),
+                    answer.clone(),
+                ));
+            }
+        });
+    }
+    answer
+}
+
 /// The inputs a branch is further witnessed at because it is the `first` of an [`Overlap`]: one
 /// per overlap, the first candidate in it, each sent once.
 ///
@@ -19517,8 +19652,8 @@ fn overlap_inputs(
         .into_iter()
         .chain(refusal_pair_overlaps(ir.format(), command, outcome))
     {
-        if let Some(input) = overlap_witness(ir, command, &overlap, &[], |_| true)
-            .filter(|input| !rows.contains(input))
+        if let Some(input) =
+            first_in_overlap(ir, command, &overlap).filter(|input| !rows.contains(input))
         {
             rows.push(input);
         }
@@ -19536,8 +19671,8 @@ pub(super) fn refusal_pair_inputs(
 ) -> Vec<BTreeMap<String, Node>> {
     let mut rows = Vec::new();
     for overlap in refusal_pair_overlaps(ir.format(), command, outcome) {
-        if let Some(input) = overlap_witness(ir, command, &overlap, &[], |_| true)
-            .filter(|input| !rows.contains(input))
+        if let Some(input) =
+            first_in_overlap(ir, command, &overlap).filter(|input| !rows.contains(input))
         {
             rows.push(input);
         }
@@ -19806,7 +19941,7 @@ fn unwitnessed_overlaps(ir: &EssIr, suite: &ConformanceSuite) -> Vec<Note> {
                 {
                     continue;
                 }
-                let gap = if overlap_witness(ir, command, &overlap, &[], |_| true).is_some() {
+                let gap = if first_in_overlap(ir, command, &overlap).is_some() {
                     OverlapGap::Unsent
                 } else if crate::witness::exhausts(ir, command, &overlap.searched())
                     || crate::witness::duplicate_capped_below_two(&overlap.both)

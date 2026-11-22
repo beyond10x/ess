@@ -343,3 +343,47 @@ fn an_overlap_over_another_field_is_sent_and_requires_the_first_declared_branch(
         BTreeSet::from([SMALL.to_owned()])
     );
 }
+
+/// One overlap is searched once per synthesis: generation looks in it for an input to send, and the
+/// check of the finished suite asks the same question again of every overlap no scenario sends. A
+/// command of 10 mutually exclusive accepting guards has 45 overlaps, all empty, and searched each
+/// twice; the second pass took 9.5 % of the run's instructions. A work bound rather than a clock.
+#[test]
+fn each_overlap_of_two_accepting_guards_is_searched_once() {
+    let cases: String = (0..10)
+        .map(|i| {
+            format!(
+                "      - {{name: case-{i}, when: quantity == {i}, emits: [shop.order.Checked]}}\n"
+            )
+        })
+        .collect();
+    let model = ir(&format!(
+        "format: ess/25
+system: shop
+version: v1
+domain: shop.order
+commands:
+  - name: shop.order.Check
+    input: [{{name: quantity, type: Integer}}]
+    outcomes:
+{cases}      - {{name: other, emits: [shop.order.Checked]}}
+events: [{{name: shop.order.Checked, fields: []}}]
+"
+    ));
+    let (synthesis, searched) =
+        ess_conformance::synthesize::overlap_searches(|| synthesize(&model));
+    assert!(
+        synthesis.refusals.is_empty(),
+        "every scenario is synthesized: {:#?}",
+        synthesis.refusals
+    );
+    assert_eq!(
+        synthesis.suite.scenarios.len(),
+        11,
+        "one scenario per branch"
+    );
+    assert!(
+        searched <= 45,
+        "the 45 overlaps of 10 accepting guards were searched {searched} times"
+    );
+}
