@@ -55,13 +55,14 @@ fn binary64_sparse_model_refuses_every_unsupported_publication_route() {
     fs::create_dir_all(root.join("spec")).unwrap();
     fs::write(
         root.join("spec/system.yaml"),
-        NOTES.replace("{input}", REACHED),
+        NOTES.replace("{input}", REACHED).replace(
+            "{name: demo.notes.NoteId, kind: newtype, of: Uuid}",
+            "{name: demo.notes.NoteId, kind: newtype, of: Binary64}",
+        ),
     )
     .unwrap();
-    // Restated for story:a-binary64-value-round-trips-through-a-conformance-suite: the conformance
-    // suite routes carry a finite Binary64 a command input reaches from suite/62
-    // (`a_reached_binary64_publishes_every_conformance_route`); whole-system code generation and
-    // the browser bundle still carry none and still refuse it.
+    // The identity `NoteId` is a Binary64 no route carries, so every publication route still
+    // refuses it, whatever the code targets come to carry elsewhere.
     let operations: &[(&[&str], bool)] = &[
         (&["synthesize", "--target", "rust"], true),
         (&["synthesize", "--target", "go"], true),
@@ -105,7 +106,7 @@ fn binary64_sparse_model_refuses_every_unsupported_publication_route() {
             .unwrap();
             assert!(!result.status.success(), "{arguments:?}: {combined}");
             assert!(
-                combined.contains("Binary64") && combined.contains("demo.notes.Rate"),
+                combined.contains("Binary64") && combined.contains("demo.notes.NoteId"),
                 "located finite refusal: {combined}"
             );
             if arguments[0] == "synthesize" {

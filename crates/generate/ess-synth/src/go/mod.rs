@@ -39,6 +39,7 @@
 
 mod accessor;
 mod behaviour;
+pub(crate) mod binary64;
 mod condition;
 mod context;
 mod entity;

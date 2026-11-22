@@ -28,6 +28,7 @@
 //! obligation, or the ports a generated behaviour reads through — which is the honest empty state,
 //! and the one a reader learns the plan from. Gap register D-2 says the machinery does not choose; a page is machinery.
 
+pub(crate) mod binary64;
 mod bridge;
 mod catalog;
 mod layout;

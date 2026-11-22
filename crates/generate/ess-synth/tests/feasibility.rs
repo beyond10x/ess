@@ -48,8 +48,8 @@ fn core(body: &str, wiring: &str) -> EssIr {
 }
 
 #[test]
-fn binary64_is_refused_even_when_no_component_consumes_the_type() {
-    let ir = fixture(&[("sparse.yaml", "format: ess/2\nsystem: demo\nversion: v1\ndomains: [demo.core]\ndomain: demo.core\ntypes:\n  - {name: demo.core.Ratio, kind: newtype, of: Binary64}\n")]);
+fn binary64_is_refused_where_an_identity_reaches_it() {
+    let ir = fixture(&[("sparse.yaml", "format: ess/2\nsystem: demo\nversion: v1\ndomains: [demo.core]\ndomain: demo.core\ntypes:\n  - {name: demo.core.Ratio, kind: newtype, of: Binary64}\nentities:\n  - name: demo.core.Gauge\n    identity: {name: gauge_id, type: demo.core.Ratio}\n    fields: []\n    lifecycle: {initial: Open, states: [Open], terminal: [Open], transitions: []}\n")]);
     let plan = SynthesisPlan::of(&ir);
     for (target, label, format) in [
         (Target::Rust, "rust", "ess-target-failure/1"),
