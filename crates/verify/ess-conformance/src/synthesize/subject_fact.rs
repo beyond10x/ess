@@ -6052,7 +6052,7 @@ pub(super) fn holding(ir: &EssIr, entity: &EntityHandle, row: &Arrangement) -> H
 
 /// The rows of `ir` held on this thread ([`holding`]), as the key of what a search under them
 /// made ([`super::made`]).
-fn held_key(ir: &EssIr) -> String {
+pub(super) fn held_key(ir: &EssIr) -> String {
     HELD.with(|held| {
         held.borrow()
             .iter()

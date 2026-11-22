@@ -187,6 +187,7 @@ mod binding_condition;
 mod binding_effects;
 mod bounded_retry;
 mod caller;
+mod created_memo;
 mod delivery_context;
 mod disclosure;
 mod earlier_runs;
@@ -3490,6 +3491,21 @@ pub fn syntheses_started<R>(run: impl FnOnce() -> R) -> (R, u64) {
     (out, SYNTHESES.with(std::cell::Cell::get) - before)
 }
 
+/// What `run` returns, how many rows of creating branches it asked for on this thread, and how
+/// many of them were made rather than answered from what the synthesis made before: the work a
+/// test bounds. Not part of the suite.
+#[doc(hidden)]
+pub fn created_rows_made<R>(run: impl FnOnce() -> R) -> (R, u64, u64) {
+    created_memo::counting(run)
+}
+
+/// What `run` returns with every row of a creating branch made afresh, for a test comparing the
+/// suite with the one made from memory. Not part of the suite.
+#[doc(hidden)]
+pub fn created_rows_unkept<R>(run: impl FnOnce() -> R) -> R {
+    created_memo::unkept(run)
+}
+
 /// [`synthesize`], with explicitly admitted synthesis seeds (beyond10x/ess#413,
 /// `docs/design/synthesis-seeds.md`).
 ///
@@ -3539,6 +3555,7 @@ fn synthesize_in(ir: &EssIr, seeds: &AdmittedSeeds) -> Synthesis {
     // Each overlap is searched once, for generation and the check of the finished suite.
     let _overlaps = keep_overlap_answers(ir);
     let _kept = model_memo::keep(ir);
+    let _created = created_memo::remember(ir);
     // ess/16 (#168): a model whose actors carry attributes is synthesized once per caller
     // assignment, each read with the caller's values written in (`caller::synthesize`). Seeds are
     // offered in the reading that sends every command as the caller their rows imply.
@@ -3706,6 +3723,7 @@ fn synthesize_invocations(models: &caller::InvocationModels<'_>, focus: Focus<'_
     let _remembered = made::remember(ir);
     let _orderings = crate::now_offset::remember(ir);
     let _kept = model_memo::keep(ir);
+    let _created = created_memo::remember(ir);
     let mut suite = ConformanceSuite::new(SuiteProvenance::of(ir));
     let mut refusals = Vec::new();
     // A Binary64 nothing a scenario sends or reads reaches is noted, not refused (`synthesize_in`);
@@ -8300,6 +8318,43 @@ fn owner_of_row<'a>(
 // One argument per thing an arranging run is told, and the witness it is for.
 #[allow(clippy::too_many_arguments)]
 fn created_owned(
+    ir: &EssIr,
+    entity: &EntityHandle,
+    creator: &Driver<'_>,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    distinction: Distinction,
+    arranging: &[&EntityHandle],
+    owner: Option<&(String, Arrangement)>,
+    input: Option<&BTreeMap<String, Node>>,
+) -> Result<Arrangement, Unreachable> {
+    // Asked again by every scenario that acts on such a row: made once per model and context.
+    created_memo::created_owned(
+        ir,
+        entity,
+        creator,
+        actors,
+        distinction,
+        arranging,
+        owner,
+        input,
+        || {
+            created_owned_made(
+                ir,
+                entity,
+                creator,
+                actors,
+                distinction,
+                arranging,
+                owner,
+                input,
+            )
+        },
+    )
+}
+
+/// [`created_owned`], made afresh.
+#[allow(clippy::too_many_arguments)]
+fn created_owned_made(
     ir: &EssIr,
     entity: &EntityHandle,
     creator: &Driver<'_>,
