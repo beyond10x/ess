@@ -213,6 +213,8 @@ mod related_list;
 mod repeated_identity;
 mod row_set;
 mod run_memo;
+#[doc(hidden)]
+pub use row_set::row_set_attempts;
 mod seeds;
 mod self_admission;
 mod set_effects;

@@ -9,7 +9,7 @@
 //! every arrangement of that branch.
 
 use ess_compiler::{ir::EssIr, resolve::compile, source::SourceMap};
-use ess_conformance::synthesize::{companion_work, synthesize, Synthesis};
+use ess_conformance::synthesize::{companion_work, row_set_attempts, synthesize, Synthesis};
 use ess_domain::{
     spec::{RawSpecFile, Specification},
     system::Source,
@@ -128,4 +128,50 @@ fn a_companion_pass_alike_to_one_that_found_nothing_is_not_searched_again() {
         "{searched} stored-row searches for {asked} companions, more than one each"
     );
     assert_eq!(shown(&kept), shown(&fresh), "the suite changed");
+}
+
+/// A wire joins two ports; `Connect` reads both through `when_related:` beside a row set over the
+/// wires leaving its source port (`ess/32`).
+const WIRING: &str =
+    include_str!("../../../specify/ess-domain/tests/fixtures/identity-beside-row-set.yaml");
+
+const SOURCE_TAKEN: &str = "      - name: source-taken
+        when_related:
+          entity: wiring.board.Wire
+          where: from_port == input.from_port
+          exists: true
+        error: wiring.board.SourceTaken
+";
+
+/// The row-set refusal moved ahead of every branch over a named port.
+fn taken_first() -> String {
+    let without = WIRING.replacen(SOURCE_TAKEN, "", 1);
+    assert_ne!(without, WIRING, "the refusal is in the model");
+    let moved = without.replacen(
+        "      - name: no-source\n",
+        &format!("{SOURCE_TAKEN}      - name: no-source\n"),
+        1,
+    );
+    assert_ne!(moved, without, "the first branch is in the model");
+    moved
+}
+
+/// The linked arrangement of a row-set branch, tried among the attempts beside named rows and not
+/// standing selected there, is not tried again after the plain one: before, every such branch
+/// arranged it twice (the `fresh` runs below still do, so they ask for more arrangements).
+#[test]
+fn a_linked_row_set_attempt_that_ran_beside_named_rows_is_not_tried_again() {
+    let (mut asked, mut fresh_asked) = (0, 0);
+    for text in [WIRING.to_owned(), taken_first()] {
+        let ir = ir(&text);
+        let (kept, kept_asked) = row_set_attempts(false, || synthesize(&ir));
+        let (fresh, again) = row_set_attempts(true, || synthesize(&ir));
+        assert_eq!(shown(&kept), shown(&fresh), "the suite changed");
+        asked += kept_asked;
+        fresh_asked += again;
+    }
+    assert!(
+        asked < fresh_asked,
+        "{asked} row-set arrangements asked for, {fresh_asked} when the linked one is tried again"
+    );
 }
