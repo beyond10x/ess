@@ -159,8 +159,9 @@ enum SpecifyCommand {
         #[command(flatten)]
         input: SpecPath,
         /// Report completeness for this declared component's suite, as `ess verify conform
-        /// synthesize --component` scopes it: the scenarios it holds outside are listed under
-        /// `completeness.outside`.
+        /// synthesize --component` scopes it: only the component's operations are synthesized,
+        /// their scenarios it holds outside are listed under `completeness.outside`, and
+        /// `unscenarioed` and `unanswered` are those of its operations.
         #[arg(long)]
         component: Option<String>,
     },
@@ -630,11 +631,13 @@ enum ConformCommand {
         out: Option<PathBuf>,
         /// Hold one component to the specification rather than the whole system.
         ///
-        /// Keeps only the scenarios whose every command, event and view this component accepts,
-        /// publishes or owns, and lists the rest with what they need — they belong in the suite of
-        /// the component that realises it. An implementation of one component answers
-        /// `ErrUnsupported` to the other's scenarios, and a run with skips in it cannot say it
-        /// passed.
+        /// Synthesizes only the operations this component realises: the commands it accepts, the
+        /// views it owns and the events it publishes. Keeps the scenarios whose every command,
+        /// event and view it accepts, publishes or owns, and lists the other scenarios of its
+        /// operations with what they need. Refusals and notes are those of its operations; the
+        /// whole system's are reported without `--component`. An implementation of one component
+        /// answers `ErrUnsupported` to the other's scenarios, and a run with skips in it cannot
+        /// say it passed.
         #[arg(long)]
         component: Option<String>,
         /// The `ess-scenario/1` documents to compile beside the generated scenarios.
@@ -5407,12 +5410,36 @@ fn synthesize_suite(
                     "{} scenario(s) ({authored} authored), {refused}, {written}",
                     synthesis.suite.len(),
                 ),
-                Some(name) => println!(
-                    "{} scenario(s) for `{name}` ({authored} authored), {} outside it, {refused}, \
-                     {written}",
-                    synthesis.suite.len(),
-                    synthesis.outside.len(),
-                ),
+                Some(name) => {
+                    // Only the component's own operations were synthesized: whether another
+                    // component's are refused is not known here, and the line says where it is.
+                    println!(
+                        "scope: only `{name}`'s operations are synthesized, so whether the system \
+                         refuses or notes anything about another component's is not known to this \
+                         run; `ess verify conform synthesize` without `--component` reports the \
+                         whole system's"
+                    );
+                    // What no component realises is reported by no component's run: named here
+                    // from the component map, so a run per component cannot pass it by silence.
+                    let unrealised = ess_conformance::synthesize::unrealised(&ir);
+                    if !unrealised.is_empty() {
+                        let names: Vec<String> =
+                            unrealised.iter().map(|name| format!("`{name}`")).collect();
+                        println!(
+                            "unrealised: {} operation(s) no component realises, so no \
+                             `--component` run reports their scenarios or refusals; `ess verify \
+                             conform synthesize` without `--component` does: {}",
+                            unrealised.len(),
+                            names.join(", ")
+                        );
+                    }
+                    println!(
+                        "{} scenario(s) for `{name}` ({authored} authored), {} outside it, \
+                         {refused}, {written}",
+                        synthesis.suite.len(),
+                        synthesis.outside.len(),
+                    );
+                }
             }
         }
         Format::Json => print!("{}", json.as_deref().unwrap_or_default()),

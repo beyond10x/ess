@@ -3736,18 +3736,65 @@ enum Focus<'a> {
 }
 
 impl Focus<'_> {
-    /// Whether the scenarios of `command` are written.
+    /// Whether the scenarios of `command` are written: never for a command outside the component a
+    /// [`synthesize_for`] run is scoped to.
     fn takes(self, command: &QualifiedName) -> bool {
-        match self {
-            Self::Whole => true,
-            Self::About(focus) => focus == command,
-        }
+        in_scope(command)
+            && match self {
+                Self::Whole => true,
+                Self::About(focus) => focus == command,
+            }
     }
 
     /// Whether every scenario is written.
     fn is_whole(self) -> bool {
         matches!(self, Self::Whole)
     }
+}
+
+thread_local! {
+    /// The commands a synthesis scoped to one component writes scenarios for on this thread
+    /// ([`synthesize_for`]); `None` outside such a synthesis, where every command's are written.
+    static SCOPE: std::cell::RefCell<Option<BTreeSet<QualifiedName>>> =
+        const { std::cell::RefCell::new(None) };
+    /// How many commands' outcome scenarios were synthesized on this thread
+    /// ([`commands_synthesized`]).
+    static COMMANDS_TAKEN: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
+
+/// Whether the scenarios of `command` are written under the scope this thread holds.
+fn in_scope(command: &QualifiedName) -> bool {
+    SCOPE.with_borrow(|scope| {
+        scope
+            .as_ref()
+            .is_none_or(|commands| commands.contains(command))
+    })
+}
+
+/// Holds the scope [`scoped_to`] set until dropped, then restores the one before it.
+#[must_use = "the scope ends when this is dropped"]
+struct Scope(Option<BTreeSet<QualifiedName>>);
+
+impl Drop for Scope {
+    fn drop(&mut self) {
+        let previous = self.0.take();
+        SCOPE.with_borrow_mut(|scope| *scope = previous);
+    }
+}
+
+/// Scopes every synthesis on this thread to the scenarios of `commands` until the guard drops.
+fn scoped_to(commands: BTreeSet<QualifiedName>) -> Scope {
+    Scope(SCOPE.with_borrow_mut(|scope| scope.replace(commands)))
+}
+
+/// What `run` returns, and how many commands' outcome scenarios were synthesized on this thread
+/// while it ran: the work a component-scoped synthesis bounds where a wall-clock bound would
+/// depend on the machine. Not part of the suite.
+#[doc(hidden)]
+pub fn commands_synthesized<R>(run: impl FnOnce() -> R) -> (R, u64) {
+    let before = COMMANDS_TAKEN.get();
+    let result = run();
+    (result, COMMANDS_TAKEN.get() - before)
 }
 
 /// [`synthesize`], for a model in which nothing depends on who sends a command.
@@ -3788,6 +3835,7 @@ fn synthesize_invocations(models: &caller::InvocationModels<'_>, focus: Focus<'_
         if !focus.takes(&command.name) {
             continue;
         }
+        COMMANDS_TAKEN.set(COMMANDS_TAKEN.get() + 1);
         for outcome in &command.outcomes {
             // A wrong-state branch gets no scenario from here. §10 asks for one scenario per
             // *reachable* outcome, and the states this branch is reachable in are exactly the ones
@@ -3967,8 +4015,13 @@ fn synthesize_invocations(models: &caller::InvocationModels<'_>, focus: Focus<'_
 /// specification declares minus the branch's own, and an implementation can say it did not emit an
 /// event it has never heard of; requiring the component to publish it would empty every suite.
 ///
-/// The refusals are the whole system's, untouched: a refusal is a fact about the specification, and
-/// scoping the suite does not make a construct say more.
+/// Only the component's own operations are synthesized: the commands it handles, the views it owns
+/// and the events it publishes. Each of their scenarios is written exactly as
+/// [`synthesize`] writes it, so the kept suite is the one the whole system's suite filters to; a
+/// scenario of one of them that needs another component is listed outside; and the refusals and
+/// notes are those about the component's operations, with every fact about the model that names
+/// no operation. A scenario, refusal or note about another component's operation is not written:
+/// the whole system's are [`synthesize`]'s, and a run per component costs that component's work.
 ///
 /// # Errors
 ///
@@ -3983,32 +4036,189 @@ fn synthesize_for_in(
     component: &str,
     seeds: &AdmittedSeeds,
 ) -> Result<Synthesis, UnknownComponent> {
-    let Some(realised) = ir
-        .components()
+    let realised = component_named(ir, component)?;
+    Ok(split(
+        ir,
+        realised,
+        synthesize_operations_of(ir, realised, seeds),
+    ))
+}
+
+/// [`synthesize_for`], read off the whole system's synthesis rather than synthesized for the
+/// component alone: what a test compares the scoped synthesis with. Not part of the API.
+///
+/// # Errors
+///
+/// As [`synthesize_for`].
+#[doc(hidden)]
+pub fn synthesize_for_from_whole(
+    ir: &EssIr,
+    component: &str,
+) -> Result<Synthesis, UnknownComponent> {
+    let realised = component_named(ir, component)?;
+    Ok(split(
+        ir,
+        realised,
+        restricted(ir, realised, synthesize_in(ir, &seeds::EMPTY)),
+    ))
+}
+
+/// The declared component named `component`, or the refusal naming the ones declared.
+fn component_named<'a>(
+    ir: &'a EssIr,
+    component: &str,
+) -> Result<&'a ResolvedComponent, UnknownComponent> {
+    ir.components()
         .values()
         .find(|declared| declared.name.as_str() == component)
-    else {
-        return Err(UnknownComponent {
+        .ok_or_else(|| UnknownComponent {
             component: component.to_owned(),
             declared: ir
                 .components()
                 .keys()
                 .map(|name| name.as_str().to_owned())
                 .collect(),
-        });
-    };
+        })
+}
 
-    let whole = synthesize_in(ir, seeds);
-    let mut provenance = whole.suite.provenance.clone();
-    provenance.component = Some(component.to_owned());
+/// Every scenario about an operation `component` realises, whether its suite can hold it or not,
+/// with the refusals and notes [`synthesize_for`] keeps: the synthesis of the commands it handles
+/// alone where that writes each of those exactly as the whole synthesis does
+/// ([`scoping_reproduces`]), and the whole synthesis read down to them otherwise.
+pub(crate) fn synthesize_operations_of(
+    ir: &EssIr,
+    component: &ResolvedComponent,
+    seeds: &AdmittedSeeds,
+) -> Synthesis {
+    let synthesis = if scoping_reproduces(ir, component) {
+        let _scope = scoped_to(scope_of(ir, component));
+        synthesize_in(ir, seeds)
+    } else {
+        synthesize_in(ir, seeds)
+    };
+    restricted(ir, component, synthesis)
+}
+
+/// The commands whose scenarios a synthesis for `component` writes: those it handles, and, where
+/// the model has actors, every other command whose branch has a subject one of those writes.
+///
+/// A refused send of a command no grant admits is cut from the scenario of the finished suite that
+/// ends sending it best (`grant::denied`), and a scenario of another command ends sending it
+/// where it arranges a row beside that command's subject after the command's own send. Such a
+/// scenario is written so the refused send is cut from the same one; it is not the component's,
+/// so [`restricted`] drops it again.
+fn scope_of(ir: &EssIr, component: &ResolvedComponent) -> BTreeSet<QualifiedName> {
+    let handled: BTreeSet<QualifiedName> = ir
+        .commands()
+        .keys()
+        .filter(|command| handles(ir, component, command))
+        .cloned()
+        .collect();
+    if ir.actors().is_empty() {
+        return handled;
+    }
+    let subject = |command: &ResolvedCommand| -> BTreeSet<EntityHandle> {
+        command
+            .outcomes
+            .iter()
+            .filter_map(|outcome| {
+                outcome
+                    .subject
+                    .as_ref()
+                    .map(|subject| subject.entity.clone())
+            })
+            .collect()
+    };
+    let written: BTreeSet<EntityHandle> = handled
+        .iter()
+        .filter_map(|name| ir.commands().get(name))
+        .flat_map(subject)
+        .collect();
+    let mut scope = handled;
+    scope.extend(
+        ir.commands()
+            .values()
+            .filter(|command| !subject(command).is_disjoint(&written))
+            .map(|command| command.name.clone()),
+    );
+    scope
+}
+
+/// Whether the synthesis of the commands `component` handles alone writes every scenario about its
+/// operations as the whole synthesis does.
+///
+/// Every family files a command's scenarios from its loop over that command, so leaving another
+/// command out leaves its scenarios out and nothing else. Two passes instead borrow steps from
+/// whichever scenario of the finished suite fits best, and that may be one of another component's
+/// commands: a one-time-response cell, and the read of a read-granted view with parameters. Where
+/// the component's suite holds either, the whole system is synthesized and read down.
+fn scoping_reproduces(ir: &EssIr, component: &ResolvedComponent) -> bool {
+    if crate::one_time_response::marked_model(ir) {
+        return false;
+    }
+    !(ir.grants_reads()
+        && ir.views().iter().any(|(name, view)| {
+            !view.params.is_empty() && ir.read_granted(name) && owns_view(ir, component, name)
+        }))
+}
+
+/// `synthesis` read down to `component`'s operations: every scenario its suite can hold, every
+/// other scenario about one of its operations ([`of_component`]), and the refusals and notes about
+/// them or about no operation at all.
+///
+/// A kept refusal whose cause (`caused_by`) is a refusal about another component's operation
+/// loses that link: the cause is not reported here, so the refusal stands as its own.
+fn restricted(ir: &EssIr, component: &ResolvedComponent, mut synthesis: Synthesis) -> Synthesis {
+    synthesis.suite.scenarios.retain(|id, scenario| {
+        of_component(ir, component, id) || needs_of(ir, component, scenario).is_empty()
+    });
+    let mut dropped: BTreeSet<ScenarioId> = BTreeSet::new();
+    synthesis.refusals.retain(|refusal| {
+        let kept = match &refusal.scenario {
+            Some(id) => of_component(ir, component, id),
+            None => subject_of_component(ir, component, &refusal.subject),
+        };
+        if !kept {
+            dropped.extend(refusal.scenario.iter().cloned());
+        }
+        kept
+    });
+    let reported: BTreeSet<&ScenarioId> = synthesis
+        .refusals
+        .iter()
+        .filter_map(|refusal| refusal.scenario.as_ref())
+        .collect();
+    let orphaned: BTreeSet<ScenarioId> = dropped
+        .into_iter()
+        .filter(|cause| !reported.contains(cause))
+        .collect();
+    for refusal in &mut synthesis.refusals {
+        if refusal
+            .caused_by
+            .as_ref()
+            .is_some_and(|cause| orphaned.contains(cause))
+        {
+            refusal.caused_by = None;
+        }
+    }
+    synthesis
+        .notes
+        .retain(|note| note_of_component(ir, component, note));
+    synthesis
+}
+
+/// `synthesis`'s suite split into what `component`'s suite holds and what it lists outside.
+fn split(ir: &EssIr, component: &ResolvedComponent, synthesis: Synthesis) -> Synthesis {
+    let mut provenance = synthesis.suite.provenance.clone();
+    provenance.component = Some(component.name.as_str().to_owned());
     let mut suite = ConformanceSuite::new(provenance);
     let mut outside = Vec::new();
-    for (id, scenario) in whole.suite.scenarios {
-        let needs = needs_of(ir, realised, &scenario);
+    for (id, scenario) in synthesis.suite.scenarios {
+        let needs = needs_of(ir, component, &scenario);
         if needs.is_empty() {
             suite
                 .insert(id, scenario)
-                .expect("the whole suite held each id once, so its subset does too");
+                .expect("the synthesized suite held each id once, so its subset does too");
         } else {
             outside.push(Outside {
                 scenario: id,
@@ -4017,12 +4227,146 @@ fn synthesize_for_in(
         }
     }
     suite.select_fresh_format_for(ir);
-    Ok(Synthesis {
+    Synthesis {
         suite,
-        refusals: whole.refusals,
+        refusals: synthesis.refusals,
         outside,
-        notes: whole.notes,
-    })
+        notes: synthesis.notes,
+    }
+}
+
+/// Whether the scenario `id` is about an operation `component` realises: the command whose branch,
+/// transition, refusal, invariant, grant or one-time response it proves is one the component
+/// handles, the view it reads a value, an aggregate, a grant or a reference of is one it owns, or
+/// the command a binding invokes is one it handles. An authored id names no operation: synthesis
+/// writes none, and the caller filing authored scenarios lists each one outside the component's
+/// suite by its needs alone.
+pub(crate) fn of_component(ir: &EssIr, component: &ResolvedComponent, id: &ScenarioId) -> bool {
+    match id {
+        ScenarioId::Outcome { outcome } | ScenarioId::HeldOutcome { outcome, .. } => {
+            handles(ir, component, outcome.command.name())
+        }
+        ScenarioId::Transition { by, .. } => handles(ir, component, by.command.name()),
+        ScenarioId::Refusal { command, .. }
+        | ScenarioId::Grant { command }
+        | ScenarioId::GrantAdmitted { command, .. } => handles(ir, component, command.name()),
+        ScenarioId::Invariant { after, .. } => handles(ir, component, after.command.name()),
+        ScenarioId::Disclosure { cell } => handles(ir, component, cell.origin.command.name()),
+        ScenarioId::ValueInvariant { at, .. } | ScenarioId::ValueInvariantWrapped { at, .. } => {
+            owns_view(ir, component, at.name())
+        }
+        ScenarioId::Aggregate { view }
+        | ScenarioId::ReadGrant { view }
+        | ScenarioId::ReadGrantAdmitted { view, .. }
+        | ScenarioId::ViewReference { view, .. } => owns_view(ir, component, view.name()),
+        ScenarioId::Binding { binding, .. } | ScenarioId::BindingRefusal { binding, .. } => {
+            invokes_handled(ir, component, binding)
+        }
+        ScenarioId::Authored { .. } => false,
+    }
+}
+
+/// The commands, events, views and bindings no declared component realises, in order: no
+/// [`synthesize_for`] run writes their scenarios, refusals or notes, so only [`synthesize`] reports
+/// them. Read off the component map alone; nothing is synthesized. Empty where the specification
+/// declares no component.
+#[must_use]
+pub fn unrealised(ir: &EssIr) -> Vec<EssSemanticRef> {
+    let components: Vec<&ResolvedComponent> = ir.components().values().collect();
+    if components.is_empty() {
+        return Vec::new();
+    }
+    let by_none = |realises: &dyn Fn(&ResolvedComponent) -> bool| {
+        !components.iter().any(|component| realises(component))
+    };
+    let mut unrealised: BTreeSet<EssSemanticRef> = BTreeSet::new();
+    for name in ir.commands().keys() {
+        if by_none(&|component| handles(ir, component, name)) {
+            unrealised.insert(CommandRef::new(name.clone()).into());
+        }
+    }
+    for name in ir.events().keys() {
+        if by_none(&|component| emits(ir, component, name)) {
+            unrealised.insert(EventRef::new(name.clone()).into());
+        }
+    }
+    for name in ir.views().keys() {
+        if by_none(&|component| owns_view(ir, component, name)) {
+            unrealised.insert(ViewRef::new(name.clone()).into());
+        }
+    }
+    for name in ir.bindings().keys() {
+        let binding = BindingRef::new(name.clone());
+        if by_none(&|component| invokes_handled(ir, component, &binding)) {
+            unrealised.insert(binding.into());
+        }
+    }
+    unrealised.into_iter().collect()
+}
+
+/// Whether the command `binding` invokes is one `component` handles.
+fn invokes_handled(ir: &EssIr, component: &ResolvedComponent, binding: &BindingRef) -> bool {
+    ir.bindings()
+        .get(binding.name())
+        .is_some_and(|declared| handles(ir, component, &ir.command(&declared.command).name))
+}
+
+/// Whether a refusal about no one scenario, about `subject`, is `component`'s: a command, branch,
+/// event, view or binding by [`of_component`]'s rule; anything else names no operation, so it is a
+/// fact about the model every component's synthesis reports.
+fn subject_of_component(
+    ir: &EssIr,
+    component: &ResolvedComponent,
+    subject: &EssSemanticRef,
+) -> bool {
+    match subject {
+        EssSemanticRef::Command { name } => handles(ir, component, name.name()),
+        EssSemanticRef::Outcome { name } => handles(ir, component, name.command.name()),
+        EssSemanticRef::Event { name } => emits(ir, component, name.name()),
+        EssSemanticRef::View { name } => owns_view(ir, component, name.name()),
+        EssSemanticRef::Binding { name } => invokes_handled(ir, component, name),
+        EssSemanticRef::Domain { .. }
+        | EssSemanticRef::Type { .. }
+        | EssSemanticRef::Entity { .. }
+        | EssSemanticRef::Error { .. }
+        | EssSemanticRef::Actor { .. }
+        | EssSemanticRef::Transition { .. }
+        | EssSemanticRef::Component { .. } => true,
+    }
+}
+
+/// Whether `note` is `component`'s: about a scenario, command, branch or view by
+/// [`of_component`]'s rule, or about no operation at all.
+fn note_of_component(ir: &EssIr, component: &ResolvedComponent, note: &Note) -> bool {
+    match note {
+        Note::PartialObservation { scenario, .. }
+        | Note::UnseparatedSources { scenario, .. }
+        | Note::UnwitnessedOverlap { scenario, .. }
+        | Note::UnswappedCallers { scenario, .. }
+        | Note::CrossCallerUnswapped { scenario, .. }
+        | Note::CrossCallerUnwitnessed { scenario, .. }
+        | Note::UnaccompaniedRelatedCopy { scenario, .. }
+        | Note::ProvidedRelatedRow { scenario, .. }
+        | Note::UnobservedNoOp { scenario, .. }
+        | Note::UnspreadCollection { scenario, .. }
+        | Note::UnspreadInputList { scenario, .. } => of_component(ir, component, scenario),
+        Note::UnknownInstanceUnanswered { command }
+        | Note::UnknownInstanceAmbiguous { command, .. }
+        | Note::GrantedToEveryActor { command }
+        | Note::GrantedToNoActor { command, .. }
+        | Note::GrantDeniedUnwitnessed { command }
+        | Note::GrantRotationSkipped { command, .. } => handles(ir, component, command.name()),
+        Note::ReadGrantedToEveryActor { view } | Note::ReadGrantUnwitnessed { view } => {
+            owns_view(ir, component, view.name())
+        }
+        Note::ConvertedFieldUnasserted { outcome, .. } => {
+            handles(ir, component, outcome.command.name())
+        }
+        Note::GrantEnforcedByCaller
+        | Note::ReadGrantEnforcedByCaller
+        | Note::UnreachedBinary64 { .. }
+        | Note::UnreachedValueInvariant { .. } => true,
+    }
 }
 
 /// What `scenario` asks of an implementation that `component` does not realise, in name order;
@@ -4040,21 +4384,7 @@ pub fn needs_outside(
     component: &str,
     scenario: &ConformanceScenario,
 ) -> Result<Vec<EssSemanticRef>, UnknownComponent> {
-    let Some(realised) = ir
-        .components()
-        .values()
-        .find(|declared| declared.name.as_str() == component)
-    else {
-        return Err(UnknownComponent {
-            component: component.to_owned(),
-            declared: ir
-                .components()
-                .keys()
-                .map(|name| name.as_str().to_owned())
-                .collect(),
-        });
-    };
-    Ok(needs_of(ir, realised, scenario))
+    Ok(needs_of(ir, component_named(ir, component)?, scenario))
 }
 
 /// A scenario a component's suite does not hold, and what it would need the component to realise.

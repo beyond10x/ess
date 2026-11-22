@@ -51,13 +51,19 @@ to what that level can answer:
 ```shell-session
 $ ess verify conform synthesize --path examples/billing --component invoice-service \
     --out target/invoice-service-suite.json
-26 scenario(s) for `invoice-service` (0 authored), 6 outside it, 0 refusal(s), written to target/invoice-service-suite.json
+scope: only `invoice-service`'s operations are synthesized, so whether the system refuses or notes anything about another component's is not known to this run; `ess verify conform synthesize` without `--component` reports the whole system's
+26 scenario(s) for `invoice-service` (0 authored), 0 outside it, 0 refusal(s), written to target/invoice-service-suite.json
 $ ess verify conform select --suite target/coverage-suite.json --ids selected-ids.json \
     --out target/selected.json
 ```
 
-`--component` keeps only the scenarios whose every command, event and view that component accepts,
-publishes or owns, and lists the rest. `select` narrows a coverage suite to explicit scenario IDs and
+`--component` synthesizes only the operations that component realises: the commands it accepts or
+whose domain it owns, the views it owns and the events it publishes. It keeps the scenarios whose
+every command, event and view the component accepts, publishes or owns, and lists the other
+scenarios of its own operations. Refusals and notes are those of its operations; another
+component's are reported only without `--component`. Operations no component realises get an
+`unrealised:` line, since no component's run reports their refusals. So the suites and lists of
+all components together are not the whole suite: run without `--component` for that. `select` narrows a coverage suite to explicit scenario IDs and
 keeps its parent, so a report still says what was left out
 ([Author scenarios](../guides/verify/author-scenarios.md#run-a-chosen-subset-of-a-coverage-suite)).
 Do not hand a partial target the whole suite and read past the red scenarios.

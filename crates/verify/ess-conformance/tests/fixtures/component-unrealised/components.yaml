@@ -1,0 +1,12 @@
+components:
+  - component: desk-service
+    summary: Opens tickets.
+    owns:
+      domains:
+        - shop.desk
+    accepts:
+      commands:
+        - shop.desk.Open
+    publishes:
+      events:
+        - shop.desk.Opened

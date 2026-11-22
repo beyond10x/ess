@@ -1,0 +1,10 @@
+format: ess/1
+system: shop
+version: v1
+
+summary: >-
+  A desk component that owns tickets, and a ledger domain that no component owns or accepts yet.
+
+domains:
+  - shop.desk
+  - shop.ledger

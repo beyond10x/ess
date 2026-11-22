@@ -72,9 +72,11 @@ inequality use their reversal arm. Existing strictness swaps retain their IDs.
 #236 uses the existing `synthesize_for` component admission on both baseline and each mutant.
 An emitted mutant is in scope if its component suite differs from the component baseline in a
 scenario body or scenario presence. This includes cross-domain commands the component accepts.
-Owned-domain filtering is incorrect. `synthesize_for` deliberately preserves whole-system
-refusals; comparing that inventory cannot establish component scope. Keep those global facts
-visible separately, without adding unrelated mutants to the selected component's denominator.
+Owned-domain filtering is incorrect. `synthesize_for` synthesizes only the component's own
+operations and reports their refusals and the facts of the whole model, not another component's
+refusals; comparing refusal inventories cannot establish component scope. A refusal about another
+component's operation is in neither the baseline's nor a mutant's inventory, so it cannot make a
+component-scoped mutant `unwitnessed`; the whole-system audit still reports it.
 
 For scoring an already in-scope mutant, use only refusal keys naming a scenario present in the
 union of its baseline and mutant component suites. Other refusals are reported as unscoped facts,
