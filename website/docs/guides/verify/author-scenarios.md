@@ -50,20 +50,20 @@ $ ess verify conform author --path examples/billing --scenarios examples/billing
 
 Every command, actor, outcome, event, error, view, entity, field, enum variant and lifecycle state
 a scenario names is resolved against the model here, so a name the model does not declare is
-refused here, before any run reaches it. The act checks on this page (`ESS-AUTHOR-037` and the
-others) apply the same way. Use `author` in a pre-commit or CI step that only checks scenario
-files, and run the result like any other suite.
+refused now rather than at the first run that reaches it. The act checks on this page
+(`ESS-AUTHOR-037` and the others) apply the same way. Use it in a pre-commit or CI step that only
+checks scenario files, and run the result like any other suite.
 
 A key written twice in one mapping, such as `label` twice in a step's `input:` or `$instance`
 twice inside a `contains:` field, is refused as `ESS-AUTHOR-047`, as a model file's repeat is:
 YAML keeps only one of the two values, so the other would never be sent or checked. The refusal
-reports the mapping's path, the key and the line of the mapping.
+names the mapping's path, the key, and the line of the mapping.
 
 ## Run a chosen subset of a coverage suite
 
 `ess verify conform select` narrows a coverage suite (`--suite-format 5`, or the `/7` and `/9`
-versions some constructs select) to scenario IDs you list. `--ids` takes a JSON file holding a
-sorted array of distinct IDs. `[]` selects none, explicitly:
+versions some constructs select) to scenario IDs you list. `--ids` names a JSON file holding a
+sorted array of distinct IDs; `[]` selects none, explicitly:
 
 ```shell-session
 $ ess verify conform synthesize --path examples/billing --suite-format 5 --out target/coverage-suite.json
@@ -99,14 +99,10 @@ From `type: ess-scenario/6` a literal input its declared type refuses, at any de
 `ESS-AUTHOR-015`: a decoder refuses it before the command runs. Below `/6` only its shape is checked.
 
 `validate` reads each act's literal input against the command's `when:` guards, in the order a
-conforming target answers them:
-
-1. input-guarded refusals first, the first declared of them;
-2. then accepting `when:` and external branches in declaration order;
-3. the default only where no `when:` holds.
-
-An act is refused with `ESS-AUTHOR-041` when that order decidedly does not take the branch it
-expects under `outcome:`. Where no `outcome:` is written, the check applies to the branches that
+conforming target answers them: input-guarded refusals first, the first declared of them; then
+accepting `when:` and external branches in declaration order; the default only where no `when:`
+holds. An act is refused with `ESS-AUTHOR-041` when that order decidedly does not take the branch
+it expects under `outcome:`. Where no `outcome:` is written, the check applies to the branches that
 report its `error:`, and the act is refused only when none of them is taken.
 
 ```yaml
@@ -118,18 +114,16 @@ timeline:
     outcome: closed
 ```
 
-The refusal reports the branch that answers first and its guard, or the expected branch's own guard
-that the input refutes. Only what the input decides is read.
-
-What a branch reads beyond the input
-is not decided: a held state, a stored or related row, an external answer, the target's clock.
-Neither is a guard over a field sent as `{$instance: …}` or another reference. A guard over `now`
+The refusal names the branch that answers first and its guard, or the expected branch's own guard
+that the input refutes. Only what the input decides is read. What a branch reads beyond the input
+(a held state, a stored or related row, an external answer, the target's clock) is not decided, and
+neither is a guard over a field sent as `{$instance: …}` or another reference. A guard over `now`
 is decided only where it reads the same at every run, such as a start already in the past when the
 operand was introduced. Where any of these leaves the answer open, the act is accepted.
 
 ## Expect an external branch in an authored scenario
 
-No input decides a branch declared `external:`, so an authored act that expects one writes it under
+No input decides a branch declared `external:`, so an authored act that expects one names it under
 `outcome:`:
 
 ```yaml
@@ -148,15 +142,13 @@ that call.
 That is the only external answer an act can state. An act is refused with `ESS-AUTHOR-037`
 when one of its claims holds only on an external answer it does not state, whether or not
 `outcome:` is written. The check covers the act's error, its direct response, each event it
-claims published and each event it claims absent.
-
-The answers the check considers are those of the act's
+claims published and each event it claims absent. The answers it considers are those of the act's
 own command and of every command a binding invokes from what the act publishes, however many
-bindings along. A binding's escalation event needs its invoked command to fail. The refusal lists
+bindings along. A binding's escalation event needs its invoked command to fail. The refusal names
 every such branch as `command/branch`.
 
 For example, an act on `billing.invoice.CreateInvoice` that claims
-`billing.email.DeliveryEscalated` is refused with `billing.email.SendEmail/failed`. The binding's
+`billing.email.DeliveryEscalated` is refused naming `billing.email.SendEmail/failed`. The binding's
 `SendEmail` call fails only on that external branch, and an authored act has no key for the
 answer a binding's call gives. Generated scenarios cover the escalation. An event that some
 command's input-decided branch publishes exempts a claim only when the act reaches that command.
@@ -189,22 +181,15 @@ so the suite is written at `ess-conformance/26` or later.
 A refused command takes no branch and publishes nothing, so `no_events:` is the only claim it can
 carry. It is checked against the target's whole event log: the log may hold no more of each listed event
 after the send than just before it, counting repeats, and a refusal that hands back events fails.
-So a target that runs the command and only then refuses it fails.
-
-The generated runners perform these observations through `ObserveEvents` / `observeEvents`. A
-custom runner must do the same.
-On reaching the act's `execute_command`, it looks ahead to the
-`expect_not_granted` that follows.
-
-Before sending, it observes each `no_events:` event in the
-scenario's correlation and counts the occurrences. After the refusal, it observes each event again
-in the same correlation. The step fails if any count grew. A target that cannot observe its log
-leaves the scenario `unsupported`, not passed. The command's answer and view comparisons cannot
-replace these observations. See
+So a target that runs the command and only then refuses it fails. The generated runners perform
+these observations through `ObserveEvents` / `observeEvents`. A custom runner must do the same.
+On reaching the act's `execute_command`, it looks ahead to the `expect_not_granted` that follows.
+Before sending, it observes each `no_events:` event in the scenario's correlation and counts the
+occurrences. After the refusal, it observes each event again in the same correlation. The step
+fails if any count grew. A target that cannot observe its log leaves the scenario `unsupported`,
+never passed. The command's answer and view comparisons cannot replace these observations. See
 [the target interface](./runners.md#hold-your-own-implementation-to-the-suite) for the full
-contract. No extra authored step is needed.
-
-The act is refused:
+contract. No extra authored step is needed. The act is refused:
 
 | When | Refusal |
 |---|---|
@@ -213,8 +198,9 @@ The act is refused:
 | the document is `ess-scenario/1` to `/3` | `ESS-AUTHOR-001`, naming `refused: not_granted` |
 
 Where the specification serves a component (`reached_by: network`), synthesis already witnesses the
-refusal once per command, as `<command>/grant/denied`, for every command some declared actor lacks
-the grant for. An authored act adds a particular input or a particular actor.
+refusal once per command, as `<command>/grant/denied`, for every
+command some declared actor lacks the grant for. An authored act adds a particular input or a
+particular actor.
 
 A served command no declared actor is granted is refused to every caller, so an act that sends it
 with no `actor:` and expects it to run is refused with `ESS-AUTHOR-040`. Grant the command to an
@@ -251,9 +237,9 @@ it does for a generated suite. An act with no `caller:` sends none, and its suit
 
 | When | Refusal |
 |---|---|
-| `caller:` names an attribute the act's `actor:` does not declare, or the act names no `actor:` | `ESS-AUTHOR-013`, reporting the attribute, the actor and the command |
-| the command reads a required attribute the act does not state, or the act states a caller and leaves one of the actor's required attributes out | `ESS-AUTHOR-014`, reporting the attribute and the command |
-| a value is not of the attribute's type, or `{$instance: name}` names an instance captured at run time | `ESS-AUTHOR-015`, reporting the attribute |
+| `caller:` names an attribute the act's `actor:` does not declare, or the act names no `actor:` | `ESS-AUTHOR-013`, naming the attribute, the actor and the command |
+| the command reads a required attribute the act does not state, or the act states a caller and leaves one of the actor's required attributes out | `ESS-AUTHOR-014`, naming the attribute and the command |
+| a value is not of the attribute's type, or `{$instance: name}` names an instance captured at run time | `ESS-AUTHOR-015`, naming the attribute |
 | the document is `ess-scenario/1` to `/4` | `ESS-AUTHOR-001`, naming `type: ess-scenario/5` |
 
 A captured identity is chosen by the target while the scenario runs, and a caller's values are
@@ -264,23 +250,19 @@ older `ess`, reports the scenario `unsupported` with a reason naming the attribu
 ## Claim one member of a nested value
 
 A nested value in a claim is compared whole: `response: {checkpoint: {checkpoint_id: cp-1}}` is
-refused for the members it leaves out, named at their path (`ESS-AUTHOR-014`).
-
-From
+refused for the members it leaves out, named at their path (`ESS-AUTHOR-014`). From
 `type: ess-scenario/6` a claim names one member alone by its dotted path,
 `response: {checkpoint.checkpoint_id: cp-1}`, in an act's `response:`, an event's `payload:`, an
 error's `fields:` and a view row's `contains`, `excludes` and `at`. Each path is compared alone at
-the member's declared type, through `Optional` and newtypes. A member absent or null along it
+the member's declared type, through `Optional` and newtypes; a member absent or null along it
 matches only `null`, and a path ending at a struct compares that struct whole.
 
 A path naming no member is `ESS-AUTHOR-013` with the full path, as is any dotted key under
-`ess-scenario/1` to `/5`. The next paths are `ESS-AUTHOR-015`: a path through a list, map, union,
-enum or primitive, a path in `input:`, `setup:`, `caller:` or `params:` (all sent whole), and a path
-beside a whole field claiming the same member. A path holding a reference is `ESS-AUTHOR-021`.
-
-Event, error and row paths compile to suite/26 dotted keys, so their suites keep their format. A
-response path compiles to `expected` under `ess-conformance/62`, which an older reader refuses by
-its version.
+`ess-scenario/1` to `/5`. A path through a list, map, union, enum or primitive, a path in `input:`,
+`setup:`, `caller:` or `params:` (all sent whole), and a path beside a whole field claiming the same
+member are `ESS-AUTHOR-015`; a path holding a reference is `ESS-AUTHOR-021`. Event, error and row
+paths compile to suite/26 dotted keys, so their suites keep their format; a response path compiles
+to `expected` under `ess-conformance/62`, which an older reader refuses by its version.
 
 ## Establish backend state in an authored scenario
 
@@ -311,16 +293,15 @@ qualified identities, null identities and inconclusive invariants refuse.
 
 The adapter must establish actual isolated backend state and make it visible
 before acknowledging setup. Setup emits no command or event and claims no
-lifecycle path. Rust and generated Go expose an optional setup capability.
-Unsupported adapters produce a non-passing result. These steps use suite/6 or
+lifecycle path. Rust and generated Go expose an optional setup capability;
+unsupported adapters produce a non-passing result. These steps use suite/6 or
 coverage suite/7 and require explicit report/2. Source scenario/1 refuses setup.
 
 ## Name several instances in one input
 
 `{$instance: name}` stands wherever the declared type at that position is the instance's
 identity type: a whole input field, a list element, a map value, a struct member or the
-payload of a union variant whose type is the identity, at any depth. A rollout over three release
-rings uses them in order:
+payload of a union variant whose type is the identity, at any depth. A rollout over three release rings names them in order:
 
 ```yaml
     input:
@@ -330,14 +311,12 @@ rings uses them in order:
 ```
 
 Each reference resolves to the identity the run bound for that instance, and the command
-receives the list or mapping with those identities in place.
-
-A reference at a position of
-any other type is refused as `ESS-AUTHOR-022`, reporting the position (`labels[1]`,
-`pair.note`, `tags[owner]`, `target.value`). One at a member the model does not declare, or
-inside a value of the wrong shape, is refused with the member or the position. One nested
+receives the list or mapping with those identities in place. A reference at a position of
+any other type is refused as `ESS-AUTHOR-022`, naming the position (`labels[1]`,
+`pair.note`, `tags[owner]`, `target.value`); one at a member the model does not declare, or
+inside a value of the wrong shape, is refused naming the member or the position. One nested
 inside an event payload or an error is refused as `ESS-AUTHOR-021`. A suite carrying such a
-value is suite/32 (/33 with coverage). Rust, Go and TypeScript resolve it with report/2.
+value is suite/32 (/33 with coverage); Rust, Go and TypeScript resolve it with report/2.
 
 ## Compare an event's identity with a captured instance
 
@@ -352,10 +331,8 @@ identity, so an implementation that drops the identity, or publishes another one
 
 The reference resolves to the identity the run bound, as it does in a command input, and the
 event must carry exactly that value. The act compiles into an `expect_event_values` step, so the
-suite is written at `ess-conformance/18` or later. Rust, Go and TypeScript resolve it, and browser
-replay shows it as a declaration.
-
-A reference at a field of any other type, including another
+suite is written at `ess-conformance/18` or later; Rust, Go and TypeScript resolve it, and browser
+replay shows it as a declaration. A reference at a field of any other type, including another
 entity's identity, an error field, or a position nested inside a payload field, is refused as
 `ESS-AUTHOR-021`.
 
@@ -367,7 +344,7 @@ and a related row's identity read through `{related: …}`.
 
 A field the outcome marks `{generated: true}` is minted by the implementation, so an act that
 claims one exact value for it passes only where the implementation happens to mint that value. It
-is refused as `ESS-AUTHOR-042`, reporting the field and the branch that mints it:
+is refused as `ESS-AUTHOR-042`, naming the field and the branch that mints it:
 
 ```yaml
     outcome: selected
@@ -380,12 +357,9 @@ The same holds for an error's fields, for a member of a struct the outcome fills
 for `{input: f, else: {generated: true}}` where the act sends no `f`, for `{generated: true,
 present: true}`, and for a view row's stored field that every branch the scenario reaches mints,
 including one a `sets:` entry reads from a minted payload field with `{payload: <Event>.<field>}`.
-
 In an event's payload or an error's fields, drop the field from the expectation, and the suite
 still checks its presence and type there, or relate it to another value with `capture:` on the
-event.
-
-A view read checks only what the scenario claims of a row, so in a view row drop the field
+event. A view read checks only what the scenario claims of a row, so in a view row drop the field
 and assert `satisfies: defined(<field>)` on the view, which requires it on every row and at least
 one row, or state its relation to an event's value with `{$observed: {event: …, field: …}}`. A
 value a `setup:` states, or one a branch fills from the input, keeps its exact claim.
@@ -405,21 +379,19 @@ the input fills:
         payload: {revision: 2}   # the second commit this scenario made
 ```
 
-An implementation that mints another value fails the scenario. One that mints the stated value
-passes. The claim is taken alike in every place listed above: an event's payload, an error's
-fields, a struct member and a view row's stored field.
-
-The model interpreter mints its own counter,
-so on `--target interpreted`, and in the baseline `mutate --scenarios` runs, such a scenario passes
-only where the counter happens to mint the stated value. Elsewhere the baseline is refused as
-`ESS-MUTATE-001`. Synthesis never pins a minted value at any format. Below `ess/30` the act is refused as
+An implementation that mints another value fails the scenario; one that mints the stated value
+passes. Every place listed above takes the claim alike: an event's payload, an error's fields, a
+struct member and a view row's stored field. The model interpreter mints its own counter, so on
+`--target interpreted`, and in the baseline `mutate --scenarios` runs, such a scenario passes only where the
+counter happens to mint the stated value; elsewhere the baseline is refused as `ESS-MUTATE-001`.
+Synthesis never pins a minted value at any format. Below `ess/30` the act is refused as
 `ESS-AUTHOR-042`, its message unchanged and its help naming `ess/30`.
 
 ## Where the observation sections went
 
-What a suite observes beyond an act's own answer is on [Observations](observations.md). The
-sections that used to be on this page are listed here under their old anchors, so an older link
-still lands on its section.
+What a suite observes beyond an act's own answer is on [Observations](observations.md). Each
+section that used to be on this page is listed here under its old anchor, so an older link still
+finds it.
 
 - <a id="observe-outcomes-selected-by-held-state"></a>[Observe outcomes selected by held state](observations.md#observe-outcomes-selected-by-held-state)
 - <a id="observe-retries-of-the-original-result"></a>[Observe retries of the original result](observations.md#observe-retries-of-the-original-result)

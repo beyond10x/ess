@@ -21,7 +21,7 @@ description: Select an outcome from held state or stored fields, cover inputs no
 
 The surrounding model declares that event, entity and input types. Both
 conditions must hold. Omitting `when` selects any admitted input in the
-named held state. The state comes from the existing subject row, not from an
+named held state. The state comes from the existing subject row; it is not an
 extra caller field. All ordinary, state-guarded and default branches must name
 the same entity and input identity. A missing row does not become an initial row.
 
@@ -32,9 +32,9 @@ proof; unsupported or open input domains require a genuine default. Runtime
 witnesses additionally validate their concrete inputs and invariants.
 
 From `ess/18` (0.41.0) the guard may list several states, and a refusal may carry it without
-naming a subject. It reads the subject its sibling branches name. A command answers differently in
-different states its moves do not start from this way, where `wrong_state` gives them all one
-answer:
+naming a subject; it reads the subject its sibling branches name. That is how a command answers
+differently in different states its moves do not start from, where `wrong_state` gives them all
+one answer:
 
 ```yaml
 - name: shipped
@@ -53,7 +53,7 @@ Every state no guard claims falls to the default, whose move must start there. T
 suite arranges an order in `Delivered` and one in `Cancelled`, each refused with `Gone` and left
 unchanged.
 
-An input-guarded refusal, a `when:` with an `error:` that names no subject, may sit beside the
+An input-guarded refusal — `when:` with an `error:`, naming no subject — may sit beside the
 state-guarded branches, at every format that has `when_subject_state`. It is answered before the
 record is looked up and before its state is read, so "the new value is refused whatever the record's
 state" is written once:
@@ -72,9 +72,7 @@ state" is written once:
 ```
 
 The refusal still names no subject: with `updates:` or `preserves:` it is refused as
-`refusal_mutated_state`.
-
-The synthesized suite sends the refused input for an identity nothing
+`refusal_mutated_state`. The synthesized suite sends the refused input for an identity nothing
 stores, then for a record arranged in each state of the lifecycle, and requires the error, no event
 and the record unchanged each time. Where a state-guarded branch also reads the input, the record in
 its state is sent an input both guards admit. A target that reads the held state or looks the record
@@ -102,7 +100,7 @@ order as it is while it is `Shipped` or `Delivered` is one branch:
 
 The synthesized suite arranges an order in each listed state, sends the command and requires
 `already-there` with the order unchanged, so a target that keeps the order in only one of them
-fails. `when_subject_state: {in: [...]}` is refused, and the list is the spelling.
+fails. `when_subject_state: {in: [...]}` is refused; the list is the spelling.
 
 ## Which branch answers
 
@@ -111,7 +109,7 @@ One order answers every command, whichever branches it declares
 For a command acting on a record its input names:
 
 1. input refusals answer first: a `when:` with an `error:` and no subject is checked before the
-   record is looked up, and of two that one input selects, the first declared answers. A refusal
+   record is looked up, and of two that one input selects, the first declared answers; a refusal
    whose `when:` always holds (`when: true`) is refused (`ESS-COMMAND-004`): give it the
    condition it refuses on, or drop `when:` to make it the default refusal;
 2. then existence: an identity no record carries takes the unknown instance answer, an
@@ -124,10 +122,8 @@ Declare the branches the held state selects before the accepting and external on
 refuses an accepting `when:` or an `external:` branch declared above a `when_subject_state:`,
 `when_subject:` or `when_state_changes:` branch of the same command when one request can satisfy
 both input guards (`ESS-COMMAND-004`, naming both), because there step 3 answers and the first
-declared does not.
-
-Guards over a `Boolean` or an enum input that no value satisfies together may
-come in either order. An `external:` branch with no `when:`, and a guard over an open or `Optional`
+declared does not. Guards over a `Boolean` or an enum input that no value satisfies together may
+come in either order; an `external:` branch with no `when:`, and a guard over an open or `Optional`
 input, counts as overlapping. Reordering changes no answer.
 
 A `when_related:` guard adds steps of its own; the design note lists them.
@@ -214,10 +210,9 @@ components:
 The synthesized suite sends the blank code to an identity nothing stores and requires
 `no-session`, to a paused session and requires `not-active`, and to an active one and requires
 `invalid-code`. A target that checks the code before it looks the session up fails the first two.
-
 `when_subject_state: Active` beside the `when:` would read the same, but below `ess/27` it is
-refused beside `wrong_state:` (`ESS-COMMAND-004`). From `ess/27` the sibling `paused` move is
-then refused because the guard leaves it a held state it cannot start from, so write the predicate
+refused beside `wrong_state:` (`ESS-COMMAND-004`), and from `ess/27` the sibling `paused` move is
+then refused because the guard leaves it a held state it cannot start from; write the predicate
 form.
 
 ### Two input refusals whose guards overlap
@@ -233,7 +228,6 @@ the first declared answers:
 `{code: "", pause: true}` takes `invalid-code`. Validation does not refuse the overlap: a text or
 number guard needs an overlap analysis it does not have. Write the refusal that should win first,
 or make the guards disjoint with `all:` or `not`, as in `{all: [pause == true, code != ""]}`.
-
 The synthesized suite witnesses `invalid-code` with
 `{code: "", pause: false}`, outside the later guard, and the overlap is sent once more, on its own,
 requiring `invalid-code`. A target that checks `pause` first fails only that send. Where no input
@@ -279,13 +273,11 @@ commands:
 ```
 
 The predicate reads the entity's declared fields and nothing else: not the input, which stays in
-`when:` beside it, and, before `ess/18`, not `state`. From `ess/18` (0.41.0) it may read
+`when:` beside it, and — before `ess/18` — not `state`. From `ess/18` (0.41.0) it may read
 `state`, the lifecycle state the row holds, to select by the state and a stored field together:
-`{all: [state == Ready, hold_note != ""]}`. A branch reading it that moves must be able to move
-from every state it may be selected in.
-
-The refusal names no
-subject of its own and reads the parcel its sibling moves. An `Optional` field may be read. An
+`{all: [state == Ready, hold_note != ""]}`; a branch reading it that moves must be able to move
+from every state it may be selected in. The refusal names no
+subject of its own and reads the parcel its sibling moves. An `Optional` field may be read; an
 absent value is unknown and selects no branch, so write `not defined(field)` to select on absence.
 
 A domain generated from another format, such as the case record of a protocol's claims, guards its
@@ -296,21 +288,17 @@ required: [generated case-record domains](https://github.com/beyond10x/ess/blob/
 Validation partitions closed enum fields jointly with the input, so two branches that split an enum
 need no default. An open comparison such as `weight_kg > 20` needs a genuine default, here
 `dispatched`. Declare an unfiltered view that projects the identity, `state` and every guarded
-field. Conformance arranges a parcel through `Create`'s `sets:` mappings: Express at 21 kg for the
-refusal, Express at 20 kg and Standard at 21 kg for the default. It observes the parcel through that
-view and dispatches it.
-
-A `read_your_writes` view is read once. Where the only such view is `eventual`,
+field: conformance arranges a parcel through `Create`'s `sets:` mappings — Express at 21 kg for the
+refusal, Express at 20 kg and Standard at 21 kg for the default — observes it through that view,
+and dispatches it. A `read_your_writes` view is read once; where the only such view is `eventual`,
 the observation goes in an `eventually` block that waits until the view shows the arranged parcel.
 A refused parcel is asserted unchanged only through a `read_your_writes` view: an `eventual` view
 that has not caught up shows the old row too, so without one that check is left out.
-
 From `ess/23` a refused record is asserted unchanged in every field, not only in the guarded ones:
 the scenario snapshots the whole record before the command and compares it afterwards, as it does
 for a `wrong_state` refusal. A target that refuses and still writes a field the guard does not
 read fails. Where the `read_your_writes` views do not project every field, the suite compares what
 they project and names the rest in a note. Below `ess/23` only the guarded fields are compared.
-
 In a state the command does not move from, no branch is selected by the stored fields, and the
 refusal scenario sends the command as it does for a command without `when_subject`. The older
 `when_subject: {field, equals}` form keeps `ess/6`.
@@ -352,8 +340,8 @@ Whether a mail provider accepts an address is not a function of the request. Fro
   error: billing.email.Undeliverable
 ```
 
-Writing `when: false` would claim the branch is unreachable, which is a different statement and a
-false one. A generator reads `external` and injects a fault instead of trying to construct an input.
+Writing `when: false` would claim the branch is unreachable — a different statement, and a false
+one. A generator reads `external` and injects a fault instead of trying to construct an input.
 
 ## A rule stored as data is evaluated by the system
 
@@ -382,22 +370,20 @@ outcome_groups:
 A group names its members in exactly one way: an explicit `commands:` list, `actor:` for every
 command that actor `may:` invoke, or `domain:` for every command that domain's files declare. Each
 member gains the group's outcomes after its own, in ascending group-name order when several groups
-select it.
-
-That happens before validation, so validation, conformance and every generator see
+select it. That happens before validation, so validation, conformance and every generator see
 ordinary outcomes, and a group compiles to exactly what copying the outcome into each command by
 hand would. A group of 28 commands therefore still adds 28 scenarios. A group's outcome is always an
 external refusal: `external:` and `error:`, with an optional `summary:` and `refs:`, and nothing that
 depends on the command it lands in.
 
-`except:` is only for `actor:` and `domain:`. With an explicit list, leave the command out of
+`except:` is only for `actor:` and `domain:`; with an explicit list, leave the command out of
 `commands:` instead. A member that already declares an outcome of the same name is refused at the
-group and is not overridden: rename one of the two, drop the command's own, or list the command
+group, never silently overridden: rename one of the two, drop the command's own, or list the command
 under `except:`. Two groups that would give one command outcomes of the same name are refused too,
 and neither group expands into that command.
 
 ## Illegal lifecycle moves are illegal by absence
 
-`Paid` cannot become `Cancelled` because no transition says it can. There is no forbidding rule:
-a second place for the same truth would eventually disagree with the first. The generated
-documentation lists the absent pairs, derived from the same transitions.
+`Paid` cannot become `Cancelled` because no transition says it can. There is no forbidding rule,
+because a rule would be a second place for the same truth to live, and two places eventually
+disagree. The generated documentation lists the absent pairs, derived from the same transitions.
