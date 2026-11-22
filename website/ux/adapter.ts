@@ -21,7 +21,8 @@ export const REPOSITORY = join(ROOT, '..', '..');
 // `UX_WORKERS` and every timed run of a round (T19 of the R-02 report review).
 export const WORKERS = 4;
 // The lane (UX_LANE): `gate` on every merge (the template pages and the anchor cards, 120 s), `slow`
-// for the whole sitemap, every card and the measured-only viewports, as SLOW_L2_SLICES + 2 pool jobs.
+// for the whole sitemap, every card, the measured-only viewports and the nested runs, as
+// SLOW_L2_SLICES + 3 pool jobs.
 export const LANE: 'gate' | 'slow' = process.env.UX_LANE === 'slow' ? 'slow' : 'gate';
 export const SLOW_L2_SLICES = 6;
 
@@ -117,18 +118,28 @@ export function builtPage(path: string): string {
   throw new Error(`${path}: no built page under ${BUILD}`);
 }
 
+// The most elements a template page of the gate may build: axe and the probes cost with the page's
+// elements, and the 120 s gate step holds only pages a test checks in seconds under load (UXF-025:
+// the 3,405-element format history and the 1,897-element diagnostics page took 24 to 32 s a test
+// in R-03). Longer pages run in the slow lane.
+export const GATE_PAGE_ELEMENTS = 1200;
+
 // Template pages: one page of each layout the site renders, so that every page template and every
 // always-visible element is checked on every merge. The full sitemap runs in the `slow` lane.
+// Listed slowest first (R-04 gate runs): the gate's workers take tests in this order, so the
+// long tests start first and the short ones fill the end of the step.
 export const TEMPLATE_PAGES: Array<{ path: string; why: string }> = [
-  { path: '/ess/', why: 'landing page (product template)' },
-  { path: '/ess/docs/start/install', why: 'doc page with sidebar and table of contents' },
-  { path: '/ess/docs/reference/spec-versions', why: 'long reference table page' },
-  { path: '/ess/docs/reference/diagnostics', why: 'generated reference page (cargo xtask diagnostics)' },
-  { path: '/ess/docs/status/where-this-stands', why: 'status page' },
   { path: '/ess/docs/visualise', why: 'doc page without sidebar (interactive presentation)' },
   { path: '/ess/releases', why: 'release list with the recent-posts sidebar' },
   { path: '/ess/releases/conformance-in-any-language', why: 'release post' },
   { path: '/ess/releases/archive', why: 'release archive, no sidebar by design' },
+  { path: '/ess/docs/status/where-this-stands', why: 'status page' },
+  // R-04: the generated reference table page here is the lowering reference (1,049 built elements);
+  // the format history (3,405) and the diagnostics page (1,897) are over GATE_PAGE_ELEMENTS and run
+  // in the slow lane with every other page (UXF-025).
+  { path: '/ess/docs/reference/entity-runtime-lowering', why: 'generated reference table page (ess-entity-runtime lowerable_subset)' },
+  { path: '/ess/docs/start/install', why: 'doc page with sidebar and table of contents' },
+  { path: '/ess/', why: 'landing page (product template)' },
 ];
 
 // Regions the screen-only user tells apart; the first match wins, so nested regions come first.

@@ -13,14 +13,18 @@ import { EXPECT, type Expected, type L3Record } from '../core/reporter';
 test.describe.configure({ mode: 'parallel' });
 holdKnownFailures(test, FINDINGS, REPOSITORY);
 
+// Keyboard runs first, then the rest, each phone run before its desktop run: the keyboard runs at
+// mobile-390 are the longest tests of the gate (11 to 20 s in R-04's gate runs), so they start
+// first and the workers end the step together (UXF-025).
 const runs = scenarios()
   .filter((scenario) => LANE === 'slow' || scenario.card === 'anchor')
   .flatMap((scenario) =>
-    GATING.flatMap((viewport) => [
-      { scenario, viewport, mode: 'pointer' as const },
+    [...GATING].reverse().flatMap((viewport) => [
       ...(scenario.card === 'anchor' ? [{ scenario, viewport, mode: 'keyboard' as const }] : []),
+      { scenario, viewport, mode: 'pointer' as const },
     ]),
-  );
+  )
+  .sort((a, b) => Number(b.mode === 'keyboard') - Number(a.mode === 'keyboard'));
 
 for (const { scenario, viewport, mode } of runs) {
   const expected: Expected = { kind: 'l3', task: scenario.name, viewport: viewport.name, mode, total: runs.length };

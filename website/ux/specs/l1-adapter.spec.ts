@@ -1,10 +1,10 @@
 // L1: the adapter states what this site has, and gate 2 gates only what the adapter gates.
 import { expect, test } from '@playwright/test';
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { BASE, FINDINGS, GATING, REPOSITORY, ROOT, SITEMAP, TEMPLATE_PAGES, WORKERS, alwaysVisible, hasSearchControl, pageKind } from '../adapter';
+import { BASE, FINDINGS, GATE_PAGE_ELEMENTS, GATING, REPOSITORY, ROOT, SITEMAP, TEMPLATE_PAGES, WORKERS, alwaysVisible, builtPage, hasSearchControl, pageKind } from '../adapter';
 import { holdKnownFailures } from '../core/findings';
-import { stageGrep } from '../playwright.config';
+import { gateProjects, stageGrep } from '../playwright.config';
 import { checkAlwaysVisible } from '../core/contract';
 import { sitemapPaths } from '../core/sitemap';
 
@@ -70,6 +70,19 @@ test('L1 a round stage runs its own tests of round.spec.ts and no test of the ot
   expect(report.filter((t) => stageGrep('round').test(path('round', t)))).toEqual([]);
   expect(report.filter((t) => stageGrep('report').test(path('report', t)))).toEqual(report);
   expect(round.filter((t) => stageGrep('report').test(path('report', t)))).toEqual([]);
+});
+
+// UXF-025: R-03's gate ran to its 120 s cut under load. The two long reference pages held 100 to
+// 133 of its 321 to 400 test-seconds, and three L1 tests each started a nested Playwright run.
+test('L1 the gate lane holds no heavy page and no nested Playwright run (UXF-025)', () => {
+  const elements = (html: string) => (html.match(/<[a-zA-Z]/g) ?? []).length;
+  const heavy = TEMPLATE_PAGES.map((t) => ({ path: t.path, elements: elements(builtPage(t.path)) })).filter((p) => p.elements > GATE_PAGE_ELEMENTS);
+  expect.soft(heavy, `template pages over ${GATE_PAGE_ELEMENTS} built elements`).toEqual([]);
+  const specs = readdirSync(join(ROOT, 'specs')).filter((f) => gateProjects.some((p) => p.testMatch.test(f)));
+  expect(specs.length, 'the gate lane matches spec files').toBeGreaterThan(0);
+  const cli = ['@playwright', 'test', 'cli'].join('/');
+  const nested = specs.filter((f) => readFileSync(join(ROOT, 'specs', f), 'utf8').includes(cli));
+  expect.soft(nested, 'gate-lane spec files that start a nested Playwright run').toEqual([]);
 });
 
 test('L1 the template pages of the gate cover every page template and every always-visible element of the sitemap', async ({ page }) => {

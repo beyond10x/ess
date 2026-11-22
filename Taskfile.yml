@@ -562,7 +562,7 @@ tasks:
       - npm ci
       # Every project runs whatever the one before found: a project's own exit code is not the
       # round's result, the merged round is (UX_STAGE=round, then `ux-ratchet`).
-      - for: [l2-1, l2-2, l2-3, l2-4, l2-5, l2-6, l3, measured]
+      - for: [l2-1, l2-2, l2-3, l2-4, l2-5, l2-6, l3, measured, nested]
         cmd: UX_OUT=.out/slow-{{.ITEM}} npx playwright test --project={{.ITEM}} --workers={{.UX_WORKERS}}
         ignore_error: true
 
