@@ -15,3 +15,10 @@ threads-required = "num-test-threads"
 [[profile.default.overrides]]
 filter = "test(=the_cost_of_one_document_stays_within_reach_of_linear_in_the_registry)"
 threads-required = "num-test-threads"
+
+[profile.ci]
+slow-timeout = { period = "60s" }
+final-status-level = "slow"
+
+[profile.ci.junit]
+path = "junit.xml"

@@ -116,6 +116,7 @@ tasks:
       - task: json-body-harnesses
       - task: ui-http-servers
       - task: clap-shared-binary
+      - defer: { task: test-slowest }
       - |
         set -eu
         args=""
@@ -123,7 +124,7 @@ tasks:
           [ "$package" = ess-xtask ] || args="$args --package $package"
         done
         if [ -n "$args" ]; then
-          cargo nextest run --locked --no-fail-fast $args
+          cargo nextest run --locked --profile ci --no-fail-fast $args
         fi
       - |
         case " {{.PACKAGES}} " in
@@ -323,7 +324,8 @@ tasks:
       - rm -f {{.NEXTEST_ARCHIVES}}/workspace-{{.OTHER_GROUP}}.tar.zst
       - cargo nextest list --archive-file {{.NEXTEST_ARCHIVES}}/workspace-{{.GROUP}}.tar.zst --workspace-remap . --extract-to . --extract-overwrite > /dev/null
       - rm {{.NEXTEST_ARCHIVES}}/workspace-{{.GROUP}}.tar.zst
-      - cargo nextest run --binaries-metadata target/nextest/binaries-metadata.json --cargo-metadata target/nextest/cargo-metadata.json --workspace-remap . --target-dir-remap target --no-fail-fast --partition slice:{{.PART}}
+      - defer: { task: test-slowest }
+      - cargo nextest run --binaries-metadata target/nextest/binaries-metadata.json --cargo-metadata target/nextest/cargo-metadata.json --workspace-remap . --target-dir-remap target --profile ci --no-fail-fast --partition slice:{{.PART}}
 
   test-transport-network:
     desc: Validate AsyncAPI and execute both generated publishers against real JetStream; requires explicit external test tooling.
@@ -344,7 +346,25 @@ tasks:
       ESS_UI_HTTP_SHELF_SERVER: '{{.UI_HTTP_SHELF_SERVER}}'
       ESS_UI_HTTP_ITEMS_SERVER: '{{.UI_HTTP_ITEMS_SERVER}}'
     cmds:
-      - cargo nextest run --archive-file {{.NEXTEST_ARCHIVES}}/feature-off.tar.zst --workspace-remap . --extract-to . --extract-overwrite --no-fail-fast --partition slice:{{.SHARD}}
+      - defer: { task: test-slowest }
+      - cargo nextest run --archive-file {{.NEXTEST_ARCHIVES}}/feature-off.tar.zst --workspace-remap . --extract-to . --extract-overwrite --profile ci --no-fail-fast --partition slice:{{.SHARD}}
+
+  test-slowest:
+    desc: Print the ten slowest tests of the last nextest run under the `ci` profile, from its JUnit report; prints and never fails.
+    cmds:
+      - |
+        export LC_ALL=C
+        report=target/nextest/ci/junit.xml
+        if [ ! -f "$report" ]; then
+          echo "test-slowest: no JUnit report at $report"
+          exit 0
+        fi
+        echo "the ten slowest tests of this run ($report):"
+        grep -o '<testcase [^>]*>' "$report" \
+          | sed -E 's/^.* name="([^"]*)" classname="([^"]*)".* time="([0-9.]+)".*$/\3 \2 \1/' \
+          | sort -rn \
+          | head -n 10 \
+          | awk '{ printf "%10.3fs  %s %s\n", $1, $2, $3 }'
 
   test-feature-off-doc:
     desc: Run the doc-tests of the packages without `arbitrary_precision`, which nextest does not.
