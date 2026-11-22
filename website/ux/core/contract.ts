@@ -76,10 +76,14 @@ export async function checkAlwaysVisible(page: Page, watched: Watched[]): Promis
 // for the second theme of a viewport whose structure the full run has already checked.
 export const COLOUR_RULES = ['color-contrast', 'link-in-text-block'];
 export async function runAxe(page: Page, scope: 'full' | 'colour' = 'full'): Promise<AxeViolation[]> {
-  // Legacy mode runs axe in the page. The default mode runs each frame partly and aggregates the
-  // results in a new blank page: on the 17,337-element ess-ui reference page that took 92 to 112 s
-  // for one rule, against 16 to 30 s for every rule in the page (R-02, under load 55 to 85).
-  const builder = new AxeBuilder({ page }).setLegacyMode(true).options({ resultTypes: ['violations'] });
+  // Legacy mode runs axe in the top document only: it never enters a frame. The default mode runs
+  // each frame partly and aggregates the results in a new blank page, which covers frames but on
+  // the 17,337-element ess-ui reference page took 92 to 112 s for one rule, against 16 to 30 s for
+  // every rule in legacy mode (R-02, under load 55 to 85). So: the default mode on a page that holds
+  // a frame, legacy mode on one that holds none, where the two report the same. R-02 ran legacy
+  // mode everywhere and lost every violation inside the visualise page's frame (UXF-021).
+  const framed = page.mainFrame().childFrames().length > 0;
+  const builder = new AxeBuilder({ page }).setLegacyMode(!framed).options({ resultTypes: ['violations'] });
   const result = await (scope === 'full' ? builder.withTags(AXE_TAGS) : builder.withRules(COLOUR_RULES)).analyze();
   return result.violations
     .map((v) => ({

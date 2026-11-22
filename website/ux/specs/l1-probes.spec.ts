@@ -2,7 +2,7 @@
 // the metric functions meet canned states. No server, no site.
 import { expect, test } from '@playwright/test';
 import { ScreenOnlyUser } from '../core/bot';
-import { checkAlwaysVisible } from '../core/contract';
+import { checkAlwaysVisible, runAxe } from '../core/contract';
 import { median, percentile, taskMetrics } from '../core/metrics';
 import { probeLayout, probeMotion } from '../core/probes';
 
@@ -44,6 +44,21 @@ test('L1 gate 2 finds a missing, an out-of-viewport and a covered element', asyn
   expect(at('search')).toEqual(['missing']);
   expect(at('below')).toContain('out of viewport');
   expect(at('covered')).toContain('covered');
+});
+
+// UXF-021: the R-02 engine ran axe in legacy mode, which checks the top document only, so the
+// violations inside the visualise page's frame (UXF-007, UXF-008) went unreported.
+test('L1 gate 5 reports a control nested in a control and a scroll region the keyboard cannot reach, inside a frame (UXF-021)', async ({ page }) => {
+  const framed = `<!doctype html><html lang="en"><head><title>framed</title></head><body><main>
+    <div role="button" tabindex="0">outer <button>inner</button></div>
+    <div style="height:60px;overflow:auto">${'<div>a line in a scrolling region with nothing focusable</div>'.repeat(12)}</div>
+    <p style="color:#aaa;background:#fff">faint text</p></main></body></html>`;
+  await page.setContent(`<!doctype html><html lang="en"><head><title>host</title></head><body><main><h1>host</h1>
+    <iframe title="framed" srcdoc="${framed.replace(/"/g, '&quot;')}"></iframe></main></body></html>`);
+  await page.frameLocator('iframe').getByRole('button', { name: 'inner', exact: true }).waitFor();
+  const full = (await runAxe(page, 'full')).map((v) => v.id);
+  expect(full).toEqual(expect.arrayContaining(['color-contrast', 'nested-interactive', 'scrollable-region-focusable']));
+  expect((await runAxe(page, 'colour')).map((v) => v.id)).toContain('color-contrast');
 });
 
 test('L1 reduced motion finds a running animation', async ({ page }) => {
