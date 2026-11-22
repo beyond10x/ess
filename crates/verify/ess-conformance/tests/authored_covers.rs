@@ -165,3 +165,43 @@ fn without_covers_the_suite_keeps_its_format_and_its_refusal_bytes() {
     assert!(!suite.original_json().contains("covered_by"));
     assert!(!suite.coverage().unwrap().is_complete());
 }
+
+/// The covering scenario and `n` more authored scenarios that each take one note.
+fn sources(n: usize) -> Vec<CoverageSource> {
+    let mut sources =
+        vec![CoverageSource::new("scenarios/too-many-tags.yaml", scenario()).unwrap()];
+    for i in 0..n {
+        let text = format!(
+            "type: ess-scenario/7\ndomain: example.review\nscenario: a-note-taken-{i}\n\
+             summary: One note taken.\n\ntimeline:\n  - at: 2026-01-05T08:59:59Z\n    \
+             command: example.review.TakeNote\n    actor: example.review.Reviewer\n    \
+             input: {{note_id: n-{i}, tags: [first]}}\n    outcome: taken\n"
+        );
+        sources.push(CoverageSource::new(format!("scenarios/taken-{i}.yaml"), text).unwrap());
+    }
+    sources
+}
+
+/// A fresh coverage suite is admitted from the values it was written from: the document it just
+/// serialized is not parsed back (a downstream specification of 286 scenarios spent one
+/// instruction in six there), and admitting it from its bytes gives the same suite, inventory and
+/// digest. Unfixed: 1 parse.
+#[test]
+fn a_fresh_coverage_suite_is_not_parsed_back_and_equals_its_reread() {
+    let ir = model();
+    let (input, parsed) = ess_conformance::admission::suites_parsed(|| {
+        coverage_build::build(
+            &ir,
+            &sources(3),
+            Scope::System,
+            Origins::GeneratedAndAuthored,
+        )
+        .unwrap()
+    });
+    assert_eq!(parsed, 0, "suite documents parsed while building one");
+    let fresh = input.selected();
+    let reread = ess_conformance::AdmittedSuite::from_json(fresh.original_json()).unwrap();
+    assert_eq!(reread.suite(), fresh.suite());
+    assert_eq!(reread.coverage(), fresh.coverage());
+    assert_eq!(reread.digest(), fresh.digest());
+}

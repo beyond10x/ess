@@ -295,7 +295,7 @@ fn finish_inventory(
     suite.select_fresh_format_for(ir);
     suite.provenance.suite_version = coverage_version(ir, &suite, &inventory);
     let original = coverage::suite_document(&suite, &inventory)?;
-    AdmittedInput::from_suite(AdmittedSuite::from_json(&original)?)
+    AdmittedInput::from_suite(AdmittedSuite::produced(original, suite, inventory)?)
 }
 
 /// Files synthesis's refusals in the inventory, after the authored scenarios are merged.
