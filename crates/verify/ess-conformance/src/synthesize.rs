@@ -218,6 +218,7 @@ mod view_grant;
 mod view_reference;
 
 pub use seeds::{AdmittedSeeds, SeedAdmissionError, SeedSelection};
+pub(crate) use seeds::memoised_provenance;
 
 #[doc(hidden)]
 pub use disclosure::followup_origins_built;
@@ -3488,7 +3489,7 @@ pub fn synthesize_with_seeds(
     ir: &EssIr,
     seeds: &AdmittedSeeds,
 ) -> Result<Synthesis, SeedAdmissionError> {
-    seeds.bound_to(ir)?;
+    let _digested = seeds.bound_to(ir)?;
     let mut synthesis = synthesize_in(ir, seeds);
     seeds.attach(ir, &mut synthesis.suite);
     Ok(synthesis)
@@ -3506,7 +3507,7 @@ pub fn synthesize_for_with_seeds(
     component: &str,
     seeds: &AdmittedSeeds,
 ) -> Result<Synthesis, SeedAdmissionError> {
-    seeds.bound_to(ir)?;
+    let _digested = seeds.bound_to(ir)?;
     let mut synthesis = synthesize_for_in(ir, component, seeds)?;
     seeds.attach(ir, &mut synthesis.suite);
     Ok(synthesis)

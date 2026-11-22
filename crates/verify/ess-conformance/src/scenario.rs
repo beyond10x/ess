@@ -569,6 +569,11 @@ impl SuiteProvenance {
     /// so the panic is how the two crates disagreeing becomes visible immediately rather than as an
     /// evidence record the protocol engine silently refuses later.
     pub fn of(ir: &EssIr) -> Self {
+        crate::synthesize::memoised_provenance(ir, || Self::computed(ir))
+    }
+
+    /// [`SuiteProvenance::of`], hashing the model.
+    fn computed(ir: &EssIr) -> Self {
         let projection = ess_gen::Provenance::of(ir);
         let digest = |value: &str| {
             SpecDigest::new(value).unwrap_or_else(|error| {

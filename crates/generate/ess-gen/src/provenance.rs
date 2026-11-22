@@ -60,6 +60,20 @@ pub struct Provenance {
     pub contract_digest: String,
 }
 
+thread_local! {
+    /// How many times [`Provenance::of`] hashed a whole model on this thread.
+    static PROVENANCES: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
+
+/// What `run` returns, and how many times [`Provenance::of`] (both digests of a whole model) was
+/// computed on this thread while it ran. A work counter for tests.
+#[doc(hidden)]
+pub fn provenances_computed<R>(run: impl FnOnce() -> R) -> (R, u64) {
+    let before = PROVENANCES.with(std::cell::Cell::get);
+    let out = run();
+    (out, PROVENANCES.with(std::cell::Cell::get) - before)
+}
+
 impl Provenance {
     /// Derives provenance from the model an artifact is generated from.
     ///
@@ -67,6 +81,7 @@ impl Provenance {
     /// an artifact stamped this way is owed regeneration whenever anything moves. An artifact that
     /// derives from less than the whole model narrows through [`ProvenanceMint::of_seeds`].
     pub fn of(ir: &EssIr) -> Self {
+        PROVENANCES.with(|count| count.set(count.get() + 1));
         Self {
             system: ir.system().to_string(),
             specification_version: ir.version().to_string(),
