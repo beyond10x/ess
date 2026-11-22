@@ -112,3 +112,149 @@ fn a_refusal_about_a_newtype_wrapped_enum_field_names_the_enum_as_the_story_requ
          is one lookup away`; through a newtype it names only the wrapper: {wrapped}"
     );
 }
+
+/// Enums with and without `ordered: true`, a newtype over each, and three ordered primitives.
+fn ordering_registry() -> TypeRegistry {
+    let mut registry = TypeRegistry::new();
+    for (name, body) in [
+        (
+            "sample.Plain",
+            TypeBody::Enum {
+                ordered: false,
+                variants: vec!["low".into(), "medium".into(), "high".into()],
+            },
+        ),
+        (
+            "sample.Level",
+            TypeBody::Enum {
+                ordered: true,
+                variants: vec!["low".into(), "medium".into(), "high".into()],
+            },
+        ),
+        (
+            "sample.WrappedLevel",
+            TypeBody::Newtype {
+                alphabet: None,
+                prefix: None,
+                of: TypeRef::parse("sample.Level").unwrap(),
+                invariants: vec![],
+            },
+        ),
+    ] {
+        registry
+            .insert(NamedType {
+                reading: None,
+                name: name.parse().unwrap(),
+                body,
+                naming: Naming::default(),
+            })
+            .unwrap();
+    }
+    registry
+}
+
+fn ordering_fields() -> Vec<Field> {
+    vec![
+        field("plain", "sample.Plain"),
+        field("level", "sample.Level"),
+        field("wrapped", "sample.WrappedLevel"),
+        field("count", "Integer"),
+        field("name", "String"),
+        field("at", "Timestamp"),
+    ]
+}
+
+fn fact(path: &str) -> Operand {
+    Operand::Fact(FactPath::new(path).unwrap())
+}
+
+fn text(value: &str) -> Operand {
+    Operand::Literal(FactValue::text(value))
+}
+
+fn comparison(left: Operand, op: CompareOp, right: Operand) -> Predicate {
+    Predicate::Compare {
+        kind: ess_primitives::predicate::CompareKind::Value,
+        left,
+        op,
+        right,
+    }
+}
+
+fn type_mismatches(predicate: &Predicate) -> Vec<String> {
+    let registry = ordering_registry();
+    let fields = ordering_fields();
+    let environment = DomainEnvironment::new(&registry, &fields);
+    check_predicate(&environment, predicate, "owner")
+        .errors
+        .iter()
+        .filter(|error| error.code == ValidationCode::TypeMismatch)
+        .map(|error| error.message.clone())
+        .collect()
+}
+
+#[test]
+fn an_ordering_comparison_over_an_enum_is_refused() {
+    let ordering = [CompareOp::Lt, CompareOp::Le, CompareOp::Gt, CompareOp::Ge];
+    let enums = [
+        ("plain", "sample.Plain"),
+        ("level", "sample.Level"),
+        ("wrapped", "sample.Level"),
+    ];
+    for op in ordering {
+        for (field_name, enum_name) in enums {
+            let shapes = [
+                comparison(fact(field_name), op, text("medium")),
+                comparison(text("medium"), op, fact(field_name)),
+                comparison(fact(field_name), op, fact(field_name)),
+            ];
+            for predicate in shapes {
+                let refusals = type_mismatches(&predicate);
+                assert_eq!(
+                    refusals.len(),
+                    1,
+                    "`{predicate}` must be refused once: {refusals:?}"
+                );
+                assert!(
+                    refusals[0].contains(&format!("`{enum_name}`")),
+                    "`{predicate}` must name the enum `{enum_name}`: {}",
+                    refusals[0]
+                );
+                assert!(
+                    refusals[0].contains("in: ["),
+                    "`{predicate}`: {}",
+                    refusals[0]
+                );
+            }
+        }
+    }
+    for field_name in ["plain", "level"] {
+        let refusals = type_mismatches(&comparison(fact(field_name), CompareOp::Gt, text("low")));
+        assert!(refusals[0].contains("declared order"), "{}", refusals[0]);
+    }
+}
+
+#[test]
+fn equality_and_the_orderings_of_other_types_still_validate() {
+    for op in [CompareOp::Eq, CompareOp::Ne] {
+        assert!(
+            type_mismatches(&comparison(fact("level"), op, text("medium"))).is_empty(),
+            "{op}"
+        );
+    }
+    let ordered_scalars = [
+        comparison(
+            fact("count"),
+            CompareOp::Gt,
+            Operand::Literal(FactValue::number(1.0).unwrap()),
+        ),
+        comparison(fact("name"), CompareOp::Lt, text("m")),
+        comparison(fact("at"), CompareOp::Ge, text("2026-01-01T00:00:00Z")),
+    ];
+    for predicate in ordered_scalars {
+        assert!(
+            type_mismatches(&predicate).is_empty(),
+            "`{predicate}` must still validate"
+        );
+    }
+}

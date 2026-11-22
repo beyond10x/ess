@@ -807,3 +807,76 @@ fn a_flat_summary_on_a_type_names_naming() {
         validated.output
     );
 }
+
+/// An ordered enum compared with `>` in a `when_related` `where:`. Written here, not under
+/// `tests/fixtures/`, so no table that pins every fixture model has to carry a row for it.
+const ENUM_ORDERING: &str = r"format: ess/37
+system: shop
+version: v1
+domain: shop.order
+types:
+  - name: shop.order.FloorId
+    kind: newtype
+    of: String
+  - name: shop.order.OrderId
+    kind: newtype
+    of: String
+  - name: shop.order.Level
+    kind: enum
+    ordered: true
+    variants: [low, medium, high]
+entities:
+  - name: shop.order.Floor
+    identity: {name: floor_id, type: shop.order.FloorId}
+    fields:
+      - {name: minimum, type: shop.order.Level}
+    lifecycle: {initial: Set, states: [Set], terminal: [Set]}
+  - name: shop.order.Order
+    identity: {name: order_id, type: shop.order.OrderId}
+    fields:
+      - {name: level, type: shop.order.Level}
+    lifecycle: {initial: Placed, states: [Placed], terminal: [Placed]}
+events:
+  - name: shop.order.OrderPlaced
+    fields:
+      - {name: order_id, type: shop.order.OrderId}
+errors:
+  - name: shop.order.Below
+    fields:
+      - {name: order_id, type: shop.order.OrderId}
+actors:
+  - name: shop.order.Clerk
+    may: [shop.order.PlaceOrder]
+commands:
+  - name: shop.order.PlaceOrder
+    input:
+      - {name: order_id, type: shop.order.OrderId}
+      - {name: level, type: shop.order.Level}
+    outcomes:
+      - name: below
+        when_related:
+          entity: shop.order.Floor
+          where: minimum > input.level
+          exists: true
+        error: shop.order.Below
+      - name: placed
+        creates: shop.order.Order
+        instance: order_id
+        sets: {level: input.level}
+        emits: [shop.order.OrderPlaced]
+        payload:
+          shop.order.OrderPlaced: {order_id: input.order_id}
+";
+
+#[test]
+fn an_ordering_comparison_over_an_enum_is_refused_naming_the_enum() {
+    let validated = validate("enum-ordering.yaml", ENUM_ORDERING);
+    assert_eq!(validated.code, Some(1), "{}", validated.output);
+    let found: Vec<&String> = validated
+        .problems
+        .iter()
+        .filter(|problem| problem.starts_with("[type_mismatch] "))
+        .collect();
+    assert_eq!(found.len(), 1, "{}", validated.output);
+    assert!(found[0].contains("`shop.order.Level`"), "{}", found[0]);
+}
