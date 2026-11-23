@@ -19,6 +19,7 @@ mod scratch_leaks;
 mod site_data;
 mod slow_lane;
 mod support;
+mod synth_jobs;
 mod whats_changed;
 
 use anyhow::{bail, Context, Result as AnyResult};
@@ -157,6 +158,8 @@ enum Command {
     },
     /// List the tests marked `#[ignore = "slow lane: <reason>"]`, which run only in `task test-slow`.
     SlowList(slow_lane::Args),
+    /// Measure one synthesis at 1, 2 and 4 jobs (wall, CPU, peak memory); refuses differing suites.
+    SynthJobs(synth_jobs::Args),
     /// Accept one generated service placement against a disposable k3d cluster; needs Docker.
     InfraAcceptance(infra_acceptance::Args),
     /// Verify or render release records.
@@ -238,6 +241,9 @@ fn run(cli: Cli) -> Result<String, String> {
             format_history::run(&root, check).map_err(|error| format!("{error:#}"))
         }
         Command::SlowList(args) => slow_lane::run(&root, &args),
+        Command::SynthJobs(args) => {
+            synth_jobs::run(&root, &args).map_err(|error| format!("{error:#}"))
+        }
         Command::InfraAcceptance(args) => {
             infra_acceptance::run(&root, &args).map_err(|error| format!("{error:#}"))
         }

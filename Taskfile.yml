@@ -727,3 +727,10 @@ tasks:
       - task: fuzz-check
       - task: release-check
       - task: action-check
+
+  synth-jobs-profile:
+    desc: Measure one synthesis at 1, 2 and 4 jobs (wall, CPU, peak memory); refuses differing suites.
+    cmds:
+      - SLOT_TIMEOUT=30m cargo build --release --locked -p ess-cli
+      - cargo build --locked -p ess-xtask
+      - target/debug/ess-xtask synth-jobs {{.CLI_ARGS}}
