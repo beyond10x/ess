@@ -3,7 +3,7 @@ format: aep.planning-md/3
 id: story:a-writer-true-conformance-entry-admits-a-senders-narrowing-of-types-and-value-constraints
 kind: story
 status: draft
-title: A writer true conformance entry admits a sender's narrowing of newtypes, enums, unions, maps, fields and value constraints
+title: A writer true conformance entry admits a sender's narrowing of types and value constraints
 tags:
 - wave-2026-11-23
 relations:
@@ -17,7 +17,7 @@ scope:
   path: crates/specify/ess-composition/tests/writer_conformance/common.rs
 - confidence: inferred
   path: crates/specify/ess-composition/tests/writer_conformance/narrowing.rs
-revision: 4
+revision: 9
 ---
 ## Outcome
 
@@ -32,7 +32,7 @@ Parent: `story:a-writer-side-conformance-admits-the-narrowing-a-sender-may-do` (
 
 ## Where
 
-Read at commit `16f2fc88c2` (`crates/specify/ess-composition` is unchanged at the tree's `f4e13cde68`). This unit starts from the head of `w1`, which adds about 25 lines to `Comparison`, `field_naming` and `references` and moves every later line down; locate by function name, and record your base with `git rev-parse HEAD`. Line numbers below are the unmodified tree's.
+Read at commit `16f2fc88c2` (`crates/specify/ess-composition` is identical at `f4e13cde68` and at `80794bbd698`, `plan/wave-2026-11-23`). This unit starts from the head of `w1`, which adds about 25 lines to `Comparison`, `field_naming` and `references` and moves every later line down; locate by function name, and record your base with `git rev-parse HEAD`. Line numbers below are the unmodified tree's.
 
 `crates/specify/ess-composition/src/conformance.rs` (all of this unit's source edits are here)
 
@@ -41,21 +41,21 @@ Read at commit `16f2fc88c2` (`crates/specify/ess-composition` is unchanged at th
 - `Compared` (831-837) gains `ignores: bool`; `fields()` (839-863) sets it from the payload, or for a named struct from `ir.undeclared_fields(name).is_ignored()` (`ess-compiler/src/ir.rs:3525`; `UndeclaredFields::is_ignored`, `ess-domain/src/types.rs:1172`), `false` for a name that is no struct.
 - `shapes` (240-260): `self.structs("", (mine.name, own), (theirs.name, sent), theirs.ignores)`.
 - `structs` (306-357): a fourth parameter `ignores: bool` (the imported struct's). Edits:
-  - first loop (312-325): add after `None if self.reader => {}` the arm `None if self.writer && omittable(field) => {}` with the comment "A sender may leave out an imported field the imported reader reads as absent: `Optional` and not `null_when_absent`.";
+  - first loop (312-325): add after `None if self.reader => {}` the arm `None if self.writer && omittable(field) => {}` with the comment "A sender may leave out an imported field whose reader accepts a missing key (`omittable`, which reads `absent_read`).";
   - second loop (326-356): the wire-key block (333-342) runs for `self.reader || self.writer`, so a local field that travels as a key the imported struct reads is compared with that field (otherwise an extra field would hide a change of type behind an ignored key); then, before the `optional` test (343), `if self.writer && ignores { continue; }` with the comment "A sender may send a field the imported reader ignores: every declared field stays required and typed, which the first loop checked."; the existing drift text is unchanged for a closed imported struct;
   - doc comment: say what a writer may do, beside the reader's sentence.
 - New free fn beside `wire_name` (875):
 
   ```rust
-  /// Whether an imported field may be absent from what a sender writes: `Optional`, and not
-  /// `null_when_absent` (which reads only an explicit `null`).
+  /// Whether an imported field may be absent from what a sender writes: `Optional`, and its
+  /// reader accepts a missing key. The presence rule is `w1`'s `absent_read`, the one home of it.
   fn omittable(field: &ResolvedField) -> bool {
       matches!(field.type_ref, ResolvedTypeRef::Optional { .. })
-          && field.naming.presence != Some(Presence::NullWhenAbsent)
+          && absent_read(field.naming.presence).omitted
   }
   ```
 
-  The reader's own test at 343 and 348 may call it; leave the reader's behaviour as it is.
+  `absent_read` and `Absent` are `w1`'s private items in this file (the same function `writes_within` reads the imported side through): do not write a second table of which presence reads which spelling. The reader's own test at 343 and 348 stays as it is.
 - `wire_names` (361-381): leave. Add `wire_subset` after it, same parameters (`(local, mine)`, `(imported, theirs)`): the imported wire names are `known`, `unknown` is every local `EnumVariant::wire` not in `known`; when `unknown` is not empty push ``"{}: `{local}` has wire names {} that `{imported}` lacks"`` with `at(path)` and `names(&unknown)`.
 - `invariants` (387-417): the first loop's guard (403) `if !self.reader` is unchanged; the second loop (411-416, local conditions the imported lacks) is wrapped in `if !self.writer`, with the comment "A sender may state conditions the imported type does not: it sends fewer values.". Doc comment gets the writer's sentence.
 - `text_constraint` (423-461): after the reader block (439-451) add:
@@ -168,7 +168,7 @@ Models. The wire domain `wire.session` declares: newtype `Ref` (`of: String`, `a
 11. `variant_attributes_stay_exact_for_a_writer`: imported `Kind` enum with `attributes: [{name: terminal, type: Boolean}]` and variants `Open` (`terminal: false`), `Closed` (`terminal: true`). Local `Kind` with the same attribute and only `Open` composes (a subset of variants, same values). Local `Kind` with no attributes: drift containing `attributes`. Local `Open` with `terminal: true`: drift containing `variant` and `terminal`. Local `Kind` that declares one more attribute: drift containing `attributes`.
 12. `a_plain_v6_entry_keeps_its_verdicts`: every admitted pair of tests 1 to 10, composed as a plain `/6` entry, is drift, and every pair a plain entry admits today (a local `Optional` against a required field, the same type, an equal enum) composes both as a plain `/6` entry and under `writer: true` unless a table row says otherwise. The one control that no row changes: a local `Optional<String>` against an imported `String`, plain composes and `writer` is drift (`w1`).
 
-Timing: each test builds a handful of tiny models; the whole target runs in well under 10 s on a warm build. Time each (`finished in` of the run) and name any over 5 s in your report. No test near 60 s; the test step stays under 120 s.
+Timing is measured at a 1-minute load of 60 or less (`cut -d' ' -f1 /proc/loadavg`), on a warm build, as test time only: the runner's own figure (the `finished in` line), not the command's wall time. This unit adds 12 tests, each building a handful of tiny models; name any over 5 s with its time in your report. The budget is 60 s per test and 120 s for the step.
 
 ## Steps
 
@@ -186,14 +186,14 @@ Timing: each test builds a handful of tiny models; the whole target runs in well
 
 ## Not yours
 
-- `w1` (lands first) owns, and this unit does not change: `lib.rs`, `Comparison`, `resolve_conformances`, `compare_inputs`, `field_naming`, `writes_within`, arms 2 and 3 of `references`, `docs.rs`, the two rows of `formats.md`, `owner_types.rs`, and `main.rs`, `presence.rs`, `ends.rs`, `format.rs` of the target. `references` is shared with `w1` in sequence: this unit starts from `w1`'s head and adds arms 6 and 10 only.
+- `w1` (lands first) owns, and this unit does not change: `lib.rs`, `Comparison`, `resolve_conformances`, `compare_inputs`, `field_naming`, `Absent`, `absent_written`, `absent_read`, `writes_within` (the presence rule; this unit calls `absent_read`), arms 2 and 3 of `references`, `docs.rs`, the two rows of `formats.md`, `owner_types.rs`, and `main.rs`, `presence.rs`, `ends.rs`, `format.rs` of the target. `references` is shared with `w1` in sequence: this unit starts from `w1`'s head and adds arms 6 and 10 only.
 - `w3` owns the `TypeConformanceDrift` text in `lib.rs`, the design page, the reference pages, `diagnostics.md`, `cli.md`, `ess-cli/src/main.rs` and `CHANGELOG.md`.
 - No `.yaml` file; none of `lowered-definitions-table.tsv`, `synthesis-suite-bytes-table.tsv`, `selection-precedence-table.tsv`.
 - `story:a-synthesized-suite-sends-an-omitted-or-null-member-both-ways` and `story:reader-true-refused-for-closed-readers` are not in this wave.
 
 ## Gate
 
-`AGENTS.md` § Gate, the crate this unit touches: `ess-composition` only (no `ess-domain`, `ess-compiler` or `ess-primitives` file, no diagnostic, no format version change, no `RawSpecFile`, no generated tree). Bounds for every command and test: 60 s per test, 120 s for the test step, a pool job ends after 10 minutes unless it names its time (30 minutes at most), no Python, no files in `/tmp` (`TMPDIR` to your scratch directory), no `RUSTC_WRAPPER`, `SCCACHE_*` or `-j`.
+`AGENTS.md` § Gate, the crate this unit touches: `ess-composition` only (no `ess-domain`, `ess-compiler` or `ess-primitives` file, no diagnostic, no format version change, no `RawSpecFile`, no generated tree). Bounds for every command and test (wall-time figures judged at a 1-minute load of 60 or less, test time only): 60 s per test, 120 s for the test step, a pool job ends after 10 minutes unless it names its time (30 minutes at most), no Python, no files in `/tmp` (`TMPDIR` to your scratch directory), no `RUSTC_WRAPPER`, `SCCACHE_*` or `-j`.
 
 ```console
 slot task fmt-check
@@ -212,7 +212,8 @@ No `ess-cli` gate: nothing it compiles changes. No `task test-xtask`: no `Valida
 4. Test 8 shows a command response follows its own `undeclared_fields` and an event payload stays closed.
 5. `cargo test -p ess-composition --locked` passes with no existing test edited.
 6. `git diff` shows no line outside the owned files; no new `.yaml`; no model table moved.
-7. The report names any test over 5 s with its time and the base commit.
+7. The report names any test over 5 s (the runner's own figure, at a 1-minute load of 60 or less) with its time, and the base commit.
+8. `git diff <base> -- crates/specify/ess-composition/src/conformance.rs | grep '^+' | grep -c 'Presence::'` prints 0: this unit adds no line naming a presence, because the presence rule has one home, `w1`'s `absent_written`, `absent_read` and `writes_within`.
 
 ## Decisions
 

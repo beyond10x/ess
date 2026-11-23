@@ -3,23 +3,21 @@ format: aep.planning-md/3
 id: story:the-generated-view-queries-target-keeps-generation-in-the-test-step-and-compiles-in-the-slow-lane
 kind: story
 status: draft
-title: The generated-view-queries target runs its generation and plan tests in the test step and its nine cargo and go compile tests in the slow lane
+title: The generated-view-queries target keeps generation in the test step and compiles in the slow lane
 tags:
 - wave-2026-11-23
 relations:
 - serves: vision:O2
 - derived_from: story:the-test-step-meets-the-test-budget
-- depends_on: story:a-slow-lane-runs-the-tests-marked-slow-in-task-test-slow-and-a-ci-job-that-gate-carries
+- depends_on: story:a-test-marked-slow-runs-only-in-task-test-slow-under-its-own-profile-and-slow-list-names-it
 scope:
 - confidence: cited
   path: CHANGELOG.md
 - confidence: cited
-  path: crates/edge/ess-xtask/tests/no_test_builds.rs
-- confidence: inferred
   path: crates/edge/ess-xtask/tests/slow_lane.rs
 - confidence: cited
   path: crates/generate/ess-synth/tests/generated_view_queries.rs
-revision: 5
+revision: 9
 ---
 ## Outcome
 
@@ -27,7 +25,7 @@ revision: 5
 
 - The nine tests that build generated Rust or Go with `cargo` or `go` and run the result carry `#[ignore = "slow lane: ..."]` and run in `task test-slow` and the `slow` job.
 - The tests that only generate and read the plan stay in the step; any of them that the first-step measurement puts over 30 s moves to the lane too.
-- The target ends within 30 s in the step, and no test of it runs over 60 s.
+- The target ends within 30 s in the step by the runner's own figure, on a warm build at a 1-minute load of 60 or less, and no test of it runs over 60 s.
 
 ## Why
 
@@ -37,7 +35,7 @@ Consumer gap: none.
 
 ## Where
 
-Read at `bf128f9146` (unchanged in `ff7f8e74fb`). Re-read a line before editing it.
+Read at `80794bbd698` (unchanged since `bf128f9146`). Re-read a line before editing it.
 
 `crates/generate/ess-synth/tests/generated_view_queries.rs` (2060 lines). Helpers: `cargo` 278 (spawns `$CARGO ... --offline` with `RUSTFLAGS=-D warnings`), the Go probe 1095 and runner 1101, the server spawn 1170, `ess_conformance::synthesize` 414.
 
@@ -54,13 +52,13 @@ Tests that get the marker (fn line; its `#[test]` is the line before, with nothi
 - 1981 `adversary_rust_typed_parameters_and_orders_answer_as_the_interpreted_target`
 - 2018 `adversary_go_typed_parameters_and_orders_answer_as_the_interpreted_target`
 
-`crates/edge/ess-xtask/tests/no_test_builds.rs`: `ALLOWED` entry at line 67, `"crates/generate/ess-synth/tests/generated_view_queries.rs"`.
+`crates/edge/ess-xtask/tests/no_test_builds.rs`: `ALLOWED` entry at line 67, `"crates/generate/ess-synth/tests/generated_view_queries.rs"`. This file is run as a test, not edited, and so it is not in this unit's `.scope`.
 
-`crates/edge/ess-xtask/tests/slow_lane.rs`: `MARKED` (t1). `CHANGELOG.md` `## [Unreleased]` line 3, `### Changed` line 5.
+`crates/edge/ess-xtask/tests/slow_lane.rs`: `MARKED` (t1a). `CHANGELOG.md`: the `### Changed` heading under `## [Unreleased]`.
 
 ## Tests first
 
-Bounds: no test over 60 s, the test step within 120 s, a pool job ends after 10 minutes unless it names its time (`SLOT_TIMEOUT=30m`, 30 at most). Time every test; any over 5 s is named in the report.
+Bounds: wall-time figures are the runner's own per-test figure (`target/nextest/ci/junit.xml`), on a warm build at a 1-minute load of 60 or less (`cut -d' ' -f1 /proc/loadavg`, before and after; above 60 the run decides nothing and is repeated); no test over 60 s, the test step within 120 s, a pool job ends after 10 minutes unless it names its time (`SLOT_TIMEOUT=30m`, 30 at most); no Python for anything that stays. Time every test; any over 5 s is named in the report.
 
 0. Measure first. `SLOT_TIMEOUT=30m cargo nextest run --profile ci -p ess-synth --test generated_view_queries` on the unchanged tree, then read every test's time from `target/nextest/ci/junit.xml`. Decision rules:
    - a test of the nine over 5 s is marked (the default, and expected);
@@ -80,16 +78,17 @@ No new test in `generated_view_queries.rs`: nothing in the file changes except a
 4. Leave `no_test_builds.rs` as it is: the file stays in `ALLOWED` because the cargo and go spawns remain, now only inside slow tests. Run `cargo test -p ess-xtask --locked --test no_test_builds` to prove it.
 5. `cargo test -p ess-xtask --locked --test slow_lane` is green. Run `SLOT_TIMEOUT=30m task test-slow PACKAGES=ess-synth` once; every marked test must pass in the lane (they did before: only their lane moved). Report the time of each and the lane's wall time for `ess-synth`.
 6. Time the step: `SLOT_TIMEOUT=30m cargo nextest run --profile ci -p ess-synth --test generated_view_queries` ends within 30 s; report it and the time of the slowest remaining test.
-7. No change to `ci.yml`, `Taskfile.yml`, `nextest.toml`, `AGENTS.md` (t1 and t7 own them).
+7. Add the Changelog bullet below.
+8. No change to `ci.yml`, `Taskfile.yml`, `nextest.toml`, `AGENTS.md` (t1a, t1b and t7 own them).
 
 ## Owned files
 
-`crates/generate/ess-synth/tests/generated_view_queries.rs` (attribute lines only).
+`crates/generate/ess-synth/tests/generated_view_queries.rs` (attribute lines only), the nine or more rows you add to `MARKED` in `crates/edge/ess-xtask/tests/slow_lane.rs`, and one bullet in `CHANGELOG.md`.
 
 ## Not yours
 
-- t1: `slow_lane.rs` machinery, `Taskfile.yml`, `ci.yml`, `nextest.toml`. t2, t3, t5, t6, t7: their files. The other 51 `ess-synth` test files that spawn node, tsc, go, cargo, rustc or npm (a follow-up per crate, named in the map comments).
-- Shared: `crates/edge/ess-xtask/tests/slow_lane.rs` (`MARKED`: t1 lands first; keep every row at merge, rows sorted by path then name), `CHANGELOG.md` (keep both bullets).
+- t1a: `slow_lane.rs` machinery, `Taskfile.yml`, `nextest.toml`. t1b: `ci.yml`, the `slow` job. t2, t3, t5, t6, t7: their files. `no_test_builds.rs`: unchanged. The other 51 `ess-synth` test files that spawn node, tsc, go, cargo, rustc or npm (a follow-up per crate, named in the map comments).
+- Shared: `crates/edge/ess-xtask/tests/slow_lane.rs` (`MARKED`: t1a lands first; t2, t3, t5 add rows beside yours; keep every row at merge, rows sorted by path then name), `CHANGELOG.md` (keep every bullet).
 
 ## Gate
 
@@ -106,13 +105,13 @@ A generator output moves nothing here, so the "also `ess-synth`'s whole test set
 ## Acceptance
 
 1. `cargo xtask slow-list` lists the nine tests under `ess-synth generated_view_queries` (plus any the step-0 rule added).
-2. `cargo nextest run --profile ci -p ess-synth --test generated_view_queries` ends within 30 s, its remaining tests all pass, the nine print as ignored, and none runs over 5 s (or each over 5 s is named in the report with its time).
+2. `cargo nextest run --profile ci -p ess-synth --test generated_view_queries` ends within 30 s by the runner's figure (the `time` attribute of the `testsuite` element in `target/nextest/ci/junit.xml`), on a warm build (a second run with no source change; the first run's compile is not the figure) at a 1-minute load of 60 or less (both loads in the report). Its remaining tests all pass, the nine print as ignored, and each remaining test over 5 s is named in the report with its time. If the second run is over 30 s, the slowest remaining test is marked (step 0 rule) until it is not; the target is never left over 30 s.
 3. `task test-slow PACKAGES=ess-synth` runs the nine and they pass.
 4. `cargo test -p ess-xtask --test slow_lane` and `--test no_test_builds` are green; `git diff --stat` for the repository shows `generated_view_queries.rs` changed only by inserted attribute lines.
 
 ## Decisions
 
-- Names (t1, repeated): marker `#[ignore = "slow lane: <reason>"]`; `cargo xtask slow-list`; `task test-slow` with `PACKAGES`; profile `slow`; job `slow`; `MARKED`.
+- Names (t1a, repeated): marker `#[ignore = "slow lane: <reason>"]`; `cargo xtask slow-list`; `task test-slow` with `PACKAGES`; profile `slow`; job `slow` (t1b); `MARKED`.
 - D1 (a)/(b) not reopened. For this file the "made once" rule is met by moving the whole compile to the slow lane: the lane builds each generated crate a few times at most and takes no part of the 120 s step. The cargo spawns stay inside the tests, so the file stays in `no_test_builds.rs` `ALLOWED`.
 - Marker only; no helper, no refactor of the file: a refactor would move lines under other units' feet and is not needed to meet the budget.
 - Per-test marking, not whole-file `#![cfg(...)]`: the seven generation tests are the fast coverage that the step keeps.
@@ -123,7 +122,7 @@ Addition A (acceptance) asks that `generated_view_queries` "builds with cargo on
 - A (recommended): mark the nine slow and keep the in-test cargo builds. The step meets the budget, the 60 s bound holds in the lane (each test under the profile's 20 minutes), and the file keeps its `ALLOWED` entry. It is the form D1 (b) gives for a case not worth committing.
 - B: port the nine to Taskfile harness tasks, as `task json-body-harnesses` does, with `no_test_builds.rs` covering the file. A larger follow-up (several harness tasks, new environment variables), not in this wave.
 
-This unit implements A. Choosing B later changes only the lane's content, not t1's mechanism.
+This unit implements A. Choosing B later changes only the lane's content, not t1a's mechanism.
 
 ## Changelog
 

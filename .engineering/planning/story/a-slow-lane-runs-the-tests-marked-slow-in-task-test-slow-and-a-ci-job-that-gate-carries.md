@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-slow-lane-runs-the-tests-marked-slow-in-task-test-slow-and-a-ci-job-that-gate-carries
 kind: story
-status: draft
+status: archived
 title: 'A `slow` lane runs the tests marked `#[ignore = "slow lane: <reason>"]` in `task test-slow` and in a `slow` CI job that `Gate` carries'
 tags:
 - wave-2026-11-23
@@ -44,7 +44,9 @@ scope:
   path: crates/verify/ess-conformance/tests/adversary_w3_266_267_dump.rs
 - confidence: inferred
   path: crates/verify/ess-conformance/tests/external_beside_held_guard.rs
-revision: 18
+revision: 20
+transitions:
+- {from: "draft", to: "archived", at: "2026-11-23T05:31:34Z", actor: "human:timo", revision: 20}
 ---
 ## Outcome
 
@@ -181,3 +183,5 @@ The `ess-xtask` tests run as named `--test` targets; `task test-xtask` is not ne
 `### Changed`, one bullet:
 
 - CI: a test marked `#[ignore = "slow lane: <reason>"]` runs in `task test-slow` and in a `slow` job beside the test shards, which `Gate` carries; a pull request skips the job only when every changed path is a plan, documentation, UI, infrastructure or `ess-xtask` path, and every other run (`main`, nightly, queue, merge group, release) runs it. The six byte-identity and WebAssembly probes that `task test-slow-probes` ran only by hand now run there, and that task is gone.
+
+Split on 2026-11-23 after round 1 of the plan critics (design finding: one unit held the local mechanism and the CI wiring): the mechanism is `story:a-test-marked-slow-runs-only-in-task-test-slow-under-its-own-profile-and-slow-list-names-it`, the CI wiring `story:a-slow-ci-job-runs-task-test-slow-on-every-run-that-can-count-for-a-release-and-gate-carries-it`.

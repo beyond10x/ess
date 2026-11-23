@@ -3,7 +3,7 @@ format: aep.planning-md/3
 id: story:with-more-than-one-job-the-caller-readings-of-a-synthesis-run-on-scoped-threads-and-write-the-same-suite
 kind: story
 status: draft
-title: With more than one job the caller readings of a synthesis run on scoped threads, each uniform model's readings on one thread that keeps its memory, and the suite, refusals and notes are the bytes one job writes
+title: With more than one job the caller readings of a synthesis run on scoped threads and write the same suite
 tags:
 - wave-2026-11-23
 relations:
@@ -11,6 +11,7 @@ relations:
 - derived_from: story:the-caller-readings-of-a-synthesis-run-on-several-threads-and-write-the-suite-a-single-thread-writes
 - depends_on: story:every-caller-reading-of-a-synthesis-is-computed-from-explicit-inputs-in-a-fixed-plan
 - depends_on: story:every-piece-of-thread-state-a-synthesis-reads-is-classified-and-the-caller-reading-context-is-carried-to-other-threads
+- depends_on: story:a-test-marked-slow-runs-only-in-task-test-slow-under-its-own-profile-and-slow-list-names-it
 scope:
 - confidence: cited
   path: crates/verify/ess-conformance/src/synthesize.rs
@@ -29,8 +30,14 @@ scope:
 - confidence: cited
   path: crates/verify/ess-conformance/tests/caller_readings_made_once_work.rs
 - confidence: cited
+  path: crates/verify/ess-conformance/tests/fixtures/synthesis-component-suites-table.tsv
+- confidence: cited
+  path: crates/verify/ess-conformance/tests/fixtures/synthesis-suite-bytes-table.tsv
+- confidence: cited
   path: crates/verify/ess-conformance/tests/mutation_grants.rs
-revision: 10
+- confidence: cited
+  path: crates/verify/ess-conformance/tests/synthesis_suite_bytes_table.rs
+revision: 15
 ---
 ## Outcome
 
@@ -43,28 +50,38 @@ revision: 10
     (its **lane**);
   - every other reading goes to whichever thread is free;
   - results are merged by plan index on the calling thread.
-- The suite, refusals, notes and outside are byte for byte those of one job, for every job count,
-  every repository model, every component, seeded runs, and every mutant of the mutation audit.
+- These are the bytes one job writes (suite, refusals, notes, outside), as tested:
+  - at 1, 2, 4 and 7 jobs on five caller fixtures, in the test step;
+  - at 1, 2 and 7 jobs on every repository model and every component the byte tables walk, in
+    the slow lane;
+  - at 4 jobs for a seeded run and a component run of a caller model;
+  - at 4 jobs for the mutants of the sets-drop and grant classes.
 - A panic in a reading on another thread is resumed on the calling thread with its own payload,
   the same panic one job raises.
-- The work counters of every reading are added to the calling thread, so every `*_work.rs` bound
-  holds at any job count.
+- The work counted on a worker is added to the calling thread. The 14 `*_work.rs` targets pass at
+  `ESS_SYNTH_JOBS=1` and at `ESS_SYNTH_JOBS=4`.
+- On a generic caller model of 12 commands read differently by two callers, 50 = 4 x 12 + 2
+  readings run on another thread at 4 jobs, and 0 at 1 job.
 - No new dependency, no `unsafe`, no format change. The CLI flag is unit `p4`'s.
 
 ## Why
 
-- Parent: `PARENT-THREADS`. This is the thread unit. Its decisions: D2 C (stage 2 on two threads,
-  one per uniform model, each owning its model's memory) and D3 A (caller readings only).
+- Parent: `story:the-caller-readings-of-a-synthesis-run-on-several-threads-and-write-the-suite-a-single-thread-writes`.
+  This is the thread unit. Its decisions: D2 C (stage 2 on two threads, one per uniform model,
+  each owning its model's memory) and D3 A (caller readings only).
 - Consumer gap: one synthesis of the largest known downstream specification takes 279 s on one
   core of a many-core CI runner.
 - Units `p1` (the plan, inline) and `p2` (context, counters, registry) are merged before this
   starts. This unit changes who runs the plan, and nothing else.
+- The parent's acceptance asks for a byte-identity test over the committed model corpus at 1, 2
+  and 7 threads. Over every model that is several minutes of synthesis, so it is a slow-lane test,
+  using the mechanism of unit `t1a`. The five fixtures run in the test step.
 
 ## Where
 
-Read at `ff7f8e74fb`. `p1` and `p2` change the files below first, so **re-read them at the
-wave's merged head before you start**, and find each site by its name. Record
-`BASE=$(git rev-parse HEAD)`.
+Read at `80794bbd698` (`plan/wave-2026-11-23`, the plan tree's head). `p1` and `p2` change the
+files below first, so **re-read them at the wave's merged head before you start**, and find each
+site by its name. Record `BASE=$(git rev-parse HEAD)`.
 
 ### `crates/verify/ess-conformance/src/synthesize.rs`
 
@@ -92,11 +109,38 @@ pub(super) fn jobs() -> std::num::NonZeroUsize { /* as stated */ }
 pub fn readings_off_thread<R>(run: impl FnOnce() -> R) -> (R, u64) { /* before/after of OFF_THREAD */ }
 ```
 
-Also add `pub(super) fn add_off_thread(more: u64)`.
+Also add:
+
+- `pub(super) fn add_off_thread(more: u64)`;
+- `#[doc(hidden)] pub fn current_jobs() -> std::num::NonZeroUsize { jobs() }`. Unit `p4`'s test
+  reads it to show that the flag reaches the count.
 
 ### `crates/verify/ess-conformance/src/synthesize/caller/readings.rs` (`p1`'s)
 
-Replace the body of `read_all` (the signature stays):
+Add the thread bounds that `p1` left out (routing decision X3) to the signature:
+
+```rust
+pub(super) fn read_all<'m, J: Sync, R: Send>(
+    jobs: &[J],
+    lane: impl Fn(&J) -> Option<&'m Arc<EssIr>> + Sync,
+    read: impl Fn(&J) -> R + Sync,
+) -> Vec<R>
+```
+
+Add the compile-time guard at the end of the file:
+
+```rust
+const _: () = {
+    const fn sync<T: Sync>() {}
+    sync::<super::Assigned<'static>>();
+    sync::<super::Callers>();
+};
+```
+
+If a bound fails to compile, the error names the type that holds an `Rc` or a `Cell`. Report it,
+and replace it only where it is a plain data field and not a memo.
+
+Replace the body of `read_all`:
 
 1. Let `threads = super::super::jobs().get()`. If `threads == 1` or `jobs.len() < 2`, return
    `jobs.iter().map(read).collect()`. That is `p1`'s body.
@@ -148,7 +192,7 @@ thread_local! {
 
 - The `let _kept = readings::Kept::open(..)` that `p1` added becomes
   `let _kept = (super::jobs().get() == 1).then(|| readings::Kept::open(&assigned.uniform_models()));`.
-  Above one job the lanes own that memory, and the readings run inline at merge time
+  Above one job the lanes own that memory, and the readings that run inline at merge time
   (`one_row_acted_on`, the rotation re-run) start from none.
 - `mod tests`:
   - `counted` (3653) runs its synthesis inside `super::super::with_jobs(NonZeroUsize::MIN, ..)`,
@@ -162,21 +206,36 @@ thread_local! {
 
 ### `crates/verify/ess-conformance/src/synthesize/threads.rs` (`p2`'s)
 
-Add to `STATE`:
+- Add to `STATE`:
+  - `synthesize.rs` `JOBS` and `OFF_THREAD` as `Caller`. They are only read and set on the
+    calling thread.
+  - `synthesize/caller/readings.rs` `PANIC_IN` as `Test`.
+- Remove the `#![cfg_attr(not(test), allow(dead_code))]` that `p2` put at the top of the file,
+  with its comment naming this unit. `read_all` now uses `Context` and `Work`, and through them
+  every accessor. Also remove any per-item `allow` that `p2` added with the same comment
+  (`git grep -n 'p3 removes' crates/verify/ess-conformance/src`).
+- `Work` is unchanged.
 
-- `synthesize.rs` `JOBS` and `OFF_THREAD` as `Caller`. They are only read and set on the
-  calling thread.
-- `synthesize/caller/readings.rs` `PANIC_IN` as `Test`.
+### `crates/verify/ess-conformance/tests/synthesis_suite_bytes_table.rs`
 
-`Work` is unchanged.
+- The corpus walker and the line makers are reused unchanged:
+  - `models(&root())` (135): every ESS source file, and every directory with a `system.yaml`;
+  - `model_lines` (205): stage, or suite count and digest, refusals, notes, outside;
+  - `component_lines` (230): one line per component;
+  - `UNAFFORDABLE`.
+- Unit `t2` edits this file after this unit (routing decision X1: `t2` lands after `p3`). This
+  unit only appends one test function at the end of the file (380), and `t2` keeps it.
 
 ## Tests first
 
-Time each new test in a debug build and name every one over 5 s with its time. No test may run
-over 60 s. If one does, the unit says what to cut: N = 7 first, then the largest model of that
-test, which you name. A test step stays within 120 s. No new test binary: every test goes into
-an existing file. All new tests are red today with `error[E0432]: unresolved import
-ess_conformance::synthesize::with_jobs` (or `readings_off_thread`), unless stated otherwise.
+- Time each new test in a debug build and name every one over 5 s with its time.
+- Wall-time figures are judged at a 1-minute load of 60 or less (`cut -d' ' -f1 /proc/loadavg`),
+  on a warm build, as test time (the runner's figure, not the command's wall time).
+- No test of the test step may run over 60 s. If one does, cut N = 7 first, then the largest
+  model of that test, which you name. A test step stays within 120 s.
+- No new test binary: every test goes into an existing file.
+- All new tests are red today with `error[E0432]: unresolved import
+  ess_conformance::synthesize::with_jobs` (or `readings_off_thread`), unless stated otherwise.
 
 In `crates/verify/ess-conformance/tests/caller_readings_made_once_work.rs`:
 
@@ -213,8 +272,8 @@ In `crates/verify/ess-conformance/tests/caller_readings_made_once_work.rs`:
    - `with_jobs(1)` gives `0`;
    - the two `rendered` are equal.
 
-   If its time is over 30 s, lower `10` to the largest value under 30 s and write the expected
-   count as `2 + 4 * (flags + 2)`.
+   The parent's acceptance names this count. If the test runs over 30 s, lower `10` to the
+   largest value under 30 s and write the expected count as `2 + 4 * (flags + 2)`.
 7. `the_creating_rows_counted_at_four_jobs_are_those_counted_at_one`: `creations_made` of
    `model(true)` is equal at `with_jobs(1)` and `with_jobs(4)`, and both are
    `<= TIMES * plain`. The lanes give each uniform model the sequence of readings one thread
@@ -229,7 +288,7 @@ In `crates/verify/ess-conformance/tests/caller_readings_made_once_work.rs`:
 
    `with_dropped_write` is set around each mutant's synthesis (`mutate.rs` 5643, and in `emit`
    6890), and readings read it in `unread_apart` and in five memo keys (`dropped_key`,
-   `synthesize.rs` 14696).
+   `synthesize.rs` 14705).
 
 In `crates/verify/ess-conformance/tests/mutation_grants.rs`:
 
@@ -241,7 +300,7 @@ In `crates/verify/ess-conformance/tests/mutation_grants.rs`:
    - the manifest lists a `grant-drop/` and a `grant-add/` mutant.
 
    `with_dropped_grant` and `with_added_grant` (`mutate.rs` 2314-2318) are read inside readings
-   by `grant::denied` (`synthesize.rs` 3947, `grant.rs` 81).
+   by `grant::denied` (`synthesize.rs` 3956, `grant.rs` 81).
 
 In `crates/verify/ess-conformance/tests/caller_arranged_rows.rs`:
 
@@ -272,91 +331,146 @@ In `crates/verify/ess-conformance/src/synthesize/caller.rs` `mod tests`:
 
     Red today: `PANIC_IN` and `with_jobs` do not exist.
 
-The mutation proof for 8, 9 and 11 is required, and it is reported:
+In `crates/verify/ess-conformance/tests/synthesis_suite_bytes_table.rs`, a slow-lane test, marked
+with the marker of unit `t1a` (marker and task as `t1a` defines them):
 
-1. Temporarily replace `context.enter(..)` in the worker by a direct call.
-2. Run 8, 9 and 11.
-3. Record which go red and the first differing line.
-4. Restore.
+13. `every_repository_model_and_component_writes_its_bytes_at_one_two_and_seven_jobs`. For `n`
+    in `[1, 2, 7]`, inside `with_jobs(NonZeroUsize::new(n).unwrap(), ..)`, build:
+    - `models(&root())` mapped through `model_lines`;
+    - `models(&root())` mapped through `component_lines`.
 
-8 and 9 must go red. If 11 stays green with the context removed, say so: the component's scope
-then does not change which commands this fixture takes.
+    Call `models` once per count, so no `Model` needs to be `Clone`. Assert that the lines at 2
+    and at 7 equal the lines at 1, model by model. On failure, print the label, the count and
+    both lines.
+
+    - `UNAFFORDABLE` models stay excluded as the tables exclude them.
+    - A line holds the suite's count and SHA-256 digest and the full refusals, notes and outside
+      as they print. Equal digests stand for `cmp` of the suite bytes (D8).
+    - Red today: the same compile error.
+    - It runs in the slow lane only: never in the test step, never under the 60 s bound of the
+      test step. Report its time. If `t1a` defines a per-test bound in the slow lane and the test
+      exceeds it, split it into one test per count (2 and 7) and one for components, each
+      compared with 1.
+    - The parent asks for the corpus plus the caller models of the work tests. Those models are
+      generated in code, and tests 5-7 cover them in the test step.
+
+### The mutation proof (required, and reported)
+
+1. Temporarily replace `context.enter(..)` in the worker by a direct call. Run tests 8, 9 and 11,
+   record which go red and the first differing line, and restore.
+2. Then, one at a time, remove one setter from `Context::enter`, run its test, and restore:
+   - `with_dropped_write` for test 8;
+   - `with_dropped_grant` and `with_added_grant` for test 9;
+   - `scoped_to` for test 11.
+
+What a green mutant means:
+
+- Tests 8 and 9 must go red under step 1, and under their setters in step 2. If one stays green,
+  its model does not make a worker read that context. Change the model until it does, and say
+  how. Examples: a write that a focused reading of a rewritten command drops; a grant of a command
+  that only the attributed actor holds.
+- If no model in reach turns it red, stop and report the unit as not accepted: a mutation test
+  that cannot fail proves nothing.
+- Test 11 under `scoped_to` may stay green, if the component `svc` takes every command of the
+  model. Then say so, and add a second component to `model(ATTR)` that takes only one command, so
+  that the scope changes what a worker synthesizes. If test 11 still stays green, report it.
 
 ## Steps
 
-1. Re-read `readings.rs`, `caller.rs` `synthesize` and `threads.rs` at the merged head.
-2. Write tests 1-12 and record the red lines. Every target runs through the pool.
-3. Add `with_jobs`, `jobs`, `readings_off_thread` and the two thread-locals. Classify them in
-   `STATE`.
-4. Write the threaded body of `read_all`, the panic seam and the `jobs() == 1` condition on
-   `_kept`.
-5. Run tests 1-12, then the mutation proof.
-6. Run the corpus at four jobs. It is the byte proof. It is a command, not a new test:
-   `ESS_SYNTH_JOBS=4` makes every synthesis of the two byte-table tests run on threads.
-7. Run the gate.
-8. One commit, message file via the Write tool, `git commit -F <file>`:
+1. Re-read `readings.rs`, `caller.rs` `synthesize`, `threads.rs` and
+   `synthesis_suite_bytes_table.rs` at the merged head. Read `t1a`'s marker and slow-lane task in
+   its merged change.
+2. Write tests 1-13 and record the red lines. Every target runs through the pool.
+3. Add `with_jobs`, `jobs`, `current_jobs`, `readings_off_thread` and the two thread-locals.
+   Classify them in `STATE`, and remove `p2`'s dead-code allows.
+4. Add the bounds and the guard to `read_all`. Then write the threaded body, the panic seam and
+   the `jobs() == 1` condition on `_kept`.
+5. Run tests 1-12, then the mutation proof, then test 13 in the slow lane.
+6. Run the gate.
+7. One commit, message file via the Write tool, `git commit -F <file>`:
    `feat(conformance): caller readings run on scoped threads with the bytes one thread writes`.
-   The body names the job counts tested and the corpus run.
+   The body names the job counts tested, test 13's time and the mutation proof's red lines.
 
-No generated file changes. `with_jobs` and `readings_off_thread` are new public API, so
-`task ci-lint` runs.
+No generated file changes. `with_jobs`, `current_jobs` and `readings_off_thread` are new public
+API, so `task ci-lint` runs.
 
 ## Owned files
 
-- `crates/verify/ess-conformance/src/synthesize/caller/readings.rs`: `read_all`'s body and the
-  panic seam. `p1` created the file and is merged.
+- `crates/verify/ess-conformance/src/synthesize/caller/readings.rs`: `read_all`'s bounds and body,
+  the guard and the panic seam. `p1` created the file and is merged.
 - `crates/verify/ess-conformance/src/synthesize.rs`: `JOBS`, `OFF_THREAD`, `with_jobs`, `jobs`,
-  `readings_off_thread`, `add_off_thread` only.
+  `current_jobs`, `readings_off_thread`, `add_off_thread` only.
 - `crates/verify/ess-conformance/src/synthesize/caller.rs`: the `_kept` line, `counted`, test 12.
 - `crates/verify/ess-conformance/src/witness_memo.rs`: `counted` only.
-- `crates/verify/ess-conformance/src/synthesize/threads.rs`: three `STATE` rows.
+- `crates/verify/ess-conformance/src/synthesize/threads.rs`: three `STATE` rows, and the removal
+  of `p2`'s dead-code allows.
 - The four test files named under Tests first: the new tests and the `model_flags` refactor only.
+- `crates/verify/ess-conformance/tests/synthesis_suite_bytes_table.rs`: test 13 only, appended.
 
 ## Not yours
 
 - `crates/edge/ess-cli` and `website/` belong to `p4`; `crates/edge/ess-xtask`, `Taskfile.yml`
   and the design page's `## Measured` belong to `p5`.
-- `tests/synthesis_suite_bytes_table.rs` and its tables belong to `t2` this wave. They are run,
-  never edited.
-- `tests/mutation_audit.rs` and `mutate.rs` belong to `m1` this wave.
+- The byte tables (`tests/fixtures/*-table.tsv`) and every other line of
+  `synthesis_suite_bytes_table.rs` belong to `t2`, which lands after this unit. They are read and
+  run here, never re-pinned.
+- The slow-lane marker, its scanner and its task belong to `t1a`.
+- `mutate.rs`: nothing here edits it.
+
+## Shared files
+
+- `synthesis_suite_bytes_table.rs` with `t2`. This unit lands first and appends one function;
+  `t2` keeps it.
+- `threads.rs` with `p2` (merged before).
 
 ## Gate
 
-Each command is one pool job. `cargo` is the shim. Bounds:
-
-- 60 s per test, 120 s per test step;
-- a pool job ends after 10 minutes unless it names its time, 30 minutes at most;
-- no `RUSTC_WRAPPER`, `SCCACHE_*` or `-j`.
+- Each command is one pool job; `cargo` is the shim.
+- Bounds: 60 s per test, 120 s per test step. A pool job ends after 10 minutes unless it names
+  its time, 30 minutes at most.
+- No Python, no files in `/tmp`, no `RUSTC_WRAPPER`, `SCCACHE_*` or `-j`.
 
 ```console
 slot task fmt-check
 SLOT_TIMEOUT=30m CARGO_PROFILE_DEV_DEBUG=false CARGO_INCREMENTAL=0 cargo clippy -p ess-conformance --all-targets --locked -- -D warnings
 SLOT_TIMEOUT=30m CARGO_PROFILE_DEV_DEBUG=false CARGO_INCREMENTAL=0 cargo clippy -p ess-cli --all-targets --locked -- -D warnings
-SLOT_TIMEOUT=30m CARGO_PROFILE_DEV_DEBUG=false CARGO_INCREMENTAL=0 cargo test -p ess-conformance --locked --lib synthesize::caller synthesize::threads witness_memo
+SLOT_TIMEOUT=30m CARGO_PROFILE_DEV_DEBUG=false CARGO_INCREMENTAL=0 cargo test -p ess-conformance --locked --lib -- synthesize::caller synthesize::threads witness_memo
 SLOT_TIMEOUT=30m CARGO_PROFILE_DEV_DEBUG=false CARGO_INCREMENTAL=0 cargo test -p ess-conformance --locked --test caller_readings_made_once_work --test mutation_grants --test caller_arranged_rows --test a_synthesis_seed_is_accepted_for_a_caller_model
-SLOT_TIMEOUT=30m CARGO_PROFILE_DEV_DEBUG=false CARGO_INCREMENTAL=0 ESS_SYNTH_JOBS=4 cargo test -p ess-conformance --locked --test caller_readings_made_once_work --test caller_arranged_rows --test a_seeded_scenario_notes_its_skipped_reversed_caller_run --test caller_values --test interpreted_caller --test one_time_caller --test mutation_grants --test mutation_sets_entries --test companion_rows_searched_once_work --test row_set_many_selectors_work
+SLOT_TIMEOUT=30m CARGO_PROFILE_DEV_DEBUG=false CARGO_INCREMENTAL=0 cargo test -p ess-conformance --locked --test caller_readings_made_once_work --test companion_rows_searched_once_work --test created_rows_kept_work --test nested_paths_extended_in_place_work --test once_per_model_work --test own_scenario_nesting_bounded_work --test ranked_and_shorthand_work --test related_guard_ranked_candidates_work --test row_set_many_selectors_work --test rows_moved_by_many_commands_work --test step_clones_work --test stored_row_bound_once_work --test stored_rows_decided_once_work --test witness_unread_choices_work
+SLOT_TIMEOUT=30m CARGO_PROFILE_DEV_DEBUG=false CARGO_INCREMENTAL=0 ESS_SYNTH_JOBS=4 cargo test -p ess-conformance --locked --test caller_readings_made_once_work --test companion_rows_searched_once_work --test created_rows_kept_work --test nested_paths_extended_in_place_work --test once_per_model_work --test own_scenario_nesting_bounded_work --test ranked_and_shorthand_work --test related_guard_ranked_candidates_work --test row_set_many_selectors_work --test rows_moved_by_many_commands_work --test step_clones_work --test stored_row_bound_once_work --test stored_rows_decided_once_work --test witness_unread_choices_work
+SLOT_TIMEOUT=30m CARGO_PROFILE_DEV_DEBUG=false CARGO_INCREMENTAL=0 ESS_SYNTH_JOBS=4 cargo test -p ess-conformance --locked --test caller_arranged_rows --test a_seeded_scenario_notes_its_skipped_reversed_caller_run --test caller_values --test interpreted_caller --test one_time_caller --test mutation_grants --test mutation_sets_entries
 SLOT_TIMEOUT=30m CARGO_PROFILE_DEV_DEBUG=false CARGO_INCREMENTAL=0 cargo test -p ess-conformance --locked --test synthesis_suite_bytes_table --test synthesis_suite_bytes_table_cli_read --test adversary_related_values_all_bytes --test external_beside_held_guard
-SLOT_TIMEOUT=30m CARGO_PROFILE_DEV_DEBUG=false CARGO_INCREMENTAL=0 ESS_SYNTH_JOBS=4 cargo test -p ess-conformance --locked --test synthesis_suite_bytes_table
 SLOT_TIMEOUT=30m slot task ci-lint
 ```
 
-- The `ESS_SYNTH_JOBS=4` run of `synthesis_suite_bytes_table` re-synthesizes every repository
-  model and component at four jobs against the committed tables. If `t2` has moved that
-  re-synthesis to the slow lane, run the slow lane's tests of the file with `ESS_SYNTH_JOBS=4`
-  set. Report its time and the host's load average; its single tests run past 60 s by design.
+Then test 13 through `t1a`'s slow-lane task, filtered to its name, as `t1a` defines the task.
+Report its time and the 1-minute load at its start.
+
+- The byte-pin targets run as they are today (routing decision X2). `t2` lands later.
 - The `ess-cli` tests run in `p4`.
 
 ## Acceptance
 
-1. Tests 1-12 pass. Their times are reported, and every one over 5 s is named.
-2. The mutation proof turned 8 and 9 red with the context removed. The report has the lines.
-3. `ESS_SYNTH_JOBS=4` over `synthesis_suite_bytes_table` passes with no table edited:
+Each line checks one claim of the Outcome:
+
+1. Tests 1-5 pass: five fixtures at 1, 2, 4 and 7 jobs. Times are reported, and every one over
+   5 s is named.
+2. Test 13 passes in the slow lane: every repository model and component at 1, 2 and 7 jobs.
+   Its time is reported.
+3. Test 11 passes: a seeded run and a component run at 4 jobs.
+4. Tests 8 and 9 pass, and the mutation proof turned them red with the context removed and with
+   each of their setters removed. The report has the lines.
+5. Test 12 passes: the same panic payload at 1 and 4 jobs.
+6. The 14 `*_work.rs` targets pass at the default and at `ESS_SYNTH_JOBS=4`. Test 7 passes: an
+   equal creation count at 1 and 4.
+7. Test 6 passes: 50 readings off the calling thread at 4 jobs, 0 at 1.
+8. The byte-pin targets pass with no table edited:
    `git diff $BASE -- crates/verify/ess-conformance/tests/fixtures` is empty.
-4. The `ESS_SYNTH_JOBS=4` run of the caller-themed and work targets in `## Gate` passes.
-5. `git diff $BASE -- Cargo.lock '**/Cargo.toml'` is empty: no new dependency.
-6. `git grep -n 'unsafe' crates/verify/ess-conformance/src/synthesize/caller/readings.rs` prints
-   nothing.
-7. `every_static_of_the_crate_is_classified` (`p2`) passes with the three new rows.
+9. `git diff $BASE -- Cargo.lock '**/Cargo.toml'` is empty: no new dependency.
+10. `git grep -n 'unsafe' crates/verify/ess-conformance/src/synthesize/caller/readings.rs`
+    prints nothing.
+11. `every_static_of_the_crate_is_classified` (`p2`) passes with the three new rows, and
+    `git grep -n 'p3 removes' crates/verify/ess-conformance/src` prints nothing.
 
 ## Decisions
 
@@ -374,12 +488,29 @@ SLOT_TIMEOUT=30m slot task ci-lint
   memory, because the lanes keep it.
 - D5. Every job runs even after one panicked, and the lowest-indexed panic is resumed. That is
   deterministic, and a panic is a defect anyway, so the cost of finishing is accepted.
-- D6. The library reads `ESS_SYNTH_JOBS`, so every existing test and both byte tables run at four
-  jobs unchanged. That is how identity is proven over the whole corpus. A value outside 1 to 256
-  counts as 1 there; the CLI refuses it (`p4`).
+- D6. The library reads `ESS_SYNTH_JOBS`, so every existing test runs at four jobs unchanged
+  (the `## Gate` runs the work targets that way). A value outside 1 to 256 counts as 1 there; the
+  CLI refuses it (`p4`).
 - D7. No thread count above 256 is refused by the library (`with_jobs` takes any `NonZeroUsize`).
   The count is capped by the jobs to run anyway.
+- D8. Test 13 compares the byte tables' own lines (count, SHA-256 of the canonical suite, full
+  refusals, notes and outside). Holding three full suites of every model at once to `cmp` them
+  would cost memory and add nothing that a SHA-256 does not detect.
+
+## Open for the operator
+
+- **The expected speed-up.** Lanes put every reading on a uniform model on one thread: each whole
+  reading, every cross run, and every focused run of a command outside `rewritten`. That is about
+  2.2x at 2 or more jobs on the profile (inferred), against the parent's 3.5x.
+  - A (recommended, and what this unit builds): lanes. Bytes and work bounds hold as they are.
+  - B: those readings go to the pool with fresh memory. More parallel, but the work bound of
+    `caller_readings_made_once_work.rs` must be loosened, and CPU rises.
+  - C: a frozen, read-only memory layer shared by all workers. A later story: the memo values are
+    `Rc` and would have to become `Send + Sync`.
+
+  `p5`'s table, and the coordinator's run on the largest known downstream specification, show
+  what A gives.
 
 ## Changelog
 
-none here; `p4` writes the story's bullet, which names `with_jobs`.
+None here. `p4` writes the story's bullet, which names `with_jobs`.

@@ -3,7 +3,7 @@ format: aep.planning-md/3
 id: story:a-writer-true-conformance-entry-under-ess-composition-6-decides-presence-by-what-the-sender-may-write
 kind: story
 status: draft
-title: A writer true conformance entry under ess-composition 6 decides presence and optionality by what the sender may write
+title: A writer true conformance entry under ess-composition 6 decides presence by what the sender may write
 tags:
 - wave-2026-11-23
 relations:
@@ -32,7 +32,7 @@ scope:
   path: crates/specify/ess-composition/tests/writer_conformance/presence.rs
 - confidence: cited
   path: website/docs/reference/formats.md
-revision: 12
+revision: 17
 ---
 ## Outcome
 
@@ -50,7 +50,7 @@ This unit opens the shared format `ess-composition/6` (parent Decision 5, A) and
 
 ## Where
 
-Read at commit `16f2fc88c2` (`integration/wave-2026-11-22`). Line numbers are as read there; locate by name once edits move them. Record your base with `git rev-parse HEAD` before you start.
+Read at commit `16f2fc88c2` (`integration/wave-2026-11-22`) and re-checked at `80794bbd698` (`plan/wave-2026-11-23`): `crates/specify/ess-composition/` and the composition rows of `docs.rs` are identical there; `formats.md` moved (the `/5` rows are lines 213-214 there). Line numbers are as read; locate by name once edits move them. Record your base with `git rev-parse HEAD` before you start.
 
 `crates/specify/ess-composition/src/lib.rs`
 
@@ -75,30 +75,48 @@ Read at commit `16f2fc88c2` (`integration/wave-2026-11-22`). Line numbers are as
 - `compare_inputs` (176-219), literal 180-187: add `writer: false,`. A role's input comparison never reads a writer assertion.
 - `Comparison` (222-235): add after `reader` the field `writer: bool` with the doc "A writer assertion (`ess-composition/6`): the local type only sends the imported one, so a difference is admitted where the local type can send no value the imported type's reader refuses." The struct then has three bools, which `clippy::struct_excessive_bools` (limit: more than three) still accepts; do not add a fourth.
 - `field_naming` (278-302): the presence check at 292-301. Both fields `Optional`: where `self.writer`, the pair agrees when `writes_within(own.naming.presence, field.naming.presence)`; otherwise it agrees when the two presences are equal (unchanged). The drift text stays byte for byte: ``field `{at}`: presence {own} where `{imported}` has {theirs}`` (the `presence(...)` helper at 966-968 prints backticks, or `unstated`).
-- New private fn after `presence` (966-968):
+- New private items after `presence` (966-968). This is the one home of the presence rule: the two spelling functions and `writes_within`; `w2` calls `absent_read` and never restates the table.
 
   ```rust
+  /// The absent spellings a field can carry on the wire.
+  #[derive(Clone, Copy)]
+  struct Absent {
+      omitted: bool,
+      null: bool,
+  }
+
+  /// What a sender of a field with `presence` writes when the value is absent. A field with no
+  /// presence writes either spelling.
+  fn absent_written(presence: Option<Presence>) -> Absent {
+      match presence {
+          Some(Presence::NullWhenAbsent) => Absent { omitted: false, null: true },
+          Some(Presence::OmittedWhenAbsent) => Absent { omitted: true, null: false },
+          Some(Presence::OmittedOrNull) | None => Absent { omitted: true, null: true },
+      }
+  }
+
+  /// What a reader of a field with `presence` accepts when the value is absent. As the published
+  /// schema reads it, a field with no presence accepts only a missing key.
+  fn absent_read(presence: Option<Presence>) -> Absent {
+      match presence {
+          Some(Presence::NullWhenAbsent) => Absent { omitted: false, null: true },
+          Some(Presence::OmittedWhenAbsent) | None => Absent { omitted: true, null: false },
+          Some(Presence::OmittedOrNull) => Absent { omitted: true, null: true },
+      }
+  }
+
   /// Whether every absent spelling a writer's `own` presence can produce is one the imported
-  /// field's `theirs` reads. Equal forms always conform. A field with no presence writes either
-  /// spelling and, as the published schema reads it, reads only a missing key.
+  /// field's `theirs` reads. Equal forms always conform.
   fn writes_within(own: Option<Presence>, theirs: Option<Presence>) -> bool {
       if own == theirs {
           return true;
       }
-      // (omitted, null)
-      let writes = match own {
-          Some(Presence::NullWhenAbsent) => (false, true),
-          Some(Presence::OmittedWhenAbsent) => (true, false),
-          Some(Presence::OmittedOrNull) | None => (true, true),
-      };
-      let reads = match theirs {
-          Some(Presence::NullWhenAbsent) => (false, true),
-          Some(Presence::OmittedWhenAbsent) | None => (true, false),
-          Some(Presence::OmittedOrNull) => (true, true),
-      };
-      (!writes.0 || reads.0) && (!writes.1 || reads.1)
+      let (writes, reads) = (absent_written(own), absent_read(theirs));
+      (!writes.omitted || reads.omitted) && (!writes.null || reads.null)
   }
   ```
+
+  `Absent`, `absent_written`, `absent_read` and `writes_within` stay private to `conformance.rs`, where `w2` also works. The pin of `absent_read` is the 25-cell test below (its `required`-free columns read the three spellings) and `w2`'s test 6 (the field-subset rule reads `absent_read(..).omitted`).
 
 - `references` (733-772). Two edits, nothing else in the function: (a) directly after the first arm (735-738, `Optional`/`Optional` and `List`/`List`) add an arm `(local, ResolvedTypeRef::Optional { of: theirs }) if self.writer => self.references(path, local, theirs),` with the comment "A writer: a required value where the imported one may be absent writes what every reader accepts, at any position."; (b) the tolerance arm at 740, `(ResolvedTypeRef::Optional { of: mine }, theirs) => ...`, gets the guard `if !self.writer`, and its comment says the tolerance is a reader's. A local `Optional` against an imported required value then falls to the final drift arm (765-770): ``field `codec`: `Optional<String>` where the imported type has `String` ``. That is the drift this unit reports for the optionality cells.
 - `structs`, `bodies`, `widened`, `object_shaped`, `invariants`, `text_constraint`, `attributes`, `value_constraints`, `Shape`, `Compared`, `fields`: not edited by this unit (`w2` owns them).
@@ -110,7 +128,7 @@ Read at commit `16f2fc88c2` (`integration/wave-2026-11-22`). Line numbers are as
 
 `website/docs/reference/formats.md`
 
-- After the `/5` rows (194-195) add the authored and compiled `ess-composition/6` rows. `cargo xtask docs` refuses a supported version that no reference page names, so these are required in this unit; `w3` extends the authored row. Text of the two rows, in the register of the rows above them:
+- After the `/5` rows (the two `ess-composition/5` rows, lines 213-214 at `80794bbd698`; locate by their text, since `h1` also edits this file elsewhere, near its `ess-http` rows) add the authored and compiled `ess-composition/6` rows. `cargo xtask docs` refuses a supported version that no reference page names, so these are required in this unit; `w3` extends the authored row. Text of the two rows, in the register of the rows above them:
 
   `| Authored composition: `format: ess-composition/6` | As the earlier format; a `conformances` entry may add `writer: true` | Not yet in a release. A writer entry asserts that the local type only sends the imported one, so the pair conforms when the local type can send no value the imported type's reader refuses. A field's presence conforms when every absent spelling it writes is one the imported field reads: `null_when_absent` against `null_when_absent` and `omitted_or_null`; `omitted_when_absent` against `omitted_when_absent`, `omitted_or_null` and a field with no presence; `omitted_or_null` against `omitted_or_null`; a field with no presence against `omitted_or_null` and a field with no presence. A field with no presence reads only a missing key, as its published schema does. A local required value is admitted where the imported one is `Optional`, at any position; a local `Optional` where the imported value is required is `type_conformance_drift`, which a plain entry admits. Everything else is compared as without `writer`. `writer: true` with `reader: true` on one entry is refused when read, naming both keys. An earlier-format document carrying `writer`, whatever its value (`null` included), is refused as `unsupported_format`; earlier-format documents keep their meaning and bytes. `roles`, payload ends and value-constraint comparison are admitted as under `/5`. [Source][composition] |`
 
@@ -187,7 +205,7 @@ The `relay` model publishes the events `relay.session.Opened` (`codec: Optional<
 
 Existing tests that must stay green unchanged except the one line above: `cargo test -p ess-composition --locked` (every `/2` to `/5` assertion).
 
-Timing: each test builds two or four tiny models, a few milliseconds each. Time each test file's run (`--test writer_conformance -- --report-time` is not stable; use the `finished in` line) and name any test over 5 s in your report. The whole target stays far under 60 s per test.
+Timing is measured at a 1-minute load of 60 or less (`cut -d' ' -f1 /proc/loadavg`), on a warm build, as test time only: the runner's own figure (the `finished in` line of the target and `--report-time` where the runner offers it), not the command's wall time. The target holds 11 tests (`presence` 4, `ends` 2, `format` 5; the `owner_types.rs` edit is not one of them), each building two or four tiny models; name any test over 5 s with its time in your report. The budget is 60 s per test and 120 s for the step.
 
 ## Steps
 
@@ -208,19 +226,19 @@ Only this unit edits, in this wave:
 - `crates/specify/ess-composition/tests/writer_conformance/main.rs`, `common.rs`, `presence.rs`, `ends.rs`, `format.rs`, and the stub `narrowing.rs`
 - `crates/specify/ess-composition/tests/owner_types.rs` (lines 173-180 only)
 - `crates/edge/ess-xtask/src/docs.rs` (the one row)
-- `website/docs/reference/formats.md` (the two new rows after line 195)
+- `website/docs/reference/formats.md` (the two new rows after the `ess-composition/5` rows; `h1` edits other rows of the file: both are row insertions at different places and merge textually)
 
 ## Not yours
 
 - `w2` owns, in `conformance.rs`: `structs`, `bodies`, `wire_names`, `invariants`, `text_constraint`, `attributes`, `value_constraints`, `widened`, `object_shaped`, `Shape`, `Compared`, `fields`, `shapes`, and a second pair of edits in `references` (new arms after yours); and `tests/writer_conformance/narrowing.rs` (replace the stub). `w2` starts from this unit's commit, so the two share `references` in sequence, never in parallel.
 - `w3` owns the `CompositionCode::TypeConformanceDrift` doc (1059-1063) and its `CATALOGUE` entry (1153-1161) in `lib.rs`, `docs/design/*`, `spec-versions.md`, the rest of `formats.md`, `diagnostics.md`, `CHANGELOG.md`, and `crates/edge/ess-cli/src/main.rs`.
 - `story:reader-true-refused-for-closed-readers` and `story:a-synthesized-suite-sends-an-omitted-or-null-member-both-ways` (not in this wave) edit `conformance.rs`, `lib.rs`, `formats.md` and `field_naming`. When one of them is built later it reuses `WRITER_COMPOSITION_FORMAT`, `at_least_payload`, the `docs.rs` row and the `/6` rows, and adds only its own key.
-- Shared files of the wave: `CHANGELOG.md`, `docs/`, `website/` belong to the coordinator at integration (`.engineering/waves/wave-2026-11-22.md`); the two lines this unit puts in `formats.md` and the one row in `docs.rs` are required for `cargo xtask docs` to pass and are expected at integration.
+- Shared files of the wave: `CHANGELOG.md`, `docs/`, `website/` belong to the coordinator at integration (`.engineering/waves/wave-2026-11-23.md`); the two lines this unit puts in `formats.md` and the one row in `docs.rs` are required for `cargo xtask docs` to pass and are expected at integration.
 - No `.yaml` file anywhere; no `lowered-definitions-table.tsv`, `synthesis-suite-bytes-table.tsv`, `selection-precedence-table.tsv`.
 
 ## Gate
 
-`AGENTS.md` § Gate, the crates this unit touches: `ess-composition` and `ess-xtask` (`docs.rs`, `docs` lane). Bounds for every command and test run here: 60 s per test, 120 s for the test step, a pool job ends after 10 minutes unless it names its time (30 minutes at most), no Python in anything that stays in the repository, no files in `/tmp` (set `TMPDIR` to your scratch directory), no `RUSTC_WRAPPER`, `SCCACHE_*` or `-j`. Every `cargo` call goes through the shim; `CARGO_PROFILE_DEV_DEBUG=false CARGO_INCREMENTAL=0` on each.
+`AGENTS.md` § Gate, the crates this unit touches: `ess-composition` and `ess-xtask` (`docs.rs`, `docs` lane). Bounds for every command and test run here (wall-time figures judged at a 1-minute load of 60 or less, test time only): 60 s per test, 120 s for the test step, a pool job ends after 10 minutes unless it names its time (30 minutes at most), no Python in anything that stays in the repository, no files in `/tmp` (set `TMPDIR` to your scratch directory), no `RUSTC_WRAPPER`, `SCCACHE_*` or `-j`. Every `cargo` call goes through the shim; `CARGO_PROFILE_DEV_DEBUG=false CARGO_INCREMENTAL=0` on each.
 
 ```console
 slot task fmt-check
@@ -244,7 +262,7 @@ The change touches no `ess-domain`, `ess-compiler` or `ess-primitives` file, no 
 7. `a_v6_document_reads_roles_and_payload_ends_and_compares_value_constraints_as_v5_does` passes (the `at_least_payload` edits).
 8. `cargo xtask docs` and `slot --timeout 30m task test-xtask` pass; `SUPPORTED_COMPOSITION_FORMATS` is `&[1, 2, 3, 4, 5, 6]`.
 9. `git status` shows no new `.yaml` or `.yml` file and none of the three model tables edited.
-10. The report names any test over 5 s with its time and the base commit.
+10. The report names any test over 5 s (the runner's own figure, at a 1-minute load of 60 or less) with its time, and the base commit.
 
 ## Decisions
 
@@ -254,7 +272,7 @@ The change touches no `ess-domain`, `ess-compiler` or `ess-primitives` file, no 
 4. **`writer` is stored as authored**, `Option<WriterKey>` apart from its value, like `reader`: a `/1` to `/5` entry serialises without it, so no old bytes move.
 5. **The drift text is not new.** A both-`Optional` presence drift keeps the existing wording; the required-column drift is the existing final arm of `references`. Reason: one wording per drift, and `diagnostics.md` needs no new row (no new code).
 6. **No new `ValidationCode` or diagnostic code**: drift stays `type_conformance_drift`; the read refusal is a `ReadRefusal` message, not a diagnostic, like the `roles` and payload-end refusals. `macro-guards.json` and `review-typed-diagnostics.md` do not move.
-7. **Inline sources, one test binary directory.** The models are Rust strings in the test files; the target is `tests/writer_conformance/main.rs` with modules, so the crate gains one test binary, not two. Reason: the organization AGENTS.md, § Tests stay fast (few binaries) and the three shared model tables walk `.yaml` files.
+7. **Inline sources, one test binary directory.** The models are Rust strings in the test files; the target is `tests/writer_conformance/main.rs` with modules, so the crate gains one test binary, not two. Reason: the organization AGENTS.md § Tests stay fast (few binaries) and the three shared model tables walk `.yaml` files.
 8. **`Json` as an imported target is not admitted under `writer`** (a local value sent where the imported type is `Json`): it is not in the parent's table, and the table is the specification.
 9. **A role's `implements` comparison never reads `writer`** (`compare_inputs` sets `false`): parent fit review 4 puts a response comparison there out of scope.
 10. **The `ess specify compose` help text** (`crates/edge/ess-cli/src/main.rs:179` and `:183`, "`/1` to `/5`") is `w3`'s: changing it moves the generated `website/docs/reference/cli.md` and needs an `ess-cli` build, which this unit avoids.

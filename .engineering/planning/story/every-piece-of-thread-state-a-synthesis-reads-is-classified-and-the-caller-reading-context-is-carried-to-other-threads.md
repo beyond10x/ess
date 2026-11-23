@@ -3,12 +3,14 @@ format: aep.planning-md/3
 id: story:every-piece-of-thread-state-a-synthesis-reads-is-classified-and-the-caller-reading-context-is-carried-to-other-threads
 kind: story
 status: draft
-title: Every piece of thread state a synthesis reads is classified, the context a caller reading reads is carried to another thread, and the work counted there is added to the calling thread's count
+title: Every piece of thread state a synthesis reads is classified and the caller reading context is carried to other threads
 tags:
 - wave-2026-11-23
 relations:
 - serves: vision:O2
 - derived_from: story:the-caller-readings-of-a-synthesis-run-on-several-threads-and-write-the-suite-a-single-thread-writes
+- depends_on: story:a-setup-run-of-a-creating-branch-with-several-related-rows-uses-the-field-values-another-scenario-chose
+- depends_on: story:every-caller-reading-of-a-synthesis-is-computed-from-explicit-inputs-in-a-fixed-plan
 scope:
 - confidence: cited
   path: crates/verify/ess-conformance/src/admission.rs
@@ -60,9 +62,11 @@ scope:
   path: crates/verify/ess-conformance/src/synthesize/threads.rs
 - confidence: cited
   path: crates/verify/ess-conformance/src/witness.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/tests/fixtures/synthesis-suite-bytes-table.tsv
 - confidence: inferred
   path: docs/design/parallel-caller-readings.md
-revision: 27
+revision: 32
 ---
 ## Outcome
 
@@ -81,11 +85,18 @@ revision: 27
   piece of thread state with its handling, the determinism argument and the memory expectation.
 - Nothing spawns a thread outside the tests, and no byte of any synthesis changes. This unit
   changes no behaviour.
+- `Context`, `Work` and the accessors have no caller outside the tests until `p3`. They stay
+  clean under `clippy -D warnings` through one named allow, which `p3` removes:
+  `#![cfg_attr(not(test), allow(dead_code))]` at the top of `threads.rs`, with a comment beside
+  it. See D7.
 
 ## Why
 
-- Parent: `PARENT-THREADS`. Its first point: every piece of state a reading touches that is not
-  passed as an argument must be named, with what a worker must see and how.
+- Parent: `story:the-caller-readings-of-a-synthesis-run-on-several-threads-and-write-the-suite-a-single-thread-writes`.
+  Its first point: every piece of state a reading touches that is not passed as an argument must
+  be named, with what a worker must see and how.
+- Depends on `p1` (merged before: the design page describes `p1`'s plan and lanes) and on `c1`
+  (merged before: its counter `OWN_OVERLAY_WORK` is classified here). Routing decision X3.
 - The mutation audit runs readings with `with_dropped_write`, `with_dropped_grant` and
   `with_added_grant` set around the whole synthesis (`mutate.rs` 5643, 2314-2318). A worker that
   did not see them would write a different mutant suite.
@@ -94,8 +105,13 @@ revision: 27
 
 ## Where
 
-Read at `ff7f8e74fb` in the wave worktree. Record
-`BASE=$(git rev-parse HEAD)` first.
+Read at `ff7f8e74fb`, and re-checked at `80794bbd698` (`plan/wave-2026-11-23`, the plan tree's
+head). Between the two, only `synthesize.rs` (9 lines added after 3508) and
+`synthesize/related_guard.rs` (the correction's `OWN_WORK` and its functions, 2838-2920, which
+moved everything below by 62 lines) changed in `ess-conformance/src`. The line numbers below are
+those of `80794bbd698`. `p1` and `c1` land before this unit and move lines in `caller.rs`,
+`made.rs`, `witness_memo.rs`, `synthesize.rs` and `related_guard.rs`, so find each site by its
+name. Record `BASE=$(git rev-parse HEAD)` first.
 
 ### Verified by reading: what is and is not `Send`/`Sync`
 
@@ -108,8 +124,8 @@ Read at `ff7f8e74fb` in the wave worktree. Record
   - thread-locals;
   - `ess-domain` `system.rs` 1202, an `Rc` inside a thread-local.
 - `AdmittedSeeds` is already a `static` (`seeds.rs` 46), so the compiler holds it `Sync` today.
-- The only `Rc<EssIr>` are `caller.rs` 358, `made.rs` 323 and `witness_memo.rs` 124. Unit `p1`
-  replaces them in the same round.
+- The only `Rc<EssIr>` were `caller.rs` 358 and 391, `made.rs` 323 and 334, and
+  `witness_memo.rs` 124 and 135. Unit `p1`, merged before, replaced them with `Arc`.
 - Every other `Rc` in the crate is a memo value on one thread's stack: `made.rs` 54-59,
   `subject_fact.rs`, `now_offset.rs` 124, `model_memo.rs` 31 and three `synthesize.rs` memos.
   None of them crosses.
@@ -120,15 +136,15 @@ Read at `ff7f8e74fb` in the wave worktree. Record
 
 - Module list (180-231): add `mod threads;` between `mod system_issued;` (228) and
   `mod value_invariant;` (229).
-- `SCOPE` (3764-3768) and `DROPPED` (14665-14668) are private to this file. `threads.rs` is a
-  child module and reads them directly. Add two accessors:
-  - beside `in_scope` (3775): `fn scope() -> Option<BTreeSet<QualifiedName>>` returning
+- `SCOPE` (3776) and `DROPPED` (14676) are private to this file. `threads.rs` is a child module
+  and reads them directly. Add two accessors:
+  - beside `in_scope` (3784): `fn scope() -> Option<BTreeSet<QualifiedName>>` returning
     `SCOPE.with_borrow(Clone::clone)`;
-  - beside `dropped_key` (14696): `fn dropped_write() -> Option<DroppedWrite>` returning
+  - beside `dropped_key` (14705): `fn dropped_write() -> Option<DroppedWrite>` returning
     `DROPPED.with(|it| it.borrow().clone())`.
 - Counters of this file (`Work` reads them directly, they are visible to the child): `SYNTHESES`
-  3499, `COMMANDS_TAKEN` 3771, `DERIVED_EDGES` 9682, `BUILT_VIEW_INDEXES` 9684,
-  `OVERLAP_SEARCHES` 20024, `PRECEDENCE_REPLAYS` 20317, `BINDING_TRIGGERS_TRIED` 21707. No
+  3499, `COMMANDS_TAKEN` 3780, `DERIVED_EDGES` 9691, `BUILT_VIEW_INDEXES` 9693,
+  `OVERLAP_SEARCHES` 20033, `PRECEDENCE_REPLAYS` 20326, `BINDING_TRIGGERS_TRIED` 21716. No
   accessor is needed for them.
 
 ### Accessors in the other modules
@@ -158,7 +174,9 @@ current value and `add_<static in lower case>(more)` adding to it. Visibility:
 | `synthesize/first_kept.rs` | `WORK` 25 `(asked, made, fresh)` | `first_rows_made` 31 | `taken_work() -> (u64, u64)`, `add_work((u64, u64))`, `fn fresh() -> bool` (context) |
 | `synthesize/row_set.rs` | `ATTEMPTS` 3338 `(count, fresh)`, `TRIED` 5022 | `row_set_attempts` 3345, `counting` 5027 | `taken_attempts/add_attempts` over the count, `fn attempts_fresh() -> bool` (context), `taken_tried/add_tried` |
 | `synthesize/subject_fact.rs` | `FIELDS_BOUND` 626, `INPUTS_MADE` 640 `(u64, u64)` | `fields_bound` 631, `inputs_made` 645 | two pairs |
-| `synthesize/related_guard.rs` | `COMPANION_WORK` 4915 `(asked, searched, fresh)` | `companion_work` 4923 | `taken_companion_work() -> (u64, u64)`, `add_companion_work`, `fn companion_fresh() -> bool` (context) |
+| `synthesize/related_guard.rs` | `COMPANION_WORK` 4977 `(asked, searched, fresh)` | `companion_work` 4985 | `taken_companion_work() -> (u64, u64)`, `add_companion_work`, `fn companion_fresh() -> bool` (context) |
+| `synthesize/related_guard.rs` | `OWN_WORK` 2842 `(arranged, strict, deepest)`, the correction's | `own_scenario_work` 2868 | `taken_own_work() -> (u64, u64, usize)`, `add_own_work`: the first two fields are summed, the third is a maximum (`deepest.max(more.2)`), as `own_worked` (2891) keeps it |
+| `synthesize/related_guard.rs` | `OWN_OVERLAY_WORK` (`c1`, beside `OWN_WORK`, `Cell<u64>`; `c1` D4) | `own_overlay_work` (`c1`, in `synthesize.rs` beside `own_scenario_work` 3516) | `taken_own_overlay_work`, `add_own_overlay_work` |
 | `synthesize/grant.rs` | `ADDED` 313, `DROPPED` 365 (context) | `with_added_grant` 323, `with_dropped_grant` 375 | `fn added_grant() -> Option<AddedGrant>`, `fn dropped_grant() -> Option<DroppedGrant>` |
 | `witness.rs` | `STEPS` 2923, `BUILT` 2928, `CLONED` 2934 | `directed_steps` 2971, `inputs_built` 2954, `builders_cloned` 2942 | three pairs (`usize`) |
 | `now_offset.rs` | `ANALYSES` 116 | `orderings_analysed` 165 | one pair |
@@ -169,10 +187,11 @@ current value and `add_<static in lower case>(more)` adding to it. Visibility:
 | `authored/ties.rs` | `REPLAYS` 29 | `replays_run` 35 | one pair; `mod ties` (`authored.rs` 270) is private, so also `pub(crate) use ties::{taken_replays, add_replays};` in `authored.rs` |
 | `admission.rs` | `SUITES_PARSED` 109 | `suites_parsed` 115 | one pair |
 
-`related_guard.rs` is also edited this wave by the correction `unit/w1122-s3fix` and by unit `c1`
-(`drive_several`, `as_own_scenario`, `own_opening`, about 2830-2980). Put this unit's three
-functions directly below `companion_work` (4923-4933) and nowhere near those, so the files merge
-without touching one function twice.
+`related_guard.rs` is also edited this wave by unit `c1` (`drive_several`, `as_own_scenario`,
+`own_opening`, `arranged`, about 2830-3000 and 3770-4380), which is merged before this unit. Put
+all of this unit's functions in that file (the `COMPANION_WORK`, `OWN_WORK` and
+`OWN_OVERLAY_WORK` accessors and `beside_or_own_open`) directly below `companion_work`
+(4985-4994), away from `c1`'s functions.
 
 For the reading scopes (debug check in `Context::capture`), add one query each, directly below
 the scope's opener:
@@ -189,7 +208,12 @@ the scope's opener:
 ### `crates/verify/ess-conformance/src/synthesize/threads.rs` (new)
 
 1. `//!` doc: what crosses a thread when caller readings run elsewhere, and a pointer to
-   `docs/design/parallel-caller-readings.md`.
+   `docs/design/parallel-caller-readings.md`. Below it:
+   ```rust
+   // p3 removes this: `readings::read_all` then uses `Context` and `Work`, and through them
+   // every accessor; until then only this module's tests do.
+   #![cfg_attr(not(test), allow(dead_code))]
+   ```
 2. The handling of each static:
    ```rust
    /// How a static of this crate is handled where caller readings run on another thread.
@@ -218,9 +242,14 @@ the scope's opener:
    }
    ```
 3. `pub(super) const STATE: &[(&str, &str, Handling)]`: `(path under src/, static name,
-   handling)`, sorted by path, then name. Exactly these 70 rows, read from
-   `git grep -nE '\bstatic [A-Z][A-Z0-9_]*\s*:' crates/verify/ess-conformance/src` at
-   `ff7f8e74fb`:
+   handling)`, sorted by path, then name. Exactly these 74 rows. Count them by kind: Counter 40,
+   Context 6, Scope 6, Memory 10, Lane 2, Caller 1, Test 4, Shared 3, Unreached 2. Where they
+   come from:
+   - `git grep -nE '\bstatic [A-Z][A-Z0-9_]*\s*:' crates/verify/ess-conformance/src` prints 72
+     lines at `ff7f8e74fb` and 73 at `80794bbd698` (the correction's `OWN_WORK`);
+   - `c1` adds `OWN_OVERLAY_WORK`, the 74th.
+
+   If the merged head shows another static, classify it too and name it in your report.
    - **Counter:**
      - `admission.rs` `SUITES_PARSED`;
      - `authored.rs` `DOCUMENTS_READ`;
@@ -239,7 +268,8 @@ the scope's opener:
      - `synthesize/made.rs` `MAKES`, `PICKS`, `RELATED_PICKS`;
      - `synthesize/model_memo.rs` `ABSENT_BUILT`;
      - `synthesize/ordered_head.rs` `STEERING_WORK`;
-     - `synthesize/related_guard.rs` `COMPANION_WORK` (two counts; flag context);
+     - `synthesize/related_guard.rs` `COMPANION_WORK` (two counts; flag context), `OWN_WORK`
+       (two sums and a maximum), `OWN_OVERLAY_WORK` (`c1`);
      - `synthesize/row_set.rs` `ATTEMPTS` (count; flag context), `TRIED`;
      - `synthesize/run_memo.rs` `ASKED`, `MADE`;
      - `synthesize/shorthand.rs` `TRAVERSALS`;
@@ -260,8 +290,8 @@ the scope's opener:
      - `synthesize/related_guard.rs` `BESIDE_OPEN` (its `cut` field is a per-thread running
        count read only as differences inside one reading, `cuts()` call sites in
        `created_memo.rs` 184-187, `made.rs` 289-291, `run_memo.rs` 130-133, `subject_fact.rs`
-       2613-2632 and 6611-6635, `row_set.rs` 3257-3260, `related_guard.rs` 3005-3018 and
-       4890-4906, so a worker's starting at 0 changes no answer), `OWN_OPEN`;
+       2613-2632 and 6611-6635, `row_set.rs` 3257-3260, `related_guard.rs` 3067-3080 and
+       4952-4968, so a worker's starting at 0 changes no answer), `OWN_OPEN`;
      - `synthesize/subject_fact.rs` `HELD`;
      - `witness.rs` `UNDER_TEST`, `REFERENCE` (debug only).
    - **Memory:**
@@ -383,7 +413,7 @@ downstream specification".
    only command in it. The other readings go to any thread. This is the parent story's
    decision D2 C. Say why the memory is not shared: `made` and `witness_memo` memories hold `Rc`
    values on one thread's stack.
-3. **Thread state.** A table of the 70 statics: path, name, handling, and one line on what a
+3. **Thread state.** A table of the 74 statics (77 once `p3` adds its three): path, name, handling, and one line on what a
    worker sees. Then the cross-crate items of points 4 and 5 above.
 4. **Determinism.** Results are merged by plan index, never in arrival order. No unordered
    iteration is added. A memory answers what the computation answers: the debug guard of
@@ -448,21 +478,17 @@ The existing suites must stay green unchanged. This unit changes no behaviour.
 ## Steps
 
 1. Create `threads.rs` with `Handling`, `STATE` and test 1. Run it and keep its output: it is
-   your check that the 70 rows are complete.
+   your check that the 74 rows are complete.
 2. Add the accessors (table above), then `Context`, `Work` and the assertions, then tests 2-5.
 3. Write the design page.
 4. Run the gate.
-5. At merge, other units of this wave add statics:
-   - the correction `unit/w1122-s3fix` adds `src/synthesize/own_memo.rs` (a memory) and a counter
-     `OWN_WORK` in `related_guard.rs`;
-   - `c1` adds `OWN_OVERLAY_WORK`;
-   - `p3` adds `JOBS` and `OFF_THREAD`.
+5. The statics of other units, by order:
+   - the correction's `OWN_WORK` is on the plan tree's head;
+   - `c1`'s `OWN_OVERLAY_WORK` is merged before this unit.
 
-   Whichever lands second classifies the other's statics:
-   - a memory as `Memory`;
-   - each counter as `Counter`, also added to `Work` with its two accessors.
-
-   Test 1 names any static left out.
+   Both are classified here as `Counter`, with a `Work` field and two accessors each. `p3` lands
+   after this unit and classifies its own (`JOBS`, `OFF_THREAD`, `PANIC_IN`). No other unit of
+   the wave adds a static to `ess-conformance/src`. Test 1 names any static left out.
 6. One commit, message file via the Write tool, `git commit -F <file>`:
    `refactor(conformance): every static a synthesis reads is classified for caller readings on other threads`.
 
@@ -478,11 +504,11 @@ No generated file changes. `docs/` changed, so `task test-xtask` runs (AGENTS.md
 ## Not yours
 
 - `synthesize/caller.rs`, `synthesize/caller/readings.rs`, and the `Keeping`s of `made.rs` and
-  `witness_memo.rs`. These are `p1`'s, in the same round. In `made.rs` this unit adds functions
-  only between 69 and 117, and `p1` edits only 308-351.
-- `drive_several`, `as_own_scenario`, `own_opening` and `own_memo.rs` in `related_guard.rs`'s
-  region about 2830-2980. Those belong to the correction and `c1`.
-- `mutate.rs` (`m1` this wave): nothing here edits it. `GRANTS_KEPT` is only classified.
+  `witness_memo.rs`. These are `p1`'s, merged before. In `made.rs` this unit adds functions only
+  beside the counters (69-117), and `p1` edited only `Keeping` (308-351).
+- `drive_several`, `as_own_scenario`, `own_opening`, `arranged` and `OWN_OVERLAY_WORK`'s
+  declaration in `related_guard.rs`: those are `c1`'s, merged before.
+- `mutate.rs`: nothing here edits it. `GRANTS_KEPT` is only classified.
 - Every file under `tests/`.
 
 ## Gate
@@ -498,18 +524,22 @@ slot task fmt-check
 SLOT_TIMEOUT=30m CARGO_PROFILE_DEV_DEBUG=false CARGO_INCREMENTAL=0 cargo clippy -p ess-conformance --all-targets --locked -- -D warnings
 SLOT_TIMEOUT=30m CARGO_PROFILE_DEV_DEBUG=false CARGO_INCREMENTAL=0 cargo clippy -p ess-cli --all-targets --locked -- -D warnings
 SLOT_TIMEOUT=30m CARGO_PROFILE_DEV_DEBUG=false CARGO_INCREMENTAL=0 cargo test -p ess-conformance --locked --lib synthesize::threads
-SLOT_TIMEOUT=30m CARGO_PROFILE_DEV_DEBUG=false CARGO_INCREMENTAL=0 cargo test -p ess-conformance --locked --test caller_readings_made_once_work --test companion_rows_searched_once_work --test row_set_many_selectors_work --test stored_rows_decided_once_work --test once_per_model_work --test mutation_grants --test mutation_sets_entries
+SLOT_TIMEOUT=30m CARGO_PROFILE_DEV_DEBUG=false CARGO_INCREMENTAL=0 cargo test -p ess-conformance --locked --test caller_readings_made_once_work --test companion_rows_searched_once_work --test row_set_many_selectors_work --test stored_rows_decided_once_work --test once_per_model_work --test own_scenario_nesting_bounded_work --test mutation_grants --test mutation_sets_entries
 SLOT_TIMEOUT=30m CARGO_PROFILE_DEV_DEBUG=false CARGO_INCREMENTAL=0 cargo test -p ess-conformance --locked --test synthesis_suite_bytes_table
 SLOT_TIMEOUT=30m slot task test-xtask
 ```
 
-- If `t2` has moved the table's re-synthesis to the slow lane, run it there, as `p1`'s gate says.
+- The byte-pin target runs as it is today (routing decision X2); `t2` lands after every `p` unit.
 - The accessors only add functions, so `ess-cli` is gated for Clippy only.
+- Clippy with `-D warnings` is clean through the one allow of D7. If it still names an accessor
+  as dead, put `#[cfg_attr(not(test), allow(dead_code))] // p3 removes this` on that accessor
+  only, and name it in your report.
 
 ## Acceptance
 
-1. `every_static_of_the_crate_is_classified` passes with 70 rows at `ff7f8e74fb`'s set of
-   statics, plus whatever the units merged before it added.
+1. `every_static_of_the_crate_is_classified` passes with 74 rows: the 73 statics of
+   `80794bbd698` plus `c1`'s `OWN_OVERLAY_WORK`. Any further static of the merged head is named
+   in the report, with its row.
 2. `work_names_every_counter_row`, `a_worker_sees_the_context_of_the_planning_thread`,
    `a_workers_counts_are_added_to_the_planning_thread` and
    `capturing_inside_a_reading_scope_is_refused_in_debug` pass.
@@ -517,7 +547,11 @@ SLOT_TIMEOUT=30m slot task test-xtask
    `git grep -n unsafe crates/verify/ess-conformance/src/synthesize/threads.rs` prints nothing.
 4. The work and mutation targets in `## Gate` and `synthesis_suite_bytes_table` pass unchanged.
 5. `task test-xtask` passes with the new design page.
-6. `git grep -n 'spawn' crates/verify/ess-conformance/src` lists only `threads.rs`'s tests.
+6. `git grep -nwE 'spawn|spawn_scoped' crates/verify/ess-conformance/src` lists only lines of
+   `threads.rs`'s tests. `-w` keeps `respawn` (`process.rs`, `process/tests.rs`) out; at
+   `80794bbd698` the command prints nothing.
+7. Clippy is clean with `-D warnings`. `git grep -n 'p3 removes' crates/verify/ess-conformance/src`
+   lists the allow of D7 and any accessor named in the report, and nothing else.
 
 ## Decisions
 
@@ -528,14 +562,20 @@ SLOT_TIMEOUT=30m slot task test-xtask
   `with_*` setters. No reading refuses to go parallel because of one: every value is cheap to
   clone.
 - D3. The reading scopes are asserted empty where the plan is built, not carried. No code opens
-  one around `caller::synthesize`: it is reached only from `synthesize_in` (`synthesize.rs` 3612),
+  one around `caller::synthesize`: it is reached only from `synthesize_in` (`synthesize.rs` 3621),
   whose callers are the public entry points and `mutate.rs` (6689, 6723).
 - D4. The registry is a test that reads the sources, inside the library (anything executable is
   Rust; no shell checker; no new test binary).
 - D5. Other crates' counters are not summed (no adder exists, and adding one is a change to
   `ess-compiler` and `ess-domain` that no test needs). The design page names them.
-- D6. The design page is written here because its core is this unit's table. `p1` and `p3`
-  implement what it states.
+- D6. The design page is written here because its core is this unit's table. `p1` (merged
+  before) built the plan and the lanes it describes; `p3` builds the threads.
+- D7. Dead code until `p3` (routing decision X3), handled by a named allow rather than by moving
+  the items into `p3`. `Context` and `Work` are what this unit's tests prove, so they belong with
+  the registry. The allow is `#![cfg_attr(not(test), allow(dead_code))]` at the top of
+  `threads.rs`, with the comment "p3 removes this". `rustc` treats an item under `allow(dead_code)`
+  as used, and so also the accessors it calls. `p3`'s steps remove the allow, and `p3`'s
+  acceptance 11 checks that it is gone.
 
 ## Changelog
 

@@ -3,7 +3,7 @@ format: aep.planning-md/3
 id: story:every-caller-reading-of-a-synthesis-is-computed-from-explicit-inputs-in-a-fixed-plan
 kind: story
 status: draft
-title: Every caller reading of a synthesis is computed from explicit inputs in a fixed plan before its results are merged, and the suite keeps every byte
+title: Every caller reading of a synthesis is computed from explicit inputs in a fixed plan
 tags:
 - wave-2026-11-23
 relations:
@@ -20,7 +20,11 @@ scope:
   path: crates/verify/ess-conformance/src/synthesize/made.rs
 - confidence: cited
   path: crates/verify/ess-conformance/src/witness_memo.rs
-revision: 6
+- confidence: cited
+  path: crates/verify/ess-conformance/tests/fixtures/synthesis-component-suites-table.tsv
+- confidence: cited
+  path: crates/verify/ess-conformance/tests/fixtures/synthesis-suite-bytes-table.tsv
+revision: 11
 ---
 ## Outcome
 
@@ -33,8 +37,9 @@ revision: 6
   order. The notes come out in today's order.
 - `read_all` runs the plan inline on the calling thread, in plan order. This unit adds **no
   thread**. The next unit of this story (`p3`) replaces only the body of `read_all`.
-- `Assigned` holds no `RefCell` and no `Rc`. It is `Sync`, and its two uniform models are
-  `Arc<EssIr>`. The memory those two models keep across syntheses (`made::Keeping`,
+- `Assigned` holds no `RefCell` and no `Rc`, and its two uniform models are `Arc<EssIr>`. No
+  `Send` or `Sync` bound and no compile-time guard is written here; `p3` adds them where the
+  threads are (routing decision X3). The memory those two models keep across syntheses (`made::Keeping`,
   `witness_memo::Keeping`) is opened by a guard, `readings::Kept`. The guard is `!Send`, because
   dropping it pops the stack of the thread that opened it.
 - Every byte a synthesis writes is unchanged. That covers suite, refusals, notes and outside, for
@@ -43,7 +48,7 @@ revision: 6
 
 ## Why
 
-- Parent: `PARENT-THREADS`, the caller readings of a synthesis run on several threads and write
+- Parent: `story:the-caller-readings-of-a-synthesis-run-on-several-threads-and-write-the-suite-a-single-thread-writes`, the caller readings of a synthesis run on several threads and write
   the suite a single thread writes. This is its first unit: it changes no behaviour, and it makes
   every reading a function of explicit inputs in a fixed order, so the thread unit only has to
   change who runs the plan.
@@ -53,9 +58,10 @@ revision: 6
 
 ## Where
 
-Read in the wave worktree at commit `ff7f8e74fb`
-(branch `integration/wave-2026-11-22`). Record your base first: `BASE=$(git rev-parse HEAD)`.
-Every line number below was read at that commit. If the file moved, find each site by its name.
+Read at commit `ff7f8e74fb`, and re-checked at `80794bbd698` (`plan/wave-2026-11-23`, the plan
+tree's head). Between the two, `caller.rs`, `caller/arranged.rs`, `made.rs` and `witness_memo.rs`
+did not change, so every line number below holds at both. Record your base first:
+`BASE=$(git rev-parse HEAD)`. If a file moved, find each site by its name.
 
 ### `crates/verify/ess-conformance/src/synthesize/caller.rs` (3797 lines)
 
@@ -90,8 +96,9 @@ Every line number below was read at that commit. If the file moved, find each si
   1. Lines 651-656 stay. After `let assigned = Assigned::new(ir, &callers);` add
      `let _kept = readings::Kept::open(&assigned.uniform_models());`. It lives until the function
      returns, as `Assigned`'s Keepings do today.
-  2. Move the computation of `mixed_commands` (686-694) up, before the readings. It is pure: it
-     reads only `ir` and `callers`.
+  2. Move the computation of `mixed_commands` (686-694) up, before the readings, as
+     `fn mixed(ir: &EssIr, callers: &Callers) -> BTreeSet<QualifiedName>` with the same body. It
+     is pure: it reads only `ir` and `callers`. Test 2 calls it.
   3. `let plan = readings::plan(&mixed_commands, unfocused);`. `unfocused` is
      `#[cfg(test)] tests::UNFOCUSED.get()` and `false` otherwise. Read it here, on the calling
      thread, as `about_command` reads it today (936-942).
@@ -182,24 +189,17 @@ Every line number below was read at that commit. If the file moved, find each si
 
   Put it here and not in `caller.rs`, because only the executor reads it. `p3` uses it to keep
   each uniform model's memory on one thread.
-- `pub(super) fn read_all<'m, J: Sync, R: Send>(jobs: &[J], lane: impl Fn(&J) -> Option<&'m Arc<EssIr>> + Sync, read: impl Fn(&J) -> R + Sync) -> Vec<R>`.
+- `pub(super) fn read_all<'m, J, R>(jobs: &[J], lane: impl Fn(&J) -> Option<&'m Arc<EssIr>>, read: impl Fn(&J) -> R) -> Vec<R>`.
   The named `'m` lets the lane borrow from `Assigned` rather than from the job. Its body in this
-  unit is `jobs.iter().map(read).collect()`, and `lane` is unused (`let _ = &lane;`). The bounds
-  are written now, so `p3` changes no signature. If `Synthesis: Send` does not hold, the
-  compiler says so here; that is `p2`'s assertion, and the type it names is to be reported, not
-  worked around.
+  unit is `jobs.iter().map(read).collect()`, and `lane` is unused (`let _ = &lane;`). The
+  signature has no `Send` or `Sync` bound: `p3` adds `J: Sync`, `R: Send` and `+ Sync` on the two
+  closures when it runs them on threads. So this unit compiles whatever those traits say of
+  `Synthesis`, `EssIr` and `AdmittedSeeds`.
 - `pub(super) struct Kept { _made: made::Keeping, _witnessed: crate::witness_memo::Keeping }`
   with `pub(super) fn open(models: &[&Arc<EssIr>]) -> Self`. `open` calls `Keeping::open()` on
   both and then `keep(model)` for each model, made first, as `Assigned::new` and `model` do
   today (380-381, 407-408).
-- Compile-time guard, at the end of the file:
-  ```rust
-  const _: () = {
-      const fn sync<T: Sync>() {}
-      sync::<Assigned<'static>>();
-      sync::<Callers>();
-  };
-  ```
+- No compile-time `Sync` guard in this unit; `p3` adds it.
 
 ### `crates/verify/ess-conformance/src/witness_memo.rs` (588 lines)
 
@@ -247,13 +247,26 @@ In `caller.rs`'s `mod tests` (3522), next to the existing tests. Use its `compil
    - `lane(About{CreateNote, back:false, ..})` is `None`, because its key `[First, Second]` is
      mixed.
 
-   Then compile a copy of `NOTES` in which the attributed actor also holds `AddTag`: replace
-   `may: [demo.notes.CreateNote, demo.notes.CloseNote]` with
-   `may: [demo.notes.CreateNote, demo.notes.CloseNote, demo.notes.AddTag]`. `AddTag` is now
-   mixed (its two callers carry different values) and still outside `rewritten` (it reads no
-   caller). Assert that `lane(About{AddTag, back:false, ..})` is the all-`First` model and
-   `lane(About{AddTag, back:true, ..})` the all-`Second` one: a command outside `rewritten`
-   reads the uniform model. Red today: the same compile error.
+   Then the case of a command outside `rewritten`. In `NOTES` (`caller.rs` 3541-3634), `AddTag`
+   is held only by `Clerk` and `Auditor` (3570-3573), which declare no attributes. So
+   `Callers::for_command` gives it the empty map for both callers, and it is not in
+   `mixed_commands` (686-694). NOTES has no mixed command outside `rewritten`, so the test makes
+   one. Compile a copy of `NOTES` in which the attributed actor `AccountUser` (3565-3569) also
+   holds it: replace `may: [demo.notes.CreateNote, demo.notes.CloseNote]` with
+   `may: [demo.notes.CreateNote, demo.notes.CloseNote, demo.notes.AddTag]`. Then:
+   - `AddTag`'s two callers carry `AccountUser`'s two different value sets (`Callers::of`
+     266-267), so it is mixed;
+   - `AddTag` reads no caller, so `written` leaves it unchanged, and it stays outside
+     `rewritten` (365-374).
+
+   The test asserts both premises first: `mixed(&ir, &callers)` of the copy contains
+   `demo.notes.AddTag`, and `Assigned::new(..).rewritten` does not. Then it asserts that
+   `lane(About{AddTag, back:false, ..})` is the all-`First` model and
+   `lane(About{AddTag, back:true, ..})` the all-`Second` one: a command outside `rewritten` reads
+   the uniform model.
+
+   Red today: `error[E0433]`, no module `readings`, because `lane` and `readings::Reading` do not
+   exist yet. Nothing else in the test is new: both premises hold on today's code.
 3. The existing tests of this module stay green unchanged. They are the order proof at the level
    of whole runs:
    - `a_caller_reading_command_costs_no_whole_synthesis_of_its_own` (3682): `whole == 2`;
@@ -297,13 +310,12 @@ No generated file changes. No `cargo xtask` command applies.
 
 ## Not yours
 
-- `src/synthesize/threads.rs` and every counter accessor, which belong to `p2` (same round).
-  `p2` adds functions to `made.rs` (beside `MAKES`, `PICKS` and `RELATED_PICKS`, lines 69-117)
-  and to `witness_memo.rs` (none planned). Two units never edit one function. Whichever lands
-  second rebases over the other's added lines.
+- `src/synthesize/threads.rs`, every counter accessor and the design page belong to `p2`, which
+  lands after this unit (`p2` depends on `p1`). `p2` adds functions to `made.rs` (beside `MAKES`,
+  `PICKS` and `RELATED_PICKS`, lines 69-117), never in `Keeping`.
 - `synthesize.rs` (`p2`, `p3`), `caller/arranged.rs` (no unit edits it), every file under
   `tests/` (`p3`), `crates/edge/ess-cli` (`p4`), `crates/edge/ess-xtask` (`p5`).
-- `related_guard.rs` and `own_memo.rs`: the correction `unit/w1122-s3fix` and the unit `c1`.
+- `related_guard.rs`: unit `c1` (round 1 beside this unit; no shared file).
 
 ## Gate
 
@@ -318,16 +330,14 @@ the slot shim. Bounds:
 slot task fmt-check
 SLOT_TIMEOUT=30m CARGO_PROFILE_DEV_DEBUG=false CARGO_INCREMENTAL=0 cargo clippy -p ess-conformance --all-targets --locked -- -D warnings
 SLOT_TIMEOUT=30m CARGO_PROFILE_DEV_DEBUG=false CARGO_INCREMENTAL=0 cargo clippy -p ess-cli --all-targets --locked -- -D warnings
-SLOT_TIMEOUT=30m CARGO_PROFILE_DEV_DEBUG=false CARGO_INCREMENTAL=0 cargo test -p ess-conformance --locked --lib synthesize::caller witness_memo
+SLOT_TIMEOUT=30m CARGO_PROFILE_DEV_DEBUG=false CARGO_INCREMENTAL=0 cargo test -p ess-conformance --locked --lib -- synthesize::caller witness_memo
 SLOT_TIMEOUT=30m CARGO_PROFILE_DEV_DEBUG=false CARGO_INCREMENTAL=0 cargo test -p ess-conformance --locked --test caller_readings_made_once_work --test caller_arranged_rows --test a_synthesis_seed_is_accepted_for_a_caller_model --test a_seeded_scenario_notes_its_skipped_reversed_caller_run --test caller_values --test interpreted_caller --test one_time_caller --test caller_swap_related_tie_written_from_input --test mutation_grants
 SLOT_TIMEOUT=30m CARGO_PROFILE_DEV_DEBUG=false CARGO_INCREMENTAL=0 cargo test -p ess-conformance --locked --test synthesis_suite_bytes_table --test synthesis_suite_bytes_table_cli_read --test adversary_related_values_all_bytes --test external_beside_held_guard
 SLOT_TIMEOUT=30m CARGO_PROFILE_DEV_DEBUG=false CARGO_INCREMENTAL=0 cargo test -p ess-cli --locked --test tutorial_page
 ```
 
-- `synthesis_suite_bytes_table` is the byte proof. If the test-budget unit of this wave (`t2`)
-  has already moved its re-synthesis to the slow lane when you start, run that lane's tests of
-  the file as `t2` names them: `-- --ignored` on the same target, or `task test-slow`. Its
-  single tests run longer than 60 s by design there. Report the time.
+- `synthesis_suite_bytes_table` is the byte proof. It runs as it is today (routing decision X2);
+  `t2`, which changes it, lands after every `p` unit. Report its time.
 - `ess-synth`'s and `ess-openapi`'s byte pins compare generated trees, not synthesis. This unit
   does not touch them.
 
@@ -342,8 +352,12 @@ SLOT_TIMEOUT=30m CARGO_PROFILE_DEV_DEBUG=false CARGO_INCREMENTAL=0 cargo test -p
 4. Every caller-themed target in `## Gate` passes unchanged.
 5. `git grep -n 'std::rc::Rc<EssIr>\|Rc<EssIr>' crates/verify/ess-conformance/src` prints
    nothing.
-6. `git grep -n 'thread::\|spawn' crates/verify/ess-conformance/src/synthesize/caller` prints
-   nothing. This unit starts no thread.
+6. This unit starts no thread. The check names both the file and the directory, because a
+   pathspec `synthesize/caller` alone leaves out `synthesize/caller.rs`:
+   `git grep -nE 'thread::|\bspawn' -- crates/verify/ess-conformance/src/synthesize/caller.rs crates/verify/ess-conformance/src/synthesize/caller/`
+   prints nothing. It prints nothing at `80794bbd698` too. `thread_local!` (the test counters at
+   `caller.rs` 3532) does not match `thread::`, and `\b` keeps out a `respawn`. The `Rc<EssIr>`
+   sites of `caller.rs` (358, 391-412) are held by acceptance 5, whose path is all of `src/`.
 7. Clippy is clean on `ess-conformance` and `ess-cli`, and `task fmt-check` passes.
 
 ## Decisions

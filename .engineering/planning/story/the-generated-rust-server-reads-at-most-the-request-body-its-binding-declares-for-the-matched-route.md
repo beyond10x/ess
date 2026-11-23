@@ -16,6 +16,10 @@ scope:
 - confidence: cited
   path: Taskfile.yml
 - confidence: cited
+  path: crates/edge/ess-cli/tests/generate_ui_http.rs
+- confidence: cited
+  path: crates/edge/ess-xtask/tests/no_test_builds.rs
+- confidence: cited
   path: crates/generate/ess-synth/src/rust/http.rs
 - confidence: cited
   path: crates/generate/ess-synth/src/rust/http/bound.rs
@@ -26,10 +30,12 @@ scope:
 - confidence: inferred
   path: crates/generate/ess-synth/tests/http_binding/body_cap_rust.rs
 - confidence: cited
+  path: crates/generate/ess-synth/tests/http_binding/go.rs
+- confidence: cited
   path: crates/generate/ess-synth/tests/http_binding/shared.rs
 - confidence: cited
   path: crates/generate/ess-synth/tests/http_binding_rust.rs
-revision: 10
+revision: 14
 ---
 ## Outcome
 
@@ -68,7 +74,7 @@ New module `tests/http_binding/body_cap_rust.rs` (a module of `http_binding_rust
 
 Fixture model (`model.yaml.in`; copy the shape of `crates/edge/ess-cli/tests/fixtures/ui-http/items/system.yaml`, which validates; no actors, so no `--callers`):
 
-- `system: parcel`, `domain: parcel.intake`, `format: ess/23`; type `parcel.intake.ParcelId` newtype of `Integer`; entity `parcel.intake.Parcel` (identity `parcel_id`, field `note: String`, lifecycle `{initial: Held, states: [Held], terminal: [Held]}`); event `parcel.intake.ParcelHeld {parcel_id, note}`; three commands `parcel.intake.Receive`, `parcel.intake.Label`, `parcel.intake.Discard`, each `input: [parcel_id, note]` and one outcome `held` that `creates: parcel.intake.Parcel`, `instance: parcel_id`, `sets: {note: input.note}`, `emits: [parcel.intake.ParcelHeld]`, with the payload from the two inputs; view `parcel.intake.AllParcels` (source `Parcel`, fields `parcel_id`, `note`, `consistency: read_your_writes`); component `parcel` owning the domain, accepting the three commands, publishing the event, `reached_by: network`.
+- `system: parcel`, `domain: parcel.intake`, `format: ess/23`; type `parcel.intake.ParcelId` newtype of `Integer`; entity `parcel.intake.Parcel` (identity `parcel_id`, field `note: String`, lifecycle `{initial: Held, states: [Held], terminal: [Held]}`); event `parcel.intake.ParcelHeld {parcel_id, note}`; four commands `parcel.intake.Receive`, `parcel.intake.Label`, `parcel.intake.Discard`, `parcel.intake.Archive`, each `input: [parcel_id, note]` and one outcome `held` that `creates: parcel.intake.Parcel`, `instance: parcel_id`, `sets: {note: input.note}`, `emits: [parcel.intake.ParcelHeld]`, with the payload from the two inputs; view `parcel.intake.AllParcels` (source `Parcel`, fields `parcel_id`, `note`, `consistency: read_your_writes`); component `parcel` owning the domain, accepting the four commands, publishing the event, `reached_by: network`.
 
 Fixture binding (`http.yaml.in`; `source_digest` is the model's, which the test holds it to as `json_body_closure.rs` `binding()` does, line 163):
 
@@ -89,38 +95,46 @@ routes:
     limits: {request_bytes: 256}
     refusals:
       too_large: {status: 413, body: none}
+  - command: parcel.intake.Discard
+    method: post
+    path: /bulk
+    limits: {request_bytes: 2097152}
   - {view: parcel.intake.AllParcels, method: get, path: /parcels}
 ```
 
-`Discard` is not named, so it keeps its derived route. Tests (each starts nothing itself but a child process of the built server; time the module and report it; every test under 60 s, the module far under 120 s):
+`Archive` is not named, so it keeps its derived route; `Discard` is the route whose cap (2 MiB) is above the fixed 1 MiB default. Tests (each starts nothing itself but a child process of the built server; report the runner's own figure for the module at a 1-minute load of 60 or less (`cut -d' ' -f1 /proc/loadavg`), on a warm build, test time only; every test under 60 s, each new one under 5 s at that load or named with its time):
 
 1. `a_binding_that_declares_no_limit_keeps_the_rust_server_bytes` (digest pin; green today and after): synthesize the shop fixture with `shared::binding(&ir, ROUTES)` for `Target::Rust` in `OutputLayout::Workspace` and `Crate`, join every artifact as `path`, `\n`, `contents` in path order, and assert `ess_gen::ess_http::digest(joined.as_bytes())` equals a constant. Capture the constants on the UNMODIFIED tree first (step 1).
 2. `the_fixed_bound_is_the_one_the_binding_crate_exports` (green today; guards drift): the uncapped `http.rs` of the shop fixture contains `pub const MAX_BODY: usize = 1_048_576;` and `ess_http::FIXED_REQUEST_BYTES == 1_048_576`. Compiles only after h1; write it in step 3.
 3. `a_capped_surface_reads_through_its_body_limit`: synthesize the fixture (`Target::Rust`, `OutputLayout::Crate`); the server crate's `http.rs` contains `limit: &dyn Fn(&str, &str)` and `pub fn body_too_large`; the surface file contains `fn body_limit(` and `fn refusal_too_large`; `Receive` and `Label` get `Some((64, ...))` and `Some((256, ...))`. The same synthesis of the shop fixture contains none of `body_limit`, `body_too_large` and `limit: &dyn`. Red today: the fixture binding does not compile (h1 not built) or, once it does, nothing is emitted.
-4. Socket cases, one `#[test]` per case so a failure names the case, all against the server binary `ESS_BODY_CAP_RUST_SERVER` names (driver below). Bodies are built by padding `note` so the whole body is exactly N bytes; assert `body.len()` before sending. `baseline` is the status the server answers to a 10-byte-note `Receive` with a fresh `parcel_id`.
+3b. `the_cap_lookup_of_a_route_above_the_fixed_bound_is_that_route_cap` (the unit test of the cap lookup the parent asks for): in the generated `body_limit` of the fixture, parse the rows (one block per row, in order) and assert that the block of `POST /bulk` returns `Some((2097152, refusal_too_large` and that `2097152 > ess_http::FIXED_REQUEST_BYTES` (read from the crate, not typed), that the blocks of `POST /parcels` and `POST /labels` return 64 and 256, that the block of `GET /parcels` returns `None`, and that the derived rows (found through `ess_gen::http::derived`) and both documents return `None`. This is the lookup, as a table, with a route cap above the default; the socket case below runs it.
+4. Socket cases (five; the parent's 2 MiB acceptance is test 3b and the `a_route_cap_above_the_fixed_bound...` case), one `#[test]` per case so a failure names the case, all against the server binary `ESS_BODY_CAP_RUST_SERVER` names (driver below). Bodies are built by padding `note` so the whole body is exactly N bytes; assert `body.len()` before sending. `baseline` is the status the server answers to a 10-byte-note `Receive` with a fresh `parcel_id`.
    - `a_body_of_the_cap_is_read_and_one_byte_more_is_refused`: `Receive` with a 64-byte body answers `baseline` and is not `422`; with a 65-byte body answers `422`, the body `{"error":"too_big"}` and the header `X-Limit: 64`.
    - `a_refusal_needs_no_body_read`: `Receive` with `Content-Length: 65` and no body bytes sent answers `422` (not `400 the body was shorter than Content-Length announced`), which shows the check runs before the read.
    - `a_route_limit_stands_in_place_of_the_binding_limit`: `Label` with a 256-byte body is accepted; with 257 answers `413` with no body (`Content-Length: 0`, no `Content-Type`), the route's own `too_large`; `Label` with a 65-byte body is accepted (the binding's 64 does not apply).
-   - `a_route_that_reads_no_body_and_a_derived_route_keep_the_fixed_bound`: `GET /parcels` with 65 body bytes answers `200`; `POST` to `Discard`'s derived path (read from the server's `GET /openapi.json`: the path whose operation has `operationId` `parcel.intake.Discard`) with `Content-Length: 1048577` and no body answers `413` with the body `{"refused":"the body is 1048577 bytes and this surface reads at most 1048576"}`; the same on an unrouted path `/nowhere`.
+   - `a_route_cap_above_the_fixed_bound_reads_a_body_the_default_refuses`: `POST /bulk` (`Discard`, cap 2097152) with a 1,200,000-byte body (more than the fixed 1048576, built by padding `note`; assert `body.len()`) answers `baseline`; the same body to `Archive`'s derived path (below) answers `413` with today's wording (`the body is 1200000 bytes and this surface reads at most 1048576`); `POST /bulk` with `Content-Length: 2097153` and no body answers `422` (the binding's `too_large`; `/bulk` has no refusal of its own).
+   - `a_route_that_reads_no_body_and_a_derived_route_keep_the_fixed_bound`: `GET /parcels` with 65 body bytes answers `200`; `POST` to `Archive`'s derived path (read from the server's `GET /openapi.json`: the path whose operation has `operationId` `parcel.intake.Archive`) with `Content-Length: 1048577` and no body answers `413` with the body `{"refused":"the body is 1048577 bytes and this surface reads at most 1048576"}`; the same on an unrouted path `/nowhere`.
    A surface that declares nothing is covered by test 1 and by the existing `without_a_binding_the_rust_server_keeps_its_bytes` (`http_binding_rust.rs:34`), not by a socket case.
 
 Driver (in the module, ~60 lines; model it on `server`/`serve` of `crates/edge/ess-cli/tests/generate_ui_http.rs` 463-560): read `ESS_BODY_CAP_RUST_SERVER`, panic naming `task body-cap-rust-server` when unset or missing (the message shape of `generate_ui_http.rs` `server`), make the file executable, spawn it with `--listen 127.0.0.1:0` and piped stdout, read lines until a JSON record with `runtime.address`, kill on drop (`Served`). One server for all cases in a process under `nextest` is not possible (a process per test): each case starts its own server (about 10 ms); that is cheap, and it is not an expensive product built per test. Send raw HTTP/1.1 over `TcpStream` with a 10 s read timeout, write the head and the body bytes, parse the status line and headers, and read the body by its `Content-Length` (every answer this server writes carries one; the server also half-closes after an answer, `http::linger`, `rust/http.rs:2092`).
 
 ## Steps
 
-1. On the unmodified tree write test 1 with a placeholder constant, run it, copy the digests in, run green. Time the Rust synthesis for the shop fixture (`target/debug/ess generate synthesize --target rust --http ... --out <scratch dir>` three runs, started directly without the `slot` prefix since it measures) and write the median down.
-2. Write the fixtures and tests 3 and 4 (and the module declaration); `cargo test -p ess-synth --test http_binding_rust body_cap_rust` fails (red, as above).
+1. On the unmodified tree write test 1 with a placeholder constant, run it, copy the digests in, run green. Write the two digests down: they are the count that must not move.
+2. Write the fixtures and tests 3, 3b and 4 (and the module declaration); `cargo test -p ess-synth --test http_binding_rust body_cap_rust` fails (red, as above).
 3. Implement `capped_read`, `body_limit`, the `refusal_set` change and the `serve` replace; capped mode is `server.binding.is_some_and(|binding| binding.ir().bounds_requests())`, computed once in `server_crate`/`Server` and passed, never re-derived per site.
 4. Add the Taskfile var, task, wiring and the `AGENTS.md` line. The task: `cargo build --workspace --exclude ess-xtask --locked --bin ess`; `rm -rf target/body-cap-rust-server`; `mkdir -p {{.WORK}} {{.NEXTEST_ARCHIVES}}`; `target/debug/ess generate synthesize --target rust --layout crate --path {{.FIXTURES}}/model.yaml.in --http {{.FIXTURES}}/http.yaml.in --out {{.WORK}}/parcel` (the `.yaml.in` model has to be copied to a `.yaml` name first, as `json-body-harnesses` copies `model.yaml.in` to `shelf.yaml`); then, as `ui-http-servers` does (`env -u CARGO_TARGET_DIR -u CARGO_ENCODED_RUSTFLAGS -u RUSTC_WRAPPER CARGO_INCREMENTAL=0`), `RUSTFLAGS='-D warnings'` and `cargo build --offline --quiet --features server --bin parcel-server --manifest-path {{.WORK}}/parcel/Cargo.toml --target-dir {{.WORK}}/target`; copy the binary to `{{.BODY_CAP_RUST_SERVER}}`; remove `{{.WORK}}`. No `RUSTC_WRAPPER`, `SCCACHE_*` or `-j` is set (AGENTS.md § One compile cache): `env -u` unsets the variable and leaves the host's `rustc-wrapper`. If the server binary's name differs from `parcel-server`, read it in the generated `Cargo.toml`. If `-D warnings` turns an existing unrelated generated warning red, report the warning and drop the flag for this task; do not edit generated text of other features.
 5. Run `ESS_BODY_CAP_RUST_SERVER=<path> cargo test ...` after `slot task body-cap-rust-server`; then the gate.
-6. Re-time the synthesis of step 1; report both times. The generator gained a text rewrite and one table; a jump over 5 % is fixed in this change.
+6. Re-run test 1: both digests equal the two written down in step 1 (the generator gained a text rewrite and one table that run in capped mode only, so the shop synthesis is byte for byte the same). Report the byte count the capped fixture's server crate gains over the same fixture without `limits` (one number, no bound).
 7. Pins that must not move, and the tests that show it: the committed `generated/rust/{billing,gatepass}` trees (`without_a_binding_the_rust_server_keeps_its_bytes`, `crates/generate/ess-synth/tests/http_binding_rust.rs:34`; `feasibility`; `adversary_related_guard_behaviour_pass1`); the bytes of a bound synthesis that declares nothing (test 1); the byte-pin targets of `AGENTS.md` for `ess-synth`: `served_codec_names` and `go`, and `http_binding_rust` with its `go` module, which compare committed example trees byte for byte. None of these is re-pinned; if one moves, the change is wrong.
 
 ## Owned files
 
 - `crates/generate/ess-synth/src/rust/http.rs`, `crates/generate/ess-synth/src/rust/http/bound.rs`
 - `crates/generate/ess-synth/tests/http_binding/body_cap_rust.rs` (new), `crates/generate/ess-synth/tests/fixtures/body-cap-rust/` (new), `crates/generate/ess-synth/tests/http_binding_rust.rs` (one module declaration)
-- `Taskfile.yml` and `AGENTS.md`: the lines named above. h3 edits the same two files; h2 lands first, h3 rebases and keeps both sets of lines (adjacent additions in the same lists).
+- `Taskfile.yml` and `AGENTS.md`: the lines named above. h3 edits the same two files and lands after h2 (h3 depends on h2): h3 rebases and keeps both sets of lines (adjacent additions in the same lists). t7 (the test-budget unit) later adds timeout prefixes to the same three tasks, `test`, `test-packages` and `test-shard`, whose `env:` blocks h2 edits: whoever lands second rebases and keeps both.
+- Pinned reads (no edit): `crates/generate/ess-synth/tests/http_binding/shared.rs`, `crates/generate/ess-synth/tests/http_binding/go.rs`, `crates/edge/ess-cli/tests/generate_ui_http.rs`, `crates/edge/ess-xtask/tests/no_test_builds.rs`.
+- No stamp involvement: `ess-synth` is not one of the `SYNTHESIS_CRATES` the stamp (t2) hashes, and `ess-conformance` does not depend on it. h2 touches nothing t2 digests and does not run t2's digest test.
 
 ## Not yours
 
@@ -132,7 +146,7 @@ Driver (in the module, ~60 lines; model it on `server`/`serve` of `crates/edge/e
 
 ## Gate
 
-Per `AGENTS.md` § Gate, a change under `crates/generate/ess-synth` gates `ess-synth` and its byte-pin targets. Each command through the shim or `slot`; each job ends in 10 minutes unless it names its time; each test under 60 s; the test step within 120 s (the generator tests of `ess-synth` are the large ones: run only the named targets).
+Per `AGENTS.md` § Gate, a change under `crates/generate/ess-synth` gates `ess-synth` and its byte-pin targets. Each command through the shim or `slot`; each job ends in 10 minutes unless it names its time (at most 30 minutes); each test under 60 s; the test step within 120 s of test time (the runner's own figure) at a 1-minute load of 60 or less (`cut -d' ' -f1 /proc/loadavg`), on a warm build. The generator tests of `ess-synth` are the large ones: run only the named targets.
 
 ```console
 slot task fmt-check
@@ -146,11 +160,11 @@ ESS_BODY_CAP_RUST_SERVER=$PWD/target/nextest-archives/body-cap-rust-server SLOT_
 ## Acceptance
 
 1. `slot task body-cap-rust-server` builds `target/nextest-archives/body-cap-rust-server` with `RUSTFLAGS='-D warnings'`.
-2. The four socket tests of test 4 pass: 64 bytes accepted and 65 answered `422` with the declared body and `X-Limit: 64`; `Content-Length: 65` without a body answered `422`; `Label` 256 accepted and 257 answered `413` without a body; a view with 65 body bytes answered `200`; a derived route and an unrouted path with `Content-Length: 1048577` answered `413` with today's wording at the cap 1048576.
-3. Tests 1 and 2 pass before and after (digest of the declaring-nothing synthesis unchanged; `MAX_BODY` equals `FIXED_REQUEST_BYTES`).
+2. The five socket tests of test 4 pass: 64 bytes accepted and 65 answered `422` with the declared body and `X-Limit: 64`; `Content-Length: 65` without a body answered `422` after the server read 0 body bytes from the socket (the test sends none and the answer arrives within its 10 s read timeout, so the count is 0 by construction); `Label` 256 accepted and 257 answered `413` without a body; `/bulk` (cap 2097152) accepted a 1,200,000-byte body that `Archive`'s derived route refused with `413` at the cap 1048576, and answered `422` to `Content-Length: 2097153`; a view with 65 body bytes answered `200`; a derived route and an unrouted path with `Content-Length: 1048577` answered `413` with today's wording at the cap 1048576.
+3. Tests 1, 2 and 3b pass: the digest of the declaring-nothing synthesis equals the constant captured in step 1 (before and after), `MAX_BODY` equals `FIXED_REQUEST_BYTES`, and the lookup table returns 2097152 for `POST /bulk`, above `FIXED_REQUEST_BYTES`.
 4. `without_a_binding_the_rust_server_keeps_its_bytes`, `feasibility`, `adversary_related_guard_behaviour_pass1`, `served_codec_names`, and `go` pass unchanged; no file under `generated/` changed (`git status --short generated` is empty).
 5. The fixture synthesis contains `body_limit` and the shop synthesis does not.
-6. The two generator timings are reported and within 5 %; every new test is under 5 s, or is named with its time.
+6. The shop synthesis digests (two layouts) equal the two constants of step 1 (bytes, not time); every new test is under 5 s at the load of the Gate, or is named with its runner time.
 7. `cargo test -p ess-xtask --test no_test_builds` passes (run it by name; it reads the tree): the new module spawns no cargo.
 
 ## Decisions

@@ -13,18 +13,26 @@ scope:
 - confidence: cited
   path: crates/generate/ess-gen/src/openapi.rs
 - confidence: cited
+  path: crates/generate/ess-gen/tests/openapi_http.rs
+- confidence: cited
+  path: crates/generate/ess-gen/tests/openapi_http_presentation.rs
+- confidence: cited
   path: crates/specify/ess-http/src/lib.rs
 - confidence: cited
   path: crates/specify/ess-http/tests/compile.rs
-- confidence: inferred
+- confidence: cited
+  path: crates/specify/ess-http/tests/fixtures/board.yaml
+- confidence: cited
+  path: crates/specify/ess-http/tests/fixtures/catalog.yaml
+- confidence: cited
   path: crates/specify/ess-http/tests/fixtures/orders.yaml
-- confidence: inferred
-  path: crates/specify/ess-http/tests/request_limits.rs
+- confidence: cited
+  path: crates/specify/ess-http/tests/route_refusals_and_view_answers.rs
 - confidence: cited
   path: docs/design/http-presentation-binding.md
 - confidence: cited
   path: website/docs/reference/formats.md
-revision: 8
+revision: 11
 ---
 ## Outcome
 
@@ -66,10 +74,10 @@ Tree read: the plan tree, `git rev-parse --short HEAD` = `cfe9dabcb85`; the code
 
 ## Tests first
 
-All in a new `crates/specify/ess-http/tests/request_limits.rs`. Copy the helpers `model`, `derived`, `header`, `compiled`, `located`, `refused`, `ir_json`, `round_trips`, `two_commands`, `view_route` verbatim from `route_refusals_and_view_answers.rs` (lines 20-123) and reuse its fixture `tests/fixtures/orders.yaml` (commands `catalog.orders.PlaceOrder`, `catalog.orders.NoteOrder`; views `catalog.orders.OrderById`, ...). Where the fixture has no command that fits a case (a `get` command whose input the path carries, a `delete` command with `request: {encoding: query}`), take the model of `tests/fixtures/board.yaml` or `catalog.yaml` for that case, as `request_body.rs` and `presentation.rs` do. Each test is milliseconds; time the file once with `cargo test -p ess-http --test request_limits` and report it; none may near 60 s.
+All eight tests are appended to the existing `crates/specify/ess-http/tests/route_refusals_and_view_answers.rs`, a new section "Request limits" after its last test. No new test binary: that file already holds every helper the cases use (`model`, `derived`, `header`, `compiled`, `located`, `refused`, `ir_json`, `round_trips`, `two_commands`, `view_route`, lines 20-123) and the fixture `tests/fixtures/orders.yaml` (commands `catalog.orders.PlaceOrder`, `catalog.orders.NoteOrder`; views `catalog.orders.OrderById`, ...), the crate has 22 test binaries already, and a new file would copy the helpers (about 100 lines) and add a link. Where the fixture has no command that fits a case (a `get` command whose input the path carries, a `delete` command with `request: {encoding: query}`), add a second constant `BOARD: &str = include_str!("fixtures/board.yaml")` in the section and compile that case against it with the helpers' own `model` shape, as `request_body.rs` does; `catalog.yaml` if `board.yaml` lacks the shape. Each test is milliseconds; report the runner's own figure for the file (`cargo test -p ess-http --test route_refusals_and_view_answers`, test time only) at a 1-minute load of 60 or less (`cut -d' ' -f1 /proc/loadavg`), on a warm build.
 
 1. `a_binding_limit_and_a_route_limit_compile_and_round_trip`: `limits: {request_bytes: 64}` at the top and `limits: {request_bytes: 256}` on the `PlaceOrder` route compile; the IR JSON holds `limits` at the top (`{"request_bytes": 64}`) and on that route only; `round_trips`; `request_bytes(route)` is 256 for `PlaceOrder` and 64 for `NoteOrder`. Red today: panics `parses: unknown field `limits``.
-2. `a_limit_is_a_whole_number_of_bytes_from_one_to_the_ceiling`: `0`, `-1`, `16777217` at the top level are `ESS-HTTP-034` at `limits.request_bytes` and at `routes[0].limits.request_bytes` on a route; `1` and `16777216` compile; `64.5` and `"64"` fail `HttpSpec::from_yaml` with a message naming `request_bytes`; `limits: {}` fails with `missing field `request_bytes``; `limits: {request_bytes: 64, extra: 1}` fails with `unknown field `extra``. Pin the message text of the `034` diagnostic for `0` with `assert_eq!`. Red today: unknown field `limits`.
+2. `a_limit_is_a_whole_number_of_bytes_from_one_to_the_ceiling`: `0`, `-1`, `16777217` at the top level are `ESS-HTTP-034` at `limits.request_bytes` and at `routes[0].limits.request_bytes` on a route; `1` and `16777216` compile; `64.5` and `"64"` fail `HttpSpec::from_yaml` with a message naming `request_bytes`; `limits: {}` fails with `missing field `request_bytes``; `limits: {request_bytes: 64, extra: 1}` fails with `unknown field `extra``. Pin the message text of the `034` diagnostic for `0` with `assert_eq!`, and assert that `0` at the top level yields exactly one diagnostic, `(ESS-HTTP-034, limits.request_bytes)`, through `located` (this is the test that holds acceptance 3). Red today: unknown field `limits`.
 3. `a_route_limit_on_a_route_that_reads_no_body_is_refused`: a `limits` on a view route; on a `get` command (all input in the path); on a command with `request: {encoding: query}` on `delete`: each `ESS-HTTP-034` at `routes[i].limits` and nothing else; the same three routes without a route `limits` but under a binding `limits` compile, and `request_bytes` is `None` for each (the binding's limit applies where a body is read, and is not an error elsewhere). A `post` command with `request: {encoding: form}` and a `delete` command with `json` accept a route `limits`.
 4. `the_fourth_refusal_is_too_large_and_takes_any_4xx`: `refusals: {too_large: {status: 413, body: none}}` and `{status: 422, body: {error: {literal: too_big}}, headers: {X-Limit: {literal: '64'}}}` compile and round-trip; `status: 500` is `ESS-HTTP-029` at `refusals.too_large.status`; `too_large` written twice is `ESS-HTTP-029` at `refusals.too_large`; `too-large` is `ESS-HTTP-029` and its message lists the four keys; under `routes[i].refusals` the same; a `too_large` on a view route is accepted (it never answers). Red today: `refusals:` refuses the key.
 5. `a_binding_that_declares_neither_key_keeps_its_ir_bytes`: compile the existing `two_commands("")` document and a binding with the bound routes of `route_refusals_and_view_answers.rs`; assert the canonical JSON holds no `limits` anywhere and that `ess_http::digest(ir.to_canonical_json().as_bytes())` equals a constant. Capture the constants by running the test on the UNMODIFIED tree before any change (step 1 below); the test is green today and must stay green.
@@ -82,17 +90,18 @@ Also the existing `every_code_this_crate_can_emit_is_one_of_the_codes_built_so_f
 ## Steps
 
 1. On the unmodified tree, write test 5 with placeholder constants, run it, copy the printed digests into it, run it green. Commit nothing yet.
-2. Write tests 1-4 and 6-8 and the edit to `compile.rs`; run `cargo test -p ess-http --test request_limits`; they fail as listed.
+2. Write tests 1-4 and 6-8 and the edit to `compile.rs`; run `cargo test -p ess-http --test route_refusals_and_view_answers`; they fail as listed.
 3. Types, `RefusalKey::TooLarge`, `limits` fn, route resolution, IR fields and invariants, accessors, `changes`.
 4. The `refusal_sentence` arm in `ess-gen`.
 5. Docs: the design page and `formats.md` as listed.
 6. Run the gate. Pins that move: `CODES` and the `matches!` list in `compile.rs` (claimed: new code); `docs/design/review-typed-diagnostics.md` and `macro-guards.json` do NOT move because `ESS-HTTP-0xx` codes are strings, not `ValidationCode` (read `crates/specify/ess-http/src/lib.rs:36`: it is a `&[&str]`); `task test-xtask` still runs, as AGENTS.md says for a code and `website/` and `docs/` files. No `*_TABLE_WRITE` model table moves: a binding is not a model. If any committed IR or OpenAPI byte moves, it is a defect of this unit: stop and find why (every committed example has no binding).
-7. Time the generator-free test file and report its time. No generator gains a dependency here, so no before and after timing is owed; h2 and h3 owe theirs.
+7. Report the runner's own figure for the test file, at the load named under Tests first. No generator gains a dependency here; h2, h3 and h4 decide their output by counts.
 
 ## Owned files
 
 - `crates/specify/ess-http/src/lib.rs`
-- `crates/specify/ess-http/tests/request_limits.rs` (new), `crates/specify/ess-http/tests/compile.rs` (the one list)
+- `crates/specify/ess-http/tests/route_refusals_and_view_answers.rs` (the appended section), `crates/specify/ess-http/tests/compile.rs` (the one list)
+- Read as pins, not edited: `crates/specify/ess-http/tests/fixtures/orders.yaml`, `board.yaml`, `catalog.yaml`; `crates/generate/ess-gen/tests/openapi_http.rs` and `openapi_http_presentation.rs` (run in the Gate)
 - `docs/design/http-presentation-binding.md`: Keys table, "Standard refusals", "What compiling checks (stage 2)", "Codes per unit", "Refinement"
 - `website/docs/reference/formats.md`
 - `crates/generate/ess-gen/src/openapi.rs`: the single arm in `refusal_sentence` (1909) and nothing else
@@ -103,11 +112,12 @@ Also the existing `every_code_this_crate_can_emit_is_one_of_the_codes_built_so_f
 - The Precedence list, "What the servers write" and "What OpenAPI writes" of the design page, and `website/docs/guides/http-routes.md` (h4).
 - `ess-conformance`: the conformance suite is not extended; it does not speak HTTP (design page "Stage 3" is another story). `ess-ui` reads routes only and is unchanged.
 - No new format version, no `ess-http/2`, no `ess-http-ir/2`, no generic registry or property bag (AGENTS.md § Boundaries).
+- The synthesis-sources stamp file and its fast digest test belong to t2, which lands after this unit and stamps the tree that holds it (this unit changes `src/` of `ess-http` and `ess-gen`, both hashed). Do not write the stamp and do not run that test in the Gate.
 - Do not change the `ValidationCode` list, the schema `schemas/generated/ess.schema.json` (`RawSpecFile` is untouched: `HttpSpec` is a different type) or `crates/specify/ess-http/tests/fixtures/*`.
 
 ## Gate
 
-Run the commands one after another, each through the shim or `slot`; none may run longer than 10 minutes unless it names its time. Every test stays under 60 s and the test step under 120 s.
+Run the commands one after another, each through the shim or `slot`; none may run longer than 10 minutes unless it names its time. Every test stays under 60 s and each test step under 120 s of test time (the runner's own figure, at a 1-minute load of 60 or less, on a warm build).
 
 ```console
 slot task fmt-check
@@ -122,9 +132,9 @@ Test files run by `cargo test -p ess-http`: every file under `crates/specify/ess
 
 ## Acceptance
 
-1. `cargo test -p ess-http --test request_limits` passes all eight tests, each under 5 s.
+1. `cargo test -p ess-http --test route_refusals_and_view_answers` passes its eight new tests and its existing ones, each of the new under 5 s at the stated load.
 2. The pre-existing `ess-http` tests pass unchanged, except the one added list entry in `compile.rs`; `a_binding_that_declares_neither_key_keeps_its_ir_bytes` passes with constants captured before the change.
-3. `ess specify http compile` on a binding with `limits: {request_bytes: 0}` prints one `ESS-HTTP-034` at `limits.request_bytes`.
+3. `a_limit_is_a_whole_number_of_bytes_from_one_to_the_ceiling` (target `route_refusals_and_view_answers`) passes: compiling a binding with `limits: {request_bytes: 0}` yields exactly one diagnostic, `ESS-HTTP-034` at `limits.request_bytes`, with the pinned message. `ess specify http compile` prints that diagnostic from the same `compile`; no gate builds the CLI, so no acceptance runs it.
 4. `HttpIr::from_json` on the compiled IR of test 1 reads it and writes the same bytes; on IR with a route `limits` on a view it refuses naming `limits`.
 5. `ess_http::CODES` ends with `"ESS-HTTP-034"` and `every_code_this_crate_can_emit_is_one_of_the_codes_built_so_far` passes.
 6. `cargo test -p ess-gen --test openapi_http --test openapi_http_presentation` passes: nothing in a document generated without `limits` or `too_large` moved.

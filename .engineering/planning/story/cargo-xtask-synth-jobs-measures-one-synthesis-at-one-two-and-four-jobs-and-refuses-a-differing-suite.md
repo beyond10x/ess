@@ -3,13 +3,14 @@ format: aep.planning-md/3
 id: story:cargo-xtask-synth-jobs-measures-one-synthesis-at-one-two-and-four-jobs-and-refuses-a-differing-suite
 kind: story
 status: draft
-title: cargo xtask synth-jobs measures the wall time, CPU time and peak memory of one synthesis at one, two and four jobs, refuses a suite that differs between them, and the design page records the measurement
+title: cargo xtask synth-jobs measures one synthesis at one, two and four jobs and refuses a differing suite
 tags:
 - wave-2026-11-23
 relations:
 - serves: vision:O2
 - derived_from: story:the-caller-readings-of-a-synthesis-run-on-several-threads-and-write-the-suite-a-single-thread-writes
 - depends_on: story:with-more-than-one-job-the-caller-readings-of-a-synthesis-run-on-scoped-threads-and-write-the-same-suite
+- depends_on: story:a-test-marked-slow-runs-only-in-task-test-slow-under-its-own-profile-and-slow-list-names-it
 scope:
 - confidence: cited
   path: Taskfile.yml
@@ -19,7 +20,7 @@ scope:
   path: crates/edge/ess-xtask/src/synth_jobs.rs
 - confidence: inferred
   path: docs/design/parallel-caller-readings.md
-revision: 5
+revision: 10
 ---
 ## Outcome
 
@@ -28,17 +29,23 @@ revision: 5
 `--path` it is any specification. The command:
 
 - prints one row per job count: wall time, user CPU time, system CPU time, peak resident memory,
-  the suite's SHA-256, and the speed-up against one job;
+  the suite's scenario count and SHA-256, and the speed-up against one job;
 - exits 1, naming the two counts, when the suite bytes differ between any two of them.
 
 A task `synth-jobs-profile` builds the release binary and runs it. The design page
 `docs/design/parallel-caller-readings.md` gets a `## Measured` section with the table from this
 host. The default stays 1; the table is what the operator reads before any default changes.
 
+This unit does not judge the parent's "N = 4 takes at most 45 % of N = 1". The coordinator
+judges that on the largest known downstream specification, with the wave's release build and
+this command's `--path`, and records it in the parent (routing decision X11).
+
 ## Why
 
-- Parent: `PARENT-THREADS`. Its rule: peak memory and CPU are measured at 2 and 4 threads before
-  any default changes.
+- Parent: `story:the-caller-readings-of-a-synthesis-run-on-several-threads-and-write-the-suite-a-single-thread-writes`.
+  Its rule: peak memory and CPU are measured at 2 and 4 threads before any default changes. The
+  tool is a committed `cargo xtask` subcommand on a generated model, because the downstream
+  specification is private and no unit can read it. The parent records that decision (X11).
 - Consumer gap: one synthesis of the largest known downstream specification takes 279 s on one
   core. The parent's 3.5x is an estimate. Unit `p3`'s lanes put each uniform model's readings on
   one thread, so the expected gain is lower (inferred about 2.2x; see `p3` D3). This unit
@@ -51,7 +58,10 @@ host. The default stays 1; the table is what the operator reads before any defau
 
 ## Where
 
-Read at `db7bfe96d1`.
+Read at `db7bfe96d1`, and re-checked at `80794bbd698` (the plan tree's head): `ess-xtask`'s
+`main.rs` and `Cargo.toml` did not change between them. Unit `t1a` lands before this one and adds
+a `SlowList` variant to `main.rs` and a `test-slow` task to `Taskfile.yml`, so find each site by
+its name.
 
 - `crates/edge/ess-xtask/src/main.rs`:
   - `mod` list 3-21;
@@ -64,8 +74,8 @@ Read at `db7bfe96d1`.
   `crates/verify/ess-conformance/tests/caller_readings_made_once_work.rs` 36-146: a card with
   `owner_id` set from the caller by `Open`, flags set by `Mark<i>`, and `Close` refused to a
   non-owner.
-- `Taskfile.yml`: unit `t1` of this wave edits `test`, `test-shard`, `test-slowest`, `check` and
-  `test-slow-probes`. This unit adds one new task and touches none of those.
+- `Taskfile.yml`: units `t1a` and `t1b` of this wave edit the test tasks (`test-slow`, `test`,
+  `test-shard`, `test-slowest`, `check`). This unit adds one new task and touches none of those.
 - `docs/design/parallel-caller-readings.md` is written by `p2` with a `## Measured` heading that
   holds a placeholder. This unit replaces the placeholder.
 
@@ -87,8 +97,9 @@ Read at `db7bfe96d1`.
 4. `a_stat_line_gives_the_childrens_cpu_ticks`: `children_ticks` of a `/proc/self/stat` line
    whose command name holds a space and a parenthesis, `"12 (a b) c) S 1 2 …"`, reads `cutime`
    and `cstime` (fields 16 and 17 counted from 1). The parser splits after the last `)`.
-5. `differing_suites_are_refused_with_both_counts`: `compare(&[(1, digest_a), (2, digest_a), (4,
-   digest_b)])` is `Err` with text naming `1` and `4`, and three equal digests are `Ok`.
+5. `differing_suites_are_refused_with_both_counts`: `compare(&[(1, digest_a, 7), (2, digest_a, 7),
+   (4, digest_b, 7)])` is `Err` with text naming `1` and `4`; a differing scenario count with
+   equal digests is `Err` too; three equal rows are `Ok`.
 
 ## Steps
 
@@ -123,10 +134,13 @@ Read at `db7bfe96d1`.
         - peak resident memory as the largest `VmHWM` of `/proc/<pid>/status`, read every 20 ms
           while the child runs. It is a lower bound by at most the last 20 ms; say so in the
           output's last line.
-     4. Hash each suite file with `sha2::Sha256`, then call `compare`.
-     5. Print a Markdown table (`| jobs | wall s | user s | sys s | peak MiB | speed-up | suite
-        sha256 |`) and one line naming the model and its flags, reading, scenario count and
-        host core count (`std::thread::available_parallelism`).
+     4. Hash each suite file with `sha2::Sha256`, and read its scenario count with `serde_json`
+        (the number of entries of the suite document's `scenarios`). Then call `compare`, which
+        refuses a differing digest or count.
+     5. Print a Markdown table (`| jobs | wall s | user s | sys s | peak MiB | speed-up |
+        scenarios | suite sha256 |`). Then one line naming the model and its flags, reading and
+        command count, the host's core count (`std::thread::available_parallelism`), and the
+        1-minute load read from `/proc/loadavg` before the first run and after the last.
    - On a non-Linux host: a clear refusal, "synth-jobs reads /proc and runs on Linux only".
 3. Register `mod synth_jobs;` and `Command::SynthJobs { .. }` in `main.rs`, dispatched like
    `SiteData`.
@@ -145,10 +159,12 @@ Read at `db7bfe96d1`.
    - The measurement runs outside the pool: it measures, so it holds no slot (the organization AGENTS.md,
      "Scripts that do not build stay off slot"). Run the task without the `slot` prefix.
    - No `RUSTC_WRAPPER`, `SCCACHE_*` or `-j` in it.
-5. Tune the size: run `task synth-jobs-profile` (no `slot` prefix). Raise `--flags` and
-   `--reading` until the one-job row's wall time lies between 20 and 120 s on this host; record
-   the values and make them the defaults. Each run of the three counts must end within 10
-   minutes. If one count alone runs over 5 minutes, lower the size.
+5. Tune the size. Run `task synth-jobs-profile` (no `slot` prefix) only at a 1-minute load of 60
+   or less (`cut -d' ' -f1 /proc/loadavg`), on a warm release build. Raise `--flags` and
+   `--reading` until the one-job row's wall time lies between 20 and 120 s; record the values
+   and make them the defaults. Each run of the three counts must end within 10 minutes. If one
+   count alone runs over 5 minutes, lower the size. A run started above load 60 is repeated,
+   not reported.
 6. Replace the `## Measured` placeholder of the design page with:
    - the table;
    - the date, the commit, the host's core count and its load average at the start
@@ -172,16 +188,18 @@ Read at `db7bfe96d1`.
 ## Not yours
 
 - `crates/verify/ess-conformance/**` (`p3`), `crates/edge/ess-cli/**` and `CHANGELOG.md` (`p4`).
-- Every other line of `Taskfile.yml` (`t1`).
+- Every other line of `Taskfile.yml` (`t1a`, `t1b`, `t2` to `t7`).
 - Changing the default job count: it stays 1 (D1 A of the parent). The operator decides it on
   this table, after this wave.
+- The verdict on the parent's 45 %: the coordinator's (X11).
 
 ## Shared files
 
-- `Taskfile.yml` with `t1`. `t1` lands first (round 1 of its map). This unit adds a new task at
-  the end of the map and keeps every line of `t1`.
-- `crates/edge/ess-xtask/src/main.rs` with `t1` and `t2` if their slow-lane commands add
-  variants there. Each variant is its own block; keep both at merge.
+- `Taskfile.yml` with `t1a` (round 1) and the other `t` units before this one. This unit adds
+  a new task at the end of the map and keeps every line of theirs.
+- `crates/edge/ess-xtask/src/main.rs` with `t1a` (its `SlowList` variant, round 1) and with
+  `t2` if its command adds a variant (`t2` is round 4, beside this unit). Each variant is its
+  own block; keep both at merge.
 - The design page with `p2` (merged before; only the `## Measured` section changes here).
 
 ## Gate
@@ -207,14 +225,17 @@ task synth-jobs-profile
 ## Acceptance
 
 1. Tests 1-5 pass, with their times reported.
-2. `task synth-jobs-profile` exits 0 and prints three rows with one SHA-256. The one-job row's
-   wall time is between 20 and 120 s.
-3. The refusal of differing suites is covered by test 5. A real run cannot be forced to differ
+2. Decided by counts and identical suites: `task synth-jobs-profile` exits 0 and prints exactly
+   three rows (jobs 1, 2, 4). All three have one SHA-256 and one scenario count, and the count is
+   above 0. The model line names `flags + 2` commands.
+3. Stated, not judged: the one-job row's wall time lies between 20 and 120 s at a 1-minute load
+   of 60 or less, warm release build. The printed load line shows the load at both ends.
+4. The refusal of differing suites is covered by test 5. A real run cannot be forced to differ
    from outside, and the report says so.
-4. The design page's `## Measured` holds the table, the commit and the host facts, and names no
-   private model.
-5. `git diff $BASE -- Cargo.lock '**/Cargo.toml'` is empty.
-6. `git grep -n -i python -- crates/edge/ess-xtask/src/synth_jobs.rs Taskfile.yml` shows no new
+5. The design page's `## Measured` holds the table, the commit, the host's core count and the
+   load, and names no private model.
+6. `git diff $BASE -- Cargo.lock '**/Cargo.toml'` is empty.
+7. `git grep -n -i python -- crates/edge/ess-xtask/src/synth_jobs.rs Taskfile.yml` shows no new
    line.
 
 ## Decisions
