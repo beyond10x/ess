@@ -1,5 +1,9 @@
 # R-04 decisions
 
+Rewritten in round R-05 (T35 of the R-04 report review): each worse value a list item takes now
+names its value, `<scenario> <metric> <value>`, the value the baseline took from this round; a
+decision takes a worse value only at the value it names.
+
 ## Ratchet decision `R-04-worse`: the index of the reference rows adds text to read
 
 Change 5 (UXF-010) puts an index of every `ess/N` row under the title of the format version page
@@ -14,11 +18,11 @@ reaches its row in 3 to 5 actions instead of 26 and 33, and reads more on the fi
 | `diagnostic-type-009/mobile-390` | `reading_load.max` | 142 | 165 |
 | `diagnostic-type-009/mobile-390` | `reading_load.median` | 120 | 137 |
 
-- `ess-31-release/desktop-1280 reading_load.max`
-- `ess-31-release/mobile-390 reading_load.max`
-- `ess-31-release/mobile-390 reading_load.median`
-- `diagnostic-type-009/mobile-390 reading_load.max`
-- `diagnostic-type-009/mobile-390 reading_load.median`
+- `ess-31-release/desktop-1280 reading_load.max 358`
+- `ess-31-release/mobile-390 reading_load.max 164`
+- `ess-31-release/mobile-390 reading_load.median 137`
+- `diagnostic-type-009/mobile-390 reading_load.max 165`
+- `diagnostic-type-009/mobile-390 reading_load.median 137`
 
 ## Ratchet decision `R-04-worse`: the docs introduction holds one more link before the target
 
@@ -31,8 +35,8 @@ it once more:
 | `first-conformance-run/mobile-390/keyboard` | `screen_only.actions` | 130 | 131 |
 | `install-linux-x86_64/mobile-390/keyboard` | `screen_only.actions` | 128 | 129 |
 
-- `first-conformance-run/mobile-390/keyboard screen_only.actions`
-- `install-linux-x86_64/mobile-390/keyboard screen_only.actions`
+- `first-conformance-run/mobile-390/keyboard screen_only.actions 131`
+- `install-linux-x86_64/mobile-390/keyboard screen_only.actions 129`
 
 ## Ratchet decision `R-04-worse`: a layout shift measured once under a load of 120 to 170
 
@@ -49,8 +53,8 @@ That two probe runs of both pages afterwards measured 0 is not kept: their logs 
 layout-shift value (R-05). These are not good values: they were measured once under load. They are
 taken so the round stays complete; the next round's run replaces them in the baseline if it measures 0 again.
 
-- `/ess/docs/concepts/overview@desktop-1280/dark layout_shift.load`
-- `/ess/docs/status/roadmap@desktop-1280/dark layout_shift.load`
+- `/ess/docs/concepts/overview@desktop-1280/dark layout_shift.load 0.0342`
+- `/ess/docs/status/roadmap@desktop-1280/dark layout_shift.load 0.0697`
 
 ## Ratchet decision `R-04-worse`: the gate lane measures a lighter reference page
 

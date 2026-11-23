@@ -47,6 +47,7 @@ for (const path of pages) {
         kind: pageKind(path),
         viewport: viewport.name,
         layoutShift: 0,
+        loadTheme: THEMES[0],
         motion: { running: [], smoothScroll: false },
         blocked: {},
         configs: [],

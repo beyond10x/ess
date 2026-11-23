@@ -31,8 +31,15 @@
 //! declares, and an open record states the message its asset fails with (`failure_pattern`, `none`
 //! when the asset is no expected failure).
 //!
+//! 8. a run that did not pass (T41): a round of one run whose `timing` status is not `passed` or
+//!    that names an unexpected test, and a run of a merged round that was cut, or that failed a
+//!    test no later run of the round passed.
+//!
 //! A decision (`--decision <id>`) takes only the worse and lost values it lists in the round's
-//! `decision.md`, as backticked list items under the `## ` heading that names the id.
+//! `decision.md`, as backticked list items under the `## ` heading that names the id: a worse
+//! value as `<scenario> <metric> <value>`, at that value and no other (T35), a lost value as
+//! `<scenario> <metric>`, `<scenario>` or `<lane>: <scenario>`. A value worse than the baseline
+//! by no more than its tolerance passes and is named in a note (T36).
 
 use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};
@@ -140,6 +147,10 @@ pub(crate) struct Round {
     /// Every run merged into the round, each with the engine that measured it.
     #[serde(default)]
     pub runs: Vec<RunEngine>,
+    /// How the run ended, for a round of one run (a gate run's `round.json`); a merged round says
+    /// it per run.
+    #[serde(default)]
+    pub timing: Option<RunOutcome>,
     /// The values a later run replaced: scenario, then metric key, then every run's value in run
     /// order. Only a merged round has them.
     #[serde(default)]
@@ -157,6 +168,29 @@ pub(crate) struct RunEngine {
     pub name: String,
     /// Its engine.
     pub engine: Engine,
+    /// The lane it ran: `slow` for a run of a `full` round's measurement; a run of another lane (the
+    /// gate runs a round reports for their time) is not judged by its outcome.
+    #[serde(default)]
+    pub lane: Option<String>,
+    /// How it ended.
+    #[serde(default)]
+    pub timing: Option<RunOutcome>,
+}
+
+/// How a run ended, as its `timing` records it (T41 of the R-04 report review).
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+pub(crate) struct RunOutcome {
+    /// Playwright's status of the whole run: `passed`, `failed`, `timedout` or `interrupted`.
+    pub status: String,
+    /// Each test whose outcome was not the expected one, with its status and why.
+    #[serde(default)]
+    pub unexpected: Vec<String>,
+    /// The same tests as `[<project>] <title>`.
+    #[serde(default)]
+    pub unexpected_tests: Vec<String>,
+    /// Every test that passed, as `[<project>] <title>`.
+    #[serde(default)]
+    pub passed: Vec<String>,
 }
 
 /// One run's value of a scenario and metric that more than one run measured.
@@ -208,6 +242,8 @@ pub(crate) enum Breach {
     RunsDisagree,
     /// A run (or the round) was not measured by the engine the committed tree holds.
     Unattributable { run: String, why: String },
+    /// A run (or the round) did not pass, and no later run of the round passed what it failed.
+    RunNotPassed { run: String, why: String },
     /// The round is worse than the baseline beyond the tolerance.
     Worse {
         scenario: String,
@@ -272,6 +308,11 @@ impl fmt::Display for Breach {
                 f,
                 "{run}: not measured by the committed tree's engine: {why}; commit the engine and \
                  measure again"
+            ),
+            Breach::RunNotPassed { run, why } => write!(
+                f,
+                "{run}: the run did not pass: {why}; a round is taken only from runs that passed, \
+                 or whose failed tests a later run of the round passed"
             ),
             Breach::Worse {
                 scenario,
@@ -446,6 +487,7 @@ pub(crate) fn compare_with(
         breaches.push(Breach::RunsDisagree);
     }
     breaches.extend(unattributable(round));
+    breaches.extend(not_passed(round));
     let value_of = |scenario: &str, metric: &str, value: f64| {
         held_value(round, decision, scenario, metric, value)
     };
@@ -510,8 +552,134 @@ pub(crate) fn compare_with(
     breaches
 }
 
+/// The values worse than the baseline by no more than their tolerance (T36): the ratchet lets them
+/// pass and names each, so a rise inside the tolerance is seen.
+pub(crate) fn within_tolerance(
+    baseline: &Baseline,
+    round: &Round,
+    decision: Option<&Decision>,
+) -> Vec<String> {
+    let lane = scope(baseline, &round.lane);
+    let mut notes = Vec::new();
+    for (scenario, entries) in &baseline.scenarios {
+        if lane.is_some_and(|set| !set.contains(scenario)) {
+            continue;
+        }
+        let Some(values) = round.scenarios.get(scenario) else {
+            continue;
+        };
+        for (metric, entry) in entries {
+            let (Some(&value), Ok(tolerance)) = (
+                values.get(metric),
+                tolerance_of(baseline, scenario, metric, entry),
+            ) else {
+                continue;
+            };
+            let held = held_value(round, decision, scenario, metric, value);
+            let allowance = tolerance.allowance(entry.value);
+            if held > entry.value + EPSILON && held <= entry.value + allowance + EPSILON {
+                notes.push(format!(
+                    "{scenario} {metric}: {held} against {}, worse inside its tolerance of {allowance}",
+                    entry.value
+                ));
+            }
+        }
+    }
+    notes
+}
+
+/// The runs that did not pass (T41): the round's own run when its `timing` says it did not pass
+/// or names an unexpected test, a run of a merged round whose status is neither `passed` nor
+/// `failed`, a passed run that names an unexpected test, and a failed run with a failed test no
+/// later run of the round passed. A run without `timing`, and a run of another lane than the
+/// round's measurement, is not judged here.
+fn not_passed(round: &Round) -> Vec<Breach> {
+    let measures = |run: &RunEngine| {
+        run.lane
+            .as_deref()
+            .is_none_or(|lane| lane == round.lane || (lane == "slow" && round.lane == FULL))
+    };
+    let runs: Vec<&RunEngine> = round.runs.iter().filter(|run| measures(run)).collect();
+    let mut out = Vec::new();
+    if let Some(timing) = &round.timing {
+        let mut why = Vec::new();
+        if timing.status != "passed" {
+            why.push(format!("its status is `{}`", timing.status));
+        }
+        if let Some(first) = timing.unexpected.first() {
+            why.push(format!(
+                "{} unexpected test(s), first {first}",
+                timing.unexpected.len()
+            ));
+        }
+        if !why.is_empty() {
+            out.push(Breach::RunNotPassed {
+                run: "the round".to_owned(),
+                why: why.join(", "),
+            });
+        }
+    }
+    for (index, run) in runs.iter().enumerate() {
+        let Some(timing) = &run.timing else {
+            continue;
+        };
+        let later: BTreeSet<&str> = runs[index + 1..]
+            .iter()
+            .filter_map(|later| later.timing.as_ref())
+            .flat_map(|later| later.passed.iter().map(String::as_str))
+            .collect();
+        let why = match timing.status.as_str() {
+            "passed" | "failed" if timing.unexpected.len() != timing.unexpected_tests.len() => {
+                Some(format!(
+                    "its status is `{}` and it names {} unexpected test(s) by title for {} unexpected outcome(s)",
+                    timing.status,
+                    timing.unexpected_tests.len(),
+                    timing.unexpected.len()
+                ))
+            }
+            "failed" if timing.unexpected_tests.is_empty() => {
+                Some("its status is `failed` and it names no failed test".to_owned())
+            }
+            "passed" | "failed" => {
+                let open: Vec<&str> = timing
+                    .unexpected_tests
+                    .iter()
+                    .map(String::as_str)
+                    .filter(|test| !later.contains(test))
+                    .collect();
+                (!open.is_empty()).then(|| {
+                    format!(
+                        "no later run passed {} of its failed test(s), first {}",
+                        open.len(),
+                        open[0]
+                    )
+                })
+            }
+            status => Some(format!("its status is `{status}`")),
+        };
+        if let Some(why) = why {
+            out.push(Breach::RunNotPassed {
+                run: run.name.clone(),
+                why,
+            });
+        }
+    }
+    out
+}
+
+/// Whether the decision takes this worse value: a list item `<scenario> <metric> <value>` that
+/// names the scenario, the metric and the value (T35).
+fn takes_value(decision: &Decision, scenario: &str, metric: &str, value: f64) -> bool {
+    decision.keys.iter().any(|key| {
+        let parts: Vec<&str> = key.split_whitespace().collect();
+        matches!(parts.as_slice(), [s, m, v] if *s == scenario && *m == metric
+            && v.parse::<f64>().is_ok_and(|named| (named - value).abs() <= EPSILON))
+    })
+}
+
 /// The value the ratchet holds for a scenario and metric: the round's value, or the worst value
-/// any of its runs measured when a rerun replaced one (T27), unless the decision names the key.
+/// any of its runs measured when a rerun replaced one (T27), unless the decision names the
+/// round's value with its scenario and metric (T35).
 fn held_value(
     round: &Round,
     decision: Option<&Decision>,
@@ -519,7 +687,7 @@ fn held_value(
     metric: &str,
     value: f64,
 ) -> f64 {
-    if decision.is_some_and(|d| covers(d, None, scenario, metric)) {
+    if decision.is_some_and(|d| takes_value(d, scenario, metric, value)) {
         return value;
     }
     round
@@ -542,6 +710,8 @@ fn unattributable(round: &Round) -> Vec<Breach> {
             dirty: false,
             ..round.engine.clone()
         },
+        lane: None,
+        timing: None,
     };
     let mut out = Vec::new();
     for run in std::iter::once(&top).chain(&round.runs) {
@@ -696,8 +866,9 @@ pub(crate) fn decision_of(text: &str, id: &str) -> Result<Decision, String> {
     }
     if keys.is_empty() {
         return Err(format!(
-            "decision {named} lists no key: list each value it takes as a list item \
-             `- `<scenario> <metric>``, `- `<scenario>`` or `- `<lane>: <scenario>``"
+            "decision {named} lists no key: list each worse value it takes as a list item \
+             `- `<scenario> <metric> <value>``, and each lost value as `- `<scenario> <metric>``, \
+             `- `<scenario>`` or `- `<lane>: <scenario>``"
         ));
     }
     Ok(Decision {
@@ -706,8 +877,9 @@ pub(crate) fn decision_of(text: &str, id: &str) -> Result<Decision, String> {
     })
 }
 
-/// Whether the decision lists the value: by `<scenario> <metric>`, by its whole `<scenario>`, or,
-/// for a scenario a lane dropped, by `<lane>: <scenario>`.
+/// Whether the decision lists a lost value: by `<scenario> <metric>`, by its whole `<scenario>`,
+/// or, for a scenario a lane dropped, by `<lane>: <scenario>`. A worse value is taken only by
+/// [`takes_value`].
 fn covers(decision: &Decision, lane: Option<&str>, scenario: &str, metric: &str) -> bool {
     decision.keys.contains(&format!("{scenario} {metric}"))
         || decision.keys.contains(scenario)
@@ -726,6 +898,12 @@ pub(crate) fn update_with(
     let decided = |scenario: &str, metric: &str| {
         named
             .filter(|d| !d.id.trim().is_empty() && covers(d, lane.as_deref(), scenario, metric))
+            .map(|d| d.id.as_str())
+    };
+    // A worse value only at the value the decision names (T35).
+    let decided_value = |scenario: &str, metric: &str, value: f64| {
+        named
+            .filter(|d| !d.id.trim().is_empty() && takes_value(d, scenario, metric, value))
             .map(|d| d.id.as_str())
     };
     let mut next = baseline.clone();
@@ -759,7 +937,7 @@ pub(crate) fn update_with(
                 metric,
                 value,
                 baseline: old,
-            } => match decided(&scenario, &metric) {
+            } => match decided_value(&scenario, &metric, value) {
                 Some(id) => {
                     set_value(&mut next, &scenario, &metric, value);
                     if let Some(entry) = next
@@ -1483,6 +1661,9 @@ pub(crate) fn run(
         None => None,
     };
     let mut report = String::new();
+    for note in within_tolerance(&baseline, &measured, decision.as_ref()) {
+        let _ = writeln!(report, "ux ratchet: note: {note}");
+    }
     if update_baseline {
         let (next, taken) =
             update_with(&baseline, &measured, decision.as_ref()).map_err(|refused| {
@@ -1768,7 +1949,7 @@ mod tests {
             &one_more_link,
             Some((
                 "D-5",
-                &["/ess/docs/a@desktop-1280/light axe.serious_critical_nodes"],
+                &["/ess/docs/a@desktop-1280/light axe.serious_critical_nodes 11"],
             )),
         )
         .expect("a decision takes it");
@@ -1957,7 +2138,7 @@ mod tests {
     fn a_decision_that_names_a_replaced_value_holds_the_value_that_replaced_it() {
         let named = Decision {
             id: "R-04-shift".into(),
-            keys: BTreeSet::from(["/p@m/dark layout_shift.load".to_owned()]),
+            keys: BTreeSet::from(["/p@m/dark layout_shift.load 0".to_owned()]),
         };
         assert_eq!(
             compare_with(&baseline(SHIFT), &round(RERUN), Some(&named)),
@@ -2252,7 +2433,7 @@ mod tests {
         let (next, _) = update(
             &baseline(BASE),
             &measured,
-            Some(("D-7", &["install/desktop-1280 glance_cost.p95"])),
+            Some(("D-7", &["install/desktop-1280 glance_cost.p95 2.5"])),
         )
         .expect("a decision takes the worse value");
         let entries = &next.scenarios["install/desktop-1280"];
@@ -2565,15 +2746,15 @@ mod tests {
       {"screen_only.actions": 4, "glance_cost.p95": 2.5, "layout_shift.max": 0.02}}}"#;
 
     /// T29 of the R-03 report review: a decision id took every worse value of the update. It
-    /// takes the values it lists, by `<scenario> <metric>` or by a whole `<scenario>`, and no
-    /// other.
+    /// takes the worse values it lists, each as `<scenario> <metric> <value>` (T35), and no other;
+    /// a whole `<scenario>` takes no worse value.
     #[test]
     fn a_decision_takes_only_the_values_it_lists() {
         let measured = round(TWO_WORSE);
         let refused = update(
             &baseline(BASE),
             &measured,
-            Some(("D-2", &["install/desktop-1280 glance_cost.p95"])),
+            Some(("D-2", &["install/desktop-1280 glance_cost.p95 2.5"])),
         )
         .unwrap_err();
         assert!(
@@ -2586,8 +2767,8 @@ mod tests {
             Some((
                 "D-2",
                 &[
-                    "install/desktop-1280 glance_cost.p95",
-                    "install/desktop-1280 screen_only.actions",
+                    "install/desktop-1280 glance_cost.p95 2.5",
+                    "install/desktop-1280 screen_only.actions 4",
                 ],
             )),
         )
@@ -2599,12 +2780,15 @@ mod tests {
                 .as_deref(),
             Some("D-2")
         );
-        assert!(update(
-            &baseline(BASE),
-            &measured,
-            Some(("D-2", &["install/desktop-1280"]))
-        )
-        .is_ok());
+        assert!(
+            update(
+                &baseline(BASE),
+                &measured,
+                Some(("D-2", &["install/desktop-1280"]))
+            )
+            .is_err(),
+            "a whole scenario took worse values"
+        );
         let lost = round(r#"{"scenarios": {"install/desktop-1280": {"screen_only.actions": 3}}}"#);
         assert!(
             update(
@@ -2652,6 +2836,197 @@ mod tests {
         assert!(
             decision_of("## Ratchet decision `D-7`\n\nNo list.\n", "D-7").is_err(),
             "a decision that lists no key"
+        );
+    }
+
+    /// A run of a merged round that ended with `status`, failing `failed` and passing `passed`.
+    fn run_with(name: &str, status: &str, failed: &[&str], passed: &[&str]) -> String {
+        let list = |items: &[&str]| {
+            items
+                .iter()
+                .map(|item| format!("{item:?}"))
+                .collect::<Vec<_>>()
+                .join(", ")
+        };
+        let unexpected: Vec<String> = failed
+            .iter()
+            .map(|test| format!("{test} (timedOut, expected passed)"))
+            .collect();
+        let unexpected: Vec<&str> = unexpected.iter().map(String::as_str).collect();
+        format!(
+            r#"{{"name": "{name}", "engine": {{"digest": "d", "commit": "c", "dirty": false}},
+              "timing": {{"status": "{status}", "unexpected": [{}], "unexpected_tests": [{}],
+              "passed": [{}]}}}}"#,
+            list(&unexpected),
+            list(failed),
+            list(passed)
+        )
+    }
+
+    /// T41 of the R-04 report review: the ratchet read neither a run's status nor its unexpected
+    /// failures, so a run that failed or was cut judged as a pass on the values it recorded.
+    #[test]
+    fn a_run_that_did_not_pass_is_refused_unless_a_later_run_passed_what_it_failed() {
+        let failed = run_with(
+            "slow-l2-4",
+            "failed",
+            &["[l2-4] L2 /a m"],
+            &["[l2-4] L2 /b m"],
+        );
+        let cut = run_with("gate-9", "timedout", &[], &[]);
+        for (case, runs) in [
+            ("failed", format!("[{failed}]")),
+            ("timedout", format!("[{CLEAN_RUN}, {cut}]")),
+            (
+                "rerun earlier",
+                format!(
+                    "[{}, {failed}]",
+                    run_with("rerun-a", "passed", &[], &["[l2-4] L2 /a m"])
+                ),
+            ),
+        ] {
+            let breaches = compare(&baseline(BASE), &merged(&runs));
+            assert!(
+                breaches
+                    .iter()
+                    .any(|breach| matches!(breach, Breach::RunNotPassed { .. })),
+                "{case}: {breaches:?}"
+            );
+            assert!(
+                update(
+                    &baseline(BASE),
+                    &merged(&runs),
+                    Some(("D-1", &["install/desktop-1280"]))
+                )
+                .is_err(),
+                "{case}"
+            );
+        }
+        let rerun = run_with("rerun-a", "passed", &[], &["[l2-4] L2 /a m"]);
+        assert_eq!(
+            compare(&baseline(BASE), &merged(&format!("[{failed}, {rerun}]"))),
+            vec![],
+            "a failed test a later run passed"
+        );
+        let gate = cut.replacen(r#""engine""#, r#""lane": "gate", "engine""#, 1);
+        assert_eq!(
+            compare(&baseline(BASE), &merged(&format!("[{CLEAN_RUN}, {gate}]"))),
+            vec![],
+            "a gate run a full round reports for its time is not its measurement"
+        );
+    }
+
+    /// T41: a gate run's own `round.json` says how the run ended at the top.
+    #[test]
+    fn a_round_of_one_run_with_an_unexpected_failure_is_refused() {
+        let measured = round(
+            r#"{"lane": "full", "timing": {"status": "failed",
+              "unexpected": ["[l1] L1 x (failed, expected passed)"], "unexpected_tests": ["[l1] L1 x"]},
+              "scenarios": {"install/desktop-1280":
+              {"screen_only.actions": 3, "glance_cost.p95": 2.0, "layout_shift.max": 0.02}}}"#,
+        );
+        let breaches = compare(&baseline(BASE), &measured);
+        assert!(
+            matches!(breaches.as_slice(), [Breach::RunNotPassed { run, .. }] if run == "the round"),
+            "{breaches:?}"
+        );
+        let passed = round(
+            r#"{"timing": {"status": "passed"}, "scenarios": {"install/desktop-1280":
+              {"screen_only.actions": 3, "glance_cost.p95": 2.0, "layout_shift.max": 0.02}}}"#,
+        );
+        assert_eq!(compare(&baseline(BASE), &passed), vec![]);
+    }
+
+    /// T35 of the R-04 report review: a decision listed keys, so it took any later worse value of
+    /// a listed key. A list item `<scenario> <metric> <value>` takes that value and no other; a
+    /// key without a value, or a whole scenario, takes no worse value.
+    #[test]
+    fn a_decision_takes_a_worse_value_only_at_the_value_it_names() {
+        let measured = round(TWO_WORSE);
+        let (_, taken) = update(
+            &baseline(BASE),
+            &measured,
+            Some((
+                "D-3",
+                &[
+                    "install/desktop-1280 glance_cost.p95 2.5",
+                    "install/desktop-1280 screen_only.actions 4",
+                ],
+            )),
+        )
+        .expect("a decision that names both values takes both");
+        assert_eq!(taken.worse, 2);
+        for keys in [
+            &[
+                "install/desktop-1280 glance_cost.p95 2.4",
+                "install/desktop-1280 screen_only.actions 4",
+            ][..],
+            &[
+                "install/desktop-1280 glance_cost.p95",
+                "install/desktop-1280 screen_only.actions",
+            ][..],
+            &["install/desktop-1280"][..],
+        ] {
+            assert!(
+                update(&baseline(BASE), &measured, Some(("D-3", keys))).is_err(),
+                "{keys:?} took a value it does not name"
+            );
+        }
+    }
+
+    /// T35 with T27: a decision takes a rerun's value only when it names scenario, metric and
+    /// that value; else the worse of the runs is held.
+    #[test]
+    fn a_rerun_is_held_at_its_worse_value_unless_the_decision_names_the_value_it_takes() {
+        let keyed = |key: &str| Decision {
+            id: "R-05-shift".into(),
+            keys: BTreeSet::from([key.to_owned()]),
+        };
+        assert_eq!(
+            compare_with(
+                &baseline(SHIFT),
+                &round(RERUN),
+                Some(&keyed("/p@m/dark layout_shift.load 0"))
+            ),
+            vec![]
+        );
+        for key in [
+            "/p@m/dark layout_shift.load",
+            "/p@m/dark",
+            "/p@m/dark layout_shift.load 0.01",
+        ] {
+            let breaches = compare_with(&baseline(SHIFT), &round(RERUN), Some(&keyed(key)));
+            assert!(
+                matches!(breaches.as_slice(), [Breach::Worse { value, .. }] if (*value - 0.0253).abs() < 1e-12),
+                "{key}: {breaches:?}"
+            );
+        }
+    }
+
+    /// T36 of the R-04 report review: four values rose against R-03 inside their tolerance and
+    /// no line named them.
+    #[test]
+    fn a_worsening_inside_its_tolerance_is_named() {
+        let within = round(
+            r#"{"scenarios": {"install/desktop-1280":
+              {"screen_only.actions": 3, "glance_cost.p95": 2.09, "layout_shift.max": 0.02}}}"#,
+        );
+        assert_eq!(compare(&baseline(BASE), &within), vec![]);
+        let notes = within_tolerance(&baseline(BASE), &within, None);
+        assert_eq!(notes.len(), 1, "{notes:?}");
+        assert!(
+            notes[0].contains("install/desktop-1280 glance_cost.p95")
+                && notes[0].contains("2.09")
+                && notes[0].contains("inside its tolerance"),
+            "{notes:?}"
+        );
+        let equal = round(
+            r#"{"scenarios": {"install/desktop-1280":
+              {"screen_only.actions": 3, "glance_cost.p95": 2.0, "layout_shift.max": 0.02}}}"#,
+        );
+        assert_eq!(
+            within_tolerance(&baseline(BASE), &equal, None),
+            Vec::<String>::new()
         );
     }
 

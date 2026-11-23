@@ -103,6 +103,17 @@ test('L1 coverage: a task run that never ran is unmeasured and fails gates 3 and
   expect(s.gates.gate3_unmissable_completion.result).toBe('fail');
 });
 
+// T34 of the R-04 report review: the page load is measured under the first theme the L2 test
+// shows (light), and the value was filed under the first configuration after the merge sorted
+// them, dark.
+test('L1 metrics: the layout shift of the page load is filed under the theme it was measured in (T34)', () => {
+  const rec = { ...record('/a', 'd', [config('d', 'light'), config('d', 'dark')]), layoutShift: 0.05, loadTheme: 'light' };
+  const s = summarize([rec], [], [l2('/a', 'd')]);
+  expect(s.scenarios['/a@d/light']['layout_shift.load']).toBe(0.05);
+  expect(s.scenarios['/a@d/dark']['layout_shift.load']).toBeUndefined();
+  expect(s.scenarios['/a@d/light']['motion.running']).toBe(0);
+});
+
 test('L1 coverage: measured-only viewports report their coverage with a denominator', () => {
   const measured = [record('/a', 'w', [config('w', 'dark', { gating: false })])];
   const expected: Expected[] = [

@@ -51,6 +51,8 @@ export interface L2Record {
   kind: string;
   viewport: string;
   layoutShift: number;
+  // The theme the page loaded in, which `layoutShift` and `motion` were measured under.
+  loadTheme?: string;
   motion: { running: string[]; smoothScroll: boolean };
   blocked: Record<string, number>;
   configs: L2Config[];
@@ -108,6 +110,11 @@ export interface RunTiming {
   // Tests whose outcome was not the expected one: a new failure, or an open finding's asset that
   // passed. Any entry makes the run exit 1.
   unexpected?: string[];
+  // The same tests as `[<project>] <title>`, and every test whose outcome was the expected one (it
+  // passed, or an open finding's asset failed as its record states): the ratchet takes a failed
+  // run only when a later run of the round passed each test it failed (T41 of the R-04 review).
+  unexpected_tests?: string[];
+  passed?: string[];
   // The host's 1, 5 and 15 minute load averages when the run began and when it ended, so a
   // round's notes can cite the load of a run from round.json (T33 of the R-03 report review).
   load?: { before: number[]; after: number[] };
@@ -193,8 +200,9 @@ export function summarize(l2In: L2Record[], l3In: L3Record[], expected: Expected
       'always_visible.failures': c.alwaysVisible.filter(gated).length,
       'axe.serious_critical_rules': new Set(axe.map((v) => v.id)).size,
       'axe.serious_critical_nodes': sum(axe.map((v) => v.nodes)),
-      // The page load is measured once per test, under its first theme.
-      ...(c === rec.configs[0] ? { 'layout_shift.load': r(rec.layoutShift), 'motion.running': rec.motion.running.length + (rec.motion.smoothScroll ? 1 : 0) } : {}),
+      // The page load is measured once per test, under the theme it loaded in (`loadTheme`; T34 of
+      // the R-04 review: it was filed under the first configuration, dark, while it loaded light).
+      ...((rec.loadTheme ? c.theme === rec.loadTheme : c === rec.configs[0]) ? { 'layout_shift.load': r(rec.layoutShift), 'motion.running': rec.motion.running.length + (rec.motion.smoothScroll ? 1 : 0) } : {}),
     };
   }
 
@@ -352,6 +360,8 @@ export default class UxReporter implements Reporter {
   private workers = 0;
   private known: string[] = [];
   private unexpected: string[] = [];
+  private unexpectedTests: string[] = [];
+  private passed: string[] = [];
   private loadBefore: number[] = [];
 
   onBegin(config: FullConfig, suite: Suite): void {
@@ -369,8 +379,12 @@ export default class UxReporter implements Reporter {
     // Retries are 0, so each test ends once and its outcome is final.
     // An asset that failed with a message its findings do not state says which (core/findings.ts).
     const why = [...result.annotations, ...test.annotations].find((a) => a.type === 'new failure')?.description;
-    if (test.outcome() === 'unexpected') this.unexpected.push(`[${project}] ${test.title} (${result.status}, expected ${test.expectedStatus})${why ? `: ${why}` : ''}`);
-    else if (test.expectedStatus === 'failed' && result.status === 'failed') this.known.push(`[${project}] ${test.title}`);
+    const name = `[${project}] ${test.title}`;
+    if (test.outcome() === 'unexpected') {
+      this.unexpected.push(`${name} (${result.status}, expected ${test.expectedStatus})${why ? `: ${why}` : ''}`);
+      this.unexpectedTests.push(name);
+    } else if (test.outcome() === 'expected') this.passed.push(name);
+    if (test.expectedStatus === 'failed' && result.status === 'failed') this.known.push(`[${project}] ${test.title}`);
     for (const a of result.attachments) {
       if (!a.body) continue;
       if (a.name === 'ux-l2') this.l2.push(JSON.parse(a.body.toString()));
@@ -402,6 +416,8 @@ export default class UxReporter implements Reporter {
       slowest,
       known_failures: [...this.known].sort(),
       unexpected: [...this.unexpected].sort(),
+      unexpected_tests: [...this.unexpectedTests].sort(),
+      passed: [...this.passed].sort(),
       load: { before: this.loadBefore, after: hostLoad() },
     };
     const raw: Raw = { lane: process.env.UX_LANE ?? 'gate', engine: engine(root), expected: this.expected, l2: this.l2, l3: this.l3, measured: this.measured, timing };
