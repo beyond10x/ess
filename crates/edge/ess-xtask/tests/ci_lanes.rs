@@ -5922,10 +5922,14 @@ fn the_slow_decision_is_every_changed_path_in_the_skippable_list() {
         ("AGENTS.md only", &["AGENTS.md"], "false"),
         (
             "a UI path and docs",
-            &["crates/ui/a.rs", "docs/x.md"],
+            &["crates/ui/ess-ui/src/lib.rs", "docs/x.md"],
             "false",
         ),
-        ("an infrastructure path", &["crates/infra/a.rs"], "false"),
+        (
+            "an infrastructure path",
+            &["crates/infra/infra-spec/src/lib.rs"],
+            "false",
+        ),
         (
             "an ess-xtask path",
             &["crates/edge/ess-xtask/src/main.rs"],
@@ -5937,7 +5941,11 @@ fn the_slow_decision_is_every_changed_path_in_the_skippable_list() {
             &[".engineering/planning/story/x.md"],
             "false",
         ),
-        ("a verifier path", &["crates/verify/a.rs"], "true"),
+        (
+            "a verifier path",
+            &["crates/verify/ess-diff/src/lib.rs"],
+            "true",
+        ),
         (
             "a reproduction a test reads",
             &[".engineering/repro/501/system.yaml"],
@@ -5953,7 +5961,11 @@ fn the_slow_decision_is_every_changed_path_in_the_skippable_list() {
         ("the workflow", &[".github/workflows/ci.yml"], "true"),
         ("the Taskfile", &["Taskfile.yml"], "true"),
         ("the lock file", &["Cargo.lock"], "true"),
-        ("a generator path", &["crates/generate/a.rs"], "true"),
+        (
+            "a generator path",
+            &["crates/generate/ess-gen/src/lib.rs"],
+            "true",
+        ),
         ("an example", &["examples/a.yaml"], "true"),
         (
             "a skippable and another path",
