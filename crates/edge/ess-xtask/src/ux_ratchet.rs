@@ -188,9 +188,12 @@ pub(crate) struct RunOutcome {
     /// The same tests as `[<project>] <title>`.
     #[serde(default)]
     pub unexpected_tests: Vec<String>,
-    /// Every test that passed, as `[<project>] <title>`.
+    /// Every test that passed, as `[<project>] <title>`; a known failure is not one (T46).
     #[serde(default)]
     pub passed: Vec<String>,
+    /// Every test that ended as its open finding states, as `[<project>] <title>`.
+    #[serde(default)]
+    pub known_failures: Vec<String>,
 }
 
 /// One run's value of a scenario and metric that more than one run measured.
@@ -603,6 +606,13 @@ fn not_passed(round: &Round) -> Vec<Breach> {
     };
     let runs: Vec<&RunEngine> = round.runs.iter().filter(|run| measures(run)).collect();
     let mut out = Vec::new();
+    // T47: a round that says neither how its runs ended nor how it ended is not judged as passed.
+    if round.runs.is_empty() && round.timing.is_none() {
+        out.push(Breach::RunNotPassed {
+            run: "the round".to_owned(),
+            why: "it names no run and no `timing`, so it does not say how it ended".to_owned(),
+        });
+    }
     if let Some(timing) = &round.timing {
         let mut why = Vec::new();
         if timing.status != "passed" {
@@ -623,12 +633,19 @@ fn not_passed(round: &Round) -> Vec<Breach> {
     }
     for (index, run) in runs.iter().enumerate() {
         let Some(timing) = &run.timing else {
+            out.push(Breach::RunNotPassed {
+                run: run.name.clone(),
+                why: "it has no `timing`, so it does not say how it ended".to_owned(),
+            });
             continue;
         };
+        // A later run rescues a failed test when it passed it or ended it as its open finding
+        // states (T46): `passed` holds no known failure.
         let later: BTreeSet<&str> = runs[index + 1..]
             .iter()
             .filter_map(|later| later.timing.as_ref())
-            .flat_map(|later| later.passed.iter().map(String::as_str))
+            .flat_map(|later| later.passed.iter().chain(&later.known_failures))
+            .map(String::as_str)
             .collect();
         let why = match timing.status.as_str() {
             "passed" | "failed" if timing.unexpected.len() != timing.unexpected_tests.len() => {
@@ -1669,7 +1686,7 @@ pub(crate) fn run(
     if update_baseline {
         let (next, taken) =
             update_with(&baseline, &measured, decision.as_ref()).map_err(|refused| {
-                anyhow::anyhow!("the baseline was not updated:\n{}", lines(&refused))
+                anyhow::anyhow!("{report}the baseline was not updated:\n{}", lines(&refused))
             })?;
         baseline = next;
         let _ = writeln!(
@@ -1690,27 +1707,12 @@ pub(crate) fn run(
     }
     let findings = check_findings(root)?;
     if !breaches.is_empty() || !findings.is_empty() {
-        let mut message = String::new();
-        if !breaches.is_empty() {
-            let _ = writeln!(
-                message,
-                "ratchet: {} breach(es)\n{}",
-                breaches.len(),
-                lines(&breaches)
-            );
-        }
-        if !findings.is_empty() {
-            let _ = writeln!(
-                message,
-                "findings: {} problem(s)\n{}",
-                findings.len(),
-                findings.join("\n")
-            );
-        }
-        if update_baseline {
-            message.push_str("the baseline file was not written\n");
-        }
-        bail!(message.trim_end().to_owned());
+        bail!(failure_message(
+            &report,
+            &breaches,
+            &findings,
+            update_baseline
+        ));
     }
     if update_baseline {
         fs::write(&baseline_path, to_text(&baseline)?)
@@ -1724,6 +1726,37 @@ pub(crate) fn run(
         baseline.scenarios.len()
     );
     Ok(report)
+}
+
+/// What the command prints when it fails: the tolerance notes written so far (T48), the breaches,
+/// the findings' problems, and whether the baseline file was left unwritten.
+fn failure_message(
+    report: &str,
+    breaches: &[Breach],
+    findings: &[String],
+    update_baseline: bool,
+) -> String {
+    let mut message = report.to_owned();
+    if !breaches.is_empty() {
+        let _ = writeln!(
+            message,
+            "ratchet: {} breach(es)\n{}",
+            breaches.len(),
+            lines(breaches)
+        );
+    }
+    if !findings.is_empty() {
+        let _ = writeln!(
+            message,
+            "findings: {} problem(s)\n{}",
+            findings.len(),
+            findings.join("\n")
+        );
+    }
+    if update_baseline {
+        message.push_str("the baseline file was not written\n");
+    }
+    message.trim_end().to_owned()
 }
 
 fn lines(breaches: &[Breach]) -> String {
@@ -1757,6 +1790,10 @@ mod tests {
                 r#"{"engine": {"digest": "d", "commit": "c", "dirty": false}, "#,
                 1,
             );
+        }
+        // A round says how it ended (T47): one of one run by its `timing`, a merged one by its runs.
+        if !json.contains("\"runs\"") && !json.contains("\"timing\"") {
+            json = json.replacen('{', r#"{"timing": {"status": "passed"}, "#, 1);
         }
         serde_json::from_str(&json).expect("canned round parses")
     }
@@ -2050,8 +2087,8 @@ mod tests {
         measured
     }
 
-    const CLEAN_RUN: &str =
-        r#"{"name": "slow-l2-1", "engine": {"digest": "d", "commit": "c", "dirty": false}}"#;
+    const CLEAN_RUN: &str = r#"{"name": "slow-l2-1", "engine": {"digest": "d", "commit": "c", "dirty": false},
+          "timing": {"status": "passed"}}"#;
 
     /// T26 of the R-03 report review: R-03 was measured by engine `bc3e06f44faa130b` while the
     /// committed tree's engine was `93f932aacd3f4a09`, and nothing compared the two.
@@ -3030,6 +3067,68 @@ mod tests {
             within_tolerance(&baseline(BASE), &equal, None),
             Vec::<String>::new()
         );
+    }
+
+    /// T47 (and T37) of the R-05 report review: a round that names no run and no `timing`, or a run
+    /// without its `timing`, was not judged, so a `round.json` written without them was taken.
+    #[test]
+    fn a_round_or_run_that_does_not_say_how_it_ended_is_refused() {
+        let silent: Round = serde_json::from_str(
+            r#"{"coverage": {"unmeasured": []},
+              "engine": {"digest": "d", "commit": "c", "dirty": false},
+              "scenarios": {"install/desktop-1280":
+              {"screen_only.actions": 3, "glance_cost.p95": 2.0, "layout_shift.max": 0.02}}}"#,
+        )
+        .expect("canned round parses");
+        let breaches = compare(&baseline(BASE), &silent);
+        assert!(
+            matches!(breaches.as_slice(), [Breach::RunNotPassed { run, .. }] if run == "the round"),
+            "no runs, no timing: {breaches:?}"
+        );
+        let untimed = merged(
+            r#"[{"name": "slow-l2-2", "engine": {"digest": "d", "commit": "c", "dirty": false}}]"#,
+        );
+        let breaches = compare(&baseline(BASE), &untimed);
+        assert!(
+            matches!(breaches.as_slice(), [Breach::RunNotPassed { run, .. }] if run == "slow-l2-2"),
+            "a run without timing: {breaches:?}"
+        );
+    }
+
+    /// T46 of the R-05 report review: `passed` held the known failures too, and the rescue of an
+    /// earlier failure read it. The reporter's `passed` now holds only tests that passed, so a test
+    /// a later run ended as its open finding states (`known_failures`) still rescues it.
+    #[test]
+    fn a_later_run_that_ended_a_test_as_its_finding_states_rescues_it() {
+        let failed = run_with("slow-l2-1", "failed", &["[l2-1] L2 /ess/ m"], &[]);
+        let known = r#"{"name": "rerun-a", "engine": {"digest": "d", "commit": "c", "dirty": false},
+              "timing": {"status": "passed", "known_failures": ["[l2-1] L2 /ess/ m"]}}"#;
+        assert_eq!(
+            compare(&baseline(BASE), &merged(&format!("[{failed}, {known}]"))),
+            vec![]
+        );
+    }
+
+    /// T48 of the R-05 report review: the notes of a worsening inside its tolerance were printed
+    /// only when the ratchet passed, so a failing run named none of them.
+    #[test]
+    fn a_failing_run_prints_its_tolerance_notes() {
+        let notes = "ux ratchet: note: install/desktop-1280 glance_cost.p95 2.09 is worse \
+                     than the baseline 2 inside its tolerance\n";
+        let message = failure_message(
+            notes,
+            &[Breach::Missing {
+                scenario: "a/b".into(),
+                metric: "m".into(),
+            }],
+            &[],
+            false,
+        );
+        assert!(
+            message.contains("note: install/desktop-1280 glance_cost.p95 2.09"),
+            "{message}"
+        );
+        assert!(message.contains("a/b m: lost coverage"), "{message}");
     }
 
     /// The repository root: the first ancestor of this crate that holds the findings directory.

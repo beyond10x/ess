@@ -13,7 +13,7 @@
 // "held by" a file (the ratchet's baseline) is held by that file's values, not by the test's result,
 // so it is not an expected failure. Generic: the findings directory and the root that asset paths
 // are relative to are the caller's.
-import { readdirSync, readFileSync } from 'node:fs';
+import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import type { TestInfo, TestType } from '@playwright/test';
 
@@ -75,6 +75,64 @@ export function knownFailures(findingsDir: string): KnownFailure[] {
     }
   }
   return [...byTest.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([, v]) => v);
+}
+
+// The numbers of a finding record are written by the round stage, not by hand (T49 of the R-05
+// report review): a record names what it follows in `round_values` (`<scenario> <metric>`, `;`
+// between them; `runs/<run> wall_s` is a run's wall time with its load), and the stage writes this
+// round's value of each between the two markers, replacing what stood there.
+export const ROUND_VALUES_BEGIN = '<!-- round values: written by the round stage from round.json, not by hand -->';
+export const ROUND_VALUES_END = '<!-- end of round values -->';
+
+interface ValuesRound {
+  scenarios: Record<string, Record<string, number>>;
+  runs?: Array<{ name: string; timing?: { wall_s?: number; load?: { before: number[]; after: number[] } } }>;
+}
+
+function roundValue(round: ValuesRound, scenario: string, metric: string): string {
+  const run = /^runs\/(.+)$/.exec(scenario)?.[1];
+  if (run !== undefined) {
+    const timing = round.runs?.find((r) => r.name === run)?.timing;
+    if (metric !== 'wall_s' || timing?.wall_s === undefined) return 'not measured';
+    return timing.load ? `${timing.wall_s} (1-minute load ${timing.load.before[0]} before, ${timing.load.after[0]} after)` : String(timing.wall_s);
+  }
+  const value = round.scenarios[scenario]?.[metric];
+  return value === undefined ? 'not measured' : String(value);
+}
+
+// The record with this round's block written, or null when the record follows no value.
+export function roundValuesBlock(text: string, roundName: string, round: ValuesRound): string | null {
+  const keys = (frontMatter(text).round_values ?? '')
+    .split(';')
+    .map((k) => k.trim().split(/\s+/))
+    .filter((k) => k.length === 2);
+  if (keys.length === 0) return null;
+  const block = [
+    ROUND_VALUES_BEGIN,
+    `## Values of round ${roundName}`,
+    '',
+    '| scenario | metric | value |',
+    '|---|---|---|',
+    ...keys.map(([scenario, metric]) => `| ${scenario} | ${metric} | ${roundValue(round, scenario, metric)} |`),
+    ROUND_VALUES_END,
+  ].join('\n');
+  const begin = text.indexOf(ROUND_VALUES_BEGIN);
+  const end = text.indexOf(ROUND_VALUES_END);
+  if (begin >= 0 && end > begin) return text.slice(0, begin) + block + text.slice(end + ROUND_VALUES_END.length);
+  return `${text.trimEnd()}\n\n${block}\n`;
+}
+
+// Writes the block of every record that follows a value; returns the ids of the records written.
+export function writeFindingValues(findingsDir: string, roundName: string, round: ValuesRound): string[] {
+  const written: string[] = [];
+  for (const file of readdirSync(findingsDir).filter((f) => /^UXF-.*\.md$/.test(f)).sort()) {
+    const text = readFileSync(join(findingsDir, file), 'utf8');
+    const next = roundValuesBlock(text, roundName, round);
+    if (next === null || next === text) continue;
+    writeFileSync(join(findingsDir, file), next);
+    written.push(file.replace(/\.md$/, ''));
+  }
+  return written;
 }
 
 // The error messages of a failed asset that no failure pattern of its findings matches (T28 of the

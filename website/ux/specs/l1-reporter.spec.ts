@@ -1,12 +1,13 @@
 // L1: the reporter counts what was measured, never what was not. Canned records, no browser.
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, test } from '@playwright/test';
+import type { FullConfig, FullResult, Suite, TestCase, TestResult } from '@playwright/test/reporter';
 import { FINDINGS, REPOSITORY } from '../adapter';
 import { holdKnownFailures } from '../core/findings';
 import { engineDigest } from '../core/engine';
-import { budgetLine, mergeRecords, summarize, type Expected, type L2Config, type L2Record, type L3Record, type Raw } from '../core/reporter';
-import { buildRound, committedBaseline, mergeRaws, notesNumbersMissing } from '../core/round';
+import UxReporter, { budgetLine, mergeRecords, summarize, type Expected, type L2Config, type L2Record, type L3Record, type Raw } from '../core/reporter';
+import { buildRound, committedBaseline, lastRoundCell, mergeRaws, previousGroupValue, proseNumbers } from '../core/round';
 
 holdKnownFailures(test, FINDINGS, REPOSITORY);
 
@@ -25,6 +26,7 @@ const record = (path: string, viewport: string, configs: L2Config[]): L2Record =
   kind: 'doc',
   viewport,
   layoutShift: 0,
+  loadTheme: 'light',
   motion: { running: [], smoothScroll: false },
   blocked: {},
   configs,
@@ -179,7 +181,7 @@ test('L1 round: a merged round keeps the engine of every run, and a dirty or unk
 // T27: a rerun replaced the first run's value of a configuration and nothing kept the first one
 // (layout_shift.load 0.0253, then 0.0000423, and round.json held 0).
 test('L1 round: a value a rerun replaced is kept beside the value that replaced it', () => {
-  const shifted = (shift: number) => ({ ...record('/p', 'm', [config('m', 'dark'), config('m', 'light')]), layoutShift: shift });
+  const shifted = (shift: number) => ({ ...record('/p', 'm', [config('m', 'dark'), config('m', 'light')]), layoutShift: shift, loadTheme: 'dark' });
   const round = roundOf([
     { name: 'slow-l2-4', raw: rawOf({ digest: 'd', commit: 'c', dirty: false }, [shifted(0.0253)]) },
     { name: 'rerun-shift', raw: rawOf({ digest: 'd', commit: 'c', dirty: false }, [shifted(0.0000423)]) },
@@ -195,23 +197,67 @@ test('L1 round: a value a rerun replaced is kept beside the value that replaced 
   });
 });
 
-// T33 of the R-03 report review: the report's hand-written notes held numbers neither round.json nor
-// the logs gave. A number of the notes is one round.json holds, as a value or inside a string; a
-// number that is part of a name (UXF-006, R-03, gate-4, mobile-390) or in a code span is not a
-// number of the notes. A run records the host load before and after it, so the notes can cite it.
-test('L1 report: the hand-written notes carry no number round.json does not hold (T33)', () => {
-  const round = {
-    runs: [{ name: 'gate-4', timing: { wall_s: 45.1, load: { before: [53.48, 52.1, 40.03], after: [50.19, 51.2, 40.5] } } }],
-    scenarios: { '/p@m/dark': { 'layout_shift.load': 0.0253 } },
-    gates: { gate4_screen_only: { over_limit: ['ess-31-release/desktop-1280: 25 of 6'] } },
-  };
+// T49 of the R-05 report review (after T33 of R-03): the check took a number when the same number
+// stood anywhere in round.json, and read no spelled number ("Fifteen more", "nine jobs"). The notes
+// are prose: a digit or a spelled number is refused wherever it stands, except inside a quoted
+// finding id or a path; every number of the round is printed by the round stage from round.json.
+test('L1 report: a hand-written note is prose: digits and spelled numbers are refused, a finding id or a path is not (T49)', () => {
   const notes = [
-    '- Host load. `gate-4` took 45.1 s at a load of 53.48 before and 50.19 after it (UXF-025, R-03).',
-    '- `ess/31` at mobile-390 and l2-1: 25 actions of 6; layout shift 0.0253.',
-    '- Three runs were cut at 119 s, and the day cost 1,900 minutes.',
+    '- `gate-6` started at a load of 133.34 and Fifteen more were worse (`UXF-025`).',
+    "- The slow lane's nine jobs; see `../R-05/decision.md` and [the record](../../findings/UXF-025.md).",
+    '- `install-linux-x86_64/mobile-390` took less than before, and `UXF-016` is closed.',
   ].join('\n');
-  expect(notesNumbersMissing(notes, round)).toEqual(['119', '1,900']);
-  expect(notesNumbersMissing('No number here, only `R-04` and gate-5.', round)).toEqual([]);
+  expect(proseNumbers(notes)).toEqual(['gate-6', '133.34', 'Fifteen', 'nine']);
+  expect(proseNumbers('The gate held its budget (`UXF-025`, `website/ux/adapter.ts`).')).toEqual([]);
+});
+
+// T44 of the R-05 report review: the last-round column printed 0 where the last round held the
+// scenarios but no value under the key (R-04 filed the page-load shift under another theme).
+test('L1 report: the last-round column says "not measured" where the last round has no value under the key (T44)', () => {
+  expect(lastRoundCell(undefined)).toBe('not measured');
+  expect(lastRoundCell(0)).toBe('0');
+  expect(previousGroupValue({ '/a@d/light': { 'layout_shift.load': 0.01 } }, 'd/dark', 'layout_shift.load')).toBeUndefined();
+  expect(previousGroupValue({ '/a@d/dark': { 'motion.running': 0 } }, 'd/dark', 'layout_shift.load')).toBeUndefined();
+  expect(previousGroupValue({ '/a@d/dark': { 'layout_shift.load': 0.01 }, '/b@d/dark': { 'layout_shift.load': 0.02 } }, 'd/dark', 'layout_shift.load')).toBeCloseTo(0.03);
+});
+
+// T45 of the R-05 report review: a record without the theme it loaded in had its page-load values
+// filed under its first configuration, the defect T34 fixed.
+test('L1 metrics: a page-load value without the theme it loaded in is refused (T45)', () => {
+  const themeless = { ...record('/a', 'd', [config('d', 'light'), config('d', 'dark')]), loadTheme: undefined };
+  expect(() => summarize([themeless], [], [l2('/a', 'd')])).toThrow(/loadTheme/);
+});
+
+// T46 of the R-05 report review: `passed` held the tests that failed as an open finding states, and
+// no test read the reporter's lists. Driven through the reporter with canned tests, no browser.
+test('L1 reporter: passed lists only tests that passed; a known failure and a new one are listed apart (T46)', () => {
+  const testCase = (title: string, expectedStatus: TestResult['status'], status: TestResult['status']) => ({
+    test: {
+      title,
+      expectedStatus,
+      annotations: [],
+      parent: { project: () => ({ name: 'l2' }) },
+      outcome: () => (status === expectedStatus ? 'expected' : 'unexpected'),
+    } as unknown as TestCase,
+    result: { status, duration: 10, startTime: new Date(), annotations: [], attachments: [] } as unknown as TestResult,
+  });
+  const out = test.info().outputPath('reporter');
+  const before = process.env.UX_OUT;
+  process.env.UX_OUT = out;
+  try {
+    const reporter = new UxReporter();
+    reporter.onBegin({ workers: 1, globalTimeout: 0 } as unknown as FullConfig, { allTests: () => [] } as unknown as Suite);
+    for (const c of [testCase('passes', 'passed', 'passed'), testCase('known', 'failed', 'failed'), testCase('new', 'passed', 'failed')]) reporter.onTestEnd(c.test, c.result);
+    reporter.onEnd({ status: 'failed' } as FullResult);
+  } finally {
+    if (before === undefined) delete process.env.UX_OUT;
+    else process.env.UX_OUT = before;
+  }
+  const timing = (JSON.parse(readFileSync(join(out, 'raw.json'), 'utf8')) as Raw).timing;
+  expect(timing.passed).toEqual(['[l2] passes']);
+  expect(timing.known_failures).toEqual(['[l2] known']);
+  expect(timing.unexpected_tests).toEqual(['[l2] new']);
+  expect(timing.unexpected).toEqual(['[l2] new (failed, expected passed)']);
 });
 
 // UXF-025, R-06: the host judges a test budget at a 1-minute load of 60 or less, so the step

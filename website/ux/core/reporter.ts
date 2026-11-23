@@ -214,6 +214,10 @@ export function summarize(l2In: L2Record[], l3In: L3Record[], expected: Expected
   }
 
   const scenarios: Record<string, Record<string, number>> = {};
+  // A page-load value without the theme it loaded in is refused (T45 of the R-05 report review):
+  // the fallback to the first configuration filed it under dark, the defect T34 fixed.
+  const themeless = l2.filter((rec) => rec.configs.some((c) => c.gating) && !rec.loadTheme).map((rec) => `${rec.path}@${rec.viewport}`);
+  if (themeless.length > 0) throw new Error(`a page-load value without the theme it loaded in (loadTheme) is refused: ${themeless.join(', ')}`);
   for (const { rec, c, key } of configs) {
     const axe = (c.axe ?? []).filter(serious);
     scenarios[key] = {
@@ -224,7 +228,7 @@ export function summarize(l2In: L2Record[], l3In: L3Record[], expected: Expected
       'axe.serious_critical_nodes': sum(axe.map((v) => v.nodes)),
       // The page load is measured once per test, under the theme it loaded in (`loadTheme`; T34 of
       // the R-04 review: it was filed under the first configuration, dark, while it loaded light).
-      ...((rec.loadTheme ? c.theme === rec.loadTheme : c === rec.configs[0]) ? { 'layout_shift.load': r(rec.layoutShift), 'motion.running': rec.motion.running.length + (rec.motion.smoothScroll ? 1 : 0) } : {}),
+      ...(c.theme === rec.loadTheme ? { 'layout_shift.load': r(rec.layoutShift), 'motion.running': rec.motion.running.length + (rec.motion.smoothScroll ? 1 : 0) } : {}),
     };
   }
 
@@ -407,7 +411,7 @@ export default class UxReporter implements Reporter {
     if (test.outcome() === 'unexpected') {
       this.unexpected.push(`${name} (${result.status}, expected ${test.expectedStatus})${why ? `: ${why}` : ''}`);
       this.unexpectedTests.push(name);
-    } else if (test.outcome() === 'expected') this.passed.push(name);
+    } else if (test.outcome() === 'expected' && result.status === 'passed') this.passed.push(name);
     if (test.expectedStatus === 'failed' && result.status === 'failed') this.known.push(`[${project}] ${test.title}`);
     for (const a of result.attachments) {
       if (!a.body) continue;

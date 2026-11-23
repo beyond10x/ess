@@ -4,8 +4,8 @@
 // result (T39).
 import { mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { expect, test } from '@playwright/test';
-import { assetTests, knownFailures, settleKnownFailure, unmatchedErrors } from '../core/findings';
+import { expect, test, type TestInfo, type TestType } from '@playwright/test';
+import { assetTests, holdKnownFailures, knownFailures, roundValuesBlock, settleKnownFailure, unmatchedErrors } from '../core/findings';
 import { findingRecord as record } from './fixtures';
 
 test('L1 known failures: an open finding asset is an expected failure; an accepted, closed, baseline-held or unnamed one is not', ({}, testInfo) => {
@@ -66,6 +66,61 @@ test('L1 known failures: an asset failing with its stated error and an unstated 
   const knownOnly = settleKnownFailure(entry!, result.status, result.errors.slice(0, 1));
   expect(knownOnly.newFailure).toBeUndefined();
   expect(exitOf(knownOnly), 'the known error alone').toBe(0);
+});
+
+// T39, R-06 (T50 of the R-05 report review): the canned test above calls the rule, not the hooks
+// that apply it. This one runs the hooks holdKnownFailures installs on a canned test, as Playwright
+// would: it is red on the code before T28's fix, whose hooks never took the mark back.
+test('L1 known failures: the hooks make an asset failing with a stated and an unstated error a new failure, and hold it with the stated one alone (T39)', ({}, testInfo) => {
+  const dir = testInfo.outputPath('findings');
+  mkdirSync(dir, { recursive: true });
+  const spec = 'website/ux/specs/l2-layout.spec.ts';
+  const title = 'L2 /ess/ mobile-390';
+  writeFileSync(join(dir, 'UXF-009.md'), record('UXF-009', 'open', `${spec} :: ${title}`, 'truncation mobile-390/\\w+: div\\.b10x-terminal__bar'));
+  type Hook = (fixtures: object, info: TestInfo) => void;
+  const hooks: Hook[] = [];
+  const canned = { beforeEach: (hook: Hook) => hooks.push(hook), afterEach: (hook: Hook) => hooks.push(hook) };
+  holdKnownFailures(canned as unknown as TestType<any, any>, dir, '/repository');
+  const exitOf = (errors: string[]) => {
+    const info = {
+      file: `/repository/${spec}`,
+      title,
+      status: 'failed',
+      expectedStatus: 'passed',
+      errors: errors.map((message) => ({ message })),
+      annotations: [] as Array<{ type: string; description?: string }>,
+      fail(condition: boolean) {
+        if (condition) this.expectedStatus = 'failed';
+      },
+    };
+    for (const hook of hooks) hook({}, info as unknown as TestInfo);
+    return info.expectedStatus === info.status ? 0 : 1;
+  };
+  const known = 'Error: hard gate\nReceived: "truncation mobile-390/dark: div.b10x-terminal__bar > span"';
+  const unknown = 'page.goto: net::ERR_CONNECTION_REFUSED at http://127.0.0.1:4391/ess/';
+  expect(exitOf([known, unknown]), 'a stated and an unstated error in one test').toBe(1);
+  expect(exitOf([known]), 'the stated error alone').toBe(0);
+});
+
+// T49 of the R-05 report review: the numbers of a finding record were typed by hand, and eight of
+// them were wrong. A record names the values it follows (`round_values`), and the round stage
+// writes this round's value of each between the round-values markers.
+test('L1 findings: the round stage writes the values a record follows from round.json, between its markers (T49)', () => {
+  const text = (fields: string, body: string) => `---\nid: UXF-013\nstatus: open\n${fields}---\n\n# UXF-013\n\nProse.\n${body}`;
+  const round = {
+    scenarios: { 'first-conformance-run/mobile-390': { 'screen_only.actions': 3 } },
+    runs: [{ name: 'gate-1', timing: { wall_s: 61.2, load: { before: [44.1, 1, 1], after: [50.3, 1, 1] } } }],
+  };
+  const fields = 'round_values: first-conformance-run/mobile-390 screen_only.actions; limitations/mobile-390 screen_only.actions; runs/gate-1 wall_s\n';
+  const written = roundValuesBlock(text(fields, ''), 'R-06', round);
+  expect(written).toContain('| first-conformance-run/mobile-390 | screen_only.actions | 3 |');
+  expect(written).toContain('| limitations/mobile-390 | screen_only.actions | not measured |');
+  expect(written).toContain('| runs/gate-1 | wall_s | 61.2 (1-minute load 44.1 before, 50.3 after) |');
+  expect(written).toContain('## Values of round R-06');
+  // A second write replaces the block; what a hand wrote inside it does not survive.
+  const tampered = written!.replace('| 3 |', '| 4 |');
+  expect(roundValuesBlock(tampered, 'R-06', round)).toBe(written);
+  expect(roundValuesBlock(text('', ''), 'R-06', round), 'a record that follows no value is left alone').toBeNull();
 });
 
 // Every open record states its failure pattern: a regular expression where its asset is an

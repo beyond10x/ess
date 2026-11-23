@@ -172,6 +172,18 @@ const sumPhases = (rec: L2Record) => Object.values(rec.phases ?? {}).reduce((n, 
 
 const fmt = (v: number | undefined) => (v === undefined ? '–' : Number.isInteger(v) ? String(v) : v.toFixed(3).replace(/0+$/, '').replace(/\.$/, ''));
 
+// The last round's cell: "not measured" where the last round holds no value under the key (T44
+// of the R-05 report review: it printed 0, so a re-keyed metric read as a rise from 0).
+export const lastRoundCell = (v: number | undefined) => (v === undefined ? 'not measured' : fmt(v));
+
+// The last round's page values of one viewport and theme summed for one metric, or undefined when
+// no page of the last round holds the metric under that key (T44).
+export function previousGroupValue(previous: Record<string, Record<string, number>> | undefined, key: string, metric: string): number | undefined {
+  if (!previous) return undefined;
+  const these = Object.entries(previous).filter(([s, v]) => s.startsWith('/') && s.endsWith(`@${key}`) && v[metric] !== undefined);
+  return these.length ? these.reduce((n, [, v]) => n + v[metric], 0) : undefined;
+}
+
 function table(head: string[], rows: Array<Array<string | number>>): string {
   const line = (cells: Array<string | number>) => `| ${cells.map((c) => String(c).replace(/\|/g, '\\|')).join(' | ')} |`;
   return [line(head), line(head.map(() => '---')), ...rows.map(line)].join('\n');
@@ -350,22 +362,17 @@ export function writeReport(dir: string, m: MeasuredRound, x: ReportExtras): voi
     for (const [k, v] of Object.entries(values)) group[k] = (group[k] ?? 0) + v;
     groups.set(key, group);
   }
-  const prevGroup = (key: string, metric: string) => {
-    const prev = x.previous?.scenarios;
-    if (!prev) return undefined;
-    const these = Object.entries(prev).filter(([s]) => s.startsWith('/') && s.endsWith(`@${key}`));
-    return these.length ? these.reduce((n, [, v]) => n + (v[metric] ?? 0), 0) : undefined;
-  };
+  const prevGroup = (key: string, metric: string) => previousGroupValue(x.previous?.scenarios, key, metric);
   const baseGroup = (key: string, metric: string) => {
     const these = Object.entries(x.baseline.scenarios).filter(([s]) => s.startsWith('/') && s.endsWith(`@${key}`));
     return these.length ? these.reduce((n, [, v]) => n + (v[metric]?.value ?? 0), 0) : undefined;
   };
   for (const [key, values] of [...groups.entries()].sort()) {
-    for (const [metric, value] of Object.entries(values)) rows.push([`pages @${key} (sum)`, metric, fmt(value), fmt(baseGroup(key, metric)), fmt(prevGroup(key, metric))]);
+    for (const [metric, value] of Object.entries(values)) rows.push([`pages @${key} (sum)`, metric, fmt(value), fmt(baseGroup(key, metric)), lastRoundCell(prevGroup(key, metric))]);
   }
   for (const [scenario, values] of tasks) {
     for (const [metric, value] of Object.entries(values)) {
-      rows.push([scenario, metric, fmt(value), fmt(x.baseline.scenarios[scenario]?.[metric]?.value), fmt(x.previous?.scenarios?.[scenario]?.[metric])]);
+      rows.push([scenario, metric, fmt(value), fmt(x.baseline.scenarios[scenario]?.[metric]?.value), lastRoundCell(x.previous?.scenarios?.[scenario]?.[metric])]);
     }
   }
   out.push(table(['scenario', 'key', 'this round', 'baseline', 'last round'], rows), '');
@@ -396,45 +403,39 @@ export function writeReport(dir: string, m: MeasuredRound, x: ReportExtras): voi
   out.push('- Recordings (rrweb): none; the screen-only user\'s states are in the runs\' raw.json.');
   out.push('- L4 keyed replay, L5 discoverability probe, L7 review agents: run by the coordinator after this report.', '');
   if (x.notes !== undefined) {
-    const missing = notesNumbersMissing(x.notes, m);
-    if (missing.length > 0) throw new Error(`notes.md holds numbers round.json does not: ${missing.join(', ')}; cite a value of round.json or drop the number`);
-    out.push('## Notes of the round (written by hand in notes.md; every number is one of round.json)', '', x.notes.trim(), '');
+    const numbers = proseNumbers(x.notes);
+    if (numbers.length > 0) throw new Error(`notes.md is prose only, and holds numbers: ${numbers.join(', ')}; a number of the round is one round.json holds, and the round stage prints it (T49)`);
+    out.push('## Notes of the round (written by hand in notes.md, prose only: every number of the round is in the tables above)', '', x.notes.trim(), '');
   }
   writeFileSync(`${dir}/report.md`, out.join('\n'));
 }
 
-// A number of the notes: digits, a thousands separator or a fraction allowed, not part of a name.
-// Part of a name: next to a letter, a digit, `-`, `_`, `/`, `.`, `@` or `#` (UXF-006, R-03,
-// gate-4, mobile-390, l2-1, ess/31), or inside a code span.
-const NOTE_NUMBER = /(?<![\w\-/.@#])\d{1,3}(?:,\d{3})+(?:\.\d+)?(?![\w\-/@]|\.\d)|(?<![\w\-/.@#])\d+(?:\.\d+)?(?![\w\-/@]|\.\d)/g;
-const ANY_NUMBER = /\d+(?:\.\d+)?/g;
+// A hand-written note of a round is prose only (T49, T38 of the R-05 report review): every
+// number of a round is one round.json holds, and the round stage writes it (report.md, trend.md,
+// the round values of the finding records). A note may name a finding (`UXF-025`) or a path
+// (`../R-05/decision.md`, `website/ux/adapter.ts`, a scenario such as `install-linux-x86_64/mobile-390`),
+// whose digits are part of a name; any other digit, and any number spelled as a word, is refused.
+const SPELLED = /\b(zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred|thousand|million|dozen|once|twice|thrice|half|first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth)\b/gi;
+const FINDING_ID = /^UXF-\d+$/;
+const PATH = /^[^\s]*\/[^\s]*$/;
 
-// The numbers of a round's hand-written notes that round.json does not hold (T33 of the R-03
-// report review): the notes cite the round, they do not add to it. round.json holds a number as a
-// value, or inside a key or a string (a task run "25 of 6").
-export function notesNumbersMissing(notes: string, round: unknown): string[] {
-  const held = new Set<number>();
-  const fromText = (text: string) => {
-    for (const match of text.matchAll(ANY_NUMBER)) held.add(Number(match[0]));
+export function proseNumbers(notes: string): string[] {
+  const found: string[] = [];
+  const add = (s: string) => {
+    if (!found.includes(s)) found.push(s);
   };
-  const walk = (value: unknown): void => {
-    if (typeof value === 'number') held.add(value);
-    else if (typeof value === 'string') fromText(value);
-    else if (Array.isArray(value)) value.forEach(walk);
-    else if (value && typeof value === 'object') {
-      for (const [key, inner] of Object.entries(value)) {
-        fromText(key);
-        walk(inner);
-      }
-    }
-  };
-  walk(round);
-  const prose = notes.replace(/`[^`\n]*`/g, ' ');
-  const missing: string[] = [];
-  for (const match of prose.matchAll(NOTE_NUMBER)) {
-    if (!held.has(Number(match[0].replace(/,/g, ''))) && !missing.includes(match[0])) missing.push(match[0]);
+  // Code spans: a finding id or a path is a name; any other span is read like prose.
+  let prose = notes.replace(/`([^`\n]*)`/g, (_, span: string) => (FINDING_ID.test(span) || PATH.test(span) ? ' ' : ` ${span} `));
+  // A link's target is a path.
+  prose = prose.replace(/\]\([^)\s]*\)/g, ']');
+  for (const token of prose.split(/[\s,;:()[\]"'!?]+/)) {
+    const bare = token.replace(/[.]+$/, '');
+    if (!/\d/.test(bare)) continue;
+    if (FINDING_ID.test(bare) || PATH.test(bare)) continue;
+    add(bare);
   }
-  return missing;
+  for (const match of prose.matchAll(SPELLED)) add(match[0]);
+  return found;
 }
 
 export const TREND_HEAD =

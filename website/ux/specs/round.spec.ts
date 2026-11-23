@@ -14,7 +14,8 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { test, type Browser, type Page } from '@playwright/test';
-import { GATING, MEASURED, MOMENTS, ORIGIN, ROOT, ROUND, cards, scenarios, type Moment } from '../adapter';
+import { FINDINGS, GATING, MEASURED, MOMENTS, ORIGIN, ROOT, ROUND, cards, scenarios, type Moment } from '../adapter';
+import { writeFindingValues } from '../core/findings';
 import { frame, showTheme } from '../core/contract';
 import { makeHermetic } from '../core/hermetic';
 import { mergeRecords, mergeTaskRuns, type L2Record, type L3Record, type Raw } from '../core/reporter';
@@ -153,8 +154,11 @@ test('report: report.md and the trend row from round.json and the committed base
     l3,
     worst: worstShots(l2, l3).shots,
     contact: contactShots,
-    // The hand-written notes: every number one of round.json (T33 of the R-03 report review).
+    // The hand-written notes: prose only, every number of the round is printed from round.json (T49).
     notes: existsSync(join(dir, 'notes.md')) ? readFileSync(join(dir, 'notes.md'), 'utf8') : undefined,
   });
   writeTrend(join(ROOT, 'trend.md'), round);
+  // The values each finding record follows, from round.json (T49 of the R-05 report review).
+  const written = writeFindingValues(FINDINGS, ROUND, round as unknown as Parameters<typeof writeFindingValues>[2]);
+  console.log(`ux: wrote the round values of ${written.length > 0 ? written.join(', ') : 'no finding record'}`);
 });
