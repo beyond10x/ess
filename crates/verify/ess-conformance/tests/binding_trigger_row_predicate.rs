@@ -302,6 +302,7 @@ fn a_target_that_never_invokes_issue_fails_the_flow() {
 }
 
 #[test]
+#[ignore = "slow lane: runs the interpreted target on the fixture suite"]
 fn a_target_that_retries_not_eligible_fails_the_refusal() {
     let synthesis = synthesize(&model(FIXTURE));
     let retrying = rewrite(

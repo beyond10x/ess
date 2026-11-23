@@ -10,6 +10,7 @@
 
 - Testing: a test marked `#[ignore = "slow lane: <reason>"]` runs only in `task test-slow`, under the nextest profile `slow`, and `cargo xtask slow-list` names it; the byte-identity and WebAssembly probes that `task test-slow-probes` ran by hand carry the marker, and that task is gone (story:the-test-step-meets-the-test-budget).
 - CI: `task test-xtask` builds through the host's compile cache and job pool instead of an emptied `RUSTC_WRAPPER` and `CARGO_BUILD_JOBS=2`, compiles in one command and runs the `ess-xtask` tests under nextest, one process per test; no test moved to the slow lane.
+- CI: the seeded and order sweeps of `adversary_u22_pass1` and `adversary_ess0700a_identity_beside_row_set_2` run a reduced set in the test step and the full set in the `slow` lane.
 
 ### Fixed
 
