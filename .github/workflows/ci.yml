@@ -644,8 +644,6 @@ jobs:
 
       - name: Workspace tests ${{ matrix.group }} ${{ matrix.part }}
         if: ${{ !cancelled() && steps.go-task.outcome == 'success' && (steps.archives.outcome == 'success' || steps.archives-retry.outcome == 'success' || steps.archives-retry-2.outcome == 'success') }}
-        env:
-          ESS_TUTORIAL_NETWORK: "1"
         run: task test-shard GROUP=${{ matrix.group }} PART=${{ matrix.part }}
 
       - name: Disk after the workspace tests

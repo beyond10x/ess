@@ -5503,3 +5503,34 @@ fn test_xtask_builds_before_it_runs() {
         }
     }
 }
+
+#[test]
+fn the_tutorial_network_is_set_by_the_slow_lane_and_by_no_test_step() {
+    const VARIABLE: &str = "ESS_TUTORIAL_NETWORK";
+    let sets = |env: &Value| {
+        env.as_mapping()
+            .is_some_and(|env| env.keys().any(|key| key.as_str() == Some(VARIABLE)))
+    };
+    let ci = yaml(".github/workflows/ci.yml");
+    let taskfile = yaml("Taskfile.yml");
+    let mut offenders = Vec::new();
+    for (name, job) in ci["jobs"].as_mapping().expect("ci.yml has jobs") {
+        if sets(&job["env"]) {
+            offenders.push(format!("{}: job env", text(name)));
+        }
+        for step in job["steps"].as_sequence().into_iter().flatten() {
+            if sets(&step["env"]) {
+                offenders.push(format!("{}: {}", text(name), text(&step["name"])));
+            }
+        }
+    }
+    assert!(
+        offenders.is_empty(),
+        "{VARIABLE} is set outside the slow lane: {offenders:?}"
+    );
+    assert_eq!(
+        taskfile["tasks"]["test-slow"]["env"][VARIABLE].as_str(),
+        Some("1"),
+        "`test-slow` does not set {VARIABLE}: \"1\""
+    );
+}
