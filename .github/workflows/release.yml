@@ -127,7 +127,8 @@ jobs:
       # the newest ten, a failure, one still running, more than one page of check-runs, a squash,
       # an API error — runs the gate below as before. The head is reported whenever its tree is
       # the tagged tree, so the prebuilt step can be keyed on it. `ci_lanes.rs` runs this script
-      # against real Git histories.
+      # against real Git histories. A run qualifies only if its `slow` job ran: `Gate` fails a
+      # skipped `slow` job except on a run that cannot qualify.
       - name: Look for the required checks passed on the tagged tree
         id: prior-gate
         shell: bash
