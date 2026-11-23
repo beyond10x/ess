@@ -16,6 +16,10 @@ use slow_lane::{run, scan, Args};
 /// Every file of this tree that holds a marked test, and the names marked in it, sorted by path.
 const MARKED: &[(&str, &[&str])] = &[
     (
+        "crates/edge/ess-cli/tests/tutorial_page.rs",
+        &["the_walkthrough_runs_the_npm_and_go_blocks_too"],
+    ),
+    (
         "crates/generate/ess-synth/tests/adversary_e_u2_bytes.rs",
         &["adv_e_u2_byte_identity_probe"],
     ),

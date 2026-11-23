@@ -9,6 +9,7 @@
 ### Changed
 
 - Testing: a test marked `#[ignore = "slow lane: <reason>"]` runs only in `task test-slow`, under the nextest profile `slow`, and `cargo xtask slow-list` names it; the byte-identity and WebAssembly probes that `task test-slow-probes` ran by hand carry the marker, and that task is gone (story:the-test-step-meets-the-test-budget).
+- CI: the Start-here walkthrough test runs the `ess` commands of the pages in the test step and runs their `npm` and `go` blocks in the `slow` lane, where `ESS_TUTORIAL_NETWORK=1` is set; no test step sets it (story:the-test-step-meets-the-test-budget).
 - CI: `task test-xtask` builds through the host's compile cache and job pool instead of an emptied `RUSTC_WRAPPER` and `CARGO_BUILD_JOBS=2`, compiles in one command and runs the `ess-xtask` tests under nextest, one process per test; no test moved to the slow lane.
 
 ### Fixed

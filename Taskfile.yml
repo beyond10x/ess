@@ -372,6 +372,8 @@ tasks:
 
   test-slow:
     desc: Run every test marked for the slow lane under the nextest profile `slow`, one run per package (optional PACKAGES), and print the ten slowest of each.
+    env:
+      ESS_TUTORIAL_NETWORK: "1"
     cmds:
       - |
         set -eu
