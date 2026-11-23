@@ -1,6 +1,6 @@
 {
-  "about": "UX ratchet baseline of the ESS documentation website, lower is better; written by cargo xtask ux-ratchet --update: lane full from round R-05, lane gate from round R-05; 3556 values in 578 scenario(s)",
-  "sources": {"full": "R-05", "gate": "R-05"},
+  "about": "UX ratchet baseline of the ESS documentation website, lower is better; written by cargo xtask ux-ratchet --update: lane full from round R-06, lane gate from round R-05; 3556 values in 578 scenario(s)",
+  "sources": {"full": "R-06", "gate": "R-05"},
   "lanes": {
     "gate": [
       "/ess/@desktop-1280/dark",
@@ -38,8 +38,8 @@
     },
     "/ess/@desktop-1280/light": {
       "always_visible.failures": {"value": 0, "tolerance": "count"},
-      "axe.serious_critical_nodes": {"value": 2, "tolerance": "content"},
-      "axe.serious_critical_rules": {"value": 1, "tolerance": "count"},
+      "axe.serious_critical_nodes": {"value": 0, "tolerance": "content"},
+      "axe.serious_critical_rules": {"value": 0, "tolerance": "count"},
       "layout.spills": {"value": 0, "tolerance": "count"},
       "layout.truncated_texts": {"value": 0, "tolerance": "count"},
       "layout_shift.load": {"value": 0, "tolerance": "layout_shift"},
@@ -54,8 +54,8 @@
     },
     "/ess/@mobile-390/light": {
       "always_visible.failures": {"value": 0, "tolerance": "count"},
-      "axe.serious_critical_nodes": {"value": 2, "tolerance": "content"},
-      "axe.serious_critical_rules": {"value": 1, "tolerance": "count"},
+      "axe.serious_critical_nodes": {"value": 0, "tolerance": "content"},
+      "axe.serious_critical_rules": {"value": 0, "tolerance": "count"},
       "layout.spills": {"value": 0, "tolerance": "count"},
       "layout.truncated_texts": {"value": 0, "tolerance": "count"},
       "layout_shift.load": {"value": 0, "tolerance": "layout_shift"},
@@ -314,7 +314,7 @@
       "axe.serious_critical_rules": {"value": 0, "tolerance": "count"},
       "layout.spills": {"value": 0, "tolerance": "count"},
       "layout.truncated_texts": {"value": 0, "tolerance": "count"},
-      "layout_shift.load": {"value": 0.0006, "tolerance": "layout_shift"},
+      "layout_shift.load": {"value": 0, "tolerance": "layout_shift"},
       "motion.running": {"value": 0, "tolerance": "count"}
     },
     "/ess/docs/guides/commit-generated-files@desktop-1280/dark": {
@@ -410,7 +410,7 @@
       "axe.serious_critical_rules": {"value": 0, "tolerance": "count"},
       "layout.spills": {"value": 0, "tolerance": "count"},
       "layout.truncated_texts": {"value": 0, "tolerance": "count"},
-      "layout_shift.load": {"value": 0.0001, "tolerance": "layout_shift"},
+      "layout_shift.load": {"value": 0, "tolerance": "layout_shift"},
       "motion.running": {"value": 0, "tolerance": "count"}
     },
     "/ess/docs/guides/deliver/resolve-a-stack@desktop-1280/dark": {
@@ -474,7 +474,7 @@
       "axe.serious_critical_rules": {"value": 0, "tolerance": "count"},
       "layout.spills": {"value": 0, "tolerance": "count"},
       "layout.truncated_texts": {"value": 0, "tolerance": "count"},
-      "layout_shift.load": {"value": 0.0006, "tolerance": "layout_shift"},
+      "layout_shift.load": {"value": 0, "tolerance": "layout_shift"},
       "motion.running": {"value": 0, "tolerance": "count"}
     },
     "/ess/docs/guides/http-routes@desktop-1280/dark": {
@@ -570,7 +570,7 @@
       "axe.serious_critical_rules": {"value": 0, "tolerance": "count"},
       "layout.spills": {"value": 0, "tolerance": "count"},
       "layout.truncated_texts": {"value": 0, "tolerance": "count"},
-      "layout_shift.load": {"value": 0.0006, "tolerance": "layout_shift"},
+      "layout_shift.load": {"value": 0, "tolerance": "layout_shift"},
       "motion.running": {"value": 0, "tolerance": "count"}
     },
     "/ess/docs/guides/specify/binding-conditions@desktop-1280/dark": {
@@ -602,7 +602,7 @@
       "axe.serious_critical_rules": {"value": 0, "tolerance": "count"},
       "layout.spills": {"value": 0, "tolerance": "count"},
       "layout.truncated_texts": {"value": 0, "tolerance": "count"},
-      "layout_shift.load": {"value": 0.0006, "tolerance": "layout_shift"},
+      "layout_shift.load": {"value": 0, "tolerance": "layout_shift"},
       "motion.running": {"value": 0, "tolerance": "count"}
     },
     "/ess/docs/guides/specify/binding-context@desktop-1280/dark": {
@@ -634,7 +634,7 @@
       "axe.serious_critical_rules": {"value": 0, "tolerance": "count"},
       "layout.spills": {"value": 0, "tolerance": "count"},
       "layout.truncated_texts": {"value": 0, "tolerance": "count"},
-      "layout_shift.load": {"value": 0.0006, "tolerance": "layout_shift"},
+      "layout_shift.load": {"value": 0, "tolerance": "layout_shift"},
       "motion.running": {"value": 0, "tolerance": "count"}
     },
     "/ess/docs/guides/specify/binding-stored-state@desktop-1280/dark": {
@@ -666,7 +666,7 @@
       "axe.serious_critical_rules": {"value": 0, "tolerance": "count"},
       "layout.spills": {"value": 0, "tolerance": "count"},
       "layout.truncated_texts": {"value": 0, "tolerance": "count"},
-      "layout_shift.load": {"value": 0.0006, "tolerance": "layout_shift"},
+      "layout_shift.load": {"value": 0, "tolerance": "layout_shift"},
       "motion.running": {"value": 0, "tolerance": "count"}
     },
     "/ess/docs/guides/specify/bindings-and-components@desktop-1280/dark": {
@@ -730,7 +730,7 @@
       "axe.serious_critical_rules": {"value": 0, "tolerance": "count"},
       "layout.spills": {"value": 0, "tolerance": "count"},
       "layout.truncated_texts": {"value": 0, "tolerance": "count"},
-      "layout_shift.load": {"value": 0.0006, "tolerance": "layout_shift"},
+      "layout_shift.load": {"value": 0, "tolerance": "layout_shift"},
       "motion.running": {"value": 0, "tolerance": "count"}
     },
     "/ess/docs/guides/specify/fields-and-invariants@desktop-1280/dark": {
@@ -858,7 +858,7 @@
       "axe.serious_critical_rules": {"value": 0, "tolerance": "count"},
       "layout.spills": {"value": 0, "tolerance": "count"},
       "layout.truncated_texts": {"value": 0, "tolerance": "count"},
-      "layout_shift.load": {"value": 0.0006, "tolerance": "layout_shift"},
+      "layout_shift.load": {"value": 0, "tolerance": "layout_shift"},
       "motion.running": {"value": 0, "tolerance": "count"}
     },
     "/ess/docs/guides/specify/selection-effects@desktop-1280/dark": {
@@ -890,7 +890,7 @@
       "axe.serious_critical_rules": {"value": 0, "tolerance": "count"},
       "layout.spills": {"value": 0, "tolerance": "count"},
       "layout.truncated_texts": {"value": 0, "tolerance": "count"},
-      "layout_shift.load": {"value": 0.0006, "tolerance": "layout_shift"},
+      "layout_shift.load": {"value": 0, "tolerance": "layout_shift"},
       "motion.running": {"value": 0, "tolerance": "count"}
     },
     "/ess/docs/guides/specify/stored-rules@desktop-1280/dark": {
@@ -922,7 +922,7 @@
       "axe.serious_critical_rules": {"value": 0, "tolerance": "count"},
       "layout.spills": {"value": 0, "tolerance": "count"},
       "layout.truncated_texts": {"value": 0, "tolerance": "count"},
-      "layout_shift.load": {"value": 0.0006, "tolerance": "layout_shift"},
+      "layout_shift.load": {"value": 0, "tolerance": "layout_shift"},
       "motion.running": {"value": 0, "tolerance": "count"}
     },
     "/ess/docs/guides/specify/unions@desktop-1280/dark": {
@@ -986,7 +986,7 @@
       "axe.serious_critical_rules": {"value": 0, "tolerance": "count"},
       "layout.spills": {"value": 0, "tolerance": "count"},
       "layout.truncated_texts": {"value": 0, "tolerance": "count"},
-      "layout_shift.load": {"value": 0.0006, "tolerance": "layout_shift"},
+      "layout_shift.load": {"value": 0, "tolerance": "layout_shift"},
       "motion.running": {"value": 0, "tolerance": "count"}
     },
     "/ess/docs/guides/specify/views@desktop-1280/dark": {
@@ -1050,7 +1050,7 @@
       "axe.serious_critical_rules": {"value": 0, "tolerance": "count"},
       "layout.spills": {"value": 0, "tolerance": "count"},
       "layout.truncated_texts": {"value": 0, "tolerance": "count"},
-      "layout_shift.load": {"value": 0.0006, "tolerance": "layout_shift"},
+      "layout_shift.load": {"value": 0, "tolerance": "layout_shift"},
       "motion.running": {"value": 0, "tolerance": "count"}
     },
     "/ess/docs/guides/synthesize@desktop-1280/dark": {
@@ -1114,7 +1114,7 @@
       "axe.serious_critical_rules": {"value": 0, "tolerance": "count"},
       "layout.spills": {"value": 0, "tolerance": "count"},
       "layout.truncated_texts": {"value": 0, "tolerance": "count"},
-      "layout_shift.load": {"value": 0.0006, "tolerance": "layout_shift"},
+      "layout_shift.load": {"value": 0, "tolerance": "layout_shift"},
       "motion.running": {"value": 0, "tolerance": "count"}
     },
     "/ess/docs/guides/verify-conformance@desktop-1280/dark": {
@@ -1210,7 +1210,7 @@
       "axe.serious_critical_rules": {"value": 0, "tolerance": "count"},
       "layout.spills": {"value": 0, "tolerance": "count"},
       "layout.truncated_texts": {"value": 0, "tolerance": "count"},
-      "layout_shift.load": {"value": 0.0006, "tolerance": "layout_shift"},
+      "layout_shift.load": {"value": 0, "tolerance": "layout_shift"},
       "motion.running": {"value": 0, "tolerance": "count"}
     },
     "/ess/docs/guides/verify/explore@desktop-1280/dark": {
@@ -1274,7 +1274,7 @@
       "axe.serious_critical_rules": {"value": 0, "tolerance": "count"},
       "layout.spills": {"value": 0, "tolerance": "count"},
       "layout.truncated_texts": {"value": 0, "tolerance": "count"},
-      "layout_shift.load": {"value": 0.0006, "tolerance": "layout_shift"},
+      "layout_shift.load": {"value": 0, "tolerance": "layout_shift"},
       "motion.running": {"value": 0, "tolerance": "count"}
     },
     "/ess/docs/guides/verify/observations@desktop-1280/dark": {
@@ -1370,7 +1370,7 @@
       "axe.serious_critical_rules": {"value": 0, "tolerance": "count"},
       "layout.spills": {"value": 0, "tolerance": "count"},
       "layout.truncated_texts": {"value": 0, "tolerance": "count"},
-      "layout_shift.load": {"value": 0.0006, "tolerance": "layout_shift"},
+      "layout_shift.load": {"value": 0, "tolerance": "layout_shift"},
       "motion.running": {"value": 0, "tolerance": "count"}
     },
     "/ess/docs/guides/verify/synthesize-a-suite@desktop-1280/dark": {
@@ -1482,7 +1482,7 @@
       "axe.serious_critical_rules": {"value": 0, "tolerance": "count"},
       "layout.spills": {"value": 0, "tolerance": "count"},
       "layout.truncated_texts": {"value": 0, "tolerance": "count"},
-      "layout_shift.load": {"value": 0.0004, "tolerance": "layout_shift"},
+      "layout_shift.load": {"value": 0, "tolerance": "layout_shift"},
       "motion.running": {"value": 0, "tolerance": "count"}
     },
     "/ess/docs/guides@mobile-390/dark": {
@@ -1626,7 +1626,7 @@
       "axe.serious_critical_rules": {"value": 0, "tolerance": "count"},
       "layout.spills": {"value": 0, "tolerance": "count"},
       "layout.truncated_texts": {"value": 0, "tolerance": "count"},
-      "layout_shift.load": {"value": 0.0006, "tolerance": "layout_shift"},
+      "layout_shift.load": {"value": 0, "tolerance": "layout_shift"},
       "motion.running": {"value": 0, "tolerance": "count"}
     },
     "/ess/docs/reference/ess-ui@desktop-1280/dark": {
@@ -1850,7 +1850,7 @@
       "axe.serious_critical_rules": {"value": 0, "tolerance": "count"},
       "layout.spills": {"value": 0, "tolerance": "count"},
       "layout.truncated_texts": {"value": 0, "tolerance": "count"},
-      "layout_shift.load": {"value": 0.0006, "tolerance": "layout_shift"},
+      "layout_shift.load": {"value": 0, "tolerance": "layout_shift"},
       "motion.running": {"value": 0, "tolerance": "count"}
     },
     "/ess/docs/start/first-conformance-run@desktop-1280/dark": {
@@ -1882,7 +1882,7 @@
       "axe.serious_critical_rules": {"value": 0, "tolerance": "count"},
       "layout.spills": {"value": 0, "tolerance": "count"},
       "layout.truncated_texts": {"value": 0, "tolerance": "count"},
-      "layout_shift.load": {"value": 0.0006, "tolerance": "layout_shift"},
+      "layout_shift.load": {"value": 0, "tolerance": "layout_shift"},
       "motion.running": {"value": 0, "tolerance": "count"}
     },
     "/ess/docs/start/first-specification@desktop-1280/dark": {
@@ -2010,7 +2010,7 @@
       "axe.serious_critical_rules": {"value": 0, "tolerance": "count"},
       "layout.spills": {"value": 0, "tolerance": "count"},
       "layout.truncated_texts": {"value": 0, "tolerance": "count"},
-      "layout_shift.load": {"value": 0.0006, "tolerance": "layout_shift"},
+      "layout_shift.load": {"value": 0, "tolerance": "layout_shift"},
       "motion.running": {"value": 0, "tolerance": "count"}
     },
     "/ess/docs/start/runners/typescript@desktop-1280/dark": {
@@ -2042,7 +2042,7 @@
       "axe.serious_critical_rules": {"value": 0, "tolerance": "count"},
       "layout.spills": {"value": 0, "tolerance": "count"},
       "layout.truncated_texts": {"value": 0, "tolerance": "count"},
-      "layout_shift.load": {"value": 0.0006, "tolerance": "layout_shift"},
+      "layout_shift.load": {"value": 0, "tolerance": "layout_shift"},
       "motion.running": {"value": 0, "tolerance": "count"}
     },
     "/ess/docs/start/use-with-an-agent@desktop-1280/dark": {
@@ -2266,7 +2266,7 @@
       "axe.serious_critical_rules": {"value": 0, "tolerance": "count"},
       "layout.spills": {"value": 0, "tolerance": "count"},
       "layout.truncated_texts": {"value": 0, "tolerance": "count"},
-      "layout_shift.load": {"value": 0.0006, "tolerance": "layout_shift"},
+      "layout_shift.load": {"value": 0, "tolerance": "layout_shift"},
       "motion.running": {"value": 0, "tolerance": "count"}
     },
     "/ess/releases/a-cluster-described-and-answered@desktop-1280/dark": {
@@ -2890,7 +2890,7 @@
       "axe.serious_critical_rules": {"value": 0, "tolerance": "count"},
       "layout.spills": {"value": 0, "tolerance": "count"},
       "layout.truncated_texts": {"value": 0, "tolerance": "count"},
-      "layout_shift.load": {"value": 0.0003, "tolerance": "layout_shift"},
+      "layout_shift.load": {"value": 0, "tolerance": "layout_shift"},
       "motion.running": {"value": 0, "tolerance": "count"}
     },
     "/ess/releases/generated-servers-refuse-what-their-openapi-refuses@mobile-390/dark": {
@@ -4483,7 +4483,7 @@
       "glance_cost.median": {"value": 2, "tolerance": "steps"},
       "glance_cost.p95": {"value": 2, "tolerance": "steps"},
       "reading_load.max": {"value": 256, "tolerance": "words"},
-      "reading_load.median": {"value": 217, "tolerance": "words", "decision": "R-05-worse"},
+      "reading_load.median": {"value": 194, "tolerance": "words", "decision": "R-05-worse"},
       "screen_only.actions": {"value": 3, "tolerance": "count"},
       "screen_only.looks": {"value": 3, "tolerance": "count"},
       "screen_only.steers": {"value": 0, "tolerance": "count"},
@@ -4494,8 +4494,8 @@
       "false_complete": {"value": 0, "tolerance": "count"},
       "glance_cost.median": {"value": 2, "tolerance": "steps"},
       "glance_cost.p95": {"value": 3, "tolerance": "steps"},
-      "reading_load.max": {"value": 139, "tolerance": "words", "decision": "R-04-worse"},
-      "reading_load.median": {"value": 123, "tolerance": "words", "decision": "R-04-worse"},
+      "reading_load.max": {"value": 123, "tolerance": "words", "decision": "R-04-worse"},
+      "reading_load.median": {"value": 119, "tolerance": "words", "decision": "R-04-worse"},
       "screen_only.actions": {"value": 4, "tolerance": "count"},
       "screen_only.looks": {"value": 3, "tolerance": "count"},
       "screen_only.steers": {"value": 1, "tolerance": "count", "decision": "R-02-baseline"},
@@ -4507,7 +4507,7 @@
       "glance_cost.median": {"value": 2, "tolerance": "steps"},
       "glance_cost.p95": {"value": 2, "tolerance": "steps"},
       "reading_load.max": {"value": 322, "tolerance": "words", "decision": "R-04-worse"},
-      "reading_load.median": {"value": 217, "tolerance": "words", "decision": "R-05-worse"},
+      "reading_load.median": {"value": 194, "tolerance": "words", "decision": "R-05-worse"},
       "screen_only.actions": {"value": 3, "tolerance": "count"},
       "screen_only.looks": {"value": 3, "tolerance": "count"},
       "screen_only.steers": {"value": 0, "tolerance": "count", "decision": "R-02-baseline"},
@@ -4519,7 +4519,7 @@
       "glance_cost.median": {"value": 3, "tolerance": "steps"},
       "glance_cost.p95": {"value": 3, "tolerance": "steps"},
       "reading_load.max": {"value": 177, "tolerance": "words", "decision": "R-05-worse"},
-      "reading_load.median": {"value": 137, "tolerance": "words", "decision": "R-04-worse"},
+      "reading_load.median": {"value": 119, "tolerance": "words", "decision": "R-04-worse"},
       "screen_only.actions": {"value": 5, "tolerance": "count"},
       "screen_only.looks": {"value": 3, "tolerance": "count"},
       "screen_only.steers": {"value": 2, "tolerance": "count", "decision": "R-02-baseline"},
@@ -4530,8 +4530,8 @@
       "false_complete": {"value": 0, "tolerance": "count"},
       "glance_cost.median": {"value": 1, "tolerance": "steps"},
       "glance_cost.p95": {"value": 2, "tolerance": "steps"},
-      "reading_load.max": {"value": 205, "tolerance": "words", "decision": "R-05-worse"},
-      "reading_load.median": {"value": 189, "tolerance": "words"},
+      "reading_load.max": {"value": 189, "tolerance": "words", "decision": "R-05-worse"},
+      "reading_load.median": {"value": 182, "tolerance": "words"},
       "screen_only.actions": {"value": 2, "tolerance": "count"},
       "screen_only.looks": {"value": 1, "tolerance": "count"},
       "screen_only.steers": {"value": 0, "tolerance": "count"},
@@ -4542,8 +4542,8 @@
       "false_complete": {"value": 0, "tolerance": "count"},
       "glance_cost.median": {"value": 3, "tolerance": "steps", "decision": "R-02-baseline"},
       "glance_cost.p95": {"value": 3, "tolerance": "steps", "decision": "R-02-baseline"},
-      "reading_load.max": {"value": 205, "tolerance": "words", "decision": "R-05-worse"},
-      "reading_load.median": {"value": 189, "tolerance": "words"},
+      "reading_load.max": {"value": 189, "tolerance": "words", "decision": "R-05-worse"},
+      "reading_load.median": {"value": 182, "tolerance": "words"},
       "screen_only.actions": {"value": 23, "tolerance": "count"},
       "screen_only.looks": {"value": 2, "tolerance": "count", "decision": "R-02-baseline"},
       "screen_only.steers": {"value": 0, "tolerance": "count"},
@@ -4552,13 +4552,13 @@
     "first-conformance-run/mobile-390": {
       "completion_miss": {"value": 0, "tolerance": "count"},
       "false_complete": {"value": 0, "tolerance": "count"},
-      "glance_cost.median": {"value": 3, "tolerance": "steps"},
+      "glance_cost.median": {"value": 1, "tolerance": "steps"},
       "glance_cost.p95": {"value": 3, "tolerance": "steps"},
-      "reading_load.max": {"value": 108, "tolerance": "words"},
-      "reading_load.median": {"value": 94, "tolerance": "words"},
-      "screen_only.actions": {"value": 4, "tolerance": "count"},
-      "screen_only.looks": {"value": 2, "tolerance": "count"},
-      "screen_only.steers": {"value": 2, "tolerance": "count"},
+      "reading_load.max": {"value": 92, "tolerance": "words"},
+      "reading_load.median": {"value": 76, "tolerance": "words"},
+      "screen_only.actions": {"value": 3, "tolerance": "count"},
+      "screen_only.looks": {"value": 1, "tolerance": "count"},
+      "screen_only.steers": {"value": 1, "tolerance": "count"},
       "screen_only.time_to_act_steps.max": {"value": 2, "tolerance": "steps"}
     },
     "first-conformance-run/mobile-390/keyboard": {
@@ -4566,11 +4566,11 @@
       "false_complete": {"value": 0, "tolerance": "count"},
       "glance_cost.median": {"value": 3, "tolerance": "steps"},
       "glance_cost.p95": {"value": 3, "tolerance": "steps"},
-      "reading_load.max": {"value": 108, "tolerance": "words"},
-      "reading_load.median": {"value": 94, "tolerance": "words"},
-      "screen_only.actions": {"value": 131, "tolerance": "count", "decision": "R-04-worse"},
+      "reading_load.max": {"value": 92, "tolerance": "words"},
+      "reading_load.median": {"value": 76, "tolerance": "words"},
+      "screen_only.actions": {"value": 81, "tolerance": "count", "decision": "R-04-worse"},
       "screen_only.looks": {"value": 2, "tolerance": "count"},
-      "screen_only.steers": {"value": 2, "tolerance": "count"},
+      "screen_only.steers": {"value": 1, "tolerance": "count"},
       "screen_only.time_to_act_steps.max": {"value": 2, "tolerance": "steps"}
     },
     "go-runner/desktop-1280": {
@@ -4578,8 +4578,8 @@
       "false_complete": {"value": 0, "tolerance": "count"},
       "glance_cost.median": {"value": 2, "tolerance": "steps"},
       "glance_cost.p95": {"value": 2, "tolerance": "steps"},
-      "reading_load.max": {"value": 214, "tolerance": "words", "decision": "R-05-worse"},
-      "reading_load.median": {"value": 205, "tolerance": "words", "decision": "R-05-worse"},
+      "reading_load.max": {"value": 191, "tolerance": "words", "decision": "R-05-worse"},
+      "reading_load.median": {"value": 182, "tolerance": "words", "decision": "R-05-worse"},
       "screen_only.actions": {"value": 2, "tolerance": "count"},
       "screen_only.looks": {"value": 2, "tolerance": "count"},
       "screen_only.steers": {"value": 0, "tolerance": "count"},
@@ -4590,8 +4590,8 @@
       "false_complete": {"value": 0, "tolerance": "count"},
       "glance_cost.median": {"value": 2, "tolerance": "steps"},
       "glance_cost.p95": {"value": 3, "tolerance": "steps"},
-      "reading_load.max": {"value": 140, "tolerance": "words"},
-      "reading_load.median": {"value": 94, "tolerance": "words"},
+      "reading_load.max": {"value": 122, "tolerance": "words"},
+      "reading_load.median": {"value": 92, "tolerance": "words"},
       "screen_only.actions": {"value": 3, "tolerance": "count"},
       "screen_only.looks": {"value": 2, "tolerance": "count"},
       "screen_only.steers": {"value": 1, "tolerance": "count"},
@@ -4602,7 +4602,7 @@
       "false_complete": {"value": 0, "tolerance": "count"},
       "glance_cost.median": {"value": 1, "tolerance": "steps"},
       "glance_cost.p95": {"value": 2, "tolerance": "steps"},
-      "reading_load.max": {"value": 205, "tolerance": "words", "decision": "R-05-worse"},
+      "reading_load.max": {"value": 182, "tolerance": "words", "decision": "R-05-worse"},
       "reading_load.median": {"value": 182, "tolerance": "words"},
       "screen_only.actions": {"value": 2, "tolerance": "count"},
       "screen_only.looks": {"value": 1, "tolerance": "count"},
@@ -4614,7 +4614,7 @@
       "false_complete": {"value": 0, "tolerance": "count"},
       "glance_cost.median": {"value": 3, "tolerance": "steps", "decision": "R-02-baseline"},
       "glance_cost.p95": {"value": 3, "tolerance": "steps", "decision": "R-02-baseline"},
-      "reading_load.max": {"value": 205, "tolerance": "words", "decision": "R-05-worse"},
+      "reading_load.max": {"value": 182, "tolerance": "words", "decision": "R-05-worse"},
       "reading_load.median": {"value": 182, "tolerance": "words", "decision": "R-02-baseline"},
       "screen_only.actions": {"value": 21, "tolerance": "count"},
       "screen_only.looks": {"value": 2, "tolerance": "count", "decision": "R-02-baseline"},
@@ -4624,13 +4624,13 @@
     "install-linux-x86_64/mobile-390": {
       "completion_miss": {"value": 0, "tolerance": "count"},
       "false_complete": {"value": 0, "tolerance": "count"},
-      "glance_cost.median": {"value": 3, "tolerance": "steps"},
+      "glance_cost.median": {"value": 1, "tolerance": "steps"},
       "glance_cost.p95": {"value": 3, "tolerance": "steps"},
       "reading_load.max": {"value": 120, "tolerance": "words"},
-      "reading_load.median": {"value": 94, "tolerance": "words"},
-      "screen_only.actions": {"value": 4, "tolerance": "count"},
-      "screen_only.looks": {"value": 2, "tolerance": "count"},
-      "screen_only.steers": {"value": 2, "tolerance": "count"},
+      "reading_load.median": {"value": 76, "tolerance": "words"},
+      "screen_only.actions": {"value": 3, "tolerance": "count"},
+      "screen_only.looks": {"value": 1, "tolerance": "count"},
+      "screen_only.steers": {"value": 1, "tolerance": "count"},
       "screen_only.time_to_act_steps.max": {"value": 2, "tolerance": "steps"}
     },
     "install-linux-x86_64/mobile-390/keyboard": {
@@ -4639,10 +4639,10 @@
       "glance_cost.median": {"value": 3, "tolerance": "steps"},
       "glance_cost.p95": {"value": 3, "tolerance": "steps"},
       "reading_load.max": {"value": 120, "tolerance": "words"},
-      "reading_load.median": {"value": 94, "tolerance": "words"},
-      "screen_only.actions": {"value": 129, "tolerance": "count", "decision": "R-04-worse"},
+      "reading_load.median": {"value": 76, "tolerance": "words"},
+      "screen_only.actions": {"value": 80, "tolerance": "count", "decision": "R-04-worse"},
       "screen_only.looks": {"value": 2, "tolerance": "count"},
-      "screen_only.steers": {"value": 2, "tolerance": "count"},
+      "screen_only.steers": {"value": 1, "tolerance": "count"},
       "screen_only.time_to_act_steps.max": {"value": 2, "tolerance": "steps"}
     },
     "limitations/desktop-1280": {
@@ -4650,8 +4650,8 @@
       "false_complete": {"value": 0, "tolerance": "count"},
       "glance_cost.median": {"value": 1, "tolerance": "steps"},
       "glance_cost.p95": {"value": 2, "tolerance": "steps"},
-      "reading_load.max": {"value": 176, "tolerance": "words", "decision": "R-05-worse"},
-      "reading_load.median": {"value": 164, "tolerance": "words"},
+      "reading_load.max": {"value": 168, "tolerance": "words", "decision": "R-05-worse"},
+      "reading_load.median": {"value": 144, "tolerance": "words"},
       "screen_only.actions": {"value": 2, "tolerance": "count"},
       "screen_only.looks": {"value": 1, "tolerance": "count"},
       "screen_only.steers": {"value": 0, "tolerance": "count"},
@@ -4660,13 +4660,13 @@
     "limitations/mobile-390": {
       "completion_miss": {"value": 0, "tolerance": "count"},
       "false_complete": {"value": 0, "tolerance": "count"},
-      "glance_cost.median": {"value": 3, "tolerance": "steps"},
+      "glance_cost.median": {"value": 1, "tolerance": "steps"},
       "glance_cost.p95": {"value": 3, "tolerance": "steps"},
-      "reading_load.max": {"value": 106, "tolerance": "words"},
-      "reading_load.median": {"value": 86, "tolerance": "words"},
-      "screen_only.actions": {"value": 4, "tolerance": "count"},
-      "screen_only.looks": {"value": 2, "tolerance": "count"},
-      "screen_only.steers": {"value": 2, "tolerance": "count"},
+      "reading_load.max": {"value": 87, "tolerance": "words"},
+      "reading_load.median": {"value": 85, "tolerance": "words"},
+      "screen_only.actions": {"value": 3, "tolerance": "count"},
+      "screen_only.looks": {"value": 1, "tolerance": "count"},
+      "screen_only.steers": {"value": 1, "tolerance": "count"},
       "screen_only.time_to_act_steps.max": {"value": 2, "tolerance": "steps"}
     },
     "page-a-view/desktop-1280": {
@@ -4675,7 +4675,7 @@
       "glance_cost.median": {"value": 2, "tolerance": "steps"},
       "glance_cost.p95": {"value": 2, "tolerance": "steps"},
       "reading_load.max": {"value": 258, "tolerance": "words", "decision": "R-05-worse"},
-      "reading_load.median": {"value": 214, "tolerance": "words"},
+      "reading_load.median": {"value": 208.5, "tolerance": "words"},
       "screen_only.actions": {"value": 4, "tolerance": "count"},
       "screen_only.looks": {"value": 3, "tolerance": "count"},
       "screen_only.steers": {"value": 0, "tolerance": "count"},
@@ -4686,8 +4686,8 @@
       "false_complete": {"value": 0, "tolerance": "count"},
       "glance_cost.median": {"value": 3, "tolerance": "steps"},
       "glance_cost.p95": {"value": 3, "tolerance": "steps"},
-      "reading_load.max": {"value": 142, "tolerance": "words"},
-      "reading_load.median": {"value": 99, "tolerance": "words"},
+      "reading_load.max": {"value": 124, "tolerance": "words"},
+      "reading_load.median": {"value": 90.5, "tolerance": "words"},
       "screen_only.actions": {"value": 11, "tolerance": "count", "decision": "R-02-baseline"},
       "screen_only.looks": {"value": 4, "tolerance": "count"},
       "screen_only.steers": {"value": 8, "tolerance": "count", "decision": "R-02-baseline"},
