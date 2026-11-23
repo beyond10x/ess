@@ -35,3 +35,22 @@ test('L1 site: each index list of a reference page is a named navigation that sa
   expect(css, 'a jump target clears the navbar').toMatch(/\.markdown a\[id\]:empty\{scroll-margin-top:calc\(var\(--ifm-navbar-height\) ?\+ ?1rem\)\}/);
   expect(css, 'the row a jump lands on is marked').toMatch(/\.markdown tr:has\(a\[id\]:target\)\{outline:/);
 });
+
+// UXF-013, UXF-019 (R-06): on a phone a link of the navbar or the sidebar costs the menu's taps, so
+// the cards first-conformance-run and limitations took 4 actions of 3. The first screen of the
+// landing page, of the docs index and of the status page (each before its first section) links on
+// to the next step in the page, and the docs index's five areas are a link.
+test('L1 site: the landing page, the docs index and the status page link on to the next step before their first section, without the menu (UXF-013, UXF-019)', () => {
+  const firstScreen = (path: string, from: string) => {
+    const html = builtPage(path);
+    const at = html.indexOf(from);
+    expect(at, `${path} holds ${from}`).toBeGreaterThan(-1);
+    const end = html.indexOf('<h2', at);
+    return [...html.slice(at, end < 0 ? undefined : end).matchAll(/href="?([^"\s>]+)/g)].map((m) => m[1].replace(/\/$/, ''));
+  };
+  expect(firstScreen('/ess/', '<main')).toEqual(expect.arrayContaining(['/ess/docs/start/first-conformance-run', '/ess/docs/status/limitations']));
+  expect(firstScreen('/ess/docs', 'theme-doc-markdown')).toEqual(
+    expect.arrayContaining(['/ess/docs/start/install', '/ess/docs/start/first-conformance-run', '/ess/docs/guides/verify-conformance', '/ess/docs/status/limitations', '/ess/docs/reference/cli']),
+  );
+  expect(firstScreen('/ess/docs/status/where-this-stands', 'theme-doc-markdown')).toContain('/ess/docs/status/limitations');
+});

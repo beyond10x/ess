@@ -8,6 +8,8 @@ source: Capabilities generated from website/data/status.json by cargo xtask site
 
 # Where this stands
 
+[Limitations and trust assumptions](./limitations.md): what ESS does not do or claim.
+
 ## Latest release
 
 The latest published release observed on 23 November 2026 is
