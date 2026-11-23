@@ -5,6 +5,7 @@
 ### Added
 
 - An `ess-http/1` binding declares `limits: {request_bytes: N}` at the top and on a route, and `refusals.too_large`: both generated servers read at most that many bytes of the matched route's body and refuse a larger one, the OpenAPI document names the bound under `x-ess-request-max-bytes`, a binding declaring neither keeps every byte it writes, and `ESS-HTTP-034` refuses a limit outside 1 to 16777216 or on a route that reads no body.
+- `format: ess-composition/6`: a `conformances` entry may carry `writer: true`, the assertion that the local type only sends the imported one. The pair conforms when the local type can send no value the imported type's reader refuses: a field's `presence` conforms when every absent spelling it writes is one the imported field reads, a required local value is admitted where the imported one is `Optional`, and a newtype, an enum where the imported reference is `String`, a subset of an enum's or a union's variants, a struct or `String`-keyed map where the imported reference is `Map<String, Json>`, an imported `Optional` field left out, an extra field where the imported struct declares `undeclared_fields: ignored`, and a narrower alphabet, a longer prefix or more invariants are admitted. `writer: true` with `reader: true` on one entry is refused when read. `ess-composition/1` to `/5` refuse `writer`, whatever its value, as `unsupported_format` and keep their bytes.
 
 ### Changed
 
@@ -12,6 +13,8 @@
 - CI: the Start-here walkthrough test runs the `ess` commands of the pages in the test step and runs their `npm` and `go` blocks in the `slow` lane, where `ESS_TUTORIAL_NETWORK=1` is set; no test step sets it (story:the-test-step-meets-the-test-budget).
 - CI: `task test-xtask` builds through the host's compile cache and job pool instead of an emptied `RUSTC_WRAPPER` and `CARGO_BUILD_JOBS=2`, compiles in one command and runs the `ess-xtask` tests under nextest, one process per test; no test moved to the slow lane.
 - CI: the nine tests of `generated_view_queries` that build generated Rust or Go with `cargo` or `go` run in the `slow` lane; the generation and plan tests of the file stay in the test step.
+
+- In the `ess-composition` library, `WRITER_COMPOSITION_FORMAT`, `TypeConformance::{for_writer, writer}` and `CompositionSpec::with_writer_conformances` are new, `SUPPORTED_COMPOSITION_FORMATS` lists `6`, and `TypeConformance` has a new field `writer`.
 
 ### Fixed
 
