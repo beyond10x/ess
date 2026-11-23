@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-22T14:14:22Z",
+  "actor": "human:timo",
+  "artifact": "story:validation-refuses-an-ordering-comparison-over-an-enum",
+  "kind": "story",
+  "revision": 9,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "unit VR-ENUM package gate, implementor's logs, each exit 0: cargo test -p ess-domain --locked --test enum_variant_refusals (3 passed), aggregate_measures_over_expressions, adversary_w091_u3_agg_1, fixture_inputs_guard_reads, cargo test -p ess-cli --locked --test validate_parse_refusals (14 passed), -p ess-compiler --test typed_diagnostics, slot --timeout 30m task test-xtask, cargo clippy -p ess-domain --all-targets. slot task fmt-check exited 201 in the unit's tree and 0 on the integration branch before the synthesis units: cargo clippy -p ess-domain -p ess-cli -p ess-conformance -p ess-synth --all-targets --locked -- -D warnings exit 0, slot task fmt-check exit 0",
+    "reference": "1a5a485e0e"
+  }
+}

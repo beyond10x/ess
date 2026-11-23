@@ -212,7 +212,7 @@ Each refusal is reported at the selector's site (`….when_related`, `….payloa
 | condition | code | message names |
 | --- | --- | --- |
 | `in:` a mapping other than exactly `{entity: <text>}` | `unparsable_predicate` / `type_mismatch` (as today, by site) | that `in:` takes a fact path or `{entity: <Entity>}` |
-| a rows collection below `ess/27` | `unsupported_format_version` | the construct; hint `declare \`format: ess/27\`` (today: the parse refusal above) |
+| a rows collection below `ess/27` | `unsupported_format_version` | the construct; hint `write \`format: ess/27\` on the source that declares the system` (today: the parse refusal above) |
 | a rows collection at a site that does not admit it | `unsupported_construct` | the site, and the two sites that admit it; at `when_subject:` the `when_related` idiom |
 | `E` is no declared entity | `undeclared_reference` | the declared entities (`row_set::undeclared`, `row_set.rs:518-533`) |
 | `forall:` over rows | `unsupported_construct` | the `not: {exists: …}` rewrite |

@@ -1718,9 +1718,10 @@ impl ViewSpec {
                     self.name, aggregate.function, source_field.name, source_field.type_ref
                 ),
             )
-            .with_hint(
-                "declare `format: ess/36`, from which a measure admits every type grid O orders",
-            ),
+            .with_hint(format!(
+                "{raise}, from which a measure admits every type grid O orders",
+                raise = crate::system::FormatVersion::V36.declaration_hint()
+            )),
             _ => refused,
         })
     }
@@ -1754,7 +1755,10 @@ impl ViewSpec {
                     self.name, field.name
                 ),
             )
-            .with_hint("declare `format: ess/36`, or measure one field of the source"));
+            .with_hint(format!(
+                "{raise}, or measure one field of the source",
+                raise = crate::system::FormatVersion::V36.declaration_hint()
+            )));
         }
         let checked = self
             .measure_value(field, written, types, source_fields)
@@ -1827,7 +1831,7 @@ impl ViewSpec {
                         self.name, field.name
                     ),
                 )
-                .with_hint("declare `format: ess/27`"),
+                .with_hint(crate::system::FormatVersion::V27.declaration_hint()),
             );
             return errors;
         }
@@ -2077,11 +2081,14 @@ impl ViewSpec {
                 .function(&field.name)
                 .is_some_and(|aggregate| aggregate.skip_absent)
             {
-                errors.push(ValidationError::new(
-                    ValidationCode::UnsupportedFormatVersion,
-                    at(&format!("fields[{index}].aggregate")),
-                    "`skip_absent` requires specification format ess/15",
-                ));
+                errors.push(
+                    ValidationError::new(
+                        ValidationCode::UnsupportedFormatVersion,
+                        at(&format!("fields[{index}].aggregate")),
+                        "`skip_absent` requires specification format ess/15",
+                    )
+                    .with_hint(crate::system::FormatVersion::V15.declaration_hint()),
+                );
             }
         }
         for (index, key) in aggregation.group_by.iter().enumerate() {
@@ -2089,15 +2096,18 @@ impl ViewSpec {
                 .field(key)
                 .is_some_and(|field| unwrap_chain(&field.type_ref, types).optional)
             {
-                errors.push(ValidationError::new(
-                    ValidationCode::UnsupportedFormatVersion,
-                    at(&format!("group_by[{index}]")),
-                    format!(
-                        "`{}` groups by `{key}`, which may be absent; a group key that may be \
+                errors.push(
+                    ValidationError::new(
+                        ValidationCode::UnsupportedFormatVersion,
+                        at(&format!("group_by[{index}]")),
+                        format!(
+                            "`{}` groups by `{key}`, which may be absent; a group key that may be \
                          absent requires specification format ess/15",
-                        self.name
-                    ),
-                ));
+                            self.name
+                        ),
+                    )
+                    .with_hint(crate::system::FormatVersion::V15.declaration_hint()),
+                );
             }
         }
         errors
@@ -2124,15 +2134,18 @@ impl ViewSpec {
                 .function(&field.name)
                 .is_some_and(|aggregate| aggregate.r#where.is_some())
             {
-                errors.push(ValidationError::new(
-                    ValidationCode::UnsupportedFormatVersion,
-                    format!("view.{}.fields[{index}].aggregate.where", self.name),
-                    format!(
+                errors.push(
+                    ValidationError::new(
+                        ValidationCode::UnsupportedFormatVersion,
+                        format!("view.{}.fields[{index}].aggregate.where", self.name),
+                        format!(
                         "`{}.{}` reads only the rows its `where:` admits; a measure's condition \
                          requires specification format ess/22",
                         self.name, field.name
                     ),
-                ));
+                    )
+                    .with_hint(crate::system::FormatVersion::V22.declaration_hint()),
+                );
             }
         }
         errors

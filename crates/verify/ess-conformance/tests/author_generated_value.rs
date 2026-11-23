@@ -231,6 +231,7 @@ fn the_refusal_reads_in_full() {
         &ir,
         &document("", &selected("{agent_id: a1, connect_seq: 7}"), ""),
     );
+    // Re-pinned by story:every-format-version-hint-names-the-source-that-declares-the-system.
     assert_eq!(
         text,
         "refusal[ESS-AUTHOR-042]: `relay.desk/authored/a-scenario` in scenario.yaml\n  \
@@ -242,8 +243,9 @@ fn the_refusal_reads_in_full() {
          there, or relate it to another value with `capture:` on the event; in a view row, drop \
          it and assert `satisfies: defined(<field>)` on the view, which requires it on every row \
          and at least one row, or state its relation to an event's value with `{$observed: \
-         {event: …, field: …}}`; from `format: ess/30` an exact value there is the scenario's \
-         own claim, which the suite checks as written"
+         {event: …, field: …}}`; write `format: ess/30` on the source that declares the \
+         system, from which an exact value there is the scenario's own claim, which the suite \
+         checks as written"
     );
 }
 

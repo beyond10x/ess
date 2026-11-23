@@ -29,6 +29,7 @@
 mod accessor;
 mod actor;
 pub(crate) mod behaviour;
+pub(crate) mod binary64;
 mod condition;
 mod context;
 mod entity;
@@ -429,6 +430,9 @@ fn lib_module(
 fn primitives_module(ir: &EssIr, layout: &Layout, provenance: &Provenance) -> Artifact {
     let mut out = provenance.commented_for("//", REGENERATE);
     out.push_str(PRIMITIVES);
+    if binary64::used(ir) {
+        out.push_str(binary64::PRIMITIVE);
+    }
     out.push_str(&reading::helpers(ir));
     out.push_str(&invariant::runtime(ir));
     Artifact::new(

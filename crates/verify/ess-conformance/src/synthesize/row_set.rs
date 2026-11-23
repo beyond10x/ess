@@ -726,16 +726,21 @@ fn resolved_literals(
         let ScenarioValue::Instance { instance } = value else {
             continue;
         };
-        let named = rows
-            .held
-            .iter()
-            .filter(|row| row.instance.as_ref() == Some(instance))
-            .find_map(|row| row.identity.as_ref().and_then(ScenarioValue::as_literal));
+        let named = literal_identity(rows, instance);
         if let Some(identity) = named {
             out.insert(field.clone(), identity.clone());
         }
     }
     out
+}
+
+/// The literal identity of the row the steps left under `instance`, where the steps named its
+/// identity by a literal (ess/23, beyond10x/ess#429).
+fn literal_identity<'r>(rows: &'r Rows, instance: &InstanceName) -> Option<&'r Node> {
+    rows.held
+        .iter()
+        .filter(|row| row.instance.as_ref() == Some(instance))
+        .find_map(|row| row.identity.as_ref().and_then(ScenarioValue::as_literal))
 }
 
 /// The literal values of a sent input, as the predicates over it read them.
@@ -949,6 +954,28 @@ impl<'a> Reading<'a> {
                 });
         }
         let predicate = instances_decided(predicate, &settled, &self.supplied);
+        // From `ess/23` a field naming an arranged row whose identity the steps named by a
+        // literal holds that literal, as the send's input naming that row reads it
+        // ([`resolved_literals`]): a row created naming a related row stores that row's identity,
+        // so a selector comparing the field with the input decides it.
+        if subject_fact::identity_selectors(self.ir) {
+            for (field, held) in &row.settled {
+                let ScenarioValue::Instance { instance } = &held.value else {
+                    continue;
+                };
+                if let Some(identity) = literal_identity(self.rows, instance) {
+                    settled.to_mut().insert(
+                        field.clone(),
+                        Determined {
+                            value: ScenarioValue::Literal {
+                                value: identity.clone(),
+                            },
+                            type_ref: held.type_ref.clone(),
+                        },
+                    );
+                }
+            }
+        }
         subject_fact::row_truth_with(
             self.ir,
             &row.entity,
@@ -3197,6 +3224,7 @@ pub(super) type Prepared = (Setup, BTreeMap<String, Node>, Vec<RefusalCause>);
 /// Where no arrangement stands and a selector compares its rows' field with an input naming a
 /// related row their creator refuses while missing, the arrangement is tried once more with that
 /// row created first, the send naming it and every row created naming it (beyond10x/ess#682).
+/// Where the send addresses that related row as its subject, the rows name the subject.
 /// That row is filled so the creator's refusals over its stored fields pass, and the creator's
 /// input steered by its settled values, so a refusal comparing it with the input passes too.
 /// Where that fails too, a refusal for want of an arrangement names the creator's guard that
@@ -4517,6 +4545,9 @@ fn flow_text(text: &str) -> String {
 /// of their own for every other row the creator sets a field from ([`creator_row`]) —
 /// or, for [`Others::Sent`], naming the row the send names through the same input, where it names
 /// one.
+///
+/// Where the command addresses that related row as its subject through the input the selector
+/// compares, the rows are created naming the subject ([`addressed_related`]).
 fn linked(
     ir: &EssIr,
     command: &ResolvedCommand,
@@ -4584,6 +4615,14 @@ fn linked(
             }
             let row = if let Some(row) = created.get(&link.input) {
                 row.clone()
+            } else if let Some(row) = addressed_related(ir, command, &link, setup) {
+                // The send's own subject is the related row: the rows are created naming it as
+                // the steps so far leave it, never a second row the send does not name.
+                if !passes_all(ir, &link, ir.commands().get(&link.creator), &row) {
+                    return None;
+                }
+                created.insert(link.input.clone(), row.clone());
+                row
             } else {
                 if setup.bound.contains_key(&link.input) {
                     return None;
@@ -4605,6 +4644,42 @@ fn linked(
             })
         })
         .collect()
+}
+
+/// The subject the send addresses, as the setup's steps leave it, where the input `link`
+/// compares names it: a branch of `command` addresses an existing row of the linked entity
+/// through that input (`instance: <input>`). `None` for every other selector, whose related row
+/// [`linked`] arranges of its own.
+fn addressed_related(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    link: &Link,
+    setup: &Setup,
+) -> Option<Arrangement> {
+    let instance = setup.instance.as_ref()?;
+    let addresses = command
+        .outcomes
+        .iter()
+        .filter_map(|outcome| outcome.subject.as_ref())
+        .any(|subject| {
+            subject.effect != ResolvedEffect::Creates
+                && subject.entity == link.entity
+                && matches!(&subject.instance,
+                    ResolvedInstance::Supplied { field } if field.name == link.input)
+        });
+    if !addresses {
+        return None;
+    }
+    let (state, settled, unwritten) = walked_row(ir, &setup.steps, &link.entity, instance)?;
+    Some(Arrangement {
+        instance: instance.clone(),
+        state,
+        steps: Vec::new(),
+        source: BTreeSet::new(),
+        settled,
+        unwritten,
+        unobserved: BTreeSet::new(),
+    })
 }
 
 /// A row the creator `link` names reads through its `input`, other than the row it links through,

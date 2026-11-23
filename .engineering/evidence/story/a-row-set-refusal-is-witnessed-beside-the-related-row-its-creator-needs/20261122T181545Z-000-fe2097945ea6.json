@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-22T18:15:45Z",
+  "actor": "human:timo",
+  "artifact": "story:a-row-set-refusal-is-witnessed-beside-the-related-row-its-creator-needs",
+  "kind": "story",
+  "revision": 11,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "unit S2 package gate, implementor's logs, each exit 0: cargo test -p ess-conformance --locked --test row_sets (23 passed), row_set_struct_identity (11), row_set_upsert (8), external_beside_held_guard (17), adversary_related_values_all_bytes, synthesis_suite_bytes_table, synthesis_suite_bytes_table_cli_read; -p ess-compiler --test selection_precedence_table; -p ess-entity-runtime --test lowered_definitions_table; -p ess-cli --test tutorial_page (8); cargo clippy -p ess-conformance --all-targets exit 0. adversary_463_pass1 (missing Node types path) and adversary_ess0700a_identity_beside_row_set (a fixture-validation error) ended red in the unit and are not part of this record",
+    "reference": "a9b01dc3d9"
+  }
+}

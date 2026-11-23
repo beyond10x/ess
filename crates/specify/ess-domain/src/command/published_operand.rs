@@ -291,7 +291,7 @@ fn below_ess_27(
                  operand from specification format ess/27"
             ),
         )
-        .with_hint("declare `format: ess/27`")
+        .with_hint(FormatVersion::V27.declaration_hint())
     })
 }
 

@@ -1,0 +1,71 @@
+format: ess/37
+system: demo
+version: v1
+domain: demo.search
+summary: Documents with finite scores in every value position.
+types:
+  - {name: demo.search.DocId, kind: newtype, of: Uuid}
+  - {name: demo.search.Ratio, kind: newtype, of: Binary64, invariants: ["value >= 0", "value <= 1"]}
+  - name: demo.search.Hit
+    kind: struct
+    fields:
+      - {name: label, type: String}
+      - {name: score, type: Binary64}
+      - {name: maybe, type: Optional<Binary64>}
+      - {name: many, type: List<Binary64>}
+      - {name: by_name, type: "Map<String, Binary64>"}
+entities:
+  - name: demo.search.Doc
+    identity: {name: doc_id, type: demo.search.DocId}
+    fields:
+      - {name: added, type: Binary64}
+      - {name: ratio, type: demo.search.Ratio}
+      - {name: hit, type: demo.search.Hit}
+    lifecycle: {initial: Open, states: [Open], terminal: [Open], transitions: []}
+actors:
+  - {name: demo.search.Clerk, may: [demo.search.AddDoc]}
+commands:
+  - name: demo.search.AddDoc
+    input:
+      - {name: added, type: Binary64}
+      - {name: ratio, type: demo.search.Ratio}
+      - {name: hit, type: demo.search.Hit}
+    outcomes:
+      - name: added
+        when: "input.added >= 0.5"
+        creates: demo.search.Doc
+        instance: doc_id
+        sets: {added: input.added, ratio: input.ratio, hit: input.hit}
+        emits: [demo.search.DocAdded]
+        payload:
+          demo.search.DocAdded: {doc_id: {generated: true}, added: input.added}
+      - name: rejected
+        error: demo.search.TooLow
+        payload:
+          demo.search.TooLow: {added: input.added}
+errors:
+  - name: demo.search.TooLow
+    fields:
+      - {name: added, type: Binary64}
+events:
+  - name: demo.search.DocAdded
+    fields:
+      - {name: doc_id, type: demo.search.DocId}
+      - {name: added, type: Binary64}
+views:
+  - name: demo.search.DocsByAdded
+    source: demo.search.Doc
+    consistency: read_your_writes
+    filter: "added > 0.75"
+    order_by: [added desc, doc_id asc]
+    fields:
+      - {name: doc_id, type: demo.search.DocId}
+      - {name: added, type: Binary64}
+      - {name: ratio, type: demo.search.Ratio}
+      - {name: hit, type: demo.search.Hit}
+components:
+  - component: search-service
+    reached_by: network
+    owns: {domains: [demo.search]}
+    accepts: {commands: [demo.search.AddDoc]}
+    publishes: {events: [demo.search.DocAdded]}

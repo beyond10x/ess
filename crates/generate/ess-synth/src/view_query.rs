@@ -339,7 +339,7 @@ pub(crate) fn resolve(ir: &EssIr, entity: &ResolvedEntity, name: &str) -> Result
 /// How the values an aggregate or an order reads compare.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Values {
-    /// `Integer` or `Decimal`: by exact numeric value.
+    /// `Integer`, `Decimal` or `Binary64`: by exact numeric value.
     Numeric,
     /// `String`: by UTF-8 bytes.
     Text,

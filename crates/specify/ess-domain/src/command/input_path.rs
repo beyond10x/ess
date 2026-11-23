@@ -225,7 +225,7 @@ pub fn below_ess_22(at: &ConstructRef, what: &str) -> ValidationError {
         ValidationCode::UnsupportedFormatVersion,
         format!("{what} requires specification format ess/22"),
     )
-    .with_hint("write `format: ess/22` on the source that declares the system")
+    .with_hint(FormatVersion::V22.declaration_hint())
 }
 
 /// The refusal for a path whose route may leave it absent where it would supply `what`: an

@@ -145,16 +145,17 @@ const SOURCE_TAKEN: &str = "      - name: source-taken
         error: wiring.board.SourceTaken
 ";
 
-/// The row-set refusal moved ahead of every branch over a named port.
-fn taken_first() -> String {
+/// The row-set refusal moved ahead of every predicate over a named port, as far up as the missing
+/// ports' branches let it (`ess/27`: they answer before it in either order).
+fn taken_above_the_predicates() -> String {
     let without = WIRING.replacen(SOURCE_TAKEN, "", 1);
     assert_ne!(without, WIRING, "the refusal is in the model");
     let moved = without.replacen(
-        "      - name: no-source\n",
-        &format!("{SOURCE_TAKEN}      - name: no-source\n"),
+        "      - name: source-not-output\n",
+        &format!("{SOURCE_TAKEN}      - name: source-not-output\n"),
         1,
     );
-    assert_ne!(moved, without, "the first branch is in the model");
+    assert_ne!(moved, without, "the first predicate is in the model");
     moved
 }
 
@@ -164,7 +165,7 @@ fn taken_first() -> String {
 #[test]
 fn a_linked_row_set_attempt_that_ran_beside_named_rows_is_not_tried_again() {
     let (mut asked, mut fresh_asked) = (0, 0);
-    for text in [WIRING.to_owned(), taken_first()] {
+    for text in [WIRING.to_owned(), taken_above_the_predicates()] {
         let ir = ir(&text);
         let (kept, kept_asked) = row_set_attempts(false, || synthesize(&ir));
         let (fresh, again) = row_set_attempts(true, || synthesize(&ir));

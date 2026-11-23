@@ -249,11 +249,6 @@ commands:
         error: demo.fit.NoRun
         payload:
           demo.fit.NoRun: {}
-      - name: not-running
-        when_related: {via: input.run_id, predicate: state != Running}
-        error: demo.fit.NotRunning
-        payload:
-          demo.fit.NotRunning: {}
       - name: no-graph
         when_related: {via: input.graph_id, exists: false}
         error: demo.fit.NoGraph
@@ -264,6 +259,11 @@ commands:
         error: demo.fit.NoPatch
         payload:
           demo.fit.NoPatch: {}
+      - name: not-running
+        when_related: {via: input.run_id, predicate: state != Running}
+        error: demo.fit.NotRunning
+        payload:
+          demo.fit.NotRunning: {}
       - name: proposed
         creates: demo.fit.Candidate
         instance: candidate_id

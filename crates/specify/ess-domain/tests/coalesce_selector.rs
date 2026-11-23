@@ -164,7 +164,7 @@ fn below_ess_30_a_coalesced_selector_keeps_its_refusal_its_hint_naming_ess_30() 
 }
 
 /// Below `ess/29` the compact spelling keeps its own refusal, naming `ess/29` and the structured
-/// form, with no hint.
+/// form, its hint naming the source that declares the system.
 #[test]
 fn below_ess_29_the_compact_spelling_keeps_its_refusal_naming_ess_29() {
     let errors = refused(&at("ess/28", MODEL));
@@ -179,7 +179,12 @@ fn below_ess_29_the_compact_spelling_keeps_its_refusal_naming_ess_29() {
             error.message.contains("ess/29") && error.message.contains("{compare: {left: {expr:"),
             "{error:?}"
         );
-        assert_eq!(error.hint, None, "{error:?}");
+        // Re-pinned by story:every-format-version-hint-names-the-source-that-declares-the-system.
+        assert_eq!(
+            error.hint.as_deref(),
+            Some("write `format: ess/29` on the source that declares the system"),
+            "{error:?}"
+        );
     }
 }
 

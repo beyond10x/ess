@@ -302,10 +302,7 @@ fn predicate_count(
                         crate::binding::condition::BOOLEAN_FORMAT.major()
                     ),
                 )
-                .with_hint(format!(
-                    "declare `format: ess/{}`",
-                    crate::binding::condition::BOOLEAN_FORMAT.major()
-                )))
+                .with_hint(crate::binding::condition::BOOLEAN_FORMAT.declaration_hint()))
             }
             // The bounded contract for string operators (docs/design/string-predicate-operators.md,
             // *Selection*): a text literal, not empty, and no longer than any admitted read, so one

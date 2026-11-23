@@ -115,7 +115,7 @@ pub fn validate_specification(spec: &crate::Specification) -> ValidationErrors {
                                      specification format ess/18"
                                 ),
                             )
-                            .with_hint("declare `format: ess/18`"),
+                            .with_hint(crate::system::FormatVersion::V18.declaration_hint()),
                         );
                     }
                 }
@@ -130,7 +130,7 @@ pub fn validate_specification(spec: &crate::Specification) -> ValidationErrors {
                     format!("{at}.context_fields"),
                     "a delivery context requires specification format ess/18",
                 )
-                .with_hint("declare `format: ess/18`"),
+                .with_hint(crate::system::FormatVersion::V18.declaration_hint()),
             );
         }
         for field in &external.context_fields {

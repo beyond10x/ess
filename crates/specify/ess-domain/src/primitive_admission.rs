@@ -14,20 +14,26 @@ pub(crate) fn reference(
 ) {
     match ty {
         TypeRef::Primitive(Primitive::Binary64) if format == Some(FormatVersion::V1) => errors
-            .push(ValidationError::new(
-                ValidationCode::UnsupportedFormatVersion,
-                at,
-                "Binary64 requires specification format ess/2",
-            )),
+            .push(
+                ValidationError::new(
+                    ValidationCode::UnsupportedFormatVersion,
+                    at,
+                    "Binary64 requires specification format ess/2",
+                )
+                .with_hint(FormatVersion::V2.declaration_hint()),
+            ),
         // An older reader refuses `Json` as an undeclared type, with no version hint.
         TypeRef::Primitive(Primitive::Json)
             if format.is_some_and(|format| format.major() < FormatVersion::V15.major()) =>
         {
-            errors.push(ValidationError::new(
-                ValidationCode::UnsupportedFormatVersion,
-                at,
-                "Json requires specification format ess/15",
-            ));
+            errors.push(
+                ValidationError::new(
+                    ValidationCode::UnsupportedFormatVersion,
+                    at,
+                    "Json requires specification format ess/15",
+                )
+                .with_hint(FormatVersion::V15.declaration_hint()),
+            );
         }
         TypeRef::Map(key, value) => {
             if *key == Primitive::Binary64 {
@@ -109,11 +115,10 @@ fn presence(
         ),
     };
     if format.major() < required.major() {
-        errors.push(ValidationError::new(
-            ValidationCode::UnsupportedFormatVersion,
-            at,
-            message,
-        ));
+        errors.push(
+            ValidationError::new(ValidationCode::UnsupportedFormatVersion, at, message)
+                .with_hint(required.declaration_hint()),
+        );
     }
     if !field.type_ref.is_optional() {
         errors.push(
@@ -156,11 +161,14 @@ pub(crate) fn system(system: &SystemSpec) -> ValidationErrors {
     for declared in system.types.iter() {
         let at = format!("types.{}", declared.name);
         if declared.reading.is_some() && system.format.major() < 3 {
-            errors.push(ValidationError::new(
-                ValidationCode::UnsupportedFormatVersion,
-                format!("{at}.reading"),
-                "clock reading contracts require specification format ess/3",
-            ));
+            errors.push(
+                ValidationError::new(
+                    ValidationCode::UnsupportedFormatVersion,
+                    format!("{at}.reading"),
+                    "clock reading contracts require specification format ess/3",
+                )
+                .with_hint(FormatVersion::V3.declaration_hint()),
+            );
         }
         match &declared.body {
             TypeBody::Newtype {
@@ -172,19 +180,25 @@ pub(crate) fn system(system: &SystemSpec) -> ValidationErrors {
                 reference(of, Some(system.format), &format!("{at}.of"), &mut errors);
                 // An older reader fails `alphabet:` as an unknown field with no version hint.
                 if alphabet.is_some() && system.format.major() < FormatVersion::V11.major() {
-                    errors.push(ValidationError::new(
-                        ValidationCode::UnsupportedFormatVersion,
-                        format!("{at}.alphabet"),
-                        "declared alphabets require specification format ess/11",
-                    ));
+                    errors.push(
+                        ValidationError::new(
+                            ValidationCode::UnsupportedFormatVersion,
+                            format!("{at}.alphabet"),
+                            "declared alphabets require specification format ess/11",
+                        )
+                        .with_hint(FormatVersion::V11.declaration_hint()),
+                    );
                 }
                 // The same for `prefix:` (beyond10x/ess#146).
                 if prefix.is_some() && system.format.major() < FormatVersion::V15.major() {
-                    errors.push(ValidationError::new(
-                        ValidationCode::UnsupportedFormatVersion,
-                        format!("{at}.prefix"),
-                        "declared prefixes require specification format ess/15",
-                    ));
+                    errors.push(
+                        ValidationError::new(
+                            ValidationCode::UnsupportedFormatVersion,
+                            format!("{at}.prefix"),
+                            "declared prefixes require specification format ess/15",
+                        )
+                        .with_hint(FormatVersion::V15.declaration_hint()),
+                    );
                 }
             }
             TypeBody::Struct {
@@ -209,7 +223,10 @@ pub(crate) fn system(system: &SystemSpec) -> ValidationErrors {
                                     "a union variant with no payload requires specification \
                                      format ess/22",
                                 )
-                                .with_hint("declare `format: ess/22`, or give the variant a type"),
+                                .with_hint(format!(
+                                    "{raise}, or give the variant a type",
+                                    raise = crate::system::FormatVersion::V22.declaration_hint()
+                                )),
                             );
                         }
                         continue;
@@ -225,11 +242,14 @@ pub(crate) fn system(system: &SystemSpec) -> ValidationErrors {
             TypeBody::Enum { variants, .. } => {
                 for variant in variants {
                     if system.format.major() < 5 && !variant.is_bare() {
-                        errors.push(ValidationError::new(
-                            ValidationCode::UnsupportedFormatVersion,
-                            format!("{at}.variants.{}", variant.name()),
-                            "declared enum variant naming requires specification format ess/5",
-                        ));
+                        errors.push(
+                            ValidationError::new(
+                                ValidationCode::UnsupportedFormatVersion,
+                                format!("{at}.variants.{}", variant.name()),
+                                "declared enum variant naming requires specification format ess/5",
+                            )
+                            .with_hint(FormatVersion::V5.declaration_hint()),
+                        );
                     }
                 }
                 if system.format.major() >= FormatVersion::V32.major() {
@@ -295,7 +315,7 @@ fn held_state_conditions(
             command.site().key("outcomes"),
             ValidationCode::UnsupportedFormatVersion,
             "retained results and effect-free state defaults require specification format ess/7",
-        ));
+        ).with_hint(FormatVersion::V7.declaration_hint()));
     }
     if format.major() < 6
         && command.outcomes.iter().any(|outcome| {
@@ -313,24 +333,30 @@ fn held_state_conditions(
             command.site().key("outcomes"),
             ValidationCode::UnsupportedFormatVersion,
             "guarded external outcomes, subject facts and preservation require specification format ess/6",
-        ));
+        ).with_hint(FormatVersion::V6.declaration_hint()));
     }
     // A new shape of an existing key's value: an older reader fails it with `unknown field
     // predicate` and no version hint, so the meaning change is a format change of its own
     // (`docs/design/cross-record-and-stored-field-guards.md`). `{field, equals}` keeps ess/6.
     if format.major() < 9 && crate::command::subject_fact::uses_predicate(command) {
-        errors.push(ValidationError::at(
-            command.site().key("outcomes"),
-            ValidationCode::UnsupportedFormatVersion,
-            "subject predicates require specification format ess/9",
-        ));
+        errors.push(
+            ValidationError::at(
+                command.site().key("outcomes"),
+                ValidationCode::UnsupportedFormatVersion,
+                "subject predicates require specification format ess/9",
+            )
+            .with_hint(FormatVersion::V9.declaration_hint()),
+        );
     }
     if format.major() < 3 && crate::command::subject_state::uses_subject_state(command) {
-        errors.push(ValidationError::at(
-            command.site().key("outcomes"),
-            ValidationCode::UnsupportedFormatVersion,
-            "subject-state outcome guards require specification format ess/3",
-        ));
+        errors.push(
+            ValidationError::at(
+                command.site().key("outcomes"),
+                ValidationCode::UnsupportedFormatVersion,
+                "subject-state outcome guards require specification format ess/3",
+            )
+            .with_hint(FormatVersion::V3.declaration_hint()),
+        );
     }
     // beyond10x/ess#201: a listed `when_subject_state:` is a sequence an older reader cannot
     // parse, and a subjectless refusal carrying one is a document an older reader refuses.
@@ -357,16 +383,19 @@ fn held_state_conditions(
                     ValidationCode::UnsupportedFormatVersion,
                     format!("{what} requires specification format ess/18"),
                 )
-                .with_hint("declare `format: ess/18`"),
+                .with_hint(crate::system::FormatVersion::V18.declaration_hint()),
             );
         }
     }
     if format.major() < 4 && crate::command::subject_state::uses_state_changes(command) {
-        errors.push(ValidationError::at(
-            command.site().key("outcomes"),
-            ValidationCode::UnsupportedFormatVersion,
-            "state-change outcome guards require specification format ess/4",
-        ));
+        errors.push(
+            ValidationError::at(
+                command.site().key("outcomes"),
+                ValidationCode::UnsupportedFormatVersion,
+                "state-change outcome guards require specification format ess/4",
+            )
+            .with_hint(FormatVersion::V4.declaration_hint()),
+        );
     }
 }
 
@@ -511,11 +540,14 @@ fn aggregate_view(view: &crate::ViewSpec, format: FormatVersion, errors: &mut Va
         } else {
             "group_by"
         };
-        errors.push(ValidationError::new(
-            ValidationCode::UnsupportedFormatVersion,
-            format!("view.{}.{at}", view.name),
-            "aggregate views require specification format ess/10",
-        ));
+        errors.push(
+            ValidationError::new(
+                ValidationCode::UnsupportedFormatVersion,
+                format!("view.{}.{at}", view.name),
+                "aggregate views require specification format ess/10",
+            )
+            .with_hint(FormatVersion::V10.declaration_hint()),
+        );
     }
 }
 
@@ -553,11 +585,14 @@ fn predicate_operators(spec: &Specification, format: FormatVersion, errors: &mut
     for (site, predicate) in predicates(spec) {
         for (admitted, uses, message) in OPERATOR_FORMATS {
             if format.major() < admitted.major() && uses(predicate) {
-                errors.push(ValidationError::at(
-                    site.clone(),
-                    ValidationCode::UnsupportedFormatVersion,
-                    *message,
-                ));
+                errors.push(
+                    ValidationError::at(
+                        site.clone(),
+                        ValidationCode::UnsupportedFormatVersion,
+                        *message,
+                    )
+                    .with_hint(admitted.declaration_hint()),
+                );
             }
         }
     }
@@ -574,15 +609,18 @@ fn input_examples(
         return;
     }
     for field in command.examples.keys() {
-        errors.push(ValidationError::at(
-            command
-                .site()
-                .key("input")
-                .named(field.clone())
-                .key("example"),
-            ValidationCode::UnsupportedFormatVersion,
-            "input examples require specification format ess/11",
-        ));
+        errors.push(
+            ValidationError::at(
+                command
+                    .site()
+                    .key("input")
+                    .named(field.clone())
+                    .key("example"),
+                ValidationCode::UnsupportedFormatVersion,
+                "input examples require specification format ess/11",
+            )
+            .with_hint(FormatVersion::V11.declaration_hint()),
+        );
     }
 }
 
@@ -628,21 +666,27 @@ pub(crate) fn specification(spec: &Specification) -> ValidationErrors {
                     matches!(source, crate::binding::MappingSource::Selection { .. })
                 }))
         {
-            errors.push(ValidationError::new(
-                ValidationCode::UnsupportedFormatVersion,
-                format!("binding.{}.selections", binding.name),
-                "bounded list selection requires specification format ess/3",
-            ));
+            errors.push(
+                ValidationError::new(
+                    ValidationCode::UnsupportedFormatVersion,
+                    format!("binding.{}.selections", binding.name),
+                    "bounded list selection requires specification format ess/3",
+                )
+                .with_hint(FormatVersion::V3.declaration_hint()),
+            );
         }
         for (target, source) in &binding.mapping {
             if matches!(source, crate::binding::MappingSource::EventAccessor { .. })
                 && format.major() < 3
             {
-                errors.push(ValidationError::new(
-                    ValidationCode::UnsupportedFormatVersion,
-                    format!("binding.{}.mapping.{target}", binding.name),
-                    "bounded event accessors require specification format ess/3",
-                ));
+                errors.push(
+                    ValidationError::new(
+                        ValidationCode::UnsupportedFormatVersion,
+                        format!("binding.{}.mapping.{target}", binding.name),
+                        "bounded event accessors require specification format ess/3",
+                    )
+                    .with_hint(FormatVersion::V3.declaration_hint()),
+                );
             }
         }
     }
@@ -667,7 +711,7 @@ pub(crate) fn specification(spec: &Specification) -> ValidationErrors {
                     location,
                     format!("{what} requires specification format {needs}"),
                 )
-                .with_hint(format!("declare `format: {needs}`, or {instead}")),
+                .with_hint(format!("{}, or {instead}", needs.declaration_hint())),
             );
         }
     }
@@ -686,13 +730,7 @@ pub(crate) fn specification(spec: &Specification) -> ValidationErrors {
         );
     }
     for error in spec.errors().values() {
-        if format.major() < 4 && !error.naming.is_empty() {
-            errors.push(ValidationError::new(
-                ValidationCode::UnsupportedFormatVersion,
-                format!("error.{}.naming", error.name),
-                "declared error naming requires specification format ess/4",
-            ));
-        }
+        error_naming(error, format, &mut errors);
         fields(
             &error.fields,
             format,
@@ -709,6 +747,24 @@ pub(crate) fn specification(spec: &Specification) -> ValidationErrors {
     errors
 }
 
+/// The refusal of a declared error whose naming needs `ess/4`.
+fn error_naming(
+    error: &crate::command::ErrorSpec,
+    format: FormatVersion,
+    errors: &mut ValidationErrors,
+) {
+    if format.major() < 4 && !error.naming.is_empty() {
+        errors.push(
+            ValidationError::new(
+                ValidationCode::UnsupportedFormatVersion,
+                format!("error.{}.naming", error.name),
+                "declared error naming requires specification format ess/4",
+            )
+            .with_hint(FormatVersion::V4.declaration_hint()),
+        );
+    }
+}
+
 /// Every lifecycle member of `entity` that declares more than `format` admits, each as its
 /// location, what it declares, the format that admits it and what to write instead.
 ///
@@ -719,7 +775,7 @@ pub(crate) fn specification(spec: &Specification) -> ValidationErrors {
 fn lifecycle_members(
     entity: &crate::entity::EntitySpec,
     format: FormatVersion,
-) -> Vec<(String, &'static str, &'static str, String)> {
+) -> Vec<(String, &'static str, FormatVersion, String)> {
     let mut refused = Vec::new();
     let below = |needs: FormatVersion| format.major() < needs.major();
     let owner = format!("entity {}", entity.name);
@@ -729,7 +785,7 @@ fn lifecycle_members(
             refused.push((
                 at.clone(),
                 "a lifecycle state's wire spelling",
-                "ess/32",
+                FormatVersion::V32,
                 format!("write the state as `{state}`"),
             ));
         }
@@ -737,7 +793,7 @@ fn lifecycle_members(
             refused.push((
                 at,
                 "a lifecycle state's summary",
-                "ess/33",
+                FormatVersion::V33,
                 "drop the state's `summary:`".to_owned(),
             ));
         }
@@ -748,7 +804,7 @@ fn lifecycle_members(
                 refused.push((
                     format!("{owner}.transitions[{index}]"),
                     "a lifecycle transition's summary",
-                    "ess/33",
+                    FormatVersion::V33,
                     format!("drop the summary of transition `{}`", transition.name),
                 ));
             }

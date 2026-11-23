@@ -447,10 +447,7 @@ pub fn validate_specification(spec: &crate::Specification) -> ValidationErrors {
                     at.clone(),
                     "a failure policy selected per refusal requires specification format ess/22",
                 )
-                .with_hint(
-                    "declare `format: ess/22`, or write one universal policy: `retry`, `drop`, \
-                     or `escalate:` with `emits:`",
-                ),
+                .with_hint(format!("{raise}, or write one universal policy: `retry`, `drop`, or `escalate:` with `emits:`", raise = crate::system::FormatVersion::V22.declaration_hint())),
             );
         }
         errors.extend(check_shape(binding, policy, &at));

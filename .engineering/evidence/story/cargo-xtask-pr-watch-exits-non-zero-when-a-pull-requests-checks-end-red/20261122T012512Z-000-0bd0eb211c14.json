@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-22T01:25:12Z",
+  "actor": "human:timo",
+  "artifact": "story:cargo-xtask-pr-watch-exits-non-zero-when-a-pull-requests-checks-end-red",
+  "kind": "story",
+  "revision": 5,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "unit L3 package gate, implementor's logs, each exit 0: cargo test -p ess-xtask --locked --bin ess-xtask pr_watch:: (15 passed), cargo clippy -p ess-xtask --all-targets exit 0. slot task fmt-check exited 201 in the unit's tree; it exited 0 on the integration branch before the synthesis units: cargo clippy -p ess-domain -p ess-cli -p ess-conformance -p ess-synth --all-targets --locked -- -D warnings exit 0, slot task fmt-check exit 0",
+    "reference": "f7bc059acb"
+  }
+}

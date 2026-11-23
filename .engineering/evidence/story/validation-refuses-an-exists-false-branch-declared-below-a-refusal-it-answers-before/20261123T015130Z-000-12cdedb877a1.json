@@ -1,0 +1,14 @@
+{
+  "at": "2026-11-23T01:51:30Z",
+  "actor": "human:timo",
+  "artifact": "story:validation-refuses-an-exists-false-branch-declared-below-a-refusal-it-answers-before",
+  "kind": "story",
+  "revision": 9,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "review-result:wave-2026-11-22-whole-diff-security",
+    "review": "review-result:wave-2026-11-22-whole-diff-security",
+    "outcome": "no-op"
+  }
+}

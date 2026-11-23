@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-22T14:36:31Z",
+  "actor": "human:timo",
+  "artifact": "story:the-go-target-carries-a-finite-binary64",
+  "kind": "story",
+  "revision": 12,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "unit B3 package gate, implementor's logs, each exit 0: cargo test -p ess-synth --locked --test binary64_go (4 passed), binary64_plan, go_owner, go, json_go, served_codec_names, invariant_check, http_binding_rust, adversary_served_pass2_go, adversary_related_guard_behaviour_pass1, feasibility; cargo clippy -p ess-synth --all-targets exit 0. generated_view_queries was killed at the time limit in the unit (exit 124) and passed on the integration branch (go and rust, exit 0). fmt-check exited 201 in the unit's tree and 0 on the integration branch before the synthesis units: cargo clippy -p ess-domain -p ess-cli -p ess-conformance -p ess-synth --all-targets --locked -- -D warnings exit 0, slot task fmt-check exit 0",
+    "reference": "77728e7705"
+  }
+}

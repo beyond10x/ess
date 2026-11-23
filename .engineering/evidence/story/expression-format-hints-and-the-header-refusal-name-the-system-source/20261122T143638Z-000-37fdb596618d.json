@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-22T14:36:38Z",
+  "actor": "human:timo",
+  "artifact": "story:expression-format-hints-and-the-header-refusal-name-the-system-source",
+  "kind": "story",
+  "revision": 10,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "unit F3 package gate, implementor's logs, each exit 0: cargo test -p ess-domain --locked (206 binaries, 1942 passed, 0 failed), the ess-cli, ess-conformance byte-pin and ess-compiler typed_diagnostics targets of its second gate run, slot task fmt-check",
+    "reference": "481610b4ca"
+  }
+}

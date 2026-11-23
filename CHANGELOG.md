@@ -2,10 +2,36 @@
 
 ## [Unreleased]
 
+## [0.98.0] — 2026-11-23
+
+### Added
+
+- `ess generate synthesize --target rust`, `--target go` and `--target web` carry a finite `Binary64` where they refused the whole workspace with `this target has no qualified finite Binary64 codec`. The positions carried are an entity field, a command's input and response, an event's and an error's field, and a view's field and row, bare, under `Optional` and `List`, in a struct, in a newtype and as a map value. `primitives::Binary64` in the Rust types crate and `primitives.Binary64` in the Go module are checked wrappers that refuse a NaN and an infinity, and both servers read a JSON number rounded once to the nearest binary64 and write the same bytes: `3` as `3.0`, `-0` as `-0.0`, `0.000001` as `1e-6`. A value that is not a number, and a number that rounds to an infinity, are answered `400` naming the path. A guard, a view `filter:` and an `order_by:` over a `Binary64` compare its shortest decimal. The web page gives a `Binary64` field `<input type="number" step="any">`, and `TARGET.md` states that the page holds the value as a JavaScript number. A `Binary64` that is an entity identity, a view parameter, an actor attribute, a binding's delivery context, mapping or selection, or a declared conversion is refused as `missing-representation` with the detail `a Binary64 here is a key, a lookup or a delivery route, which this target does not carry`, and `--target clap` refuses every `Binary64`. A model without a `Binary64` keeps every byte, and no format version changes (`docs/design/code-target-binary64.md`).
+
 ### Changed
 
 - CI: a pull request whose every changed path lies under `.engineering/`, none under `.engineering/repro/`, builds no test archive and starts none of the 20 test jobs, and `Gate` passes them skipped for that reason only and says so in its log. A `main` push, the nightly run, a `queue/` head, a merge-group run and the release gate never skip, so a run that skipped never stands in for a release's gate (story:the-test-step-meets-the-test-budget).
+- **Breaking.** Validation refuses an `exists: false` branch over one row declared below a `when_related` predicate or row-set refusal over another row, where one request can satisfy both, from `ess/27`: the `exists: false` branch answers first at step 4. Declare it before the refusal, or use `existing_instance:` for an identity that already exists.
+- **Breaking.** Validation refuses `<`, `<=`, `>` and `>=` where an operand is an enum, ordered or not, as `type_mismatch` naming the enum, at every format; list the admitted variants with `in: [...]`.
+- Every refusal that asks for a newer specification format says where the key goes: its hint
+  reads ``write `format: ess/N` on the source that declares the system``, where 79 hints said
+  ``declare `format: ess/N` `` and the file the diagnostic points at is often a domain file
+  that may not carry `format:`. The 43 such refusals that had no hint now carry one, among
+  them `subject-state outcome guards require specification format ess/3`; three current-time
+  and calendar-window refusals carry the instruction as their hint instead of at the end of
+  their message. A domain file that sets `format:`, `version:` or `domains:` without `system:`
+  is told the file that names the system. No format version changes.
 - Documentation: it is published only at the project site, and the unified-docs manifest and its two workflows are removed.
+
+### Fixed
+
+- `ess verify conform run --report-out`, `ess verify conform report --report-out` and `ess verify conform mutate --report-out` replace a report file that exists as a regular file in one step: the report goes to a new file beside it and is renamed over it, so a run killed in between leaves the earlier report whole, where the file was truncated first. The replaced file keeps its permissions, and a symbolic link to a regular file replaces that file and stays a link. A destination that is not a regular file, such as `/dev/stdout`, `/dev/null` or a FIFO, is written in place as before, and a directory is refused.
+- `ess verify conform synthesize` arranges the setup run of a creating branch that reads two or more related rows as the branch's own scenario is arranged, where the strict search finds no run. A guard over a row beside the creation that reads the input, or a link of the row the creation is filed under compared with the input naming another row, withdrew every scenario that needed the row the branch creates, as `ESS-SYNTH-004` "which no input reaches" or `ESS-SYNTH-003`. On the new fixture the suite grows from 10 to 17 scenarios and the refusals fall from 7 to 3. Every run the strict search finds, and every refusal text, is unchanged. A setup run arranged as its branch's own scenario nests at most 1 level; a branch that would need a deeper arrangement is refused as before.
+- Synthesis no longer repeats a witness search for a command equal to one already searched in the same model: with all synthesis changes of 0.98.0 together, the largest reported downstream specification synthesizes in 1,385e9 instructions instead of 1,764e9 on 0.97.4, measured on one thread, and its peak memory rises from 5.8 GB to 6.3 GB.
+- `ess verify conform synthesize` witnesses a creating branch guarded on the absence of the row it creates (`when_related: {via: input.<id>, exists: false}` beside `creates:` with `instance: <id>`), where it withdrew that branch's scenario, and every scenario whose arrangement needed two such rows, as `ESS-SYNTH-001` "names one row per value": each row the branch creates for an arrangement carries its own identity. The further run that leaves an Optional reference out sends an identity no row of its scenario holds, also beside a view filtered on the created row's identity, whose expectation accepts the instance names of the distinctions that run retried. Every other suite is byte for byte unchanged.
+- Synthesis witnesses a row-set branch that needs rows present where the command creating those rows refuses a missing related row the send names (`when_related: {via: input.x, exists: false}` beside a selector comparing `x == input.x`). From `ess/23` a row's field naming a related row whose identity the scenario sends as a literal is compared with the input as that literal. Where the row-set command addresses the related row as its subject without an `owns` relation, the rows are created naming that subject, not a second row the send does not name. Such branches were refused as `ESS-SYNTH-001`. No format version changes.
+
+Language: 0 general, 0 one-to-one, 0 part (general share 0%; cumulative 17%).
 
 ## [0.97.4] — 2026-11-22
 

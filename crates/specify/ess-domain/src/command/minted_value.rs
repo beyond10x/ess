@@ -231,7 +231,7 @@ pub(super) fn misread_mapping(
                     target.name, target.type_ref
                 ),
             )
-            .with_hint("declare `format: ess/27`"),
+            .with_hint(FormatVersion::V27.declaration_hint()),
         );
     }
     Some(

@@ -274,6 +274,7 @@ fn assert_fixture_bytes(name: &str, actual: &str) {
     let expected = std::fs::read_to_string(&path).unwrap_or_default();
     if expected != actual {
         let written = Path::new(env!("CARGO_TARGET_TMPDIR")).join(name);
+        std::fs::create_dir_all(env!("CARGO_TARGET_TMPDIR")).expect("the test target directory");
         std::fs::write(&written, actual).expect("the scratch directory is writable");
         panic!(
             "{name} is not the bytes written; they are at {}",

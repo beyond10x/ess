@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-22T02:27:39Z",
+  "actor": "human:timo",
+  "artifact": "story:the-test-runner-reports-every-test-over-60-s-and-the-ten-slowest",
+  "kind": "story",
+  "revision": 6,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "unit T1 package gate, implementor's logs, each exit 0: cargo test -p ess-xtask --locked --test test_budget (6 passed), ci_lanes (36 passed), cargo clippy -p ess-xtask --all-targets exit 0 (second run; first exit 101), slot task fmt-check exit 0 (second run; first exit 201)",
+    "reference": "4a21b249fe"
+  }
+}

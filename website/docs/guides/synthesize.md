@@ -75,8 +75,17 @@ and completion. Rust's semantic types and component libraries remain dependency-
 [Clap emitter](https://github.com/beyond10x/ess/blob/main/crates/generate/ess-synth/src/clap/mod.rs)
 and [handler/completion tests](https://github.com/beyond10x/ess/blob/main/crates/generate/ess-synth/tests/clap.rs).
 
-All four full synthesis targets refuse unsupported modeled Binary64, as covered by the
+The `rust`, `go` and `web` targets carry a finite `Binary64` as `primitives::Binary64` and
+`primitives.Binary64`, checked wrappers that refuse a NaN and an infinity, and the servers read and
+write it as a JSON number. A `Binary64` that is an entity identity, a view parameter, an actor
+attribute, a binding's delivery context, mapping or selection, or a declared conversion is refused
+as `missing-representation`, as covered by the
 [feasibility tests](https://github.com/beyond10x/ess/blob/main/crates/generate/ess-synth/tests/feasibility.rs).
+The `clap` target refuses every `Binary64`, as covered by the
+[plan tests](https://github.com/beyond10x/ess/blob/main/crates/generate/ess-synth/tests/binary64_plan.rs).
+The `web` page gives a `Binary64` field `<input type="number" step="any">` and holds the value as a
+JavaScript number, which `TARGET.md` states.
+
 `Json` is represented per target:
 
 - `rust`: `json::Value`, a module its types crate carries only when the model uses `Json`. The

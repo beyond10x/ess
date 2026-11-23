@@ -444,7 +444,8 @@ fn per_row_below_ess_25(event: &QualifiedName, at: String) -> ValidationError {
         ),
     )
     .with_hint(format!(
-        "declare `format: ess/25`, or list `{event}` by name to publish it once"
+        "{raise}, or list `{event}` by name to publish it once",
+        raise = FormatVersion::V25.declaration_hint()
     ))
 }
 
@@ -881,9 +882,12 @@ fn instance_without_each(name: &str, index: usize, at: String, below_23: bool) -
                  rows by `where:`; `instance:` names the row an element of `each:` writes, which \
                  requires specification format ess/23"
             ),
-            "drop `instance:`, or declare `format: ess/23` and write one row per element with \
+            format!(
+                "drop `instance:`, or {raise} and write one row per element with \
              `each:` and `instance:`; to change one existing row by its identity, write `where: \
              <identity> == subject.<field>` (ess/27)",
+                raise = FormatVersion::V23.declaration_hint()
+            ),
         )
     } else {
         (
@@ -893,7 +897,8 @@ fn instance_without_each(name: &str, index: usize, at: String, below_23: bool) -
             ),
             "drop `instance:`, or write one row per element with `each: {in: input.<list>, as: \
              <name>}` and `instance: <name>.<member>` in place of `where:`; to change one existing \
-             row by its identity, write `where: <identity> == subject.<field>` (ess/27)",
+             row by its identity, write `where: <identity> == subject.<field>` (ess/27)"
+                .to_owned(),
         )
     };
     ValidationError::new(ValidationCode::ConflictingDeclaration, at, message).with_hint(hint)
@@ -908,8 +913,11 @@ fn no_rows_named(name: &str, index: usize, at: String, below_23: bool) -> Valida
                 "outcome `{name}` declares `affects[{index}]` with no `where:`, so the entry names \
                  no rows; an entry naming its rows by `each:` requires specification format ess/23"
             ),
-            "select the rows with `where: <predicate>`, or declare `format: ess/23` and write one \
+            format!(
+                "select the rows with `where: <predicate>`, or {raise} and write one \
              row per element with `each:` and `instance:`",
+                raise = FormatVersion::V23.declaration_hint()
+            ),
         )
     } else {
         (
@@ -918,7 +926,8 @@ fn no_rows_named(name: &str, index: usize, at: String, below_23: bool) -> Valida
                  so the entry names no rows"
             ),
             "select the rows with `where: <predicate>`, or write one row per element of an input \
-             list with `each:` and `instance:`",
+             list with `each:` and `instance:`"
+                .to_owned(),
         )
     };
     ValidationError::new(ValidationCode::MissingDeclaration, at, message).with_hint(hint)
@@ -1329,7 +1338,7 @@ pub(crate) fn validate(spec: &Specification) -> ValidationErrors {
                             ValidationCode::UnsupportedFormatVersion,
                             format!("`{key}:` requires specification format ess/16"),
                         )
-                        .with_hint("declare `format: ess/16`"),
+                        .with_hint(FormatVersion::V16.declaration_hint()),
                     );
                 }
                 continue;
@@ -1411,10 +1420,11 @@ pub(crate) fn validate(spec: &Specification) -> ValidationErrors {
                                     outcome.name, command.name
                                 ),
                             )
-                            .with_hint(
-                                "declare `format: ess/35`, or hold the member distinct with a \
+                            .with_hint(format!(
+                                "{raise}, or hold the member distinct with a \
                                  declared `distinct:`",
-                            ),
+                                raise = FormatVersion::V35.declaration_hint()
+                            )),
                         );
                     } else if let Some((other, _)) = outcome
                         .set_effects
@@ -1971,7 +1981,7 @@ fn check_filter(
                     entity.name
                 ),
             )
-            .with_hint("declare `format: ess/27`"),
+            .with_hint(FormatVersion::V27.declaration_hint()),
         );
     }
     errors
@@ -2163,10 +2173,13 @@ pub(super) fn check_row_predicate(
         let refused = ValidationError::at(at.clone(), error.code, error.message.clone());
         errors.push(match error.hint() {
             Some(hint) => refused.with_hint(hint.to_owned()),
-            None if reads_held_state_below_ess_30(spec, fields, error) => refused.with_hint(
-                "a set effect's filter reads the row's held state as `state` from ess/30; \
-                 declare `format: ess/30`",
-            ),
+            None if reads_held_state_below_ess_30(spec, fields, error) => {
+                refused.with_hint(format!(
+                    "a set effect's filter reads the row's held state as `state` from ess/30; \
+                 {raise}",
+                    raise = FormatVersion::V30.declaration_hint()
+                ))
+            }
             None => refused,
         });
     }
@@ -2432,7 +2445,7 @@ pub(crate) fn refuse_below_ess_16(
             at,
             format!("`{key}` requires specification format ess/16"),
         )
-        .with_hint("declare `format: ess/16`")
+        .with_hint(FormatVersion::V16.declaration_hint())
     };
     for (source, file) in files.iter_mut() {
         crate::spec::mark(read, errors, Some(&*source));
@@ -2476,10 +2489,11 @@ fn move_below_ess_22(at: String) -> ValidationError {
         "a move inside `affects:` — `moves: <Entity>.<transition>` on the rows an entry selects — \
          requires specification format ess/22",
     )
-    .with_hint(
-        "declare `format: ess/22`, or declare `sets:` on the affected rows and move them with a \
+    .with_hint(format!(
+        "{raise}, or declare `sets:` on the affected rows and move them with a \
          command of their own",
-    )
+        raise = FormatVersion::V22.declaration_hint()
+    ))
 }
 
 /// Refuses, before any outcome is converted, each move inside an `affects:` entry that cannot be
@@ -2562,7 +2576,10 @@ fn bulk_deletion_below_ess_23(name: &str, at: String) -> ValidationError {
              specification format ess/23"
         ),
     )
-    .with_hint("declare `format: ess/23`, or name one row with `instance:`")
+    .with_hint(format!(
+        "{raise}, or name one row with `instance:`",
+        raise = FormatVersion::V23.declaration_hint()
+    ))
 }
 
 /// The refusal of `affects:` beside a `deletes:` subject below ess/23, at `at`: the code and
@@ -2577,10 +2594,11 @@ fn affects_beside_deletion_below_ess_23(name: &str, at: String) -> ValidationErr
              and beside `deletes:` from specification format ess/23"
         ),
     )
-    .with_hint(
-        "declare `format: ess/23`, or move `affects:` to the branch that moves or updates an \
+    .with_hint(format!(
+        "{raise}, or move `affects:` to the branch that moves or updates an \
          existing row",
-    )
+        raise = FormatVersion::V23.declaration_hint()
+    ))
 }
 
 /// The refusal of `deletes:` inside an `affects:` entry below ess/23, at `at` (beyond10x/ess#452).
@@ -2591,7 +2609,7 @@ fn affect_deletion_below_ess_23(at: String) -> ValidationError {
         "a deletion inside `affects:` — `deletes: <Entity>` on the rows an entry selects — \
          requires specification format ess/23",
     )
-    .with_hint("declare `format: ess/23`")
+    .with_hint(FormatVersion::V23.declaration_hint())
 }
 
 /// Every deletion a set effect declares under a format below ess/23, refused where an assembled
@@ -3043,7 +3061,7 @@ fn each_below_ess_23(at: String) -> ValidationError {
         "an entry writing one row per element of an input list — `each: {in: input.<list>, as: \
          <name>}` inside `affects:` — requires specification format ess/23",
     )
-    .with_hint("declare `format: ess/23`")
+    .with_hint(FormatVersion::V23.declaration_hint())
 }
 
 /// The refusal of `moves:` or `deletes:` (`beside`) in an `each:` entry below ess/27, at `at`
@@ -3059,10 +3077,11 @@ fn each_effect_below_ess_27(name: &str, index: usize, beside: &str, at: String) 
              no other, below specification format ess/27"
         ),
     )
-    .with_hint(
+    .with_hint(format!(
         "keep `each:` with `instance:` and `sets:`, or write the other effect as an entry of its \
-         own; from `format: ess/27` the entry may move or delete the row each element names",
-    )
+         own; {raise}, from which the entry may move or delete the row each element names",
+        raise = FormatVersion::V27.declaration_hint()
+    ))
 }
 
 /// The refusal of a `where:` inside `each:` below ess/27, at `at` (beyond10x/ess#596).
@@ -3073,7 +3092,7 @@ fn element_filter_below_ess_27(at: String) -> ValidationError {
         "an `each:` entry acting only on the elements a filter selects — `each: {in: …, as: \
          <name>, where: <predicate>}` — requires specification format ess/27",
     )
-    .with_hint("declare `format: ess/27`")
+    .with_hint(FormatVersion::V27.declaration_hint())
 }
 
 /// Refuses, before any outcome is converted, under one header from `ess/16` (beyond10x/ess#459):

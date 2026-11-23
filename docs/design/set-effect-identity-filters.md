@@ -160,7 +160,7 @@ identity as any other field.
 
 | case | code | at | message (hint) |
 | --- | --- | --- | --- |
-| the identity read in a set effect's filter below `ess/27` | `unsupported_format_version` | `…affects[<n>].where`, `…instances.where` | "`call_id` is the identity of `demo.q.Call`; a set effect's filter reads it from `ess/27`" (declare `format: ess/27`) |
+| the identity read in a set effect's filter below `ess/27` | `unsupported_format_version` | `…affects[<n>].where`, `…instances.where` | "`call_id` is the identity of `demo.q.Call`; a set effect's filter reads it from `ess/27`" (write `format: ess/27` on the source that declares the system) |
 | a pin over the subject's own entity whose operand is the subject's identity (`subject.<identity>`, or the input field the outcome's `instance:` names) | `conflicting_declaration` | `…affects[<n>].where` | the entry selects only the subject, which every `affects:` entry excepts (drop the entry, or write the change in the outcome's own `sets:`) |
 | `instance:` without `each:` (existing) | `conflicting_declaration` (ESS-COMMAND-004) | `…affects[<n>].instance` | unchanged message; the hint adds: to change one existing row by its identity, write `where: <identity> == subject.<field>` (`ess/27`) |
 | `state` in a set effect's filter (existing) | `unobservable_fact` (ESS-COMMAND-003) | `…where` | unchanged |

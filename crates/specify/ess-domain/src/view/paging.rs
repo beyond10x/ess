@@ -226,7 +226,7 @@ impl ViewSpec {
                     format!("view.{}.paging", self.name),
                     "`paging:` requires specification format ess/16",
                 )
-                .with_hint("write `format: ess/16` on the source that declares the system"),
+                .with_hint(crate::system::FormatVersion::V16.declaration_hint()),
             );
         }
         errors

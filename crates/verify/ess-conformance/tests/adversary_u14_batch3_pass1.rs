@@ -1248,7 +1248,27 @@ fn u14_copied_key_beside_a_literal_conjunct_passes_the_interpreter() {
 fn u14_two_entries_with_node_reading_segments_at_ess_32_pass_the_interpreter() {
     let model = edit(
         &with_segments(GRAPH, false, true),
-        &[("format: ess/25\n", "format: ess/32\n")],
+        &[
+            ("format: ess/25\n", "format: ess/32\n"),
+            // From ess/27 a missing node may not be declared below a run in the wrong state
+            // (`conflicting_declaration`, ESS-COMMAND-004): one request holds both.
+            (
+                "      - name: run-not-active
+        when_related: {via: input.run_id, predicate: state != Active}
+        error: demo.graph.RunNotActive
+      - name: unknown-node
+        when_related: {via: input.node_id, exists: false}
+        error: demo.graph.NodeNotFound
+",
+                "      - name: unknown-node
+        when_related: {via: input.node_id, exists: false}
+        error: demo.graph.NodeNotFound
+      - name: run-not-active
+        when_related: {via: input.run_id, predicate: state != Active}
+        error: demo.graph.RunNotActive
+",
+            ),
+        ],
     );
     segments_witnessed(&model);
 }
