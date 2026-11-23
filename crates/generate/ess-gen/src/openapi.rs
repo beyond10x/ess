@@ -1910,6 +1910,7 @@ fn refusal_sentence(key: ess_http::RefusalKey, refusal: &ess_http::Refusal) -> S
     let what = match key {
         ess_http::RefusalKey::Malformed => "a request whose input cannot be read",
         ess_http::RefusalKey::NotGranted => "a caller no grant admits",
+        ess_http::RefusalKey::TooLarge => "a request whose body is larger than the route reads",
         ess_http::RefusalKey::Unfinished => "a realization that is unfinished",
     };
     let body = match &refusal.body {

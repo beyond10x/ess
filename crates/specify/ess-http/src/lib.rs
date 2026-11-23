@@ -62,11 +62,19 @@ pub const CODES: &[&str] = &[
     "ESS-HTTP-031",
     "ESS-HTTP-032",
     "ESS-HTTP-033",
+    "ESS-HTTP-034",
 ];
 
 /// The wording of a route collision, the same as the `OpenAPI` import's refusal of two operations
 /// on one location, so the two read alike.
 pub const COLLISION: &str = "two operations claim the same method and path";
+
+/// The largest request body both generated servers read when a binding declares no `limits`, in
+/// bytes: 1 MiB.
+pub const FIXED_REQUEST_BYTES: u64 = 1_048_576;
+
+/// The largest `limits.request_bytes` a binding may declare, in bytes: 16 MiB.
+pub const MAX_REQUEST_BYTES: u64 = 16_777_216;
 
 /// The exact ESS an HTTP binding binds.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -831,19 +839,27 @@ pub enum RefusalKey {
     Malformed,
     /// A caller no grant admits; today `403`. Answered with a `4xx`.
     NotGranted,
+    /// A request whose body is larger than the route reads; today `413`. Answered with a `4xx`.
+    TooLarge,
     /// An unfinished realization; today `501`. Answered with a `5xx`.
     Unfinished,
 }
 
 impl RefusalKey {
     /// Every key, in name order.
-    pub const ALL: [Self; 3] = [Self::Malformed, Self::NotGranted, Self::Unfinished];
+    pub const ALL: [Self; 4] = [
+        Self::Malformed,
+        Self::NotGranted,
+        Self::TooLarge,
+        Self::Unfinished,
+    ];
 
     /// The key as a binding spells it.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Malformed => "malformed",
             Self::NotGranted => "not_granted",
+            Self::TooLarge => "too_large",
             Self::Unfinished => "unfinished",
         }
     }
@@ -857,7 +873,7 @@ impl RefusalKey {
     /// the unfinished realization.
     fn class(self) -> u16 {
         match self {
-            Self::Malformed | Self::NotGranted => 4,
+            Self::Malformed | Self::NotGranted | Self::TooLarge => 4,
             Self::Unfinished => 5,
         }
     }
@@ -1586,6 +1602,18 @@ pub struct RouteSpec {
     /// top-level `refusals:`; absent, the binding's.
     #[serde(default)]
     pub refusals: Option<Entries<RefusalSpec>>,
+    /// The largest request body this route reads, over the binding's top-level `limits:`; absent,
+    /// the binding's. Only a command route that reads a body takes it.
+    #[serde(default)]
+    pub limits: Option<LimitsSpec>,
+}
+
+/// A `limits:` entry, as written: the largest request body a route reads.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LimitsSpec {
+    /// The largest request body, in bytes, from 1 to [`MAX_REQUEST_BYTES`]; required.
+    pub request_bytes: i64,
 }
 
 /// A route's `parameters`, as written: every entry in document order, a key written twice kept
@@ -1834,10 +1862,13 @@ pub struct HttpSpec {
     /// `sha256:<hex>` of the bytes of the binding this one refines; absent, it refines nothing.
     #[serde(default)]
     pub refines: Option<String>,
-    /// The standard refusals this binding answers its own way, keyed `malformed`, `not_granted`
-    /// or `unfinished`; one not listed keeps today's answer.
+    /// The standard refusals this binding answers its own way, keyed `malformed`, `not_granted`,
+    /// `too_large` or `unfinished`; one not listed keeps today's answer.
     #[serde(default)]
     pub refusals: Option<Entries<RefusalSpec>>,
+    /// The largest request body a route that reads one takes; absent, [`FIXED_REQUEST_BYTES`].
+    #[serde(default)]
+    pub limits: Option<LimitsSpec>,
     /// The base URLs a `reached_by: network` component's paths resolve against, keyed by the
     /// component, each list in the order written: the first is the default.
     #[serde(default)]
@@ -2150,9 +2181,32 @@ pub struct Route {
         deserialize_with = "route_refusals"
     )]
     pub refusals: BTreeMap<RefusalKey, Refusal>,
+    /// The largest request body this route reads, in place of the binding's [`HttpIr::limits`].
+    /// Absent when the binding's stands, and always absent on a route that reads no body.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub limits: Option<Limits>,
+}
+
+/// A compiled `limits`: the largest request body a route reads.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Limits {
+    /// The largest request body, in bytes, from 1 to [`MAX_REQUEST_BYTES`].
+    pub request_bytes: u64,
 }
 
 impl Route {
+    /// Whether the route reads a request body: it serves a command, its method is not `get` and
+    /// its request is not encoded `query`. A view, a `get` command and a `query`-encoded command
+    /// carry their input in the path or the query string.
+    pub fn reads_body(&self) -> bool {
+        reads_body(
+            &self.operation,
+            self.method,
+            self.request.as_ref().map(|request| request.encoding),
+        )
+    }
+
     /// The path's segments; `None` for an open route.
     ///
     /// A compiled path always parses: [`compile`] refuses one that does not, and
@@ -2209,6 +2263,9 @@ pub struct HttpIr {
     /// The digest of the refined binding's bytes. Absent when the binding refines nothing.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     refines: Option<String>,
+    /// The largest request body a route that reads one takes. Absent when not declared.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    limits: Option<Limits>,
     /// The standard refusals the binding overrides, in key order. Absent when empty.
     #[serde(
         default,
@@ -2244,6 +2301,39 @@ impl HttpIr {
     /// The standard refusals the binding answers its own way, in key order.
     pub fn refusals(&self) -> &BTreeMap<RefusalKey, Refusal> {
         &self.refusals
+    }
+
+    /// The binding's own `limits`, if it declares them.
+    pub fn limits(&self) -> Option<&Limits> {
+        self.limits.as_ref()
+    }
+
+    /// The largest request body `route` reads, in bytes: `None` when it reads no body, else the
+    /// route's own `limits` over the binding's, and `None` too when neither declares one (the
+    /// server's [`FIXED_REQUEST_BYTES`] then applies).
+    pub fn request_bytes(&self, route: &Route) -> Option<u64> {
+        if !route.reads_body() {
+            return None;
+        }
+        route
+            .limits
+            .as_ref()
+            .or(self.limits.as_ref())
+            .map(|limits| limits.request_bytes)
+    }
+
+    /// Whether the binding bounds the request of `route`: it reads a body and a `limits` or a
+    /// `too_large` refusal, its own or the binding's, applies to it.
+    pub fn bounds_request(&self, route: &Route) -> bool {
+        route.reads_body()
+            && (self.request_bytes(route).is_some()
+                || route.refusals.contains_key(&RefusalKey::TooLarge)
+                || self.refusals.contains_key(&RefusalKey::TooLarge))
+    }
+
+    /// Whether the binding bounds the request of any of its routes.
+    pub fn bounds_requests(&self) -> bool {
+        self.routes.iter().any(|route| self.bounds_request(route))
     }
 
     /// Each `reached_by: network` component's base URLs the binding declares, by component name,
@@ -2299,8 +2389,8 @@ impl HttpIr {
     /// `errors` answers, or a group whose answers differ or hold an `envelope`; a view body `rows`
     /// written out, `single` without `empty` or `empty` without `single` (beside `rows` or
     /// `array`), an `empty` status outside `4xx`, or an `empty` body `none` written out or a
-    /// literal under an empty member; a refusal key outside `malformed`, `not_granted` and
-    /// `unfinished`, a refusal status outside its class (`4xx`, `4xx`, `5xx`), or a refusal body
+    /// literal under an empty member; a refusal key outside `malformed`, `not_granted`,
+    /// `too_large` and `unfinished`, a refusal status outside its class (`4xx`, `4xx`, `4xx`, `5xx`), or a refusal body
     /// other than `none` or one literal member with a name, the binding's or a route's own, and a
     /// route's `refusals` out of key order or written empty; `headers`, challenge `params` or redirect `parameters` out of
     /// name order or empty; a header name that is not a token, one the server, the encoding or
@@ -2360,6 +2450,9 @@ impl HttpIr {
                      digest compiled IR records of the refined binding's bytes"
                 ));
             }
+        }
+        if let Some(limits) = &self.limits {
+            limits_invariants(*limits, "limits")?;
         }
         for (key, refusal) in &self.refusals {
             refusal_invariants(*key, refusal, "refusals")?;
@@ -2553,7 +2646,27 @@ fn route_invariants(route: &Route, at: &str) -> Result<(), String> {
     if let Some(request) = &route.request {
         request_invariants(route, request, at)?;
     }
+    if let Some(limits) = &route.limits {
+        if !route.reads_body() {
+            return Err(format!(
+                "`{at}.limits` is on {}, which reads no request body",
+                route.operation
+            ));
+        }
+        limits_invariants(*limits, &format!("{at}.limits"))?;
+    }
     answer_invariants(route, at)
+}
+
+/// Holds a compiled `limits` to its range.
+fn limits_invariants(limits: Limits, at: &str) -> Result<(), String> {
+    if !(1..=MAX_REQUEST_BYTES).contains(&limits.request_bytes) {
+        return Err(format!(
+            "`{at}.request_bytes` `{}` is not a whole number of bytes from 1 to {MAX_REQUEST_BYTES}",
+            limits.request_bytes
+        ));
+    }
+    Ok(())
 }
 
 /// The invariants of one compiled route's answers (see [`HttpIr::from_json`]): `outcomes` on a
@@ -3099,11 +3212,12 @@ impl Refusals {
 /// | `ESS-HTTP-026` | at `routes[i].outcomes.<name>.headers.<Name>`, `routes[i].errors.headers.<Name>` (once for each outcome `errors` covers), `refusals.<key>.headers.<Name>` or `routes[i].refusals.<key>.headers.<Name>`: a name that is not an RFC 9110 token; `Content-Type`, `Content-Length`, `Transfer-Encoding` or `Location` in any case, which the encoding and `redirect` write; a name declared again ignoring case; a literal that is not a field value (visible US-ASCII, spaces and tabs, no space or tab at either end); a source outside `input.<field>`, `response.<field>`, `error.<field>` and `error.wire`, naming no field, naming one of a type other than a scalar or an `Optional` scalar, or one the outcome cannot supply (`response.` without `returns: true`, `error.` without an error), or `error.wire` where the error declares a field named `wire`; any source in a standard refusal's header. At `….challenge.params.<param>`: the same source refusals for a sourced challenge param |
 /// | `ESS-HTTP-027` | at `….headers.<Name>`: a challenge under any header but `WWW-Authenticate`; at `….challenge.scheme`: a scheme that is not a token; at `….challenge.params.<param>`: a param name that is not a token, one declared again ignoring case, or a literal a quoted string cannot carry; at `….headers`: an outcome or standard refusal on `401` without a `WWW-Authenticate` challenge (one refused for its scheme or params counts as declared) |
 /// | `ESS-HTTP-028` | at `routes[i].outcomes.<name>.redirect` or `routes[i].errors.redirect` (once for each outcome `errors` covers): a `redirect` on a compiled status other than `301`, `302`, `303`, `307` and `308`, or one of those without a `redirect`; at `….redirect.location`: a source the outcome cannot supply (as for `ESS-HTTP-026`), or of a type other than `String` or a newtype of `String`, `Optional` included; at `….redirect.mode`: none, or one outside `query` and `fragment`; at `….redirect.parameters.<name>`: a parameter written twice, or a source refused as a header source is |
-/// | `ESS-HTTP-029` | at `refusals.<key>`, or a route's own `routes[i].refusals.<key>`: a key outside `malformed`, `not_granted` and `unfinished`, or one written twice; at `….<key>.status`: a status outside its class, `4xx` for `malformed` and `not_granted`, `5xx` for `unfinished`; at `….<key>.body`: a body other than `none` or `{<member>: {literal: <text>}}` under a non-empty member |
+/// | `ESS-HTTP-029` | at `refusals.<key>`, or a route's own `routes[i].refusals.<key>`: a key outside `malformed`, `not_granted`, `too_large` and `unfinished`, or one written twice; at `….<key>.status`: a status outside its class, `4xx` for `malformed`, `not_granted` and `too_large`, `5xx` for `unfinished`; at `….<key>.body`: a body other than `none` or `{<member>: {literal: <text>}}` under a non-empty member |
 /// | `ESS-HTTP-030` | at `routes[i]`: `body: single` without `empty`, `empty` without `single` (on a command too), or an `empty` status outside `4xx`, unless the route answers `rows` or `array`, where `empty` is refused once, for itself; at `routes[i].empty.body`: a body other than `none` or `{<member>: {literal: <text>}}` under a non-empty member |
 /// | `ESS-HTTP-031` | at `routes[i].body`: `body: single` on a view whose filter does not select by its source entity's identity: neither the filter nor a member of a top-level `all` (nested `all` included) is `<identity field> == param.<name>`, compared by value, in either operand order; naming the view, its entity and the identity field |
 /// | `ESS-HTTP-032` | at `routes[i].operation_id`: an id outside `[A-Za-z_][A-Za-z0-9_.-]*`; one an earlier route already gives, naming both routes; or the qualified name of another command or view of the specification, which is that operation's derived `operationId` |
 /// | `ESS-HTTP-033` | at `servers.<component>`: a component the specification does not declare, one not `reached_by: network`, one written twice, or an empty list; at `servers.<component>[j].url`: a URL that is neither absolute `http://` or `https://` with a host nor `/`-rooted, one holding whitespace, `{`, `}`, `?`, `#` or userinfo, or one given twice for the component |
+/// | `ESS-HTTP-034` | at `limits.request_bytes` or `routes[i].limits.request_bytes`: a request size outside 1 to 16777216 bytes; at `routes[i].limits`: a limit on a route that reads no request body (a view, a `get` command or a `request: {encoding: query}` command) |
 ///
 /// A listed outcome, a `single` view and a standard refusal are written into the IR with every
 /// default omitted: an outcome's `envelope`, a view's `rows`, an empty answer's `none` body, an
@@ -3134,7 +3248,7 @@ pub fn compile(
 /// | code | refused |
 /// |---|---|
 /// | `ESS-HTTP-003` | at `refines`: a value that is not `sha256:` and 64 lower-case hex digits; `refines` given and no refined binding supplied; the supplied binding's byte digest differs; the refined binding itself refines (a refinement of a refinement is refused in `/1`); or a refined binding supplied to a document that refines nothing |
-/// | `ESS-HTTP-012` | at `routes[i].method` or `routes[i].path`: a method or path the refined binding fixed is changed, or a fixed path left open; at `routes[i].request.encoding`, `routes[i].request.unknown` or `routes[i].request.body`: a refined route's request restated with another value, a default written out or left out counting as that default, and a body added or dropped; at `routes[i].outcomes.<name>`, `routes[i].errors`, `routes[i].body` or `routes[i].empty`: a refined route's outcome, `errors` (its headers and redirect included), view body or empty answer (its body included, none written out or left out counting as none) added, dropped or restated with another status or body, by the same counting; at `routes[i].outcomes.<name>.headers` or `….redirect`: an outcome both list whose headers or redirect differ, compared in name order with an empty map counting as none; at `refusals.<key>`: a standard refusal added, dropped or changed; at `refusals.<key>.headers`: one both declare whose headers differ; at `routes[i].refusals.<key>` and `routes[i].refusals.<key>.headers`: the same for a route's own refusals; at `routes`: a route of the refined binding is dropped; at `routes[i].operation_id`: an operation id the refined route fixes changed or left out (one may be added where the refined route has none); at `routes[i].outcomes.<name>`: an outcome both list restated with another `encoding`, `json` written out or left out counting as `json`; at `routes[i].alike`: the groups added, dropped or restated, each compared in name order |
+/// | `ESS-HTTP-012` | at `limits` or `routes[i].limits`: a request limit added, dropped or restated; at `routes[i].method` or `routes[i].path`: a method or path the refined binding fixed is changed, or a fixed path left open; at `routes[i].request.encoding`, `routes[i].request.unknown` or `routes[i].request.body`: a refined route's request restated with another value, a default written out or left out counting as that default, and a body added or dropped; at `routes[i].outcomes.<name>`, `routes[i].errors`, `routes[i].body` or `routes[i].empty`: a refined route's outcome, `errors` (its headers and redirect included), view body or empty answer (its body included, none written out or left out counting as none) added, dropped or restated with another status or body, by the same counting; at `routes[i].outcomes.<name>.headers` or `….redirect`: an outcome both list whose headers or redirect differ, compared in name order with an empty map counting as none; at `refusals.<key>`: a standard refusal added, dropped or changed; at `refusals.<key>.headers`: one both declare whose headers differ; at `routes[i].refusals.<key>` and `routes[i].refusals.<key>.headers`: the same for a route's own refusals; at `routes`: a route of the refined binding is dropped; at `routes[i].operation_id`: an operation id the refined route fixes changed or left out (one may be added where the refined route has none); at `routes[i].outcomes.<name>`: an outcome both list restated with another `encoding`, `json` written out or left out counting as `json`; at `routes[i].alike`: the groups added, dropped or restated, each compared in name order |
 ///
 /// `servers` is not compared: each server binding states its own deployment.
 ///
@@ -3151,6 +3265,7 @@ pub fn compile_refining(
 ) -> Result<HttpIr, HttpDiagnostics> {
     let mut refusals = Refusals(Vec::new());
     let standard = envelope(spec, ir, &mut refusals);
+    let limits = limits(spec.limits.as_ref(), "limits", &mut refusals);
     let compared = refinement(spec, refined, ir, derived, &mut refusals);
     let (routes, derived_routes) = body(spec, ir, derived, &standard, &mut refusals);
     let servers = presentation(spec, ir, &mut refusals);
@@ -3163,6 +3278,7 @@ pub fn compile_refining(
             format: HTTP_IR_FORMAT.to_owned(),
             specification: spec.specification.clone(),
             refines: spec.refines.clone(),
+            limits,
             refusals: standard,
             servers,
             routes,
@@ -3207,9 +3323,113 @@ fn standing(
     standing
 }
 
+/// Holds a written `limits` to its range (`ESS-HTTP-034`), at `{at}.request_bytes`; `None` when
+/// refused or not written.
+fn limits(written: Option<&LimitsSpec>, at: &str, refusals: &mut Refusals) -> Option<Limits> {
+    let written = written?;
+    let Some(request_bytes) = u64::try_from(written.request_bytes)
+        .ok()
+        .filter(|bytes| (1..=MAX_REQUEST_BYTES).contains(bytes))
+    else {
+        refusals.refuse(
+            "ESS-HTTP-034",
+            format!("{at}.request_bytes"),
+            format!(
+                "`{}` is not a request size: `limits.request_bytes` is a whole number of bytes \
+                 from 1 to {MAX_REQUEST_BYTES}",
+                written.request_bytes
+            ),
+        );
+        return None;
+    };
+    Some(Limits { request_bytes })
+}
+
+/// Whether an operation reads a request body: a command whose method is not `get` and whose
+/// request is not encoded `query`.
+fn reads_body(operation: &Operation, method: Method, encoding: Option<Encoding>) -> bool {
+    matches!(operation, Operation::Command(_))
+        && method != Method::Get
+        && encoding != Some(Encoding::Query)
+}
+
+/// Holds a route's `limits` to its range and to the kind of route it is on (`ESS-HTTP-034`): a
+/// command that reads a request body takes it.
+fn route_limits(
+    spec: &RouteSpec,
+    operation: &Operation,
+    method: Option<Method>,
+    request: &Result<Option<Request>, Refused>,
+    path: &str,
+    refusals: &mut Refusals,
+) -> Option<Limits> {
+    let compiled = limits(spec.limits.as_ref(), &format!("{path}.limits"), refusals);
+    let (Some(_), Some(method)) = (&spec.limits, method) else {
+        return compiled;
+    };
+    let encoding = request
+        .as_ref()
+        .ok()
+        .and_then(|request| request.as_ref())
+        .map(|request| request.encoding);
+    if !reads_body(operation, method, encoding) {
+        let why = if matches!(operation, Operation::View(_)) {
+            "a view takes no request"
+        } else if method == Method::Get {
+            "`get` carries none"
+        } else {
+            "`request: {encoding: query}` carries the input in the query string"
+        };
+        refusals.refuse(
+            "ESS-HTTP-034",
+            format!("{path}.limits"),
+            format!(
+                "{operation} reads no request body ({why}); `limits.request_bytes` belongs on a \
+                 command route that carries its input in a `json` or `form` body"
+            ),
+        );
+    }
+    compiled
+}
+
+/// Refuses (`ESS-HTTP-012`) a `limits` that differs from the refined binding's, at `at`.
+fn limit_changes(
+    (new, old): (Option<&LimitsSpec>, Option<&LimitsSpec>),
+    at: String,
+    message: impl FnOnce(&str, &str) -> String,
+    refusals: &mut Refusals,
+) {
+    if new == old {
+        return;
+    }
+    let shown = |limits: Option<&LimitsSpec>| {
+        limits.map_or_else(
+            || "no limit".to_owned(),
+            |limits| format!("`request_bytes: {}`", limits.request_bytes),
+        )
+    };
+    refusals.refuse("ESS-HTTP-012", at, message(&shown(new), &shown(old)));
+}
+
 /// Holds each `refusals:` entry under `prefix` (`refusals`, or a route's `routes[i].refusals`) to
 /// its rules (`ESS-HTTP-029`): a key of the set, written once, a status of the key's class and a
 /// body that is `none` or one literal member with a name.
+/// Refuses (`ESS-HTTP-012`) a refining document whose top-level `limits` differ from the refined
+/// binding's.
+fn binding_limit_changes(spec: &HttpSpec, refined: &HttpSpec, refusals: &mut Refusals) {
+    limit_changes(
+        (spec.limits.as_ref(), refined.limits.as_ref()),
+        "limits".to_owned(),
+        |new, old| {
+            format!(
+                "`limits` is {new} here, and the refined binding fixes {old}; a refinement \
+                 restates the refined binding's limits exactly"
+            )
+        },
+        refusals,
+    );
+}
+
 fn standard(
     written: Option<&Entries<RefusalSpec>>,
     prefix: &str,
@@ -3233,7 +3453,7 @@ fn standard(
                 at,
                 format!(
                     "`{name}` is not a standard refusal; `refusals:` takes `malformed`, \
-                     `not_granted` and `unfinished`"
+                     `not_granted`, `too_large` and `unfinished`"
                 ),
             );
             continue;
@@ -3248,8 +3468,8 @@ fn standard(
                 format!("{at}.status"),
                 format!(
                     "`{}` is not a `{class}xx` status, and `{key}` answers a `{class}xx`: \
-                     `malformed` and `not_granted` refuse the request (`4xx`), `unfinished` is \
-                     the server's (`5xx`)",
+                     `malformed`, `not_granted` and `too_large` refuse the request (`4xx`), \
+                     `unfinished` is the server's (`5xx`)",
                     spec.status
                 ),
             );
@@ -3385,6 +3605,7 @@ fn refinement<'a>(
     }
     let mut own = Refusals(Vec::new());
     let standard = envelope(&refined.spec, ir, &mut own);
+    limits(refined.spec.limits.as_ref(), "limits", &mut own);
     body(&refined.spec, ir, derived, &standard, &mut own);
     presentation(&refined.spec, ir, &mut own);
     for diagnostic in own.0 {
@@ -3615,6 +3836,7 @@ fn changes(spec: &HttpSpec, refined: &HttpSpec, refusals: &mut Refusals) {
         "refusals",
         refusals,
     );
+    binding_limit_changes(spec, refined, refusals);
     let mut routed: BTreeMap<Operation, usize> = BTreeMap::new();
     for (index, route) in spec.routes.iter().enumerate() {
         if let Some(operation) = named(route) {
@@ -3692,6 +3914,18 @@ fn changes(spec: &HttpSpec, refined: &HttpSpec, refusals: &mut Refusals) {
             route.refusals.as_ref(),
             fixed.refusals.as_ref(),
             &format!("routes[{index}].refusals"),
+            refusals,
+        );
+        limit_changes(
+            (route.limits.as_ref(), fixed.limits.as_ref()),
+            format!("routes[{index}].limits"),
+            |new, old| {
+                format!(
+                    "{operation} bounds its request at {new} here, and the refined binding fixes \
+                     {old} at `routes[{at}]`; a refinement restates the limits of every route it \
+                     restates"
+                )
+            },
             refusals,
         );
     }
@@ -4178,6 +4412,7 @@ fn routes(
             &path,
             refusals,
         );
+        let route_limits = route_limits(spec, &operation, method, &request, &path, refusals);
         let own = self::standard(
             spec.refusals.as_ref(),
             &format!("{path}.refusals"),
@@ -4222,6 +4457,7 @@ fn routes(
                     body: answers.body,
                     empty: answers.empty,
                     refusals: own,
+                    limits: route_limits,
                 })
             }
             _ => None,

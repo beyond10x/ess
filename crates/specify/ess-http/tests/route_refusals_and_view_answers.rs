@@ -415,3 +415,390 @@ fn compiled_ir_with_view_answers_out_of_rules_is_refused() {
     let fine = bare.replace(path, &format!("{path}, \"refusals\": {written}"));
     HttpIr::from_json(&fine).unwrap_or_else(|error| panic!("reads: {error}"));
 }
+
+// --- request limits -----------------------------------------------------------------------------
+
+#[test]
+fn a_binding_that_declares_neither_key_keeps_its_ir_bytes() {
+    let ir = model();
+    let bare =
+        compiled(&ir, &two_commands("")).unwrap_or_else(|errors| panic!("compiles: {errors}"));
+    let bound = compiled(
+        &ir,
+        &(TOP_LEVEL.to_owned()
+            + &two_commands(
+                "    refusals:\n      malformed: {status: 400, body: none}\n      not_granted: {status: 404, body: none}\n",
+            )),
+    )
+    .unwrap_or_else(|errors| panic!("compiles: {errors}"));
+    for (name, http, pinned) in [
+        (
+            "bare",
+            &bare,
+            "sha256:8d4577309106eec43667ddb21b05765c9ad9af7d35aa95355433aaeb65e194d3",
+        ),
+        (
+            "bound",
+            &bound,
+            "sha256:518c82b2b8f2d4eab45752ca53f51b46fdb54a1bd62b8878e6332a4f89c9c057",
+        ),
+    ] {
+        let text = http.to_canonical_json();
+        assert!(!text.contains("limits"), "{name}: {text}");
+        assert!(!text.contains("too_large"), "{name}: {text}");
+        assert_eq!(
+            ess_http::digest(text.as_bytes()),
+            pinned,
+            "{name}: the IR bytes of a binding without limits moved"
+        );
+    }
+}
+
+const NOTE: &str = "catalog.orders.NoteOrder";
+
+/// `NoteOrder` (its one input in the path) routed on `method`, with `keys` beside its path.
+fn note_route(method: &str, keys: &str) -> String {
+    format!(
+        "routes:\n  - command: {NOTE}\n    method: {method}\n    path: /orders/{{order_id}}/note\n    parameters: {{order_id: input.order_id}}\n{keys}"
+    )
+}
+
+fn worded(result: Result<HttpIr, HttpDiagnostics>) -> Vec<String> {
+    result
+        .expect_err("refused")
+        .0
+        .into_iter()
+        .map(|diagnostic| diagnostic.message)
+        .collect()
+}
+
+#[test]
+fn a_binding_limit_and_a_route_limit_compile_and_round_trip() {
+    let ir = model();
+    let document = "limits: {request_bytes: 64}\n".to_owned()
+        + &two_commands("    limits: {request_bytes: 256}\n");
+    let http = compiled(&ir, &document).unwrap_or_else(|errors| panic!("compiles: {errors}"));
+    let json = ir_json(&http);
+    assert_eq!(json["limits"], json!({"request_bytes": 64}), "{json:#}");
+    assert_eq!(
+        json["routes"][0]["limits"],
+        json!({"request_bytes": 256}),
+        "{json:#}"
+    );
+    assert!(json["routes"][1].get("limits").is_none(), "{json:#}");
+    assert_eq!(http.limits().map(|limits| limits.request_bytes), Some(64));
+    round_trips(&http);
+    let place = http
+        .route(&Operation::Command("catalog.orders.PlaceOrder".into()))
+        .expect("routed");
+    let note = http
+        .route(&Operation::Command(NOTE.into()))
+        .expect("routed");
+    assert_eq!(http.request_bytes(place), Some(256));
+    assert_eq!(http.request_bytes(note), Some(64));
+}
+
+#[test]
+fn a_limit_is_a_whole_number_of_bytes_from_one_to_the_ceiling() {
+    let ir = model();
+    for bad in ["0", "-1", "16777217"] {
+        assert_eq!(
+            located(compiled(
+                &ir,
+                &format!("limits: {{request_bytes: {bad}}}\n{}", two_commands(""))
+            )),
+            [refused("ESS-HTTP-034", "limits.request_bytes")],
+            "{bad}"
+        );
+        assert_eq!(
+            located(compiled(
+                &ir,
+                &two_commands(&format!("    limits: {{request_bytes: {bad}}}\n"))
+            )),
+            [refused("ESS-HTTP-034", "routes[0].limits.request_bytes")],
+            "{bad}"
+        );
+    }
+    for good in ["1", "16777216"] {
+        compiled(
+            &ir,
+            &format!("limits: {{request_bytes: {good}}}\n{}", two_commands("")),
+        )
+        .unwrap_or_else(|errors| panic!("{good} compiles: {errors}"));
+    }
+    assert_eq!(
+        worded(compiled(
+            &ir,
+            &format!("limits: {{request_bytes: 0}}\n{}", two_commands(""))
+        )),
+        ["`0` is not a request size: `limits.request_bytes` is a whole number of bytes from 1 to 16777216"]
+    );
+    for (written, named) in [
+        ("limits: {request_bytes: 64.5}", "request_bytes"),
+        ("limits: {request_bytes: \"64\"}", "request_bytes"),
+        ("limits: {}", "missing field `request_bytes`"),
+        (
+            "limits: {request_bytes: 64, extra: 1}",
+            "unknown field `extra`",
+        ),
+    ] {
+        let error = HttpSpec::from_yaml(&(header(&ir) + written + "\n" + &two_commands("")))
+            .expect_err(written)
+            .to_string();
+        assert!(error.contains(named), "{written}: {error}");
+    }
+}
+
+#[test]
+fn a_route_limit_on_a_route_that_reads_no_body_is_refused() {
+    let ir = model();
+    let limit = "    limits: {request_bytes: 64}\n";
+    let bodiless = [
+        view_route("OrderById", ""),
+        note_route("get", ""),
+        note_route("delete", "    request: {encoding: query}\n"),
+    ];
+    for document in &bodiless {
+        assert_eq!(
+            located(compiled(&ir, &format!("{document}{limit}"))),
+            [refused("ESS-HTTP-034", "routes[0].limits")],
+            "{document}"
+        );
+        let http = compiled(&ir, &format!("limits: {{request_bytes: 64}}\n{document}"))
+            .unwrap_or_else(|errors| panic!("{document}: {errors}"));
+        assert!(!http.routes()[0].reads_body(), "{document}");
+        assert_eq!(http.request_bytes(&http.routes()[0]), None, "{document}");
+    }
+    for document in [
+        note_route("post", "    request: {encoding: form}\n"),
+        note_route("delete", "    request: {encoding: json}\n"),
+    ] {
+        let http = compiled(&ir, &format!("{document}{limit}"))
+            .unwrap_or_else(|errors| panic!("{document}: {errors}"));
+        assert!(http.routes()[0].reads_body(), "{document}");
+        assert_eq!(http.request_bytes(&http.routes()[0]), Some(64));
+    }
+}
+
+#[test]
+fn the_fourth_refusal_is_too_large_and_takes_any_4xx() {
+    let ir = model();
+    for refusal in [
+        "{status: 413, body: none}",
+        "{status: 418, body: {error: {literal: too_big}}, headers: {X-Limit: {literal: '64'}}}",
+    ] {
+        for document in [
+            format!("refusals:\n  too_large: {refusal}\n{}", two_commands("")),
+            two_commands(&format!("    refusals:\n      too_large: {refusal}\n")),
+        ] {
+            let http =
+                compiled(&ir, &document).unwrap_or_else(|errors| panic!("compiles: {errors}"));
+            assert!(
+                ir_json(&http).to_string().contains("too_large"),
+                "{document}"
+            );
+            round_trips(&http);
+        }
+    }
+    for (prefix, at) in [("", "refusals"), ("    ", "routes[0].refusals")] {
+        let wrap = |entries: &str| {
+            if prefix.is_empty() {
+                format!("refusals:\n{entries}{}", two_commands(""))
+            } else {
+                two_commands(&format!("    refusals:\n{entries}"))
+            }
+        };
+        let entry = |text: &str| format!("{prefix}  {text}\n");
+        let status = entry("too_large: {status: 500, body: none}");
+        assert_eq!(
+            located(compiled(&ir, &wrap(&status))),
+            [refused("ESS-HTTP-029", &format!("{at}.too_large.status"))]
+        );
+        let twice = entry("too_large: {status: 413, body: none}")
+            + &entry("too_large: {status: 418, body: none}");
+        assert_eq!(
+            located(compiled(&ir, &wrap(&twice))),
+            [refused("ESS-HTTP-029", &format!("{at}.too_large"))]
+        );
+        let dashed = entry("too-large: {status: 413, body: none}");
+        let messages = worded(compiled(&ir, &wrap(&dashed)));
+        assert!(
+            messages
+                .iter()
+                .any(|message| message.contains("`too_large` and `unfinished`")),
+            "{messages:?}"
+        );
+    }
+    compiled(
+        &ir,
+        &view_route(
+            "OrderById",
+            "    refusals:\n      too_large: {status: 413, body: none}\n",
+        ),
+    )
+    .unwrap_or_else(|errors| panic!("a view route takes it: {errors}"));
+}
+
+const THREE_ROUTES: &str = "routes:
+  - command: catalog.orders.PlaceOrder
+    method: post
+    path: /api/orders
+    limits: {request_bytes: 256}
+  - command: catalog.orders.NoteOrder
+    method: post
+    path: /api/orders/note
+  - view: catalog.orders.OrderById
+    method: get
+    path: /orders/{order_id}
+    parameters: {order_id: param.order_id}
+";
+
+#[test]
+fn the_effective_request_bound_is_one_answer() {
+    assert_eq!(ess_http::FIXED_REQUEST_BYTES, 1_048_576);
+    assert_eq!(ess_http::MAX_REQUEST_BYTES, 16_777_216);
+    let ir = model();
+    let place = Operation::Command("catalog.orders.PlaceOrder".into());
+    let note = Operation::Command(NOTE.into());
+    let view = Operation::View("catalog.orders.OrderById".into());
+
+    let http = compiled(
+        &ir,
+        &format!("limits: {{request_bytes: 64}}\n{THREE_ROUTES}"),
+    )
+    .unwrap_or_else(|errors| panic!("compiles: {errors}"));
+    for (operation, reads, bytes, bounds) in [
+        (&place, true, Some(256), true),
+        (&note, true, Some(64), true),
+        (&view, false, None, false),
+    ] {
+        let route = http.route(operation).expect("routed");
+        assert_eq!(route.reads_body(), reads, "{operation}");
+        assert_eq!(http.request_bytes(route), bytes, "{operation}");
+        assert_eq!(http.bounds_request(route), bounds, "{operation}");
+    }
+    assert!(http.bounds_requests());
+
+    // A `too_large` with no `limits` bounds the route: the fixed bound answers with it.
+    let refused_only = THREE_ROUTES.replace(
+        "    limits: {request_bytes: 256}\n",
+        "    refusals:\n      too_large: {status: 413, body: none}\n",
+    );
+    let http = compiled(&ir, &refused_only).unwrap_or_else(|errors| panic!("compiles: {errors}"));
+    let route = http.route(&place).expect("routed");
+    assert_eq!(http.request_bytes(route), None);
+    assert!(http.bounds_request(route));
+    assert!(!http.bounds_request(http.route(&note).expect("routed")));
+    assert!(http.bounds_requests());
+    // At the binding, it bounds every route that reads a body, and no view.
+    let at_binding = format!(
+        "refusals:\n  too_large: {{status: 413, body: none}}\n{}",
+        THREE_ROUTES.replace("    limits: {request_bytes: 256}\n", "")
+    );
+    let http = compiled(&ir, &at_binding).unwrap_or_else(|errors| panic!("compiles: {errors}"));
+    assert!(http.bounds_request(http.route(&note).expect("routed")));
+    assert!(!http.bounds_request(http.route(&view).expect("routed")));
+
+    // Neither key: nothing is bounded.
+    let http = compiled(
+        &ir,
+        &THREE_ROUTES.replace("    limits: {request_bytes: 256}\n", ""),
+    )
+    .unwrap_or_else(|errors| panic!("compiles: {errors}"));
+    assert!(!http.bounds_requests());
+    // A limit that only views and bodiless routes could carry bounds nothing.
+    let bodiless = format!(
+        "limits: {{request_bytes: 64}}\n{}",
+        view_route("OrderById", "")
+    );
+    let http = compiled(&ir, &bodiless).unwrap_or_else(|errors| panic!("compiles: {errors}"));
+    assert!(!http.bounds_requests());
+}
+
+#[test]
+fn a_refinement_restates_limits() {
+    let ir = model();
+    let base = "limits: {request_bytes: 64}\n".to_owned()
+        + &two_commands("    limits: {request_bytes: 256}\n");
+    let refined = Refined::from_yaml((header(&ir) + &base).as_bytes()).expect("parses");
+    let refining = |document: &str| {
+        let text = header(&ir) + &format!("refines: {}\n", refined.digest()) + document;
+        let spec = HttpSpec::from_yaml(&text).expect("parses");
+        compile_refining(&spec, Some(&refined), &ir, &derived(&ir))
+    };
+    assert_eq!(located(refining(&base)), []);
+    let at_top = |top: &str, route: &str| format!("{top}{}", two_commands(route));
+    for (changed, path) in [
+        (at_top("", "    limits: {request_bytes: 256}\n"), "limits"),
+        (
+            at_top(
+                "limits: {request_bytes: 65}\n",
+                "    limits: {request_bytes: 256}\n",
+            ),
+            "limits",
+        ),
+        (at_top("limits: {request_bytes: 64}\n", ""), "routes[0].limits"),
+        (
+            at_top(
+                "limits: {request_bytes: 64}\n",
+                "    limits: {request_bytes: 257}\n",
+            ),
+            "routes[0].limits",
+        ),
+        (
+            "limits: {request_bytes: 64}\n".to_owned()
+                + "routes:\n  - command: catalog.orders.PlaceOrder\n    method: post\n    path: /api/orders\n    limits: {request_bytes: 256}\n  - command: catalog.orders.NoteOrder\n    method: post\n    path: /api/orders/note\n    limits: {request_bytes: 8}\n",
+            "routes[1].limits",
+        ),
+    ] {
+        let located = located(refining(&changed));
+        assert!(
+            located.contains(&refused("ESS-HTTP-012", path)),
+            "{changed}: {located:?}"
+        );
+    }
+}
+
+#[test]
+fn compiled_ir_with_limits_out_of_rules_is_refused() {
+    let ir = model();
+    let read = |document: &str| {
+        let text = compiled(&ir, document)
+            .unwrap_or_else(|errors| panic!("compiles: {errors}"))
+            .to_canonical_json();
+        serde_json::from_str::<Value>(&text).expect("JSON")
+    };
+    let refuse = |value: &Value, named: &str| {
+        let text = serde_json::to_string_pretty(value).expect("JSON");
+        let error = HttpIr::from_json(&text).expect_err(&text).to_string();
+        assert!(error.contains(named), "{named}: {error}");
+    };
+    let with_limits = read(&format!(
+        "limits: {{request_bytes: 64}}\n{}",
+        two_commands("    limits: {request_bytes: 256}\n")
+    ));
+    HttpIr::from_json(&serde_json::to_string_pretty(&with_limits).expect("JSON"))
+        .unwrap_or_else(|error| panic!("reads: {error}"));
+    for bad in [0_u64, 16_777_217] {
+        let mut value = with_limits.clone();
+        value["limits"]["request_bytes"] = json!(bad);
+        refuse(&value, "limits.request_bytes");
+        let mut value = with_limits.clone();
+        value["routes"][0]["limits"]["request_bytes"] = json!(bad);
+        refuse(&value, "routes[0].limits.request_bytes");
+    }
+    let mut value = with_limits.clone();
+    value["limits"] = json!({});
+    refuse(&value, "request_bytes");
+    let mut value = with_limits.clone();
+    value["limits"]["request_bytes"] = json!(64.0);
+    refuse(&value, "");
+    for document in [view_route("OrderById", ""), note_route("get", "")] {
+        let mut value = read(&document);
+        value["routes"][0]["limits"] = json!({"request_bytes": 64});
+        refuse(&value, "limits");
+    }
+    let mut value = with_limits.clone();
+    value["refusals"] = json!({"too_large": {"status": 500, "body": "none"}});
+    refuse(&value, "4xx");
+}
