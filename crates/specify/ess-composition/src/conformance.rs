@@ -40,6 +40,12 @@
 //! Under `/5` a reader may also state no alphabet or a wider one, no prefix or a shorter one the
 //! imported prefix starts with, a subset of the imported invariants, and a subset of the imported
 //! attributes, each agreeing in type and in value on every variant matched by wire name.
+//!
+//! A writer assertion (`writer: true`, `ess-composition/6`) asks the dual question: can the local
+//! type send a value the imported type's reader refuses? For presence it admits a field whose
+//! written absent spellings are among those the imported field reads, and a required local value
+//! where the imported one is `Optional`, at any position; a local `Optional` where the imported
+//! value is required is drift.
 
 use std::collections::BTreeSet;
 
@@ -51,8 +57,8 @@ use ess_domain::types::{EnumVariant, Presence, Primitive, TypeRef};
 use ess_primitives::predicate::Predicate;
 
 use crate::{
-    Admission, CommandPart, CompositionCode, CompositionDiagnostic, CompositionSpec,
-    ConformanceEnd, TypeBinding, TypeConformance, PAYLOAD_COMPOSITION_FORMAT,
+    at_least_payload, Admission, CommandPart, CompositionCode, CompositionDiagnostic,
+    CompositionSpec, ConformanceEnd, TypeBinding, TypeConformance,
 };
 
 /// Admits both ends of every assertion and compares their shapes.
@@ -72,7 +78,8 @@ pub(crate) fn resolve_conformances(
             local: local_ir,
             imported: imported_ir,
             reader: asserted.reader(),
-            constraints: specification.format() == PAYLOAD_COMPOSITION_FORMAT,
+            writer: asserted.writer(),
+            constraints: at_least_payload(specification.format()),
             visiting: BTreeSet::new(),
             drifts: Vec::new(),
         };
@@ -181,6 +188,7 @@ pub(crate) fn compare_inputs(
         local,
         imported: contract,
         reader: false,
+        writer: false,
         constraints: false,
         visiting: BTreeSet::new(),
         drifts: Vec::new(),
@@ -224,6 +232,10 @@ struct Comparison<'ir> {
     imported: &'ir EssIr,
     /// A reader assertion (`ess-composition/3`): the widenings [`Comparison::widened`] names apply.
     reader: bool,
+    /// A writer assertion (`ess-composition/6`): the local type only sends the imported one, so a
+    /// difference is admitted where the local type can send no value the imported type's reader
+    /// refuses.
+    writer: bool,
     /// Value constraints and variant attributes are compared too (`ess-composition/5`): newtype
     /// alphabets, prefixes and invariants, struct invariants and enum variant attributes.
     constraints: bool,
@@ -291,7 +303,11 @@ impl Comparison<'_> {
         }
         if matches!(own.type_ref, ResolvedTypeRef::Optional { .. })
             && matches!(field.type_ref, ResolvedTypeRef::Optional { .. })
-            && own.naming.presence != field.naming.presence
+            && !(if self.writer {
+                writes_within(own.naming.presence, field.naming.presence)
+            } else {
+                own.naming.presence == field.naming.presence
+            })
         {
             self.drifts.push(format!(
                 "field `{at}`: presence {} where `{imported}` has {}",
@@ -736,8 +752,15 @@ impl Comparison<'_> {
             | (ResolvedTypeRef::List { of: mine }, ResolvedTypeRef::List { of: theirs }) => {
                 self.references(path, mine, theirs);
             }
-            // The tolerance: a reader may treat a required value as optional.
-            (ResolvedTypeRef::Optional { of: mine }, theirs) => self.references(path, mine, theirs),
+            // A writer: a required value where the imported one may be absent writes what every
+            // reader accepts, at any position.
+            (local, ResolvedTypeRef::Optional { of: theirs }) if self.writer => {
+                self.references(path, local, theirs);
+            }
+            // The tolerance, a reader's: a reader may treat a required value as optional.
+            (ResolvedTypeRef::Optional { of: mine }, theirs) if !self.writer => {
+                self.references(path, mine, theirs);
+            }
             (
                 ResolvedTypeRef::Primitive { name: mine },
                 ResolvedTypeRef::Primitive { name: theirs },
@@ -965,4 +988,59 @@ fn variant_spelling(variant: &EnumVariant) -> String {
 
 fn presence(value: Option<Presence>) -> String {
     value.map_or_else(|| "unstated".to_owned(), |value| format!("`{value}`"))
+}
+
+/// The absent spellings a field can carry on the wire.
+#[derive(Clone, Copy)]
+struct Absent {
+    omitted: bool,
+    null: bool,
+}
+
+/// What a sender of a field with `presence` writes when the value is absent. A field with no
+/// presence writes either spelling.
+fn absent_written(presence: Option<Presence>) -> Absent {
+    match presence {
+        Some(Presence::NullWhenAbsent) => Absent {
+            omitted: false,
+            null: true,
+        },
+        Some(Presence::OmittedWhenAbsent) => Absent {
+            omitted: true,
+            null: false,
+        },
+        Some(Presence::OmittedOrNull) | None => Absent {
+            omitted: true,
+            null: true,
+        },
+    }
+}
+
+/// What a reader of a field with `presence` accepts when the value is absent. As the published
+/// schema reads it, a field with no presence accepts only a missing key.
+fn absent_read(presence: Option<Presence>) -> Absent {
+    match presence {
+        Some(Presence::NullWhenAbsent) => Absent {
+            omitted: false,
+            null: true,
+        },
+        Some(Presence::OmittedWhenAbsent) | None => Absent {
+            omitted: true,
+            null: false,
+        },
+        Some(Presence::OmittedOrNull) => Absent {
+            omitted: true,
+            null: true,
+        },
+    }
+}
+
+/// Whether every absent spelling a writer's `own` presence can produce is one the imported
+/// field's `theirs` reads. Equal forms always conform.
+fn writes_within(own: Option<Presence>, theirs: Option<Presence>) -> bool {
+    if own == theirs {
+        return true;
+    }
+    let (writes, reads) = (absent_written(own), absent_read(theirs));
+    (!writes.omitted || reads.omitted) && (!writes.null || reads.null)
 }

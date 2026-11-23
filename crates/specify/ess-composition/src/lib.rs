@@ -35,6 +35,10 @@
 //! selected component, and a payload is compared as a struct of its fields, against another
 //! payload or a struct type. Conformance ends are never added to the client surface.
 //!
+//! Under [`WRITER_COMPOSITION_FORMAT`] a conformance may carry `writer: true`: the local type only
+//! sends the imported one, so a presence the sender writes must be one the imported reader accepts
+//! and a required value is admitted where the imported one is `Optional`.
+//!
 //! The persisted input formats are [`SUPPORTED_COMPOSITION_FORMATS`]. Generated clients consume
 //! the derived [`EssClientPlan`] rather than reinterpreting multiple service models independently.
 //! The Rust client constrains operation descriptors to that selection, but forwards request and
@@ -76,8 +80,20 @@ pub const ROLE_COMPOSITION_FORMAT: &str = "ess-composition/4";
 /// input or response.
 pub const PAYLOAD_COMPOSITION_FORMAT: &str = "ess-composition/5";
 
+/// The composition format that also admits `writer: true` on a `conformances` entry.
+pub const WRITER_COMPOSITION_FORMAT: &str = "ess-composition/6";
+
 /// Every `ess-composition/N` major this build reads; any other marker is refused.
-pub const SUPPORTED_COMPOSITION_FORMATS: &[u32] = &[1, 2, 3, 4, 5];
+pub const SUPPORTED_COMPOSITION_FORMATS: &[u32] = &[1, 2, 3, 4, 5, 6];
+
+/// Whether `format` reads what `/5` introduced: payload ends, `roles` and value-constraint
+/// comparison.
+pub(crate) fn at_least_payload(format: &str) -> bool {
+    matches!(
+        format,
+        PAYLOAD_COMPOSITION_FORMAT | WRITER_COMPOSITION_FORMAT
+    )
+}
 
 /// The language-neutral client-plan format emitted from composition IR.
 pub const CLIENT_PLAN_FORMAT: &str = "ess-client-plan/1";
@@ -653,6 +669,15 @@ pub struct TypeConformance {
         skip_serializing_if = "Option::is_none"
     )]
     reader: Option<ReaderKey>,
+    /// `writer:` as authored (`ess-composition/6`): `None` when absent, `Some(None)` for an
+    /// authored `null`. Absent from every `/1` to `/5` entry, which keeps its bytes; refused under
+    /// `/2` to `/5` whatever its value.
+    #[serde(
+        default,
+        deserialize_with = "present",
+        skip_serializing_if = "Option::is_none"
+    )]
+    writer: Option<WriterKey>,
 }
 
 /// An authored `reader:` value, `null` included; kept apart from absence by `Option<ReaderKey>`.
@@ -661,6 +686,13 @@ pub struct TypeConformance {
 )]
 #[serde(transparent)]
 struct ReaderKey(Option<bool>);
+
+/// An authored `writer:` value, `null` included; kept apart from absence by `Option<WriterKey>`.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize,
+)]
+#[serde(transparent)]
+struct WriterKey(Option<bool>);
 
 /// Records that a key was written, `null` included, which a plain `Option` field cannot tell from
 /// an absent one.
@@ -679,6 +711,7 @@ impl TypeConformance {
             local,
             conforms_to,
             reader: None,
+            writer: None,
         }
     }
 
@@ -700,6 +733,21 @@ impl TypeConformance {
             local,
             conforms_to,
             reader: Some(ReaderKey(Some(true))),
+            writer: None,
+        }
+    }
+
+    /// Asserts that `local` only sends `conforms_to` (`ess-composition/6`): the pair conforms when
+    /// the local type can send no value the imported type's reader refuses.
+    ///
+    /// The question is the dual of [`TypeConformance::for_reader`]'s. Presence and optionality
+    /// are decided by it; the narrowing beyond presence arrives with the same key.
+    pub fn for_writer(local: TypeBinding, conforms_to: TypeBinding) -> Self {
+        Self {
+            local,
+            conforms_to,
+            reader: None,
+            writer: Some(WriterKey(Some(true))),
         }
     }
 
@@ -708,9 +756,19 @@ impl TypeConformance {
         self.reader == Some(ReaderKey(Some(true)))
     }
 
+    /// Whether this is a writer assertion (`writer: true`).
+    pub fn writer(&self) -> bool {
+        self.writer == Some(WriterKey(Some(true)))
+    }
+
     /// Whether the `reader` key was written, whatever its value.
     fn reader_key(&self) -> bool {
         self.reader.is_some()
+    }
+
+    /// Whether the `writer` key was written, whatever its value.
+    fn writer_key(&self) -> bool {
+        self.writer.is_some()
     }
 
     /// The consumer's own type.
@@ -784,15 +842,24 @@ struct RawConformance {
     conforms_to: RawTypeBinding,
     #[serde(default, deserialize_with = "present")]
     reader: Option<ReaderKey>,
+    #[serde(default, deserialize_with = "present")]
+    writer: Option<WriterKey>,
 }
 
 impl RawConformance {
     /// The entry, its ends read as `format` reads them.
     fn read(self, format: &str) -> Result<TypeConformance, ReadRefusal> {
+        if format == WRITER_COMPOSITION_FORMAT
+            && self.reader == Some(ReaderKey(Some(true)))
+            && self.writer == Some(WriterKey(Some(true)))
+        {
+            return Err(ReadRefusal::WriterWithReader);
+        }
         Ok(TypeConformance {
             local: bind(self.local, format)?,
             conforms_to: bind(self.conforms_to, format)?,
             reader: self.reader,
+            writer: self.writer,
         })
     }
 }
@@ -800,7 +867,7 @@ impl RawConformance {
 /// One end read as `format` reads it: before [`PAYLOAD_COMPOSITION_FORMAT`] only `service` and
 /// `type` are fields, so a payload key is refused as the unknown field it was.
 fn bind(raw: RawTypeBinding, format: &str) -> Result<TypeBinding, ReadRefusal> {
-    if format != PAYLOAD_COMPOSITION_FORMAT {
+    if !at_least_payload(format) {
         if let Some(key) = raw.payload_key() {
             return Err(ReadRefusal::PayloadEndBeforeFive {
                 key,
@@ -826,6 +893,8 @@ enum ReadRefusal {
     PayloadEndBeforeFive { key: &'static str, format: String },
     /// An end that names no kind, several, or a command without its part.
     End(String),
+    /// `writer: true` and `reader: true` on one entry.
+    WriterWithReader,
 }
 
 impl fmt::Display for ReadRefusal {
@@ -844,6 +913,11 @@ impl fmt::Display for ReadRefusal {
                  {format:?}"
             ),
             Self::End(detail) => formatter.write_str(detail),
+            Self::WriterWithReader => formatter.write_str(
+                "a conformance entry carries `writer: true` and `reader: true`: `writer` asserts \
+                 what a sender writes and `reader` what a receiver reads, so an entry carries one \
+                 of them",
+            ),
         }
     }
 }
@@ -853,10 +927,8 @@ impl TryFrom<RawCompositionSpec> for CompositionSpec {
 
     fn try_from(raw: RawCompositionSpec) -> Result<Self, Self::Error> {
         if raw.roles.is_some()
-            && !matches!(
-                raw.format.as_str(),
-                ROLE_COMPOSITION_FORMAT | PAYLOAD_COMPOSITION_FORMAT
-            )
+            && raw.format != ROLE_COMPOSITION_FORMAT
+            && !at_least_payload(&raw.format)
         {
             return Err(ReadRefusal::RolesBeforeFour(raw.format));
         }
@@ -963,6 +1035,27 @@ impl CompositionSpec {
         Self {
             format: PAYLOAD_COMPOSITION_FORMAT.to_owned(),
             ..Self::with_roles(composition, services, references, conformances, roles)
+        }
+    }
+
+    /// Creates an `ess-composition/6` input, whose conformances may be writer assertions
+    /// ([`TypeConformance::for_writer`]). Semantic validation happens in [`compile`].
+    pub fn with_writer_conformances(
+        composition: ServiceKey,
+        services: Vec<ServiceImportSpec>,
+        references: Vec<CompositionRef>,
+        conformances: Vec<TypeConformance>,
+        roles: Vec<ContractRole>,
+    ) -> Self {
+        Self {
+            format: WRITER_COMPOSITION_FORMAT.to_owned(),
+            ..Self::with_payload_conformances(
+                composition,
+                services,
+                references,
+                conformances,
+                roles,
+            )
         }
     }
 
@@ -2003,6 +2096,7 @@ fn validate_format(
         READER_COMPOSITION_FORMAT => READER_COMPOSITION_FORMAT,
         ROLE_COMPOSITION_FORMAT => ROLE_COMPOSITION_FORMAT,
         PAYLOAD_COMPOSITION_FORMAT => PAYLOAD_COMPOSITION_FORMAT,
+        WRITER_COMPOSITION_FORMAT => WRITER_COMPOSITION_FORMAT,
         other => {
             diagnostics.push(CompositionDiagnostic::new(
                 CompositionCode::UnsupportedFormat,
@@ -2010,7 +2104,8 @@ fn validate_format(
                 format!(
                     "format {other:?} is unsupported; expected {COMPOSITION_FORMAT}, \
                      {CONFORMANCE_COMPOSITION_FORMAT}, {READER_COMPOSITION_FORMAT}, \
-                     {ROLE_COMPOSITION_FORMAT} or {PAYLOAD_COMPOSITION_FORMAT}"
+                     {ROLE_COMPOSITION_FORMAT}, {PAYLOAD_COMPOSITION_FORMAT} or \
+                     {WRITER_COMPOSITION_FORMAT}"
                 ),
             ));
             return COMPOSITION_FORMAT;
@@ -2018,7 +2113,7 @@ fn validate_format(
     };
     // The reader refuses `roles` before `/4` and payload ends before `/5`; this holds the same
     // lines for a document built some other way.
-    if format != PAYLOAD_COMPOSITION_FORMAT
+    if !at_least_payload(format)
         && specification.conformances().iter().any(|asserted| {
             asserted.local.end.is_payload() || asserted.conforms_to.end.is_payload()
         })
@@ -2032,8 +2127,10 @@ fn validate_format(
             ),
         ));
     }
-    if !matches!(format, ROLE_COMPOSITION_FORMAT | PAYLOAD_COMPOSITION_FORMAT)
-        && specification.roles.is_some()
+    if !matches!(
+        format,
+        ROLE_COMPOSITION_FORMAT | PAYLOAD_COMPOSITION_FORMAT | WRITER_COMPOSITION_FORMAT
+    ) && specification.roles.is_some()
     {
         diagnostics.push(CompositionDiagnostic::new(
             CompositionCode::UnsupportedFormat,
@@ -2055,7 +2152,10 @@ fn validate_format(
     }
     if !matches!(
         format,
-        READER_COMPOSITION_FORMAT | ROLE_COMPOSITION_FORMAT | PAYLOAD_COMPOSITION_FORMAT
+        READER_COMPOSITION_FORMAT
+            | ROLE_COMPOSITION_FORMAT
+            | PAYLOAD_COMPOSITION_FORMAT
+            | WRITER_COMPOSITION_FORMAT
     ) && specification
         .conformances()
         .iter()
@@ -2066,6 +2166,21 @@ fn validate_format(
             None,
             format!(
                 "`reader` on a conformance is an {READER_COMPOSITION_FORMAT} construct; \
+                 {format} does not admit it, whatever its value"
+            ),
+        ));
+    }
+    if format != WRITER_COMPOSITION_FORMAT
+        && specification
+            .conformances()
+            .iter()
+            .any(TypeConformance::writer_key)
+    {
+        diagnostics.push(CompositionDiagnostic::new(
+            CompositionCode::UnsupportedFormat,
+            None,
+            format!(
+                "`writer` on a conformance is an {WRITER_COMPOSITION_FORMAT} construct; \
                  {format} does not admit it, whatever its value"
             ),
         ));
