@@ -39,7 +39,7 @@ scope:
   path: website/docs/reference/diagnostics.md
 - confidence: cited
   path: website/docs/reference/formats.md
-revision: 19
+revision: 20
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-23T04:37:11Z", actor: "human:timo", revision: 17}
 - {from: "proposed", to: "active", at: "2026-11-23T04:37:12Z", actor: "human:timo", revision: 18}
@@ -336,3 +336,18 @@ stand.
 
 The requester confirmed that a binding default with a per-route override and a declarable refusal
 body fit its routes.
+
+Decided on 2026-11-23, after round 1 of the plan critics, beside D1 to D7 above:
+
+- D8. The new behaviour is tested against two servers built once by two harness tasks
+  (`body-cap-rust-server`, `body-cap-go-server`, each read through an environment variable),
+  because no test may build with cargo and the committed example servers keep their bytes. This
+  replaces the sentence "no new server is built".
+- D9. The guide page on HTTP routes gets one subsection, "Limit the request body".
+- D10. In the OpenAPI projection an operation keeps the form it has: a route without bound
+  outcomes gains one `413` response and `x-ess-request-max-bytes`; a route in the bound form
+  gains the `413` among its bound responses. The precedence list gets a step 1a, with no
+  renumbering.
+- D11. The unit for the Go server owns both Go set-up steps of the workflows (the test-build job
+  and the hotfix test job) and depends on the unit for the Rust server, because the parity case
+  (both servers answer the same bytes for the same over-cap request) needs both.

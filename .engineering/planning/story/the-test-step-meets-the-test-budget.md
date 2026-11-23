@@ -36,7 +36,7 @@ scope:
   path: crates/generate/ess-synth/tests/generated_view_queries.rs
 - confidence: cited
   path: crates/verify/ess-conformance/tests
-revision: 24
+revision: 25
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T21:10:59Z", actor: "human:timo", revision: 5}
 - {from: "proposed", to: "active", at: "2026-11-21T21:11:00Z", actor: "human:timo", revision: 6}
@@ -436,3 +436,43 @@ numbers above with CI's, and the acceptance below holds each of them:
   the committed file instead.
 - `generated_view_queries` builds with cargo once, in a Taskfile task, and the test reads its path
   (the accepted form named in Need); `no_test_builds.rs` covers the file it names.
+
+## Decisions taken
+
+Taken for the wave of 2026-11-23, after round 1 of the plan critics. The story stays active after
+the wave: these parts of it are not in the wave's units and are follow-ups.
+
+Acceptance lines not in the wave:
+
+- (a) `ci_lanes.rs` pins that every byte-pin target `AGENTS.md` lists runs in the slow job. The
+  wave moves 4 of the 13 listed targets; the other 9 (`adversary_related_values_all_bytes`,
+  `external_beside_held_guard`, `served_codec_names`, `go`, `feasibility`,
+  `adversary_related_guard_behaviour_pass1`, `http_binding_rust`, `adversary_ess_issues_2_u6`,
+  `string_alphabet_and_length`) stay in the test step.
+- (b) The browser-product tests and the five harness tasks move to the slow lane; the wave leaves
+  them as they are.
+- (c) A pull request whose diff is only prose `*.md` files outside `website/` passes its required
+  checks without a test job.
+- (d) The test step runs no network command, pinned by `ci_lanes.rs`, and `transport-network` is
+  named a network lane; the wave pins `ESS_TUTORIAL_NETWORK` only.
+
+Cut from units:
+
+- The `ess-xtask` unit-test unit does not edit `consumer-check` and adds no `ci_lanes` pin over
+  every `test*` task for wrapper and job settings; both belong to the draft story
+  `story:consumer-coverage-build-profile-admits-the-hosts-compile-wrapper-and-no-taskfile-task-empties-rustc-wrapper`.
+- The runner-kill unit adds no JUnit upload step to the shard jobs and does not make the hotfix
+  gate run `task test-slow`.
+
+Earlier follow-ups, still open: every feature-off test moves to the slow lane (decision D3 above);
+one story per crate for the test files that spawn node, tsc, go, cargo, rustc or npm in the test
+step (172 files: `ess-conformance` 100, `ess-synth` 52, `ess-cli` 20), each lowering a ceiling of
+the runner-kill unit; a matrix split of the slow job if `task test-slow` takes over 20 minutes; a
+story in the slot repository naming the exceptions found (the harness tasks with `env -u
+RUSTC_WRAPPER`, the `CARGO_BUILD_JOBS` of the macOS witness job in `ci.yml`); each test the
+runner-kill unit exempts from the 60 s kill is a defect with its own story.
+
+Also decided: the slow lane is two units, the local mechanism and the CI wiring; the byte-pin
+stamp is written once, by the byte-pin unit, after every unit that changes a source it hashes;
+a unit that adds a test file to a crate that already has an integration binary says why it cannot
+be a module of an existing one.
