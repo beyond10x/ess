@@ -3508,6 +3508,15 @@ pub fn syntheses_started<R>(run: impl FnOnce() -> R) -> (R, u64) {
     (out, SYNTHESES.with(std::cell::Cell::get) - before)
 }
 
+/// What `run` returns, how many setup runs of a creating branch reading several related rows were
+/// arranged as the branch's own scenario on this thread while it ran, how many strict searches of
+/// a run reading several rows ran, and the most such arrangements open at once: the work a test
+/// bounds. Not part of the suite.
+#[doc(hidden)]
+pub fn own_scenario_work<R>(run: impl FnOnce() -> R) -> (R, (u64, u64, usize)) {
+    related_guard::own_scenario_work(run)
+}
+
 /// What `run` returns, how many rows of creating branches it asked for on this thread, and how
 /// many of them were made rather than answered from what the synthesis made before: the work a
 /// test bounds. Not part of the suite.

@@ -2836,6 +2836,64 @@ thread_local! {
     /// last ([`own_opening`]).
     static OWN_OPEN: RefCell<Vec<(*const EssIr, QualifiedName, String)>> =
         const { RefCell::new(Vec::new()) };
+    /// How many setup runs were arranged as their own scenario on this thread, how many strict
+    /// searches of a run reading several rows ran, and the most arrangements as an own scenario
+    /// open at once ([`own_scenario_work`]).
+    static OWN_WORK: std::cell::Cell<(u64, u64, usize)> =
+        const { std::cell::Cell::new((0, 0, 0)) };
+}
+
+/// How many arrangements of setup runs as their own scenario ([`as_own_scenario`]) may already be
+/// open on this thread when the fallback is asked; at that depth it is not taken, and the strict
+/// search's refusal is the answer, as it was before the fallback existed.
+///
+/// The bound keeps the fallback's work finite. Every arrangement as an own scenario is made at a
+/// distinction of its own, derived from the caller's, so no two are equal and no memory finds one
+/// again: on a chain of creators each reading two related rows, each level owning the next, an
+/// unbounded fallback grows the suite about 3 times per level and the work about 15 times (user CPU
+/// at depth 1 to 4: 0.035, 0.236, 2.09 and 33.2 s; depth 5 did not end in 540 s). Nested at most 1
+/// level the same chain takes 0.04 to 1.1 s at depth 1 to 8, 2 levels 0.04 to 10.7 s, 3 levels
+/// 14.6 s at depth 4. Follow-up: the own-scenario arrangement is numbered so that equal
+/// arrangements are found again, after which the bound can go.
+const OWN_NESTING: usize = 1;
+
+/// How many arrangements of setup runs as their own scenario are open on this thread.
+fn own_depth() -> usize {
+    OWN_OPEN.with(|open| open.borrow().len())
+}
+
+/// What `run` returns, how many setup runs were arranged as their branch's own scenario on this
+/// thread while it ran, how many strict searches of a run reading several rows ran, and the most
+/// such arrangements open at once.
+pub(super) fn own_scenario_work<R>(run: impl FnOnce() -> R) -> (R, (u64, u64, usize)) {
+    let (arranged, strict, deepest) = OWN_WORK.with(|work| {
+        let held = work.get();
+        work.set((held.0, held.1, 0));
+        held
+    });
+    let out = run();
+    let (arranged_after, strict_after, deepest_after) = OWN_WORK.with(|work| {
+        let after = work.get();
+        work.set((after.0, after.1, after.2.max(deepest)));
+        after
+    });
+    (
+        out,
+        (
+            arranged_after - arranged,
+            strict_after - strict,
+            deepest_after,
+        ),
+    )
+}
+
+/// Counts arrangements as own scenarios (`arranged`) and strict searches (`strict`).
+fn own_worked(arranged: u64, strict: u64) {
+    let open = own_depth();
+    OWN_WORK.with(|work| {
+        let (a, s, deepest) = work.get();
+        work.set((a + arranged, s + strict, deepest.max(open)));
+    });
 }
 
 /// One setup run arranged as its branch's own scenario, open until dropped ([`own_opening`]).
@@ -2870,11 +2928,12 @@ fn own_opening(ir: &EssIr, driver: &super::Driver<'_>) -> Option<OwnOpened> {
 
 /// [`drive`] on a command reading several rows (beyond10x/ess#283): [`drive_several_strict`],
 /// and where that finds no run for a creating branch, the run arranged as the branch's own
-/// scenario is ([`as_own_scenario`]). A row beside whose guard reads the input holds for no
-/// input but some, and a link of the row the creation is filed under compared with the input
-/// naming another row needs both rows under one owner. The strict search admits neither, and
-/// the branch's own scenario arranges both. Where both fail, the strict search's refusal is the
-/// answer, so every run the strict search finds, and every refusal it gives, stays as it was.
+/// scenario is ([`as_own_scenario`]), nested at most [`OWN_NESTING`] deep. A row beside whose guard
+/// reads the input holds for no input but some, and a link of the row the creation is filed under
+/// compared with the input naming another row needs both rows under one owner. The strict search
+/// admits neither, and the branch's own scenario arranges both. Where both fail, the strict
+/// search's refusal is the answer, so every run the strict search finds, and every refusal it
+/// gives, stays as it was.
 // One argument per thing an arranging run is told, as [`drive`] takes them.
 #[allow(clippy::too_many_arguments)]
 fn drive_several(
@@ -2905,6 +2964,7 @@ fn drive_several(
             if instance.is_none()
                 && input.is_none()
                 && known.is_empty()
+                && own_depth() < OWN_NESTING
                 && own_scenario_applies(driver, bound, arranging) =>
         {
             as_own_scenario(ir, driver, actors, distinction, bound).map_err(|_| cause)
@@ -2941,6 +3001,7 @@ fn as_own_scenario(
     bound: &BTreeMap<String, crate::scenario::InstanceName>,
 ) -> Result<super::Invocation, RefusalCause> {
     let _open = own_opening(ir, driver).ok_or_else(unarranged)?;
+    own_worked(1, 0);
     let models = super::caller::InvocationModels::plain(ir);
     let (setup, input, _) = arranged(
         &models,
@@ -2988,6 +3049,7 @@ fn drive_several_strict(
     input: Option<&BTreeMap<String, Node>>,
     arranging: &[&EntityHandle],
 ) -> Result<super::Invocation, RefusalCause> {
+    own_worked(0, 1);
     let (via, _) = focus(ir, driver.command, driver.outcome).ok_or_else(unarranged)?;
     let projected = projection(driver.command, via.field());
     kept(&projected, driver.outcome)?;
