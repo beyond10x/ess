@@ -320,24 +320,29 @@ thread_local! {
 /// is keyed as before, so nothing a search decides changes. The guard holds the models, so no
 /// address it keeps can be taken by another model while their memory is parked.
 pub(super) struct Keeping {
-    models: Vec<Rc<EssIr>>,
+    models: Vec<std::sync::Arc<EssIr>>,
+    /// A Keeping pops the stack of the thread that opened it, so it is not sent to another thread.
+    _thread: std::marker::PhantomData<*const ()>,
 }
 
 impl Keeping {
     /// A new innermost scope, holding no model yet.
     pub(super) fn open() -> Self {
         KEPT.with(|kept| kept.borrow_mut().push(BTreeMap::new()));
-        Self { models: Vec::new() }
+        Self {
+            models: Vec::new(),
+            _thread: std::marker::PhantomData,
+        }
     }
 
     /// Keeps what `ir` makes for as long as this guard lives.
-    pub(super) fn keep(&mut self, ir: &Rc<EssIr>) {
+    pub(super) fn keep(&mut self, ir: &std::sync::Arc<EssIr>) {
         KEPT.with(|kept| {
             if let Some(scope) = kept.borrow_mut().last_mut() {
                 scope.entry(address(ir)).or_insert(None);
             }
         });
-        self.models.push(Rc::clone(ir));
+        self.models.push(std::sync::Arc::clone(ir));
     }
 }
 
