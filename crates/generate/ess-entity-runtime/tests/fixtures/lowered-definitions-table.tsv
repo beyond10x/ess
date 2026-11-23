@@ -1,4 +1,4 @@
-#	models=488	lines=669
+#	models=489	lines=670
 crates/edge/ess-cli/tests/fixtures/adversary-shorthand-binary64/spec.yaml	components=1
 crates/edge/ess-cli/tests/fixtures/adversary-shorthand-binary64/spec.yaml	tracker-service	tracker.ops.Sample	definition=6994335e6a9e9266f5f0ce33a640350814ba12cce3c4ce7439fe61643a3a9cdb:5797
 crates/edge/ess-cli/tests/fixtures/adversary-shorthand-binary64/spec.yaml	tracker-service	tracker.ops.Sample	create	recorded
@@ -124,6 +124,7 @@ crates/ui/ess-ui-check/tests/fixtures/model/system.yaml	ASSEMBLE
 crates/ui/ess-ui-react/tests/fixtures/fixture-command-effect/spec/system.yaml	ASSEMBLE
 crates/ui/ess-ui-test/tests/fixtures/adversary-t3-fixture-command-effect/spec/system.yaml	ASSEMBLE
 crates/ui/ess-ui-test/tests/fixtures/fixture-command-effect/spec/system.yaml	ASSEMBLE
+crates/verify/ess-conformance/tests/fixtures/a-creator-chosen-values-beside-several-rows.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/a-creator-reading-several-related-rows.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/absent-optional-beside-stored-guard.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/absent-reference-identity-view.yaml	components=0

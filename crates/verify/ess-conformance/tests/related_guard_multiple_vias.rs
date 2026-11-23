@@ -693,10 +693,6 @@ const DRIVEN: [&str; 7] = [
     "shop.desk.Grant/transition/revoke/by/shop.desk.RevokeGrant/revoked",
     "shop.desk.Grant/state/Revoked/refuses/shop.desk.RevokeGrant",
 ];
-/// The outcome whose three `any:` legs are still refused: each needs a row in a named state with
-/// chosen field values.
-const LEGS: &str = "shop.desk.ReceiveTicket/outcome/grant-refused";
-
 fn every_status(result: &Synthesis, model: EssIr) -> BTreeMap<String, Status> {
     let admitted =
         AdmittedSuite::from_suite(&result.suite).unwrap_or_else(|error| panic!("{error}"));
@@ -711,7 +707,8 @@ fn every_status(result: &Synthesis, model: EssIr) -> BTreeMap<String, Status> {
 
 /// The model synthesizes 17 scenarios: the branch's own and every scenario needing the row it
 /// creates, which were refused before the change, and every one passes against the interpreter.
-/// Three refusals remain, one per leg of the `any:` guard of `LEGS`.
+/// No refusal remains: each `any:` leg of `ReceiveTicket/grant-refused` is witnessed on a grant
+/// the creating branch is sent the chosen values for.
 fn driven(label: &str, text: &str) {
     let model = ir(text);
     let result = ess_conformance::synthesize::synthesize(&model);
@@ -720,15 +717,7 @@ fn driven(label: &str, text: &str) {
         scenario(&result, id);
     }
     let refusals = refusals_for(&result, "shop.desk.");
-    // These three wait for the follow-up "a setup run arranges a related row in a named state with
-    // chosen field values"; when it lands this count becomes 0.
-    assert_eq!(refusals.len(), 3, "{label}: refusals: {refusals:#?}");
-    for refusal in &refusals {
-        assert!(
-            refusal.starts_with(&format!("ESS-SYNTH-003 [{LEGS}]: ")),
-            "{label}: a refusal of another target: {refusal}"
-        );
-    }
+    assert_eq!(refusals.len(), 0, "{label}: refusals: {refusals:#?}");
     let passed = every_status(&result, model);
     for id in DRIVEN {
         assert_eq!(
@@ -751,4 +740,155 @@ fn a_creator_whose_owned_rows_link_is_compared_with_the_input_is_driven() {
 #[test]
 fn a_creator_whose_row_beside_reads_the_input_is_driven() {
     driven("beside", &replaced(DESK, LINK_GUARD, BESIDE_INPUT_GUARD));
+}
+
+// ---- A creator's setup run with chosen field values --------------------------------------------
+
+const CHOSEN: &str = include_str!("fixtures/a-creator-chosen-values-beside-several-rows.yaml");
+
+/// The scenarios and the refusals of `text`, every scenario run against the interpreter.
+fn chosen_suite(text: &str) -> (Synthesis, BTreeMap<String, Status>) {
+    let model = ir(text);
+    let result = ess_conformance::synthesize::synthesize(&model);
+    let passed = every_status(&result, model);
+    (result, passed)
+}
+
+fn all_pass(label: &str, passed: &BTreeMap<String, Status>) {
+    assert!(
+        passed.values().all(|status| *status == Status::Passed),
+        "{label}: every scenario passes against the interpreter: {passed:#?}"
+    );
+}
+
+#[test]
+fn a_chosen_value_that_is_not_the_first_variant_is_arranged_beside_several_rows() {
+    let (result, passed) = chosen_suite(CHOSEN);
+    let refusals = refusals_for(&result, "shop.desk.");
+    assert_eq!(refusals.len(), 0, "refusals: {refusals:#?}");
+    scenario(&result, "shop.desk.UseGrant/outcome/used");
+    all_pass("chosen", &passed);
+}
+
+#[test]
+fn the_chosen_values_are_the_ones_sent() {
+    let model = ir(CHOSEN);
+    let result = ess_conformance::synthesize::synthesize(&model);
+    let used = scenario(&result, "shop.desk.UseGrant/outcome/used");
+    // The grant `UseGrant` is sent, and the send of `IssueGrant` that created it: the setup also
+    // creates grants beside it, which are not the one used.
+    let mut last_issue = None;
+    let mut created = BTreeMap::new();
+    let mut sent = None;
+    for step in &used.steps {
+        match step {
+            ScenarioStep::ExecuteCommand { command, input, .. }
+                if command.to_string() == "shop.desk.IssueGrant" =>
+            {
+                last_issue = Some(input);
+            }
+            ScenarioStep::ExecuteCommand { command, input, .. }
+                if command.to_string() == "shop.desk.UseGrant" =>
+            {
+                if let Some(ess_conformance::ScenarioValue::Instance { instance }) =
+                    input.get("grant_id")
+                {
+                    sent = Some(instance.clone());
+                }
+            }
+            ScenarioStep::CaptureInstance {
+                instance, entity, ..
+            } if entity.to_string() == "shop.desk.Grant" => {
+                created.insert(instance.clone(), last_issue);
+            }
+            _ => {}
+        }
+    }
+    let issue = sent
+        .and_then(|grant| created.get(&grant).copied().flatten())
+        .unwrap_or_else(|| panic!("`used` is sent a grant `IssueGrant` created: {used:#?}"));
+    let name = format!("{:?}", issue["name"]);
+    let mode = format!("{:?}", issue["mode"]);
+    assert!(name.contains("mail"), "the name sent: {name}");
+    assert!(!mode.contains("denied"), "the mode sent: {mode}");
+    for field in ["site_id", "desk_id"] {
+        assert!(
+            matches!(
+                issue[field],
+                ess_conformance::ScenarioValue::Instance { .. }
+            ),
+            "{field} names a row the arrangement made: {:?}",
+            issue[field]
+        );
+    }
+}
+
+#[test]
+fn a_row_beside_the_focus_is_created_with_a_chosen_value() {
+    let text = replaced(
+        DESK,
+        "              - {name: {none_of: [chat]}}\n",
+        "              - {name: {none_of: [mail]}}\n",
+    );
+    let (result, passed) = chosen_suite(&text);
+    for id in [
+        "shop.desk.ReceiveTicket/outcome/received",
+        "shop.desk.ReceiveTicket/outcome/ignored",
+    ] {
+        scenario(&result, id);
+    }
+    let refusals = refusals_for(&result, "shop.desk.");
+    assert_eq!(refusals.len(), 0, "refusals: {refusals:#?}");
+    all_pass("none_of mail", &passed);
+}
+
+#[test]
+fn a_chosen_value_the_branchs_own_guard_refuses_is_not_sent() {
+    // Declared first: an input guard answers at step 1 of the precedence order.
+    let text = replaced(
+        CHOSEN,
+        "    outcomes:\n      - name: no-site\n        when_related: {via: input.site_id, exists: false}\n        error: shop.desk.SiteNotFound\n      - name: no-desk\n",
+        "    outcomes:\n      - name: not-asked\n        when: mode == asked\n        error: shop.desk.GrantRefused\n      - name: no-site\n        when_related: {via: input.site_id, exists: false}\n        error: shop.desk.SiteNotFound\n      - name: no-desk\n",
+    );
+    let (result, passed) = chosen_suite(&text);
+    let refusals = refusals_for(&result, "shop.desk.");
+    assert_eq!(refusals.len(), 0, "refusals: {refusals:#?}");
+    all_pass("not-asked", &passed);
+}
+
+/// `(own-scenario arrangements, strict searches, open)` of `CHOSEN`, as measured.
+const CHOSEN_OWN_WORK: (u64, u64, usize) = (123, 123, 1);
+
+#[test]
+fn the_chosen_values_are_arranged_in_counted_work() {
+    let work = |text: &str| {
+        let model = ir(text);
+        let ((_, own), overlay) = ess_conformance::synthesize::own_overlay_work(|| {
+            ess_conformance::synthesize::own_scenario_work(|| {
+                ess_conformance::synthesize::synthesize(&model)
+            })
+        });
+        (overlay, own)
+    };
+    let ((built, asked), own) = work(CHOSEN);
+    // No model found asks a chosen-values run at the nesting bound: five models tried.
+    assert_eq!(asked, 0, "chosen-values runs stopped by the bound");
+    assert!(built >= 1, "the overlay is used: built {built}");
+    assert_eq!(own, CHOSEN_OWN_WORK, "own-scenario work of CHOSEN");
+    let (arranged, _, open) = own;
+    assert!(open <= 1, "the nesting bound: open {open}");
+    assert!(arranged >= built, "arranged {arranged} < built {built}");
+    let wider = replaced(
+        CHOSEN,
+        "variants: [chat, mail, push]",
+        "variants: [chat, mail, push, pull, peek, poke]",
+    );
+    let ((built_wider, asked_wider), own_wider) = work(&wider);
+    assert_eq!(asked_wider, 0, "chosen-values runs stopped by the bound");
+    assert!(
+        built_wider <= 2 * built + 2,
+        "linear in the candidates: {built} then {built_wider}"
+    );
+    assert!(own_wider.2 <= 1, "the nesting bound: open {}", own_wider.2);
+    assert!(own_wider.0 >= built_wider);
 }
