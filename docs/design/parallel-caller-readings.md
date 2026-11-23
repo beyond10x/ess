@@ -193,4 +193,18 @@ further thread adds the working memory of one reading. The default is one thread
 
 ## Measured
 
-Filled by the measurement unit.
+One synthesis (`ess verify conform synthesize --target ir --compact`) of a generated model of 48
+flags and 50 commands, 24 of them reading the caller, at `ESS_SYNTH_JOBS` 1, 2 and 4. Release
+build, 2026-11-23, on the tree of commit `34bc86011` plus the command, 20 cores, load average
+39.05 at the start (below 60) and 47.77 at the end. Command: `task synth-jobs-profile`. Peak
+memory is polled every 20 ms, so it is a lower bound by at most the last 20 ms.
+
+| jobs | wall s | user s | sys s | peak MiB | speed-up | scenarios | suite sha256 |
+|---|---|---|---|---|---|---|---|
+| 1 | 67.9 | 61.5 | 0.6 | 1327 | 1.00x | 270 | 684c1d82ccd0d234654cd34dce073df00c03d5bacf5148d21f5e8657d9888f52 |
+| 2 | 36.5 | 66.0 | 0.9 | 1526 | 1.86x | 270 | 684c1d82ccd0d234654cd34dce073df00c03d5bacf5148d21f5e8657d9888f52 |
+| 4 | 41.6 | 84.8 | 1.8 | 1930 | 1.63x | 270 | 684c1d82ccd0d234654cd34dce073df00c03d5bacf5148d21f5e8657d9888f52 |
+
+The speed-up is 1.86x at 2 jobs and 1.63x at 4 against the parent's estimate of 3.5x: on this
+model four jobs are slower than two, so the estimate does not hold here. Peak memory at 4 jobs is
+1930 MiB against 1327 MiB at one job, 1.45 times as much. The default stays 1.
