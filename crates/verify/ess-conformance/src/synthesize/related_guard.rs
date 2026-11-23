@@ -1948,6 +1948,9 @@ struct Around<'a> {
     /// Whether a row whose guards read the input is admitted whatever input is chosen, to be
     /// arranged for the input that is ([`steered_beside`]).
     relaxed: bool,
+    /// The field values a caller chose for the row this arrangement is the creating branch of:
+    /// entered as `fixed` input of the focus row's search ([`arranged_at`]).
+    chosen: Option<&'a BTreeMap<String, Node>>,
 }
 
 impl Around<'_> {
@@ -2841,6 +2844,29 @@ thread_local! {
     /// open at once ([`own_scenario_work`]).
     static OWN_WORK: std::cell::Cell<(u64, u64, usize)> =
         const { std::cell::Cell::new((0, 0, 0)) };
+    /// How many own-scenario arrangements carried chosen values, and how many setup runs with
+    /// chosen values were stopped by the nesting bound ([`own_overlay_work`]).
+    static OWN_OVERLAY_WORK: std::cell::Cell<(u64, u64)> =
+        const { std::cell::Cell::new((0, 0)) };
+}
+
+/// What `run` returns, how many own-scenario arrangements carrying chosen values were built on
+/// this thread while it ran, and how many setup runs with chosen values reached the fallback after
+/// the strict search failed and were stopped by [`OWN_NESTING`].
+pub(super) fn own_overlay_work<R>(run: impl FnOnce() -> R) -> (R, (u64, u64)) {
+    let before = OWN_OVERLAY_WORK.with(std::cell::Cell::get);
+    let out = run();
+    let after = OWN_OVERLAY_WORK.with(std::cell::Cell::get);
+    (out, (after.0 - before.0, after.1 - before.1))
+}
+
+/// Counts own-scenario arrangements with chosen values (`built`) and chosen-values runs stopped
+/// by the nesting bound (`stopped`).
+fn overlay_worked(built: u64, stopped: u64) {
+    OWN_OVERLAY_WORK.with(|work| {
+        let (b, s) = work.get();
+        work.set((b + built, s + stopped));
+    });
 }
 
 /// How many arrangements of setup runs as their own scenario ([`as_own_scenario`]) may already be
@@ -2962,12 +2988,22 @@ fn drive_several(
     match strict {
         Err(cause)
             if instance.is_none()
-                && input.is_none()
                 && known.is_empty()
                 && own_depth() < OWN_NESTING
                 && own_scenario_applies(driver, bound, arranging) =>
         {
-            as_own_scenario(ir, driver, actors, distinction, bound).map_err(|_| cause)
+            as_own_scenario(ir, driver, actors, distinction, (bound, input)).map_err(|_| cause)
+        }
+        // A run with chosen values the nesting bound stops: the strict search's refusal stands.
+        Err(cause)
+            if instance.is_none()
+                && input.is_some()
+                && known.is_empty()
+                && own_depth() >= OWN_NESTING
+                && own_scenario_applies(driver, bound, arranging) =>
+        {
+            overlay_worked(0, 1);
+            Err(cause)
         }
         other => other,
     }
@@ -2998,18 +3034,25 @@ fn as_own_scenario(
     driver: &super::Driver<'_>,
     actors: &BTreeMap<QualifiedName, ActorRef>,
     distinction: Distinction,
-    bound: &BTreeMap<String, crate::scenario::InstanceName>,
+    (bound, chosen): (
+        &BTreeMap<String, crate::scenario::InstanceName>,
+        Option<&BTreeMap<String, Node>>,
+    ),
 ) -> Result<super::Invocation, RefusalCause> {
     let _open = own_opening(ir, driver).ok_or_else(unarranged)?;
     own_worked(1, 0);
+    if chosen.is_some_and(|chosen| !chosen.is_empty()) {
+        overlay_worked(1, 0);
+    }
     let models = super::caller::InvocationModels::plain(ir);
-    let (setup, input, _) = arranged(
+    let (setup, input, _) = arranged_choosing(
         &models,
         driver.command,
         driver.outcome,
         actors,
         distinction,
         None,
+        chosen,
     )?;
     let mut bound = bound.clone();
     for (field, named) in &setup.bound {
@@ -3778,6 +3821,20 @@ fn arranged(
     distinction: Distinction,
     goal: Option<&Goal>,
 ) -> Result<(Setup, BTreeMap<String, Node>, bool), RefusalCause> {
+    arranged_choosing(models, command, outcome, actors, distinction, goal, None)
+}
+
+/// [`arranged`] with the field values `chosen` entered as fixed input of the focus row's search,
+/// where the command reads several rows.
+fn arranged_choosing(
+    models: &super::caller::InvocationModels<'_>,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    distinction: Distinction,
+    goal: Option<&Goal>,
+    chosen: Option<&BTreeMap<String, Node>>,
+) -> Result<(Setup, BTreeMap<String, Node>, bool), RefusalCause> {
     if !several(command) {
         return arranged_at(models, command, outcome, actors, distinction, goal, None);
     }
@@ -3803,7 +3860,7 @@ fn arranged(
         (&projected, own),
         actors,
         (distinction, goal),
-        (&others, false),
+        (&others, false, chosen),
     ) {
         Ok(found) => found,
         // A row beside that holds for no input but the one it was arranged for: arranged again
@@ -3815,6 +3872,7 @@ fn arranged(
             actors,
             (distinction, goal),
             (&mut others, cause),
+            chosen,
         )?,
     };
     if goal.is_none() {
@@ -3841,7 +3899,7 @@ fn arranged_beside(
     (projected, own): (&ResolvedCommand, &ResolvedOutcome),
     actors: &BTreeMap<QualifiedName, ActorRef>,
     (distinction, goal): (Distinction, Option<&Goal>),
-    (others, relaxed): (&[Beside<'_>], bool),
+    (others, relaxed, chosen): (&[Beside<'_>], bool, Option<&BTreeMap<String, Node>>),
 ) -> Result<(Setup, BTreeMap<String, Node>, bool), RefusalCause> {
     let ir = models.arrangement;
     // ess/28: a branch over several rows at once is decided on the rows arranged beside.
@@ -3852,6 +3910,7 @@ fn arranged_beside(
         outcome,
         rows: others,
         relaxed,
+        chosen,
     };
     let (setup, input, lonely) = arranged_at(
         models,
@@ -3899,6 +3958,7 @@ fn steered_beside(
     actors: &BTreeMap<QualifiedName, ActorRef>,
     (distinction, goal): (Distinction, Option<&Goal>),
     (others, cause): (&mut [Beside<'_>], RefusalCause),
+    chosen: Option<&BTreeMap<String, Node>>,
 ) -> Result<(Setup, BTreeMap<String, Node>, bool), RefusalCause> {
     let ir = models.arrangement;
     if !others.iter().any(|other| other.reads_input(ir, command)) {
@@ -3910,7 +3970,7 @@ fn steered_beside(
         (projected, own),
         actors,
         (distinction, goal),
-        (&*others, true),
+        (&*others, true, chosen),
     ) else {
         return Err(cause);
     };
@@ -3936,7 +3996,7 @@ fn steered_beside(
         (projected, own),
         actors,
         (distinction, goal),
-        (&*others, false),
+        (&*others, false, chosen),
     )
     .map_err(|_| cause)
 }
@@ -4358,7 +4418,21 @@ fn arranged_at(
             setup.instance.as_ref(),
             &setup.bound,
         );
-        let fixed = subject_identity(ir, outcome, &setup);
+        let mut fixed = subject_identity(ir, outcome, &setup);
+        // The values a caller chose for the row this branch creates are fixed too, but for a field
+        // naming a row — the arrangement owns those — and one already decided.
+        if let Some(around) = around {
+            let owned = vias(around.command);
+            for (field, value) in around.chosen.into_iter().flatten() {
+                if !fixed.contains_key(field)
+                    && !setup.bound.contains_key(field)
+                    && !pinned.contains_key(field)
+                    && !owned.iter().any(|(via, _)| via == field)
+                {
+                    fixed.insert(field.clone(), value.clone());
+                }
+            }
+        }
         // The rows beside are held while the row is searched for: one filed under a row beside —
         // a machine added to the site the send names — is created by a run decided on that row as
         // it was arranged, and never arranges a second row under its name.

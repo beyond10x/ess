@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Synthesis witnesses a scenario that needs a related row with chosen field values, a grant whose `name` is `mail` or whose `mode` is `denied` for instance, where the row's creating branch reads several related rows through its input: the setup run is arranged as that branch's own scenario with the chosen values sent, where the scenario was refused (`ESS-SYNTH-003`). The `any:` legs of a refusal over such a row and the scenarios that need it in a later state are witnessed. Suites where the strict search already found the run keep their bytes.
+
 ## [0.98.0] — 2026-11-23
 
 ### Added
