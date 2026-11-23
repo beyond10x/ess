@@ -103,7 +103,7 @@ const CELLS: [(&str, &str, bool); 25] = [
     cell(3, 4, false),
     cell(4, 0, false),
     cell(4, 1, false),
-    cell(4, 2, false),
+    cell(4, 2, true),
     cell(4, 3, true),
     cell(4, 4, true),
 ];
@@ -158,7 +158,7 @@ fn the_presence_table_cell_by_cell() {
             wrong.push(format!("{name}: expected {expected:?} in {detail:?}"));
         }
     }
-    assert_eq!((conforming, drifting), (13, 12));
+    assert_eq!((conforming, drifting), (14, 11));
     assert!(wrong.is_empty(), "{}", wrong.join("\n"));
 }
 
@@ -204,6 +204,29 @@ fn a_local_optional_against_an_imported_required_field_is_drift_under_writer_and
         detail.contains("field `codec`: `String` where the imported type has `Optional<String>`"),
         "{detail}"
     );
+}
+
+#[test]
+fn a_field_with_no_presence_writes_only_a_missing_key_as_its_published_schema_reads_it() {
+    let models = pair();
+    for imported in ["OmittedWhenAbsent", "Unstated", "OmittedOrNull"] {
+        models.composes(&models.document("ess-composition/6", &writer_entry("Unstated", imported)));
+    }
+    let detail = models.drift(&models.document(
+        "ess-composition/6",
+        &writer_entry("Unstated", "NullWhenAbsent"),
+    ));
+    assert!(
+        detail.contains(
+            "presence unstated where `wire.session.NullWhenAbsent` has `null_when_absent`"
+        ),
+        "{detail}"
+    );
+    for local in ["NullWhenAbsent", "OmittedOrNull"] {
+        let detail =
+            models.drift(&models.document("ess-composition/6", &writer_entry(local, "Unstated")));
+        assert!(detail.contains("has unstated"), "{detail}");
+    }
 }
 
 #[test]

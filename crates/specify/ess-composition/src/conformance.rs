@@ -1124,18 +1124,18 @@ struct Absent {
 }
 
 /// What a sender of a field with `presence` writes when the value is absent. A field with no
-/// presence writes either spelling.
+/// presence is projected as `omitted_when_absent` is, so it leaves the key out.
 fn absent_written(presence: Option<Presence>) -> Absent {
     match presence {
         Some(Presence::NullWhenAbsent) => Absent {
             omitted: false,
             null: true,
         },
-        Some(Presence::OmittedWhenAbsent) => Absent {
+        Some(Presence::OmittedWhenAbsent) | None => Absent {
             omitted: true,
             null: false,
         },
-        Some(Presence::OmittedOrNull) | None => Absent {
+        Some(Presence::OmittedOrNull) => Absent {
             omitted: true,
             null: true,
         },
