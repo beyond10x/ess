@@ -36,7 +36,7 @@ scope:
   path: crates/generate/ess-synth/tests/generated_view_queries.rs
 - confidence: cited
   path: crates/verify/ess-conformance/tests
-revision: 25
+revision: 26
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T21:10:59Z", actor: "human:timo", revision: 5}
 - {from: "proposed", to: "active", at: "2026-11-21T21:11:00Z", actor: "human:timo", revision: 6}
@@ -476,3 +476,17 @@ Also decided: the slow lane is two units, the local mechanism and the CI wiring;
 stamp is written once, by the byte-pin unit, after every unit that changes a source it hashes;
 a unit that adds a test file to a crate that already has an integration binary says why it cannot
 be a module of an existing one.
+
+Added after round 2 of the plan critics, for the wave of 2026-11-23. Not reached by the wave:
+
+- `test-xtask` and `test-doc` run `cargo test`, which kills no single test and writes no JUnit
+  report; in the wave they get the step ceiling only. Running them under nextest, so that a test
+  over 60 s is killed and the ten slowest are printed for them, is a follow-up.
+- (e) The test step ends within 120 s on a `main` push, with the run id recorded here. Not reached:
+  the runner-kill unit's ceilings are a ratchet set at the longest time seen plus 20 %, and each
+  later story lowers them.
+- (f) Decision D2, `story:one-integration-test-binary-per-large-crate`, lands after the wave.
+
+What the wave delivers of this story: a slow lane exists, six kinds of expensive test leave the
+test step, a test over 60 s is killed, and the step ceilings are pinned. The two-minute end state
+is not claimed.

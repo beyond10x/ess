@@ -11,6 +11,10 @@ relations:
 - derived_from: story:the-caller-readings-of-a-synthesis-run-on-several-threads-and-write-the-suite-a-single-thread-writes
 scope:
 - confidence: cited
+  path: crates/generate/ess-entity-runtime/tests/fixtures/lowered-definitions-table.tsv
+- confidence: cited
+  path: crates/specify/ess-compiler/tests/fixtures/selection-precedence-table.tsv
+- confidence: cited
   path: crates/verify/ess-conformance/src/synthesize/caller.rs
 - confidence: cited
   path: crates/verify/ess-conformance/src/synthesize/caller/arranged.rs
@@ -24,7 +28,7 @@ scope:
   path: crates/verify/ess-conformance/tests/fixtures/synthesis-component-suites-table.tsv
 - confidence: cited
   path: crates/verify/ess-conformance/tests/fixtures/synthesis-suite-bytes-table.tsv
-revision: 11
+revision: 15
 ---
 ## Outcome
 
@@ -315,7 +319,15 @@ No generated file changes. No `cargo xtask` command applies.
   `PICKS` and `RELATED_PICKS`, lines 69-117), never in `Keeping`.
 - `synthesize.rs` (`p2`, `p3`), `caller/arranged.rs` (no unit edits it), every file under
   `tests/` (`p3`), `crates/edge/ess-cli` (`p4`), `crates/edge/ess-xtask` (`p5`).
-- `related_guard.rs`: unit `c1` (round 1 beside this unit; no shared file).
+- `related_guard.rs` and the three model tables: unit `c1`
+  (`a-setup-run-of-a-creating-branch-with-several-related-rows-uses-the-field-values-another-scenario-chose`),
+  in round 1 beside this unit. This unit reads the two synthesis tables
+  (`synthesis-suite-bytes-table.tsv`, `synthesis-component-suites-table.tsv`) as pins and
+  re-pins none. Only `c1` re-pins: its three tables are those two files' targets plus
+  `selection-precedence-table.tsv` and `lowered-definitions-table.tsv`.
+- Landing beside `c1` (routing decision Y4): the second of this unit and `c1` to land reruns
+  the three model-table targets on the merged tree before it lands. A row that differs is `c1`'s
+  re-pin, regenerated with the table's own command, never merged by hand.
 
 ## Gate
 
@@ -338,6 +350,12 @@ SLOT_TIMEOUT=30m CARGO_PROFILE_DEV_DEBUG=false CARGO_INCREMENTAL=0 cargo test -p
 
 - `synthesis_suite_bytes_table` is the byte proof. It runs as it is today (routing decision X2);
   `t2`, which changes it, lands after every `p` unit. Report its time.
+- If `c1` landed before this unit, rerun the three model-table targets on the merged tree before
+  landing (routing decision Y4): `synthesis_suite_bytes_table` above, plus
+  `SLOT_TIMEOUT=30m cargo test -p ess-compiler --locked --test selection_precedence_table` and
+  `SLOT_TIMEOUT=30m cargo test -p ess-entity-runtime --locked --test lowered_definitions_table`.
+  A row that differs is `c1`'s re-pin: regenerate it with the command the failing table prints,
+  never merge it by hand.
 - `ess-synth`'s and `ess-openapi`'s byte pins compare generated trees, not synthesis. This unit
   does not touch them.
 

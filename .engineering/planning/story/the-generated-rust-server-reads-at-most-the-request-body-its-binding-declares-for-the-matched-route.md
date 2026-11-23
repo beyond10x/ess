@@ -35,7 +35,7 @@ scope:
   path: crates/generate/ess-synth/tests/http_binding/shared.rs
 - confidence: cited
   path: crates/generate/ess-synth/tests/http_binding_rust.rs
-revision: 14
+revision: 18
 ---
 ## Outcome
 
@@ -138,7 +138,7 @@ Driver (in the module, ~60 lines; model it on `server`/`serve` of `crates/edge/e
 
 ## Not yours
 
-- Everything under `crates/generate/ess-synth/src/go/` and `tests/http_binding/go.rs`, `tests/fixtures/body-cap-go/` (h3); `.github/workflows/ci.yml` and `ci_lanes.rs` (h3 only: the Rust task needs no CI change, the archive job already builds Rust and uploads `target/nextest-archives`).
+- Everything under `crates/generate/ess-synth/src/go/` and `tests/http_binding/go.rs` and `tests/http_binding/body_cap_go.rs` (h3); `.github/workflows/ci.yml` and `ci_lanes.rs` (h3 only: the Rust task needs no CI change, the archive job already builds Rust and uploads `target/nextest-archives`).
 - `crates/specify/ess-http` (h1), `crates/generate/ess-gen` (h4), `CHANGELOG.md` (h4), the design page and the guide (h1, h4).
 - The conformance suite (`ess-conformance`) is not extended; it does not speak HTTP. The TypeScript web target takes no `--http` (`models/toolchain/domains/generate.yaml:199`) and is unchanged, as is `ess-ui`.
 - The shop fixture, `shared.rs` and `go.rs`: read them, do not edit them. The existing cargo-spawning tests stay on the `ALLOWED` list; do not touch it.
@@ -164,7 +164,7 @@ ESS_BODY_CAP_RUST_SERVER=$PWD/target/nextest-archives/body-cap-rust-server SLOT_
 3. Tests 1, 2 and 3b pass: the digest of the declaring-nothing synthesis equals the constant captured in step 1 (before and after), `MAX_BODY` equals `FIXED_REQUEST_BYTES`, and the lookup table returns 2097152 for `POST /bulk`, above `FIXED_REQUEST_BYTES`.
 4. `without_a_binding_the_rust_server_keeps_its_bytes`, `feasibility`, `adversary_related_guard_behaviour_pass1`, `served_codec_names`, and `go` pass unchanged; no file under `generated/` changed (`git status --short generated` is empty).
 5. The fixture synthesis contains `body_limit` and the shop synthesis does not.
-6. The shop synthesis digests (two layouts) equal the two constants of step 1 (bytes, not time); every new test is under 5 s at the load of the Gate, or is named with its runner time.
+6. The shop synthesis digests (two layouts) equal the two constants of step 1 (bytes, not time); every new test is under 5 s at a 1-minute load of 60 or less, or is named with its runner time.
 7. `cargo test -p ess-xtask --test no_test_builds` passes (run it by name; it reads the tree): the new module spawns no cargo.
 
 ## Decisions
@@ -176,7 +176,7 @@ ESS_BODY_CAP_RUST_SERVER=$PWD/target/nextest-archives/body-cap-rust-server SLOT_
 - The default refusal keeps today's wording (`this surface reads at most {cap}`) so a surface that declares only `limits` answers in the words a caller already sees.
 - A request without `Content-Length` has no body in this server and a chunked one is `411`: no separate unannounced-length rule is needed here; h3 has one for `net/http`.
 - The new test file is a module of `http_binding_rust` and each case starts its own server process: no new test binary, no per-test build, and no `OnceLock` (which is per process under nextest).
-- The `body-cap-rust` fixture is its own copy; h3 has a copy with the same bytes. Reason: the two units are built at the same time and each unit's story is its whole work order.
+- The `body-cap-rust` model and binding pair is also read by h3's Go task and parity case (h3 depends on h2 and keeps no copy): it must not change without h3.
 
 ## Open for the operator
 

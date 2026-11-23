@@ -41,7 +41,7 @@ scope:
   path: crates/verify/ess-conformance/tests/external_beside_held_guard.rs
 - confidence: cited
   path: crates/verify/ess-conformance/tests/synthesis_suite_bytes_table.rs
-revision: 16
+revision: 20
 ---
 ## Outcome
 
@@ -55,7 +55,7 @@ A test marked `#[ignore = "slow lane: <reason>"]` runs only in `task test-slow`,
 ## Why
 
 Parent: `story:the-test-step-meets-the-test-budget`, design step 5 (a separate lane named `slow`) and decisions D1 and D3. Rule: "Tests stay fast": full regeneration and generated-code compiles run in a separate lane named `slow`, not in the test step.
-Consumer gap: none. Units t2 to t5 put their tests into the lane through this marker and need only this unit, not the CI wiring (t1b).
+Consumer gap: none. Units t2 to t5 and p3 (its corpus test) put their tests into the lane through this marker and need only this unit, not the CI wiring (t1b).
 
 ## Where
 
@@ -90,7 +90,7 @@ Bounds, stated once. Wall-time figures in this story are the runner's own per-te
 
 ## Steps
 
-0. Measure the six probes first. Run each once with its marker still `ignore`, from a tree where the code builds, at a 1-minute load of 60 or less: `SLOT_TIMEOUT=30m cargo nextest run --profile ci -p ess-synth --test adversary_e_u2_bytes --test adversary_e_u6_bytes --run-ignored only` and `SLOT_TIMEOUT=30m cargo nextest run --profile ci -p ess-conformance --test adversary_244b_window_free_bytes --run-ignored only`, then the same for `adversary_w3_266_267_dump` and for `adversary_287_pass1` with `-E 'test(/wasm_matches_actual_native_outcomes/)'` (one `ess-conformance` target per run; their builds are large). Read each test's time from `target/nextest/ci/junit.xml`. Decision rule, one threshold: a probe that runs over 60 s is marked slow (step 6) and its time goes into its reason; a probe that runs at most 60 s loses its `#[ignore]` and stays in the test step (not marked, no `MARKED` row), and the report names it with its time; a probe whose measurement was at a load above 60 is marked slow and named `undecided`. If every probe is under 60 s, `MARKED` still needs one row: keep the slowest probe marked, so the lane is never empty. Write the six times in the report.
+0. Measure the six probes first. Run each once with its marker still `ignore`, from a tree where the code builds, at a 1-minute load of 60 or less: `SLOT_TIMEOUT=30m cargo nextest run --profile ci -p ess-synth --test adversary_e_u2_bytes --test adversary_e_u6_bytes --run-ignored only` and `SLOT_TIMEOUT=30m cargo nextest run --profile ci -p ess-conformance --test adversary_244b_window_free_bytes --run-ignored only`, then the same for `adversary_w3_266_267_dump` and for `adversary_287_pass1` with `-E 'test(/wasm_matches_actual_native_outcomes/)'` (one `ess-conformance` target per run; their builds are large). Read each test's time from `target/nextest/ci/junit.xml`. Decision rule, one threshold: a probe that runs over 30 s is marked slow (step 6) and its time goes into its reason; a probe that runs at most 30 s loses its `#[ignore]` and stays in the test step (not marked, no `MARKED` row), and the report names it with its time; a probe whose measurement was at a load above 60 is marked slow and named `undecided`. If every probe is at most 30 s, `MARKED` still needs one row: keep the slowest probe marked, so the lane is never empty. Write the six times in the report.
 1. Write the tests of `## Tests first`, run them red.
 2. `src/slow_lane.rs`. Scan `crates/<area>/<crate>/tests/**/*.rs`, skipping any directory named `fixtures`, with `std::fs`; parse each file with `syn::parse_file`; visit every `ItemFn` at any module depth; a test is a function with an attribute whose path ends in `test`; a marker is an `ignore` attribute `= "slow lane: <reason>"` on a test. The package name is the first `name = "..."` after `[package]` in the crate's `Cargo.toml`; the target is the first path component below `tests/` (the file stem, or the directory name). `Args` (`#[derive(Debug, clap::Args)]`): no flag prints one `<package>\t<target>\t<test>` line per marked test, sorted; `--packages` prints the package names, one per line; `--package <P> --targets` prints that package's targets, one per line; `--package <P> --filter` prints one nextest filterset, `test(/(^|::)(<name1>|<name2>)$/)`, so that a test that moves into a module of a merged binary (`story:one-integration-test-binary-per-large-crate`) is still found. Refuse as `the_scanner_refuses_a_marker_it_cannot_run` says. An empty tree is not an error for the scanner; `test-slow` refuses an empty lane (step 5).
 3. `main.rs`: the `mod`, the `SlowList` variant and its arm.
@@ -113,7 +113,7 @@ Bounds, stated once. Wall-time figures in this story are the runner's own per-te
 
 - t1b: the `diff` step, the `slow` job, `Gate`, `release.yml`, the `check` step, the `ci_lanes.rs` tests, the CI half of the `AGENTS.md` sentence. t2: the rest of `synthesis_suite_bytes_table.rs`. t3 to t5: their files. t6, t7.
 - `test-browser-product` and the five harness tasks (`integer-spellings-harness`, `append-set-harness`, `json-body-harnesses`, `ui-http-servers`, `clap-shared-binary`/`binary64-harness`) stay as they are: moving them to the lane is a follow-up under the parent (X8(b) on the wave page), not this unit.
-- Shared with later units: `crates/edge/ess-xtask/tests/slow_lane.rs` (`MARKED`: t2, t3, t4, t5 add rows; this unit lands first; at merge keep every row, one per file, sorted by path), `Taskfile.yml` (t3 adds `env:` to `test-slow`; t1b adds the `check` step; different lines), `AGENTS.md` (t1b appends to the same sentence), `CHANGELOG.md` (keep every unit's bullet at merge).
+- Shared with later units: `crates/edge/ess-xtask/tests/slow_lane.rs` (`MARKED`: t2, t3, t4, t5 and p3 (artifact `with-more-than-one-job-the-caller-readings-of-a-synthesis-run-on-scoped-threads-and-write-the-same-suite`, its corpus test) add rows; this unit lands first; at merge keep every row, one per file, sorted by path), `Taskfile.yml` (t3 adds `env:` to `test-slow`; t1b adds the `check` step; different lines), `AGENTS.md` (t1b appends to the same sentence), `CHANGELOG.md` (keep every unit's bullet at merge).
 
 ## Gate
 
@@ -133,7 +133,7 @@ Named `--test` targets only; `ess-conformance` one target at a time. `task test-
 1. `cargo test -p ess-xtask --test slow_lane` is green; `MARKED` and the markers in the tree agree, and the three tests were red before the implementation.
 2. `cargo xtask slow-list` prints one row per marked probe (as many as step 0 left marked, at least one), and `--filter` prints a `test(/(^|::)(...)$/)` filterset naming each.
 3. `SLOT_TIMEOUT=30m task test-slow` runs exactly those tests, prints the ten slowest tests per package from `target/nextest/slow/junit.xml`, and exits 0 when they pass; with every marker removed it exits 1 with `no test is marked`.
-4. The report lists the six probes with their measured seconds, the load read before and after each measurement, and the decision (marked or left in the step) by the 60 s threshold of step 0.
+4. The report lists the six probes with their measured seconds, the load read before and after each measurement, and the decision (marked or left in the step) by the 30 s threshold of step 0.
 5. `cargo test -p ess-xtask --test test_budget` is green with `test-slow` in `NEXTEST_TASKS` and the `slow` profile pinned.
 6. `git grep -n "test-slow-probes" -- . ':!.engineering'` finds nothing.
 7. No workflow file changed: `git diff --stat` shows none under `.github/`.
@@ -151,7 +151,7 @@ Reasons:
 - The filter is package plus a test-name regex, not `binary_id`, so that story's merge needs no change here. That story lands after this wave.
 - The slow profile kills a test at 20 minutes (`period` 120 s, `terminate-after` 10); the 60 s test bound does not apply to the lane. The CI job's 30 minutes is t1b's.
 - One nextest run per package, in a shell loop, because the cargo behaviour for a `--test` held by one package of several was not verified; revisit only with a measurement.
-- The probe threshold is 60 s at a 1-minute load of 60 or less (coordinator decision X5): over it, marked slow; at most it, back in the test step; undecided under load, marked slow.
+- The probe threshold is 30 s at a 1-minute load of 60 or less (coordinator decision Y8, the same as t3, t4 and t5): over it, marked slow; at most it, back in the test step; undecided under load, marked slow.
 - `test-browser-product` and the harness tasks stay as they are; moving them is a follow-up under the parent (X8(b)).
 - No `RUSTC_WRAPPER`, `SCCACHE_*`, `-j` or `CARGO_BUILD_JOBS` in the new task.
 - D3 (feature-off tests to the lane) is not in this unit or in the wave.

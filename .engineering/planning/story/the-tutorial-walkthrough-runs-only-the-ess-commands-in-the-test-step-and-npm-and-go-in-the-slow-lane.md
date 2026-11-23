@@ -25,7 +25,7 @@ scope:
   path: crates/edge/ess-xtask/tests/ci_lanes.rs
 - confidence: cited
   path: crates/edge/ess-xtask/tests/slow_lane.rs
-revision: 12
+revision: 15
 ---
 ## Outcome
 
@@ -119,7 +119,7 @@ slot task ci-lint
 1. `cargo test -p ess-cli --test tutorial_page -- --nocapture` with `ESS_TUTORIAL_NETWORK` unset and no `go` on `PATH` is green and its output holds the skip line, whose text is exactly `skipped in the test step: the slow lane runs the npm blocks` for the node blocks and `skipped in the test step: the slow lane runs the go blocks` for the go blocks, followed by the summary line ending `the requires=node and requires=go blocks skipped`.
 2. The same command with `ESS_TUTORIAL_NETWORK=1` and `go` on `PATH` prints the same two skip lines (the step skips whatever the environment holds): `the_toolchain_blocks_are_skipped_in_the_step_and_named_for_the_slow_lane` is green, and it asserts that `Walkthrough::new(.., Toolchains::Skipped)` holds no `go_cache` and no `go_mod_cache` (so no `go env` process is started).
 3. `the_walkthrough_runs_and_prints_what_the_pages_record` ends within 30 s by the runner's figure, on a warm build at a 1-minute load of 60 or less (if step 0 applied the prefix rule, the prefix is named and its time is the figure); the measurement before and the figure after are in the report.
-4. `cargo xtask slow-list` lists `ess-cli tutorial_page the_walkthrough_runs_the_npm_and_go_blocks_too`; `task test-slow PACKAGES=ess-cli` is green with `ESS_TUTORIAL_NETWORK=1` in its environment, and the test fails with `ESS_TUTORIAL_NETWORK=1 is required` without it.
+4. `cargo xtask slow-list` lists `ess-cli tutorial_page the_walkthrough_runs_the_npm_and_go_blocks_too`; `task test-slow PACKAGES=ess-cli` is green (the task sets `ESS_TUTORIAL_NETWORK=1` itself), and the ignored test run directly with the variable unset, `env -u ESS_TUTORIAL_NETWORK cargo nextest run -p ess-cli --test tutorial_page --run-ignored only`, fails with `ESS_TUTORIAL_NETWORK=1 is required`.
 5. `the_tutorial_network_is_set_by_the_slow_lane_and_by_no_test_step` is green; `grep -n ESS_TUTORIAL_NETWORK .github/workflows/ci.yml` finds nothing.
 6. `cargo test -p ess-xtask --test slow_lane` is green with the new row.
 

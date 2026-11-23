@@ -14,13 +14,61 @@ relations:
 - depends_on: story:a-test-marked-slow-runs-only-in-task-test-slow-under-its-own-profile-and-slow-list-names-it
 scope:
 - confidence: cited
+  path: crates/edge/ess-xtask/tests/slow_lane.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/admission.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/authored.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/authored/ties.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/fixtures.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/input.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/now_offset.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/scenario.rs
+- confidence: cited
   path: crates/verify/ess-conformance/src/synthesize.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/synthesize/aggregate.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/synthesize/aggregate/contrast.rs
 - confidence: cited
   path: crates/verify/ess-conformance/src/synthesize/caller.rs
 - confidence: inferred
   path: crates/verify/ess-conformance/src/synthesize/caller/readings.rs
 - confidence: inferred
+  path: crates/verify/ess-conformance/src/synthesize/created_memo.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/synthesize/disclosure.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/synthesize/earlier_runs.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/synthesize/first_kept.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/synthesize/grant.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/synthesize/made.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/synthesize/model_memo.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/synthesize/ordered_head.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/synthesize/related_guard.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/synthesize/row_set.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/synthesize/run_memo.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/synthesize/shorthand.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/synthesize/subject_fact.rs
+- confidence: inferred
   path: crates/verify/ess-conformance/src/synthesize/threads.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/witness.rs
 - confidence: cited
   path: crates/verify/ess-conformance/src/witness_memo.rs
 - confidence: cited
@@ -37,7 +85,7 @@ scope:
   path: crates/verify/ess-conformance/tests/mutation_grants.rs
 - confidence: cited
   path: crates/verify/ess-conformance/tests/synthesis_suite_bytes_table.rs
-revision: 15
+revision: 19
 ---
 ## Outcome
 
@@ -212,8 +260,19 @@ thread_local! {
   - `synthesize/caller/readings.rs` `PANIC_IN` as `Test`.
 - Remove the `#![cfg_attr(not(test), allow(dead_code))]` that `p2` put at the top of the file,
   with its comment naming this unit. `read_all` now uses `Context` and `Work`, and through them
-  every accessor. Also remove any per-item `allow` that `p2` added with the same comment
-  (`git grep -n 'p3 removes' crates/verify/ess-conformance/src`).
+  every accessor.
+- Remove every other line that carries the comment `p3 removes this`, in whichever file of
+  `crates/verify/ess-conformance/src/` `p2` left it (`git grep -n 'p3 removes'
+  crates/verify/ess-conformance/src`; `p2`'s report lists those files). Change nothing else in
+  those files (routing decision Y2).
+
+### `crates/edge/ess-xtask/tests/slow_lane.rs` (`t1a`'s)
+
+- Add one row to `MARKED: &[(&str, &[&str])]`: `("crates/verify/ess-conformance/tests/synthesis_suite_bytes_table.rs", &["every_repository_model_and_component_writes_its_bytes_at_one_two_and_seven_jobs"])`.
+  The path is workspace-relative and the rows are sorted by path, as `t1a` sets the table.
+- If `t2` already put a row for the same file (its own slow tests), add the name to that row's
+  list rather than adding a second row: one row per file. `t1a` names this unit among the units
+  that add rows; keep every row at merge (routing decision Y1).
 - `Work` is unchanged.
 
 ### `crates/verify/ess-conformance/tests/synthesis_suite_bytes_table.rs`
@@ -331,8 +390,10 @@ In `crates/verify/ess-conformance/src/synthesize/caller.rs` `mod tests`:
 
     Red today: `PANIC_IN` and `with_jobs` do not exist.
 
-In `crates/verify/ess-conformance/tests/synthesis_suite_bytes_table.rs`, a slow-lane test, marked
-with the marker of unit `t1a` (marker and task as `t1a` defines them):
+In `crates/verify/ess-conformance/tests/synthesis_suite_bytes_table.rs`, a slow-lane test. It
+carries `t1a`'s marker, `#[test] #[ignore = "slow lane: <reason>"]`, as
+`#[ignore = "slow lane: every model and component synthesized at 1, 2 and 7 jobs, about <n> s"]`
+with the measured seconds. It runs in `task test-slow`, and its `MARKED` row is this unit's:
 
 13. `every_repository_model_and_component_writes_its_bytes_at_one_two_and_seven_jobs`. For `n`
     in `[1, 2, 7]`, inside `with_jobs(NonZeroUsize::new(n).unwrap(), ..)`, build:
@@ -348,9 +409,7 @@ with the marker of unit `t1a` (marker and task as `t1a` defines them):
       as they print. Equal digests stand for `cmp` of the suite bytes (D8).
     - Red today: the same compile error.
     - It runs in the slow lane only: never in the test step, never under the 60 s bound of the
-      test step. Report its time. If `t1a` defines a per-test bound in the slow lane and the test
-      exceeds it, split it into one test per count (2 and 7) and one for components, each
-      compared with 1.
+      test step. `t1a`'s slow profile kills a test at 20 minutes. Report its time.
     - The parent asks for the corpus plus the caller models of the work tests. Those models are
       generated in code, and tests 5-7 cover them in the test step.
 
@@ -377,12 +436,14 @@ What a green mutant means:
 
 ## Steps
 
-1. Re-read `readings.rs`, `caller.rs` `synthesize`, `threads.rs` and
-   `synthesis_suite_bytes_table.rs` at the merged head. Read `t1a`'s marker and slow-lane task in
-   its merged change.
-2. Write tests 1-13 and record the red lines. Every target runs through the pool.
+1. Re-read `readings.rs`, `caller.rs` `synthesize`, `threads.rs`,
+   `synthesis_suite_bytes_table.rs` and `MARKED` in `crates/edge/ess-xtask/tests/slow_lane.rs` at
+   the merged head.
+2. Write tests 1-13 and record the red lines. Every target runs through the pool. With test 13's
+   marker, add its `MARKED` row, so that `cargo test -p ess-xtask --test slow_lane` stays green.
 3. Add `with_jobs`, `jobs`, `current_jobs`, `readings_off_thread` and the two thread-locals.
-   Classify them in `STATE`, and remove `p2`'s dead-code allows.
+   Classify them in `STATE`. Remove every line with the comment `p3 removes this`
+   (`git grep -n 'p3 removes' crates/verify/ess-conformance/src`).
 4. Add the bounds and the guard to `read_all`. Then write the threaded body, the panic seam and
    the `jobs() == 1` condition on `_kept`.
 5. Run tests 1-12, then the mutation proof, then test 13 in the slow lane.
@@ -403,24 +464,31 @@ API, so `task ci-lint` runs.
 - `crates/verify/ess-conformance/src/synthesize/caller.rs`: the `_kept` line, `counted`, test 12.
 - `crates/verify/ess-conformance/src/witness_memo.rs`: `counted` only.
 - `crates/verify/ess-conformance/src/synthesize/threads.rs`: three `STATE` rows, and the removal
-  of `p2`'s dead-code allows.
+  of `p2`'s module-level dead-code allow.
+- Every line carrying the comment `p3 removes this`, in whichever file of
+  `crates/verify/ess-conformance/src/` `p2` left it (`git grep -n 'p3 removes'`); nothing else in
+  those files.
 - The four test files named under Tests first: the new tests and the `model_flags` refactor only.
 - `crates/verify/ess-conformance/tests/synthesis_suite_bytes_table.rs`: test 13 only, appended.
+- `crates/edge/ess-xtask/tests/slow_lane.rs`: the `MARKED` row (or name) for test 13 only.
 
 ## Not yours
 
-- `crates/edge/ess-cli` and `website/` belong to `p4`; `crates/edge/ess-xtask`, `Taskfile.yml`
+- `crates/edge/ess-cli` and `website/` belong to `p4`; `crates/edge/ess-xtask` (except test 13's `MARKED` row), `Taskfile.yml`
   and the design page's `## Measured` belong to `p5`.
 - The byte tables (`tests/fixtures/*-table.tsv`) and every other line of
   `synthesis_suite_bytes_table.rs` belong to `t2`, which lands after this unit. They are read and
   run here, never re-pinned.
-- The slow-lane marker, its scanner and its task belong to `t1a`.
+- The slow-lane marker, its scanner, its task and every other row of `MARKED` belong to `t1a`
+  and to the `t` units that add rows.
 - `mutate.rs`: nothing here edits it.
 
 ## Shared files
 
 - `synthesis_suite_bytes_table.rs` with `t2`. This unit lands first and appends one function;
   `t2` keeps it.
+- `crates/edge/ess-xtask/tests/slow_lane.rs` with `t1a` (merged before) and `t2` to `t5`, which
+  add rows too: keep every row at merge, one per file, sorted by path.
 - `threads.rs` with `p2` (merged before).
 
 ## Gate
@@ -440,11 +508,13 @@ SLOT_TIMEOUT=30m CARGO_PROFILE_DEV_DEBUG=false CARGO_INCREMENTAL=0 cargo test -p
 SLOT_TIMEOUT=30m CARGO_PROFILE_DEV_DEBUG=false CARGO_INCREMENTAL=0 ESS_SYNTH_JOBS=4 cargo test -p ess-conformance --locked --test caller_readings_made_once_work --test companion_rows_searched_once_work --test created_rows_kept_work --test nested_paths_extended_in_place_work --test once_per_model_work --test own_scenario_nesting_bounded_work --test ranked_and_shorthand_work --test related_guard_ranked_candidates_work --test row_set_many_selectors_work --test rows_moved_by_many_commands_work --test step_clones_work --test stored_row_bound_once_work --test stored_rows_decided_once_work --test witness_unread_choices_work
 SLOT_TIMEOUT=30m CARGO_PROFILE_DEV_DEBUG=false CARGO_INCREMENTAL=0 ESS_SYNTH_JOBS=4 cargo test -p ess-conformance --locked --test caller_arranged_rows --test a_seeded_scenario_notes_its_skipped_reversed_caller_run --test caller_values --test interpreted_caller --test one_time_caller --test mutation_grants --test mutation_sets_entries
 SLOT_TIMEOUT=30m CARGO_PROFILE_DEV_DEBUG=false CARGO_INCREMENTAL=0 cargo test -p ess-conformance --locked --test synthesis_suite_bytes_table --test synthesis_suite_bytes_table_cli_read --test adversary_related_values_all_bytes --test external_beside_held_guard
+SLOT_TIMEOUT=30m CARGO_PROFILE_DEV_DEBUG=false CARGO_INCREMENTAL=0 cargo test -p ess-xtask --locked --test slow_lane
 SLOT_TIMEOUT=30m slot task ci-lint
+SLOT_TIMEOUT=30m task test-slow PACKAGES=ess-conformance
 ```
 
-Then test 13 through `t1a`'s slow-lane task, filtered to its name, as `t1a` defines the task.
-Report its time and the 1-minute load at its start.
+- `task test-slow` runs every test marked in `ess-conformance`, test 13 among them. Report test
+  13's time from its run and the 1-minute load at its start.
 
 - The byte-pin targets run as they are today (routing decision X2). `t2` lands later.
 - The `ess-cli` tests run in `p4`.
@@ -471,6 +541,9 @@ Each line checks one claim of the Outcome:
     prints nothing.
 11. `every_static_of_the_crate_is_classified` (`p2`) passes with the three new rows, and
     `git grep -n 'p3 removes' crates/verify/ess-conformance/src` prints nothing.
+12. `cargo test -p ess-xtask --test slow_lane` passes: test 13's marker and its `MARKED` row
+    agree, and `cargo xtask slow-list` prints
+    `ess-conformance\tsynthesis_suite_bytes_table\tevery_repository_model_and_component_writes_its_bytes_at_one_two_and_seven_jobs`.
 
 ## Decisions
 

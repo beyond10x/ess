@@ -18,7 +18,7 @@ scope:
   path: crates/edge/ess-xtask/src/docs.rs
 - confidence: cited
   path: crates/edge/ess-xtask/tests/ci_lanes.rs
-revision: 10
+revision: 13
 ---
 ## Outcome
 
@@ -54,7 +54,7 @@ Bounds: wall-time figures are measured on a warm build at a 1-minute load of 60 
    - (a) compile as today: `cargo test --package ess-xtask --locked --no-run` under today's `env` prefix from `Taskfile.yml` lines 410-417, including `RUSTC_WRAPPER=` and `CARGO_BUILD_JOBS=2`;
    - (b) compile with the prefix of step 2 below (no wrapper assignments, no jobs);
    - (c) run only, in the target of (b), warm: `cargo test --package ess-xtask --locked` wall time and the `finished in` lines per binary, and `cargo nextest run --package ess-xtask --bin ess-xtask docs::` for per-test times (nextest is only the measuring tool here; `task test-xtask` stays on `cargo test`).
-   Decision rules: if (a) minus (b) is over 60 s, the wrapper and jobs lines were the cost: steps 1 to 3 are the fix and nothing else is needed for `docs::`. If (c) shows a `docs::` test over 5 s, it is named, and step 4 applies. If (c) is over 120 s with every test under 5 s, the number of tests is the cost: report it as a finding and stop for that part (no test is changed on a guess), and the acceptance in item 4 below is then not met and says so in the report.
+   Decision rules: if (a) minus (b) is over 60 s, the wrapper and jobs lines were the cost: steps 1 to 3 are the fix and nothing else is needed for `docs::`. If (c) shows a `docs::` test over 5 s, it is named, and step 3 applies. If (c) is over 120 s with every test under 5 s, the number of tests is the cost: report it as a finding and stop for that part (no test is changed on a guess). Landing rule: when the measured time cannot meet acceptance 4 (the second command over 120 s on a warm build at load 60 or less after steps 2 and 3), the unit does not land; it reports the measurement, the cause it found and the smallest change that would meet it, for the coordinator.
 1. `crates/edge/ess-xtask/tests/ci_lanes.rs`, new test `test_xtask_sets_no_wrapper_and_no_build_jobs`: reads `Taskfile.yml`; for the task `test-xtask` only, no command and no `vars` value contains a word starting `RUSTC_WRAPPER=`, `RUSTC_WORKSPACE_WRAPPER=`, `CARGO_BUILD_RUSTC_WRAPPER=` or `CARGO_BUILD_RUSTC_WORKSPACE_WRAPPER=` (with or without a value), `CARGO_BUILD_JOBS`, `SCCACHE_`, or the words `-j` and `--jobs`. Red today: it names `test-xtask` line 413. The pin over every `test*` task and over `consumer-check` is not this unit's (see `## Not yours`).
 2. New test `test_xtask_builds_before_it_runs`: `shell_commands(&taskfile, "test-xtask")` has two commands, the first ending `--no-run`, the second not containing it, and both carry `--package ess-xtask --locked`, `RUSTUP_TOOLCHAIN=1.98.1`, `-fuse-ld=lld`, `CARGO_INCREMENTAL=0`, `CARGO_PROFILE_DEV_DEBUG=0` and `CARGO_PROFILE_TEST_DEBUG=0` (after variable expansion of the task's `vars`: the check reads the task's `vars` and its commands together). Red today: one command only.
 3. Run both red.

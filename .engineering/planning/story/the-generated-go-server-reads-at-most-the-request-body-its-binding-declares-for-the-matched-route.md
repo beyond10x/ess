@@ -30,10 +30,10 @@ scope:
   path: crates/generate/ess-synth/src/go/http.rs
 - confidence: cited
   path: crates/generate/ess-synth/src/go/http/bound.rs
-- confidence: inferred
-  path: crates/generate/ess-synth/tests/fixtures/body-cap-go/http.yaml.in
-- confidence: inferred
-  path: crates/generate/ess-synth/tests/fixtures/body-cap-go/model.yaml.in
+- confidence: cited
+  path: crates/generate/ess-synth/tests/fixtures/body-cap-rust/http.yaml.in
+- confidence: cited
+  path: crates/generate/ess-synth/tests/fixtures/body-cap-rust/model.yaml.in
 - confidence: inferred
   path: crates/generate/ess-synth/tests/http_binding/body_cap_go.rs
 - confidence: cited
@@ -44,7 +44,7 @@ scope:
   path: crates/generate/ess-synth/tests/http_binding/shared.rs
 - confidence: cited
   path: crates/generate/ess-synth/tests/http_binding_rust.rs
-revision: 16
+revision: 20
 ---
 ## Outcome
 
@@ -121,36 +121,7 @@ func readBody(request *http.Request, reading bodyCap) ([]byte, *response) {
 
 ## Tests first
 
-New module `tests/http_binding/body_cap_go.rs` (a module of `http_binding_rust`, not a binary of its own; it spawns no cargo, so it is not added to `ALLOWED` in `no_test_builds.rs`) and two fixtures `tests/fixtures/body-cap-go/model.yaml.in` and `http.yaml.in`: the same bytes as h2's `body-cap-rust/` pair (each unit carries its own copy; both are built at the same time). Model and binding:
-
-- `model.yaml.in`: `system: parcel`, `domain: parcel.intake`, `format: ess/23`; type `parcel.intake.ParcelId` newtype of `Integer`; entity `parcel.intake.Parcel` (identity `parcel_id`, field `note: String`, lifecycle `{initial: Held, states: [Held], terminal: [Held]}`); event `parcel.intake.ParcelHeld {parcel_id, note}`; four commands `parcel.intake.Receive`, `parcel.intake.Label`, `parcel.intake.Discard`, `parcel.intake.Archive`, each `input: [parcel_id, note]` with one outcome `held` that `creates: parcel.intake.Parcel`, `instance: parcel_id`, `sets: {note: input.note}`, `emits: [parcel.intake.ParcelHeld]`; view `parcel.intake.AllParcels` (source `Parcel`, fields `parcel_id`, `note`, `consistency: read_your_writes`); component `parcel` owning the domain, accepting the four commands, publishing the event, `reached_by: network`. Copy the shape of `crates/edge/ess-cli/tests/fixtures/ui-http/items/system.yaml`. No actors.
-- `http.yaml.in`:
-
-```yaml
-type: ess-http/1
-specification:
-  system: parcel
-  version: v1
-  source_digest: sha256:<the model's digest>
-limits: {request_bytes: 64}
-refusals:
-  too_large: {status: 422, body: {error: {literal: too_big}}, headers: {X-Limit: {literal: '64'}}}
-routes:
-  - {command: parcel.intake.Receive, method: post, path: /parcels}
-  - command: parcel.intake.Label
-    method: post
-    path: /labels
-    limits: {request_bytes: 256}
-    refusals:
-      too_large: {status: 413, body: none}
-  - command: parcel.intake.Discard
-    method: post
-    path: /bulk
-    limits: {request_bytes: 2097152}
-  - {view: parcel.intake.AllParcels, method: get, path: /parcels}
-```
-
-`Archive` is not named, so it keeps its derived route; `Discard` is the route whose cap (2 MiB) is above the fixed 1 MiB default. The pair is byte for byte h2's. The model is compiled in the test from the fixture under the source name `parcel.yaml` (the Taskfile copies it to that name), and the test holds the binding's `source_digest` to the compile's as `json_body_closure.rs` `binding()` does (line 163), panicking with the digest and `run task body-cap-go-server again`.
+New module `tests/http_binding/body_cap_go.rs` (a module of `http_binding_rust`, not a binary of its own; it spawns no cargo, so it is not added to `ALLOWED` in `no_test_builds.rs`) and NO fixture of its own: it reads the model and binding pair h2 wrote, `tests/fixtures/body-cap-rust/model.yaml.in` and `http.yaml.in` (see h2, "Tests first": four commands `Receive` 64, `Label` 256 with its own `too_large`, `Discard` on `/bulk` 2097152, derived `Archive`, and the view `/parcels`), through a path built from `env!("CARGO_MANIFEST_DIR")`. Nothing in the pair is Rust-specific, so the Go task and the Go cases read it as it is (the task copies the model to `parcel.yaml`, as h2's does); the directory keeps h2's name so h2's path does not move. h3 depends on h2 for this, and it must not edit the pair: a change to it is h2's, and h2 says so. The model is compiled in the test from the pair under the source name `parcel.yaml` (the Taskfile copies it to that name), and the test holds the binding's `source_digest` to the compile's as `json_body_closure.rs` `binding()` does (line 163), panicking with the digest and `run task body-cap-go-server again`.
 
 Each test starts nothing itself but a child process of the built server (test 5b starts two). Report the runner's own figure for the module at a 1-minute load of 60 or less (`cut -d' ' -f1 /proc/loadavg`), on a warm build, test time only; every test under 60 s, each new one under 5 s at that load or named with its time.
 
@@ -168,7 +139,7 @@ Each test starts nothing itself but a child process of the built server (test 5b
    - `a_route_that_reads_no_body_and_a_derived_route_keep_the_fixed_bound`: `GET /parcels` with 65 body bytes answers `200`; `POST` to `Archive`'s derived path (read from the server's `GET /openapi.json`: the path whose operation has `operationId` `parcel.intake.Archive`) with `Content-Length: 1048577` and no body answers `413` with the body `{"refused":"the body is longer than 1048576 bytes, which is all this surface reads"}` (parse it with `serde_json`, which `ess-synth` depends on, and compare the member); the same on an unrouted path `/nowhere`. Today's Go server would wait for the missing megabyte here; the capped one answers at once.
    A surface that declares nothing is covered by test 1 and by the existing `without_a_binding_the_go_server_keeps_its_bytes` (`tests/http_binding/go.rs:330`), not by a socket case.
 5. `the_go_and_rust_servers_answer_one_binding_alike` (`go.rs:754`) is read, not changed; it runs the shop binding, which declares no limit, so it stays green and shows the uncapped parity did not move.
-5b. `the_go_and_rust_servers_answer_a_capped_binding_alike` (the capped-binding Rust-equals-Go parity case, in `body_cap_go.rs`): start the Go server (`ESS_BODY_CAP_GO_SERVER`) and the Rust server of the same fixture (`ESS_BODY_CAP_RUST_SERVER`, built by h2's task from the byte-identical pair; panic naming `task body-cap-rust-server` when unset) and send both the same raw requests: `Receive` with 64 and with 65 body bytes, `Label` with 256 and 257, `Receive` with `Content-Length: 65` and no body, `/bulk` with 1,200,000 bytes and with `Content-Length: 2097153`, `GET /parcels` with 65 bytes, and `Archive`'s derived path with `Content-Length: 1048577`. For each request assert the two servers' status codes are equal, and where the binding declares the refusal also the body and the `X-Limit` header. The `Archive` case compares status only: the two default `413` bodies differ in words by design (decisions). The chunked case is not in it: the Rust server answers `411` to chunked transfer, so it has no counterpart (h2 decisions). The two drivers are the module's own copies.
+5b. `the_go_and_rust_servers_answer_a_capped_binding_alike` (the capped-binding Rust-equals-Go parity case, in `body_cap_go.rs`): start the Go server (`ESS_BODY_CAP_GO_SERVER`) and the Rust server of the same pair (`ESS_BODY_CAP_RUST_SERVER`, built by h2's task from the one pair both servers are built from; panic naming `task body-cap-rust-server` when unset) and send both the same raw requests: `Receive` with 64 and with 65 body bytes, `Label` with 256 and 257, `Receive` with `Content-Length: 65` and no body, `/bulk` with 1,200,000 bytes and with `Content-Length: 2097153`, `GET /parcels` with 65 bytes, and `Archive`'s derived path with `Content-Length: 1048577`. For each request assert the two servers' status codes are equal, and where the binding declares the refusal also the body and the `X-Limit` header. The `Archive` case compares status only: the two default `413` bodies differ in words by design (decisions). The chunked case is not in it: the Rust server answers `411` to chunked transfer, so it has no counterpart (h2 decisions). The two drivers are the module's own copies.
 6. In `ci_lanes.rs`, `a_job_that_builds_the_go_server_installs_go_after_it_frees_the_disk` (one test, both set-up steps): for every job of `ci.yml` and of `release.yml` that reaches the task `body-cap-go-server` (through `lane_invocations` and `reached`; today `build-tests` through `test-archive-workspace` and `hotfix-tests` through `test-packages`), assert it has an `actions/setup-go` step through `step_using`, pinned to a full commit like the one the `test` job uses and with the same `go-version` and `cache: false`; that this step comes after any step named `Free runner disk` and before the step that runs the job's task; and that `Taskfile.yml`'s `body-cap-go-server` runs `go build`. Assert too that at least those two jobs are found, so a rename of one cannot make the loop empty. Mutate the workflows in memory as `the_workspace_split_fails_on_a_dropped_group_a_...` (748) does (in `ci.yml` drop the step, and move it before `Free runner disk`; in `release.yml` drop the step) and assert the test fails on each of the three. Red today: no job installs Go, and the task does not exist (the test is written first with the task name, and fails on the missing task).
 
 Driver (in the module, ~70 lines, its own copy of the Rust module's driver; model it on `server`/`serve` of `crates/edge/ess-cli/tests/generate_ui_http.rs` 463-560): read `ESS_BODY_CAP_GO_SERVER`, panic naming `task body-cap-go-server` when unset or missing, make the file executable (an uploaded artifact loses its mode bits), spawn it with `--listen 127.0.0.1:0` and piped stdout, read lines until a JSON record with `runtime.address`, kill on drop. One server for all cases in a process under `nextest` is not possible (a process per test): each case starts its own server (about 10 ms); that is cheap, and it is not an expensive product built per test. Send raw HTTP/1.1 over `TcpStream` with a 10 s read timeout, write the head and the body bytes, parse the status line and headers, and read the body by its `Content-Length` (every answer this server writes carries one except `204` and `304`, and it closes the connection after each).
@@ -176,9 +147,9 @@ Driver (in the module, ~70 lines, its own copy of the Rust module's driver; mode
 ## Steps
 
 1. On the unmodified tree write test 1 with a placeholder constant, run it, copy the digest in, run green. Write the digest down: it is the count that must not move.
-2. Write the fixtures and tests 2, 3b, 4 and 5b and the module declaration; `cargo test -p ess-synth --test http_binding_rust body_cap_go` fails (red, as above). Write test 6; it fails.
+2. Write tests 2, 3b, 4 and 5b and the module declaration (the pair is h2's, already on the tree); `cargo test -p ess-synth --test http_binding_rust body_cap_go` fails (red, as above). Write test 6; it fails.
 3. Implement `capped_read_body`, `CAPPED`, `body_limit`, the `dispatch` placeholder, the `refusal_set` change and `caps_a_request`; write test 3. Capped mode is computed once per site by `caps_a_request` and passed, never re-derived per call.
-4. Add the Taskfile var, task, wiring, the `AGENTS.md` line and the two Go steps (`ci.yml` `build-tests`, `release.yml` `hotfix-tests`). The task, modelled on `ui-http-servers` (264-283): `cargo build --workspace --exclude ess-xtask --locked --bin ess`; `rm -rf {{.WORK}}`; `mkdir -p {{.WORK}} {{.NEXTEST_ARCHIVES}}`; `cp {{.FIXTURES}}/model.yaml.in {{.WORK}}/parcel.yaml`; `target/debug/ess generate synthesize --target go --path {{.WORK}}/parcel.yaml --http {{.FIXTURES}}/http.yaml.in --out {{.WORK}}/parcel`; then in one command `cd {{.WORK}}/parcel && env GOFLAGS=-mod=mod GOPROXY=off GOTOOLCHAIN=local go vet ./...` and, in the next, the same environment with `CGO_ENABLED=0 go build -trimpath -o {{.BODY_CAP_GO_SERVER}} ./cmd/parcel-server`; `rm -rf {{.WORK}}`. The environment is the one `tests/http_binding/go.rs` `go()` (151) sets. Read the real command directory in the generated tree (`cmd/<component>-server`, `go/entry.rs` 82) and fix the name if it differs. `go` goes through the slot shim, so the task takes its slots by itself; the vet runs once here, so no test spawns `go`. `GOCACHE` is the caller's or Go's default; do not set it to a path under `/tmp`.
+4. Add the Taskfile var, task, wiring, the `AGENTS.md` line and the two Go steps (`ci.yml` `build-tests`, `release.yml` `hotfix-tests`). The task, modelled on `ui-http-servers` (264-283): `cargo build --workspace --exclude ess-xtask --locked --bin ess`; `rm -rf {{.WORK}}`; `mkdir -p {{.WORK}} {{.NEXTEST_ARCHIVES}}`; `cp {{.FIXTURES}}/model.yaml.in {{.WORK}}/parcel.yaml` (here `{{.FIXTURES}}` is `crates/generate/ess-synth/tests/fixtures/body-cap-rust`, h2's pair); `target/debug/ess generate synthesize --target go --path {{.WORK}}/parcel.yaml --http {{.FIXTURES}}/http.yaml.in --out {{.WORK}}/parcel`; then in one command `cd {{.WORK}}/parcel && env GOFLAGS=-mod=mod GOPROXY=off GOTOOLCHAIN=local go vet ./...` and, in the next, the same environment with `CGO_ENABLED=0 go build -trimpath -o {{.BODY_CAP_GO_SERVER}} ./cmd/parcel-server`; `rm -rf {{.WORK}}`. The environment is the one `tests/http_binding/go.rs` `go()` (151) sets. Read the real command directory in the generated tree (`cmd/<component>-server`, `go/entry.rs` 82) and fix the name if it differs. `go` goes through the slot shim, so the task takes its slots by itself; the vet runs once here, so no test spawns `go`. `GOCACHE` is the caller's or Go's default; do not set it to a path under `/tmp`.
 5. Run `ESS_BODY_CAP_GO_SERVER=<path> cargo test ...` after `slot task body-cap-go-server`; then the gate.
 6. Re-run test 1: the digest equals the one written down in step 1 (the generator gained a text rewrite and one table that run in capped mode only, so the shop synthesis is byte for byte the same). Report the byte count the capped fixture's helpers and surface files gain over the same fixture without `limits` (one number, no bound).
 7. Pins that must not move, and the tests that show it: the committed `generated/go/{billing,gatepass}` trees (`without_a_binding_the_go_server_keeps_its_bytes`, `go.rs:330`; `feasibility`; `adversary_related_guard_behaviour_pass1`); the bytes of a bound synthesis that declares nothing (test 1); the byte-pin targets of `AGENTS.md` for `ess-synth`: `served_codec_names` and `go`, and `http_binding_rust` with its `go` module. None of these is re-pinned; if one moves, the change is wrong.
@@ -186,10 +157,10 @@ Driver (in the module, ~70 lines, its own copy of the Rust module's driver; mode
 ## Owned files
 
 - `crates/generate/ess-synth/src/go/http.rs`, `crates/generate/ess-synth/src/go/http/bound.rs`
-- `crates/generate/ess-synth/tests/http_binding/body_cap_go.rs` (new), `crates/generate/ess-synth/tests/fixtures/body-cap-go/` (new), `crates/generate/ess-synth/tests/http_binding_rust.rs` (one module declaration)
+- `crates/generate/ess-synth/tests/http_binding/body_cap_go.rs` (new), `crates/generate/ess-synth/tests/http_binding_rust.rs` (one module declaration); no fixture directory of its own
 - `.github/workflows/ci.yml` (the one step in `build-tests`), `.github/workflows/release.yml` (the one step in `hotfix-tests`) and `crates/edge/ess-xtask/tests/ci_lanes.rs` (the one new test, appended; t1b, t3, t6 and t7 append theirs too: keep both at merge)
 - `Taskfile.yml` and `AGENTS.md`: the lines named above. h2 edits the same two files and lands first (h3 depends on h2); h3 rebases and keeps both sets of lines (adjacent additions in the same lists). t7 adds timeout prefixes to `test`, `test-packages` and `test-shard` later or earlier: whoever lands second rebases and keeps both.
-- Pinned reads (no edit): `crates/generate/ess-synth/tests/http_binding/shared.rs`, `crates/edge/ess-cli/tests/generate_ui_http.rs`, `crates/edge/ess-xtask/tests/no_test_builds.rs`, `crates/generate/ess-synth/tests/http_binding/body_cap_rust.rs` and `tests/fixtures/body-cap-rust/` (h2's, read for the driver shape and the identical fixture bytes).
+- Pinned reads (no edit): `crates/generate/ess-synth/tests/http_binding/shared.rs`, `crates/edge/ess-cli/tests/generate_ui_http.rs`, `crates/edge/ess-xtask/tests/no_test_builds.rs`, `crates/generate/ess-synth/tests/http_binding/body_cap_rust.rs` and `tests/fixtures/body-cap-rust/` (h2's: the driver shape, and the model and binding pair that the Go task and the Go cases read as it is).
 - No stamp involvement: `ess-synth` is not one of the `SYNTHESIS_CRATES` the stamp (t2) hashes, and `ess-conformance` does not depend on it. h3 touches nothing t2 digests and does not run t2's digest test.
 
 ## Not yours
@@ -225,7 +196,7 @@ SLOT_TIMEOUT=30m CARGO_INCREMENTAL=0 cargo test -p ess-xtask --locked --test ci_
 3c. Test 5b passes: for every request it sends, the Go and the Rust server answer the same status, and the same declared body and `X-Limit` header where the binding declares them.
 4. `without_a_binding_the_go_server_keeps_its_bytes`, `the_go_and_rust_servers_answer_one_binding_alike`, `feasibility`, `adversary_related_guard_behaviour_pass1`, `served_codec_names` and `go` pass unchanged; no file under `generated/` changed (`git status --short generated` is empty).
 5. `ci_lanes` passes with the new test, which finds `build-tests` and `hotfix-tests` and fails on each of its three mutations (two of `ci.yml`, one of `release.yml`).
-6. The shop synthesis digest equals the constant of step 1 (bytes, not time); every new test is under 5 s at the load of the Gate, or is named with its runner time.
+6. The shop synthesis digest equals the constant of step 1 (bytes, not time); every new test is under 5 s at a 1-minute load of 60 or less, or is named with its runner time.
 7. `cargo test -p ess-xtask --test no_test_builds` passes (run it by name; it reads the tree): the new module spawns no cargo.
 
 ## Decisions
@@ -236,7 +207,7 @@ SLOT_TIMEOUT=30m CARGO_INCREMENTAL=0 cargo test -p ess-xtask --locked --test ci_
 - In a capped package the fixed bound also answers an announced oversize at once (today's Go server waits for the bytes). The words stay today's: `the body is longer than {limit} bytes, which is all this surface reads`, with the route's limit in place of `maxBody`.
 - Go's default `413` does not name the announced length, as today's does not; the Rust server's does. The two answers' words differ today and keep differing.
 - The unit installs Go in `build-tests` and in the hotfix job `hotfix-tests` (both reach the task) rather than building the Go server in each test shard: the shards compile nothing and carry no Go build step of their own per test, and a per-test `go build` is the per-test expensive product the organization AGENTS.md forbids. The server is a static binary (`CGO_ENABLED=0`), so it runs in every shard from the archive directory.
-- The `body-cap-go` fixture is its own copy of h2's pair. Reason: the two units are built at the same time and each unit's story is its whole work order. A later story may share one copy.
+- One model and binding pair for both servers, h2's, read by h3 from h2's path (h3 depends on h2). Reason: the parity case (5b) compares the two servers on one binding, so the two must be built from one pair, and a second copy could drift from it silently.
 - A bound cap above 1 MiB lets one request hold up to 16 MiB in memory at a time per connection; accepted (the ceiling is 16 MiB, parent D4).
 
 ## Open for the operator

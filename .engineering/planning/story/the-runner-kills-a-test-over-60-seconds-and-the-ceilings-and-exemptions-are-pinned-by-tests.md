@@ -32,7 +32,7 @@ scope:
   path: crates/edge/ess-xtask/tests/slow_lane.rs
 - confidence: cited
   path: crates/edge/ess-xtask/tests/test_budget.rs
-revision: 13
+revision: 16
 ---
 ## Outcome
 
@@ -41,6 +41,7 @@ The test budget is enforced by the runner and held down by a ratchet.
 - Nextest kills a test of the `ci` profile at 60 s and counts it failed (`terminate-after = 1`). The tests measured over 60 s that stay in the step are exempt by name at up to 300 s, each exemption listed in `AGENTS.md`.
 - Each test task of the step (`test-shard`, `test-feature-off`, `test-xtask`, `test-doc`) runs under `timeout --kill-after=30 <ceiling>`, exits 124 with a message that names the task and the ceiling, and the ceiling is a number in `AGENTS.md` § Gate. A test in `ci_lanes.rs` runs the handler of every task on exit 124 and holds the Taskfile and `AGENTS.md` to one table, so raising a ceiling is a visible edit.
 - `AGENTS.md` § Gate describes the ceilings, the exemptions and the slow lane's place in the package-gate table.
+- The ceilings are a ratchet set at the longest time seen plus 20 %, and each later story lowers them; this wave does not reach the 120 s test step (follow-up (e) on the wave page).
 
 ## Why
 
@@ -134,6 +135,7 @@ slot task fmt-check
 - The kill wrapper is coreutils `timeout --kill-after=30`: no new tool, no Python; exit 124 is a failure of the step, with a message naming the task. The handler is run by a test, not only matched as text.
 - `terminate-after = 1` in the profile and exemptions by name at up to 5 periods (300 s): a test over 300 s is moved to the slow lane, not exempted.
 - `test-xtask` is wrapped per command (compile, then run), each at the task's ceiling: a looser bound than one for the sum, accepted for simplicity.
+- `test-xtask` and `test-doc` run `cargo test`, which kills no single test and writes no JUnit report, so in this wave they get the step ceiling only. The per-test 60 s kill and the ten-slowest print for them are not built here: they are a follow-up (run both tasks under nextest), listed on the wave page, in `t-followups.md` and in the parent (coordinator, Y6).
 - `test-packages` and `test-slow` are not wrapped: a hotfix gate with a 60-minute job, and a lane whose own profile and job bound it.
 - No new dependency, no comments in `nextest.toml` or `Taskfile.yml` lines you add.
 

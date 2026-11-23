@@ -66,7 +66,7 @@ scope:
   path: crates/verify/ess-conformance/tests/fixtures/synthesis-suite-bytes-table.tsv
 - confidence: inferred
   path: docs/design/parallel-caller-readings.md
-revision: 32
+revision: 36
 ---
 ## Outcome
 
@@ -176,7 +176,7 @@ current value and `add_<static in lower case>(more)` adding to it. Visibility:
 | `synthesize/subject_fact.rs` | `FIELDS_BOUND` 626, `INPUTS_MADE` 640 `(u64, u64)` | `fields_bound` 631, `inputs_made` 645 | two pairs |
 | `synthesize/related_guard.rs` | `COMPANION_WORK` 4977 `(asked, searched, fresh)` | `companion_work` 4985 | `taken_companion_work() -> (u64, u64)`, `add_companion_work`, `fn companion_fresh() -> bool` (context) |
 | `synthesize/related_guard.rs` | `OWN_WORK` 2842 `(arranged, strict, deepest)`, the correction's | `own_scenario_work` 2868 | `taken_own_work() -> (u64, u64, usize)`, `add_own_work`: the first two fields are summed, the third is a maximum (`deepest.max(more.2)`), as `own_worked` (2891) keeps it |
-| `synthesize/related_guard.rs` | `OWN_OVERLAY_WORK` (`c1`, beside `OWN_WORK`, `Cell<u64>`; `c1` D4) | `own_overlay_work` (`c1`, in `synthesize.rs` beside `own_scenario_work` 3516) | `taken_own_overlay_work`, `add_own_overlay_work` |
+| `synthesize/related_guard.rs` | `OWN_OVERLAY_WORK` (`c1` D4: one `thread_local!` `Cell<(u64, u64)>` in the block of `OWN_OPEN` and `OWN_WORK`, the pair `(built, asked_at_the_bound)`) | `own_overlay_work` (`c1`: `pub(super)` in `related_guard.rs`, re-exported `#[doc(hidden)] pub` in `synthesize.rs` beside `own_scenario_work` 3516, returning `(R, (u64, u64))`) | `taken_own_overlay_work() -> (u64, u64)`, `add_own_overlay_work((u64, u64))`: both fields summed |
 | `synthesize/grant.rs` | `ADDED` 313, `DROPPED` 365 (context) | `with_added_grant` 323, `with_dropped_grant` 375 | `fn added_grant() -> Option<AddedGrant>`, `fn dropped_grant() -> Option<DroppedGrant>` |
 | `witness.rs` | `STEPS` 2923, `BUILT` 2928, `CLONED` 2934 | `directed_steps` 2971, `inputs_built` 2954, `builders_cloned` 2942 | three pairs (`usize`) |
 | `now_offset.rs` | `ANALYSES` 116 | `orderings_analysed` 165 | one pair |
@@ -247,9 +247,14 @@ the scope's opener:
    come from:
    - `git grep -nE '\bstatic [A-Z][A-Z0-9_]*\s*:' crates/verify/ess-conformance/src` prints 72
      lines at `ff7f8e74fb` and 73 at `80794bbd698` (the correction's `OWN_WORK`);
-   - `c1` adds `OWN_OVERLAY_WORK`, the 74th.
+   - `c1` adds `OWN_OVERLAY_WORK`, the 74th. It is one static, so it is one row (Counter). Its
+     `Cell<(u64, u64)>` gives `Work` two summed fields, `own_overlay_built` and
+     `own_overlay_asked_at_the_bound`.
 
-   If the merged head shows another static, classify it too and name it in your report.
+   The count is one row per `static` line the census pattern finds: 73 at `80794bbd698`, plus
+   one for `c1`. `Work` has more fields than there are Counter rows, because a tuple counter
+   gives one field per element. If the merged head shows another static, classify it too and
+   name it in your report.
    - **Counter:**
      - `admission.rs` `SUITES_PARSED`;
      - `authored.rs` `DOCUMENTS_READ`;
@@ -269,7 +274,7 @@ the scope's opener:
      - `synthesize/model_memo.rs` `ABSENT_BUILT`;
      - `synthesize/ordered_head.rs` `STEERING_WORK`;
      - `synthesize/related_guard.rs` `COMPANION_WORK` (two counts; flag context), `OWN_WORK`
-       (two sums and a maximum), `OWN_OVERLAY_WORK` (`c1`);
+       (two sums and a maximum), `OWN_OVERLAY_WORK` (`c1`; the pair `(built, asked_at_the_bound)`, two sums);
      - `synthesize/row_set.rs` `ATTEMPTS` (count; flag context), `TRIED`;
      - `synthesize/run_memo.rs` `ASKED`, `MADE`;
      - `synthesize/shorthand.rs` `TRAVERSALS`;
@@ -486,7 +491,7 @@ The existing suites must stay green unchanged. This unit changes no behaviour.
    - the correction's `OWN_WORK` is on the plan tree's head;
    - `c1`'s `OWN_OVERLAY_WORK` is merged before this unit.
 
-   Both are classified here as `Counter`, with a `Work` field and two accessors each. `p3` lands
+   Both are classified here as `Counter`, one row each, with two accessors each and one `Work` field per tuple element (`OWN_WORK` three, `OWN_OVERLAY_WORK` two). `p3` lands
    after this unit and classifies its own (`JOBS`, `OFF_THREAD`, `PANIC_IN`). No other unit of
    the wave adds a static to `ess-conformance/src`. Test 1 names any static left out.
 6. One commit, message file via the Write tool, `git commit -F <file>`:
@@ -532,14 +537,16 @@ SLOT_TIMEOUT=30m slot task test-xtask
 - The byte-pin target runs as it is today (routing decision X2); `t2` lands after every `p` unit.
 - The accessors only add functions, so `ess-cli` is gated for Clippy only.
 - Clippy with `-D warnings` is clean through the one allow of D7. If it still names an accessor
-  as dead, put `#[cfg_attr(not(test), allow(dead_code))] // p3 removes this` on that accessor
-  only, and name it in your report.
+  as dead, the fallback is an item-level allow on that accessor only, always with the comment
+  `p3 removes this`: `#[cfg_attr(not(test), allow(dead_code))] // p3 removes this`. Your report
+  lists every file that got one, with the accessor (routing decision Y2). `p3` removes every
+  such line.
 
 ## Acceptance
 
-1. `every_static_of_the_crate_is_classified` passes with 74 rows: the 73 statics of
-   `80794bbd698` plus `c1`'s `OWN_OVERLAY_WORK`. Any further static of the merged head is named
-   in the report, with its row.
+1. `every_static_of_the_crate_is_classified` passes with 74 rows, one per `static`: the 73 of
+   `80794bbd698` plus `c1`'s `OWN_OVERLAY_WORK`, one Counter row whose pair gives `Work` two
+   summed fields. Any further static of the merged head is named in the report, with its row.
 2. `work_names_every_counter_row`, `a_worker_sees_the_context_of_the_planning_thread`,
    `a_workers_counts_are_added_to_the_planning_thread` and
    `capturing_inside_a_reading_scope_is_refused_in_debug` pass.
@@ -551,7 +558,8 @@ SLOT_TIMEOUT=30m slot task test-xtask
    `threads.rs`'s tests. `-w` keeps `respawn` (`process.rs`, `process/tests.rs`) out; at
    `80794bbd698` the command prints nothing.
 7. Clippy is clean with `-D warnings`. `git grep -n 'p3 removes' crates/verify/ess-conformance/src`
-   lists the allow of D7 and any accessor named in the report, and nothing else.
+   lists the allow of D7 and the item-level allows the report lists (file and accessor), and
+   nothing else.
 
 ## Decisions
 
