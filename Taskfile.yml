@@ -15,6 +15,7 @@ vars:
   UI_HTTP_SHELF_SERVER: '{{.ROOT_DIR}}/{{.NEXTEST_ARCHIVES}}/ui-http-shelf-server'
   UI_HTTP_ITEMS_SERVER: '{{.ROOT_DIR}}/{{.NEXTEST_ARCHIVES}}/ui-http-items-server'
   BODY_CAP_RUST_SERVER: '{{.ROOT_DIR}}/{{.NEXTEST_ARCHIVES}}/body-cap-rust-server'
+  BODY_CAP_GO_SERVER: '{{.ROOT_DIR}}/{{.NEXTEST_ARCHIVES}}/body-cap-go-server'
   CLAP_SHARED_BINARY: '{{.ROOT_DIR}}/{{.NEXTEST_ARCHIVES}}/clap-shared-binary'
   BINARY64_HARNESS: '{{.ROOT_DIR}}/{{.NEXTEST_ARCHIVES}}/binary64-harness'
   # The feature-off cases a pull request runs, when `FEATURE_OFF=number-semantics`: every package
@@ -84,6 +85,7 @@ tasks:
       ESS_UI_HTTP_SHELF_SERVER: '{{.UI_HTTP_SHELF_SERVER}}'
       ESS_UI_HTTP_ITEMS_SERVER: '{{.UI_HTTP_ITEMS_SERVER}}'
       ESS_BODY_CAP_RUST_SERVER: '{{.BODY_CAP_RUST_SERVER}}'
+      ESS_BODY_CAP_GO_SERVER: '{{.BODY_CAP_GO_SERVER}}'
       ESS_CLAP_SHARED_BINARY: '{{.CLAP_SHARED_BINARY}}'
       ESS_BINARY64_HARNESS: '{{.BINARY64_HARNESS}}'
     cmds:
@@ -92,6 +94,7 @@ tasks:
       - task: json-body-harnesses
       - task: ui-http-servers
       - task: body-cap-rust-server
+      - task: body-cap-go-server
       - task: clap-shared-binary
       - task: binary64-harness
       - cargo test --workspace --exclude ess-xtask --locked
@@ -116,6 +119,7 @@ tasks:
       ESS_UI_HTTP_SHELF_SERVER: '{{.UI_HTTP_SHELF_SERVER}}'
       ESS_UI_HTTP_ITEMS_SERVER: '{{.UI_HTTP_ITEMS_SERVER}}'
       ESS_BODY_CAP_RUST_SERVER: '{{.BODY_CAP_RUST_SERVER}}'
+      ESS_BODY_CAP_GO_SERVER: '{{.BODY_CAP_GO_SERVER}}'
       ESS_CLAP_SHARED_BINARY: '{{.CLAP_SHARED_BINARY}}'
       ESS_BINARY64_HARNESS: '{{.BINARY64_HARNESS}}'
     cmds:
@@ -124,6 +128,7 @@ tasks:
       - task: json-body-harnesses
       - task: ui-http-servers
       - task: body-cap-rust-server
+      - task: body-cap-go-server
       - task: clap-shared-binary
       - task: binary64-harness
       - defer: { task: test-slowest }
@@ -163,6 +168,7 @@ tasks:
       - task: json-body-harnesses
       - task: ui-http-servers
       - task: body-cap-rust-server
+      - task: body-cap-go-server
       - task: clap-shared-binary
       - task: binary64-harness
 
@@ -309,6 +315,23 @@ tasks:
       - cp {{.WORK}}/target/debug/parcel-server {{.BODY_CAP_RUST_SERVER}}
       - rm -rf {{.WORK}}
 
+  body-cap-go-server:
+    desc: >-
+      Build the generated Go server ess-synth's body_cap_go drives, at BODY_CAP_GO_SERVER, from the
+      model and binding of body-cap-rust-server (no test builds with go, no_test_builds.rs).
+    vars:
+      WORK: target/body-cap-go-server
+      FIXTURES: crates/generate/ess-synth/tests/fixtures/body-cap-rust
+    cmds:
+      - cargo build --workspace --exclude ess-xtask --locked --bin ess
+      - rm -rf {{.WORK}}
+      - mkdir -p {{.WORK}} {{.NEXTEST_ARCHIVES}}
+      - cp {{.FIXTURES}}/model.yaml.in {{.WORK}}/parcel.yaml
+      - target/debug/ess generate synthesize --target go --path {{.WORK}}/parcel.yaml --http {{.FIXTURES}}/http.yaml.in --out {{.WORK}}/parcel
+      - cd {{.WORK}}/parcel && env GOFLAGS=-mod=mod GOPROXY=off GOTOOLCHAIN=local go vet ./...
+      - cd {{.WORK}}/parcel && env GOFLAGS=-mod=mod GOPROXY=off GOTOOLCHAIN=local CGO_ENABLED=0 go build -trimpath -o {{.BODY_CAP_GO_SERVER}} ./cmd/parcel-server
+      - rm -rf {{.WORK}}
+
   clap-shared-binary:
     desc: >-
       Build the clap binary ess-synth's clap_shared_binary runs, generated from two components
@@ -392,6 +415,7 @@ tasks:
       ESS_UI_HTTP_SHELF_SERVER: '{{.UI_HTTP_SHELF_SERVER}}'
       ESS_UI_HTTP_ITEMS_SERVER: '{{.UI_HTTP_ITEMS_SERVER}}'
       ESS_BODY_CAP_RUST_SERVER: '{{.BODY_CAP_RUST_SERVER}}'
+      ESS_BODY_CAP_GO_SERVER: '{{.BODY_CAP_GO_SERVER}}'
       ESS_CLAP_SHARED_BINARY: '{{.CLAP_SHARED_BINARY}}'
       ESS_BINARY64_HARNESS: '{{.BINARY64_HARNESS}}'
     cmds:

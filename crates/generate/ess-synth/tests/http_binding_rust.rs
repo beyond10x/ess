@@ -20,6 +20,9 @@ mod go;
 #[path = "http_binding/body_cap_rust.rs"]
 mod body_cap_rust;
 
+#[path = "http_binding/body_cap_go.rs"]
+mod body_cap_go;
+
 use ess_synth::{
     synthesize_bound, synthesize_laid_out, BindingRefusal, OutputLayout, SynthesisFailure, Target,
 };
