@@ -10,6 +10,7 @@
 //! refused by the field. The same model without the attribute keeps its seeded suite's bytes.
 
 use std::fmt::Write as _;
+use std::num::NonZeroUsize;
 
 use ess_compiler::{resolve::compile, source::SourceMap, EssIr};
 use ess_conformance::authored::Source as Authored;
@@ -17,7 +18,8 @@ use ess_conformance::interpret::Interpreted;
 use ess_conformance::report::Status;
 use ess_conformance::scenario::{InstanceName, ScenarioStep};
 use ess_conformance::synthesize::{
-    synthesize, synthesize_with_seeds, AdmittedSeeds, SeedSelection,
+    commands_synthesized, synthesize, synthesize_for, synthesize_with_seeds, with_jobs,
+    AdmittedSeeds, SeedSelection,
 };
 use ess_conformance::{AdmittedSuite, Runner, Synthesis};
 use ess_domain::{spec::RawSpecFile, system::Source, Specification};
@@ -208,4 +210,79 @@ fn seeded_synthesis_of_the_model_without_caller_attributes_keeps_its_suite_bytes
     assert_eq!(digest, PLAIN_SEEDED_SHA256);
     assert_eq!(rendered(&synthesis), Vec::<String>::new());
     assert_eq!(not_passed(&ir, &synthesis), Vec::<String>::new());
+}
+
+/// Everything a synthesis writes, as it prints.
+fn written(synthesis: &Synthesis) -> String {
+    let lines = |items: Vec<String>| items.join("\n");
+    format!(
+        "{}\n--- refusals\n{}\n--- notes\n{}\n--- outside\n{}",
+        synthesis.suite.to_canonical_json().unwrap(),
+        lines(rendered(synthesis)),
+        lines(synthesis.notes.iter().map(ToString::to_string).collect()),
+        lines(synthesis.outside.iter().map(ToString::to_string).collect()),
+    )
+}
+
+#[test]
+fn a_seeded_and_a_component_synthesis_write_the_same_bytes_at_four_jobs() {
+    let ir = model(ATTR);
+    let at = |count: usize| NonZeroUsize::new(count).unwrap();
+    let seeded = |count: usize| {
+        with_jobs(at(count), || {
+            written(
+                &synthesize_with_seeds(&ir, &seeds(&ir, &["flagged"]))
+                    .expect("the seed is admitted"),
+            )
+        })
+    };
+    assert_eq!(seeded(4), seeded(1), "the seeded run");
+    // `svc` owns the whole model, so its scope changes nothing; a component that accepts nothing is
+    // scoped to no command at all, which a worker must be told.
+    let split = model([
+        ATTR[0],
+        (
+            "components.yaml",
+            "components:
+  - component: svc
+    owns:
+      domains: [demo.s]
+    accepts:
+      commands: [demo.s.DefineGrant, demo.s.Touch, demo.s.Use]
+  - component: aux
+    publishes:
+      events: [demo.s.Used]
+",
+        ),
+        ATTR[2],
+    ]);
+    // A scope lets a synthesis leave out the commands a component does not handle, and what the
+    // component keeps is the same either way, so the bytes cannot show that a worker was given it:
+    // the commands taken can.
+    let mut taken_at_one = Vec::new();
+    for (label, ir, component) in [
+        ("whole", &ir, "svc"),
+        ("beside another", &split, "svc"),
+        ("the empty one", &split, "aux"),
+    ] {
+        let run = |count: usize| {
+            with_jobs(at(count), || {
+                commands_synthesized(|| {
+                    written(&synthesize_for(ir, component).expect("the component is declared"))
+                })
+            })
+        };
+        let (one, taken_one) = run(1);
+        let (four, taken_four) = run(4);
+        assert_eq!(four, one, "the component run of `{component}` ({label})");
+        assert_eq!(
+            taken_four, taken_one,
+            "the commands taken for `{component}` ({label}) at 4 jobs and at 1"
+        );
+        taken_at_one.push(taken_one);
+    }
+    assert!(
+        taken_at_one[2] < taken_at_one[1],
+        "the empty component takes fewer commands than its neighbour: {taken_at_one:?}"
+    );
 }

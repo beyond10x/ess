@@ -6,10 +6,6 @@
 //! the worker; [`Work`] reads every work counter on one thread and adds it to another's. See
 //! `docs/design/parallel-caller-readings.md`.
 
-// p3 removes this: `readings::read_all` then uses `Context` and `Work`, and through them
-// every accessor; until then only this module's tests do.
-#![cfg_attr(not(test), allow(dead_code))]
-
 use std::collections::BTreeSet;
 
 use ess_compiler::ir::EssIr;
@@ -22,6 +18,7 @@ use super::{AddedGrant, Synthesis};
 
 /// How a static of this crate is handled where caller readings run on another thread.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg(test)]
 pub(super) enum Handling {
     /// Counted per thread; a worker's count is added to the calling thread's on join ([`Work`]).
     Counter,
@@ -52,6 +49,7 @@ pub(super) enum Handling {
 /// A tuple counter is one row. Three hold a flag that is context rather than a count
 /// (`first_kept.rs` `WORK`, `related_guard.rs` `COMPANION_WORK`, `row_set.rs` `ATTEMPTS`): their
 /// rows say `Counter`, and [`Context`] carries their flags.
+#[cfg(test)]
 pub(super) const STATE: &[(&str, &str, Handling)] = &[
     ("admission.rs", "SUITES_PARSED", Handling::Counter),
     ("authored.rs", "DOCUMENTS_READ", Handling::Counter),
@@ -71,7 +69,9 @@ pub(super) const STATE: &[(&str, &str, Handling)] = &[
     ("synthesize.rs", "COMMANDS_TAKEN", Handling::Counter),
     ("synthesize.rs", "DERIVED_EDGES", Handling::Counter),
     ("synthesize.rs", "DROPPED", Handling::Context),
+    ("synthesize.rs", "JOBS", Handling::Caller),
     ("synthesize.rs", "NOTHING", Handling::Shared),
+    ("synthesize.rs", "OFF_THREAD", Handling::Caller),
     ("synthesize.rs", "OVERLAP_ANSWERS", Handling::Memory),
     ("synthesize.rs", "OVERLAP_SEARCHES", Handling::Counter),
     ("synthesize.rs", "PRECEDENCE_REPLAYS", Handling::Counter),
@@ -85,6 +85,7 @@ pub(super) const STATE: &[(&str, &str, Handling)] = &[
     ),
     ("synthesize/caller.rs", "UNFOCUSED", Handling::Test),
     ("synthesize/caller.rs", "WHOLE", Handling::Test),
+    ("synthesize/caller/readings.rs", "PANIC_IN", Handling::Test),
     ("synthesize/created_memo.rs", "ASKED", Handling::Counter),
     ("synthesize/created_memo.rs", "KEPT", Handling::Memory),
     ("synthesize/created_memo.rs", "MADE", Handling::Counter),
@@ -257,6 +258,7 @@ macro_rules! work {
 
             /// The field-wise difference from `earlier`; the most open at once
             /// (`own_deepest`) is the later value.
+            #[cfg(test)]
             pub(super) fn since(&self, earlier: &Self) -> Self {
                 let mut out = Self { $($field: self.$field.saturating_sub(earlier.$field),)* };
                 out.own_deepest = self.own_deepest;
@@ -318,6 +320,7 @@ work! {
 
 impl Work {
     /// The counters, as `"<path>:<STATIC>"`, in [`STATE`] order.
+    #[cfg(test)]
     pub(super) const NAMES: &[&str] = &[
         "admission.rs:SUITES_PARSED",
         "authored.rs:DOCUMENTS_READ",

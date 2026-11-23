@@ -3509,6 +3509,59 @@ pub fn syntheses_started<R>(run: impl FnOnce() -> R) -> (R, u64) {
     (out, SYNTHESES.with(std::cell::Cell::get) - before)
 }
 
+thread_local! {
+    /// The job count [`with_jobs`] set on this thread; `None` outside one.
+    static JOBS: std::cell::Cell<Option<std::num::NonZeroUsize>> = const { std::cell::Cell::new(None) };
+    /// How many caller readings ran on a thread other than the one that planned them.
+    static OFF_THREAD: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
+
+/// Runs `run` with the caller readings of every synthesis in it on at most `jobs` threads.
+/// The bytes a synthesis writes do not depend on `jobs`.
+pub fn with_jobs<R>(jobs: std::num::NonZeroUsize, run: impl FnOnce() -> R) -> R {
+    struct Restore(Option<std::num::NonZeroUsize>);
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            JOBS.with(|it| it.set(self.0));
+        }
+    }
+    let _restore = Restore(JOBS.with(|it| it.replace(Some(jobs))));
+    run()
+}
+
+/// The job count: [`with_jobs`]'s, else `ESS_SYNTH_JOBS` where it is a whole number from 1 to
+/// 256, else 1.
+pub(super) fn jobs() -> std::num::NonZeroUsize {
+    JOBS.with(std::cell::Cell::get).unwrap_or_else(|| {
+        std::env::var("ESS_SYNTH_JOBS")
+            .ok()
+            .and_then(|value| value.parse::<usize>().ok())
+            .filter(|count| (1..=256).contains(count))
+            .and_then(std::num::NonZeroUsize::new)
+            .unwrap_or(std::num::NonZeroUsize::MIN)
+    })
+}
+
+/// The job count a synthesis started now on this thread would use.
+#[doc(hidden)]
+pub fn current_jobs() -> std::num::NonZeroUsize {
+    jobs()
+}
+
+/// Counts `more` caller readings that ran on another thread.
+pub(super) fn add_off_thread(more: u64) {
+    OFF_THREAD.with(|it| it.set(it.get() + more));
+}
+
+/// What `run` returns, and how many caller readings ran on another thread while it ran. Not
+/// part of the suite.
+#[doc(hidden)]
+pub fn readings_off_thread<R>(run: impl FnOnce() -> R) -> (R, u64) {
+    let before = OFF_THREAD.with(std::cell::Cell::get);
+    let out = run();
+    (out, OFF_THREAD.with(std::cell::Cell::get) - before)
+}
+
 /// What `run` returns, how many setup runs of a creating branch reading several related rows were
 /// arranged as the branch's own scenario on this thread while it ran, how many strict searches of
 /// a run reading several rows ran, and the most such arrangements open at once: the work a test

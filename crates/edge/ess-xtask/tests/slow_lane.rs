@@ -56,6 +56,10 @@ const MARKED: &[(&str, &[&str])] = &[
         "crates/verify/ess-conformance/tests/adversary_w3_266_267_dump.rs",
         &["adv_every_model_synthesizes_one_document_and_dumps_for_base_comparison"],
     ),
+    (
+        "crates/verify/ess-conformance/tests/synthesis_suite_bytes_table.rs",
+        &["every_repository_model_and_component_writes_its_bytes_at_one_two_and_seven_jobs"],
+    ),
 ];
 
 fn write(root: &Path, relative: &str, text: &str) {

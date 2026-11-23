@@ -34,12 +34,13 @@
 //! alone, and each directory holding a `system.yaml` as one system, as the `ess` CLI reads it.
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
+use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 use ess_compiler::ir::EssIr;
 use ess_compiler::{resolve::compile, source::SourceMap};
-use ess_conformance::synthesize::{synthesize, synthesize_for};
+use ess_conformance::synthesize::{synthesize, synthesize_for, with_jobs};
 use ess_domain::spec::{RawSpecFile, Specification};
 use ess_domain::system::Source;
 use sha2::{Digest, Sha256};
@@ -377,4 +378,39 @@ fn every_repository_component_keeps_its_synthesized_bytes() {
         return;
     }
     compare(COMPONENT_TABLE, &here, COMPONENT_REPIN);
+}
+
+/// Every model's lines by `lines` inside `with_jobs(count, ..)`, in walk order.
+fn lines_at(count: usize, lines: fn(&str, Model) -> Vec<String>) -> Vec<(String, Vec<String>)> {
+    with_jobs(NonZeroUsize::new(count).unwrap(), || {
+        models(&root())
+            .into_iter()
+            .map(|(label, model)| {
+                let made = lines(&label, model);
+                (label, made)
+            })
+            .collect()
+    })
+}
+
+#[test]
+#[ignore = "slow lane: every model and component synthesized at 1, 2 and 7 jobs, about 450 s"]
+fn every_repository_model_and_component_writes_its_bytes_at_one_two_and_seven_jobs() {
+    for (name, lines) in [
+        ("model", model_lines as fn(&str, Model) -> Vec<String>),
+        ("component", component_lines),
+    ] {
+        let one = lines_at(1, lines);
+        for count in [2, 7] {
+            let many = lines_at(count, lines);
+            assert_eq!(one.len(), many.len(), "{name} lines at {count} jobs");
+            for ((label, at_one), (_, at_many)) in one.iter().zip(&many) {
+                assert!(
+                    at_one == at_many,
+                    "{name} `{label}` at {count} jobs differs from 1 job\n  1 job : {at_one:?}\n  \
+                     {count} jobs: {at_many:?}"
+                );
+            }
+        }
+    }
 }
