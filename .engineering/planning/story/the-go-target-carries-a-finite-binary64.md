@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:the-go-target-carries-a-finite-binary64
 kind: story
-status: active
+status: implemented
 title: The Go target carries a finite Binary64 in every value position, on the wire as the Rust server writes it
 tags:
 - wave-2026-11-22
@@ -29,10 +29,11 @@ scope:
   path: crates/generate/ess-synth/tests/binary64_go.rs
 - confidence: inferred
   path: crates/generate/ess-synth/tests/fixtures/binary64-served-go-harness/main.go
-revision: 12
+revision: 13
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T23:43:38Z", actor: "human:timo", revision: 11}
 - {from: "proposed", to: "active", at: "2026-11-21T23:43:39Z", actor: "human:timo", revision: 12}
+- {from: "active", to: "implemented", at: "2026-11-23T01:56:57Z", actor: "human:timo", revision: 13, decided_on: {"recorded":{"test_result":1}}}
 ---
 ## Outcome
 

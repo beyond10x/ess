@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-test-that-writes-into-target-tmp-before-creating-it-fails-a-check
 kind: story
-status: active
+status: implemented
 title: A test that writes into CARGO_TARGET_TMPDIR before creating it fails a repository check, and the two files that do are fixed
 tags:
 - wave-2026-11-22
@@ -16,10 +16,11 @@ scope:
   path: crates/generate/ess-synth/tests/external_request_binding.rs
 - confidence: cited
   path: crates/verify/ess-conformance/tests/mutation_identical_answer.rs
-revision: 6
+revision: 7
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T23:42:39Z", actor: "human:timo", revision: 5}
 - {from: "proposed", to: "active", at: "2026-11-21T23:42:40Z", actor: "human:timo", revision: 6}
+- {from: "active", to: "implemented", at: "2026-11-23T01:57:02Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"test_result":1}}}
 ---
 ## Outcome
 

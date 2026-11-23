@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:cargo-xtask-pr-watch-exits-non-zero-when-a-pull-requests-checks-end-red
 kind: story
-status: active
+status: implemented
 title: cargo xtask pr-watch waits for a pull request's check runs and exits non-zero, naming the red job and its failing task, when one ends red
 tags:
 - wave-2026-11-22
@@ -14,10 +14,11 @@ scope:
   path: crates/edge/ess-xtask/src/main.rs
 - confidence: inferred
   path: crates/edge/ess-xtask/src/pr_watch.rs
-revision: 5
+revision: 6
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T23:42:44Z", actor: "human:timo", revision: 4}
 - {from: "proposed", to: "active", at: "2026-11-21T23:42:45Z", actor: "human:timo", revision: 5}
+- {from: "active", to: "implemented", at: "2026-11-23T01:57:04Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"test_result":1,"review_outcome":1}}}
 ---
 ## Outcome
 

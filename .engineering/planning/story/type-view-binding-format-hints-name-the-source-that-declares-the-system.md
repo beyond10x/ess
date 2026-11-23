@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:type-view-binding-format-hints-name-the-source-that-declares-the-system
 kind: story
-status: active
+status: implemented
 title: Every format hint of a type, view, binding or admission refusal names the source that declares the system
 tags:
 - wave-2026-11-22
@@ -53,10 +53,11 @@ scope:
   path: crates/specify/ess-domain/tests/format_hint_emitted_types_and_views.rs
 - confidence: cited
   path: crates/specify/ess-domain/tests/view_paging/absent_answer.rs
-revision: 24
+revision: 25
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T23:44:58Z", actor: "human:timo", revision: 23}
 - {from: "proposed", to: "active", at: "2026-11-21T23:44:59Z", actor: "human:timo", revision: 24}
+- {from: "active", to: "implemented", at: "2026-11-23T01:57:00Z", actor: "human:timo", revision: 25, decided_on: {"recorded":{"test_result":1}}}
 ---
 ## Outcome
 

@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:command-format-hints-name-the-source-that-declares-the-system
 kind: story
-status: active
+status: implemented
 title: Every format hint of a command refusal names the source that declares the system
 tags:
 - wave-2026-11-22
@@ -62,10 +62,11 @@ scope:
   path: crates/specify/ess-domain/tests/format_hint_source_scan.rs
 - confidence: cited
   path: crates/specify/ess-domain/tests/published_value_operand.rs
-revision: 29
+revision: 30
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T23:44:36Z", actor: "human:timo", revision: 28}
 - {from: "proposed", to: "active", at: "2026-11-21T23:44:37Z", actor: "human:timo", revision: 29}
+- {from: "active", to: "implemented", at: "2026-11-23T01:56:59Z", actor: "human:timo", revision: 30, decided_on: {"recorded":{"test_result":1}}}
 ---
 ## Outcome
 

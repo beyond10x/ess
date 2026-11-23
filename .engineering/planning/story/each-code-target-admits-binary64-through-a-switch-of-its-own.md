@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:each-code-target-admits-binary64-through-a-switch-of-its-own
 kind: story
-status: active
+status: implemented
 title: Each code target admits a finite Binary64 through a switch of its own, and guards, filters and orders read one as a number
 tags:
 - wave-2026-11-22
@@ -44,10 +44,11 @@ scope:
   path: crates/generate/ess-synth/tests/fixtures/binary64-served/model.yaml.in
 - confidence: cited
   path: crates/generate/ess-synth/tests/go_owner.rs
-revision: 20
+revision: 21
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T23:43:17Z", actor: "human:timo", revision: 19}
 - {from: "proposed", to: "active", at: "2026-11-21T23:43:18Z", actor: "human:timo", revision: 20}
+- {from: "active", to: "implemented", at: "2026-11-23T01:56:56Z", actor: "human:timo", revision: 21, decided_on: {"recorded":{"test_result":1}}}
 ---
 ## Outcome
 

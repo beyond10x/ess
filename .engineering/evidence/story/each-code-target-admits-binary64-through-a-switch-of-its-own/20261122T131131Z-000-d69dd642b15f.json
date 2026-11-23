@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-22T13:11:31Z",
+  "actor": "human:timo",
+  "artifact": "story:each-code-target-admits-binary64-through-a-switch-of-its-own",
+  "kind": "story",
+  "revision": 20,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "unit B1 package gate, implementor's logs, each exit 0: cargo test -p ess-synth --locked --lib failure::tests and --test binary64_plan, feasibility, go_owner, bounded_accessor, clock_reading, generated_view_queries, adversary_related_guard_behaviour_pass1, http_binding_rust, served_codec_names, go; -p ess-cli --test binary64_publication, target_failure; cargo clippy -p ess-synth --all-targets exit 0. Clippy -p ess-cli and fmt-check were interrupted in the unit (exit 130) and ran on the integration branch before the synthesis units: cargo clippy -p ess-domain -p ess-cli -p ess-conformance -p ess-synth --all-targets --locked -- -D warnings exit 0, slot task fmt-check exit 0",
+    "reference": "b37db528d0"
+  }
+}

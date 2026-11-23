@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:the-test-runner-reports-every-test-over-60-s-and-the-ten-slowest
 kind: story
-status: active
+status: implemented
 title: The test runner names every test over 60 s and each test step prints its ten slowest tests
 tags:
 - wave-2026-11-22
@@ -16,10 +16,11 @@ scope:
   path: Taskfile.yml
 - confidence: inferred
   path: crates/edge/ess-xtask/tests/test_budget.rs
-revision: 6
+revision: 7
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T23:42:59Z", actor: "human:timo", revision: 5}
 - {from: "proposed", to: "active", at: "2026-11-21T23:43:00Z", actor: "human:timo", revision: 6}
+- {from: "active", to: "implemented", at: "2026-11-23T01:57:05Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"test_result":1}}}
 ---
 ## Outcome
 

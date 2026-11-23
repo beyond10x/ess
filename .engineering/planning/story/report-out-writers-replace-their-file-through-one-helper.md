@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:report-out-writers-replace-their-file-through-one-helper
 kind: story
-status: active
+status: implemented
 title: A conformance report replaces its file in one step
 tags:
 - wave-2026-11-22
@@ -16,10 +16,11 @@ scope:
   path: crates/edge/ess-cli/src/replace_file.rs
 - confidence: cited
   path: crates/edge/ess-cli/tests/count_reports.rs
-revision: 6
+revision: 7
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T23:42:31Z", actor: "human:timo", revision: 5}
 - {from: "proposed", to: "active", at: "2026-11-21T23:42:33Z", actor: "human:timo", revision: 6}
+- {from: "active", to: "implemented", at: "2026-11-23T01:57:06Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"test_result":1,"review_outcome":2}}}
 ---
 ## Outcome
 

@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:expression-format-hints-and-the-header-refusal-name-the-system-source
 kind: story
-status: active
+status: implemented
 title: Every expression format hint, the authored-value repair and the header refusal name the source that declares the system
 tags:
 - wave-2026-11-22
@@ -25,10 +25,11 @@ scope:
   path: crates/verify/ess-conformance/src/authored.rs
 - confidence: cited
   path: crates/verify/ess-conformance/tests/author_generated_value.rs
-revision: 10
+revision: 11
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T23:45:07Z", actor: "human:timo", revision: 9}
 - {from: "proposed", to: "active", at: "2026-11-21T23:45:08Z", actor: "human:timo", revision: 10}
+- {from: "active", to: "implemented", at: "2026-11-23T01:57:01Z", actor: "human:timo", revision: 11, decided_on: {"recorded":{"test_result":1}}}
 ---
 ## Outcome
 

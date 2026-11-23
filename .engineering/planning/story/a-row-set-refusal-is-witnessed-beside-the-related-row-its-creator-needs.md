@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-row-set-refusal-is-witnessed-beside-the-related-row-its-creator-needs
 kind: story
-status: active
+status: implemented
 title: A row-set refusal is witnessed beside the related row its rows' creator needs
 tags:
 - wave-2026-11-22
@@ -27,10 +27,11 @@ scope:
   path: crates/verify/ess-conformance/tests/fixtures/row-set-refusal-beside-the-addressed-related-row.yaml
 - confidence: cited
   path: crates/verify/ess-conformance/tests/fixtures/synthesis-suite-bytes-table.tsv
-revision: 11
+revision: 12
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-22T17:30:58Z", actor: "human:timo", revision: 10}
 - {from: "proposed", to: "active", at: "2026-11-22T17:30:59Z", actor: "human:timo", revision: 11}
+- {from: "active", to: "implemented", at: "2026-11-23T01:57:10Z", actor: "human:timo", revision: 12, decided_on: {"recorded":{"test_result":1,"review_outcome":1}}}
 ---
 ## Outcome
 

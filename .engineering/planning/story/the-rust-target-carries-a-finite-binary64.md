@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:the-rust-target-carries-a-finite-binary64
 kind: story
-status: active
+status: implemented
 title: The Rust target carries a finite Binary64 in every value position, on the wire as a JSON number
 tags:
 - wave-2026-11-22
@@ -31,10 +31,11 @@ scope:
   path: crates/generate/ess-synth/tests/fixtures/binary64-served-harness/harness.toml
 - confidence: inferred
   path: crates/generate/ess-synth/tests/fixtures/binary64-served-harness/main.rs
-revision: 13
+revision: 14
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T23:43:28Z", actor: "human:timo", revision: 12}
 - {from: "proposed", to: "active", at: "2026-11-21T23:43:29Z", actor: "human:timo", revision: 13}
+- {from: "active", to: "implemented", at: "2026-11-23T01:56:57Z", actor: "human:timo", revision: 14, decided_on: {"recorded":{"test_result":1}}}
 ---
 ## Outcome
 
