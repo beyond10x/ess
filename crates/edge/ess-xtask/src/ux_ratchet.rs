@@ -578,8 +578,10 @@ pub(crate) fn within_tolerance(
             let held = held_value(round, decision, scenario, metric, value);
             let allowance = tolerance.allowance(entry.value);
             if held > entry.value + EPSILON && held <= entry.value + allowance + EPSILON {
+                // The allowance is a product of floats (6.8500000000000005); four places say it.
+                let shown = (allowance * 1e4).round() / 1e4;
                 notes.push(format!(
-                    "{scenario} {metric}: {held} against {}, worse inside its tolerance of {allowance}",
+                    "{scenario} {metric}: {held} against {}, worse inside its tolerance of {shown}",
                     entry.value
                 ));
             }
