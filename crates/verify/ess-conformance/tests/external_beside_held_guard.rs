@@ -1087,7 +1087,7 @@ fn models(root: &Path) -> Vec<(String, Model)> {
 /// The models this test does not synthesize, each with why that loses nothing: synthesis of
 /// `conditional-measures-generated.yaml` takes minutes in a debug build, and it declares no
 /// external branch, so no path this change touches is entered for it. Its suite bytes are pinned
-/// by the slow probe `adversary_244b_window_free_bytes` (`task test-slow-probes`).
+/// by the slow probe `adversary_244b_window_free_bytes` (`#[ignore = "slow lane: ..."]`, run by `task test-slow`).
 const UNAFFORDABLE: &[&str] =
     &["crates/generate/ess-synth/tests/fixtures/conditional-measures-generated.yaml"];
 

@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Testing: a test marked `#[ignore = "slow lane: <reason>"]` runs only in `task test-slow`, under the nextest profile `slow`, and `cargo xtask slow-list` names it; the byte-identity and WebAssembly probes that `task test-slow-probes` ran by hand carry the marker, and that task is gone (story:the-test-step-meets-the-test-budget).
+
 ## [0.98.0] — 2026-11-23
 
 ### Added

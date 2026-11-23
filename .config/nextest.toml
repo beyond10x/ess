@@ -22,3 +22,10 @@ final-status-level = "slow"
 
 [profile.ci.junit]
 path = "junit.xml"
+
+[profile.slow]
+slow-timeout = { period = "120s", terminate-after = 10 }
+final-status-level = "slow"
+
+[profile.slow.junit]
+path = "junit.xml"

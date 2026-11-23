@@ -17,6 +17,7 @@ mod scratch;
 #[cfg(test)]
 mod scratch_leaks;
 mod site_data;
+mod slow_lane;
 mod support;
 mod whats_changed;
 
@@ -154,6 +155,8 @@ enum Command {
         #[arg(long)]
         check: bool,
     },
+    /// List the tests marked `#[ignore = "slow lane: <reason>"]`, which run only in `task test-slow`.
+    SlowList(slow_lane::Args),
     /// Accept one generated service placement against a disposable k3d cluster; needs Docker.
     InfraAcceptance(infra_acceptance::Args),
     /// Verify or render release records.
@@ -234,6 +237,7 @@ fn run(cli: Cli) -> Result<String, String> {
         Command::FormatHistory { check } => {
             format_history::run(&root, check).map_err(|error| format!("{error:#}"))
         }
+        Command::SlowList(args) => slow_lane::run(&root, &args),
         Command::InfraAcceptance(args) => {
             infra_acceptance::run(&root, &args).map_err(|error| format!("{error:#}"))
         }

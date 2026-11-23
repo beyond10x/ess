@@ -106,7 +106,7 @@ fn guarded(name: &str, text: &str) -> String {
     })
 }
 
-#[ignore = "slow probe: `task test-slow-probes`"]
+#[ignore = "slow lane: byte identity of every model's generated Rust and Go, 729 s at load 89"]
 #[test]
 fn adv_e_u2_byte_identity_probe() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..");
