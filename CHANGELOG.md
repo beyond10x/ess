@@ -15,6 +15,7 @@
 - CI: the nine tests of `generated_view_queries` that build generated Rust or Go with `cargo` or `go` run in the `slow` lane; the generation and plan tests of the file stay in the test step.
 - In the `ess-composition` library, `WRITER_COMPOSITION_FORMAT`, `TypeConformance::{for_writer, writer}` and `CompositionSpec::with_writer_conformances` are new, `SUPPORTED_COMPOSITION_FORMATS` lists `6`, and `TypeConformance` has a new field `writer`.
 - CI: a `slow` job runs `task test-slow` beside the test shards and `Gate` carries it; a pull request skips it only when every changed path is a plan, documentation, UI, infrastructure or `ess-xtask` path, and every other run (`main`, nightly, queue, merge group, release) runs it, so a run that skipped it never stands in for a release (story:the-test-step-meets-the-test-budget).
+- CI: `synthesis_suite_bytes_table` compares a digest of the sources of synthesis and of every model with a committed stamp in the test step; the byte comparison against the committed tables, with another whole-corpus synthesis test, runs in the slow lane (story:the-test-step-meets-the-test-budget).
 
 ### Fixed
 

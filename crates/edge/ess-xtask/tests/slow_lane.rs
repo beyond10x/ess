@@ -57,8 +57,15 @@ const MARKED: &[(&str, &[&str])] = &[
         &["adv_every_model_synthesizes_one_document_and_dumps_for_base_comparison"],
     ),
     (
+        "crates/verify/ess-conformance/tests/enum_presence_guard.rs",
+        &["no_corpus_suite_requires_a_branch_the_precedence_takes_elsewhere"],
+    ),
+    (
         "crates/verify/ess-conformance/tests/synthesis_suite_bytes_table.rs",
-        &["every_repository_model_and_component_writes_its_bytes_at_one_two_and_seven_jobs"],
+        &[
+            "every_repository_model_and_component_writes_its_bytes_at_one_two_and_seven_jobs",
+            "every_repository_model_keeps_its_synthesized_bytes",
+        ],
     ),
 ];
 

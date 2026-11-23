@@ -218,6 +218,15 @@ red there):
 
 Re-pin a moved row only where the change claims it, and name the cause beside the pin.
 
+These targets are gated by name as before. In the test step `synthesis_suite_bytes_table` compares a
+digest of the sources of synthesis and of every model with
+`crates/verify/ess-conformance/tests/fixtures/synthesis-sources.digest` and synthesizes nothing; the
+byte comparison itself (the two tables, and the whole-corpus `enum_presence_guard` case) runs in the
+slow lane. A change under `src/` of `ess-conformance`, `ess-gen`, `ess-transport`, `ess-http`,
+`ess-compiler`, `ess-domain`, `ess-primitives` or `ess-yaml`, or to a model file, re-stamps with the
+command the failing `the_synthesis_sources_digest_matches_the_committed_stamp` prints, in the same
+change.
+
 `task test-browser-product` runs in no CI lane (those Firefox tests are ignored in the CI test
 shards); run it locally when a change touches what it covers. The slow lane, `task test-slow`, runs
 every test marked `#[ignore = "slow lane: <reason>"]` (`cargo xtask slow-list` names them). The CI
