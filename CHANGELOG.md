@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Testing: a test marked `#[ignore = "slow lane: <reason>"]` runs only in `task test-slow`, under the nextest profile `slow`, and `cargo xtask slow-list` names it; the byte-identity and WebAssembly probes that `task test-slow-probes` ran by hand carry the marker, and that task is gone (story:the-test-step-meets-the-test-budget).
+
 ### Fixed
 
 - Synthesis witnesses a scenario that needs a related row with chosen field values, a grant whose `name` is `mail` or whose `mode` is `denied` for instance, where the row's creating branch reads several related rows through its input: the setup run is arranged as that branch's own scenario with the chosen values sent, where the scenario was refused (`ESS-SYNTH-003`). The `any:` legs of a refusal over such a row and the scenarios that need it in a later state are witnessed. Suites where the strict search already found the run keep their bytes.

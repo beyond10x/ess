@@ -322,11 +322,29 @@ tasks:
     cmds:
       - cargo test --locked -p ess-cli --test browser_response_conformance --test browser_product_adversary -- --include-ignored --test-threads=1
 
-  test-slow-probes:
-    desc: Run the slow byte-identity and WASM-parity probes the CI test shards leave out; run before tagging a release.
+  test-slow:
+    desc: Run every test marked for the slow lane under the nextest profile `slow`, one run per package (optional PACKAGES), and print the ten slowest of each.
     cmds:
-      - cargo test --locked -p ess-synth --test adversary_e_u2_bytes --test adversary_e_u6_bytes -- --ignored --test-threads=1
-      - cargo test --locked -p ess-conformance --test adversary_244b_window_free_bytes --test adversary_w3_266_267_dump --test adversary_287_pass1 -- --ignored --test-threads=1
+      - |
+        set -eu
+        status=0
+        wanted="{{.PACKAGES | default ""}}"
+        if [ -z "$(cargo xtask slow-list --packages)" ]; then
+          echo 'test-slow: no test is marked #[ignore = "slow lane: ..."]'
+          exit 1
+        fi
+        for package in $(cargo xtask slow-list --packages); do
+          if [ -n "$wanted" ] && ! echo " $wanted " | grep -q " $package "; then
+            continue
+          fi
+          targets=""
+          for target in $(cargo xtask slow-list --package "$package" --targets); do
+            targets="$targets --test $target"
+          done
+          cargo nextest run --locked --profile slow --run-ignored only --no-fail-fast --package "$package" $targets -E "$(cargo xtask slow-list --package "$package" --filter)" || status=1
+          SLOWEST_REPORT=target/nextest/slow/junit.xml task test-slowest
+        done
+        exit "$status"
 
   # The shards extract into the checkout's own `target/`: test binaries bake
   # `env!("CARGO_BIN_EXE_…")` and `env!("CARGO_TARGET_TMPDIR")` in at build time, so extracted
@@ -384,7 +402,7 @@ tasks:
     cmds:
       - |
         export LC_ALL=C
-        report=target/nextest/ci/junit.xml
+        report="${SLOWEST_REPORT:-target/nextest/ci/junit.xml}"
         if [ ! -f "$report" ]; then
           echo "test-slowest: no JUnit report at $report"
           exit 0

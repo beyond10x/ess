@@ -69,7 +69,7 @@ const COMPONENT_REPIN: &str = "re-pin from the repository root with \
 /// The models these tables do not synthesize, each pinned as `EXCLUDED` in the whole-suite table:
 /// synthesis of `conditional-measures-generated.yaml` takes minutes in a debug build (about 224
 /// seconds measured). Its suite bytes are pinned by the slow probe
-/// `adversary_244b_window_free_bytes` (`task test-slow-probes`), as `external_beside_held_guard.rs`
+/// `adversary_244b_window_free_bytes` (`#[ignore = "slow lane: ..."]`, run by `task test-slow`), as `external_beside_held_guard.rs`
 /// excludes it.
 const UNAFFORDABLE: &[&str] =
     &["crates/generate/ess-synth/tests/fixtures/conditional-measures-generated.yaml"];
