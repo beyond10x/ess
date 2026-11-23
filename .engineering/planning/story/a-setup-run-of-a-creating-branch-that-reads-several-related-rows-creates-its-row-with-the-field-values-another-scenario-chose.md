@@ -29,7 +29,7 @@ scope:
   path: crates/verify/ess-conformance/tests/fixtures/synthesis-suite-bytes-table.tsv
 - confidence: cited
   path: crates/verify/ess-conformance/tests/related_guard_multiple_vias.rs
-revision: 16
+revision: 17
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-22T22:32:32Z", actor: "human:timo", revision: 15}
 - {from: "proposed", to: "active", at: "2026-11-22T22:32:33Z", actor: "human:timo", revision: 16}
@@ -148,3 +148,23 @@ Derived 2026-11-22 by `story-scoper`. Every line is **cited** or **inferred**.
 - **Confidence:** medium - the story names the sites and I read them; whether the overlay satisfies `selects` over several rows is unproven
 - **Would collide with:** any unit touching `drive_several`/`as_own_scenario` in `related_guard.rs`, `selects`, `beside_refused`, `arranged_beside`, or the same three pin tables and `related_guard_multiple_vias.rs`
 - **Safety fact:** the fallback applies only after the strict search fails (`drive_several` match arm), so runs the strict search finds keep their bytes - 2 (`related_guard.rs:2903-2913`), unproven
+
+## Decisions taken
+
+Taken for the wave of 2026-11-23, after round 1 of the plan critics. The unit departs from two of
+the story's decisions, and says so in its own `## Decisions`:
+
+- D1 option B, against the recommendation A: the chosen values enter the arrangement as `fixed`
+  input fields, extended onto every candidate input of the focus row's search, not as an overlay
+  on the finished input. Reason: with A the finished input must be re-checked against every row
+  beside and the focus row by hand, and `selects` takes one row; with B the existing checks
+  decide it, once. If the model of the unit's fixture does not exercise `fixed`, the unit stops
+  unlanded and reports; the fallback is option A, which is an operator decision.
+- D3, no memo and no CPU split: the unit neither measures whether the added CPU comes from the new
+  scenarios or from failed fallbacks nor bounds the failed fallbacks with a memo. The repeated
+  arrangement is left to
+  `story:the-own-scenario-arrangement-of-a-setup-run-finds-an-equal-arrangement-again-instead-of-building-it-once-per-path`.
+  The only measurement kept is the synthesis time of the two fixtures before and after.
+
+The outcome is 0 refusals with no leg left over; a leg that stays refused is a stop, not a pinned
+count. The nesting bound stays at 1 and decides the interaction.

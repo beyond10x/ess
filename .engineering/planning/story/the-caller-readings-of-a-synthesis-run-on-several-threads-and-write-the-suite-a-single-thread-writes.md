@@ -33,7 +33,7 @@ scope:
   path: crates/verify/ess-conformance/tests/main.rs
 - confidence: inferred
   path: website/docs/reference/
-revision: 17
+revision: 18
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-22T22:55:13Z", actor: "human:timo", revision: 15}
 - {from: "proposed", to: "active", at: "2026-11-22T22:55:14Z", actor: "human:timo", revision: 16}
@@ -216,3 +216,12 @@ parallel"): the story's own recommendations stand.
 - D4 A: the flag is `--jobs`.
 
 A measurement of peak memory at 2 and 4 threads is part of the work before any default changes.
+
+Decided on 2026-11-23, after round 1 of the plan critics:
+
+- The measurement tool is a committed `cargo xtask synth-jobs` that times a generated caller
+  model at 1, 2 and 4 jobs and refuses differing suites, because the largest known downstream
+  specification is private and no unit can read it.
+- The acceptance "4 jobs take at most 45 % of 1 job" is judged by the coordinator on that
+  specification, with the wave's release build and the tool's `--path`, and recorded here. The
+  measurement unit's own acceptance is decided by counts and by identical suites.

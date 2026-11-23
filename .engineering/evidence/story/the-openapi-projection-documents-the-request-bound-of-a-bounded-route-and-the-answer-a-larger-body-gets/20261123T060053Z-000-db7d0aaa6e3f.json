@@ -1,0 +1,14 @@
+{
+  "at": "2026-11-23T06:00:53Z",
+  "actor": "human:timo",
+  "artifact": "story:the-openapi-projection-documents-the-request-bound-of-a-bounded-route-and-the-answer-a-larger-body-gets",
+  "kind": "story",
+  "revision": 9,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "review-result:scope-wave-2026-11-23-round-1",
+    "review": "review-result:scope-wave-2026-11-23-round-1",
+    "outcome": "fixed"
+  }
+}

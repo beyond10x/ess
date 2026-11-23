@@ -29,7 +29,7 @@ scope:
   path: website/docs/reference/cli.md
 - confidence: inferred
   path: website/docs/reference/formats.md
-revision: 16
+revision: 17
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-22T22:32:35Z", actor: "human:timo", revision: 14}
 - {from: "proposed", to: "active", at: "2026-11-22T22:32:37Z", actor: "human:timo", revision: 15}
@@ -141,3 +141,5 @@ defaults stand.
 - D3 B: no bound on the number of mutants.
 
 This wave builds the progress unit and the design page. The reuse itself follows the page.
+
+Its units are scheduled for the wave after the wave of 2026-11-23 (decision D33).

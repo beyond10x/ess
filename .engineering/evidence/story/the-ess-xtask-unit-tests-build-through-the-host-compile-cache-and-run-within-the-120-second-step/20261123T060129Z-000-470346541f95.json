@@ -1,0 +1,14 @@
+{
+  "at": "2026-11-23T06:01:29Z",
+  "actor": "human:timo",
+  "artifact": "story:the-ess-xtask-unit-tests-build-through-the-host-compile-cache-and-run-within-the-120-second-step",
+  "kind": "story",
+  "revision": 13,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "review-result:parallel-safety-wave-2026-11-23-round-1",
+    "review": "review-result:parallel-safety-wave-2026-11-23-round-1",
+    "outcome": "fixed"
+  }
+}
