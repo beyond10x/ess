@@ -5065,6 +5065,63 @@ pub fn companion_work<R>(fresh: bool, run: impl FnOnce() -> R) -> (R, u64, u64) 
     (out, after_asked - asked, after_searched - searched)
 }
 
+/// How many times [`companion`] was asked and how many stored-row searches it ran on this thread
+/// ([`COMPANION_WORK`]).
+pub(super) fn taken_companion_work() -> (u64, u64) {
+    let (asked, searched, _) = COMPANION_WORK.with(std::cell::Cell::get);
+    (asked, searched)
+}
+
+/// Adds `more`, the askings and the searches, to the counts of [`COMPANION_WORK`] on this thread.
+pub(super) fn add_companion_work(more: (u64, u64)) {
+    COMPANION_WORK.with(|work| {
+        let (asked, searched, fresh) = work.get();
+        work.set((asked + more.0, searched + more.1, fresh));
+    });
+}
+
+/// Whether a pass alike to one that found nothing is searched again on this thread
+/// ([`companion_work`]).
+pub(super) fn companion_fresh() -> bool {
+    COMPANION_WORK.with(std::cell::Cell::get).2
+}
+
+/// The arrangements as an own scenario, the strict searches and the most arrangements open at
+/// once on this thread ([`OWN_WORK`]).
+pub(super) fn taken_own_work() -> (u64, u64, usize) {
+    OWN_WORK.with(std::cell::Cell::get)
+}
+
+/// Adds `more` to [`OWN_WORK`] on this thread: the first two counts are summed and the most open
+/// at once is the larger of the two, as [`own_worked`] keeps it.
+pub(super) fn add_own_work(more: (u64, u64, usize)) {
+    OWN_WORK.with(|work| {
+        let (arranged, strict, deepest) = work.get();
+        work.set((arranged + more.0, strict + more.1, deepest.max(more.2)));
+    });
+}
+
+/// The own-scenario arrangements carrying chosen values and the chosen-values runs the nesting
+/// bound stopped on this thread ([`OWN_OVERLAY_WORK`]).
+pub(super) fn taken_own_overlay_work() -> (u64, u64) {
+    OWN_OVERLAY_WORK.with(std::cell::Cell::get)
+}
+
+/// Adds `more`, the arrangements built and the runs stopped, to [`OWN_OVERLAY_WORK`] on this
+/// thread.
+pub(super) fn add_own_overlay_work(more: (u64, u64)) {
+    OWN_OVERLAY_WORK.with(|work| {
+        let (built, stopped) = work.get();
+        work.set((built + more.0, stopped + more.1));
+    });
+}
+
+/// Whether a search for a row beside, or an arrangement as an own scenario, is open on this
+/// thread ([`BESIDE_OPEN`], [`OWN_OPEN`]).
+pub(super) fn beside_or_own_open() -> bool {
+    BESIDE_OPEN.with(|open| !open.borrow().open.is_empty()) || own_depth() > 0
+}
+
 /// One pass of the [`companion`] search: the values its rows are steered toward, and what it takes.
 type Pass<'a> = (&'a [(&'a str, Node)], &'a dyn Fn(&Arrangement) -> bool);
 

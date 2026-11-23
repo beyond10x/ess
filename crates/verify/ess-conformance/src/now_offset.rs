@@ -168,6 +168,16 @@ pub fn orderings_analysed<R>(run: impl FnOnce() -> R) -> (R, u64) {
     (out, ANALYSES.with(Cell::get) - before)
 }
 
+/// The count of [`ANALYSES`] on this thread.
+pub(crate) fn taken_analyses() -> u64 {
+    ANALYSES.with(std::cell::Cell::get)
+}
+
+/// Adds `more` to the count of [`ANALYSES`] on this thread.
+pub(crate) fn add_analyses(more: u64) {
+    ANALYSES.with(|it| it.set(it.get() + more));
+}
+
 impl Orderings {
     /// [`Self::analyse`], answered from memory where `command` is `ir`'s own declaration and `ir`
     /// is the model remembered innermost ([`remember`]).

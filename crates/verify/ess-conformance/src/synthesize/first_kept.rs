@@ -38,6 +38,26 @@ pub fn first_rows_made<R>(fresh: bool, run: impl FnOnce() -> R) -> (R, u64, u64)
     (out, after_asked - asked, after_made - made)
 }
 
+/// How many further rows were asked for and how many were arranged on this thread ([`WORK`]).
+pub(super) fn taken_work() -> (u64, u64) {
+    let (asked, made, _) = WORK.with(std::cell::Cell::get);
+    (asked, made)
+}
+
+/// Adds `more`, the rows asked for and the rows arranged, to the counts of [`WORK`] on this
+/// thread.
+pub(super) fn add_work(more: (u64, u64)) {
+    WORK.with(|work| {
+        let (asked, made, fresh) = work.get();
+        work.set((asked + more.0, made + more.1, fresh));
+    });
+}
+
+/// Whether every row is arranged afresh on this thread ([`first_rows_made`]).
+pub(super) fn fresh() -> bool {
+    WORK.with(std::cell::Cell::get).2
+}
+
 /// [`arrange_first`] of `entity` at `targets`, under `distinction`, arranged for no other entity,
 /// from memory where this model asked the same in the same context before.
 pub(super) fn arranged_first(

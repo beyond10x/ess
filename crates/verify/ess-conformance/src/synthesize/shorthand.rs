@@ -139,6 +139,16 @@ pub(super) fn traversals<R>(run: impl FnOnce() -> R) -> (R, u64) {
     (out, TRAVERSALS.with(std::cell::Cell::get) - before)
 }
 
+/// The count of [`TRAVERSALS`] on this thread.
+pub(super) fn taken_traversals() -> u64 {
+    TRAVERSALS.with(std::cell::Cell::get)
+}
+
+/// Adds `more` to the count of [`TRAVERSALS`] on this thread.
+pub(super) fn add_traversals(more: u64) {
+    TRAVERSALS.with(|it| it.set(it.get() + more));
+}
+
 /// Every declared type from which a value reaches a struct with a shorthand, itself included: one
 /// traversal of the declared types against the reverse of their references, made once per run.
 pub(super) fn reaching_shorthand(ir: &EssIr) -> BTreeSet<QualifiedName> {

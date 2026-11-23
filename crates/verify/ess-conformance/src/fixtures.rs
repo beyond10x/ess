@@ -30,6 +30,16 @@ pub fn fixture_step_clones<R>(run: impl FnOnce() -> R) -> (R, u64) {
     (out, FIXTURE_STEP_CLONES.with(std::cell::Cell::get) - before)
 }
 
+/// The count of [`FIXTURE_STEP_CLONES`] on this thread.
+pub(crate) fn taken_fixture_step_clones() -> u64 {
+    FIXTURE_STEP_CLONES.with(std::cell::Cell::get)
+}
+
+/// Adds `more` to the count of [`FIXTURE_STEP_CLONES`] on this thread.
+pub(crate) fn add_fixture_step_clones(more: u64) {
+    FIXTURE_STEP_CLONES.with(|it| it.set(it.get() + more));
+}
+
 /// What `run` returns, and how many steps the preconditions' prelude was copied on this thread
 /// while it ran. Not part of the suite.
 #[doc(hidden)]
@@ -40,6 +50,16 @@ pub fn precondition_step_clones<R>(run: impl FnOnce() -> R) -> (R, u64) {
         out,
         PRECONDITION_STEP_CLONES.with(std::cell::Cell::get) - before,
     )
+}
+
+/// The count of [`PRECONDITION_STEP_CLONES`] on this thread.
+pub(crate) fn taken_precondition_step_clones() -> u64 {
+    PRECONDITION_STEP_CLONES.with(std::cell::Cell::get)
+}
+
+/// Adds `more` to the count of [`PRECONDITION_STEP_CLONES`] on this thread.
+pub(crate) fn add_precondition_step_clones(more: u64) {
+    PRECONDITION_STEP_CLONES.with(|it| it.set(it.get() + more));
 }
 
 /// Copies the steps of the preconditions' prelude, counting each copied step.

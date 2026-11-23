@@ -118,6 +118,16 @@ pub fn suites_parsed<R>(run: impl FnOnce() -> R) -> (R, u64) {
     (out, SUITES_PARSED.with(std::cell::Cell::get) - before)
 }
 
+/// The count of [`SUITES_PARSED`] on this thread.
+pub(crate) fn taken_suites_parsed() -> u64 {
+    SUITES_PARSED.with(std::cell::Cell::get)
+}
+
+/// Adds `more` to the count of [`SUITES_PARSED`] on this thread.
+pub(crate) fn add_suites_parsed(more: u64) {
+    SUITES_PARSED.with(|it| it.set(it.get() + more));
+}
+
 /// The SHA-256 identity of `original` under sha256-json-bytes/1.
 fn digest(original: &str) -> String {
     Sha256::digest(original.as_bytes())

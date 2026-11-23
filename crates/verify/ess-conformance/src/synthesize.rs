@@ -226,6 +226,7 @@ mod singleton;
 mod subject_fact;
 pub(crate) use subject_fact::disjoint_on_rows;
 pub(crate) mod system_issued;
+mod threads;
 mod value_invariant;
 mod view_grant;
 mod view_reference;
@@ -3786,6 +3787,11 @@ thread_local! {
     /// How many commands' outcome scenarios were synthesized on this thread
     /// ([`commands_synthesized`]).
     static COMMANDS_TAKEN: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
+
+/// The scope [`scoped_to`] holds on this thread, if any.
+fn scope() -> Option<BTreeSet<QualifiedName>> {
+    SCOPE.with_borrow(Clone::clone)
 }
 
 /// Whether the scenarios of `command` are written under the scope this thread holds.
@@ -14706,6 +14712,11 @@ pub(crate) fn with_dropped_write<R>(
     let previous = DROPPED.with(|it| it.replace(dropped));
     let _restore = Restore(previous);
     synthesize()
+}
+
+/// The dropped write [`with_dropped_write`] holds on this thread, if any.
+fn dropped_write() -> Option<DroppedWrite> {
+    DROPPED.with(|it| it.borrow().clone())
 }
 
 /// The dropped write [`with_dropped_write`] names, as the key of what a search under it made

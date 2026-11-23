@@ -79,6 +79,16 @@ pub(super) fn counting<R>(run: impl FnOnce() -> R) -> (R, u64) {
     (out, MAKES.with(std::cell::Cell::get) - before)
 }
 
+/// The count of [`MAKES`] on this thread.
+pub(super) fn taken_makes() -> u64 {
+    MAKES.with(std::cell::Cell::get)
+}
+
+/// Adds `more` to the count of [`MAKES`] on this thread.
+pub(super) fn add_makes(more: u64) {
+    MAKES.with(|it| it.set(it.get() + more));
+}
+
 thread_local! {
     /// How many times a row and an input were checked on this thread for the branch they select.
     static PICKS: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
@@ -90,6 +100,16 @@ pub(super) fn picks<R>(run: impl FnOnce() -> R) -> (R, u64) {
     let before = PICKS.with(std::cell::Cell::get);
     let out = run();
     (out, PICKS.with(std::cell::Cell::get) - before)
+}
+
+/// The count of [`PICKS`] on this thread.
+pub(super) fn taken_picks() -> u64 {
+    PICKS.with(std::cell::Cell::get)
+}
+
+/// Adds `more` to the count of [`PICKS`] on this thread.
+pub(super) fn add_picks(more: u64) {
+    PICKS.with(|it| it.set(it.get() + more));
 }
 
 /// Counts one row and input checked for the branch they select ([`picks`]).
@@ -109,6 +129,16 @@ pub(super) fn related_picks<R>(run: impl FnOnce() -> R) -> (R, u64) {
     let before = RELATED_PICKS.with(std::cell::Cell::get);
     let out = run();
     (out, RELATED_PICKS.with(std::cell::Cell::get) - before)
+}
+
+/// The count of [`RELATED_PICKS`] on this thread.
+pub(super) fn taken_related_picks() -> u64 {
+    RELATED_PICKS.with(std::cell::Cell::get)
+}
+
+/// Adds `more` to the count of [`RELATED_PICKS`] on this thread.
+pub(super) fn add_related_picks(more: u64) {
+    RELATED_PICKS.with(|it| it.set(it.get() + more));
 }
 
 /// Counts one related row and input checked for the branch they select ([`related_picks`]).

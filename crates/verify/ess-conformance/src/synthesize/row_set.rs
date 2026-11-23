@@ -3351,6 +3351,25 @@ pub fn row_set_attempts<R>(fresh: bool, run: impl FnOnce() -> R) -> (R, u64) {
     (out, after - asked)
 }
 
+/// How many arrangements [`prepare_with`] was asked for on this thread ([`ATTEMPTS`]).
+pub(super) fn taken_attempts() -> u64 {
+    ATTEMPTS.with(std::cell::Cell::get).0
+}
+
+/// Adds `more` to the arrangements [`prepare_with`] was asked for on this thread.
+pub(super) fn add_attempts(more: u64) {
+    ATTEMPTS.with(|work| {
+        let (count, fresh) = work.get();
+        work.set((count + more, fresh));
+    });
+}
+
+/// Whether the linked attempt is tried again after it ran beside named rows on this thread
+/// ([`row_set_attempts`]).
+pub(super) fn attempts_fresh() -> bool {
+    ATTEMPTS.with(std::cell::Cell::get).1
+}
+
 /// How one arrangement of [`prepare_with`] is tried.
 #[derive(Clone, Copy, Default, PartialEq, Eq)]
 struct Arranging {
@@ -5028,4 +5047,14 @@ pub(super) fn counting<R>(run: impl FnOnce() -> R) -> (R, u64) {
     let before = TRIED.with(std::cell::Cell::get);
     let out = run();
     (out, TRIED.with(std::cell::Cell::get) - before)
+}
+
+/// The count of [`TRIED`] on this thread.
+pub(super) fn taken_tried() -> u64 {
+    TRIED.with(std::cell::Cell::get)
+}
+
+/// Adds `more` to the count of [`TRIED`] on this thread.
+pub(super) fn add_tried(more: u64) {
+    TRIED.with(|it| it.set(it.get() + more));
 }

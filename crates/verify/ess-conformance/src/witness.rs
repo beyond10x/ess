@@ -1549,6 +1549,11 @@ pub(crate) fn under_test(
     UnderTest { previous }
 }
 
+/// Whether a scope [`under_test`] opened is open on this thread.
+pub(crate) fn under_test_open() -> bool {
+    UNDER_TEST.with(|scope| scope.borrow().is_some())
+}
+
 /// The input paths the branch under test copies, where it is a branch of `command`; empty
 /// otherwise. Part of what a witness search answers, so the memo keys on it as well.
 pub(crate) fn copied_under_test(command: &ResolvedCommand) -> BTreeSet<FactPath> {
@@ -2946,6 +2951,16 @@ pub fn builders_cloned<T>(run: impl FnOnce() -> T) -> (T, usize) {
     (out, after.saturating_sub(before))
 }
 
+/// The count of [`CLONED`] on this thread.
+pub(crate) fn taken_cloned() -> usize {
+    CLONED.with(std::cell::Cell::get)
+}
+
+/// Adds `more` to the count of [`CLONED`] on this thread.
+pub(crate) fn add_cloned(more: usize) {
+    CLONED.with(|it| it.set(it.get() + more));
+}
+
 /// `run`'s result, and how many whole command inputs the witness search built on this thread
 /// while it ran, each candidate and each half of a candidate's pair counted once.
 ///
@@ -2956,6 +2971,16 @@ pub fn inputs_built<T>(run: impl FnOnce() -> T) -> (T, usize) {
     let out = run();
     let after = BUILT.with(std::cell::Cell::get);
     (out, after.saturating_sub(before))
+}
+
+/// The count of [`BUILT`] on this thread.
+pub(crate) fn taken_built() -> usize {
+    BUILT.with(std::cell::Cell::get)
+}
+
+/// Adds `more` to the count of [`BUILT`] on this thread.
+pub(crate) fn add_built(more: usize) {
+    BUILT.with(|it| it.set(it.get() + more));
 }
 
 /// The scope [`under_test`] holds on this thread, as the key of what a search inside it made.
@@ -2973,6 +2998,16 @@ pub fn directed_steps<T>(run: impl FnOnce() -> T) -> (T, usize) {
     let out = run();
     let after = STEPS.with(std::cell::Cell::get);
     (out, after.saturating_sub(before))
+}
+
+/// The count of [`STEPS`] on this thread.
+pub(crate) fn taken_steps() -> usize {
+    STEPS.with(std::cell::Cell::get)
+}
+
+/// Adds `more` to the count of [`STEPS`] on this thread.
+pub(crate) fn add_steps(more: usize) {
+    STEPS.with(|it| it.set(it.get() + more));
 }
 
 /// The atoms of a guard: everything under its connectives.
