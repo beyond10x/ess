@@ -28,6 +28,7 @@
 //! in one scenario (a fixture prelude, a retained replay, a periodic check) keeps its first run only.
 
 mod arranged;
+mod readings;
 
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
@@ -355,14 +356,14 @@ struct Assigned<'a> {
     callers: &'a Callers,
     /// The commands whose reading depends on who sends them, in name order.
     rewritten: Vec<QualifiedName>,
-    models: std::cell::RefCell<BTreeMap<Vec<Who>, std::rc::Rc<EssIr>>>,
-    made: std::cell::RefCell<super::made::Keeping>,
-    witnessed: std::cell::RefCell<crate::witness_memo::Keeping>,
+    /// The models in which every rewritten command is sent by one caller, by assignment key: two
+    /// models, or one where `rewritten` is empty and both callers read the model the same.
+    uniform: BTreeMap<Vec<Who>, std::sync::Arc<EssIr>>,
 }
 
 impl<'a> Assigned<'a> {
     fn new(ir: &'a EssIr, callers: &'a Callers) -> Self {
-        let rewritten = ir
+        let rewritten: Vec<QualifiedName> = ir
             .commands()
             .values()
             .filter(|command| {
@@ -372,14 +373,31 @@ impl<'a> Assigned<'a> {
             })
             .map(|command| command.name.clone())
             .collect();
+        let mut uniform = BTreeMap::new();
+        for who in [Who::First, Who::Second] {
+            let key: Vec<Who> = rewritten.iter().map(|_| who).collect();
+            uniform.entry(key).or_insert_with(|| {
+                std::sync::Arc::new(ir.with_commands_rewritten(|command| {
+                    written(ir, command, &callers.for_command(ir, who, &command.name))
+                }))
+            });
+        }
         Self {
             ir,
             callers,
             rewritten,
-            models: std::cell::RefCell::new(BTreeMap::new()),
-            made: std::cell::RefCell::new(super::made::Keeping::open()),
-            witnessed: std::cell::RefCell::new(crate::witness_memo::Keeping::open()),
+            uniform,
         }
+    }
+
+    /// The commands' assignment key: who sends each rewritten command.
+    fn key(&self, who: Assignment<'_>) -> Vec<Who> {
+        self.rewritten.iter().map(who).collect()
+    }
+
+    /// The uniform models, in key order.
+    fn uniform_models(&self) -> Vec<&std::sync::Arc<EssIr>> {
+        self.uniform.values().collect()
     }
 
     /// The model with every caller read written as `who` sends each command.
@@ -388,28 +406,18 @@ impl<'a> Assigned<'a> {
     /// focused run of a command that reads no caller is one of them. A reading sending one such
     /// command as the other caller serves that command's few runs, and keeping it would hold
     /// another model and its memory per caller-reading command for the whole synthesis.
-    fn model(&self, who: Assignment<'_>) -> std::rc::Rc<EssIr> {
-        let key: Vec<Who> = self.rewritten.iter().map(who).collect();
-        if let Some(model) = self.models.borrow().get(&key) {
-            return std::rc::Rc::clone(model);
+    fn model(&self, who: Assignment<'_>) -> std::sync::Arc<EssIr> {
+        if let Some(model) = self.uniform.get(&self.key(who)) {
+            return std::sync::Arc::clone(model);
         }
         let (ir, callers) = (self.ir, self.callers);
-        let model = std::rc::Rc::new(ir.with_commands_rewritten(|command| {
+        std::sync::Arc::new(ir.with_commands_rewritten(|command| {
             written(
                 ir,
                 command,
                 &callers.for_command(ir, who(&command.name), &command.name),
             )
-        }));
-        if key.windows(2).any(|pair| pair[0] != pair[1]) {
-            return model;
-        }
-        self.made.borrow_mut().keep(&model);
-        self.witnessed.borrow_mut().keep(&model);
-        self.models
-            .borrow_mut()
-            .insert(key, std::rc::Rc::clone(&model));
-        model
+        }))
     }
 }
 
@@ -654,8 +662,28 @@ pub(super) fn synthesize(ir: &EssIr, seeds: &super::AdmittedSeeds) -> Synthesis 
     let reading = reading(ir, &callers);
     let rotated = grant::rotated(ir);
     let assigned = Assigned::new(ir, &callers);
-    let mut whole = run_seeded(&assigned, &|_| Who::First, Focus::Whole, seeds);
-    let swapped = run(&assigned, &|_| Who::Second, Focus::Whole);
+    let _kept = readings::Kept::open(&assigned.uniform_models());
+    let mixed_commands = mixed(ir, &callers);
+    #[cfg(test)]
+    let unfocused = tests::UNFOCUSED.get();
+    #[cfg(not(test))]
+    let unfocused = false;
+    let plan = readings::plan(&mixed_commands, unfocused);
+    let mut results = readings::read_all(
+        &plan,
+        |reading| assigned.lane(reading),
+        |reading| readings::read(&assigned, seeds, reading),
+    )
+    .into_iter();
+    let mut next = || results.next().expect("one result per planned reading");
+    let mut whole = next();
+    let swapped = next();
+    let abouts: Vec<(Synthesis, Synthesis)> =
+        mixed_commands.iter().map(|_| (next(), next())).collect();
+    let crosses: Vec<(&QualifiedName, Synthesis, Synthesis)> = mixed_commands
+        .iter()
+        .map(|command| (command, next(), next()))
+        .collect();
     let mut identities = Identities::of(ir, whole.suite.scenarios.values());
     // The model read with one command sent as `second` and every other as `first`, by command:
     // read only for a scenario acting on the one row of a singleton entity.
@@ -681,27 +709,12 @@ pub(super) fn synthesize(ir: &EssIr, seeds: &super::AdmittedSeeds) -> Synthesis 
             None => whole.notes.push(unswapped(id, scenario, exhausted)),
         }
     }
-    // A command need not read a credential to depend on shared state. In particular, a
-    // related-row guard must observe the row arranged by the other principal (#312).
-    let mixed_commands: BTreeSet<_> = ir
-        .commands()
-        .keys()
-        .filter(|command| {
-            callers.for_command(ir, Who::First, command)
-                != callers.for_command(ir, Who::Second, command)
-        })
-        .cloned()
-        .collect();
-    for command in &mixed_commands {
-        let sent = |name: &QualifiedName| {
-            if name == command {
-                Who::Second
-            } else {
-                Who::First
-            }
+    for (command, (other, back_run)) in mixed_commands.iter().zip(abouts) {
+        let (other, back) = if !unfocused && turned(command, &other, &back_run, &rotated) {
+            readings::read_about_whole(&assigned, seeds, command)
+        } else {
+            (other, back_run)
         };
-        let back = |name: &QualifiedName| sent(name).other();
-        let (other, back) = about_command((&assigned, seeds), (&sent, &back), command, &rotated);
         for (id, mut scenario) in other.suite.scenarios {
             if !about(&id, command) {
                 continue;
@@ -725,7 +738,7 @@ pub(super) fn synthesize(ir: &EssIr, seeds: &super::AdmittedSeeds) -> Synthesis 
             whole.suite.scenarios.insert(id, scenario);
         }
     }
-    cross_single_command((&assigned, seeds), &mut whole);
+    merge_cross(ir, crosses, &mut whole);
     arranged_by_callers(ir, &callers, &reading, &mut identities, &mut whole);
     seeded_unswapped(ir, seeds, &reading, &mut whole);
     // Every reading above is synthesized from a rewritten copy of the model, whose digests are not
@@ -808,34 +821,28 @@ fn seeded_unswapped(
     }
 }
 
-/// Upserts and duplicate-identity controls arrange and act with the same command name.
-fn cross_single_command(
-    (assigned, seeds): (&Assigned<'_>, &super::AdmittedSeeds),
+/// The commands whose two callers differ, in name order.
+fn mixed(ir: &EssIr, callers: &Callers) -> BTreeSet<QualifiedName> {
+    // A command need not read a credential to depend on shared state. In particular, a
+    // related-row guard must observe the row arranged by the other principal (#312).
+    ir.commands()
+        .keys()
+        .filter(|command| {
+            callers.for_command(ir, Who::First, command)
+                != callers.for_command(ir, Who::Second, command)
+        })
+        .cloned()
+        .collect()
+}
+
+/// Upserts and duplicate-identity controls arrange and act with the same command name: merges the
+/// crossed readings of each mixed command (`readings::Reading::Cross`), in name order.
+fn merge_cross(
+    ir: &EssIr,
+    crosses: Vec<(&QualifiedName, Synthesis, Synthesis)>,
     whole: &mut Synthesis,
 ) {
-    let (ir, callers) = (assigned.ir, assigned.callers);
-    let first = assigned.model(&|_| Who::First);
-    let second = assigned.model(&|_| Who::Second);
-    let forward = InvocationModels {
-        arrangement: &first,
-        acting: &second,
-        credentials: Some((ir, callers, Who::First)),
-        seeds,
-    };
-    let backward = InvocationModels {
-        arrangement: &second,
-        acting: &first,
-        credentials: Some((ir, callers, Who::Second)),
-        seeds: &super::seeds::EMPTY,
-    };
-    for command in ir.commands().keys() {
-        if callers.for_command(ir, Who::First, command)
-            == callers.for_command(ir, Who::Second, command)
-        {
-            continue;
-        }
-        let mixed = super::synthesize_invocations(&forward, Focus::About(command));
-        let reversed = super::synthesize_invocations(&backward, Focus::About(command));
+    for (command, mixed, reversed) in crosses {
         for refusal in &mixed.refusals {
             let Some(id) = &refusal.scenario else {
                 continue;
@@ -926,37 +933,21 @@ type Assignment<'a> = &'a dyn Fn(&QualifiedName) -> Who;
 /// with none. Every family files a command's scenarios from its own loop over that command, so
 /// those are the scenarios the whole run writes, but for one exception: a command sent in turn as
 /// each actor granted it ([`grant::rotated`]) is sent by turn across every scenario sending it. A
-/// kept scenario sending one is read from the whole runs, as before.
-fn about_command(
-    (assigned, seeds): (&Assigned<'_>, &super::AdmittedSeeds),
-    (sent, back): (Assignment<'_>, Assignment<'_>),
+/// kept scenario sending one is read from the whole runs, as before. Whether a pair of runs sends
+/// one is this.
+fn turned(
     command: &QualifiedName,
+    other: &Synthesis,
+    back_run: &Synthesis,
     rotated: &BTreeSet<QualifiedName>,
-) -> (Synthesis, Synthesis) {
-    #[cfg(test)]
-    if tests::UNFOCUSED.get() {
-        return (
-            run_seeded(assigned, sent, Focus::Whole, seeds),
-            run(assigned, back, Focus::Whole),
-        );
-    }
-    let focus = Focus::About(command);
-    let other = run_seeded(assigned, sent, focus, seeds);
-    let back_run = run(assigned, back, focus);
-    let turned = [&other, &back_run].iter().any(|synthesis| {
+) -> bool {
+    [other, back_run].iter().any(|synthesis| {
         synthesis
             .suite
             .scenarios
             .iter()
             .any(|(id, scenario)| about(id, command) && sends_any(scenario, rotated))
-    });
-    if turned {
-        return (
-            run_seeded(assigned, sent, Focus::Whole, seeds),
-            run(assigned, back, Focus::Whole),
-        );
-    }
-    (other, back_run)
+    })
 }
 
 /// The model read under one assignment, synthesized, with every command step marked with the
@@ -1000,16 +991,27 @@ fn arranged_by_callers(
     whole: &mut Synthesis,
 ) {
     let mut any = false;
-    for command in arranged::refused_commands(ir, whole) {
-        let Some((model, lifted)) = arranged::lifted_model(ir, callers, &|_| Who::First, &command)
-        else {
+    let commands: Vec<QualifiedName> = arranged::refused_commands(ir, whole).into_iter().collect();
+    let firsts = readings::read_all(
+        &commands,
+        |_| None,
+        |command| {
+            arranged::lifted_model(ir, callers, &|_| Who::First, command)
+                .map(|(model, lifted)| (synthesize_plain(&model, Focus::About(command)), lifted))
+        },
+    );
+    // Every adoption, in command order, with the notes it wrote set aside.
+    let mut kept = Vec::new();
+    for (command, first) in commands.iter().zip(firsts) {
+        let Some((first, lifted)) = first else {
             continue;
         };
-        let first = synthesize_plain(&model, Focus::About(&command));
         let held: BTreeSet<ScenarioId> = whole.suite.scenarios.keys().cloned().collect();
-        any |= arranged::adopt(whole, first, &command, &lifted, &|step| {
+        let mark_len = whole.notes.len();
+        any |= arranged::adopt(whole, first, command, &lifted, &|step| {
             mark(ir, callers, &|_| Who::First, step);
         });
+        let adopted_notes = whole.notes.split_off(mark_len);
         let adopted: Vec<ScenarioId> = whole
             .suite
             .scenarios
@@ -1020,15 +1022,23 @@ fn arranged_by_callers(
         if adopted.is_empty() {
             continue;
         }
-        let swapped = arranged::lifted_model(ir, callers, &|_| Who::Second, &command).map(
-            |(model, lifted)| {
-                let mut again = synthesize_plain(&model, Focus::About(&command));
+        kept.push((command, adopted, adopted_notes));
+    }
+    let swapped = readings::read_all(
+        &kept,
+        |_| None,
+        |(command, ..)| {
+            arranged::lifted_model(ir, callers, &|_| Who::Second, command).map(|(model, lifted)| {
+                let mut again = synthesize_plain(&model, Focus::About(command));
                 arranged::finish(&mut again, &lifted, &|step| {
                     mark(ir, callers, &|_| Who::Second, step);
                 });
                 again
-            },
-        );
+            })
+        },
+    );
+    for ((_, adopted, adopted_notes), swapped) in kept.into_iter().zip(swapped) {
+        whole.notes.extend(adopted_notes);
         for id in adopted {
             let scenario = whole.suite.scenarios.get_mut(&id).expect("adopted above");
             identities.take(&scenario.steps);
@@ -3730,6 +3740,110 @@ views:
             );
             assert_eq!(focused, unfocused);
         }
+    }
+
+    fn rendered(reading: &readings::Reading<'_>) -> String {
+        use readings::Reading;
+        let short = |name: &QualifiedName| {
+            let text = name.to_string();
+            text.rsplit('.').next().unwrap_or_default().to_owned()
+        };
+        match reading {
+            Reading::Whole(Who::First) => "Whole(First)".to_owned(),
+            Reading::Whole(Who::Second) => "Whole(Second)".to_owned(),
+            Reading::About { command, back, .. } => format!(
+                "About({},{})",
+                short(command),
+                if *back { "back" } else { "first" }
+            ),
+            Reading::Cross { command, reversed } => format!(
+                "Cross({},{})",
+                short(command),
+                if *reversed { "reversed" } else { "forward" }
+            ),
+        }
+    }
+
+    #[test]
+    fn the_plan_lists_each_reading_once_in_the_order_the_merge_reads_them() {
+        let ir = compiled(NOTES);
+        let callers = Callers::of(&ir).expect("the model reads callers");
+        let commands = mixed(&ir, &callers);
+        let plan = readings::plan(&commands, false);
+        let text: Vec<String> = plan.iter().map(rendered).collect();
+        assert_eq!(
+            text,
+            [
+                "Whole(First)",
+                "Whole(Second)",
+                "About(CloseNote,first)",
+                "About(CloseNote,back)",
+                "About(CreateNote,first)",
+                "About(CreateNote,back)",
+                "Cross(CloseNote,forward)",
+                "Cross(CloseNote,reversed)",
+                "Cross(CreateNote,forward)",
+                "Cross(CreateNote,reversed)",
+            ]
+        );
+    }
+
+    #[test]
+    fn a_reading_on_a_uniform_model_names_that_model_as_its_lane() {
+        use readings::Reading;
+        use std::sync::Arc;
+        let ir = compiled(NOTES);
+        let callers = Callers::of(&ir).expect("the model reads callers");
+        let assigned = Assigned::new(&ir, &callers);
+        let names: Vec<String> = assigned.rewritten.iter().map(ToString::to_string).collect();
+        assert_eq!(names, ["demo.notes.CloseNote", "demo.notes.CreateNote"]);
+        let lane = |reading: Reading<'_>| assigned.lane(&reading).cloned();
+        let first = lane(Reading::Whole(Who::First)).expect("a uniform model");
+        let second = lane(Reading::Whole(Who::Second)).expect("a uniform model");
+        let cross = |reversed| {
+            let command: QualifiedName = "demo.notes.CreateNote".parse().unwrap();
+            lane(Reading::Cross {
+                command: &command,
+                reversed,
+            })
+            .expect("a uniform model")
+        };
+        assert!(Arc::ptr_eq(&first, &cross(false)));
+        assert!(Arc::ptr_eq(&second, &cross(true)));
+        assert!(!Arc::ptr_eq(&first, &second));
+        let create: QualifiedName = "demo.notes.CreateNote".parse().unwrap();
+        assert!(assigned
+            .lane(&Reading::About {
+                command: &create,
+                back: false,
+                whole: false,
+            })
+            .is_none());
+
+        let widened = NOTES.replace(
+            "may: [demo.notes.CreateNote, demo.notes.CloseNote]",
+            "may: [demo.notes.CreateNote, demo.notes.CloseNote, demo.notes.AddTag]",
+        );
+        let ir = compiled(&widened);
+        let callers = Callers::of(&ir).expect("the model reads callers");
+        let tag: QualifiedName = "demo.notes.AddTag".parse().unwrap();
+        assert!(mixed(&ir, &callers).contains(&tag));
+        let assigned = Assigned::new(&ir, &callers);
+        assert!(!assigned.rewritten.contains(&tag));
+        let about = |back| {
+            assigned
+                .lane(&Reading::About {
+                    command: &tag,
+                    back,
+                    whole: false,
+                })
+                .cloned()
+                .expect("a command outside `rewritten` reads a uniform model")
+        };
+        let first = assigned.lane(&Reading::Whole(Who::First)).unwrap();
+        let second = assigned.lane(&Reading::Whole(Who::Second)).unwrap();
+        assert!(Arc::ptr_eq(&about(false), first));
+        assert!(Arc::ptr_eq(&about(true), second));
     }
 
     fn steps(value: serde_json::Value) -> Vec<ScenarioStep> {
