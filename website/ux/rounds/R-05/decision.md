@@ -1,0 +1,643 @@
+# R-05 decisions
+
+Each worse value a list item takes names its value (`<scenario> <metric> <value>`, T35); a lost
+value is named by `<scenario> <metric>` or, for a scenario a lane drops, `<lane>: <scenario>`.
+
+## Ratchet decision `R-05-worse`: the docs introduction and the two index lists hold more words
+
+Eleven reading-load values rose beyond their 5 % tolerance. Nine are cards whose path passes the
+docs introduction at desktop-1280 (`/ess/docs`, step "click link /^Install ess$/" of
+`install-linux-x86_64`: 205 words): `main`'s text, merged in step 0, adds the line "The command is
+`ess`. Its first level is five areas …" there; no change of R-05 touches that page. Three are the two
+index pages, where change 5 names the class beside each number and says which family the versions
+list covers (UXF-027). The same pages' other values fell: `ess-31-release/desktop-1280
+reading_load.max` 358 to 322, `diagnostic-type-009/mobile-390 reading_load.max` 165 to 139.
+
+| scenario | metric | baseline (R-04) | R-05 |
+| --- | --- | --- | --- |
+| `diagnostic-type-009/desktop-1280` | `reading_load.median` | 201 | 217 |
+| `ess-31-release/desktop-1280` | `reading_load.median` | 201 | 217 |
+| `ess-31-release/mobile-390` | `reading_load.max` | 164 | 177 |
+| `first-conformance-run/desktop-1280` | `reading_load.max` | 189 | 205 |
+| `first-conformance-run/desktop-1280/keyboard` | `reading_load.max` | 189 | 205 |
+| `go-runner/desktop-1280` | `reading_load.max` | 198 | 214 |
+| `go-runner/desktop-1280` | `reading_load.median` | 189 | 205 |
+| `install-linux-x86_64/desktop-1280` | `reading_load.max` | 189 | 205 |
+| `install-linux-x86_64/desktop-1280/keyboard` | `reading_load.max` | 182 | 205 |
+| `limitations/desktop-1280` | `reading_load.max` | 165 | 176 |
+| `page-a-view/desktop-1280` | `reading_load.max` | 230 | 258 |
+
+- `diagnostic-type-009/desktop-1280 reading_load.median 217`
+- `ess-31-release/desktop-1280 reading_load.median 217`
+- `ess-31-release/mobile-390 reading_load.max 177`
+- `first-conformance-run/desktop-1280 reading_load.max 205`
+- `first-conformance-run/desktop-1280/keyboard reading_load.max 205`
+- `go-runner/desktop-1280 reading_load.max 214`
+- `go-runner/desktop-1280 reading_load.median 205`
+- `install-linux-x86_64/desktop-1280 reading_load.max 205`
+- `install-linux-x86_64/desktop-1280/keyboard reading_load.max 205`
+- `limitations/desktop-1280 reading_load.max 176`
+- `page-a-view/desktop-1280 reading_load.max 258`
+
+## Ratchet decision `R-05-worse`: one layout shift of the landing page under load
+
+`/ess/@desktop-1280/light layout_shift.load` measured 0.0948 in `slow-l2-1` at a 1-minute load
+of 131, and 0 in `gate-5`, `gate-7` and `gate-8` (load 133, 170, 60) and in `slow-rerun-b` at
+load 56. It is a timing value (UXF-026); the value taken is the rerun's at load under 60.
+
+- `/ess/@desktop-1280/light layout_shift.load 0`
+
+## Ratchet decision `R-05-worse`: the page load is filed under the theme it loaded in
+
+Change 2 (T34) files `layout_shift.load` and `motion.running` under the light configuration of each
+page and viewport, where the page loaded, and no longer under dark. The dark values are dropped and
+the light ones are new (278 of each). The two dark values R-04 took under load,
+`/ess/docs/concepts/overview@desktop-1280/dark` 0.0342 and `/ess/docs/status/roadmap@desktop-1280/dark`
+0.0697, measure 0 under light in `slow-l2-5` and `slow-l2-3` and in `slow-rerun-b` at load 56.
+
+- `/ess/@desktop-1280/dark layout_shift.load`
+- `/ess/@desktop-1280/dark motion.running`
+- `/ess/@mobile-390/dark layout_shift.load`
+- `/ess/@mobile-390/dark motion.running`
+- `/ess/docs/concepts/adoption-modes@desktop-1280/dark layout_shift.load`
+- `/ess/docs/concepts/adoption-modes@desktop-1280/dark motion.running`
+- `/ess/docs/concepts/adoption-modes@mobile-390/dark layout_shift.load`
+- `/ess/docs/concepts/adoption-modes@mobile-390/dark motion.running`
+- `/ess/docs/concepts/component-delivery@desktop-1280/dark layout_shift.load`
+- `/ess/docs/concepts/component-delivery@desktop-1280/dark motion.running`
+- `/ess/docs/concepts/component-delivery@mobile-390/dark layout_shift.load`
+- `/ess/docs/concepts/component-delivery@mobile-390/dark motion.running`
+- `/ess/docs/concepts/ess@desktop-1280/dark layout_shift.load`
+- `/ess/docs/concepts/ess@desktop-1280/dark motion.running`
+- `/ess/docs/concepts/ess@mobile-390/dark layout_shift.load`
+- `/ess/docs/concepts/ess@mobile-390/dark motion.running`
+- `/ess/docs/concepts/overview@desktop-1280/dark layout_shift.load`
+- `/ess/docs/concepts/overview@desktop-1280/dark motion.running`
+- `/ess/docs/concepts/overview@mobile-390/dark layout_shift.load`
+- `/ess/docs/concepts/overview@mobile-390/dark motion.running`
+- `/ess/docs/concepts/test-pyramid@desktop-1280/dark layout_shift.load`
+- `/ess/docs/concepts/test-pyramid@desktop-1280/dark motion.running`
+- `/ess/docs/concepts/test-pyramid@mobile-390/dark layout_shift.load`
+- `/ess/docs/concepts/test-pyramid@mobile-390/dark motion.running`
+- `/ess/docs/examples/specification-to-contracts@desktop-1280/dark layout_shift.load`
+- `/ess/docs/examples/specification-to-contracts@desktop-1280/dark motion.running`
+- `/ess/docs/examples/specification-to-contracts@mobile-390/dark layout_shift.load`
+- `/ess/docs/examples/specification-to-contracts@mobile-390/dark motion.running`
+- `/ess/docs/getting-started@desktop-1280/dark layout_shift.load`
+- `/ess/docs/getting-started@desktop-1280/dark motion.running`
+- `/ess/docs/getting-started@mobile-390/dark layout_shift.load`
+- `/ess/docs/getting-started@mobile-390/dark motion.running`
+- `/ess/docs/guides/check-infrastructure@desktop-1280/dark layout_shift.load`
+- `/ess/docs/guides/check-infrastructure@desktop-1280/dark motion.running`
+- `/ess/docs/guides/check-infrastructure@mobile-390/dark layout_shift.load`
+- `/ess/docs/guides/check-infrastructure@mobile-390/dark motion.running`
+- `/ess/docs/guides/commit-generated-files@desktop-1280/dark layout_shift.load`
+- `/ess/docs/guides/commit-generated-files@desktop-1280/dark motion.running`
+- `/ess/docs/guides/commit-generated-files@mobile-390/dark layout_shift.load`
+- `/ess/docs/guides/commit-generated-files@mobile-390/dark motion.running`
+- `/ess/docs/guides/deliver/build-and-chart@desktop-1280/dark layout_shift.load`
+- `/ess/docs/guides/deliver/build-and-chart@desktop-1280/dark motion.running`
+- `/ess/docs/guides/deliver/build-and-chart@mobile-390/dark layout_shift.load`
+- `/ess/docs/guides/deliver/build-and-chart@mobile-390/dark motion.running`
+- `/ess/docs/guides/deliver/deploy-an-environment@desktop-1280/dark layout_shift.load`
+- `/ess/docs/guides/deliver/deploy-an-environment@desktop-1280/dark motion.running`
+- `/ess/docs/guides/deliver/deploy-an-environment@mobile-390/dark layout_shift.load`
+- `/ess/docs/guides/deliver/deploy-an-environment@mobile-390/dark motion.running`
+- `/ess/docs/guides/deliver/resolve-a-stack@desktop-1280/dark layout_shift.load`
+- `/ess/docs/guides/deliver/resolve-a-stack@desktop-1280/dark motion.running`
+- `/ess/docs/guides/deliver/resolve-a-stack@mobile-390/dark layout_shift.load`
+- `/ess/docs/guides/deliver/resolve-a-stack@mobile-390/dark motion.running`
+- `/ess/docs/guides/generate-artifacts@desktop-1280/dark layout_shift.load`
+- `/ess/docs/guides/generate-artifacts@desktop-1280/dark motion.running`
+- `/ess/docs/guides/generate-artifacts@mobile-390/dark layout_shift.load`
+- `/ess/docs/guides/generate-artifacts@mobile-390/dark motion.running`
+- `/ess/docs/guides/http-routes@desktop-1280/dark layout_shift.load`
+- `/ess/docs/guides/http-routes@desktop-1280/dark motion.running`
+- `/ess/docs/guides/http-routes@mobile-390/dark layout_shift.load`
+- `/ess/docs/guides/http-routes@mobile-390/dark motion.running`
+- `/ess/docs/guides/record-realization@desktop-1280/dark layout_shift.load`
+- `/ess/docs/guides/record-realization@desktop-1280/dark motion.running`
+- `/ess/docs/guides/record-realization@mobile-390/dark layout_shift.load`
+- `/ess/docs/guides/record-realization@mobile-390/dark motion.running`
+- `/ess/docs/guides/specify/aggregate-views@desktop-1280/dark layout_shift.load`
+- `/ess/docs/guides/specify/aggregate-views@desktop-1280/dark motion.running`
+- `/ess/docs/guides/specify/aggregate-views@mobile-390/dark layout_shift.load`
+- `/ess/docs/guides/specify/aggregate-views@mobile-390/dark motion.running`
+- `/ess/docs/guides/specify/binding-conditions@desktop-1280/dark layout_shift.load`
+- `/ess/docs/guides/specify/binding-conditions@desktop-1280/dark motion.running`
+- `/ess/docs/guides/specify/binding-conditions@mobile-390/dark layout_shift.load`
+- `/ess/docs/guides/specify/binding-conditions@mobile-390/dark motion.running`
+- `/ess/docs/guides/specify/binding-context@desktop-1280/dark layout_shift.load`
+- `/ess/docs/guides/specify/binding-context@desktop-1280/dark motion.running`
+- `/ess/docs/guides/specify/binding-context@mobile-390/dark layout_shift.load`
+- `/ess/docs/guides/specify/binding-context@mobile-390/dark motion.running`
+- `/ess/docs/guides/specify/binding-stored-state@desktop-1280/dark layout_shift.load`
+- `/ess/docs/guides/specify/binding-stored-state@desktop-1280/dark motion.running`
+- `/ess/docs/guides/specify/binding-stored-state@mobile-390/dark layout_shift.load`
+- `/ess/docs/guides/specify/binding-stored-state@mobile-390/dark motion.running`
+- `/ess/docs/guides/specify/bindings-and-components@desktop-1280/dark layout_shift.load`
+- `/ess/docs/guides/specify/bindings-and-components@desktop-1280/dark motion.running`
+- `/ess/docs/guides/specify/bindings-and-components@mobile-390/dark layout_shift.load`
+- `/ess/docs/guides/specify/bindings-and-components@mobile-390/dark motion.running`
+- `/ess/docs/guides/specify/commands-and-outcomes@desktop-1280/dark layout_shift.load`
+- `/ess/docs/guides/specify/commands-and-outcomes@desktop-1280/dark motion.running`
+- `/ess/docs/guides/specify/commands-and-outcomes@mobile-390/dark layout_shift.load`
+- `/ess/docs/guides/specify/commands-and-outcomes@mobile-390/dark motion.running`
+- `/ess/docs/guides/specify/fields-and-invariants@desktop-1280/dark layout_shift.load`
+- `/ess/docs/guides/specify/fields-and-invariants@desktop-1280/dark motion.running`
+- `/ess/docs/guides/specify/fields-and-invariants@mobile-390/dark layout_shift.load`
+- `/ess/docs/guides/specify/fields-and-invariants@mobile-390/dark motion.running`
+- `/ess/docs/guides/specify/guards-and-predicates@desktop-1280/dark layout_shift.load`
+- `/ess/docs/guides/specify/guards-and-predicates@desktop-1280/dark motion.running`
+- `/ess/docs/guides/specify/guards-and-predicates@mobile-390/dark layout_shift.load`
+- `/ess/docs/guides/specify/guards-and-predicates@mobile-390/dark motion.running`
+- `/ess/docs/guides/specify/layout-and-validation@desktop-1280/dark layout_shift.load`
+- `/ess/docs/guides/specify/layout-and-validation@desktop-1280/dark motion.running`
+- `/ess/docs/guides/specify/layout-and-validation@mobile-390/dark layout_shift.load`
+- `/ess/docs/guides/specify/layout-and-validation@mobile-390/dark motion.running`
+- `/ess/docs/guides/specify/narrowed-inputs@desktop-1280/dark layout_shift.load`
+- `/ess/docs/guides/specify/narrowed-inputs@desktop-1280/dark motion.running`
+- `/ess/docs/guides/specify/narrowed-inputs@mobile-390/dark layout_shift.load`
+- `/ess/docs/guides/specify/narrowed-inputs@mobile-390/dark motion.running`
+- `/ess/docs/guides/specify/selection-effects@desktop-1280/dark layout_shift.load`
+- `/ess/docs/guides/specify/selection-effects@desktop-1280/dark motion.running`
+- `/ess/docs/guides/specify/selection-effects@mobile-390/dark layout_shift.load`
+- `/ess/docs/guides/specify/selection-effects@mobile-390/dark motion.running`
+- `/ess/docs/guides/specify/stored-rules@desktop-1280/dark layout_shift.load`
+- `/ess/docs/guides/specify/stored-rules@desktop-1280/dark motion.running`
+- `/ess/docs/guides/specify/stored-rules@mobile-390/dark layout_shift.load`
+- `/ess/docs/guides/specify/stored-rules@mobile-390/dark motion.running`
+- `/ess/docs/guides/specify/unions@desktop-1280/dark layout_shift.load`
+- `/ess/docs/guides/specify/unions@desktop-1280/dark motion.running`
+- `/ess/docs/guides/specify/unions@mobile-390/dark layout_shift.load`
+- `/ess/docs/guides/specify/unions@mobile-390/dark motion.running`
+- `/ess/docs/guides/specify/values-and-views@desktop-1280/dark layout_shift.load`
+- `/ess/docs/guides/specify/values-and-views@desktop-1280/dark motion.running`
+- `/ess/docs/guides/specify/values-and-views@mobile-390/dark layout_shift.load`
+- `/ess/docs/guides/specify/values-and-views@mobile-390/dark motion.running`
+- `/ess/docs/guides/specify/views@desktop-1280/dark layout_shift.load`
+- `/ess/docs/guides/specify/views@desktop-1280/dark motion.running`
+- `/ess/docs/guides/specify/views@mobile-390/dark layout_shift.load`
+- `/ess/docs/guides/specify/views@mobile-390/dark motion.running`
+- `/ess/docs/guides/specify/wire-names@desktop-1280/dark layout_shift.load`
+- `/ess/docs/guides/specify/wire-names@desktop-1280/dark motion.running`
+- `/ess/docs/guides/specify/wire-names@mobile-390/dark layout_shift.load`
+- `/ess/docs/guides/specify/wire-names@mobile-390/dark motion.running`
+- `/ess/docs/guides/synthesize@desktop-1280/dark layout_shift.load`
+- `/ess/docs/guides/synthesize@desktop-1280/dark motion.running`
+- `/ess/docs/guides/synthesize@mobile-390/dark layout_shift.load`
+- `/ess/docs/guides/synthesize@mobile-390/dark motion.running`
+- `/ess/docs/guides/track-change@desktop-1280/dark layout_shift.load`
+- `/ess/docs/guides/track-change@desktop-1280/dark motion.running`
+- `/ess/docs/guides/track-change@mobile-390/dark layout_shift.load`
+- `/ess/docs/guides/track-change@mobile-390/dark motion.running`
+- `/ess/docs/guides/verify-conformance@desktop-1280/dark layout_shift.load`
+- `/ess/docs/guides/verify-conformance@desktop-1280/dark motion.running`
+- `/ess/docs/guides/verify-conformance@mobile-390/dark layout_shift.load`
+- `/ess/docs/guides/verify-conformance@mobile-390/dark motion.running`
+- `/ess/docs/guides/verify/author-scenarios@desktop-1280/dark layout_shift.load`
+- `/ess/docs/guides/verify/author-scenarios@desktop-1280/dark motion.running`
+- `/ess/docs/guides/verify/author-scenarios@mobile-390/dark layout_shift.load`
+- `/ess/docs/guides/verify/author-scenarios@mobile-390/dark motion.running`
+- `/ess/docs/guides/verify/cover-a-refusal@desktop-1280/dark layout_shift.load`
+- `/ess/docs/guides/verify/cover-a-refusal@desktop-1280/dark motion.running`
+- `/ess/docs/guides/verify/cover-a-refusal@mobile-390/dark layout_shift.load`
+- `/ess/docs/guides/verify/cover-a-refusal@mobile-390/dark motion.running`
+- `/ess/docs/guides/verify/explore@desktop-1280/dark layout_shift.load`
+- `/ess/docs/guides/verify/explore@desktop-1280/dark motion.running`
+- `/ess/docs/guides/verify/explore@mobile-390/dark layout_shift.load`
+- `/ess/docs/guides/verify/explore@mobile-390/dark motion.running`
+- `/ess/docs/guides/verify/mutation-audit@desktop-1280/dark layout_shift.load`
+- `/ess/docs/guides/verify/mutation-audit@desktop-1280/dark motion.running`
+- `/ess/docs/guides/verify/mutation-audit@mobile-390/dark layout_shift.load`
+- `/ess/docs/guides/verify/mutation-audit@mobile-390/dark motion.running`
+- `/ess/docs/guides/verify/observations@desktop-1280/dark layout_shift.load`
+- `/ess/docs/guides/verify/observations@desktop-1280/dark motion.running`
+- `/ess/docs/guides/verify/observations@mobile-390/dark layout_shift.load`
+- `/ess/docs/guides/verify/observations@mobile-390/dark motion.running`
+- `/ess/docs/guides/verify/one-time-responses@desktop-1280/dark layout_shift.load`
+- `/ess/docs/guides/verify/one-time-responses@desktop-1280/dark motion.running`
+- `/ess/docs/guides/verify/one-time-responses@mobile-390/dark layout_shift.load`
+- `/ess/docs/guides/verify/one-time-responses@mobile-390/dark motion.running`
+- `/ess/docs/guides/verify/runners@desktop-1280/dark layout_shift.load`
+- `/ess/docs/guides/verify/runners@desktop-1280/dark motion.running`
+- `/ess/docs/guides/verify/runners@mobile-390/dark layout_shift.load`
+- `/ess/docs/guides/verify/runners@mobile-390/dark motion.running`
+- `/ess/docs/guides/verify/synthesize-a-suite@desktop-1280/dark layout_shift.load`
+- `/ess/docs/guides/verify/synthesize-a-suite@desktop-1280/dark motion.running`
+- `/ess/docs/guides/verify/synthesize-a-suite@mobile-390/dark layout_shift.load`
+- `/ess/docs/guides/verify/synthesize-a-suite@mobile-390/dark motion.running`
+- `/ess/docs/guides/verify/target-process@desktop-1280/dark layout_shift.load`
+- `/ess/docs/guides/verify/target-process@desktop-1280/dark motion.running`
+- `/ess/docs/guides/verify/target-process@mobile-390/dark layout_shift.load`
+- `/ess/docs/guides/verify/target-process@mobile-390/dark motion.running`
+- `/ess/docs/guides/write-a-specification@desktop-1280/dark layout_shift.load`
+- `/ess/docs/guides/write-a-specification@desktop-1280/dark motion.running`
+- `/ess/docs/guides/write-a-specification@mobile-390/dark layout_shift.load`
+- `/ess/docs/guides/write-a-specification@mobile-390/dark motion.running`
+- `/ess/docs/guides@desktop-1280/dark layout_shift.load`
+- `/ess/docs/guides@desktop-1280/dark motion.running`
+- `/ess/docs/guides@mobile-390/dark layout_shift.load`
+- `/ess/docs/guides@mobile-390/dark motion.running`
+- `/ess/docs/reference/cli@desktop-1280/dark layout_shift.load`
+- `/ess/docs/reference/cli@desktop-1280/dark motion.running`
+- `/ess/docs/reference/cli@mobile-390/dark layout_shift.load`
+- `/ess/docs/reference/cli@mobile-390/dark motion.running`
+- `/ess/docs/reference/diagnostics@desktop-1280/dark layout_shift.load`
+- `/ess/docs/reference/diagnostics@desktop-1280/dark motion.running`
+- `/ess/docs/reference/diagnostics@mobile-390/dark layout_shift.load`
+- `/ess/docs/reference/diagnostics@mobile-390/dark motion.running`
+- `/ess/docs/reference/entity-runtime-lowering@desktop-1280/dark layout_shift.load`
+- `/ess/docs/reference/entity-runtime-lowering@desktop-1280/dark motion.running`
+- `/ess/docs/reference/entity-runtime-lowering@mobile-390/dark layout_shift.load`
+- `/ess/docs/reference/entity-runtime-lowering@mobile-390/dark motion.running`
+- `/ess/docs/reference/ess-ui-test@desktop-1280/dark layout_shift.load`
+- `/ess/docs/reference/ess-ui-test@desktop-1280/dark motion.running`
+- `/ess/docs/reference/ess-ui-test@mobile-390/dark layout_shift.load`
+- `/ess/docs/reference/ess-ui-test@mobile-390/dark motion.running`
+- `/ess/docs/reference/ess-ui@desktop-1280/dark layout_shift.load`
+- `/ess/docs/reference/ess-ui@desktop-1280/dark motion.running`
+- `/ess/docs/reference/ess-ui@mobile-390/dark layout_shift.load`
+- `/ess/docs/reference/ess-ui@mobile-390/dark motion.running`
+- `/ess/docs/reference/formats@desktop-1280/dark layout_shift.load`
+- `/ess/docs/reference/formats@desktop-1280/dark motion.running`
+- `/ess/docs/reference/formats@mobile-390/dark layout_shift.load`
+- `/ess/docs/reference/formats@mobile-390/dark motion.running`
+- `/ess/docs/reference/glossary@desktop-1280/dark layout_shift.load`
+- `/ess/docs/reference/glossary@desktop-1280/dark motion.running`
+- `/ess/docs/reference/glossary@mobile-390/dark layout_shift.load`
+- `/ess/docs/reference/glossary@mobile-390/dark motion.running`
+- `/ess/docs/reference/predicates@desktop-1280/dark layout_shift.load`
+- `/ess/docs/reference/predicates@desktop-1280/dark motion.running`
+- `/ess/docs/reference/predicates@mobile-390/dark layout_shift.load`
+- `/ess/docs/reference/predicates@mobile-390/dark motion.running`
+- `/ess/docs/reference/spec-versions@desktop-1280/dark layout_shift.load`
+- `/ess/docs/reference/spec-versions@desktop-1280/dark motion.running`
+- `/ess/docs/reference/spec-versions@mobile-390/dark layout_shift.load`
+- `/ess/docs/reference/spec-versions@mobile-390/dark motion.running`
+- `/ess/docs/releases/what-changed@desktop-1280/dark layout_shift.load`
+- `/ess/docs/releases/what-changed@desktop-1280/dark motion.running`
+- `/ess/docs/releases/what-changed@mobile-390/dark layout_shift.load`
+- `/ess/docs/releases/what-changed@mobile-390/dark motion.running`
+- `/ess/docs/start/explore-the-example@desktop-1280/dark layout_shift.load`
+- `/ess/docs/start/explore-the-example@desktop-1280/dark motion.running`
+- `/ess/docs/start/explore-the-example@mobile-390/dark layout_shift.load`
+- `/ess/docs/start/explore-the-example@mobile-390/dark motion.running`
+- `/ess/docs/start/first-conformance-run@desktop-1280/dark layout_shift.load`
+- `/ess/docs/start/first-conformance-run@desktop-1280/dark motion.running`
+- `/ess/docs/start/first-conformance-run@mobile-390/dark layout_shift.load`
+- `/ess/docs/start/first-conformance-run@mobile-390/dark motion.running`
+- `/ess/docs/start/first-specification@desktop-1280/dark layout_shift.load`
+- `/ess/docs/start/first-specification@desktop-1280/dark motion.running`
+- `/ess/docs/start/first-specification@mobile-390/dark layout_shift.load`
+- `/ess/docs/start/first-specification@mobile-390/dark motion.running`
+- `/ess/docs/start/install@desktop-1280/dark layout_shift.load`
+- `/ess/docs/start/install@desktop-1280/dark motion.running`
+- `/ess/docs/start/install@mobile-390/dark layout_shift.load`
+- `/ess/docs/start/install@mobile-390/dark motion.running`
+- `/ess/docs/start/runners/go@desktop-1280/dark layout_shift.load`
+- `/ess/docs/start/runners/go@desktop-1280/dark motion.running`
+- `/ess/docs/start/runners/go@mobile-390/dark layout_shift.load`
+- `/ess/docs/start/runners/go@mobile-390/dark motion.running`
+- `/ess/docs/start/runners/rust@desktop-1280/dark layout_shift.load`
+- `/ess/docs/start/runners/rust@desktop-1280/dark motion.running`
+- `/ess/docs/start/runners/rust@mobile-390/dark layout_shift.load`
+- `/ess/docs/start/runners/rust@mobile-390/dark motion.running`
+- `/ess/docs/start/runners/typescript@desktop-1280/dark layout_shift.load`
+- `/ess/docs/start/runners/typescript@desktop-1280/dark motion.running`
+- `/ess/docs/start/runners/typescript@mobile-390/dark layout_shift.load`
+- `/ess/docs/start/runners/typescript@mobile-390/dark motion.running`
+- `/ess/docs/start/use-with-an-agent@desktop-1280/dark layout_shift.load`
+- `/ess/docs/start/use-with-an-agent@desktop-1280/dark motion.running`
+- `/ess/docs/start/use-with-an-agent@mobile-390/dark layout_shift.load`
+- `/ess/docs/start/use-with-an-agent@mobile-390/dark motion.running`
+- `/ess/docs/status/limitations@desktop-1280/dark layout_shift.load`
+- `/ess/docs/status/limitations@desktop-1280/dark motion.running`
+- `/ess/docs/status/limitations@mobile-390/dark layout_shift.load`
+- `/ess/docs/status/limitations@mobile-390/dark motion.running`
+- `/ess/docs/status/outlook@desktop-1280/dark layout_shift.load`
+- `/ess/docs/status/outlook@desktop-1280/dark motion.running`
+- `/ess/docs/status/outlook@mobile-390/dark layout_shift.load`
+- `/ess/docs/status/outlook@mobile-390/dark motion.running`
+- `/ess/docs/status/roadmap@desktop-1280/dark layout_shift.load`
+- `/ess/docs/status/roadmap@desktop-1280/dark motion.running`
+- `/ess/docs/status/roadmap@mobile-390/dark layout_shift.load`
+- `/ess/docs/status/roadmap@mobile-390/dark motion.running`
+- `/ess/docs/status/where-this-stands@desktop-1280/dark layout_shift.load`
+- `/ess/docs/status/where-this-stands@desktop-1280/dark motion.running`
+- `/ess/docs/status/where-this-stands@mobile-390/dark layout_shift.load`
+- `/ess/docs/status/where-this-stands@mobile-390/dark motion.running`
+- `/ess/docs/visualise@desktop-1280/dark layout_shift.load`
+- `/ess/docs/visualise@desktop-1280/dark motion.running`
+- `/ess/docs/visualise@mobile-390/dark layout_shift.load`
+- `/ess/docs/visualise@mobile-390/dark motion.running`
+- `/ess/docs@desktop-1280/dark layout_shift.load`
+- `/ess/docs@desktop-1280/dark motion.running`
+- `/ess/docs@mobile-390/dark layout_shift.load`
+- `/ess/docs@mobile-390/dark motion.running`
+- `/ess/releases/a-cluster-described-and-answered@desktop-1280/dark layout_shift.load`
+- `/ess/releases/a-cluster-described-and-answered@desktop-1280/dark motion.running`
+- `/ess/releases/a-cluster-described-and-answered@mobile-390/dark layout_shift.load`
+- `/ess/releases/a-cluster-described-and-answered@mobile-390/dark motion.running`
+- `/ess/releases/a-deployment-described@desktop-1280/dark layout_shift.load`
+- `/ess/releases/a-deployment-described@desktop-1280/dark motion.running`
+- `/ess/releases/a-deployment-described@mobile-390/dark layout_shift.load`
+- `/ess/releases/a-deployment-described@mobile-390/dark motion.running`
+- `/ess/releases/a-pass-over-nothing@desktop-1280/dark layout_shift.load`
+- `/ess/releases/a-pass-over-nothing@desktop-1280/dark motion.running`
+- `/ess/releases/a-pass-over-nothing@mobile-390/dark layout_shift.load`
+- `/ess/releases/a-pass-over-nothing@mobile-390/dark motion.running`
+- `/ess/releases/a-secret-is-only-present@desktop-1280/dark layout_shift.load`
+- `/ess/releases/a-secret-is-only-present@desktop-1280/dark motion.running`
+- `/ess/releases/a-secret-is-only-present@mobile-390/dark layout_shift.load`
+- `/ess/releases/a-secret-is-only-present@mobile-390/dark motion.running`
+- `/ess/releases/actor-grants-and-related-state@desktop-1280/dark layout_shift.load`
+- `/ess/releases/actor-grants-and-related-state@desktop-1280/dark motion.running`
+- `/ess/releases/actor-grants-and-related-state@mobile-390/dark layout_shift.load`
+- `/ess/releases/actor-grants-and-related-state@mobile-390/dark motion.running`
+- `/ess/releases/aggregates-over-related-guards@desktop-1280/dark layout_shift.load`
+- `/ess/releases/aggregates-over-related-guards@desktop-1280/dark motion.running`
+- `/ess/releases/aggregates-over-related-guards@mobile-390/dark layout_shift.load`
+- `/ess/releases/aggregates-over-related-guards@mobile-390/dark motion.running`
+- `/ess/releases/alike-outcomes-and-unreachable-branches@desktop-1280/dark layout_shift.load`
+- `/ess/releases/alike-outcomes-and-unreachable-branches@desktop-1280/dark motion.running`
+- `/ess/releases/alike-outcomes-and-unreachable-branches@mobile-390/dark layout_shift.load`
+- `/ess/releases/alike-outcomes-and-unreachable-branches@mobile-390/dark motion.running`
+- `/ess/releases/archive@desktop-1280/dark layout_shift.load`
+- `/ess/releases/archive@desktop-1280/dark motion.running`
+- `/ess/releases/archive@mobile-390/dark layout_shift.load`
+- `/ess/releases/archive@mobile-390/dark motion.running`
+- `/ess/releases/authored-caller-attributes@desktop-1280/dark layout_shift.load`
+- `/ess/releases/authored-caller-attributes@desktop-1280/dark motion.running`
+- `/ess/releases/authored-caller-attributes@mobile-390/dark layout_shift.load`
+- `/ess/releases/authored-caller-attributes@mobile-390/dark motion.running`
+- `/ess/releases/bare-bodies-literal-routes-and-repeated-identities@desktop-1280/dark layout_shift.load`
+- `/ess/releases/bare-bodies-literal-routes-and-repeated-identities@desktop-1280/dark motion.running`
+- `/ess/releases/bare-bodies-literal-routes-and-repeated-identities@mobile-390/dark layout_shift.load`
+- `/ess/releases/bare-bodies-literal-routes-and-repeated-identities@mobile-390/dark motion.running`
+- `/ess/releases/concurrent-histories@desktop-1280/dark layout_shift.load`
+- `/ess/releases/concurrent-histories@desktop-1280/dark motion.running`
+- `/ess/releases/concurrent-histories@mobile-390/dark layout_shift.load`
+- `/ess/releases/concurrent-histories@mobile-390/dark motion.running`
+- `/ess/releases/conformance-in-any-language@desktop-1280/dark layout_shift.load`
+- `/ess/releases/conformance-in-any-language@desktop-1280/dark motion.running`
+- `/ess/releases/conformance-in-any-language@mobile-390/dark layout_shift.load`
+- `/ess/releases/conformance-in-any-language@mobile-390/dark motion.running`
+- `/ess/releases/ess-the-compiler@desktop-1280/dark layout_shift.load`
+- `/ess/releases/ess-the-compiler@desktop-1280/dark motion.running`
+- `/ess/releases/ess-the-compiler@mobile-390/dark layout_shift.load`
+- `/ess/releases/ess-the-compiler@mobile-390/dark motion.running`
+- `/ess/releases/ess-the-join-and-the-model@desktop-1280/dark layout_shift.load`
+- `/ess/releases/ess-the-join-and-the-model@desktop-1280/dark motion.running`
+- `/ess/releases/ess-the-join-and-the-model@mobile-390/dark layout_shift.load`
+- `/ess/releases/ess-the-join-and-the-model@mobile-390/dark motion.running`
+- `/ess/releases/ess-the-projections@desktop-1280/dark layout_shift.load`
+- `/ess/releases/ess-the-projections@desktop-1280/dark motion.running`
+- `/ess/releases/ess-the-projections@mobile-390/dark layout_shift.load`
+- `/ess/releases/ess-the-projections@mobile-390/dark motion.running`
+- `/ess/releases/event-identities-and-file-cited-refusals@desktop-1280/dark layout_shift.load`
+- `/ess/releases/event-identities-and-file-cited-refusals@desktop-1280/dark motion.running`
+- `/ess/releases/event-identities-and-file-cited-refusals@mobile-390/dark layout_shift.load`
+- `/ess/releases/event-identities-and-file-cited-refusals@mobile-390/dark motion.running`
+- `/ess/releases/every-witness-reads-back-and-the-audit-covers-grants@desktop-1280/dark layout_shift.load`
+- `/ess/releases/every-witness-reads-back-and-the-audit-covers-grants@desktop-1280/dark motion.running`
+- `/ess/releases/every-witness-reads-back-and-the-audit-covers-grants@mobile-390/dark layout_shift.load`
+- `/ess/releases/every-witness-reads-back-and-the-audit-covers-grants@mobile-390/dark motion.running`
+- `/ess/releases/existence-lookup-and-portable-output@desktop-1280/dark layout_shift.load`
+- `/ess/releases/existence-lookup-and-portable-output@desktop-1280/dark motion.running`
+- `/ess/releases/existence-lookup-and-portable-output@mobile-390/dark layout_shift.load`
+- `/ess/releases/existence-lookup-and-portable-output@mobile-390/dark motion.running`
+- `/ess/releases/four-areas-and-a-command-line@desktop-1280/dark layout_shift.load`
+- `/ess/releases/four-areas-and-a-command-line@desktop-1280/dark motion.running`
+- `/ess/releases/four-areas-and-a-command-line@mobile-390/dark layout_shift.load`
+- `/ess/releases/four-areas-and-a-command-line@mobile-390/dark motion.running`
+- `/ess/releases/generated-servers-refuse-what-their-openapi-refuses@desktop-1280/dark layout_shift.load`
+- `/ess/releases/generated-servers-refuse-what-their-openapi-refuses@desktop-1280/dark motion.running`
+- `/ess/releases/generated-servers-refuse-what-their-openapi-refuses@mobile-390/dark layout_shift.load`
+- `/ess/releases/generated-servers-refuse-what-their-openapi-refuses@mobile-390/dark motion.running`
+- `/ess/releases/hardening-the-register-emptied@desktop-1280/dark layout_shift.load`
+- `/ess/releases/hardening-the-register-emptied@desktop-1280/dark motion.running`
+- `/ess/releases/hardening-the-register-emptied@mobile-390/dark layout_shift.load`
+- `/ess/releases/hardening-the-register-emptied@mobile-390/dark motion.running`
+- `/ess/releases/host-slots-and-list-guard-witnesses@desktop-1280/dark layout_shift.load`
+- `/ess/releases/host-slots-and-list-guard-witnesses@desktop-1280/dark motion.running`
+- `/ess/releases/host-slots-and-list-guard-witnesses@mobile-390/dark layout_shift.load`
+- `/ess/releases/host-slots-and-list-guard-witnesses@mobile-390/dark motion.running`
+- `/ess/releases/http-bound-inputs-and-short-names@desktop-1280/dark layout_shift.load`
+- `/ess/releases/http-bound-inputs-and-short-names@desktop-1280/dark motion.running`
+- `/ess/releases/http-bound-inputs-and-short-names@mobile-390/dark layout_shift.load`
+- `/ess/releases/http-bound-inputs-and-short-names@mobile-390/dark motion.running`
+- `/ess/releases/instance-references-in-structured-values@desktop-1280/dark layout_shift.load`
+- `/ess/releases/instance-references-in-structured-values@desktop-1280/dark motion.running`
+- `/ess/releases/instance-references-in-structured-values@mobile-390/dark layout_shift.load`
+- `/ess/releases/instance-references-in-structured-values@mobile-390/dark motion.running`
+- `/ess/releases/journey-controls-and-collection-controls@desktop-1280/dark layout_shift.load`
+- `/ess/releases/journey-controls-and-collection-controls@desktop-1280/dark motion.running`
+- `/ess/releases/journey-controls-and-collection-controls@mobile-390/dark layout_shift.load`
+- `/ess/releases/journey-controls-and-collection-controls@mobile-390/dark motion.running`
+- `/ess/releases/json-cli-results-and-optional-generator-ports@desktop-1280/dark layout_shift.load`
+- `/ess/releases/json-cli-results-and-optional-generator-ports@desktop-1280/dark motion.running`
+- `/ess/releases/json-cli-results-and-optional-generator-ports@mobile-390/dark layout_shift.load`
+- `/ess/releases/json-cli-results-and-optional-generator-ports@mobile-390/dark motion.running`
+- `/ess/releases/named-rows-beside-a-row-set@desktop-1280/dark layout_shift.load`
+- `/ess/releases/named-rows-beside-a-row-set@desktop-1280/dark motion.running`
+- `/ess/releases/named-rows-beside-a-row-set@mobile-390/dark layout_shift.load`
+- `/ess/releases/named-rows-beside-a-row-set@mobile-390/dark motion.running`
+- `/ess/releases/names-nobody-may-invent@desktop-1280/dark layout_shift.load`
+- `/ess/releases/names-nobody-may-invent@desktop-1280/dark motion.running`
+- `/ess/releases/names-nobody-may-invent@mobile-390/dark layout_shift.load`
+- `/ess/releases/names-nobody-may-invent@mobile-390/dark motion.running`
+- `/ess/releases/nested-claims-and-binary64@desktop-1280/dark layout_shift.load`
+- `/ess/releases/nested-claims-and-binary64@desktop-1280/dark motion.running`
+- `/ess/releases/nested-claims-and-binary64@mobile-390/dark layout_shift.load`
+- `/ess/releases/nested-claims-and-binary64@mobile-390/dark motion.running`
+- `/ess/releases/nullable-binary64-and-binding-aware-synthesis@desktop-1280/dark layout_shift.load`
+- `/ess/releases/nullable-binary64-and-binding-aware-synthesis@desktop-1280/dark motion.running`
+- `/ess/releases/nullable-binary64-and-binding-aware-synthesis@mobile-390/dark layout_shift.load`
+- `/ess/releases/nullable-binary64-and-binding-aware-synthesis@mobile-390/dark motion.running`
+- `/ess/releases/one-spec-two-apps@desktop-1280/dark layout_shift.load`
+- `/ess/releases/one-spec-two-apps@desktop-1280/dark motion.running`
+- `/ess/releases/one-spec-two-apps@mobile-390/dark layout_shift.load`
+- `/ess/releases/one-spec-two-apps@mobile-390/dark motion.running`
+- `/ess/releases/optional-appends-and-refusals-that-tell-states-apart@desktop-1280/dark layout_shift.load`
+- `/ess/releases/optional-appends-and-refusals-that-tell-states-apart@desktop-1280/dark motion.running`
+- `/ess/releases/optional-appends-and-refusals-that-tell-states-apart@mobile-390/dark layout_shift.load`
+- `/ess/releases/optional-appends-and-refusals-that-tell-states-apart@mobile-390/dark motion.running`
+- `/ess/releases/outcome-shapes@desktop-1280/dark layout_shift.load`
+- `/ess/releases/outcome-shapes@desktop-1280/dark motion.running`
+- `/ess/releases/outcome-shapes@mobile-390/dark layout_shift.load`
+- `/ess/releases/outcome-shapes@mobile-390/dark motion.running`
+- `/ess/releases/page/2@desktop-1280/dark layout_shift.load`
+- `/ess/releases/page/2@desktop-1280/dark motion.running`
+- `/ess/releases/page/2@mobile-390/dark layout_shift.load`
+- `/ess/releases/page/2@mobile-390/dark motion.running`
+- `/ess/releases/page/3@desktop-1280/dark layout_shift.load`
+- `/ess/releases/page/3@desktop-1280/dark motion.running`
+- `/ess/releases/page/3@mobile-390/dark layout_shift.load`
+- `/ess/releases/page/3@mobile-390/dark motion.running`
+- `/ess/releases/page/4@desktop-1280/dark layout_shift.load`
+- `/ess/releases/page/4@desktop-1280/dark motion.running`
+- `/ess/releases/page/4@mobile-390/dark layout_shift.load`
+- `/ess/releases/page/4@mobile-390/dark motion.running`
+- `/ess/releases/page/5@desktop-1280/dark layout_shift.load`
+- `/ess/releases/page/5@desktop-1280/dark motion.running`
+- `/ess/releases/page/5@mobile-390/dark layout_shift.load`
+- `/ess/releases/page/5@mobile-390/dark motion.running`
+- `/ess/releases/reconciliation@desktop-1280/dark layout_shift.load`
+- `/ess/releases/reconciliation@desktop-1280/dark motion.running`
+- `/ess/releases/reconciliation@mobile-390/dark layout_shift.load`
+- `/ess/releases/reconciliation@mobile-390/dark motion.running`
+- `/ess/releases/runtime-parity@desktop-1280/dark layout_shift.load`
+- `/ess/releases/runtime-parity@desktop-1280/dark motion.running`
+- `/ess/releases/runtime-parity@mobile-390/dark layout_shift.load`
+- `/ess/releases/runtime-parity@mobile-390/dark motion.running`
+- `/ess/releases/semantic-diff@desktop-1280/dark layout_shift.load`
+- `/ess/releases/semantic-diff@desktop-1280/dark motion.running`
+- `/ess/releases/semantic-diff@mobile-390/dark layout_shift.load`
+- `/ess/releases/semantic-diff@mobile-390/dark motion.running`
+- `/ess/releases/set-effects@desktop-1280/dark layout_shift.load`
+- `/ess/releases/set-effects@desktop-1280/dark motion.running`
+- `/ess/releases/set-effects@mobile-390/dark layout_shift.load`
+- `/ess/releases/set-effects@mobile-390/dark motion.running`
+- `/ess/releases/state-scoped-refusals@desktop-1280/dark layout_shift.load`
+- `/ess/releases/state-scoped-refusals@desktop-1280/dark motion.running`
+- `/ess/releases/state-scoped-refusals@mobile-390/dark layout_shift.load`
+- `/ess/releases/state-scoped-refusals@mobile-390/dark motion.running`
+- `/ess/releases/structural-synthesis@desktop-1280/dark layout_shift.load`
+- `/ess/releases/structural-synthesis@desktop-1280/dark motion.running`
+- `/ess/releases/structural-synthesis@mobile-390/dark layout_shift.load`
+- `/ess/releases/structural-synthesis@mobile-390/dark motion.running`
+- `/ess/releases/structured-examples-and-provided-rows@desktop-1280/dark layout_shift.load`
+- `/ess/releases/structured-examples-and-provided-rows@desktop-1280/dark motion.running`
+- `/ess/releases/structured-examples-and-provided-rows@mobile-390/dark layout_shift.load`
+- `/ess/releases/structured-examples-and-provided-rows@mobile-390/dark motion.running`
+- `/ess/releases/tags/conformance@desktop-1280/dark layout_shift.load`
+- `/ess/releases/tags/conformance@desktop-1280/dark motion.running`
+- `/ess/releases/tags/conformance@mobile-390/dark layout_shift.load`
+- `/ess/releases/tags/conformance@mobile-390/dark motion.running`
+- `/ess/releases/tags/ess/page/2@desktop-1280/dark layout_shift.load`
+- `/ess/releases/tags/ess/page/2@desktop-1280/dark motion.running`
+- `/ess/releases/tags/ess/page/2@mobile-390/dark layout_shift.load`
+- `/ess/releases/tags/ess/page/2@mobile-390/dark motion.running`
+- `/ess/releases/tags/ess/page/3@desktop-1280/dark layout_shift.load`
+- `/ess/releases/tags/ess/page/3@desktop-1280/dark motion.running`
+- `/ess/releases/tags/ess/page/3@mobile-390/dark layout_shift.load`
+- `/ess/releases/tags/ess/page/3@mobile-390/dark motion.running`
+- `/ess/releases/tags/ess/page/4@desktop-1280/dark layout_shift.load`
+- `/ess/releases/tags/ess/page/4@desktop-1280/dark motion.running`
+- `/ess/releases/tags/ess/page/4@mobile-390/dark layout_shift.load`
+- `/ess/releases/tags/ess/page/4@mobile-390/dark motion.running`
+- `/ess/releases/tags/ess/page/5@desktop-1280/dark layout_shift.load`
+- `/ess/releases/tags/ess/page/5@desktop-1280/dark motion.running`
+- `/ess/releases/tags/ess/page/5@mobile-390/dark layout_shift.load`
+- `/ess/releases/tags/ess/page/5@mobile-390/dark motion.running`
+- `/ess/releases/tags/ess@desktop-1280/dark layout_shift.load`
+- `/ess/releases/tags/ess@desktop-1280/dark motion.running`
+- `/ess/releases/tags/ess@mobile-390/dark layout_shift.load`
+- `/ess/releases/tags/ess@mobile-390/dark motion.running`
+- `/ess/releases/tags/infrastructure@desktop-1280/dark layout_shift.load`
+- `/ess/releases/tags/infrastructure@desktop-1280/dark motion.running`
+- `/ess/releases/tags/infrastructure@mobile-390/dark layout_shift.load`
+- `/ess/releases/tags/infrastructure@mobile-390/dark motion.running`
+- `/ess/releases/tags/release/page/2@desktop-1280/dark layout_shift.load`
+- `/ess/releases/tags/release/page/2@desktop-1280/dark motion.running`
+- `/ess/releases/tags/release/page/2@mobile-390/dark layout_shift.load`
+- `/ess/releases/tags/release/page/2@mobile-390/dark motion.running`
+- `/ess/releases/tags/release/page/3@desktop-1280/dark layout_shift.load`
+- `/ess/releases/tags/release/page/3@desktop-1280/dark motion.running`
+- `/ess/releases/tags/release/page/3@mobile-390/dark layout_shift.load`
+- `/ess/releases/tags/release/page/3@mobile-390/dark motion.running`
+- `/ess/releases/tags/release/page/4@desktop-1280/dark layout_shift.load`
+- `/ess/releases/tags/release/page/4@desktop-1280/dark motion.running`
+- `/ess/releases/tags/release/page/4@mobile-390/dark layout_shift.load`
+- `/ess/releases/tags/release/page/4@mobile-390/dark motion.running`
+- `/ess/releases/tags/release/page/5@desktop-1280/dark layout_shift.load`
+- `/ess/releases/tags/release/page/5@desktop-1280/dark motion.running`
+- `/ess/releases/tags/release/page/5@mobile-390/dark layout_shift.load`
+- `/ess/releases/tags/release/page/5@mobile-390/dark motion.running`
+- `/ess/releases/tags/release@desktop-1280/dark layout_shift.load`
+- `/ess/releases/tags/release@desktop-1280/dark motion.running`
+- `/ess/releases/tags/release@mobile-390/dark layout_shift.load`
+- `/ess/releases/tags/release@mobile-390/dark motion.running`
+- `/ess/releases/tags@desktop-1280/dark layout_shift.load`
+- `/ess/releases/tags@desktop-1280/dark motion.running`
+- `/ess/releases/tags@mobile-390/dark layout_shift.load`
+- `/ess/releases/tags@mobile-390/dark motion.running`
+- `/ess/releases/the-claims-a-scenario-could-not-make@desktop-1280/dark layout_shift.load`
+- `/ess/releases/the-claims-a-scenario-could-not-make@desktop-1280/dark motion.running`
+- `/ess/releases/the-claims-a-scenario-could-not-make@mobile-390/dark layout_shift.load`
+- `/ess/releases/the-claims-a-scenario-could-not-make@mobile-390/dark motion.running`
+- `/ess/releases/the-scenarios-an-author-writes@desktop-1280/dark layout_shift.load`
+- `/ess/releases/the-scenarios-an-author-writes@desktop-1280/dark motion.running`
+- `/ess/releases/the-scenarios-an-author-writes@mobile-390/dark layout_shift.load`
+- `/ess/releases/the-scenarios-an-author-writes@mobile-390/dark motion.running`
+- `/ess/releases/the-specification-as-oracle@desktop-1280/dark layout_shift.load`
+- `/ess/releases/the-specification-as-oracle@desktop-1280/dark motion.running`
+- `/ess/releases/the-specification-as-oracle@mobile-390/dark layout_shift.load`
+- `/ess/releases/the-specification-as-oracle@mobile-390/dark motion.running`
+- `/ess/releases/typed-expressions-and-one-precedence-order@desktop-1280/dark layout_shift.load`
+- `/ess/releases/typed-expressions-and-one-precedence-order@desktop-1280/dark motion.running`
+- `/ess/releases/typed-expressions-and-one-precedence-order@mobile-390/dark layout_shift.load`
+- `/ess/releases/typed-expressions-and-one-precedence-order@mobile-390/dark motion.running`
+- `/ess/releases/ui-documents-and-published-answers@desktop-1280/dark layout_shift.load`
+- `/ess/releases/ui-documents-and-published-answers@desktop-1280/dark motion.running`
+- `/ess/releases/ui-documents-and-published-answers@mobile-390/dark layout_shift.load`
+- `/ess/releases/ui-documents-and-published-answers@mobile-390/dark motion.running`
+- `/ess/releases/ui-durations-help-and-synthesis-refusals@desktop-1280/dark layout_shift.load`
+- `/ess/releases/ui-durations-help-and-synthesis-refusals@desktop-1280/dark motion.running`
+- `/ess/releases/ui-durations-help-and-synthesis-refusals@mobile-390/dark layout_shift.load`
+- `/ess/releases/ui-durations-help-and-synthesis-refusals@mobile-390/dark motion.running`
+- `/ess/releases/ui-labels-toggles-pager-and-refusal-paths@desktop-1280/dark layout_shift.load`
+- `/ess/releases/ui-labels-toggles-pager-and-refusal-paths@desktop-1280/dark motion.running`
+- `/ess/releases/ui-labels-toggles-pager-and-refusal-paths@mobile-390/dark layout_shift.load`
+- `/ess/releases/ui-labels-toggles-pager-and-refusal-paths@mobile-390/dark motion.running`
+- `/ess/releases/ui-tests-and-supplied-results@desktop-1280/dark layout_shift.load`
+- `/ess/releases/ui-tests-and-supplied-results@desktop-1280/dark motion.running`
+- `/ess/releases/ui-tests-and-supplied-results@mobile-390/dark layout_shift.load`
+- `/ess/releases/ui-tests-and-supplied-results@mobile-390/dark motion.running`
+- `/ess/releases/unkillable-mutants@desktop-1280/dark layout_shift.load`
+- `/ess/releases/unkillable-mutants@desktop-1280/dark motion.running`
+- `/ess/releases/unkillable-mutants@mobile-390/dark layout_shift.load`
+- `/ess/releases/unkillable-mutants@mobile-390/dark motion.running`
+- `/ess/releases/values-read-from-the-row@desktop-1280/dark layout_shift.load`
+- `/ess/releases/values-read-from-the-row@desktop-1280/dark motion.running`
+- `/ess/releases/values-read-from-the-row@mobile-390/dark layout_shift.load`
+- `/ess/releases/values-read-from-the-row@mobile-390/dark motion.running`
+- `/ess/releases/what-a-retry-returns@desktop-1280/dark layout_shift.load`
+- `/ess/releases/what-a-retry-returns@desktop-1280/dark motion.running`
+- `/ess/releases/what-a-retry-returns@mobile-390/dark layout_shift.load`
+- `/ess/releases/what-a-retry-returns@mobile-390/dark motion.running`
+- `/ess/releases@desktop-1280/dark layout_shift.load`
+- `/ess/releases@desktop-1280/dark motion.running`
+- `/ess/releases@mobile-390/dark layout_shift.load`
+- `/ess/releases@mobile-390/dark motion.running`
+
+## Ratchet decision `R-05-worse`: the gate lane runs five pages and three task runs
+
+Change 1 (UXF-025) leaves one template page of each page kind and three task runs in the every-merge
+gate. The release list, the status page and the lowering reference, and the phone keyboard runs and
+two pointer runs, are measured and held in the slow lane, which runs every page and every card:
+
+- `gate: /ess/docs/reference/entity-runtime-lowering@desktop-1280/dark`
+- `gate: /ess/docs/reference/entity-runtime-lowering@desktop-1280/light`
+- `gate: /ess/docs/reference/entity-runtime-lowering@mobile-390/dark`
+- `gate: /ess/docs/reference/entity-runtime-lowering@mobile-390/light`
+- `gate: /ess/docs/status/where-this-stands@desktop-1280/dark`
+- `gate: /ess/docs/status/where-this-stands@desktop-1280/light`
+- `gate: /ess/docs/status/where-this-stands@mobile-390/dark`
+- `gate: /ess/docs/status/where-this-stands@mobile-390/light`
+- `gate: /ess/releases@desktop-1280/dark`
+- `gate: /ess/releases@desktop-1280/light`
+- `gate: /ess/releases@mobile-390/dark`
+- `gate: /ess/releases@mobile-390/light`
+- `gate: first-conformance-run/desktop-1280/keyboard`
+- `gate: first-conformance-run/mobile-390`
+- `gate: first-conformance-run/mobile-390/keyboard`
+- `gate: install-linux-x86_64/desktop-1280`
+- `gate: install-linux-x86_64/mobile-390/keyboard`
+
+The lane `full` is taken with `cargo xtask ux-ratchet --round website/ux/rounds/R-05/round.json
+--update --decision R-05-worse`, the lane `gate` with the same command on the round of `gate-8`
+(this file copied beside it), the one gate run of R-05's engine that passed. Decided in round
+R-05 under its brief ("worse values go only under a decision that lists scenario, metric and
+value"), 2026-11-23.
