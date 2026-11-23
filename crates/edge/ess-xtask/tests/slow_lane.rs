@@ -24,6 +24,20 @@ const MARKED: &[(&str, &[&str])] = &[
         &["adv_e_u6_byte_identity_probe"],
     ),
     (
+        "crates/generate/ess-synth/tests/generated_view_queries.rs",
+        &[
+            "adversary_go_typed_parameters_and_orders_answer_as_the_interpreted_target",
+            "adversary_rust_typed_parameters_and_orders_answer_as_the_interpreted_target",
+            "conditional_measure_all_six_functions_execute_in_the_generated_go_queries",
+            "conditional_measure_all_six_functions_execute_in_the_generated_rust_queries",
+            "the_generated_queries_build_with_warnings_denied_and_pass_their_own_suite",
+            "the_go_queries_build_and_pass_their_own_suite",
+            "the_go_servers_of_the_workbench_views_answer_their_parameters_and_orders",
+            "the_rust_servers_of_the_workbench_views_answer_their_parameters_and_orders",
+            "the_single_crate_layout_passes_the_same_suite_with_its_server_feature",
+        ],
+    ),
+    (
         "crates/verify/ess-conformance/tests/adversary_244b_window_free_bytes.rs",
         &["adversary_244b_every_window_free_model_keeps_its_bytes_against_3b1684d1a"],
     ),

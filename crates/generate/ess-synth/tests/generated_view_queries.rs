@@ -331,6 +331,7 @@ fn harness_source() -> String {
 }
 
 #[test]
+#[ignore = "slow lane: builds the generated Rust queries with cargo and runs their suite"]
 fn the_generated_queries_build_with_warnings_denied_and_pass_their_own_suite() {
     let ir = compile_text(&fixture());
     let synthesis = synthesize_for(&ir, Target::Rust).expect("the fixture synthesizes");
@@ -346,6 +347,7 @@ fn the_generated_queries_build_with_warnings_denied_and_pass_their_own_suite() {
 }
 
 #[test]
+#[ignore = "slow lane: builds the single-crate layout with cargo and runs its suite"]
 fn the_single_crate_layout_passes_the_same_suite_with_its_server_feature() {
     let ir = compile_text(&fixture());
     let synthesis = synthesize_laid_out(&ir, Target::Rust, OutputLayout::Crate)
@@ -496,6 +498,7 @@ fn assert_ties_rank_by_the_next_key(target: &Harnessed) {
 /// pass the suite the specification synthesizes through the generated HTTP surface over a real
 /// socket.
 #[test]
+#[ignore = "slow lane: builds the generated Go queries and runs their suite"]
 fn the_go_queries_build_and_pass_their_own_suite() {
     let Some(go) = go() else {
         eprintln!("no Go toolchain on this machine; the generated Go queries are unchecked here");
@@ -608,6 +611,7 @@ fn conditional_harness_source() -> String {
 }
 
 #[test]
+#[ignore = "slow lane: builds the generated Rust queries and runs the six measure functions"]
 fn conditional_measure_all_six_functions_execute_in_the_generated_rust_queries() {
     let ir = compile_text(&conditional_fixture());
     let synthesis = synthesize_for(&ir, Target::Rust).expect("the fixture synthesizes");
@@ -629,6 +633,7 @@ fn conditional_measure_all_six_functions_execute_in_the_generated_rust_queries()
 }
 
 #[test]
+#[ignore = "slow lane: builds the generated Go queries and runs the six measure functions"]
 fn conditional_measure_all_six_functions_execute_in_the_generated_go_queries() {
     let Some(go) = go() else {
         eprintln!("no Go toolchain on this machine; the generated Go queries are unchecked here");
@@ -979,6 +984,7 @@ gap-system = { path = \"../gap/crates/gap-system\" }
 ";
 
 #[test]
+#[ignore = "slow lane: builds and runs the Rust workbench servers"]
 fn the_rust_servers_of_the_workbench_views_answer_their_parameters_and_orders() {
     for example in examples() {
         let ir = compile_files(&accepting_commands(&example.files));
@@ -1028,6 +1034,7 @@ fn the_rust_servers_of_the_workbench_views_answer_their_parameters_and_orders() 
 }
 
 #[test]
+#[ignore = "slow lane: builds and runs the Go workbench servers"]
 fn the_go_servers_of_the_workbench_views_answer_their_parameters_and_orders() {
     let Some(go) = go() else {
         eprintln!("no Go toolchain on this machine; the generated Go queries are unchecked here");
@@ -1978,6 +1985,7 @@ fn adversary_owed(synthesis: &ess_synth::Synthesis) -> Vec<String> {
 }
 
 #[test]
+#[ignore = "slow lane: builds the generated Rust queries for typed parameters and compares with the interpreted target"]
 fn adversary_rust_typed_parameters_and_orders_answer_as_the_interpreted_target() {
     let ir = compile_files(&adversary_files());
     let synthesis = synthesize_for(&ir, Target::Rust).expect("the probe synthesizes");
@@ -2015,6 +2023,7 @@ fn adversary_rust_typed_parameters_and_orders_answer_as_the_interpreted_target()
 }
 
 #[test]
+#[ignore = "slow lane: builds the generated Go queries for typed parameters and compares with the interpreted target"]
 fn adversary_go_typed_parameters_and_orders_answer_as_the_interpreted_target() {
     let Some(go) = go() else {
         eprintln!("no Go toolchain on this machine; the generated Go queries are unchecked here");
