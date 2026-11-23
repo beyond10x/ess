@@ -1871,9 +1871,9 @@ mod tests {
         let (next, taken) =
             update(&baseline(BASE), &better, None).expect("an improvement needs no decision");
         assert_eq!(taken.improved, 1);
-        assert_eq!(
-            next.scenarios["install/desktop-1280"]["glance_cost.p95"].value,
-            1.95
+        assert!(
+            (next.scenarios["install/desktop-1280"]["glance_cost.p95"].value - 1.95).abs()
+                < EPSILON
         );
     }
 
@@ -2476,7 +2476,7 @@ mod tests {
         )
         .expect("a decision takes the worse value");
         let entries = &next.scenarios["install/desktop-1280"];
-        assert_eq!(entries["screen_only.actions"].value, 2.0);
+        assert!((entries["screen_only.actions"].value - 2.0).abs() < EPSILON);
         assert_eq!(entries["glance_cost.p95"].decision.as_deref(), Some("D-7"));
         assert_eq!(entries["reading_load.max"].tolerance, "words");
     }
