@@ -120,6 +120,28 @@ export interface RunTiming {
   load?: { before: number[]; after: number[] };
 }
 
+// The 1-minute load at or under which the host judges a test budget (its working rule since
+// 2026-11-23: three times the 20 cores). A run over its budget at a higher load is reported, not
+// counted as a test-budget defect (UXF-025).
+export const JUDGED_AT_LOAD = 60;
+
+// The step's line about its budget: the wall time beside the 1-minute load before and after, and,
+// when the step ran out of its time, whether that load was above the load a budget is judged at.
+// `budget_s` 0: the run has no step budget (the round stages).
+export function budgetLine(t: { status: string; wall_s: number; budget_s: number; load: { before: number[]; after: number[] } }): string {
+  const before = t.load.before[0];
+  const after = t.load.after[0];
+  const loads = `1-minute load ${before} before, ${after} after`;
+  if (t.budget_s === 0) return `ux: wall ${t.wall_s} s; ${loads}`;
+  const above = Math.max(before, after) > JUDGED_AT_LOAD;
+  if (t.status === 'timedout') {
+    return above
+      ? `ux: OVER BUDGET: the step ran out of its ${t.budget_s} s (wall ${t.wall_s} s) at a ${loads}: above ${JUDGED_AT_LOAD}, so it is reported, not counted as a test-budget defect`
+      : `ux: OVER BUDGET: the step ran out of its ${t.budget_s} s (wall ${t.wall_s} s) at a ${loads}: at or under ${JUDGED_AT_LOAD}, so it is a test-budget defect (UXF-025)`;
+  }
+  return `ux: budget: wall ${t.wall_s} s of ${t.budget_s} s at a ${loads}${above ? `: above ${JUDGED_AT_LOAD}, not where a budget is judged` : ''}`;
+}
+
 type Result = 'pass' | 'fail' | 'not run';
 const hostLoad = () => loadavg().map((v) => r(v, 2));
 const serious = (v: AxeViolation) => v.impact === 'serious' || v.impact === 'critical';
@@ -358,6 +380,7 @@ export default class UxReporter implements Reporter {
   private timings: TestTiming[] = [];
   private started = Date.now();
   private workers = 0;
+  private budget = 0;
   private known: string[] = [];
   private unexpected: string[] = [];
   private unexpectedTests: string[] = [];
@@ -368,6 +391,7 @@ export default class UxReporter implements Reporter {
     this.started = Date.now();
     this.loadBefore = hostLoad();
     this.workers = config.workers;
+    this.budget = (config.globalTimeout ?? 0) / 1000;
     for (const test of suite.allTests()) {
       for (const a of test.annotations) if (a.type === EXPECT && a.description) this.expected.push(JSON.parse(a.description));
     }
@@ -433,6 +457,7 @@ export default class UxReporter implements Reporter {
     for (const [name, p] of Object.entries(projects)) console.log(`ux: project ${name}: ${p.tests} tests, wall ${p.wall_s} s`);
     console.log('ux: ten slowest tests');
     for (const t of slowest) console.log(`  ${t.seconds.toFixed(1).padStart(6)} s  [${t.project}] ${t.title} (${t.status})`);
+    console.log(budgetLine({ status: timing.status, wall_s: timing.wall_s, budget_s: this.budget, load: timing.load ?? { before: [], after: [] } }));
     console.log(`ux: wrote ${join(out, 'round.json')}`);
   }
 }

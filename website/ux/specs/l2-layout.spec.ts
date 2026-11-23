@@ -1,4 +1,4 @@
-// L2 layout contract: in the `gate` lane the template pages, in the `slow` lane every page of the
+// L2 layout contract: in the `gate` lane the gate pages (GATE_PAGES), in the `slow` lane every page of the
 // built sitemap (tagged into SLOW_L2_SLICES slices, one project each), at both gating viewports, in
 // both themes.
 // One test per page and viewport, one navigation each; the theme changes in place (the site follows
@@ -6,7 +6,7 @@
 // and attaches what it measured even when it is cut off, so the reporter counts the rest as
 // unmeasured.
 import { expect, test } from '@playwright/test';
-import { BASE, FINDINGS, GATING, LANE, ORIGIN, REPOSITORY, SITEMAP, SLOW_L2_SLICES, TEMPLATE_PAGES, THEMES, HYDRATED, alwaysVisible, builtPage, hasSearchControl, pageKind } from '../adapter';
+import { BASE, FINDINGS, GATE_PAGES, GATING, LANE, ORIGIN, REPOSITORY, SITEMAP, SLOW_L2_SLICES, TEMPLATE_PAGES, THEMES, HYDRATED, alwaysVisible, builtPage, hasSearchControl, pageKind } from '../adapter';
 import { holdKnownFailures } from '../core/findings';
 import { checkConfig, frame, gateFailures, showTheme } from '../core/contract';
 import { makeHermetic } from '../core/hermetic';
@@ -14,7 +14,7 @@ import { probeMotion, readLayoutShift } from '../core/probes';
 import { EXPECT, type Expected, type L2Record } from '../core/reporter';
 import { sitemapPaths } from '../core/sitemap';
 
-const pages = LANE === 'gate' ? TEMPLATE_PAGES.map((p) => p.path) : sitemapPaths(SITEMAP).filter((p) => p.startsWith(BASE.replace(/\/$/, '')));
+const pages = LANE === 'gate' ? GATE_PAGES.map((p) => p.path) : sitemapPaths(SITEMAP).filter((p) => p.startsWith(BASE.replace(/\/$/, '')));
 const total = pages.length * GATING.length * THEMES.length;
 
 test.describe.configure({ mode: 'parallel' });

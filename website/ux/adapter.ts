@@ -156,12 +156,19 @@ export const GATE_TASK_RUNS: GateTaskRun[] = [
   { task: 'first-conformance-run', viewport: 'desktop-1280', mode: 'pointer' },
 ];
 
-// The most browser tests the gate lane runs: one L2 test per template page and gating viewport,
-// one L3 test per gate task run (UXF-025, R-05). R-04's gate ran 24 at 4 workers: 17.9 s on a
-// quiet host, cut at 120 s at a 1-minute load of 115 to 140, where one test took up to 8.9 times
-// its quiet time (`L3 install-linux-x86_64 mobile-390 keyboard`, 5.4 s in gate-13, 49.4 s in
-// gate-9). Thirteen hold about half the test-seconds, so that step ends inside 120 s at that load.
-export const GATE_BROWSER_TESTS = 13;
+// The page kinds the gate lane gives up to the slow lane (decision `R-06-gate-kinds`,
+// rounds/R-06/decision.md; UXF-025). Their template pages, the landing page and the visualise
+// page, carry the four known-failing browser tests of findings owned by pinned packages
+// (UXF-005 to UXF-008): in the gate they can only fail as expected, and they held about a third of
+// its test-seconds (rounds/R-05/diagnosis-gate-time.md § 4). The slow lane runs every page of the
+// sitemap, these two with it.
+export const SLOW_LANE_KINDS: PageKind[] = ['landing', 'doc-without-sidebar'];
+export const GATE_PAGES = TEMPLATE_PAGES.filter((p) => !SLOW_LANE_KINDS.includes(pageKind(p.path)));
+
+// The most browser tests the gate lane runs: one L2 test per gate page and gating viewport, one L3
+// test per gate task run (UXF-025). R-05's gate ran 13; R-06 gives the two page kinds above to the
+// slow lane, which leaves 9.
+export const GATE_BROWSER_TESTS = 9;
 
 // Regions the screen-only user tells apart; the first match wins, so nested regions come first.
 // Primary: where a reader's eyes already are (the top bar and the article).

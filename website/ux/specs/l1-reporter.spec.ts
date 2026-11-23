@@ -5,7 +5,7 @@ import { expect, test } from '@playwright/test';
 import { FINDINGS, REPOSITORY } from '../adapter';
 import { holdKnownFailures } from '../core/findings';
 import { engineDigest } from '../core/engine';
-import { mergeRecords, summarize, type Expected, type L2Config, type L2Record, type L3Record, type Raw } from '../core/reporter';
+import { budgetLine, mergeRecords, summarize, type Expected, type L2Config, type L2Record, type L3Record, type Raw } from '../core/reporter';
 import { buildRound, committedBaseline, mergeRaws, notesNumbersMissing } from '../core/round';
 
 holdKnownFailures(test, FINDINGS, REPOSITORY);
@@ -212,6 +212,19 @@ test('L1 report: the hand-written notes carry no number round.json does not hold
   ].join('\n');
   expect(notesNumbersMissing(notes, round)).toEqual(['119', '1,900']);
   expect(notesNumbersMissing('No number here, only `R-04` and gate-5.', round)).toEqual([]);
+});
+
+// UXF-025, R-06: the host judges a test budget at a 1-minute load of 60 or less, so the step
+// prints the load beside its wall time, and a step cut at its budget says which side of 60 it ran.
+test('L1 reporter: the step prints its wall time beside the 1-minute load, and a step over its budget says whether the load was above 60 (UXF-025)', () => {
+  const load = (before: number, after: number) => ({ before: [before, 1, 1], after: [after, 1, 1] });
+  expect(budgetLine({ status: 'passed', wall_s: 19.5, budget_s: 120, load: load(60.06, 62.47) })).toBe(
+    'ux: budget: wall 19.5 s of 120 s at a 1-minute load 60.06 before, 62.47 after: above 60, not where a budget is judged',
+  );
+  expect(budgetLine({ status: 'passed', wall_s: 19.5, budget_s: 120, load: load(41, 55) })).toBe('ux: budget: wall 19.5 s of 120 s at a 1-minute load 41 before, 55 after');
+  expect(budgetLine({ status: 'timedout', wall_s: 116.5, budget_s: 120, load: load(133.47, 135.75) })).toMatch(/^ux: OVER BUDGET: .* 133\.47 before, 135\.75 after: above 60, so it is reported, not counted as a test-budget defect$/);
+  expect(budgetLine({ status: 'timedout', wall_s: 118, budget_s: 120, load: load(40, 58) })).toMatch(/: at or under 60, so it is a test-budget defect \(UXF-025\)$/);
+  expect(budgetLine({ status: 'passed', wall_s: 3, budget_s: 0, load: load(10, 11) })).toBe('ux: wall 3 s; 1-minute load 10 before, 11 after');
 });
 
 // T23 of the R-02 report review: the report's baseline column was read from whatever baseline.json

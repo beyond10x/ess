@@ -2,7 +2,7 @@
 import { expect, test } from '@playwright/test';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { BASE, FINDINGS, GATE_BROWSER_TESTS, GATE_PAGE_ELEMENTS, GATE_TASK_RUNS, GATING, REPOSITORY, ROOT, SITEMAP, TEMPLATE_PAGES, WORKERS, alwaysVisible, builtPage, hasSearchControl, pageKind, scenarios } from '../adapter';
+import { BASE, FINDINGS, GATE_BROWSER_TESTS, GATE_PAGES, GATE_PAGE_ELEMENTS, GATE_TASK_RUNS, GATING, REPOSITORY, ROOT, SITEMAP, SLOW_LANE_KINDS, TEMPLATE_PAGES, WORKERS, alwaysVisible, builtPage, hasSearchControl, pageKind, scenarios } from '../adapter';
 import { holdKnownFailures } from '../core/findings';
 import { gateProjects, slowProjects, stageGrep } from '../playwright.config';
 import { checkAlwaysVisible } from '../core/contract';
@@ -98,9 +98,10 @@ test('L1 the gate lane holds no heavy page and no nested Playwright run (UXF-025
   expect.soft(nested, 'gate-lane spec files that start a nested Playwright run').toEqual([]);
 });
 
-// UXF-025, R-05: R-04's gate ran 24 browser tests and was cut at 120 s at a load of 115 to 140.
+// UXF-025, R-05: R-04's gate ran 24 browser tests and was cut at 120 s at a load of 115 to 140;
+// R-06: 13, of which four can only fail as expected (decision `R-06-gate-kinds`).
 test('L1 the gate lane runs at most GATE_BROWSER_TESTS browser tests, and every one of its task runs is a run of an anchor card (UXF-025)', () => {
-  const l2 = TEMPLATE_PAGES.length * GATING.length;
+  const l2 = GATE_PAGES.length * GATING.length;
   expect(l2 + GATE_TASK_RUNS.length, `${l2} L2 tests and ${GATE_TASK_RUNS.length} L3 tests in the gate lane`).toBeLessThanOrEqual(GATE_BROWSER_TESTS);
   const anchors = scenarios().filter((s) => s.card === 'anchor').map((s) => s.name);
   expect(GATE_TASK_RUNS.filter((r) => !anchors.includes(r.task) || !GATING.some((v) => v.name === r.viewport))).toEqual([]);
@@ -111,13 +112,25 @@ test('L1 the gate lane runs at most GATE_BROWSER_TESTS browser tests, and every 
   expect([...new Set(GATE_TASK_RUNS.map((r) => r.task))].sort()).toEqual([...anchors].sort());
 });
 
-test('L1 the template pages of the gate cover every page template and every always-visible element of the sitemap', async ({ page }) => {
+// Decision `R-06-gate-kinds` (rounds/R-06/decision.md): the gate pages cover every page kind but
+// the two the gate gives up, and every always-visible element of the sitemap; the decision names
+// each kind given up and the slow-lane tests that keep it, and those tests are tests of the slow
+// lane (pages of the sitemap, which the slow lane runs whole).
+test('L1 the gate pages cover every page kind but those a recorded decision gives to the slow lane, and every always-visible element of the sitemap', async ({ page }) => {
   await page.setContent('<body></body>');
   const sitemap = sitemapPaths(SITEMAP).filter((p) => p.startsWith(BASE.replace(/\/$/, '')));
   const templates = TEMPLATE_PAGES.map((t) => t.path);
+  const gate = GATE_PAGES.map((t) => t.path);
   const kinds = (paths: string[]) => [...new Set(paths.map(pageKind))].sort();
   const elements = (paths: string[]) => [...new Set(paths.flatMap((p) => GATING.flatMap((v) => alwaysVisible(page, v, pageKind(p)).map((w) => `${v.name} ${w.name}`))))].sort();
   expect(templates.filter((p) => !sitemap.includes(p)), 'every template page is a page of the site').toEqual([]);
   expect(kinds(templates)).toEqual(kinds(sitemap));
-  expect(elements(templates)).toEqual(elements(sitemap));
+  expect([...kinds(gate), ...SLOW_LANE_KINDS].sort(), 'the gate pages and the kinds given to the slow lane cover every kind').toEqual(kinds(sitemap));
+  expect(elements(gate)).toEqual(elements(sitemap));
+  const decision = readFileSync(join(ROOT, 'rounds', 'R-06', 'decision.md'), 'utf8');
+  const section = decision.split(/^## /m).find((s) => s.includes('`R-06-gate-kinds`')) ?? '';
+  expect(section, 'decision R-06-gate-kinds is recorded').not.toBe('');
+  const slowTests = TEMPLATE_PAGES.filter((t) => SLOW_LANE_KINDS.includes(pageKind(t.path))).flatMap((t) => GATING.map((v) => `L2 ${t.path} ${v.name}`));
+  for (const kind of SLOW_LANE_KINDS) expect(section, `the decision names the kind ${kind}`).toContain(`\`${kind}\``);
+  for (const title of slowTests) expect(section, `the decision names the slow-lane test that keeps it`).toContain(`\`${title}\``);
 });

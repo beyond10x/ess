@@ -1,0 +1,413 @@
+{
+  "about": "The probe of ../R-05/diagnosis-gate-time.md § 4, run in R-06 on the engine of the R-06 triage commit: three interleaved pairs; A the gate lane, B the gate lane without the four known-failing browser tests (--grep-invert \"visualise|L2 /ess/ \"). Each run is the reporter's own timing (raw.json); load is the 1-minute load before and after the run itself, not the queue. Pressure is /proc/pressure sampled right after each run.",
+  "pairs": [
+    {
+      "pair": 1,
+      "a": {
+        "run": "p-A1",
+        "engine": {
+          "digest": "8d03a2813ab593f9",
+          "commit": "f9c03e8394c9",
+          "dirty": false
+        },
+        "status": "passed",
+        "wall_s": 95.5,
+        "workers": 4,
+        "load": {
+          "before": [
+            129.81,
+            124,
+            106.95
+          ],
+          "after": [
+            112.13,
+            120.12,
+            107.26
+          ]
+        },
+        "tests": 62,
+        "test_s": 272.7,
+        "projects": {
+          "l1": {
+            "tests": 48,
+            "wall_s": 17.9,
+            "sum_s": 37
+          },
+          "l2": {
+            "tests": 11,
+            "wall_s": 73.8,
+            "sum_s": 193.1
+          },
+          "l3": {
+            "tests": 3,
+            "wall_s": 17.9,
+            "sum_s": 42.6
+          }
+        },
+        "known_failures": [
+          "[l2] L2 /ess/ desktop-1280",
+          "[l2] L2 /ess/ mobile-390",
+          "[l2] L2 /ess/docs/visualise desktop-1280",
+          "[l2] L2 /ess/docs/visualise mobile-390",
+          "[l2] L2 site search: every template page builds a search control (UXF-001)"
+        ],
+        "unexpected": [],
+        "pressure_after": {
+          "cpu_some": {
+            "avg10": 79.58,
+            "avg60": 80.74
+          },
+          "io_some": {
+            "avg10": 13.66,
+            "avg60": 14.54
+          },
+          "io_full": {
+            "avg10": 0,
+            "avg60": 0
+          },
+          "memory_some": {
+            "avg10": 0.84,
+            "avg60": 1.74
+          }
+        }
+      },
+      "b": {
+        "run": "p-B1",
+        "engine": {
+          "digest": "8d03a2813ab593f9",
+          "commit": "f9c03e8394c9",
+          "dirty": false
+        },
+        "status": "passed",
+        "wall_s": 77.3,
+        "workers": 4,
+        "load": {
+          "before": [
+            98.26,
+            108.86,
+            108.05
+          ],
+          "after": [
+            106.08,
+            108.55,
+            107.98
+          ]
+        },
+        "tests": 58,
+        "test_s": 204.5,
+        "projects": {
+          "l1": {
+            "tests": 48,
+            "wall_s": 32.2,
+            "sum_s": 67.3
+          },
+          "l2": {
+            "tests": 7,
+            "wall_s": 46.1,
+            "sum_s": 105
+          },
+          "l3": {
+            "tests": 3,
+            "wall_s": 14.2,
+            "sum_s": 32.2
+          }
+        },
+        "known_failures": [
+          "[l2] L2 site search: every template page builds a search control (UXF-001)"
+        ],
+        "unexpected": [],
+        "pressure_after": {
+          "cpu_some": {
+            "avg10": 81.32,
+            "avg60": 78.99
+          },
+          "io_some": {
+            "avg10": 12.63,
+            "avg60": 15.66
+          },
+          "io_full": {
+            "avg10": 0,
+            "avg60": 0
+          },
+          "memory_some": {
+            "avg10": 1.05,
+            "avg60": 1.35
+          }
+        }
+      },
+      "b_over_a": 0.81
+    },
+    {
+      "pair": 2,
+      "a": {
+        "run": "p-A2",
+        "engine": {
+          "digest": "8d03a2813ab593f9",
+          "commit": "f9c03e8394c9",
+          "dirty": false
+        },
+        "status": "passed",
+        "wall_s": 45.9,
+        "workers": 4,
+        "load": {
+          "before": [
+            81.5,
+            84.41,
+            95.59
+          ],
+          "after": [
+            83.35,
+            84.7,
+            95.16
+          ]
+        },
+        "tests": 62,
+        "test_s": 136.2,
+        "projects": {
+          "l1": {
+            "tests": 48,
+            "wall_s": 9.9,
+            "sum_s": 22.5
+          },
+          "l2": {
+            "tests": 11,
+            "wall_s": 33.9,
+            "sum_s": 90.6
+          },
+          "l3": {
+            "tests": 3,
+            "wall_s": 10.1,
+            "sum_s": 23.1
+          }
+        },
+        "known_failures": [
+          "[l2] L2 /ess/ desktop-1280",
+          "[l2] L2 /ess/ mobile-390",
+          "[l2] L2 /ess/docs/visualise desktop-1280",
+          "[l2] L2 /ess/docs/visualise mobile-390",
+          "[l2] L2 site search: every template page builds a search control (UXF-001)"
+        ],
+        "unexpected": [],
+        "pressure_after": {
+          "cpu_some": {
+            "avg10": 63.91,
+            "avg60": 70.9
+          },
+          "io_some": {
+            "avg10": 45.94,
+            "avg60": 30.96
+          },
+          "io_full": {
+            "avg10": 0.21,
+            "avg60": 0.08
+          },
+          "memory_some": {
+            "avg10": 5.92,
+            "avg60": 4.29
+          }
+        }
+      },
+      "b": {
+        "run": "p-B2",
+        "engine": {
+          "digest": "8d03a2813ab593f9",
+          "commit": "f9c03e8394c9",
+          "dirty": false
+        },
+        "status": "passed",
+        "wall_s": 56.3,
+        "workers": 4,
+        "load": {
+          "before": [
+            108.35,
+            111.53,
+            104.26
+          ],
+          "after": [
+            104.79,
+            110.06,
+            104.22
+          ]
+        },
+        "tests": 58,
+        "test_s": 160,
+        "projects": {
+          "l1": {
+            "tests": 48,
+            "wall_s": 18.4,
+            "sum_s": 37.3
+          },
+          "l2": {
+            "tests": 7,
+            "wall_s": 40.2,
+            "sum_s": 85.3
+          },
+          "l3": {
+            "tests": 3,
+            "wall_s": 14.6,
+            "sum_s": 37.4
+          }
+        },
+        "known_failures": [
+          "[l2] L2 site search: every template page builds a search control (UXF-001)"
+        ],
+        "unexpected": [],
+        "pressure_after": {
+          "cpu_some": {
+            "avg10": 75.99,
+            "avg60": 75.11
+          },
+          "io_some": {
+            "avg10": 26.08,
+            "avg60": 27.64
+          },
+          "io_full": {
+            "avg10": 0,
+            "avg60": 0.3
+          },
+          "memory_some": {
+            "avg10": 1.44,
+            "avg60": 1.04
+          }
+        }
+      },
+      "b_over_a": 1.23
+    },
+    {
+      "pair": 3,
+      "a": {
+        "run": "p-A3",
+        "engine": {
+          "digest": "8d03a2813ab593f9",
+          "commit": "f9c03e8394c9",
+          "dirty": false
+        },
+        "status": "passed",
+        "wall_s": 45.4,
+        "workers": 4,
+        "load": {
+          "before": [
+            66.88,
+            69.95,
+            74.74
+          ],
+          "after": [
+            78.25,
+            72.4,
+            75.34
+          ]
+        },
+        "tests": 62,
+        "test_s": 145.5,
+        "projects": {
+          "l1": {
+            "tests": 48,
+            "wall_s": 14.2,
+            "sum_s": 34.9
+          },
+          "l2": {
+            "tests": 11,
+            "wall_s": 30.7,
+            "sum_s": 102.6
+          },
+          "l3": {
+            "tests": 3,
+            "wall_s": 3.2,
+            "sum_s": 8
+          }
+        },
+        "known_failures": [
+          "[l2] L2 /ess/ desktop-1280",
+          "[l2] L2 /ess/ mobile-390",
+          "[l2] L2 /ess/docs/visualise desktop-1280",
+          "[l2] L2 /ess/docs/visualise mobile-390",
+          "[l2] L2 site search: every template page builds a search control (UXF-001)"
+        ],
+        "unexpected": [],
+        "pressure_after": {
+          "cpu_some": {
+            "avg10": 76.35,
+            "avg60": 58.75
+          },
+          "io_some": {
+            "avg10": 25.58,
+            "avg60": 34.45
+          },
+          "io_full": {
+            "avg10": 0.19,
+            "avg60": 2.85
+          },
+          "memory_some": {
+            "avg10": 1.56,
+            "avg60": 2.97
+          }
+        }
+      },
+      "b": {
+        "run": "p-B3",
+        "engine": {
+          "digest": "8d03a2813ab593f9",
+          "commit": "f9c03e8394c9",
+          "dirty": false
+        },
+        "status": "passed",
+        "wall_s": 14.1,
+        "workers": 4,
+        "load": {
+          "before": [
+            61.39,
+            70.05,
+            72.34
+          ],
+          "after": [
+            63.1,
+            70.09,
+            72.33
+          ]
+        },
+        "tests": 58,
+        "test_s": 39.2,
+        "projects": {
+          "l1": {
+            "tests": 48,
+            "wall_s": 4.7,
+            "sum_s": 13.2
+          },
+          "l2": {
+            "tests": 7,
+            "wall_s": 8.9,
+            "sum_s": 16.8
+          },
+          "l3": {
+            "tests": 3,
+            "wall_s": 3.7,
+            "sum_s": 9.2
+          }
+        },
+        "known_failures": [
+          "[l2] L2 site search: every template page builds a search control (UXF-001)"
+        ],
+        "unexpected": [],
+        "pressure_after": {
+          "cpu_some": {
+            "avg10": 29.27,
+            "avg60": 41.19
+          },
+          "io_some": {
+            "avg10": 30.3,
+            "avg60": 23.52
+          },
+          "io_full": {
+            "avg10": 6.67,
+            "avg60": 3.94
+          },
+          "memory_some": {
+            "avg10": 0.25,
+            "avg60": 0.87
+          }
+        }
+      },
+      "b_over_a": 0.31
+    }
+  ]
+}
