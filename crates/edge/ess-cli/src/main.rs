@@ -3855,9 +3855,13 @@ fn conform(command: ConformCommand) -> Result<ExitCode> {
             out,
         } => coverage::select(suite.as_deref(), suite_input.as_deref(), &ids, &out),
         ConformCommand::Diff { from, to, format } => conform_diff(&from, &to, format),
-        command @ ConformCommand::Run { jobs, .. } => {
-            with_job_count(jobs, || conform_run(command))?
-        }
+        command @ ConformCommand::Run {
+            suite: None,
+            suite_input: None,
+            jobs,
+            ..
+        } => with_job_count(jobs, || conform_run(command))?,
+        command @ ConformCommand::Run { .. } => conform_run(command),
         ConformCommand::Serve { target } => Ok(conform_serve(target)),
         command @ ConformCommand::Report { .. } => Ok(conform_report_mode(command)),
         command @ ConformCommand::Mutate { .. } => conform_mutate_mode(command),

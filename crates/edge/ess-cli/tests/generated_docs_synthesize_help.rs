@@ -252,3 +252,43 @@ fn run_synthesizes_with_jobs() {
     assert_eq!(one.code, four.code, "{}", four.stderr);
     assert_eq!(one.stdout, four.stdout);
 }
+
+fn run_args(suite: Option<&str>) -> Vec<&str> {
+    let mut args = vec!["run", "--path", FIXTURE, "--target", "interpreted"];
+    if let Some(file) = suite {
+        args.extend(["--suite", file]);
+    }
+    args.extend(["--format", "json"]);
+    args
+}
+
+#[test]
+fn run_with_a_suite_does_not_read_the_job_variable() {
+    let dir = out_dir("run-suite");
+    let (made, bytes) = synthesize_to(&dir, "suite.json", &[], None);
+    assert_eq!(made.code, Some(0), "{}", made.stderr);
+    assert!(bytes.is_some(), "no suite written");
+    let file = dir.join("suite.json");
+    let file = file.to_str().expect("a UTF-8 path");
+    let without = ess(&run_args(Some(file)), None);
+    assert_ne!(without.code, Some(2), "{}", without.stderr);
+    for value in ["abc", "0", "257"] {
+        let with = ess(&run_args(Some(file)), Some(value));
+        assert_eq!(with.code, without.code, "{value}: {}", with.stderr);
+        assert_eq!(with.stdout, without.stdout, "{value}");
+        assert!(!with.stderr.contains("ESS_SYNTH_JOBS"), "{}", with.stderr);
+    }
+}
+
+#[test]
+fn run_that_synthesizes_refuses_an_invalid_job_variable() {
+    let refused = ess(&run_args(None), Some("abc"));
+    assert_eq!(refused.code, Some(1), "{}", refused.stderr);
+    assert!(
+        refused
+            .stderr
+            .contains("ESS_SYNTH_JOBS is `abc`; it takes a whole number from 1 to 256"),
+        "{}",
+        refused.stderr
+    );
+}
