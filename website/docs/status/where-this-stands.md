@@ -10,8 +10,8 @@ source: Capabilities generated from website/data/status.json by cargo xtask site
 
 ## Latest release
 
-The latest published release observed on 22 November 2026 is
-[0.97.3](https://github.com/beyond10x/ess/releases/tag/0.97.3). Its release record lists archives
+The latest published release observed on 23 November 2026 is
+[0.97.4](https://github.com/beyond10x/ess/releases/tag/0.97.4). Its release record lists archives
 for Linux and macOS on x86-64 and ARM64, plus SHA256SUMS. This is a dated observation of the asset list.
 It does not claim that the archives were downloaded, their checksums verified, or the binary
 installed or run.
@@ -20,11 +20,11 @@ The last five releases:
 
 | Release | What it added |
 |---|---|
+| 0.97.4 | Synthesis repeats less work, and the largest reported specification synthesizes in 416 s of CPU time instead of 717 s |
 | 0.97.3 | Synthesis and validation repeat less work, and a downstream specification synthesizes in 24.6 s of CPU time instead of 470.7 s |
 | 0.97.1 | A suite synthesized for a command whose guard compares an input with the caller passes the interpreted target |
 | 0.97.0 | Test a program written in any language against its ESS specification |
 | 0.96.0 | Bind two errors of one wire name on one status without `alike:` when one always writes a field the other never writes |
-| 0.95.0 | Group record fields, collapse sections and draw sections in one shared frame on an `ess-ui/1` page |
 
 [Format version history](../reference/spec-versions.md) says what every format version changed and
 which release introduced it, and the
