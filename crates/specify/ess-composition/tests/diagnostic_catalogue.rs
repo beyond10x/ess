@@ -61,3 +61,25 @@ fn the_contract_role_categories_are_catalogued_under_their_wire_names() {
         );
     }
 }
+
+#[test]
+fn the_type_conformance_drift_entry_names_the_writer_rule() {
+    let entry = CompositionCode::CATALOGUE
+        .iter()
+        .find(|entry| entry.key == CompositionCode::TypeConformanceDrift)
+        .expect("`type_conformance_drift` is catalogued");
+    for (field, text) in [("meaning", entry.meaning), ("repair", entry.repair)] {
+        assert!(
+            text.contains("writer: true"),
+            "the {field} names `writer: true`: {text}"
+        );
+        assert!(
+            text.contains("ess-composition/6"),
+            "the {field} names `ess-composition/6`: {text}"
+        );
+        assert!(
+            text.contains("ess-composition/5"),
+            "the {field} still names `ess-composition/5`: {text}"
+        );
+    }
+}

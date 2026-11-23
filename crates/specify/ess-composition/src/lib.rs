@@ -1152,7 +1152,9 @@ pub enum CompositionCode {
     /// A local type asserted to conform to an imported type differs from it in a field's name,
     /// presence or type (from `ess-composition/2`), or a payload end (from `ess-composition/5`)
     /// differs from the other end in kind or field, or under `/5` in a value constraint or variant
-    /// attribute.
+    /// attribute. A `writer: true` entry (from `ess-composition/6`) asks what the sender may write:
+    /// a difference is drift where the local type can send a value the imported type's reader
+    /// refuses.
     TypeConformanceDrift,
     /// A role's `service` or `plays` names a key the composition does not import (from
     /// `ess-composition/4`).
@@ -1248,9 +1250,16 @@ impl CompositionCode {
             meaning: "A local type or payload said to conform to an imported type or payload \
                       differs from it in kind, or in a field's name, presence or type; from \
                       `ess-composition/5` also in a value constraint (alphabet, prefix, \
-                      invariant) or an enum variant attribute.",
+                      invariant) or an enum variant attribute. Under `writer: true` \
+                      (`ess-composition/6`) it is a difference the local type's sender cannot \
+                      make safely: a value the imported type's reader refuses, such as a \
+                      presence that writes an absent spelling the imported field does not read, \
+                      or a local optional value where the imported one is required.",
             repair: "Change the local type or payload to match the imported one field for field, \
-                     and constraint for constraint under `ess-composition/5`.",
+                     and constraint for constraint under `ess-composition/5`. For a type that \
+                     only sends the imported one, assert `writer: true` under \
+                     `ess-composition/6` and narrow only what its table admits; change the \
+                     sender where it can send a value the imported reader refuses.",
         },
         ess_compiler::diagnostic::CatalogueEntry {
             key: Self::UnknownRoleService,
