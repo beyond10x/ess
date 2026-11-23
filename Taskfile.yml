@@ -447,19 +447,20 @@ tasks:
 
   test-xtask:
     desc: Run the ess-xtask tests under the consumer-check native profile.
+    vars:
+      XTASK_ENV: >-
+        env -u CARGO_ENCODED_RUSTFLAGS RUSTUP_TOOLCHAIN=1.98.1
+        RUSTFLAGS='-C link-arg=-fuse-ld=lld'
+        CARGO_INCREMENTAL=0
+        CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0
+        CARGO_PROFILE_DEV_INCREMENTAL=false CARGO_PROFILE_TEST_INCREMENTAL=false
     cmds:
       # The metadata authority regression executes the compiled provider. Its test
       # build needs the consumer-check profile. Keep that native profile scoped to
       # xtask: workspace tests also build Wasm, whose linker rejects native flags.
-      - >-
-        env -u CARGO_ENCODED_RUSTFLAGS RUSTUP_TOOLCHAIN=1.98.1
-        RUSTFLAGS='-C link-arg=-fuse-ld=lld'
-        RUSTC_WRAPPER= RUSTC_WORKSPACE_WRAPPER=
-        CARGO_BUILD_RUSTC_WRAPPER= CARGO_BUILD_RUSTC_WORKSPACE_WRAPPER=
-        CARGO_BUILD_JOBS=2 CARGO_INCREMENTAL=0
-        CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0
-        CARGO_PROFILE_DEV_INCREMENTAL=false CARGO_PROFILE_TEST_INCREMENTAL=false
-        cargo test --package ess-xtask --locked
+      - '{{.XTASK_ENV}} cargo test --package ess-xtask --locked --no-run'
+      - defer: { task: test-slowest }
+      - '{{.XTASK_ENV}} cargo nextest run --package ess-xtask --locked --profile ci --no-fail-fast'
 
   doc-check:
     env:

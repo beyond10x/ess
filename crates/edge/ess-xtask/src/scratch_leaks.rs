@@ -36,6 +36,7 @@ const INTEGRATION_SUITES: &[&str] = &[
     "host_paths_adversary",
     "host_paths_adversary_2",
     "host_paths_adversary_3",
+    "slow_lane",
 ];
 
 /// Where this check reads TMPDIR scratch being made, so a new maker cannot stay unlisted.
