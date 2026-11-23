@@ -49,12 +49,10 @@ const MARKED: &[(&str, &[&str])] = &[
     (
         "crates/verify/ess-conformance/tests/adversary_u22_pass1.rs",
         &[
-            "a_reachable_refusal_past_ten_independent_choices_and_a_refuted_core_has_its_scenario",
             "a_refusal_the_step_bound_cut_short_names_the_bound",
             "a_seeded_chain_synthesizes_the_same_suite_twice",
             "every_reachable_branch_of_seeded_plain_sixteen_refusal_chains_has_its_scenario",
             "every_reachable_branch_of_seeded_sixteen_refusal_chains_over_the_adopter_shape_has_its_scenario",
-            "the_first_seeds_of_the_plain_sixteen_refusal_chains_have_their_scenario_in_the_step",
             "the_first_seeds_of_the_seeded_sixteen_refusal_chains_have_their_scenario_in_the_step",
         ],
     ),

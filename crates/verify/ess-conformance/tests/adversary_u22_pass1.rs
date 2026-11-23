@@ -326,7 +326,6 @@ fn deep_backtrack_chain(decoys: usize) -> Chain {
 /// (1,024) steps is refused. The search before this change had no step bound; its first complete
 /// assignment on this chain is the witness, so it was synthesized.
 #[test]
-#[ignore = "slow lane: synthesizes a chain past ten independent choices"]
 fn a_reachable_refusal_past_ten_independent_choices_and_a_refuted_core_has_its_scenario() {
     let chain = deep_backtrack_chain(10);
     let ir = model(&chain);
@@ -560,12 +559,12 @@ fn every_reachable_branch_of_seeded_sixteen_refusal_chains_over_the_adopter_shap
     sweep(0..24, seeded_chain_of_sixteen, false);
 }
 
-/// Seeds swept of the seeded chains by the short twin: 40 s per seed, load 72.
+/// Seeds swept of the seeded chains by the short twin: 7.4 s per seed, load 31.
 const STEP_SEEDS_SEEDED: u64 = 2;
 
 /// The first seeds of the seeded sixteen-refusal sweep, the same assertions as its full range.
 #[test]
-#[ignore = "slow lane: sweeps the first seeds of the seeded chains, 40 s per seed on a busy host"]
+#[ignore = "slow lane: sweeps the first seeds of the seeded chains"]
 fn the_first_seeds_of_the_seeded_sixteen_refusal_chains_have_their_scenario_in_the_step() {
     sweep(0..STEP_SEEDS_SEEDED, seeded_chain_of_sixteen, false);
 }
@@ -734,12 +733,11 @@ fn every_reachable_branch_of_seeded_plain_sixteen_refusal_chains_has_its_scenari
     sweep(100..148, plain_chain, true);
 }
 
-/// Seeds swept of the plain chains by the short twin: 24 s per seed, load 72.
+/// Seeds swept of the plain chains by the short twin: 5.6 s per seed, load 31.
 const STEP_SEEDS_PLAIN: u64 = 2;
 
 /// The first seeds of the plain sixteen-refusal sweep, the same assertions as its full range.
 #[test]
-#[ignore = "slow lane: sweeps the first seeds of the plain chains, 24 s per seed on a busy host"]
 fn the_first_seeds_of_the_plain_sixteen_refusal_chains_have_their_scenario_in_the_step() {
     sweep(100..100 + STEP_SEEDS_PLAIN, plain_chain, true);
 }
