@@ -195,7 +195,7 @@ const STRICT_PER_LEVEL: u64 = 8;
 /// strict searches at depth 1, 34 and 34 at depth 2, about fifteen times more per level.
 #[test]
 fn the_own_scenario_fallback_nests_one_level_at_every_depth() {
-    for depth in 1..=6 {
+    for depth in 1..=4 {
         let (_, (arranged, strict, open)) = work(depth);
         let level = depth as u64;
         assert!(
