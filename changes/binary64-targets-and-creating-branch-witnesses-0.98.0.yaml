@@ -1,0 +1,17 @@
+schema: b10x-change/v1
+id: ess/binary64-targets-and-creating-branch-witnesses-0.98.0
+repository: ess
+publishedAt: 2026-11-23T00:00:00Z
+title: The Rust, Go and web targets carry a finite Binary64, and synthesis witnesses more creating branches
+summary: >-
+  `ess generate synthesize --target rust`, `--target go` and `--target web` carry a finite
+  `Binary64`. Synthesis writes more scenarios for creating branches and row-set refusals.
+  Validation refuses an `exists: false` branch declared below a refusal it answers first, and an
+  ordering comparison over an enum.
+kind: capability
+impact: notable
+source:
+  url: https://github.com/beyond10x/ess/releases/tag/0.98.0
+  version: 0.98.0
+journeys: [specify, operate-services]
+affectedSurfaces: [ess/docs]

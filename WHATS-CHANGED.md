@@ -6,6 +6,7 @@ Generated from `changes/*.yaml` by `cargo xtask whats-changed`. Edit a fragment,
 
 | Release | Change | Kind | Impact |
 |---|---|---|---|
+| [0.98.0](#the-rust-go-and-web-targets-carry-a-finite-binary64-and-synthesis-witnesses-more-creating-branches) | The Rust, Go and web targets carry a finite Binary64, and synthesis witnesses more creating branches | capability | notable |
 | [0.97.0](#a-conformance-run-holds-a-program-in-any-language-to-its-suite) | A conformance run holds a program in any language to its suite | capability | significant |
 | [0.96.0](#ess-ui-check-resolves-every-binding-path-and-two-more-refusals-are-told-apart) | ess ui check resolves every binding path, and two more refusals are told apart | capability | notable |
 | [0.95.0](#records-group-their-fields-a-page-header-takes-a-badge-and-generated-decoders-check-a-structs-distinct-keys) | Records group their fields, a page header takes a badge, and generated decoders check a struct's distinct keys | capability | notable |
@@ -108,6 +109,14 @@ Generated from `changes/*.yaml` by `cargo xtask whats-changed`. Edit a fragment,
 | [0.16.0](#an-authored-scenario-can-claim-a-length-of-time-and-a-target-has-to-answer-for-it) | An authored scenario can claim a length of time, and a target has to answer for it | capability | significant |
 | [0.14.0](#a-component-can-declare-a-command-line-surface-and-ess-synthesizes-its-parser) | A component can declare a command-line surface, and ESS synthesizes its parser | capability | significant |
 | [0.1.0](#ess-becomes-a-standalone-executable-specification-toolchain) | ESS becomes a standalone executable specification toolchain | migration | significant |
+
+## 0.98.0 — 2026-11-23
+
+### The Rust, Go and web targets carry a finite Binary64, and synthesis witnesses more creating branches
+
+capability · notable impact · [release notes](https://github.com/beyond10x/ess/releases/tag/0.98.0)
+
+`ess generate synthesize --target rust`, `--target go` and `--target web` carry a finite `Binary64`. Synthesis writes more scenarios for creating branches and row-set refusals. Validation refuses an `exists: false` branch declared below a refusal it answers first, and an ordering comparison over an enum.
 
 ## 0.97.0 — 2026-11-21
 
