@@ -1,0 +1,14 @@
+{
+  "at": "2026-11-23T01:51:35Z",
+  "actor": "human:timo",
+  "artifact": "story:the-web-target-carries-a-finite-binary64",
+  "kind": "story",
+  "revision": 7,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "review-result:wave-2026-11-22-whole-diff-security",
+    "review": "review-result:wave-2026-11-22-whole-diff-security",
+    "outcome": "fixed"
+  }
+}
