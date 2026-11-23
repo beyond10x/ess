@@ -257,6 +257,8 @@ const FORMAT_RELEASES: &[(&str, u32, Option<&str>)] = &[
     // A conformance end names an event, error or command payload, and value constraints and
     // variant attributes are compared.
     ("ess-composition", 5, Some("0.76.0")),
+    // A conformance entry may assert a sender's copy (`writer: true`).
+    ("ess-composition", 6, None),
     ("ess-scenario", 1, Some("0.16.0")),
     ("ess-scenario", 2, Some("0.23.0")),
     ("ess-scenario", 3, Some("0.35.0")),
