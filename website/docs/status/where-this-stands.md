@@ -10,21 +10,21 @@ source: Capabilities generated from website/data/status.json by cargo xtask site
 
 ## Latest release
 
-Latest published release observed on 1 October 2026:
-[0.51.0](https://github.com/beyond10x/ess/releases/tag/0.51.0). Its release record lists archives
-for Linux and macOS on x86-64 and ARM64, plus SHA256SUMS. This is a dated observation of the asset
-list: it does not claim that the archives were downloaded, their checksums verified, or the binary
+The latest published release observed on 22 November 2026 is
+[0.97.3](https://github.com/beyond10x/ess/releases/tag/0.97.3). Its release record lists archives
+for Linux and macOS on x86-64 and ARM64, plus SHA256SUMS. This is a dated observation of the asset list.
+It does not claim that the archives were downloaded, their checksums verified, or the binary
 installed or run.
 
 The last five releases:
 
 | Release | What it added |
 |---|---|
-| 0.51.0 | Generated Rust servers select an `existing_instance:` refusal or a creating `unknown_instance:` branch by looking the input identity up in storage before dispatch; generated output committed with its `.ess-output` regenerates in another checkout when its owned files still have their recorded bytes |
-| 0.50.0 | Synthesis witnesses an aggregate view whose creating command has a `when_related` guard, instead of refusing it with ESS-SYNTH-017 |
-| 0.49.0 | Generated Rust and Go servers enforce actor grants: they take the authenticated caller and answer `403 not granted` before a command runs, and served suites add `grant/denied` and `grant/admitted` scenarios; source format `ess/20` (a related row's lifecycle `state` in `when_related`); synthesis witnesses copies from a related row, `when_related` over an `owns` via field and overlapping `when:` branches; `verify diff` leaves no residual for a one-sided declaration |
-| 0.48.0 | `ess ui test` runs `ess-ui-test/1` tests headless and emits a Playwright spec from the same file; `verify conform report` turns an outside runner's per-scenario results into a report/2 that says ESS executed nothing; a served `501` carries `committed`; `ess ui check --model <dir>` reads `ess-inputs.yaml`; a delegating `ess` names the release it runs on every command |
-| 0.47.0 | The generated Rust and Go servers answer with the events a command published, keep request headers and name and encode every system event, and bindings are delivered per binding; `ess-ui/1` UI documents load, check, render as a terminal application or a React project and document themselves (`ess ui`, `ess generate ui`); `verify diff` no longer reports an added or regrouped aggregate view as `unclassified-changed` |
+| 0.97.3 | Synthesis and validation repeat less work, and a downstream specification synthesizes in 24.6 s of CPU time instead of 470.7 s |
+| 0.97.1 | A suite synthesized for a command whose guard compares an input with the caller passes the interpreted target |
+| 0.97.0 | Test a program written in any language against its ESS specification |
+| 0.96.0 | Bind two errors of one wire name on one status without `alike:` when one always writes a field the other never writes |
+| 0.95.0 | Group record fields, collapse sections and draw sections in one shared frame on an `ess-ui/1` page |
 
 [Format version history](../reference/spec-versions.md) says what every format version changed and
 which release introduced it, and the
@@ -34,7 +34,7 @@ which release introduced it, and the
 
 [ess-status-record-begin]: #
 
-Generated from `website/data/status.json`, the file the landing page's status section reads; statuses as of 2026-10-04.
+Generated from `website/data/status.json`, the file the landing page's status section reads; statuses as of 2026-11-22.
 
 ### Specify
 
@@ -68,14 +68,14 @@ Generated from `website/data/status.json`, the file the landing page's status se
 ### Support boundaries
 
 These rows describe the source checkout. Dated conformance evidence remains scoped to its original
-release observation; publishing a newer source tag does not re-run that evidence.
-Output and CLI metadata checks establish kinds, versions and availability; the linked owners and
+release observation, and publishing a newer source tag does not re-run that evidence.
+Output and CLI metadata checks establish kinds, versions and availability. The linked owners and
 tests establish the bounded support and refusals. The offline `cargo xtask support --check` compares
 this complete maintained block. It does not verify remote release records.
 
 [ess-source-support-begin]: #
 
-The source checkout’s workspace version is `0.97.3` and includes separately documented unreleased changes.
+The source checkout’s workspace version is `0.97.4` and includes separately documented unreleased changes.
 
 | Capability | Current source | Limits and evidence |
 |---|---|---|
@@ -96,7 +96,7 @@ The source checkout’s workspace version is `0.97.3` and includes separately do
 | Conformance targets | `billing`, `oracle-fixture`, `interpreted`, `process` | Built-in reference implementations, except `process`, which starts the program given after `--` and speaks `ess-conformance-target/1` to it. A production adapter must establish its own execution boundary; the built-in targets do not prove independent deployment. |
 | Conformance formats | Defaults: `ess-conformance/34`, the default report refused before execution without explicit `--report-format 2`. Explicit count surfaces: `ess-conformance-report/2`, `ess-conformance-run/2`. CLI suite choices: `4`, `5` (default `4`); report choices: `1`, `2` (default `1`). | Actual report markers and CLI metadata; all-pass legacy execution can still mean inconclusive conformance. [count-report tests](https://github.com/beyond10x/ess/blob/main/crates/edge/ess-cli/tests/count_reports.rs). |
 | Coverage qualification | Current-source `ess-conformance/35` requires explicit report/2 before execution | Only a nonempty all-pass selection with complete inventory and no in-scope refusal can qualify. Suite/5, carrier and paired replay were introduced in 0.21.0. [coverage CLI tests](https://github.com/beyond10x/ess/blob/main/crates/edge/ess-cli/tests/coverage_cli.rs) and [conformance guide](../guides/verify/runners.md#opt-into-declared-coverage). |
-| Mutation audit | `verify conform mutate` against `billing`, `oracle-fixture`, `interpreted`; classes `from-drop`, `transition-to`, `guard-boundary`, `sets-retarget`, `guard-negate`, `guard-connective`, `error-swap`, `emit-drop`, `order-flip`, `sets-drop`, `precedence-swap`, `emit-swap`, `grant-drop`, `grant-add`; writes `ess-mutation-report/3`, or `/4` for a component, a known-failure declaration or an `emit-swap` site with no alternative | Mutates the specification, not the implementation, and runs no authored scenario: a survivor is a rule synthesis does not pin, answered by the model or a synthesis gap. [mutation audit tests](https://github.com/beyond10x/ess/blob/main/crates/verify/ess-conformance/tests/mutation_audit.rs) and [conformance guide](../guides/verify/mutation-audit.md#audit-the-suite-with-specification-mutants). |
+| Mutation audit | `verify conform mutate` against `billing`, `oracle-fixture`, `interpreted`; classes `from-drop`, `transition-to`, `guard-boundary`, `sets-retarget`, `guard-negate`, `guard-connective`, `error-swap`, `emit-drop`, `order-flip`, `sets-drop`, `precedence-swap`, `emit-swap`, `grant-drop`, `grant-add`; writes `ess-mutation-report/3`, or `/4` for a component, a known-failure declaration or an `emit-swap` site with no alternative | Mutates the specification, not the implementation. Authored scenarios run only with `--scenarios DIR --target interpreted`, where one that fails a mutant kills it. Without them a survivor is a rule synthesis does not pin, answered by the model or a synthesis gap. [mutation audit tests](https://github.com/beyond10x/ess/blob/main/crates/verify/ess-conformance/tests/mutation_audit.rs) and [conformance guide](../guides/verify/mutation-audit.md#audit-the-suite-with-specification-mutants). |
 | Browser conformance | Replay presentation with no execution report | A green replay is not independent execution evidence; digest comparison does not authenticate the publisher. [browser admission tests](https://github.com/beyond10x/ess/blob/main/crates/edge/ess-cli/tests/coverage_browser.rs). |
 | Runtime compilation | Checks supplied identities, component coverage, replica bounds and stateful storage | Does not establish live provisioning or all resource requirements. [runtime checks/tests](https://github.com/beyond10x/ess/blob/main/crates/generate/ess-deployment/src/runtime.rs). |
 | Explicit executors | `execute`, `publish`, `fetch`, `reconcile` invoke external clients; reconciliation requires `--authority` naming a protected registry entry and refuses without one, compares an admitted baseline desired deployment with the desired one, and attempts at most one admitted mutation per release | Caller-supplied state, authority and credentials remain material; a supplied baseline is admitted intent rather than proof of application, and a stopped invocation leaves the affected release unknown rather than absent or rolled back. [CLI executor owner](https://github.com/beyond10x/ess/blob/main/crates/edge/ess-cli/src/main.rs). The support check invokes none of these verbs. |

@@ -89,8 +89,9 @@ caller carrying the row's value, so the row reads as one that caller made. Rows 
 values of one attribute, or a caller-set field left absent or null, are refused with
 `caller-contradiction` and the field named.
 
-A request with seeds writes suite `ess-conformance/42` (`/43` with `--suite-format 5`), or `/44`
-(`/45`) where an act also claims one event more than once, and records in its provenance which
+A request with seeds writes suite `ess-conformance/42` (`/43` with `--suite-format 5`), or a later pair
+where the model uses what a later suite carries (`/44` (`/45`) where an act also claims one event
+more than once, up to `/52` (`/53`); `ess verify conform synthesize --help` lists each), and records in its provenance which
 files were read, the exact rows admitted, and where each row was used. A target needs the entity
 setup capability to run those scenarios. Without `--synthesis-seed` the
 suite is what it was, except that a guard over an integer beyond 2^53 that synthesis used to refuse

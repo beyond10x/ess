@@ -10,8 +10,8 @@ description: A rule the system stores as rows is the system's to evaluate; the s
 
 Some systems store their rules as rows, written at run time: a condition's expression, operator and
 expectation, and a fold of ALL or ANY. ESS does not evaluate such a rule. The specification states
-the rule's parts as typed rows and leaves the verdict to the system's evaluator, as an `external:`
-outcome the suite injects:
+the rule's parts as typed rows and leaves the verdict to the system's evaluator. The verdict is an
+`external:` outcome the suite injects:
 
 ```yaml
 format: ess/16
@@ -79,9 +79,12 @@ components:
 ```
 
 The synthesized suite forces `not-met` and requires its error, and sends `TestRule` with no verdict
-forced for `met`. Where the system stores each condition's result as a row field, such as
-`holds: Boolean`, the ALL/ANY fold over those results is a fact the specification can state: from
-`ess/22`, a `when_related` row-set guard with `forall` or `exists`. The boundary, and why ESS does
-not interpret stored rules, is in
+forced for `met`.
+
+If the system stores each condition's result as a row field, such as `holds: Boolean`, the ALL/ANY
+fold over those results is a fact the specification can state. It is a `when_related` row-set guard
+with `forall` or `exists`, from `ess/22`.
+
+The boundary, and why ESS does not interpret stored rules, is in
 [the stored-rules design note](https://github.com/beyond10x/ess/blob/main/docs/design/stored-rules-boundary.md).
 

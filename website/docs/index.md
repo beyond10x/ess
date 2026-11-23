@@ -15,7 +15,7 @@ conformance scenarios an implementation must satisfy.
 [Verify conformance](./guides/verify-conformance.md) checks an implementation you already have
 against its specification.
 
-The command is `ess`. Its first level is four areas:
+The command is `ess`. Its first level is five areas (`specify`, `generate`, `verify`, `infra`, `ui`); the first four are shown:
 
 ```shell-session
 $ ess specify validate --path spec                                      # is the specification consistent?

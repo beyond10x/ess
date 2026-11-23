@@ -21,7 +21,7 @@ pub(super) struct Options {
     /// Original standalone ess-conformance-report/2 JSON; never a generic check log.
     #[arg(long, requires_all = ["spec", "expected_selection"])]
     report: Option<PathBuf>,
-    /// Independently supplied original unfiltered coverage suite/5 or /7 JSON.
+    /// Independently supplied original unfiltered declared-coverage suite JSON (suite/5 or later).
     #[arg(long, group = "expected_selection", conflicts_with = "expected_suite_input", requires_all = ["spec", "report"])]
     expected_suite: Option<PathBuf>,
     /// Independently supplied original input/1 carrier, including every parent suite.
@@ -95,7 +95,7 @@ impl Options {
         let coverage = input
             .selected()
             .coverage()
-            .context("expected selection requires declared coverage (suite/5 or /7)")?;
+            .context("expected selection requires declared coverage (suite/5 or later)")?;
         match (&coverage.selection.scope, &actual.component) {
             (Scope::System, None) => {}
             (Scope::Component { component }, Some(name)) if component.as_str() == name => {

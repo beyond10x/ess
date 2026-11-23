@@ -10,23 +10,25 @@ source: An architectural assessment of the 0.18.0 source tree, 5 September 2026
 # Outlook — making ESS dependable
 
 ESS has the foundations of a useful specification toolchain: typed system models, deterministic
-projections, explicit implementation obligations, and executable conformance scenarios. Its next
-stage should make those foundations dependable across the full path from authored intent to
-generated artifacts and execution evidence.
+projections, explicit implementation obligations, and executable conformance scenarios.
 
 This outlook describes **proposed improvement priorities**, based on an architectural assessment
 of the `0.18.0` source tree on 5 September 2026. That assessment has not been re-run on a
-later release, so read the priorities below as standing direction rather than a current reading of the
-source. Several have since shipped in part: count reports and coverage suites separate execution
+later release, so the priorities below are standing direction and not a current reading of the
+source.
+
+Several have since shipped in part: count reports and coverage suites separate execution
 from coverage, output ownership refuses unsafe generated paths, and deployment reconciliation now
-records what it can establish and reports the rest as unknown. It is not a release schedule, an accepted format migration, or a claim that the
+records what it can establish and reports the rest as unknown.
+
+The outlook is not a release schedule, an accepted format migration, or a claim that the
 capabilities below already exist. For supported behavior, use the
 [status page](./where-this-stands.md) and
 [limitations and trust assumptions](./limitations.md).
 
 ## What maturity should mean
 
-A mature ESS should make it easy to answer five questions:
+A mature ESS should make it easy to answer:
 
 1. What does this specification say, and which parts are valid?
 2. What can this target generate or check, and what remains unsupported?
@@ -44,7 +46,7 @@ An entity declaration is intent. A resolved reference is a compiler result. An O
 a projection of a supported contract. A conformance report describes an execution of particular
 checks. None should silently become authority for the others.
 
-The same distinction applies to infrastructure. A system's runtime requirements, a proposed
+The same applies to infrastructure. A system's runtime requirements, a proposed
 deployment, and an observed cluster are different kinds of knowledge. ESS should keep the semantic
 and infrastructure models separate and introduce comparisons where concrete use cases require them.
 
@@ -64,8 +66,8 @@ a suite does not by itself establish that the suite covers every required behavi
 specification. Reports should identify the exact executed suite and distinguish generated checks,
 authored examples, unsupported obligations, and checks outside a selected component.
 
-The maturity criterion is simple: no consumer should need the original terminal output to discover
-why a saved artifact is incomplete.
+The maturity criterion: no consumer should need the original terminal output to discover why a
+saved artifact is incomplete.
 
 ## Second: make change analysis complete as the language grows
 
@@ -114,8 +116,8 @@ calculations should be visible, and the supported calculations should agree with
 ESS can keep deterministic build and deployment planning independent of the tools that execute
 those plans. Explicit Docker, registry, and Helm operations should remain identifiable boundaries.
 
-The next improvement is clarity about the result. Matching manifest digests and required evidence
-references establishes consistency; it does not establish that a signature is trusted, that a
+Matching manifest digests and required evidence
+references establishes consistency. It does not establish that a signature is trusted, that a
 conformance report passed the required suite, or that the intended releases are currently running.
 
 Dependable delivery needs explicit policies for evidence verification, cache integrity, execution
@@ -126,7 +128,7 @@ running deployment controller.
 ## A clearer vocabulary and map
 
 Readers should not need to know crate names to understand which document to write. The following
-grouping is a proposal for documentation and discovery; it does not rename current CLI areas.
+grouping is a proposal for documentation and discovery. It does not rename current CLI areas.
 
 | Group | What belongs here |
 | --- | --- |
@@ -138,7 +140,7 @@ grouping is a proposal for documentation and discovery; it does not rename curre
 | Documentation and contracts | Document models, rendered documentation and independently authored schema registries. |
 
 Within each group, show the progression from **authored input → resolved model → generated output
-or evidence**. The existing `specify`, `generate`, `verify`, and `infra` CLI areas remain useful
+or evidence**. The existing `specify`, `generate`, `verify`, `infra` and `ui` CLI areas remain useful
 action-oriented entrypoints.
 
 Several names deserve particular care:
@@ -185,6 +187,4 @@ digests should remain meaningful.
 | Dependable delivery | Consistency, evidence trust, and execution results are separate, testable outcomes with clear recovery behavior. |
 | Predictable adoption | One glossary and format catalog agree with command help, source schemas, examples, and current support documentation. |
 
-New adapters and language targets should grow alongside this evidence. The aim is a toolchain
-whose limits are explicit, whose outputs can be traced to their authority, and whose successful
-results mean the same thing to authors, implementers, and reviewers.
+New adapters and language targets should grow alongside this evidence.

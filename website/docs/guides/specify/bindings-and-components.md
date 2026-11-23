@@ -8,8 +8,8 @@ description: The component, binding and topology layers; binding failure, retrie
 
 ## Three layers above the domains
 
-A domain says what the software *means*. Three further layers say how it is put together, kept apart
-because conflating them is how a domain model turns into a description of a deployment:
+A domain says what the software *means*. Three further layers say how it is put together. They stay
+apart so that a domain model does not turn into a description of a deployment:
 
 | Layer | Says | Does not say |
 |---|---|---|
@@ -54,7 +54,7 @@ bindings:
         emits: billing.email.DeliveryEscalated
 ```
 
-`delivery:` and `on_failure:` are required words, not defaults — a binding that can fail silently is
+`delivery:` and `on_failure:` are required and have no defaults: a binding that can fail silently is
 the difference between specifying a system and specifying a demo. `drop` is legal: losing work is a
 decision, and the decision has to be findable in the document that made it. `escalate` must name a
 declared event, because "surface it to a person" is not something a generated test can observe.
@@ -63,19 +63,20 @@ The conformance suite forces a failure only through an `external:` branch that r
 names an `error:`. An `external:` branch that accepts, such as "the user already holds it", is not a
 failure, and a command whose only `external:` branches accept has no failure a scenario can force.
 
-`delivery:` accepts two values, and they are not two points on one scale — they say which side of
+`delivery:` accepts two values that are not two points on one scale: they say which side of
 the invocation carries the risk.
 
 | word | what it promises | what it costs |
 |---|---|---|
 | `at_least_once` | the command may run more than once for one event | the handler must be idempotent, and the generated OpenAPI document makes `Idempotency-Key` required on that command |
-| `at_most_once` | one attempt, and nothing redelivers it | the handler is owed no repeat, and a lost attempt is `on_failure:`'s to answer |
+| `at_most_once` | one attempt, and nothing redelivers it | the handler gets no repeat, and a lost attempt is `on_failure:`'s to answer |
 
-Neither is "exactly once", and nothing here will ever spell that word: "exactly once" is what
-everyone believes they have until a retry proves otherwise. Write `at_most_once` where the
-invocation really is a single attempt — one HTTP call with no retry, or one whose response nobody
-reads — because a specification claiming the stronger guarantee is a claim the system does not
-keep. A conformance suite for an `at_most_once` binding contains no redelivery scenario, since
+Neither is "exactly once", and the specification has no spelling for it. Write `at_most_once` where
+the invocation is a single attempt, such as one HTTP call with no retry or one whose response nobody
+reads, because a specification claiming the stronger guarantee is a claim the system does not
+keep.
+
+A conformance suite for an `at_most_once` binding contains no redelivery scenario, since
 redelivery is the thing that word says will not happen.
 
 ## Fill a command input with a constant
@@ -95,34 +96,38 @@ mapping:
 `is_bridged: true` and `is_bridged: 'true'` are the same value: an unquoted YAML Boolean, integer
 or decimal and the quoted text of one are both admitted exactly where `sets:` admits them, and
 compile to the same IR. A constant that is not a value of the input is a `type_mismatch` with the
-hint `sets:` gives — `weight: true` over an `Integer`, `is_bridged: 1` over a `Boolean`. Over text
-or an enum the hint is `quote it`: `template: 3` meant the text `3`, and `template: '3'` says so.
+hint `sets:` gives, as with `weight: true` over an `Integer` and `is_bridged: 1` over a `Boolean`.
+Over text or an enum the hint is `quote it`: `template: 3` meant the text `3`, and `template: '3'`
+says so.
+
 Every target reads the constant typed: the conformance suite expects `true` and `3` in the invoked
 command's input, not `"true"` and `"3"`, and the generated Rust and Go adapters pass a typed
-constant. Other primitives — a `Timestamp`, a `Uuid` — have no literal spelling here, and take
-their value from a field of the event.
+constant. Other primitives, such as a `Timestamp` or a `Uuid`, have no literal spelling here, and
+take their value from a field of the event.
 
 ## Bound a retry
 
 `on_failure: retry` says nothing about how often. Where the count is a constant in the sender's
-code rather than a deployment setting, state it (`format: ess/16`):
+code and not a deployment setting, state it (`format: ess/16`):
 
 ```yaml
 on_failure:
   retry: {attempts: 3, final: [demo.ledger.Unknown]}
 ```
 
-`attempts` counts invocations including the first, and is at least 2 — one attempt is `drop`.
+`attempts` counts invocations including the first, and is at least 2, because one attempt is `drop`.
 `final` names refusals of the invoked command that end the retry at once: an outcome that carries
 `error:`, by name, or the error itself. Any other failure is retried up to the bound, and after the
-last attempt the event's effect is lost. The conformance suite forces a retried `external:` refusal
+last attempt the event's effect is lost.
+
+The conformance suite forces a retried `external:` refusal
 on every attempt and requires exactly `attempts` invocations, and forces a final one once and
-requires exactly one. The generated Rust, Go and Web targets refuse a bounded retry by name,
+requires exactly one. The generated Rust, Go and Web targets refuse a bounded retry,
 because their retry counts no attempts.
 
 ## Choose the policy per refusal
 
-`ess/22` lets one binding answer different refusals of its command differently. Key the policies,
+From `ess/22` one binding can answer different refusals of its command differently. Key the policies,
 and say which refusals each one takes:
 
 ```yaml
@@ -179,16 +184,20 @@ The rules:
 
 Conformance witnesses each refusal on its own scenario, `<binding>/binding/refusal/<outcome>`: the
 refusal is forced on an `external:` branch, and the scenario requires the attempt count its policy
-owes, the escalation event published exactly once where it escalates (`expect_publication_count`),
+sets, the escalation event published exactly once where it escalates (`expect_publication_count`),
 and, where it does not, that the escalation event is published no times for the whole window
 (`expect_no_publication`). An unbounded retry is witnessed as the universal `retry` is, through the
-same arrangement of the row the command addresses. A `when_related: {via: input.<field>, exists:
+same arrangement of the row the command addresses.
+
+A `when_related: {via: input.<field>, exists:
 false}` refusal needs no `external:`: where the binding maps that input unconverted from an event
 field the triggering command copies from its own input, the scenario sends the trigger naming a row
 that does not exist, and the invoked command answers the refusal on every attempt. A refusal no
-scenario can force or answer is refused by name. These scenarios need suite/36 or /37. The generated Rust, Go and Web targets
-and the scenario player cannot select a policy per refusal yet, so they refuse such a binding by
-name (`bindings.<name>.on_failure`).
+scenario can force or answer is refused. These scenarios need suite/36 or /37.
+
+The generated Rust, Go and Web targets
+and the scenario player cannot select a policy per refusal yet, so they refuse such a binding,
+naming `bindings.<name>.on_failure`.
 
 ## Read a field inside an event envelope
 

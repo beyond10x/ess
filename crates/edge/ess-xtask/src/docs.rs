@@ -167,8 +167,8 @@ const FORMAT_RELEASES: &[(&str, u32, Option<&str>)] = &[
     ("ess-diff", 20, Some("0.63.0")),
     ("ess-diff", 21, Some("0.64.0")),
     ("ess-diff", 22, Some("0.78.0")),
-    ("ess-diff", 23, None),
-    ("ess-diff", 24, None),
+    ("ess-diff", 23, Some("0.91.1")),
+    ("ess-diff", 24, Some("0.93.0")),
     ("ess-diff-acknowledgements", 1, Some("0.53.0")),
     ("ess-suite-diff", 1, Some("0.63.0")),
     ("ess-conformance", 1, Some("0.1.0")),
@@ -248,8 +248,8 @@ const FORMAT_RELEASES: &[(&str, u32, Option<&str>)] = &[
     ("ess-conformance", 62, Some("0.79.0")),
     ("ess-conformance", 63, Some("0.79.0")),
     // The pair opened for the constructs of one release, with no vocabulary of its own yet.
-    ("ess-conformance", 64, None),
-    ("ess-conformance", 65, None),
+    ("ess-conformance", 64, Some("0.93.0")),
+    ("ess-conformance", 65, Some("0.93.0")),
     ("ess-composition", 1, Some("0.4.0")),
     ("ess-composition", 2, Some("0.38.0")),
     ("ess-composition", 3, Some("0.40.0")),
@@ -263,6 +263,7 @@ const FORMAT_RELEASES: &[(&str, u32, Option<&str>)] = &[
     ("ess-scenario", 4, Some("0.39.0")),
     ("ess-scenario", 5, Some("0.59.0")),
     ("ess-scenario", 6, Some("0.79.0")),
+    ("ess-scenario", 7, Some("0.93.0")),
     ("ess-normalization", 1, Some("0.19.0")),
     ("ess-normalization", 2, Some("0.20.0")),
     ("ess-normalization", 3, Some("0.20.0")),
@@ -291,7 +292,7 @@ const FORMAT_RELEASES: &[(&str, u32, Option<&str>)] = &[
     ("infra-ir", 2, Some("0.21.0")),
     ("infra-ir", 3, Some("0.33.0")),
     // The cluster's HTTP edge: Gateway API gateways and HTTP routes.
-    ("infra-ir", 4, None),
+    ("infra-ir", 4, Some("0.93.0")),
     ("infra-drift", 1, Some("0.1.0")),
     ("infra-drift", 2, Some("0.21.0")),
     ("infra-drift", 3, Some("0.33.0")),
@@ -312,12 +313,15 @@ const FORMAT_RELEASES: &[(&str, u32, Option<&str>)] = &[
     ("ess-mutation-report", 6, Some("0.60.0")),
     // A mutant whose suite asks what the baseline's asks (https://github.com/beyond10x/ess/issues/586).
     ("ess-mutation-report", 7, Some("0.62.0")),
+    // A report lists the sites a class left unmutated, and a grant mutant is scored.
+    ("ess-mutation-report", 8, Some("0.85.0")),
     ("ess-mutation-manifest", 1, Some("0.37.0")),
     ("ess-mutation-manifest", 2, Some("0.41.0")),
     ("ess-mutation-manifest", 3, Some("0.42.0")),
     ("ess-mutation-manifest", 4, Some("0.53.0")),
     ("ess-mutation-manifest", 5, Some("0.57.0")),
     ("ess-mutation-manifest", 6, Some("0.60.0")),
+    ("ess-mutation-manifest", 7, Some("0.85.0")),
     ("ess-service-interface", 1, Some("0.1.0")),
     ("infra-spec", 1, Some("0.1.0")),
     ("infra-graph", 1, Some("0.1.0")),
@@ -374,7 +378,7 @@ const FORMAT_RELEASES: &[(&str, u32, Option<&str>)] = &[
     ("ess-output-state", 2, Some("0.34.0")),
     ("ess-output-state", 3, Some("0.56.0")),
     // The whole-model digest recorded per owner, no longer stamped into every generated file.
-    ("ess-output-state", 4, None),
+    ("ess-output-state", 4, Some("0.89.0")),
     ("ess-cli", 1, Some("0.21.0")),
     ("ess-cli-plan", 1, Some("0.21.0")),
     // A binding may omit the `config` and `output` globals (beyond10x/ess#481).

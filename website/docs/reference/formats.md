@@ -11,7 +11,7 @@ unversioned, and two different shapes can share a marker. A successful JSON or Y
 necessarily validate the document's claims.
 
 A format version such as `ess/1`, a specification version such as `v3`, and a software release
-such as `0.18.0` identify different things. Specification versions are major-only; typed IR serializes
+such as `0.18.0` identify different things. Specification versions are major-only, and typed IR serializes
 that major as a number. Delivery release versions and constraints use SemVer independently.
 [Version owners][versions], [specification format support][system].
 
@@ -21,7 +21,7 @@ that major as a number. Delivery release versions and constraints use SemVer ind
 
 | Identity | Hash input and spelling |
 |---|---|
-| **Compiled model**: `source_digest` or suite `spec_digest` | SHA-256 of compact typed `EssIr` JSON, with no appended newline. Bare 64 lowercase hexadecimal characters. This is not a hash of raw YAML or pretty `ess compile` output. [Source][ir] |
+| **Compiled model**: `source_digest` or suite `spec_digest` | SHA-256 of compact typed `EssIr` JSON, with no appended newline. Bare 64 lowercase hexadecimal characters. This is not a hash of raw YAML or pretty `ess specify compile` output. [Source][ir] |
 | **Whole contract**: whole-model `contract_digest` | SHA-256 of a compact, key-sorted construct payload. Bare 64 lowercase hex; the payload differs from the compiled-model hash input. [Source][provenance] |
 | **Sliced contract**: Constructs `contract_digest` | `slice-sha256/2:<64 lowercase hex>`, from the selected constructs and their dependency closure. The profile prefix is part of identity; a bare legacy slice digest requires regeneration. [Source][provenance] |
 | **Delivery document**: `Digest` | `sha256:<64 lowercase hex>`. Canonical delivery `digest()` methods hash pretty JSON including its final LF. Artifact/OCI digests can use the same spelling for different bytes. [Source][delivery-identity] |
@@ -42,9 +42,9 @@ model digest. Generated artifact bytes retain their existing identities.
 
 The reader accepts canonical sorted-key JSON with a final LF and rejects unknown versions,
 fields, duplicate keys, noncanonical bytes, unsafe paths and contradictory inventories.
-`UnixBytes1` encodes native path components as lowercase hexadecimal; it preserves native names
+`UnixBytes1` encodes native path components as lowercase hexadecimal. It preserves native names
 without interpreting them as UTF-8. File digests use lowercase SHA-256. The checkpoint checksum
-covers its canonical payload without the checksum member and detects inconsistent bytes; it
+covers its canonical payload without the checksum member and detects inconsistent bytes. It
 does not authenticate another writer.
 
 Recovery follows the recorded staging, prepared, committed or restored decision and retains it
@@ -54,39 +54,50 @@ protocol for this format.
 
 A checkpoint with a pending transaction records the root's absolute path and directory identity,
 and refuses at any other root. A settled (idle) checkpoint records neither, so a committed
-`.ess-output/state.json` names nothing about the machine that wrote it. A settled checkpoint is
-admitted in any root, the one that generated it or a clone or second worktree of it, when every
-owned file present has its recorded length and digest, and refused otherwise, naming the
-differing files and the route that re-enrolls the root.
+`.ess-output/state.json` holds nothing about the machine that wrote it.
+
+A settled checkpoint is admitted in any root, the one that generated it or a clone or second
+worktree of it, when every owned file present has its recorded length and digest. Otherwise it
+is refused, and the refusal lists the differing files and the route that re-enrolls the root.
 
 `ess-output-state/2` (added in 0.34.0) is `/1` plus one required nonempty string, `producer`: the `ess`
-release that last published into the root, as `ess X.Y.Z`. Every publication writes `/2`; the
+release that last published into the root, as `ess X.Y.Z`. Every publication writes `/2`, and the
 reader accepts `/1` without `producer` and `/2` with it, and refuses either shape under the other
-version. A publication that changes the root and finds a different recorded producer prints a
+version.
+
+A publication that changes the root and finds a different recorded producer prints a
 `note:` naming both releases. Recovery and adoption keep the producer they found. Releases before
 `/2` refuse a `/2` checkpoint as an unsupported output-state version.
 
 `ess-output-state/3` is `/2` with the root binding (`root`, `directory`) present only while a
-transaction is pending. Every publication writes `/3`; the reader accepts `/1`, `/2` and `/3`,
+transaction is pending. Every publication writes `/3`, the reader accepts `/1`, `/2` and `/3`,
 and refuses a `/1` or `/2` checkpoint without the binding, a settled `/3` checkpoint with it and
-a pending `/3` checkpoint without it. A generation that finds a settled `/1` or `/2` checkpoint
-rewrites it as `/3` even when no file changes, keeping its owners and producer. With `--check`
-it reports no drift for it and prints one warning naming `root` and `directory`. Recovery and
-adoption settle as `/3` too, keeping a recorded producer. A `state.next` left by an interrupted
-run, which may hold a pending checkpoint and its binding, is never authoritative: a write-mode
-command that finds the root settled removes it, and `--check` reports it. Releases before `/3` refuse a `/3` checkpoint before
-writing: a settled one as an invalid output state missing `root`, a pending one as an
-unsupported output-state version.
+a pending `/3` checkpoint without it.
+
+A generation that finds a settled `/1` or `/2` checkpoint rewrites it as `/3` even when no file
+changes, and keeps its owners and producer. With `--check` it reports no drift for it and prints
+one warning naming `root` and `directory`. Recovery and adoption settle as `/3` too and keep a
+recorded producer.
+
+A `state.next` left by an interrupted run, which may hold a pending checkpoint and its binding,
+is never authoritative: a write-mode command that finds the root settled removes it, and
+`--check` reports it. Releases before `/3` refuse a `/3` checkpoint before writing: a settled
+one as an invalid output state missing `root`, a pending one as an unsupported output-state
+version.
 
 `ess-output-state/4` (added in 0.89.0) adds an optional `model` on each owner to the previous
 version: the digest of the whole compiled model an `ess generate` projection was generated from, 64 lowercase hex
 characters. A generated file carries only the digest of the model slice it derives from, so this
-record is where a generation's whole-model digest lives. Every publication writes `/4`; the reader
-accepts `/1` to `/4` and refuses `model` under any earlier version. An adopted owner, and an owner
-of a generator that names no model, records none. A generation over an owner recorded without a
-model digest records one, which is a publication even when no file changes; `--check` does not
-report that as drift. A recorded model digest that differs from the model being generated is
-drift: `--check` reports `.ess-output/state.json` as recording another generation. Releases before
+record is where a generation's whole-model digest lives.
+
+The reader accepts `/1` to `/4` and refuses `model` under any
+earlier version, and all publications write `/4`. An adopted owner, and an owner of a generator
+that names no model, records none.
+
+A generation over an owner recorded without a model digest records one. That is a publication
+even when no file changes, and `--check` does not report it as drift. A recorded model digest
+that differs from the model being generated is drift: `--check` reports
+`.ess-output/state.json` as recording another generation. Releases before
 `/4` refuse a `/4` checkpoint as an unsupported output-state version.
 [Design](https://github.com/beyond10x/ess/blob/main/docs/design/specification-requires-release.md). See [the generation workflow](../guides/generate-artifacts.md#repeated-generation-and-recovery)
 for the filesystem assumptions and recovery command.
@@ -98,7 +109,7 @@ This format was introduced in 0.21.0.
 `format`, `specification` and `scenarios`. The latter two are lists of strings. Nulls, wrong types,
 unknown fields, duplicate mapping keys, multiple YAML documents and other format versions refuse.
 This is optional immediate-directory acquisition configuration, not an authored ESS fragment or a
-persisted IR. Pass its containing directory; passing the file itself keeps ordinary direct-file
+persisted IR. Pass its containing directory: passing the file itself keeps ordinary direct-file
 reader behavior. [Reader][input-discovery].
 
 Each path is a nonempty UTF-8 identity relative to that root. Split on `/`: empty, `.` and `..`
@@ -107,12 +118,14 @@ segments refuse, as do backslashes, colons and control characters. Case and Unic
 roles refuse. There are no globs, includes, remote expansion or inherited configuration.
 
 Only the active role resolves filesystem entries. Its list must be nonempty. The root, manifest,
-selected files and intermediate directories below that root must not be symlinks; selected inputs
-must be regular files whose canonical targets stay inside the root and are not repeated. Inactive
-paths receive structural checks only and may name missing files. Unlisted files are not enumerated,
-inspected or read. `ess specify validate` treats a nonempty `scenarios` list as active beside
-`specification`, so its files must exist and compile against the model. Distinct copied or
-hardlinked files retain separate identities and can trigger existing semantic duplicate refusals.
+selected files and intermediate directories below that root must not be symlinks. Selected inputs
+must be regular files whose canonical targets stay inside the root and are not repeated.
+
+Inactive paths receive structural checks only and may name missing files. Unlisted files are not
+enumerated, inspected or read. `ess specify validate` treats a nonempty `scenarios` list as
+active beside `specification`, so its files must exist and compile against the model. Distinct
+copied or hardlinked files retain separate identities and can trigger existing semantic
+duplicate refusals.
 
 Selected original UTF-8 text is retained without newline conversion. Entries are read in sorted
 identity order. Model Source/SourceMap and suite/5 source identities are the listed relative paths;
@@ -122,30 +135,36 @@ and semantic digests keep their existing, separate meanings.
 
 An invalid reserved filename refuses without legacy fallback. Rename an older ESS fragment named
 `ess-inputs.yaml` or adopt this configuration. Older readers do not understand this format and
-refuse it; some old conformance semantic-refusal paths can retain incomplete diagnostic outputs.
+refuse it. Some old conformance semantic-refusal paths can retain incomplete diagnostic outputs.
 The direct-file, recursive-model (`system.yaml`) and shallow-scenario layouts remain supported when
 configuration is absent. Manifest selection does not infer generation, authorship or ownership.
 
 The named ESS model describes the closed fields, singleton format enum, lists and string values.
 Its projection does not enforce complete path grammar, cross-list uniqueness, active-role cardinality,
 filesystem facts, deterministic acquisition or exact source-byte custody. The CLI reader owns those
-checks; declaration validation alone is not discovery evidence.
+checks. Declaration validation alone is not discovery evidence.
 
 `format: ess-inputs/2` (added in 0.34.0) is `/1` plus one optional string, `requires`: `ess X.Y.Z` for
-exactly that release, or `ess X.Y` for any `X.Y.*`. Components are decimal without leading zeros;
-any other spelling refuses. `requires` in a `/1` document refuses, naming `/2`. An `ess` older than
-the requirement refuses before any selected file is read and names `b10x upgrade` and
-`/ess:upgrade`; a newer one warns once per command, and the global `--strict-requires` makes that a
-refusal. `/2` without `requires` behaves exactly as `/1`. Releases before `/2` refuse it as an
-unsupported format. The named model admits the field and both versions; the version grammar and
-the `/1` exclusion are the reader's.
+exactly that release, or `ess X.Y` for any `X.Y.*`. Components are decimal without leading zeros, and any
+other spelling refuses. `requires` in a `/1` document refuses, naming `/2`.
+
+A minor-line pin (`ess X.Y`) is checked by the running `ess`. An older one refuses before any
+selected file is read and names `b10x upgrade` and `/ess:upgrade`. A newer one warns once per
+command, and the global `--strict-requires` makes that a refusal.
+
+An exact pin (`ess X.Y.Z`) in the working directory or above makes any `ess` run that release
+from its verified cache, and installs it on first use. Given through `--path` from outside that
+directory, it refuses, naming `cd <directory>` and `ESS_TOOLCHAIN=X.Y.Z`. `/2` without `requires`
+behaves exactly as `/1`. Releases before `/2` refuse it as an unsupported format. The named
+model admits the field and both versions. The version grammar and the `/1` exclusion are the
+reader's.
 [Design](https://github.com/beyond10x/ess/blob/main/docs/design/specification-requires-release.md).
 
 ## Specifications and implementation plans
 
 “Closed DTO” below means unknown fields are refused. The named compile or validation step still
 checks semantics. “Pretty JSON” means the writer's deterministic rendering with a final LF unless
-the row says otherwise; it does not imply that those bytes are hashed.
+the row says otherwise. It does not imply that those bytes are hashed.
 
 | Document and discriminator | Version/identity carried separately | Reader and byte contract |
 |---|---|---|
@@ -195,7 +214,7 @@ the row says otherwise; it does not imply that those bytes are hashed.
 | Compiled composition: `format: ess-composition/5` | As the earlier format, with each conformance end as authored | Added in 0.76.0. Serialize-only; a `type` end is written `{service, type}`, a payload end `{service, event}`, `{service, error}` or `{service, command, part}`. Conformance ends are not added to the surface, so the client plan is unchanged. [Source][composition] |
 | Client plan: `format: ess-client-plan/1` | Composition key and the same selected service metadata/names | Derived from compiled composition; Serialize-only. No complete payload or codec definitions. Pretty JSON; no client-plan byte digest or live service identity check. [Source][composition] |
 | Authored UI document: `format: ess-ui/1` | Application name (`app`) and the ESS system its views, commands and events resolve against (`model`) | Added in 0.47.0. Defined as data in `schemas/ui/ess-ui.schema.yaml` ([reference](./ess-ui.md)). The loader expands every short form, merges each page over its page kind and each widget instance over its widget, and reads the result into typed Rust, refusing an undeclared key with the path of its node. No document digest. |
-| UI check report: `format: ess-ui-check/1` | The document checked (`document`) | Added in 0.47.0. Written by `ess ui check --format json`: `{format, document, findings}`, each finding `{path, check, severity, message}` with `path` the failing node's canonical path, `check` one of the checks the schema's `checks.list` declares or the checker adds, and `severity` `error` or `warning`; findings ordered by path, then check. From 0.90.0 an optional `backlog`, `[{path, host, reason}]`, the host slots that stand in for `none`. From 0.91.0 an optional `hosts`, `[{path, host, reason, stands_in_for}]`, every host slot ordered by path, and, with `--model` only, `coverage: {covered, host_covered, uncovered}`, the model's views and commands reached by a generated node, only by a host slot, and by nothing; each optional key is left out when empty, so a document without host slots checked without a model writes the bytes it wrote before. Serialize-only; no digest. |
+| UI check report: `format: ess-ui-check/1` | The document checked (`document`) | Added in 0.47.0. Written by `ess ui check --format json`: `{format, document, findings}`, each finding `{path, check, severity, message}` with `path` the failing node's canonical path, `check` one of the checks the schema's `checks.list` declares or the checker adds, and `severity` `error` or `warning`; findings ordered by path, then check. From 0.90.0 an optional `backlog`, `[{path, host, reason}]`, the host slots that stand in for `none`. From 0.91.1 an optional `hosts`, `[{path, host, reason, stands_in_for}]`, every host slot ordered by path, and, with `--model` only, `coverage: {covered, host_covered, uncovered}`, the model's views and commands reached by a generated node, only by a host slot, and by nothing; each optional key is left out when empty, so a document without host slots checked without a model writes the bytes it wrote before. Serialize-only; no digest. |
 | UI test file: `format: ess-ui-test/1` | The document tested (`document`, relative to the file) and each test's `name` | Added in 0.48.0. Read by `ess ui test`: tests of one-key steps that select nodes by canonical node path ([reference](./ess-ui-test.md)). Unknown keys and steps are refused with the file, test and step. No digest. |
 | UI test report: `format: ess-ui-test-report/1` | The document tested (`document`) | Added in 0.48.0. Written by `ess ui test --format json`: `{format, document, tests}`, each test `{name, status, step?, message?}` with `status` `passed` or `failed` and `step` the failing step, from 1; tests in file order. Serialize-only; no digest. |
 | Authored realization: **`type: ess-realization/1`** | Realization id and specification/synthesis identities | Closed JSON/YAML DTO, then compilation against supplied ESS authority. No raw-document digest contract. [Source][realization] |
@@ -216,43 +235,48 @@ the row says otherwise; it does not imply that those bytes are hashed.
 
 Composition selects commands from the component's `accepts` and views from its owned domains.
 Its named-type traversal covers command inputs, event/error fields and query row shapes/fields,
-but not view parameters; from `ess-composition/2` a reference may also name any type the
+but not view parameters. From `ess-composition/2` a reference may also name any type the
 component's owned domains declare, without adding it to that traversal. The imported digest
-identifies compiled semantics, not raw YAML, plan bytes or a running endpoint. The generated
-Rust client restricts normal callers to selected
-operation descriptors while forwarding `&[u8]` requests and `Vec<u8>` responses unchanged through
-`Transport<Authority>`. Provider injection adds no authority verification or live model handshake;
-the client does no payload admission, decoding or sanitization.
+identifies compiled semantics, not raw YAML, plan bytes or a running endpoint.
+
+The generated Rust client restricts normal callers to selected operation descriptors and
+forwards `&[u8]` requests and `Vec<u8>` responses unchanged through `Transport<Authority>`.
+Provider injection adds no authority verification or live model handshake. The client does no
+payload admission, decoding or sanitization.
 See the [executed Todo example](cli.md#composition-clients-selected-operations-and-byte-transport),
 where both a String title and an incompatible numeric title reach the same selected command.
 
 `ess_synth::synthesize` and `synthesize_for` return `Result<Synthesis, TargetFailure>`.
 The direct `rust::workspace` and `web::workspace` APIs return `Result<Vec<Artifact>, TargetFailure>`
 and `Result<web::Emission, TargetFailure>` respectively. Go and Clap workspace APIs
-now also return `Result<Emission, TargetFailure>` in ESS 0.20.0. Rust checks allocation and representation
-before rendering; Web checks its Rust prerequisite and Web codec allocation. `Err` withholds the
-whole requested workspace, even if some modules could be emitted. `Ok` retains the existing
-`Synthesis` fields and neutral plan bytes; partial Go/Web/Clap reports remain successful values.
-`Synthesis` itself has no serialized envelope.
+also return `Result<Emission, TargetFailure>` as of ESS 0.20.0.
+
+Rust checks allocation and representation before rendering. Web checks its Rust prerequisite
+and Web codec allocation. `Err` withholds the whole requested workspace, even if some modules
+could be emitted. `Ok` retains the existing `Synthesis` fields and neutral plan bytes.
+Partial Go/Web/Clap reports remain successful values. `Synthesis` itself has no serialized
+envelope.
 [Facade][synthesis], [Rust][rust-workspace], [Web][web-workspace].
 
-Each failure cause has a `code`, nonempty sorted unique `sources`, and nonempty `detail`; causes
-are also sorted and deduplicated. Current codes are `invalid-identifier`, `symbol-collision`,
-`path-collision`, `recursive-layout`, `binding-assignment`, `missing-type-owner`, `wire-collision`
-and `missing-representation`. Format /3 also admits `accessor-resource`
-when bounded accessor generation exceeds its output budget, and `selection-constraint`
-when list selection requires invariant or reading validation outside its supported capability. A plan with zero capabilities can still fail. The typed error
-implements `Display` and `std::error::Error`; it carries no independent digest.
+Each failure cause has a `code`, nonempty sorted unique `sources`, and nonempty `detail`.
+Causes are also sorted and deduplicated. Current codes are `invalid-identifier`,
+`symbol-collision`, `path-collision`, `recursive-layout`, `binding-assignment`,
+`missing-type-owner`, `wire-collision` and `missing-representation`. Format /3 also admits
+`accessor-resource` when bounded accessor generation exceeds its output budget, and
+`selection-constraint` when list selection requires invariant or reading validation outside its
+supported capability. A plan with zero capabilities can still fail. The typed error
+implements `Display` and `std::error::Error`. It carries no independent digest.
+
 Go checks every named type against the actual domain type rosters before package allocation,
 including unreferenced types. A missing owner returns `missing-type-owner` with that qualified
-type as its source; the existing Binary64 refusal takes precedence.
-These checks do not constitute a universal compiler proof; internal coverage assertions remain,
+type as its source. The existing Binary64 refusal takes precedence.
+These checks are not a universal compiler proof. Internal coverage assertions remain,
 and direct workspace calls require the plan for the supplied IR.
 [Error][target-failure], [API limits][synthesis].
 
-For a complete target failure, `ess synthesize` prints the text error or JSON/YAML envelope to
+For a complete target failure, `ess generate synthesize` prints the text error or JSON/YAML envelope to
 stdout and exits 1 before writing artifacts. It creates no output directory and leaves an existing
-destination untouched. Successful text output still counts the neutral plan; partial target notes
+destination untouched. Successful text output still counts the neutral plan. Partial target notes
 are in `TARGET.md`/`target.json`. Later I/O failures have no new rollback guarantee.
 [CLI][cli].
 
@@ -279,11 +303,11 @@ implement a model's lifecycle, and normalization executes only an explicitly che
 | `format: ess-normalization-target/3` | Report for every format-4, format-5 or format-6 recipe. The embedded canonical recipe and its digest bind input policies; first-stage schemas describe the prepared representation. Same report fields, new semantics; older readers must reject this version. No general report-admission API exists. Formats 1–5 preserve generated file maps through frozen legacy templates; generator versions remain truthful across releases. [Source][normalization-target] |
 
 The TypeScript normalization writer adds a package-bearing configuration
-arm local to normalization; structural TypeScript configuration remains separate.
+arm local to normalization. Structural TypeScript configuration remains separate.
 Recipes 1/2 retain target report 1, recipe 3 uses report 2, and recipes 4/5/6 use
 report 3. These are serialize-only reports, so the additional target needs no new
 report version. Its fixed schema profile and runtime files enter the existing
-file-digest map; unsupported constraints refuse before a report exists. Complete
+file-digest map. Unsupported constraints refuse before a report exists. Complete
 Rust/Go maps retain exact bytes at a fixed generator version.
 
 Format-5/6 static checking adds equality for two typed Binary64 operands. The
@@ -303,15 +327,15 @@ The following hashes are bare lowercase SHA-256, but have different input domain
   their separately defined semantic domains. [Model projection][model-data]
 - Normalization `recipe_digest`: checked `Plan::to_json()` bytes, including final LF.
 - Normalization `schema_digest` and `files` values: exact emitted UTF-8 file bytes.
-  `normalization-report.json` is deliberately excluded from its own file-digest map.
+  `normalization-report.json` is excluded from its own file-digest map.
 
 ## Component delivery
 
 Every marker here uses the `format` key. Build/runtime/component inputs are closed DTOs followed
 by compilation. Persisted IR, release, bundle, catalog and lock readers validate through generic
-Serde as well as convenience readers; nested documents cross that boundary too. Revalidate mutable
+Serde as well as convenience readers. Nested documents cross that boundary too. Revalidate mutable
 values before use. These checks establish local consistency, with additional checks where authority
-inputs are supplied; they do not prove remote artifact contents or authenticity.
+inputs are supplied. They do not prove remote artifact contents or authenticity.
 [Validation owner][delivery-validation].
 
 | Document | Independent version or identity | Reader / canonical digest |
@@ -337,12 +361,12 @@ Release and bundle `/1` wire fields, canonical bytes and four required evidence 
 Their validators establish consistency of declared metadata and relationships. **Evidence.digest
 is the OCI attachment manifest digest**, not the SHA-256 of a report file. Provenance, SBOM,
 signature and conformance entries remain declared attachments: attachment binding, producer origin
-and artifact execution are unverified; signature verification is unsupported. Fetch additionally
+and artifact execution are unverified, and signature verification is unsupported. Fetch additionally
 checks OCI content identity without authenticating the evidence references inside a bundle.
 
 Local release qualification uses existing report/2 plus an independent original suite/5 or fully
 admitted input/1 carrier and an explicit model/deployment context. It creates no new envelope or
-persisted assessment. Only the supplied nonempty complete all-pass selection qualifies; legacy
+persisted assessment. Only the supplied nonempty complete all-pass selection qualifies. Legacy
 report/1 readers remain unchanged and cannot satisfy this positive gate. Optional CLI/action raw
 pins cover the complete original report and selected suite/carrier files. They do not change any
 format's canonical digest profile or provide remote attachment proof. See the
@@ -353,7 +377,7 @@ format's canonical digest profile or provide remote attachment proof. See the
 | Document and discriminator | Separate identity | Reader and byte contract |
 |---|---|---|
 | `format: ess-diff/1` | Before/after compiled-model digests and specification majors | Legacy vocabulary/bytes retained; raw closed DTO → validated delta. Explicit legacy writing refuses new-only kinds. Pretty JSON; no delta-file hash. [Writer][delta], [reader][delta-reader] |
-| **Default** `format: ess-diff/2` | Same endpoint identities | Supported delta majors are 1 to 11; legacy changes retain /2. Admission checks ids, relations, order, uniqueness and same-system identity; serialization checks the selected vocabulary. Pretty JSON. [Source][delta] |
+| **Default** `format: ess-diff/2` | Same endpoint identities | Supported delta majors are 1 to 24; legacy changes retain /2. Admission checks ids, relations, order, uniqueness and same-system identity; serialization checks the selected vocabulary. Pretty JSON. [Source][delta] |
 | `format: ess-diff/3` | Same endpoint identities | Added in 0.23.0. New periodic-cause, selection-plan and clock-reading-contract changes retain typed before/after values. Explicit /1 or /2 writing refuses these variants. [Source][delta] |
 | `format: ess-diff/4` | Same endpoint identities | Added in 0.23.0. Error naming, command response declarations and response/generated payload source changes. Earlier delta writers refuse this vocabulary; legacy-only changes keep their existing formats. [Source][delta] |
 | `format: ess-diff/5` | Same endpoint identities | Added in 0.27.0. `VariantWireNameChanged`, `VariantDisplayNameChanged` and `VariantSummaryChanged` on `TypeChange`: a variant's own name does not move when its wire spelling does, so majors 1 to 4 returned an empty delta for it and refuse this vocabulary. [Source][delta] |
@@ -383,12 +407,12 @@ format's canonical digest profile or provide remote attachment proof. See the
 | Authored **`type: ess-scenario/4`** | Domain/scenario identity and purpose | Added in 0.39.0. An act's `response: {field: literal}` asserts selected return fields, checked against their complete declared types. `{}` requests the complete response shape check. Selected `returns: true` outcomes receive that check automatically. Earlier versions refuse the new key. [Source][authored] |
 | Authored **`type: ess-scenario/5`** | Domain/scenario identity and purpose | Added in 0.59.0. An act's `caller: {attribute: value}` states the caller its command is sent as: each value a literal of the attribute's declared type, or `{$instance: name}` for an instance arranged with `setup:`. An attribute the act's `actor:` does not declare is refused (`ESS-AUTHOR-013`), and so is a required attribute the command reads that the act leaves unstated (`ESS-AUTHOR-014`), naming the attribute and the command. The values compile into the step's existing suite/26 `caller`; an act with no `caller:` sends none and its suite keeps its bytes. Earlier versions refuse the new key, and an older `ess` refuses the header. [Source][authored] |
 | Authored **`type: ess-scenario/6`** | Domain/scenario identity and purpose | Added in 0.79.0. A claim may name one member of a nested value by its dotted path, `checkpoint.checkpoint_id: cp-1`, in an act's `response:`, an event's `payload:`, an error's `fields:` and a row's `contains`, `excludes` and `at`; each path is compared alone, through `Optional` and newtypes, and the members it does not name are not read. A nested value written whole is still compared whole: a partial one is refused for the members it leaves out, named at their path (`ESS-AUTHOR-014`, `response:` included at every header). A path naming no member is refused with the full path (`ESS-AUTHOR-013`); a path through a list, map, union, enum or primitive, a path to a reference, and a path in `input:`, `setup:`, `caller:` or a view's `params:` are refused by name. Event, error and row paths compile to suite/26 dotted keys, a path ending at a struct as its leaves; a response path compiles to `expected` under `ess-conformance/62`. An act's literal input that its declared type refuses, at any depth, is refused naming the field and the constraint (`ESS-AUTHOR-015`). Below `ess-scenario/6` a dotted key is refused as an undeclared field and an input is checked for its shape only, and an older `ess` refuses the header. [Source][authored] |
-| Authored **`type: ess-scenario/7`** | Domain/scenario identity and purpose | Not yet in a release. Reads as the format before it, and adds `covers:`, a list of exact scenario ids a generated synthesis refused (`example.review.ConfirmDecision/outcome/already-exists`). The refusal stays in the suite, marked `covered_by` the authored scenario in `ess-conformance/65`; declared coverage counts it complete only when the covering scenario is selected and the run passes. An id synthesis did not refuse is `covers.unknown-scenario`, naming it, and `covers:` below `/7` is refused as an unsupported key naming `ess-scenario/7`. An older `ess` refuses the header. [Source][authored] |
+| Authored **`type: ess-scenario/7`** | Domain/scenario identity and purpose | Added in 0.93.0. Reads as the format before it, and adds `covers:`, a list of exact scenario ids a generated synthesis refused (`example.review.ConfirmDecision/outcome/already-exists`). The refusal stays in the suite, marked `covered_by` the authored scenario in `ess-conformance/65`; declared coverage counts it complete only when the covering scenario is selected and the run passes. An id synthesis did not refuse is `covers.unknown-scenario`, naming it, and `covers:` below `/7` is refused as an unsupported key naming `ess-scenario/7`. An older `ess` refuses the header. [Source][authored] |
 | Suite **`provenance.suite_version: ess-conformance/4`** | Specification `vN`, model and whole-contract digests | Historical Deserialize/from_json parses an unadmitted DTO. Original-byte admission checks the closed, major-specific vocabulary before execution; serialize-once admission of a DTO binds only its newly serialized bytes. Suite bytes/defaults stay frozen; report/2 separately carries exact identity. [Source][suite] |
 | Rust `format: ess-conformance-report/1` | Model digest, implementation and suite-version claim | Checked closed reader validates version/counts/list/status; it does not establish exact-suite coverage or unique opaque result ids. Pretty JSON; unsigned u64 `completed_at`. [Source][report] |
 | Go `format: ess-conformance-report/1` | Same claims, Go failed/skipped vocabulary | Generated Go writer; current Rust admission accommodates its non-pass vocabulary. Indented JSON+LF, signed int64 `completed_at`; no cross-producer byte/range equivalence is implied. [Source][go-report] |
 | Default detailed `ConformanceReport`: **unversioned** | Suite provenance, implementation, run/scenario identities | Detailed CLI JSON/YAML is distinct from standalone `--report-out` JSON. Serialize-only; pretty canonical JSON, no report-file or exact-suite hash. [Source][detailed-report] |
-| Opt-in `ess-conformance-report/2` and `ess-conformance-run/2` | Exact original suite/1–17 bytes, producer profile and five outcome categories | Separate standalone and detailed surfaces with paired readers. Sorted UTF-8 object keys, two-space JSON plus LF, exact unsigned u64 counts/timestamps. Ordinary coverage remains unknown; complete nonempty suite/5, /7, /9, /11, /13, /15 or /17 selection can qualify. Suites /6 to /9 arrived in 0.23.0. [Count contracts][count-report] |
+| Opt-in `ess-conformance-report/2` and `ess-conformance-run/2` | Exact original suite/1–65 bytes, producer profile and five outcome categories | Separate standalone and detailed surfaces with paired readers. Sorted UTF-8 object keys, two-space JSON plus LF, exact unsigned u64 counts/timestamps. Ordinary coverage remains unknown; a complete nonempty selection of a coverage suite (an odd major from /5 to /65) can qualify. Suites /6 to /9 arrived in 0.23.0. [Count contracts][count-report] |
 | `format: ess-conformance-results/1` | One terminal status per scenario of a suite ESS admits, and optionally that suite's `sha256-json-bytes/1` digest | Added in 0.48.0. Read by `ess verify conform report`, which writes report/2 from it. Closed `format`, exact u64 `completed_at`, optional `suite_digest` and `results` of `{scenario_id, status, message?}`; `status` is `passed`, `failed`, `error` or `unsupported`. Refused: a result for a scenario outside the suite, a scenario with no result, two results for one scenario, any other status, a `suite_digest` that is not the admitted suite's. The report's `producer_profile` is `external-scenario-status/1`, or `external-scenario-status/1;runner=<name>@<version>`, with Rust category rules. [Source][results] |
 | `format: ess-known-failures/1` | Original specification digest (`spec_digest`), exact suite-byte digest (`suite_digest`), the report's `implementation` label and the public `implementation_build` (`sha256:` and 64 lowercase hex digits) | Added in 0.53.0. An external declaration of scenarios one build of an implementation is known to fail, read by `--known-failing` on `ess verify conform run`, `report` and `mutate` (beyond10x/ess#294, #296). Closed `format`, `spec_digest`, `suite_digest`, `implementation`, `implementation_build` and a nonempty `failures` list of `{scenario, reason, tracking}` in scenario ID order, each string nonempty; `tracking` names a repair record and is never fetched. IDs match exactly: no wildcard, prefix, command-wide or outcome-wide match. It never makes a run pass and is never a marker on an authored outcome. Refusals, each first in its message and exit 2 on the CLI: `known-failures.malformed` (unknown or duplicate key, other format, invalid digest, empty or unordered list); `known-failures.identity` (another specification, other suite bytes, another implementation label or build); `known-failures.unknown-scenario` (an ID the suite does not hold); `known-failures.stale` (a declared scenario passed); `known-failures.not-failed` (a declared scenario ended `error`, `unsupported` or `skipped`); `known-failures.unbound` (a declaration supplied to `mutate --collect` that the emission did not bind, or other bytes than the ones it bound); `known-failures.accounting` (an accounting document that is not the partition its report and declaration make). [Source][known-failures] |
 | `format: ess-conformance-execution/1` | The exact report-byte digest (`report_digest`), suite-byte digest (`suite_digest`), the report's `implementation` label and the host's `implementation_build` | Added in 0.53.0. Host execution provenance beside a report/2: which public build produced exactly that report of exactly that suite. Written by the generated Go and TypeScript runners when `ESS_IMPLEMENTATION_BUILD` and `ESS_EXECUTION_CONTEXT_OUT` are both set (with `ESS_REPORT_FORMAT=2` and `ESS_REPORT_OUT`, read before any target is made), and by `ess verify conform report --results … --implementation-build … --execution-context-out …`; read by `report --observed-report` and by `mutate --collect` under a bound declaration, conventionally as `execution.json` beside `report.json`. Closed: those five keys and nothing else — no values, timestamps, host text or commands; a protected one-time run carries its fixed redacted label. Declared host provenance, not remote attestation. [Source][known-failures] |
@@ -433,13 +457,13 @@ format's canonical digest profile or provide remote attachment proof. See the
 | `format: ess-mutation-report/5` | As version 4 | Added in 0.57.0. The version-4 report with `identical_answer` on a mutant (beyond10x/ess#517), written by either route wherever a `precedence-swap` mutant carries it; a report none of whose mutants carries it keeps the version in the row below, with its earlier bytes. `identical_answer` is the answer both branches of a `precedence-swap` give where it is the same one — the same error, the same or no payload, neither branch changing state, setting or emitting anything, and every binding invoking the command answering both with the same failure policy and `final` membership — such as ``refuse with `shop.order.Invalid` and no payload; neither changes state, sets or emits anything``; such a mutant is `equivalent` (`ESS-MUTATE-005`) on the terms an `unsatisfiable_guard` makes one, and its text line ends `— ESS-MUTATE-005: both branches <answer>`. It is recorded apart from `unsatisfiable_guard`, which still says only that the two guards never overlap. **No reader**. [source][mutate] |
 | `format: ess-mutation-report/4` | Original model digest (`spec_digest`), implementation, `<system> <version>`, the `component` and the known-failure declaration | Added in 0.53.0. Written by `ess verify conform mutate --collect DIR` for an emission scoped to a component (`--emit --component NAME`), and by `mutate` under a known-failure declaration (`--known-failing`, beyond10x/ess#294), and by either route where a selected `emit-swap` site has no admissible alternative (beyond10x/ess#295); every other report keeps the version in the row below. Such a report carries `unavailable_sites`, each as `{class, command, event, id, outcome, reason, unaudited}` in byte order of id, where `id` is `emit-swap/<command>/<outcome>/<event>` and `reason` is `no_compatible_event_alternative`: no declared event other than the outcome's only one has exactly its resolved fields, is published by every component that accepts the command, and compiles in its place, so single-event substitution was not audited there, as `unaudited` says. In an emission scoped to a component, a site whose command another component handles has `outside_component` instead. An unavailable site is neither a mutant nor counted in `counts`; one that is not `outside_component` makes the audit exit 3 unless a mutant survived, and is listed in the text after the inconclusive mutants and counted in the summary line as `; N unavailable`. Under a declaration it carries `known_failures` (`declaration_digest`, the declared `failures` as `{reason, scenario, tracking}` and the `implementation_build`), and each mutant carries `exclusions`, the scenarios of its suite that are not eligible witnesses, as `{reason, scenario}` in scenario order: `known_failed` (declared, and failed in the baseline) or `no_baseline_control` (not in the baseline suite). Only a baseline-passing scenario can kill; a mutant whose changed declared scenario or new scenario hid a kill is `inconclusive`, and one with no eligible witness at all is `inconclusive` unless a gained or baseline synthesis refusal makes it `unwitnessed`, never `killed` or `equivalent`. A failure the declaration does not name still refuses with `ESS-MUTATE-001`; a stale or mismatched declaration exits 2. Known failures are listed in the text straight after the summary line, and the audit makes no conformance claim. **No reader**. That document, with `component`, the component every suite was scoped to, and `out_of_scope`. A scoped suite's refusals are those of the component's own operations and of the whole model, so a refusal about another component's operation never makes a mutant `unwitnessed`. `out_of_scope` lists each mutant whose site belongs to another component (a command that component handles, a view it owns, a transition one of its commands performs, by the membership `synthesize --component` uses), as `{change, class, id}` in byte order of id. It had no suite, is not scored and is not counted in `counts.mutants`, so it never changes the exit status; a survivor on the component's own site is scored and counted. Codes as in the row below. [source][mutate] |
 | `format: ess-mutation-report/3` | Original model digest (`spec_digest`), implementation and `<system> <version>` | Added in 0.42.0. This build no longer writes the version-1 or version-2 report; see the [version history](spec-versions.md). Written by `ess verify conform mutate` only, to `--report-out` and as `--format json` (the same bytes); `yaml` renders them. **No reader**: nothing in this repository admits it. Sorted keys, two-space JSON plus LF, no timestamp, so the bytes are a function of the tree and the target. `baseline` carries `scenarios`, `refusals` and `not_scored`: each baseline scenario the target reported `unsupported` or the runner `skipped`, with that `status`, in suite order; no mutant is scored on one. One entry per mutant in byte order of id, with `class`, `change`, `verdict` (`killed`, `survived`, `unwitnessed`, `inconclusive`, `equivalent`, `stillborn`), the suite `scenarios` and `refusals` counts, `killers` on `killed` only, `stillborn` on `stillborn` only, `added_refusals` (each synthesis refusal of the mutant's suite the baseline's lacks, as `{code, scenario, subject}`, `scenario` absent when the refusal has none, `subject` the element refused, or the invariant (`ESS-SYNTH-011`), view (`ESS-SYNTH-005`, `-014`) or input path (`ESS-SYNTH-001`) one element or scenario is refused per; counted key by key, so a second refusal with a key the baseline holds once is added; sorted) when there is one, `baseline_refusals` (the baseline's synthesis refusals of the scenario of the outcome the mutant is on, as `{code, scenario, subject}`, sorted) where no baseline scenario takes that outcome and the baseline refused it, and on a `from-drop` or `transition-to` mutant the refusals of every outcome that performs its transition, where no baseline scenario takes any of them and the baseline refused each, `unsatisfiable_guard` (the guard a guard mutant left its outcome, as written) where no input satisfies it while some input satisfies the baseline's guard there, or on a `precedence-swap` mutant the overlap of its two guards where no input satisfies it, decided only for equality, membership and truth tests of non-optional scalar input fields, other than a `Timestamp`, against literals, over every combination of each field's values (a boolean's two, an enum's variants, and for any other field its literals and one value none of them equals) where there are at most 64 combinations, counted before any invariant applies; a combination no admitted input takes is still tried, so a guard is never called dead that an input satisfies, and `excluded` (the mutant's scenarios the baseline did not execute, sorted) when there is one; a mutant nothing killed with an `excluded` scenario it changed is `inconclusive`; one whose excluded scenarios are all the baseline's own, unchanged, can still be `survived`. `counts` adds `unwitnessed` and `equivalent`. A report `--collect` writes from a version-1 or version-2 manifest names no `unsatisfiable_guard` and scores no mutant `equivalent`. A report written by `--collect` also carries `unscored` on an `inconclusive` mutant whose `report.json` is missing, unreadable, or of another suite or implementation. Codes: `ESS-MUTATE-001`, a baseline scenario failed or ended `error` (stderr, exit 3, no report); `ESS-MUTATE-002`, `assemble` or `compile` refused a mutant (on its entry, with the refusal's own code as `cause`); `ESS-MUTATE-003`, the selected classes found no site (stderr, exit 3, no report); `ESS-MUTATE-004`, `unwitnessed`: the mutant's suite gained a synthesis refusal, or it has `baseline_refusals`, and no scored scenario failed (exit 3 unless a mutant survived); `ESS-MUTATE-005`, `equivalent`: the mutant has an `unsatisfiable_guard`, no scored scenario failed and no scenario it changed went unscored, which outranks `unwitnessed`; an `inconclusive` mutant stays `inconclusive` (does not change the exit status, but a run whose every mutant is `equivalent` or `stillborn` exits 3). A baseline that executed no scenario is refused as `nothing scored` (stderr, exit 3, no report). [Mutation audit](../guides/verify/mutation-audit.md#audit-the-suite-with-specification-mutants), [source][mutate] |
-| `format: ess-mutation-report/2` | Original model digest (`spec_digest`), implementation and `<system> <version>` | Added in 0.41.0. Written by 0.41.0; this build writes `ess-mutation-report/3`, see the [version history](spec-versions.md). 0.41.0 wrote it from `ess verify conform mutate` only, to `--report-out` and as `--format json` (the same bytes); `yaml` renders them. **No reader**: nothing in this repository admits it. Sorted keys, two-space JSON plus LF, no timestamp, so the bytes are a function of the tree and the target. `baseline` carries `scenarios`, `refusals` and `not_scored`: each baseline scenario the target reported `unsupported` or the runner `skipped`, with that `status`, in suite order; no mutant is scored on one. One entry per mutant in byte order of id, with `class`, `change`, `verdict` (`killed`, `survived`, `unwitnessed`, `inconclusive`, `stillborn`), the suite `scenarios` and `refusals` counts, `killers` on `killed` only, `stillborn` on `stillborn` only, `added_refusals` (each synthesis refusal of the mutant's suite the baseline's lacks, as `{code, scenario, subject}`, `scenario` absent when the refusal has none, `subject` the element refused, or the invariant (`ESS-SYNTH-011`), view (`ESS-SYNTH-005`, `-014`) or input path (`ESS-SYNTH-001`) one element or scenario is refused per; counted key by key, so a second refusal with a key the baseline holds once is added; sorted) when there is one, and `excluded` (the mutant's scenarios the baseline did not execute, sorted) when there is one; a mutant nothing killed with an `excluded` scenario it changed is `inconclusive`; one whose excluded scenarios are all the baseline's own, unchanged, can still be `survived`. `counts` adds `unwitnessed`. A report written by `--collect` also carries `unscored` on an `inconclusive` mutant whose `report.json` is missing, unreadable, or of another suite or implementation. Codes: `ESS-MUTATE-001`, a baseline scenario failed or ended `error` (stderr, exit 3, no report); `ESS-MUTATE-002`, `assemble` or `compile` refused a mutant (on its entry, with the refusal's own code as `cause`); `ESS-MUTATE-003`, the selected classes found no site (stderr, exit 3, no report); `ESS-MUTATE-004`, `unwitnessed`: the mutant's suite gained a synthesis refusal and no scored scenario failed (exit 3 unless a mutant survived). A baseline that executed no scenario is refused as `nothing scored` (stderr, exit 3, no report). [Mutation audit](../guides/verify/mutation-audit.md#audit-the-suite-with-specification-mutants), [source][mutate] |
+| `format: ess-mutation-report/2` | Original model digest (`spec_digest`), implementation and `<system> <version>` | Added in 0.41.0. Written by 0.41.0; this build writes `ess-mutation-report/3` to `/8`, the lowest version that carries the report's content, see the [version history](spec-versions.md). 0.41.0 wrote it from `ess verify conform mutate` only, to `--report-out` and as `--format json` (the same bytes); `yaml` renders them. **No reader**: nothing in this repository admits it. Sorted keys, two-space JSON plus LF, no timestamp, so the bytes are a function of the tree and the target. `baseline` carries `scenarios`, `refusals` and `not_scored`: each baseline scenario the target reported `unsupported` or the runner `skipped`, with that `status`, in suite order; no mutant is scored on one. One entry per mutant in byte order of id, with `class`, `change`, `verdict` (`killed`, `survived`, `unwitnessed`, `inconclusive`, `stillborn`), the suite `scenarios` and `refusals` counts, `killers` on `killed` only, `stillborn` on `stillborn` only, `added_refusals` (each synthesis refusal of the mutant's suite the baseline's lacks, as `{code, scenario, subject}`, `scenario` absent when the refusal has none, `subject` the element refused, or the invariant (`ESS-SYNTH-011`), view (`ESS-SYNTH-005`, `-014`) or input path (`ESS-SYNTH-001`) one element or scenario is refused per; counted key by key, so a second refusal with a key the baseline holds once is added; sorted) when there is one, and `excluded` (the mutant's scenarios the baseline did not execute, sorted) when there is one; a mutant nothing killed with an `excluded` scenario it changed is `inconclusive`; one whose excluded scenarios are all the baseline's own, unchanged, can still be `survived`. `counts` adds `unwitnessed`. A report written by `--collect` also carries `unscored` on an `inconclusive` mutant whose `report.json` is missing, unreadable, or of another suite or implementation. Codes: `ESS-MUTATE-001`, a baseline scenario failed or ended `error` (stderr, exit 3, no report); `ESS-MUTATE-002`, `assemble` or `compile` refused a mutant (on its entry, with the refusal's own code as `cause`); `ESS-MUTATE-003`, the selected classes found no site (stderr, exit 3, no report); `ESS-MUTATE-004`, `unwitnessed`: the mutant's suite gained a synthesis refusal and no scored scenario failed (exit 3 unless a mutant survived). A baseline that executed no scenario is refused as `nothing scored` (stderr, exit 3, no report). [Mutation audit](../guides/verify/mutation-audit.md#audit-the-suite-with-specification-mutants), [source][mutate] |
 | `format: ess-mutation-manifest/7` | As version 6 | Added in 0.85.0. The version-6 manifest with `unmutated_sites`, as the version-8 report carries it (beyond10x/ess#711). Written by `ess verify conform mutate --emit DIR` wherever a selected class left a site without a mutant; in an emission scoped to a component, only the component's own sites are listed. Any other emission keeps the version in the rows below, with its earlier bytes. Read back by `--collect DIR`, which carries the list into the report. An empty list, a site whose reason belongs to another class, a list out of byte order, or a site whose id is also a mutant's is refused, and a version-6 or earlier manifest carrying the list is refused naming this version. It is also the version of an emission holding a `grant-drop` or `grant-add` mutant (beyond10x/ess#710), whose baseline and mutant suites keep their `<command>/grant/denied` scenarios; a version-6 or earlier manifest naming such a mutant is refused naming this version. [source][mutate] |
 | `format: ess-mutation-manifest/6` | As version 5 | Added in 0.60.0. The version-5 manifest with `overlap_taken_by` on a `precedence-swap` mutant whose overlap branches answered before both take, as the version-6 report carries it (beyond10x/ess#539). Written by `ess verify conform mutate --emit DIR` wherever a mutant carries it; any other emission keeps the version in the rows below, with its earlier bytes. Read back by `--collect DIR` exactly as version 5 is. A manifest of this version carrying `overlap_taken_by` on any other class is refused, and a version-5 or earlier one carrying it is refused naming this version. [source][mutate] |
 | `format: ess-mutation-manifest/5` | As version 4 | Added in 0.57.0. The version-4 manifest with `identical_answer` on a `precedence-swap` mutant whose two branches answer alike, as the version-5 report carries it (beyond10x/ess#517). Written by `ess verify conform mutate --emit DIR` wherever a mutant carries it; any other emission keeps the version in the row below, with its earlier bytes. Read back by `--collect DIR` exactly as version 4 is. A manifest of this version carrying `identical_answer` on any other class is refused, and a version-4 or earlier one carrying it is refused naming this version. [source][mutate] |
 | `format: ess-mutation-manifest/4` | Original model digest (`spec_digest`), `<system> <version>`, each suite's `spec_digest` and `suite_digest`, the `component` and the bound known-failure declaration | Added in 0.53.0. Every suite records `suite_digest`, the SHA-256 of its exact bytes, and `--collect` scores only report/2 of exactly those bytes (report/1 is collected only from version-3 and earlier manifests). With `--emit --known-failing FILE` the declaration is checked against the emitted baseline, copied byte for byte to `known-failures.json`, and bound as `known_failures` (`digest`, `file`, `implementation`, `implementation_build`); `--collect` then needs the host's `ess-conformance-execution/1` beside every `report.json` (`execution.json`) of the bound build, refusing the collection when the baseline's is missing or mismatched and leaving a mutant whose is `inconclusive`, and refuses a declaration supplied again in other bytes, or to an emission that bound none. Written by `ess verify conform mutate --emit DIR` where the emission names a `component`, binds a declaration, or holds a `sets-drop` or `precedence-swap` mutant, an `emit-swap` mutant or an `emit-swap` site with no admissible alternative, recorded as `unavailable_sites` exactly as the version-4 report carries them; any other emission keeps the version in the row below, so its readers still collect it. Read back by `--collect DIR`. That document, with `component`, the component every suite was scoped to as `synthesize --component` scopes one, where one was named, and on each mutant whose site belongs to another component `out_of_scope: true` and no suite fields: nothing is written for it. A scoped suite's `refusals` and `refused` hold the refusals of the component's own operations and of the whole model, not another component's. A manifest of this version with an `out_of_scope` mutant and no `component` is refused; an earlier one carrying a `component`, an `out_of_scope` mutant, a `sets-drop`, `precedence-swap` or `emit-swap` mutant, or `unavailable_sites` is refused naming this version, and one of this version carrying `identical_answer` is refused naming version 5; an unavailable site of another class, with an id or `unaudited` that is not its own, out of byte order of id, also a mutant's site, or `outside_component` with no `component` is refused, and a format this build does not know is refused by name before any field is read. [source][mutate] |
 | `format: ess-mutation-manifest/3` | Original model digest (`spec_digest`), `<system> <version>`, and each suite's `spec_digest` | Added in 0.42.0. Written by `ess verify conform mutate --emit DIR` as `DIR/manifest.json`; read back only by `--collect DIR`, which still reads the version-2 and version-1 manifests, and which reads the baseline's `ir.json` for the outcomes that perform each transition (without it, a transition mutant is scored without them). Sorted keys, two-space JSON plus LF, no timestamp. `baseline` names the unmutated suite's `dir`, `scenarios`, `refusals`, `refused` and `spec_digest`; `mutants` lists every mutant in byte order of id with `class`, `site`, `change` and either the same five suite fields, with `unsatisfiable_guard` where the emitter found the guard it left dead, or `stillborn` (`ESS-MUTATE-002`, no suite). `refused` lists each synthesis refusal as `{code, scenario, subject}` (at least one of `scenario` and `subject`), sorted, and must hold `refusals` entries; a version-2 manifest has no `unsatisfiable_guard`, so its emission scores no mutant `equivalent`; a version-1 manifest has neither, so its emission also judges a mutant's gained refusals by count and names none. A version-1 or version-2 manifest carrying `unsatisfiable_guard` is refused. Each `dir` is relative, of plain segments; `--collect` refuses any other. Unknown fields are refused. [source][mutate] |
-| `format: ess-mutation-manifest/2` | Original model digest (`spec_digest`), `<system> <version>`, and each suite's `spec_digest` | Added in 0.41.0. Written by 0.41.0 from `ess verify conform mutate --emit DIR` as `DIR/manifest.json`; this build emits `ess-mutation-manifest/3`, and its `--collect DIR` still reads version 2 and version 1. Sorted keys, two-space JSON plus LF, no timestamp. `baseline` names the unmutated suite's `dir`, `scenarios`, `refusals`, `refused` and `spec_digest`; `mutants` lists every mutant in byte order of id with `class`, `site`, `change` and either the same five suite fields or `stillborn` (`ESS-MUTATE-002`, no suite). `refused` lists each synthesis refusal as `{code, scenario, subject}` (at least one of `scenario` and `subject`), sorted, and must hold `refusals` entries; a version-1 manifest has no `refused`, so its emission judges a mutant's gained refusals by count and names none. Each `dir` is relative, of plain segments; `--collect` refuses any other. Unknown fields are refused. [source][mutate] |
+| `format: ess-mutation-manifest/2` | Original model digest (`spec_digest`), `<system> <version>`, and each suite's `spec_digest` | Added in 0.41.0. Written by 0.41.0 from `ess verify conform mutate --emit DIR` as `DIR/manifest.json`; this build emits `ess-mutation-manifest/3` to `/7`, and its `--collect DIR` still reads version 2 and version 1. Sorted keys, two-space JSON plus LF, no timestamp. `baseline` names the unmutated suite's `dir`, `scenarios`, `refusals`, `refused` and `spec_digest`; `mutants` lists every mutant in byte order of id with `class`, `site`, `change` and either the same five suite fields or `stillborn` (`ESS-MUTATE-002`, no suite). `refused` lists each synthesis refusal as `{code, scenario, subject}` (at least one of `scenario` and `subject`), sorted, and must hold `refusals` entries; a version-1 manifest has no `refused`, so its emission judges a mutant's gained refusals by count and names none. Each `dir` is relative, of plain segments; `--collect` refuses any other. Unknown fields are refused. [source][mutate] |
 | `format: ess-history/3` | `spec_digest` of the specification the run was recorded against, `history_id`, `seed` | Added in 0.61.0. The format 2 document, whose operations may also carry `input`, the command's input as the client sent it (every input field by name, the field naming the subject included); `events`, each event a `Returned` command's answer published, in order, as `{event, payload}`; and `arranged`, the `external:` branches the client asked the target to arrange through `ConfigureExternalOutcome` before sending the call (`[]` for none). Each is absent where the writer recorded none and never `null`; `events` is refused on an `Indeterminate` operation, and all three are refused in a format 1 or format 2 document. A number inside `input` or a `payload` has one spelling, the ECMAScript spelling of its binary64 value that `JSON.stringify` and Go's `encoding/json` write (`100`, never `100.0` or `1e2`; `1e+21`; `0`, never `-0`), and an object there repeats no key; either is refused by name otherwise, so a history read and written back keeps its bytes. A writer selects `ess-history/3` exactly when an operation records any of the three, so a history without them keeps its format and its bytes. `ess verify conform check-history` steps an operation that records its input with exactly that input, where it otherwise asks whether some candidate input explains the answer; holds an operation that records its events to the events the branch it takes publishes, in order, and, with its input, each payload field the branch maps from the input or a literal to the value the model computes; and, for an operation that records `arranged`, admits an `external:` branch other than a `replays:` one only where an operation of the same command recorded arranging it and was invoked before this one returned. Written by the Go and TypeScript concurrent explorers for every command call (beyond10x/ess#576); a reader of format 1 refuses `ess-history/3` by its `format`. [source][history] |
 | `format: ess-history/2` | `spec_digest` of the specification the run was recorded against, `history_id`, `seed` | Added in 0.53.0. The format 1 document, whose operations may also carry `decision_time`: the UTC instant that call's command decision observed, read once at its decision edge, in one spelling (`Z`, a fraction only when it is not zero, no trailing zero, years 0000 through 9999). Absent where no decision was observed — a call refused before deciding, a retained answer delivered again, a target recording none — and never `null`; an `Indeterminate` operation keeps the instant its decision began at. `invoked_at` and `returned_at` stay ordering coordinates and are never read as the current time. A writer selects `ess-history/2` exactly when an operation records a `decision_time`, so a history without one is still written as format 1, byte for byte as before, and writing format 1 with one is refused. `ess verify conform check-history` and `web --history` read both formats and refuse a `decision_time` in a format 1 document, written `null`, in another spelling, or a future major; a reader of format 1 only refuses `ess-history/2` by its `format` before reading any operation. The checker reads each operation's recorded instant as `now` on every alternative it tries; an operation recording none leaves a guard that needs one unresolved, never a violation. Written by the Go and TypeScript concurrent explorers from a target's decision receipt. [source][history] |
 | `format: ess-history/1` | `spec_digest` of the specification the run was recorded against, `history_id`, `seed` | Added in 0.39.0. One concurrent run: `clients` and, per operation, `operation_id`, `client`, `command`, `subject_key`, `invoked_at`, `returned_at`, `completion` (`Returned` or `Indeterminate`), `outcome`, a view read's `rows` and a retried request's `retry_of`. Declared by `models/concurrent-history/`, published as `schemas/ess-history.schema.json`. Read by `ess verify conform check-history` and `web --history`, which refuse an unknown, missing or repeated field, another `format`, a history of another specification, an operation whose completion disagrees with its instants or outcome, and any integer above 2^53 − 1. Written by the Go and TypeScript concurrent explorers and by `import-history`. [source][history] |
@@ -447,7 +471,7 @@ format's canonical digest profile or provide remote attachment proof. See the
 
 For retained-result Integer observations, the actual target adapter must preserve
 the handler's exact integer before constructing its typed response. JSON adapters
-must decode it losslessly or report Unsupported; parity of typed observations
+must decode it losslessly or report Unsupported. Parity of typed observations
 does not certify arbitrary JSON numeric spellings or a generic floating-point
 conversion. Existing numeric bytes remain unchanged.
 
@@ -458,9 +482,9 @@ source formats keep their existing canonical witnesses.
 
 The complete pair is `snapshot_complete_subject` followed by
 `expect_complete_subject_unchanged`. Its required `shape` contains
-`identity_field`, typed `fields` and reachable `declarations`; it supplies
+`identity_field`, typed `fields` and reachable `declarations`. It supplies
 schema authority, not expected target values. Both actual rows must satisfy that
-shape; missing required fields or incompatible values fail execution. Invalid
+shape. Missing required fields or incompatible values fail execution. Invalid
 pairings or unsupported recursive observers refuse admission. Extra top-level row fields remain
 permitted and participate in exact comparison. Legacy `snapshot_subject` and
 `expect_subject_unchanged` retain their original semantics, including inside a
@@ -478,9 +502,9 @@ and the [impact implementation][impact].
 `ConformanceSuite::to_canonical_json`, Go/Web `emit` and `Runner::run` now return
 `Result` with a located `AdmissionError` for unsupported Binary64 contracts. The
 model producer/CLI guard also checks sparse models whose unsupported fields would
-be absent from the suite. Suite readers and serializers reject the new primitive
-under the existing suite vocabulary; no new suite version or float codec support
-is implied. Existing admitted canonical suites retain their bytes.
+be absent from the suite. Suite readers and serializers reject the primitive
+under a suite major below /62, and from `ess-conformance/62` a modeled `Binary64` is carried and
+compared by its nearest binary64. Existing admitted canonical suites retain their bytes.
 
 ## Generated documents and external formats
 
@@ -499,8 +523,8 @@ is implied. Existing admitted canonical suites retain their bytes.
 | Go HTTP startup JSON lines: **`log: ess/1`** | Shared specification facts plus Go runtime fields | Separate generated writer using shared startup facts; no log-admission reader or cross-language byte promise. [Source][go-http] |
 
 `web::browser_catalog(ir, plan) -> BrowserCatalog` remains a separate semantic catalog API with
-unchanged `ess-browser-catalog/1` bytes. It does not run the workspace's fatal feasibility gate;
-catalog availability does not establish that a Rust/Web workspace can be emitted. When a Web
+unchanged `ess-browser-catalog/1` bytes. It does not run the workspace's fatal feasibility gate.
+Catalog availability does not establish that a Rust/Web workspace can be emitted. When a Web
 workspace is emitted, its catalog uses the same bytes. [Catalog API][web-workspace].
 
 Generated artifact maps, validation/refusal/adapter summaries, inspected declarations, interaction
@@ -510,13 +534,15 @@ general ESS reader for those report files or an implicit whole-report digest.
 [CLI owners][cli], [schema reports][schema-cli], [infrastructure diagnosis][diagnosis].
 
 Markdown, HTML, generated source code and build manifests follow their individual writers.
-Kubernetes `apiVersion`/`kind`, Helm artifacts and BuildKit inputs use their external contracts;
-they do not introduce another ESS format marker. Adopter-owned JSON Schema `$id` identifies its
+Kubernetes `apiVersion`/`kind`, Helm artifacts and BuildKit inputs use their external contracts.
+They do not introduce another ESS format marker. Adopter-owned JSON Schema `$id` identifies its
 schema resource independently of any digest. Neither the contract nor syntax schema generator
-assigns that ID or a hosted schema endpoint. The
+assigns that ID or a hosted schema endpoint.
+
+The
 [local registry workflow](../guides/generate-artifacts.md#generated-schemas-in-a-local-registry)
 adds only root IDs to separate copies and uses strict application envelopes with absolute payload
-references. Original generated bytes, dialects, constraints and provenance remain intact; a copied
+references. Original generated bytes, dialects, constraints and provenance remain intact. A copied
 resource's model or slice digest is not its file checksum. Registry validation resolves the supplied
 resources offline, and its successful records identify the selected envelopes. It does not establish
 whole-system semantic validity or support in the separate restricted TypeScript projector.
@@ -525,27 +551,33 @@ whole-system semantic validity or support in the separate restricted TypeScript 
 
 The `ess verify bindings` command, introduced in 0.21.0, connects admitted realization selections to
 native infrastructure observations. `ess-observed-bindings/1` and `/2` are closed authored
-JSON/YAML DTOs; the binding digest hashes compact typed JSON after sorting bindings by id and
+JSON/YAML DTOs. The binding digest hashes compact typed JSON after sorting bindings by id and
 sorting declared evidence, and, for `/2`, sorting `foreign_containers` by workload and container
-name. It retains all authored image expectations and the exact realization digest. `/2` adds
-optional `foreign_containers`: per bound workload, containers this realization does not build,
-each with a `name` and a nonempty `reason` and no image. `/1` is read unchanged and acknowledges
-nothing; its binding digest is the one earlier releases computed, and a `/1` document carrying
-`foreign_containers` is refused. Earlier readers refuse `/2` by its format.
+name. It retains all authored image expectations and the exact realization digest.
+
+`/2` adds optional `foreign_containers`: per bound workload, containers this realization does
+not build, each with a `name` and a nonempty `reason` and no image. `/1` is read unchanged and
+acknowledges nothing. Its binding digest is the one earlier releases computed, and a `/1`
+document carrying `foreign_containers` is refused. Earlier readers refuse `/2` by its format.
+
 `ess-observed-bindings-report/3` is serialize-only, deterministic pretty JSON plus LF with no
 whole-report digest or report-admission reader. `/2` added the `OBS-BIND-008` check (an unbound
 container or native sidecar in a bound workload violates), so the same input can be satisfied
 under `/1` and violated under `/2`. `/3` adds each binding's `acknowledged` list (`container`,
-`reason`) of acknowledged foreign containers observed in its workload; a satisfied `OBS-BIND-008`
-now means each entry is bound or acknowledged. An acknowledged container running a declared
-image or artifact locator, or its `@sha256:` digest under another name, violates it, and an acknowledgement naming no observed container or
-native sidecar leaves it unknown, since plain init containers are not recorded. A `/1` reader must reject `/2`, and a `/2` reader `/3`. It carries that binding digest, realization digest,
+`reason`) of acknowledged foreign containers observed in its workload. With it, a satisfied
+`OBS-BIND-008` means each entry is bound or acknowledged.
+
+An acknowledged container running a declared image or artifact locator, or its `@sha256:` digest
+under another name, violates it. An acknowledgement naming no observed container or native
+sidecar leaves it unknown, since plain init containers are not recorded.
+
+A `/1` reader must reject `/2`, and a `/2` reader `/3`. The report carries that binding digest, realization digest,
 observation model digest and provenance, per-binding results and explicit exclusions. These
-identities name different bytes. Missing evidence produces unknown, never an empty successful
-comparison. [Binding guide](../guides/check-infrastructure.md#connect-implementation-selections-to-observed-workloads).
+identities cover different bytes. Missing evidence produces unknown, never an empty
+successful comparison. [Binding guide](../guides/check-infrastructure.md#connect-implementation-selections-to-observed-workloads).
 
 The namespace topology profile adds `infra-observation/2`, `infra-ir/2`, `infra-graph/2`,
-`infra-drift/2` and `infra-simulation/2`. Its closed coverage claim names the namespace and
+`infra-drift/2` and `infra-simulation/2`. Its closed coverage claim states the namespace and
 `namespace_topology` profile. IR coverage belongs to the canonical model and its digest;
 graph and drift retain that coverage, and simulation retains it in its typed unknown reason.
 Version 1 bytes remain unchanged, and version 1 cannot carry version 2 qualifications.
@@ -555,7 +587,7 @@ for omitted content, comparison restrictions and projection refusal.
 | Document and discriminator | Independent identity | Reader and byte contract |
 |---|---|---|
 | `format: infra-observation/1` | Context, scan time, scanner release | Sanitized scanner output; permissive raw DTO → observation validation. Pretty JSON without an appended LF; scanner-reported hash covers those file bytes. It does not prove complete collection scope. [Writer][scanner], [reader][observation] |
-| `format: infra-observation/3` | Context, scan time, scanner release | What `ess-kubernetes scan` writes for a full scan. `/1` with one meaning changed: each Secret `data`/`stringData` value is exactly `{"present": true}` — the key name and that a value exists, with no digest and no length. Anything else is refused (`INFRA-SECRET-001` for a plain value, `INFRA-SECRET-003` otherwise). `/1` wrote each value's unsalted SHA-256 and byte length, which let anyone holding the file confirm a guessed low-entropy secret; `/1` still reads, its digests are checked for shape and discarded. Same byte contract as `/1`. [Writer][scanner], [reader][observation] |
+| `format: infra-observation/3` | Context, scan time, scanner release | What a full scan writes (`ess infra import kubernetes --context <ctx> --observation-out <file>`). `/1` with one meaning changed: each Secret `data`/`stringData` value is exactly `{"present": true}` — the key name and that a value exists, with no digest and no length. Anything else is refused (`INFRA-SECRET-001` for a plain value, `INFRA-SECRET-003` otherwise). `/1` wrote each value's unsalted SHA-256 and byte length, which let anyone holding the file confirm a guessed low-entropy secret; `/1` still reads, its digests are checked for shape and discarded. Same byte contract as `/1`. [Writer][scanner], [reader][observation] |
 | `format: infra-ir/1` | Observation provenance and model digest | `read_document` checks exact format, closed mirrors, hash and resolved-reference membership. CLI pretty envelope; **infrastructure-model** digest. Checked model transformations add no wire version or completeness proof. A workload's optional `native_sidecars` (name and image of each `initContainers` entry with `restartPolicy: Always`) is absent when the observation did not record init containers and `[]` when it recorded none; before 0.32.0 the field is written only for a native sidecar or an explicit `initContainers: []`, so every other document from those producers keeps its bytes and digest; older readers refuse a document that carries the field. [API][infra-ir], [reader][infra-reader] |
 | `format: infra-ir/3` | Observation provenance and model digest | `/1` with one meaning changed: each Secret key holds `{"present": true}` and nothing derived from its value. Written for every full observation that has a Secret key, including a compiled `infra-observation/1`; an IR with no Secret key keeps `/1` and its bytes. `read_document` refuses a document whose declared version disagrees with its Secret values, and one model mixing markers and legacy digests. A persisted `/1` still reads: its own digest is checked, then each Secret key is reduced to presence, so what was read is `/3` with a different model digest. Every derived document (graph `source_digest`, drift `from`/`to`, simulation snapshot, projection `snapshot_digest`, observed-bindings observation) names that stripped digest, and none chains to the `/1` file's own digest any more: a digest over the unsalted Secret digests, beside the `/3` of the same model, confirms a guessed Secret value. [API][infra-ir], [reader][infra-reader] |
 | `format: infra-ir/4` | Observation provenance and model digest | `/3` grown by the cluster's HTTP edge: optional model maps `gateways` (class, listeners, status addresses) and `http_routes` (hostnames; each parent with its effective namespace and a checked `gateway` reference, `null` for a parent of another kind such as a `ListenerSet`; each rule's path matches and backends with a checked `service` reference, `null` for a backend of another kind), and by its cloud: a service account's optional `cloud_identity` (`provider`, `role_arn`) and a load-balancer service's optional `load_balancer` (`hostnames`, `scheme`). Written only for a model that holds one of them, the maps scanned and empty included; every other model keeps `/3` or `/1`, its bytes and its digest. Secret keys are presence markers as in `/3`. An unobserved gateway or backend service is an unresolved fact (`gateway`, `service`). `read_document` refuses a `/3` declaring them, a `/4` without them, and a `null` map. An older reader refuses `/4`. [API][infra-ir], [reader][infra-reader] |
@@ -586,10 +618,12 @@ of the same number, so an `ess-cli/1` binding compiles to the same `ess-cli-plan
 ## Deployment recovery records
 
 `ess generate deployment reconcile --authority UUID` reads and writes five record formats. The
-registry and its authorities live under the protected root `/etc/ess/recovery`; the store header,
+registry and its authorities live under the protected root `/etc/ess/recovery`. The store header,
 lock and journal live under the `state_root` the selected authority names. All five were
 introduced in 0.21.0, and each has exactly one admitted version: a record naming any other is
-refused. The bytes are canonical JSON: recursively sorted keys, array order kept, no duplicate
+refused.
+
+The bytes are canonical JSON: recursively sorted keys, array order kept, no duplicate
 key, no floating-point number, and exactly one trailing newline. [Source][recovery-model]
 
 | Document | What it is |
@@ -605,49 +639,56 @@ key, no floating-point number, and exactly one trailing newline. [Source][recove
 Use the owning reader's validation API. The stamp reader accepts complete authoritative envelopes
 and supported profiles, including matching comment/structured copies where the writer emits both.
 Generic String deserialization does not perform that check. Cargo synthesis stamp recognition does
-not validate TOML, and a docs document has per-page stamps rather than one artifact stamp.
+not validate TOML, and a docs document has per-page stamps and no single artifact stamp.
 [Stamp reader][stamp].
 
-Explicit report **/2** and detailed **ess-conformance-run/2** pair admitted original suite/1–13
+Explicit report **/2** and detailed **ess-conformance-run/2** pair admitted original suite/1–65
 bytes under `sha256-json-bytes/1`. Ordinary suite/1–4, /6, /8, /10 and /12 coverage remains unknown, including all-pass runs.
+
 Suite **/5** adds a closed declared inventory: exact selection, origin/source ownership, outside
 scenarios and every refusal occurrence. Only nonempty all-pass execution with complete inventory
 and no in-scope refusal qualifies for that exact selection. Suite/7 retains these rules with
-extended observation/setup vocabulary; suite/9 adds typed command-response observation,
+extended observation/setup vocabulary, and suite/9 adds typed command-response observation,
 suite/11 adds independent subject snapshots, and suite/13 adds retained-result comparison.
-Legacy defaults remain suite/4, report/1 and diagnostic execution;
-an extended suite requires explicit report/2. Suites /5 to /13 with report/1 refuse before execution, including without an
+
+Legacy defaults remain suite/4, report/1 and diagnostic execution.
+An extended suite requires explicit report/2. Suites /5 to /65 with report/1 refuse before execution, including without an
 output destination or with allow-incomplete. Report/1 keeps its historical non-pass aggregate and
 does not establish exact suite-byte identity. [Coverage workflow](../guides/verify/runners.md#opt-into-declared-coverage).
 
-A runner outside ESS reports through `ess-conformance-results/1` rather than by writing report/2
+A runner outside ESS reports through `ess-conformance-results/1` and does not write report/2
 itself. `ess verify conform report` admits the suite the runner executed and takes coverage, the
 suite reference and policy from that admission, so the report it writes qualifies exactly as one
 ESS's own run would. Its `producer_profile`, `external-scenario-status/1`, says that ESS executed
-nothing; a reader that admits only `rust-scenario-status/1` and `go-scenario-status/1` refuses it.
+nothing. A reader that admits only `rust-scenario-status/1` and `go-scenario-status/1` refuses it.
 `message` is read and not carried into the report.
 
 Generated Go and TypeScript count reports use `go-scenario-status/2` to distinguish a
 failed assertion, an execution error, an unsupported required observation and an explicit skip.
-An unsupported observation makes execution fail; an error or skip makes it inconclusive unless
+An unsupported observation makes execution fail. An error or skip makes it inconclusive unless
 another scenario failed or was unsupported. Counts and outcome lists retain each category.
+
 The older `go-scenario-status/1` remains readable with its original passed/failed/skipped
-categories; it cannot carry error or unsupported outcomes. Unknown producer profiles are refused.
+categories. It cannot carry error or unsupported outcomes. Unknown producer profiles are refused.
 Legacy report/1 keeps its diagnostic presentation and does not establish this count-profile parity.
 
 `ess-conformance-input/1` has exactly `format`, original selected `suite_json` and nearest-first
 `parent_suites` strings. Every explicit child needs its complete original parent chain. The selected
-inner string is hashed, never the carrier or the reduced execution DTO; all surviving definitions,
-dependencies, source mappings and refusal occurrences must agree. `ess-conformance-replay/1` pairs
+inner string is hashed, never the carrier or the reduced execution DTO. All surviving definitions,
+dependencies, source mappings and refusal occurrences must agree.
+
+`ess-conformance-replay/1` pairs
 that input with the exact SuiteReference and a closed typed reduced model before browser state is
-created. The player displays coverage but emits no evidence; it does not reconstruct the full model
+created. The player displays coverage but emits no evidence. It does not reconstruct the full model
 digest, authenticate a publisher or fill the existing literal-assignment/view-evaluation omissions.
 
 New counts and timestamps use exact unsigned decimal u64 tokens. Go's selected execution adapter
 separately checks its host `int` width after admitting all parents, and its clock remains nonnegative
-int64; Rust timestamps retain the full u64 range. Declared Node payloads retain finite binary64
-meaning. Modeled Binary64 remains refused before conformance output. Impact with complete admitted
-input retains `ess-impact/3` and presents selection separately; unknown/incomplete input refuses.
+int64. Rust timestamps retain the full u64 range. Declared Node payloads retain finite binary64
+meaning.
+
+Modeled Binary64 is carried from suite/62, and one reached through an identity, a view parameter, an actor attribute, a binding or a conversion is still refused before conformance output (`ESS-AUTHOR-036`). Impact with complete admitted
+input retains `ess-impact/3` and presents selection separately. With unknown/incomplete input it refuses.
 A format catalog alone does not establish an installed external consumer upgrade.
 
 [versions]: https://github.com/beyond10x/ess/blob/main/crates/specify/ess-domain/src/name.rs

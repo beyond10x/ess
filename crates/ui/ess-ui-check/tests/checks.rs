@@ -2,8 +2,8 @@
 //!
 //! One test per check, named by the check's id: `every_check_has_a_test_named_by_its_id` reads
 //! this file and fails when an id of [`ess_ui_check::CHECKS`] has no `fn <id>()` here, and
-//! `every_schema_check_is_run` fails when the schema's `checks.list` names a check the crate does
-//! not run, or gives it another severity.
+//! `every_schema_check_is_run` fails when the schema's `checks.list` and [`CHECKS`] differ in an id
+//! or a severity.
 
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
@@ -2278,14 +2278,13 @@ fn every_schema_check_is_run() {
             .iter()
             .find(|check| check.id == id)
             .unwrap_or_else(|| panic!("the schema's check `{id}` is not run"));
-        assert!(check.from_schema, "`{id}` is declared by the schema");
         assert_eq!(check.severity.as_str(), severity, "`{id}`");
     }
-    for check in CHECKS.iter().filter(|check| check.from_schema) {
+    for check in CHECKS {
         assert!(
             list.iter()
                 .any(|entry| entry["id"].as_str() == Some(check.id)),
-            "`{}` claims the schema declares it",
+            "`{}` is run and the schema does not declare it",
             check.id
         );
     }
