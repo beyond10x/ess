@@ -53,8 +53,34 @@ const MARKED: &[(&str, &[&str])] = &[
         ],
     ),
     (
+        "crates/verify/ess-conformance/tests/adversary_ess0700a_identity_beside_row_set_2.rs",
+        &[
+            "adversary_a2_count_row_set_orders_are_told_apart",
+            "adversary_a2_every_step_4_order_is_told_apart_across_declaration_orders",
+            "adversary_a2_forall_beside_named_rows_witnesses_every_branch",
+            "adversary_a2_row_set_over_a_missing_named_row_orders_are_told_apart",
+            "adversary_a2_row_set_over_the_other_named_row_orders_are_told_apart",
+            "adversary_a2_separate_creator_orders_are_told_apart",
+            "adversary_a2_when_beside_a_named_refusal_orders_are_told_apart",
+        ],
+    ),
+    (
+        "crates/verify/ess-conformance/tests/adversary_u22_pass1.rs",
+        &[
+            "a_refusal_the_step_bound_cut_short_names_the_bound",
+            "a_seeded_chain_synthesizes_the_same_suite_twice",
+            "every_reachable_branch_of_seeded_plain_sixteen_refusal_chains_has_its_scenario",
+            "every_reachable_branch_of_seeded_sixteen_refusal_chains_over_the_adopter_shape_has_its_scenario",
+            "the_first_seeds_of_the_seeded_sixteen_refusal_chains_have_their_scenario_in_the_step",
+        ],
+    ),
+    (
         "crates/verify/ess-conformance/tests/adversary_w3_266_267_dump.rs",
         &["adv_every_model_synthesizes_one_document_and_dumps_for_base_comparison"],
+    ),
+    (
+        "crates/verify/ess-conformance/tests/binding_trigger_row_predicate.rs",
+        &["a_target_that_retries_not_eligible_fails_the_refusal"],
     ),
     (
         "crates/verify/ess-conformance/tests/synthesis_suite_bytes_table.rs",
