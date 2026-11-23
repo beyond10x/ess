@@ -28,7 +28,7 @@ scope:
   path: crates/verify/ess-conformance/src/synthesize/set_effects.rs
 - confidence: inferred
   path: crates/verify/ess-conformance/tests/input_path_addressing.rs
-revision: 5
+revision: 6
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-10T00:46:49Z", actor: "human:timo", revision: 4, decided_on: {"recorded":{"review_outcome":1}}}
 - {from: "proposed", to: "active", at: "2026-11-10T00:46:50Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"review_outcome":1}}}
@@ -90,6 +90,8 @@ confidence: low
 ## Decisions
 
 accept, redesigned, as the parent story. This story carries synthesis and the interpreted target.
+
+2026-11-23: the feature opens `ess/38`; `ess/37`, released in 0.93.0, keeps its meaning (the operator's decision on the question which format carries the new reading of `{missing: input.<path>}`).
 
 ## Source
 
