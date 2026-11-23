@@ -210,10 +210,12 @@ field reads:
 | `null_when_absent` | drift | yes | drift | yes | drift |
 | `omitted_when_absent` | drift | drift | yes | yes | yes |
 | `omitted_or_null` | drift | drift | drift | yes | drift |
-| unstated | drift | drift | drift | yes | yes |
+| unstated | drift | drift | yes | yes | yes |
 
-A field with no `presence:` writes either absent spelling and, as the published schema reads it,
-reads only a missing key; equal forms always conform.
+A field with no `presence:` is projected as `omitted_when_absent` is (optional, not nullable;
+`ess-gen`'s `object_annotated`), and the interpreted target leaves its absent value out. As the
+published schema reads it, it writes and reads only a missing key, so its row and column are those
+of `omitted_when_absent`; equal forms always conform.
 
 | narrowing | admitted under `writer: true` | still drift |
 |---|---|---|
@@ -240,7 +242,8 @@ naming `ess-composition/6`. A role's `implements` comparison never reads it.
 declares `undeclared_fields: ignored` (`ess/24`); the comparison reads that key, the author asserts
 nothing.
 
-**Departure.** None from an issue; the presence table's `unstated` row follows the published schema.
+**Departure.** None from an issue; the presence table's `unstated` row and column follow the published schema, where a field with no
+presence is `omitted_when_absent`'s projection.
 
 ## Compatibility
 
