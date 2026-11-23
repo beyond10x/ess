@@ -36,17 +36,18 @@ it once more:
 
 ## Ratchet decision `R-04-worse`: a layout shift measured once under a load of 120 to 170
 
-Two pages that changes 1 to 5 did not touch shifted at load in the slow lane, in the dark theme,
-where the layout shift is measured:
+Two pages shifted at load in the slow lane. Changes 1 to 3 and 5 did not touch them; change 4 edits
+`website/src/css/custom.css`, which every page uses (corrected in R-05). The shift is measured under
+the light theme and filed under `dark` by the reporter (T34, corrected in R-05):
 
 | scenario | key | baseline | R-04 |
 | --- | --- | --- | --- |
 | `/ess/docs/concepts/overview@desktop-1280/dark` | `layout_shift.load` | 0 | 0.0342 |
 | `/ess/docs/status/roadmap@desktop-1280/dark` | `layout_shift.load` | 0 | 0.0697 |
 
-Two probe runs of both pages afterwards, at a load of 122 and 128 (`.out/probe-cls-1`,
-`.out/probe-cls-2`, not part of the round), measured 0 on both. The values are taken so the round
-stays complete; the next round's run replaces them in the baseline if it measures 0 again.
+That two probe runs of both pages afterwards measured 0 is not kept: their logs hold no
+layout-shift value (R-05). These are not good values: they were measured once under load. They are
+taken so the round stays complete; the next round's run replaces them in the baseline if it measures 0 again.
 
 - `/ess/docs/concepts/overview@desktop-1280/dark layout_shift.load`
 - `/ess/docs/status/roadmap@desktop-1280/dark layout_shift.load`
