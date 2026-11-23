@@ -1697,6 +1697,16 @@ pub fn path_segments_copied<R>(run: impl FnOnce() -> R) -> (R, u64) {
     (out, SEGMENTS_COPIED.with(std::cell::Cell::get) - before)
 }
 
+/// The count of [`SEGMENTS_COPIED`] on this thread.
+pub(crate) fn taken_segments_copied() -> u64 {
+    SEGMENTS_COPIED.with(std::cell::Cell::get)
+}
+
+/// Adds `more` to the count of [`SEGMENTS_COPIED`] on this thread.
+pub(crate) fn add_segments_copied(more: u64) {
+    SEGMENTS_COPIED.with(|it| it.set(it.get() + more));
+}
+
 /// Counts `segments` path segments copied or appended ([`path_segments_copied`]).
 fn count_segments(segments: usize) {
     let segments = u64::try_from(segments).unwrap_or(u64::MAX);

@@ -744,6 +744,16 @@ pub(super) fn deciding<R>(run: impl FnOnce() -> R) -> (R, u64) {
     (out, DECIDED.with(Cell::get) - before)
 }
 
+/// The count of [`DECIDED`] on this thread.
+pub(in crate::synthesize) fn taken_decided() -> u64 {
+    DECIDED.with(std::cell::Cell::get)
+}
+
+/// Adds `more` to the count of [`DECIDED`] on this thread.
+pub(in crate::synthesize) fn add_decided(more: u64) {
+    DECIDED.with(|it| it.set(it.get() + more));
+}
+
 /// Whether `condition` holds of the arranged row `index` for a read sending `params`; a condition
 /// nothing decides is refused by name rather than read as false.
 pub(super) fn holds(

@@ -634,6 +634,16 @@ pub(super) fn fields_bound<R>(run: impl FnOnce() -> R) -> (R, u64) {
     (out, FIELDS_BOUND.with(std::cell::Cell::get) - before)
 }
 
+/// The count of [`FIELDS_BOUND`] on this thread.
+pub(super) fn taken_fields_bound() -> u64 {
+    FIELDS_BOUND.with(std::cell::Cell::get)
+}
+
+/// Adds `more` to the count of [`FIELDS_BOUND`] on this thread.
+pub(super) fn add_fields_bound(more: u64) {
+    FIELDS_BOUND.with(|it| it.set(it.get() + more));
+}
+
 thread_local! {
     /// How many times [`hinted`] was asked on this thread, and how many times it made its inputs
     /// ([`inputs_made`]).
@@ -647,6 +657,20 @@ pub(super) fn inputs_made<R>(run: impl FnOnce() -> R) -> (R, u64, u64) {
     let out = run();
     let (now_asked, now_made) = INPUTS_MADE.with(std::cell::Cell::get);
     (out, now_asked - asked, now_made - made)
+}
+
+/// How many times [`hinted`] was asked and how many times it made its inputs on this thread
+/// ([`INPUTS_MADE`]).
+pub(super) fn taken_inputs_made() -> (u64, u64) {
+    INPUTS_MADE.with(std::cell::Cell::get)
+}
+
+/// Adds `more`, the askings and the makings, to the counts of [`INPUTS_MADE`] on this thread.
+pub(super) fn add_inputs_made(more: (u64, u64)) {
+    INPUTS_MADE.with(|work| {
+        let (asked, made) = work.get();
+        work.set((asked + more.0, made + more.1));
+    });
 }
 
 /// What of a stored row's binding no predicate changes, bound once for every predicate decided over
@@ -6533,6 +6557,11 @@ pub(super) fn holding(ir: &EssIr, entity: &EntityHandle, row: &Arrangement) -> H
             .push((std::ptr::from_ref(ir), entity.clone(), row.clone()));
     });
     Holding
+}
+
+/// Whether a row is held on this thread ([`holding`]).
+pub(super) fn holding_any() -> bool {
+    HELD.with(|held| !held.borrow().is_empty())
 }
 
 /// The rows of `ir` held on this thread ([`holding`]), as the key of what a search under them

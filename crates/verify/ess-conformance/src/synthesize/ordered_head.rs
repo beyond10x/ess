@@ -220,6 +220,20 @@ pub(super) fn steering_work<R>(run: impl FnOnce() -> R) -> (R, (u64, u64)) {
     (out, (after_maps - maps, after_checks - checks))
 }
 
+/// The driver maps built and the steerability checks made on this thread by [`Steering`].
+pub(super) fn taken_steering_work() -> (u64, u64) {
+    STEERING_WORK.with(std::cell::Cell::get)
+}
+
+/// Adds `more`, the maps built and the checks made, to the counts of [`STEERING_WORK`] on this
+/// thread.
+pub(super) fn add_steering_work(more: (u64, u64)) {
+    STEERING_WORK.with(|work| {
+        let (maps, checks) = work.get();
+        work.set((maps + more.0, checks + more.1));
+    });
+}
+
 /// The creations of one entity, found once, and the answer of [`steerable`] for each key asked,
 /// kept: a ranked view's keys are checked once each, however many later keys need the answer.
 pub(super) struct Steering<'a> {

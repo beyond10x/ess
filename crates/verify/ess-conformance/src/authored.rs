@@ -271,6 +271,7 @@ mod ties;
 
 #[doc(hidden)]
 pub use ties::replays_run;
+pub(crate) use ties::{add_replays, taken_replays};
 
 // ---- the diagnostic catalogue ------------------------------------------------------------------
 
@@ -2973,6 +2974,16 @@ pub fn documents_read<R>(run: impl FnOnce() -> R) -> (R, u64) {
     let before = DOCUMENTS_READ.with(std::cell::Cell::get);
     let out = run();
     (out, DOCUMENTS_READ.with(std::cell::Cell::get) - before)
+}
+
+/// The count of [`DOCUMENTS_READ`] on this thread.
+pub(crate) fn taken_documents_read() -> u64 {
+    DOCUMENTS_READ.with(std::cell::Cell::get)
+}
+
+/// Adds `more` to the count of [`DOCUMENTS_READ`] on this thread.
+pub(crate) fn add_documents_read(more: u64) {
+    DOCUMENTS_READ.with(|it| it.set(it.get() + more));
 }
 
 /// A document, its `type:` looked at before any other key is admitted.

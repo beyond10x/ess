@@ -46,6 +46,7 @@ use crate::scenario::{
 use crate::witness::{uuid_of, Distinction};
 
 mod contrast;
+pub(super) use contrast::{add_decided, taken_decided};
 
 /// What `run` returns, and how many times a conditioned measure's `where:` was decided for a
 /// row on this thread while it ran, rather than answered from what the same condition answered
@@ -67,6 +68,16 @@ pub fn literals_collected<R>(run: impl FnOnce() -> R) -> (R, u64) {
     let before = LITERALS.with(std::cell::Cell::get);
     let out = run();
     (out, LITERALS.with(std::cell::Cell::get) - before)
+}
+
+/// The count of [`LITERALS`] on this thread.
+pub(super) fn taken_literals() -> u64 {
+    LITERALS.with(std::cell::Cell::get)
+}
+
+/// Adds `more` to the count of [`LITERALS`] on this thread.
+pub(super) fn add_literals(more: u64) {
+    LITERALS.with(|it| it.set(it.get() + more));
 }
 
 /// The most inputs the page's pattern keeps apart: seven, with a group of nine rows.
