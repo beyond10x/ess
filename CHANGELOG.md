@@ -10,6 +10,7 @@
 
 - Testing: a test marked `#[ignore = "slow lane: <reason>"]` runs only in `task test-slow`, under the nextest profile `slow`, and `cargo xtask slow-list` names it; the byte-identity and WebAssembly probes that `task test-slow-probes` ran by hand carry the marker, and that task is gone (story:the-test-step-meets-the-test-budget).
 - CI: `task test-xtask` builds through the host's compile cache and job pool instead of an emptied `RUSTC_WRAPPER` and `CARGO_BUILD_JOBS=2`, compiles in one command and runs the `ess-xtask` tests under nextest, one process per test; no test moved to the slow lane.
+- CI: a `slow` job runs `task test-slow` beside the test shards and `Gate` carries it; a pull request skips it only when every changed path is a plan, documentation, UI, infrastructure or `ess-xtask` path, and every other run (`main`, nightly, queue, merge group, release) runs it, so a run that skipped it never stands in for a release (story:the-test-step-meets-the-test-budget).
 
 ### Fixed
 

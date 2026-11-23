@@ -709,6 +709,7 @@ tasks:
       - task: fmt-check
       - task: clippy
       - task: test
+      - task: test-slow
       - task: doc-check
       - task: example-check
       - task: projection-check
