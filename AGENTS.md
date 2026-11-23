@@ -235,9 +235,10 @@ the variable set, or its Rust cases fail naming the task. The same holds for `ta
 append-set-harness` (`append_set`, through `ESS_APPEND_SET_HARNESS`), `task binary64-harness`
 (`binary64_rust`, through `ESS_BINARY64_HARNESS`), `task json-body-harnesses` (`json_body_closure` and `adversary_w1_gen1_security`, through
 `ESS_JSON_BODY_CLOSURE_HARNESS` and `ESS_JSON_BODY_SECURITY_HARNESS`), `task ui-http-servers`
-(`ess-cli`'s `generate_ui_http`, through `ESS_UI_HTTP_SHELF_SERVER` and `ESS_UI_HTTP_ITEMS_SERVER`)
-and `task body-cap-rust-server` (`ess-synth`'s `body_cap_rust` cases, through
-`ESS_BODY_CAP_RUST_SERVER`).
+(`ess-cli`'s `generate_ui_http`, through `ESS_UI_HTTP_SHELF_SERVER` and `ESS_UI_HTTP_ITEMS_SERVER`),
+`task body-cap-rust-server` (`ess-synth`'s `body_cap_rust` cases, through
+`ESS_BODY_CAP_RUST_SERVER`) and `task body-cap-go-server` (`ess-synth`'s `body_cap_go` cases,
+through `ESS_BODY_CAP_GO_SERVER`).
 Each generates its server from a committed model and `http.yaml.in` binding beside the test; a
 change to either needs the task run again.
 Put the JavaScript tools `ci.yml` installs globally on `PATH` too (`typescript@6.0.3`,

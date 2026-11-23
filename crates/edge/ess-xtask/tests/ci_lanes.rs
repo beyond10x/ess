@@ -5404,3 +5404,153 @@ fn no_archived_test_reads_the_plan_store_outside_its_reproductions() {
          diff would skip the tests of what it changed: {readers:#?}"
     );
 }
+
+/// The words of the `task …` lines of `step`: a one-line step or a line of a script.
+fn task_words(step: &Value) -> Vec<String> {
+    text(&step["run"])
+        .lines()
+        .filter_map(|line| line.trim().strip_prefix("task "))
+        .flat_map(|rest| {
+            rest.split_whitespace()
+                .take_while(|word| {
+                    !word.contains('=') && !word.contains('$') && !word.starts_with('-')
+                })
+                .map(|word| word.trim_matches('"').to_owned())
+                .collect::<Vec<_>>()
+        })
+        .collect()
+}
+
+/// The jobs of `workflow` that run a task reaching `target`, each with the index of its first
+/// such step.
+fn jobs_reaching(workflow: &Value, taskfile: &Value, target: &str) -> Vec<(String, usize)> {
+    let mut found = Vec::new();
+    let Some(jobs) = workflow["jobs"].as_mapping() else {
+        return found;
+    };
+    for (id, job) in jobs {
+        for (index, step) in job["steps"].as_sequence().into_iter().flatten().enumerate() {
+            let mut covered = BTreeSet::new();
+            for task in task_words(step) {
+                reached(taskfile, &task, &mut covered);
+            }
+            if covered.contains(target) {
+                found.push((text(id).to_owned(), index));
+                break;
+            }
+        }
+    }
+    found
+}
+
+/// Every job of `ci.yml` and `release.yml` that reaches `body-cap-go-server` installs Go with the
+/// `test` job's pinned action and version, after the step that frees the runner's disk (which
+/// deletes the hosted tool cache) and before the step that runs the task; and the task builds.
+fn assert_the_go_server_has_its_go(ci: &Value, release: &Value, taskfile: &Value) {
+    let builds = shell_commands(taskfile, "body-cap-go-server");
+    assert!(
+        builds.iter().any(|command| command.contains("go build")),
+        "`body-cap-go-server` runs no `go build`: {builds:?}"
+    );
+    let (_, reference) = step_using(&ci["jobs"]["test"], "actions/setup-go")
+        .expect("the `test` job of ci.yml installs Go");
+    let mut found = 0;
+    for (file, workflow) in [("ci.yml", ci), ("release.yml", release)] {
+        for (id, task_step) in jobs_reaching(workflow, taskfile, "body-cap-go-server") {
+            found += 1;
+            let job = &workflow["jobs"][id.as_str()];
+            let (go_step, go) = step_using(job, "actions/setup-go").unwrap_or_else(|| {
+                panic!("`{id}` of {file} builds the Go server and installs no Go")
+            });
+            let pinned = text(&go["uses"]);
+            let (_, commit) = pinned.split_once('@').expect("a ref");
+            assert!(
+                commit.len() >= 40 && commit[..40].chars().all(|c| c.is_ascii_hexdigit()),
+                "`{id}` of {file} does not pin setup-go to a commit: {pinned}"
+            );
+            assert_eq!(
+                pinned,
+                text(&reference["uses"]),
+                "`{id}` of {file} pins another setup-go than the `test` job"
+            );
+            assert_eq!(
+                text(&go["with"]["go-version"]),
+                text(&reference["with"]["go-version"]),
+                "`{id}` of {file} installs another Go than the `test` job"
+            );
+            assert_eq!(
+                go["with"]["cache"],
+                Value::Bool(false),
+                "`{id}` of {file} caches Go"
+            );
+            for (index, step) in job["steps"].as_sequence().unwrap().iter().enumerate() {
+                if text(&step["name"]) == "Free runner disk" {
+                    assert!(
+                        go_step > index,
+                        "`{id}` of {file} installs Go before it frees the disk, which deletes it"
+                    );
+                }
+            }
+            assert!(
+                go_step < task_step,
+                "`{id}` of {file} installs Go after the step that builds the Go server"
+            );
+        }
+    }
+    assert!(
+        found >= 2,
+        "{found} job(s) reach `body-cap-go-server`; build-tests and hotfix-tests are expected"
+    );
+}
+
+#[test]
+fn a_job_that_builds_the_go_server_installs_go_after_it_frees_the_disk() {
+    let ci = yaml(".github/workflows/ci.yml");
+    let release = yaml(".github/workflows/release.yml");
+    let taskfile = yaml("Taskfile.yml");
+    assert_the_go_server_has_its_go(&ci, &release, &taskfile);
+    let jobs: Vec<String> = [&ci, &release]
+        .iter()
+        .flat_map(|workflow| jobs_reaching(workflow, &taskfile, "body-cap-go-server"))
+        .map(|(id, _)| id)
+        .collect();
+    assert!(
+        jobs.contains(&"build-tests".to_owned()) && jobs.contains(&"hotfix-tests".to_owned()),
+        "{jobs:?}"
+    );
+
+    let caught = |ci: &Value, release: &Value, what: &str| {
+        assert!(
+            std::panic::catch_unwind(|| assert_the_go_server_has_its_go(ci, release, &taskfile))
+                .is_err(),
+            "{what} went unnoticed"
+        );
+    };
+    let go_index = |job: &Value| step_using(job, "actions/setup-go").unwrap().0;
+
+    let mut mutated = ci.clone();
+    let at = go_index(&ci["jobs"]["build-tests"]);
+    let removed = mutated["jobs"]["build-tests"]["steps"]
+        .as_sequence_mut()
+        .unwrap()
+        .remove(at);
+    caught(&mutated, &release, "build-tests without Go");
+
+    let steps = mutated["jobs"]["build-tests"]["steps"]
+        .as_sequence_mut()
+        .unwrap();
+    let disk = steps
+        .iter()
+        .position(|step| text(&step["name"]) == "Free runner disk")
+        .unwrap();
+    steps.insert(disk, removed);
+    caught(&mutated, &release, "Go installed before the disk is freed");
+
+    let mut mutated = release.clone();
+    let at = go_index(&release["jobs"]["hotfix-tests"]);
+    mutated["jobs"]["hotfix-tests"]["steps"]
+        .as_sequence_mut()
+        .unwrap()
+        .remove(at);
+    caught(&ci, &mutated, "hotfix-tests without Go");
+}

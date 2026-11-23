@@ -199,6 +199,23 @@ fn helpers_file(
     }
     if let Some(binding) = binding {
         helpers = bound::surface_helpers(&helpers);
+        // Capped mode: some declared route of the served component bounds its request. Every
+        // surface of the package must agree with the helpers, so a second served component that
+        // does not is a bug to fail loudly.
+        let answers: Vec<bool> = served(ir, refusals)
+            .into_iter()
+            .map(|component| {
+                bound::caps_a_request(binding, &http::bound_routes(ir, component, Some(binding)))
+            })
+            .collect();
+        assert!(
+            answers.windows(2).all(|pair| pair[0] == pair[1]),
+            "the served components of one Go package disagree about capping a request"
+        );
+        let capped = answers.first().copied().unwrap_or(false);
+        if capped {
+            helpers = bound::capped_read_body(&helpers);
+        }
         for import in bound::IMPORTS {
             emit.import(import);
         }
@@ -209,6 +226,9 @@ fn helpers_file(
             ));
         } else {
             helpers.push_str(bound::BOUND);
+        }
+        if capped {
+            helpers.push_str(bound::CAPPED);
         }
         if bound::reads_a_bare_body(binding) {
             helpers.push_str(bound::BARE_BODY);
@@ -222,7 +242,14 @@ fn helpers_file(
                     Served::View(handle) => http::read_checked(ir, handle.name()),
                 })
         });
-        helpers.push_str(&bound::refusals(binding, checks_grant));
+        let shared_too_large = served(ir, refusals).into_iter().any(|component| {
+            http::bound_routes(ir, component, Some(binding))
+                .iter()
+                .filter_map(|route| route.declared)
+                .filter(|declared| declared.refusals.is_empty())
+                .any(|declared| binding.ir().bounds_request(declared))
+        });
+        helpers.push_str(&bound::refusals(binding, checks_grant, shared_too_large));
         for component in served(ir, refusals) {
             helpers.push_str(&bound::route_refusals(
                 ir,
@@ -1329,7 +1356,13 @@ fn surface_file(
     serve_static(&mut body, &system, &exported, grants, bound);
 
     if bound {
-        bound::dispatch(&mut body, ir, layout, &routes, &rows, &system, &exported);
+        let capped = binding.is_some_and(|binding| bound::caps_a_request(binding, &routes));
+        bound::dispatch(
+            &mut body, ir, layout, &routes, &rows, &system, &exported, capped,
+        );
+        if let (true, Some(binding)) = (capped, binding) {
+            bound::body_limit(&mut body, binding, ir, layout, &routes, &rows, &exported);
+        }
     } else {
         dispatch(&mut body, ir, layout, &routes, &rows, &system, &exported);
     }
