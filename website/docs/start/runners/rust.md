@@ -1,6 +1,7 @@
 ---
 title: The Rust runner
 description: Hold a Rust implementation to a synthesized suite through the ConformanceTarget trait of the ess-conformance crate, the runner ess itself uses.
+release_numbers: written by cargo xtask docs --write
 ---
 
 # The Rust runner

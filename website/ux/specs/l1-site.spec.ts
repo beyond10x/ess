@@ -3,7 +3,7 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, test } from '@playwright/test';
-import { BUILD, builtPage } from '../adapter';
+import { BUILD, REPOSITORY, builtPage } from '../adapter';
 
 // A highlighted code block splits a token into spans, so code is read with its tags dropped, not
 // replaced by a space.
@@ -12,7 +12,7 @@ const text = (path: string, tag = ' ') => builtPage(path).replace(/<[^>]*>/g, ta
 // UXF-016: the navbar's "Status" named a release older than the one the install page installs
 // (0.51.0 against 0.97.1 in R-01, 0.97.3 against 0.97.4 in R-05).
 test('L1 site: the status page names as the latest release the version the install page installs (UXF-016)', () => {
-  const latest = /latest published release observed on [^.]*? is (\d+\.\d+\.\d+)/.exec(text('/ess/docs/status/where-this-stands'))?.[1];
+  const latest = /The newest release is (\d+\.\d+\.\d+)/.exec(text('/ess/docs/status/where-this-stands'))?.[1];
   const installs = [...new Set([...text('/ess/docs/start/install', '').matchAll(/version=(\d+\.\d+\.\d+)/g)].map((m) => m[1]))];
   expect(installs, 'the install page installs one version').toHaveLength(1);
   expect(latest, 'the status page names the latest release').toBe(installs[0]);
@@ -53,4 +53,31 @@ test('L1 site: the landing page, the docs index and the status page link on to t
     expect.arrayContaining(['/ess/docs/start/install', '/ess/docs/start/first-conformance-run', '/ess/docs/guides/verify-conformance', '/ess/docs/status/limitations', '/ess/docs/reference/cli']),
   );
   expect(firstScreen('/ess/docs/status/where-this-stands', 'theme-doc-markdown')).toContain('/ess/docs/status/limitations');
+});
+
+// Change 4 of R-06 (after UXF-016): the newest release was typed by hand in 16 places of the docs,
+// and the status page fell behind the install page twice. It is written once, from the changelog,
+// by `cargo xtask docs --write`: a page whose release numbers that command writes says so in its
+// front matter, and a generated region stands between its begin and end marks. Anywhere else in
+// the docs, but the release history pages, the newest release is a copy typed by hand.
+test('L1 site: the newest release is written by one command, never typed by hand in a page (change 4 of R-06)', () => {
+  const newest = /^## \[(\d+\.\d+\.\d+)\] — /m.exec(readFileSync(join(REPOSITORY, 'CHANGELOG.md'), 'utf8'))?.[1];
+  expect(newest, 'the changelog names a dated release').toBeDefined();
+  const release = new RegExp(`(?<![\\d.])${newest!.replace(/\./g, '\\.')}(?![\\d]|\\.\\d)`);
+  const docs = join(REPOSITORY, 'website', 'docs');
+  const history = ['releases/', 'reference/spec-versions.md'];
+  const typed: string[] = [];
+  for (const file of (readdirSync(docs, { recursive: true }) as string[]).sort()) {
+    if (!/\.mdx?$/.test(file) || history.some((h) => file.startsWith(h))) continue;
+    const text = readFileSync(join(docs, file), 'utf8');
+    const front = text.startsWith('---\n') ? text.slice(4, text.indexOf('\n---\n', 4)) : '';
+    if (front.split('\n').includes('release_numbers: written by cargo xtask docs --write')) continue;
+    let region = false;
+    text.split('\n').forEach((line, i) => {
+      if (/^\[[\w-]+-begin\]: #/.test(line)) region = true;
+      if (/^\[[\w-]+-end\]: #/.test(line)) region = false;
+      if (!region && release.test(line)) typed.push(`${file}:${i + 1}`);
+    });
+  }
+  expect(typed, `copies of the newest release ${newest} typed by hand`).toEqual([]);
 });

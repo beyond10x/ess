@@ -1,6 +1,7 @@
 ---
 title: The Go runner
 description: The files ess writes for a Go conformance package, the Target interface an implementation provides, and a complete in-memory implementation run with go test.
+release_numbers: written by cargo xtask docs --write
 ---
 
 # The Go runner

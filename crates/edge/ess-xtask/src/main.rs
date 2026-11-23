@@ -112,7 +112,12 @@ enum Command {
         check: bool,
     },
     /// Check what the published documents claim about releases.
-    Docs,
+    Docs {
+        /// First write the newest release into the pages that name it (the install walkthrough
+        /// and the status page's release region), from `CHANGELOG.md` and `release-notes/`.
+        #[arg(long)]
+        write: bool,
+    },
     /// Regenerate or check the command sections of the CLI reference page from the `ess` command.
     CliReference {
         /// Compare the generated block without writing.
@@ -241,7 +246,14 @@ fn run(cli: Cli) -> Result<String, String> {
         }
         Command::Generate { check } => generate(&root, check).map_err(|error| format!("{error:#}")),
         Command::Schema { check } => schema(&root, check).map_err(|error| format!("{error:#}")),
-        Command::Docs => docs::run(&root),
+        Command::Docs { write } => {
+            let written = if write {
+                docs::write(&root)?
+            } else {
+                String::new()
+            };
+            docs::run(&root).map(|checked| written + &checked)
+        }
         Command::CliReference { check } => {
             cli_reference::run(&root, check).map_err(|error| format!("{error:#}"))
         }

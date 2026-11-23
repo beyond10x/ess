@@ -1,6 +1,7 @@
 ---
 title: Run your first conformance suite
 description: Synthesize the conformance suite a specification obliges as a TypeScript test package, hold a small implementation to it, and watch it fail when the implementation is wrong.
+release_numbers: written by cargo xtask docs --write
 ---
 
 # Run your first conformance suite

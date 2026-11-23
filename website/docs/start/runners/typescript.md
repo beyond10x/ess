@@ -1,6 +1,7 @@
 ---
 title: The TypeScript runner
 description: The files ess writes for a TypeScript conformance package, the Target interface an implementation provides, and how to run it with npm.
+release_numbers: written by cargo xtask docs --write
 ---
 
 # The TypeScript runner

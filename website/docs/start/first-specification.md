@@ -1,6 +1,7 @@
 ---
 title: Write your first specification
 description: Write a one-file specification of a task list, validate it, and generate an OpenAPI contract from it.
+release_numbers: written by cargo xtask docs --write
 ---
 
 # Write your first specification
