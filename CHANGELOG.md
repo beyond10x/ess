@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- An `ess-http/1` binding declares `limits: {request_bytes: N}` at the top and on a route, and `refusals.too_large`: both generated servers read at most that many bytes of the matched route's body and refuse a larger one, the OpenAPI document names the bound under `x-ess-request-max-bytes`, a binding declaring neither keeps every byte it writes, and `ESS-HTTP-034` refuses a limit outside 1 to 16777216 or on a route that reads no body.
+
 ### Changed
 
 - Testing: a test marked `#[ignore = "slow lane: <reason>"]` runs only in `task test-slow`, under the nextest profile `slow`, and `cargo xtask slow-list` names it; the byte-identity and WebAssembly probes that `task test-slow-probes` ran by hand carry the marker, and that task is gone (story:the-test-step-meets-the-test-budget).
