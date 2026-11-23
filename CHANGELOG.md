@@ -6,6 +6,13 @@
 
 - An `ess-http/1` binding declares `limits: {request_bytes: N}` at the top and on a route, and `refusals.too_large`: both generated servers read at most that many bytes of the matched route's body and refuse a larger one, the OpenAPI document names the bound under `x-ess-request-max-bytes`, a binding declaring neither keeps every byte it writes, and `ESS-HTTP-034` refuses a limit outside 1 to 16777216 or on a route that reads no body.
 - `format: ess-composition/6`: a `conformances` entry may carry `writer: true`, the assertion that the local type only sends the imported one. The pair conforms when the local type can send no value the imported type's reader refuses: a field's `presence` conforms when every absent spelling it writes is one the imported field reads, a required local value is admitted where the imported one is `Optional`, and a newtype, an enum where the imported reference is `String`, a subset of an enum's or a union's variants, a struct or `String`-keyed map where the imported reference is `Map<String, Json>`, an imported `Optional` field left out, an extra field where the imported struct declares `undeclared_fields: ignored`, and a narrower alphabet, a longer prefix or more invariants are admitted. `writer: true` with `reader: true` on one entry is refused when read. `ess-composition/1` to `/5` refuse `writer`, whatever its value, as `unsupported_format` and keep their bytes.
+- `ess verify conform synthesize` and `ess verify conform run` take `--jobs <JOBS>` (1 to 256,
+  default 1, or `ESS_SYNTH_JOBS` when it is set), which runs the caller readings of a synthesis on
+  that many threads: each model a caller reading reuses runs on one thread, and the suite, the
+  refusals and the notes are the bytes one job writes. The library offers the same as
+  `ess_conformance::synthesize::with_jobs`. An `ESS_SYNTH_JOBS` that is not a whole number from 1
+  to 256 is refused with exit 1. No format version changes
+  (`docs/design/parallel-caller-readings.md`).
 
 ### Changed
 
