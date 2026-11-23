@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:an-ess-http-binding-declares-the-largest-request-body-a-route-reads-and-the-refusal-a-larger-one-gets
 kind: story
-status: draft
+status: active
 title: An ess-http/1 binding declares the largest request body a route reads, and the status and body of the refusal a larger one gets, and compiles them to ess-http-ir/1
 tags:
 - wave-2026-11-23
@@ -32,7 +32,10 @@ scope:
   path: docs/design/http-presentation-binding.md
 - confidence: cited
   path: website/docs/reference/formats.md
-revision: 11
+revision: 13
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-23T06:03:31Z", actor: "human:timo", revision: 12, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-23T06:03:33Z", actor: "human:timo", revision: 13, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Outcome
 

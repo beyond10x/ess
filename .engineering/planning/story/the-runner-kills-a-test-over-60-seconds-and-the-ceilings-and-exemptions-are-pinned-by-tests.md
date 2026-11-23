@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:the-runner-kills-a-test-over-60-seconds-and-the-ceilings-and-exemptions-are-pinned-by-tests
 kind: story
-status: draft
+status: active
 title: The runner kills a test over 60 seconds and the ceilings and exemptions are pinned by tests
 tags:
 - wave-2026-11-23
@@ -32,7 +32,10 @@ scope:
   path: crates/edge/ess-xtask/tests/slow_lane.rs
 - confidence: cited
   path: crates/edge/ess-xtask/tests/test_budget.rs
-revision: 16
+revision: 18
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-23T06:03:02Z", actor: "human:timo", revision: 17, decided_on: {"recorded":{"review_outcome":5}}}
+- {from: "proposed", to: "active", at: "2026-11-23T06:03:04Z", actor: "human:timo", revision: 18, decided_on: {"recorded":{"review_outcome":5}}}
 ---
 ## Outcome
 

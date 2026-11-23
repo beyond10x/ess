@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:the-documents-and-help-describe-the-writer-true-conformance-entry-and-ess-composition-6
 kind: story
-status: draft
+status: active
 title: The documents and help describe the writer true conformance entry and ess-composition 6
 tags:
 - wave-2026-11-23
@@ -31,7 +31,10 @@ scope:
   path: website/docs/reference/formats.md
 - confidence: cited
   path: website/docs/reference/spec-versions.md
-revision: 15
+revision: 17
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-23T06:03:25Z", actor: "human:timo", revision: 16}
+- {from: "proposed", to: "active", at: "2026-11-23T06:03:26Z", actor: "human:timo", revision: 17}
 ---
 ## Outcome
 

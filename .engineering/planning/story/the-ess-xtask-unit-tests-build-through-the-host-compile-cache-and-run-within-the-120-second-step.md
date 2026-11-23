@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:the-ess-xtask-unit-tests-build-through-the-host-compile-cache-and-run-within-the-120-second-step
 kind: story
-status: draft
+status: active
 title: The ess-xtask unit tests build through the host compile cache and run within the 120 second step
 tags:
 - wave-2026-11-23
@@ -18,7 +18,10 @@ scope:
   path: crates/edge/ess-xtask/src/docs.rs
 - confidence: cited
   path: crates/edge/ess-xtask/tests/ci_lanes.rs
-revision: 13
+revision: 15
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-23T06:02:42Z", actor: "human:timo", revision: 14, decided_on: {"recorded":{"review_outcome":4}}}
+- {from: "proposed", to: "active", at: "2026-11-23T06:02:44Z", actor: "human:timo", revision: 15, decided_on: {"recorded":{"review_outcome":4}}}
 ---
 ## Outcome
 

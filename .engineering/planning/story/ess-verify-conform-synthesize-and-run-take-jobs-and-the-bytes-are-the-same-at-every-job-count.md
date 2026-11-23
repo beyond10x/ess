@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:ess-verify-conform-synthesize-and-run-take-jobs-and-the-bytes-are-the-same-at-every-job-count
 kind: story
-status: draft
+status: active
 title: ess verify conform synthesize and run take --jobs and the bytes are the same at every job count
 tags:
 - wave-2026-11-23
@@ -20,7 +20,10 @@ scope:
   path: crates/edge/ess-cli/tests/generated_docs_synthesize_help.rs
 - confidence: cited
   path: website/docs/reference/cli.md
-revision: 9
+revision: 11
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-23T06:03:15Z", actor: "human:timo", revision: 10, decided_on: {"recorded":{"review_outcome":2}}}
+- {from: "proposed", to: "active", at: "2026-11-23T06:03:16Z", actor: "human:timo", revision: 11, decided_on: {"recorded":{"review_outcome":2}}}
 ---
 ## Outcome
 

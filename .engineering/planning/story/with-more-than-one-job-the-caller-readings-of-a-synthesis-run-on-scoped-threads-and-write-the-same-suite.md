@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:with-more-than-one-job-the-caller-readings-of-a-synthesis-run-on-scoped-threads-and-write-the-same-suite
 kind: story
-status: draft
+status: active
 title: With more than one job the caller readings of a synthesis run on scoped threads and write the same suite
 tags:
 - wave-2026-11-23
@@ -85,7 +85,10 @@ scope:
   path: crates/verify/ess-conformance/tests/mutation_grants.rs
 - confidence: cited
   path: crates/verify/ess-conformance/tests/synthesis_suite_bytes_table.rs
-revision: 19
+revision: 21
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-23T06:03:12Z", actor: "human:timo", revision: 20, decided_on: {"recorded":{"review_outcome":7}}}
+- {from: "proposed", to: "active", at: "2026-11-23T06:03:13Z", actor: "human:timo", revision: 21, decided_on: {"recorded":{"review_outcome":7}}}
 ---
 ## Outcome
 

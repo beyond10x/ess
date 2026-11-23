@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-writer-true-conformance-entry-under-ess-composition-6-decides-presence-by-what-the-sender-may-write
 kind: story
-status: draft
+status: active
 title: A writer true conformance entry under ess-composition 6 decides presence by what the sender may write
 tags:
 - wave-2026-11-23
@@ -32,7 +32,10 @@ scope:
   path: crates/specify/ess-composition/tests/writer_conformance/presence.rs
 - confidence: cited
   path: website/docs/reference/formats.md
-revision: 17
+revision: 19
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-23T06:02:28Z", actor: "human:timo", revision: 18}
+- {from: "proposed", to: "active", at: "2026-11-23T06:02:30Z", actor: "human:timo", revision: 19}
 ---
 ## Outcome
 

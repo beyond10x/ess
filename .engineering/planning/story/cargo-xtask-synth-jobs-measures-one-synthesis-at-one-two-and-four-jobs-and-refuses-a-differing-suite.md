@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:cargo-xtask-synth-jobs-measures-one-synthesis-at-one-two-and-four-jobs-and-refuses-a-differing-suite
 kind: story
-status: draft
+status: active
 title: cargo xtask synth-jobs measures one synthesis at one, two and four jobs and refuses a differing suite
 tags:
 - wave-2026-11-23
@@ -20,7 +20,10 @@ scope:
   path: crates/edge/ess-xtask/src/synth_jobs.rs
 - confidence: inferred
   path: docs/design/parallel-caller-readings.md
-revision: 10
+revision: 12
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-23T06:03:18Z", actor: "human:timo", revision: 11, decided_on: {"recorded":{"review_outcome":2}}}
+- {from: "proposed", to: "active", at: "2026-11-23T06:03:20Z", actor: "human:timo", revision: 12, decided_on: {"recorded":{"review_outcome":2}}}
 ---
 ## Outcome
 

@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:the-generated-rust-server-reads-at-most-the-request-body-its-binding-declares-for-the-matched-route
 kind: story
-status: draft
+status: active
 title: The generated Rust server reads at most the request body its binding declares for the matched route, and answers a larger one with the refusal the binding declares
 tags:
 - wave-2026-11-23
@@ -35,7 +35,10 @@ scope:
   path: crates/generate/ess-synth/tests/http_binding/shared.rs
 - confidence: cited
   path: crates/generate/ess-synth/tests/http_binding_rust.rs
-revision: 18
+revision: 20
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-23T06:03:34Z", actor: "human:timo", revision: 19, decided_on: {"recorded":{"review_outcome":3}}}
+- {from: "proposed", to: "active", at: "2026-11-23T06:03:36Z", actor: "human:timo", revision: 20, decided_on: {"recorded":{"review_outcome":3}}}
 ---
 ## Outcome
 

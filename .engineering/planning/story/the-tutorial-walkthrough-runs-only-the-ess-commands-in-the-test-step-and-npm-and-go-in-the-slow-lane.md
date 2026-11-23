@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:the-tutorial-walkthrough-runs-only-the-ess-commands-in-the-test-step-and-npm-and-go-in-the-slow-lane
 kind: story
-status: draft
+status: active
 title: The tutorial walkthrough runs only the ess commands in the test step and npm and go in the slow lane
 tags:
 - wave-2026-11-23
@@ -25,7 +25,10 @@ scope:
   path: crates/edge/ess-xtask/tests/ci_lanes.rs
 - confidence: cited
   path: crates/edge/ess-xtask/tests/slow_lane.rs
-revision: 15
+revision: 17
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-23T06:02:49Z", actor: "human:timo", revision: 16, decided_on: {"recorded":{"review_outcome":3}}}
+- {from: "proposed", to: "active", at: "2026-11-23T06:02:51Z", actor: "human:timo", revision: 17, decided_on: {"recorded":{"review_outcome":3}}}
 ---
 ## Outcome
 

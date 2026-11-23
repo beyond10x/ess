@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:three-adversary-targets-run-a-reduced-sweep-in-the-test-step-and-the-full-sweep-in-the-slow-lane
 kind: story
-status: draft
+status: active
 title: Three adversary targets run a reduced sweep in the test step and the full sweep in the slow lane
 tags:
 - wave-2026-11-23
@@ -21,7 +21,10 @@ scope:
   path: crates/verify/ess-conformance/tests/adversary_u22_pass1.rs
 - confidence: cited
   path: crates/verify/ess-conformance/tests/binding_trigger_row_predicate.rs
-revision: 10
+revision: 12
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-23T06:02:56Z", actor: "human:timo", revision: 11, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-23T06:02:57Z", actor: "human:timo", revision: 12, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Outcome
 

@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-test-marked-slow-runs-only-in-task-test-slow-under-its-own-profile-and-slow-list-names-it
 kind: story
-status: draft
+status: active
 title: A test marked slow runs only in `task test-slow`, under its own nextest profile, and `cargo xtask slow-list` names it
 tags:
 - wave-2026-11-23
@@ -41,7 +41,10 @@ scope:
   path: crates/verify/ess-conformance/tests/external_beside_held_guard.rs
 - confidence: cited
   path: crates/verify/ess-conformance/tests/synthesis_suite_bytes_table.rs
-revision: 20
+revision: 22
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-23T06:02:38Z", actor: "human:timo", revision: 21, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-23T06:02:40Z", actor: "human:timo", revision: 22, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Outcome
 

@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:the-openapi-projection-documents-the-request-bound-of-a-bounded-route-and-the-answer-a-larger-body-gets
 kind: story
-status: draft
+status: active
 title: The OpenAPI projection documents the request bound of a bounded route and the answer a larger body gets, and the design page, guide and changelog of the binding state the rule
 tags:
 - wave-2026-11-23
@@ -31,7 +31,10 @@ scope:
   path: docs/design/http-presentation-binding.md
 - confidence: cited
   path: website/docs/guides/http-routes.md
-revision: 9
+revision: 11
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-23T06:03:42Z", actor: "human:timo", revision: 10, decided_on: {"recorded":{"review_outcome":3}}}
+- {from: "proposed", to: "active", at: "2026-11-23T06:03:43Z", actor: "human:timo", revision: 11, decided_on: {"recorded":{"review_outcome":3}}}
 ---
 ## Outcome
 

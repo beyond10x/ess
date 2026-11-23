@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-slow-ci-job-runs-task-test-slow-on-every-run-that-can-count-for-a-release-and-gate-carries-it
 kind: story
-status: draft
+status: active
 title: A slow CI job runs `task test-slow` on every run that can count for a release and `Gate` carries it
 tags:
 - wave-2026-11-23
@@ -24,7 +24,10 @@ scope:
   path: Taskfile.yml
 - confidence: cited
   path: crates/edge/ess-xtask/tests/ci_lanes.rs
-revision: 7
+revision: 9
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-23T06:02:45Z", actor: "human:timo", revision: 8}
+- {from: "proposed", to: "active", at: "2026-11-23T06:02:47Z", actor: "human:timo", revision: 9}
 ---
 ## Outcome
 

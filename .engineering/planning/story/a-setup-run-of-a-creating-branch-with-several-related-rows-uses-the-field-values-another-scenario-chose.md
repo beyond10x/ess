@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-setup-run-of-a-creating-branch-with-several-related-rows-uses-the-field-values-another-scenario-chose
 kind: story
-status: draft
+status: active
 title: A setup run of a creating branch with several related rows uses the field values another scenario chose
 tags:
 - wave-2026-11-23
@@ -32,7 +32,10 @@ scope:
   path: crates/verify/ess-conformance/tests/own_scenario_nesting_bounded_work.rs
 - confidence: cited
   path: crates/verify/ess-conformance/tests/related_guard_multiple_vias.rs
-revision: 20
+revision: 22
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-23T06:03:28Z", actor: "human:timo", revision: 21, decided_on: {"recorded":{"review_outcome":5}}}
+- {from: "proposed", to: "active", at: "2026-11-23T06:03:29Z", actor: "human:timo", revision: 22, decided_on: {"recorded":{"review_outcome":5}}}
 ---
 ## Outcome
 

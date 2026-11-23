@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:every-piece-of-thread-state-a-synthesis-reads-is-classified-and-the-caller-reading-context-is-carried-to-other-threads
 kind: story
-status: draft
+status: active
 title: Every piece of thread state a synthesis reads is classified and the caller reading context is carried to other threads
 tags:
 - wave-2026-11-23
@@ -66,7 +66,10 @@ scope:
   path: crates/verify/ess-conformance/tests/fixtures/synthesis-suite-bytes-table.tsv
 - confidence: inferred
   path: docs/design/parallel-caller-readings.md
-revision: 36
+revision: 38
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-23T06:03:08Z", actor: "human:timo", revision: 37, decided_on: {"recorded":{"review_outcome":4}}}
+- {from: "proposed", to: "active", at: "2026-11-23T06:03:10Z", actor: "human:timo", revision: 38, decided_on: {"recorded":{"review_outcome":4}}}
 ---
 ## Outcome
 

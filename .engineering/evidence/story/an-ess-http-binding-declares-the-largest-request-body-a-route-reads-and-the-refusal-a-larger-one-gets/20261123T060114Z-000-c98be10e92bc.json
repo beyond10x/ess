@@ -1,0 +1,14 @@
+{
+  "at": "2026-11-23T06:01:14Z",
+  "actor": "human:timo",
+  "artifact": "story:an-ess-http-binding-declares-the-largest-request-body-a-route-reads-and-the-refusal-a-larger-one-gets",
+  "kind": "story",
+  "revision": 11,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "review-result:acceptance-wave-2026-11-23-round-1",
+    "review": "review-result:acceptance-wave-2026-11-23-round-1",
+    "outcome": "fixed"
+  }
+}

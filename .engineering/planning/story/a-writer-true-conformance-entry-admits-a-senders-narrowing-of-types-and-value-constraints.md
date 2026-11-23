@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-writer-true-conformance-entry-admits-a-senders-narrowing-of-types-and-value-constraints
 kind: story
-status: draft
+status: active
 title: A writer true conformance entry admits a sender's narrowing of types and value constraints
 tags:
 - wave-2026-11-23
@@ -17,7 +17,10 @@ scope:
   path: crates/specify/ess-composition/tests/writer_conformance/common.rs
 - confidence: inferred
   path: crates/specify/ess-composition/tests/writer_conformance/narrowing.rs
-revision: 9
+revision: 11
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-23T06:03:21Z", actor: "human:timo", revision: 10, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-11-23T06:03:23Z", actor: "human:timo", revision: 11, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Outcome
 

@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:every-caller-reading-of-a-synthesis-is-computed-from-explicit-inputs-in-a-fixed-plan
 kind: story
-status: draft
+status: active
 title: Every caller reading of a synthesis is computed from explicit inputs in a fixed plan
 tags:
 - wave-2026-11-23
@@ -28,7 +28,10 @@ scope:
   path: crates/verify/ess-conformance/tests/fixtures/synthesis-component-suites-table.tsv
 - confidence: cited
   path: crates/verify/ess-conformance/tests/fixtures/synthesis-suite-bytes-table.tsv
-revision: 15
+revision: 17
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-23T06:03:05Z", actor: "human:timo", revision: 16, decided_on: {"recorded":{"review_outcome":4}}}
+- {from: "proposed", to: "active", at: "2026-11-23T06:03:07Z", actor: "human:timo", revision: 17, decided_on: {"recorded":{"review_outcome":4}}}
 ---
 ## Outcome
 

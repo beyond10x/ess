@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:the-synthesis-byte-pin-targets-read-a-sources-digest-and-re-synthesize-only-in-the-slow-lane
 kind: story
-status: draft
+status: active
 title: The synthesis byte-pin targets read a sources digest and re-synthesize only in the slow lane
 tags:
 - wave-2026-11-23
@@ -29,7 +29,10 @@ scope:
   path: crates/verify/ess-conformance/tests/synthesis_suite_bytes_table.rs
 - confidence: cited
   path: crates/verify/ess-conformance/tests/synthesis_suite_bytes_table_cli_read.rs
-revision: 13
+revision: 15
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-23T06:02:59Z", actor: "human:timo", revision: 14, decided_on: {"recorded":{"review_outcome":4}}}
+- {from: "proposed", to: "active", at: "2026-11-23T06:03:01Z", actor: "human:timo", revision: 15, decided_on: {"recorded":{"review_outcome":4}}}
 ---
 ## Outcome
 

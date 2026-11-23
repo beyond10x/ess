@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:the-generated-go-server-reads-at-most-the-request-body-its-binding-declares-for-the-matched-route
 kind: story
-status: draft
+status: active
 title: The generated Go server reads at most the request body its binding declares for the matched route, and answers a larger one with the refusal the binding declares
 tags:
 - wave-2026-11-23
@@ -44,7 +44,10 @@ scope:
   path: crates/generate/ess-synth/tests/http_binding/shared.rs
 - confidence: cited
   path: crates/generate/ess-synth/tests/http_binding_rust.rs
-revision: 20
+revision: 22
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-23T06:03:38Z", actor: "human:timo", revision: 21, decided_on: {"recorded":{"review_outcome":7}}}
+- {from: "proposed", to: "active", at: "2026-11-23T06:03:40Z", actor: "human:timo", revision: 22, decided_on: {"recorded":{"review_outcome":7}}}
 ---
 ## Outcome
 

@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:the-generated-view-queries-target-keeps-generation-in-the-test-step-and-compiles-in-the-slow-lane
 kind: story
-status: draft
+status: active
 title: The generated-view-queries target keeps generation in the test step and compiles in the slow lane
 tags:
 - wave-2026-11-23
@@ -17,7 +17,10 @@ scope:
   path: crates/edge/ess-xtask/tests/slow_lane.rs
 - confidence: cited
   path: crates/generate/ess-synth/tests/generated_view_queries.rs
-revision: 9
+revision: 11
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-23T06:02:53Z", actor: "human:timo", revision: 10, decided_on: {"recorded":{"review_outcome":2}}}
+- {from: "proposed", to: "active", at: "2026-11-23T06:02:54Z", actor: "human:timo", revision: 11, decided_on: {"recorded":{"review_outcome":2}}}
 ---
 ## Outcome
 
