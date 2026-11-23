@@ -797,7 +797,9 @@ fn dated_sections(changelog: &str) -> Vec<(String, String)> {
 /// § Policy, policy 3): from [`COUNT_LINE_FROM_MINOR`], a dated section that changes the source
 /// language ends with `Language: G general, S one-to-one, P part (general share X%; cumulative
 /// Y%).`, its share following from its own counts and its cumulative from [`COUNT_BASELINE`] and
-/// every counted section before it.
+/// every counted section before it. A section whose only entries naming a source format are
+/// refusals or hints admits no new spelling and states `0 general, 0 one-to-one, 0 part`, a share
+/// of 0% that leaves the cumulative where it was.
 fn count_line_refusals(changelog: &str) -> Vec<String> {
     let mut refusals = Vec::new();
     let (mut general, one_to_one, part) = COUNT_BASELINE;
@@ -819,7 +821,7 @@ fn count_line_refusals(changelog: &str) -> Vec<String> {
         };
         let entries = counted.general + counted.one_to_one + counted.part;
         let share = percent(counted.general, entries);
-        if entries == 0 || counted.share != share {
+        if counted.share != share {
             refusals.push(format!(
                 "CHANGELOG.md {version}: {} general of {entries} counted entries is a general \
                  share of {share}%, not {}%",
@@ -1592,6 +1594,26 @@ mod tests {
             refusals[0].contains("0.64.0") && refusals[0].contains("23%"),
             "{refusals:#?}"
         );
+    }
+
+    #[test]
+    fn a_section_naming_a_format_only_in_refusals_counts_zero_and_keeps_the_cumulative() {
+        // Baseline 18 general of 81 is 22%; counting nothing leaves it at 22%.
+        let zero = language_section(
+            "0.63.0",
+            Some("Language: 0 general, 0 one-to-one, 0 part (general share 0%; cumulative 22%)."),
+        );
+        assert_eq!(
+            count_line_refusals(&changelog(&[&zero])),
+            Vec::<String>::new()
+        );
+        let moved = language_section(
+            "0.63.0",
+            Some("Language: 0 general, 0 one-to-one, 0 part (general share 0%; cumulative 23%)."),
+        );
+        let refusals = count_line_refusals(&changelog(&[&moved]));
+        assert_eq!(refusals.len(), 1, "{refusals:#?}");
+        assert!(refusals[0].contains("22%"), "{refusals:#?}");
     }
 
     #[test]

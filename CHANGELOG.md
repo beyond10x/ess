@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.98.0] — 2026-11-23
+
 ### Added
 
 - `ess generate synthesize --target rust`, `--target go` and `--target web` carry a finite `Binary64` where they refused the whole workspace with `this target has no qualified finite Binary64 codec`. The positions carried are an entity field, a command's input and response, an event's and an error's field, and a view's field and row, bare, under `Optional` and `List`, in a struct, in a newtype and as a map value. `primitives::Binary64` in the Rust types crate and `primitives.Binary64` in the Go module are checked wrappers that refuse a NaN and an infinity, and both servers read a JSON number rounded once to the nearest binary64 and write the same bytes: `3` as `3.0`, `-0` as `-0.0`, `0.000001` as `1e-6`. A value that is not a number, and a number that rounds to an infinity, are answered `400` naming the path. A guard, a view `filter:` and an `order_by:` over a `Binary64` compare its shortest decimal. The web page gives a `Binary64` field `<input type="number" step="any">`, and `TARGET.md` states that the page holds the value as a JavaScript number. A `Binary64` that is an entity identity, a view parameter, an actor attribute, a binding's delivery context, mapping or selection, or a declared conversion is refused as `missing-representation` with the detail `a Binary64 here is a key, a lookup or a delivery route, which this target does not carry`, and `--target clap` refuses every `Binary64`. A model without a `Binary64` keeps every byte, and no format version changes (`docs/design/code-target-binary64.md`).
@@ -28,6 +30,8 @@
 - Synthesis no longer repeats a witness search for a command equal to one already searched in the same model: the largest reported downstream specification synthesizes in 1,296e9 instructions instead of 1,782e9 on 0.97.3 (435 s of CPU time instead of 685 s), with the same suite.
 - `ess verify conform synthesize` witnesses a creating branch guarded on the absence of the row it creates (`when_related: {via: input.<id>, exists: false}` beside `creates:` with `instance: <id>`), where it withdrew that branch's scenario, and every scenario whose arrangement needed two such rows, as `ESS-SYNTH-001` "names one row per value": each row the branch creates for an arrangement carries its own identity. The further run that leaves an Optional reference out sends an identity no row of its scenario holds, also beside a view filtered on the created row's identity, whose expectation accepts the instance names of the distinctions that run retried. Every other suite is byte for byte unchanged.
 - Synthesis witnesses a row-set branch that needs rows present where the command creating those rows refuses a missing related row the send names (`when_related: {via: input.x, exists: false}` beside a selector comparing `x == input.x`). From `ess/23` a row's field naming a related row whose identity the scenario sends as a literal is compared with the input as that literal. Where the row-set command addresses the related row as its subject without an `owns` relation, the rows are created naming that subject, not a second row the send does not name. Such branches were refused as `ESS-SYNTH-001`. No format version changes.
+
+Language: 0 general, 0 one-to-one, 0 part (general share 0%; cumulative 17%).
 
 ## [0.97.4] — 2026-11-22
 

@@ -9,6 +9,14 @@ What each ESS release is worth to somebody using it: what became possible, how m
 
 This page is generated from the change records kept in the repository. A release with no entry here added nothing somebody using ESS would act on.
 
+## 0.98.0 — 2026-11-23
+
+### The Rust, Go and web targets carry a finite Binary64, and synthesis witnesses more creating branches
+
+capability · notable impact · [release notes](https://github.com/beyond10x/ess/releases/tag/0.98.0)
+
+`ess generate synthesize --target rust`, `--target go` and `--target web` carry a finite `Binary64`. Synthesis writes more scenarios for creating branches and row-set refusals. Validation refuses an `exists: false` branch declared below a refusal it answers first, and an ordering comparison over an enum.
+
 ## 0.97.0 — 2026-11-21
 
 ### A conformance run holds a program in any language to its suite
