@@ -12,11 +12,12 @@ use ess_yaml::Value;
 const REPORT: &str = "target/nextest/ci/junit.xml";
 
 /// The tasks that run `cargo nextest run` today.
-const NEXTEST_TASKS: [&str; 4] = [
+const NEXTEST_TASKS: [&str; 5] = [
     "test-feature-off",
     "test-packages",
     "test-shard",
     "test-slow",
+    "test-xtask",
 ];
 
 /// The task that runs the slow lane: nextest in a loop, one run per package, in one command.

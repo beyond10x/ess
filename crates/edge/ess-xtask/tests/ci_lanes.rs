@@ -5404,3 +5404,102 @@ fn no_archived_test_reads_the_plan_store_outside_its_reproductions() {
          diff would skip the tests of what it changed: {readers:#?}"
     );
 }
+
+/// The commands of `test-xtask` with each `{{.NAME}}` of the task's `vars` expanded.
+fn test_xtask_commands(taskfile: &Value) -> Vec<String> {
+    let task = &taskfile["tasks"]["test-xtask"];
+    let vars: Vec<(String, String)> = task["vars"]
+        .as_mapping()
+        .into_iter()
+        .flatten()
+        .map(|(name, value)| (text(name).to_owned(), text(value).to_owned()))
+        .collect();
+    shell_commands(taskfile, "test-xtask")
+        .into_iter()
+        .map(|mut command| {
+            for (name, value) in &vars {
+                command = command.replace(&format!("{{{{.{name}}}}}"), value);
+            }
+            command
+        })
+        .collect()
+}
+
+#[test]
+fn test_xtask_sets_no_wrapper_and_no_build_jobs() {
+    let taskfile = yaml("Taskfile.yml");
+    let task = &taskfile["tasks"]["test-xtask"];
+    let mut texts = shell_commands(&taskfile, "test-xtask");
+    texts.extend(
+        task["vars"]
+            .as_mapping()
+            .into_iter()
+            .flatten()
+            .map(|(_, value)| text(value).to_owned()),
+    );
+    let mut found = Vec::new();
+    for command in &texts {
+        for word in command.split_whitespace() {
+            let name = word.split('=').next().unwrap_or("");
+            let forbidden = [
+                "RUSTC_WRAPPER",
+                "RUSTC_WORKSPACE_WRAPPER",
+                "CARGO_BUILD_RUSTC_WRAPPER",
+                "CARGO_BUILD_RUSTC_WORKSPACE_WRAPPER",
+            ]
+            .contains(&name)
+                || word.starts_with("CARGO_BUILD_JOBS")
+                || word.starts_with("SCCACHE_")
+                || word == "-j"
+                || word == "--jobs";
+            if forbidden {
+                found.push(word.to_owned());
+            }
+        }
+    }
+    assert!(
+        found.is_empty(),
+        "`test-xtask` empties the host's compile wrapper or sets build jobs: {found:?}"
+    );
+}
+
+#[test]
+fn test_xtask_builds_before_it_runs() {
+    let taskfile = yaml("Taskfile.yml");
+    let commands = test_xtask_commands(&taskfile);
+    assert_eq!(
+        commands.len(),
+        2,
+        "`test-xtask` is a build line and a nextest run line: {commands:?}"
+    );
+    assert!(
+        commands[0].trim_end().ends_with("--no-run"),
+        "the first command does not end `--no-run`: {}",
+        commands[0]
+    );
+    assert!(
+        commands[1].contains("cargo nextest run") && commands[1].contains("--profile ci"),
+        "the second command is not a nextest run under the `ci` profile: {}",
+        commands[1]
+    );
+    assert!(
+        !commands[1].contains("--no-run"),
+        "the second command is the run and does not build only: {}",
+        commands[1]
+    );
+    for command in &commands {
+        for needed in [
+            "--package ess-xtask --locked",
+            "RUSTUP_TOOLCHAIN=1.98.1",
+            "-fuse-ld=lld",
+            "CARGO_INCREMENTAL=0",
+            "CARGO_PROFILE_DEV_DEBUG=0",
+            "CARGO_PROFILE_TEST_DEBUG=0",
+        ] {
+            assert!(
+                command.contains(needed),
+                "`{needed}` is missing from: {command}"
+            );
+        }
+    }
+}
