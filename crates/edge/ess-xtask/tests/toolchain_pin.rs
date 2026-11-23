@@ -1,6 +1,6 @@
 //! One rustc, pinned in `rust-toolchain.toml` and read by every workflow that builds this
-//! repository. Three exceptions are named: the `msrv` job, which reads `rust-version`, the
-//! `planning.yml` build of the pinned `aep` checkout and the generated `b10x-docs-bundle.yml`.
+//! repository. Two exceptions are named: the `msrv` job, which reads `rust-version`, and the
+//! `planning.yml` build of the pinned `aep` checkout.
 
 use std::collections::BTreeSet;
 use std::fs;
@@ -12,11 +12,7 @@ const MSRV_OUTPUT: &str = "${{ steps.msrv.outputs.toolchain }}";
 const DTOLNAY: &str = "dtolnay/rust-toolchain@";
 
 /// Workflow file and job id; `*` means every job.
-const EXCEPTIONS: &[(&str, &str)] = &[
-    ("b10x-docs-bundle.yml", "*"),
-    ("ci.yml", "msrv"),
-    ("planning.yml", "*"),
-];
+const EXCEPTIONS: &[(&str, &str)] = &[("ci.yml", "msrv"), ("planning.yml", "*")];
 
 fn workspace_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -190,17 +186,13 @@ fn every_workflow_reads_the_pinned_rustc() {
             );
         }
     }
-    let expected: BTreeSet<(String, String)> = [
-        ("b10x-docs-bundle.yml", "bundle"),
-        ("ci.yml", "msrv"),
-        ("planning.yml", "validate"),
-    ]
-    .iter()
-    .map(|(file, job)| (file.to_string(), job.to_string()))
-    .collect();
+    let expected: BTreeSet<(String, String)> = [("ci.yml", "msrv"), ("planning.yml", "validate")]
+        .iter()
+        .map(|(file, job)| (file.to_string(), job.to_string()))
+        .collect();
     assert_eq!(
         excepted, expected,
-        "the exceptions are exactly the named three"
+        "the exceptions are exactly the named two"
     );
 }
 
@@ -287,7 +279,7 @@ fn the_pin_step_reads_the_file_and_refuses_anything_else() {
 #[test]
 fn no_workflow_names_a_rustc_version() {
     for name in workflow_names() {
-        if name == "planning.yml" || name == "b10x-docs-bundle.yml" {
+        if name == "planning.yml" {
             continue;
         }
         let text = fs::read_to_string(workspace_root().join(".github/workflows").join(&name))
