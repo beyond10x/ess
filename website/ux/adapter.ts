@@ -128,19 +128,40 @@ export const GATE_PAGE_ELEMENTS = 1200;
 // always-visible element is checked on every merge. The full sitemap runs in the `slow` lane.
 // Listed slowest first (R-04 gate runs): the gate's workers take tests in this order, so the
 // long tests start first and the short ones fill the end of the step.
+// R-05 (UXF-025): one page of each kind `pageKind` tells apart, five in all. The release list, the
+// status page and the lowering reference (a second release page with a sidebar and two more doc
+// pages) run in the slow lane with every other page; no page kind and no always-visible element
+// leaves the gate (the L1 test of the template pages holds both).
 export const TEMPLATE_PAGES: Array<{ path: string; why: string }> = [
   { path: '/ess/docs/visualise', why: 'doc page without sidebar (interactive presentation)' },
-  { path: '/ess/releases', why: 'release list with the recent-posts sidebar' },
-  { path: '/ess/releases/conformance-in-any-language', why: 'release post' },
+  { path: '/ess/releases/conformance-in-any-language', why: 'release post with the recent-posts sidebar' },
   { path: '/ess/releases/archive', why: 'release archive, no sidebar by design' },
-  { path: '/ess/docs/status/where-this-stands', why: 'status page' },
-  // R-04: the generated reference table page here is the lowering reference (1,049 built elements);
-  // the format history (3,405) and the diagnostics page (1,897) are over GATE_PAGE_ELEMENTS and run
-  // in the slow lane with every other page (UXF-025).
-  { path: '/ess/docs/reference/entity-runtime-lowering', why: 'generated reference table page (ess-entity-runtime lowerable_subset)' },
   { path: '/ess/docs/start/install', why: 'doc page with sidebar and table of contents' },
   { path: '/ess/', why: 'landing page (product template)' },
 ];
+
+// The task runs of the gate lane, by card, gating viewport and mode. The slow lane runs every card
+// at both gating viewports with the pointer, and the anchor cards with the keyboard too.
+export interface GateTaskRun {
+  task: string;
+  viewport: string;
+  mode: 'pointer' | 'keyboard';
+}
+// The gate (UXF-025, R-05): each anchor card once with the pointer, one at each gating viewport,
+// and one with the keyboard alone at desktop-1280 for gate 5's keyboard half. The phone keyboard
+// runs (128 to 131 key presses, 56 to 59 s at load 194 in R-05's first gate run) are slow-lane runs.
+export const GATE_TASK_RUNS: GateTaskRun[] = [
+  { task: 'install-linux-x86_64', viewport: 'desktop-1280', mode: 'keyboard' },
+  { task: 'install-linux-x86_64', viewport: 'mobile-390', mode: 'pointer' },
+  { task: 'first-conformance-run', viewport: 'desktop-1280', mode: 'pointer' },
+];
+
+// The most browser tests the gate lane runs: one L2 test per template page and gating viewport,
+// one L3 test per gate task run (UXF-025, R-05). R-04's gate ran 24 at 4 workers: 17.9 s on a
+// quiet host, cut at 120 s at a 1-minute load of 115 to 140, where one test took up to 8.9 times
+// its quiet time (`L3 install-linux-x86_64 mobile-390 keyboard`, 5.4 s in gate-13, 49.4 s in
+// gate-9). Thirteen hold about half the test-seconds, so that step ends inside 120 s at that load.
+export const GATE_BROWSER_TESTS = 13;
 
 // Regions the screen-only user tells apart; the first match wins, so nested regions come first.
 // Primary: where a reader's eyes already are (the top bar and the article).

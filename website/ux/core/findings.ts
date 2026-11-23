@@ -87,6 +87,21 @@ export function unmatchedErrors(entry: Pick<KnownFailure, 'patterns'>, messages:
   return messages.filter((m) => !patterns.some((p) => p.test(plain(m))));
 }
 
+// What a finished asset of open findings counts as: held (expected `failed`, the run exits 0 on
+// it) when it failed and every error matches a failure pattern of its findings; a new failure
+// (expected `passed`, the run exits 1) when it failed with any other error. A test that passed or
+// ran out of time stays expected to fail, so it is a new failure already.
+export function settleKnownFailure(
+  entry: Pick<KnownFailure, 'findings' | 'patterns'>,
+  status: string,
+  messages: string[],
+): { expectedStatus: 'failed' | 'passed'; newFailure?: string } {
+  if (status !== 'failed') return { expectedStatus: 'failed' };
+  const unmatched = unmatchedErrors(entry, messages);
+  if (unmatched.length === 0) return { expectedStatus: 'failed' };
+  return { expectedStatus: 'passed', newFailure: `no failure pattern of ${entry.findings.join(', ')} matches: ${unmatched[0].split('\n')[0]}` };
+}
+
 // Marks every test of the calling spec file that is an open finding's asset as expected to fail,
 // and after it ran, takes the mark back when the test failed with a message none of its findings'
 // failure patterns matches, so that failure is a new one. A test that runs out of time is a new
@@ -104,10 +119,10 @@ export function holdKnownFailures(test: TestType<any, any>, findingsDir: string,
   });
   test.afterEach(({}, testInfo: TestInfo) => {
     const entry = entryOf(testInfo);
-    if (!entry || testInfo.status !== 'failed') return;
-    const unmatched = unmatchedErrors(entry, testInfo.errors.map((e) => e.message ?? e.value ?? ''));
-    if (unmatched.length === 0) return;
-    testInfo.annotations.push({ type: 'new failure', description: `no failure pattern of ${entry.findings.join(', ')} matches: ${unmatched[0].split('\n')[0]}` });
-    testInfo.expectedStatus = 'passed';
+    if (!entry) return;
+    const settled = settleKnownFailure(entry, testInfo.status ?? '', testInfo.errors.map((e) => e.message ?? e.value ?? ''));
+    if (!settled.newFailure) return;
+    testInfo.annotations.push({ type: 'new failure', description: settled.newFailure });
+    testInfo.expectedStatus = settled.expectedStatus;
   });
 }

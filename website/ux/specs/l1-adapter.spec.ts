@@ -2,7 +2,7 @@
 import { expect, test } from '@playwright/test';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { BASE, FINDINGS, GATE_PAGE_ELEMENTS, GATING, REPOSITORY, ROOT, SITEMAP, TEMPLATE_PAGES, WORKERS, alwaysVisible, builtPage, hasSearchControl, pageKind } from '../adapter';
+import { BASE, FINDINGS, GATE_BROWSER_TESTS, GATE_PAGE_ELEMENTS, GATE_TASK_RUNS, GATING, REPOSITORY, ROOT, SITEMAP, TEMPLATE_PAGES, WORKERS, alwaysVisible, builtPage, hasSearchControl, pageKind, scenarios } from '../adapter';
 import { holdKnownFailures } from '../core/findings';
 import { gateProjects, slowProjects, stageGrep } from '../playwright.config';
 import { checkAlwaysVisible } from '../core/contract';
@@ -96,6 +96,19 @@ test('L1 the gate lane holds no heavy page and no nested Playwright run (UXF-025
   const cli = ['@playwright', 'test', 'cli'].join('/');
   const nested = specs.filter((f) => readFileSync(join(ROOT, 'specs', f), 'utf8').includes(cli));
   expect.soft(nested, 'gate-lane spec files that start a nested Playwright run').toEqual([]);
+});
+
+// UXF-025, R-05: R-04's gate ran 24 browser tests and was cut at 120 s at a load of 115 to 140.
+test('L1 the gate lane runs at most GATE_BROWSER_TESTS browser tests, and every one of its task runs is a run of an anchor card (UXF-025)', () => {
+  const l2 = TEMPLATE_PAGES.length * GATING.length;
+  expect(l2 + GATE_TASK_RUNS.length, `${l2} L2 tests and ${GATE_TASK_RUNS.length} L3 tests in the gate lane`).toBeLessThanOrEqual(GATE_BROWSER_TESTS);
+  const anchors = scenarios().filter((s) => s.card === 'anchor').map((s) => s.name);
+  expect(GATE_TASK_RUNS.filter((r) => !anchors.includes(r.task) || !GATING.some((v) => v.name === r.viewport))).toEqual([]);
+  // Gate 5's keyboard half and gate 4 stay in the gate: at least one run of each mode, and each
+  // gating viewport and each anchor card at least once.
+  expect([...new Set(GATE_TASK_RUNS.map((r) => r.mode))].sort()).toEqual(['keyboard', 'pointer']);
+  expect([...new Set(GATE_TASK_RUNS.map((r) => r.viewport))].sort()).toEqual(GATING.map((v) => v.name).sort());
+  expect([...new Set(GATE_TASK_RUNS.map((r) => r.task))].sort()).toEqual([...anchors].sort());
 });
 
 test('L1 the template pages of the gate cover every page template and every always-visible element of the sitemap', async ({ page }) => {
