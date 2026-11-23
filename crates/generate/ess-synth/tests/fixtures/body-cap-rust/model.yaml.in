@@ -1,0 +1,84 @@
+format: ess/23
+system: parcel
+version: v1
+domain: parcel.intake
+types:
+  - {name: parcel.intake.ParcelId, kind: newtype, of: Integer}
+entities:
+  - name: parcel.intake.Parcel
+    identity: {name: parcel_id, type: parcel.intake.ParcelId}
+    fields:
+      - {name: note, type: String}
+    lifecycle: {initial: Held, states: [Held], terminal: [Held]}
+events:
+  - name: parcel.intake.ParcelHeld
+    fields:
+      - {name: parcel_id, type: parcel.intake.ParcelId}
+      - {name: note, type: String}
+commands:
+  - name: parcel.intake.Receive
+    input:
+      - {name: parcel_id, type: parcel.intake.ParcelId}
+      - {name: note, type: String}
+    outcomes:
+      - name: held
+        creates: parcel.intake.Parcel
+        instance: parcel_id
+        sets: {note: input.note}
+        emits: [parcel.intake.ParcelHeld]
+        payload:
+          parcel.intake.ParcelHeld: {parcel_id: input.parcel_id, note: input.note}
+  - name: parcel.intake.Label
+    input:
+      - {name: parcel_id, type: parcel.intake.ParcelId}
+      - {name: note, type: String}
+    outcomes:
+      - name: held
+        creates: parcel.intake.Parcel
+        instance: parcel_id
+        sets: {note: input.note}
+        emits: [parcel.intake.ParcelHeld]
+        payload:
+          parcel.intake.ParcelHeld: {parcel_id: input.parcel_id, note: input.note}
+  - name: parcel.intake.Discard
+    input:
+      - {name: parcel_id, type: parcel.intake.ParcelId}
+      - {name: note, type: String}
+    outcomes:
+      - name: held
+        creates: parcel.intake.Parcel
+        instance: parcel_id
+        sets: {note: input.note}
+        emits: [parcel.intake.ParcelHeld]
+        payload:
+          parcel.intake.ParcelHeld: {parcel_id: input.parcel_id, note: input.note}
+  - name: parcel.intake.Archive
+    input:
+      - {name: parcel_id, type: parcel.intake.ParcelId}
+      - {name: note, type: String}
+    outcomes:
+      - name: held
+        creates: parcel.intake.Parcel
+        instance: parcel_id
+        sets: {note: input.note}
+        emits: [parcel.intake.ParcelHeld]
+        payload:
+          parcel.intake.ParcelHeld: {parcel_id: input.parcel_id, note: input.note}
+views:
+  - name: parcel.intake.AllParcels
+    source: parcel.intake.Parcel
+    consistency: read_your_writes
+    fields:
+      - {name: parcel_id, type: parcel.intake.ParcelId}
+      - {name: note, type: String}
+components:
+  - component: parcel
+    owns: {domains: [parcel.intake]}
+    accepts:
+      commands:
+        - parcel.intake.Receive
+        - parcel.intake.Label
+        - parcel.intake.Discard
+        - parcel.intake.Archive
+    publishes: {events: [parcel.intake.ParcelHeld]}
+    reached_by: network
