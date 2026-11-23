@@ -24,3 +24,21 @@
     min-height: calc(100vh + 16rem);
   }
 }
+
+/* A terminal's title wraps instead of being cut with an ellipsis, so its whole text is on screen
+   at a phone's width (UXF-009). The bar is named too: the shared theme's own rule for the title
+   comes later in the stylesheet and would win a tie. */
+.b10x-terminal__bar > .b10x-terminal__title {
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+/* A hero band in the primary colour (the release archive's title) takes the theme's text colour
+   for that background, so its heading meets the contrast minimum in both themes (UXF-006). The
+   heading takes it too: headings have a colour of their own (`--ifm-heading-color`). */
+.hero--primary {
+  --ifm-hero-text-color: var(--b10x-color-on-accent);
+  --ifm-heading-color: var(--b10x-color-on-accent);
+}
