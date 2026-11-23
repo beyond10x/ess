@@ -427,7 +427,7 @@ a kept source. Each is corrected or marked here, in `report.md`'s copy of these 
 | the layout shift "measured in the dark theme" | `decision.md`, UXF-026 | measured under the light theme, filed under `dark` by the reporter (T34) | `specs/l2-layout.spec.ts` (`colorScheme: THEMES[0]`), `core/reporter.ts` |
 | "17 tests timed out and were rerun" | the builder's report | 16 tests did not pass (15 timed out, 1 failed); 19 reran | `round.json`, `runs[].timing.unexpected` |
 | R-03's gate "63 tests (36/19/8)" | UXF-025 | `gate-4` ran 62: 36, 19, 7 | `../R-03/round.json`, `runs[name=gate-4].timing.projects` |
-| R-03's gate runs "at load 61 to 69" | UXF-025, `triage.md` | R-03's review reported 61 to 92; R-03's `round.json` holds no load | `../R-03/review-report.md` |
+| R-03's gate runs "at load 61 to 69" | UXF-025, `triage.md` | not wrong: the 1-minute values were 61.24 to 69.39 (restored in R-06; R-05 wrote "61 to 92", which adds the 15-minute value 91.73); R-03's `round.json` holds no load | `../R-03/review-report.md`, row M3 |
 | "two pages that changes 1 to 5 did not touch" | `decision.md` | change 4 edits `website/src/css/custom.css`, which every page uses | commit `5f6ae80d36` |
 | two probe runs "measured 0" | `decision.md`, these notes | not kept | none |
 | `.out/gate-<n>/raw.json` and the `gate-8` row | UXF-025 | not kept: `.out/` is discarded and `gate-8` is in no `round.json` | none |

@@ -5,12 +5,15 @@ value is named by `<scenario> <metric>` or, for a scenario a lane drops, `<lane>
 
 ## Ratchet decision `R-05-worse`: the docs introduction and the two index lists hold more words
 
-Eleven reading-load values rose beyond their 5 % tolerance. Nine are cards whose path passes the
-docs introduction at desktop-1280 (`/ess/docs`, step "click link /^Install ess$/" of
-`install-linux-x86_64`: 205 words): `main`'s text, merged in step 0, adds the line "The command is
-`ess`. Its first level is five areas …" there; no change of R-05 touches that page. Three are the two
-index pages, where change 5 names the class beside each number and says which family the versions
-list covers (UXF-027). The same pages' other values fell: `ess-31-release/desktop-1280
+Eleven reading-load values rose beyond their 5 % tolerance. Corrected in R-06 (the report review
+of R-05, § 1 row 4: "nine" and "three" made twelve, and four deltas do not fit the cause named):
+seven rose by 16 words, the length of the line `main`'s text, merged in step 0, adds to the docs
+introduction (`/ess/docs`, step "click link /^Install ess$/" of `install-linux-x86_64`: 205 words):
+"The command is `ess`. Its first level is five areas …"; no change of R-05 touches that page. The
+other four (`ess-31-release/mobile-390` +13, `install-linux-x86_64/desktop-1280/keyboard` +23,
+`limitations/desktop-1280` +11, `page-a-view/desktop-1280` +28) rose with `main`'s reworded pages
+and change 5's class names on the two index pages (UXF-027); the per-step words that would show
+which are not kept (they were in the discarded `.out/`). The same pages' other values fell: `ess-31-release/desktop-1280
 reading_load.max` 358 to 322, `diagnostic-type-009/mobile-390 reading_load.max` 165 to 139.
 
 | scenario | metric | baseline (R-04) | R-05 |
@@ -42,8 +45,10 @@ reading_load.max` 358 to 322, `diagnostic-type-009/mobile-390 reading_load.max` 
 ## Ratchet decision `R-05-worse`: one layout shift of the landing page under load
 
 `/ess/@desktop-1280/light layout_shift.load` measured 0.0948 in `slow-l2-1` at a 1-minute load
-of 131, and 0 in `gate-5`, `gate-7` and `gate-8` (load 133, 170, 60) and in `slow-rerun-b` at
-load 56. It is a timing value (UXF-026); the value taken is the rerun's at load under 60.
+of 131, and 0 in `slow-rerun-b` at load 56 (`round.json`, `replaced`). The three gate-run reads
+of 0 named here in R-05 (`gate-5`, `gate-7`, `gate-8`) are not kept: the gate runs' per-page values
+were in the discarded `.out/` (corrected in R-06). One shift in two kept reads is as consistent
+with an intermittent shift as with load (UXF-026); the value taken is the rerun's.
 
 - `/ess/@desktop-1280/light layout_shift.load 0`
 
@@ -53,7 +58,8 @@ Change 2 (T34) files `layout_shift.load` and `motion.running` under the light co
 page and viewport, where the page loaded, and no longer under dark. The dark values are dropped and
 the light ones are new (278 of each). The two dark values R-04 took under load,
 `/ess/docs/concepts/overview@desktop-1280/dark` 0.0342 and `/ess/docs/status/roadmap@desktop-1280/dark`
-0.0697, measure 0 under light in `slow-l2-5` and `slow-l2-3` and in `slow-rerun-b` at load 56.
+0.0697, measure 0 under light in `slow-l2-5` and `slow-l2-3` and in `slow-rerun-b` at load 56
+(held indirectly: `round.json` `replaced` names neither page, so both runs read the same 0).
 
 - `/ess/@desktop-1280/dark layout_shift.load`
 - `/ess/@desktop-1280/dark motion.running`
@@ -615,8 +621,8 @@ the light ones are new (278 of each). The two dark values R-04 took under load,
 ## Ratchet decision `R-05-worse`: the gate lane runs five pages and three task runs
 
 Change 1 (UXF-025) leaves one template page of each page kind and three task runs in the every-merge
-gate. The release list, the status page and the lowering reference, and the phone keyboard runs and
-two pointer runs, are measured and held in the slow lane, which runs every page and every card:
+gate. The release list, the status page and the lowering reference, and three keyboard runs and
+two pointer runs (corrected in R-06 from "the phone keyboard runs and two pointer runs"), are measured and held in the slow lane, which runs every page and every card:
 
 - `gate: /ess/docs/reference/entity-runtime-lowering@desktop-1280/dark`
 - `gate: /ess/docs/reference/entity-runtime-lowering@desktop-1280/light`
@@ -638,6 +644,7 @@ two pointer runs, are measured and held in the slow lane, which runs every page 
 
 The lane `full` is taken with `cargo xtask ux-ratchet --round website/ux/rounds/R-05/round.json
 --update --decision R-05-worse`, the lane `gate` with the same command on the round of `gate-8`
-(this file copied beside it), the one gate run of R-05's engine that passed. Decided in round
+(this file copied beside it), the one gate run of R-05's engine that passed. That round file is not
+kept (it was in the discarded `.out/`; corrected in R-06); `gate-8`'s run is in `round.json`. Decided in round
 R-05 under its brief ("worse values go only under a decision that lists scenario, metric and
 value"), 2026-11-23.

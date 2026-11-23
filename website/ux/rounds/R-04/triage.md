@@ -21,8 +21,8 @@ I would put first").
 - Frequencies come from R-03's `round.json`: pages affected of 139 pages, task runs affected of 22
   task runs, runs affected of 18 runs, configurations of 556 where a finding is about a value per
   configuration. UXF-017 has no measured count in any round; its frequency is the R-01 estimate.
-- R-03's gate runs ran at a 1-minute load of 61 to 92, as R-03's review reported (R-03's `round.json`
-  holds no load; corrected in R-05 from "61 to 69"); R-04's gate runs log the load before
+- R-03's gate runs ran at a 1-minute load of 61 to 69 (`../R-03/review-report.md`, row M3; R-03's `round.json`
+  holds no load; R-05 changed this to "61 to 92" wrongly, restored in R-06); R-04's gate runs log the load before
   and after each run.
 - No person, recording or questionnaire in R-01 to R-03; L4 to L6 did not run.
 
