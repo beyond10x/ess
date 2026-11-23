@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-22T18:59:02Z",
+  "actor": "human:timo",
+  "artifact": "story:a-creating-branch-sends-every-row-it-creates-under-its-own-identity",
+  "kind": "story",
+  "revision": 11,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "unit S1 package gate, implementor's logs, each exit 0: cargo test -p ess-conformance --locked --test arranged_identities_stay_distinct, existing_instance_beside_related_guards, interpreted_existence, related_guard_absent_input, related_guard_optional, upsert_by_existence, the three pin tables, adversary_related_values_all_bytes, external_beside_held_guard, stored_rows_decided_once_work, synthesis_suite_bytes_table_cli_read; cargo test -p ess-synth --locked --test go, served_codec_names, -p ess-cli --test tutorial_page; cargo clippy -p ess-conformance and -p ess-cli --all-targets exit 0",
+    "reference": "54c1dcc53a"
+  }
+}

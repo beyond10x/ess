@@ -778,11 +778,12 @@ pub fn validate_shape(command: &CommandSpec, types: Option<&TypeRegistry>) -> Va
                     command.name
                 ),
             )
-            .with_hint(
-                "declare `format: ess/27`, where the unknown addressed identity answers after an \
+            .with_hint(format!(
+                "{raise}, where the unknown addressed identity answers after an \
                  `exists: false` over the input's row and before the related row's predicates, or \
                  split the other guard into a command of its own",
-            ),
+                raise = crate::system::FormatVersion::V27.declaration_hint()
+            )),
         );
         return errors;
     }
@@ -815,9 +816,9 @@ fn validate_declared(
                 ),
             )
             .with_hint(
-                "declare `format: ess/27`, where the one precedence rule orders the two, guard the \
+                format!("{raise}, where the one precedence rule orders the two, guard the \
                  command on the related row alone, or split the other guard into a command of its \
-                 own",
+                 own", raise = crate::system::FormatVersion::V27.declaration_hint()),
             ),
         );
         return errors;
@@ -1089,7 +1090,7 @@ fn several_rows_below_ess_22(spec: &Specification, command: &CommandSpec) -> Val
                 ),
             )
             .with_hint(format!(
-                "declare `format: ess/22`, or read the related row through `{first}`"
+                "{raise}, or read the related row through `{first}`", raise = crate::system::FormatVersion::V22.declaration_hint()
             )),
         );
     }
@@ -1164,7 +1165,7 @@ fn orders_present_refusals(
             ),
         )
         .with_hint(
-            "declare `format: ess/27`, where the one precedence rule orders the two, guard the command on the related row alone, or split the other guard into a command of its own",
+            format!("{raise}, where the one precedence rule orders the two, guard the command on the related row alone, or split the other guard into a command of its own", raise = crate::system::FormatVersion::V27.declaration_hint()),
         ));
     }
     Ok(orders)
@@ -1294,7 +1295,7 @@ pub fn validate(spec: &Specification, types: &TypeRegistry) -> ValidationErrors 
                             "a guard over a related row (`when_related`) requires specification \
                              format ess/18",
                         )
-                        .with_hint("declare `format: ess/18`"),
+                        .with_hint(crate::system::FormatVersion::V18.declaration_hint()),
                     );
                 }
             }
@@ -1319,7 +1320,7 @@ pub fn validate(spec: &Specification, types: &TypeRegistry) -> ValidationErrors 
                         ),
                     )
                     .with_hint(
-                        "declare `format: ess/28`, or split the rows into one refusal each",
+                        format!("{raise}, or split the rows into one refusal each", raise = crate::system::FormatVersion::V28.declaration_hint()),
                     )
                 })
                 .collect();
@@ -1425,7 +1426,10 @@ fn optional_below_ess_22(spec: &Specification, command: &CommandSpec) -> Option<
                 read.type_ref
             ),
         )
-        .with_hint("declare `format: ess/22`, or make the input required"),
+        .with_hint(format!(
+            "{raise}, or make the input required",
+            raise = crate::system::FormatVersion::V22.declaration_hint()
+        )),
     )
 }
 
@@ -1469,7 +1473,10 @@ fn subject_via_below_ess_22(spec: &Specification, command: &CommandSpec) -> Vali
                     outcome.name, command.name
                 ),
             )
-            .with_hint("declare `format: ess/22`, or read the identity from the input: `via: input.<field>`")
+            .with_hint(format!(
+                "{raise}, or read the identity from the input: `via: input.<field>`",
+                raise = crate::system::FormatVersion::V22.declaration_hint()
+            ))
         } else {
             ValidationError::at(
                 site(command, outcome),
@@ -1774,7 +1781,7 @@ fn check(
                 "reading the related row's held lifecycle state as `state` in a `when_related` \
                  predicate requires specification format ess/20",
             )
-            .with_hint("declare `format: ess/20`"),
+            .with_hint(crate::system::FormatVersion::V20.declaration_hint()),
         );
         return errors;
     }
@@ -1944,10 +1951,11 @@ fn validate_partition(
             ),
         );
         errors.push(if selected > 1 && !one_rule {
-            refusal.with_hint(
-                "declare `format: ess/27`, where the one precedence rule answers the branch it \
+            refusal.with_hint(format!(
+                "{raise}, where the one precedence rule answers the branch it \
                  reads first, within one step the first declared, or make the guards disjoint",
-            )
+                raise = crate::system::FormatVersion::V27.declaration_hint()
+            ))
         } else {
             refusal
         });

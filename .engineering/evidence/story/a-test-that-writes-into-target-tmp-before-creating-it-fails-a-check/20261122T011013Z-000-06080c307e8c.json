@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-22T01:10:13Z",
+  "actor": "human:timo",
+  "artifact": "story:a-test-that-writes-into-target-tmp-before-creating-it-fails-a-check",
+  "kind": "story",
+  "revision": 6,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "unit L1 package gate, implementor's logs, each exit 0: cargo test -p ess-xtask --locked --test target_tmpdir (17 passed), cargo test -p ess-conformance --locked --test mutation_identical_answer (22 passed); the unit's status file records three further builds and one more crate check at exit 0. fmt-check ran in the unit without a recorded exit line and exited 0 on the integration branch before the synthesis units: cargo clippy -p ess-domain -p ess-cli -p ess-conformance -p ess-synth --all-targets --locked -- -D warnings exit 0, slot task fmt-check exit 0",
+    "reference": "c9b6166d17"
+  }
+}

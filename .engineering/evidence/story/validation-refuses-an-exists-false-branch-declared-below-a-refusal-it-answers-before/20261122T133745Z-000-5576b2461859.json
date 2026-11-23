@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-22T13:37:45Z",
+  "actor": "human:timo",
+  "artifact": "story:validation-refuses-an-exists-false-branch-declared-below-a-refusal-it-answers-before",
+  "kind": "story",
+  "revision": 9,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "unit VR-BRANCH package gate, implementor's logs, each exit 0: cargo test -p ess-domain --locked --test held_state_order (26 passed) and the 24 fixture binaries that read the changed precedence (257 passed, 0 failed), slot --timeout 30m task test-xtask (23 binaries, 519 passed), cargo clippy -p ess-domain --all-targets, slot task fmt-check. typed_diagnostics failed one design-page count in the unit run and passed 8 of 8 on the integration branch before the synthesis units: cargo clippy -p ess-domain -p ess-cli -p ess-conformance -p ess-synth --all-targets --locked -- -D warnings exit 0, slot task fmt-check exit 0",
+    "reference": "859bfaa31a"
+  }
+}

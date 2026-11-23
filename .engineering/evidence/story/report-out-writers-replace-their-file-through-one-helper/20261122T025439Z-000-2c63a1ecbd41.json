@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-22T02:54:39Z",
+  "actor": "human:timo",
+  "artifact": "story:report-out-writers-replace-their-file-through-one-helper",
+  "kind": "story",
+  "revision": 6,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "unit R1 package gate, implementor's logs, each exit 0: cargo test -p ess-cli --locked --bin ess replace_file:: (7 passed), --test count_reports (5 passed), known_failures_cli (4), conform_report (4), mutate_cli (13); cargo clippy -p ess-cli --all-targets exit 0; slot task fmt-check exit 0",
+    "reference": "b019ca6181"
+  }
+}

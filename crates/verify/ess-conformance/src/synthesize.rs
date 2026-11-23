@@ -3508,6 +3508,15 @@ pub fn syntheses_started<R>(run: impl FnOnce() -> R) -> (R, u64) {
     (out, SYNTHESES.with(std::cell::Cell::get) - before)
 }
 
+/// What `run` returns, how many setup runs of a creating branch reading several related rows were
+/// arranged as the branch's own scenario on this thread while it ran, how many strict searches of
+/// a run reading several rows ran, and the most such arrangements open at once: the work a test
+/// bounds. Not part of the suite.
+#[doc(hidden)]
+pub fn own_scenario_work<R>(run: impl FnOnce() -> R) -> (R, (u64, u64, usize)) {
+    related_guard::own_scenario_work(run)
+}
+
 /// What `run` returns, how many rows of creating branches it asked for on this thread, and how
 /// many of them were made rather than answered from what the synthesis made before: the work a
 /// test bounds. Not part of the suite.
@@ -4581,6 +4590,12 @@ pub(crate) fn owns_view(ir: &EssIr, component: &ResolvedComponent, view: &Qualif
         .is_some_and(|declared| component.owns.contains(&declared.domain))
 }
 
+/// How many further distinctions past its own the absent-reference run of a branch an absent
+/// Optional reference selects is tried at, where the run at its own would create a row under an
+/// identity a row of the scenario still holds
+/// (story:a-creating-branchs-scenario-sends-every-row-it-creates-under-an-identity-of-its-own).
+const RELATED_ABSENT_TRIES: usize = 4;
+
 /// One scenario per declared outcome (§10), or the refusal that says why there is none.
 fn outcome_scenario_in(
     models: &caller::InvocationModels<'_>,
@@ -4807,16 +4822,43 @@ fn outcome_scenario_noting(
     // further instance, with the reference left out, so a target reading absence as a missing row
     // — or reading some row of the entity — fails this scenario.
     if related_guard::absent_selects(models.arrangement, command, outcome) {
-        let nth = related_guard::boundary_goals(models.arrangement, command, outcome).len() + 1;
-        if let Some((more, depends, _)) = exercise_as(
+        let first = related_guard::boundary_goals(models.arrangement, command, outcome).len() + 1;
+        let mut found = exercise_as(
             models,
             command,
             outcome,
             actors,
             &id,
             refusals,
-            Witness::RelatedAbsent(nth),
-        ) {
+            Witness::RelatedAbsent(first),
+        );
+        // A row the scenario already holds may carry the identity this run creates at its own
+        // distinction: the companion a view filtered on the identity arranges beside the full
+        // run is created at the same further distinction. The next distinctions are tried, and
+        // the first run is kept where each repeats, so a scenario that never repeated keeps
+        // its bytes (story:a-creating-branchs-scenario-sends-every-row-it-creates-under-an-identity-of-its-own).
+        let repeats = |more: &[ScenarioStep]| {
+            repeated_identity::repeats(models.arrangement, &[steps.as_slice(), more].concat())
+        };
+        if found.as_ref().is_some_and(|(more, ..)| repeats(more)) {
+            let apart = (1..=RELATED_ABSENT_TRIES).find_map(|step| {
+                let mut passed_over = Vec::new();
+                exercise_as(
+                    models,
+                    command,
+                    outcome,
+                    actors,
+                    &id,
+                    &mut passed_over,
+                    Witness::RelatedAbsent(first + step),
+                )
+                .filter(|(more, ..)| !repeats(more))
+            });
+            if apart.is_some() {
+                found = apart;
+            }
+        }
+        if let Some((more, depends, _)) = found {
             steps.extend(more);
             source.extend(depends);
         }
@@ -11803,6 +11845,20 @@ fn view_expectations(
             || (0..MAX_FALLBACK_RUNS).any(|run| {
                 *captured
                     == instance_name(&ir.entity(&subject.entity).name, fallback_distinction(run))
+            })
+            // The absent-reference run of a branch an absent Optional reference selects, where
+            // it was moved to a further distinction than its own ([`RELATED_ABSENT_TRIES`]): its
+            // row is read under the capture that run made, as the first event of the scenario
+            // that published an identity is another row's.
+            || (related_guard::absent_selects(ir, command, outcome) && {
+                let first = related_guard::boundary_goals(ir, command, outcome).len() + 1;
+                (1..=RELATED_ABSENT_TRIES).any(|step| {
+                    *captured
+                        == instance_name(
+                            &ir.entity(&subject.entity).name,
+                            Distinction::further(first + step),
+                        )
+                })
             })
     };
     let rekeyed = rekeyed_identity(outcome, run, ir);

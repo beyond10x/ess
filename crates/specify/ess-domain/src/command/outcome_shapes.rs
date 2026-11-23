@@ -366,10 +366,11 @@ fn validate_existence_pair(
                 )
                 .with_hint(if preserved {
                     format!(
-                        "declare `format: ess/27`, where a creation pairs with a branch that \
+                        "{raise}, where a creation pairs with a branch that \
                          preserves `{}`, or declare the `updates:` or `moves:` branch on it with \
                          `instance: {identity}`",
-                        subject.entity
+                        subject.entity,
+                        raise = FormatVersion::V27.declaration_hint()
                     )
                 } else {
                     format!(
@@ -543,7 +544,7 @@ pub(crate) fn validate(spec: &Specification) -> ValidationErrors {
             ValidationCode::UnsupportedFormatVersion,
             format!("{construct} requires specification format ess/15"),
         )
-        .with_hint("write `format: ess/15` on the source that declares the system")
+        .with_hint(FormatVersion::V15.declaration_hint())
     };
     let before_16 = format.major() < FormatVersion::V16.major();
     let gate_16 = |at: ConstructRef, construct: &str| {
@@ -552,7 +553,7 @@ pub(crate) fn validate(spec: &Specification) -> ValidationErrors {
             ValidationCode::UnsupportedFormatVersion,
             format!("{construct} requires specification format ess/16"),
         )
-        .with_hint("write `format: ess/16` on the source that declares the system")
+        .with_hint(FormatVersion::V16.declaration_hint())
     };
     for command in spec.commands().values() {
         for outcome in &command.outcomes {
@@ -619,7 +620,7 @@ pub(crate) fn validate(spec: &Specification) -> ValidationErrors {
                 "system.preconditions",
                 "`preconditions:` requires specification format ess/15",
             )
-            .with_hint("write `format: ess/15` on the source that declares the system"),
+            .with_hint(FormatVersion::V15.declaration_hint()),
         );
     }
     for (index, precondition) in preconditions.iter().enumerate() {

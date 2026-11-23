@@ -132,7 +132,7 @@ fn attrs(attrs: &[Attribute], owner: &str) -> Result<Vec<String>> {
     for a in attrs {
         let path = tokens(a.path());
         match path.as_str() {
-            "doc" | "allow" | "must_use" => {}
+            "doc" | "allow" | "must_use" | "macro_export" => {}
             "derive" | "serde" | "schemars" | "repr" | "non_exhaustive" | "default" => {
                 representation(a, owner)?;
                 result.push(tokens(&a.meta));

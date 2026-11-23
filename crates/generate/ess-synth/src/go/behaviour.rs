@@ -4543,6 +4543,7 @@ impl Guards<'_, '_> {
             Kind::Number(Primitive::Decimal) | Kind::Instant => {
                 ReadLeaf::Expression(format!("{at}.Value()"))
             }
+            Kind::Number(Primitive::Binary64) => ReadLeaf::Expression(format!("{at}.Decimal()")),
             Kind::Number(_) => {
                 self.emit.import("strconv");
                 ReadLeaf::Expression(format!("strconv.FormatInt({at}, 10)"))

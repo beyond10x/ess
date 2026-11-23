@@ -173,3 +173,138 @@ fn count_cli_configuration_and_original_suite_refusals_preserve_destinations() {
         }
     }
 }
+
+fn entries(directory: &Path) -> Vec<String> {
+    let mut names: Vec<String> = std::fs::read_dir(directory)
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    names.sort();
+    names
+}
+
+#[test]
+fn a_report_replaces_an_earlier_report_with_its_canonical_bytes_and_leaves_nothing_beside_it() {
+    let directory = suite_files("replace");
+    let report = directory.join("report.json");
+    std::fs::write(&report, "earlier\n").unwrap();
+    let output = run_suite(
+        &directory,
+        &[
+            "--report-format",
+            "2",
+            "--report-out",
+            report.to_str().unwrap(),
+        ],
+    );
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let text = std::fs::read_to_string(&report).unwrap();
+    assert_ne!(text, "earlier\n");
+    let admitted = ess_conformance::AdmittedSuite::from_json(
+        &std::fs::read_to_string(directory.join("suite.json")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(
+        ess_conformance::CountReport::from_json(&text, &admitted)
+            .unwrap()
+            .to_canonical_json()
+            .unwrap(),
+        text
+    );
+    assert_eq!(entries(&directory), ["report.json", "suite.json"]);
+}
+
+#[test]
+fn a_report_onto_a_directory_fails_and_leaves_nothing_beside_it() {
+    let directory = suite_files("directory");
+    let report = directory.join("report.json");
+    std::fs::create_dir(&report).unwrap();
+    std::fs::write(report.join("keep.txt"), "keep\n").unwrap();
+    let output = run_suite(
+        &directory,
+        &[
+            "--report-format",
+            "2",
+            "--report-out",
+            report.to_str().unwrap(),
+        ],
+    );
+    assert_eq!(output.status.code(), Some(1));
+    assert_eq!(output.stdout, Vec::<u8>::new());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains(&format!("writing {}", report.display())),
+        "{stderr}"
+    );
+    assert_eq!(
+        std::fs::read_to_string(report.join("keep.txt")).unwrap(),
+        "keep\n"
+    );
+    assert_eq!(entries(&directory), ["report.json", "suite.json"]);
+}
+
+/// `--report-out /dev/stdout` wrote the report to standard output on 0.97.4 (`fs::write` opens
+/// the path). Standard output is a pipe here, as under `| jq`.
+#[cfg(target_os = "linux")]
+#[test]
+fn a_report_out_of_dev_stdout_writes_the_report_to_standard_output() {
+    let directory = suite_files("dev-stdout");
+    let output = run_suite(
+        &directory,
+        &["--report-format", "2", "--report-out", "/dev/stdout"],
+    );
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(String::from_utf8_lossy(&output.stdout).contains("\"conformance_status\""));
+}
+
+/// `--report-out /dev/null` discarded the report on 0.97.4. The helper creates its temporary
+/// file in the destination's directory, so a writer that may not create files in `/dev` fails,
+/// and one that may (root in a container) renames a regular file over the device.
+#[cfg(target_os = "linux")]
+#[test]
+fn a_report_out_of_dev_null_succeeds() {
+    let directory = suite_files("dev-null");
+    let output = run_suite(
+        &directory,
+        &["--report-format", "2", "--report-out", "/dev/null"],
+    );
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+/// A destination that is not a regular file and not a directory is not replaced by a regular
+/// file: on 0.97.4 the write to a socket failed and the socket stayed.
+#[cfg(unix)]
+#[test]
+fn a_report_out_of_a_non_regular_file_does_not_replace_it() {
+    use std::os::unix::fs::FileTypeExt;
+    let directory = suite_files("socket");
+    let socket = directory.join("report.sock");
+    let _listener = std::os::unix::net::UnixListener::bind(&socket).unwrap();
+    let _ = run_suite(
+        &directory,
+        &[
+            "--report-format",
+            "2",
+            "--report-out",
+            socket.to_str().unwrap(),
+        ],
+    );
+    let kind = std::fs::symlink_metadata(&socket).unwrap().file_type();
+    assert!(
+        kind.is_socket(),
+        "the socket at the destination was replaced: is_file={}",
+        kind.is_file()
+    );
+}

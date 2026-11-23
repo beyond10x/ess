@@ -25,11 +25,14 @@ pub(super) fn validate(
     }
     let at = at.clone().key("one_time_response");
     if spec.system().format.major() < 21 {
-        errors.push(ValidationError::at(
-            at.clone(),
-            ValidationCode::UnsupportedFormatVersion,
-            "one_time_response requires specification format ess/21",
-        ));
+        errors.push(
+            ValidationError::at(
+                at.clone(),
+                ValidationCode::UnsupportedFormatVersion,
+                "one_time_response requires specification format ess/21",
+            )
+            .with_hint(crate::system::FormatVersion::V21.declaration_hint()),
+        );
     }
     if !outcome.returns
         || outcome.error.is_some()

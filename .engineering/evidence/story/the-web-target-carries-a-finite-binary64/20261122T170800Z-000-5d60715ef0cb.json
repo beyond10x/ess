@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-22T17:08:00Z",
+  "actor": "human:timo",
+  "artifact": "story:the-web-target-carries-a-finite-binary64",
+  "kind": "story",
+  "revision": 7,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "unit B4 package gate, implementor's logs, each exit 0: cargo test -p ess-synth --locked --lib, --test web, json_web, binary64_plan, feasibility, binary64_web (4 passed); cargo clippy -p ess-synth exit 0; wasm check exit 0; slot task fmt-check exit 0 on its second run",
+    "reference": "a606656587"
+  }
+}

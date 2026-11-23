@@ -94,10 +94,11 @@ pub(super) fn gates(spec: &Specification, command: &CommandSpec) -> ValidationEr
                          specification format ess/28"
                     ),
                 )
-                .with_hint(
-                    "declare `format: ess/28` to refuse a list naming a missing row with `exists: \
+                .with_hint(format!(
+                    "{raise} to refuse a list naming a missing row with `exists: \
                      false`, or read an input typed as the other entity's identity",
-                ),
+                    raise = FormatVersion::V28.declaration_hint()
+                )),
             );
             continue;
         }

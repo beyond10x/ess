@@ -263,7 +263,7 @@ pub(crate) fn validate(spec: &Specification) -> ValidationErrors {
                         ValidationCode::UnsupportedFormatVersion,
                         "`input_absent:` requires specification format ess/16",
                     )
-                    .with_hint("write `format: ess/16` on the source that declares the system"),
+                    .with_hint(FormatVersion::V16.declaration_hint()),
                 );
             }
         }

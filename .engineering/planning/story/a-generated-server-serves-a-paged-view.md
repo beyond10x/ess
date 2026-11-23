@@ -46,7 +46,7 @@ scope:
   path: crates/generate/ess-synth/tests/view_paging.rs
 - confidence: inferred
   path: docs/design/view-paging.md
-revision: 2
+revision: 3
 ---
 ## Outcome
 
@@ -217,3 +217,16 @@ which is why this story writes no `capped` member and the design must decide it 
 - inferred: docs/design/view-paging.md
 - inferred: CHANGELOG.md
 confidence: medium
+
+## Requester feedback, 2026-11-21
+
+- **A read that sends only the page.** The requester's served system answers it with a default
+  page size, and asks that a generated server does not turn that 200 into a 400. This story's
+  decision (page alone is answered with 400) is therefore open again: a default size needs a
+  declaration, whose home is `story:page-numbered-paging-declares-a-default-and-a-maximum-size`.
+  Resolve it when this story's design page is written: either that draft lands first and a
+  page-only read takes the declared default, or the 400 stays for a view that declares none.
+- **A size outside the permitted range** is answered with 400 by the requester's system; the
+  maximum is declared by the same draft.
+- **A capped total** is not needed here; confirmed by the requester. It stays with
+  `story:a-view-may-declare-a-fixed-server-side-row-cap`.

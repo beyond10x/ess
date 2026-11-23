@@ -1,4 +1,4 @@
-#	models=483	lines=664
+#	models=488	lines=669
 crates/edge/ess-cli/tests/fixtures/adversary-shorthand-binary64/spec.yaml	components=1
 crates/edge/ess-cli/tests/fixtures/adversary-shorthand-binary64/spec.yaml	tracker-service	tracker.ops.Sample	definition=6994335e6a9e9266f5f0ce33a640350814ba12cce3c4ce7439fe61643a3a9cdb:5797
 crates/edge/ess-cli/tests/fixtures/adversary-shorthand-binary64/spec.yaml	tracker-service	tracker.ops.Sample	create	recorded
@@ -124,7 +124,9 @@ crates/ui/ess-ui-check/tests/fixtures/model/system.yaml	ASSEMBLE
 crates/ui/ess-ui-react/tests/fixtures/fixture-command-effect/spec/system.yaml	ASSEMBLE
 crates/ui/ess-ui-test/tests/fixtures/adversary-t3-fixture-command-effect/spec/system.yaml	ASSEMBLE
 crates/ui/ess-ui-test/tests/fixtures/fixture-command-effect/spec/system.yaml	ASSEMBLE
+crates/verify/ess-conformance/tests/fixtures/a-creator-reading-several-related-rows.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/absent-optional-beside-stored-guard.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/absent-reference-identity-view.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/adversary-0710/affects-past-creating-not-found.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/adversary-0710/set-update-refuses-the-related-row-it-names.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/adversary-0710/set-update-second-creator-copies-another-field.yaml	components=0
@@ -215,6 +217,7 @@ crates/verify/ess-conformance/tests/fixtures/component-scope.yaml	marks-2	REFUSE
 crates/verify/ess-conformance/tests/fixtures/component-scope.yaml	marks-3	REFUSED	c7976c663c63ae369f4d1c83aa71ae7b7bef7a4440225eadf93b0b3ebc393f9a:399
 crates/verify/ess-conformance/tests/fixtures/component-unrealised/system.yaml	ASSEMBLE
 crates/verify/ess-conformance/tests/fixtures/conditional-aggregate-measures.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/create-if-absent.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/create-or-update-beside-related-refusal.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/created-rows-kept.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/current-time-guard.yaml	components=0
@@ -358,6 +361,8 @@ crates/verify/ess-conformance/tests/fixtures/restart.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/retained-commit.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/retained-replay.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/row-set-creator-predicate-guard.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/row-set-refusal-beside-a-named-related-row.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/row-set-refusal-beside-the-addressed-related-row.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/row-set-related-copy-identity.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/row-set-related-copy.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/row-set-struct-identity.yaml	components=1

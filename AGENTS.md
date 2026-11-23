@@ -127,13 +127,6 @@ optimised in them. CI's Linux jobs link with lld through
 `CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS` in `ci.yml`, not `.cargo/config.toml`, so local
 builds and shipped release binaries keep the system linker.
 
-**Local compile cache.** On the shared development host, local ESS builds use a compile cache of
-their own, because a fresh worktree otherwise recompiles every dependency. Set it per command, for
-this repository's builds only: `RUSTC_WRAPPER=sccache SCCACHE_DIR=~/.cache/sccache/ess
-SCCACHE_SERVER_PORT=4303 SCCACHE_CACHE_SIZE=2G`. Never the default port 4226, never a server shared
-with another repository, and never in `.cargo/config.toml` or a global cargo configuration: CI and
-release builds run without it.
-
 **Consumer coverage is opt-in.** Revision 3 of the ESS evolution plan (plan
 ess-evolution-20260915, 2026-09-25) parked feature-preservation accounting, as recorded in
 `decision-blocker:consumer-accounting-parked` and the 2026-09-25 amendment to
@@ -238,8 +231,8 @@ in `adversary_287_pass1` fail with `TS2688: Cannot find type definition file for
 (no test builds with cargo, `no_test_builds.rs`); `task test` and the CI shards set
 `ESS_INTEGER_SPELLINGS_HARNESS` to it, and a bare `cargo test -p ess-synth` needs that task run and
 the variable set, or its Rust cases fail naming the task. The same holds for `task
-append-set-harness` (`append_set`, through `ESS_APPEND_SET_HARNESS`), `task
-json-body-harnesses` (`json_body_closure` and `adversary_w1_gen1_security`, through
+append-set-harness` (`append_set`, through `ESS_APPEND_SET_HARNESS`), `task binary64-harness`
+(`binary64_rust`, through `ESS_BINARY64_HARNESS`), `task json-body-harnesses` (`json_body_closure` and `adversary_w1_gen1_security`, through
 `ESS_JSON_BODY_CLOSURE_HARNESS` and `ESS_JSON_BODY_SECURITY_HARNESS`) and `task ui-http-servers`
 (`ess-cli`'s `generate_ui_http`, through `ESS_UI_HTTP_SHELF_SERVER` and `ESS_UI_HTTP_ITEMS_SERVER`).
 Each generates its server from a committed model and `http.yaml.in` binding beside the test; a

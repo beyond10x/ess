@@ -360,8 +360,9 @@ floating value.
 
 Binary64 values are executed through
 [normalization recipes](../generate-artifacts.md#binary64-inputs-and-integer-conversion) (`ess-normalization/5`).
-Standalone structural Rust/Go codecs and whole-system targets refuse Binary64;
-TypeScript structural output reports the finite codec obligation.
+Standalone structural Rust/Go codecs carry a finite Binary64, and whole-system synthesis carries it
+through the Rust, Go and web targets in the positions a conformance suite carries and refuses it on
+Clap. TypeScript structural output reports the finite codec obligation.
 
 A conformance
 suite carries a Binary64 in an entity's fields, a command's input and response, an

@@ -192,7 +192,10 @@ the reason). Four targets render the plan: a Rust workspace, a Go module, a WebA
 bridge, and a Clap command grammar with completion support and handler seams. The language-neutral
 plan travels with each tree, and target-specific weakenings and refusals are recorded separately.
 Clap handlers receive `clap::ArgMatches`, and its generated crate depends on `clap` and
-`clap_complete` 4. Full synthesis refuses modeled Binary64 across all four targets. The separate
+`clap_complete` 4. The Rust, Go and web targets carry a finite `Binary64` in entity fields, command
+input and response, event and error fields, and view fields and row, and refuse one that is an
+entity identity, a view parameter, an actor attribute, a binding's delivery context, mapping or
+selection, or a declared conversion. The Clap target refuses every `Binary64`. The separate
 structural data libraries have their own support boundary.
 
 A command whose every outcome the specification spells out gets a generated behaviour, and a view

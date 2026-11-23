@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-22T15:04:25Z",
+  "actor": "human:timo",
+  "artifact": "story:the-rust-target-carries-a-finite-binary64",
+  "kind": "story",
+  "revision": 13,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "unit B2 package gate, implementor's logs, each exit 0: cargo test -p ess-synth --locked --test binary64_plan, feasibility, single_crate_layout, json_primitive, invariant_check, go, served_codec_names, http_binding_rust, adversary_related_guard_behaviour_pass1, generated_view_queries; cargo clippy -p ess-synth --all-targets exit 0; slot task fmt-check exit 0. The unit's own binary64_rust run ended red before its last fix and has no later unit log; it passed 7 of 7 with the built harness on the integration branch before the synthesis units: cargo clippy -p ess-domain -p ess-cli -p ess-conformance -p ess-synth --all-targets --locked -- -D warnings exit 0, slot task fmt-check exit 0",
+    "reference": "43edcd4e0e"
+  }
+}

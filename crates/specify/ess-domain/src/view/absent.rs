@@ -80,7 +80,10 @@ impl ViewSpec {
                     "a view's answer for an identity no row carries (`absent:`) requires \
                      specification format ess/25",
                 )
-                .with_hint("declare `format: ess/25`, or drop `absent:`"),
+                .with_hint(format!(
+                    "{raise}, or drop `absent:`",
+                    raise = crate::system::FormatVersion::V25.declaration_hint()
+                )),
             );
         }
         errors

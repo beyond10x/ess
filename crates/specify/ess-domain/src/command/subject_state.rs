@@ -176,10 +176,11 @@ pub fn validate_shape(command: &CommandSpec, composition: &Composition) -> Valid
                         ValidationCode::ConflictingDeclaration,
                         "explicit subject-state guards cannot also declare wrong_state precedence",
                     )
-                    .with_hint(
-                        "declare `format: ess/27`, where the one precedence rule answers \
+                    .with_hint(format!(
+                        "{raise}, where the one precedence rule answers \
                          `wrong_state:` after the explicit subject-state guards",
-                    ),
+                        raise = crate::system::FormatVersion::V27.declaration_hint()
+                    )),
                 );
             }
             continue;

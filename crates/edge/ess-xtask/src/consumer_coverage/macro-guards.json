@@ -15,6 +15,9 @@
   "ess_domain::binding::periodic::profile_word": {
     "definition": "e162e1bad4d35e9bc86ea32587f8527ece428412248a78083b176994b82f6703"
   },
+  "ess_domain::system::declaration_hint": {
+    "definition": "662612306c086fac072479b688869347f5120c0e1cd44d4ed9c7cf830ec4620a"
+  },
   "ess_primitives::error::validation_codes": {
     "definition": "71a0a5b3d5725632de53cc7ca460f20fa88e9d90ef7bd46e642631ed46e7b546",
     "invocation": "02301d7b9bb631b7ab10a0df4b740035ad5bce0b2efb384dcfa56f4f8dc3c155"

@@ -20,11 +20,13 @@ use std::fmt::Write as _;
 /// The repair named beside the refusal of a stored-field guard and a lifecycle-state guard in one
 /// command (beyond10x/ess#461): the held state read as `state` in the fact strategy's predicate
 /// (ess/18) states the same command, and declaration order gives the refusal its precedence.
-pub(crate) const LIFECYCLE_MIX_HINT: &str =
-    "declare `format: ess/27`, where the one precedence rule reads both at its held-state step in \
+pub(crate) const LIFECYCLE_MIX_HINT: &str = concat!(
+    crate::declaration_hint!(27),
+    ", where the one precedence rule reads both at its held-state step in \
      declaration order, or read the held state in the predicate instead: replace \
      `when_subject_state:` with `when_subject: {predicate: state == Active}`, or refuse every other \
-     state with `when_subject: {predicate: state != Active}` declared before the default";
+     state with `when_subject: {predicate: state != Active}` declared before the default"
+);
 
 /// Whether any branch of this command reads the existing subject's stored fields.
 pub fn uses(command: &CommandSpec) -> bool {
@@ -295,11 +297,12 @@ fn share_one_subject(
                 "subject fact selection requires one existing subject identity",
             );
             if same_identity && creates_on_unknown_identity(outcome) {
-                error = error.with_hint(
-                    "declare `format: ess/25`, where an `unknown_instance:` branch may create the \
+                error = error.with_hint(format!(
+                    "{raise}, where an `unknown_instance:` branch may create the \
                      row beside `when_subject:` branches, or select the update branches with \
                      `when_subject_state:`",
-                );
+                    raise = crate::system::FormatVersion::V25.declaration_hint()
+                ));
             }
             errors.push(error);
         }
@@ -513,7 +516,10 @@ fn check(
                 "an `input.` operand in a `when_subject` predicate requires specification format \
                  ess/15",
             )
-            .with_hint("declare `format: ess/15`, or compare the stored field with a literal"),
+            .with_hint(format!(
+                "{raise}, or compare the stored field with a literal",
+                raise = crate::system::FormatVersion::V15.declaration_hint()
+            )),
         );
         return errors;
     }
@@ -525,7 +531,10 @@ fn check(
                 "reading the held lifecycle state as `state` in a `when_subject` predicate \
                  requires specification format ess/18",
             )
-            .with_hint("declare `format: ess/18`, or guard the state with `when_subject_state:`"),
+            .with_hint(format!(
+                "{raise}, or guard the state with `when_subject_state:`",
+                raise = crate::system::FormatVersion::V18.declaration_hint()
+            )),
         );
         return errors;
     }

@@ -102,11 +102,12 @@ fn absent_is_refused_on_a_view_not_selecting_by_identity() {
 /// Below ess/25 the key is refused once, naming ess/25.
 #[test]
 fn absent_is_refused_below_ess_25() {
+    // Re-pinned by story:every-format-version-hint-names-the-source-that-declares-the-system.
     assert_eq!(
         refusals(&replaced(FLAGS, "format: ess/25", "format: ess/24")),
         ["[unsupported_format_version] view.demo.status.FlagById.absent: a view's answer for an \
           identity no row carries (`absent:`) requires specification format ess/25 (hint: \
-          declare `format: ess/25`, or drop `absent:`)"]
+          write `format: ess/25` on the source that declares the system, or drop `absent:`)"]
     );
 }
 

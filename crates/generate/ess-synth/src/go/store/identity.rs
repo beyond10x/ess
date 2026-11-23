@@ -35,7 +35,9 @@ impl<'a, 'ir> Keys<'a, 'ir> {
                     self.json = true;
                     format!("memoryJSONKey(({value}).Value())")
                 }
-                Primitive::Binary64 => unreachable!("native synthesis refuses Binary64"),
+                Primitive::Binary64 => {
+                    unreachable!("a Binary64 identity is refused by failure::binary64")
+                }
             },
             ResolvedTypeRef::Declared { name } => {
                 self.named.insert(name.name().clone(), name.clone());

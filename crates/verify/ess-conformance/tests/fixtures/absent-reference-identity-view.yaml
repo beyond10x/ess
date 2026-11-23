@@ -1,0 +1,159 @@
+format: ess/37
+system: demo
+version: v1
+domain: demo.depot
+summary: A label is filed under its own identity, on an open shelf or on none, and read by that identity.
+types:
+  - {name: demo.depot.ShelfId, kind: newtype, of: String}
+  - {name: demo.depot.LabelId, kind: newtype, of: String}
+entities:
+  - name: demo.depot.Shelf
+    identity: {name: shelf_id, type: demo.depot.ShelfId}
+    fields:
+      - {name: title, type: String}
+    lifecycle:
+      initial: Open
+      states: [Open, Closed]
+      terminal: [Closed]
+      transitions:
+        - {name: close, from: [Open], to: Closed}
+  - name: demo.depot.Label
+    identity: {name: label_id, type: demo.depot.LabelId}
+    fields:
+      - {name: shelf_id, type: Optional<demo.depot.ShelfId>}
+      - {name: text, type: String}
+      - {name: filed_at, type: Timestamp}
+    relations:
+      - {name: shelf, kind: references, target: demo.depot.Shelf, cardinality: one, via: shelf_id}
+    lifecycle:
+      initial: Filed
+      states: [Filed, Done]
+      terminal: [Done]
+      transitions:
+        - {name: finish, from: [Filed], to: Done}
+actors:
+  - name: demo.depot.Keeper
+    may: [demo.depot.OpenShelf, demo.depot.CloseShelf, demo.depot.FileLabel, demo.depot.FinishLabel]
+errors:
+  - name: demo.depot.ShelfExists
+    fields: [{name: shelf_id, type: demo.depot.ShelfId}]
+  - name: demo.depot.NoSuchShelf
+    fields: [{name: shelf_id, type: demo.depot.ShelfId}]
+  - name: demo.depot.ShelfStateConflict
+    fields: [{name: shelf_id, type: demo.depot.ShelfId}]
+  - name: demo.depot.ShelfClosedToLabels
+    fields: [{name: label_id, type: demo.depot.LabelId}]
+  - name: demo.depot.NoSuchLabel
+    fields: [{name: label_id, type: demo.depot.LabelId}]
+  - name: demo.depot.LabelStateConflict
+    fields: [{name: label_id, type: demo.depot.LabelId}]
+commands:
+  - name: demo.depot.OpenShelf
+    input:
+      - {name: shelf_id, type: demo.depot.ShelfId}
+      - {name: title, type: String}
+    outcomes:
+      - name: opened
+        creates: demo.depot.Shelf
+        instance: shelf_id
+        sets:
+          title: input.title
+        emits: [demo.depot.ShelfOpened]
+        payload:
+          demo.depot.ShelfOpened:
+            shelf_id: input.shelf_id
+      - name: shelf-exists
+        existing_instance: true
+        error: demo.depot.ShelfExists
+  - name: demo.depot.CloseShelf
+    input:
+      - {name: shelf_id, type: demo.depot.ShelfId}
+    outcomes:
+      - name: no-shelf
+        unknown_instance: true
+        error: demo.depot.NoSuchShelf
+      - name: closed
+        moves: demo.depot.Shelf.close
+        instance: shelf_id
+        emits: [demo.depot.ShelfClosed]
+        payload:
+          demo.depot.ShelfClosed:
+            shelf_id: input.shelf_id
+      - name: wrong-state
+        wrong_state: true
+        error: demo.depot.ShelfStateConflict
+  - name: demo.depot.FileLabel
+    input:
+      - {name: label_id, type: demo.depot.LabelId}
+      - {name: shelf_id, type: Optional<demo.depot.ShelfId>}
+      - {name: text, type: String}
+      - {name: at, type: Timestamp}
+    outcomes:
+      - name: no-shelf
+        when_related: {via: input.shelf_id, exists: false}
+        error: demo.depot.NoSuchShelf
+      - name: shelf-closed
+        when_related: {via: input.shelf_id, predicate: state == Closed}
+        error: demo.depot.ShelfClosedToLabels
+      - name: filed
+        creates: demo.depot.Label
+        instance: label_id
+        sets:
+          shelf_id: input.shelf_id
+          text: input.text
+          filed_at: input.at
+        emits: [demo.depot.LabelFiled]
+        payload:
+          demo.depot.LabelFiled:
+            label_id: input.label_id
+  - name: demo.depot.FinishLabel
+    input:
+      - {name: label_id, type: demo.depot.LabelId}
+    outcomes:
+      - name: no-label
+        unknown_instance: true
+        error: demo.depot.NoSuchLabel
+      - name: finished
+        moves: demo.depot.Label.finish
+        instance: label_id
+        emits: [demo.depot.LabelFinished]
+        payload:
+          demo.depot.LabelFinished:
+            label_id: input.label_id
+      - name: wrong-state
+        wrong_state: true
+        error: demo.depot.LabelStateConflict
+events:
+  - name: demo.depot.ShelfOpened
+    fields: [{name: shelf_id, type: demo.depot.ShelfId}]
+  - name: demo.depot.ShelfClosed
+    fields: [{name: shelf_id, type: demo.depot.ShelfId}]
+  - name: demo.depot.LabelFiled
+    fields: [{name: label_id, type: demo.depot.LabelId}]
+  - name: demo.depot.LabelFinished
+    fields: [{name: label_id, type: demo.depot.LabelId}]
+views:
+  - name: demo.depot.Shelves
+    source: demo.depot.Shelf
+    consistency: read_your_writes
+    fields:
+      - {name: shelf_id, type: demo.depot.ShelfId}
+      - {name: title, type: String}
+      - {name: state, type: demo.depot.Shelf.State}
+  - name: demo.depot.Labels
+    source: demo.depot.Label
+    consistency: read_your_writes
+    fields:
+      - {name: label_id, type: demo.depot.LabelId}
+      - {name: state, type: demo.depot.Label.State}
+  - name: demo.depot.LabelDetail
+    source: demo.depot.Label
+    consistency: read_your_writes
+    params:
+      - {name: label_id, type: demo.depot.LabelId}
+    filter: label_id == param.label_id
+    fields:
+      - {name: label_id, type: demo.depot.LabelId}
+      - {name: shelf_id, type: Optional<demo.depot.ShelfId>}
+      - {name: text, type: String}
+      - {name: state, type: demo.depot.Label.State}

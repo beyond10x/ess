@@ -1,4 +1,4 @@
-#	models=401	commands=824
+#	models=406	commands=842
 crates/edge/ess-cli/tests/fixtures/adversary-shorthand-binary64/spec.yaml	ir=c87449d062a2da60a227a5a4fe21bf6e78c1108f81fca3463834272ed4c44788:14663
 crates/edge/ess-cli/tests/fixtures/adversary-shorthand-binary64/spec.yaml	tracker.ops.Record	default: recorded
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	ir=d47970055f083eda582673dfe528f0af87f902defa07339aa014f6c8d50be57f:5099
@@ -233,9 +233,21 @@ crates/ui/ess-ui-check/tests/fixtures/model/system.yaml	ASSEMBLE
 crates/ui/ess-ui-react/tests/fixtures/fixture-command-effect/spec/system.yaml	ASSEMBLE
 crates/ui/ess-ui-test/tests/fixtures/adversary-t3-fixture-command-effect/spec/system.yaml	ASSEMBLE
 crates/ui/ess-ui-test/tests/fixtures/fixture-command-effect/spec/system.yaml	ASSEMBLE
+crates/verify/ess-conformance/tests/fixtures/a-creator-reading-several-related-rows.yaml	ir=84a4e46f221f1b6b278253b0e3b05aa1b3d37d30ca056b0b77429d2d70d00d34:35666
+crates/verify/ess-conformance/tests/fixtures/a-creator-reading-several-related-rows.yaml	shop.desk.AddClerk	default: added
+crates/verify/ess-conformance/tests/fixtures/a-creator-reading-several-related-rows.yaml	shop.desk.IssueGrant	present_related: no-site, no-desk, elsewhere | default: issued
+crates/verify/ess-conformance/tests/fixtures/a-creator-reading-several-related-rows.yaml	shop.desk.OpenDesk	present_related: no-site | default: opened
+crates/verify/ess-conformance/tests/fixtures/a-creator-reading-several-related-rows.yaml	shop.desk.OpenSite	default: opened
+crates/verify/ess-conformance/tests/fixtures/a-creator-reading-several-related-rows.yaml	shop.desk.ReceiveTicket	present_related: no-clerk, no-grant, grant-refused, ignored | default: received
+crates/verify/ess-conformance/tests/fixtures/a-creator-reading-several-related-rows.yaml	shop.desk.RevokeGrant	existence: no-grant | held_state: wrong-state | default: revoked
 crates/verify/ess-conformance/tests/fixtures/absent-optional-beside-stored-guard.yaml	ir=ce30f5dee85374e1c98ff2fb1df54789ef7ce953502eae811c4d923d1ca7cb4d:12178
 crates/verify/ess-conformance/tests/fixtures/absent-optional-beside-stored-guard.yaml	example.review.Annotate	held_state: not-accepted | default: annotated
 crates/verify/ess-conformance/tests/fixtures/absent-optional-beside-stored-guard.yaml	example.review.Record	input_refusal: incomplete, not-verified | existence: already-exists | default: recorded
+crates/verify/ess-conformance/tests/fixtures/absent-reference-identity-view.yaml	ir=ba17abceb5930c5070d442dfcbfb1f6339466060204836e36c9e3dfaf743a8b6:23774
+crates/verify/ess-conformance/tests/fixtures/absent-reference-identity-view.yaml	demo.depot.CloseShelf	existence: no-shelf | held_state: wrong-state | default: closed
+crates/verify/ess-conformance/tests/fixtures/absent-reference-identity-view.yaml	demo.depot.FileLabel	present_related: no-shelf, shelf-closed | default: filed
+crates/verify/ess-conformance/tests/fixtures/absent-reference-identity-view.yaml	demo.depot.FinishLabel	existence: no-label | held_state: wrong-state | default: finished
+crates/verify/ess-conformance/tests/fixtures/absent-reference-identity-view.yaml	demo.depot.OpenShelf	existence: shelf-exists | default: opened
 crates/verify/ess-conformance/tests/fixtures/adversary-0710/affects-past-creating-not-found.yaml	ir=91f7a59a3f68896dd4a5c06336882417f0d0912f3734023d87309584f6aeac2d:13316
 crates/verify/ess-conformance/tests/fixtures/adversary-0710/affects-past-creating-not-found.yaml	demo.w.CreateMember	default: created
 crates/verify/ess-conformance/tests/fixtures/adversary-0710/affects-past-creating-not-found.yaml	demo.w.OpenTicket	related_row: walk-in | default: opened
@@ -508,6 +520,9 @@ crates/verify/ess-conformance/tests/fixtures/component-unrealised/system.yaml	AS
 crates/verify/ess-conformance/tests/fixtures/conditional-aggregate-measures.yaml	ir=8dd5d71711712bd413e241f86738084c0536bdf60722e70c37d703543faf7a65:19229
 crates/verify/ess-conformance/tests/fixtures/conditional-aggregate-measures.yaml	demo.cases.Complete	held_state: unavailable | default: completed
 crates/verify/ess-conformance/tests/fixtures/conditional-aggregate-measures.yaml	demo.cases.Open	default: opened
+crates/verify/ess-conformance/tests/fixtures/create-if-absent.yaml	ir=71273caa0f2f3743448b0ac2bc4cb6b2f2ed26c143536f21474f26d188376b0b:10408
+crates/verify/ess-conformance/tests/fixtures/create-if-absent.yaml	demo.depot.CloseShelf	existence: no-shelf | held_state: wrong-state | default: closed
+crates/verify/ess-conformance/tests/fixtures/create-if-absent.yaml	demo.depot.OpenShelf	present_related: opened | default: shelf-exists
 crates/verify/ess-conformance/tests/fixtures/create-or-update-beside-related-refusal.yaml	ir=4da3cf557f04473b5aafb5e493ed09467847ac0c8cc7923738820fa555b0d759:13880
 crates/verify/ess-conformance/tests/fixtures/create-or-update-beside-related-refusal.yaml	demo.desk.AddAgent	default: added
 crates/verify/ess-conformance/tests/fixtures/create-or-update-beside-related-refusal.yaml	demo.desk.Bind	existence: bound | held_state: already-bound | present_related: no-agent | default: rebound
@@ -923,7 +938,7 @@ crates/verify/ess-conformance/tests/fixtures/related-guard-owner-link.yaml	mini.
 crates/verify/ess-conformance/tests/fixtures/related-guard-owner-link.yaml	mini.m.CreateOwner	default: created
 crates/verify/ess-conformance/tests/fixtures/related-guard-owner-link.yaml	mini.m.Start	related_row: no-item | accepting: other-owner | default: started
 crates/verify/ess-conformance/tests/fixtures/related-guard-owner-link.yaml	mini.m.Stop	held_state: not-running | default: stopped
-crates/verify/ess-conformance/tests/fixtures/related-guard-ranked-candidates.yaml	ir=a6869ad4125e0be888b6c9fb6bdbec8db7486bf2c11143e983e6e935e5c9b5ba:42098
+crates/verify/ess-conformance/tests/fixtures/related-guard-ranked-candidates.yaml	ir=11efa46bb2875e179b88542f9a4da1b0877f50a4886f92fe385588d42d012b8c:42098
 crates/verify/ess-conformance/tests/fixtures/related-guard-ranked-candidates.yaml	demo.fit.Build	present_related: no-graph, not-checked | default: built
 crates/verify/ess-conformance/tests/fixtures/related-guard-ranked-candidates.yaml	demo.fit.Check	existence: no-graph | held_state: unknown-node, not-loaded | default: checked
 crates/verify/ess-conformance/tests/fixtures/related-guard-ranked-candidates.yaml	demo.fit.Complete	existence: no-run | held_state: finished | default: completed
@@ -981,6 +996,14 @@ crates/verify/ess-conformance/tests/fixtures/row-set-creator-predicate-guard.yam
 crates/verify/ess-conformance/tests/fixtures/row-set-creator-predicate-guard.yaml	demo.items.CreateChild	present_related: parent-not-found, other-tenant | default: created
 crates/verify/ess-conformance/tests/fixtures/row-set-creator-predicate-guard.yaml	demo.items.CreateParent	default: created
 crates/verify/ess-conformance/tests/fixtures/row-set-creator-predicate-guard.yaml	demo.items.GetChild	present_related: child-not-found | default: found
+crates/verify/ess-conformance/tests/fixtures/row-set-refusal-beside-a-named-related-row.yaml	ir=80d64be78135b90944185f8a2d2f11e6a8947ee75b25aa84323185b7fb325221:14771
+crates/verify/ess-conformance/tests/fixtures/row-set-refusal-beside-a-named-related-row.yaml	shop.store.BuildShelf	existence: shelf-exists | default: built
+crates/verify/ess-conformance/tests/fixtures/row-set-refusal-beside-a-named-related-row.yaml	shop.store.ClearShelf	present_related: tickets-pinned | default: cleared
+crates/verify/ess-conformance/tests/fixtures/row-set-refusal-beside-a-named-related-row.yaml	shop.store.PinTicket	present_related: no-shelf, out-of-order | default: pinned
+crates/verify/ess-conformance/tests/fixtures/row-set-refusal-beside-the-addressed-related-row.yaml	ir=e8710fa1b092eca325727e351228a42ec8a8d525a1fb9303f1bc28ea9f4d418d:16533
+crates/verify/ess-conformance/tests/fixtures/row-set-refusal-beside-the-addressed-related-row.yaml	shop.store.CloseShelf	existence: no-shelf | held_state: wrong-state | present_related: tickets-pinned | default: closed
+crates/verify/ess-conformance/tests/fixtures/row-set-refusal-beside-the-addressed-related-row.yaml	shop.store.OpenShelf	default: opened
+crates/verify/ess-conformance/tests/fixtures/row-set-refusal-beside-the-addressed-related-row.yaml	shop.store.PinTicket	present_related: no-shelf, shelf-closed | default: pinned
 crates/verify/ess-conformance/tests/fixtures/row-set-related-copy-identity.yaml	ir=e2cf165ae500c9b8f2fb524f45a56ded419948f0a8f2995589eaf78f8645ba0e:13941
 crates/verify/ess-conformance/tests/fixtures/row-set-related-copy-identity.yaml	demo.seats.Check	accepting: qualified | default: not-qualified
 crates/verify/ess-conformance/tests/fixtures/row-set-related-copy-identity.yaml	demo.seats.DefineTier	default: defined

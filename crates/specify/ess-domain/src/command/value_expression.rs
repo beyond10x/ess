@@ -401,22 +401,25 @@ fn check(
     let (root, target) = targets;
     let format = context.spec.system().format;
     if source.needs_value_expressions() && format.major() < FormatVersion::V14.major() {
-        errors.push(ValidationError::at(
-            at.clone(),
-            ValidationCode::UnsupportedFormatVersion,
-            format!(
-                "a {} source requires specification format {}",
-                kind(source),
-                if matches!(
-                    source,
-                    PayloadSource::RelatedField { .. } | PayloadSource::CallerAttribute { .. }
-                ) {
-                    "ess/16"
-                } else {
-                    "ess/14"
-                }
-            ),
-        ));
+        let needs = if matches!(
+            source,
+            PayloadSource::RelatedField { .. } | PayloadSource::CallerAttribute { .. }
+        ) {
+            FormatVersion::V16
+        } else {
+            FormatVersion::V14
+        };
+        errors.push(
+            ValidationError::at(
+                at.clone(),
+                ValidationCode::UnsupportedFormatVersion,
+                format!(
+                    "a {} source requires specification format {needs}",
+                    kind(source)
+                ),
+            )
+            .with_hint(needs.declaration_hint()),
+        );
         return;
     }
     match source {
@@ -775,11 +778,12 @@ fn reference_identity<'t>(
                          `{{related: …}}` follows one reference that is always there"
                     ),
                 )
-                .with_hint(
-                    "declare `format: ess/22` to read through an Optional reference — the value \
+                .with_hint(format!(
+                    "{raise} to read through an Optional reference — the value \
                      is then absent where the reference is — or read a required field typed as \
                      the other entity's identity",
-                ),
+                    raise = FormatVersion::V22.declaration_hint()
+                )),
             );
             return None;
         }
@@ -1001,8 +1005,8 @@ fn check_related(
             )
             .with_hint(format!(
                 "from specification format ess/27 this branch reads `{field}` present, since \
-                     its `when_related:` predicate requires `defined({field})`: declare `format: \
-                     ess/27`"
+                     its `when_related:` predicate requires `defined({field})`: {raise}",
+                raise = FormatVersion::V27.declaration_hint()
             )),
         );
         return;
@@ -1036,7 +1040,7 @@ fn related_shape_refused(
                 ValidationCode::UnsupportedFormatVersion,
                 "a `{related: …}` source requires specification format ess/16",
             )
-            .with_hint("write `format: ess/16` on the source that declares the system"),
+            .with_hint(FormatVersion::V16.declaration_hint()),
         );
     }
     if !through.is_empty() && format.major() < FormatVersion::V22.major() {
@@ -1047,10 +1051,11 @@ fn related_shape_refused(
                 "a chained `via:` — `{related: {via: [<field>, <field>], …}}`, read across two \
                  references — requires specification format ess/22",
             )
-            .with_hint(
-                "declare `format: ess/22`, or copy the value onto the row the first reference \
+            .with_hint(format!(
+                "{raise}, or copy the value onto the row the first reference \
                  names and read it in one hop",
-            ),
+                raise = FormatVersion::V22.declaration_hint()
+            )),
         );
     }
     if !is_field_name(via.field())
@@ -1087,7 +1092,10 @@ fn related_state_below(at: &ConstructRef, entity: &crate::entity::EntitySpec) ->
             entity.name
         ),
     )
-    .with_hint("declare `format: ess/28`, or read a declared field of the referenced row")
+    .with_hint(format!(
+        "{raise}, or read a declared field of the referenced row",
+        raise = FormatVersion::V28.declaration_hint()
+    ))
 }
 
 /// The refusal of a value read through a reference that may be absent into a target that cannot be
@@ -1187,7 +1195,8 @@ fn check_subject(
         errors.push(if narrowable {
             refusal.with_hint(format!(
                 "from specification format ess/27 this branch reads `{field}` present, since its \
-                 `when_subject:` requires `defined({field})`: declare `format: ess/27`"
+                 `when_subject:` requires `defined({field})`: {raise}",
+                raise = FormatVersion::V27.declaration_hint()
             ))
         } else {
             refusal
@@ -1213,9 +1222,10 @@ fn check_subject_state(
                 "`{subject: state}`, the state the record held before the outcome, requires \
                  specification format ess/23",
             )
-            .with_hint(
-                "declare `format: ess/23`, or fill the field from the input or a literal state",
-            ),
+            .with_hint(format!(
+                "{raise}, or fill the field from the input or a literal state",
+                raise = FormatVersion::V23.declaration_hint()
+            )),
         );
         return;
     }
@@ -1259,10 +1269,11 @@ fn existing_subject_field<'a>(
             ),
         );
         errors.push(if context.subject_from_27 {
-            refusal.with_hint(
+            refusal.with_hint(format!(
                 "from specification format ess/27 a refusal guarded by a related row the \
-                 subject's stored reference names reads that subject; declare `format: ess/27`",
-            )
+                 subject's stored reference names reads that subject; {raise}",
+                raise = FormatVersion::V27.declaration_hint()
+            ))
         } else {
             refusal
         });
@@ -1477,10 +1488,11 @@ fn check_fallback(
                     ValidationCode::UnsupportedFormatVersion,
                     "a literal after `else:` requires specification format ess/16",
                 )
-                .with_hint(
-                    "write `format: ess/16` on the source that declares the system, or \
-                     `else: {generated: true}`",
-                ),
+                .with_hint(format!(
+                    "{raise}, or \
+                     `else: {{generated: true}}`",
+                    raise = FormatVersion::V16.declaration_hint()
+                )),
             );
             return;
         }
@@ -1749,7 +1761,7 @@ fn related_mapping(
                 ValidationCode::UnsupportedFormatVersion,
                 "a `{related: …}` source requires specification format ess/16",
             )
-            .with_hint("write `format: ess/16` on the source that declares the system"),
+            .with_hint(FormatVersion::V16.declaration_hint()),
         );
     }
     Some(
@@ -2023,7 +2035,7 @@ fn check_selection(
                 "a filtered read — `{related: {entity, where, field}}` — requires specification \
                  format ess/22",
             )
-            .with_hint("declare `format: ess/22`"),
+            .with_hint(FormatVersion::V22.declaration_hint()),
         );
         return;
     }

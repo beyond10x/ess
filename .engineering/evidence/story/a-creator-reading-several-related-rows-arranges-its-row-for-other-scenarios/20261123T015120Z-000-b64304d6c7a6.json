@@ -1,0 +1,14 @@
+{
+  "at": "2026-11-23T01:51:20Z",
+  "actor": "human:timo",
+  "artifact": "story:a-creator-reading-several-related-rows-arranges-its-row-for-other-scenarios",
+  "kind": "story",
+  "revision": 9,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "review-result:wave-2026-11-22-whole-diff-adversary",
+    "review": "review-result:wave-2026-11-22-whole-diff-adversary",
+    "outcome": "fixed"
+  }
+}

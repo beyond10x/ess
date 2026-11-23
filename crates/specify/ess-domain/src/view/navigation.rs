@@ -201,9 +201,10 @@ impl ViewSpec {
                          which requires specification format ess/28"
                     ),
                 )
-                .with_hint(
-                    "declare `format: ess/28`, or copy the value onto the row when it is written",
-                ),
+                .with_hint(format!(
+                    "{raise}, or copy the value onto the row when it is written",
+                    raise = crate::system::FormatVersion::V28.declaration_hint()
+                )),
             );
         }
         let references = references(spec, self);
@@ -217,7 +218,10 @@ impl ViewSpec {
                          format ess/28"
                     ),
                 )
-                .with_hint("declare `format: ess/28`, or filter on a value copied onto the row"),
+                .with_hint(format!(
+                    "{raise}, or filter on a value copied onto the row",
+                    raise = crate::system::FormatVersion::V28.declaration_hint()
+                )),
             );
         }
         errors

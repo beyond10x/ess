@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-22T13:09:22Z",
+  "actor": "human:timo",
+  "artifact": "story:command-format-hints-name-the-source-that-declares-the-system",
+  "kind": "story",
+  "revision": 29,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "unit F1 package gate, implementor's logs, each exit 0: cargo test -p ess-domain --locked (202 binaries, 1909 passed, 0 failed), cargo test -p ess-compiler --locked --test typed_diagnostics and string_alphabet_and_length, cargo clippy -p ess-domain --all-targets exit 0 (third run; two earlier runs exit 101), slot task fmt-check exit 0",
+    "reference": "b48e2f6c0d"
+  }
+}

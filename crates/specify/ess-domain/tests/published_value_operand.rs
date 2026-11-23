@@ -349,10 +349,10 @@ fn the_operand_below_ess_27_is_refused_naming_ess_27() {
         text.contains("payload.demo.nested.PairMade.right_key"),
         "{text}"
     );
+    // Re-pinned by story:every-format-version-hint-names-the-source-that-declares-the-system.
     assert!(
-        refusals
-            .iter()
-            .all(|error| error.hint.as_deref() == Some("declare `format: ess/27`")),
+        refusals.iter().all(|error| error.hint.as_deref()
+            == Some("write `format: ess/27` on the source that declares the system")),
         "{text}"
     );
 

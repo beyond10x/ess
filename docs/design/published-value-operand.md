@@ -145,7 +145,7 @@ Each refusal is reported at the source site (`….payload.<Event>.<field>`, `…
 
 | condition | code | message names |
 | --- | --- | --- |
-| below `ess/27`, where the path after `payload` names an event this outcome fills and one of its fields | `unsupported_format_version` | the operand; hint `declare \`format: ess/27\`` (today: `unobservable_fact`, measured above) |
+| below `ess/27`, where the path after `payload` names an event this outcome fills and one of its fields | `unsupported_format_version` | the operand; hint `write \`format: ess/27\` on the source that declares the system` (today: `unobservable_fact`, measured above) |
 | below `ess/27`, any other `payload.` path | `unobservable_fact` | unchanged |
 | the operand in a guard | `unsupported_construct` | that a guard decides the branch before anything is published |
 | the operand in `affects[].where` or `instances:` | `unsupported_construct` | that an effect selecting by a published value is not admitted in this cut |

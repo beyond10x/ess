@@ -390,3 +390,57 @@ fn a_fixture_program_is_compiled_once_per_source_rather_than_once_per_process() 
         std::fs::remove_file(program).unwrap();
     }
 }
+
+/// Many processes (here threads) asking for one new fixture at once publish it once: they all
+/// get the same path and bytes, the published file is never replaced, and no staging file stays.
+#[cfg(unix)]
+#[test]
+fn concurrent_requests_for_one_fixture_publish_it_once_and_never_replace_it() {
+    use std::os::unix::fs::MetadataExt;
+    let fixture = Fixture::new();
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let stem = format!("concurrent-probe-{}-{nanos}", std::process::id());
+    let source = fixture.0.join(format!("{stem}.rs"));
+    std::fs::write(
+        &source,
+        format!("// {stem}\nfn main() {{ println!(\"{stem}\"); }}\n"),
+    )
+    .unwrap();
+    let compiler = std::ffi::OsString::from("rustc");
+    let barrier = std::sync::Barrier::new(8);
+    let results: Vec<_> = std::thread::scope(|scope| {
+        let handles: Vec<_> = (0..8)
+            .map(|_| {
+                scope.spawn(|| {
+                    barrier.wait();
+                    let program =
+                        compiled_fixture::compiled(&source, &compiler, &["--edition=2021"]);
+                    let bytes = std::fs::read(&program).unwrap();
+                    let inode = std::fs::metadata(&program).unwrap().ino();
+                    (program, bytes, inode)
+                })
+            })
+            .collect();
+        handles.into_iter().map(|h| h.join().unwrap()).collect()
+    });
+    let (path, bytes, _) = &results[0];
+    for (other, other_bytes, _) in &results {
+        assert_eq!(other, path);
+        assert!(other_bytes == bytes, "readers saw different bytes");
+    }
+    let inode = std::fs::metadata(path).unwrap().ino();
+    for (_, _, seen) in &results {
+        assert_eq!(*seen, inode, "the published file was replaced");
+    }
+    let published = path.file_name().unwrap().to_string_lossy().into_owned();
+    let staged: Vec<_> = std::fs::read_dir(path.parent().unwrap())
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+        .filter(|name| name.starts_with(&stem) && *name != published)
+        .collect();
+    assert!(staged.is_empty(), "staging files left: {staged:?}");
+    std::fs::remove_file(path).unwrap();
+}

@@ -10,6 +10,7 @@ use std::{
     hash::{Hash, Hasher},
     path::{Path, PathBuf},
     process::Command,
+    sync::atomic::{AtomicU64, Ordering},
     time::{SystemTime, UNIX_EPOCH},
 };
 
@@ -17,9 +18,10 @@ use std::{
 ///
 /// The key is the source's bytes, the compiler and the flags, so an edited fixture is a
 /// different program and never reuses a stale executable. Concurrent first uses each compile
-/// into a private name and rename it into place: the rename is atomic and every candidate is
-/// the same program, so a reader never sees a partial file.
+/// into a private name and publish it with a hard link, which fails when another process
+/// published first: the published file is complete from its first appearance and never replaced.
 pub fn compiled(source: &Path, compiler: &OsString, flags: &[&str]) -> PathBuf {
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
     let bytes = std::fs::read(source)
         .unwrap_or_else(|error| panic!("reading fixture source {}: {error}", source.display()));
     let mut hasher = DefaultHasher::new();
@@ -42,8 +44,9 @@ pub fn compiled(source: &Path, compiler: &OsString, flags: &[&str]) -> PathBuf {
         .unwrap()
         .as_nanos();
     let staging = directory.join(format!(
-        "{stem}-{}-{nanos}.partial{}",
+        "{stem}-{}-{}-{nanos}.partial{}",
         std::process::id(),
+        COUNTER.fetch_add(1, Ordering::Relaxed),
         std::env::consts::EXE_SUFFIX
     ));
     let output = Command::new(compiler)
@@ -59,6 +62,14 @@ pub fn compiled(source: &Path, compiler: &OsString, flags: &[&str]) -> PathBuf {
         source.display(),
         String::from_utf8_lossy(&output.stderr)
     );
-    std::fs::rename(&staging, &program).unwrap();
+    // A hard link fails when another process published first, and never replaces a file a
+    // reader may be copying: the published name appears once, complete.
+    let linked = std::fs::hard_link(&staging, &program);
+    let _ = std::fs::remove_file(&staging);
+    match linked {
+        Ok(()) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
+        Err(error) => panic!("publishing fixture {}: {error}", program.display()),
+    }
     program
 }
