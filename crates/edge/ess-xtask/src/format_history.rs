@@ -39,12 +39,20 @@ const INDEX_END: &str = "[ess-format-index-end]: #";
 /// The links are HTML, as the anchors are: the site build's anchor check does not see an `id`
 /// written as HTML in a Markdown page, so a Markdown link to one is reported broken; the test
 /// `the_page_opens_with_an_index_that_links_every_version_row` holds each link to its anchor.
+/// The list is a navigation landmark with a name of its own, so a screen-reader user can skip it,
+/// and it says which family it covers (UXF-027).
 pub fn render_index(history: &[FormatHistoryEntry]) -> String {
     let links: Vec<String> = history
         .iter()
         .map(|entry| format!("<a href=\"#ess-{0}\"><code>ess/{0}</code></a>", entry.major))
         .collect();
-    format!("Jump to a version of `ess/`: {}.\n\n", links.join(" · "))
+    format!(
+        "<nav aria-label=\"Versions of the ess/ format\">\n\n\
+         Jump to a version of the specification format `ess/`; the other formats have a section \
+         each below the table: {}.\n\n\
+         </nav>\n\n",
+        links.join(" · ")
+    )
 }
 
 /// The "Introduced in" cell: a reference link to the release, or `unreleased`.

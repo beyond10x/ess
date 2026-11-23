@@ -42,3 +42,14 @@
   --ifm-hero-text-color: var(--b10x-color-on-accent);
   --ifm-heading-color: var(--b10x-color-on-accent);
 }
+
+/* A jump from an index list lands below the sticky navbar, and the row it lands on is marked while
+   it is the target (UXF-027). The targets are the empty anchors the generated reference tables put
+   in a row's cell. */
+.markdown a[id]:empty {
+  scroll-margin-top: calc(var(--ifm-navbar-height) + 1rem);
+}
+.markdown tr:has(a[id]:target) {
+  outline: 2px solid var(--ifm-color-primary);
+  outline-offset: -2px;
+}

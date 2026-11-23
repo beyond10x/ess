@@ -284,18 +284,21 @@ fn render_sections(sections: &[Section]) -> String {
     // reaches the row of `<NNN>` without scrolling (UXF-010 of the documentation site's UX loop).
     // HTML links, as the anchors are: the site build's anchor check does not see an HTML `id` in a
     // Markdown page; `the_page_opens_with_an_index_that_links_every_class_row` holds them.
+    // The list is a navigation landmark with a name of its own, so a screen-reader user can skip
+    // it, and each number shows its class's name beside the link (UXF-027).
     let links: Vec<String> = codes::class::CATALOGUE
         .iter()
         .map(|class| {
             format!(
-                "<a href=\"#class-{0:03}\"><code>{0:03}</code></a>",
-                class.number
+                "<a href=\"#class-{0:03}\"><code>{0:03}</code></a> {1}",
+                class.number, class.name
             )
         })
         .collect();
     let _ = write!(
         out,
-        "\n\nJump to the class of `ESS-<FAMILY>-<NNN>`: {}.",
+        "\n\n<nav aria-label=\"Classes of the specification diagnostics\">\n\n\
+         Jump to the class of `ESS-<FAMILY>-<NNN>`: {}.\n\n</nav>",
         links.join(" · ")
     );
     out.push_str(
