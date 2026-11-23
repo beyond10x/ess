@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:entity-runtime-lowering-refuses-an-instance-that-names-a-member-of-a-struct-input-by-name-beside-any-when
 kind: story
-status: draft
+status: active
 title: 'Entity Runtime lowering refuses an instance: that names a member of a struct input by name, beside any when_related: refusal of the same command, its subset page says so, and OpenAPI keeps such a member inside the request body'
 tags:
 - wave-2026-11-24
@@ -30,7 +30,10 @@ scope:
   path: crates/verify/ess-conformance/tests/fixtures/synthesis-sources.digest
 - confidence: cited
   path: website/docs/reference/entity-runtime-lowering.md
-revision: 10
+revision: 12
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-23T21:48:30Z", actor: "human:timo", revision: 11}
+- {from: "proposed", to: "active", at: "2026-11-23T21:48:31Z", actor: "human:timo", revision: 12}
 ---
 ## Outcome
 

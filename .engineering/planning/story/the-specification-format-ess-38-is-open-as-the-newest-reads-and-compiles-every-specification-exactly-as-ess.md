@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:the-specification-format-ess-38-is-open-as-the-newest-reads-and-compiles-every-specification-exactly-as-ess
 kind: story
-status: draft
+status: active
 title: The specification format ess/38 is open as the newest, reads and compiles every specification exactly as ess/37 does, and holds the gate the member-address constructs use below it
 tags:
 - wave-2026-11-24
@@ -38,7 +38,10 @@ scope:
   path: website/docs/reference/spec-versions.md
 - confidence: cited
   path: website/docs/start/first-specification.md
-revision: 15
+revision: 17
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-23T21:48:19Z", actor: "human:timo", revision: 16}
+- {from: "proposed", to: "active", at: "2026-11-23T21:48:21Z", actor: "human:timo", revision: 17}
 ---
 ## Outcome
 

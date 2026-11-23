@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:synthesis-witnesses-an-instance-and-an-each-in-that-name-a-member-of-a-struct-input-on-the-parent-s-minimal
 kind: story
-status: draft
+status: active
 title: 'Synthesis witnesses an instance: and an each: {in:} that name a member of a struct input, on the parent''s minimal model too, the interpreted target reads both there, and no suite format moves'
 tags:
 - wave-2026-11-24
@@ -39,7 +39,10 @@ scope:
   path: crates/verify/ess-conformance/tests/fixtures/synthesis-sources.digest
 - confidence: inferred
   path: crates/verify/ess-conformance/tests/input_path_addressing.rs
-revision: 14
+revision: 16
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-23T21:48:32Z", actor: "human:timo", revision: 15}
+- {from: "proposed", to: "active", at: "2026-11-23T21:48:34Z", actor: "human:timo", revision: 16}
 ---
 ## Outcome
 

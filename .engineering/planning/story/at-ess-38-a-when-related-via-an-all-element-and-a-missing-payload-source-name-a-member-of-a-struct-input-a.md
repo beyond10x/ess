@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:at-ess-38-a-when-related-via-an-all-element-and-a-missing-payload-source-name-a-member-of-a-struct-input-a
 kind: story
-status: draft
+status: active
 title: 'At ess/38 a when_related via, an all: element and a {missing:} payload source name a member of a struct input, a List of references included, and ess/37 keeps its reading of a struct value written {missing: input.a.b}'
 tags:
 - wave-2026-11-24
@@ -45,7 +45,10 @@ scope:
   path: website/docs/reference/formats.md
 - confidence: cited
   path: website/docs/reference/spec-versions.md
-revision: 18
+revision: 20
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-23T21:48:22Z", actor: "human:timo", revision: 19}
+- {from: "proposed", to: "active", at: "2026-11-23T21:48:24Z", actor: "human:timo", revision: 20}
 ---
 ## Outcome
 

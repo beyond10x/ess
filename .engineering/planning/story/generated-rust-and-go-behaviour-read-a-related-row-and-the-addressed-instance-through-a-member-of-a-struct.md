@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:generated-rust-and-go-behaviour-read-a-related-row-and-the-addressed-instance-through-a-member-of-a-struct
 kind: story
-status: draft
+status: active
 title: 'Generated Rust and Go behaviour read a related row and the addressed instance through a member of a struct input and pass their synthesized suite, and a List member or an each: over one keeps its command owed by name'
 tags:
 - wave-2026-11-24
@@ -25,7 +25,10 @@ scope:
   path: crates/generate/ess-synth/src/rust/behaviour.rs
 - confidence: inferred
   path: crates/generate/ess-synth/tests/struct_member_address.rs
-revision: 7
+revision: 9
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-23T21:48:35Z", actor: "human:timo", revision: 8}
+- {from: "proposed", to: "active", at: "2026-11-23T21:48:36Z", actor: "human:timo", revision: 9}
 ---
 ## Outcome
 

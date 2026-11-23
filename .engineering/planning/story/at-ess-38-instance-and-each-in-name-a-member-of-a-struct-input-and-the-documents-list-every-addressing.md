@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:at-ess-38-instance-and-each-in-name-a-member-of-a-struct-input-and-the-documents-list-every-addressing
 kind: story
-status: draft
+status: active
 title: 'At ess/38 instance: and each: {in:} name a member of a struct input, and the documents list every addressing position that reads an input path'
 tags:
 - wave-2026-11-24
@@ -51,7 +51,10 @@ scope:
   path: website/docs/reference/predicates.md
 - confidence: cited
   path: website/docs/reference/spec-versions.md
-revision: 21
+revision: 23
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-23T21:48:25Z", actor: "human:timo", revision: 22}
+- {from: "proposed", to: "active", at: "2026-11-23T21:48:26Z", actor: "human:timo", revision: 23}
 ---
 ## Outcome
 

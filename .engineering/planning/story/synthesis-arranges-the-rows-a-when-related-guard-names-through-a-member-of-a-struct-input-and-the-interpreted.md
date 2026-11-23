@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:synthesis-arranges-the-rows-a-when-related-guard-names-through-a-member-of-a-struct-input-and-the-interpreted
 kind: story
-status: draft
+status: active
 title: Synthesis arranges the rows a when_related guard names through a member of a struct input, and the interpreted target reads the member
 tags:
 - wave-2026-11-24
@@ -29,7 +29,10 @@ scope:
   path: crates/verify/ess-conformance/tests/fixtures/synthesis-sources.digest
 - confidence: inferred
   path: crates/verify/ess-conformance/tests/input_path_addressing.rs
-revision: 10
+revision: 12
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-23T21:48:27Z", actor: "human:timo", revision: 11}
+- {from: "proposed", to: "active", at: "2026-11-23T21:48:29Z", actor: "human:timo", revision: 12}
 ---
 ## Outcome
 
