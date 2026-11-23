@@ -534,13 +534,22 @@ The served surface refuses some requests without a declared outcome: an actor no
 input where the command declares that answer (`400`, `http.rs:83-86`), and a malformed request or a
 path nothing declares (`rust/http.rs:1566-1579`). A protocol states its own answer for some of them
 (RFC 6749 §5.2, `invalid_request`, `invalid_client`). Top-level `refusals:` takes `not_granted`,
-`unfinished` and `malformed`, each with `status`, a literal body and headers. A refusal not listed
+`too_large`, `unfinished` and `malformed`, each with `status`, a literal body and headers. A refusal not listed
 keeps today's answer.
 
 A route may state its own: `routes[i].refusals:` takes the same keys and the same checks, and on
 that route only stands in place of the top-level entry of the same key. One endpoint of a protocol
 can answer a malformed request with its own error while the binding's other routes keep theirs
 (`story:ess-http-admits-text-bodies-route-refusals-empty-bodies-and-array-views`).
+
+Request size: `limits: {request_bytes: N}` at the top of a binding, and under a route, states the
+largest request body a route reads, a whole number of bytes from 1 to 16,777,216; the route's own
+value stands in place of the binding's. It applies to the routes the binding names that read a body
+(a command on `json` or `form`, not on `get`, not `request: {encoding: query}`), never to a view and
+never to a derived route, and a route `limits` on a route that reads no body is `ESS-HTTP-034`.
+`too_large` answers a body over the bound with a `4xx` of its own (`413` when absent), a literal
+body or none, and headers. A binding that declares neither keeps today's fixed 1 MiB bound
+and its answers.
 
 ### What compiling checks (stage 2)
 
@@ -555,9 +564,10 @@ can answer a malformed request with its own error while the binding's other rout
 | `ESS-HTTP-026` | a header name that is not a token, a header the server (`Connection`), the encoding (`Content-Type`, `Content-Encoding`, `Content-Length`, `Transfer-Encoding`) or `redirect` (`Location`) owns, a literal that is not a field value, `error.wire` whose wire name is not a field value, a header declared twice ignoring case, a source that names no field or names a non-scalar, a source the outcome cannot supply (`response.` without `returns: true`, `error.` without `error`), `error.wire` on an outcome whose error declares a field named `wire`, or any `source` in a `refusals:` header | the header and the source |
 | `ESS-HTTP-027` | a challenge whose scheme or param name is not a token, a param declared twice, a literal param or a param reading `error.wire` whose text no quoted string carries, a challenge under any header but `WWW-Authenticate`, or a declared `401` (outcome or refusal) without a `WWW-Authenticate` challenge | the header, the param |
 | `ESS-HTTP-028` | `redirect` without a `3xx` status, a `3xx` without `redirect`, a `location` that is not a `String` or a newtype of `String`, or is `Optional`, or that reads `error.wire`; a `mode` absent or outside the set, a parameter name that is not one or more RFC 3986 `unreserved` characters, a parameter declared twice, a parameter source that names no field, names a non-scalar or that the outcome cannot supply | the outcome and the key |
-| `ESS-HTTP-029` | a `refusals:` key outside the set; a status in the wrong class for it (`4xx` for `malformed` and `not_granted`, `5xx` for `unfinished`); a body other than `{<member>: {literal: …}}` or `none`; the same under a route's own `refusals:` | `refusals.<key>` or `routes[i].refusals.<key>` |
+| `ESS-HTTP-029` | a `refusals:` key outside the set; a status in the wrong class for it (`4xx` for `malformed`, `not_granted` and `too_large`, `5xx` for `unfinished`); a body other than `{<member>: {literal: …}}` or `none`; the same under a route's own `refusals:` | `refusals.<key>` or `routes[i].refusals.<key>` |
 | `ESS-HTTP-030` | `body: single` without `empty`, `empty` without `single`, an `empty` status outside `4xx`, or an `empty` body other than `none` and `{<member>: {literal: …}}` | `routes[i]`, or `routes[i].empty.body` |
 | `ESS-HTTP-031` | `body: single` on a view whose filter does not select by its source entity's identity: neither the filter nor a member of a top-level `all` (nested `all` included) is `<identity field> == param.<name>`, compared by value, in either operand order | `routes[i].body`, the view, its source entity and the entity's identity field |
+| `ESS-HTTP-034` | a `limits.request_bytes` outside 1 to 16777216 bytes; a route `limits` on a route that reads no request body (a view, a `get` command, a `request: {encoding: query}` command) | `limits.request_bytes`, `routes[i].limits.request_bytes` or `routes[i].limits` |
 
 A refinement may not change a refined route's stage-2 keys either; that is `ESS-HTTP-012`. A
 missing `status` in a listed outcome or refusal, and an unknown key anywhere, are parse refusals
@@ -611,7 +621,9 @@ same bytes.
 | `routes[].empty.status` (view route) | an integer, `4xx`; **required** with `single` | written with `single` | k2 |
 | `routes[].empty.body` (view route) | `none`, `{<member>: {literal: <text>}}` | `none`, omitted | 0.77.0 |
 | `routes[].refusals.<key>` | as `refusals.<key>` with its `status`, `body` and `headers`; on that route in place of the top-level entry | absent, omitted when the route states none | 0.77.0 |
-| `refusals.<key>` | `malformed`, `not_granted`, `unfinished` | absent: today's answer | k2 |
+| `limits.request_bytes` | a whole number of bytes from 1 to 16777216; **required** under `limits` | absent: the fixed 1 MiB; written only where declared | this wave |
+| `routes[].limits.request_bytes` | as `limits.request_bytes`; on a command route that reads a body (`json` or `form`, not `get`), in place of the binding's | absent, omitted | this wave |
+| `refusals.<key>` | `malformed`, `not_granted`, `too_large`, `unfinished` | absent: today's answer | k2 |
 | `refusals.<key>.status` | an integer; **required** | always written | k2 |
 | `refusals.<key>.body` | `{<member>: {literal: <text>}}`, `none`; **required** | always written | k2 |
 | `routes[].outcomes.<outcome>.headers.<Name>` | `{literal: <text>}`, `{source: <path>}`, `{challenge: {scheme, params}}` | absent, omitted when empty; ordered by name | k3 |
@@ -645,6 +657,7 @@ k4 to k6 add no binding key:
 | k2 | `ESS-HTTP-022`, `-023`, `-024` (except its `redirect` clause), `-025`, `-029`, `-030`, `-031` | `ESS-HTTP-012` covers `outcomes` (status, body), `body`, `empty` and `refusals` |
 | k3 | `ESS-HTTP-026`, `-027`, `-028`, and `-024`'s clause for a body beside a `redirect` | `ESS-HTTP-012` covers headers and redirects |
 | k4, k5, k6 | no code | — |
+| request limits | `ESS-HTTP-034` | `ESS-HTTP-029` (key set), `ESS-HTTP-012` (limits) |
 
 k3 refuses a `3xx` outcome without a `redirect` (`ESS-HTTP-028`) and a `401` without a challenge
 (`ESS-HTTP-027`), which k2 alone compiled; no release falls between the two units. k3 also widens
@@ -664,7 +677,9 @@ A refining document restates each stage-2 key of every route of the refined bind
 adds, changes or drops on such a route is `ESS-HTTP-012`, naming the key, the refined value and the
 new one. A route's `errors` is compared as one value, at `routes[i].errors`, and its `empty` as
 status and body. Its top-level `refusals:` equals the refined binding's, both absent or both the
-same, and so does each refined route's own `refusals:`, compared at `routes[i].refusals.<key>`. A
+same, and so does each refined route's own `refusals:`, compared at `routes[i].refusals.<key>`. Its
+`limits:` equals the refined binding's, and each refined route's own `limits:` is restated, compared
+at `limits` and `routes[i].limits`. A
 route the refining document adds may carry any stage-2 key. The comparison is over the compiled
 values, so writing a default explicitly is not a change.
 
