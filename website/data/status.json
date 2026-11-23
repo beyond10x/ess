@@ -1,6 +1,6 @@
 {
   "format": "b10x-status/1",
-  "asOf": "2026-10-04",
+  "asOf": "2026-11-22",
   "source": "Maintained with the source; shipped means a command that runs in the current source checkout",
   "items": [
     {"label": "Validation and canonical compilation", "status": "shipped", "area": "Specify", "detail": "Name resolution, reusable shapes, entity relations, total handle lookup, inspection and graphing.", "href": "/docs/guides/write-a-specification"},

@@ -10,7 +10,7 @@ From source `ess/16`, an `Optional<T>` input reads as `T` in a branch that is on
 the input present. There are two such branches:
 
 - the default branch, written with no `when:`, when a sibling refuses exactly the input's
-  absence with `error:` — `when: not defined(x)` or `when: missing(x)`;
+  absence with `error:`, as `when: not defined(x)` or `when: missing(x)`;
 - a branch whose own guard requires the input: `when: defined(x)`, or an `all:` with it as a
   member.
 
@@ -42,7 +42,9 @@ mapping, and only to a top-level input.
 Nothing else narrows. A refusal of the absence *and* something else, such as
 `{all: ["not defined(x)", "kind == Draft"]}`, leaves some absent requests to the default branch. A
 sibling that succeeds when `x` is absent refuses nothing. A guarded branch other than the default can
-match a request the refusal also matches. That includes a branch written `when: true`: it is a
+match a request the refusal also matches.
+
+That includes a branch written `when: true`: it is a
 guard that always holds, not the default, and a runtime that tries branches in declared order would
 take it before a refusal declared after it. Write the default with no `when:`.
 
@@ -70,7 +72,9 @@ present (beyond10x/ess#556):
 `{related: {via, field}}` reads at its present type under `when_related: {predicate:
 defined(field)}` over the same `via`. A refusal guarded by a related row the addressed record's
 stored reference names, `when_related: {via: incident_id, …}`, reads that record's stored fields
-with `{subject: …}` (beyond10x/ess#555): the record was read to follow the reference. The suite
+with `{subject: …}` (beyond10x/ess#555): the record was read to follow the reference.
+
+The suite
 asserts each value in the error. The generated Rust and Go behaviours keep such a command an
 obligation, named by the read. Below `ess/27` each read keeps its refusal, the hint naming
 `ess/27`.

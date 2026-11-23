@@ -8,10 +8,10 @@ description: State the method and path a protocol fixes for a command or a view 
 ESS derives an HTTP route for every operation it projects: `POST /{domain}/commands/{command}` for
 a command a component accepts, and `GET /{domain}/views/{view}` for a view of a component declared
 `reached_by: network`. A published HTTP protocol often fixes its routes itself, so the specification
-cannot be the place that chooses them. An `ess-http/1` binding is where they are stated: a document
-beside the specification, pinned to its source digest the way an `ess-transport/1` document is, that
-names a method and a path for each operation it binds. The specification does not change when the
-same command is served at another path; the binding does.
+is not where they are chosen. An `ess-http/1` binding states them: a document beside the
+specification, pinned to its source digest the way an `ess-transport/1` document is, that gives a
+method and a path for each operation it binds. Serving the same command at another path changes the
+binding while the specification stays the same.
 
 An operation the binding does not name keeps the route ESS derives for it.
 
@@ -37,7 +37,7 @@ routes:
 ```
 
 - Each route names exactly one `command` or `view` by its qualified name.
-- `method` is lower case. A view is bound to `get`; a command to `post`, `put`, `patch` or
+- `method` is lower case. A view is bound to `get`, and a command to `post`, `put`, `patch` or
   `delete`, or to `get` when its path carries every input field.
 - `path` is a template: it starts with `/`, and a variable is a whole segment, `{name}`.
 - `parameters` maps every variable to the one value it carries: `input.<field>` of a command,
@@ -53,7 +53,9 @@ ess specify http compile  --path MODEL --binding catalog-http.yaml --out catalog
 
 Every refusal is reported at once, with an `ESS-HTTP-` code and the path of the key it is about. Two
 operations on one method and path of a component, declared or derived, are refused, variable names
-ignored. Two paths one request can match are admitted where one is more specific, holding the
+ignored.
+
+Two paths one request can match are admitted where one is more specific, holding the
 literal at every segment they differ: `/items/current` beside `/items/{item_id}` serves
 `/items/current` by its own route and every other item id by `/items/{item_id}`. Two that cross,
 each holding a literal where the other holds a variable, such as `/{tenant}/tasks` beside
@@ -100,13 +102,13 @@ ess generate --path MODEL --kind openapi --http server-http.yaml --refines proto
 The binding is compiled exactly as `ess specify http compile` compiles it, with the same refusals,
 and each document then serves every operation the binding routes at its method and path:
 
-- one path may carry several methods, one per operation;
-- each path variable is a required parameter `in: path`, named after the variable, with the schema
-  of the input field or view parameter it carries;
-- a command's field carried in the path is not in its request body: `{command}.Input` describes the
-  body, and a command whose every field is in the path has no request body;
-- a view's parameter carried in the path is not a query parameter;
-- each bound operation carries `x-ess-route-source: binding`, so a reader tells the protocol's
+- One path may carry several methods, one per operation.
+- Each path variable is a required parameter `in: path`, named after the variable, with the schema
+  of the input field or view parameter it carries.
+- A command's field carried in the path is not in its request body: `{command}.Input` describes the
+  body, and a command whose every field is in the path has no request body.
+- A view's parameter carried in the path is not a query parameter.
+- Each bound operation carries `x-ess-route-source: binding`, so a reader tells the protocol's
   routes from the derived ones.
 
 An operation the binding does not name keeps its derived route, byte for byte, and every projection
@@ -171,12 +173,12 @@ The document follows those keys on the routes that use them:
   alone, `text/plain; charset=utf-8`, and the document describes it under `text/plain`.
 - `alike: [[fetched, inline]]` on a command route declares that the service answers those
   outcomes the same way: their declared answers must be equal, and the document writes one response
-  for the status, its `x-ess-outcomes` naming both, with one schema. Without it, two outcomes whose
+  for the status, its `x-ess-outcomes` listing both, with one schema. Without it, two outcomes whose
   bodies do not tell them apart on one status are refused.
 - Declared headers are response `headers`, a `WWW-Authenticate` challenge among them, and a
   `redirect` answers a required `Location` header and no content.
 - A `single` view answers its one row at `200` and, at its `empty` status, no content or the
-  literal object `empty: {status: 404, body: {error: {literal: not_found}}}` names.
+  literal object `empty: {status: 404, body: {error: {literal: not_found}}}` gives.
 - `body: array` on a view that is not paged answers its rows as a bare JSON array, `[]` when it
   holds none.
 - A `refusals:` entry replaces the standard answer for that refusal on every operation the binding
@@ -203,7 +205,7 @@ routes:
 ```
 
 - `operation_id` becomes the operation's `operationId`. It starts with a letter or `_` and continues
-  with letters, digits, `_`, `.` and `-`; it is unique in the binding and is not another
+  with letters, digits, `_`, `.` and `-`. It is unique in the binding and is not another
   operation's qualified name, the `operationId` that operation keeps (`ESS-HTTP-032`). A route
   without one, and every operation the binding does not name, keeps its qualified name.
 - `servers` becomes that component's document `servers`, after `info`, in the order written, so the
@@ -213,10 +215,11 @@ routes:
 - A server binding keeps every `operation_id` its protocol binding fixes, and may add one where the
   protocol binding has none. It states its own `servers`.
 
-A binding with an open route is refused, naming each operation whose path it leaves open, and
-nothing is written: a published document cannot carry a route nobody can send a request to. Give the
-server binding that fills it in, with the protocol binding as `--refines`.
+A binding with an open route is refused, and the refusal lists each operation whose path it leaves
+open. Nothing is written, because a published document cannot carry a route nobody can send a
+request to. Give the server binding that fills it in, with the protocol binding as `--refines`.
 
-`--http` belongs to `--kind openapi` and is refused with any other `--kind`, including none, as
-`--transport` is refused without `--kind asyncapi`. `--refines` requires `--http`. The synthesized
-servers, `ess ui` and the other generated artifacts do not read a binding yet.
+`--http` is read by `--kind openapi`, `ess generate synthesize --target rust|go`,
+`ess generate types`, `ess generate ui` and `ess ui run`. `ess generate` refuses it with any other
+`--kind`, including none, as `--transport` is refused without `--kind asyncapi`. `--refines`
+requires `--http`.

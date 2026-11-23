@@ -7,28 +7,41 @@ description: Author an ESS document — the layout, the constructs the model ins
 # Write a specification
 
 This guide covers authoring an Executable System Specification. The normative example is
-`examples/billing/` in the repository — deliberately the smallest system that exercises the
-core of the model. Concepts are covered in [ESS](../concepts/ess.md); these pages are about writing
-one.
+`examples/billing/` in the repository, the smallest system that exercises the core of the model.
+Concepts are in [ESS](../concepts/ess.md). These pages are about writing one.
 
 ## Pages in this guide
 
-1. [Lay out and validate a specification](specify/layout-and-validation.md) — the files, where
+1. [Lay out and validate a specification](specify/layout-and-validation.md): the files, where
    generated output goes, reading refusals, checking what resolved, and names.
-2. [Refusals, fields and invariants](specify/fields-and-invariants.md) — what the model insists on:
+2. [Refusals, fields and invariants](specify/fields-and-invariants.md):
    declared outcomes, invariants, enums, instants, text, JSON and Binary64 fields.
-3. [Guards and outcome selection](specify/guards-and-predicates.md) — choosing an outcome from input,
+3. [Guards and outcome selection](specify/guards-and-predicates.md): choosing an outcome from input,
    held state or stored fields.
-4. [Commands and outcomes](specify/commands-and-outcomes.md) — wrong-state answers, unknown
+4. [Commands and outcomes](specify/commands-and-outcomes.md): wrong-state answers, unknown
    instances, existence, filters, deletion and event value sources.
-5. [Values and credentials](specify/values-and-views.md) — value expressions and the caller's
-   credential; [Views](specify/views.md) — view consistency, paging and aggregates.
-6. [Components and bindings](specify/bindings-and-components.md) — the layers above the domains
+5. [Values and credentials](specify/values-and-views.md): value expressions and the caller's
+   credential. [Views](specify/views.md): view consistency, paging and derived fields.
+   [Aggregate views](specify/aggregate-views.md): views with `group_by` that count, sum and bound
+   one entity's rows, and conditional measures.
+6. [Components and bindings](specify/bindings-and-components.md): the layers above the domains
    and bindings between components.
-7. [Selections, periodic causes and delivery context](specify/binding-context.md) — what a binding
+7. [Selections, periodic causes and delivery context](specify/binding-context.md): what a binding
    reads besides its event payload, and clock-reading provenance.
-8. [Conversions and wire names](specify/wire-names.md) — conversions between contexts, wire
+8. [Conversions and wire names](specify/wire-names.md): conversions between contexts, wire
    spellings and error wire codes.
+9. [An input refused when absent is present afterwards](specify/narrowed-inputs.md): an `Optional`
+   input reads as its value type in a branch only ever taken with the input present.
+10. [Changing selected records](specify/selection-effects.md): an outcome that changes, moves or
+    deletes every record a filter selects.
+11. [Rules stored as data](specify/stored-rules.md): a rule the system stores as rows is the
+    system's to evaluate. The specification types its parts and injects its verdict.
+12. [Tagged unions](specify/unions.md): a value that is one of several shapes, declared with
+    `kind: union` and a tag.
+13. [Binding conditions](specify/binding-conditions.md): invoke a binding only when its event
+    payload says so.
+14. [Read stored state in the command a binding invokes](specify/binding-stored-state.md): why a
+    binding maps an identity and the invoked command reads the row.
 
 ## Where each section went
 
@@ -86,7 +99,7 @@ an older link still finds it.
 
 ## Next
 
-* [Verify an implementation](./verify-conformance.md) — generate the suite this specification
+* [Verify an implementation](./verify-conformance.md): generate the suite this specification
   obliges, run it, and turn the result into evidence.
-* [The billing example](https://github.com/beyond10x/ess/tree/main/examples/billing) — the billing
+* [The billing example](https://github.com/beyond10x/ess/tree/main/examples/billing): the billing
   example's source next to its generated output.

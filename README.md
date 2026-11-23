@@ -7,7 +7,7 @@ infrastructure against what was declared.
 The canonical command is `ess`, and its first level is the five areas the crates are grouped into:
 `specify`, `generate`, `verify`, `infra`, `ui`.
 
-New to ESS? [Getting started](https://beyond10x.github.io/docs/ess/getting-started/) goes from
+New to ESS? [Getting started](https://beyond10x.github.io/ess/docs/getting-started/) goes from
 installing `ess` to a specification of your own, a generated contract and a passing conformance
 run. The commands below run the repository's own examples from a checkout.
 
@@ -54,7 +54,7 @@ is deprecated, and a pinned caller needs no change.
 
 ## Install the command
 
-[Install ess](https://beyond10x.github.io/docs/ess/start/install/) covers every route: a verified
+[Install ess](https://beyond10x.github.io/ess/docs/start/install/) covers every route: a verified
 archive on macOS (`shasum`) or Linux (`sha256sum`), `cargo install` from the release tag, an agent
 plugin, and pinning the release for a project. In short:
 
@@ -225,5 +225,5 @@ history of the former standalone scanner.
 <!-- b10x-docs:start -->
 ## Documentation
 
-[ESS documentation](https://beyond10x.github.io/docs/ess/) · [Start](https://beyond10x.github.io/) · [Ecosystem](https://beyond10x.github.io/ecosystem/) · [Impact](https://beyond10x.github.io/changes/) · [Releases](https://beyond10x.github.io/releases/)
+[ESS documentation](https://beyond10x.github.io/ess/) · [Start](https://beyond10x.github.io/) · [Ecosystem](https://beyond10x.github.io/ecosystem/) · [Impact](https://beyond10x.github.io/changes/) · [Releases](https://beyond10x.github.io/releases/)
 <!-- b10x-docs:end -->

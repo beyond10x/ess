@@ -752,7 +752,7 @@ enum ConformCommand {
         #[arg(long, value_enum, default_value_t = MachineFormat::Text)]
         format: MachineFormat,
     },
-    /// Narrow a coverage suite/5, /7 or /9 by explicit IDs, retaining every exact original parent.
+    /// Narrow a declared-coverage suite (suite/5 or later) by explicit IDs, retaining every exact original parent.
     Select {
         #[arg(
             long,
@@ -762,7 +762,7 @@ enum ConformCommand {
         suite: Option<PathBuf>,
         #[arg(long, required_unless_present = "suite", conflicts_with = "suite")]
         suite_input: Option<PathBuf>,
-        /// JSON array of sorted distinct IDs; an empty array is explicit.
+        /// A file holding a JSON array of sorted distinct IDs; an empty array is explicit.
         #[arg(long)]
         ids: PathBuf,
         /// Destination for the complete ess-conformance-input/1 carrier.
@@ -779,7 +779,7 @@ enum ConformCommand {
         path: Option<PathBuf>,
         #[arg(long)]
         suite: Option<PathBuf>,
-        /// Original coverage suite/5, /7 or /9 and its complete original parent chain.
+        /// Original declared-coverage suite (suite/5 or later) and its complete original parent chain.
         #[arg(long, conflicts_with_all = ["suite", "scenarios", "suite_format"])]
         suite_input: Option<PathBuf>,
         /// Fresh ordinary (4) or declared coverage (5); accessors select 6 or 7. Loaded versions stay unchanged.
@@ -795,7 +795,7 @@ enum ConformCommand {
         target: ReferenceTarget,
         #[command(flatten)]
         process: ProcessArgs,
-        /// Standalone JSON destination; suites/5-/7 require explicit report/2, even without this option.
+        /// Standalone JSON destination; every suite from /5 on requires explicit report/2, even without this option.
         #[arg(long)]
         report_out: Option<PathBuf>,
         /// Report contract version; JSON/YAML detailed v2 is ess-conformance-run/2.
@@ -978,8 +978,9 @@ enum ConformCommand {
     /// (ESS-MUTATE-001), the baseline executed nothing (nothing scored), the classes found no site
     /// (ESS-MUTATE-003), or no mutant survived and at least one was unwitnessed or inconclusive, a
     /// selected in-scope site was unavailable, or none ran that was not equivalent. Exit 2: the
-    /// `--known-failing` declaration was refused. Known failures are listed first in the text and
-    /// never count as a pass: the audit makes no conformance claim.
+    /// `--known-failing` declaration was refused, or `--target process` was given. Known failures
+    /// are listed first in the text and never count as a pass: the audit makes no conformance
+    /// claim.
     ///
     /// For an implementation of your own, split the audit in two. `--emit DIR` writes the
     /// baseline suite to `DIR/baseline/suite.json`, every mutant's suite to
@@ -1006,7 +1007,7 @@ enum ConformCommand {
     Mutate {
         #[arg(long, default_value = ".")]
         path: PathBuf,
-        /// The reference implementation every suite runs against.
+        /// The reference implementation every suite runs against; `process` is refused (exit 2): use `--emit`, `run --target process`, `--collect`.
         #[arg(long, value_enum)]
         target: Option<ReferenceTarget>,
         /// Only these classes; every class when absent.

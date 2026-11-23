@@ -21,7 +21,7 @@ flowchart LR
   Deliver -. explicit executor commands .-> External[BuildKit · ORAS · Helm · cluster]
 ```
 
-## The four command areas
+## The five command areas
 
 | Area | What it does | Guides |
 |---|---|---|
@@ -29,6 +29,7 @@ flowchart LR
 | `ess generate` | documentation, schemas, OpenAPI and AsyncAPI; structural code; build, component, release, stack and deployment documents; projections to BuildKit, Helm, Kubernetes and OpenAPI | [Generate contracts and documentation](../guides/generate-artifacts.md), [Synthesize code](../guides/synthesize.md), [Project a build and a Helm chart](../guides/deliver/build-and-chart.md) |
 | `ess verify` | conformance suites and runs, mutation audits, history checks, semantic diff and impact, binding checks | [Verify conformance](../guides/verify-conformance.md), [Track specification change](../guides/track-change.md) |
 | `ess infra` | import an observed cluster or an OpenAPI document, then diagnose, graph and compare infrastructure IR | [Import and project Kubernetes infrastructure](../guides/check-infrastructure.md) |
+| `ess ui` | load, check, document, render and test `ess-ui/1` documents, and run them | [UI documents](../reference/ess-ui.md) |
 
 ## Pure model and compiler
 

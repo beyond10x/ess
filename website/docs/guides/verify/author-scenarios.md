@@ -42,10 +42,10 @@ scenarios, not every scenario file below the directory.
 ```shell-session
 $ ess verify conform author --path examples/billing --scenarios examples/billing-scenarios \
     --out target/authored.json
-1 authored scenario(s) from 1 file(s), 0 refusal(s), suite ess-conformance/4, written to target/authored.json
+2 authored scenario(s) from 2 file(s), 0 refusal(s), suite ess-conformance/34, written to target/authored.json
 $ ess verify conform author --path examples/billing --scenarios examples/billing-scenarios \
     --suite-format 5 --out target/authored-coverage.json
-1 selected scenario(s), 1 authored source(s), 0 refusal occurrence(s)
+2 selected scenario(s), 2 authored source(s), 0 refusal occurrence(s)
 ```
 
 Every command, actor, outcome, event, error, view, entity, field, enum variant and lifecycle state
@@ -73,7 +73,7 @@ $ cat create-only.json
 $ ess verify conform select --suite target/coverage-suite.json --ids create-only.json \
     --out target/create-only.json
 $ ess verify conform run --target billing --suite-input target/create-only.json --report-format 2
-billing v3 against billing-reference 0.51.0 — passed
+billing v3 against billing-reference 0.97.3 — passed
   passed billing.invoice.CreateInvoice/outcome/accepted
   passed billing.invoice.CreateInvoice/outcome/rejected
   2 scenarios: 2 passed, 0 failed, 0 error, 0 unsupported
@@ -382,7 +382,7 @@ the input fills:
 An implementation that mints another value fails the scenario; one that mints the stated value
 passes. Every place listed above takes the claim alike: an event's payload, an error's fields, a
 struct member and a view row's stored field. The model interpreter mints its own counter, so on
-`--target ir`, and in the baseline `mutate --scenarios` runs, such a scenario passes only where the
+`--target interpreted`, and in the baseline `mutate --scenarios` runs, such a scenario passes only where the
 counter happens to mint the stated value; elsewhere the baseline is refused as `ESS-MUTATE-001`.
 Synthesis never pins a minted value at any format. Below `ess/30` the act is refused as
 `ESS-AUTHOR-042`, its message unchanged and its help naming `ess/30`.

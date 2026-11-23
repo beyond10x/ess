@@ -21,11 +21,10 @@ $ ess verify conform mutate \
 It changes the **specification**, one edit per mutant, and runs each mutant's freshly synthesized
 suite against the unchanged reference target. A mutant is *killed* when its suite fails there. A
 *survivor* is a declared rule that no synthesized scenario pins down. The fourteen classes are
-`from-drop`, `transition-to`, `guard-boundary`, `sets-retarget`, `guard-negate`,
-`guard-connective`, `error-swap`, `emit-drop`, `order-flip`, `sets-drop`, `precedence-swap`,
-`emit-swap`, `grant-drop` and `grant-add`;
-`--class` selects some of them and repeats. Every class *changes* the specification rather than
-weakening it: a mutant that only says less could never be killed by a correct target.
+`from-drop`, `transition-to`, `guard-boundary`, `sets-retarget`, `guard-negate`, `guard-connective`,
+`error-swap`, `emit-drop`, `order-flip`, `sets-drop`, `precedence-swap`, `emit-swap`, `grant-drop`
+and `grant-add`; `--class` selects some of them and repeats. Every class *changes* the specification
+rather than weakening it: a mutant that only says less could never be killed by a correct target.
 
 - `guard-boundary` moves a boundary three ways: it swaps the strictness of `<`, `<=`, `>` or `>=`;
   it moves the integer literal of a `>=` or `<=` one step outward (`amount >= 10` becomes
@@ -256,8 +255,9 @@ authored scenario runs, and the report is what it was.
 
 ## Audit your own implementation
 
-`--target` runs only the targets built into `ess`, and each of those passes only its own example
-specification. For your implementation, split the audit in two and run the suites yourself:
+`--target` runs only the targets built into `ess`: `billing` and `oracle-fixture` each pass only
+their own example specification, and `interpreted` runs the specification you name. A program of
+your own is not a `--target` (`--target process` is refused). For your implementation, split the audit in two and run the suites yourself:
 
 ```shell-session
 $ ess verify conform mutate --path examples/billing --emit target/mutants \
@@ -285,7 +285,7 @@ score the reports:
 
 ```shell-session
 $ ess verify conform mutate --collect target/mutants
-mutation audit of billing v3 against billing-reference 0.51.0: 4 mutant(s), 3 killed, 0 survived, 1 inconclusive, 0 stillborn, 0 unwitnessed, 0 equivalent (baseline: 32 scenario(s), 0 refusal(s)); 3 of 4 site(s) scored
+mutation audit of billing v3 against billing-reference 0.97.3: 4 mutant(s), 3 killed, 0 survived, 1 inconclusive, 0 stillborn, 0 unwitnessed, 0 equivalent (baseline: 32 scenario(s), 0 refusal(s)); 3 of 4 site(s) scored
 inconclusive guard-negate/billing.invoice.CreateInvoice/accepted: `when: amount.amount > 0` becomes `when: not (amount.amount > 0)`
 killed guard-boundary/billing.invoice.CreateInvoice/accepted/0: `amount.amount > 0` becomes `amount.amount >= 0` — by billing.invoice.CreateInvoice/outcome/accepted (1 in total); …
 …

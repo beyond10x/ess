@@ -12,7 +12,7 @@ can be compiled into deterministic intermediate representation, inspected as a g
 semantically across revisions, projected into supported concrete formats, and used to generate the
 conformance scenarios an implementation must satisfy.
 
-The command is `ess`. Its first level is four areas:
+The command is `ess`. Its first level is five areas (`specify`, `generate`, `verify`, `infra`, `ui`); the first four are shown:
 
 ```shell-session
 $ ess specify validate --path spec                                      # is the specification consistent?

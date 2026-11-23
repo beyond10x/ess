@@ -23,9 +23,9 @@ compiled models, so comments and source-file layout do not themselves produce ch
 
 The report follows these rules:
 
-- Ten typed construct families are compared: system header, types, entities, commands, events,
+- Eleven typed construct families are compared: system header, domains, types, entities, commands, events,
   errors, views, actors, components and bindings. Residual model changes outside those typed
-  comparisons produce `unclassified-changed`; they are not silently treated as equality.
+  comparisons produce `unclassified-changed` and are not treated as equality.
 - Every part of a command outcome is compared on its own, one change per outcome. `ess-diff/12`
   adds the kinds for an error's `payload:` sources (`outcome-error-payload-added`,
   `outcome-error-payload-removed`, `outcome-error-payload-changed`), `accepts: nothing`
@@ -37,10 +37,10 @@ The report follows these rules:
 - Inputs must describe revisions of the same system. A different system identity is refused.
 
 `--format` accepts `text` or `json`. JSON output is **`ess-diff/2`**, as it is for this pair,
-unless the delta carries a change kind introduced later; it then takes the newest version any of its
-changes needs, up to `ess-diff/12` (see the
+unless the delta carries a change kind introduced later. It then takes the newest version any of its
+changes needs, up to `ess-diff/23` (see the
 [format history](../reference/spec-versions.md#ess-diff--what-moved-between-two-revisions)). The
-library retains the frozen `/1` vocabulary and reader support; explicit legacy writing refuses
+library retains the frozen `/1` vocabulary and reader support, and explicit legacy writing refuses
 changes outside that vocabulary. The endpoint digests identify compact compiled models, not raw YAML
 or the pretty JSON shown by `ess specify compile`.
 [Delta writer](https://github.com/beyond10x/ess/blob/main/crates/verify/ess-diff/src/delta.rs),
@@ -64,7 +64,7 @@ ess verify diff --from before --to after --fail-on breaking --acknowledgements r
   lists, maps or optionals: a command input or view parameter is an `input`, a response, event,
   error or view row an `output`, an entity field or event a `stored` value. A component setting and
   an external channel's or periodic host's context fields are `input` too. A removed variant breaks
-  callers and history and no reader; an added variant breaks readers of an output and nobody else.
+  callers and history and no reader. An added variant breaks readers of an output and nobody else.
   Any other mention of the type is `unmodelled`: a change to the type, other than documentation or
   adding or removing it, is then `unknown` in every dimension.
 - A grant or command removed breaks callers, a view removed breaks readers, an event or entity
@@ -73,10 +73,10 @@ ess verify diff --from before --to after --fail-on breaking --acknowledgements r
   answer depends on how consumers treat it, and the model does not say.
 
 `--fail-on breaking` exits **4** when an unacknowledged change is breaking in a considered
-dimension; `--fail-on breaking-or-unknown` also fails on `unknown`. `--dimension callers` (repeatable)
-limits the dimensions considered. Without `--compatibility` or `--fail-on`, the output and the exit
-status are unchanged. With either, JSON output is `ess-diff/14`, and every change carries
-`compatibility`.
+dimension, and `--fail-on breaking-or-unknown` also fails on `unknown`. `--dimension callers`
+(repeatable) limits the dimensions considered. Without `--compatibility` or `--fail-on`, the output
+and the exit status are unchanged. With either, JSON output is `ess-diff/14` or later, and every
+change carries `compatibility`.
 
 An acknowledgements file lets reviewed changes pass. It is bound to the exact pair compared: take
 both digests from the delta, and list change ids from it.
@@ -90,7 +90,7 @@ both digests from the delta, and list change ids from it.
 }
 ```
 
-A file naming other digests, an id the delta does not hold or an id twice is refused with exit 1.
+A file carrying other digests, an id the delta does not hold or an id twice is refused with exit 1.
 [Classification and gate](https://github.com/beyond10x/ess/blob/main/crates/verify/ess-diff/src/compatibility.rs).
 
 ## Find the work owed again
@@ -136,7 +136,7 @@ that runs without that input has not performed that check.
 
 An item absent from the narrowed answer was not reached by this analysis. That is not a claim that
 its prior evidence remains valid or that the suite has complete coverage. Suite/4 carries model and
-whole-contract identities; it does not carry an exact digest of the complete suite bytes.
+whole-contract identities. It does not carry an exact digest of the complete suite bytes.
 
 Design documents, runbooks and prose references outside the compiled model are not part of the
 dependency walk. Their owner must track their freshness separately.

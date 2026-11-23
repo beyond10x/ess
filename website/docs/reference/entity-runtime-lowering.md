@@ -44,7 +44,7 @@ The last column says what lowering the construct would need. *entity-core* means
 
 | Construct | Code | Lowering needs |
 |---|---|---|
-| `now` in a guard | `CurrentTimeUnsupported` | Host value: the request's clock reading as a bound argument; entity-core refuses `$now` |
+| `now` in a guard or, from ess/30, a view filter | `CurrentTimeUnsupported` | Host value: the request's clock reading as a bound argument; entity-core refuses `$now` |
 | `{related: …}` | `ValueExpressionUnsupported` | Host value: the related row's field, loaded by the host and bound as an argument |
 | an `unknown_instance:` refusal | `OutcomeShapeUnsupported` | Host value: the host's own not-found answer, mapped to the declared refusal |
 | an external refusal answered before the row, `before_row: true` | `OutcomeShapeUnsupported` | Host value: the host's own decision, answered before it loads the row |
@@ -91,7 +91,7 @@ The last column says what lowering the construct would need. *entity-core* means
 | a calendar window (`window: {at, days, from, to, offset}`, ess/22) | `CalendarWindowUnsupported` | entity-core: a weekday and time-of-day operand at a fixed offset, and a clock operand for `at: now` |
 | a refusal that compensates (`compensates: true`, ess/22) | `CompensatingRefusalUnsupported` | entity-core: a refusal that changes the instance it answers for |
 | a re-key (`updates:` writing the identity, ess/23) | `IdentityChangeUnsupported` | entity-core: an operation that moves the instance it names to another identity |
-| a function of a fact in a guard (`sha256(…)`, `base64url(…)`, `ascii(…)`, ess/27) | `FunctionCallUnsupported` | entity-core: a digest and encoding operand: SHA-256, base64url, ASCII bytes |
+| a function of a fact in a guard (`sha256(…)`, `base64url(…)`, `ascii(…)`, `coalesce(…)`, `abs(…)`, `min(…)`, `max(…)`, ess/27) | `FunctionCallUnsupported` | entity-core: an operand computed from a fact (digest, encoding, default, arithmetic) |
 | a lifecycle state's wire spelling (`states: [{name, wire}]`, ess/32) | `StateWireNameUnsupported` | entity-core: a lifecycle state spelled apart from its name |
 | an `invariants:` or `prefix:` of a creation's input type, on an input some accepting branch does not store in a field of that type | `InputInvariantUnsupported` | entity-core: a precondition on the creation entrypoint; an outcome guard would change which branch answers |
 | an ordering over text, or over a value not known to be a number or a `Timestamp`, in an `invariants:` of an input's type | `InputInvariantUnsupported` | entity-core: an ordering over text by its bytes; its `compare` orders numbers only and answers `Unknown` otherwise |
@@ -128,7 +128,7 @@ A harness matches on the code. The construct is the one a diagnostic under that 
 | `TrimmedTextUnsupported` | `trimmed:` | A guard compares text with its surrounding ASCII whitespace removed. |
 | `OutcomeShapeUnsupported` | an ess/15 outcome shape | An outcome is an `unknown_instance:` refusal, deletes, creates `into:` a state, or accepts nothing. |
 | `InputAbsentUnsupported` | `input_absent:` | An outcome answers a request with no input. |
-| `CurrentTimeUnsupported` | `now` in a guard | A guard orders a `Timestamp` against the current time. |
+| `CurrentTimeUnsupported` | `now` in a guard or, from ess/30, a view filter | A guard or a view filter orders a `Timestamp` against the current time. |
 | `ExistenceSelectionUnsupported` | a branch chosen by existence (`unknown_instance:` on a creation, `existing_instance:`) | A branch is chosen by whether a record carries the addressed identity. |
 | `CallerUnsupported` | the caller (`{caller: …}`, `caller.<attribute>`) | A value or a guard reads the authenticated caller. |
 | `SetEffectUnsupported` | a set effect (`instances:`, `affects:`, `{count: changed}`) | An outcome changes rows beside, or instead of, the one its request names. |
@@ -141,7 +141,7 @@ A harness matches on the code. The construct is the one a diagnostic under that 
 | `CalendarWindowUnsupported` | a calendar window (`window: {at, days, from, to, offset}`, ess/22) | A guard holds an instant to a weekly window at a fixed offset. |
 | `CompensatingRefusalUnsupported` | a refusal that compensates (`compensates: true`, ess/22) | A refusal changes its addressed instance before answering its error. |
 | `IdentityChangeUnsupported` | a re-key (`updates:` writing the identity, ess/23) | An update writes the identity and re-keys its record. |
-| `FunctionCallUnsupported` | a function of a fact in a guard (`sha256(…)`, `base64url(…)`, `ascii(…)`, ess/27) | A guard reads a fact through a digest or encoding function. |
+| `FunctionCallUnsupported` | a function of a fact in a guard (`sha256(…)`, `base64url(…)`, `ascii(…)`, `coalesce(…)`, `abs(…)`, `min(…)`, `max(…)`, ess/27) | A guard reads a fact through a function. |
 | `StateWireNameUnsupported` | a lifecycle state's wire spelling (`states: [{name, wire}]`, ess/32) | A lifecycle state declares its wire spelling. |
 | `InputInvariantUnsupported` | an `invariants:` or `prefix:` of a creation's input type, on an input some accepting branch does not store in a field of that type | An input type's invariant or prefix is not held: on a creation whose accepting branches do not all store the input in a field of that type, or as an ordering Entity Runtime cannot decide over the input. |
 
