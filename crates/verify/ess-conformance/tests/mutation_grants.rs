@@ -9,6 +9,7 @@
 #![allow(clippy::missing_panics_doc)]
 
 use std::collections::BTreeMap;
+use std::num::NonZeroUsize;
 
 use ess_compiler::source::SourceMap;
 use ess_conformance::interpret::Interpreted;
@@ -16,7 +17,7 @@ use ess_conformance::mutate::{
     self, Document, MutantClass, MutationReport, Verdict, BASELINE_DIR, MANIFEST_FILE, REPORT_FILE,
     SUITE_FILE,
 };
-use ess_conformance::synthesize::synthesize;
+use ess_conformance::synthesize::{synthesize, with_jobs};
 use ess_conformance::{AdmittedSuite, CountReport, Runner};
 use ess_domain::spec::RawSpecFile;
 use ess_domain::system::Source;
@@ -523,4 +524,48 @@ fn the_added_grant_scenario_is_the_mutants_alone() {
         "{STORY}: {:?}",
         suite.scenarios.keys().collect::<Vec<_>>()
     );
+}
+
+/// The grant mutants' suites are read in readings that run on other threads: the dropped and the
+/// added grant cross to every worker. An `Archivist` that sorts before the `Librarian` lacks the
+/// grant too, so only the dropped grant names the `Librarian` as the sender of the refusal.
+#[test]
+fn a_grant_mutants_suites_are_the_same_at_four_jobs() {
+    let text = with_actors(
+        "  - name: library.shelf.Archivist
+  - name: library.shelf.Librarian
+    attributes: [{name: branch, type: String}]
+    may: [library.shelf.CatalogueBook]
+  - name: library.shelf.Reader
+",
+    );
+    let (documents, texts) = documents(&text);
+    let emit = |count: usize| {
+        with_jobs(NonZeroUsize::new(count).unwrap(), || {
+            mutate::emit(
+                &documents,
+                &texts,
+                &[MutantClass::GrantDrop, MutantClass::GrantAdd],
+            )
+            .unwrap_or_else(|refusal| panic!("{STORY}: {refusal}"))
+        })
+    };
+    let one = emit(1);
+    let four = emit(4);
+    let listed = |prefix: &str| one.files.keys().any(|key| key.contains(prefix));
+    assert!(listed("grant-drop/"), "{:?}", one.files.keys());
+    assert!(listed("grant-add/"), "{:?}", one.files.keys());
+    assert_eq!(
+        one.files.keys().collect::<Vec<_>>(),
+        four.files.keys().collect::<Vec<_>>(),
+        "{STORY}"
+    );
+    for (key, text) in &one.files {
+        let other = &four.files[key];
+        let first = text.lines().zip(other.lines()).find(|(a, b)| a != b);
+        assert!(
+            other == text,
+            "{STORY}: `{key}` differs at 4 jobs from 1 job, first at {first:?}"
+        );
+    }
 }

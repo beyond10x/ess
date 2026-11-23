@@ -12,9 +12,13 @@
 //! rows it arranges, against the same model without caller attributes: a work bound, not a clock.
 
 use std::fmt::Write as _;
+use std::num::NonZeroUsize;
 
 use ess_compiler::{ir::EssIr, resolve::compile, source::SourceMap};
-use ess_conformance::synthesize::{creations_made, synthesize, Synthesis};
+use ess_conformance::mutate::{self, MutantClass};
+use ess_conformance::synthesize::{
+    creations_made, readings_off_thread, synthesize, with_jobs, Synthesis,
+};
 use ess_domain::{
     spec::{RawSpecFile, Specification},
     system::Source,
@@ -32,9 +36,14 @@ const TIMES: u64 = 4;
 /// A card whose flags several commands set, each refusing a flag already set, and an owner that
 /// only the owner may close: with `caller`, the owner is the opening caller's and closing compares
 /// the caller; without, both send the owner as an input.
-#[allow(clippy::too_many_lines)] // One model, written out in source order.
 fn model(caller: bool) -> String {
-    let flags = 1..=FLAGS;
+    model_flags(FLAGS, caller)
+}
+
+/// [`model`] with `flags` flags, each set by a command of its own.
+#[allow(clippy::too_many_lines)] // One model, written out in source order.
+fn model_flags(flags: usize, caller: bool) -> String {
+    let flags = 1..=flags;
     let mut text = String::from(
         "format: ess/37\nsystem: demo\nversion: v1\ndomain: demo.board\n\
          summary: Cards whose flags several commands set, each refusing a flag already set.\n\
@@ -176,4 +185,190 @@ fn caller_readings_arrange_each_row_about_once_per_caller() {
         "the caller model arranged creating rows {caller_made} times, more than {TIMES} times the \
          {plain_made} of the same model without caller attributes"
     );
+}
+
+/// Everything a synthesis writes, as it prints: the suite, then the refusals, notes and outside,
+/// each under a `--- <name>` line.
+fn rendered(synthesis: &Synthesis) -> String {
+    let lines = |items: Vec<String>| items.join("\n");
+    format!(
+        "{}\n--- refusals\n{}\n--- notes\n{}\n--- outside\n{}",
+        synthesis.suite.to_canonical_json().unwrap(),
+        lines(synthesis.refusals.iter().map(ToString::to_string).collect()),
+        lines(synthesis.notes.iter().map(ToString::to_string).collect()),
+        lines(synthesis.outside.iter().map(ToString::to_string).collect()),
+    )
+}
+
+fn jobs(count: usize) -> NonZeroUsize {
+    NonZeroUsize::new(count).unwrap()
+}
+
+/// Synthesizes `text` at 1, 2, 4 and 7 jobs and asserts the same bytes at each.
+fn same_at_every_job_count(label: &str, text: &str) {
+    let model = ir(text);
+    let one = rendered(&with_jobs(jobs(1), || synthesize(&model)));
+    for count in [2, 4, 7] {
+        let many = rendered(&with_jobs(jobs(count), || synthesize(&model)));
+        if many != one {
+            let (a, b) = one
+                .lines()
+                .zip(many.lines())
+                .find(|(a, b)| a != b)
+                .unwrap_or(("(a prefix)", "(a prefix)"));
+            panic!("{label}: {count} jobs differ from 1 job\n  1 job : {a}\n  {count} jobs: {b}");
+        }
+    }
+}
+
+#[test]
+fn a_two_caller_swap_with_a_related_tie_writes_one_suite_at_every_job_count() {
+    same_at_every_job_count(
+        "caller-swap-related-tie",
+        include_str!("fixtures/caller-swap-related-tie.yaml"),
+    );
+}
+
+#[test]
+fn a_caller_addressed_identity_writes_one_suite_at_every_job_count() {
+    same_at_every_job_count(
+        "caller-addressed-identity",
+        include_str!("fixtures/caller-addressed-identity.yaml"),
+    );
+}
+
+#[test]
+fn a_guard_beside_creating_rows_writes_one_suite_at_every_job_count() {
+    same_at_every_job_count(
+        "list-identity-guard-beside-creates",
+        include_str!("fixtures/list-identity-guard-beside-creates.yaml"),
+    );
+}
+
+#[test]
+fn a_one_time_follow_up_guarded_by_its_caller_writes_one_suite_at_every_job_count() {
+    same_at_every_job_count(
+        "one-time-followup/caller-guard",
+        include_str!("fixtures/one-time-followup/caller-guard.yaml"),
+    );
+}
+
+#[test]
+fn the_card_model_writes_one_suite_at_every_job_count() {
+    same_at_every_job_count("the card model", &model(true));
+}
+
+#[test]
+fn twelve_commands_read_by_two_callers_run_their_readings_off_the_calling_thread() {
+    let flags = 10;
+    let model = ir(&model_flags(flags, true));
+    let (four, off) = readings_off_thread(|| with_jobs(jobs(4), || synthesize(&model)));
+    let (one, none) = readings_off_thread(|| with_jobs(jobs(1), || synthesize(&model)));
+    assert_eq!(
+        off,
+        2 + 4 * (flags as u64 + 2),
+        "readings off the thread at 4 jobs"
+    );
+    assert_eq!(none, 0, "readings off the thread at 1 job");
+    assert_eq!(rendered(&four), rendered(&one));
+}
+
+#[test]
+fn the_creating_rows_counted_at_four_jobs_are_those_counted_at_one() {
+    let plain = ir(&model(false));
+    let model = ir(&model(true));
+    let (_, plain_made) = creations_made(|| synthesize(&plain));
+    let (_, one) = creations_made(|| with_jobs(jobs(1), || synthesize(&model)));
+    let (_, four) = creations_made(|| with_jobs(jobs(4), || synthesize(&model)));
+    assert_eq!(four, one, "creating rows arranged at 4 jobs and at 1");
+    assert!(one <= TIMES * plain_made, "{one} against {plain_made}");
+}
+/// [`model_flags`] with an `amount` the card takes from `Open`'s input, and an `Adjust` that reads the
+/// caller and changes the amount from an input named apart from it (`amount: input.amount_to`), so
+/// the model has a `sets-drop` site on a command whose reading runs on a pool thread. Byte identity
+/// only: no caller reading reaches `unread_apart`, so no suite shows the dropped write, and the
+/// carrying of it is proved at the runner (`readings::tests`).
+fn tagged(flags: usize) -> String {
+    let text = model_flags(flags, true)
+        .replacen(
+            "      - {name: owner_id, type: demo.board.OwnerId}\n",
+            "      - {name: owner_id, type: demo.board.OwnerId}\n      - {name: amount, type: Integer}\n",
+            1,
+        )
+        .replace(
+            "  - name: demo.board.Open\n    input:\n      - {name: card_id, type: demo.board.CardId}\n",
+            "  - name: demo.board.Open\n    input:\n      - {name: card_id, type: demo.board.CardId}\n      - {name: amount, type: Integer}\n",
+        )
+        .replace(
+            "          owner_id: {caller: owner_id}\n",
+            "          owner_id: {caller: owner_id}\n          amount: input.amount\n",
+        )
+        .replace(
+            "    may: [demo.board.Open, demo.board.Close",
+            "    may: [demo.board.Open, demo.board.Close, demo.board.Adjust",
+        )
+        .replace(
+            "        error: demo.board.StateConflict\nevents:\n",
+            "        error: demo.board.StateConflict\n\
+             \x20 - name: demo.board.Adjust\n    input:\n\
+             \x20     - {name: card_id, type: demo.board.CardId}\n\
+             \x20     - {name: amount_to, type: Integer}\n    outcomes:\n\
+             \x20     - name: no-card\n        unknown_instance: true\n        error: demo.board.NoSuchCard\n\
+             \x20     - name: not-owner\n        when_subject:\n          predicate: owner_id != caller.owner_id\n\
+             \x20       error: demo.board.NotOwner\n\
+             \x20     - name: adjusted\n        updates: demo.board.Card\n        instance: card_id\n\
+             \x20       sets:\n          amount: input.amount_to\n        emits: [demo.board.Marked]\n\
+             \x20       payload:\n          demo.board.Marked: {card_id: input.card_id}\n\
+             events:\n",
+        );
+    assert!(text.contains("amount: input.amount_to") && text.contains("amount: input.amount"));
+    text
+}
+
+/// The first line two texts differ at, as `<line> | <line>`.
+fn first_difference(one: &str, other: &str) -> String {
+    one.lines()
+        .zip(other.lines())
+        .find(|(a, b)| a != b)
+        .map_or_else(
+            || "(one is a prefix of the other)".to_owned(),
+            |(a, b)| format!("{a}\n  | {b}"),
+        )
+}
+
+#[test]
+fn a_sets_drop_mutants_suites_are_byte_identical_at_four_jobs() {
+    let text = tagged(1);
+    let documents = vec![(
+        Source::new("board.yaml"),
+        RawSpecFile::parse(&text).unwrap(),
+    )];
+    let mut texts = SourceMap::new();
+    texts.insert("board.yaml".to_owned(), text);
+    let emit = |count: usize| {
+        with_jobs(jobs(count), || {
+            mutate::emit(&documents, &texts, &[MutantClass::SetsDrop])
+                .unwrap_or_else(|refusal| panic!("{refusal}"))
+        })
+    };
+    let one = emit(1);
+    let four = emit(4);
+    assert!(
+        one.files
+            .keys()
+            .any(|key| key.contains("sets-drop/demo.board.Adjust/")),
+        "{:?}",
+        one.files.keys().collect::<Vec<_>>()
+    );
+    assert_eq!(
+        one.files.keys().collect::<Vec<_>>(),
+        four.files.keys().collect::<Vec<_>>()
+    );
+    for (key, text) in &one.files {
+        assert!(
+            &four.files[key] == text,
+            "`{key}` differs at 4 jobs from 1 job, first at\n  {}",
+            first_difference(text, &four.files[key])
+        );
+    }
 }

@@ -662,7 +662,10 @@ pub(super) fn synthesize(ir: &EssIr, seeds: &super::AdmittedSeeds) -> Synthesis 
     let reading = reading(ir, &callers);
     let rotated = grant::rotated(ir);
     let assigned = Assigned::new(ir, &callers);
-    let _kept = readings::Kept::open(&assigned.uniform_models());
+    // Above one job the lanes own that memory, and the readings that run inline at merge time
+    // (`one_row_acted_on`, the rotation re-run) start from none.
+    let _kept =
+        (super::jobs().get() == 1).then(|| readings::Kept::open(&assigned.uniform_models()));
     let mixed_commands = mixed(ir, &callers);
     #[cfg(test)]
     let unfocused = tests::UNFOCUSED.get();
@@ -3663,7 +3666,9 @@ views:
     fn counted(ir: &EssIr, unfocused: bool) -> (Synthesis, usize) {
         WHOLE.set(0);
         UNFOCUSED.set(unfocused);
-        let synthesis = super::super::synthesize(ir);
+        // `WHOLE` counts on the thread that runs a whole reading.
+        let synthesis =
+            super::super::with_jobs(std::num::NonZeroUsize::MIN, || super::super::synthesize(ir));
         UNFOCUSED.set(false);
         (synthesis, WHOLE.get())
     }
@@ -3907,5 +3912,29 @@ views:
             found.is_empty(),
             "a struct literal holding `observed` is no reference"
         );
+    }
+
+    #[test]
+    fn a_panic_in_a_reading_on_another_thread_is_the_panic_one_thread_raises() {
+        let ir = compiled(NOTES);
+        readings::PANIC_IN.with(|seam| *seam.borrow_mut() = Some("demo.notes.CloseNote".into()));
+        let at = |jobs: usize| {
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                super::super::with_jobs(std::num::NonZeroUsize::new(jobs).unwrap(), || {
+                    super::super::synthesize(&ir)
+                })
+            }))
+        };
+        let (one, four) = (at(1), at(4));
+        readings::PANIC_IN.with(|seam| *seam.borrow_mut() = None);
+        let message = |outcome: Result<Synthesis, Box<dyn std::any::Any + Send>>| {
+            outcome
+                .expect_err("the reading panics")
+                .downcast_ref::<String>()
+                .cloned()
+        };
+        let expected = "a test panic in the reading of `demo.notes.CloseNote`";
+        assert_eq!(message(one).as_deref(), Some(expected));
+        assert_eq!(message(four).as_deref(), Some(expected));
     }
 }
