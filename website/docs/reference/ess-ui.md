@@ -63,7 +63,7 @@ Expressions connect a node to state and data. They are short paths plus a few op
 | `selection.<field>` | the selected row(s) of the section |
 | `draft.<field>` | the unsaved input of the enclosing form |
 | `section.<name>.selection` | another section's selection |
-| `section.<name>.row` | the first row of a section that reads, as `header.title_from` reads it; absent while the section loads, when it is empty, and for a section without a read |
+| `section.<name>.row` | the first row of a section that reads, as `header.title_from` reads it; absent while the section loads and when it is empty; a section without a read, a choice, a read whose params read its own row, and sections that read each other's row are refused (`section_row`) |
 | `channel.<name>.<field>` | a named field of a channel |
 | `shell.<name>` | shell state |
 | `url.query.<name>` | a query parameter (guards only) |
@@ -224,6 +224,7 @@ TimeWindow:
 | Check | Subject | Rule | Severity |
 |---|---|---|---|
 | `types_structural` | `**.type` | `{must_match: type_rule, forbidden: string_holding_a_type_expression}` | error |
+| `type_in_model` | `pages.*.params.*` | `{must: "with --model, a page parameter's named type resolves in the document, the schema or the model"}` | error |
 
 ### NodePath
 
@@ -290,7 +291,7 @@ containers:
     note: lists of named nodes; order is meaningful
   - {container: preload_views, child_name: view}
   - container: rows
-    child_name: {row_key: {first_present: [live.match, id]}}
+    child_name: {row_key: {first_present: [reads.key, live.match, id]}}
     note: runtime rows of a collection
 widget_instances: {expanded_body_path: <instance path>/body/<node name>}
 uniqueness: {scope: siblings, severity: error}
@@ -573,7 +574,7 @@ A page owns the state a link should reproduce (filters, paging, selection) and c
 | `layout` | [PageLayout](#pagelayout) |   | `stack` | how sections are arranged |
 | `state` | map of `name` → optional [State](#state) |   |   | page state |
 | `header` | [header](#header) |   |   | title, total, actions, live status |
-| `sections` | list of [Section](#section) | yes |   | regions of the page, named, in declaration order; merged with the kind's by name |
+| `sections` | list of [Section](#section) | yes, unless the node is a [HostSlot](#hostslot) |   | regions of the page, named, in declaration order; merged with the kind's by name |
 | `overlays` | map of `name` → optional [overlay](#overlay) |   |   | drawers and dialogs of the page (unordered) |
 | `profile` | one of: `thin` \| `fat` |   |   | placement for this page in a hybrid document |
 | `source` | list of `string` |   |   | files the page was retrofitted from |
@@ -626,6 +627,8 @@ overlays: {edit: {kind: drawer, component: form, same_as: partners.list.edit}}
 | `page_reachable` | `pages.*` | `{must_be_in: ["navigation.sections[].pages[]", "navigation.hidden[]", "navigation.sections[].pages.page"]}` | error |
 | `page_refs` | `**.navigate.to`, `**.to.to`, `pages.*.switch_to[]`, `shells.*.guards[].then.redirect` | `{must_resolve: {ref: page}}` | error |
 | `shell_refs` | `pages.*.shell` | `{must_resolve: {ref: shell}}` | error |
+| `actor_in_model` | `pages.*.actor` | `{must: "with --model, actor names an actor of the model"}` | error |
+| `page_actor_grants` | `pages.*` | `{must: "with --model, every command a page with an actor sends is in that actor's may"}` | error |
 
 ### PageLayout
 
@@ -706,6 +709,7 @@ areas:
 |---|---|---|---|
 | `section_refs` | `**.header.total`, `**.header.filters`, `**.depends_on`, `pages.*.layout.columns[].sections[]`, `pages.*.layout.areas.place.*[]`, `section.<name>.<member> inside expr` | `{must_resolve_in: [page.sections, expressions.forms]}` | error |
 | `layout_complete` | `pages.*.layout` | `{must: place_every_section_once}` | warning |
+| `frame_rules` | `pages.*.layout`, `pages.*.sections[]` | `{must: "title and collapsed belong to frame: shared; a collapsed frame or section has a title, a collapsed group a label; a shared frame holds consecutive sections"}` | error |
 
 ### PageKind
 
@@ -814,7 +818,7 @@ The section, not the page, is the unit of loading. Each has at most one `reads`,
 | Property | Type | Required | Default | Note |
 |---|---|---|---|---|
 | `name` | `name` | yes |   | node name among the page's sections |
-| `component` | one of: name of a [Composite](#composite) \| name of a [Widget](#widget) | yes |   | what the section renders |
+| `component` | one of: name of a [Composite](#composite) \| name of a [Widget](#widget) | yes, unless the node is a [HostSlot](#hostslot) |   | what the section renders |
 | `title` | `string` |   |   | heading shown above the section; absent, none |
 | `collapsed` | `boolean` |   | `false` | starts the section closed under its `title`, which a reader clicks to open; needs a `title`, since there is nothing else to click. A collapsed section with `load: on_visible` starts its read when opened |
 | `reads` | [Reads](#reads) |   |   | the section's data; one per section; it is the composite's own `reads` |
@@ -877,6 +881,9 @@ states:
 |---|---|---|---|
 | `section_refs` | `**.header.total`, `**.header.filters`, `**.depends_on`, `pages.*.layout.columns[].sections[]`, `pages.*.layout.areas.place.*[]`, `section.<name>.<member> inside expr` | `{must_resolve_in: [page.sections, expressions.forms]}` | error |
 | `widget_expands` | `**.component naming a widget` | `{must: [resolve_widget, required_args_present, args_match_param_types, no_recursion], then: check_expanded_body}` | error |
+| `frame_rules` | `pages.*.layout`, `pages.*.sections[]` | `{must: "title and collapsed belong to frame: shared; a collapsed frame or section has a title, a collapsed group a label; a shared frame holds consecutive sections"}` | error |
+| `section_readable` | `pages.*.sections[]` | `{must: "with --model, some actor may read the view the section reads (an approximation: ESS grants commands, not views)"}` | error |
+| `section_row` | `pages.*.sections[]` | `{must: "section.<name>.row is the first row of a section that reads: a section that reads nothing or is a choice holds none, and a read whose params read its own section's row, or sections that read each other's, never settle"}` | error |
 
 ### SectionStates
 
@@ -951,6 +958,14 @@ row_actions:
   - {name: open, navigate: {to: partners.detail, params: {id: row.id}}, label: Open}
   - {name: delete, opens: delete, as: icon}
 ```
+
+**Checks**
+
+| Check | Subject | Rule | Severity |
+|---|---|---|---|
+| `row_fields` | `**.group_by`, `**.label_from`, `**.title_from` | `{must: "with --model, group_by, an aggregate's field, label_from, a choice's value or label, title_from.field and section.<name>.row.<field> name a row field the view has"}` | error |
+| `model_enum_values` | `**.group_order`, `**.options` | `{must: "with --model, a group_order value or a form choice's fixed option is a variant of the enum the field holds, and the options leave no variant out"}` | error |
+| `group_order` | `**.group_order`, `**.show_empty_groups` | `{must: "they order the groups of group_by, so a collection that has them has group_by"}` | error |
 
 ### record
 
@@ -1050,6 +1065,13 @@ multiple: true
 options: DealStage
 ```
 
+**Checks**
+
+| Check | Subject | Rule | Severity |
+|---|---|---|---|
+| `model_enum_values` | `**.group_order`, `**.options` | `{must: "with --model, a group_order value or a form choice's fixed option is a variant of the enum the field holds, and the options leave no variant out"}` | error |
+| `options_enum` | `**.options` | `{must: "a choice's options name an enum of the document, or with --model exactly one enum of the model"}` | error |
+
 ### filter_bar
 
 Search, choices, inputs and a time window bound to page state.
@@ -1124,6 +1146,8 @@ actions: [{name: create, opens: create, label: New ticket}]
 |---|---|---|---|
 | `channel_refs` | `**.live.channel`, `**.header.live[]`, `channel.<name> inside expr` | `{must_resolve: {ref: channel}}` | error |
 | `section_refs` | `**.header.total`, `**.header.filters`, `**.depends_on`, `pages.*.layout.columns[].sections[]`, `pages.*.layout.areas.place.*[]`, `section.<name>.<member> inside expr` | `{must_resolve_in: [page.sections, expressions.forms]}` | error |
+| `row_fields` | `**.group_by`, `**.label_from`, `**.title_from` | `{must: "with --model, group_by, an aggregate's field, label_from, a choice's value or label, title_from.field and section.<name>.row.<field> name a row field the view has"}` | error |
+| `header_record` | `**.header.title_from` | `{must: "title_from.section names a section that reads: the title's record is its first row"}` | error |
 
 ### overlay
 
@@ -1136,7 +1160,7 @@ Overlays hold forms, confirms and detail views opened by actions. They belong to
 | Property | Type | Required | Default | Note |
 |---|---|---|---|---|
 | `kind` | one of: `drawer` \| `dialog` \| `fullscreen` \| `popover` | yes |   | presentation hint; a TUI uses a full-screen pane |
-| `component` | one of: name of a [Composite](#composite) \| name of a [Widget](#widget) | yes |   | what the overlay renders |
+| `component` | one of: name of a [Composite](#composite) \| name of a [Widget](#widget) | yes, unless the node is a [HostSlot](#hostslot) |   | what the overlay renders |
 | `title` | `string` |   |   | overlay title; a confirm shows it as its question |
 | `params` | map of `name` → `expr` |   |   | values passed by the opener |
 | `state` | map of `name` → [State](#state) |   |   | overlay-local state |
@@ -1168,6 +1192,7 @@ actions: [{name: pdf, export: {reads: invoices.Pdf, as: zip}, label: Download PD
 |---|---|---|---|
 | `same_as_resolves` | `**.same_as` | `{must_resolve: {ref: overlay}}` | error |
 | `widget_expands` | `**.component naming a widget` | `{must: [resolve_widget, required_args_present, args_match_param_types, no_recursion], then: check_expanded_body}` | error |
+| `overlay_params` | `**.overlays.*.params` | `{must: every key of an overlay's params is read inside it as params.<key>}` | error |
 
 ### confirm
 
@@ -1228,6 +1253,12 @@ component: metric
 from: channel.metrics.overdue_invoices
 label: Overdue invoices
 ```
+
+**Checks**
+
+| Check | Subject | Rule | Severity |
+|---|---|---|---|
+| `metric_aggregate` | `**.aggregate` | `{must: "aggregate reads rows, so it needs reads; every aggregate but count needs a field, and field means nothing without an aggregate"}` | error |
 
 ### chart
 
@@ -1442,11 +1473,11 @@ Wherever a nested element is allowed (`item`, `children`, `body`, `parts`, `expa
 
 | Property | Type | Required | Default | Note |
 |---|---|---|---|---|
-| (value) | one of: [Composite](#composite) \| [WidgetInstance](#widgetinstance) \| [Primitive](#primitive) |   |   | exactly one of component or primitive |
+| (value) | one of: [Composite](#composite) \| [WidgetInstance](#widgetinstance) \| [Primitive](#primitive) \| [HostSlot](#hostslot) |   |   | exactly one of component, primitive or host |
 
 **Exactly one of**
 
-`component`, `primitive`
+`component`, `primitive`, `host`
 
 **Example**
 
@@ -1507,6 +1538,7 @@ choice: {component: choice, options: PartnerTier}
 |---|---|---|---|
 | `label_map_refs` | `**.labels naming a label map` | `{must_resolve: {ref: label_map}}` | error |
 | `suggests_needs_tags` | `**.suggests` | `{must: sit_on_an_as_tags_field}` | error |
+| `row_fields` | `**.group_by`, `**.label_from`, `**.title_from` | `{must: "with --model, group_by, an aggregate's field, label_from, a choice's value or label, title_from.field and section.<name>.row.<field> name a row field the view has"}` | error |
 
 ### Tab
 
@@ -1662,6 +1694,13 @@ no_areas: {fallbacks: [stack], applies_to: [PageLayout], order: section_declarat
 no_graph_editor: collection
 no_drag: move_buttons
 ```
+
+**Checks**
+
+| Check | Subject | Rule | Severity |
+|---|---|---|---|
+| `degrades_known` | `**.degrades` | `{must: "a key names a capability, its value one of that capability's fallbacks"}` | error |
+| `degrades_cover` | `**.degrades` | `{must: a renderer lacking a capability (ess ui check --lacks) finds a fallback that is not refuse}` | error |
 
 ### Primitive
 
@@ -2001,7 +2040,7 @@ How the UI reads ESS views, runs ESS commands, and runs without a backend.
 
 The ESS view a section or composite reads — or, while designing, a named placeholder backed by a fixture.
 
-Every piece of data on screen comes from an ESS view. Params bind page state; `paging` says who pages. While a screen is designed before its model exists, write `placeholder` with a view name and a `fixture` file instead of `view`; renderers read the fixture, validators report the placeholder as a warning until it is bound. `key` names the field that identifies a row when it is not `id`, so row paths and row actions address the rows of a view keyed by another field, with or without a channel. `endpoint` and `derived` are traceability for retrofits. `pager` names, among `params`, the param that carries a server read's page and the one that carries its page size, each bound to a `state.<path>`: a collection shows Previous, the page and Next on those paths, and with a `size` a per-page select over `sizes` that returns to page 1. With `paging: client` the pager names no param, only `sizes`: the collection pages the rows it holds by the first size until the per-page select chooses another, and a change to the read's params or to what its row filter reads (a search, a filter bar) returns it to page 1. Whenever the page size and the total are known, the footer shows the rows on the page as a range of the total, `1-10 of 30`.
+Every piece of data on screen comes from an ESS view. Params bind page state; `paging` says who pages. While a screen is designed before its model exists, write `placeholder` with a view name and a `fixture` file instead of `view`; renderers read the fixture, validators report the placeholder as a warning until it is bound. `key` names the field that identifies a row when it is not `id`, so row paths and row actions address the rows of a view keyed by another field, with or without a channel. `endpoint` and `derived` are traceability for retrofits. `pager` names, among `params`, the param that carries a server read's page and the one that carries its page size, each bound to a `state.<path>`: a collection shows Previous, the page and Next on those paths, and with a `size` a per-page select over `sizes` that returns to page 1. With `paging: client` the pager names no param, only `sizes`: the collection pages the rows it holds by the first size until the per-page select chooses another, and a change to the read's params or to what its row filter reads (a search, a filter bar) returns it to page 1. Whenever the page size and the total are known, the footer shows the rows on the page as a range of the total, `1-10 of 30`. `paging: client` pages the rows the read returned whole; use it only for a view whose rows fit one answer.
 
 **Properties**
 
@@ -2034,7 +2073,6 @@ Every piece of data on screen comes from an ESS view. Params bind page state; `p
 **Constraints**
 
 ```yaml
-- {when: {paging: client}, requires: {view.bounded: true}, else: refuse}
 - {when: {placeholder: present}, requires: {fixture: present}, else: refuse}
 - {when: {filter: present}, requires: {paging: {one_of: [client, none]}}, else: refuse}
 - {when: {pager: present}, requires: {paging: {one_of: [server, client]}}, else: refuse}
@@ -2066,6 +2104,8 @@ fixture: fixtures/forecast.yaml
 | `pager_params` | `reads.pager.page`, `reads.pager.size` | `{must: name_distinct_params_of_the_read_each_bound_to_a_state_path_neither_inside_the_other}` | error |
 | `pager_sizes` | `reads.pager.sizes` | `{must: list_at_least_one_size_each_at_least_1_none_repeated}` | error |
 | `pager_outside_collection` | `reads.pager` | `{must: belong_to_a_collection_reads}` | error |
+| `view_in_model` | `pages.*.sections[].reads.view` | `{must: "with --model, a view named resolves in the model, and a reached_by: network component serves it"}` | error |
+| `read_params` | `pages.*.sections[].reads` | `{must: "with --model, a read binds only parameters its view declares and leaves no required one unbound"}` | error |
 
 ### Action
 
@@ -2139,12 +2179,13 @@ One user-triggered effect: run a command (`does`), open an overlay, navigate, ex
 | `checked_needs_toggle` | `**.checked` | `{must: sit_on_an_as_toggle_action}` | error |
 | `toggle_state_unknown` | `**.checked absent on an as toggle action with does` | `{must: [write_checked, or_bind_exactly_one_input_as_not_expr]}` | warning |
 | `checked_unreadable` | `**.checked on an as toggle action` | `{must: [parse_as_a_filter_predicate, read_only_row_params_state_shell_args]}` | warning |
+| `export_selection` | `**.export.params` | `{must: "an export's params read selection.<field> only on a bulk action, where the selection is in scope"}` | error |
 
 ### FixtureIndex
 
 Sample data per view and event scripts per channel, so renderers run without a backend.
 
-In fixture mode a renderer answers every read from a fixture file and plays each channel's script in a loop, honouring delivery and coalesce. A file holds one view or several; `derived` answers ById views from a list fixture. Placeholders name their fixture on the read itself.
+In fixture mode a renderer answers every read from a fixture file and plays each channel's script, honouring delivery and coalesce. A script file holds `events` (the entries below) and may say `channel`, `session` and `loop: true`, which repeats the script from the start after its last entry (default: it plays once). A file holds one view or several; `derived` answers ById views from a list fixture. Placeholders name their fixture on the read itself.
 
 **Properties**
 
@@ -2257,6 +2298,7 @@ buffer: {type: {list: ChatEvent}, class: channel_buffer}
 | Check | Subject | Rule | Severity |
 |---|---|---|---|
 | `script_per_channel` | `channels.*` | `{must_be_in: [fixtures.scripts]}` | warning |
+| `event_in_model` | `channels.*.carries`, `pages.*.sections[].live.on` | `{must: "with --model, an event named resolves in the model"}` | error |
 
 ### Live
 
@@ -2292,6 +2334,7 @@ coalesce: 500ms
 | Check | Subject | Rule | Severity |
 |---|---|---|---|
 | `channel_refs` | `**.live.channel`, `**.header.live[]`, `channel.<name> inside expr` | `{must_resolve: {ref: channel}}` | error |
+| `event_in_model` | `channels.*.carries`, `pages.*.sections[].live.on` | `{must: "with --model, an event named resolves in the model"}` | error |
 
 ## State placement
 
@@ -2335,7 +2378,7 @@ layout:
 
 | Check | Subject | Rule | Severity |
 |---|---|---|---|
-| `state_resolves` | `**.state.*` | `{must: resolve_to_store, refusals: PlacementProfile.resolution.refusals}` | error |
+| `state_resolves` | `**.state.*` | `{must: resolve_to_store, refusals: [sensitive_in_url_or_browser_storage, credential_outside_memory_or_server_session]}` | error |
 
 ### StateClass
 
@@ -2552,9 +2595,12 @@ refusals:
   - when: {state.sensitive: true, store: [url, session_storage, local_storage]}
     result: refuse
   - {when: {state.class: credential, store_not_in: [memory, server_session]}, result: refuse}
-  - {when: {store: url, value_serializable: false}, result: refuse}
-  - {when: {store: url, value_bytes_over: 2048}, result: refuse}
-  - {when: {renderer.thin_only: true, resolved_by_profile: fat}, result: refuse}
+not_checked:
+  reason: a renderer's concern; ess ui check does not run them
+  refusals:
+    - {when: {store: url, value_serializable: false}, result: refuse}
+    - {when: {store: url, value_bytes_over: 2048}, result: refuse}
+    - {when: {renderer.thin_only: true, resolved_by_profile: fat}, result: refuse}
 ```
 
 **Reload and reconnect**
@@ -2778,7 +2824,7 @@ What a validator checks in a document, and the construct each check applies to. 
 | `unbound_placeholder` | [Reads](#reads) | `**.reads.placeholder` | `{must: bind_to_view}` | warning |
 | `fixture_per_view` | [Reads](#reads) | `**.reads.view` | `{must_be_in: [fixtures.views, fixtures.derived]}` | warning |
 | `script_per_channel` | [Channel](#channel) | `channels.*` | `{must_be_in: [fixtures.scripts]}` | warning |
-| `state_resolves` | [State](#state) | `**.state.*` | `{must: resolve_to_store, refusals: PlacementProfile.resolution.refusals}` | error |
+| `state_resolves` | [State](#state) | `**.state.*` | `{must: resolve_to_store, refusals: [sensitive_in_url_or_browser_storage, credential_outside_memory_or_server_session]}` | error |
 | `types_structural` | [Type](#type), [Tokens](#tokens) | `**.type` | `{must_match: type_rule, forbidden: string_holding_a_type_expression}` | error |
 | `unmapped_reported` | every node | `**` | `{matches: unmapped_marker.pattern, action: report}` | warning |
 | `token_values` | [Tokens](#tokens) | `tokens.color.*`, `tokens.space.*`, `tokens.radius.*`, `tokens.type.*` | `{must_match: Tokens.grammar}` | error |
@@ -2812,6 +2858,31 @@ What a validator checks in a document, and the construct each check applies to. 
 | `board_widget_kinds` | every node | `**.board.reads fixture rows` | `{must: have_a_widget_by_field_that_names_an_entry_of_widgets}` | warning |
 | `expr_paths` | every node | `judged: state.<name>, params.<name> and shell.<name> inside an expr written in a page or in an overlay of a shell, against what is in scope there (a page overlay that declares params has the page's and its own, a shell overlay its own); and shell.<name> inside the rest of a shell (its regions and guards)`, `not judged: page kinds, widget declarations, navigation, state.<name> and params.<name> inside the rest of a shell, and params.<name> inside an overlay that declares no params, whose opener hands it values` | `{must_resolve_in: ["the state, parameters and shell state in scope where the expression stands"]}` | error |
 | `expr_roots` | every node | `an unquoted dotted word inside an expr, outside the arguments of a call`, `not judged: a read's filter and a dynamic menu entry's filter (held by the filter_* checks), and a widget argument whose parameter the widget does not substitute into an expr, where the word is shown as text` | `{must: begin_with_a_root_of_expressions.forms_or_be_quoted}` | warning |
+| `document_loads` | every node | `every node` | `{must: the loader accepts the document; a refusal no other check names is reported under this id}` | error |
+| `layer_rules` | every node | `every node` | `{must: a node stands only where its layer may (layers)}` | error |
+| `degrades_known` | [Degrades](#degrades) | `**.degrades` | `{must: "a key names a capability, its value one of that capability's fallbacks"}` | error |
+| `degrades_cover` | [Degrades](#degrades) | `**.degrades` | `{must: a renderer lacking a capability (ess ui check --lacks) finds a fallback that is not refuse}` | error |
+| `enum_values` | every node | `every node` | `{must: a value written where the schema declares a closed enum is one of its values}` | error |
+| `frame_rules` | [PageLayout](#pagelayout), [Section](#section) | `pages.*.layout`, `pages.*.sections[]` | `{must: "title and collapsed belong to frame: shared; a collapsed frame or section has a title, a collapsed group a label; a shared frame holds consecutive sections"}` | error |
+| `overlay_params` | [overlay](#overlay) | `**.overlays.*.params` | `{must: every key of an overlay's params is read inside it as params.<key>}` | error |
+| `view_in_model` | [Reads](#reads) | `pages.*.sections[].reads.view` | `{must: "with --model, a view named resolves in the model, and a reached_by: network component serves it"}` | error |
+| `command_in_model` | every node | `every does, commands and sends that names a command` | `{must: "with --model, a command named resolves in the model, and a reached_by: network component serves it"}` | error |
+| `event_in_model` | [Channel](#channel), [Live](#live) | `channels.*.carries`, `pages.*.sections[].live.on` | `{must: "with --model, an event named resolves in the model"}` | error |
+| `section_readable` | [Section](#section) | `pages.*.sections[]` | `{must: "with --model, some actor may read the view the section reads (an approximation: ESS grants commands, not views)"}` | error |
+| `actor_in_model` | [Page](#page) | `pages.*.actor` | `{must: "with --model, actor names an actor of the model"}` | error |
+| `page_actor_grants` | [Page](#page) | `pages.*` | `{must: "with --model, every command a page with an actor sends is in that actor's may"}` | error |
+| `read_params` | [Reads](#reads) | `pages.*.sections[].reads` | `{must: "with --model, a read binds only parameters its view declares and leaves no required one unbound"}` | error |
+| `type_in_model` | [Type](#type) | `pages.*.params.*` | `{must: "with --model, a page parameter's named type resolves in the document, the schema or the model"}` | error |
+| `field_in_model` | every node | `every form field, bind key, column and row.<field> path` | `{must: "with --model, form fields and bind keys are inputs of their command; columns, record fields and row.<field> paths are fields of the view read"}` | error |
+| `row_fields` | [collection](#collection), [Field](#field), [header](#header) | `**.group_by`, `**.label_from`, `**.title_from` | `{must: "with --model, group_by, an aggregate's field, label_from, a choice's value or label, title_from.field and section.<name>.row.<field> name a row field the view has"}` | error |
+| `model_enum_values` | [collection](#collection), [choice](#choice) | `**.group_order`, `**.options` | `{must: "with --model, a group_order value or a form choice's fixed option is a variant of the enum the field holds, and the options leave no variant out"}` | error |
+| `metric_aggregate` | [metric](#metric) | `**.aggregate` | `{must: "aggregate reads rows, so it needs reads; every aggregate but count needs a field, and field means nothing without an aggregate"}` | error |
+| `group_order` | [collection](#collection) | `**.group_order`, `**.show_empty_groups` | `{must: "they order the groups of group_by, so a collection that has them has group_by"}` | error |
+| `options_enum` | [choice](#choice) | `**.options` | `{must: "a choice's options name an enum of the document, or with --model exactly one enum of the model"}` | error |
+| `choice_projection` | every node | `a choice's value and label` | `{must: "value and label name fields of the rows of reads, so a choice that has them has reads"}` | error |
+| `header_record` | [header](#header) | `**.header.title_from` | `{must: "title_from.section names a section that reads: the title's record is its first row"}` | error |
+| `export_selection` | [Action](#action) | `**.export.params` | `{must: "an export's params read selection.<field> only on a bulk action, where the selection is in scope"}` | error |
+| `section_row` | [Section](#section) | `pages.*.sections[]` | `{must: "section.<name>.row is the first row of a section that reads: a section that reads nothing or is a choice holds none, and a read whose params read its own section's row, or sections that read each other's, never settle"}` | error |
 
 ## Retrofits and lowering
 

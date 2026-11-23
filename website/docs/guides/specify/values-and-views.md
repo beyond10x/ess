@@ -8,8 +8,8 @@ description: Value expressions, the caller's credential and inputs present after
 
 ## Value expressions
 
-Source `ess/14`, introduced in 0.36.0, lets a `payload:` or `sets:` value come from more than
-the input or a literal:
+Source `ess/14`, introduced in 0.36.0, admits more than an input or a literal as a `payload:` or
+`sets:` value:
 
 ```yaml
 - name: retried
@@ -66,11 +66,12 @@ sets:
 
 The literal is checked against the target exactly as a literal written there is: a variant of the
 enum, text for a String-backed type, `3` over an `Integer`, `'3'` rather than `3` over a `String`.
-Nothing else follows `else:` — not `input.<field>`, not `{subject: …}`. Below `ess/16` a literal
-fallback is refused with `unsupported_format_version`. The outcome's synthesized scenario checks
-both halves: it first sends the input and asserts the sent value, then invokes the branch again
-without the input and asserts the literal. An implementation that ignores the input fails the
-first check, and one that stores another default fails the second.
+Nothing else follows `else:`: not `input.<field>`, not `{subject: …}`. Below `ess/16` a literal
+fallback is refused with `unsupported_format_version`.
+
+The outcome's synthesized scenario checks both halves. It first sends the input and asserts the sent
+value, then invokes the branch again without the input and asserts the literal. An implementation
+that ignores the input fails the first check, and one that stores another default fails the second.
 
 From source `ess/22` a value can be read from a member of a struct input, and a fallback can be
 another input:
@@ -95,16 +96,18 @@ the struct before it, through any `Optional` and newtype around that struct. A p
 list, map or union has no members. The value is the last member's; an absent `Optional` anywhere
 before it leaves the value absent, so such a path fills an `Optional<…>` target and is refused
 with `type_mismatch` for a required one. `{input: <path>, else: …}` falls back wherever any
-`Optional` on the path is absent. `else: input.<path>` reads an input that must be present
-whenever the request is valid — required along its whole route — and fills the target as a plain
-`input.` source would; there is no second fallback. A path may supply a creation's identity, or
-the address another row is read through, only where nothing on it may be absent.
+`Optional` on the path is absent.
+
+`else: input.<path>` reads an input that must be present whenever the request is valid, required
+along its whole route. It fills the target as a plain `input.` source would, and there is no second
+fallback. A path may supply a creation's identity, or the address another row is read through, only
+where nothing on it may be absent.
 
 The same paths work in an event's `payload:`, an error's `payload:` and a nested mapping's
 leaves. Synthesis sends every path present, then sends the branch again with the shallowest
 `Optional` on each path left out, and asserts the absent value and the fallback. Below `ess/22`
 each form keeps the refusal it had: `input.a.b` is an input the command does not declare, and
-`{input: a.b, else: …}` names more than one field. Entity Runtime lowering refuses a path by name.
+`{input: a.b, else: …}` names more than one field. Entity Runtime lowering refuses a path.
 
 From source `ess/16` a value can come from a field of the row the subject references:
 
@@ -121,18 +124,22 @@ From source `ess/16` a value can come from a field of the row the subject refere
 
 `via` is a field of the subject as it was before the outcome (on `creates:`, a field the
 branch sets from its input, or the identity it fills from its input), or `input.<field>`, and its
-type is the identity of the entity it names — exactly, not `Optional<…>` or a list. Where several
+type is the identity of the entity it names, exactly: not `Optional<…>` or a list.
+
+Where several
 entities share that identity type, the relation on the subject field says which one: a
 `references` relation of cardinality `one` that the subject declares on it, or the `owns` relation
-of the subject's owner; an input is settled by the relation on the field the branch sets from it,
+of the subject's owner. An input is settled by the relation on the field the branch sets from it,
 or on the identity the branch names its instance by. The field may be the subject's identity: an
 entity keyed by `user_id` that declares `{name: user, kind: references, target: User,
-cardinality: one, via: user_id}` reads the user with the same id. `field` is a field of that
-entity, typed as the target admits. `{related: …}` is written alone and holds exactly `via` and
-`field`; any other mapping under `related` is a nested mapping, and below `ess/16` so is this one.
+cardinality: one, via: user_id}` reads the user with the same id.
 
-From source `ess/22` the reference may be `Optional<…>`, and `via` may name a second reference —
-a field of the row the first one names — as a list of two:
+`field` is a field of that entity, typed as the target admits. `{related: …}` is written alone and
+holds exactly `via` and `field`. Any other mapping under `related` is a nested mapping, and below
+`ess/16` so is this one.
+
+From source `ess/22` the reference may be `Optional<…>`, and `via` may name a second reference, a
+field of the row the first one names, as a list of two:
 
 ```yaml
 - name: booked
@@ -148,26 +155,32 @@ Each reference is resolved as `via` is: the relation on the field says which ent
 the one entity identified by its type. Where any reference may be absent the value may be too,
 so the target must be `Optional<…>`; a required target is refused with `type_mismatch`. An absent
 reference reads no row and copies an absent value. A present reference that names no row is still
-a missing row, never an absent value. Two references is the limit: a list of one or of three is
-refused when the document is read. Below `ess/22` an `Optional<…>` reference is refused with
-`type_mismatch` and a list with `unsupported_format_version`, both naming `ess/22`. A view still
-reads one entity: group by the copied field rather than by a field of another entity.
+a missing row, never an absent value.
+
+Two references is the limit: a list of one or of three is refused when the document is read. Below
+`ess/22` an `Optional<…>` reference is refused with `type_mismatch` and a list with
+`unsupported_format_version`, both naming `ess/22`. A view still reads one entity: group by the
+copied field rather than by a field of another entity.
 
 The scenario creates the referenced row between two others of its entity, points the subject at
 it, and asserts that row's value, so an implementation that reads another row, the first or the
 last, fails. Where the specification has an `updates:` branch that changes the field read, the
 scenario runs it on the referenced row just before the branch and asserts the new value, so an
-implementation that copied the value earlier fails too. A chained read gets the same between-decoys
-arrangement for each entity it passes through, and a branch that changes the middle row's reference
-is run on it just before the branch, so an implementation following the reference as first written
-fails. For each reference that may be absent, the scenario runs the branch once more with that
-reference left out and every other present, and asserts the value absent on the row it writes and
-on the event (left out or `null`), so an implementation that reads absence as a missing row, or
-copies some row's value anyway, fails. A reference that may be absent and that no run can leave
-absent is reported as `ESS-SYNTH-020`, naming it; the scenario stands.
-Below `ess/16` the source is refused with `unsupported_format_version`, and Entity
-Runtime lowering refuses it. Generated Rust and Go behaviour keeps a command with a `{related: …}`
-value an obligation.
+implementation that copied the value earlier fails too.
+
+A chained read gets the same between-decoys arrangement for each entity it passes through, and a
+branch that changes the middle row's reference is run on it just before the branch, so an
+implementation following the reference as first written fails.
+
+For each reference that may be absent, the scenario runs the branch once more with that reference
+left out and every other present, and asserts the value absent on the row it writes and on the
+event (left out or `null`), so an implementation that reads absence as a missing row, or copies some
+row's value anyway, fails. A reference that may be absent and that no run can leave absent is
+reported as `ESS-SYNTH-020`, naming it, and the scenario stands.
+
+Below `ess/16` the source is refused with `unsupported_format_version`, and Entity Runtime lowering
+refuses it. Generated Rust and Go behaviour keeps a command with a `{related: …}` value an
+obligation.
 
 From `ess/28` (beyond10x/ess#557) `field: state` reads the lifecycle state of the referenced row,
 as its guards read `state`: a refusal can name the state that blocked it.
@@ -232,17 +245,22 @@ a quotient into a required field is refused naming `coalesce(…, 0)`. `now` is 
 and so are an expression in a set effect's `sets:` and a computed field in an aggregate view.
 
 The interpreter and synthesis compute the value with one shared evaluator. Synthesis asserts it on
-the event and the row, and runs the branch again on inputs worth checking the figure on: every
-input the expression reads moved apart from the others, so a target computing `started_at -
-ended_at` fails; each divisor read directly from the input at `0`; and each such quotient on a
-rounding tie at its digits, once on an even and once on an odd neighbour, so a target rounding by
-another mode fails one. The generated Rust and Go behaviours and queries, and Entity Runtime
-lowering, keep such a command or view an obligation named by the expression. Below `ess/27`
-`{expr: …}` is the nested mapping it always was, and `expr:` on a view field is refused naming
-`ess/27`.
+the event and the row, and runs the branch again on inputs worth checking the figure on:
+
+- every input the expression reads moved apart from the others, so a target computing `started_at -
+  ended_at` fails;
+- each divisor read directly from the input at `0`;
+- each such quotient on a rounding tie at its digits, once on an even and once on an odd neighbour,
+  so a target rounding by another mode fails one.
+
+The generated Rust and Go behaviours and queries, and Entity Runtime lowering, keep such a command or
+view an obligation named by the expression. Below `ess/27` `{expr: …}` is the nested mapping it
+always was, and `expr:` on a view field is refused naming `ess/27`.
 
 ### A relation the model only implies
-Where a stored field is typed as exactly one entity's named identity, or a `when_related:` row is settled by that type alone, and no relation says so, `ess specify validate` prints a warning, `ESS-ENTITY-019` (`ESS-COMMAND-019` for the guard): declare a `references` relation on the field, or the target's `owns`. A warning changes neither the exit status nor the compiled model; a bare primitive identity such as `Uuid`, and a row set selector (`entity`, `where`), are not linted ([how to read it](./layout-and-validation.md#a-relation-the-model-only-implies)).
+Where a stored field is typed as exactly one entity's named identity, or a `when_related:` row is settled by that type alone, and no relation says so, `ess specify validate` prints a warning, `ESS-ENTITY-019` (`ESS-COMMAND-019` for the guard): declare a `references` relation on the field, or the target's `owns`.
+
+A warning changes neither the exit status nor the compiled model. A bare primitive identity such as `Uuid`, and a row set selector (`entity`, `where`), are not linted ([how to read it](./layout-and-validation.md#a-relation-the-model-only-implies)).
 
 ## Read the caller's credential
 
@@ -282,20 +300,23 @@ commands:
 ```
 
 The attribute is not an input: the credential is its authority, not the request. It is readable
-only where every actor whose `may` names the command declares it, at one type; a command whose
-actors disagree, or that no actor may invoke, is refused where it reads the attribute. A guard
-compares a caller attribute with `==` or `!=` against a field of the same declared type and nothing
-else. An input or a stored field named `caller` keeps being read as itself. Below `ess/16` actor
-attributes and a `caller.` operand are refused with `unsupported_format_version`, and
+only where every actor whose `may` names the command declares it, at one type. A command whose
+actors disagree, or that no actor may invoke, is refused where it reads the attribute.
+
+A guard compares a caller attribute with `==` or `!=` against a field of the same declared type and
+nothing else. An input or a stored field named `caller` keeps being read as itself. Below `ess/16`
+actor attributes and a `caller.` operand are refused with `unsupported_format_version`, and
 `{caller: …}` is the nested mapping it always was.
 
 A refusal the caller decides answers `403` in the generated `OpenAPI` contract, and every operation
 names the caller attributes it reads under `x-ess-caller`. The conformance suite (suite/26) says
-which caller sends each command, and the target sends it authenticated as that caller; a target
-that cannot answers `unsupported`. Synthesis uses two callers: the refusal is sent by one caller on
-the other's note, and every scenario of a command that reads the caller runs a second time with the
-two callers' roles swapped, so an implementation that records one fixed account or admits one
-caller by name fails. Entity Runtime lowering refuses a caller read with `CallerUnsupported`.
+which caller sends each command, and the target sends it authenticated as that caller. A target
+that cannot answers `unsupported`.
+
+Synthesis uses two callers: the refusal is sent by one caller on the other's note, and every
+scenario of a command that reads the caller runs a second time with the two callers' roles swapped,
+so an implementation that records one fixed account or admits one caller by name fails. Entity
+Runtime lowering refuses a caller read with `CallerUnsupported`.
 
 ## An input refused when absent is present afterwards
 

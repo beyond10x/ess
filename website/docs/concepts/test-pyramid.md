@@ -130,6 +130,6 @@ The alternatives, as they stand today:
 
 | Route | Today |
 |---|---|
-| Import the runner as a library | The `ess-conformance` crate is not published. A Rust target can implement its `ConformanceTarget` trait only from a checkout of this repository. |
+| Import the runner as a library | The `ess-conformance` crate is not on crates.io. A Rust target implements its `ConformanceTarget` trait by depending on it from the matching release tag ([Rust runner](../start/runners/rust.md#depend-on-the-runner)). |
 | Run a target in another process over a wire protocol | `ess verify conform run --target process -- <program>` starts the program and speaks `ess-conformance-target/1` to it ([an implementation in any language](../guides/verify/target-process.md)). |
-| Run the specification itself (`--target interpreted`) | Runs a command's outcomes, transitions, `sets:`, events and invariants from the model; views, bindings, time, redelivery and established entities come back `unsupported`. It checks a specification, not your implementation. |
+| Run the specification itself (`--target interpreted`) | Runs the model itself: a command's outcomes, transitions, `sets:`, events, invariants, views, bindings, redelivery, time and entity setup. A construct it cannot execute comes back `unsupported`. It checks a specification, not your implementation. |

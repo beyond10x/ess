@@ -9,12 +9,14 @@ description: Every predicate form ESS accepts, where each one is accepted, and w
 A predicate is a condition over facts. ESS reads the same grammar in every place it takes one, in
 two spellings: a **compact** string (`quantity > 0`) and a **structured** mapping (`all:`, `any:`,
 `quantity: {gte: 5}`). Both spellings build the same kind of predicate, and they may be mixed at any
-depth. They read a bare dotted word differently in one place; see
+depth. One place reads a bare dotted word differently: the
 [equality shorthand](#the-equality-shorthand-reads-a-literal).
 
 Every YAML example on this page is run by a test. The test runs `ess specify validate` on each one.
 It also runs `ess verify conform synthesize` wherever the page makes a claim about synthesis. A
-page that says a form works when it does not fails the gate. An example that describes a release
+page that says a form works when it does not fails the gate.
+
+An example that describes a release
 not yet made is marked as pending in the page source. The test still runs it, expects it to
 disagree with the page today, and fails once it agrees, so the marker cannot outlive the change.
 
@@ -22,16 +24,20 @@ disagree with the page today, and fails once it agrees, so the marker cannot out
 
 | Place | What the predicate reads | Notes |
 |---|---|---|
-| a command outcome's `when` | the command's input fields | A branch without `when` is the default. |
-| a command outcome's `when_subject: {predicate: …}` (`ess/9`) | the declared stored fields of the entity the command addresses, read just before the command selects a branch; from `ess/15` also the command's input, as `input.<field>` | `state` from `ess/18`, the held lifecycle state; not before. The input only through the `input.` prefix; see [comparing with the input](#comparing-a-stored-field-with-the-input). Conjunctive with `when`. A refusal may carry it without naming a subject; it reads the one its sibling branches name. |
+| a command outcome's `when` | the command's input fields; from `ess/16` also `caller.<attribute>`, compared by `==` or `!=` with a field of the same type (see [read the caller's credential](../guides/specify/values-and-views.md#read-the-callers-credential)) | A branch without `when` is the default. |
+| a command outcome's `when_subject: {predicate: …}` (`ess/9`) | the declared stored fields of the entity the command addresses, read just before the command selects a branch; from `ess/15` also the command's input, as `input.<field>`; from `ess/16` also `caller.<attribute>`, compared by `==` or `!=` with a field of the same type (see [read the caller's credential](../guides/specify/values-and-views.md#read-the-callers-credential)) | `state` from `ess/18`, the held lifecycle state; not before. The input only through the `input.` prefix; see [comparing with the input](#comparing-a-stored-field-with-the-input). Conjunctive with `when`. A refusal may carry it without naming a subject; it reads the one its sibling branches name. |
 | a command outcome's `when_related: {via: input.<field>, predicate: …}` (`ess/18`) | the declared stored fields of the row of another entity whose identity `input.<field>` carries, read just before the command selects a branch, and the command's input as `input.<field>` | `state` from `ess/20`, the related row's held lifecycle state; not before. From `ess/22` `input.<field>` may be `Optional<…>`: checked only when present, and an absent reference selects no `when_related` branch; and `via` may be a bare stored field of the addressed subject, read as it was before the branch (see [a stored reference](#a-stored-reference)). Keyed by that entity's identity only, one hop; from `ess/22` a lookup by any other field is the row-set form below. A missing row makes the predicate unknown, so it selects only the sibling `when_related: {via: …, exists: false}` branch, which the command must declare; from `ess/30` not over a stored reference the specification keeps present (see [a stored reference](#a-stored-reference)). Any branch may carry it, a `creates:` or a refusal naming no subject included; conjunctive with `when` except on the `exists: false` branch, which answers a missing row before any other below `ess/27`, and after the input refusals, the addressed record's existence and its held state from `ess/27` (the one precedence rule); from `ess/27` beside `unknown_instance:`, `when_subject:`, `when_subject_state:`, `when_state_changes:`, `input_absent:`, `wrong_state:` in any composition and an `external:` marked `before_row: true`, below it beside none of them. An `exists: false` over a row the input names answers before every present-row refusal over a different row, so declare it above them (or use `existing_instance:` for an identity the command creates); validation refuses the other order. See [a guard over another entity's row](#a-guard-over-another-entitys-row). |
 | a command outcome's `when_related: {entity, where, …}` (`ess/22`) | the rows of `entity` that `where` selects: each candidate row's declared fields, identity and held lifecycle state `state` bare, the command's input as `input.<field>`, the addressed subject as it was before the branch as `subject.<field>`, and `now` as the decision's one instant; `forall` reads the same over each selected row | The rows are the store just before the branch is selected; no row the outcome writes is one of them. `exists` is a Boolean, `count` one comparison (`eq`, `ne`, `lt`, `lte`, `gt`, `gte`) with a whole number, `forall` a second predicate, true of no rows. Conjunctive with `when`; never beside `via` or a `when_subject*` guard. See [a guard over the rows a selector selects](#a-guard-over-the-rows-a-selector-selects). |
+| a set effect's `instances: {where}` or `affects:` entry `where` (`ess/16`) | the candidate row's declared fields, the input as `input.<field>`; from `ess/27` its identity, from `ess/30` its held `state` | no `now`, window, `trimmed` or function |
+| an aggregate's `where:` (`ess/22`) | the source row's fields | the rows of the group one measure reads |
 | an entity's `invariants` | the entity's own fields and its lifecycle `state` | Checked after every branch that creates or changes the entity. A required field an invariant reads must be set by every `creates:` branch, or declared `Optional<…>`; otherwise validate refuses it with `ESS-COMMAND-018`. |
 | a struct type's `invariants` | the struct's own fields | Same grammar, checked against the type. |
 | a newtype's `invariants` | the wrapped value, as `value` | For example `value != ""` on a newtype of `String`. |
 | a view's `filter` | the source entity's fields and its lifecycle `state`; from `ess/28` also a field, the identity or `state` of the row a reference of the source names, as `<reference>.<field>`, one hop | Selects the rows the view returns. A path through a reference is unknown where the reference is absent or names no row, and the row is then not shown; see [a view reads the row a reference names](../guides/specify/views.md#a-view-reads-the-row-a-reference-names). |
 | a binding cause's `where` (`ess/22`) | the triggering event's payload, as `event.<member>` | A bounded fragment: presence, `==`/`!=` of a String or enum leaf against a text literal and, from `ess/27`, of a Boolean leaf against `true` or `false`, and `all`/`any`/`not`. A bare Boolean path is no comparison. See [binding conditions](../guides/specify/binding-conditions.md). |
-| a binding selection's `where` | one list item's fields | A bounded fragment: presence, typed equality and inequality of a String or enum leaf and, from `ess/27`, of a Boolean leaf against `true` or `false`, and `all`/`any`/`not`. See [select ordered records in a binding](../guides/specify/binding-context.md#select-ordered-records-in-a-binding). |
+| a binding selection's `where` | one list item's fields | A bounded fragment: presence, typed equality and inequality of a String or enum leaf and, from `ess/27`, of a Boolean leaf against `true` or `false`, `starts_with`/`ends_with`/`contains` of a non-empty text literal of at most 4096 bytes, and `all`/`any`/`not`. See [select ordered records in a binding](../guides/specify/binding-context.md#select-ordered-records-in-a-binding). |
+
+The `where` of a `{related: {entity, where, …}}` value reads as a row-set guard's does.
 
 Two outcome keys that look like guards are **not** predicates:
 
@@ -52,9 +58,9 @@ Every fragment below is placed into this one specification before it is run. A `
 replaces the guard of outcome `placed`. An `invariants:` fragment replaces the invariants of
 `shop.order.Order`. A `filter:` fragment replaces the filter of `shop.order.OpenOrders`.
 
-`placed` stores `quantity: 1` rather than copying the input. Copied with no guard keeping it inside
-`quantity >= 1`, the input would leave the model without an outcome for a quantity of 0, and a
-`when:` fragment that says nothing about `quantity` would then draw `ESS-SYNTH-025` (see
+`placed` stores `quantity: 1` and does not copy the input. If it copied the input with no guard
+keeping it inside `quantity >= 1`, the model would have no outcome for a quantity of 0, and a
+`when:` fragment that says nothing about `quantity` would draw `ESS-SYNTH-025` (see
 [an input outside an entity invariant](#an-input-outside-an-entity-invariant)).
 
 ```yaml ess-check="model"
@@ -197,12 +203,14 @@ The right-hand side of a comparison is read in this order:
    that binder: `t != l`.
 5. Anything else is text: `channel == Web`.
 
-Through `ess/21` a right-hand side without a dot is therefore never a field (from `ess/22` see
-[a bare word names a field](#from-ess22-a-bare-word-names-a-field)). To compare two fields, put them in one
+Through `ess/21` a right-hand side without a dot is therefore never a field. From `ess/22`, see
+[a bare word names a field](#from-ess22-a-bare-word-names-a-field). To compare two fields, put them in one
 struct and compare its members, for example `window.ends_at > window.starts_at`. See
 [order two instants](../guides/specify/fields-and-invariants.md#order-two-instants).
 
-An equality whose text literal is the name of a declared field is refused rather than read as
+From `ess/23` an enum fact whose enum declares `attributes:` reads one as `<fact>.<attribute>`, such as `channel.online == true`, in a guard, an invariant or a view filter. See [give enum variants typed attributes](../guides/specify/fields-and-invariants.md#give-enum-variants-typed-attributes).
+
+An equality whose text literal is the name of a declared field is refused and is not read as
 text. The refusal says the literal is the text and not the field. Quoting the word does not change
 this, and neither does the `eq` or shorthand spelling.
 
@@ -249,8 +257,8 @@ the structured form below.
 when: channel in [Web, Store]
 ```
 
-An unquoted `&&` or `||` after a comparison is refused rather than read as part of one text
-literal. Quote the whole literal if the text really contains it.
+An unquoted `&&` or `||` after a comparison is refused and is not read as part of one text
+literal. Quote the whole literal if the text contains it.
 
 ```yaml ess-check="when" ess-expect="refused" ess-says="are not part of the compact form"
 when: sku == A1 && gift
@@ -268,36 +276,39 @@ is decided against the declarations of the place it is written in, in this order
 1. the name of a binder in scope is that binder, as before;
 2. where the left side is an enum that declares the word as a variant, it is that variant, so
    `state == Open` keeps its meaning beside a field named `Open`;
-3. the name of a field the place reads — an input in a `when:`, a stored field in a
+3. the name of a field the place reads is that field: an input in a `when:`, a stored field in a
    `when_subject:` or `when_related:` predicate, an `instances:` or `affects:` filter, an entity's,
-   struct's or newtype's invariant or a view's `filter:` — is that field: `task_id != depends_on`
-   compares two inputs, `leased <= capacity` two stored fields;
+   struct's or newtype's invariant, or a view's `filter:`. So `task_id != depends_on`
+   compares two inputs, and `leased <= capacity` compares two stored fields;
 4. anything else is the text it always was.
 
 A quoted word is text in every format, and one naming a field is still refused, now with the
-repair to write it unquoted. A field named `now` is that field; only where none is declared does
-`now` read the current time. A binder named like a field of the place is refused where a bare word
+repair to write it unquoted. A field named `now` is that field. Only where none is declared does
+`now` read the current time.
+
+A binder named like a field of the place is refused where a bare word
 would read it: rename the binder. A plain `when:` also reads `input.<field>` as that input, unless
 the command declares an input named `input`, which keeps being read as itself.
 
 A one-segment field on the right is written back as the explicit operand `{fact: depends_on}`
 (`task_id: {eq: {fact: depends_on}}`), because the compact `task_id == depends_on` reads as text
-in every earlier format. A dotted path and a binder keep their compact spelling. The explicit
-operand is an `ess/22` form: under `ess/21` and earlier it is refused as
-`unsupported_format_version`, and the bare word keeps its old meaning and its old refusal.
+in every earlier format. A dotted path and a binder keep their compact spelling.
 
-A comparison of two `Timestamp` fields is tagged to compare the instants they name, never their
+The explicit operand is an `ess/22` form. Under `ess/21` and earlier it is refused while the predicate is parsed
+(`unparsable_predicate`, "a comparison operand must be a scalar"), and the bare word keeps its old meaning and its old refusal.
+
+A comparison of two `Timestamp` fields is tagged to compare the instants they name, not their
 spellings: `valid_until > valid_from` is written back as
 `{compare: {left: valid_until, op: gt, right: {fact: valid_from}, as: timestamp}}`. The tag is
 read only between two `Timestamp` facts, and only from `ess/22`. A `compare` mapping without
 `left` is still a constraint on a field named `compare`.
 
-Two inputs whose type is an entity's identity compare only by `==` and `!=`: ordering identities
-names nothing a caller supplied, and is refused as `type_mismatch`. Synthesis sends the equal case
+Two inputs whose type is an entity's identity compare only by `==` and `!=`. Ordering identities
+is refused as `type_mismatch`. Synthesis sends the equal case
 as one arranged instance named twice and the unequal case as two arranged instances.
 
 A suite carrying the explicit operand or the tag is written as `ess-conformance/40` (ordinary) or
-`/41` (coverage), which the Rust, Go and TypeScript runners read; a suite labelled with an earlier
+`/41` (coverage), which the Rust, Go and TypeScript runners read. A suite labelled with an earlier
 number is refused before any step runs. A suite whose comparisons need neither keeps its number.
 
 ### From `ess/22`: one constant offset
@@ -306,21 +317,23 @@ From `ess/22` (beyond10x/ess#233, #244), the right side of a comparison may be o
 one constant: `upper <= lower + 5`, `expires_at <= issued_at - 24h`. An unquoted right side written
 `<fact> + <magnitude>` or `<fact> - <magnitude>`, with or without spaces around the sign, is an
 offset where the fact names a binder in scope, a field of the place or a dotted path through
-either; where it names nothing it stays the text it always was.
+either. Where it names nothing, it stays the text it always was.
 
-- Between two `Integer` facts (through newtypes and `Optional`) the magnitude is a whole number
+- Between two `Integer` facts, through newtypes and `Optional`, the magnitude is a whole number
   from `0` to `9223372036854775807`, with no sign, fraction or leading zero. The comparison uses the
   exact sum: `upper < lower + 1` holds for `9223372036854775807` on both sides, and nothing wraps,
   saturates or rounds. `Decimal` and `Binary64` are refused.
 - Between two `Timestamp` facts the magnitude is a whole number of `s`, `m` or `h` under the
-  current-time bound, and the base moves by that many elapsed UTC seconds. A day is `24h`; there are
+  current-time bound, and the base moves by that many elapsed UTC seconds. A day is `24h`, and there are
   no days, months, calendars or zones.
 
 All six operators are admitted for both. A fact not observed, an absent `Optional`, a text that
 names no instant, or a moved instant past what an RFC 3339 `date-time` spells makes the comparison
-unknown. A base of another type is refused as `type_mismatch`. Against an `Integer` or a `Timestamp`,
-so is a right side spelled as an offset of a field whose magnitude does not read — `lower + 05`,
-`lower + 5 + 3`, `issued_at - 1d` — or that is quoted; against a `String` such a spelling is the text
+unknown. A base of another type is refused as `type_mismatch`.
+
+Against an `Integer` or a `Timestamp`, a right side is also refused as `type_mismatch` when it is
+spelled as an offset of a field whose magnitude does not read (`lower + 05`,
+`lower + 5 + 3`, `issued_at - 1d`) or when it is quoted. Against a `String` such a spelling is the text
 it always was, so `mode == read-only` beside a field named `read` still compares with `read-only`.
 `now - 60s` keeps reading the current time, with its `<`, `<=`, `>`, `>=` restriction, wherever no
 field is named `now`.
@@ -328,7 +341,7 @@ field is named `now`.
 An offset is written back as one closed mapping, `upper: {lte: {offset: {fact: lower, add: 5}}}` or
 `expires_at: {lte: {offset: {fact: issued_at, subtract: 24h}}}`, with exactly `fact` and one of
 `add` and `subtract`. It is an `ess/22` form, refused below it, and a suite carrying it is
-`ess-conformance/40` or `/41`. Generated Rust and Go behaviour decides such a guard; a view filter
+`ess-conformance/40` or `/41`. Generated Rust and Go behaviour decides such a guard. A view filter
 with an offset stays owed, an entity invariant with one refuses the generated target by name, and
 Entity Runtime refuses it as `OffsetUnsupported`.
 
@@ -337,59 +350,72 @@ Entity Runtime refuses it as `OffsetUnsupported`.
 From `ess/22` (beyond10x/ess#237), `distinct: {in: <list>, as: <name>, by: <name>.<member>}` holds
 when no two elements of a `List` share a key: the element itself, or, with `by`, the one member of
 it that `by` names under the binder, such as `{distinct: {in: files, as: file, by: file.path}}`.
+
 `by` is optional for a list of scalars and required for a list of structs. The key resolves,
 through newtypes and `Optional`, to a `Boolean`, `Integer`, `Decimal`, `String`, `Uuid`, `Timestamp`
-or enum; a struct, list, map, union, `Json`, `Binary64`, `Duration` or `Bytes` key is refused as
+or enum. A struct, list, map, union, `Json`, `Binary64`, `Duration` or `Bytes` key is refused as
 `type_mismatch`, and so is a `Map` or a scalar in `in`.
 
-Keys compare by their type: numbers exactly, so `1` and `1.0` are one `Decimal` key and
-`9007199254740992` and `9007199254740993` two `Integer` keys; a `Timestamp` by the instant it names,
-so `2020-01-01T00:00:00Z` and `2019-12-31T19:00:00-05:00` are one key; text, a `Uuid` and an enum
-exactly. An empty or one-element list holds. For two or more, two known equal keys anywhere make
-it false; every key known and pairwise unequal makes it true; anything else is unknown. An absent
+Keys compare by their type:
+
+- numbers exactly, so `1` and `1.0` are one `Decimal` key and
+  `9007199254740992` and `9007199254740993` two `Integer` keys;
+- a `Timestamp` by the instant it names, so `2020-01-01T00:00:00Z` and `2019-12-31T19:00:00-05:00`
+  are one key;
+- text, a `Uuid` and an enum exactly.
+
+An empty or one-element list holds. For two or more, two known equal keys anywhere make
+it false. Every key known and pairwise unequal makes it true, and anything else is unknown. An absent
 `Optional` list is unknown, not empty, and an absent key is neither skipped nor one shared null.
-A key outside its type — a fraction under `Integer`, a text no `date-time` spells — is unknown.
+A key outside its type, such as a fraction under `Integer` or a text no `date-time` spells, is unknown.
 Negation keeps unknown.
 
-The source leaves the key's type out; the canonical form writes it, as
+The source leaves the key's type out. The canonical form writes it, as
 `{distinct: {in: files, as: file, by: file.path, kind: string}}`, where `kind` is one of `boolean`,
 `integer`, `decimal`, `string`, `uuid`, `timestamp` and `enum`. A source that writes `kind` must
 write the one its declarations give. A mapping under `distinct` without `as` is a constraint on a
-fact named `distinct`, as it always was. It is an `ess/22` form, refused below it, and a suite
+fact named `distinct`, as it always was.
+
+It is an `ess/22` form, refused below it, and a suite
 carrying it is `ess-conformance/40` or `/41`, whose readers require `kind` and read a view row's
 lists element by element. The generated Rust and Go decoders check it in a struct's `invariants:`,
-by the equality above, and answer a request whose list repeats a key with a decode error at the
-struct's path naming the invariant. Generated Rust and Go behaviour owes a guard or a view filter
-reading it by name, an entity or newtype invariant with it refuses the generated target by name,
-and Entity Runtime refuses it as `DistinctUnsupported`.
+by the equality above. They answer a request whose list repeats a key with a decode error at the
+struct's path, and the error names the invariant.
+
+Generated Rust and Go behaviour owes a guard or a view filter reading it by name. An entity or
+newtype invariant with it refuses the generated target by name, and Entity Runtime refuses it as
+`DistinctUnsupported`.
 
 The published JSON Schema asserts it where a keyword says it exactly (beyond10x/ess#686). Over a
 list of scalars, or a list newtype's `value`, it is `uniqueItems: true` on the list. Where an
-element may be `null`, a list with two or more `null`s is not checked, since each is an unknown key. With `by`
-reaching an enum or a `Boolean` through required struct members, the list carries one `contains` per
+element may be `null`, a list with two or more `null`s is not checked, since each is an unknown key.
+
+With `by` reaching an enum or a `Boolean` through required struct members, the list carries one `contains` per
 variant with `minContains: 0` and `maxContains: 1`. Each `contains` requires an object holding the
 key path and ends in the variant's wire spelling, so an element without the key is not counted.
-An open key (text, a number, a `Uuid`, a `Timestamp`) and an `Optional` member on the path stay in
+
+An open key, such as text, a number, a `Uuid` or a `Timestamp`, and an `Optional` member on the path stay in
 `x-ess-invariants` only, because JSON Schema has no keyword that compares one member across
 elements. `uniqueItems` compares JSON values, so two spellings of one `Decimal` or of one instant
 pass it where the model refuses them.
 
 ### From `ess/22`: the UTF-8 byte length of a text
 
-From `ess/22` (beyond10x/ess#233), `.utf8_bytes` after a `String` — or a newtype or `Optional` of
-one — is the number of bytes the text's UTF-8 encoding takes, an `Integer`: `label.utf8_bytes <=
-255` holds a column limit that `.count`, which counts Unicode scalar values, cannot. `é` is two
-bytes and one scalar, `€` three bytes, U+1F600 four bytes, one scalar and two UTF-16 code units; `e`
+From `ess/22` (beyond10x/ess#233), `.utf8_bytes` after a `String`, or a newtype or `Optional` of
+one, is the number of bytes the text's UTF-8 encoding takes, an `Integer`. `label.utf8_bytes <= 255` holds a column limit that `.count`, which counts Unicode scalar values, cannot. `é` is two
+bytes and one scalar, `€` three bytes, U+1F600 four bytes, one scalar and two UTF-16 code units, and `e`
 followed by a combining accent is three bytes. No Unicode normalization occurs, and empty text is
-zero. A guard `when: label.utf8_bytes > 255`, an invariant `title.utf8_bytes <= 64` and a
+zero.
+
+A guard `when: label.utf8_bytes > 255`, an invariant `title.utf8_bytes <= 64` and a
 comparison of two byte lengths, `label.utf8_bytes != code.utf8_bytes`, are all admitted. Under
-a quantifier's binder the bare and the structured spelling are one predicate: in a command guard,
+a quantifier's binder the bare and the structured spelling are one predicate. In a command guard,
 `exists: {in: input.tags, as: s, that: "s.utf8_bytes != s.count"}` compiles exactly as
 `{compare: {left: {utf8_bytes: s}, op: ne, right: s.count}}` does, whether the list is written
-`input.tags` or `tags` (before this release the bare form was refused as `type_mismatch` when the
-list was written `input.tags`).
+`input.tags` or `tags`. Before this release the bare form was refused as `type_mismatch` when the
+list was written `input.tags`.
 
-It is an operand of a comparison, on either side, and nothing else: `defined(label.utf8_bytes)`, a
+It is an operand of a comparison, on either side, and nothing else. `defined(label.utf8_bytes)`, a
 bare `label.utf8_bytes`, `any_of`, a text operator and a quantifier over it are refused as
 `type_mismatch`. It is not defined on `Bytes`, `Timestamp`, `Uuid`, an enum, a number or a
 collection, and nothing may follow it. A struct member that is itself named `utf8_bytes` is that
@@ -397,31 +423,37 @@ member, in every format. Below `ess/22` the selector is refused naming `ess/22`.
 
 An absent `Optional`, an unobserved text and a value that is no text make the comparison unknown.
 A text holding a lone UTF-16 surrogate is no Unicode text, and its byte length is unknown in every
-runner: a Rust string cannot hold one, the Go runner refuses a string that is not UTF-8, and the
-TypeScript runner refuses a lone surrogate rather than measure the three bytes of the U+FFFD an
+runner.
+
+A Rust string cannot hold one, the Go runner refuses a string that is not UTF-8, and the
+TypeScript runner refuses a lone surrogate and does not measure the three bytes of the U+FFFD an
 encoder would write in its place. A generated Rust or Go server answers `400` to a request body
 that escapes one.
 
 An observation bound at the full path `<text>.utf8_bytes` wins over the text, as one bound at
-`<text>.count` does for `.count`. The two differ in what such an observation may be: any value
-bound at `.count` is compared as it is, while only a whole number from zero is a byte length —
-anything else bound at `.utf8_bytes` makes the comparison unknown, and the text is not read instead.
+`<text>.count` does for `.count`. The two differ in what such an observation may be. Any value
+bound at `.count` is compared as it is. At `.utf8_bytes` only a whole number from zero is a byte length,
+and anything else makes the comparison unknown without reading the text.
 
 The byte length is written back as its own operand, `{utf8_bytes: label}`: on the right as
 `limit: {gte: {utf8_bytes: label}}`, and on the left in the closed form
 `{compare: {left: {utf8_bytes: label}, op: lte, right: 255}}`, with exactly `left`, `op` and `right`. A suite carrying
-it is `ess-conformance/40` or `/41`; a member named `utf8_bytes` selects nothing. In such a
-`satisfies`, a text's `.count` is asserted on view rows beside it. Synthesis witnesses each bound at
+it is `ess-conformance/40` or `/41`. A member named `utf8_bytes` selects nothing. In such a
+`satisfies`, a text's `.count` is asserted on view rows beside it.
+
+Synthesis witnesses each bound at
 the length and one byte either side, as text led by a wide character where the alphabet admits one,
-so an implementation counting scalars, UTF-16 units or graphemes fails a scenario; past 1024 bytes
-the guard is refused as `ESS-SYNTH-018`. Generated Rust and Go behaviour and invariant checks
-measure with `str::len` and `len` of a valid UTF-8 `string`; a view filter with a byte length stays
+so an implementation counting scalars, UTF-16 units or graphemes fails a scenario. Past 1024 bytes
+the guard is refused as `ESS-SYNTH-018`.
+
+Generated Rust and Go behaviour and invariant checks
+measure with `str::len` and `len` of a valid UTF-8 `string`. A view filter with a byte length stays
 owed, and Entity Runtime refuses it as `Utf8BytesUnsupported`.
 
 ### From `ess/27`: a fact read through a digest or encoding function
 
-From `ess/27` (beyond10x/ess#584) a command outcome's guard — `when:`, `when_subject:`,
-`when_related:` — may compare with a fact read through a function, written unquoted on the right:
+From `ess/27` (beyond10x/ess#584) a command outcome's guard (`when:`, `when_subject:` or
+`when_related:`) may compare with a fact read through a function, written unquoted on the right:
 
 ```text
 - name: mismatch                           # RFC 7636 PKCE S256
@@ -438,12 +470,15 @@ From `ess/27` (beyond10x/ess#584) a command outcome's guard — `when:`, `when_s
 | `sha256(x)` | a String (its UTF-8 bytes) or Bytes | the 32-byte SHA-256 digest (FIPS 180-4), Bytes |
 | `base64url(x)` | Bytes | base64url without padding (RFC 4648 § 5), a String |
 | `ascii(x)` | a String | its bytes where every character is ASCII; unknown otherwise |
+| `abs(x)`, `min(x, c)`, `max(x, c)` | an Integer or Decimal | the absolute value, or the smaller or larger of the fact and a constant, of the same type |
 
-The functions nest around one fact, and the result is compared with a value of the type it gives:
-`base64url(…)` with a String. A misuse is refused as `type_mismatch` naming the type the function
-takes, and a function anywhere but a command guard — an invariant, a view filter, a selector — as
-`unsupported_construct`. Quoted, `"base64url(…)"` is the text it spells in every format; unquoted
-below `ess/27` it is refused naming `ess/27`. The canonical form is the operand `{expr:
+The functions nest around one fact (`coalesce` is [below](#from-ess29-what-an-absent-value-compares-as)). The result is compared with a value of the type it gives:
+`base64url(…)` with a String. A misuse is refused as `type_mismatch`, and the refusal names the type the function
+takes. A function anywhere but a command guard is refused as
+`unsupported_construct`: an invariant, a view filter and a selector all refuse it.
+
+Quoted, `"base64url(…)"` is the text it spells in every format.
+Unquoted below `ess/27` it is refused naming `ess/27`. The canonical form is the operand `{expr:
 "base64url(sha256(ascii(input.verifier)))"}`. The same functions compute a value under `{expr: …}`.
 
 Synthesis issues the stored value the input it sends computes for the accepting branch, and sends
@@ -479,24 +514,23 @@ left of a comparison:
 Inside a YAML flow mapping, quote the comparison: the comma between the call's arguments would
 otherwise end the entry, as in `when_subject: {predicate: "coalesce(retries, 0) >= 3"}`.
 
-`defined(is_error)` beside the comparison does not do this: `all: [defined(is_error), is_error ==
-false]` is false where `is_error` is absent. Synthesis still witnesses `defined(is_error)` by the
+`defined(is_error)` beside the comparison does not do this: `all: [defined(is_error), is_error == false]` is false where `is_error` is absent. Synthesis still witnesses `defined(is_error)` by the
 input that leaves `is_error` out: the comparison reads an absent value there, so it is unknown and
-does not block that input (see "What synthesis can witness").
+does not block that input. See "What synthesis can witness".
 
-The default has the fact's type (an Integer and a Decimal mix as a Decimal), and the call reads one
-fact; anything else on the left is refused as `type_mismatch`. A call on the left outside a command
+The default has the fact's type, and an Integer and a Decimal mix as a Decimal. The call reads one
+fact, and anything else on the left is refused as `type_mismatch`. A call on the left outside a command
 outcome's guards is refused as `unsupported_construct`, except one form in a selector's `where:`
 from `ess/30` ([below](#from-ess30-what-an-absent-candidate-field-compares-as)). The canonical
 form is the structured
 `{compare: {left: {expr: "coalesce(is_error, true)"}, op: eq, right: false}}`, which validates
-from `ess/27`; below `ess/29` the compact spelling is refused as `unsupported_format_version`
+from `ess/27`. Below `ess/29` the compact spelling is refused as `unsupported_format_version`
 naming `ess/29` and that form.
 
 Synthesis sends each `Optional` a guard reads only through `coalesce` absent first, so the branch
 the absence selects is witnessed on it, and the present values as for the fact itself. The generated
 Rust and Go behaviours decide `coalesce(<fact>, <literal>)` over a Boolean, Integer, Decimal or
-String; Entity Runtime refuses the guard as `FunctionCallUnsupported`.
+String. Entity Runtime refuses the guard as `FunctionCallUnsupported`.
 
 ### Absence is not `null`
 
@@ -521,7 +555,7 @@ or a map `T`. Presence belongs to the `Optional`, not to what it holds:
 | a struct, list or map, including an empty one | `true` |
 | left out, or `null` | `false` |
 
-This lets an invariant say when an optional field must be gone. For an entity whose
+An invariant can say when an optional field must be gone. For an entity whose
 `metrics: Optional<demo.queue.Metrics>` is held only while it is `Paused`, the invariant is
 `any: [state == Paused, {not: "defined(metrics)"}]`. Synthesis checks it after every branch that
 changes the entity. If an outcome leaves `Paused` without clearing `metrics`, that check fails.
@@ -585,8 +619,8 @@ invariants:
 ```
 
 An entity invariant also reads the held lifecycle state as `state`. This one says a closed order
-still has a positive quantity; the same form states which value a stored field holds in each state
-(see [a view field derived from the lifecycle state](../guides/specify/views.md#a-view-field-derived-from-the-lifecycle-state)):
+still has a positive quantity. The same form states which value a stored field holds in each state. See
+[a view field derived from the lifecycle state](../guides/specify/views.md#a-view-field-derived-from-the-lifecycle-state):
 
 ```yaml ess-check="invariants" ess-expect="synthesizes"
 invariants:
@@ -623,8 +657,10 @@ offset form and a parameter declared in the unit the field is stored in.
 `any_of`, `none_of`, their aliases and `in_ignore_case` hold literal values only
 (beyond10x/ess#438). An operand that is one dotted word naming a view parameter or a command input,
 `queue_id: {in: param.queues}`, would be the text it spells, so it is refused as `type_mismatch` in
-every format and against every field type. Membership in a list the caller sends is a quantifier,
-`exists: {in: param.queues, as: q, that: queue_id == q}` (`not:` around it for `none_of`); a
+every format and against every field type.
+
+Membership in a list the caller sends is a quantifier,
+`exists: {in: param.queues, as: q, that: queue_id == q}` (`not:` around it for `none_of`). A
 parameter holding one value is compared with `==` or `!=`. The refusal names the form that fits
 what the word names.
 
@@ -719,10 +755,10 @@ An unknown operator is refused, and the refusal lists the operators the parser k
 
 A claim about every element of a collection, or about some element of it, needs a quantifier. A
 collection is a `List` or a `Map`. Over a `Map` the quantifier binds each **value**, never a key
-and never a key/value entry, and no key is reachable: `exists: {in: redirect_uris, as: r, that: r
-== input.application}` over a `Map<String, String>` asks whether some value of the map equals
-`input.application`, and `r` has the map's value type. Validation types `r` that way, the
-conformance evaluator walks the values in key order, and Entity Runtime folds the same values in
+and never a key/value entry, and no key is reachable. `exists: {in: redirect_uris, as: r, that: r == input.application}` over a `Map<String, String>` asks whether some value of the map equals
+`input.application`, and `r` has the map's value type.
+
+Validation types `r` that way, the conformance evaluator walks the values in key order, and Entity Runtime folds the same values in
 its canonical key order. A quantifier is a mapping with exactly three keys:
 
 | Key | Value |
@@ -804,12 +840,13 @@ when: tags.0 == vip
 
 `.count` on a `String`, or on a newtype of one at any depth, is the text's length in Unicode scalar
 values (`ess/11`). `é` written as one character counts 1, and `e` followed by a combining accent
-counts 2: this is not a grapheme count. Synthesis witnesses a length guard with a text one character
+counts 2. This is not a grapheme count. Synthesis witnesses a length guard with a text one character
 either side of the literal, drawn from the type's `alphabet:` when it declares one, up to 1024
-characters; past that the guard is refused as `ESS-SYNTH-018`. A length is not asserted on a view
-row in this suite format, so an invariant that reads one is held where values are built — unless
-the same invariant reads an `ess/22` form, such as a [UTF-8 byte
-length](#from-ess22-the-utf-8-byte-length-of-a-text), whose suite format carries both. For the
+characters. Past that the guard is refused as `ESS-SYNTH-018`.
+
+A length is not asserted on a view
+row in this suite format, so an invariant that reads one is held where values are built, unless
+the same invariant reads an `ess/22` form, such as a [UTF-8 byte length](#from-ess22-the-utf-8-byte-length-of-a-text), whose suite format carries both. For the
 number of bytes a text takes, use `.utf8_bytes`.
 
 ```yaml ess-check="when" ess-expect="synthesizes"
@@ -865,7 +902,7 @@ when: {starts_at: {ge: now - 1h}}
 ```
 
 `now` goes on the right of `<`, `<=`, `>` or `>=`. The offset is written `<n>s`, `<n>m` or `<n>h`
-with no leading zero; there are no days, so write `24h`. From `format: ess/22` a `when_subject:`
+with no leading zero. A day is not a unit, so write `24h`. From `format: ess/22` a `when_subject:`
 predicate and the predicate of an identity-addressed `when_related:` may order a stored
 `Timestamp` against `now` too:
 
@@ -876,12 +913,18 @@ when_related: {via: input.member_id, predicate: banned_until > now + 30s}
 
 One command decision reads one instant: its input guard and every row it reads are decided with
 it, over the rows as they were before the outcome. Below `ess/22` such a stored ordering is refused
-as `unsupported_format_version`, naming `ess/22`. From `format: ess/30` a view's `filter:` may
+as `unsupported_format_version`, naming `ess/22`.
+
+From `format: ess/30` a view's `filter:` may
 order a `Timestamp` field against `now` too, `filter: [expires_at > now]`, and `now` is the instant
-the view is read; below `ess/30` it is refused, naming the `from`/`to` parameter idiom below
+the view is read. Below `ess/30` it is refused, naming the `from`/`to` parameter idiom below
 (beyond10x/ess#560). Generated Rust and Go view queries and Entity Runtime do not read a clock yet
-and refuse such a filter by name. Anywhere else — an invariant, a selection, a set-effect filter — the operand is
-refused, because none of those is read while a request is handled. A view over a range named in a
+and refuse such a filter by name.
+
+None of an invariant, a selection or a set-effect filter is read while a request is handled, so
+the operand is refused there and anywhere else.
+
+A view over a range named in a
 zone takes the two instants its caller resolved as `Timestamp` parameters instead,
 `filter: [started_at >= param.from, started_at < param.to]` (beyond10x/ess#439). `==` and `!=` against `now` are refused too: an
 instant is ordered against the current time, never equated with it. Below `ess/16` the guard is
@@ -891,9 +934,13 @@ A generated suite witnesses such a guard a second either side of its boundary an
 `starts_at < now - 60s` is sent `now - 61s` requiring the refusal and `now - 59s` requiring the
 other branch. The suite carries each value as a `now_offset`, which the runner turns into an
 instant from the wall clock it is given when it sends the command, so a target that handles the
-request within a second decides it as required. Entity Runtime has no clock operand and refuses the
+request within a second decides it as required.
+
+Entity Runtime has no clock operand and refuses the
 guard (`CurrentTimeUnsupported`). A value chosen from a fixed instant the same field is also
-ordered against is sent as that instant. Synthesis refuses to witness `now` against a `Timestamp`
+ordered against is sent as that instant.
+
+Synthesis refuses to witness `now` against a `Timestamp`
 inside a structure or a list element (`exists: {in: starts, as: s, that: s > now}`): a `now_offset`
 replaces a whole input field. It also refuses a field ordered against `now` and against a fixed
 instant between `2019-12-30T23:59:59Z`, the instant it decides values at, and
@@ -902,11 +949,16 @@ instant between `2019-12-30T23:59:59Z`, the instant it decides values at, and
 
 A stored instant is arranged through the input of the command that writes it: the value chosen for
 the row is sent to that command as a `now_offset` and travels through its `sets:` into the row,
-and the row read back is required to hold it. A stored instant no such input carries — one the
-implementation generates, a literal, a converted value, a member inside a structure — is refused
-by name rather than decided at the reference instant. A target supplies the decision's instant
+and the row read back is required to hold it.
+
+A stored instant no such input carries is refused
+by name. It is not decided at the reference instant. Such an instant is one the
+implementation generates, a literal, a converted value, or a member inside a structure.
+
+A target supplies the decision's instant
 from its own clock: the interpreter reads a command clock it is handed once per decision, and a
 generated Rust or Go behaviour reads its context's command clock once per decision.
+
 `ess verify conform run --target interpreted` hands the interpreter the instant of the step being
 executed, the one that step's `now_offset` values resolve against, and reads no machine clock, so
 two runs print the same report. With no clock,
@@ -917,8 +969,8 @@ stands. See `docs/design/expression-family-source22.md`, A3.
 
 From `format: ess/22` (beyond10x/ess#244), a command guard may hold an instant to a weekly window:
 listed weekdays, a time of day from `from` up to `to`, at UTC or a fixed offset. It is admitted
-where `now` is — a command outcome's `when:`, its `when_subject:` predicate and an
-identity-addressed `when_related:` predicate — in the structured form only:
+in the structured form only, where `now` is admitted: a command outcome's `when:`, its
+`when_subject:` predicate and an identity-addressed `when_related:` predicate.
 
 ```text
 when:
@@ -928,33 +980,38 @@ when_subject:
     window: {at: ready_at, days: [fri], from: "22:00", to: "02:00", offset: Z}
 ```
 
-`at` is `now`, the decision's one instant, or a `Timestamp` field the site reads. `days` lists at
-least one of `mon`, `tue`, `wed`, `thu`, `fri`, `sat` and `sun`, each once. `from` and `to` are quoted
-`"HH:MM"`: `from` is inclusive, `to` exclusive, and `24:00` is the end of the day (`00:00` as `to` is
-refused naming it). A window whose `from` is after its `to` crosses midnight and belongs to the day
-it opens: `days: [fri], from: "22:00", to: "02:00"` holds Friday 22:00 to Saturday 02:00, and not
-Friday 01:00. `offset` is `Z` or `±HH:MM`, at most 14 hours either way; `+00:00` is written back as
-`Z` and `-00:00` is refused.
+- `at` is `now`, the decision's one instant, or a `Timestamp` field the site reads.
+- `days` lists at least one of `mon`, `tue`, `wed`, `thu`, `fri`, `sat` and `sun`, each once.
+- `from` and `to` are quoted `"HH:MM"`. `from` is inclusive, `to` exclusive, and `24:00` is the end
+  of the day. `00:00` as `to` is refused, naming it.
+- `offset` is `Z` or `±HH:MM`, at most 14 hours either way. `+00:00` is written back as
+  `Z`, and `-00:00` is refused.
 
-A named time zone — `offset: Europe/Berlin`, `offset: UTC`, a `zone:` key — is refused at source,
+A window whose `from` is after its `to` crosses midnight and belongs to the day
+it opens: `days: [fri], from: "22:00", to: "02:00"` holds Friday 22:00 to Saturday 02:00, and not
+Friday 01:00.
+
+A named time zone (`offset: Europe/Berlin`, `offset: UTC`, a `zone:` key) is refused at source,
 naming the fixed-offset spelling. A window is evaluated with the same integer arithmetic in Rust, Go
-and TypeScript and needs no zone data, so it does **not** follow daylight saving: `08:00 to 16:00 at
-+01:00` is 07:00 to 15:00 UTC all year. The instant is compared, never its spelling:
+and TypeScript and needs no zone data, so it does **not** follow daylight saving: `08:00 to 16:00 at +01:00` is 07:00 to 15:00 UTC all year. The instant is compared, never its spelling:
 `2020-01-06T02:30:00-05:00` is 08:30 at `+01:00`.
 
 The fact unobserved, an absent `Optional`, text that names no instant and `now` read without a clock
-make the window unknown. Below `ess/22` it is refused, naming `ess/22`; an invariant, a view filter,
+make the window unknown. Below `ess/22` it is refused, naming `ess/22`. An invariant, a view filter,
 a selection and a set-effect filter refuse it as `type_mismatch`, and `at: now` where a field or
 binder is also named `now` is refused. `window:` without `at` is a constraint on a fact named
 `window`, as before.
 
-A generated suite witnesses a window over an input — in a `when:`, or read as `input.<field>` in a
-stored row's predicate, at any depth of the guard — a second either side of every `from` and `to` on
+A generated suite witnesses a window over an input, in a `when:` or read as `input.<field>` in a
+stored row's predicate at any depth of the guard, a second either side of every `from` and `to` on
 the week of Monday 2020-01-06. Each further row spells its instant at an offset under which the
 instant's written clock, read as UTC, falls on the other side, so a target comparing spellings fails.
+
 A window over a stored instant is arranged through the input that writes it, on a row for each of
 its deciding instants: `from` and `to` on a listed day, a second before `from`, the last second
-before `to`, and `from` on each unlisted day. A window in an authored `satisfies:` is refused by
+before `to`, and `from` on each unlisted day.
+
+A window in an authored `satisfies:` is refused by
 name. A window over `now` is refused by name in synthesis: the target decides
 it by its own clock, and no suite step sets that clock. The interpreter decides it at the command
 clock it is handed. Generated Rust and Go behaviour leaves a command with a window owed, naming the
@@ -1003,7 +1060,8 @@ when:
       t: {starts_with: "vip"}
 ```
 
-The operand is the text it spells. It is never a number, a Boolean or a fact path, and quote
+The operand is the text it spells, or from `ess/22` one declared view parameter or command input
+written `{param: <name>}` or `{input: <name>}`. A literal is never a number, a Boolean or a fact path, and quote
 characters inside it are part of it: `{starts_with: "+44"}` tests for a leading `+44`, and
 `{starts_with: '"x"'}` for a leading `"`. Unquoted, YAML reads `+44` as the number 44, which is
 refused.
@@ -1053,7 +1111,7 @@ invariants:
 ## Case-insensitive operators
 
 `equals_ignore_case` tests a text fact against one text literal, and `in_ignore_case` against a
-list of them, ignoring ASCII case. They need `format: ess/15`; an older document that uses one is
+list of them, ignoring ASCII case. They need `format: ess/15`, and an older document that uses one is
 refused as `unsupported_format_version`, in every predicate position. Like the string operators
 they are map-form only, with no compact form and no negated spelling: negate one with `not:`.
 
@@ -1075,14 +1133,17 @@ when:
 
 Synthesis sends the guarded branch the literal with its ASCII letters in the other case, `SKU-1`
 for the first example, which only an implementation that ignores case accepts. It sends the other
-side the literal with one character changed, `xku-1`, which folds to nothing the guard names, and,
-in a further row, `ſku-1` with the long s U+017F in place of the `s`: ASCII folding refutes it,
+side the literal with one character changed, `xku-1`, which folds to nothing the guard names.
+
+In a further row it sends `ſku-1`, with the long s U+017F in place of the `s`: ASCII folding refutes it,
 and an implementation that folds Unicode case, as `toLowerCase` or `strings.EqualFold` do,
-accepts it and fails the scenario. A literal with a non-ASCII letter gets that letter in its other
+accepts it and fails the scenario.
+
+A literal with a non-ASCII letter gets that letter in its other
 case instead (`café` becomes `CAFÉ`).
 
 The operand is the text it spells. A number, a Boolean or a literal naming a field of the same
-owner is refused. `equals_ignore_case` takes one literal and `in_ignore_case` a list; the other
+owner is refused. `equals_ignore_case` takes one literal and `in_ignore_case` a list. The other
 shape is refused, and so is an empty list, which holds for no text.
 
 ```yaml ess-check="when" ess-expect="refused:ESS-COMMAND-002" ess-says="quote the literal exactly as written"
@@ -1111,7 +1172,7 @@ filter:
 ```
 
 A generated suite carries one of these operators only in a view expectation. Such a suite takes
-`ess-conformance/20`, or `/21` with coverage; a guard over command input is decided when the suite
+`ess-conformance/20`, or `/21` with coverage. A guard over command input is decided when the suite
 is generated and does not change its format.
 
 ### From `ess/25`: surrounding whitespace
@@ -1121,7 +1182,7 @@ with its surrounding ASCII whitespace removed: `reason: {trimmed: {in_ignore_cas
 DONE]}}` holds for ` done` followed by a tab, as an implementation that trims and upper-cases
 before it checks accepts it. The wrapped operator is one of `equals` (`eq`), `in` (`any_of`) over
 text literals, `equals_ignore_case`, `in_ignore_case`, `starts_with`, `ends_with` and `contains`,
-over the same fact; anything else under `trimmed`, or more than one operator, is refused.
+over the same fact. Anything else under `trimmed`, or more than one operator, is refused.
 
 Only space, tab, line feed, vertical tab, form feed and carriage return are removed, and only at
 either end. An inner space stays, and a Unicode space such as the no-break space U+00A0 compares
@@ -1130,19 +1191,23 @@ the fact are never trimmed. An unobserved fact is unknown.
 
 `trimmed` is accepted in a command outcome's guards only: its `when:`, and its `when_subject:` and
 `when_related:` predicates. An invariant, a view filter or a selection refuses it as
-`unsupported_construct`; under `ess/24` and earlier it is `unsupported_format_version`. Over a fact
+`unsupported_construct`. Under `ess/24` and earlier it is `unsupported_format_version`. Over a fact
 that is not a `String` or a newtype of one, or with a literal that is not text, it is
-`type_mismatch`. A literal that no trimmed text can match is `empty_declaration`, as an empty `in`
+`type_mismatch`.
+
+A literal that no trimmed text can match is `empty_declaration`, as an empty `in`
 is: an `equals` or `in` literal (case-insensitive or not) with ASCII whitespace at either end, a
 `starts_with` literal with it at its start and an `ends_with` literal with it at its end.
 `contains` is not affected. A command guarded by it needs a default branch, as with the
 case-insensitive operators.
 
 Synthesis sends the guarded branch each literal padded with a space and a tab before it and a space
-after it (in its other case under a case-insensitive operator), and the literal between a vertical
+after it, in its other case under a case-insensitive operator, and the literal between a vertical
 tab and form feed and a carriage return and line feed. It sends the other side the literal with an
 inner space and the literal between two no-break spaces, which an implementation trimming Unicode
-spaces accepts and so fails the scenario. Entity Runtime lowering refuses it by name
+spaces accepts and so fails the scenario.
+
+Entity Runtime lowering refuses it by name
 (`TrimmedTextUnsupported`), and `infra-spec/1` refuses it. A guard is decided when the suite is
 generated, so no suite carries `trimmed` and it changes no suite format.
 
@@ -1190,16 +1255,17 @@ characters are listed one `contains` each:
 ```
 
 Synthesis witnesses each child alone, so a target that misses one of them fails a scenario. Where
-the rule holds of every value of the type, rather than of one command's input, `alphabet:` on the
-newtype says it instead: a value outside a type's alphabet, prefix or invariants is refused before
+the rule holds of every value of the type and not only of one command's input, `alphabet:` on the
+newtype says it instead. A value outside a type's alphabet, prefix or invariants is refused before
 the command runs and never sent, so a refusal guard only such a value meets is refused as
 `ESS-SYNTH-003`, naming the type.
 
 What these do not state is a position-dependent character class, such as "six digits after the
 prefix". A pattern predicate would need a portable dialect with a parser of ESS's own, a
-translation for every runner, and a matching text and a near miss for every pattern. A regular
-expression the system stores and evaluates as data, as an operator of its stored rules, is the
-system's evaluator, not a guard of the specification:
+translation for every runner, and a matching text and a near miss for every pattern.
+
+A regular expression the system stores and evaluates as data, as an operator of its stored rules, is the
+system's evaluator and not a guard of the specification:
 [the stored-rules boundary](https://github.com/beyond10x/ess/blob/main/docs/design/stored-rules-boundary.md)
 says how such a verdict is specified.
 
@@ -1208,9 +1274,11 @@ says how such a verdict is specified.
 From `ess/15`, a `when_subject` predicate may compare a stored field of the addressed entity with a
 field of the command's input, named with the `input.` prefix: `recording_id != input.recording_id`
 ignores a stop for a recording other than the one the call holds. The two sides must have
-comparable types, and the input field must be declared by the command. A bare word on the right of
-a comparison is a literal, as everywhere, so write the input operand on the right. Under an earlier
-header it is refused as `unsupported_format_version`.
+comparable types, and the input field must be declared by the command.
+
+A bare word on the right never
+reads an input here, so write the input operand with its `input.` prefix. From `ess/22` a bare word naming a stored field reads that field. See [a bare word names a field](#from-ess22-a-bare-word-names-a-field). Under an earlier
+header the comparison is refused as `unsupported_format_version`.
 
 The finite prover cannot enumerate two facts against each other, so a command with such a guard
 needs a default branch, even over an enum. Synthesis arranges the row and sends the input once
@@ -1219,15 +1287,19 @@ member of a struct input, such as `input.publication.expected_fence`. A wrong-st
 the input that misses such a guard on the row it arranges.
 
 Where the stored side is a quantifier over a stored list or map, the stored value is each element
-the arranged row holds, a map's values: the input is sent once equal to an element the row holds
+the arranged row holds, a map's values. The input is sent once equal to an element the row holds
 and once equal to none, so `exists: {in: redirect_uris, as: r, that: r == input.application}` is
 witnessed on both sides and a target that ignores the entries, reads the map's keys, or reads only
-whether it is empty fails. The row is arranged with several entries where the collection is written
-from an input: where one element decides the quantifier (an `exists` that holds, a `forall` that
-fails), that element is neither the first nor the last in key order, so a target reading only one
-value, or `forall` for `exists`, fails; where the whole collection decides it, the row holds two or
-more elements. Where no arrangement reaches that shape (no input writes the collection, or a
-`Boolean`-keyed map holds two entries at most), the row with one entry is used and
+whether it is empty fails.
+
+The row is arranged with several entries where the collection is written
+from an input. Where one element decides the quantifier, as in an `exists` that holds or a `forall`
+that fails, that element is neither the first nor the last in key order, so a target reading only one
+value, or `forall` for `exists`, fails. Where the whole collection decides it, the row holds two or
+more elements.
+
+Where no arrangement reaches that shape, because no input writes the collection or a
+`Boolean`-keyed map holds two entries at most, the row with one entry is used and
 `ess verify conform synthesize` prints a `note:` naming the scenario and the quantifier. An entity
 that declares a stored field named `input` keeps reading `input.<member>` as that field.
 
@@ -1249,11 +1321,13 @@ for those records.
   error: demo.vault.RedirectMismatch
 ```
 
-The provider is asked, and the branch taken, only on a record the predicate selects; on any other
+The provider is asked, and the branch taken, only on a record the predicate selects. On any other
 record the branch is not taken whatever the provider would say. It reads the stored row, so the one
 precedence rule answers it at the held-state step, in declaration order among the branches the
-stored row selects and before `wrong_state:`: declared first here, a forced `hashed-mismatch`
-answers a hashed grant with a wrong redirect too. A `when:` beside it is its input eligibility, as
+stored row selects and before `wrong_state:`. Declared first here, a forced `hashed-mismatch`
+answers a hashed grant with a wrong redirect too.
+
+A `when:` beside it is its input eligibility, as
 on any external branch. A refusal naming no subject of its own reads the subject its siblings name.
 Write the guard in the predicate form: `{field, equals}` beside `external:` is refused as
 `conflicting_declaration`, and so is `before_row: true`, since the branch reads the row it would be
@@ -1287,8 +1361,9 @@ branch. Declare the race first, narrowed to the state its move starts from:
 
 Both branches answer at the held-state step, so on a validated transaction a forced `stale`
 answers before `committed`, and `committed` answers wherever the provider does not take `stale`.
-Synthesis witnesses `Commit/stale` and `Commit/committed` with no `ESS-SYNTH-003` or `004`. A plain
-`external:` declared after `committed` is never reached: the held-state step answers every
+Synthesis witnesses `Commit/stale` and `Commit/committed` with no `ESS-SYNTH-003` or `004`.
+
+A plain `external:` declared after `committed` is never reached: the held-state step answers every
 validated transaction with `committed`, and no other state starts `stale`'s move
 (beyond10x/ess#623).
 
@@ -1296,48 +1371,61 @@ validated transaction with `committed`, and no other state starts `stale`'s move
 
 From `ess/18`, a branch may be guarded by one row of another entity: the row whose identity an input
 field carries. `when_related: {via: input.tenant, exists: false}` is taken when no row carries
-`input.tenant`; `when_related: {via: input.tenant, predicate: redirect_client != input.client}` is
-taken when the row exists and the predicate over its stored fields holds. `input.tenant` must be an
-input typed as exactly one entity's identity; from `ess/22` it may be `Optional<…>` of that
-identity, and the guard is then checked only when present (see
-[an Optional reference](#an-optional-reference)). The guard composes with `when:` and with any
-subject a branch names, a `creates:` included, and a refusal may carry it without naming one. A
-command declares at most one `exists: false` branch over a row, and one wherever a predicate reads
+`input.tenant`. `when_related: {via: input.tenant, predicate: redirect_client != input.client}` is
+taken when the row exists and the predicate over its stored fields holds.
+
+`input.tenant` must be an
+input typed as exactly one entity's identity. From `ess/22` it may be `Optional<…>` of that
+identity, and the guard is then checked only when present, as
+[an Optional reference](#an-optional-reference) describes. The guard composes with `when:` and with any
+subject a branch names, a `creates:` included, and a refusal may carry it without naming one.
+
+A command declares at most one `exists: false` branch over a row, and one wherever a predicate reads
 that row, because a missing row selects no predicate and never the default. Through `ess/21` a
-command reads one related row; from `ess/22` it may read several (see
-[several related rows](#several-related-rows)).
+command reads one related row. From `ess/22` it may read several, as
+[several related rows](#several-related-rows) describes.
 
 From `ess/20`, the predicate may also read the related row's held lifecycle state as `state`, as a
 `when_subject` predicate reads the addressed subject's from `ess/18`: a release published only for
-a candidate in state `Accepted` refuses with `when_related: {via: input.candidate, predicate: state
-!= Accepted}` beside a default that publishes (beyond10x/ess#229). `state` is typed by the related
+a candidate in state `Accepted` refuses with `when_related: {via: input.candidate, predicate: state != Accepted}` beside a default that publishes (beyond10x/ess#229).
+
+`state` is typed by the related
 entity's lifecycle, so a state it does not declare is refused, and it enters the same related-row
 × input partition as the stored fields. Under `ess/18` and `ess/19` it is refused as
-`unsupported_format_version`, naming `ess/20`. Synthesis drives the related row along its
+`unsupported_format_version`, naming `ess/20`.
+
+Synthesis drives the related row along its
 lifecycle to a state on each side of the predicate: the refusal is sent for a candidate still
 `Proposed` between two `Accepted` decoys, the default for an `Accepted` one between two `Proposed`
 decoys, so a target that checks only that the row exists, or reads another row's state, fails.
-Under `ess/20`, where accepting a candidate itself reads a related candidate — a parent that must
-not be accepted yet — synthesis arranges that parent one level deep, fresh in its initial state,
-and goes no deeper; a branch only a deeper arrangement could reach is refused with
+
+Under `ess/20`, where accepting a candidate itself reads a related candidate, such as a parent that must
+not be accepted yet, synthesis arranges that parent one level deep, fresh in its initial state,
+and goes no deeper. A branch only a deeper arrangement could reach is refused with
 `ESS-SYNTH-003`, saying so. A document under an earlier header synthesizes the suite it did:
 there such a move is not arranged, and its branches are refused as before.
 
 A missing row is answered by the `exists: false` branch before any other branch, whatever the
-input: an `exists: false` branch therefore carries no `when:`, and an accepting `when:` branch may
+input. An `exists: false` branch therefore carries no `when:`, and an accepting `when:` branch may
 overlap it. The one answer before it is `existing_instance:`, which may sit in the same command: an
 identity a record already carries is refused as taken before the related row is read.
 
 From `ess/27` one precedence rule orders every guard a command declares
-(`docs/design/cross-record-and-stored-field-guards.md`, "From `ess/27`: the one rule"): a branch answers in the order of what it must read — the request alone (step
-1: input-guarded refusals, an `external:` marked `before_row: true`), whether the addressed record
-exists (step 2: `existing_instance:`, `unknown_instance:`), what it holds (step 3:
-`when_subject_state:`, `when_state_changes:`, `when_subject:`, then `wrong_state:`), the rows around
-it (step 4: every `exists: false`, then every related row's and row set's refusal), then the
-accepting and external branches (step 5) — and within one step the first declared whose condition
-holds. So a command that addresses a row through its input may answer an identity no row carries
-with `unknown_instance:` beside its related guards, and a missing related row is answered after the
-input refusals, the missing addressed row and its held state:
+(`docs/design/cross-record-and-stored-field-guards.md`, "From `ess/27`: the one rule"). A branch
+answers in the order of what it must read:
+
+1. the request alone (step 1): input-guarded refusals, an `external:` marked `before_row: true`;
+2. whether the addressed record exists (step 2): `existing_instance:`, `unknown_instance:`;
+3. what it holds (step 3): `when_subject_state:`, `when_state_changes:`, `when_subject:`, then
+   `wrong_state:`;
+4. the rows around it (step 4): every `exists: false`, then every related row's and row set's
+   refusal;
+5. the accepting and external branches (step 5).
+
+Within one step the first declared whose condition holds answers. So a command that addresses a
+row through its input may answer an identity no row carries with `unknown_instance:` beside its
+related guards, and a missing related row is answered after the input refusals, the missing
+addressed row and its held state:
 
 ```text
 - {name: unknown-seat, unknown_instance: true, error: demo.seats.UnknownSeat}
@@ -1353,35 +1441,47 @@ input refusals, the missing addressed row and its held state:
 ```
 
 Synthesis sends the `unknown_instance:` branch an identity no row carries beside a present related
-row that selects the first predicate refusal (else the first predicate branch), and again beside a
-related row no record carries; the `exists: false` branch first sends every input refusal's input
-for the missing row, each answered by that refusal; a held-state branch is sent on a related row no
+row that selects the first predicate refusal, or else the first predicate branch, and again beside a
+related row no record carries.
+
+The `exists: false` branch first sends every input refusal's input
+for the missing row, each answered by that refusal. A held-state branch is sent on a related row no
 record carries. So a target that reads the related row before the input, the addressed row's
-existence or its held state fails. Generated Rust and Go check the addressed row's existence and
-held state before the related row; Entity Runtime still refuses `when_related:` by name. Under
-`ess/26` and earlier a missing related row answers first, and `unknown_instance:`, `when_subject:`,
+existence or its held state fails.
+
+Generated Rust and Go check the addressed row's existence and
+held state before the related row. Entity Runtime still refuses `when_related:` by name.
+
+Under `ess/26` and earlier a missing related row answers first, and `unknown_instance:`, `when_subject:`,
 `when_subject_state:`, `when_state_changes:`, `input_absent:`, a `before_row:` external and
 `wrong_state:` outside the `ess/22` composition are refused beside a related guard as
 `conflicting_declaration`, each hint naming `ess/27`.
 
-From `ess/27` two refusals over one related row that both hold answer in declaration order (below
-it the pair is refused as two branches selected), `when_subject:` sits beside `when_subject_state:`
-(below it `conflicting_declaration`, "subject fact and lifecycle guards cannot be combined"), and
-`wrong_state:` beside explicit subject-state guards closes step 3 (below it "explicit subject-state
-guards cannot also declare wrong_state precedence"); each refusal below `ess/27` names `ess/27`.
+From `ess/27`:
+
+- two refusals over one related row that both hold answer in declaration order. Below it the pair
+  is refused as two branches selected.
+- `when_subject:` sits beside `when_subject_state:`, and below it that is `conflicting_declaration`,
+  "subject fact and lifecycle guards cannot be combined".
+- `wrong_state:` beside explicit subject-state guards closes step 3. Below it the refusal is
+  "explicit subject-state guards cannot also declare wrong_state precedence".
+
+Below `ess/27`, every one of these refusals names `ess/27`.
 
 Synthesis sends the `exists: false` branch an identity no row carries, beside two rows of the entity
 that carry others and with an input an accepting `when:` branch would take. Where that branch
 `creates:` the entity its `via:` names and takes the new row's identity from the same input
 (`instance:`), the guard is the creation's own existence test: every row synthesis creates through
 the branch for an arrangement carries an identity of its own, and the default branch is sent the
-identity of such a row, as beside `existing_instance:`. It sends every other branch the identity
-of a row it creates between two decoys, arranged so that each predicate is witnessed true in its
-own scenario and false in the default's, including a predicate over a stored field alone. A
-predicate with two or more `all`/`any` children is sent once more per child, on a row where that
-child alone decides it, so a target that drops one conjunct or one disjunct fails; where no row
-can isolate a child, synthesis reports `ESS-SYNTH-003` for the branch. Beside `existing_instance:`
-it sends a taken identity naming a related row that does not exist, and
+identity of such a row, as beside `existing_instance:`. It sends every other
+branch the identity of a row it creates between two decoys, arranged so that each predicate is
+witnessed true in its own scenario and false in the default's, including a predicate over a stored
+field alone.
+
+A predicate with two or more `all`/`any` children is sent once more per child, on a
+row where that child alone decides it, so a target that drops one conjunct or one disjunct fails.
+Where no row can isolate a child, synthesis reports `ESS-SYNTH-003` for the branch. Beside
+`existing_instance:` it sends a taken identity naming a related row that does not exist, and
 requires the `existing_instance:` refusal. Under an earlier header the key is refused as `unsupported_format_version`.
 
 ### An Optional reference
@@ -1389,11 +1489,14 @@ requires the `existing_instance:` refusal. Under an earlier header the key is re
 From `ess/22` (beyond10x/ess#304), `via: input.<field>` may name an input declared
 `Optional<…>` of the other entity's identity, and the guard is checked only when present. An absent
 reference reads no row and selects no `when_related` branch: it is not a missing row, so
-`exists: false` does not answer it. Selection carries on without the related row: the addressed
-row's existence and held state answer as before, then the branches that read no related row — an
-input-guarded `when:` branch or the default. Those branches must answer the absent case exactly
-once, or validate refuses the command with `non_exhaustive_branches` naming the absent reference. A
-present reference is read as a required one is: an identity no row carries still selects
+`exists: false` does not answer it.
+
+Selection carries on without the related row: the addressed
+row's existence and held state answer as before, then the branches that read no related row, which
+are an input-guarded `when:` branch or the default. Those branches must answer the absent case exactly
+once, or validate refuses the command with `non_exhaustive_branches` naming the absent reference.
+
+A present reference is read as a required one is: an identity no row carries still selects
 `exists: false` before any other branch, and a present row's predicate refusal still follows the
 held state where the command declares `wrong_state:`. The declared `Optional<…>` type is kept in
 the compiled model. Under `ess/21` and earlier an Optional reference is refused as
@@ -1402,7 +1505,7 @@ reference is checked only when present.
 
 Synthesis witnesses the absent case on the scenario of the branch it selects, on a further
 instance sent without the reference, between two rows of the related entity that a predicate
-refusal would select; a target that reads absence as a missing row, or reads some row of the
+refusal would select. A target that reads absence as a missing row, or reads some row of the
 entity, fails it. Where an unknown addressed identity is answered by `wrong_state`, synthesis sends
 it without the reference. The present cases are witnessed as for a required reference.
 
@@ -1432,21 +1535,26 @@ by an input of its own, required or `Optional<…>`:
 Each row is checked as a lone row is: its predicates against its own entity, at most one
 `exists: false` branch over it, and one wherever a predicate reads it. Declaration order decides
 between rows. A missing row answers first: the rows are read in the order their `exists: false`
-branches are declared, and the first missing one answers, before any present row's predicate. Then,
-after the addressed row's existence and held state, the first declared predicate refusal whose
+branches are declared, and the first missing one answers, before any present row's predicate.
+
+Then, after the addressed row's existence and held state, the first declared predicate refusal whose
 predicate holds answers, before every accepting branch: a paused switch under a revoked capability
 is refused as `switch-paused`. Two refusals over one row that both hold, or two accepting branches
-over different rows, are still `conflicting_declaration`. Validation covers every row's fields, and
+over different rows, are still `conflicting_declaration`.
+
+Validation covers every row's fields, and
 an Optional row's absence, crossed with the input, up to 64 joint cases. Past that cap, or over a
-domain it cannot enumerate, a command needs a default; beside one, two accepting branches over
-different rows that can both hold are still refused as `conflicting_declaration` rather than
+domain it cannot enumerate, a command needs a default. Beside one, two accepting branches over
+different rows that can both hold are still refused as `conflicting_declaration` and are not
 admitted unchecked. A stored-field `via` stays the command's only
 row. Under `ess/21` and earlier a second row is refused as `unsupported_format_version`, naming
 `ess/22`.
 
 Synthesis witnesses each branch with every other row present and arranged so that nothing the
-order answers first is selected there — for a predicate refusal, no earlier-declared refusal over
-that row; for `exists: false`, any row — and sends each refusal the overlaps the order decides:
+order answers first is selected there: for a predicate refusal, no earlier-declared refusal over
+that row, and for `exists: false`, any row.
+
+It sends each refusal the overlaps the order decides:
 both rows missing for the first declared `exists: false`, an earlier Optional reference left out
 beside a missing row, a refusing row beside a missing one, and two refusing rows for the first
 declared refusal. A target that reads the rows in another order, or ignores one, fails.
@@ -1463,13 +1571,15 @@ rows at once: `all:` lists each row, named by an input of its own, with the pred
   error: wiring.board.SameDirection
 ```
 
-The branch holds where every listed row exists and holds its predicate; it is a present-related
-refusal (or acceptance) like any other, and each listed row needs its own `exists: false` answer.
-At least two rows, each listed once, each `{via: input.<field>, predicate: …}`, and `all:` alone;
-every other shape is refused by name, and below `ess/28` the branch is refused naming `ess/28`. A
-comparison across rows, `from.direction == to.direction`, is written as one branch per value.
+The branch holds where every listed row exists and holds its predicate. It is a present-related
+refusal or acceptance like any other, and each listed row needs its own `exists: false` answer.
+The form takes at least two rows, each listed once, each `{via: input.<field>, predicate: …}`, and
+`all:` alone. Every other shape is refused by name, and below `ess/28` the branch is refused naming
+`ess/28`. A comparison across rows, `from.direction == to.direction`, is written as one branch per
+value.
+
 Synthesis arranges every listed row to hold its predicate and every other row beside it so that
-nothing answers first; a target reading one of the rows only fails.
+nothing answers first. A target reading one of the rows only fails.
 
 ### A stored reference
 
@@ -1494,28 +1604,32 @@ A task is completed only once the task its stored `blocked_by` names is `Done`. 
 read after the input-guarded refusals, the addressed row's existence and its held state, and
 before every accepting branch: an unknown task or a task already `Done` is answered first, then an
 identity no task carries selects `blocker-missing`, then a stored task that is not `Done` selects
-`blocked`. An absent `blocked_by` reads no row and selects no `when_related` branch, as an absent
+`blocked`.
+
+An absent `blocked_by` reads no row and selects no `when_related` branch, as an absent
 Optional input does. `wrong_state:` may sit beside it, unless an accepting `when_related` branch
-moves the task: that is refused as `conflicting_declaration`, as for an input reference. The guard
-is refused on a command that creates its subject, since no row holds the field before the branch,
+moves the task: that is refused as `conflicting_declaration`, as for an input reference.
+
+The guard is refused on a command that creates its subject, since no row holds the field before the branch,
 on a command that addresses no existing subject through its input, and on a field the subject does not store. Under `ess/21` and
 earlier it is refused as `unsupported_format_version`, naming `ess/22`.
 
 Synthesis arranges the related row, then rewrites the act that created the subject so that the
 stored field names it, and sends the command naming only the subject. A stored task that is not
 `Done` sits between two `Done` decoys, a `Done` one between two open decoys, so a target that reads
-another task's state, the subject's own state, or refuses whenever a blocker is stored fails. A
-stored identity no row carries is witnessed only where the act that writes the field stores it
+another task's state, the subject's own state, or refuses whenever a blocker is stored fails.
+
+A stored identity no row carries is witnessed only where the act that writes the field stores it
 unchecked. Where every writer refuses such an identity, synthesis reports `ESS-SYNTH-003` for the
 `exists: false` branch, naming it unreachable. Generated Rust, Go, Web and clap targets keep the
 command a hand-written obligation, and their contract states this order.
 
 From `ess/30` (beyond10x/ess#509) the `exists: false` branch may be left out where the
 specification keeps the row present whenever the stored field names one. Validation derives this
-from the commands; nothing is declared. It holds when both of these are true:
+from the commands, and nothing is declared. It holds when both of these are true:
 
 - every branch that creates a row of the subject's entity sets the field, and every branch that
-  writes it (on the addressed row, or on the rows `instances:` or `affects:` select) writes
+  writes it, on the addressed row or on the rows `instances:` or `affects:` select, writes
   `{cleared: true}`, the field's own value, or an input its command refuses first with
   `when_related: {via: input.<field>, exists: false}` over the same entity;
 - no branch deletes a row of the referenced entity: no `deletes:` subject, no `instances:` with
@@ -1533,11 +1647,15 @@ from the commands; nothing is declared. It holds when both of these are true:
 A specification that later gains a deleting branch or an unchecked writer gets
 `non_exhaustive_branches` on the reading command again, its hint naming each branch that breaks
 the guarantee. Below `ess/30` the branch is still required, and the hint names `ess/30` when the
-guarantee holds. Synthesis witnesses the predicate branches over a row arranged through the
+guarantee holds.
+
+Synthesis witnesses the predicate branches over a row arranged through the
 checking writer, and sends no missing row. After every accepting branch that writes a row of the
 subject's entity or of the referenced entity, the suite reads the row each arranged reference names
 again, through a view showing every row of the referenced entity, and requires it present, so a
-target that deletes it fails. A branch about a referenced row no arranged reference names first
+target that deletes it fails.
+
+A branch about a referenced row no arranged reference names first
 points a new referencing row at it. These reads are filed under the subject entity's
 `<entity>/invariant/after/<command>/<outcome>` scenario, beside any declared invariants' reads.
 Generated Rust and Go keep such a command an obligation, named.
@@ -1545,7 +1663,7 @@ Generated Rust and Go keep such a command an obligation, named.
 ### The rows a list of references names
 
 From `ess/28` (beyond10x/ess#558) `via:` may name an input typed `List<…>` of one entity's
-identity. The guard is taken when some element names no row of that entity; an empty list names
+identity. The guard is taken when some element names no row of that entity. An empty list names
 no missing row and selects no such branch. The refusal may publish the first element, in list
 order, that names no row, with `{missing: input.<list>}`, typed as the element:
 
@@ -1560,24 +1678,29 @@ order, that names no row, with `{missing: input.<list>}`, typed as the element:
   sets: {services: input.services}
 ```
 
-A list is tested for a missing row only: a `predicate:` over the rows it names is refused as
-`unsupported_construct` (test each row's fields with a row-set guard), as is a list in `all:`; a
-command guarding on a list reads no other related row (`conflicting_declaration`); a stored list
-field keeps the `type_mismatch` it had. `{missing: …}` anywhere but a whole payload field of the
+A list is tested for a missing row only:
+
+- a `predicate:` over the rows it names is refused as `unsupported_construct`, as is a list in
+  `all:`. Test each row's fields with a row-set guard.
+- a command guarding on a list reads no other related row (`conflicting_declaration`).
+- a stored list field keeps the `type_mismatch` it had.
+
+`{missing: …}` anywhere but a whole payload field of the
 branch guarding that list is refused by name. Under `ess/27` and earlier the list guard is refused
 as `type_mismatch`, its hint naming `ess/28`, and `{missing: …}` is the nested mapping it always
 was.
 
 Synthesis sends the refusal a list whose first element names a row the scenario created and whose
-second names none, and asserts that the payload names the second; it sends the accepting branch a
-list naming two created rows, and every other run of the command an empty list. A target that
-checks only the first element, answers "some row exists", or refuses an empty list fails. Generated
+second names none, and asserts that the payload names the second. It sends the accepting branch a
+list naming two created rows, and every other run of the command an empty list.
+
+A target that checks only the first element, answers "some row exists", or refuses an empty list fails. Generated
 Rust and Go keep the command an obligation, named, and Entity Runtime lowering refuses it.
 
 ## A guard over the rows a selector selects
 
-From `ess/22` (beyond10x/ess#228, beyond10x/ess#299), a branch may be guarded by the rows of an
-entity that a predicate selects, rather than by one row an input identity names:
+From `ess/22` (beyond10x/ess#228, #299), a branch may be guarded by the rows of an
+entity that a predicate selects. The earlier form takes one row an input identity names:
 
 ```text
 - name: claims-taken
@@ -1593,35 +1716,42 @@ entity that a predicate selects, rather than by one row an input identity names:
 ```
 
 No two users of one tenant carry the same claims: a second bind with claims another user carries is
-refused, and `existing_instance:` still answers first for the same user. `where` reads each
-candidate row's declared fields, identity and held lifecycle state `state` bare, the input under
+refused, and `existing_instance:` still answers first for the same user.
+
+`where` reads each candidate row's declared fields, identity and held lifecycle state `state` bare, the input under
 `input.`, and on a command whose branches address one existing subject through the input, that
-subject as it was before the branch under `subject.`; a `subject.` read on a command that only
+subject as it was before the branch under `subject.`. A `subject.` read on a command that only
 creates is refused. `now` is the decision's one instant, as in every other guard of the command.
+
 The test is exactly one of `exists: true|false`, `count: {<op>: <n>}` with `eq`, `ne`, `lt`, `lte`,
 `gt` or `gte` and a nonnegative whole number, or `forall: <predicate>`, which every selected row
 satisfies and which is true of no rows. `via` beside `entity`, `where` without `entity`, no test,
-two tests, and `where: always` are refused where the guard is written; under `ess/21` and earlier
+two tests, and `where: always` are refused where the guard is written. Under `ess/21` and earlier
 the form is refused as `unsupported_format_version`, naming `ess/22`.
 
 The rows are the store just before the branch is selected: a row the outcome creates or changes is
-never one of its own candidates, and no order among the rows decides anything. A row whose
-membership is unknown is kept as a possible member, never dropped: an `Optional<…>` key compared
+never one of its own candidates, and no order among the rows decides anything.
+
+A row whose membership is unknown is kept as a possible member, never dropped. An `Optional<…>` key compared
 without a `defined()` conjunct leaves an absent row's membership unknown, and then the decision is
 undetermined, so write `defined(org_id)` beside `org_id == input.org_id` where `org_id` may be
-absent. A row-set refusal answers after the input-guarded refusals, `existing_instance:`, and the
-addressed row's existence and held state, before every accepting branch; a row-set branch that
-accepts is taken in declaration order among the accepting branches; the default only where every
-guard before it is decidedly false. A row-set guard beside a `when_subject*` guard is refused as
-`unsupported_construct`; from `ess/32` one may sit beside rows the input names
+absent.
+
+A row-set refusal answers after the input-guarded refusals, `existing_instance:`, and the
+addressed row's existence and held state, before every accepting branch. A row-set branch that
+accepts is taken in declaration order among the accepting branches, and the default only where every
+guard before it is decidedly false.
+
+A row-set guard beside a `when_subject*` guard is refused as
+`unsupported_construct`. From `ess/32` one may sit beside rows the input names
 ([below](#a-row-set-beside-rows-the-input-names)), and below `ess/32` that pair is refused as
 `unsupported_construct` too, its hint naming `ess/32`. Without a default, the count tests over one
 selector must answer every number of rows, or validate refuses the command as
-`non_exhaustive_branches`; a branch every count of which an earlier branch over the same rows
+`non_exhaustive_branches`. A branch every count of which an earlier branch over the same rows
 answers is `unreachable_branch`.
 
-A value may read one field of the one row a selector selects, in `sets:` and `payload:` (see
-[the related value sources](../guides/specify/values-and-views.md)):
+A value may read one field of the one row a selector selects, in `sets:` and `payload:`. See
+[the related value sources](../guides/specify/values-and-views.md):
 
 ```text
 - name: ambiguous
@@ -1652,31 +1782,39 @@ A value may read one field of the one row a selector selects, in `sets:` and `pa
 ```
 
 Exactly one selected row supplies the value, read at the field's declared type, `Optional<…>`
-included; none or several supply no value and no transition, and no first or latest row is chosen,
+included. None or several supply no value and no transition. No first or latest row is chosen,
 so a command declares the branches for those counts itself, as above.
 
 Synthesis arranges the rows through the declared creating commands: one decoy per conjunct of the
-selector, refuting that conjunct alone, then as many rows as the branch needs — one, two, none or
-three, in that order — and, for a `forall`, one of them refuting it where the branch needs it false.
+selector, refuting that conjunct alone, then as many rows as the branch needs, in the order one,
+two, none, three. For a `forall`, one of them refutes it where the branch needs it false.
+
 Where a row is selected, the decoys are arranged again after it, so the selected row is neither the
 oldest nor the newest record holding a value the selector compares, and a target that keeps one
-record per such value fails. A copied value differs from every decoy's and from zero. Where the
-creating command fills a field the selector compares from another row,
+record per such value fails. A copied value differs from every decoy's and from zero.
+
+Where the creating command fills a field the selector compares from another row,
 `qualifies: {related: {via: input.tier_id, field: qualifies}}`, that row is arranged first, holding
-the value the selected row or the decoy needs, and the creating command is sent its identity; the
-steps are then followed through it, so the stored value is known rather than refused as unknown.
+the value the selected row or the decoy needs, and the creating command is sent its identity. The
+steps are then followed through it, so the stored value is known and is not refused as unknown.
+
 The branch the rows decide is checked again
 over every step of the scenario, a row arranged through the command under test included, and
-every other scenario sending a row-set command keeps only the branch its rows decide. A selector
-needs an equality between a `String` or `Uuid` field and the input or the subject, so a scenario
-counts only its own rows. From `ess/23` a `String` or `Uuid` member of a struct identity counts as
+every other scenario sending a row-set command keeps only the branch its rows decide.
+
+A selector needs an equality between a `String` or `Uuid` field and the input or the subject, so a scenario
+counts only its own rows.
+
+From `ess/23` a `String` or `Uuid` member of a struct identity counts as
 such a field: `at.region == input.place.region` beside `at.shelf == input.place.shelf` selects the
 record the place names, its decoys are arranged under other identities, and no scenario creates an
 identity a row already carries. Compare the members one by one: `at == input.place` compares two
-structs and is refused as `ESS-COMMAND-002`. Without such an equality, and on a command reading
+structs and is refused as `ESS-COMMAND-002`.
+
+Without such an equality, and on a command reading
 two selectors, synthesis reports
 `ESS-SYNTH-001` naming the branch. Generated Rust and Go keep such a command a hand-written
-obligation, naming the row set; Entity Runtime refuses it as `RowSetUnsupported`.
+obligation, naming the row set. Entity Runtime refuses it as `RowSetUnsupported`.
 
 ### A row set beside rows the input names
 
@@ -1708,10 +1846,12 @@ and a row set in one decision (beyond10x/ess#554):
   sets: {from_port: input.from_port, to_port: input.to_port}
 ```
 
-A missing named row answers first, in the order the `exists: false` branches are declared; then
-every refusal over a present named row or over a row set, in declaration order; then the accepting
-branches. So a missing sink is refused before a source facing the wrong way, and a source facing
-the wrong way before a source a wire already leaves. The named rows' predicates must still be
+A missing named row answers first, in the order the `exists: false` branches are declared. Then
+every refusal over a present named row or over a row set answers, in declaration order. Then the
+accepting branches answer. So a missing sink is refused before a source facing the wrong way, and a source facing
+the wrong way before a source a wire already leaves.
+
+The named rows' predicates must still be
 answered for every row without the row set: a row-set branch is credited with none of their cases,
 so without a default the command is refused as `non_exhaustive_branches` as before. Below
 `ess/32` the pair is refused as `unsupported_construct`, its message unchanged and its hint naming
@@ -1719,12 +1859,15 @@ so without a default the command is refused as `non_exhaustive_branches` as befo
 
 ### From `ess/27`: a test over each candidate's related rows
 
-A selector may test each candidate's related rows (beyond10x/ess#551,
-`docs/design/related-rows-quantifier.md`). The quantifier `exists:` takes the rows of an entity as
+A selector may test each candidate's related rows. See beyond10x/ess#551 and
+`docs/design/related-rows-quantifier.md`. The quantifier `exists:` takes the rows of an entity as
 its collection, `in: {entity: <Entity>}`, binds each row to its `as:` name, and holds of a
-candidate when some row satisfies `that:`. Inside `that:`, `<name>.<field>` reads the related row,
-its identity, a declared field or `state`; a bare name keeps reading the candidate, and `input.`,
+candidate when some row satisfies `that:`.
+
+Inside `that:`, `<name>.<field>` reads the related row,
+its identity, a declared field or `state`. A bare name keeps reading the candidate, and `input.`,
 `subject.`, `now` and `payload.<Event>.<field>` keep their meaning. The best open slot of a group
+whose two sides each hold a `Present` membership, and the refusal when there is none:
 whose two sides each hold a `Present` membership, and the refusal when there is none:
 
 ```text
@@ -1747,29 +1890,36 @@ whose two sides each hold a `Present` membership, and the refusal when there is 
   error: demo.slots.NoMatchableSlot
 ```
 
-The same `where:` under `{related: {entity: demo.slots.Slot, where: …, order_by: [score desc,
-slot_id], first: slot_id}}` publishes that slot. The test stands in the `where:` of a related read
-or a head and in a row-set `when_related:`'s `where:` and `forall:`; every other predicate site
-refuses it as `unsupported_construct`, `when_subject:` naming the `when_related` idiom. `that:` is
-one comparison or an `all:` holding a **tie**, a top-level `<name>.<field> == <candidate field>`
-either way round (`missing_declaration` without one; an equality under `any:` or `not:` is no
-tie). The binder may not name a field of the candidate, `state`, a root or a binder in scope
-(`conflicting_declaration`). `forall` over rows is refused with its rewrite,
+The same `where:` under `{related: {entity: demo.slots.Slot, where: …, order_by: [score desc, slot_id], first: slot_id}}` publishes that slot. The test stands in the `where:` of a related read
+or a head and in a row-set `when_related:`'s `where:` and `forall:`. Every other predicate site
+refuses it as `unsupported_construct`, `when_subject:` naming the `when_related` idiom.
+
+`that:` is one comparison or an `all:` holding a **tie**, a top-level `<name>.<field> == <candidate field>`
+either way round (`missing_declaration` without one). An equality under `any:` or `not:` is no
+tie. The binder may not name a field of the candidate, `state`, a root or a binder in scope
+(`conflicting_declaration`).
+
+`forall` over rows is refused with its rewrite,
 `not: {exists: {in: {entity: <Entity>}, as: <name>, that: {all: [<tie>, {not: <condition>}]}}}`,
-and a rows test inside another as `unsupported_construct`; `<Entity>` must be declared
-(`undeclared_reference`).
-Below `ess/27` the shape is refused as `unsupported_format_version`, naming `ess/27`.
+and a rows test inside another as `unsupported_construct`. `<Entity>` must be declared
+(`undeclared_reference`), and below `ess/27` the shape is refused as `unsupported_format_version`,
+naming `ess/27`.
 
 The related rows are the store just before the branch is selected, the snapshot the candidates are
 read from. For one candidate `exists` is `true` when some row's body is `true`, `false` when every
-row's is `false` (or the entity holds no row), and unknown otherwise; an unknown candidate stays a
-possible member, so a head or a test it leaves undecided decides nothing. Synthesis gives each
-selected candidate the related rows that make its tests hold, through the related entity's
-creating command, which must write the tie's field from its input (otherwise the branch is
-refused, naming the field); and for each test it arranges one candidate meeting the rest of the
-selector that fails it — for `exists`, one related row per conjunct of the body other than the
-tie, each failing that conjunct alone — ranked above the head on the first key where the branch
-reads a head. A target that ignores the test, tests one side, or drops a conjunct or the tie then
+row's is `false` or the entity holds no row, and unknown otherwise. An unknown candidate stays a
+possible member, so a head or a test it leaves undecided decides nothing.
+
+Synthesis gives each selected candidate the related rows that make its tests hold, through the related entity's
+creating command, which must write the tie's field from its input. Otherwise the branch is
+refused, naming the field.
+
+For each test it arranges one candidate meeting the rest of the
+selector that fails it, ranked above the head on the first key where the branch
+reads a head. For `exists`, that is one related row per conjunct of the body other than the
+tie, each failing that conjunct alone.
+
+A target that ignores the test, tests one side, or drops a conjunct or the tie then
 answers that candidate. Where no candidate can rank above the head, the gap is named and the
 scenario stands.
 
@@ -1796,21 +1946,21 @@ compare `coalesce(<field>, <literal>)` of a candidate's field with a literal:
         first: element_key
 ```
 
-A member whose `enabled` is absent is selected and ranked with the true ones; a false one is not.
+A member whose `enabled` is absent is selected and ranked with the true ones. A false one is not.
 `enabled == true` beside `defined(enabled)` would drop the absent rows instead, and
 `enabled == true` alone leaves their membership unknown. Write the selector in block style or quote
 the comparison: inside a flow sequence, the comma between the call's arguments ends the entry.
 
-Only this form is admitted: the call reads one field of the candidate (not `input.`, `subject.` or
-a quantifier's binder), its default is a literal of the field's type, and the right side is a
+Only this form is admitted. The call reads one field of the candidate, not `input.`, `subject.` or
+a quantifier's binder. Its default is a literal of the field's type, and the right side is a
 literal. Any other call, a `forall:` body and a set effect's filter keep their
-`unsupported_construct`. Below `ess/30` the refusal is unchanged, its hint naming `ess/30`; at
+`unsupported_construct`. Below `ess/30` the refusal is unchanged, its hint naming `ess/30`. At
 `ess/27` and `ess/28` that is the structured spelling's refusal, while the compact one keeps its
 refusal naming `ess/29`.
 
 Synthesis arranges candidates with the field absent and written: a target that reads an absent
 value as false, or ignores the conjunct, answers a scenario differently. Generated Rust and Go keep
-such a command a hand-written obligation, naming its selector; Entity Runtime refuses it as
+such a command a hand-written obligation, naming its selector. Entity Runtime refuses it as
 `RowSetUnsupported`, as every row set.
 
 ## What synthesis can witness
@@ -1835,24 +1985,30 @@ It reports a refusal naming the scenario it could not build, and `synthesize` st
 | `all`/`any` over many fields (`all: [any: [a > 10, b > 10], c > 10]`) | within two limits. Synthesis first tries up to 64 candidates in a fixed order. If none fits, it solves the guard from its own literals, one field at a time, or one group at a time for fields compared with each other, and tries up to 64 more. A guard past either limit is refused with `ESS-SYNTH-003`. First, each goal is broken down at most 64 times, and each `any` is tried first child first. A child the rest of the guard already rules out is skipped, so `all: [a < 5, any: [a > 11, b > 10], …]` is witnessed however many such disjunctions it holds, but a guard that needs many disjunctions whose children nothing decides to take a later child can still be refused. Second, a field compared only with other fields gets its base value, 0 and -1, so a strict chain over four such fields is refused. Where none of those fits either, a `Decimal` is also tried at the exact midpoint of every two adjacent literals it is compared with, so `amount > 0.1 and amount < 0.2` is met by `0.15`. |
 
 Every `all`/`any` with two or more children is witnessed once per child, at any depth. An `any`
-(or an `all` under `not`) sends its branch one more input per child, where that child alone holds;
-an `all` (or an `any` under `not`) sends the default branch one more input per child, where that
+(or an `all` under `not`) sends its branch one more input per child, where that child alone holds.
+An `all` (or an `any` under `not`) sends the default branch one more input per child, where that
 child alone fails. Below the top level, the input must also be one where that connective decides
 the whole guard. So a target that writes `or` for a nested `and`, such as
-`any: [all: [a, b], all: [a, c]]`, fails a scenario. Where none of the guard's own candidates is
+`any: [all: [a, b], all: [a, c]]`, fails a scenario.
+
+Where none of the guard's own candidates is
 such an input, synthesis solves for it directly, so a wide guard, such as an `any` of four
 three-way `all`s, is witnessed at every child too. Where the input orders two `Integer` fields
 against each other, such as `amount <= limit` failing beside `limit > 0` and `amount > 0`, one
 field is placed relative to the other, inside each field's declared range (`limit 1, amount 2`).
+
 A presence child, `defined(x)` or `not defined(x)`, is witnessed by the input that leaves `x`
-out, even beside a comparison on `x`, as in `all: [kind == Correction, defined(check_status),
-check_status != Verified]`. A comparison that reads an absent `Optional` is unknown, so at that
-input it decides neither way and does not block the row; every sibling that can be decided there
-still decides the opposite. The input goes to the branch the guards select for it, which is an
+out, even beside a comparison on `x`, as in `all: [kind == Correction, defined(check_status), check_status != Verified]`. A comparison that reads an absent `Optional` is unknown, so at that
+input it decides neither way and does not block the row.
+
+The siblings that can be decided there
+still decide the opposite. The input goes to the branch the guards select for it, which is an
 earlier branch where that branch takes the absent row.
+
 This holds for a presence child that is a direct child of the `all`/`any`. Two shapes are still
 refused: a read of `x` beside a presence sibling under `not`, and a presence child nested
 below another connective's child, beside a read of `x`.
+
 Where those orders and ranges leave no input at all, the child is not refused. Where the search
 finds none and did not try every value of every field, the scenario stands and an `ESS-SYNTH-022`
 refusal beside it names the input it could not build.
@@ -1860,26 +2016,31 @@ refusal beside it names the input it could not build.
 Every input also satisfies the invariants over it. That covers the invariants of each struct the
 input holds, and those of each entity a branch copies the input into. For
 `sets: {fingerprint: input.fingerprint}` beside the entity invariant
-`fingerprint.version == "v1"`, every input is sent with `fingerprint.version` at `"v1"`. The
-invariants' own literals are tried first. For a comparison of two fields, each field is also tried
+`fingerprint.version == "v1"`, every input is sent with `fingerprint.version` at `"v1"`.
+
+The invariants' own literals are tried first. For a comparison of two fields, each field is also tried
 at the other's value and, for an order between numbers, one either side of it. A list whose
 `.count` an invariant reads is tried at the lengths the invariant names. Fields no invariant
 reads keep their own values.
 
 Each input is held to the invariants of the branches it can reach, not of every branch at once.
 Two branches may copy one input into two entities whose invariants disagree, and each branch gets
-an input its own entity accepts. When a guard moves a field that an invariant ties to another,
+an input its own entity accepts.
+
+When a guard moves a field that an invariant ties to another,
 such as `origin == "eu"` beside `origin == route`, the other field is moved with it. An input that
 still breaks an invariant is never sent. A branch whose entity invariants no input of this bounded
 search meets is refused with `ESS-SYNTH-003`, and the refusal names each invariant.
 
 A refusal with a `when:` over the input is taken before any accepting branch whose guard it
 overlaps. Synthesis holds a target to that twice. An accepting branch's witness refutes every such
-refusal, with or without a default. And each such refusal is sent again at every overlap point, and
+refusal, with or without a default. Each such refusal is sent again at every overlap point, and
 the refusal is required there. For `closed: open == false` and `id-required: ticket_id == ""`,
-the `id-required` scenario also sends `{ticket_id: "", open: false}`. This holds for the `when:`
-beside a `when_subject:`, sent for a ticket the stored guard admits (or for no ticket, where the
-refusal reads the identity itself), and for an external branch's
+the `id-required` scenario also sends `{ticket_id: "", open: false}`.
+
+This holds for the `when:`
+beside a `when_subject:`, sent for a ticket the stored guard admits, or for no ticket where the
+refusal reads the identity itself, and for an external branch's
 `when:`, sent without asking the provider. A branch is refused with `ESS-SYNTH-003`, naming that
 refusal, when every candidate the search tries for it is claimed by the refusal. The search is
 bounded, so an input it does not try may still reach the branch.
@@ -1887,16 +2048,20 @@ bounded, so an input it does not try may still reach the branch.
 Two accepting branches with a `when:` over the input may overlap too. The first declared whose guard
 holds answers. For `small: amount < 100` written before `flagged: amount > 50`, the input
 `{amount: 75}` takes `small`. Synthesis holds a target to that the same two ways. A later branch's
-witness refutes every accepting branch declared before it, beside a default. And the first
+witness refutes every accepting branch declared before it, beside a default. The first
 branch's scenario also sends an input in each overlap and requires that branch there, so a target
-answering `flagged` for `75` fails. An external branch takes the same place in that order: an
+answering `flagged` for `75` fails.
+
+An external branch takes the same place in that order: an
 accepting branch declared before it answers an input its guard claims, whatever the provider says,
 so its scenario is sent an input outside that guard. A branch is refused with `ESS-SYNTH-003`,
 naming the earlier branch, when every candidate the search tries for it is claimed by an earlier
 one.
 
 An overlap is searched over the guards' own literals, and for a `Decimal` also at the midpoint of
-every two adjacent ones, so `11 < amount < 12` is sent `11.5`. An overlap the scenario of the branch
+every two adjacent ones, so `11 < amount < 12` is sent `11.5`.
+
+An overlap the scenario of the branch
 taken first does not send is listed as a note naming both branches, unless the candidates cover
 every region the literals divide the input into and none lies in both guards. That happens where
 no candidate reaches it, or where the branch is arranged over a stored row, a replay or a preserved
@@ -1963,12 +2128,15 @@ A filter over a field the creating command sets, such as `source == "web"`, is d
 value the scenario sent. Where the scenario's own row does not meet it, and no row the default
 input creates ever does, the view is asserted over a row that does as well: synthesis creates one
 more instance with an input chosen toward the filter and expects the view to contain it, beside
-excluding the scenario's own row. A filter using `equals_ignore_case` or `in_ignore_case`, negated
+excluding the scenario's own row.
+
+A filter using `equals_ignore_case` or `in_ignore_case`, negated
 or not, gets one more instance in every scenario that reads the view, whatever its own row holds:
 one carrying the literal in its other ASCII case (`WEB` for `web`), asserted as the filter decides
 it. The view is expected to contain it under `equals_ignore_case` and to exclude it under
-`not: {equals_ignore_case: …}`, so an implementation that compares bytes fails either way. Where no
-creating command can produce such a row, or the view does not project the entity's identity and
+`not: {equals_ignore_case: …}`, so an implementation that compares bytes fails either way.
+
+Where no creating command can produce such a row, or the view does not project the entity's identity and
 so cannot tell the rows apart, the scenario keeps what it asserts about its own row alone, and does
 not assert that such a view holds no rows once another row it admits has been created.
 
@@ -1984,8 +2152,9 @@ filter: note == hello
 
 Sending only inputs inside the invariants leaves a question open: what answers an input outside
 them. Where a branch copies an input into a field an entity invariant reads and no guard keeps the
-input inside the invariant, the model declares no outcome for such an input. The branch's
-`invariant/after` scenario is still written. Beside it, synthesis refuses the hole with
+input inside the invariant, the model declares no outcome for such an input.
+
+The branch's `invariant/after` scenario is still written. Beside it, synthesis refuses the hole with
 `ESS-SYNTH-025`, naming the branch, the invariant and the input that breaks it, for example
 `sets: {quantity: input.quantity}` beside `quantity >= 1` with no `when:` on the quantity.
 
@@ -1993,7 +2162,9 @@ A specification that synthesized with no refusal before can gain one. `ess verif
 synthesize` now prints `refused:` lines and a refusal count where it printed none, and a coverage
 suite (`--suite-format 5`) is written at suite `ess-conformance/65`, with exit status 1 until the
 refusal is answered. An ordinary suite keeps its bytes and its exit status, and so does `ess
-specify validate`, which lists the refusal under `completeness`. Answer it by guarding the branch
+specify validate`, which lists the refusal under `completeness`.
+
+Answer it by guarding the branch
 on the input (`when: quantity >= 1`) or by declaring a refusal branch ahead of it whose `when:`
 answers the input (`when: quantity < 1`, `error: …`). The search is bounded, one neighbour per
 comparison, so a hole it does not reach is not reported.

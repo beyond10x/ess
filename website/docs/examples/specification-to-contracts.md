@@ -6,10 +6,9 @@ description: One command from the billing specification and the contracts, repos
 
 # A specification and its contracts
 
-This page shows the central claim on real files: the specification is not a document *beside* the
-contracts — it is what the contracts are derived from. Everything below is copied out of the
-repository: the source from `examples/billing/`, the output from `generated/`, kept in step by
-`cargo xtask generate --check` in CI.
+The contracts are derived from the specification. This page shows that on real files. Everything
+below is copied out of the repository: the source from `examples/billing/`, the output from
+`generated/`, kept in step by `cargo xtask generate --check` in CI.
 
 The excerpts are the files on `main`. Each code block names the file it was copied from, and a test
 compares every block with that file, so a regenerated artifact this page was not updated for fails
@@ -95,8 +94,8 @@ commands:
         summary: The amount was not positive, and nothing was created.
 ```
 
-`Money` and `Email` are declared in the same file — `Money` a struct with the invariant
-`amount >= 0`, `Email` a newtype over `String` that is deliberately not interchangeable with one.
+`Money` and `Email` are declared in the same file. `Money` is a struct with the invariant
+`amount >= 0`, and `Email` is a newtype over `String` that is not interchangeable with one.
 
 ## JSON Schema
 
@@ -175,15 +174,15 @@ commands:
 }
 ```
 
-Three things to notice. The newtype survived as its own definition rather than collapsing into
-`string`. The struct's invariant travelled with it as `x-ess-invariants`. And the provenance block
-carries one digest, `contract_digest`: the digest of the *slice* this file derives from — the seed
-constructs closed over everything they rest on — and not of the whole model.
+The newtype survived as its own definition rather than collapsing into `string`. The struct's
+invariant travelled with it as `x-ess-invariants`. The provenance block carries one digest,
+`contract_digest`, of the *slice* this file derives from: the seed constructs closed over everything
+they rest on. It is not the digest of the whole model.
 
-That digest is what stops a one-word change costing a full regeneration. When the specification
+That digest keeps a one-word change from costing a full regeneration. When the specification
 moves, `ess verify impact` compares each artifact's committed `contract_digest` against the digest
-its slice computes, and names only the artifacts whose slice actually moved; and regeneration
-rewrites only those files, because nothing else in a file moves with the rest of the model. The
+its slice computes and names only the artifacts whose slice moved. Regeneration rewrites only those
+files, because nothing else in a file moves with the rest of the model. The
 whole model's digest is recorded once per generation, in `.ess-output/state.json`.
 
 ## OpenAPI 3.1
@@ -221,14 +220,14 @@ whole model's digest is recorded once per generation, in `.ess-output/state.json
                 $ref: '#/components/schemas/billing.invoice.CreateInvoice.rejected.Response'
 ```
 
-The two outcomes became two status codes, and `x-ess-may-invoke` comes from the actor declaration in
-the model — not from an annotation someone added to the HTTP layer. The file's own header records
+The two outcomes became two status codes. `x-ess-may-invoke` comes from the actor declaration in
+the model, not from an annotation someone added to the HTTP layer. The file's own header records
 the provenance and the regeneration command.
 
 ## AsyncAPI 3.0
 
-`generated/asyncapi/invoice-service.yaml` describes what the component publishes, and says plainly
-what the model does not know:
+`generated/asyncapi/invoice-service.yaml` describes what the component publishes and says what the
+model does not know:
 
 ```text file=generated/asyncapi/invoice-service.yaml lines=15-15
     The specification declares no transport, so each address below is a name and not a topic on a named broker. Servers, protocol bindings, security schemes, message keys, partitioning, retention and ordering are absent because the model does not state them.
@@ -252,9 +251,9 @@ stateDiagram-v2
     Paid --> [*]
 ```
 
-Then it does something a diagram cannot: it lists the absences. Illegal transitions are illegal
-because no arrow exists — there is no second, forbidding rule to fall out of date — and since a
-diagram cannot show an absence, the unconnected pairs are listed, derived from the same transitions:
+The page also lists the absences, which a diagram cannot show. Illegal transitions are illegal
+because no arrow exists, with no second, forbidding rule to fall out of date. The unconnected pairs
+are listed, derived from the same transitions:
 
 ```markdown file=generated/docs/domains/billing-invoice.md lines=145-152
 - `Cancelled` may not become `Draft`
@@ -267,8 +266,8 @@ diagram cannot show an absence, the unconnected pairs are listed, derived from t
 - `Paid` may not become `Issued`
 ```
 
-The same page renders the cross-context binding as a flowchart — the event, the command it invokes,
-its outcomes, and the escalation event that makes the failure path observable at all.
+The same page renders the cross-context binding as a flowchart: the event, the command it invokes,
+its outcomes, and the escalation event that makes the failure path observable.
 
 ## Static site
 
@@ -284,15 +283,15 @@ page opens with the same provenance as the Markdown:
 -->
 ```
 
-The committed pages are under `generated/site/`. ESS writes the files; hosting them is up to you.
+The committed pages are under `generated/site/`. ESS writes the files. Hosting them is up to you.
 
-It is also not a reverse parser. The ESS YAML above is the specification; the prose in the generated
+It is also not a reverse parser. The ESS YAML above is the specification. The prose in the generated
 page is one projection. Editing that prose cannot change the model, and regenerating replaces it.
 
 ## What is not generated
 
 Behaviour. The specification also generates its own conformance suite and the structural part of its
-implementation in four targets — but every algorithm remains a typed obligation someone implements.
+implementation in four targets, but every algorithm remains a typed obligation someone implements.
 See [Synthesize code from a specification](../guides/synthesize.md) and
 [Limitations](../status/limitations.md).
 

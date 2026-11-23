@@ -23,12 +23,17 @@ The command executes the generated or committed scenarios against the selected t
 The built-in choices are `billing`, `oracle-fixture` and `interpreted`, and the one other value,
 `process`, starts a program of yours instead ([below](#an-implementation-in-any-language)); a
 production adapter must establish its own execution boundary. `billing` and `oracle-fixture` are
-hand-written reference implementations of their examples. `interpreted` selects the specification itself, named by
-`--path`, and refuses one whose `spec_digest` is not the suite's. It executes commands from the
-model — outcomes, transitions, `sets:` writes, emitted events and declared refusals — and does not
-yet interpret views or bindings, so a scenario that reads one comes back as an unsatisfied
-obligation, and a run over a suite holding at least one such scenario fails.
-A freshly synthesized suite is `ess-conformance/34`, which runs only with `--report-format 2`.
+hand-written reference implementations of their examples.
+
+`interpreted` selects the specification itself, named by `--path`, and refuses one whose
+`spec_digest` is not the suite's. It executes commands from the model: outcomes, transitions,
+`sets:` writes, emitted events and declared refusals. It also projects declared views and
+dispatches bindings. A scenario that needs a fact the model does not determine and no scenario
+control supplies comes back as an unsatisfied obligation (`unsupported`), and a run over a suite
+holding at least one such scenario fails.
+
+A freshly synthesized suite of `examples/billing` is `ess-conformance/34`. Suites from
+`ess-conformance/8` on, whatever the version a model needs, run only with `--report-format 2`.
 The default standalone report, `ess-conformance-report/1`, is for suites up to
 `ess-conformance/4`. Its historical `scenarios_failed` count includes every non-pass, including Go
 skips and Rust errors or unsupported results. Those legacy bytes and meanings remain unchanged.
@@ -57,7 +62,7 @@ $ ess verify conform synthesize --path spec --target typescript --out conformanc
 
 Each writes one package, `essconform`, below `--out`: the suite (`suite.json`), the compiled model
 (`ir.json`), the runner, a predicate evaluator and a `README.md` describing the wiring. Nothing in it
-is edited by hand; regenerate it after every change to the specification. Files you add beside the
+is edited by hand. Regenerate it after every change to the specification. Files you add beside the
 generated ones, such as your test file, are kept.
 
 The runner asks the implementation questions through one interface, `Target`, and asserts the
@@ -75,8 +80,9 @@ answers itself:
 | `ObserveInvocations` / `observeInvocations` | the commands one binding invoked and what it passed |
 
 `ObserveEvents` must read the implementation's event log for the requested event and correlation,
-including repeated occurrences; it cannot return only the last command's direct events. The runner
-uses it even when the command answers `not_granted`. Before sending a command whose next step is
+including repeated occurrences. It cannot return only the last command's direct events.
+
+The runner uses it even when the command answers `not_granted`. Before sending a command whose next step is
 `expect_not_granted`, it counts every event named in that step's `unpublished` list. After the
 refusal, it observes those events again in the same correlation context and fails if any count grew.
 A command that publishes and then refuses therefore fails even when its answer contains no events.
@@ -86,18 +92,21 @@ must do the same. For every `execute_command` or `execute_command_without_input`
 step is `expect_not_granted`:
 
 1. Look ahead before sending. Read the next step and take its `unpublished` list. The suite has no
-   separate observation step; the pre-send count belongs to `expect_not_granted`.
-2. Count before the send. Observe each listed event once, with the scenario's correlation (the one
-   `BeginScenario` received and every command carries), and count the occurrences of that event.
+   separate observation step. The pre-send count belongs to `expect_not_granted`.
+
+2. Count before the send. Observe each listed event once, with the scenario's correlation, the one
+   `BeginScenario` received and every command carries, and count the occurrences of that event.
    The count reads what the log already holds, so the generated runners pass a deadline that does
    not wait (`attempts: 1`).
-3. Send the command in that correlation. The step requires the standard refusal naming the actor
-   the step names. A command that ran, or a refusal that hands back events, fails the step.
+
+3. Send the command in that correlation. The step requires the standard refusal for the actor named
+   in the step. A command that ran, or a refusal that hands back events, fails the step.
+
 4. Count again after the refusal. Observe each listed event with the same correlation, and fail the
-   step if any count is higher than before. Count occurrences rather than comparing sets or
-   payloads: a refused send that publishes a second occurrence equal to an earlier one has still
-   added one.
-5. If the target cannot observe the log, before or after, the scenario is `unsupported` and never
+   step if any count is higher than before. Count occurrences, not sets or payloads: a refused send
+   that publishes a second occurrence equal to an earlier one has still added one.
+
+5. If the target cannot observe the log, before or after, the scenario is `unsupported`, not
    passed. If the pre-send count is unavailable, the command is not sent.
 
 Neither the command's answer nor the views can stand in for these observations. The answer carries
@@ -109,9 +118,11 @@ A refused command reports both the outcome name and the error, for example
 `{outcome: "rejected", error: "tasks.list.InvalidPriority"}`. A method the implementation cannot
 answer returns `ErrUnsupported` (Go) or throws it (TypeScript). The scenario is then reported as
 skipped, which is a different fact from failed, and a run with a skipped scenario is
-`inconclusive`, not `passed`. Specifications that declare backend setup, clock readings or periodic
-hosts ask for further optional interfaces (`EntitySetupTarget`, `ClockReadingTarget`,
-`PeriodicTarget`); the generated `README.md` names the ones a suite needs.
+`inconclusive`, not `passed`.
+
+Specifications that declare backend setup, clock readings or periodic hosts ask for further
+optional interfaces (`EntitySetupTarget`, `ClockReadingTarget`, `PeriodicTarget`). The generated
+`README.md` lists the ones a suite needs.
 
 Hand a factory to the runner from one test. The runner builds one target per scenario:
 
@@ -129,8 +140,8 @@ await test("conformance", async (t) => {
 
 Then run the language's own test command. For a suite at `ess-conformance/5` or later, the
 generated runner executes only with `ESS_REPORT_FORMAT=2` set, and without it stops before the first
-scenario; the package's `README.md` names the suite's version and the command. `ESS_REPORT_OUT`
-names a file for the standalone report:
+scenario. The package's `README.md` lists the suite's version and the command. `ESS_REPORT_OUT`
+sets the file for the standalone report:
 
 ```shell-session
 $ ESS_REPORT_FORMAT=2 ESS_REPORT_OUT=$PWD/report.json go test ./...
@@ -140,14 +151,16 @@ $ ESS_REPORT_FORMAT=2 ESS_REPORT_OUT=$PWD/report.json npm test
 [Getting started](../../start/first-conformance-run.md) builds a
 complete TypeScript target for a small specification and runs it green. For separate passed, failed
 and skipped counts, see [explicit outcome counts](#opt-into-explicit-outcome-counts). A target
-reports what it observed; it must not report its own unobserved success.
+reports what it observed. It must not report its own unobserved success.
 
 ## An implementation in any language
 
 `ess verify conform run --target process` holds an implementation written in any language to its
 suite. `ess` starts a program you write, the adapter, asks it the suite's questions as one JSON
-object per line on its standard input, and judges the answers itself; the adapter reports what it
-observed, never a verdict. The command line is `ess verify conform run --suite suite.json --target
+object per line on its standard input, and judges the answers itself. The adapter reports what it
+observed and gives no verdict.
+
+The command line is `ess verify conform run --suite suite.json --target
 process --report-format 2 --strict -- <program> [args…]`. [An implementation in any
 language](target-process.md) has the run, every message and a complete adapter in Python 3.
 
@@ -163,13 +176,17 @@ not report its own unobserved success.
 A suite for a specification whose actors' `may:` names a view sends reads of that view as an actor,
 after a `read_as` step (beyond10x/ess#286), and also as no actor after `read_as` with
 `actor: null`. The runner calls `query_view_as` with the actor, or `query_view_anonymous` for no
-actor, and a target answers a read the grant does not admit with `TargetError::NotGranted` naming
-the actor, or none, before reading anything. The defaults read as `query_view` does, so a target
-that checks no read grant fails the suite's `<view>/grant/read/denied` scenarios. A read the
-scenario needed answered and the target refused is `failed`. The generated Go and TypeScript
-runtimes send the actor as `ViewRequest.Actor` and `actor`, set `Anonymous` and `anonymous` for a
-read sent as no actor, and read a refusal from `NotGranted` and `notGranted` on the view result; a
-target that ignores them serves the read and fails the same scenarios.
+actor. A target answers a read the grant does not admit with `TargetError::NotGranted` carrying
+the actor, or none, before reading anything.
+
+The defaults read as `query_view` does, so a target that checks no read grant fails the suite's
+`<view>/grant/read/denied` scenarios. A read the scenario needed answered and the target refused is
+`failed`.
+
+The generated Go and TypeScript runtimes send the actor as `ViewRequest.Actor` and `actor`, set
+`Anonymous` and `anonymous` for a read sent as no actor, and read a refusal from `NotGranted` and
+`notGranted` on the view result. A target that ignores them serves the read and fails the same
+scenarios.
 
 ## Opt into explicit outcome counts
 
@@ -203,17 +220,19 @@ $ ess verify conform run \
 `--report-format 2` selects `ess-conformance-report/2` for `--report-out`. It records separate
 `passed`, `failed`, `error`, `unsupported` and `skipped` counts and sorted scenario IDs. Rust and
 newly generated Go and TypeScript retain all five categories. Go and TypeScript use
-`go-scenario-status/2`; older `go-scenario-status/1` reports retain their original restricted
-categories. Unsupported observations fail execution; errors or explicit skips make execution
-inconclusive unless another result has already failed it. The report
-binds every original suite byte, including its final newline, under `sha256-json-bytes/1`. Retain the
-original suite beside the report; reformatting it changes that identity.
+`go-scenario-status/2`. Older `go-scenario-status/1` reports retain their original restricted
+categories. Unsupported observations fail execution. Errors or explicit skips make execution
+inconclusive unless another result has already failed it.
+
+The report binds every original suite byte, including its final newline, under
+`sha256-json-bytes/1`. Retain the original suite beside the report, because reformatting it changes
+that identity.
 
 Legacy suite versions 1–4 have coverage exactly `unknown`, so even an empty or
 all-pass execution has inconclusive conformance. `--allow-incomplete` explicitly chooses diagnostic
 execution: Rust exits 0 for passed execution, 1 for failed and 3 for inconclusive execution.
-`--strict` requires explicit `--report-format 2` and succeeds only for passed conformance; unknown
-coverage therefore exits nonzero. Strict and allow-incomplete cannot be combined. Neither control
+`--strict` requires explicit `--report-format 2` and succeeds only for passed conformance, so
+unknown coverage exits nonzero. Strict and allow-incomplete cannot be combined. Neither control
 changes the report format automatically. Suite/4 and diagnostic report/1 remain the defaults.
 
 With report format 2, `--format json` or `--format yaml` presents a separate closed
@@ -230,20 +249,23 @@ $ ESS_REPORT_FORMAT=2 ESS_CONFORMANCE_ALLOW_INCOMPLETE=1 ESS_REPORT_OUT=report.j
 
 Generated Go defaults remain report/1 and diagnostic execution. `ESS_CONFORMANCE_STRICT=1` requires
 report/2 and fails the enclosing test even when every subtest skipped. The strictness variables accept
-only unset or `1`; conflicting settings refuse before target construction. Omitted or abnormally
+only unset or `1`. Conflicting settings refuse before target construction. Omitted or abnormally
 terminated selected subtests, a negative report/2 clock or a failed report write cannot publish a
-complete report. These checks also apply when no report destination is requested. Retained generated
-packages keep their own runtime behavior until regenerated; upgrading the standalone binary does
-not update them. Set `ESS_REPORT_OUT` as well as `ESS_REPORT_FORMAT=2` to retain the count report.
-An absolute output path avoids package working-directory differences in `go test ./...`.
-A failed conformance run still writes its separate counts; report delivery does not turn failures
-or skipped scenarios into passing evidence.
+complete report. These checks also apply when no report destination is requested.
+
+Retained generated packages keep their own runtime behavior until regenerated. Upgrading the
+standalone binary does not update them. Set `ESS_REPORT_OUT` as well as `ESS_REPORT_FORMAT=2` to
+retain the count report. An absolute output path avoids package working-directory differences in
+`go test ./...`. A failed conformance run still writes its separate counts. Report delivery does
+not turn failures or skipped scenarios into passing evidence.
 
 Under report/2, generated Go and TypeScript show each unsupported required scenario as a skipped
 subtest or case carrying the target's reason, so a JUnit or test report does not count it as a
 failed assertion. The run still fails once: the enclosing test fails with one message naming how
 many required scenarios were unsupported, and the process exits nonzero. The report still counts
-those scenarios `unsupported` with `execution_status` `failed`. A held scenario the target cannot
+those scenarios `unsupported` with `execution_status` `failed`.
+
+A held scenario the target cannot
 hold `now` for is skipped without failing the run. Report/1 is unchanged.
 
 ## Opt into declared coverage
@@ -262,7 +284,7 @@ $ ess verify conform run --suite target/coverage-suite.json --target billing \
 
 Suite/5 retains the declared scope, origins, selected IDs, known outside scenarios, every refusal
 occurrence and every requested authored source's relative identity and exact byte digest. Generated
-and authored origins can be selected independently; `--component` limits fresh synthesis to that
+and authored origins can be selected independently. `--component` limits fresh synthesis to that
 component. `conform author --suite-format 5` inventories only its supplied authored files. Library
 callers can explicitly retain known excluded generated inventory with
 `coverage_build::build_with_known_generated`.
@@ -270,11 +292,13 @@ callers can explicitly retain known excluded generated inventory with
 A nonempty all-pass selection qualifies only when its inventory is complete and has no in-scope
 refusal. Unknown inventory, an empty selection or a missing required check remains inconclusive.
 Filtering cannot remove a refusal or promote unknown knowledge. Every identical refusal occurrence
-remains visible; a useful passing scenario can have missing checks beside it. Strict mode fails
+remains visible. A useful passing scenario can have missing checks beside it.
+
+Strict mode fails
 when conformance is inconclusive, while diagnostic mode retains the execution result's exit rules.
 Suite/5 always requires explicit report/2, including with `--allow-incomplete` or no report output.
 
-To narrow an admitted suite, supply a JSON array of sorted distinct scenario IDs; `[]` explicitly
+To narrow an admitted suite, supply a JSON array of sorted distinct scenario IDs. `[]` explicitly
 selects none:
 
 ```shell-session
@@ -288,39 +312,44 @@ The closed `ess-conformance-input/1` retains the selected original JSON string a
 parent string, nearest first. Repeated selection uses `--suite-input` and retains the full chain.
 An explicit child cannot be run from its raw suite alone. Admission checks each full surviving
 scenario definition, dependency, source map, refusal and selection against the exact parent.
-Only the inner selected bytes are hashed; reformatting the carrier preserves that identity.
+Only the inner selected bytes are hashed. Reformatting the carrier preserves that identity.
 
 Authored directory discovery remains shallow. Identities use `/`-separated relative UTF-8 segments;
 absolute paths, dot segments, backslashes, colons, controls, invalid UTF-8 filenames and selected
-symlinks refuse. Relocating a root preserves identities; changing source newlines changes its digest.
+symlinks refuse. Relocating a root preserves identities. Changing source newlines changes its
+digest.
+
 The historical `ConformanceSuite` DTO remains unadmitted: it cannot recover discarded source fields
 or become known coverage by changing its version. Original inputs use `AdmittedSuite` or
-`coverage::AdmittedInput`; count reports require the immutable actual `ExecutedRun` capability.
+`coverage::AdmittedInput`. Count reports require the immutable actual `ExecutedRun` capability.
 
 Generate Go with `--suite-format 5 --target go`, or call `go::emit_input` with an admitted carrier.
 The runtime checks every original parent before creating a target. Wire metadata retains the full
-u64 range; only selected execution fields must fit the host's Go `int`. Unrepresentable selected
+u64 range. Only selected execution fields must fit the host's Go `int`. Unrepresentable selected
 counts, indices or halt limits refuse before callbacks or reports. An oversized omitted parent
-field does not block a representable child. The Go report clock supports nonnegative int64 values;
-Rust report/run timestamps support the full u64 range. Payload Number meaning is a separate finite
-binary64 boundary. Modeled Binary64 remains unsupported by conformance, including suite/5.
+field does not block a representable child.
+
+The Go report clock supports nonnegative int64 values. Rust report/run timestamps support the full
+u64 range. Payload Number meaning is a separate finite binary64 boundary. Modeled Binary64 remains unsupported by conformance, including suite/5.
 
 `conform web` emits a browser product: the original specification files, the admitted suite
 (`suite.json`) or, with `--suite-format 5`, the complete coverage input (`input.json`), a
 Rust-derived `declarations.json` and a `browser.json` manifest binding them by digest. The page
-navigates every declaration without executing anything. Building the emitted `rust/browser_host.rs`
+navigates every declaration without executing anything.
+
+Building the emitted `rust/browser_host.rs`
 with your own target installation (see the emitted `README.md`) gives `runner.wasm`, which re-admits
-the original bytes before any target call and runs the Rust runner; only those runs produce
+the original bytes before any target call and runs the Rust runner. Only those runs produce
 reports. The historical `ess-conformance-replay/1` reader stays available from the library
 (`web::emit_input`) and is no longer what this command writes.
 
 `ess verify impact --suite-input` accepts complete admitted coverage and reports its selection separately.
 Unknown or incomplete inventory and missing parents refuse. Persisted output remains `ess-impact/3`
-with its existing fields; invalidation within a selection is not whole-system execution evidence.
+with its existing fields. Invalidation within a selection is not whole-system execution evidence.
 
 ## What the report proves
 
 The report proves what its scenarios observed against the named target and specification digest. It
 does not prove that the target is independently operated, deployed in production, or free from
 behavior the suite never exercised. A consumer may translate this report into its own evidence
-vocabulary at that consumer’s boundary; ESS itself publishes no workflow or planning record.
+vocabulary at that consumer’s boundary. ESS itself publishes no workflow or planning record.
