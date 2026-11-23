@@ -1,7 +1,16 @@
 # Caller readings on several threads
 
-Status: the plan of readings and the thread state are in the tree; no thread is spawned yet. The
-registry and the carriers are `crates/verify/ess-conformance/src/synthesize/threads.rs`.
+Status: implemented. The plan of readings, the thread state and the worker threads are in the tree:
+with a job count above 1 the readings run on scoped threads (`synthesize/caller/readings.rs`), and
+`ess verify conform synthesize` and `ess verify conform run` take `--jobs` and read
+`ESS_SYNTH_JOBS`. The registry and the carriers are
+`crates/verify/ess-conformance/src/synthesize/threads.rs`.
+
+The job count: the CLI's `--jobs` (1 to 256), else `ESS_SYNTH_JOBS`, else 1. A command that
+synthesizes refuses an `ESS_SYNTH_JOBS` that is not a whole number from 1 to 256 with exit 1; a
+`conform run` given `--suite` or `--suite-input` synthesizes nothing and does not read it. A caller
+of the library that sets no job count (`with_jobs`) gets the variable's value when it is a whole
+number from 1 to 256 and 1 otherwise; only the CLI refuses an invalid value.
 
 A synthesis of a model whose commands read the caller runs the whole synthesis again for each
 assignment of callers, and again for each command and each focus. Those runs are the **caller
@@ -134,8 +143,8 @@ only as a difference inside one reading, so a worker starting it at 0 changes no
 | `witness_memo.rs` | `SHARED` | Memory | starts empty and answers what the computation answers |
 | `witness_memo.rs` | `WORK` | Test | read by the crate's own unit tests, which run with one job |
 
-The table has 74 rows. The next change of this series adds its own statics (a job count and the
-two flags of a worker) and classifies them in `STATE` too.
+The table has 74 rows. The change that spawned the workers added its own statics (a job count and
+the two flags of a worker) and classified them in `STATE` too.
 
 ### What `Context` carries
 

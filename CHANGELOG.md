@@ -10,8 +10,9 @@
   default 1, or `ESS_SYNTH_JOBS` when it is set), which runs the caller readings of a synthesis on
   that many threads: each model a caller reading reuses runs on one thread, and the suite, the
   refusals and the notes are the bytes one job writes. The library offers the same as
-  `ess_conformance::synthesize::with_jobs`. An `ESS_SYNTH_JOBS` that is not a whole number from 1
-  to 256 is refused with exit 1. No format version changes
+  `ess_conformance::synthesize::with_jobs`. A command that synthesizes refuses an `ESS_SYNTH_JOBS`
+  that is not a whole number from 1 to 256 with exit 1; `conform run --suite` synthesizes nothing
+  and does not read it, and the library falls back to 1. No format version changes
   (`docs/design/parallel-caller-readings.md`).
 
 ### Changed

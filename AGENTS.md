@@ -139,12 +139,12 @@ Re-enable the lane when a named external adopter pins a released `ess/N` and its
 artifacts, and a change reaches that adopter undetected by conformance, `ess verify diff` or a
 format refusal.
 
-The gate is offline and runs formatting, strict Clippy, all workspace tests, rustdoc, command smoke
-tests, and the dependency boundary test. Land nothing on `main` until the `Gate` job is green.
-`ESS_TUTORIAL_NETWORK=1`, set by `task test-slow`, makes the slow lane's
-`the_walkthrough_runs_the_npm_and_go_blocks_too` run the Start-here pages' `npm` and `go` steps,
-which need the npm registry and `go`; the test step's walkthrough runs every `ess` command and
-skips those blocks.
+`task check` runs formatting, strict Clippy, all workspace tests (`test`), the slow lane
+(`test-slow`), rustdoc, command smoke tests, and the dependency boundary test. Its test step is
+offline. Its slow lane is not: `task test-slow` sets `ESS_TUTORIAL_NETWORK=1`, which makes
+`the_walkthrough_runs_the_npm_and_go_blocks_too` run the Start-here pages' `npm` and `go` steps, and
+those need the npm registry and `go`; the test step's walkthrough runs every `ess` command and
+skips those blocks. Land nothing on `main` until the `Gate` job is green.
 
 For a pull request, CI owns the full gate. Before pushing, run only the crates the change touches
 — `task fmt-check` (not `cargo fmt --all --check`, which also rewrites the byte-pinned generated crates), `cargo clippy -p <crate> --all-targets --locked -- -D warnings`,
