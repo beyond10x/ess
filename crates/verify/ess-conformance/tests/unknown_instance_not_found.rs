@@ -322,3 +322,267 @@ fn two_candidate_answers_are_a_note_and_neither_is_assumed() {
         );
     }
 }
+
+/// An item touched whether or not it holds a note: `unknown-item` beside a stored-field pair that
+/// partitions every row with no default (beyond10x/ess#554).
+const DESK: &str = "format: ess/36
+system: demo
+version: v1
+domain: demo.desk
+summary: An item is touched whether or not it holds a note.
+types:
+  - {name: demo.desk.ItemId, kind: newtype, of: Uuid}
+entities:
+  - name: demo.desk.Item
+    identity: {name: item_id, type: demo.desk.ItemId}
+    fields:
+      - {name: note, type: Optional<String>}
+    lifecycle: {initial: Open, states: [Open], terminal: [Open]}
+actors:
+  - name: demo.desk.Operator
+    may: [demo.desk.AddItem, demo.desk.Touch]
+errors:
+  - {name: demo.desk.NotFound, summary: Not found., fields: []}
+events:
+  - name: demo.desk.ItemAdded
+    fields: [{name: item_id, type: demo.desk.ItemId}]
+  - name: demo.desk.Touched
+    fields: [{name: item_id, type: demo.desk.ItemId}]
+commands:
+  - name: demo.desk.AddItem
+    input:
+      - {name: note, type: Optional<String>}
+    outcomes:
+      - name: added
+        creates: demo.desk.Item
+        instance: item_id
+        sets: {note: input.note}
+        emits: [demo.desk.ItemAdded]
+        payload: {demo.desk.ItemAdded: {item_id: {generated: true}}}
+  - name: demo.desk.Touch
+    input:
+      - {name: item_id, type: demo.desk.ItemId}
+    outcomes:
+      - {name: unknown-item, unknown_instance: true, error: demo.desk.NotFound}
+      - name: touched-noted
+        when_subject: {predicate: defined(note)}
+        updates: demo.desk.Item
+        instance: item_id
+        emits: [demo.desk.Touched]
+        payload: {demo.desk.Touched: {item_id: input.item_id}}
+      - name: touched-bare
+        when_subject: {predicate: not defined(note)}
+        updates: demo.desk.Item
+        instance: item_id
+        emits: [demo.desk.Touched]
+        payload: {demo.desk.Touched: {item_id: input.item_id}}
+views:
+  - name: demo.desk.Items
+    source: demo.desk.Item
+    consistency: read_your_writes
+    fields:
+      - {name: item_id, type: demo.desk.ItemId}
+      - {name: note, type: Optional<String>}
+";
+
+/// The ledger of [`DESK`]'s sibling shape: `unknown-item` beside a related row the input names.
+const LEDGER: &str = "format: ess/36
+system: demo
+version: v1
+domain: demo.ledger
+summary: An item is sealed once an approved review exists.
+types:
+  - {name: demo.ledger.ItemId, kind: newtype, of: Uuid}
+  - {name: demo.ledger.ReviewId, kind: newtype, of: Uuid}
+entities:
+  - name: demo.ledger.Item
+    identity: {name: item_id, type: demo.ledger.ItemId}
+    fields:
+      - {name: sealed, type: Boolean}
+    lifecycle: {initial: Open, states: [Open], terminal: [Open]}
+  - name: demo.ledger.Review
+    identity: {name: review_id, type: demo.ledger.ReviewId}
+    fields:
+      - {name: approved, type: Boolean}
+    lifecycle: {initial: Open, states: [Open], terminal: [Open]}
+actors:
+  - name: demo.ledger.Operator
+    may: [demo.ledger.AddItem, demo.ledger.AddReview, demo.ledger.Seal]
+errors:
+  - {name: demo.ledger.NotFound, summary: Not found., fields: []}
+  - {name: demo.ledger.AlreadySealed, summary: Already sealed., fields: []}
+  - {name: demo.ledger.NotApproved, summary: Not approved., fields: []}
+events:
+  - name: demo.ledger.ItemAdded
+    fields: [{name: item_id, type: demo.ledger.ItemId}]
+  - name: demo.ledger.ReviewAdded
+    fields: [{name: review_id, type: demo.ledger.ReviewId}]
+  - name: demo.ledger.ItemSealed
+    fields: [{name: item_id, type: demo.ledger.ItemId}]
+commands:
+  - name: demo.ledger.AddItem
+    outcomes:
+      - name: added
+        creates: demo.ledger.Item
+        instance: item_id
+        sets: {sealed: false}
+        emits: [demo.ledger.ItemAdded]
+        payload: {demo.ledger.ItemAdded: {item_id: {generated: true}}}
+  - name: demo.ledger.AddReview
+    input:
+      - {name: approved, type: Boolean}
+    outcomes:
+      - name: added
+        creates: demo.ledger.Review
+        instance: review_id
+        sets: {approved: input.approved}
+        emits: [demo.ledger.ReviewAdded]
+        payload: {demo.ledger.ReviewAdded: {review_id: {generated: true}}}
+  - name: demo.ledger.Seal
+    input:
+      - {name: item_id, type: demo.ledger.ItemId}
+      - {name: review_id, type: demo.ledger.ReviewId}
+    outcomes:
+      - {name: unknown-item, unknown_instance: true, error: demo.ledger.NotFound}
+      - name: already-sealed
+        when_subject: {predicate: sealed == true}
+        error: demo.ledger.AlreadySealed
+      - name: no-review
+        when_related: {via: input.review_id, exists: false}
+        error: demo.ledger.NotFound
+      - name: not-approved
+        when_related: {via: input.review_id, predicate: approved == false}
+        error: demo.ledger.NotApproved
+      - name: sealed
+        updates: demo.ledger.Item
+        instance: item_id
+        sets: {sealed: true}
+        emits: [demo.ledger.ItemSealed]
+        payload: {demo.ledger.ItemSealed: {item_id: input.item_id}}
+views:
+  - name: demo.ledger.Items
+    source: demo.ledger.Item
+    consistency: read_your_writes
+    fields:
+      - {name: item_id, type: demo.ledger.ItemId}
+      - {name: sealed, type: Boolean}
+  - name: demo.ledger.Reviews
+    source: demo.ledger.Review
+    consistency: read_your_writes
+    fields:
+      - {name: review_id, type: demo.ledger.ReviewId}
+      - {name: approved, type: Boolean}
+";
+
+/// `text` synthesized: its `id` scenario sends an identity no row carries and expects `outcome`
+/// with `error` and no event and passes on the interpreted target; with `every`, nothing is refused
+/// and every scenario passes there too.
+fn assert_unknown_identity_witnessed(
+    text: &str,
+    id: &str,
+    outcome: &str,
+    error: &str,
+    every: bool,
+) {
+    let raw = RawSpecFile::parse(text).unwrap_or_else(|error| panic!("{error}"));
+    let spec = Specification::assemble([(Source::new("model.yaml"), raw)])
+        .unwrap_or_else(|errors| panic!("{errors}"));
+    let ir: EssIr = compile(&spec, &SourceMap::new()).unwrap();
+    let synthesis = ess_conformance::synthesize::synthesize(&ir);
+    let refused: Vec<String> = synthesis.refusals.iter().map(ToString::to_string).collect();
+    assert!(!every || refused.is_empty(), "{refused:#?}");
+    let unknown = scenario(&synthesis.suite, id);
+    assert!(
+        !unknown.steps.iter().any(|step| matches!(
+            step,
+            ScenarioStep::EstablishEntity { .. } | ScenarioStep::CaptureInstance { .. }
+        )) || !every,
+        "{id} arranges no instance:\n{:#?}",
+        unknown.steps
+    );
+    assert!(
+        unknown.steps.iter().any(|step| matches!(step,
+            ScenarioStep::ExpectOutcome { outcome: expected } if expected.to_string() == outcome)),
+        "{id} expects {outcome}:\n{:#?}",
+        unknown.steps
+    );
+    assert!(
+        unknown.steps.iter().any(|step| matches!(step,
+            ScenarioStep::ExpectError { error: expected, .. } if expected.to_string() == error)),
+        "{id} expects {error}:\n{:#?}",
+        unknown.steps
+    );
+    assert!(
+        unknown
+            .steps
+            .iter()
+            .any(|step| matches!(step, ScenarioStep::ExpectNoEvent { .. })),
+        "{id} forbids every event:\n{:#?}",
+        unknown.steps
+    );
+    let admitted = ess_conformance::AdmittedSuite::from_suite(&synthesis.suite).unwrap();
+    let report = ess_conformance::Runner::for_suite(&synthesis.suite)
+        .run_admitted(
+            &admitted,
+            &ess_conformance::interpret::Interpreted::for_model(ir),
+        )
+        .into_report();
+    for run in report
+        .scenarios
+        .iter()
+        .filter(|run| every || run.scenario.to_string() == id)
+    {
+        assert_eq!(
+            run.status,
+            ess_conformance::report::Status::Passed,
+            "{}: {:?}",
+            run.scenario,
+            run.checks
+        );
+    }
+}
+
+#[test]
+fn an_unknown_identity_beside_a_stored_pair_is_synthesized() {
+    assert_unknown_identity_witnessed(
+        DESK,
+        "demo.desk.Touch/outcome/unknown-item",
+        "demo.desk.Touch/unknown-item",
+        "demo.desk.NotFound",
+        true,
+    );
+    let flagged = DESK
+        .replace(
+            "      - {name: note, type: Optional<String>}\n    lifecycle",
+            "      - {name: flag, type: Boolean}\n    lifecycle",
+        )
+        .replace(
+            "      - {name: note, type: Optional<String>}\n    outcomes:\n      - name: added",
+            "      - {name: flag, type: Boolean}\n    outcomes:\n      - name: added",
+        )
+        .replace("sets: {note: input.note}", "sets: {flag: input.flag}")
+        .replace("{predicate: defined(note)}", "{predicate: flag == true}")
+        .replace("{predicate: not defined(note)}", "{predicate: flag == false}")
+        .replace(
+            "      - {name: item_id, type: demo.desk.ItemId}\n      - {name: note, type: Optional<String>}\n",
+            "      - {name: item_id, type: demo.desk.ItemId}\n      - {name: flag, type: Boolean}\n",
+        );
+    assert_unknown_identity_witnessed(
+        &flagged,
+        "demo.desk.Touch/outcome/unknown-item",
+        "demo.desk.Touch/unknown-item",
+        "demo.desk.NotFound",
+        true,
+    );
+}
+
+#[test]
+fn an_unknown_identity_beside_a_related_guard_is_synthesized() {
+    assert_unknown_identity_witnessed(
+        LEDGER,
+        "demo.ledger.Seal/outcome/unknown-item",
+        "demo.ledger.Seal/unknown-item",
+        "demo.ledger.NotFound",
+        false,
+    );
+}

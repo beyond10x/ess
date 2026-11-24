@@ -17836,6 +17836,16 @@ fn unknown_reached<'c>(
             Err(cause) => last = Some(cause),
         }
     }
+    // Where no acting branch is reached so, and each is selected by stored fields of the addressed
+    // row: the input alone decides, since that row's existence answers before any stored field is
+    // read (beyond10x/ess#554).
+    if reached.is_none() && subject_fact::uses(command) && !related_guard::uses(command) {
+        reached = acting.iter().find_map(|outcome| {
+            subject_fact::unknown_input(ir, command, outcome)
+                .ok()
+                .map(|input| (*outcome, input))
+        });
+    }
     reached.ok_or_else(|| {
         last.unwrap_or(RefusalCause::StrategyWithoutGuard {
             strategy: declared.test_strategy,

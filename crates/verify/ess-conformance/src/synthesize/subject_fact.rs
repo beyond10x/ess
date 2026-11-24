@@ -3099,6 +3099,41 @@ pub(super) fn input_selects(
     Ok(pick.is_some_and(|branch| branch.name == outcome.name))
 }
 
+/// The input an identity no row carries is sent with to reach `outcome` of a command whose branches
+/// read stored fields of the addressed row (beyond10x/ess#554): one its own input guard admits,
+/// where it declares one, and every refusal decided by the input alone refutes. The stored halves
+/// decide nothing here, because the addressed row's existence answers before any of them is read.
+pub(super) fn unknown_input(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+) -> Result<BTreeMap<String, Node>, RefusalCause> {
+    let guards: Vec<&Predicate> = command
+        .outcomes
+        .iter()
+        .filter_map(|branch| input_guard(&branch.condition))
+        .collect();
+    let own: Vec<&Predicate> = input_guard(&outcome.condition).into_iter().collect();
+    let refusals: Vec<&Predicate> = command
+        .outcomes
+        .iter()
+        .filter(|branch| branch.name != outcome.name && super::is_input_guarded_refusal(branch))
+        .filter(|branch| stored(&branch.condition).is_none())
+        .filter_map(|branch| input_guard(&branch.condition))
+        .collect();
+    for input in
+        candidates(ir, command, &guards, Distinction::PLAIN).map_err(RefusalCause::NoWitness)?
+    {
+        let facts = flatten(ir, command, &input).map_err(RefusalCause::WitnessRejected)?;
+        if decides(&facts, &own, true)? && decides(&facts, &refusals, false)? {
+            return Ok(input);
+        }
+    }
+    Err(RefusalCause::StrategyWithoutGuard {
+        strategy: outcome.test_strategy,
+    })
+}
+
 /// The row and input a wrong-state scenario sends a command reading stored fields
 /// (beyond10x/ess#173, #192): an input the moving branch `outcome`'s own input guard admits, where
 /// it declares one, sent to a row in `state` on which no sibling branch is selected.
