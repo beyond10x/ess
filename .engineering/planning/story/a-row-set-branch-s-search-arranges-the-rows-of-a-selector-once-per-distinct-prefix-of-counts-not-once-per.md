@@ -9,7 +9,7 @@ tags:
 - gap-reports-2026-11-24
 relations:
 - serves: vision:O2
-revision: 3
+revision: 4
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-24T01:33:06Z", actor: "human:timo", revision: 2}
 - {from: "proposed", to: "active", at: "2026-11-24T01:33:07Z", actor: "human:timo", revision: 3}
@@ -56,7 +56,9 @@ counter (below).
    same number before and after (the attempts are unchanged, only their work).
 3. `row_set_selectors_arranged(|| synthesize(&ir))` counts selectors arranged rather than reused, on
    every thread: the counter is carried across caller readings like `tried` in
-   `synthesize/threads.rs` (`taken_*`/`add_*` pair and a line in its counter list).
+   `synthesize/threads.rs` (`taken_*`/`add_*` pair, a `Work` field, and a `Counter` row in
+   `STATE`, which `every_static_of_the_crate_is_classified` and `work_names_every_counter_row`
+   require).
 4. No byte moves: the byte pins of `## Gate` pass unchanged, and the generic model's suite
    (`ess verify conform synthesize --target ir`) is `cmp`-identical between the unchanged head's
    release binary and the fixed one for K = 2, 3, 4, 5 (model text: the test's, written to a scratch
