@@ -1279,8 +1279,9 @@ func unquoted(text string) string {
 	return out.String()
 }
 
-// parameters is a header value's first item and its name=value parameters, each name in lower
-// case, split at each ; outside a quoted string.
+// parameters is a header value's first item and its name=value parameters, each name with its
+// ASCII capitals lower-cased and every other character as sent (as the Rust server's
+// `to_ascii_lowercase`), split at each ; outside a quoted string.
 func parameters(value string) (string, [][2]string) {
 	items := []string{}
 	var item strings.Builder
@@ -1305,10 +1306,22 @@ func parameters(value string) (string, [][2]string) {
 	for _, one := range items[1:] {
 		name, text, ok := strings.Cut(one, "=")
 		if ok {
-			pairs = append(pairs, [2]string{strings.ToLower(strings.TrimSpace(name)), unquoted(strings.TrimSpace(text))})
+			pairs = append(pairs, [2]string{lowerASCII(strings.TrimSpace(name)), unquoted(strings.TrimSpace(text))})
 		}
 	}
 	return strings.TrimSpace(items[0]), pairs
+}
+
+// lowerASCII is text with each ASCII capital lower-cased and every other byte kept: a parameter
+// name is matched by its ASCII spelling only (RFC 7578), never by Unicode case folding.
+func lowerASCII(text string) string {
+	out := []byte(text)
+	for index, one := range out {
+		if 'A' <= one && one <= 'Z' {
+			out[index] = one + ('a' - 'A')
+		}
+	}
+	return string(out)
 }
 
 // multipartBoundary is the boundary of a `multipart/form-data` request, or a refusal where its
@@ -1553,18 +1566,15 @@ func echoedParts(request *http.Request, body []byte, carried []flatField, path [
 /// What a surface adds where a route lists `request.query` (beyond10x/ess#754): the join of the
 /// fields read from the query string with the body's, as the Rust server's `http::with_query`.
 pub(super) const QUERIED: &str = r#"
-// withQuery is value with the members the query string carries added (beyond10x/ess#754), each
-// of listed that query holds, in the order listed: a field the route's `request.query` lists is
-// read from the query string alone, and the body naming it is malformed.
+// withQuery is value with the members the query string carries added (beyond10x/ess#754): a
+// field the route's `request.query` lists is read from the query string alone, and the body
+// naming it is malformed, whether the query carries it or not, checked in the order listed.
 func withQuery(value any, query map[string]any, listed []flatField, at string) (any, error) {
 	object, ok := value.(map[string]any)
 	if !ok {
 		return value, nil
 	}
 	for _, field := range listed {
-		if _, read := query[field.wire]; !read {
-			continue
-		}
 		if _, present := object[field.wire]; present {
 			return nil, fmt.Errorf("%s: the query carries this field, so the body does not", nested(at, field.wire))
 		}

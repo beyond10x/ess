@@ -1174,15 +1174,17 @@ pub fn echoed_parts(
 /// of the fields read from the query string with the body's.
 pub(super) const QUERIED: &str = r#"
 /// `value` with the members the query string carries added (beyond10x/ess#754): a field the
-/// route's `request.query` lists is read from the query string alone, and the body naming it is
-/// malformed.
+/// route's `request.query` lists, by wire name in `listed`, is read from the query string alone,
+/// and the body naming it is malformed, whether the query carries it or not.
 ///
 /// # Errors
 ///
-/// A refusal naming the member under `at` when `value` already holds one the query carries.
+/// A refusal naming the member under `at` when `value` holds one `listed` names, the first in
+/// the order listed.
 pub fn with_query(
     value: crate::json::Value,
     query: crate::json::Value,
+    listed: &[&str],
     at: &str,
 ) -> Result<crate::json::Value, String> {
     let crate::json::Value::Object(read) = query else {
@@ -1190,7 +1192,7 @@ pub fn with_query(
     };
     match value {
         crate::json::Value::Object(mut members) => {
-            for (wire, _) in &read {
+            for wire in listed {
                 if members.iter().any(|(key, _)| key == wire) {
                     return Err(format!(
                         "{}: the query carries this field, so the body does not",
@@ -1538,9 +1540,12 @@ fn queried(
     if request.query.is_empty() {
         return joined;
     }
-    let rows: Vec<String> = request
+    let fields: Vec<&ResolvedField> = request
         .query_fields()
         .filter_map(|name| command.input.iter().find(|field| field.name == name))
+        .collect();
+    let rows: Vec<String> = fields
+        .iter()
         .map(|field| {
             let (shape, flat) = http::flat(server.ir, &field.type_ref)
                 .unwrap_or((http::Shape::One, http::Flat::Text));
@@ -1552,12 +1557,17 @@ fn queried(
             )
         })
         .collect();
+    let listed: Vec<String> = fields
+        .iter()
+        .map(|field| format!("{:?}", ess_gen::schema::wire_field_name(field)))
+        .collect();
     format!(
         "let value = {{\n        {joined}\n        }}?;\n        let query = \
          http::flat_object(&request.query, &[{}], &[], {}, \"query\")?;\n        \
-         http::with_query(value, query, \"body\")",
+         http::with_query(value, query, &[{}], \"body\")",
         rows.join(", "),
-        request.unknown == ess_http::Unknown::Ignore
+        request.unknown == ess_http::Unknown::Ignore,
+        listed.join(", ")
     )
 }
 
