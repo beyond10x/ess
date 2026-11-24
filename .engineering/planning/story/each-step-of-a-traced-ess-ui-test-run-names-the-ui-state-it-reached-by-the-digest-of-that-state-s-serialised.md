@@ -10,6 +10,7 @@ tags:
 relations:
 - serves: vision:O2
 - depends_on: story:a-traced-ess-ui-test-run-reports-for-every-step-the-page-shown-the-nodes-drawn-and-the-cells-each-one-occupies
+- depends_on: story:a-ui-state-prints-as-ess-ui-state-1-with-a-digest-and-two-routes-to-one-state-print-the-same-bytes-and-the
 revision: 1
 ---
 ## Need

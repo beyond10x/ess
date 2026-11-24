@@ -9,6 +9,7 @@ tags:
 - gap-reports-2026-11-24
 relations:
 - serves: vision:O2
+- depends_on: story:ess-ui-load-format-json-prints-the-document-the-loader-resolved-every-default-filled-as-the-versioned-format
 revision: 1
 ---
 ## Need
