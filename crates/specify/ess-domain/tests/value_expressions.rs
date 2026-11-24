@@ -299,3 +299,161 @@ fn a_nested_mapping_fills_every_field_of_a_struct_and_nothing_else() {
     );
     refused(&body, &["undeclared_reference", "no declared source field"]);
 }
+
+/// A shelf on an aisle, and a command that deletes the shelf; `{label}` and `{aisle}` fill the
+/// deleting outcome's event fields.
+fn deleting(label: &str, aisle: &str) -> String {
+    format!(
+        "format: ess/37
+system: depot
+version: v1
+domain: depot.racks
+types:
+  - {{name: depot.racks.AisleId, kind: newtype, of: String}}
+entities:
+  - name: depot.racks.Aisle
+    identity: {{name: aisle_id, type: depot.racks.AisleId}}
+    fields:
+      - {{name: title, type: String}}
+    lifecycle: {{initial: Open, states: [Open], terminal: [Open]}}
+  - name: depot.racks.Shelf
+    identity: {{name: shelf_id, type: Uuid}}
+    fields:
+      - {{name: label, type: String}}
+      - {{name: aisle, type: depot.racks.AisleId}}
+    lifecycle: {{initial: Stocked, states: [Stocked], terminal: [Stocked]}}
+errors:
+  - name: depot.racks.UnknownShelf
+events:
+  - name: depot.racks.ShelfRemoved
+    fields:
+      - {{name: shelf_id, type: Uuid}}
+      - {{name: label, type: String}}
+      - {{name: aisle, type: String}}
+commands:
+  - name: depot.racks.RemoveShelf
+    input:
+      - {{name: shelf_id, type: Uuid}}
+    outcomes:
+      - {{name: unknown-shelf, unknown_instance: true, error: depot.racks.UnknownShelf}}
+      - name: removed
+        deletes: depot.racks.Shelf
+        instance: shelf_id
+        emits: [depot.racks.ShelfRemoved]
+        payload:
+          depot.racks.ShelfRemoved:
+            shelf_id: input.shelf_id
+            label: {label}
+            aisle: {aisle}
+"
+    )
+}
+
+fn refusals(body: &str) -> Vec<ess_primitives::error::ValidationError> {
+    let raw = ess_domain::spec::RawSpecFile::parse(body).unwrap_or_else(|e| panic!("{e}"));
+    ess_domain::Specification::assemble([(ess_domain::system::Source::new("racks.yaml"), raw)])
+        .err()
+        .unwrap_or_else(|| panic!("must not compile:\n{body}"))
+        .as_slice()
+        .to_vec()
+}
+
+const REMOVED: &str =
+    "command.depot.racks.RemoveShelf.outcomes.removed.payload.depot.racks.ShelfRemoved";
+
+#[test]
+fn a_subject_read_on_a_deleting_outcome_names_deletes() {
+    // beyond10x/ess#796: the refusal said the outcome was a `creates:` outcome.
+    let errors = refusals(&deleting(
+        "{subject: label}",
+        "{related: {via: input.shelf_id, field: label}}",
+    ));
+    let error = errors
+        .iter()
+        .find(|error| error.location == format!("{REMOVED}.label"))
+        .unwrap_or_else(|| panic!("{errors:#?}"));
+    assert_eq!(
+        error.code,
+        ess_primitives::error::ValidationCode::ConflictingDeclaration
+    );
+    assert!(error.message.contains("`deletes:`"), "{error:#?}");
+    assert!(!error.message.contains("`creates:`"), "{error:#?}");
+    let hint = error.hint.as_deref().unwrap_or_default();
+    assert!(
+        hint.contains("`{related: {via: input.shelf_id, field: label}}`"),
+        "{error:#?}"
+    );
+    assert!(
+        !hint.contains("read the value from the command's input instead"),
+        "{error:#?}"
+    );
+}
+
+#[test]
+fn a_related_read_through_a_subject_field_on_a_deleting_outcome_names_deletes() {
+    let errors = refusals(&deleting(
+        "{related: {via: input.shelf_id, field: label}}",
+        "{related: {via: aisle, field: title}}",
+    ));
+    let error = errors
+        .iter()
+        .find(|error| error.location == format!("{REMOVED}.aisle"))
+        .unwrap_or_else(|| panic!("{errors:#?}"));
+    assert!(error.message.contains("`deletes:`"), "{error:#?}");
+    assert!(!error.message.contains("`creates:`"), "{error:#?}");
+}
+
+/// Review of the #796 fix: the story's scope names the sibling hint of `related_via` too. An
+/// input that two entities are identified by, read on a `deletes:` outcome, is refused with a hint
+/// that says the outcome is a `creates:` branch and tells the author to set a field from the
+/// input, which a deleting outcome cannot do.
+#[test]
+fn an_ambiguous_input_read_on_a_deleting_outcome_does_not_call_it_creates() {
+    let body = deleting(
+        "{related: {via: input.shelf_id, field: label}}",
+        "{related: {via: input.aisle, field: title}}",
+    )
+    .replace(
+        "entities:\n",
+        "entities:
+  - name: depot.racks.Dock
+    identity: {name: dock_id, type: depot.racks.AisleId}
+    fields:
+      - {name: title, type: String}
+    lifecycle: {initial: Open, states: [Open], terminal: [Open]}
+",
+    )
+    .replace(
+        "      - {name: shelf_id, type: Uuid}\n    outcomes:",
+        "      - {name: shelf_id, type: Uuid}\n      - {name: aisle, type: depot.racks.AisleId}\n    outcomes:",
+    );
+    let errors = refusals(&body);
+    let error = errors
+        .iter()
+        .find(|error| error.location == format!("{REMOVED}.aisle"))
+        .unwrap_or_else(|| panic!("{errors:#?}"));
+    assert!(error.message.contains("the identity of"), "{error:#?}");
+    let hint = error.hint.as_deref().unwrap_or_default();
+    assert!(!hint.contains("`creates:`"), "{error:#?}");
+}
+
+/// A subject read of a field the entity does not have, on a `deletes:` outcome, is refused naming
+/// the unknown field, and its hint proposes no `{related: …}` read of that same field.
+#[test]
+fn an_unknown_subject_field_on_a_deleting_outcome_is_named_and_not_proposed() {
+    let errors = refusals(&deleting(
+        "{subject: nope}",
+        "{related: {via: input.shelf_id, field: label}}",
+    ));
+    let error = errors
+        .iter()
+        .find(|error| error.location == format!("{REMOVED}.label"))
+        .unwrap_or_else(|| panic!("{errors:#?}"));
+    assert!(error.message.contains("`deletes:`"), "{error:#?}");
+    let hint = error.hint.as_deref().unwrap_or_default();
+    assert!(!hint.contains("field: nope"), "{error:#?}");
+    assert!(
+        hint.contains("`nope` is not a field of `depot.racks.Shelf`"),
+        "{error:#?}"
+    );
+}

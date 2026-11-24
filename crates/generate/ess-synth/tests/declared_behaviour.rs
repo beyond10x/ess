@@ -722,6 +722,137 @@ fn plan_contract_states_existing_instance_exception_for_related_commands() {
     );
 }
 
+/// A command with an input refusal, a `before_row: true` external, `existing_instance:`, a missing
+/// related row and a present one, in source format `format`; its obligation contract. Below
+/// `ess/27`, which refuses `before_row:` beside `when_related:` and a row set beside a named row,
+/// the external is answered in declaration order and the row-set refusal is left out.
+fn one_rule_contract(format: &str) -> String {
+    let text = one_rule_text(format);
+    let text = if format == "ess/26" {
+        text.replace("        before_row: true\n", "").replace(
+            "      - name: slot-taken\n        when_related: {entity: depot.racks.Shelf, where: \
+             slot == input.slot, exists: true}\n        error: depot.racks.SlotTaken\n",
+            "",
+        )
+    } else {
+        text
+    };
+    let plan = SynthesisPlan::of(&compile_text(&text));
+    match plan.disposition_of(CapabilityKind::CommandBehavior, "depot.racks.AddShelf") {
+        Some(SynthesisDisposition::Obligation(obligation)) => obligation.contract.clone(),
+        other => panic!("an `external:` branch keeps the command owed: {other:?}"),
+    }
+}
+
+fn one_rule_text(format: &str) -> String {
+    format!(
+        "format: {format}
+system: depot
+version: v1
+domain: depot.racks
+types:
+  - {{name: depot.racks.RackId, kind: newtype, of: String}}
+  - {{name: depot.racks.ShelfId, kind: newtype, of: String}}
+entities:
+  - name: depot.racks.Rack
+    identity: {{name: rack_id, type: depot.racks.RackId}}
+    fields:
+      - {{name: aisle, type: String}}
+    lifecycle: {{initial: Open, states: [Open], terminal: [Open]}}
+  - name: depot.racks.Shelf
+    identity: {{name: shelf_id, type: depot.racks.ShelfId}}
+    fields:
+      - {{name: rack_id, type: depot.racks.RackId}}
+      - {{name: slot, type: String}}
+      - {{name: label, type: String}}
+    relations:
+      - {{name: rack, kind: references, target: depot.racks.Rack, cardinality: one, via: rack_id}}
+    lifecycle: {{initial: Stocked, states: [Stocked], terminal: [Stocked]}}
+errors:
+  - name: depot.racks.NoLabel
+  - name: depot.racks.NotCleared
+  - name: depot.racks.Duplicate
+  - name: depot.racks.SlotTaken
+  - name: depot.racks.UnknownRack
+commands:
+  - name: depot.racks.AddShelf
+    input:
+      - {{name: shelf_id, type: depot.racks.ShelfId}}
+      - {{name: rack_id, type: depot.racks.RackId}}
+      - {{name: slot, type: String}}
+      - {{name: label, type: String}}
+    outcomes:
+      - {{name: no-label, when: 'label == \"\"', error: depot.racks.NoLabel}}
+      - name: not-cleared
+        external: the safety office has not cleared the label
+        before_row: true
+        error: depot.racks.NotCleared
+      - {{name: duplicate, existing_instance: true, error: depot.racks.Duplicate}}
+      - name: unknown-rack
+        when_related: {{via: input.rack_id, exists: false}}
+        error: depot.racks.UnknownRack
+      - name: slot-taken
+        when_related: {{entity: depot.racks.Shelf, where: slot == input.slot, exists: true}}
+        error: depot.racks.SlotTaken
+      - name: added
+        creates: depot.racks.Shelf
+        instance: shelf_id
+        sets: {{rack_id: input.rack_id, slot: input.slot, label: input.label}}
+        emits: [depot.racks.ShelfAdded]
+        payload:
+          depot.racks.ShelfAdded: {{shelf_id: input.shelf_id}}
+events:
+  - name: depot.racks.ShelfAdded
+    fields:
+      - {{name: shelf_id, type: depot.racks.ShelfId}}
+"
+    )
+}
+
+/// From `ess/27` the contract states the order the one rule decides (beyond10x/ess#798): input
+/// refusals and `before_row: true` externals, then existence, the held state, missing and present
+/// related rows, and the accepting branches.
+#[test]
+fn plan_contract_states_the_one_rule_for_related_commands() {
+    let contract = one_rule_contract("ess/37");
+    let (precedence, _) = contract
+        .split_once("Declared outcomes (declaration order, not selection precedence):")
+        .expect("the inventory follows the precedence");
+    let at = |phrase: &str| {
+        precedence
+            .find(phrase)
+            .unwrap_or_else(|| panic!("{phrase:?} in:\n{precedence}"))
+    };
+    let input = at("first declared input refusal");
+    let before_row = at("`before_row: true`");
+    let existence = at("`unknown_instance`");
+    let held = at("held state");
+    let missing = at("`exists: false`");
+    let present = at("present `when_related:` predicate refusal");
+    let accepting = at("accepting and remaining external branches");
+    assert!(input < existence && before_row < existence, "{precedence}");
+    assert!(existence < held && held < missing, "{precedence}");
+    assert!(missing < present && present < accepting, "{precedence}");
+    assert!(
+        !contract.contains("`exists: false` before input-guarded refusals"),
+        "{contract}"
+    );
+    assert!(
+        !contract.contains("Related-presence predicates do not precede input-guarded refusals"),
+        "{contract}"
+    );
+}
+
+/// Below `ess/27` the contract keeps the order that format decides.
+#[test]
+fn plan_contract_below_the_one_rule_keeps_its_order() {
+    let contract = one_rule_contract("ess/26");
+    assert!(
+        contract.contains("`exists: false` before input-guarded refusals"),
+        "{contract}"
+    );
+}
+
 #[test]
 fn generated_refusal_comments_do_not_claim_universal_read_precedence() {
     let ir = compile_directory(&fixture_root());

@@ -2,6 +2,23 @@
 
 ## [Unreleased]
 
+## [0.98.2] — 2026-11-24
+
+### Fixed
+
+- Validation refuses `{subject: …}`, and a `{related: …}` read through a field of the subject, on a `deletes:` outcome naming `deletes:`, with a hint to read the row through an input such as `{related: {via: input.<id>, field: …}}`, where it said the outcome was a `creates:` outcome with no row before it and told the author to read the input (#796).
+- `ess generate synthesize --target rust` writes the port of a component that accepts no command and declares no view without a field nothing reads, so the generated workspace builds with warnings denied, where `cargo build` warned that `behaviors` is never read (#793).
+- The obligation contract of a command with `when_related:` from `ess/27`, in `PLAN.md`, `plan.json` and the generated obligation comments, states the precedence the interpreted target and the suite follow: input refusals and `before_row: true` externals first, then existence, the held state, missing and present related rows, and the accepting branches, where it put `existing_instance` and `exists: false` before the input refusals (#798).
+- `ess verify conform synthesize` tries values an input's type admits where a guard reads the input and the type's invariant refuses the value synthesis started from (a text length or a number range), so the branch is witnessed without an `example:`, where it was refused as `ESS-SYNTH-003` naming a value its own type refuses; the suite of such a model gains scenarios, and one that already passed through an `example:` may send other values beside it (#809).
+- `ess verify conform synthesize` arranges the held state of a command's wrong-state scenario on a row whose identity the command's `when:` guard over `caller.<attr>` admits for the caller each step is sent as, and writes no reading whose arranging and refusing callers no one row admits, where it sent a caller that guard refused and the interpreted target failed the scenario (#794).
+
+## [0.98.1] — 2026-11-24
+
+### Fixed
+
+- A section whose live effect is `insert_top` shows one row for a key it already holds, in the terminal renderer, in `ess ui test` and in the generated React app. An event whose key a row of the section already carried inserted a second row above it, so a looping fixture script piled up copies of its rows and two rows shared one row path (a test that advanced 30 s and expected 6 rows saw 9, the keys `[5, 4, 6, 5, 4, 6, 1, 2, 3]`). The held row takes the event's fields and moves to the top, `max_rows` applies after the move, and `insert_or_patch` still patches the held row in place.
+- The generated React app repeats a looping fixture script at the time of its last entry, as the terminal and `ess ui test` do. It waited one second longer, and never less than two seconds, so a test that advanced the clock to the last entry's time found a different second cycle in the browser than in the terminal. A script whose last entry is at 0 s plays once in the React app as in the terminal.
+
 ## [0.98.0] — 2026-11-23
 
 ### Added

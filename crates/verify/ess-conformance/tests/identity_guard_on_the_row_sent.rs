@@ -286,3 +286,279 @@ fn prepare_state_input_sends_the_row_its_identity_guard_selects() {
     );
     assert_all_pass(&run);
 }
+
+/// A bay is closed only by the caller who holds it: `CloseBay` refuses with an input guard over a
+/// caller attribute, and its held-state refusal is arranged by closing the bay first
+/// (beyond10x/ess#794).
+const HOLDER: &str = r"format: ess/37
+system: depot
+version: v1
+domain: depot.bay
+types:
+  - {name: depot.bay.BayId, kind: newtype, of: Uuid}
+entities:
+  - name: depot.bay.Bay
+    identity: {name: bay_id, type: depot.bay.BayId}
+    fields:
+      - {name: note, type: String}
+    lifecycle:
+      initial: Open
+      states: [Open, Closed]
+      terminal: [Closed]
+      transitions:
+        - {name: close, from: [Open], to: Closed}
+actors:
+  - name: depot.bay.Opener
+    may: [depot.bay.OpenBay]
+  - name: depot.bay.Holder
+    attributes:
+      - {name: bay_id, type: depot.bay.BayId}
+    may: [depot.bay.CloseBay]
+errors:
+  - name: depot.bay.NotHolder
+    fields:
+      - {name: bay_id, type: depot.bay.BayId}
+  - name: depot.bay.BayStateConflict
+    fields:
+      - {name: state, type: depot.bay.Bay.State}
+commands:
+  - name: depot.bay.OpenBay
+    input:
+      - {name: bay_id, type: depot.bay.BayId}
+      - {name: note, type: String}
+    outcomes:
+      - name: opened
+        creates: depot.bay.Bay
+        instance: bay_id
+        sets: {note: input.note}
+        emits: [depot.bay.BayOpened]
+        payload:
+          depot.bay.BayOpened: {bay_id: input.bay_id}
+  - name: depot.bay.CloseBay
+    input:
+      - {name: bay_id, type: depot.bay.BayId}
+    outcomes:
+      - name: not-holder
+        when: bay_id != caller.bay_id
+        error: depot.bay.NotHolder
+        payload:
+          depot.bay.NotHolder: {bay_id: input.bay_id}
+      - name: closed
+        moves: depot.bay.Bay.close
+        instance: bay_id
+        emits: [depot.bay.BayClosed]
+        payload:
+          depot.bay.BayClosed: {bay_id: input.bay_id}
+      - name: wrong-state
+        wrong_state: true
+        error: depot.bay.BayStateConflict
+        payload:
+          depot.bay.BayStateConflict: {state: {subject: state}}
+events:
+  - name: depot.bay.BayOpened
+    fields:
+      - {name: bay_id, type: depot.bay.BayId}
+  - name: depot.bay.BayClosed
+    fields:
+      - {name: bay_id, type: depot.bay.BayId}
+views:
+  - name: depot.bay.Bays
+    source: depot.bay.Bay
+    consistency: read_your_writes
+    fields:
+      - {name: bay_id, type: depot.bay.BayId}
+";
+
+const CLOSED_REFUSES: &str = "depot.bay.Bay/state/Closed/refuses/depot.bay.CloseBay";
+
+/// Every `CloseBay` step of the scenario that expects `closed` or `wrong-state`, as the caller's
+/// `bay_id` and the literal identity of the bay its input names.
+fn holder_steps(scenario: &Value) -> Vec<(Value, Value)> {
+    let steps = scenario["steps"].as_array().cloned().unwrap_or_default();
+    // The identity each captured bay was opened under.
+    let mut opened: BTreeMap<String, Value> = BTreeMap::new();
+    let mut last_open = Value::Null;
+    let mut found = Vec::new();
+    for (at, step) in steps.iter().enumerate() {
+        if step["step"] == "execute_command" && step["command"] == "depot.bay.OpenBay" {
+            last_open = step["input"]["bay_id"]["value"].clone();
+        }
+        if step["step"] == "capture_instance" {
+            if let Some(name) = step["instance"].as_str() {
+                opened.insert(name.to_owned(), last_open.clone());
+            }
+        }
+        if step["step"] == "execute_command" && step["command"] == "depot.bay.CloseBay" {
+            let expected = steps
+                .get(at + 1)
+                .map(|next| next["outcome"]["outcome"].clone());
+            if expected.is_some_and(|outcome| outcome == "closed" || outcome == "wrong-state") {
+                let sent = &step["input"]["bay_id"];
+                let identity = match sent["instance"].as_str() {
+                    Some(name) => opened.get(name).cloned().unwrap_or(Value::Null),
+                    None => sent["value"].clone(),
+                };
+                found.push((step["caller"]["bay_id"].clone(), identity));
+            }
+        }
+    }
+    found
+}
+
+#[test]
+fn a_caller_guarded_wrong_state_scenario_arranges_as_an_admitted_caller() {
+    let run = run(HOLDER);
+    let scenario = written(&run, CLOSED_REFUSES).unwrap_or_else(|| {
+        panic!(
+            "{CLOSED_REFUSES} is written; refusals: {:#?}",
+            run.synthesis
+                .refusals
+                .iter()
+                .map(|refusal| refusal.cause.to_string())
+                .collect::<Vec<_>>()
+        )
+    });
+    let steps = holder_steps(&scenario);
+    assert!(steps.len() >= 2, "{scenario:#}");
+    for (caller, identity) in &steps {
+        assert_eq!(caller, identity, "{scenario:#}");
+    }
+    assert!(run.synthesis.suite.scenarios.len() >= 5);
+    assert_all_pass(&run);
+}
+
+/// The arranging step and the refusal step of a scenario sent as two callers would need the bay
+/// to carry two identities; no such scenario is written, and the one-caller scenario is kept.
+#[test]
+fn a_cross_reading_that_no_row_satisfies_is_not_written() {
+    let run = run(HOLDER);
+    for (id, scenario) in &run.synthesis.suite.scenarios {
+        let scenario = serde_json::to_value(scenario).unwrap();
+        for (caller, identity) in holder_steps(&scenario) {
+            assert_eq!(caller, identity, "{id}: {scenario:#}");
+        }
+    }
+}
+
+/// `HOLDER` with the caller guard over an input that names no row: `zone != caller.zone`. Each
+/// step's `zone` is written as the caller it is sent as, so a scenario that arranges the bay as
+/// one caller and sends the refusal as the other passes, and 0.98.0 wrote exactly that.
+const ZONED: &str = r"format: ess/37
+system: depot
+version: v1
+domain: depot.bay
+types:
+  - {name: depot.bay.BayId, kind: newtype, of: Uuid}
+entities:
+  - name: depot.bay.Bay
+    identity: {name: bay_id, type: depot.bay.BayId}
+    fields:
+      - {name: note, type: String}
+    lifecycle:
+      initial: Open
+      states: [Open, Closed]
+      terminal: [Closed]
+      transitions:
+        - {name: close, from: [Open], to: Closed}
+actors:
+  - name: depot.bay.Opener
+    may: [depot.bay.OpenBay]
+  - name: depot.bay.Holder
+    attributes:
+      - {name: zone, type: String}
+    may: [depot.bay.CloseBay]
+errors:
+  - name: depot.bay.WrongZone
+    fields: []
+  - name: depot.bay.BayStateConflict
+    fields:
+      - {name: state, type: depot.bay.Bay.State}
+commands:
+  - name: depot.bay.OpenBay
+    input:
+      - {name: bay_id, type: depot.bay.BayId}
+      - {name: note, type: String}
+    outcomes:
+      - name: opened
+        creates: depot.bay.Bay
+        instance: bay_id
+        sets: {note: input.note}
+        emits: [depot.bay.BayOpened]
+        payload:
+          depot.bay.BayOpened: {bay_id: input.bay_id}
+  - name: depot.bay.CloseBay
+    input:
+      - {name: bay_id, type: depot.bay.BayId}
+      - {name: zone, type: String}
+    outcomes:
+      - name: wrong-zone
+        when: zone != caller.zone
+        error: depot.bay.WrongZone
+      - name: closed
+        moves: depot.bay.Bay.close
+        instance: bay_id
+        emits: [depot.bay.BayClosed]
+        payload:
+          depot.bay.BayClosed: {bay_id: input.bay_id}
+      - name: wrong-state
+        wrong_state: true
+        error: depot.bay.BayStateConflict
+        payload:
+          depot.bay.BayStateConflict: {state: {subject: state}}
+events:
+  - name: depot.bay.BayOpened
+    fields:
+      - {name: bay_id, type: depot.bay.BayId}
+  - name: depot.bay.BayClosed
+    fields:
+      - {name: bay_id, type: depot.bay.BayId}
+views:
+  - name: depot.bay.Bays
+    source: depot.bay.Bay
+    consistency: read_your_writes
+    fields:
+      - {name: bay_id, type: depot.bay.BayId}
+      - {name: state, type: depot.bay.Bay.State}
+";
+
+/// Review of the #794 fix: a caller guard over an input that names no row needs no single row
+/// for two callers, so the wrong-state scenario keeps the reading in which the bay is closed by
+/// one caller and the refusal is sent by the other (as 0.98.0 wrote it, passing). The fix checks
+/// the refusal input before it is written as the acting caller and drops that reading without a
+/// note or a refusal.
+#[test]
+fn a_caller_guard_over_an_input_naming_no_row_keeps_the_two_caller_wrong_state_reading() {
+    let run = run(ZONED);
+    let scenario = written(&run, CLOSED_REFUSES).unwrap_or_else(|| {
+        panic!("{CLOSED_REFUSES} is written");
+    });
+    let steps = scenario["steps"].as_array().cloned().unwrap_or_default();
+    // (caller zone, input zone, the outcome the next step expects) of every `CloseBay` step.
+    let sent: Vec<(Value, Value, Value)> = steps
+        .iter()
+        .enumerate()
+        .filter(|(_, step)| {
+            step["step"] == "execute_command" && step["command"] == "depot.bay.CloseBay"
+        })
+        .map(|(at, step)| {
+            (
+                step["caller"]["zone"].clone(),
+                step["input"]["zone"]["value"].clone(),
+                steps
+                    .get(at + 1)
+                    .map_or(Value::Null, |next| next["outcome"]["outcome"].clone()),
+            )
+        })
+        .collect();
+    for (caller, input, _) in &sent {
+        assert_eq!(caller, input, "{scenario:#}");
+    }
+    let crossed = sent
+        .windows(2)
+        .any(|pair| pair[0].2 == "closed" && pair[1].2 == "wrong-state" && pair[0].0 != pair[1].0);
+    assert!(
+        crossed,
+        "the bay closed by one caller is refused for the other: {sent:#?}"
+    );
+    assert_all_pass(&run);
+}
