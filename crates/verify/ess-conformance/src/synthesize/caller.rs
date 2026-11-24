@@ -2783,12 +2783,23 @@ fn derived(
     ir: &EssIr,
     inputs: &BTreeMap<String, (&ResolvedCommand, BTreeSet<String>)>,
 ) -> BTreeSet<String> {
+    /// `path` is the dotted path of the struct `entry` is a member of, where it is one: a struct
+    /// with a member the scenario does not determine is asserted member by member under that
+    /// path (`data.id`), so the path is a name a serialized run carries the copy under too, at
+    /// every depth. It goes to `dotted`, apart from `found`, which transitive readers match
+    /// stored field names against.
     fn copies(
         entry: &ResolvedPayloadField,
+        path: Option<&str>,
         from_input: &BTreeSet<String>,
         from_stored: &BTreeSet<String>,
         found: &mut BTreeSet<String>,
+        dotted: &mut BTreeSet<String>,
     ) {
+        let at = path.map_or_else(
+            || entry.target.clone(),
+            |parent| format!("{parent}.{}", entry.target),
+        );
         match &entry.value {
             ResolvedPayloadValue::InputField { field, .. }
             | ResolvedPayloadValue::InputOrGenerated { field, .. }
@@ -2800,13 +2811,15 @@ fn derived(
                         .is_some_and(|(root, _)| from_input.contains(root)) =>
             {
                 found.insert(entry.target.clone());
+                dotted.insert(at);
             }
             ResolvedPayloadValue::SubjectField { field, .. } if from_stored.contains(field) => {
                 found.insert(entry.target.clone());
+                dotted.insert(at);
             }
             ResolvedPayloadValue::Struct { fields } => {
                 for leaf in fields {
-                    copies(leaf, from_input, from_stored, found);
+                    copies(leaf, Some(&at), from_input, from_stored, found, dotted);
                 }
             }
             _ => {}
@@ -2827,9 +2840,34 @@ fn derived(
             .collect()
     };
     let mut found = BTreeSet::new();
+    let mut dotted = BTreeSet::new();
+    // The fields of an error a branch reports copy an input identity under their own names too;
+    // they are no stored field, so no transitive reader below looks them up.
+    let mut errors = BTreeSet::new();
     for (command, fields) in inputs.values() {
         for entry in entries(command) {
-            copies(&entry, fields, &BTreeSet::new(), &mut found);
+            copies(
+                &entry,
+                None,
+                fields,
+                &BTreeSet::new(),
+                &mut found,
+                &mut dotted,
+            );
+        }
+        for entry in command
+            .outcomes
+            .iter()
+            .flat_map(|outcome| &outcome.error_payload)
+        {
+            copies(
+                entry,
+                None,
+                fields,
+                &BTreeSet::new(),
+                &mut errors,
+                &mut dotted,
+            );
         }
     }
     let none = BTreeSet::new();
@@ -2838,10 +2876,12 @@ fn derived(
         let stored = found.clone();
         for command in ir.commands().values() {
             for entry in entries(command) {
-                copies(&entry, &none, &stored, &mut found);
+                copies(&entry, None, &none, &stored, &mut found, &mut dotted);
             }
         }
         if found.len() == before {
+            found.extend(dotted);
+            found.extend(errors);
             return found;
         }
     }

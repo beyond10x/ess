@@ -221,20 +221,10 @@ fn helpers_file(
     }
     if let Some(binding) = binding {
         helpers = bound::surface_helpers(&helpers);
-        // Capped mode: some declared route of the served component bounds its request. Every
-        // surface of the package must agree with the helpers, so a second served component that
-        // does not is a bug to fail loudly.
-        let answers: Vec<bool> = served(ir, refusals)
-            .into_iter()
-            .map(|component| {
-                bound::caps_a_request(binding, &http::bound_routes(ir, component, Some(binding)))
-            })
-            .collect();
-        assert!(
-            answers.windows(2).all(|pair| pair[0] == pair[1]),
-            "the served components of one Go package disagree about capping a request"
-        );
-        let capped = answers.first().copied().unwrap_or(false);
+        // Capped mode: some served component has a declared route that bounds its request. The
+        // package has one `readBody`, so it takes the bound as an argument when any component
+        // caps; a component that caps nothing passes the fixed bound (`fixed_body_cap`).
+        let capped = package_caps_a_request(ir, &served(ir, refusals), binding);
         if capped {
             helpers = bound::capped_read_body(&helpers);
         }
@@ -280,6 +270,57 @@ fn helpers_file(
         }
     }
     emit.file(provenance, SERVER_DOC, &helpers)
+}
+
+/// What the route match of one served component is written from.
+struct RouteTable<'a> {
+    ir: &'a EssIr,
+    layout: &'a Layout,
+    routes: &'a [http::Route<'a>],
+    rows: &'a [Row],
+    system: &'a str,
+    exported: &'a str,
+}
+
+impl RouteTable<'_> {
+    fn write_bound(&self, body: &mut String, reading: bound::Reading) {
+        bound::dispatch(
+            body,
+            self.ir,
+            self.layout,
+            self.routes,
+            self.rows,
+            self.system,
+            self.exported,
+            reading,
+        );
+    }
+
+    fn write_derived(&self, body: &mut String, package_capped: bool) {
+        dispatch(
+            body,
+            self.ir,
+            self.layout,
+            self.routes,
+            self.rows,
+            self.system,
+            self.exported,
+            package_capped,
+        );
+    }
+}
+
+/// Whether some served component of the package has a declared route that bounds its request.
+///
+/// The package has one `readBody`; it takes the bound as an argument exactly when this is true.
+fn package_caps_a_request(
+    ir: &EssIr,
+    served: &[&ResolvedComponent],
+    binding: &http::Binding,
+) -> bool {
+    served.iter().any(|component| {
+        bound::caps_a_request(binding, &http::bound_routes(ir, component, Some(binding)))
+    })
 }
 
 /// The opening of `readJSON` in [`SURFACE_HELPERS`], which [`refusing_lone_surrogates`] extends.
@@ -1423,16 +1464,29 @@ fn surface_file(
 
     serve_static(&mut body, &system, &exported, grants, bound);
 
+    let package_capped = binding.is_some_and(|binding| package_caps_a_request(ir, served, binding));
+    let table = RouteTable {
+        ir,
+        layout,
+        routes: &routes,
+        rows: &rows,
+        system: &system,
+        exported: &exported,
+    };
     if bound {
         let capped = binding.is_some_and(|binding| bound::caps_a_request(binding, &routes));
-        bound::dispatch(
-            &mut body, ir, layout, &routes, &rows, &system, &exported, capped,
+        table.write_bound(
+            &mut body,
+            bound::Reading {
+                capped,
+                package_capped,
+            },
         );
         if let (true, Some(binding)) = (capped, binding) {
             bound::body_limit(&mut body, binding, ir, layout, &routes, &rows, &exported);
         }
     } else {
-        dispatch(&mut body, ir, layout, &routes, &rows, &system, &exported);
+        table.write_derived(&mut body, package_capped);
     }
 
     handlers(
@@ -1571,6 +1625,7 @@ fn handlers(
 }
 
 /// The route match: one arm per path, and one arm for everything else.
+#[allow(clippy::too_many_arguments)]
 fn dispatch(
     body: &mut String,
     ir: &EssIr,
@@ -1579,7 +1634,15 @@ fn dispatch(
     rows: &[Row],
     system: &str,
     exported: &str,
+    package_capped: bool,
 ) {
+    // A surface the binding routes nothing of keeps its bytes, unless a sibling component's cap
+    // gives the package's `readBody` a bound argument: then it passes the fixed bound.
+    let read = if package_capped {
+        "readBody(request, bodyCap{limit: maxBody, tooLarge: bodyTooLarge})"
+    } else {
+        "readBody(request)"
+    };
     let grants = http::checks_grants(ir);
     let (grant_doc, caller) = if grants {
         (
@@ -1598,7 +1661,7 @@ fn dispatch(
          method is a 405 naming the one it answers. Neither is a status\n// the contract declares, \
          and neither should be: both are facts about a transport rather than\n// about any \
          command.{grant_doc}\nfunc dispatch{exported}(system *{system}, {caller}request \
-         *http.Request) response {{\n\tif refused := tooManyHeaders(request); refused != nil {{\n\t\treturn *refused\n\t}}\n\tbody, refused := readBody(request)\n\tif refused != nil {{\n\t\treturn \
+         *http.Request) response {{\n\tif refused := tooManyHeaders(request); refused != nil {{\n\t\treturn *refused\n\t}}\n\tbody, refused := {read}\n\tif refused != nil {{\n\t\treturn \
          *refused\n\t}}\n\t// Held from the port call through Pump and TakePublished: the system \
          is shared by\n\t// every connection.\n\tserving.Lock()\n\tdefer \
          serving.Unlock()\n\tswitch request.URL.Path {{\n"

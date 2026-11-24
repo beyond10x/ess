@@ -233,7 +233,9 @@ every test marked `#[ignore = "slow lane: <reason>"]` (`cargo xtask slow-list` n
 job `slow` carries the lane and `Gate` carries the job: a pull request runs it unless every changed
 path is in the `skippable` list of the `diff` job's `slow` step, and the `main` push, the nightly
 run, a `queue/**` head, a merge group and the release gate always run it, so a run that skipped it
-never counts for a release.
+never counts for a release. The full release gate and a reused qualifying run include the whole
+lane; the targeted gate of a patch tag (§ Hotfix, step 5) runs the slow-lane tests of the crates it
+tests.
 `test-browser-product` builds its wasm host once into one shared target and took 1120 s for 30 tests on 2026-10-22 at debuginfo 0 (about 6.8 h before, when each test built its own host on one core). To reproduce the whole gate locally, mind that `task test` alone builds about 45 GiB into
 the tree's `target/` (44.8 GiB measured on 2026-10-07 at 0.56.0), so start it only with that much
 free disk beyond what other work on the machine needs, and watch free space during the step rather
@@ -488,7 +490,7 @@ within one hour of the reproduction.
    the tag. The tag's release workflow is the gate. No wave. For a patch tag it runs a targeted
    gate instead of the 20 test shards: `Hotfix checks` (`task ci-lint` and `task ci-smoke`) and
    `Hotfix tests` (the crates changed since the previous tag and their direct dependents, chosen by
-   `.github/scripts/hotfix-scope.sh`), beside the package builds. A change the script cannot map to
+   `.github/scripts/hotfix-scope.sh`), beside the package builds; `Hotfix tests` then runs `task test-slow` on the same crates. A change the script cannot map to
    crates, such as a workflow, the Taskfile or a dependency, runs the full gate. `CHANGELOG.md` and
    `release-notes/` count as prose, and `schemas/ui/ess-ui.schema.yaml` as code of `ess-ui`.
 6. In the same minute, push the branch and open its pull request to `main`. The main ruleset needs

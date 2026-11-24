@@ -71,7 +71,6 @@ const MARKED: &[(&str, &[&str])] = &[
             "a_seeded_chain_synthesizes_the_same_suite_twice",
             "every_reachable_branch_of_seeded_plain_sixteen_refusal_chains_has_its_scenario",
             "every_reachable_branch_of_seeded_sixteen_refusal_chains_over_the_adopter_shape_has_its_scenario",
-            "the_first_seeds_of_the_seeded_sixteen_refusal_chains_have_their_scenario_in_the_step",
         ],
     ),
     (
@@ -89,6 +88,7 @@ const MARKED: &[(&str, &[&str])] = &[
     (
         "crates/verify/ess-conformance/tests/synthesis_suite_bytes_table.rs",
         &[
+            "every_repository_component_keeps_its_synthesized_bytes",
             "every_repository_model_and_component_writes_its_bytes_at_one_two_and_seven_jobs",
             "every_repository_model_keeps_its_synthesized_bytes",
         ],
@@ -248,4 +248,255 @@ fn every_marker_in_the_tree_is_a_row_of_the_table_and_every_row_is_marked() {
         MARKED.windows(2).all(|pair| pair[0].0 < pair[1].0),
         "MARKED rows are sorted by path"
     );
+}
+
+/// The workspace root, three levels above this crate.
+fn workspace() -> &'static Path {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .ancestors()
+        .nth(3)
+        .expect("the workspace root stands three levels above this crate")
+}
+
+/// Adversary: a test whose name says it runs in the test step is not marked for the slow lane.
+/// `CHANGELOG.md` says the seeded sweeps of `adversary_u22_pass1` run a reduced set in the test
+/// step; the short twin of the seeded sweep over the adopter's input shape carries the marker, so
+/// the step runs no seed of that sweep.
+#[test]
+fn adversary_no_test_named_for_the_step_is_marked_for_the_slow_lane() {
+    let in_lane: Vec<String> = scan(workspace())
+        .unwrap()
+        .into_iter()
+        .filter(|m| m.test.ends_with("_in_the_step"))
+        .map(|m| format!("{}::{}", m.file, m.test))
+        .collect();
+    assert!(
+        in_lane.is_empty(),
+        "named for the test step and marked for the slow lane, so the step runs none of them: \
+         {in_lane:#?}"
+    );
+}
+
+/// Adversary: a `slow lane:` marker the scanner cannot see is a test that runs nowhere. A test
+/// defined by a `macro_rules!` (this workspace has such tests, `ess-cli`'s
+/// `authored_scenarios.rs`) carrying the marker is ignored by the test step and not listed for
+/// the slow lane. The scanner either lists it or refuses the file.
+#[test]
+fn adversary_a_marker_inside_a_macro_is_listed_or_refused() {
+    let scratch = Scratch::new("slow-lane-macro");
+    demo(&scratch);
+    write(
+        scratch.path(),
+        "crates/area/demo/tests/a.rs",
+        "macro_rules! cases {\n    ($name:ident) => {\n        #[test]\n        \
+         #[ignore = \"slow lane: generated\"]\n        fn $name() {}\n    };\n}\n\
+         cases!(generated_case);\n",
+    );
+    let error = scan(scratch.path()).unwrap_err();
+    assert!(error.contains("tests/a.rs"), "{error}");
+    assert!(error.contains("inside a macro"), "{error}");
+}
+
+/// A marked test in a module directory that another target pulls in with `#[path]` (`ess-synth`'s
+/// `tests/http_binding/` is one, compiled into `http_binding_rust`) has no target name `--test`
+/// accepts, so the scanner refuses the marker by file and line instead of listing the directory.
+#[test]
+fn a_marker_in_a_module_directory_without_a_main_is_refused_by_file_and_line() {
+    let scratch = Scratch::new("slow-lane-module-dir");
+    demo(&scratch);
+    write(
+        scratch.path(),
+        "crates/area/demo/tests/served.rs",
+        "#[path = \"shared/body.rs\"]\nmod body;\n",
+    );
+    write(
+        scratch.path(),
+        "crates/area/demo/tests/shared/body.rs",
+        "#[test]\n#[ignore = \"slow lane: drives a server\"]\nfn drives() {}\n",
+    );
+    let error = scan(scratch.path()).unwrap_err();
+    assert!(
+        error.contains("tests/shared/body.rs:2:"),
+        "file and line: {error}"
+    );
+    assert!(
+        error.contains("`tests/<name>.rs` or `tests/<name>/main.rs`"),
+        "{error}"
+    );
+}
+
+/// The text of one top-level job of a workflow, from its key to the next job's.
+fn job<'w>(workflow: &'w str, name: &str) -> &'w str {
+    let head = format!("\n  {name}:\n");
+    let start = workflow
+        .find(&head)
+        .unwrap_or_else(|| panic!("no job `{name}`"));
+    let rest = &workflow[start + head.len()..];
+    let end = rest
+        .match_indices("\n  ")
+        .find(|(at, _)| {
+            rest[at + 3..]
+                .chars()
+                .next()
+                .is_some_and(|c| c.is_ascii_lowercase())
+        })
+        .map_or(rest.len(), |(at, _)| at);
+    &rest[..end]
+}
+
+/// Adversary: `AGENTS.md` says a run that skipped the slow lane never counts for a release, and
+/// `CHANGELOG.md` says a run that skipped it never stands in for a release. A patch tag publishes
+/// on `Hotfix tests`, which runs `task test-packages` and so skips every marked test, the
+/// repository-wide synthesis byte table among them: the job runs `task test-slow` too.
+#[test]
+fn adversary_a_hotfix_release_runs_the_slow_lane_it_is_said_to_need() {
+    let root = workspace();
+    let agents = fs::read_to_string(root.join("AGENTS.md")).unwrap();
+    let release = fs::read_to_string(root.join(".github/workflows/release.yml")).unwrap();
+    assert!(
+        agents.contains("so a run that skipped it\nnever counts for a release"),
+        "the claim this case holds the workflow to"
+    );
+    let hotfix = job(&release, "hotfix-tests");
+    assert!(
+        hotfix.contains("task test-packages"),
+        "the hotfix job is the one read"
+    );
+    assert!(
+        hotfix.contains("test-slow"),
+        "a patch tag is released on `Hotfix tests`, which runs no slow-lane test"
+    );
+}
+
+/// The lines of the block opened by the line equal to `opening`, up to the next line indented no
+/// deeper than it; empty when no line opens it.
+fn block(text: &str, opening: &str) -> String {
+    let indent = opening.len() - opening.trim_start().len();
+    let mut lines = text.lines().skip_while(|line| *line != opening);
+    let Some(first) = lines.next() else {
+        return String::new();
+    };
+    let mut out = vec![first];
+    for line in lines {
+        let depth = line.len() - line.trim_start().len();
+        if !line.trim().is_empty() && depth <= indent {
+            break;
+        }
+        out.push(line);
+    }
+    out.join("\n")
+}
+
+/// Whether `text` names `word` as a whole name: `test-slow`, never the `test-slowest` it begins.
+fn names_word(text: &str, word: &str) -> bool {
+    text.match_indices(word).any(|(at, _)| {
+        let before = text[..at].chars().next_back();
+        let after = text[at + word.len()..].chars().next();
+        let part = |c: char| c.is_ascii_alphanumeric() || c == '-' || c == '_';
+        !before.is_some_and(part) && !after.is_some_and(part)
+    })
+}
+
+/// A patch release is gated by `release.yml`'s targeted `hotfix-tests` job instead of `ci.yml`.
+/// That job runs `task test-packages`, a `cargo nextest run --profile ci` without
+/// `--run-ignored`, so a test moved to the slow lane runs in no gate of a hotfix release: the
+/// release of a change to synthesis compares the sources digest and never the bytes. A release
+/// that skipped the slow lane must not pass; the targeted gate runs the lane of the crates it
+/// tests, or `hotfix-scope.sh` sends a crate holding a slow test to the full gate.
+#[test]
+fn a_hotfix_release_runs_the_slow_tests_of_the_crates_it_tests() {
+    let root = workspace();
+    let release = fs::read_to_string(root.join(".github/workflows/release.yml")).unwrap();
+    let job = block(&release, "  hotfix-tests:");
+    assert!(
+        job.contains("task test-packages"),
+        "the hotfix-tests job runs `task test-packages`: {job}"
+    );
+    let taskfile = fs::read_to_string(root.join("Taskfile.yml")).unwrap();
+    let packages = block(&taskfile, "  test-packages:");
+    assert!(!packages.is_empty(), "Taskfile.yml holds `test-packages`");
+    let scope = fs::read_to_string(root.join(".github/scripts/hotfix-scope.sh")).unwrap();
+    let runs_the_lane = names_word(&job, "test-slow")
+        || names_word(&packages, "test-slow")
+        || packages.contains("--run-ignored");
+    let sends_slow_crates_to_the_full_gate = scope.contains("slow-list");
+    assert!(
+        runs_the_lane || sends_slow_crates_to_the_full_gate,
+        "a hotfix release runs no slow-lane test: `hotfix-tests` runs `task test-packages`, \
+         which runs nextest without `--run-ignored`, and `hotfix-scope.sh` never consults \
+         `cargo xtask slow-list`; the crates holding slow tests: {:?}",
+        MARKED.iter().map(|(file, _)| *file).collect::<Vec<_>>()
+    );
+}
+
+/// Adversary: `AGENTS.md` § Gate says the byte comparison of the two synthesis tables runs in the
+/// slow lane, and the module comment of `synthesis_suite_bytes_table.rs` says the test step
+/// synthesizes nothing there. The component table's test carries no marker.
+#[test]
+fn adversary_both_synthesis_tables_compare_in_the_slow_lane_as_the_gate_section_says() {
+    let root = workspace();
+    let agents = fs::read_to_string(root.join("AGENTS.md")).unwrap();
+    assert!(
+        agents.contains("byte comparison itself (the two tables"),
+        "the claim this case holds the tree to"
+    );
+    let marked: Vec<String> = scan(root)
+        .unwrap()
+        .into_iter()
+        .filter(|m| m.target == "synthesis_suite_bytes_table")
+        .map(|m| m.test)
+        .collect();
+    assert!(
+        marked
+            .iter()
+            .any(|test| test == "every_repository_component_keeps_its_synthesized_bytes"),
+        "the component table is compared in the test step, not the slow lane: {marked:?}"
+    );
+}
+
+/// The lines of `ci.yml`'s slow-lane decision that define `skippable`, `needed`, `decide` and
+/// `reaches_slow`, unindented.
+fn slow_decision() -> String {
+    let ci = fs::read_to_string(workspace().join(".github/workflows/ci.yml")).unwrap();
+    let lines: Vec<&str> = ci.lines().collect();
+    let from = lines
+        .iter()
+        .position(|line| line.trim_start().starts_with("skippable=("))
+        .expect("the slow step's `skippable` list");
+    let to = lines[from..]
+        .iter()
+        .position(|line| line.trim_start().starts_with("parents=$(git rev-list"))
+        .expect("the slow step's history read")
+        + from;
+    lines[from..to]
+        .iter()
+        .map(|line| line.trim_start())
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// Adversary: `cargo xtask slow-list`, which `task test-slow` runs to pick every slow test, is
+/// dispatched by `crates/edge/ess-xtask/src/main.rs` and built from `crates/edge/ess-xtask/Cargo.toml`;
+/// the deciding step lists `crates/edge/ess-xtask/*` as skippable and only `slow_lane.rs` as
+/// needed, so a pull request changing what the lane selects skips the lane.
+#[test]
+fn adversary_a_change_to_what_slow_list_runs_on_reaches_the_slow_lane() {
+    let script = slow_decision();
+    for path in [
+        "crates/edge/ess-xtask/src/main.rs",
+        "crates/edge/ess-xtask/Cargo.toml",
+    ] {
+        let output = std::process::Command::new("bash")
+            .arg("-c")
+            .arg(format!("{script}\nreaches_slow \"$1\""))
+            .arg("decide")
+            .arg(path)
+            .output()
+            .expect("bash runs");
+        assert!(output.status.success(), "{output:?}");
+        assert!(
+            !output.stdout.is_empty(),
+            "a pull request changing only {path} skips the slow lane"
+        );
+    }
 }

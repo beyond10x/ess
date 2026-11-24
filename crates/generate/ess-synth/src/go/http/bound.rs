@@ -63,6 +63,14 @@ pub(super) fn caps_a_request(binding: &http::Binding, routes: &[http::Route<'_>]
     })
 }
 
+/// How the requests of one served component are read: whether this component caps a request, and
+/// whether any component of its package does (the package's `readBody` then takes the bound).
+#[derive(Clone, Copy)]
+pub(super) struct Reading {
+    pub(super) capped: bool,
+    pub(super) package_capped: bool,
+}
+
 /// `readBody` of `base` as a capped package has it: the bound comes from the route the request
 /// matches (`bodyLimit`), and a body announced longer than that bound is refused before one byte
 /// of it is read.
@@ -1714,12 +1722,16 @@ pub(super) fn dispatch(
     rows: &[Row],
     system: &str,
     exported: &str,
-    capped: bool,
+    reading: Reading,
 ) {
     let grants = http::checks_grants(ir);
     let caller = if grants { "caller *Caller, " } else { "" };
-    let read = if capped {
+    let read = if reading.capped {
         format!("readBody(request, bodyLimit{exported}(request.Method, spelledPath(request)))")
+    } else if reading.package_capped {
+        // A component the binding bounds nothing of, in a package whose `readBody` takes a bound:
+        // it reads the fixed bound, as it does without a binding.
+        "readBody(request, bodyCap{limit: maxBody, tooLarge: bodyTooLarge})".to_owned()
     } else {
         "readBody(request)".to_owned()
     };

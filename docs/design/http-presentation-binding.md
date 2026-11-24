@@ -835,8 +835,8 @@ servers already follow (`crates/generate/ess-synth/src/rust/http.rs:824-868`):
    and path match when the binding bounds it, else the fixed 1 MiB. The answer is
    `refusals.too_large` (the route's own first), else today's `413`. The request head decides,
    before the body is read and before the 404, the 405 and the grant check, as the fixed bound
-   does today; a body of unannounced length (chunked) is read up to the bound and one byte more
-   and refused the same way.
+   does today. That holds for a request whose `Content-Length` exceeds the bound; a body of
+   unannounced length (chunked) is handled per target ("What the servers write").
 2. No route matches: today's `404`. `/openapi.json` and `/docs` keep their answers; no bound route
    can match them (above).
 3. The path matches and the method does not: today's `405`.
@@ -878,8 +878,11 @@ single` and no identity selection and no `empty` earns both `ESS-HTTP-030` and `
 - **Request size.** The bound is `limits.request_bytes` of the matched route, else of the binding,
   else 1 MiB (`FIXED_REQUEST_BYTES`). It applies to a route the binding names that reads a body,
   never to a view, a `get` command, a `query`-encoded command or a derived route. A body announced
-  above it is refused before it is read; a Go request of unannounced length is read to the bound
-  plus one byte. The refusal is `refusals.too_large`, or `413` with `{"refused": ...}`.
+  above it is refused before it is read. A body of unannounced length differs per target. Rust: a
+  chunked request is answered `411` and its body is not read, at any size (the server reads a body
+  announced by `Content-Length` only). Go: a chunked body is read up to the bound plus one byte,
+  then refused with the `too_large` answer. A client that must work against both sends
+  `Content-Length`. The refusal is `refusals.too_large`, or `413` with `{"refused": ...}`.
 - **Go and Rust alike (k6).** The Go server answers a bound request with the Rust server's status,
   headers and body bytes wherever the binding writes the answer
   (`crates/generate/ess-synth/tests/http_binding/go.rs`,

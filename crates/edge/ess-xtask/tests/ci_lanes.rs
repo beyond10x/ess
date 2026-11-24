@@ -5944,9 +5944,24 @@ fn the_slow_decision_is_every_changed_path_in_the_skippable_list() {
             "false",
         ),
         (
-            "an ess-xtask path",
-            &["crates/edge/ess-xtask/src/main.rs"],
+            "an ess-xtask test",
+            &["crates/edge/ess-xtask/tests/layout.rs"],
             "false",
+        ),
+        (
+            "an ess-xtask source slow-list does not run on",
+            &["crates/edge/ess-xtask/src/support.rs"],
+            "false",
+        ),
+        (
+            "the dispatcher of slow-list",
+            &["crates/edge/ess-xtask/src/main.rs"],
+            "true",
+        ),
+        (
+            "the manifest that builds slow-list",
+            &["crates/edge/ess-xtask/Cargo.toml"],
+            "true",
         ),
         ("a release note", &["release-notes/0.99.0.md"], "false"),
         (

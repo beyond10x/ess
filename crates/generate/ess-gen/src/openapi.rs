@@ -682,8 +682,8 @@ fn request_bound_paragraph(
         .any(|route| bound_request(binding, route.declared).is_some());
     if bounded {
         "\n\nAn operation that names `x-ess-request-max-bytes` reads at most that many bytes of \
-         its request body: a larger body is refused from the request head, before it is read, \
-         with the response the operation lists for it."
+         its request body: a larger body is refused with the response the operation lists for \
+         it. A client sends `Content-Length`; a server may answer `411` to a request without it."
     } else {
         ""
     }
@@ -1667,8 +1667,8 @@ fn responses(
 fn too_large_meaning(limit: u64) -> String {
     format!(
         "No declared outcome: the request body is larger than the {limit} bytes this operation \
-         reads (`x-ess-request-max-bytes`). It is refused from the request head, before the body \
-         is read, so nothing was run, written or published."
+         reads (`x-ess-request-max-bytes`). It is refused before the operation runs, so nothing \
+         was run, written or published."
     )
 }
 

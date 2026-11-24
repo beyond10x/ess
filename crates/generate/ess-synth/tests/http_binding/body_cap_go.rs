@@ -105,6 +105,155 @@ fn artifact_holding<'a>(synthesis: &'a Synthesis, needle: &str) -> &'a str {
     found[0]
 }
 
+/// A second served component, appended to the fixture's `components:` list, that the fixture
+/// binding routes nothing of.
+const SECOND_COMPONENT: &str = "  - component: desk
+    owns: {domains: [parcel.desk]}
+    accepts:
+      commands:
+        - parcel.desk.Note
+    publishes: {events: [parcel.desk.Noted]}
+    reached_by: network
+";
+
+/// The domain the second component owns: one command that reads a body.
+const SECOND_DOMAIN: &str = "domain: parcel.desk
+types:
+  - {name: parcel.desk.NoteId, kind: newtype, of: Integer}
+entities:
+  - name: parcel.desk.Memo
+    identity: {name: note_id, type: parcel.desk.NoteId}
+    fields:
+      - {name: text, type: String}
+    lifecycle: {initial: Open, states: [Open], terminal: [Open]}
+events:
+  - name: parcel.desk.Noted
+    fields:
+      - {name: note_id, type: parcel.desk.NoteId}
+commands:
+  - name: parcel.desk.Note
+    input:
+      - {name: note_id, type: parcel.desk.NoteId}
+      - {name: text, type: String}
+    outcomes:
+      - name: noted
+        creates: parcel.desk.Memo
+        instance: note_id
+        sets: {text: input.text}
+        emits: [parcel.desk.Noted]
+        payload:
+          parcel.desk.Noted: {note_id: input.note_id}
+";
+
+/// The fixture model with a second served component beside `parcel`, compiled from two documents.
+fn two_component_ir() -> EssIr {
+    let first = format!("{MODEL}{SECOND_COMPONENT}");
+    let mut sources = SourceMap::new();
+    let mut parsed = Vec::new();
+    for (label, text) in [
+        ("parcel.yaml", first.as_str()),
+        ("desk.yaml", SECOND_DOMAIN),
+    ] {
+        let raw = RawSpecFile::parse(text).unwrap_or_else(|error| panic!("{label}: {error}"));
+        sources.insert(label, text);
+        parsed.push((Source::new(label), raw));
+    }
+    let spec =
+        Specification::assemble(parsed).unwrap_or_else(|errors| panic!("validates: {errors}"));
+    compile(&spec, &sources).unwrap_or_else(|errors| panic!("compiles: {errors}"))
+}
+
+/// The fixture binding, pinned to `ir`'s source digest: it bounds routes of `parcel` only.
+fn binding_for(ir: &EssIr) -> Binding {
+    let pinned = BINDING
+        .lines()
+        .map(|line| {
+            if line.trim_start().starts_with("source_digest: sha256:") {
+                format!("  source_digest: sha256:{}", ir.source_digest())
+            } else {
+                line.to_owned()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    let spec = ess_http::HttpSpec::from_yaml(&pinned).expect("well formed");
+    let compiled = ess_http::compile(&spec, ir, &ess_gen::http::derived(ir))
+        .unwrap_or_else(|refused| panic!("the binding compiles: {refused}"));
+    Binding::new(compiled).unwrap_or_else(|refused| panic!("every route has a path: {refused}"))
+}
+
+/// Two components the specification serves, and a binding that bounds a route of one of them: a
+/// valid pair, which the Rust target synthesizes. The Go target builds one server package for
+/// every served component and asserts that the components agree about capping a request
+/// (`src/go/http.rs`, `helpers_file`), so the second component, whose routes the binding leaves
+/// derived, makes the generator panic instead of writing the package.
+#[test]
+fn a_bound_route_beside_a_second_served_component_synthesizes_the_go_server() {
+    let ir = two_component_ir();
+    let binding = binding_for(&ir);
+    assert_eq!(
+        ir.components()
+            .values()
+            .filter(|component| component.reached_by == ess_domain::component::Reach::Network)
+            .count(),
+        2,
+        "the model serves two components"
+    );
+    synthesize_bound(&ir, Target::Rust, OutputLayout::Workspace, Some(&binding))
+        .expect("the Rust target synthesizes the pair");
+    let go = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        synthesize_bound(&ir, Target::Go, OutputLayout::Workspace, Some(&binding))
+    }));
+    match go {
+        Ok(result) => {
+            result.expect("the Go target synthesizes the pair");
+        }
+        Err(payload) => {
+            let message = payload
+                .downcast_ref::<String>()
+                .cloned()
+                .or_else(|| {
+                    payload
+                        .downcast_ref::<&str>()
+                        .map(|text| (*text).to_owned())
+                })
+                .unwrap_or_default();
+            panic!("the Go target panicked on a valid model and binding: {message}");
+        }
+    }
+}
+
+/// The component the binding bounds nothing of, beside one it does, reads with the fixed 1 MiB
+/// bound (`maxBody`) and the plain 413, through the package's one `readBody`; the capped component
+/// reads through its route's `bodyLimit`.
+#[test]
+fn an_uncapped_component_beside_a_capped_one_reads_the_fixed_bound() {
+    let ir = two_component_ir();
+    let binding = binding_for(&ir);
+    let go = synthesize_bound(&ir, Target::Go, OutputLayout::Workspace, Some(&binding))
+        .expect("the Go target synthesizes the pair");
+    let readers: Vec<&str> = go
+        .artifacts
+        .values()
+        .map(|artifact| artifact.contents.as_str())
+        .filter(|contents| contents.contains(":= readBody(request"))
+        .collect();
+    assert_eq!(readers.len(), 2, "one surface file per served component");
+    let uncapped: Vec<&str> = readers
+        .iter()
+        .copied()
+        .filter(|contents| !contents.contains("bodyLimit"))
+        .collect();
+    assert_eq!(uncapped.len(), 1, "one component reads the fixed bound");
+    assert!(
+        uncapped[0]
+            .contains(":= readBody(request, bodyCap{limit: maxBody, tooLarge: bodyTooLarge})"),
+        "the uncapped component passes the fixed bound"
+    );
+    let helpers = artifact_holding(&go, "func readBody(request *http.Request, reading bodyCap)");
+    assert!(helpers.contains("const maxBody = "));
+}
+
 /// A binding that declares no limit and no `too_large` refusal writes the bytes it wrote before.
 #[test]
 fn a_binding_that_declares_no_limit_keeps_the_go_server_bytes() {

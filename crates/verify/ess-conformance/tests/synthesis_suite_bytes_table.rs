@@ -571,6 +571,7 @@ fn every_repository_model_keeps_its_synthesized_bytes() {
 }
 
 #[test]
+#[ignore = "slow lane: re-synthesizes every repository component and compares its suite bytes, 31.8 s at load 50"]
 fn every_repository_component_keeps_its_synthesized_bytes() {
     let (here, written) = table(component_lines, "SYNTHESIS_COMPONENT_SUITES_TABLE_WRITE");
     if written {

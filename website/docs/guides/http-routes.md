@@ -289,7 +289,9 @@ routes:
 - `refusals.too_large` takes a `4xx` status. Its body and headers are written as for the other
   refusals; without it the answer is `413` with `{"refused": ...}`. A route's own `too_large`
   replaces the binding's on that route.
-- Both servers refuse a larger body from the request head, before the body is read.
+- Both servers refuse a body whose `Content-Length` is larger from the request head, before the
+  body is read. A chunked request is answered `411` by the Rust server; the Go server reads a
+  chunked body up to the bound plus one byte and then refuses it. Send `Content-Length`.
 - The OpenAPI document names the bound of each such operation under `x-ess-request-max-bytes` and
   lists the answer as one more response.
 
