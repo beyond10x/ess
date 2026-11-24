@@ -11,7 +11,7 @@ refs:
   reference: beyond10x/ess#799
 relations:
 - serves: vision:O2
-revision: 4
+revision: 5
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-24T02:31:16Z", actor: "human:timo", revision: 3}
 - {from: "proposed", to: "active", at: "2026-11-24T02:31:18Z", actor: "human:timo", revision: 4}
@@ -114,9 +114,15 @@ published row schema in every variant.
 6. A suite written by 0.98.0 for the no-presence variant (claim `"note": null`), run against the
    interpreted target after the change, fails `depot.bins.AddBin/outcome/added`: the break the
    changelog announces is pinned.
-7. The three models in the table above move exactly in the listed scenarios (the `null` claim of the
-   listed member disappears, nothing else in their suites changes); every other row of both byte
-   tables keeps its bytes.
+7. The rows that move are exactly those whose model has a view member the rule covers: a view member
+   an outcome clears, or sets from an `Optional` input sent absent. Six models are known: the three
+   of the table above, which move in the listed scenarios, and
+   `crates/specify/ess-compiler/tests/fixtures/input-value-paths.yaml`,
+   `crates/verify/ess-conformance/tests/fixtures/absent-reference-identity-view.yaml` and
+   `crates/verify/ess-conformance/tests/fixtures/related-values-chained.yaml`, each a model whose
+   view publishes an `Optional` member of that kind and each of which loses that member's `null`
+   claim in `synthesis-suite-bytes-table.tsv`. In every moved row only that claim disappears; any
+   other row of both byte tables keeps its bytes.
 
 ## Scope
 
@@ -187,8 +193,8 @@ One `--test` at a time; no build-pool job over 10 minutes.
 - the sources stamp, rewritten in this change:
   `SYNTHESIS_SOURCES_STAMP_WRITE="$PWD/crates/verify/ess-conformance/tests/fixtures/synthesis-sources.digest" cargo test -p ess-conformance --locked --test synthesis_suite_bytes_table the_synthesis_sources_digest_matches_the_committed_stamp`;
   re-run after every rebase, never merge the stamp by hand
-- the byte comparison, once per unit, its measured time named in the report (it re-pins the four
-  rows above):
+- the byte comparison, once per unit, its measured time named in the report (it re-pins the rows that
+  move: the four above and the three of acceptance 7):
   `SLOT_TIMEOUT=30m cargo test -p ess-conformance --locked --test synthesis_suite_bytes_table -- --ignored every_repository_model_keeps_its_synthesized_bytes`
 - `task test-xtask` (the unit edits `CHANGELOG.md`)
 
@@ -234,3 +240,4 @@ Under `Changed`:
   ("`omitted_when_absent` keeps it optional and not nullable, which is what an `Optional` field
   without a policy already publishes").
 - DF-D4 (default A): no new suite format in this unit.
+- decided 2026-11-24 (D92): the three further rows (`input-value-paths.yaml`, `absent-reference-identity-view.yaml`, `related-values-chained.yaml`) are claimed if the implementor shows that the rule covers each of them; a model the rule does not cover keeps its row, and the acceptance then lists fewer than six.
