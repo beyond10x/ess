@@ -10,7 +10,7 @@ tags:
 relations:
 - serves: vision:O2
 - depends_on: story:at-the-new-format-an-outcome-may-emit-one-event-several-times-in-order-each-with-its-own-payload-and-an
-revision: 1
+revision: 2
 ---
 ## Need
 
@@ -98,7 +98,7 @@ figure. Without this unit the new construct would be a statement no suite checks
 
 ## Decisions
 
-**AE-D11**, default A. The suite-format consequence is decided with the source format.
+**AE-D11** (open, with the owner as AQ4). The suite-format consequence is decided with the source format.
 
 ## Size
 

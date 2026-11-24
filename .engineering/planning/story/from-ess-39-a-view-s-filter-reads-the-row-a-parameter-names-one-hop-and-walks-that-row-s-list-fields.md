@@ -10,7 +10,7 @@ tags:
 relations:
 - serves: vision:O2
 - depends_on: story:the-specification-format-ess-38-is-open-as-the-newest-reads-and-compiles-every-specification-exactly-as-ess
-revision: 4
+revision: 5
 ---
 ## Need
 
@@ -161,7 +161,7 @@ application's report of 2026-11-24.
 **Accept, redesigned.** What changed from the request: no view "over a list field"; the source
 entity stays, the list is walked in its filter through the row the parameter names.
 
-- **P1-D6. How a view reaches the row a parameter names.** (A) `param.<p>.<field>`, a parameter
+- **P1-D6 (open, with the owner as AQ5). How a view reaches the row a parameter names.** (A) `param.<p>.<field>`, a parameter
   typed as an identity is a reference, one hop, with list quantifiers over its fields. (B) The
   `ess/27` rows quantifier admitted in view filters, tied to a parameter. (C) Decline: the
   application keeps the list unmapped. **Recommended: (A).**

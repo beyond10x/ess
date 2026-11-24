@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-guard-over-the-rows-a-list-of-references-names-shares-a-command-with-other-related-guards-its-missing-row
 kind: story
-status: draft
+status: active
 title: A guard over the rows a list of references names shares a command with other related guards, its missing row answered among theirs in declaration order
 tags:
 - gap-p2
@@ -11,7 +11,10 @@ relations:
 - serves: vision:O2
 - depends_on: story:at-ess-38-a-when-related-via-an-all-element-and-a-missing-payload-source-name-a-member-of-a-struct-input-a
 - depends_on: story:the-specification-format-ess-38-is-open-as-the-newest-reads-and-compiles-every-specification-exactly-as-ess
-revision: 3
+revision: 6
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-24T03:52:02Z", actor: "human:timo", revision: 5}
+- {from: "proposed", to: "active", at: "2026-11-24T03:52:02Z", actor: "human:timo", revision: 6}
 ---
 ## Need
 
@@ -137,9 +140,8 @@ Tree `bcfc51555` (`integration/wave-2026-11-24`), read 2026-11-24.
 ## Decisions
 
 **Accept, redesigned** (the request names no syntax; the design is the existing keys under the
-existing precedence rule). Report item 10 covered. Open: `P2A-D4` (scope; default A, beside every
-related guard kind and a second list) and `P2A-D6` (format; default A, `ess/38` if unreleased at
-landing, else `ess/39`). Not in this story, kept refused by name: a predicate over each listed row
+existing precedence rule). Report item 10 covered. `P2A-D4` (scope) is decided: A, 2026-11-24: beside every
+related guard kind and a second list. `P2A-D6` (format) is decided: A, `ess/38` (D77, 2026-11-24). Not in this story, kept refused by name: a predicate over each listed row
 (waits for navigation in guard predicates, `generic-language-features.md:258-259`).
 
 - FMT-B (decided: A, 2026-11-24): this story moves to `ess/38` with the rest of the pull request (D77: no `ess/39`); the Acceptance line on the format says so.

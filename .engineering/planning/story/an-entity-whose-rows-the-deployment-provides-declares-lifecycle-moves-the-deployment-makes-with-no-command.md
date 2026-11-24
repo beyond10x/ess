@@ -10,7 +10,7 @@ tags:
 relations:
 - serves: vision:O2
 - depends_on: story:the-specification-format-ess-38-is-open-as-the-newest-reads-and-compiles-every-specification-exactly-as-ess
-revision: 2
+revision: 3
 ---
 ## Need
 
@@ -117,7 +117,7 @@ Tree `bcfc51555`, read-only. Second report, G13.
 
 **Accept, redesigned.** The existing `provided` marker carries the moves.
 
-- **SL-D11. How does a specification declare moves only the deployment makes?** (A) Through
+- **SL-D11 (open, with the owner as AQ3). How does a specification declare moves only the deployment makes?** (A) Through
   `provided: true`: its uncaused transitions are the deployment's, from `ess/39`. (B) Decline with
   the idiom: commands granted to a `system: true` actor, with their events, and a `missing_causation`
   hint naming it. (C) The requester's `recorded_by: owner` on the lifecycle or a transition, from

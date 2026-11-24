@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:every-target-names-what-it-does-with-a-guard-over-an-expression-of-several-facts-generated-rust-and-go
 kind: story
-status: draft
+status: active
 title: 'Every target names what it does with a guard over an expression of several facts: generated Rust and Go behaviour keep the command an obligation named by it, the Go and TypeScript runtimes evaluate it, and Entity Runtime lowering refuses it by name'
 tags:
 - gap-p2
@@ -11,7 +11,10 @@ relations:
 - serves: vision:O2
 - depends_on: story:at-ess-39-a-command-guard-compares-a-fact-with-an-expression-of-several-facts-and-every-expression-reads-the
 - depends_on: story:the-specification-format-ess-38-is-open-as-the-newest-reads-and-compiles-every-specification-exactly-as-ess
-revision: 3
+revision: 5
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-24T03:52:01Z", actor: "human:timo", revision: 4}
+- {from: "proposed", to: "active", at: "2026-11-24T03:52:01Z", actor: "human:timo", revision: 5}
 ---
 ## Need
 

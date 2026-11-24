@@ -10,7 +10,7 @@ tags:
 relations:
 - serves: vision:O2
 - depends_on: story:the-specification-format-ess-38-is-open-as-the-newest-reads-and-compiles-every-specification-exactly-as-ess
-revision: 2
+revision: 3
 ---
 ## Need
 
@@ -190,7 +190,7 @@ The opener of the new source format (format: decided before acceptance).
 
 ## Decisions
 
-Accept, redesigned. **AE-D11**, default A.
+Accept, redesigned. **AE-D11** (open, with the owner as AQ4).
 
 ## Size
 

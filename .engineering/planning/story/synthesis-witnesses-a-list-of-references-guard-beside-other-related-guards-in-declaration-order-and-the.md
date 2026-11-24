@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:synthesis-witnesses-a-list-of-references-guard-beside-other-related-guards-in-declaration-order-and-the
 kind: story
-status: draft
+status: active
 title: Synthesis witnesses a list-of-references guard beside other related guards, in declaration order, and the generated targets and Entity Runtime name what they do not read
 tags:
 - gap-p2
@@ -11,7 +11,10 @@ relations:
 - serves: vision:O2
 - depends_on: story:a-guard-over-the-rows-a-list-of-references-names-shares-a-command-with-other-related-guards-its-missing-row
 - depends_on: story:synthesis-witnesses-an-instance-and-an-each-in-that-name-a-member-of-a-struct-input-on-the-parent-s-minimal
-revision: 1
+revision: 3
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-24T03:52:03Z", actor: "human:timo", revision: 2}
+- {from: "proposed", to: "active", at: "2026-11-24T03:52:04Z", actor: "human:timo", revision: 3}
 ---
 ## Need
 

@@ -11,7 +11,7 @@ relations:
 - serves: vision:O2
 - depends_on: story:from-ess-39-a-view-s-filter-reads-the-row-a-parameter-names-one-hop-and-walks-that-row-s-list-fields
 - depends_on: story:the-specification-format-ess-38-is-open-as-the-newest-reads-and-compiles-every-specification-exactly-as-ess
-revision: 3
+revision: 4
 ---
 ## Need
 
@@ -60,7 +60,7 @@ Tree `bcfc51555`, read-only. Covers report item 8 with `g08-view-param-row` and
 
 ## Decisions
 
-- None beyond P1-D6.
+- None beyond P1-D6 (open, with the owner as AQ5).
 
 - FMT-B (decided: A, 2026-11-24): this story moves to `ess/38` with the rest of the pull request (D77: no `ess/39`); the Acceptance line on the format says so.
 

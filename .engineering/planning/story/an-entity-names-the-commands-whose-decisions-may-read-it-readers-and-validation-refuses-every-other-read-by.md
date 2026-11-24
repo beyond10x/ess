@@ -11,7 +11,7 @@ relations:
 - serves: vision:O2
 - depends_on: story:ess-specify-reads-prints-every-entity-each-command-s-decisions-read-by-kind-and-site-from-one-read-analysis
 - depends_on: story:the-specification-format-ess-38-is-open-as-the-newest-reads-and-compiles-every-specification-exactly-as-ess
-revision: 2
+revision: 3
 ---
 ## Need
 
@@ -135,13 +135,13 @@ Tree `bcfc51555`. Received 2026-11-24 from a downstream application, report item
 
 **Accept, redesigned** (`P2B-D3` (a)). Open questions:
 
-- **D1 (`P2B-D3`). Where does the claim live?** (a) `readers:`, closed, on the entity. (b)
+- **D1 (`P2B-D3`; open, with the owner as AQ2). Where does the claim live?** (a) `readers:`, closed, on the entity. (b)
   `never_reads:` on a command or a domain. (c) Only `ess specify reads`, checked by the
   application. (d) Decline. **Recommended: (a).**
-- **D2. Is an outcome acting on the entity a reader?** (a) No: its own subject is exempt. (b) Yes:
+- **D2 (open, with the owner as AQ2). Is an outcome acting on the entity a reader?** (a) No: its own subject is exempt. (b) Yes:
   every writer must be listed. **Recommended: (a).** The claim is about other commands' decisions.
   (b) makes every entity with `readers: []` list its own writers.
-- **D3. Does the suite witness the claim against an implementation?** (a) Not in this cut. A
+- **D3 (decided: a, 2026-11-24). Does the suite witness the claim against an implementation?** (a) Not in this cut. A
   later story adds a non-interference pair per command outside the list: two arranged stores that
   differ only in the entity's rows give the same outcome. (b) In this cut. **Recommended: (a).**
   The static check covers the model, and the pair is a synthesis design of its own.

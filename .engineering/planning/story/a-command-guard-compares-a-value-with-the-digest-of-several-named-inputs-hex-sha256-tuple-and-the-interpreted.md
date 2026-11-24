@@ -10,7 +10,7 @@ tags:
 relations:
 - serves: vision:O2
 - depends_on: story:the-specification-format-ess-38-is-open-as-the-newest-reads-and-compiles-every-specification-exactly-as-ess
-revision: 2
+revision: 3
 ---
 ## Need
 
@@ -148,17 +148,17 @@ Tree `bcfc51555`. Received 2026-11-24 from a downstream application, report item
 
 **Accept, redesigned** (`P2B-D2` (a)). Open questions:
 
-- **D1 (`P2B-D2`). May ESS compute a digest of several named inputs?** (a) Yes: extend the
+- **D1 (`P2B-D2`; open, with the owner as AQ1). May ESS compute a digest of several named inputs?** (a) Yes: extend the
   `ess/27` family (this story and `g15-digest-witness`). (b) No computation: state the dependency
   with identity plus `unique:` (`story:an-identity-may-be-a-composite-of-fields`, active). (c)
   Decline: the application keeps its identity, its refusals and its own determinism tests.
   **Recommended: (a).** (b) lands anyway through its own story and complements (a).
-- **D2. The encoding.** (a) A presence tag, then a length-prefixed canonical wire text per fact.
+- **D2 (open, with the owner as AQ1). The encoding.** (a) A presence tag, then a length-prefixed canonical wire text per fact.
   (b) RFC 8785 canonical JSON of an array. (c) Concatenation with a separator. **Recommended:
   (a).**
-- **D3. The text form.** (a) Add `hex(x)` beside `base64url(x)`. (b) `base64url` only.
+- **D3 (decided: a, 2026-11-24). The text form.** (a) Add `hex(x)` beside `base64url(x)`. (b) `base64url` only.
   **Recommended: (a).** `sha256:<hex>` is the common shape of a content address.
-- **D4. A key newtype with `prefix:`.** A newtype's prefix is part of its value. (a) First cut:
+- **D4 (decided: a, 2026-11-24). A key newtype with `prefix:`.** A newtype's prefix is part of its value. (a) First cut:
   the guard compares a String value, and an author whose key carries a prefix declares the digest
   part as its own field. (b) String concatenation with a literal (`"sha256:" + hex(…)`), which
   opens String `+` in grid O, a G1 decision of its own. **Recommended: (a).**

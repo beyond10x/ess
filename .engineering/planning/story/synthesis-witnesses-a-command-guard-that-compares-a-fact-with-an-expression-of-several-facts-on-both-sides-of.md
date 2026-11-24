@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:synthesis-witnesses-a-command-guard-that-compares-a-fact-with-an-expression-of-several-facts-on-both-sides-of
 kind: story
-status: draft
+status: active
 title: Synthesis witnesses a command guard that compares a fact with an expression of several facts, on both sides of the comparison, so a target that drops a factor or a term fails
 tags:
 - gap-p2
@@ -11,7 +11,10 @@ relations:
 - serves: vision:O2
 - depends_on: story:at-ess-39-a-command-guard-compares-a-fact-with-an-expression-of-several-facts-and-every-expression-reads-the
 - depends_on: story:the-specification-format-ess-38-is-open-as-the-newest-reads-and-compiles-every-specification-exactly-as-ess
-revision: 3
+revision: 6
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-24T03:51:59Z", actor: "human:timo", revision: 5}
+- {from: "proposed", to: "active", at: "2026-11-24T03:52:00Z", actor: "human:timo", revision: 6}
 ---
 ## Need
 
@@ -95,7 +98,7 @@ item G12). Tree `bcfc51555`, read-only.
 
 ## Decisions
 
-- None of its own. Follows SX-D4 and SX-D5.
+- None of its own. Follows SX-D4 and SX-D5, both decided: A, 2026-11-24.
 
 - FMT-B (decided: A, 2026-11-24): this story moves to `ess/38` with the rest of the pull request (D77: no `ess/39`); the Acceptance line on the format says so.
 

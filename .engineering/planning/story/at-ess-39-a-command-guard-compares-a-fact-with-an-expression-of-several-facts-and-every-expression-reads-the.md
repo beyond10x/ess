@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:at-ess-39-a-command-guard-compares-a-fact-with-an-expression-of-several-facts-and-every-expression-reads-the
 kind: story
-status: draft
+status: active
 title: At ess/38 a command guard compares a fact with an expression of several facts, and every expression reads the length of a list as xs.count, validated, compiled and decided by the interpreted target
 tags:
 - gap-p2
@@ -10,7 +10,10 @@ tags:
 relations:
 - serves: vision:O2
 - depends_on: story:the-specification-format-ess-38-is-open-as-the-newest-reads-and-compiles-every-specification-exactly-as-ess
-revision: 3
+revision: 6
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-24T03:51:58Z", actor: "human:timo", revision: 5}
+- {from: "proposed", to: "active", at: "2026-11-24T03:51:59Z", actor: "human:timo", revision: 6}
 ---
 ## Need
 
@@ -178,16 +181,16 @@ lists, `g14-keyed-list-compare`) only by sharing the guard positions; it does no
 
 ## Decisions
 
-- **SX-D4. What item G12 opens.** (A) Arithmetic over several facts in command guards and a list's
+- **SX-D4 (decided: A, 2026-11-24). What item G12 opens.** (A) Arithmetic over several facts in command guards and a list's
   length in every expression (the requester's count-product idiom). (B) The coverage quantifier
   "for every pair of two lists a row exists", designed with the quantifier work of report item 9.
   (C) Both, A now and B later. (D) Decline: the application keeps the `external:` cause.
   **Recommended: (A).**
-- **SX-D5. Which guard positions.** (A) `when:`, `when_subject:` and the `when_related:` predicate;
+- **SX-D5 (decided: A, 2026-11-24). Which guard positions.** (A) `when:`, `when_subject:` and the `when_related:` predicate;
   every selector, filter, invariant and view position refused by name. (B) Every predicate position
   at once, with selector synthesis and generated queries in the same decision. (C) `when:` only.
   **Recommended: (A).**
-- **SX-D6. How an expression spells a length.** (A) `xs.count`, as guards spell it since `ess/11`.
+- **SX-D6 (decided: A, 2026-11-24). How an expression spells a length.** (A) `xs.count`, as guards spell it since `ess/11`.
   (B) `count(xs)`, as the design page's table writes it, `.count` staying guard-only. (C) Both.
   **Recommended: (A).**
 

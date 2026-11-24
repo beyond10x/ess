@@ -10,7 +10,7 @@ tags:
 relations:
 - serves: vision:O2
 - depends_on: story:an-entity-whose-rows-the-deployment-provides-declares-lifecycle-moves-the-deployment-makes-with-no-command
-revision: 1
+revision: 2
 ---
 ## Need
 
@@ -51,7 +51,7 @@ reach.
 
 ## Decisions
 
-None beyond SL-D11. Under its option B, this story is not needed.
+None beyond SL-D11 (open, with the owner as AQ3). Under its option B, this story is not needed.
 
 ## Scope
 

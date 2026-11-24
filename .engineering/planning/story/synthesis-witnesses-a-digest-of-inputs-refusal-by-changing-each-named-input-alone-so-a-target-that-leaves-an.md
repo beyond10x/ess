@@ -10,7 +10,7 @@ tags:
 relations:
 - serves: vision:O2
 - depends_on: story:a-command-guard-compares-a-value-with-the-digest-of-several-named-inputs-hex-sha256-tuple-and-the-interpreted
-revision: 1
+revision: 2
 ---
 ## Need
 
@@ -55,7 +55,7 @@ questions 1-5 and 7.
 
 **Accept, redesigned** (`P2B-D2` (a)). Open question:
 
-- **D1. One refusal scenario per fact, or one scenario that changes every fact?** (a) One per
+- **D1 (decided: a, 2026-11-24). One refusal scenario per fact, or one scenario that changes every fact?** (a) One per
   fact. (b) One that changes all of them. **Recommended: (a).** (b) passes a target that leaves
   any one fact out.
 
