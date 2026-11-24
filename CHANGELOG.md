@@ -42,6 +42,7 @@
 - `ess verify conform synthesize` witnesses a branch whose guard reads a text input whose type's invariant joins a length rule with a prefix or a suffix, such as `value.count == 2` beside `starts_with: A` and `ends_with: Z`: it sends a value the whole invariant admits, where the branch was refused as `ESS-SYNTH-003` (beyond10x/ess#809).
 - `ess verify conform synthesize` witnesses an `exists: false` branch beneath several input refusals over different inputs by searching for an input that refutes all of them at once, where it was refused as `ESS-SYNTH-003` depending on how the inputs were named (beyond10x/ess#804).
 - `ess verify conform synthesize` sends a `when_related: {entity, where, exists: true}` refusal again where a sibling input refusal narrowed by `exists: false` over the same entity and `where:` would answer, such as a stored session with an invalid payload expecting `already-initialized`, so a target that checks the payload first fails; the `ESS-COMMAND-004` hint for an input refusal declared below a related-row refusal also names that narrowing (beyond10x/ess#554).
+- `ess verify conform synthesize` forces an external refusal marked `before_row: true` once more beside the row a sibling `when_related: {entity, where, exists: true}` refusal arranges, sending that row's input, so a target that looks the row up before it asks the provider fails; the `ESS-COMMAND-004` hint for a branch declared below a plain `external:` refusal also names `before_row: true` (beyond10x/ess#554).
 
 ## [0.98.2] — 2026-11-24
 

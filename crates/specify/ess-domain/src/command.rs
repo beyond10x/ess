@@ -4008,21 +4008,14 @@ impl CommandSpec {
                 earlier.name,
                 step(place.phase)
             );
-            // An input refusal below a related-row refusal keeps the declared order when it is
-            // narrowed to the rows the refusal above does not take (beyond10x/ess#554).
-            if place.phase == precedence::Phase::InputRefusal
-                && earlier.error.is_some()
-                && matches!(
-                    earlier.condition,
-                    OutcomeCondition::Related { .. } | OutcomeCondition::RelatedSet { .. }
-                )
-            {
-                let _ = write!(
-                    hint,
-                    "; or keep the order and narrow `{}` with `when_related: {{…, exists: false}}`",
-                    outcome.name
-                );
-            }
+            Self::step_order_idioms(
+                &mut hint,
+                outcome,
+                earlier,
+                place.phase,
+                format,
+                &step(precedence::Phase::InputRefusal),
+            );
             errors.push(
                 ValidationError::at(
                     self.site().key("outcomes").named(outcome.name.as_str()),
@@ -4041,6 +4034,52 @@ impl CommandSpec {
             );
         }
         errors
+    }
+
+    /// The idioms that keep the declared order, appended to the hint of
+    /// [`Self::validate_step_order`] (beyond10x/ess#554). `input_step` is the step label of the
+    /// input refusal phase.
+    fn step_order_idioms(
+        hint: &mut String,
+        outcome: &Outcome,
+        earlier: &Outcome,
+        phase: precedence::Phase,
+        format: crate::system::FormatVersion,
+        input_step: &str,
+    ) {
+        // An input refusal below a related-row refusal keeps the declared order when it is
+        // narrowed to the rows the refusal above does not take.
+        if phase == precedence::Phase::InputRefusal
+            && earlier.error.is_some()
+            && matches!(
+                earlier.condition,
+                OutcomeCondition::Related { .. } | OutcomeCondition::RelatedSet { .. }
+            )
+        {
+            let _ = write!(
+                hint,
+                "; or keep the order and narrow `{}` with `when_related: {{…, exists: false}}`",
+                outcome.name
+            );
+        }
+        // A plain external refusal declared above a branch an earlier step answers keeps the
+        // declared order when it is answered from the request alone.
+        if earlier.error.is_some()
+            && !earlier.before_row
+            && matches!(
+                earlier.condition,
+                OutcomeCondition::External { .. } | OutcomeCondition::ExternalWhen { .. }
+            )
+            && phase.position() > precedence::Phase::InputRefusal.position()
+            && format.major() >= crate::system::FormatVersion::V25.major()
+        {
+            let _ = write!(
+                hint,
+                "; or mark `{}` `before_row: true`: it then answers from the request alone, \
+                 at step {input_step}",
+                earlier.name
+            );
+        }
     }
 
     /// Refuses an `exists: false` over one row, declared below a present-row refusal over another,

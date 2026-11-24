@@ -4812,6 +4812,11 @@ fn outcome_scenario_noting(
             source.extend(depends);
         }
     }
+    // beyond10x/ess#554: forced once more beside each row a sibling refusal requiring a selected
+    // row arranges, so a target reading that row first fails.
+    let (more, depends) = before_row_beside_related(models, command, outcome, actors);
+    steps.extend(more);
+    source.extend(depends);
     // ess/25 (#534): step 2 is read in declaration order, so the external refusal is forced once
     // more for each input refusal declared after it, on an input that refusal's guard selects: a
     // target asking the provider only after every input refusal answers the later refusal there.
@@ -13511,6 +13516,84 @@ fn arranged_as(
             Err(related_guard::unarranged())
         }
     }
+}
+
+/// The further invocations of an external refusal answered before the row (`before_row: true`,
+/// ess/25) beside a present related row (beyond10x/ess#554): for each sibling refusal requiring a
+/// selected row (`when_related: {entity, where, exists: true}`), that refusal's own arrangement, the
+/// provider forced, and its input sent, requiring the external refusal and its error. A target that
+/// reads the row before it asks the provider answers the sibling and fails. A command with no such
+/// sibling keeps its suite's bytes.
+fn before_row_beside_related(
+    models: &caller::InvocationModels<'_>,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+) -> (Vec<ScenarioStep>, BTreeSet<EssSemanticRef>) {
+    let ir = models.arrangement;
+    let mut out = (Vec::new(), BTreeSet::new());
+    if !outcome.before_row
+        || outcome.error.is_none()
+        || outcome.test_strategy != TestStrategy::InjectFault
+    {
+        return out;
+    }
+    let command_ref = CommandRef::new(command.name.clone());
+    let outcome_ref = OutcomeRef::new(command_ref.clone(), outcome.name.clone());
+    for sibling in command.outcomes.iter().filter(|sibling| {
+        sibling.error.is_some()
+            && matches!(
+                sibling.condition,
+                ResolvedCondition::RelatedSet {
+                    test: ess_compiler::ir::ResolvedRowSetTest::Exists(true),
+                    input: None,
+                    ..
+                }
+            )
+    }) {
+        let Ok((mut setup, input, _)) = row_set::prepare(models, command, sibling, actors) else {
+            continue;
+        };
+        if !reaches_before_row(ir, command, outcome, &input, None).unwrap_or(false) {
+            continue;
+        }
+        let supplied: BTreeMap<String, ScenarioValue> = input
+            .iter()
+            .map(|(field, value)| {
+                let sent = setup.bound.get(field).map_or_else(
+                    || ScenarioValue::literal(value.clone()),
+                    |instance| ScenarioValue::instance(instance.clone()),
+                );
+                (field.clone(), sent)
+            })
+            .collect();
+        let expected = outcome
+            .error
+            .as_ref()
+            .map(|error| expect_error(ir, outcome, error, &supplied, &BTreeMap::new()));
+        let mut act = vec![
+            ScenarioStep::ConfigureExternalOutcome {
+                force: outcome_ref.clone(),
+                times: None,
+            },
+            ScenarioStep::ExecuteCommand {
+                caller: BTreeMap::new(),
+                command: command_ref.clone(),
+                actor: actors.get(&command.name).cloned(),
+                input: supplied,
+            },
+            ScenarioStep::ExpectOutcome {
+                outcome: outcome_ref.clone(),
+            },
+        ];
+        act.extend(expected);
+        models.mark(caller::InvocationPhase::Arrange, &mut setup.steps);
+        models.mark(caller::InvocationPhase::Act, &mut act);
+        out.0.extend(setup.steps);
+        out.0.extend(act);
+        out.1.extend(setup.source);
+    }
+    out
 }
 
 /// The input field an external refusal answered before the row (`before_row: true`, ess/25,

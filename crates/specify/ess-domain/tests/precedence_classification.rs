@@ -1277,3 +1277,70 @@ commands:
         panic!("{errors}");
     }
 }
+
+/// A plain external refusal declared above a related-row refusal (beyond10x/ess#554): the order is
+/// refused as before, and the hint also names `before_row: true`, which keeps it.
+#[test]
+fn an_external_ordering_refusal_names_before_row() {
+    let text = "format: ess/37
+system: demo
+version: v1
+domain: demo.jobs
+types:
+  - {name: demo.jobs.JobName, kind: newtype, of: String}
+entities:
+  - name: demo.jobs.Job
+    identity: {name: name, type: demo.jobs.JobName}
+    fields: []
+    lifecycle: {initial: Stored, states: [Stored], terminal: [Stored], transitions: []}
+errors:
+  - {name: demo.jobs.InvalidZone}
+  - {name: demo.jobs.Duplicate}
+events:
+  - name: demo.jobs.JobStored
+    fields:
+      - {name: name, type: demo.jobs.JobName}
+commands:
+  - name: demo.jobs.StoreJob
+    input:
+      - {name: name, type: demo.jobs.JobName}
+      - {name: zone, type: String}
+    outcomes:
+      - name: invalid-zone
+        external: the zone id does not parse
+        error: demo.jobs.InvalidZone
+      - name: duplicate-name
+        when_related: {entity: demo.jobs.Job, where: name == input.name, exists: true}
+        error: demo.jobs.Duplicate
+      - name: stored
+        creates: demo.jobs.Job
+        instance: name
+        emits: [demo.jobs.JobStored]
+        payload:
+          demo.jobs.JobStored: {name: input.name}
+";
+    let raw = RawSpecFile::parse(text).unwrap_or_else(|error| panic!("{error}"));
+    let Err(errors) = Specification::assemble([(Source::new("model.yaml"), raw)]) else {
+        panic!("the order is refused");
+    };
+    let errors = errors.to_string();
+    assert!(
+        errors.contains(
+            "`duplicate-name` answers at step 4 of the precedence order and `invalid-zone`, \
+             declared above it, at step 5; where both hold, the declaration order and the \
+             precedence order disagree (hint: declare `duplicate-name` before `invalid-zone`: \
+             step 4 answers first in either order; or mark `invalid-zone` `before_row: true`: it \
+             then answers from the request alone, at step 1)"
+        ),
+        "{errors}"
+    );
+    let marked = text.replace(
+        "        external: the zone id does not parse\n",
+        "        external: the zone id does not parse\n        before_row: true\n",
+    );
+    assert_ne!(marked, text);
+    let raw = RawSpecFile::parse(&marked).unwrap_or_else(|error| panic!("{error}"));
+    if let Err(errors) = Specification::assemble([(Source::new("model.yaml"), raw)]) {
+        panic!("{errors}");
+    }
+}
