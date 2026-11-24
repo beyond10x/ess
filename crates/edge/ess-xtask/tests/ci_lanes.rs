@@ -5937,7 +5937,7 @@ fn the_slow_decision_is_every_changed_path_in_the_skippable_list() {
         ),
         (
             "an ess-xtask source slow-list does not run on",
-            &["crates/edge/ess-xtask/src/scratch.rs"],
+            &["crates/edge/ess-xtask/src/support.rs"],
             "false",
         ),
         (
