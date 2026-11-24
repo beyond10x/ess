@@ -11,7 +11,7 @@ tags:
 - gap-reports-2026-11-24
 relations:
 - serves: vision:O2
-revision: 2
+revision: 4
 ---
 ## Need
 
@@ -71,6 +71,8 @@ source format that decision opens (not `ess/38` unless it names the row).
   head; `ess generate synthesize --target rust` reports no obligation for either command.
 - The IR bytes of a specification that uses neither are unchanged.
 
+Amendment (tenth gap report, 2026-11-24): a `{count: {entity, where}}` with no `before` is admitted in a branch that changes no row, and the branch's payload equals the rows the selection would change.
+
 ## Scope
 
 - cited: `crates/specify/ess-domain/src/command/value_expression.rs` (sources 504, 616), `command.rs`
@@ -96,3 +98,5 @@ source format that decision opens (not `ess/38` unless it names the row).
 ## Decisions
 
 AC9-D7: the order of landing. A: both at the next G2 format step in one story. B: the count first, the head with `affects[].where`. C: decline, caller-supplied values. Decided: A, 2026-11-24 (the coordinator, under the owner's delegation); accepted as redesigned (the selection syntax, not the reporter's two spellings).
+
+SW-D4, the dry-run count. A: amend this story to admit a plain `{count: {entity, where}}` without `before`. B: a second spelling `{count: selected}` on an `instances:` branch. Decided: A, 2026-11-24 (the coordinator, under the owner's delegation): one spelling for a count of a selection.
