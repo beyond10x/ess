@@ -48,7 +48,7 @@ Built side by side within a group, one group after another.
 One line per report item, in priority order: the need, then the stories that carry it with their
 size. "Existing" marks a story that was in the store before. A group not filed yet says so.
 
-### P0 (filed, revised after four critics and one recheck)
+### P0 (filed, revised after four critics and one recheck, accepted)
 
 Thirteen units in eight rounds, plus three follow-up drafts that are not in P0. Each unit's text
 answers the critics' 76 findings and the recheck's 8.
@@ -654,6 +654,22 @@ its decisions as written; moved draft, proposed, active:
 - `story:a-number-with-no-declared-number-format-is-drawn-as-written-in-every-renderer`
 - `story:a-structured-value-reads-as-one-line-of-its-members-in-every-renderer`
 - `story:a-list-field-names-the-text-that-joins-its-items-in-every-renderer`
+
+Accepted 2026-11-24 by the coordinator under the owner's delegation after a panel of four critics
+(76 findings) and one recheck (8 findings), all answered in the texts; moved draft, proposed,
+active. The thirteen P0 units, by round:
+
+- R1: `story:a-design-page-fixes-how-a-program-explores-the-ui-states-of-an-ess-ui-1-document-one-session-the-steps-a-state`, `story:the-ess-ui-loader-writes-every-constant-default-the-schema-declares-into-the-document-before-reading-it-from`, `story:a-running-terminal-app-forks-into-a-copy-that-shares-no-mutable-state-with-it-and-keeps-file-placed-state-in`
+- R2: `story:a-document-that-leaves-out-actor-runs-from-the-session-in-both-renderers-as-ess-ui-1-documents-and-the-test`, `story:with-a-model-the-loader-fills-a-form-s-fields-from-its-command-s-input-fields-and-a-form-without-fields-shows`
+- R3: `story:a-program-lists-the-ess-ui-test-1-steps-a-ui-state-offers-applies-one-and-forks-the-state-through-ess-ui-test`, `story:the-loader-resolves-every-state-s-store-and-scope-and-every-read-s-cache-store-from-the-placement-profile-once`
+- R4: `story:the-loader-fills-the-defaults-a-renderer-reads-differently-today-and-both-renderers-then-show-what-the-schema`
+- R5: `story:an-ess-ui-1-document-has-one-canonical-byte-form-and-one-digest-the-same-for-every-key-order-yaml-spelling`
+- R6: `story:ess-ui-load-format-json-prints-the-document-the-loader-resolved-every-default-filled-as-the-versioned-format`
+- R7: `story:a-ui-state-prints-as-ess-ui-state-1-with-a-digest-and-two-routes-to-one-state-print-the-same-bytes-and-the`, `story:with-model-ess-ui-resolved-1-carries-the-route-table-the-stock-generators-bind-the-document-s-views-and`
+- R8: `story:ess-ui-state-prints-the-state-a-list-of-ess-ui-test-1-steps-reaches-and-the-steps-that-state-offers`
+
+The three P0 follow-ups (`story:the-model-holds-every-filled-default-as-a-plain-value-and-no-renderer-or-checker-keeps-a-fallback-of-its-own`, `story:the-terminal-keeps-a-section-s-rows-while-its-read-runs-again-and-marks-rows-only-in-a-collection-that`,
+`story:the-generated-react-app-counts-new-live-rows-while-its-reader-is-paged-away-with-or-without-a-filter-and-keeps`) stay drafts.
 
 ## Not accepted yet
 

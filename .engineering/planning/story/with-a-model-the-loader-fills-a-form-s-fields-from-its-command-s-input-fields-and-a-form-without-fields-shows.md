@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:with-a-model-the-loader-fills-a-form-s-fields-from-its-command-s-input-fields-and-a-form-without-fields-shows
 kind: story
-status: draft
+status: active
 title: With a model, the loader fills a form's fields from its command's input fields, and a form without fields shows its inputs in both renderers
 tags:
 - gap-p0
@@ -10,7 +10,10 @@ tags:
 relations:
 - serves: vision:O2
 - depends_on: story:the-ess-ui-loader-writes-every-constant-default-the-schema-declares-into-the-document-before-reading-it-from
-revision: 2
+revision: 4
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-24T01:19:01Z", actor: "human:timo", revision: 3}
+- {from: "proposed", to: "active", at: "2026-11-24T01:19:03Z", actor: "human:timo", revision: 4}
 ---
 ## Need
 

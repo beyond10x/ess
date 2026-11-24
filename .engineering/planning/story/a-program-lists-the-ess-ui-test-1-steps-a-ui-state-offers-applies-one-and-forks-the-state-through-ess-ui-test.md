@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-program-lists-the-ess-ui-test-1-steps-a-ui-state-offers-applies-one-and-forks-the-state-through-ess-ui-test
 kind: story
-status: draft
+status: active
 title: A program lists the ess-ui-test/1 steps a UI state offers, applies one, and forks the state, through ess_ui_test::Session
 tags:
 - gap-p0
@@ -14,7 +14,10 @@ relations:
 - depends_on: story:a-document-that-leaves-out-actor-runs-from-the-session-in-both-renderers-as-ess-ui-1-documents-and-the-test
 - depends_on: story:the-ess-ui-loader-writes-every-constant-default-the-schema-declares-into-the-document-before-reading-it-from
 - depends_on: story:with-a-model-the-loader-fills-a-form-s-fields-from-its-command-s-input-fields-and-a-form-without-fields-shows
-revision: 2
+revision: 4
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-24T01:19:04Z", actor: "human:timo", revision: 3}
+- {from: "proposed", to: "active", at: "2026-11-24T01:19:06Z", actor: "human:timo", revision: 4}
 ---
 ## Need
 

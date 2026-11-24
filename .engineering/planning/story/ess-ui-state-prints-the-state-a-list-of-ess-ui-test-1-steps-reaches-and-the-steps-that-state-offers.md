@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:ess-ui-state-prints-the-state-a-list-of-ess-ui-test-1-steps-reaches-and-the-steps-that-state-offers
 kind: story
-status: draft
+status: active
 title: ess ui state prints the state a list of ess-ui-test/1 steps reaches and the steps that state offers
 tags:
 - gap-p0
@@ -12,7 +12,10 @@ relations:
 - depends_on: story:a-ui-state-prints-as-ess-ui-state-1-with-a-digest-and-two-routes-to-one-state-print-the-same-bytes-and-the
 - depends_on: story:a-program-lists-the-ess-ui-test-1-steps-a-ui-state-offers-applies-one-and-forks-the-state-through-ess-ui-test
 - depends_on: story:with-model-ess-ui-resolved-1-carries-the-route-table-the-stock-generators-bind-the-document-s-views-and
-revision: 2
+revision: 4
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-24T01:19:24Z", actor: "human:timo", revision: 3}
+- {from: "proposed", to: "active", at: "2026-11-24T01:19:25Z", actor: "human:timo", revision: 4}
 ---
 ## Need
 

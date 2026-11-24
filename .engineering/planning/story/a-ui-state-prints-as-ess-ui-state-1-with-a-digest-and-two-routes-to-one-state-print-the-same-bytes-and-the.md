@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-ui-state-prints-as-ess-ui-state-1-with-a-digest-and-two-routes-to-one-state-print-the-same-bytes-and-the
 kind: story
-status: draft
+status: active
 title: A UI state prints as ess-ui-state/1 with a digest, and two routes to one state print the same bytes and the same digest
 tags:
 - gap-p0
@@ -13,7 +13,10 @@ relations:
 - depends_on: story:a-program-lists-the-ess-ui-test-1-steps-a-ui-state-offers-applies-one-and-forks-the-state-through-ess-ui-test
 - depends_on: story:an-ess-ui-1-document-has-one-canonical-byte-form-and-one-digest-the-same-for-every-key-order-yaml-spelling
 - depends_on: story:ess-ui-load-format-json-prints-the-document-the-loader-resolved-every-default-filled-as-the-versioned-format
-revision: 2
+revision: 4
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-24T01:19:18Z", actor: "human:timo", revision: 3}
+- {from: "proposed", to: "active", at: "2026-11-24T01:19:20Z", actor: "human:timo", revision: 4}
 ---
 ## Need
 

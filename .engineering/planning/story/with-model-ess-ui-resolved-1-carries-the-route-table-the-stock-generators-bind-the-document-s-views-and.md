@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:with-model-ess-ui-resolved-1-carries-the-route-table-the-stock-generators-bind-the-document-s-views-and
 kind: story
-status: draft
+status: active
 title: With --model, ess-ui-resolved/1 carries the route table the stock generators bind the document's views and commands to, --http included
 tags:
 - gap-p0
@@ -11,7 +11,10 @@ relations:
 - serves: vision:O2
 - depends_on: story:ess-ui-load-format-json-prints-the-document-the-loader-resolved-every-default-filled-as-the-versioned-format
 - depends_on: story:an-ess-ui-1-document-has-one-canonical-byte-form-and-one-digest-the-same-for-every-key-order-yaml-spelling
-revision: 3
+revision: 5
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-24T01:19:21Z", actor: "human:timo", revision: 4}
+- {from: "proposed", to: "active", at: "2026-11-24T01:19:22Z", actor: "human:timo", revision: 5}
 ---
 ## Need
 

@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:an-ess-ui-1-document-has-one-canonical-byte-form-and-one-digest-the-same-for-every-key-order-yaml-spelling
 kind: story
-status: draft
+status: active
 title: An ess-ui/1 document has one canonical byte form and one digest, the same for every key order, YAML spelling, anchor, comment, short form and filled default written out or left out
 tags:
 - gap-p0
@@ -12,7 +12,10 @@ relations:
 - depends_on: story:the-ess-ui-loader-writes-every-constant-default-the-schema-declares-into-the-document-before-reading-it-from
 - depends_on: story:a-program-lists-the-ess-ui-test-1-steps-a-ui-state-offers-applies-one-and-forks-the-state-through-ess-ui-test
 - depends_on: story:the-loader-fills-the-defaults-a-renderer-reads-differently-today-and-both-renderers-then-show-what-the-schema
-revision: 3
+revision: 5
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-24T01:19:13Z", actor: "human:timo", revision: 4}
+- {from: "proposed", to: "active", at: "2026-11-24T01:19:14Z", actor: "human:timo", revision: 5}
 ---
 ## Need
 

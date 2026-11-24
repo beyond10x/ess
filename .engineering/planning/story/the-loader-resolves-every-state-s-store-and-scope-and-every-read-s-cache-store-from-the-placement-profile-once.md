@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:the-loader-resolves-every-state-s-store-and-scope-and-every-read-s-cache-store-from-the-placement-profile-once
 kind: story
-status: draft
+status: active
 title: The loader resolves every state's store and scope and every read's cache store from the placement profile, once, and a server state's stored key follows its scope
 tags:
 - gap-p0
@@ -12,7 +12,10 @@ relations:
 - depends_on: story:the-ess-ui-loader-writes-every-constant-default-the-schema-declares-into-the-document-before-reading-it-from
 - depends_on: story:a-document-that-leaves-out-actor-runs-from-the-session-in-both-renderers-as-ess-ui-1-documents-and-the-test
 - depends_on: story:with-a-model-the-loader-fills-a-form-s-fields-from-its-command-s-input-fields-and-a-form-without-fields-shows
-revision: 3
+revision: 5
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-24T01:19:07Z", actor: "human:timo", revision: 4}
+- {from: "proposed", to: "active", at: "2026-11-24T01:19:09Z", actor: "human:timo", revision: 5}
 ---
 ## Need
 

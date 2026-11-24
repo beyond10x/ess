@@ -2,14 +2,17 @@
 format: aep.planning-md/3
 id: story:a-design-page-fixes-how-a-program-explores-the-ui-states-of-an-ess-ui-1-document-one-session-the-steps-a-state
 kind: story
-status: draft
+status: active
 title: 'A design page fixes how a program explores the UI states of an ess-ui/1 document: one session, the steps a state offers, forks, and the published state ess-ui-state/1'
 tags:
 - gap-p0
 - gap-reports-2026-11-24
 relations:
 - serves: vision:O2
-revision: 2
+revision: 4
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-24T01:18:50Z", actor: "human:timo", revision: 3}
+- {from: "proposed", to: "active", at: "2026-11-24T01:18:52Z", actor: "human:timo", revision: 4}
 ---
 ## Need
 

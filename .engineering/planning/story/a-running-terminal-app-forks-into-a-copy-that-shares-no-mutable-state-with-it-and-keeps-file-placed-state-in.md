@@ -2,14 +2,17 @@
 format: aep.planning-md/3
 id: story:a-running-terminal-app-forks-into-a-copy-that-shares-no-mutable-state-with-it-and-keeps-file-placed-state-in
 kind: story
-status: draft
+status: active
 title: A running terminal app forks into a copy that shares no mutable state with it, keeps file-placed state in memory when asked, and says when its next event is due
 tags:
 - gap-p0
 - gap-reports-2026-11-24
 relations:
 - serves: vision:O2
-revision: 3
+revision: 5
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-24T01:18:56Z", actor: "human:timo", revision: 4}
+- {from: "proposed", to: "active", at: "2026-11-24T01:18:57Z", actor: "human:timo", revision: 5}
 ---
 ## Need
 

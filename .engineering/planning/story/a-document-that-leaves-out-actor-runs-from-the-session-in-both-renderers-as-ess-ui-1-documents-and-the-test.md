@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-document-that-leaves-out-actor-runs-from-the-session-in-both-renderers-as-ess-ui-1-documents-and-the-test
 kind: story
-status: draft
+status: active
 title: Both renderers run a document without an actor from the session, and take the actor from one place
 tags:
 - gap-p0
@@ -11,7 +11,10 @@ relations:
 - serves: vision:O2
 - depends_on: story:the-ess-ui-loader-writes-every-constant-default-the-schema-declares-into-the-document-before-reading-it-from
 - depends_on: story:a-running-terminal-app-forks-into-a-copy-that-shares-no-mutable-state-with-it-and-keeps-file-placed-state-in
-revision: 3
+revision: 5
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-24T01:18:59Z", actor: "human:timo", revision: 4}
+- {from: "proposed", to: "active", at: "2026-11-24T01:19:00Z", actor: "human:timo", revision: 5}
 ---
 ## Need
 

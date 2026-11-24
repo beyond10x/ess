@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:ess-ui-load-format-json-prints-the-document-the-loader-resolved-every-default-filled-as-the-versioned-format
 kind: story
-status: draft
+status: active
 title: ess ui load --format json prints the document the loader resolved, every default filled, as the versioned format ess-ui-resolved/1
 tags:
 - gap-p0
@@ -15,7 +15,10 @@ relations:
 - depends_on: story:the-loader-fills-the-defaults-a-renderer-reads-differently-today-and-both-renderers-then-show-what-the-schema
 - depends_on: story:the-loader-resolves-every-state-s-store-and-scope-and-every-read-s-cache-store-from-the-placement-profile-once
 - depends_on: story:with-a-model-the-loader-fills-a-form-s-fields-from-its-command-s-input-fields-and-a-form-without-fields-shows
-revision: 2
+revision: 4
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-24T01:19:16Z", actor: "human:timo", revision: 3}
+- {from: "proposed", to: "active", at: "2026-11-24T01:19:17Z", actor: "human:timo", revision: 4}
 ---
 ## Need
 
