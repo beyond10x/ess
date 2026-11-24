@@ -27,7 +27,7 @@ scope:
   path: crates/generate/ess-synth/tests/declared_behaviour.rs
 - confidence: cited
   path: crates/specify/ess-primitives/src/predicate.rs
-revision: 12
+revision: 13
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-10T00:45:16Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"review_outcome":1}}}
 - {from: "proposed", to: "active", at: "2026-11-10T00:45:17Z", actor: "human:timo", revision: 10, decided_on: {"recorded":{"review_outcome":1}}}
@@ -87,15 +87,19 @@ beyond10x/ess#798 (2026-11-21, ess 0.96.0) shows the related-guard sentence of `
   what the suite checks, so the two cannot drift apart again.
 
 - Red today: over the reproduction model (`ess/37`), the `depot.racks.AddShelf` obligation
-   contract states, in this order: the first declared input refusal or `before_row: true`
-   external whose condition holds; then `existing_instance` and `unknown_instance`; then the held
-   state; then `exists: false` and the present `when_related:` refusals; then the accepting and
-   remaining external branches. It does not contain "`exists: false` before input-guarded
-   refusals", and it does not contain "Related-presence predicates do not precede input-guarded
-   refusals".
-- The sentence is derived from `PrecedencePlan`/`Phase::step_in` for the IR's format (or written
-   per `reads_one_rule(ir.format())`), so the sentence and the plan the interpreter reads cannot
-   name different orders for one format.
+   contract names its branches in the positions the phase order gives them: the input refusal
+   (`no-label`) and the `before_row: true` external (`not-cleared`) before existence
+   (`duplicate`), existence before the held state, the held state before `exists: false`
+   (`unknown-rack`) and the present related refusal (`slot-taken`), and those before the accepting
+   branch (`added`). The test asserts only these relative positions. It does not contain
+   "`exists: false` before input-guarded refusals", and it does not contain "Related-presence
+   predicates do not precede input-guarded refusals".
+- The sentence is derived from the one phase order, `Phase::step_in(ir.format())` over the
+   command's `PrecedencePlan` (`crates/specify/ess-domain/src/command/precedence.rs:102-117`, with
+   `place` at 471-540 deciding each branch's phase), so it is whatever that order yields, including
+   `input_absent:` first and the default last, and a branch `place` moves to another step on a
+   command that reads a row first. The sentence and the plan the interpreter reads cannot name
+   different orders for one format; no order is written by hand in `plan.rs`.
 - Below `ess/27` the sentence is byte for byte today's: the three existing tests in
    `tests/declared_behaviour.rs` (lines 674-723, fixture at `ess/18`) stay green unchanged.
 - The branch for a related row read through a stored field of the subject (`plan.rs:759-771`) is
@@ -125,8 +129,9 @@ Size added to the story: S (about 80 changed lines: 35 source, 45 test).
 Fixed suite bytes of committed models: none. No committed file carries the sentence
 (`git grep 'Selection precedence'` finds only `plan.rs`); the existing tests pin it on an `ess/18`
 fixture, whose order is the old rule and stays.
-Patch-release candidate: yes on its own (no committed byte, no diagnostic); folded into the story,
-it ships when the story ships.
+Patch-release candidate: yes (no committed byte, no diagnostic). The operator ordered #798 built
+now in the hotfix wave on the released tag (2026-11-24, 03:10 CET); this amendment is the record
+for the story, which keeps its other items for the later merge.
 
 ### Need
 
@@ -157,9 +162,11 @@ held state (3), every `exists: false` then every present-related refusal (4), ac
 
 ### Scope (added)
 
-- `crates/generate/ess-synth/src/plan.rs`, `related_precedence` (lines 720-802): branch on
-  `ess_domain::command::precedence::reads_one_rule(ir.format())`; under the rule write the order of
-  acceptance 6, naming `before_row: true` externals beside the input refusals.
+- `crates/generate/ess-synth/src/plan.rs`, `related_precedence` (lines 720-802): under
+  `reads_one_rule(ir.format())`, write the sentence by walking `Phase::PRECEDENCE` in the order
+  `Phase::step_in(ir.format())` gives and naming each phase's branches from the command's
+  `PrecedencePlan` (acceptance 7); `before_row: true` externals appear where the plan puts them
+  (with the input refusals). Below the rule, today's text stays (acceptance 8).
 
 ### Owned files (added)
 
@@ -188,6 +195,8 @@ One at a time; no build-pool job over 10 minutes.
 - `cargo clippy -p ess-synth --all-targets --locked -- -D warnings`
 - `cargo test -p ess-synth --locked --test declared_behaviour`
 - byte pins of `ess-synth`: `--test served_codec_names`, `--test go`
+- `task test-xtask` (the unit edits `CHANGELOG.md`)
+- No stamp: `ess-synth/src` is not among the sources `synthesis-sources.digest` hashes.
 
 ### Depends on
 
@@ -198,8 +207,8 @@ The story it amends (same function); nothing else.
 Under `Fixed`:
 
 - The obligation contract of a command with `when_related:` from `ess/27` states the precedence the
-  interpreted target and the suite follow: input refusals and `before_row` externals first, then
-  existence, the held state, missing and present related rows, and the accepting branches (#798).
+  interpreted target and the suite follow, written from the same phase order, where it put
+  `existing_instance` and `exists: false` before the input refusals (#798).
 
 ### Fit review
 

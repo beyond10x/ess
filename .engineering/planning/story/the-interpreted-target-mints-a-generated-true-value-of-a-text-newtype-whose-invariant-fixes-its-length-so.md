@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:the-interpreted-target-mints-a-generated-true-value-of-a-text-newtype-whose-invariant-fixes-its-length-so
 kind: story
-status: draft
+status: archived
 title: 'The interpreted target mints a `{generated: true}` value of a text newtype whose invariant fixes its length, so scenarios that create such a row run instead of ending unsupported.'
 tags:
 - issues-2026-11-24
@@ -13,7 +13,9 @@ relations:
 - serves: vision:O2
 - derived_from: story:the-witness-search-and-the-interpreter-s-minting-choose-values-that-satisfy-every-declared-constraint-at-once
 - depends_on: story:a-text-input-that-a-guard-reads-whose-type-s-invariant-refuses-its-base-witness-gets-candidates-of-the-lengths
-revision: 1
+revision: 2
+transitions:
+- {from: "draft", to: "archived", at: "2026-11-24T02:30:36Z", actor: "human:timo", revision: 2}
 ---
 # d816: a generated value of a length-constrained newtype is minted
 

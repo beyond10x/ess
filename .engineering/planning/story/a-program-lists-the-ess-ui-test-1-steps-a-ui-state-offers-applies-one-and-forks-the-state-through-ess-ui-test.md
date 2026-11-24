@@ -14,7 +14,7 @@ relations:
 - depends_on: story:a-document-that-leaves-out-actor-runs-from-the-session-in-both-renderers-as-ess-ui-1-documents-and-the-test
 - depends_on: story:the-ess-ui-loader-writes-every-constant-default-the-schema-declares-into-the-document-before-reading-it-from
 - depends_on: story:with-a-model-the-loader-fills-a-form-s-fields-from-its-command-s-input-fields-and-a-form-without-fields-shows
-revision: 4
+revision: 5
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-24T01:19:04Z", actor: "human:timo", revision: 3}
 - {from: "proposed", to: "active", at: "2026-11-24T01:19:06Z", actor: "human:timo", revision: 4}
@@ -208,6 +208,7 @@ holds `Rc<Loaded>`, and that `open` offers navigation plus `switch_to`.
   computation, about 300 lines.
 - `crates/ui/ess-ui-test/src/lib.rs`: exports, 32-36.
 - read only: `screen.rs` (regions, 110-146), `parity.rs`, and `crates/ui/ess-ui-tui/src/app.rs`.
+- `crates/ui/ess-ui-tui/src/app.rs`: one public accessor for the navigation targets (`App::nav`, `switch_targets` are `pub(crate)` today); the design page `docs/design/ui-state-exploration.md` names it.
 - new: `crates/ui/ess-ui-test/tests/session.rs`.
 - `website/docs/reference/ess-ui-test.md`.
 - `CHANGELOG.md`.

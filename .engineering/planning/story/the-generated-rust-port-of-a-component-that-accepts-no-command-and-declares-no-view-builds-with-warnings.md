@@ -11,7 +11,7 @@ refs:
   reference: beyond10x/ess#793
 relations:
 - serves: vision:O2
-revision: 3
+revision: 4
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-24T02:12:59Z", actor: "human:timo", revision: 2}
 - {from: "proposed", to: "active", at: "2026-11-24T02:13:01Z", actor: "human:timo", revision: 3}
@@ -60,9 +60,8 @@ component. A port with at least one handler or query is byte for byte unchanged.
 ## Acceptance
 
 1. Red today: synthesizing the reproduction model for `Target::Rust`, the artifact
-   `crates/labels/src/lib.rs` holds no struct field that the same file never reads: it either holds
-   no `behaviors:` field, or that field is read in the file, or it is the one form the unit picks
-   (see Scope) that rustc's `dead_code` lint does not report.
+   `crates/labels/src/lib.rs` holds the field line `    _behaviors: B,` and no line
+   `    behaviors: B,` (rustc's `dead_code` lint does not report a field named with a leading `_`).
 2. `crates/stock/src/lib.rs` of the same synthesis is byte-identical to what 0.98.0 writes.
 3. `Labels::new` takes one argument of type `B`, as before.
 4. Every committed Rust example tree under `generated/` keeps its bytes (the existing byte
@@ -72,11 +71,9 @@ component. A port with at least one handler or query is byte for byte unchanged.
 
 - `crates/generate/ess-synth/src/rust/port.rs`, `port_struct` (lines 144-216): the struct text at
   152-168 is written before `bound_list` (line 170) is computed. Compute `bounds` first; when it is
-  empty, write the field so nothing is left unread. Pick one, smallest first:
-  - store the value under a field name rustc does not report (`_behaviors: B`), constructor
-    unchanged; or
-  - keep `behaviors: B` with `#[allow(dead_code)]` on that field only.
-  Either keeps the value alive for the port's lifetime, as today.
+  empty, write the field as `_behaviors: B` (and `_behaviors: behaviors,` in `new`), constructor
+  signature unchanged. Chosen over `#[allow(dead_code)]` on the field: no lint attribute in
+  generated code. The value stays alive for the port's lifetime, as today.
 - Nothing else in the Rust target reads the field (`port.rs:264, 271, 353, 360` are inside the
   bounded `impl`, skipped when `bounds.is_empty()`, line 182).
 
@@ -112,6 +109,8 @@ One at a time; no build-pool job over 10 minutes.
 - The table row "a committed example tree under `generated/` or a projection" applies only if a
   committed tree moves; acceptance 4 says none does. If one does, run `ess-synth`'s
   `feasibility`, `adversary_related_guard_behaviour_pass1` and `http_binding_rust`.
+- `task test-xtask` (the unit edits `CHANGELOG.md`)
+- No stamp: `ess-synth/src` is not among the sources `synthesis-sources.digest` hashes.
 
 ## Depends on
 

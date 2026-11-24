@@ -11,7 +11,7 @@ refs:
   reference: beyond10x/ess#796
 relations:
 - serves: vision:O2
-revision: 3
+revision: 4
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-24T02:12:51Z", actor: "human:timo", revision: 2}
 - {from: "proposed", to: "active", at: "2026-11-24T02:12:56Z", actor: "human:timo", revision: 3}
@@ -43,19 +43,31 @@ $ ess specify validate --path .
 exit 1
 ```
 
-Measured beside it (same binary): `label: {related: {via: input.shelf_id, field: label}}` and
+Measured beside it (same binary), each a model of its own run with `--path repro/796-via` and
+`--path repro/796-where`: `label: {related: {via: input.shelf_id, field: label}}` and
 `label: {related: {entity: depot.racks.Shelf, where: shelf_id == input.shelf_id, field: label}}`
 both validate, and the first synthesizes 3 scenarios that pass on the interpreted target; the
 suite checks only the shape of `label` (`expect_event_values` with `shape.label`), not its value.
+(`repro/796-preserves/`: a `preserves:` outcome cannot carry a payload at all, so it never reaches
+this refusal.)
 
 ## Outcome
 
 The refusal of a read of the row before the outcome names the outcome's own effect. On a
-`deletes:` outcome it says the outcome deletes the row and that `{subject: …}` is not read there,
-and its hint names the read that validates today: `{related: {via: input.<instance input>, field:
-<field>}}`. On `creates:` the message and hint stay as they are. The same correction applies to
-the sibling text in `related_via`'s hint, which also says "a `creates:` branch" for every outcome
-that is not `moves:` or `updates:`.
+`deletes:` outcome it says the outcome deletes the row and that `{subject: …}` is not read there.
+Its hint depends on the read:
+
+- `{subject: <field>}` (and the other reads of the subject's own field) where the outcome's
+  `instance:` names an input: `{related: {via: input.<that input>, field: <field>}}`, the read that
+  validates today;
+- the same where `instance:` names no input (a caller attribute, a minted identity): today's hint,
+  "read the value from the command's input instead";
+- `{related: {via: <subject field>, field: …}}`: "name the reference through an input field", since
+  that form reads the row the stored reference names and the input must carry that reference.
+
+On `creates:` the message and hint stay as they are. The same correction applies to the sibling
+text in `related_via`'s hint (`value_expression.rs:841-861`; the function starts at 632), which
+also says "a `creates:` branch" for every outcome that is not `moves:` or `updates:`.
 
 ## Acceptance
 
@@ -64,14 +76,18 @@ that is not `moves:` or `updates:`.
    message contains "`deletes:`" and does not contain "`creates:`".
 2. The hint of that refusal names `{related: {via: input.shelf_id, field: label}}` (the outcome's
    `instance:` input and the field read), and does not say "read the value from the command's
-   input instead".
+   input instead". With `instance:` naming no input, the hint is "read the value from the
+   command's input instead".
 3. The `creates:` refusal is unchanged: the existing assertion in
    `crates/specify/ess-domain/tests/subject_state_source.rs` (message contains "`creates:`") and its
    hint "read the value from the command's input instead" still hold.
 4. `{related: {via: <subject field>, field: …}}` in the payload of a `deletes:` outcome, which reaches
-   the same function (`related_via`, line 671), names `deletes:` too, not `creates:`.
-5. The message is chosen by a `match` over `Effect` with no wildcard arm, so a new effect fails to
-   compile until it has a text.
+   the same function (`related_via`, from line 632; the call at 671), names `deletes:` too, not
+   `creates:`, and its hint says to name the reference through an input field.
+5. The message is chosen by a `match` over `Effect` with no wildcard arm, one arm per variant
+   (`Creates`, `Moves`, `Updates`, `Preserves`, `Deletes`); `Preserves`, whose outcome carries no
+   payload and so never reaches this refusal (`repro/796-preserves/`), maps to the existing text.
+   A new effect fails to compile until it has a text.
 
 ## Scope
 
@@ -80,7 +96,7 @@ that is not `moves:` or `updates:`.
     "existing", in place of the `bool` set at lines 74-89;
   - `existing_subject_field` (lines 1254-1296): the refusal at 1282-1295 picks message and hint by
     that effect; keep ONE `ValidationError::at` call site there;
-  - `related_via` hint (lines 848-861): the `row` text for a deleting outcome.
+  - `related_via` (from line 632) hint (lines 841-861): the `row` text for a deleting outcome.
 - Every reader of `context.subject`'s second element (lines 556, 643, 848) keeps its meaning
   ("existed before the outcome" is true for moves/updates/sets, false otherwise).
 
@@ -88,6 +104,8 @@ that is not `moves:` or `updates:`.
 
 - `crates/specify/ess-domain/src/command/value_expression.rs`
 - `crates/specify/ess-domain/tests/value_expressions.rs` (new `#[test]`s only)
+- `crates/verify/ess-conformance/tests/fixtures/synthesis-sources.digest` (`ess-domain/src` is
+  hashed by the stamp; rewritten by the command under Gate)
 - `CHANGELOG.md` (one `Fixed` bullet)
 
 ## Not yours
@@ -117,6 +135,9 @@ One at a time; no job in the build pool over 10 minutes.
 - `cargo test -p ess-cli --locked` (the table: `ess-domain` also gates `ess-cli`)
 - `task test-xtask` and `cargo test -p ess-compiler --locked --test typed_diagnostics` (a diagnostic
   text changes: `AGENTS.md`, "A new `ValidationCode` or diagnostic moves pins outside the crate")
+- the sources stamp, rewritten in this change:
+  `SYNTHESIS_SOURCES_STAMP_WRITE="$PWD/crates/verify/ess-conformance/tests/fixtures/synthesis-sources.digest" cargo test -p ess-conformance --locked --test synthesis_suite_bytes_table the_synthesis_sources_digest_matches_the_committed_stamp`;
+  re-run after every rebase, never merge the stamp by hand
 
 ## Depends on
 
