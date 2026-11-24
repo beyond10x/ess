@@ -231,3 +231,104 @@ fn trailing_non_utf8_value_is_parse_failure() {
         json!({"ok":false,"error":{"code":"cli_parse","data":{}}})
     );
 }
+
+/// beyond10x/ess#694: `net` a valueless flag, `ro` an option given once per element, `argv` the
+/// words after `--`.
+const RUN_MODEL: &str = "format: ess/1
+system: demo
+version: v1
+types:
+  - name: demo.RunRequest
+    kind: struct
+    fields:
+      - {name: net, type: Boolean}
+      - {name: ro, type: 'List<String>'}
+      - {name: argv, type: 'List<String>'}
+  - name: demo.Ran
+    kind: struct
+    fields:
+      - {name: status, type: String}
+";
+
+const RUN_BINDING: &str = "format: ess-cli/1
+binary: demo
+about: Run a program
+globals: {config: config, state: state-dir, output: output}
+callables:
+  run:
+    target: {kind: local, owner: demo.cli, action: run}
+    input: demo.RunRequest
+    result: demo.Ran
+commands:
+  - path: [run]
+    callable: run
+    about: Run with the arguments after --
+    arguments:
+      - {field: net, source: {kind: flag, long: net}}
+      - {field: ro, source: {kind: option, long: ro, repeated: true}}
+      - {field: argv, source: {kind: trailing}}
+";
+
+fn run_compiled(model: &str) -> CompiledBinding {
+    let specification = Specification::assemble(vec![(
+        Source::new("model.yaml"),
+        RawSpecFile::parse(model).unwrap(),
+    )])
+    .unwrap();
+    let ir =
+        ess_compiler::compile(&specification, &ess_compiler::source::SourceMap::new()).unwrap();
+    compile(&ir, &Binding::from_yaml(RUN_BINDING).unwrap()).unwrap()
+}
+
+fn ran(model: &str, words: &[&str]) -> (ProcessOutput, Vec<Value>) {
+    let mut handler = Recorder::default();
+    let output = runtime::run(
+        run_compiled(model).plan(),
+        argv(words),
+        &mut NoSources,
+        &mut handler,
+        None,
+    );
+    (output, handler.0)
+}
+
+#[test]
+fn a_flag_and_a_repeated_option_parse_into_their_values() {
+    let (output, inputs) = ran(
+        RUN_MODEL,
+        &["run", "--net", "--ro", "/a", "--ro", "/b", "--", "x"],
+    );
+    assert_eq!(output.exit_code, 0, "{output:?}");
+    assert_eq!(
+        inputs,
+        [json!({"net": true, "ro": ["/a", "/b"], "argv": ["x"]})]
+    );
+    let (output, inputs) = ran(RUN_MODEL, &["run"]);
+    assert_eq!(output.exit_code, 0, "{output:?}");
+    assert_eq!(inputs, [json!({"net": false, "ro": [], "argv": []})]);
+    // Each occurrence is read by the element rule: a String element is its text.
+    let (output, inputs) = ran(RUN_MODEL, &["run", "--ro", "[\"a\"]"]);
+    assert_eq!(output.exit_code, 0, "{output:?}");
+    assert_eq!(inputs[0]["ro"], json!(["[\"a\"]"]));
+}
+
+#[test]
+fn a_repeated_option_reads_a_non_text_element_as_json() {
+    let model = RUN_MODEL.replace(
+        "{name: ro, type: 'List<String>'}",
+        "{name: ro, type: 'List<Integer>'}",
+    );
+    let (output, inputs) = ran(&model, &["run", "--ro", "1", "--ro", "-2"]);
+    assert_eq!(output.exit_code, 0, "{output:?}");
+    assert_eq!(inputs[0]["ro"], json!([1, -2]));
+    let (output, inputs) = ran(&model, &["run", "--ro", "one"]);
+    assert_eq!(output.exit_code, 2, "{output:?}");
+    assert!(inputs.is_empty());
+}
+
+#[test]
+fn a_flag_takes_no_value() {
+    let (output, inputs) = ran(RUN_MODEL, &["run", "--net", "true"]);
+    assert_eq!(output.exit_code, 2, "{output:?}");
+    assert!(inputs.is_empty());
+}
