@@ -29,6 +29,15 @@ list of five findings from an application's own generator, then a fourth report 
 - Fourth report (a service contract): four findings, below.
 - P2: first report items 9 to 17.
 
+## First group to build
+
+Built side by side within a group, one group after another.
+
+1. `story:a-per-value-channel-script-that-names-no-session-is-reported` (item 7, first),
+   `story:a-number-with-no-declared-number-format-is-drawn-as-written-in-every-renderer`, `story:a-traced-ess-ui-test-run-reports-for-every-step-the-page-shown-the-nodes-drawn-and-the-cells-each-one-occupies`.
+2. `story:a-structured-value-reads-as-one-line-of-its-members-in-every-renderer`, `story:a-chart-draws-its-rows-in-the-order-its-sort-declares-and-a-live-insert-keeps-that-order`.
+3. `story:a-list-field-names-the-text-that-joins-its-items-in-every-renderer`, `story:a-chart-s-rows-are-addressable-in-both-renderers-and-a-test-asserts-the-order-a-chart-draws-them-in-with`.
+
 ## Map
 
 One line per report item, in priority order: the need, then the stories that carry it with their
@@ -56,8 +65,10 @@ size. "Existing" marks a story that was in the store before. A group not filed y
 - Item 5: one section, overlay or widget drawn alone at a given width, in the terminal and in the
   generated browser project. `story:a-test-opens-one-section-overlay-or-widget-of-a-document-alone-at-a-given-terminal-width-and-the-terminal` (L, about 550),
   `story:the-generated-react-project-draws-one-section-overlay-or-widget-alone-at-a-given-width-and-the-playwright-spec` (L, about 500).
-- Item 6: a chart draws its rows in a declared order and a live insert keeps it.
-  `story:a-chart-draws-its-rows-in-the-order-its-sort-declares-and-a-live-insert-keeps-that-order` (M).
+- Item 6: a chart draws its rows in a declared order and a live insert keeps it, and a test asserts
+  that order. `story:a-chart-draws-its-rows-in-the-order-its-sort-declares-and-a-live-insert-keeps-that-order` (M, about 400), `story:a-chart-s-rows-are-addressable-in-both-renderers-and-a-test-asserts-the-order-a-chart-draws-them-in-with` (M, about 350; the chart's
+  rows made addressable in both renderers and `expect.rows` at a chart; after the chart-sort
+  story, the active terminal-addresses story and the item-7 story).
 - Item 7 (defect): a fixture script for a per-value channel that names no session is reported, and
   both renderers give one verdict. `story:a-per-value-channel-script-that-names-no-session-is-reported`
   (existing, revision 3; M, about 350, hotfix material once reproduced).
@@ -74,8 +85,9 @@ size. "Existing" marks a story that was in the store before. A group not filed y
   route. `story:a-view-route-answers-its-rows-under-a-named-member-and-views-of-one-component-may-share-a-route-by-their` (M, about 480), `story:the-generated-rust-and-go-servers-answer-a-route-shared-by-several-views-with-one-object-of-their-rows` (M, about 420),
   `story:a-generated-ui-reads-a-view-s-rows-from-the-member-its-route-declares` (S, about 220).
 - G2: a decimal literal sets or publishes a binary64 field. `story:a-decimal-literal-sets-or-publishes-a-binary64-field-read-by-one-grammar-the-validator-and-every-target-share` (M, about 450).
-- G3 (defect): a number with no declared format is drawn as written in every renderer.
-  `story:a-number-with-no-declared-number-format-is-drawn-as-written-in-every-renderer` (S, about 150).
+- G3 (a gap, not a defect): a number with no declared format is drawn as written in every
+  renderer; the story removes a documented difference between the renderers.
+  `story:a-number-with-no-declared-number-format-is-drawn-as-written-in-every-renderer` (S, about 180).
 - G4: a list field names the text that joins its items. `story:a-list-field-names-the-text-that-joins-its-items-in-every-renderer` (S, about 220); the
   renderers agree today and the reference is silent, so it is not a defect.
 - G5: a structured value reads as one line (defect), a tagged union declares a flat layout, the
@@ -193,7 +205,7 @@ Found while assessing the fourth report; no existing story was changed for them.
 
 P1, first report: item 7 first; then item 6 (after the active chart-axes story, which edits the
 same files); `story:a-traced-ess-ui-test-run-reports-for-every-step-the-page-shown-the-nodes-drawn-and-the-cells-each-one-occupies`; `story:a-test-opens-one-section-overlay-or-widget-of-a-document-alone-at-a-given-terminal-width-and-the-terminal`; `story:the-keyboard-focus-order-of-a-ui-state-is-declared-by-the-document-and-read-from-a-traced-test-run-the`;
-`story:the-generated-react-project-draws-one-section-overlay-or-widget-alone-at-a-given-width-and-the-playwright-spec`; `story:the-terminal-s-tab-follows-the-declared-focus-order-and-a-test-presses-tab-and-asserts-the-focused-node-in`; `story:the-generated-react-project-s-tab-order-is-the-declared-focus-order-and-an-open-overlay-keeps-focus-inside-it`;
+`story:a-chart-s-rows-are-addressable-in-both-renderers-and-a-test-asserts-the-order-a-chart-draws-them-in-with` (after `story:a-chart-draws-its-rows-in-the-order-its-sort-declares-and-a-live-insert-keeps-that-order`, the active terminal-addresses story and item 7); `story:the-generated-react-project-draws-one-section-overlay-or-widget-alone-at-a-given-width-and-the-playwright-spec`; `story:the-terminal-s-tab-follows-the-declared-focus-order-and-a-test-presses-tab-and-asserts-the-focused-node-in`; `story:the-generated-react-project-s-tab-order-is-the-declared-focus-order-and-an-open-overlay-keeps-focus-inside-it`;
 `story:from-ess-39-a-view-s-filter-reads-the-row-a-parameter-names-one-hop-and-walks-that-row-s-list-fields` once `ess/39` is open; then `story:synthesis-witnesses-a-view-whose-filter-reads-the-row-a-parameter-names-against-a-decoy-row-and-a-parameter` and
 `story:generated-rust-and-go-keep-a-view-that-reads-a-parameter-s-row-as-a-named-obligation-entity-runtime-refuses-it` side by side. `story:each-step-of-a-traced-ess-ui-test-run-names-the-ui-state-it-reached-by-the-digest-of-that-state-s-serialised` lands once the P0 state form
 exists.
@@ -313,8 +325,11 @@ P1 (first report):
   cell; C: cells only, no browser. Default A.
 - P1-D4 (item 5): which nodes open alone. A: section, overlay, widget declaration; B: also nested
   composites; C: sections only. Default A.
-- P1-D5 (item 7): a script without a session. A: plays into no instance in both renderers, check
-  warns, `play` fails at once; B: plays into every instance; C: the loader refuses. Default A.
+- P1-D5 (item 7): a script without a session. A: plays into no instance in both renderers, `ess ui
+  check` warns, and a `play` whose event comes only from such a script, or from a script whose
+  session matches no reader on the page last opened, fails in the terminal and is `test.fixme` in
+  the browser (every other `play` unchanged); B: plays into every instance; C: the loader refuses.
+  Default A.
 - P1-D6 (item 8): how a view reaches the row a parameter names. A: `param.<p>.<field>`, one hop, at
   `ess/39`; B: the rows quantifier in view filters; C: decline. Default A.
 - P1-D7 (item 8a): who defines the focus order. A: ESS declares it from document and state; B: each
@@ -323,15 +338,19 @@ P1 (first report):
   now. Default A.
 - P1-D9 (item 8a): focus order between sections of a wide layout. A: section declaration order,
   with a check warning; B: the wide layout's reading order; C: per renderer. Default A.
-- P1-D10 to P1-D13 (item 6): where a chart's order lives (A: chart `sort`), which parts of `sort`
-  (A: `by`, `dir`), the default order (A: none, rows as read), how a test asserts order (A:
-  `expect.rows`). Default A each.
+- P1-D10 to P1-D12 (item 6, chart-sort story): where a chart's order lives (A: chart `sort`),
+  which parts of `sort` (A: `by`, `dir`), the default order (A: none, rows as read). Default A each.
+- P1-D13 (item 6, moved to the chart-rows story): how a test asserts order. A: `expect.rows` at a
+  chart; B: a new `expect` key; C: no step. Default A.
 
 P1 (second report):
 
-- SL-D1 (G3, defect): where a number keeps digit grouping. A: only where `as: number` or
-  `format: number` is declared; B: as A, but a metric and a chart tick keep React's grouping.
-  Default A.
+- SL-D1 (G3, a gap: a documented renderer difference): where React keeps the locale's digit
+  grouping. A: where a number format is declared or is the schema default (a metric, and the header
+  total), and every other number is drawn as written; the result is the same before and after the
+  loader story writes the defaults; B: a metric's schema default becomes "as written" too, and the
+  loader writes no `metric.format`; C: as A, and a chart tick keeps React's grouping whatever its
+  axis declares. Default A.
 - SL-D2 (G5): what follows a union's variant label. A: the content's values in declaration order,
   space-joined; B: `key: value` pairs. Default A.
 - SL-D3 (G8): how `contains` matches a word. A: against each item separately; B: against the items

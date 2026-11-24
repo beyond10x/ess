@@ -9,7 +9,8 @@ tags:
 - gap-reports-2026-11-24
 relations:
 - serves: vision:O2
-revision: 1
+- depends_on: story:a-per-value-channel-script-that-names-no-session-is-reported
+revision: 2
 ---
 ## Need
 
@@ -48,7 +49,7 @@ items 1 and 2 exists.
 
 ## Acceptance
 
-- First: a test in `crates/ui/ess-ui-test/tests/` runs `examples/partner-portal/ui.yaml` with one
+- First: a case in `crates/ui/ess-ui-test/tests/cli.rs` runs `examples/partner-portal/ui.yaml` with one
   three-step test (open a page, select a row, expect a text) under `--trace` and asserts three
   records with `step` 1, 2, 3, `keyword` `open`, `select`, `expect`, the page name, and a node list
   that holds the selected row's path with its row key and a non-empty area. It fails today: the
@@ -61,16 +62,19 @@ items 1 and 2 exists.
 - The node list of a record is exactly `App::regions` of the frame drawn after the step, in drawing
   order, with no node the frame did not draw. The reference says that a node drawn without cells
   of its own (cards, a list or a tree with an `item`: `app.rs:55-60`) is not listed.
-- The area is in terminal cells of the run's backend, and the reference says so. The record carries
-  the backend size once per report (`terminal: {width, height}`).
+- The area is in terminal cells of the run's backend, and the reference says so. The report carries
+  the backend size once (`terminal: {width, height}`).
 - `--trace` with `--format text` or with `--playwright` is refused with one line naming
   `--format json`.
 - `website/docs/reference/ess-ui-test.md` § The report documents `steps` and `terminal`;
   `formats.md:221` adds "From <version> an optional `steps` and `terminal`, written only with
   `--trace`"; `CHANGELOG.md` names it.
 - An older reader: a test deserialises a traced report with a reader that knows only `{format,
-  document, tests}` keys per test and ignores the rest, and a test shows the untraced bytes did
-  not move. No `ess-ui-test-report/2`.
+  document, tests}` per report and `{name, status, step, message}` per test and ignores the rest,
+  and a test shows the untraced bytes did not move. No `ess-ui-test-report/2`.
+- With `--trace`, every test's `status`, `step` and `message` equal those of the untraced run of
+  the same file: the extra draw per step moves no verdict. A case runs the partner-portal tests
+  both ways and compares.
 
 ## Fit review
 
@@ -133,7 +137,7 @@ cells; "the state reached" waits for the P0 state form (follow-up story).
 - cited: `crates/ui/ess-ui-test/src/runner.rs` (`step`, `screen`, `current_page`)
 - cited: `crates/ui/ess-ui-test/src/screen.rs` (`Screen::capture`, regions kept per frame)
 - inferred: `crates/edge/ess-cli/src/ui.rs` (the flag reaches `TestArgs` through clap)
-- inferred: `crates/ui/ess-ui-test/tests/trace.rs` (new; or a module of an existing binary)
+- inferred: cases in `crates/ui/ess-ui-test/tests/cli.rs` (no new test binary)
 - cited: `website/docs/reference/ess-ui-test.md` § The report; `website/docs/reference/formats.md:221`;
   `CHANGELOG.md`
 - Overlap: `story:the-terminal-addresses-every-node-the-browser-addresses` (active) changes which
@@ -142,5 +146,7 @@ cells; "the state reached" waits for the P0 state form (follow-up story).
 
 ## Depends on
 
-- None to start. `g04-step-trace-state` depends on this story and on the UI state form of report
+- Lands after `g07-session-script` (shares `runner.rs` and `ess-ui-test.md`; g07 changes `play`
+  and § One verdict, this story `step`, `screen` and § The report). `g04-step-trace-state` depends
+  on this story and on the UI state form of report
   items 1 and 2 (P0 group).

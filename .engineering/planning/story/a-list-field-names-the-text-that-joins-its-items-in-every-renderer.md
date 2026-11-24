@@ -10,7 +10,7 @@ tags:
 relations:
 - serves: vision:O2
 - depends_on: story:a-structured-value-reads-as-one-line-of-its-members-in-every-renderer
-revision: 1
+revision: 2
 ---
 ## Need
 
@@ -53,15 +53,18 @@ decided in SL-D9, not here.
 
 - Red first: `ess ui load` accepts `{field: segments, as: list, separator: " / "}`. Today it is refused
   as an unknown field of `Field` (`crates/ui/ess-ui/src/model.rs:2500-2546`,
-  `deny_unknown_fields`). The case goes in `crates/ui/ess-ui/tests/` beside the other loader cases.
-- Over `{segments: [docs, guide, intro.md]}` with `separator: " / "` the cell reads `docs / guide / intro.md` in React
-  (`crates/ui/ess-ui-react/tests/value_formats.rs`) and in the terminal
+  `deny_unknown_fields`). The case goes in `crates/ui/ess-ui/tests/value_formats.rs`.
+- Over `{segments: [docs, guide, intro.md]}` with `separator: " / "` the cell reads
+  `docs / guide / intro.md` in React (`crates/ui/ess-ui-react/tests/value_formats.rs`, all new React
+  cases in one test function so that the project compiles once; each test runs in 60 s or less, the
+  step in 120 s or less) and in the terminal
   (`crates/ui/ess-ui-tui/tests/value_formats.rs`). Without `separator` both read
   `docs, guide, intro.md`, which is unchanged.
 - `separator` on a field whose `as` is not `list`, and on a form field, is refused at the field's
   path, as `unit` off a duration is (`crates/ui/ess-ui/src/path.rs:499-518`).
 - `separator` holding a line break is refused, so the joined text stays one line.
 - The `ess-ui/1` reference lists `separator` and says `as: list` joins with `, ` by default.
+- `CHANGELOG.md` names the key under Added.
 
 ## Fit review
 
@@ -98,16 +101,22 @@ decline).
 - cited: `crates/ui/ess-ui/src/model.rs` (`Field` 2500-2546), `crates/ui/ess-ui/src/path.rs` (beside `check_unit`)
 - cited: `schemas/ui/ess-ui.schema.yaml` (`Field`)
 - cited: `crates/ui/ess-ui-react/templates/runtime/core.tsx.tmpl` (822-823), `fields.tsx.tmpl`
-- cited: `crates/ui/ess-ui-tui/src/view.rs` (`cell_value`)
+- cited: `crates/ui/ess-ui-tui/src/view.rs` (`cell_value`, which passes the field to the drawing
+  function), `crates/ui/ess-ui-tui/src/expr.rs` (the drawing function `sl05-object-one-rule` adds;
+  `display` unchanged)
 - inferred: `crates/ui/ess-ui-react/src/emit.rs` (passes the key to `FieldSpec`)
-- inferred: tests in `crates/ui/ess-ui/tests/`, `crates/ui/ess-ui-react/tests/value_formats.rs`,
-  `crates/ui/ess-ui-tui/tests/value_formats.rs`; `website/docs/reference/ess-ui.md` (regenerated)
+- tests: `crates/ui/ess-ui/tests/value_formats.rs`, `crates/ui/ess-ui-react/tests/value_formats.rs`,
+  `crates/ui/ess-ui-tui/tests/value_formats.rs`
+- inferred: `website/docs/reference/ess-ui.md` (regenerated), `CHANGELOG.md`
 - Size: S, about 220 changed lines.
 
 ## Depends on
 
-`sl05-object-one-rule`, which edits the same join in `core.tsx.tmpl` and `expr.rs`. It lands before
-`sl06-time-zone` and `sl10-duration-clock`, which add keys to the same `Field`.
+Builds in the third group, after `sl05-object-one-rule`. That story edits the same join in
+`core.tsx.tmpl` and adds the drawing function in `expr.rs` that this story's separator goes through.
+It goes beside the first report's second chart-sort unit, with which it shares only the schema and
+the regenerated reference. It lands before `sl06-time-zone` and `sl10-duration-clock`, which add
+keys to the same `Field`.
 
 ## Source
 
