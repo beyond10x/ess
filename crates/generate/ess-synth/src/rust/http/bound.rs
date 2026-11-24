@@ -1153,8 +1153,22 @@ fn outcome_arm(
         Body::Envelope => {
             format!("http::Response::new({status}, http::JSON, envelope.to_owned())")
         }
-        Body::Response | Body::Wrapped { field: None, .. } => {
+        Body::Response => {
             format!("http::Response::new({status}, http::JSON, http::bare(response))")
+        }
+        // The bare form's JSON under its one member (beyond10x/ess#755).
+        Body::Wrapped { member, field } => {
+            let bare = match field {
+                None => "http::bare(response)".to_owned(),
+                Some(field) => format!(
+                    "http::bare(response.and_then(|response| response.member({:?})))",
+                    response_wire(command, field)
+                ),
+            };
+            format!(
+                "http::Response::new({status}, http::JSON, {})",
+                wrapped_json(member, &bare)
+            )
         }
         // A string field answered `encoding: text`: its value alone, not JSON. The media type is
         // written inline rather than as a constant beside `JSON`, so a server whose binding
@@ -1166,10 +1180,7 @@ fn outcome_arm(
             http::TEXT_CONTENT_TYPE,
             response_wire(command, field)
         ),
-        Body::ResponseField(field)
-        | Body::Wrapped {
-            field: Some(field), ..
-        } => format!(
+        Body::ResponseField(field) => format!(
             "http::Response::new({status}, http::JSON, http::bare(response.and_then(|response| \
              response.member({:?}))))",
             response_wire(command, field)
@@ -1388,15 +1399,38 @@ fn view(out: &mut String, server: &Server<'_>, route: &http::Route<'_>, view: &R
         .declared
         .filter(|_| body == ess_http::ViewBody::Single)
         .and_then(|declared| declared.empty.as_ref());
-    let (status, answer) = match (body, empty) {
-        (_, Some(empty)) => ("_status", single_answer(empty)),
+    // The member a wrapped body names (beyond10x/ess#755): the bare answer goes under it.
+    let member = route
+        .declared
+        .and_then(|declared| declared.body.member.as_deref());
+    let (status, answer) = match (body, empty, member) {
+        (_, Some(empty), None) => ("_status", single_answer(empty)),
+        // The one row under its member; the empty answer as declared.
+        (_, Some(empty), Some(member)) => (
+            "_status",
+            format!(
+                "{{\n            let mut answer = {};\n            if answer.status == 200 {{\n                \
+                 answer.body = {};\n            }}\n            answer\n        }}",
+                single_answer(empty),
+                wrapped_json(member, "answer.body")
+            ),
+        ),
         // The rows of `{"rows": [...]}`, bare.
-        (ess_http::ViewBody::Array, None) => (
+        (ess_http::ViewBody::Array, None, None) => (
             "status",
             "{\n            let read = json::parse(&body).unwrap_or(json::Value::Null);\n            \
              http::Response::new(status, http::JSON, http::bare(read.member(\"rows\")))\n        \
              }"
             .to_owned(),
+        ),
+        // The rows of `{"rows": [...]}`, under the member.
+        (ess_http::ViewBody::Array, None, Some(member)) => (
+            "status",
+            format!(
+                "{{\n            let read = json::parse(&body).unwrap_or(json::Value::Null);\n            \
+                 http::Response::new(status, http::JSON, {})\n        }}",
+                wrapped_json(member, "http::bare(read.member(\"rows\"))")
+            ),
         ),
         _ => (
             "status",
@@ -1408,6 +1442,16 @@ fn view(out: &mut String, server: &Server<'_>, route: &http::Route<'_>, view: &R
         "    match result {{\n        Ok(({status}, body)) => {answer},\n        Err(refused) => \
          refused_bound{suffix}(&refused),\n    }}\n}}\n"
     );
+}
+
+/// Rust code for the JSON text `inner`, an expression of type `String`, under the one `member` of
+/// an object: a wrapped body (beyond10x/ess#755). Written inline, so a server whose binding wraps
+/// nothing keeps its bytes.
+fn wrapped_json(member: &str, inner: &str) -> String {
+    format!(
+        "{{ let mut wrapped = String::from(\"{{\"); crate::json::member(&mut wrapped, \
+         {member:?}); wrapped.push_str(&{inner}); wrapped.push('}}'); wrapped }}"
+    )
 }
 
 /// A `single` view's answer: its one row, or `empty` when it holds none, with no body or the

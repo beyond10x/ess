@@ -106,7 +106,7 @@ const EDITS: &[(&str, &str)] = &[
 ];
 
 /// `(anchor, replacement)` in the shared model: a view of every item with one title.
-const MODEL_EDITS: &[(&str, &str)] = &[(
+pub(super) const MODEL_EDITS: &[(&str, &str)] = &[(
     "actors:\n",
     "  - name: shop.items.ItemsTitled
     source: shop.items.Item
@@ -239,7 +239,7 @@ fn before(text: &str, anchor: &str, addition: &str) -> String {
 }
 
 /// [`shared::RUST_HARNESS`] answering `ItemsTitled` over the stored items, too.
-fn rust_harness() -> String {
+pub(super) fn rust_harness() -> String {
     let text = before(
         shared::RUST_HARNESS,
         "ItemByIdQuery, PlaceBehavior}",
@@ -264,7 +264,7 @@ fn rust_harness() -> String {
 }
 
 /// The Go harness answering `ItemsTitled` over the stored items, too.
-fn go_harness() -> String {
+pub(super) fn go_harness() -> String {
     before(
         super::HARNESS,
         "func clean(text string) string {",

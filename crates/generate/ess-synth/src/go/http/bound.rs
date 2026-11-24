@@ -1696,6 +1696,34 @@ fn field_answer(
     }
 }
 
+/// A wrapped outcome body's answer (beyond10x/ess#755): the response, or its one `field`, under
+/// the one `member`, written as the bare form writes it.
+fn wrapped_answer(
+    command: &ResolvedCommand,
+    status: u16,
+    member: &str,
+    field: Option<&str>,
+) -> String {
+    let value = match field {
+        None => "reply".to_owned(),
+        Some(field) => format!(
+            "memberOf(reply, {})",
+            go_string(
+                command
+                    .response
+                    .iter()
+                    .find(|declared| declared.name == *field)
+                    .map_or(field, ess_gen::schema::wire_field_name)
+            )
+        ),
+    };
+    format!(
+        "response{{status: {status}, contentType: mediaJSON, body: \
+         bare(jsonObject{{{{name: {}, value: {value}}}}})}}",
+        go_string(member)
+    )
+}
+
 /// One listed outcome's arm of `declared*`: its body, its headers and its redirect, as Go
 /// statements building `answer`.
 fn outcome_arm(
@@ -1712,13 +1740,13 @@ fn outcome_arm(
         Body::Envelope => {
             format!("response{{status: {status}, contentType: mediaJSON, body: envelope}}")
         }
-        Body::Response | Body::Wrapped { field: None, .. } => {
+        Body::Response => {
             format!("response{{status: {status}, contentType: mediaJSON, body: bare(reply)}}")
         }
-        Body::ResponseField(field)
-        | Body::Wrapped {
-            field: Some(field), ..
-        } => field_answer(command, field, declared, &mut arm),
+        Body::Wrapped { member, field } => {
+            wrapped_answer(command, status, member, field.as_deref())
+        }
+        Body::ResponseField(field) => field_answer(command, field, declared, &mut arm),
         Body::None => format!("response{{status: {status}}}"),
         Body::Error { member } => format!(
             "response{{status: {status}, contentType: mediaJSON, body: errorObject({}, {}, \
@@ -1917,8 +1945,21 @@ fn view(
         .declared
         .filter(|_| body == ess_http::ViewBody::Single)
         .and_then(|declared| declared.empty.as_ref());
+    // The member a wrapped body names (beyond10x/ess#755): the bare answer goes under it.
+    let member = route
+        .declared
+        .and_then(|declared| declared.body.member.as_deref());
     match (body, empty) {
         (_, Some(empty)) => {
+            let one = member.map_or_else(
+                || "encoded[0]".to_owned(),
+                |member| {
+                    format!(
+                        "jsonObject{{{{name: {}, value: encoded[0]}}}}",
+                        go_string(member)
+                    )
+                },
+            );
             let none = match &empty.body {
                 RefusalBody::None => format!("response{{status: {}}}", empty.status),
                 RefusalBody::Literal { member, text } => format!(
@@ -1931,11 +1972,20 @@ fn view(
             let _ = write!(
                 out,
                 "\tif len(encoded) == 0 {{\n\t\treturn {none}\n\t}}\n\treturn \
-                 response{{status: 200, contentType: mediaJSON, body: bare(encoded[0])}}\n}}\n"
+                 response{{status: 200, contentType: mediaJSON, body: bare({one})}}\n}}\n"
             );
         }
         // The rows, bare: the array `rows` would hold.
-        (ess_http::ViewBody::Array, None) => out.push_str("\treturn rendered(200, encoded)\n}\n"),
+        (ess_http::ViewBody::Array, None) => match member {
+            None => out.push_str("\treturn rendered(200, encoded)\n}\n"),
+            Some(member) => {
+                let _ = write!(
+                    out,
+                    "\treturn rendered(200, map[string]any{{{}: encoded}})\n}}\n",
+                    go_string(member)
+                );
+            }
+        },
         _ => out.push_str("\treturn rendered(200, map[string]any{\"rows\": encoded})\n}\n"),
     }
 }

@@ -1431,10 +1431,11 @@ enum Answer<'a> {
     TooLarge(u64),
     /// A `rows` view's rows.
     Rows(&'a ResolvedView),
-    /// A `single` view's one row, bare.
-    Row(&'a ResolvedView),
-    /// An `array` view's rows, bare: a JSON array.
-    Array(&'a ResolvedView),
+    /// A `single` view's one row, bare, or under the one member a wrapped body names
+    /// (beyond10x/ess#755).
+    Row(&'a ResolvedView, Option<&'a str>),
+    /// An `array` view's rows, bare: a JSON array, or under the one member a wrapped body names.
+    Array(&'a ResolvedView, Option<&'a str>),
     /// A `single` view's answer when it holds no row: no body, or one literal member.
     Empty(&'a ResolvedView, &'a ess_http::RefusalBody),
 }
@@ -1553,7 +1554,7 @@ fn bound_view_responses<'a>(
             by_status
                 .entry(READ.to_owned())
                 .or_default()
-                .push(Answer::Row(view));
+                .push(Answer::Row(view, route.body.member.as_deref()));
             by_status
                 .entry(empty.status.to_string())
                 .or_default()
@@ -1562,7 +1563,7 @@ fn bound_view_responses<'a>(
         (ess_http::ViewBody::Array, _) => by_status
             .entry(READ.to_owned())
             .or_default()
-            .push(Answer::Array(view)),
+            .push(Answer::Array(view, route.body.member.as_deref())),
         // Compiling refuses `single` without `empty` (`ESS-HTTP-030`).
         _ => by_status
             .entry(READ.to_owned())
@@ -1777,28 +1778,8 @@ fn rendered(
             Some(json!({"$ref": reference(&view_key(view))})),
             view_description(ir, view),
         ),
-        Answer::Row(view) => Rendered::standard(
-            Some(json!({"$ref": reference(&row_schema_key(view))})),
-            format!(
-                "The one row of `{}`, bare, as the `ess-http/1` binding declares (`body: \
-                 single`): its filter selects by the identity of `{}`, so it holds one row at \
-                 most.",
-                view.name,
-                ir.entity(&view.source).name
-            ),
-        ),
-        Answer::Array(view) => Rendered::standard(
-            Some(json!({
-                "type": "array",
-                "items": {"$ref": reference(&row_schema_key(view))},
-            })),
-            format!(
-                "Every row of `{}`, a projection of `{}`, as a bare JSON array, as the \
-                 `ess-http/1` binding declares (`body: array`): no object around it.",
-                view.name,
-                ir.entity(&view.source).name
-            ),
-        ),
+        Answer::Row(view, member) => view_answer(ir, view, *member, true),
+        Answer::Array(view, member) => view_answer(ir, view, *member, false),
         Answer::Empty(view, body) => Rendered::standard(
             literal_schema(body),
             format!(
@@ -1811,6 +1792,53 @@ fn rendered(
                         format!("A body whose one member `{member}` is `{text}`.")
                     }
                 }
+            ),
+        ),
+    }
+}
+
+/// A view's `single` (`one`) or `array` answer, bare or under its one `member`
+/// (beyond10x/ess#755).
+fn view_answer(ir: &EssIr, view: &ResolvedView, member: Option<&str>, one: bool) -> Rendered {
+    let source = &ir.entity(&view.source).name;
+    let row = json!({"$ref": reference(&row_schema_key(view))});
+    match (one, member) {
+        (true, None) => Rendered::standard(
+            Some(row),
+            format!(
+                "The one row of `{}`, bare, as the `ess-http/1` binding declares (`body: \
+                 single`): its filter selects by the identity of `{source}`, so it holds one row \
+                 at most.",
+                view.name
+            ),
+        ),
+        (true, Some(member)) => Rendered::standard(
+            Some(wrapped_schema(member, &row)),
+            format!(
+                "The one row of `{}` under the one member `{member}`, as the `ess-http/1` \
+                 binding declares (`body: {{{member}: single}}`): its filter selects by the \
+                 identity of `{source}`, so it holds one row at most.",
+                view.name
+            ),
+        ),
+        (false, None) => Rendered::standard(
+            Some(json!({"type": "array", "items": row})),
+            format!(
+                "Every row of `{}`, a projection of `{source}`, as a bare JSON array, as the \
+                 `ess-http/1` binding declares (`body: array`): no object around it.",
+                view.name
+            ),
+        ),
+        (false, Some(member)) => Rendered::standard(
+            Some(wrapped_schema(
+                member,
+                &json!({"type": "array", "items": row}),
+            )),
+            format!(
+                "Every row of `{}`, a projection of `{source}`, as a JSON array under the one \
+                 member `{member}`, as the `ess-http/1` binding declares (`body: {{{member}: \
+                 array}}`).",
+                view.name
             ),
         ),
     }
@@ -1833,19 +1861,28 @@ fn rendered_outcome(
             discriminated: Some((OUTCOME.to_owned(), outcome.name.to_string(), key)),
             text: false,
         }),
-        ess_http::Body::Response | ess_http::Body::Wrapped { field: None, .. } => Some(Member {
+        ess_http::Body::Response => Some(Member {
             schema: json!({"$ref": reference(&format!("{}.Result", command.name))}),
             discriminated: None,
             text: false,
         }),
-        ess_http::Body::ResponseField(_) | ess_http::Body::Wrapped { field: Some(_), .. } => {
-            Some(Member {
-                schema: json!({"$ref": key}),
-                discriminated: None,
-                text: listed
-                    .is_some_and(|listed| listed.encoding == ess_http::ResponseEncoding::Text),
-            })
-        }
+        // The bare form's schema under its one member (beyond10x/ess#755).
+        ess_http::Body::Wrapped { member, field } => Some(Member {
+            schema: wrapped_schema(
+                member,
+                &match field {
+                    None => json!({"$ref": reference(&format!("{}.Result", command.name))}),
+                    Some(_) => json!({"$ref": key}),
+                },
+            ),
+            discriminated: None,
+            text: false,
+        }),
+        ess_http::Body::ResponseField(_) => Some(Member {
+            schema: json!({"$ref": key}),
+            discriminated: None,
+            text: listed.is_some_and(|listed| listed.encoding == ess_http::ResponseEncoding::Text),
+        }),
         ess_http::Body::Error { member } => Some(Member {
             schema: json!({"$ref": key}),
             discriminated: outcome.error.as_ref().map(|error| {
@@ -1994,6 +2031,16 @@ fn listed_sentence(
         "Outcome `{}`, answered {status} as the `ess-http/1` binding declares, with {body}",
         outcome.name
     )
+}
+
+/// The object a wrapped body answers (beyond10x/ess#755): `inner` under its one `member`.
+fn wrapped_schema(member: &str, inner: &Value) -> Value {
+    json!({
+        "type": "object",
+        "additionalProperties": false,
+        "required": [member],
+        "properties": {member: inner},
+    })
 }
 
 /// The schema of a standard refusal's or an empty answer's body: none, or an object with the one

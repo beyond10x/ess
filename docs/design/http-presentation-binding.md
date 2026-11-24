@@ -395,7 +395,11 @@ it is `ESS-HTTP-012`. `{<member>: error}` keeps its meaning: the member holds th
 IR; `rows` is an object already, so it is never wrapped. Compiled IR writes the member and the form,
 `{"app": "single"}`, as the binding does, and a binding without a wrapped form compiles to the
 bytes it compiled to before. A body holds one form: fixed members beside the wrapped value
-(`{"success": true, "app": …}`) are not a body.
+(`{"success": true, "app": …}`) are not a body. OpenAPI writes the answer as an object whose one
+required member holds the bare form's schema, `additionalProperties: false`; both generated servers
+write `{"<member>": …}` around the bytes the bare form writes, and the empty answer of `single`
+stays as `empty` declares it, unwrapped. A binding without a wrapped form generates the bytes it
+generated before.
 
 A bare body carries no `outcome` and no `published`. A caller of such a route sees the branch only
 through status, body shape and headers, and sees no published event. That is what the protocol

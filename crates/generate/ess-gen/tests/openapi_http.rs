@@ -1408,3 +1408,88 @@ fn the_description_names_the_bound_only_where_a_route_is_bounded() {
         "the paragraphs it holds today are kept"
     );
 }
+
+/// [`ANSWER_FORMS`] with each answer under one named member (beyond10x/ess#755): the one order
+/// under `order`, the orders of one size under `items`, and a placed order's response under
+/// `data`.
+fn wrapped_forms() -> String {
+    let wrapped = ANSWER_FORMS
+        .replace("    body: single\n", "    body: {order: single}\n")
+        .replace("    body: array\n", "    body: {items: array}\n")
+        .replace(
+            "    path: /api/orders\n    refusals:",
+            "    path: /api/orders\n    outcomes:\n      placed: {status: 201, body: {data: response}}\n    refusals:",
+        );
+    assert_eq!(wrapped.matches("{order: single}").count(), 1);
+    assert_eq!(wrapped.matches("{items: array}").count(), 1);
+    assert_eq!(wrapped.matches("{data: response}").count(), 1);
+    wrapped
+}
+
+/// The object a wrapped answer is: its one member required, nothing else.
+fn wrapper<'a>(response: &'a Value, member: &str) -> &'a Value {
+    let schema = &response["content"]["application/json"]["schema"];
+    assert_eq!(schema["type"], "object", "{response:#}");
+    assert_eq!(schema["required"], json!([member]), "{response:#}");
+    assert_eq!(schema["additionalProperties"], json!(false), "{response:#}");
+    assert_eq!(keys(&schema["properties"]), [member], "{response:#}");
+    &schema["properties"][member]
+}
+
+#[test]
+fn wrapped_answers_project_an_object_of_one_member() {
+    let ir = model_of("orders.yaml", ORDERS);
+    let document = bound_document(&ir, binding(&ir, &wrapped_forms()), "orders-service");
+    let paths = &document["paths"];
+
+    // The one row under `order`; the empty answer as `empty` says.
+    let one = &paths["/orders/{order_id}"]["get"]["responses"]["200"];
+    let row = resolved(&document, wrapper(one, "order"));
+    assert_eq!(
+        keys(&row["properties"]),
+        ["order_id", "quantity"],
+        "{row:#}"
+    );
+    let description = one["description"].as_str().expect("a description");
+    assert!(
+        description.contains("`body: {order: single}`"),
+        "{description}"
+    );
+    let empty = &paths["/orders/{order_id}"]["get"]["responses"]["404"];
+    assert_eq!(literal(empty, "error"), "not_found", "{empty:#}");
+
+    // The rows under `items`, an array of the row schema.
+    let many = &paths["/orders/size/{quantity}"]["get"]["responses"]["200"];
+    let items = wrapper(many, "items");
+    assert_eq!(items["type"], "array", "{many:#}");
+    let row = resolved(&document, &items["items"]);
+    assert_eq!(keys(&row["properties"]), ["order_id"], "{row:#}");
+
+    // The command's response under `data`.
+    let placed = &paths["/api/orders"]["post"]["responses"]["201"];
+    let data = wrapper(placed, "data");
+    assert_eq!(
+        data["$ref"], "#/components/schemas/catalog.orders.PlaceOrder.Result",
+        "{placed:#}"
+    );
+    assert!(!resolved(&document, data).is_null());
+}
+
+/// A binding without a wrapped form writes the bytes it wrote before: the wrapped binding's
+/// document differs only on the routes it wraps.
+#[test]
+fn a_binding_without_a_wrapped_form_keeps_its_document() {
+    let ir = model_of("orders.yaml", ORDERS);
+    let plain = bound_document(&ir, binding(&ir, ANSWER_FORMS), "orders-service");
+    let wrapped = bound_document(&ir, binding(&ir, &wrapped_forms()), "orders-service");
+    assert_ne!(plain, wrapped);
+    assert_eq!(
+        plain["paths"]["/api/orders/{order_id}/note"],
+        wrapped["paths"]["/api/orders/{order_id}/note"]
+    );
+    let rows = &plain["paths"]["/orders/size/{quantity}"]["get"]["responses"]["200"];
+    assert_eq!(
+        rows["content"]["application/json"]["schema"]["type"],
+        "array"
+    );
+}
