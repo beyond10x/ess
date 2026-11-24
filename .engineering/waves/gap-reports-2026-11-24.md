@@ -18,14 +18,15 @@ in the priority order below, ahead of other feature work.
   default.
 
 Priority, as given: P0, then P1 (first report items 4 to 8a), then the second report, then a third
-list of five findings from an application's own generator, then a fourth report of four findings
-(a service contract), then P2.
+list of five findings from an application's own generator, then a fifth list of two findings (a page
+lifted into a document), then a fourth report of four findings (a service contract), then P2.
 
 - P0: first report items 1, 2, 3.
 - P1: first report items 4, 5, 6, 7, 8, 8a; then the second report's G1, G2, G6, G7, G8, G10, G13,
   G11 (the semantic half), F18 and the three generator defects G3, G4, G5. G12 is the first report's
   item 3. G9 and the colour half of G11 are styling and not ESS's.
 - Third list (an application's own generator): five findings on `ess` 0.98.0, items 1 to 5 below.
+- Fifth list (a page lifted into a document): two findings on `ess` 0.98.0.
 - Fourth report (a service contract): four findings, below.
 - P2: first report items 9 to 17.
 
@@ -130,6 +131,20 @@ defects of the React runtime.
   answered is applied once it answers. `story:in-the-browser-a-live-event-that-arrives-before-the-section-s-read-has-answered-is-applied-once-it-answers-as` (S to M, about 150; after item 1).
 - Item 5: a terminal test checks what a host slot is handed. `story:a-terminal-test-checks-what-a-host-slot-is-handed-its-resolved-reads-its-commands-and-the-page-s-parameters` (M, about
   350); after `story:a-test-opens-one-section-overlay-or-widget-of-a-document-alone-at-a-given-terminal-width-and-the-terminal` and `story:one-host-component-stands-in-many-slots-that-receive-the-same-thing-each-slot-identified-by-its-node-path`.
+
+### P1, fifth list (a page lifted into a document) (filed)
+
+Two findings from lifting an existing page into `ess-ui/1`. No item of the first report is covered.
+
+- Item 1: the reference shows how a section shows a paragraph or a field's value with no label, and
+  both renderers are pinned to it. `story:the-reference-shows-how-a-section-shows-a-paragraph-or-a-field-s-value-with-no-label-and-both-renderers-are` (S, about 200; docs and tests, no
+  key). Related, separate: `story:a-node-draws-text-written-in-markdown` (existing, draft).
+- Item 2: an action leads to an address outside the document. Three units:
+  `story:one-rule-decides-which-external-addresses-a-document-may-name-and-ess-ui-check-and-both-renderers-apply-it` (M, about 280; one rule for which external addresses a document may name,
+  applied alike by `ess ui check` and both renderers), `story:an-action-leads-to-an-address-outside-the-document-so-a-button-a-header-action-or-a-menu-item-needs-no-stub` (M, about 450; `href` as
+  an action effect), `story:a-ui-test-asserts-that-an-action-opened-an-external-address-in-the-terminal-and-in-the-browser-without-a` (M, about 300; a test asserts an action opened an external
+  address). `story:one-rule-decides-which-external-addresses-a-document-may-name-and-ess-ui-check-and-both-renderers-apply-it` answers the link question of
+  `story:a-node-draws-text-written-in-markdown`.
 
 ### Fourth report (a service contract) (filed)
 
@@ -250,6 +265,10 @@ Third list: `story:a-live-insert-of-a-key-the-section-already-holds-shows-one-ro
 event re-applied after the answer must not duplicate a row; both edit `runtime/live.ts.tmpl`);
 `story:ess-ui-check-model-warns-when-a-live-event-lacks-a-field-the-section-it-feeds-shows-or-the-field-that-matches` after or beside the item-7 story (same check list); `story:a-terminal-test-checks-what-a-host-slot-is-handed-its-resolved-reads-its-commands-and-the-page-s-parameters`
 after SP-D5 and after `story:a-test-opens-one-section-overlay-or-widget-of-a-document-alone-at-a-given-terminal-width-and-the-terminal` (same `spec.rs` and parity table).
+
+Fifth list: `story:the-reference-shows-how-a-section-shows-a-paragraph-or-a-field-s-value-with-no-label-and-both-renderers-are` any time (no key, independent of P0); `story:one-rule-decides-which-external-addresses-a-document-may-name-and-ess-ui-check-and-both-renderers-apply-it` after
+`story:the-ess-ui-loader-writes-every-constant-default-the-schema-declares-into-the-document-before-reading-it-from` and `story:ess-ui-load-format-json-prints-the-document-the-loader-resolved-every-default-filled-as-the-versioned-format`; `story:an-action-leads-to-an-address-outside-the-document-so-a-button-a-header-action-or-a-menu-item-needs-no-stub` after `story:one-rule-decides-which-external-addresses-a-document-may-name-and-ess-ui-check-and-both-renderers-apply-it` and
+the active `story:an-action-names-its-icon`; `story:a-ui-test-asserts-that-an-action-opened-an-external-address-in-the-terminal-and-in-the-browser-without-a` after `story:an-action-leads-to-an-address-outside-the-document-so-a-button-a-header-action-or-a-menu-item-needs-no-stub`.
 
 Fourth report: `story:a-second-caller-s-run-expects-the-identity-it-sent-also-in-a-nested-payload-member` first (a defect, patch release after
 0.98.1); `story:an-unreadable-request-may-be-answered-with-a-2xx-status-and-no-body-where-the-service-does-so` before `story:an-error-outcome-or-a-standard-refusal-may-answer-plain-text` (shared body checks in
@@ -427,6 +446,29 @@ P2B (items 14 to 17):
   `host: true`; B: an `ess ui assert` verb; C: a language construct; D: decline. Default A.
 - P2B-D5 (items 15, 16): A: their constructs join `ess/38`; B: they land in `ess/39`, opened by
   `story:the-specification-format-ess-39-is-open-as-the-newest-reads-and-compiles-every-specification-exactly-as-ess-38`. Default B.
+
+Fifth list (a page lifted into a document):
+
+- LP-D1 (item 1): does a text-only section need an empty record as its body. A: yes, document the
+  record with `children` as the idiom; B: also let a primitive stand as a section's body; C: a
+  `text` composite kind. Default A.
+- LP-D2 (item 1): does the document tell a renderer a line is a kicker or a lede. A: decline, role
+  and look are the theme's; B: a closed role enum the renderers may ignore; C: decline and keep the
+  application's labelled fields. Default A.
+- LP-D3 (item 2): how an action names an address outside the document. A: `href: <address>` as an
+  action effect beside `navigate`; B: `navigate: {href}`; C: decline. Default A.
+- LP-D4 (item 2): which external addresses a document may name. A: `http`, `https`, `mailto` and a
+  relative reference, the set React admits today; B: `https` and `mailto` only; C: every scheme but
+  a denylist. Default A.
+- LP-D5 (item 2): may an action's address come from a row or state. A: no, a constant that `ess ui
+  check` judges; B: yes, judged at run time; C: an expression limited to listed hosts. Default A.
+- LP-D6 (item 2): how React opens an external address. A: a new tab with `rel="noopener
+  noreferrer"` at every site, the `link` primitive included; B: the same tab with
+  `rel="noreferrer"`; C: a key per link. Default A.
+- LP-D7 (item 2): does the terminal open an external address. A: never, it shows the address,
+  records the visit and shows a notice; B: opens it interactively. Default A.
+- LP-D8 (item 2): does a navigation menu section list external entries. A: not in this feature;
+  B: `NavSection` takes `links`; C: decline. Default A.
 
 Fourth report (a service contract):
 
