@@ -5523,11 +5523,21 @@ fn unclaimed(
         .map(|guard| Predicate::Not(Box::new((*guard).clone())))
         .collect();
     let goals: Vec<&Predicate> = negated.iter().collect();
+    let every = Predicate::All(negated.clone());
+    let together: [&Predicate; 1] = [&every];
+    let mut passes: Vec<&[&Predicate]> = vec![&[]];
+    if !goals.is_empty() {
+        passes.push(&goals);
+    }
+    if goals.len() > 1 {
+        passes.push(&together);
+    }
     let mut taken: Option<(&ResolvedOutcome, &Predicate)> = None;
     let mut tried = 0;
     // The plain candidates first, so an input found there is the one it always was; then those
-    // directed to refute every input-guarded refusal at once.
-    for directed in [&[][..], &goals[..]] {
+    // directed to refute each input-guarded refusal; last those directed to refute all of them in
+    // one goal, which the search over separate guards never asks for (beyond10x/ess#804).
+    for directed in passes {
         for mut input in
             candidates(ir, command, directed, distinction).map_err(RefusalCause::NoWitness)?
         {
@@ -5542,9 +5552,6 @@ fn unclaimed(
                     }
                 }
             }
-        }
-        if goals.is_empty() {
-            break;
         }
     }
     let Some((refusal, guard)) = taken else {
