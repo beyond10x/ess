@@ -483,6 +483,126 @@ fn a_literal_the_guard_compares_with_stays_a_candidate() {
     );
 }
 
+/// Review of the #809 fix: the `unknown-pick` scenario of `text` is written, no refusal names it,
+/// and it passes on the interpreted target.
+fn assert_unknown_pick_written_and_passing(text: &str) {
+    let model = ir(text);
+    let result = synthesize(&model);
+    let id = "depot.racks.PlaceShelf/outcome/unknown-pick";
+    let refused: Vec<String> = result
+        .refusals
+        .iter()
+        .filter(|refusal| {
+            refusal
+                .scenario
+                .as_ref()
+                .is_some_and(|scenario| scenario.to_string() == id)
+        })
+        .map(|refusal| format!("{}: {}", refusal.cause.code(), refusal.cause))
+        .collect();
+    assert_eq!(refused, Vec::<String>::new(), "{text}");
+    let admitted = ess_conformance::AdmittedSuite::from_suite(&result.suite).unwrap();
+    let report = ess_conformance::Runner::for_suite(&result.suite)
+        .run_admitted(
+            &admitted,
+            &ess_conformance::interpret::Interpreted::for_model(model),
+        )
+        .into_report();
+    let run = report
+        .scenarios
+        .iter()
+        .find(|run| run.scenario.to_string() == id)
+        .unwrap_or_else(|| panic!("{id} is run"));
+    assert_eq!(
+        run.status,
+        ess_conformance::report::Status::Passed,
+        "{:?}",
+        run.checks
+    );
+}
+
+/// Review of the #809 fix, the control beside the two above: a length window alone is witnessed.
+#[test]
+fn a_guard_read_code_under_a_length_window_alone_is_witnessed() {
+    assert_unknown_pick_written_and_passing(&one_letter(
+        "value.count >= 2\n      - value.count <= 3",
+        "Optional<depot.racks.Code>",
+    ));
+}
+
+/// Review of the #809 fix: an invariant no text satisfies stays a refusal of the branch, and
+/// synthesis ends (no hang, no panic).
+#[test]
+fn a_guard_read_code_no_text_satisfies_stays_refused() {
+    let result = synthesize(&ir(&one_letter(
+        "value.count >= 3\n      - value.count <= 2",
+        "Optional<depot.racks.Code>",
+    )));
+    let id = "depot.racks.PlaceShelf/outcome/unknown-pick";
+    assert!(
+        !result
+            .suite
+            .scenarios
+            .iter()
+            .any(|(key, _)| key.to_string() == id),
+        "{id} is written over an invariant no text satisfies"
+    );
+    assert!(
+        result.refusals.iter().any(|refusal| refusal
+            .scenario
+            .as_ref()
+            .is_some_and(|scenario| scenario.to_string() == id)),
+        "{id} is refused"
+    );
+}
+
+/// A literal the guard compares a guard-read input with stays on that input's ladder beside the
+/// invariant's values, where the type refuses the value synthesis started from (#809, acceptance
+/// 4): the branch selected by `pick == "Q"` is sent `Q`, which the invariant admits, beside the
+/// values the invariant's own literal `Z` adds to the ladder.
+#[test]
+fn a_literal_the_guard_compares_with_is_the_value_sent() {
+    let guarded = "        when:\n          all:\n            - defined(pick)\n            - not: {exists: {in: layout.slots, as: s, that: s.code == pick}}\n";
+    let text = one_letter(
+        "value.count == 1\n      - 'value != \"Z\"'",
+        "depot.racks.Code",
+    );
+    assert!(text.contains(guarded), "the guard is in the model");
+    let text = text.replace(guarded, "        when: 'pick == \"Q\"'\n");
+    let result = synthesize(&ir(&text));
+    let id = "depot.racks.PlaceShelf/outcome/unknown-pick";
+    let (_, witness) = result
+        .suite
+        .scenarios
+        .iter()
+        .find(|(key, _)| key.to_string() == id)
+        .unwrap_or_else(|| panic!("no scenario {id}"));
+    // The `pick` of every step the scenario expects `unknown-pick` from.
+    let refused: Vec<&Node> = witness
+        .steps
+        .windows(2)
+        .filter_map(|pair| match pair {
+            [ScenarioStep::ExecuteCommand { input, .. }, ScenarioStep::ExpectOutcome { outcome }]
+                if outcome.to_string() == "depot.racks.PlaceShelf/unknown-pick" =>
+            {
+                match input.get("pick") {
+                    Some(ess_conformance::ScenarioValue::Literal { value }) => Some(value),
+                    _ => None,
+                }
+            }
+            _ => None,
+        })
+        .collect();
+    assert!(!refused.is_empty(), "{text}");
+    assert!(
+        refused
+            .iter()
+            .all(|pick| **pick == Node::Text("Q".to_owned())),
+        "{refused:?}"
+    );
+    assert_unknown_pick_written_and_passing(&text);
+}
+
 /// The input an `external:` branch beside a registered client is sent: every hint guard refuted
 /// and the return address equal to the one the row registers, which the related search grounds
 /// as a guard over the input.
