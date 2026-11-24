@@ -5497,27 +5497,40 @@ fn test_xtask_builds_before_it_runs() {
     let commands = test_xtask_commands(&taskfile);
     assert_eq!(
         commands.len(),
-        2,
-        "`test-xtask` is a build line and a nextest run line: {commands:?}"
+        3,
+        "`test-xtask` is a build line of `ess`, a test build line and a nextest run line: \
+         {commands:?}"
     );
+    // The unit tests run the `ess` built here, beside their executable: a test running
+    // `cargo run` compiled the CLI inside the test, over the 60 s test budget.
     assert!(
-        commands[0].trim_end().ends_with("--no-run"),
-        "the first command does not end `--no-run`: {}",
+        commands[0].contains("cargo build --package ess-cli --bin ess --locked"),
+        "the first command does not build `ess`: {}",
         commands[0]
     );
     assert!(
-        commands[1].contains("cargo nextest run") && commands[1].contains("--profile ci"),
-        "the second command is not a nextest run under the `ci` profile: {}",
+        commands[1].trim_end().ends_with("--no-run"),
+        "the second command does not end `--no-run`: {}",
         commands[1]
     );
     assert!(
-        !commands[1].contains("--no-run"),
-        "the second command is the run and does not build only: {}",
-        commands[1]
+        commands[2].contains("cargo nextest run") && commands[2].contains("--profile ci"),
+        "the third command is not a nextest run under the `ci` profile: {}",
+        commands[2]
     );
+    assert!(
+        !commands[2].contains("--no-run"),
+        "the third command is the run and does not build only: {}",
+        commands[2]
+    );
+    for command in &commands[1..] {
+        assert!(
+            command.contains("--package ess-xtask --locked"),
+            "`--package ess-xtask --locked` is missing from: {command}"
+        );
+    }
     for command in &commands {
         for needed in [
-            "--package ess-xtask --locked",
             "RUSTUP_TOOLCHAIN=1.98.1",
             "-fuse-ld=lld",
             "CARGO_INCREMENTAL=0",

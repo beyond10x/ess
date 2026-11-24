@@ -809,23 +809,13 @@ fn projection_artifacts(
 
 /// Repository checks use the actual CLI, with Cargo network access disabled.
 fn cli_output(root: &Path, args: &[OsString]) -> AnyResult<Vec<u8>> {
-    let cargo = std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into());
-    let output = std::process::Command::new(&cargo)
-        .args([
-            "run",
-            "--quiet",
-            "--locked",
-            "--offline",
-            "--package",
-            "ess-cli",
-            "--bin",
-            "ess",
-            "--",
-        ])
+    let mut command = ess_command()?;
+    let program = command.get_program().to_owned();
+    let output = command
         .args(args)
         .current_dir(root)
         .output()
-        .with_context(|| format!("running {cargo:?} for ess {args:?}"))?;
+        .with_context(|| format!("running {program:?} for ess {args:?}"))?;
     if !output.status.success() {
         bail!(
             "`ess {args:?}` refused:\n{}{}",
@@ -835,6 +825,50 @@ fn cli_output(root: &Path, args: &[OsString]) -> AnyResult<Vec<u8>> {
     }
 
     Ok(output.stdout)
+}
+
+/// The `ess` a repository check runs: `cargo run` of this workspace's CLI.
+#[cfg(not(test))]
+#[allow(
+    clippy::unnecessary_wraps,
+    reason = "one signature with the test build's, which fails when its binary is missing"
+)]
+fn ess_command() -> AnyResult<std::process::Command> {
+    let cargo = std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into());
+    let mut command = std::process::Command::new(cargo);
+    command.args([
+        "run",
+        "--quiet",
+        "--locked",
+        "--offline",
+        "--package",
+        "ess-cli",
+        "--bin",
+        "ess",
+        "--",
+    ]);
+    Ok(command)
+}
+
+/// Under test, the `ess` binary `task test-xtask` builds before the tests, beside the test
+/// executable (`../ess` of its directory): a test running `cargo run` compiled the CLI inside the
+/// test while every other test process waited on cargo's lock (68-102 s each on the build node).
+#[cfg(test)]
+fn ess_command() -> AnyResult<std::process::Command> {
+    let executable = std::env::current_exe().context("finding the test executable")?;
+    let built = executable
+        .parent()
+        .and_then(Path::parent)
+        .map(|directory| directory.join(format!("ess{}", std::env::consts::EXE_SUFFIX)))
+        .context("the test executable has no grandparent directory")?;
+    if !built.is_file() {
+        bail!(
+            "{} is missing: `task test-xtask` builds it before the tests \
+             (`cargo build -p ess-cli --bin ess --locked`)",
+            built.display()
+        );
+    }
+    Ok(std::process::Command::new(built))
 }
 
 fn json_text(value: &serde_json::Value, field: &str) -> AnyResult<String> {
