@@ -564,7 +564,6 @@ const STEP_SEEDS_SEEDED: u64 = 2;
 
 /// The first seeds of the seeded sixteen-refusal sweep, the same assertions as its full range.
 #[test]
-#[ignore = "slow lane: sweeps the first seeds of the seeded chains"]
 fn the_first_seeds_of_the_seeded_sixteen_refusal_chains_have_their_scenario_in_the_step() {
     sweep(0..STEP_SEEDS_SEEDED, seeded_chain_of_sixteen, false);
 }
