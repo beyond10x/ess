@@ -3,7 +3,7 @@ format: aep.planning-md/3
 id: story:a-branch-may-leave-its-addressed-record-unchanged-without-a-view
 kind: story
 status: draft
-title: A branch may acknowledge and leave its addressed record unchanged without a read_your_writes view
+title: 'A read-only command that addresses its row with preserves: and instance: is witnessed on a row created first, without a view covering every field of the entity'
 summary: 'preserves: with instance: is refused at synthesis without an immediate identity view, and updates: with no change or accepts: nothing with instance: are refused at validation (adopter item 6, 2026-10-22); same on 0.67.0.'
 tags:
 - adopter-report
@@ -11,6 +11,8 @@ tags:
 - ess-0.70.0
 - ess-0.70.0-first
 - gap
+- gap-p1
+- gap-reports-2026-11-24
 - severity-medium
 relations:
 - serves: vision:O2
@@ -22,7 +24,7 @@ scope:
   path: crates/verify/ess-conformance/src/synthesize/subject_fact.rs
 - confidence: inferred
   path: crates/verify/ess-conformance/tests/preserve_without_view.rs
-revision: 9
+revision: 11
 ---
 ## Need
 
@@ -36,6 +38,33 @@ validation.
 What is needed: an acknowledged no-op on an existing record that synthesis can check without the
 author declaring a view the contract does not have, or a refusal that names an alternative the
 author can write.
+
+### The seventh report's case (added)
+
+A second case, brand-free, from the seventh report (attempt 3).
+
+A downstream application has a command that only reads one row by its id. It is refused with
+404 when no row has that id, and otherwise answers the row and changes nothing. Five of its
+commands have this shape. Today the "not found" branch is `external:` and the success branch has
+no subject. So synthesis sends the success branch a fresh witness id that no step created, and on
+a real target that scenario gets the 404.
+
+The form that says "this input names an existing row of `Card`" is `preserves: Card` with
+`instance: card_id`, with `unknown_instance: true` on the refusal. It validates. Synthesis refuses
+the success branch, and the `invariant/after` scenario built on it, with the cause this story
+already names:
+
+```text
+refused: refusal[ESS-SYNTH-001]: outcome demo.cards.ReadCard/read has no scenario `demo.cards.ReadCard/outcome/read`
+  no witness: `demo.cards.Card.label,owner,state` is `demo.cards.Card`, which preservation requires immediate identity views covering every subject field
+  help: declare a `read_your_writes` view of the entity that projects its identity, its state and the fields named; an `eventual` view cannot be read at the moment this observation is made
+refused: refusal[ESS-SYNTH-001]: entity demo.cards.Card has no scenario `demo.cards.Card/invariant/after/demo.cards.ReadCard/read`
+  (same cause)
+```
+
+This form also settles which entity is meant: `preserves:` names it. So it is not affected by an
+identity type that two entities share, which is what blocks `when_related: {via: input.card_id}`
+(ESS-COMMAND-004, see the story on the refusal of an input whose identity type several entities share).
 
 ## Reproduction
 
@@ -69,15 +98,24 @@ The alternatives, as re-probed on 0.68.0: `updates:` with no event and no `sets:
 `[empty_change]` (ESS-COMMAND-007), and `accepts: nothing` with `instance:` is
 `[missing_declaration]` (ESS-COMMAND-005).
 
-## Where it lives
+## Where it lives (refreshed at `bcfc51555`, `integration/wave-2026-11-24`)
 
-- `crates/verify/ess-conformance/src/synthesize.rs:5111`: a preserving branch reaches
-  `subject_fact::preservation` (`crates/verify/ess-conformance/src/synthesize/subject_fact.rs:8690`,
-  `Observation::Legacy`).
-- `subject_fact.rs:8859` (`covered`) refuses with "preservation requires immediate identity views
-  covering every subject field" (`:8877`) when no immediate view covers every subject field.
-- The fallback that already exists for refusals a stored row selects: `preserve_selected_subject`
-  (`subject_fact.rs:8733`, `Observation::Published`, beyond10x/ess#496).
+- `crates/verify/ess-conformance/src/synthesize.rs:6055-6079`: a preserving branch calls
+  `subject_fact::preservation`. Only where `has_subject_guards(command)` (`:10046-10053`, held
+  state or a state change) does a `NoWitness` fall back to `preserve_selected_subject`
+  (beyond10x/ess#732). A preserving branch on any other command keeps the refusal.
+- `crates/verify/ess-conformance/src/synthesize/subject_fact.rs:9997-10014`: `preservation` →
+  `preserve_subject` → `Observation::Legacy`. `:10166-10186` (`covered`) raises "preservation
+  requires immediate identity views covering every subject field".
+- `subject_fact.rs:10040-10047`: `preserve_selected_subject` (`Observation::Published`,
+  beyond10x/ess#496) is the fallback the decision of 2026-10-22 chose.
+- `crates/verify/ess-conformance/src/synthesize.rs:21052-21101` (`invariants`): the
+  `invariant/after` family builds on the branch's scenario and repeats its refusal.
+- The principle: `docs/design/cross-record-and-stored-field-guards.md:120-131`. "Declaring a view
+  to satisfy synthesis would make the specification describe a read surface the system does not
+  have". It is applied there to guarded rows, held state and refusals (`:277-285`). The accepting
+  `preserves:` branch is the remaining position.
+
 - Related, not the same: `story:an-outcome-that-keeps-its-subject-may-emit` (a preserving outcome
   that emits) and `story:a-delete-may-have-a-no-op-branch-that-emits-nothing` (a delete of an absent row).
 
@@ -102,6 +140,21 @@ The alternatives, as re-probed on 0.68.0: `updates:` with no event and no `sets:
 7. **Alternatives.** (a) Change nothing, and keep the refusal with its view hint. (b) Admit
    `updates:` with no change: that reverses `empty_change`. (c) Chosen: the `Published` observation.
 
+### The seventh report (added)
+
+- Report: the seventh report, attempt 3. The requester's option (c) is taken: `preserves` with
+  `instance:` works without a full read-your-writes view.
+- Class: gap, unchanged.
+- Second adopter: a "fetch one record by id, 404 when absent" endpoint. Most REST services have
+  one per resource.
+- Cost: no authored surface and no format. The suite major does not move, because the scenario
+  uses the existing snapshot steps and the existing `PartialObservation` note. A model that
+  synthesized cleanly keeps every byte. A model that had this refusal gains the scenario. The
+  repository's own models may move rows of `synthesis-suite-bytes-table.tsv` where one of them
+  had this refusal. That was not established by reading.
+- Not counted under policy 3 of `docs/design/generic-language-features.md`, because no source
+  spelling changes.
+
 ## Decisions
 
 2026-10-22: **accept, mechanism chosen; not a refusal.** The preserving branch's scenario is
@@ -118,6 +171,10 @@ nothing.
 
 2026-11-09: the earlier revision scheduled this for 0.70.0. It did not ship. 0.92.0 still refuses
 as above, and `tests/preserve_without_view.rs` does not exist.
+
+2026-11-24: the seventh report's attempt 3 is a second case of this story. The decision of
+2026-10-22 stands. The fallback is taken for every preserving branch, not only where the command
+has held-state guards.
 
 ## Acceptance
 
@@ -140,10 +197,62 @@ Fixture: the Reproduction's `demo.server` model (no view), written by the test.
   `a_preserving_branch_with_a_view_keeps_its_observation`. The existing cases in
   `tests/subject_fact_complete_refusal.rs` keep their verdicts.
 
+### Acceptance, the seventh report (added)
+
+The fixture is written by the test: `format: ess/37`, domain `demo.cards`, with no view.
+
+- Entity `Card`: identity `card_id: demo.cards.CardId` (a newtype of `String`), fields
+  `label: String` and `owner: String`, one state, and one invariant `label != ""`.
+- Entity `Badge`: identity `card_id: demo.cards.CardId`. It shares the type on purpose.
+- `CreateCard`: `creates: Card`, its identity taken from `input.card_id`.
+- `ReadCard`: input `card_id: demo.cards.CardId`, and two outcomes:
+  `{name: unknown-card, unknown_instance: true, error: demo.cards.UnknownCard}` and
+  `{name: read, preserves: demo.cards.Card, instance: card_id, returns: true}`.
+
+The acceptance checks:
+
+- **The read is synthesized on a created row.** This is the failing test the story turns green.
+  Transition: `ess verify conform synthesize` on the fixture. Before: the two refusals above.
+  After: there is no refusal for `ReadCard`. The scenario `demo.cards.ReadCard/outcome/read`
+  sends `CreateCard` before `ReadCard`, and its `card_id` names that created instance. Test:
+  `crates/verify/ess-conformance/tests/preserve_without_view.rs`, case
+  `a_read_only_command_reads_the_row_its_scenario_created`.
+- **The refusal is sent an id no row has.** After: `demo.cards.ReadCard/outcome/unknown-card`
+  sends an identity that no step of its scenario created. Same file, case
+  `the_unknown_row_refusal_is_sent_an_identity_no_row_carries`.
+- **The invariant scenario stands.** After: `demo.cards.Card/invariant/after/demo.cards.ReadCard/read`
+  is in the suite, and no refusal names it. Same file, case
+  `the_invariant_after_a_read_stands_without_a_view`.
+- **Its note names the unobserved fields.** After: the read scenario's unobserved note names
+  exactly `label` and `owner`. Same file, case `a_read_names_the_fields_no_view_shows`.
+  Mutation check: an empty note fails the case.
+- **It runs.** After: both `ReadCard` scenarios pass
+  `ess verify conform run --target interpreted --report-format 2`. Same file, case
+  `the_read_passes_on_the_interpreted_target`.
+- **A model with a covering view keeps its bytes.** The existing acceptance is unchanged.
+  `tests/subject_fact_complete_refusal.rs` and the held-state cases of beyond10x/ess#732 keep
+  their verdicts.
+
+Each case runs synthesis on a model of a few commands, so its expected time is well under 5 s.
+The test step's bounds still apply: 60 s per test, 120 s for the step, and 10 minutes for any
+build-pool job.
+
 ## Scope
 
-- cited: `crates/verify/ess-conformance/src/synthesize.rs`
-- cited: `crates/verify/ess-conformance/src/synthesize/subject_fact.rs`
-- inferred: `crates/verify/ess-conformance/tests/preserve_without_view.rs` (new)
+- cited: `crates/verify/ess-conformance/src/synthesize.rs` (`:6055-6079`: the fallback is taken
+  for every preserving branch, not only where `has_subject_guards`)
+- cited: `crates/verify/ess-conformance/src/synthesize/subject_fact.rs` (`:9997-10047`)
+- inferred: `crates/verify/ess-conformance/tests/preserve_without_view.rs` (new: the existing
+  story's four cases and the five above)
+- `CHANGELOG.md` `## [Unreleased]` `### Fixed`: one line.
 
-confidence: high
+Size: M, about 300 changed lines, of which about 30 are source and the rest are the test.
+
+## Depends on
+
+Nothing. It runs beside the units of the wave of 2026-11-24:
+
+- s3 and s4 edit other functions of `synthesize.rs` (`supply`, `fresh_identity`).
+- s4 edits `subject_fact.rs` in `absent` and `unknown_identity_refusal` only.
+- None of them edits the preserving-branch block or `subject_fact.rs:9997-10047`.
+Delivery: decision RD-D1.

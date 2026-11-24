@@ -18,15 +18,20 @@ in the priority order below, ahead of other feature work.
   default.
 
 Priority, as given: P0, then P1 (first report items 4 to 8a), then the second report, then a third
-list of five findings from an application's own generator, then a fourth report of four findings
-(a service contract), then P2.
+list of five findings from an application's own generator, then a fifth list of two findings (a page
+lifted into a document), then a fourth report of four findings (a service contract), then P2.
 
 - P0: first report items 1, 2, 3.
 - P1: first report items 4, 5, 6, 7, 8, 8a; then the second report's G1, G2, G6, G7, G8, G10, G13,
   G11 (the semantic half), F18 and the three generator defects G3, G4, G5. G12 is the first report's
   item 3. G9 and the colour half of G11 are styling and not ESS's.
 - Third list (an application's own generator): five findings on `ess` 0.98.0, items 1 to 5 below.
+- Fifth list (a page lifted into a document): two findings on `ess` 0.98.0.
 - Fourth report (a service contract): four findings, below.
+- Seventh report (a command that only reads one row): three attempts, ranked with the fourth
+  report, below.
+- Sixth list (items G12 to G15): G14 (P0, a performance defect, diagnosed apart, its story
+  follows), G15 (P1), G12 and G13 (P2), below.
 - P2: first report items 9 to 17.
 
 ## First group to build
@@ -43,19 +48,42 @@ Built side by side within a group, one group after another.
 One line per report item, in priority order: the need, then the stories that carry it with their
 size. "Existing" marks a story that was in the store before. A group not filed yet says so.
 
-### P0 (filed)
+### P0 (filed, revised after four critics and one recheck, accepted)
+
+Thirteen units in eight rounds, plus three follow-up drafts that are not in P0. Each unit's text
+answers the critics' 76 findings and the recheck's 8.
 
 - Item 1: the actions available in a UI state, and a state that can be cloned. Five units:
-  `story:a-design-page-fixes-how-a-program-explores-the-ui-states-of-an-ess-ui-1-document-one-session-the-steps-a-state` (S, prose only), `story:a-running-terminal-app-forks-into-a-copy-that-shares-no-mutable-state-with-it-and-keeps-file-placed-state-in` (M, about 300), `story:a-program-lists-the-ess-ui-test-1-steps-a-ui-state-offers-applies-one-and-forks-the-state-through-ess-ui-test`
-  (L, about 550), `story:a-ui-state-prints-as-ess-ui-state-1-with-a-digest-and-two-routes-to-one-state-print-the-same-bytes-and-the` (L, about 560), `story:ess-ui-state-prints-the-state-a-list-of-ess-ui-test-1-steps-reaches-and-the-steps-that-state-offers` (M, about 350).
+  `story:a-design-page-fixes-how-a-program-explores-the-ui-states-of-an-ess-ui-1-document-one-session-the-steps-a-state` (S, about 290, prose only), `story:a-running-terminal-app-forks-into-a-copy-that-shares-no-mutable-state-with-it-and-keeps-file-placed-state-in` (M, about 400),
+  `story:a-program-lists-the-ess-ui-test-1-steps-a-ui-state-offers-applies-one-and-forks-the-state-through-ess-ui-test` (L, about 570), `story:a-ui-state-prints-as-ess-ui-state-1-with-a-digest-and-two-routes-to-one-state-print-the-same-bytes-and-the` (L, about 590),
+  `story:ess-ui-state-prints-the-state-a-list-of-ess-ui-test-1-steps-reaches-and-the-steps-that-state-offers` (M, about 380).
 - Item 2: a canonical byte form and digest of a UI document and of a UI state.
   `story:an-ess-ui-1-document-has-one-canonical-byte-form-and-one-digest-the-same-for-every-key-order-yaml-spelling` (S to M, about 260) and `story:a-ui-state-prints-as-ess-ui-state-1-with-a-digest-and-two-routes-to-one-state-print-the-same-bytes-and-the`.
-- Item 3: the loader prints the resolved UI document with every default filled in. Ten units:
-  `story:the-ess-ui-loader-writes-every-constant-default-the-schema-declares-into-the-document-before-reading-it-from` (M, about 480), `story:ess-ui-load-format-json-prints-the-document-the-loader-resolved-every-default-filled-as-the-versioned-format` (M, about 420),
-  `story:with-model-ess-ui-resolved-1-carries-the-route-table-the-stock-generators-bind-the-document-s-views-and` (S, about 180), `story:the-loader-fills-the-defaults-a-renderer-reads-differently-today-and-both-renderers-then-show-what-the-schema` (M, about 480),
-  `story:a-document-that-leaves-out-actor-runs-from-the-session-in-both-renderers-as-ess-ui-1-documents-and-the-test` (S to M, about 220), `story:the-loader-resolves-every-state-s-store-and-scope-and-every-read-s-cache-store-from-the-placement-profile-once` (L, about 520),
-  `story:with-a-model-the-loader-fills-a-form-s-fields-from-its-command-s-input-fields-and-a-form-without-fields-shows` (M, about 280), `story:the-terminal-keeps-a-section-s-rows-while-its-read-runs-again-and-marks-rows-only-in-a-collection-that` (M, about 260),
-  `story:the-generated-react-app-counts-new-live-rows-while-its-reader-is-paged-away-with-or-without-a-filter-and-keeps` (M, about 250), `story:the-model-holds-every-filled-default-as-a-plain-value-and-no-renderer-or-checker-keeps-a-fallback-of-its-own` (L, about 550).
+- Item 3: the loader prints the resolved UI document with every default filled in. Seven units:
+  `story:the-ess-ui-loader-writes-every-constant-default-the-schema-declares-into-the-document-before-reading-it-from` (M, about 570), `story:a-document-that-leaves-out-actor-runs-from-the-session-in-both-renderers-as-ess-ui-1-documents-and-the-test` (M, about 260),
+  `story:with-a-model-the-loader-fills-a-form-s-fields-from-its-command-s-input-fields-and-a-form-without-fields-shows` (M, about 300), `story:the-loader-resolves-every-state-s-store-and-scope-and-every-read-s-cache-store-from-the-placement-profile-once` (M, about 450),
+  `story:the-loader-fills-the-defaults-a-renderer-reads-differently-today-and-both-renderers-then-show-what-the-schema` (L, about 560), `story:ess-ui-load-format-json-prints-the-document-the-loader-resolved-every-default-filled-as-the-versioned-format` (M, about 450),
+  `story:with-model-ess-ui-resolved-1-carries-the-route-table-the-stock-generators-bind-the-document-s-views-and` (S, about 220).
+- Rounds, at most three units at once and no two units of one round change one file:
+
+  | round | units | wave |
+  |---|---|---|
+  | R1 | `story:a-design-page-fixes-how-a-program-explores-the-ui-states-of-an-ess-ui-1-document-one-session-the-steps-a-state`, `story:the-ess-ui-loader-writes-every-constant-default-the-schema-declares-into-the-document-before-reading-it-from`, `story:a-running-terminal-app-forks-into-a-copy-that-shares-no-mutable-state-with-it-and-keeps-file-placed-state-in` | 1 |
+  | R2 | `story:a-document-that-leaves-out-actor-runs-from-the-session-in-both-renderers-as-ess-ui-1-documents-and-the-test`, `story:with-a-model-the-loader-fills-a-form-s-fields-from-its-command-s-input-fields-and-a-form-without-fields-shows` | 1 |
+  | R3 | `story:a-program-lists-the-ess-ui-test-1-steps-a-ui-state-offers-applies-one-and-forks-the-state-through-ess-ui-test`, `story:the-loader-resolves-every-state-s-store-and-scope-and-every-read-s-cache-store-from-the-placement-profile-once` | 2 |
+  | R4 | `story:the-loader-fills-the-defaults-a-renderer-reads-differently-today-and-both-renderers-then-show-what-the-schema` | 2 |
+  | R5 | `story:an-ess-ui-1-document-has-one-canonical-byte-form-and-one-digest-the-same-for-every-key-order-yaml-spelling` | 3 |
+  | R6 | `story:ess-ui-load-format-json-prints-the-document-the-loader-resolved-every-default-filled-as-the-versioned-format` | 3 |
+  | R7 | `story:a-ui-state-prints-as-ess-ui-state-1-with-a-digest-and-two-routes-to-one-state-print-the-same-bytes-and-the`, `story:with-model-ess-ui-resolved-1-carries-the-route-table-the-stock-generators-bind-the-document-s-views-and` | 3 |
+  | R8 | `story:ess-ui-state-prints-the-state-a-list-of-ess-ui-test-1-steps-reaches-and-the-steps-that-state-offers` | 3 |
+
+  R5 to R8 are one release: it publishes `ess-ui-resolved/1` and `ess-ui-state/1` once, complete,
+  after every fill unit has landed.
+- Follow-up, not in P0 (tag `gap-p0` stays; no P0 unit waits on them, and no P0 round runs them):
+  `story:the-model-holds-every-filled-default-as-a-plain-value-and-no-renderer-or-checker-keeps-a-fallback-of-its-own` (L, about 550; the filled `Option` fields become plain fields and
+  the renderers' dead fallbacks go; it depends on every P0 unit),
+  `story:the-terminal-keeps-a-section-s-rows-while-its-read-runs-again-and-marks-rows-only-in-a-collection-that` (M, about 340; a terminal defect story) and
+  `story:the-generated-react-app-counts-new-live-rows-while-its-reader-is-paged-away-with-or-without-a-filter-and-keeps` (M, about 200; a React defect story).
 
 ### P1, first report (filed)
 
@@ -131,6 +159,22 @@ defects of the React runtime.
 - Item 5: a terminal test checks what a host slot is handed. `story:a-terminal-test-checks-what-a-host-slot-is-handed-its-resolved-reads-its-commands-and-the-page-s-parameters` (M, about
   350); after `story:a-test-opens-one-section-overlay-or-widget-of-a-document-alone-at-a-given-terminal-width-and-the-terminal` and `story:one-host-component-stands-in-many-slots-that-receive-the-same-thing-each-slot-identified-by-its-node-path`.
 
+### P1, fifth list (a page lifted into a document) (filed)
+
+Two findings from lifting an existing page into `ess-ui/1`. No item of the first report is covered.
+
+- Item 1: the reference shows how a section shows a paragraph or a field's value with no label, and
+  both renderers are pinned to it. `story:the-reference-shows-how-a-section-shows-a-paragraph-or-a-field-s-value-with-no-label-and-both-renderers-are` (S, about 200; docs and tests, no
+  key). Related, separate: `story:a-node-draws-text-written-in-markdown` (existing, draft).
+- Item 2: an action or a navigation menu entry leads to an address outside the document. Four units:
+  `story:one-rule-decides-which-external-addresses-a-document-may-name-and-ess-ui-check-and-both-renderers-apply-it` (M, about 280; one rule for which external addresses a document may name,
+  applied alike by `ess ui check` and both renderers), `story:an-action-leads-to-an-address-outside-the-document-so-a-button-a-header-action-or-a-menu-item-needs-no-stub` (M, about 450; `href` as
+  an action effect), `story:a-ui-test-asserts-that-an-action-opened-an-external-address-in-the-terminal-and-in-the-browser-without-a` (M, about 300; a test asserts an action opened an external
+  address), `story:an-entry-of-a-navigation-section-is-a-page-or-an-outside-address-in-one-ordered-list-so-a-menu-needs-no-stub` (M, about 560; an entry of a navigation section's `pages` may be an outside
+  address).
+  `story:one-rule-decides-which-external-addresses-a-document-may-name-and-ess-ui-check-and-both-renderers-apply-it` answers the link question of
+  `story:a-node-draws-text-written-in-markdown`.
+
 ### Fourth report (a service contract) (filed)
 
 Four findings. Finding 1 is a defect being reproduced for a patch release after 0.98.1.
@@ -160,6 +204,60 @@ Four findings. Finding 1 is a defect being reproduced for a patch release after 
 - Finding 4, the OpenAPI document lists outbound commands: existing
   `story:an-http-binding-may-declare-that-an-accepted-command-or-a-served-view-has-no-route`
   (existing, draft); this report is a second need for it.
+
+### Sixth list (items G12 to G15) (filed)
+
+Four items from one downstream application on 0.98.0. The letters G12 to G15 are this list's own;
+they are not the second report's G-items and not the first report's items 12 to 15.
+
+- G14, P0: a performance defect. Diagnosed apart; its story follows and is not filed here.
+- G15, P1: fixtures are not typed against the model. `story:with-model-ess-ui-check-refuses-a-fixture-row-or-a-script-payload-whose-value-contradicts-the-type-the-model` (L, about 560;
+  `ess ui check --model` finds a fixture row or a script payload whose value contradicts the
+  declared type, SX-D1 to SX-D2) and `story:ess-ui-test-model-refuses-to-start-on-mistyped-document-fixtures-and-fails-a-test-whose-own-fixtures` (M, about 350; `ess ui test
+  --model` refuses a mistyped document fixture and fails a test with mistyped own fixtures,
+  SX-D3). No format version. Siblings under one feature, kept apart: `story:ess-ui-check-model-warns-when-a-live-event-lacks-a-field-the-section-it-feeds-shows-or-the-field-that-matches`
+  and `story:a-per-value-channel-script-that-names-no-session-is-reported` (item 7). The draft
+  `story:board-widget-kinds-reads-every-fixture-answer` has its acceptance 1 covered by the single
+  fixture reader.
+- G12, P2: no expression reads a product of list counts. Three units, all `ess/39`, which is
+  format: decided before acceptance: `story:at-ess-39-a-command-guard-compares-a-fact-with-an-expression-of-several-facts-and-every-expression-reads-the` (L, about 580; arithmetic over
+  several facts as a command guard operand and `xs.count` in every expression; after
+  `story:the-specification-format-ess-39-is-open-as-the-newest-reads-and-compiles-every-specification-exactly-as-ess-38`), `story:synthesis-witnesses-a-command-guard-that-compares-a-fact-with-an-expression-of-several-facts-on-both-sides-of` (L, about 450; synthesis witnesses both sides
+  of the comparison) and `story:every-target-names-what-it-does-with-a-guard-over-an-expression-of-several-facts-generated-rust-and-go` (M, about 380; each target keeps the command
+  an obligation named by it or evaluates it). SX-D4 to SX-D6. The count-product idiom of the first
+  report's "coverage over the product of two stored lists" is covered; the quantifier form stays
+  with the quantifier design of first report item 9 (SX-D4 B). `story:a-guard-compares-two-keyed-lists-element-by-element-and-the-reference-shows-a-dominance-refusal-that-the` shares
+  the guard positions and is not covered.
+- G13, P2: a system actor cannot carry the attribute a caller-recorded field needs.
+  `story:a-command-that-records-its-caller-and-is-granted-to-a-system-actor-is-refused-naming-that-actor-as-the-system` (S, about 120; the refusal names the system actor and the idiom, the
+  reference states who is a system actor), SX-D7. It is derived from
+  `story:a-system-issued-creating-command-is-witnessed` (active), which covers the report's second
+  sentence (`ESS-SYNTH-023` on a creating command).
+
+### Seventh report (a command that only reads one row) (filed)
+
+One application, three attempts to make a read-only command (404 when the row is absent, otherwise
+the row, changing nothing) synthesize on `ess` 0.98.0. The base shape is not a defect: nothing
+declares that the input names a row. The other four commands of the same shape were inferred by
+the requester and not run. Ranked with the fourth report: after the first application's P1 lists,
+before P2. No format version.
+
+- Attempt 3 (`preserves:` with `instance:` needs a full `read_your_writes` view): not a new story.
+  It amends the existing draft `story:a-branch-may-leave-its-addressed-record-unchanged-without-a-view`
+  (decided 2026-10-22, never shipped): its Need, Acceptance, Scope and line references gain the
+  read-only case, its title names it, and it gains the tags `gap-reports-2026-11-24` and `gap-p1`
+  (M, about 300; synthesis only, about 30 lines of source). RD-D1.
+- Attempt 1 (`when_related` with `via`, `ESS-COMMAND-004`, an identity type shared by two
+  entities): `story:the-refusal-of-an-input-whose-identity-type-several-entities-share-on-a-branch-with-no-subject-names-the-forms` (S, about 120; the refusal names the forms that say which
+  entity, a refusal-only change). RD-D2.
+- Attempt 2 (a row-set `exists: false` whose passing branch is not arranged, cause not
+  established): `story:a-row-set-guard-that-selects-its-entity-s-row-by-identity-from-the-input-is-witnessed-on-both-sides-the` (M, about 450, a guess until the first acceptance; the
+  passing branch is witnessed on a row created under that identity, a side it cannot arrange is
+  refused naming why). RD-D3.
+- Touch points, not covered: first report items 10 to 13; second report G13 (`sl13-provided-*`,
+  where the read row has no creating command); sixth list G14 (none of the three adds validation
+  cost). `story:an-outcome-that-keeps-its-subject-may-emit` builds on the amended story.
+- Idiom that works today: give the other entity a distinct identity type.
 
 ### Store issues found
 
@@ -220,13 +318,12 @@ quantifier story; `story:the-specification-format-ess-39-is-open-as-the-newest-r
 `story:ess-specify-reads-prints-every-entity-each-command-s-decisions-read-by-kind-and-site-from-one-read-analysis` (no dependency, may run beside item 14), `story:an-entity-names-the-commands-whose-decisions-may-read-it-readers-and-validation-refuses-every-other-read-by`,
 `story:ess-verify-diff-reports-an-entity-s-readers-declared-removed-widened-or-narrowed-at-ess-diff-24`; `story:each-node-of-the-resolved-ui-document-says-whether-it-is-a-host-slot-so-a-precondition-over-a-document-is` right after P0's story for item 3.
 
-P0: `story:a-design-page-fixes-how-a-program-explores-the-ui-states-of-an-ess-ui-1-document-one-session-the-steps-a-state`, `story:a-running-terminal-app-forks-into-a-copy-that-shares-no-mutable-state-with-it-and-keeps-file-placed-state-in` and `story:the-ess-ui-loader-writes-every-constant-default-the-schema-declares-into-the-document-before-reading-it-from` can start at once; then
-`story:a-program-lists-the-ess-ui-test-1-steps-a-ui-state-offers-applies-one-and-forks-the-state-through-ess-ui-test` and `story:ess-ui-load-format-json-prints-the-document-the-loader-resolved-every-default-filled-as-the-versioned-format`; `story:an-ess-ui-1-document-has-one-canonical-byte-form-and-one-digest-the-same-for-every-key-order-yaml-spelling` after the resolved document;
-`story:a-ui-state-prints-as-ess-ui-state-1-with-a-digest-and-two-routes-to-one-state-print-the-same-bytes-and-the`, `story:with-model-ess-ui-resolved-1-carries-the-route-table-the-stock-generators-bind-the-document-s-views-and` (after the digest, same output function),
-`story:with-a-model-the-loader-fills-a-form-s-fields-from-its-command-s-input-fields-and-a-form-without-fields-shows`, `story:the-loader-fills-the-defaults-a-renderer-reads-differently-today-and-both-renderers-then-show-what-the-schema`; then `story:a-document-that-leaves-out-actor-runs-from-the-session-in-both-renderers-as-ess-ui-1-documents-and-the-test`,
-`story:the-loader-resolves-every-state-s-store-and-scope-and-every-read-s-cache-store-from-the-placement-profile-once` (after `story:a-running-terminal-app-forks-into-a-copy-that-shares-no-mutable-state-with-it-and-keeps-file-placed-state-in`, same file), `story:the-terminal-keeps-a-section-s-rows-while-its-read-runs-again-and-marks-rows-only-in-a-collection-that`
-(after `story:a-program-lists-the-ess-ui-test-1-steps-a-ui-state-offers-applies-one-and-forks-the-state-through-ess-ui-test`, same file), `story:the-generated-react-app-counts-new-live-rows-while-its-reader-is-paged-away-with-or-without-a-filter-and-keeps`; `story:ess-ui-state-prints-the-state-a-list-of-ess-ui-test-1-steps-reaches-and-the-steps-that-state-offers` after the
-state document; `story:the-model-holds-every-filled-default-as-a-plain-value-and-no-renderer-or-checker-keeps-a-fallback-of-its-own` last.
+P0, 13 units in 8 rounds (the table under P0 above): R1 `story:a-design-page-fixes-how-a-program-explores-the-ui-states-of-an-ess-ui-1-document-one-session-the-steps-a-state`,
+`story:the-ess-ui-loader-writes-every-constant-default-the-schema-declares-into-the-document-before-reading-it-from`, `story:a-running-terminal-app-forks-into-a-copy-that-shares-no-mutable-state-with-it-and-keeps-file-placed-state-in`; R2 `story:a-document-that-leaves-out-actor-runs-from-the-session-in-both-renderers-as-ess-ui-1-documents-and-the-test`, `story:with-a-model-the-loader-fills-a-form-s-fields-from-its-command-s-input-fields-and-a-form-without-fields-shows`; R3
+`story:a-program-lists-the-ess-ui-test-1-steps-a-ui-state-offers-applies-one-and-forks-the-state-through-ess-ui-test`, `story:the-loader-resolves-every-state-s-store-and-scope-and-every-read-s-cache-store-from-the-placement-profile-once`; R4 `story:the-loader-fills-the-defaults-a-renderer-reads-differently-today-and-both-renderers-then-show-what-the-schema`; R5
+`story:an-ess-ui-1-document-has-one-canonical-byte-form-and-one-digest-the-same-for-every-key-order-yaml-spelling`; R6 `story:ess-ui-load-format-json-prints-the-document-the-loader-resolved-every-default-filled-as-the-versioned-format`; R7 `story:a-ui-state-prints-as-ess-ui-state-1-with-a-digest-and-two-routes-to-one-state-print-the-same-bytes-and-the`, `story:with-model-ess-ui-resolved-1-carries-the-route-table-the-stock-generators-bind-the-document-s-views-and`; R8
+`story:ess-ui-state-prints-the-state-a-list-of-ess-ui-test-1-steps-reaches-and-the-steps-that-state-offers`. R5 to R8 are one release. The follow-ups `story:the-terminal-keeps-a-section-s-rows-while-its-read-runs-again-and-marks-rows-only-in-a-collection-that`,
+`story:the-generated-react-app-counts-new-live-rows-while-its-reader-is-paged-away-with-or-without-a-filter-and-keeps` and `story:the-model-holds-every-filled-default-as-a-plain-value-and-no-renderer-or-checker-keeps-a-fallback-of-its-own` run after P0, in no P0 round.
 
 Second report, six lanes built side by side, one after another within a lane:
 
@@ -251,6 +348,11 @@ event re-applied after the answer must not duplicate a row; both edit `runtime/l
 `story:ess-ui-check-model-warns-when-a-live-event-lacks-a-field-the-section-it-feeds-shows-or-the-field-that-matches` after or beside the item-7 story (same check list); `story:a-terminal-test-checks-what-a-host-slot-is-handed-its-resolved-reads-its-commands-and-the-page-s-parameters`
 after SP-D5 and after `story:a-test-opens-one-section-overlay-or-widget-of-a-document-alone-at-a-given-terminal-width-and-the-terminal` (same `spec.rs` and parity table).
 
+Fifth list: `story:the-reference-shows-how-a-section-shows-a-paragraph-or-a-field-s-value-with-no-label-and-both-renderers-are` any time (no key, independent of P0); `story:one-rule-decides-which-external-addresses-a-document-may-name-and-ess-ui-check-and-both-renderers-apply-it` after
+`story:the-ess-ui-loader-writes-every-constant-default-the-schema-declares-into-the-document-before-reading-it-from` and `story:ess-ui-load-format-json-prints-the-document-the-loader-resolved-every-default-filled-as-the-versioned-format`; `story:an-action-leads-to-an-address-outside-the-document-so-a-button-a-header-action-or-a-menu-item-needs-no-stub` after `story:one-rule-decides-which-external-addresses-a-document-may-name-and-ess-ui-check-and-both-renderers-apply-it` and
+the active `story:an-action-names-its-icon`; `story:a-ui-test-asserts-that-an-action-opened-an-external-address-in-the-terminal-and-in-the-browser-without-a` after `story:an-action-leads-to-an-address-outside-the-document-so-a-button-a-header-action-or-a-menu-item-needs-no-stub`; `story:an-entry-of-a-navigation-section-is-a-page-or-an-outside-address-in-one-ordered-list-so-a-menu-needs-no-stub` after `story:a-ui-test-asserts-that-an-action-opened-an-external-address-in-the-terminal-and-in-the-browser-without-a` (its tests use
+`expect_visit`).
+
 Fourth report: `story:a-second-caller-s-run-expects-the-identity-it-sent-also-in-a-nested-payload-member` first (a defect, patch release after
 0.98.1); `story:an-unreadable-request-may-be-answered-with-a-2xx-status-and-no-body-where-the-service-does-so` before `story:an-error-outcome-or-a-standard-refusal-may-answer-plain-text` (shared body checks in
 `lib.rs`); `story:an-http-route-may-read-an-input-field-or-a-view-parameter-from-a-request-header` after the authentication story; `story:a-401-answer-may-state-that-the-service-sends-no-www-authenticate-challenge` and
@@ -259,9 +361,23 @@ Fourth report: `story:a-second-caller-s-run-expects-the-identity-it-sent-also-in
 The stream finding waits on the existing exchange stories (`story:an-exchange-is-declared-in-the-specification`,
 `story:asyncapi-and-openapi-project-an-exchange`, both active and unbuilt).
 
+Sixth list: `story:with-model-ess-ui-check-refuses-a-fixture-row-or-a-script-payload-whose-value-contradicts-the-type-the-model` after `g07-session-script` and `story:ess-ui-check-model-warns-when-a-live-event-lacks-a-field-the-section-it-feeds-shows-or-the-field-that-matches` (same
+`CHECKS` list and schema check list; not a hard dependency, the later story rebases), then
+`story:ess-ui-test-model-refuses-to-start-on-mistyped-document-fixtures-and-fails-a-test-whose-own-fixtures`; `story:a-command-that-records-its-caller-and-is-granted-to-a-system-actor-is-refused-naming-that-actor-as-the-system` any time; `story:at-ess-39-a-command-guard-compares-a-fact-with-an-expression-of-several-facts-and-every-expression-reads-the` once
+`ess/39` is open (`story:the-specification-format-ess-39-is-open-as-the-newest-reads-and-compiles-every-specification-exactly-as-ess-38`, one opener only), then `story:synthesis-witnesses-a-command-guard-that-compares-a-fact-with-an-expression-of-several-facts-on-both-sides-of` and
+`story:every-target-names-what-it-does-with-a-guard-over-an-expression-of-several-facts-generated-rust-and-go` side by side.
+
+Seventh report: the amended `story:a-branch-may-leave-its-addressed-record-unchanged-without-a-view`
+first (it runs beside the units of the wave of 2026-11-24: s3 and s4 edit other functions of
+`synthesize.rs`), then `story:the-refusal-of-an-input-whose-identity-type-several-entities-share-on-a-branch-with-no-subject-names-the-forms` (after s1 of that wave, which edits the same
+function, and after the amended story, so its hint names no form synthesis refuses), then
+`story:a-row-set-guard-that-selects-its-entity-s-row-by-identity-from-the-input-is-witnessed-on-both-sides-the` (after s4, or rebased on it; if it slips, `story:the-refusal-of-an-input-whose-identity-type-several-entities-share-on-a-branch-with-no-subject-names-the-forms` names
+only the `preserves:` form and `story:a-row-set-guard-that-selects-its-entity-s-row-by-identity-from-the-input-is-witnessed-on-both-sides-the` adds the second).
+
 ## Format
 
-Stories that name `ess/38` or `ess/39`: `story:from-ess-39-a-view-s-filter-reads-the-row-a-parameter-names-one-hop-and-walks-that-row-s-list-fields`, `story:a-guard-over-the-rows-a-list-of-references-names-shares-a-command-with-other-related-guards-its-missing-row`,
+Stories that name `ess/38` or `ess/39`: `story:at-ess-39-a-command-guard-compares-a-fact-with-an-expression-of-several-facts-and-every-expression-reads-the`, `story:synthesis-witnesses-a-command-guard-that-compares-a-fact-with-an-expression-of-several-facts-on-both-sides-of`,
+`story:every-target-names-what-it-does-with-a-guard-over-an-expression-of-several-facts-generated-rust-and-go`,`story:from-ess-39-a-view-s-filter-reads-the-row-a-parameter-names-one-hop-and-walks-that-row-s-list-fields`, `story:a-guard-over-the-rows-a-list-of-references-names-shares-a-command-with-other-related-guards-its-missing-row`,
 `story:a-when-related-predicate-reads-the-addressed-row-as-subject-field-and-subject-state-so-one-branch-is-selected`, `story:a-branch-that-creates-its-subject-declares-affects-over-rows-that-existed-before-the-outcome-validated-and`, `story:at-the-new-format-a-when-related-via-is-a-chain-of-declared-references-validated-compiled-and-interpreted-its`,
 `story:the-specification-format-ess-39-is-open-as-the-newest-reads-and-compiles-every-specification-exactly-as-ess-38`, `story:a-command-guard-compares-a-value-with-the-digest-of-several-named-inputs-hex-sha256-tuple-and-the-interpreted`, `story:an-entity-names-the-commands-whose-decisions-may-read-it-readers-and-validation-refuses-every-other-read-by`, `story:an-entity-whose-rows-the-deployment-provides-declares-lifecycle-moves-the-deployment-makes-with-no-command`, `story:a-tagged-union-declares-that-its-tag-sits-beside-its-variant-s-members-in-one-flat-object`,
 and, under SL-D8 option B, `story:a-decimal-literal-sets-or-publishes-a-binary64-field-read-by-one-grammar-the-validator-and-every-target-share`. `ess-diff/24` carries the diff kinds of
@@ -277,43 +393,51 @@ The other stories add no format version.
 Each has a default. Without an answer the default is taken and said so in the next report; every
 option is reversible until its story's code is merged.
 
-P0 (items 1 to 3):
+P0 (items 1 to 3). P0-D14 (B) and P0-D17 (B) are settled; P0-D18 (A) is settled by the coordinator,
+2026-11-24; the others are taken on their defaults:
 
 - P0-D1 (item 1): where the exploration surface lives. A: `ess_ui_test::Session`; B: a new crate; C:
-  in `ess-ui`; D: decline. Default A.
+  in `ess-ui`; D: decline. Taken: A.
 - P0-D2 (item 1): how a state is reached without replay. A: fork in process, `ess-ui-state/1`
-  describes and restores nothing; B: restore from the document; C: the document carries its step
-  path. Default A.
-- P0-D3 (item 1): a command-line verb. A: `ess ui state`, last in order; B: library only. Default A.
+  describes the state and its digest and restores nothing; B: restore from the document; C: the
+  document carries its step path. Taken: A.
+- P0-D3 (item 1): a command-line verb. A: `ess ui state`, last in order; B: library only. Taken: A.
 - P0-D4 (item 1): steps with a free value. A: offered by target, the caller supplies the value; B:
-  ESS picks values; C: left out. Default A.
+  ESS picks values; C: left out. Taken: A.
 - P0-D5 (item 1): the clock in a state's identity. A: absolute virtual time plus script positions;
-  B: durations until each pending event. Default A.
-- P0-D6 (item 2): the canonical rule. A: the published InfraIR scheme (compact key-sorted JSON,
-  bare SHA-256); B: RFC 8785 with a prefix; C: the EssIr struct-order style. Default A.
-- P0-D7 (item 2): does the digest cover author text and traceability keys. A: yes; B: no; C: both
-  as two digests. Default A.
-- P0-D8 (item 3): is `ess ui load --format json` versioned. A: yes, `ess-ui-resolved/1`; B: no; C:
-  decline. Default A.
+  B: durations until each pending event. Taken: A.
+- P0-D6 (item 2): the canonical rule. A: the `InfraIR` scheme with the ECMAScript number rule
+  (compact key-sorted JSON, bare SHA-256, no trailing newline); B: RFC 8785 with a prefix; C: the
+  `EssIr` struct-order style. Taken: A.
+- P0-D7 (item 2): does the digest cover author text and traceability keys. A: yes, one digest is
+  one document; B: no; C: both as two digests. Taken: A.
+- P0-D8 (item 3): is `ess ui load --format json` versioned. A: yes, `ess-ui-resolved/1`, published
+  once and complete; B: no; C: decline. Taken: A.
 - P0-D9 (item 3): the document part. A: the loader's filled tree in `ess-ui/1` keys; B: `Serialize`
-  on `Document`; C: a new shape. Default A.
+  on `Document`; C: a new shape. Taken: A.
 - P0-D10 (item 3): does the React generator read the printed JSON. A: no, a round-trip test; B:
-  yes. Default A.
-- P0-D11 (item 3): what `--model` adds. A: the existing `Binding`; B: enums only; C: binding plus
-  row field types. Default A.
+  yes. Taken: A.
+- P0-D11 (item 3): what `--model` adds. A: the existing `Binding`, only under `--format json`; B:
+  enums only; C: binding plus row field types. Taken: A.
 - P0-D12 (item 3): `Field.label` default. A: the field name with `_` as a space, schema corrected;
-  B: field labels in the specification language; C: leave unfilled. Default A.
-- P0-D13 (item 3): where `Field.tone: neutral` is filled. A: only beside `tone_by`; B:
-  everywhere; C: nowhere. Default A.
-- P0-D14 (item 3): React's server-state key once `scope` is always filled. A: bare key at the
-  store's default scope, `scope:key` otherwise; B: always `scope:key`; C: do not fill `scope`.
-  Default A.
+  B: field labels in the specification language; C: leave unfilled. Taken: A.
+- P0-D13 (item 3): where `Field.tone: neutral` is filled. A: only beside `tone_by`, schema note
+  corrected; B: everywhere; C: nowhere. Taken: A.
+- P0-D14 (item 3): how React keys a server state once `scope` is always filled. A: the loader
+  records the filled keys; B: a bare key wherever the scope equals its store's default, written or
+  not (the partner portal's `layout` moves once; a CHANGELOG line under Changed, breaking for a
+  generated React project); C: do not fill `scope`. Settled: B. No record of filled keys exists.
 - P0-D15 (item 3): `form.fields`. A: from the model when `--model` is given; B: each renderer
-  derives it; C: `--format json` requires `--model`. Default A.
+  derives it; C: `--format json` requires `--model`. Taken: A.
 - P0-D16 (item 3): `Reads.key` and `Live.match`. A: each from the other, else `id`, except on a
-  choice's read; B: `id` everywhere; C: only from each other. Default A.
-- P0-D17 (item 3): where both renderers agree against the schema's default. A: the schema, as
-  ordered; B: correct the schema to what both do; C: per key. Default A.
+  choice's read; B: `id` everywhere; C: only from each other. Taken: A.
+- P0-D17 (item 3): where both renderers agree with each other against the schema's default
+  (`confirm_label`, `rich_text.syntax`, `DynamicNavEntries.label`). A: the schema; B: correct the
+  schema to what both do. Settled: B, by the operator, per key. `Document.actor` was taken out.
+- P0-D18 (item 3): which actor rule both renderers follow. A: the reference's row source with
+  React's sign-in condition (the first row of the first view the home page's shell preloads,
+  signed in under `from_session` only when that row exists; the terminal stops signing in without a
+  row); B: React's rule in both; C: the terminal's rule in both. Settled: A.
 
 P1 (first report):
 
@@ -428,6 +552,33 @@ P2B (items 14 to 17):
 - P2B-D5 (items 15, 16): A: their constructs join `ess/38`; B: they land in `ess/39`, opened by
   `story:the-specification-format-ess-39-is-open-as-the-newest-reads-and-compiles-every-specification-exactly-as-ess-38`. Default B.
 
+Fifth list (a page lifted into a document):
+
+- LP-D1 (item 1): does a text-only section need an empty record as its body. A: yes, document the
+  record with `children` as the idiom; B: also let a primitive stand as a section's body; C: a
+  `text` composite kind. Default A.
+- LP-D2 (item 1): does the document tell a renderer a line is a kicker or a lede. A: decline, role
+  and look are the theme's; B: a closed role enum the renderers may ignore; C: decline and keep the
+  application's labelled fields. Default A.
+- LP-D3 (item 2): how an action names an address outside the document. A: `href: <address>` as an
+  action effect beside `navigate`; B: `navigate: {href}`; C: decline. Default A.
+- LP-D4 (item 2): which external addresses a document may name. A: `http`, `https`, `mailto` and a
+  relative reference, the set React admits today; B: `https` and `mailto` only; C: every scheme but
+  a denylist. Default A.
+- LP-D5 (item 2): may an action's address come from a row or state. A: no, a constant that `ess ui
+  check` judges; B: yes, judged at run time; C: an expression limited to listed hosts. Default A.
+- LP-D6 (item 2): how React opens an external address. A: a new tab with `rel="noopener
+  noreferrer"` at every site, the `link` primitive included; B: the same tab with
+  `rel="noreferrer"`; C: a key per link. Default A.
+- LP-D7 (item 2): does the terminal open an external address. A: never, it shows the address,
+  records the visit and shows a notice; B: opens it interactively. Default A.
+- LP-D8 (item 2): how a navigation menu entry leads to an outside address (the requester confirmed
+  such links sit between page entries). A: an entry of a fixed `pages` list may be `{name, label,
+  href, icon?, synonyms?}` instead of a page name, in its place, as `story:an-entry-of-a-navigation-section-is-a-page-or-an-outside-address-in-one-ordered-list-so-a-menu-needs-no-stub` (the Rust
+  type `NavPages::Fixed` changes; an older `ess` refuses it); B: a new ordered key `entries` that
+  replaces `pages` when present; C: `links` beside `pages`, drawn after them (no outside entry
+  between pages). Default A (in).
+
 Fourth report (a service contract):
 
 - AC-D1 (finding 2, also F18): may an event stream follow no row. A: amend the exchange story so
@@ -448,6 +599,49 @@ Fourth report (a service contract):
   `precedes:` and both servers dispatch in that order; B: decline; C: admit a pair whose variable
   types cannot hold each other's literal. Default A.
 
+Sixth list (items G12, G13, G15):
+
+- SX-D1 (G15): how severe is a fixture value that contradicts the model. A: every finding an
+  error; B: every finding a warning; C: shape findings (kind, unknown or missing member, enum
+  value, union tag) errors, an identity's `prefix` or `alphabet` a warning. Default C.
+- SX-D2 (G15): where the types come from. A: the compiled IR's field types as plain data
+  (`RowTypes`) walked by one `ess-ui` function; B: the served route's response schema from the
+  bound OpenAPI document, validated with `schema-contract`. Default A.
+- SX-D3 (G15): what `ess ui test --model` does with a mistyped fixture. A: a document fixture
+  error refuses the run, a test's own fixture error fails that test at setup (`test.fixme` in the
+  Playwright spec), warnings print; B: every error fails each test it reaches at setup; C: print
+  and run everything. Default A.
+- SX-D4 (G12): what the item opens. A: arithmetic over several facts as a command guard operand
+  and `xs.count` in every expression (three units, about 1,400 lines, `ess/39`); B: the coverage
+  quantifier "for every pair of two lists a row exists", with the quantifier work of item 9; C:
+  A now, B later; D: decline, the application keeps the `external:` cause. Default A.
+- SX-D5 (G12): in which guard positions. A: `when:`, `when_subject:` and the `when_related:`
+  predicate, other positions refused by name; B: every predicate position; C: `when:` only.
+  Default A.
+- SX-D6 (G12): how an expression spells a list's length. A: `xs.count`, and the design page's
+  `count(xs)` is amended; B: `count(xs)`, with `.count` guard-only; C: both. Default A.
+- SX-D7 (G13): may a command record a caller attribute when a system actor is granted it. A: a
+  system actor declares constant attributes (`ess/39`); B: the caller read names a fallback value
+  (`ess/39`); C: decline, with the documented idiom (an automated actor with an identity is a
+  caller with `attributes:`, not `system: true`) and a refusal that names both. Default C. A and
+  B touch who is recorded as having done something, an audit and authority boundary.
+
+Seventh report (a command that only reads one row):
+
+- RD-D1: how the amended preserve-without-view story is delivered. A: a unit beside the wave of
+  2026-11-24, released with it; B: a patch release from 0.98.0 on the hotfix route, ahead of the
+  wave (a tag is an operator decision; its fit review classes it a gap); C: after the wave.
+  Default A.
+- RD-D2 (attempt 1): how an author says which entity an input names when its identity type is
+  shared and the branch acts on no subject. A: no new surface, the refusal's hint names
+  `preserves:` with `instance:` and the row-set selector by identity; B: a `references: <entity>`
+  key on an input field (`ess/39`, every target); C: the requester's `entity:` beside `via:` in
+  `when_related` (`ess/39`, a second spelling against `docs/design/filtered-related-reads.md:39`).
+  Default A.
+- RD-D3 (attempt 2): a row-set selector that pins an identity the target mints. A: synthesis sends
+  the captured instance as the input, as `instance:` does, and witnesses both sides; B: refuse that
+  branch by name and point to `preserves:` with `instance:`; C: change nothing. Default A.
+
 ## Accepted
 
 Accepted 2026-11-24 by the coordinator under the operator's delegation, each with the defaults of
@@ -460,6 +654,22 @@ its decisions as written; moved draft, proposed, active:
 - `story:a-number-with-no-declared-number-format-is-drawn-as-written-in-every-renderer`
 - `story:a-structured-value-reads-as-one-line-of-its-members-in-every-renderer`
 - `story:a-list-field-names-the-text-that-joins-its-items-in-every-renderer`
+
+Accepted 2026-11-24 by the coordinator under the owner's delegation after a panel of four critics
+(76 findings) and one recheck (8 findings), all answered in the texts; moved draft, proposed,
+active. The thirteen P0 units, by round:
+
+- R1: `story:a-design-page-fixes-how-a-program-explores-the-ui-states-of-an-ess-ui-1-document-one-session-the-steps-a-state`, `story:the-ess-ui-loader-writes-every-constant-default-the-schema-declares-into-the-document-before-reading-it-from`, `story:a-running-terminal-app-forks-into-a-copy-that-shares-no-mutable-state-with-it-and-keeps-file-placed-state-in`
+- R2: `story:a-document-that-leaves-out-actor-runs-from-the-session-in-both-renderers-as-ess-ui-1-documents-and-the-test`, `story:with-a-model-the-loader-fills-a-form-s-fields-from-its-command-s-input-fields-and-a-form-without-fields-shows`
+- R3: `story:a-program-lists-the-ess-ui-test-1-steps-a-ui-state-offers-applies-one-and-forks-the-state-through-ess-ui-test`, `story:the-loader-resolves-every-state-s-store-and-scope-and-every-read-s-cache-store-from-the-placement-profile-once`
+- R4: `story:the-loader-fills-the-defaults-a-renderer-reads-differently-today-and-both-renderers-then-show-what-the-schema`
+- R5: `story:an-ess-ui-1-document-has-one-canonical-byte-form-and-one-digest-the-same-for-every-key-order-yaml-spelling`
+- R6: `story:ess-ui-load-format-json-prints-the-document-the-loader-resolved-every-default-filled-as-the-versioned-format`
+- R7: `story:a-ui-state-prints-as-ess-ui-state-1-with-a-digest-and-two-routes-to-one-state-print-the-same-bytes-and-the`, `story:with-model-ess-ui-resolved-1-carries-the-route-table-the-stock-generators-bind-the-document-s-views-and`
+- R8: `story:ess-ui-state-prints-the-state-a-list-of-ess-ui-test-1-steps-reaches-and-the-steps-that-state-offers`
+
+The three P0 follow-ups (`story:the-model-holds-every-filled-default-as-a-plain-value-and-no-renderer-or-checker-keeps-a-fallback-of-its-own`, `story:the-terminal-keeps-a-section-s-rows-while-its-read-runs-again-and-marks-rows-only-in-a-collection-that`,
+`story:the-generated-react-app-counts-new-live-rows-while-its-reader-is-paged-away-with-or-without-a-filter-and-keeps`) stay drafts.
 
 ## Not accepted yet
 
