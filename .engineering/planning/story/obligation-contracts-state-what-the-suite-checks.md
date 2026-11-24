@@ -27,7 +27,7 @@ scope:
   path: crates/generate/ess-synth/tests/declared_behaviour.rs
 - confidence: cited
   path: crates/specify/ess-primitives/src/predicate.rs
-revision: 10
+revision: 11
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-10T00:45:16Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"review_outcome":1}}}
 - {from: "proposed", to: "active", at: "2026-11-10T00:45:17Z", actor: "human:timo", revision: 10, decided_on: {"recorded":{"review_outcome":1}}}
@@ -69,6 +69,8 @@ $ ess generate synthesize --path spec.yaml --target rust --out rs
    contract does not say so. An implementer using Rust `str::trim` treats a no-break space as
    empty where the suite does not. An authored scenario for the no-break-space case is refused
    with ESS-AUTHOR-041.
+
+beyond10x/ess#798 (2026-11-21, ess 0.96.0) shows the related-guard sentence of `related_precedence` (`crates/generate/ess-synth/src/plan.rs:720`, text at `:789-796`) stating the reverse of what runs: an input-guarded refusal answers before `existing_instance` and `exists: false`, and an `external:` refusal with `before_row: true` answers before both; the contract states both.
 
 ## Acceptance
 

@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:an-http-route-streams-a-component-s-events-with-no-command-opening-it-and-frames-named-by-a-member-of-their
 kind: story
-status: draft
+status: archived
 title: An HTTP route streams a component's events, with no command opening it and frames named by a member of their data
 tags:
 - gap-p1
@@ -10,7 +10,9 @@ tags:
 relations:
 - serves: vision:O2
 - depends_on: story:an-event-channel-may-be-bound-to-server-sent-events
-revision: 1
+revision: 2
+transitions:
+- {from: "draft", to: "archived", at: "2026-11-24T01:56:03Z", actor: "human:timo", revision: 2}
 ---
 ## Need
 

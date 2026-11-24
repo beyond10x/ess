@@ -12,7 +12,7 @@ relations:
 - depends_on: story:a-structured-value-reads-as-one-line-of-its-members-in-every-renderer
 - depends_on: story:a-list-field-names-the-text-that-joins-its-items-in-every-renderer
 - depends_on: story:a-tagged-union-declares-that-its-tag-sits-beside-its-variant-s-members-in-one-flat-object
-revision: 3
+revision: 4
 ---
 ## Need
 
@@ -39,6 +39,8 @@ the object rule.
 
 The requester's proposal, restated: a union reads as its variant and its fields (`parcel north`),
 or `labels` per variant.
+
+The adjacent content member is the union's declared `content:` key (story:projections-use-a-unions-declared-content-key), and `value` (or `content`) only when none is declared; SL-D13 and SL-D14 are settled by reading on 2026-11-24 as `layout: adjacent | flat` on the union.
 
 ## Outcome
 

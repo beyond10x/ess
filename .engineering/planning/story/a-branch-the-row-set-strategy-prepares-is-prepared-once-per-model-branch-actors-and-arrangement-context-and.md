@@ -10,7 +10,6 @@ tags:
 relations:
 - serves: vision:O2
 - depends_on: story:a-row-set-branch-s-search-arranges-the-rows-of-a-selector-once-per-distinct-prefix-of-counts-not-once-per
-- depends_on: story:a-row-set-branch-s-search-does-not-arrange-a-combination-of-counts-that-provably-cannot-take-the-branch-and
 revision: 4
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-24T01:51:04Z", actor: "human:timo", revision: 3}

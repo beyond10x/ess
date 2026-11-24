@@ -9,7 +9,7 @@ tags:
 - gap-reports-2026-11-24
 relations:
 - serves: vision:O2
-revision: 1
+revision: 2
 ---
 ## Need
 
@@ -111,6 +111,8 @@ tests:
 Terminal (`ess ui test`): the entries play at 1 s, 4 s and 5 s, so the cell reads `2` and the
 test passes. Browser (`ess ui test --playwright`, `runFor(5000)`): the period is 5 s, the second
 cycle's first entry plays at 6 s, so the cell still reads `3` and the test fails.
+
+Carried by patch release 0.98.1: the `hotfix/0.98.1` tree holds the `fixturePlayer` change, the schema sentence, the `CHANGELOG.md` line and the node test `a_looping_fixture_script_repeats_at_its_last_entry_s_time`, SP-D3 taken as A; the terminal pin case under `crates/ui/ess-ui-test/tests/` is the one acceptance line not yet in it.
 
 ## Outcome
 

@@ -12,7 +12,7 @@ tags:
 relations:
 - serves: vision:O2
 - decomposes: epic:adopter-gaps-domain-language
-revision: 4
+revision: 5
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-12T21:27:30Z", actor: "human:timo", revision: 3, executor: "agent:b10x", correlation: "operator-2026-11-12-accept-16"}
 - {from: "proposed", to: "active", at: "2026-11-12T21:27:32Z", actor: "human:timo", revision: 4, executor: "agent:b10x", correlation: "operator-2026-11-12-accept-16"}
@@ -59,6 +59,8 @@ Model (`format: ess/37`), entity `demo.t.Note` with identity `id`, events `demo.
 `docs/design/minted-value-sources.md` (`ess/27`) gave `sets:` the source `{payload: <Event>.<field>}`
 so that a stored value is the published one. It has no counterpart between two payload fields of
 one outcome, and its "Not done" list does not name one.
+
+beyond10x/ess#823 (2026-11-24, 0.98.0) asks exactly acceptance 1, two events of one creating outcome carrying one generated value, and beyond10x/ess#816 item 5 asks the same for sibling generated values related by an expression (`not_before == issued_at`); the fit review decides both together with story:stored-field-equals-returned-response-value (beyond10x/ess#498), in one design.
 
 ## Acceptance
 
