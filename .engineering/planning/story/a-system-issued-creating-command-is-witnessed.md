@@ -41,7 +41,7 @@ scope:
   path: crates/verify/ess-conformance/tests/system_issued_synthesis.rs
 - confidence: cited
   path: docs/design/system-issued-commands.md
-revision: 13
+revision: 15
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-10T00:42:04Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"review_outcome":2}}}
 - {from: "proposed", to: "active", at: "2026-11-10T00:42:05Z", actor: "human:timo", revision: 10, decided_on: {"recorded":{"review_outcome":2}}}
@@ -94,6 +94,8 @@ no such record before the step (`crates/verify/ess-conformance/src/system_issued
 - A model with no system-issued creating command keeps its suite bytes (`an_old_suite_keeps_its_bytes`).
 
 Amendment (tenth gap report, 2026-11-24): a command held only by system actors whose outcomes change rows by `instances:` or `affects:` only is awaited instead of refused `ESS-SYNTH-023`: the scenario arranges the rows, takes the cause, and reads the rows removed and kept.
+
+Amendment (twelfth gap report, 2026-11-24): a command a system actor holds whose outcomes name no `instance:` and change no row (an external call, an event only) is awaited the same way, with no instance: the scenario takes the one issuance in its window and reads the outcome, the error and the events; a second issuance in the window, or none, fails it. It is no longer refused `ESS-SYNTH-023` (`NoInstance`) or `ESS-AUTHOR-045`.
 
 ## Scope
 
@@ -158,3 +160,5 @@ proposes its `CHANGELOG.md` sentence; the instance-less await is a suite shape o
   record and a second call with the same input answers a refusal. No separate story.
 
 SW-D6, the instance-less await for set effects. A: one acceptance sentence on this story. B: a separate story. Decided: A, 2026-11-24 (the coordinator, under the owner's delegation).
+
+RN-D4, the no-subject system-issued command. A: the acceptance sentence above, as SW-D6 did for set effects. B: a separate story. Decided: A, 2026-11-24 16:29 CET (the coordinator, under the owner's delegation), taken on the default.

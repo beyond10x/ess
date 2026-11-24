@@ -13,7 +13,7 @@ tags:
 relations:
 - serves: vision:O2
 - decomposes: epic:adopter-gaps-synthesis
-revision: 3
+revision: 4
 ---
 ## Need
 
@@ -53,3 +53,9 @@ Same refusal for `cron:` with `format: ess/30` on 0.68.0.
 ## Regression status
 
 Not a 0.68.0 regression: identical refusals on 0.67.0 and 0.68.0. Gap. Does not block 0.68.0.
+
+## Decisions
+
+RN-D5, the one-shot scheduled process and the periodic cause. A: a process started per schedule by the deployment is not a periodic binding. B: widen the periodic cause to cover a one-shot process (changes a released contract). Decided: A, 2026-11-24 16:29 CET (the coordinator, under the owner's delegation), taken on the default.
+
+A process the deployment starts once per schedule (`ess-runtime/2` `schedule:`, a CronJob) is not a periodic binding: the periodic cause is an in-process poll that starts one period after host activation. The cause of such a one-shot process is the run of `decision-blocker:run-of-a-process`; this story keeps the in-process wall-clock schedule only.
