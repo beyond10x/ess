@@ -27,7 +27,7 @@ scope:
   path: crates/generate/ess-synth/tests/declared_behaviour.rs
 - confidence: cited
   path: crates/specify/ess-primitives/src/predicate.rs
-revision: 11
+revision: 12
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-10T00:45:16Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"review_outcome":1}}}
 - {from: "proposed", to: "active", at: "2026-11-10T00:45:17Z", actor: "human:timo", revision: 10, decided_on: {"recorded":{"review_outcome":1}}}
@@ -86,6 +86,22 @@ beyond10x/ess#798 (2026-11-21, ess 0.96.0) shows the related-guard sentence of `
 - One test per item in `crates/generate/ess-synth/tests/` compares the printed contract against
   what the suite checks, so the two cannot drift apart again.
 
+- Red today: over the reproduction model (`ess/37`), the `depot.racks.AddShelf` obligation
+   contract states, in this order: the first declared input refusal or `before_row: true`
+   external whose condition holds; then `existing_instance` and `unknown_instance`; then the held
+   state; then `exists: false` and the present `when_related:` refusals; then the accepting and
+   remaining external branches. It does not contain "`exists: false` before input-guarded
+   refusals", and it does not contain "Related-presence predicates do not precede input-guarded
+   refusals".
+- The sentence is derived from `PrecedencePlan`/`Phase::step_in` for the IR's format (or written
+   per `reads_one_rule(ir.format())`), so the sentence and the plan the interpreter reads cannot
+   name different orders for one format.
+- Below `ess/27` the sentence is byte for byte today's: the three existing tests in
+   `tests/declared_behaviour.rs` (lines 674-723, fixture at `ess/18`) stay green unchanged.
+- The branch for a related row read through a stored field of the subject (`plan.rs:759-771`) is
+   checked against the same rule and corrected if it differs (it already puts input refusals
+   first; it names no `before_row` external).
+
 ## Scope
 
 - cited: crates/generate/ess-synth/src/plan.rs
@@ -96,3 +112,108 @@ beyond10x/ess#798 (2026-11-21, ess 0.96.0) shows the related-guard sentence of `
 - inferred: crates/generate/ess-gen/tests/openapi.rs
 
 confidence: medium
+
+## Amendment of 2026-11-24: the related-precedence sentence (beyond10x/ess#798)
+
+Folded, not a unit of its own: the story's item 3 ("the contract states the refusal precedence")
+and this issue are the same function, `related_precedence` in
+`crates/generate/ess-synth/src/plan.rs`, and the story already owns `plan.rs` and
+`tests/declared_behaviour.rs`. The amendment adds one acceptance, one test and one changelog
+reference to the story; nothing else in the story changes.
+
+Size added to the story: S (about 80 changed lines: 35 source, 45 test).
+Fixed suite bytes of committed models: none. No committed file carries the sentence
+(`git grep 'Selection precedence'` finds only `plan.rs`); the existing tests pin it on an `ess/18`
+fixture, whose order is the old rule and stays.
+Patch-release candidate: yes on its own (no committed byte, no diagnostic); folded into the story,
+it ships when the story ships.
+
+### Need
+
+beyond10x/ess#798. For a command with `when_related:` in a source format from `ess/27` on, the
+generated `PLAN.md` (and `plan.json`, the contract in every obligation that carries it) states a
+selection precedence the interpreted target and the conformance suite do not follow: it puts
+`existing_instance` and `exists: false` before the input-guarded refusals and says nothing of
+`before_row: true` externals. An implementor who follows the sentence fails the suite.
+
+### Reproduction
+
+Reproduced on 0.98.0. Model `repro/798/` (the issue's model at `format: ess/37`, with
+`unknown-rack` declared before `slot-taken`, which 0.98.0 requires: ESS-COMMAND-004 "`unknown-rack`
+answers at step 4 before `slot-taken`").
+
+```console
+$ ess generate synthesize --path . --target rust --layout crate --out out/rust
+17 capabilities: 16 generated, 1 obligation(s), 0 refused
+$ grep -o 'Selection precedence: on commands with `when_related:`, check[^.]*\.' out/rust/PLAN.md
+Selection precedence: on commands with `when_related:`, check `existing_instance` then `exists: false` before input-guarded refusals; …
+```
+
+The order that runs (the issue's four authored scenarios pass on the interpreted target; the two
+stating the sentence's order are refused as ESS-AUTHOR-041), and the order the code holds:
+`crates/specify/ess-domain/src/command/precedence.rs`, `ONE_RULE = V27` (line 32),
+`Phase::step_in` (lines 102-117): input refusals and `before_row` externals (1), existence (2),
+held state (3), every `exists: false` then every present-related refusal (4), accepting (5).
+
+### Scope (added)
+
+- `crates/generate/ess-synth/src/plan.rs`, `related_precedence` (lines 720-802): branch on
+  `ess_domain::command::precedence::reads_one_rule(ir.format())`; under the rule write the order of
+  acceptance 6, naming `before_row: true` externals beside the input refusals.
+
+### Owned files (added)
+
+- `crates/generate/ess-synth/src/plan.rs` (already the story's)
+- `crates/generate/ess-synth/tests/declared_behaviour.rs` (already the story's; new `#[test]`s)
+
+### Not yours
+
+- The Rust and Go `behaviour` module comments (`rust/behaviour.rs:21-39`, `go/behaviour.rs:17`):
+  they describe generated code that follows the plan and were not reported; the story's item 3
+  decides whether they change.
+
+### Tests first (added)
+
+In `crates/generate/ess-synth/tests/declared_behaviour.rs`, a new
+`plan_contract_states_the_one_rule_for_related_commands`: the reproduction model inline at
+`ess/37`, `SynthesisPlan::of`, the `AddShelf` obligation's contract, assert acceptance 6 by the
+positions of the phrases. A second `#[test]` builds the same command at `ess/26` and asserts the
+old sentence (acceptance 8 from the other side). In-process, well under 5 s each (bound 60 s per
+test, 120 s per step).
+
+### Gate (added to the story's)
+
+One at a time; no build-pool job over 10 minutes.
+
+- `cargo clippy -p ess-synth --all-targets --locked -- -D warnings`
+- `cargo test -p ess-synth --locked --test declared_behaviour`
+- byte pins of `ess-synth`: `--test served_codec_names`, `--test go`
+
+### Depends on
+
+The story it amends (same function); nothing else.
+
+### Changelog (added to the story's bullet, or its own)
+
+Under `Fixed`:
+
+- The obligation contract of a command with `when_related:` from `ess/27` states the precedence the
+  interpreted target and the suite follow: input refusals and `before_row` externals first, then
+  existence, the held state, missing and present related rows, and the accepting branches (#798).
+
+### Fit review
+
+1. Need: an implementor must be able to build from the contract and pass the suite. No syntax.
+2. Class: defect: the generated contract contradicts the documented rule
+   (`precedence.rs:22-32`, and `docs/design/generic-language-features.md` § G4 cited there).
+3. Expressible: not applicable (generated text).
+4. Fit: no surface; one sentence derived from the plan the interpreter already reads.
+5. Second adopter: every command with `when_related:` at `ess/27` or later.
+6. Cost: generated `PLAN.md`/`plan.json` text for such commands; no format.
+7. Considered: a unit of its own (rejected: same function and test file as the active story, which
+   would land them one after the other); deleting the sentence (rejected: the story asks for the
+   precedence to be stated); fold (chosen).
+
+### Decisions
+
+- Decision: accept as proposed, folded into story:obligation-contracts-state-what-the-suite-checks.
