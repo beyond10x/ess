@@ -4200,11 +4200,10 @@ impl CommandSpec {
     /// ([`precedence::Phase::InputRefusal`]); the plan reads those in declaration order, before every
     /// other step that reads a request. Implication is decided by the finite prover over the two
     /// guards alone ([`finite::analyze`]): every joint assignment the later guard holds in, the
-    /// earlier holds in too, and the later holds in one at least. Two equal guards need no proof
-    /// and count where the prover declines them too (beyond10x/ess#816). Where the prover declines
-    /// either of two guards that differ nothing is said, and synthesis keeps ESS-SYNTH-003 for it.
-    /// The wording is that finding's: "an input-guarded refusal declared before it" for a refusal,
-    /// "the input-guarded refusal taken first" for an accepting branch.
+    /// earlier holds in too, and the later holds in one at least. Where the prover declines either
+    /// guard nothing is said, and synthesis keeps ESS-SYNTH-003 for it. The wording is that
+    /// finding's: "an input-guarded refusal declared before it" for a refusal, "the input-guarded
+    /// refusal taken first" for an accepting branch.
     fn validate_implied_input_guards(&self, types: &TypeRegistry) -> ValidationErrors {
         let mut errors = ValidationErrors::new();
         let environment = crate::expression::DomainEnvironment::new(types, &self.input);
@@ -4241,8 +4240,7 @@ impl CommandSpec {
                 (earlier.error.is_some()
                     && precedence::place(&shapes[*index], &composition).phase
                         == precedence::Phase::InputRefusal
-                    && (later_guard == earlier_guard
-                        || implies(later_guard, earlier_guard) == Some(true)))
+                    && implies(later_guard, earlier_guard) == Some(true))
                 .then_some((earlier, earlier_guard))
             }) else {
                 continue;

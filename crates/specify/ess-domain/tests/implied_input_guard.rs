@@ -3,9 +3,8 @@
 //!
 //! Every input the later guard admits is answered first by the earlier refusal, so no request
 //! reaches the later branch. Synthesis found this by searching candidates and named it
-//! ESS-SYNTH-003; validation now decides it with the finite prover, in the same wording. Two equal
-//! guards count where the prover declines them too (beyond10x/ess#816). Where the prover declines
-//! one of two guards that differ, validation stays silent and synthesis keeps the finding. A later
+//! ESS-SYNTH-003; validation now decides it with the finite prover, in the same wording. Where the
+//! prover declines a guard, validation stays silent and synthesis keeps the finding. A later
 //! branch that some input reaches, because the earlier guard is narrower, stays valid.
 
 const NEEDLE: &str = "is unreachable: every input satisfying";
@@ -200,72 +199,6 @@ fn an_undecidable_implication_is_not_refused() {
     let branches = format!("{busy}{swamped}");
     let errors = refusals(&branches);
     assert!(errors.is_empty(), "{errors}\n{branches}");
-}
-
-/// Two refusals with one guard the prover declines (an `Integer` comparison): the second never
-/// answers, because the first answers every input that satisfies it (beyond10x/ess#816).
-#[test]
-fn an_equal_guard_the_prover_declines_is_unreachable() {
-    let busy = "      - name: busy
-        when: count > 5
-        error: demo.route.Closed
-";
-    let again = "      - name: busy-again
-        when: count > 5
-        error: demo.route.Blocked
-";
-    let errors = refusals(&format!("{busy}{again}"));
-    assert!(
-        errors.contains(
-            "[unreachable_branch] command.demo.route.Dispatch.outcomes.busy-again: `busy-again` \
-             is unreachable: every input satisfying `count > 5` is answered first by `busy` \
-             (count > 5), an input-guarded refusal declared before it (hint: drop `busy-again`, \
-             or narrow `busy` so some input `busy-again` admits falls outside it)"
-        ),
-        "{errors}"
-    );
-    assert_eq!(errors.matches(NEEDLE).count(), 1, "{errors}");
-}
-
-/// Beside an equal guard the prover declines, what stays valid: other literals, a first refusal
-/// narrowed by a conjunct the second lacks, and one guard on two commands.
-#[test]
-fn guards_the_prover_declines_that_differ_stay_valid() {
-    let busy = "      - name: busy
-        when: count > 5
-        error: demo.route.Closed
-";
-    let other = "      - name: swamped
-        when: count > 7
-        error: demo.route.Blocked
-";
-    let narrowed = "      - name: busy-x
-        when:
-          all:
-            - count > 5
-            - route == X
-        error: demo.route.Closed
-";
-    let broad = "      - name: busy-any
-        when: count > 5
-        error: demo.route.Blocked
-";
-    for branches in [format!("{busy}{other}"), format!("{narrowed}{broad}")] {
-        let errors = refusals(&branches);
-        assert!(errors.is_empty(), "{errors}\n{branches}");
-    }
-    let one = model(busy);
-    let start = one
-        .find("  - name: demo.route.Dispatch")
-        .expect("the command");
-    let end = one.find("\nevents:\n").expect("the events") + 1;
-    let second = one[start..end].replace(
-        "name: demo.route.Dispatch\n",
-        "name: demo.route.Redispatch\n",
-    );
-    let two = format!("{}{second}{}", &one[..end], &one[end..]);
-    let errors = spec(&two).err().unwrap_or_default();
-    assert!(errors.is_empty(), "{errors}\n{two}");
 }
 
 #[test]
