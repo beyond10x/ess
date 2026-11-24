@@ -38,6 +38,7 @@
 - `ess-ui/1` icon names are one closed list in the schema (`icon.icons`), each drawn by React and the terminal as a glyph of its own; `ess ui check` warns `icon_names` for another name, which is drawn as its label. An action takes `icon:` (alone with `as: icon`, else before the label) and `tone:` with the button's emphasis words (beyond10x/ess#723).
 - An `ess-ui/1` read param, overlay or navigation param and `bind` entry may be written `{value: <expr>, when: <expr>}`: React and the terminal send it only while `when` is truthy and leave it out otherwise, so a toggle that is off sends no `only_open=false`. `ess ui check` checks both expressions, refuses another key of the mapping, and with `--model` refuses `when` on a parameter the view requires or a required command input (beyond10x/ess#723).
 - The generated React runtime's `setAuthorization(value, renew?)` takes an optional `renew`: a read or a command answered `401` awaits it once, shared by every request answered `401` meanwhile, and is sent once more with the value it returns. A second `401` or no value stays the answer (beyond10x/ess#723).
+- `ess specify vendor --from <key=path> --service <key=path> --type <name> --into <domain> --out <file> --conformances <file>` writes a consumer's copy of another specification's type, with every type it reaches, as a source file of the consumer's, and the composition `services:` and `conformances:` entries that prove it against the pinned owner; `--check` exits 1 naming each copy the owner has changed since (beyond10x/ess#663).
 
 ### Changed
 

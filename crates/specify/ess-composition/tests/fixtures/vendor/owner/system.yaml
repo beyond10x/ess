@@ -1,0 +1,12 @@
+format: ess/23
+system: example.owner
+version: v1
+
+domains:
+  - example.owner.orders
+  - example.owner.ledger
+
+components:
+  - component: orders
+    owns:
+      domains: [example.owner.orders]

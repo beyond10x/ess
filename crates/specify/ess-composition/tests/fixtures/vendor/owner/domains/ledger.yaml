@@ -1,0 +1,8 @@
+domain: example.owner.ledger
+
+# A domain no component of the owner owns.
+types:
+  - name: example.owner.ledger.Entry
+    kind: struct
+    fields:
+      - {name: amount, type: Integer}

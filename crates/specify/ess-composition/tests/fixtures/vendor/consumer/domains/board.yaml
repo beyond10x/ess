@@ -1,0 +1,7 @@
+domain: example.consumer.board
+
+types:
+  - name: example.consumer.board.Card
+    kind: struct
+    fields:
+      - {name: title, type: String}
