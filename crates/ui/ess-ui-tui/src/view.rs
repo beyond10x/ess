@@ -551,9 +551,20 @@ impl App {
                 .collect();
             lines.push(Line::from(spans));
         }
-        if !header.actions.is_empty() {
-            let labels: Vec<String> = header
-                .actions
+        // A header action whose `visible:` is false is not drawn, as the palette offers it not
+        // (beyond10x/ess#722).
+        let shown: Vec<&ess_ui::Action> = header
+            .actions
+            .iter()
+            .filter(|action| {
+                self.visible(
+                    action.visible.as_ref().map(|expr| expr.0.as_str()),
+                    &Ctx::default(),
+                )
+            })
+            .collect();
+        if !shown.is_empty() {
+            let labels: Vec<String> = shown
                 .iter()
                 .map(|action| {
                     format!(
@@ -563,7 +574,7 @@ impl App {
                 })
                 .collect();
             let mut x = 0;
-            for (action, label) in header.actions.iter().zip(&labels) {
+            for (action, label) in shown.iter().zip(&labels) {
                 self.mark(Mark {
                     path: format!("{}/header/actions/{}", self.page_path(), action.name),
                     row: None,

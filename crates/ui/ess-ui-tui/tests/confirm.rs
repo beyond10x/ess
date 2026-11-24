@@ -177,3 +177,55 @@ fn a_listed_bind_value_is_sent_as_one_list() {
         app.render_text(100, 30)
     );
 }
+
+/// A header action whose `visible:` is false is not drawn, a row action guarded with `and` is
+/// offered on the row it holds for, and a bulk bind `selection.<field>` sends the list of that
+/// field over the selected rows (story:the-terminal-evaluates-every-expression-form-the-schema-defines,
+/// beyond10x/ess#722).
+#[test]
+fn the_terminal_hides_offers_and_sends_as_every_expression_form_reads() {
+    let text = DOCUMENT
+        .replace(
+            "    title: Things\n    sections:\n",
+            "    title: Things\n    header:\n      actions:\n        \
+             - {name: hidden, does: things.Never, label: Never drawn, visible: \"params.never == yes\"}\n        \
+             - {name: shown, does: things.Shown, label: Drawn action}\n    sections:\n",
+        )
+        .replace(
+            "        columns: [name]\n",
+            "        columns: [name]\n        selection: multiple\n        \
+             bulk_actions: [{name: archive, does: things.Archive, bulk: true, bind: {ids: selection.id}}]\n",
+        )
+        .replace(
+            "          - {name: drop, does: things.Drop, label: Drop, confirm: ask}\n",
+            "          - {name: drop, does: things.Drop, label: Drop, confirm: ask}\n          \
+             - {name: reopen, does: things.Reopen, bind: {thing: row.id}, label: Reopen, \
+             visible: \"row.name == Bolt and row.id != nobody\"}\n",
+        );
+    let (mut app, adapter) = open_with("forms", &text);
+    let screen = app.render_text(120, 30);
+    assert!(screen.contains("Drawn action"), "{screen}");
+    assert!(!screen.contains("Never drawn"), "{screen}");
+    let hint = |screen: &str| {
+        screen
+            .lines()
+            .find(|line| line.contains("Remove"))
+            .map(str::to_owned)
+            .unwrap_or_default()
+    };
+    assert!(!hint(&screen).contains("Reopen"), "Anvil:\n{screen}");
+    app.keys("j");
+    let screen = app.render_text(120, 30);
+    assert!(hint(&screen).contains("Reopen"), "Bolt:\n{screen}");
+    app.keys(" A");
+    let ids = Value::Sequence(vec![Value::String("th-2".to_owned())]);
+    assert_eq!(
+        sent(&adapter),
+        vec![(
+            "things.Archive".to_owned(),
+            BTreeMap::from([("ids".to_owned(), ids)])
+        )],
+        "{}",
+        app.render_text(120, 30)
+    );
+}

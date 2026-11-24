@@ -484,6 +484,9 @@ pub struct App {
     /// The sections whose `selection` is being resolved: a section that reads its own selection,
     /// directly or through another, sees none.
     pub(crate) resolving: std::cell::RefCell<Vec<String>>,
+    /// The selected rows of the collection whose bulk action runs, which `selection.<field>`
+    /// reads (beyond10x/ess#722); `None` outside a bulk action.
+    pub(crate) bulk_selection: Option<Value>,
     /// What the last frame drew where.
     pub(crate) regions: std::cell::RefCell<Vec<Region>>,
 }
@@ -591,6 +594,7 @@ impl App {
             exports: Vec::new(),
             marks: std::cell::RefCell::default(),
             resolving: std::cell::RefCell::default(),
+            bulk_selection: None,
             regions: std::cell::RefCell::default(),
         };
         app.go(&home, BTreeMap::new(), true);
@@ -3258,7 +3262,31 @@ impl App {
                     .into_iter()
                     .find(|(key, _)| *key == letter)
                 {
+                    // `selection.<field>` reads the selected rows, as React's bulk bar hands
+                    // them over (beyond10x/ess#722).
+                    let selected = &self.ui(ui).selected;
+                    let rows = collection
+                        .reads
+                        .as_ref()
+                        .and_then(|reads| self.read_rows(reads, &ctx))
+                        .map(|result| {
+                            result
+                                .rows
+                                .iter()
+                                .filter(|row| {
+                                    selected.contains(&self.selection_key(
+                                        row,
+                                        collection.reads.as_ref(),
+                                        ctx.section,
+                                    ))
+                                })
+                                .cloned()
+                                .collect()
+                        })
+                        .unwrap_or_default();
+                    self.bulk_selection = Some(Value::Sequence(rows));
                     self.run_action_at(ui, &action, None);
+                    self.bulk_selection = None;
                 }
             }
             KeyCode::Char(direction @ ('J' | 'K')) if moves => {
@@ -4628,6 +4656,13 @@ impl Resolve for Scope<'_> {
         let adapter = app.adapter.as_ref();
         match root {
             "row" => Resolved::Root(self.ctx.row.cloned().unwrap_or(Value::Null)),
+            // The selected rows, inside a bulk action; a field projects over them as the browser
+            // reads it (`selection.id` is the list of ids).
+            "selection" => Resolved::Whole(
+                app.bulk_selection
+                    .as_ref()
+                    .map_or(Value::Null, |rows| ess_ui::filter::path(rows, segments)),
+            ),
             "params" => {
                 let mut params = app.params.clone();
                 if self.ctx.overlay {

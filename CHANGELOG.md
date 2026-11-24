@@ -39,6 +39,7 @@
 ### Changed
 
 - The terminal reads a display, `visible` or `checked` expression joined with `and`, `or`, `not`, `in` or parentheses with the grammar React reads, where it split it at its first `==`, so `state.a == on and state.b == off` with both true hid the section; a string that reads no path is still literal text (beyond10x/ess#723).
+- The terminal draws no header action whose `visible:` is false, as its palette already offered none, and reads `selection.<field>` in a bulk action as the list of that field over the selected rows, where it sent the text `selection.id` (beyond10x/ess#722).
 - A generated UI reads a command answered `401` as not signed in (`not_granted` with no actor), whatever its body, in `ess_ui::binding::classify` and the React port, where it read it as no answer from the server (beyond10x/ess#723).
 - **Breaking:** the generated Rust and Go servers answer a `form` or `query` key the path carries, on a route with `unknown: ignore`, `malformed` when its value is not the path's, where they ignored it whatever it held; one holding the path's value is still ignored (beyond10x/ess#752).
 - **Breaking:** the OpenAPI document writes `{command}.Input` with `additionalProperties: true` for a `form` route with `unknown: ignore`, where it wrote the object closed, and that route's request body says that a parameter no field names is ignored and one the path carries must equal the path's value (beyond10x/ess#752).
