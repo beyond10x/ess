@@ -4972,7 +4972,16 @@ fn apply(live: &Live, rows: &mut Vec<Value>, payload: &Value) {
             None => rows.insert(0, payload.clone()),
         },
         Effect::InsertTop => {
-            rows.insert(0, payload.clone());
+            // A row path names one row: a held key's row takes the event's fields and moves up.
+            let row = match found {
+                Some(at) => {
+                    let mut held = rows.remove(at);
+                    merge(&mut held, payload);
+                    held
+                }
+                None => payload.clone(),
+            };
+            rows.insert(0, row);
             if let Some(max) = live.max_rows {
                 rows.truncate(max as usize);
             }
