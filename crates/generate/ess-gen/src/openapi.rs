@@ -164,7 +164,7 @@
 //! | omitted | why |
 //! |---|---|
 //! | `servers` | the model has no URL for a component; `topology` describes replicas and resources, not addresses. Only an `ess-http/1` binding's `servers` for a `reached_by: network` component put them in its document |
-//! | `security`, `securitySchemes` | the model states no authentication. See below: `may:` has landed, and it answers a different question |
+//! | `security`, `securitySchemes` | the model states no authentication. See below: `may:` has landed, and it answers a different question. Only an `ess-http/1` binding's `authentication` puts them in a document |
 //! | a version in the path | `info.version` carries the specification's version, which is the only version the model has. A path prefix would invent an API version that can disagree with it |
 //! | pagination, filtering, sorting | commands, not collections. A view *is* in the IR — its fields, its filter, its consistency — but nothing in the model says how one is *read*: no path, no page size, no cursor, no ordering. Exposing one would invent a query surface, and §6's `exposures:` is where that decision belongs. A view is rendered by the documentation projection and by no path here |
 //! | `400`, `401`, `404`, `429`, `500` | no outcome declares them. They are properties of a transport and a deployment, not of a command |
@@ -189,9 +189,10 @@
 //! The grant is not dropped, though — a fact the specification states and no artifact carries is a
 //! fact that stops being true. Every operation carries `x-ess-may-invoke`, naming the actors the
 //! specification permits. It is an extension and therefore an annotation: no tool enforces it, no
-//! request is refused by it, and it makes no claim about how the caller was identified. When the
-//! model grows an authentication construct, `security` is what this row changes to, and
-//! `x-ess-may-invoke` is what tells whoever writes it which operations need one.
+//! request is refused by it, and it makes no claim about how the caller was identified. The
+//! authentication construct is the binding's, not the model's (beyond10x/ess#681): with an
+//! `ess-http/1` binding that declares `authentication`, `security` is written as below, and
+//! `x-ess-may-invoke` stays beside it.
 //!
 //! # With an HTTP binding
 //!
@@ -226,7 +227,8 @@
 //! | `redirect` | a required `Location` header, `format: uri`, saying which parameters go into its query or fragment |
 //! | a view's `body: single` | the row schema at `200` and no content at its `empty` status, or the one literal member its `empty.body` declares |
 //! | a view's `body: array` | at `200`, an array of the row schema, with no `{view}.Response` |
-//! | `refusals.<key>` (`not_granted`, `malformed`, `unfinished`, `too_large`) | replaces the standard refusal's response on every bound operation that can answer it |
+//! | `refusals.<key>` (`not_granted`, `malformed`, `unfinished`, `too_large`, `unauthenticated`) | replaces the standard refusal's response on every bound operation that can answer it |
+//! | `authentication` (beyond10x/ess#681) | `components.securitySchemes`, the schemes this component's routes require by name: `bearer` and `basic` as `type: http`, `api_key` as `type: apiKey` with `in` and `name`, `mutual_tls` as `type: mutualTLS`; on each routed operation `security`, one requirement object per scheme its route requires, in route order, `[]` for an open route; and on a guarded one the `unauthenticated` answer, `401` with `WWW-Authenticate` naming each challenge, or the declared override |
 //! | `routes[i].refusals.<key>` | replaces it on that route alone, in place of the binding's |
 //! | `limits.request_bytes`, `routes[i].limits.request_bytes` | `x-ess-request-max-bytes` on each operation that reads a body, and a response at the `too_large` status |
 //! | a view's `representations` | an optional `in: query` parameter, the selector, a `string` whose `enum` holds each value; at `200`, `text/csv` as a `string` beside the JSON answer, `x-ess-representations` naming each representation's selector, media type, separator, header line and columns, and each declared header described with the value that selects it |
@@ -234,8 +236,9 @@
 //! A bare body names no branch, so every response of a command whose route uses a stage-2 key
 //! carries `x-ess-outcomes`: the outcomes it answers, in the order the command declares them, and
 //! none for a standard refusal. A route without a stage-2 key keeps the stage-1 bytes. A
-//! `WWW-Authenticate` challenge is a response header and nothing more: `security` and
-//! `securitySchemes` stay omitted (decided for stage 2, answer 8).
+//! `WWW-Authenticate` challenge a binding writes into a refusal is a response header and nothing
+//! more (decided for stage 2, answer 8): `security` and `securitySchemes` follow the binding's
+//! `authentication` alone, and a binding without it keeps every byte.
 //!
 //! # Determinism
 //!
@@ -506,6 +509,7 @@ fn document(
         paths: paths(ir, component, binding),
         components: Components {
             schemas: schemas(ir, component, binding),
+            security_schemes: security_schemes(ir, component, binding),
         },
         entities: entity_model(ir, component),
     }
@@ -650,9 +654,30 @@ fn description(
              above.",
         );
     }
+    answered_paragraphs(&mut text, ir, component, binding);
+    text.push_str(request_bound_paragraph(ir, component, binding));
+    text
+}
+
+/// The paragraphs said once where some operation of `component` is answered as the binding
+/// declares it, and once where the binding declares `authentication` (beyond10x/ess#681); nothing
+/// otherwise.
+fn answered_paragraphs(
+    text: &mut String,
+    ir: &EssIr,
+    component: &ResolvedComponent,
+    binding: Option<&http::Binding>,
+) {
+    let authenticates = binding.is_some_and(|binding| binding.ir().authentication().is_some());
     if http::bound_routes(ir, component, binding)
         .iter()
-        .any(|route| answered_by_binding(route.declared, refusals_of(binding)))
+        .any(|route| {
+            answered_by_binding(
+                route.declared,
+                refusals_of(binding),
+                guard_of(binding, route.declared).is_some(),
+            )
+        })
     {
         text.push_str(
             "\n\nThe binding also declares how some of those operations are encoded and answered: \
@@ -661,13 +686,28 @@ fn description(
              or a standard refusal's answer. Such an operation is described as the binding \
              declares it, and each response of such a command lists the outcomes it answers under \
              `x-ess-outcomes`, because a bare body carries no `outcome` naming the branch and no \
-             `published` list. A `WWW-Authenticate` challenge is a response header: the \
-             specification states what a refusal answers, not how a caller proves who it is, so \
-             no security scheme is declared.",
+             `published` list.",
+        );
+        text.push_str(if authenticates {
+            " A `WWW-Authenticate` challenge is a response header; how a caller proves who it is \
+             is the binding's `authentication`, below."
+        } else {
+            " A `WWW-Authenticate` challenge is a response header: the specification states what \
+             a refusal answers, not how a caller proves who it is, so no security scheme is \
+             declared."
+        });
+    }
+    if authenticates {
+        text.push_str(
+            "\n\nThe binding declares how a caller authenticates (`components.securitySchemes`), \
+             and each operation it routes lists under `security` the schemes its route requires, \
+             any one of them sufficing, `[]` for an open route. A call on a route that requires a \
+             scheme, carrying no credential of any of them or one the realization authenticated as \
+             no actor, is refused before the grant is checked and before the operation runs, with \
+             the `unauthenticated` answer the operation lists. The grant is checked after it, as \
+             described above.",
         );
     }
-    text.push_str(request_bound_paragraph(ir, component, binding));
-    text
 }
 
 /// The paragraph said once where some operation of `component` names `x-ess-request-max-bytes`,
@@ -716,11 +756,17 @@ type Refusals = BTreeMap<ess_http::RefusalKey, ess_http::Refusal>;
 
 /// Whether an operation is answered as an `ess-http/1` binding declares beyond its route: its
 /// route carries a stage-2 key (its own `refusals` among them), or the binding overrides a
-/// standard refusal, which applies to every route it names. A derived route never is, and neither
-/// is a route of a binding with no stage-2 key, so both keep their stage-1 bytes.
-fn answered_by_binding(declared: Option<&ess_http::Route>, refusals: Option<&Refusals>) -> bool {
+/// standard refusal, which applies to every route it names, or the route requires a scheme
+/// (`guarded`, beyond10x/ess#681). A derived route never is, and neither is a route of a binding
+/// with no stage-2 key, so both keep their stage-1 bytes.
+fn answered_by_binding(
+    declared: Option<&ess_http::Route>,
+    refusals: Option<&Refusals>,
+    guarded: bool,
+) -> bool {
     declared.is_some_and(|route| {
-        route.request.is_some()
+        guarded
+            || route.request.is_some()
             || route.declares_answers()
             || route.body != ess_http::ViewAnswer::default()
             || route.empty.is_some()
@@ -778,7 +824,8 @@ fn paths(
             .zip(route.declared)
             .map(|(binding, declared)| binding.refusals_on(declared));
         let refusals = refusals.as_ref();
-        let served = match route.serves {
+        let guard = guard_of(binding, route.declared);
+        let mut served = match route.serves {
             http::Served::Command(handle) => operation(
                 ir,
                 handle,
@@ -788,12 +835,88 @@ fn paths(
                 route.declared,
                 refusals,
                 bound_request(binding, route.declared),
+                guard.as_deref(),
             ),
-            http::Served::View(handle) => query(ir, handle, checked, route.declared, refusals),
+            http::Served::View(handle) => query(
+                ir,
+                handle,
+                checked,
+                route.declared,
+                refusals,
+                guard.as_deref(),
+            ),
         };
+        served.security = security_of(binding, route.declared);
         *out.entry(route.path).or_default().slot(route.method) = Some(served);
     }
     out
+}
+
+/// The challenges of the default `unauthenticated` answer of a route that requires a scheme
+/// (beyond10x/ess#681): `Some`, possibly empty, where it requires one, `None` where it is open,
+/// derived, or the binding declares no `authentication`.
+fn guard_of(
+    binding: Option<&http::Binding>,
+    declared: Option<&ess_http::Route>,
+) -> Option<Vec<String>> {
+    let (binding, declared) = binding.zip(declared)?;
+    if binding.schemes_on(declared).is_empty() {
+        return None;
+    }
+    Some(binding.challenges_on(declared))
+}
+
+/// An operation's `security`: one requirement object per scheme its route requires, in the order
+/// the route lists them, any one sufficing, and `[]` for an open route; `None` for a derived route
+/// and wherever the binding declares no `authentication`, so such a document keeps its bytes.
+fn security_of(
+    binding: Option<&http::Binding>,
+    declared: Option<&ess_http::Route>,
+) -> Option<Vec<BTreeMap<String, Vec<String>>>> {
+    let (binding, declared) = binding.zip(declared)?;
+    binding.ir().authentication()?;
+    Some(
+        binding
+            .schemes_on(declared)
+            .into_iter()
+            .map(|(name, _)| BTreeMap::from([(name.to_owned(), Vec::new())]))
+            .collect(),
+    )
+}
+
+/// The Security Scheme Objects of the schemes some route of `component` requires, by name
+/// (`OpenAPI` 3.1 § 4.8.27): `bearer` and `basic` as `type: http`, `api_key` as `type: apiKey` with
+/// its `in` and `name`, `mutual_tls` as `type: mutualTLS`. Empty without `authentication`.
+fn security_schemes(
+    ir: &EssIr,
+    component: &ResolvedComponent,
+    binding: Option<&http::Binding>,
+) -> BTreeMap<String, Value> {
+    let Some(binding) = binding else {
+        return BTreeMap::new();
+    };
+    http::bound_routes(ir, component, Some(binding))
+        .iter()
+        .filter_map(|route| route.declared)
+        .flat_map(|declared| binding.schemes_on(declared))
+        .map(|(name, scheme)| {
+            let object = match scheme {
+                ess_http::Scheme::Bearer => json!({"type": "http", "scheme": "bearer"}),
+                ess_http::Scheme::Basic { .. } => json!({"type": "http", "scheme": "basic"}),
+                ess_http::Scheme::ApiKey { location, name } => json!({
+                    "type": "apiKey",
+                    "in": match location {
+                        ess_http::KeyLocation::Header => "header",
+                        ess_http::KeyLocation::Query => "query",
+                        ess_http::KeyLocation::Cookie => "cookie",
+                    },
+                    "name": name,
+                }),
+                ess_http::Scheme::MutualTls => json!({"type": "mutualTLS"}),
+            };
+            (name.to_owned(), object)
+        })
+        .collect()
 }
 
 /// The input fields or view parameters a bound route carries in its path, by declared name. Empty
@@ -862,6 +985,7 @@ fn operation(
     declared: Option<&ess_http::Route>,
     refusals: Option<&Refusals>,
     bound_request: Option<u64>,
+    guard: Option<&[String]>,
 ) -> Operation {
     let command = ir.command(handle);
     let domain = ir.domain(&command.domain);
@@ -929,17 +1053,21 @@ fn operation(
         request_body: request_body(ir, command, &outside, &request, declared),
         // A route without a stage-2 key, and a derived one, keeps the stage-1 answers and bytes.
         responses: match declared {
-            Some(route) if answered_by_binding(declared, refusals) => bound_responses(
-                ir,
-                command,
-                publishes,
-                checks_grants,
-                route,
-                refusals,
-                bound_request,
-            ),
+            Some(route) if answered_by_binding(declared, refusals, guard.is_some()) => {
+                bound_responses(
+                    ir,
+                    command,
+                    publishes,
+                    checks_grants,
+                    route,
+                    refusals,
+                    bound_request,
+                    guard,
+                )
+            }
             _ => responses(ir, command, publishes, checks_grants, bound_request),
         },
+        security: None,
     }
 }
 
@@ -1057,6 +1185,7 @@ fn query(
     checks_grants: bool,
     declared: Option<&ess_http::Route>,
     refusals: Option<&Refusals>,
+    guard: Option<&[String]>,
 ) -> Operation {
     let view = ir.view(handle);
     let mut parameters = path_parameters(&view.params, declared, |param| {
@@ -1071,8 +1200,8 @@ fn query(
     // (beyond10x/ess#286); an open view, and every view of a model naming none, keeps its bytes.
     let read_checked = checks_grants && ir.read_granted(&view.name);
     let mut responses = match declared {
-        Some(route) if answered_by_binding(declared, refusals) => {
-            bound_view_responses(ir, view, read_checked, route, refusals)
+        Some(route) if answered_by_binding(declared, refusals, guard.is_some()) => {
+            bound_view_responses(ir, view, read_checked, route, refusals, guard)
         }
         _ => {
             let mut responses: BTreeMap<String, Response> = [(
@@ -1126,6 +1255,7 @@ fn query(
         parameters,
         request_body: None,
         responses,
+        security: None,
     }
 }
 
@@ -1687,6 +1817,54 @@ fn too_large_schema() -> Value {
     })
 }
 
+/// The default `unauthenticated` answer (beyond10x/ess#681): `{"refused": "unauthenticated"}` and
+/// one `WWW-Authenticate` challenge per scheme of the route that has one, as both servers write it.
+fn unauthenticated_answer(challenges: &[String]) -> Rendered {
+    let mut headers = BTreeMap::new();
+    if !challenges.is_empty() {
+        let named: Vec<String> = challenges
+            .iter()
+            .map(|challenge| format!("`{challenge}`"))
+            .collect();
+        headers.insert(
+            ess_http::CHALLENGE_HEADER.to_owned(),
+            HeaderDoc {
+                description: format!(
+                    "One RFC 9110 §11.6.1 challenge per scheme the route requires that has one, \
+                     each its own header line, in the order the route lists them: {}.",
+                    list(&named)
+                ),
+                required: true,
+                schema: json!({"type": "string"}),
+            },
+        );
+    }
+    Rendered {
+        member: Some(Member {
+            schema: json!({
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["refused"],
+                "properties": {
+                    "refused": {"const": http::UNAUTHENTICATED_REFUSED},
+                },
+            }),
+            discriminated: None,
+            text: false,
+        }),
+        label: "the `unauthenticated` refusal".to_owned(),
+        headers,
+        sentence: Some(
+            "No declared outcome: the call carries no credential of a scheme its route requires \
+             (`security`), or the realization authenticated it as no actor. It is refused before \
+             the grant is checked and before the operation runs, so nothing was run, written or \
+             published."
+                .to_owned(),
+        ),
+        unlisted: None,
+    }
+}
+
 /// What the unfinished realization means, for the `501` response's description.
 const UNFINISHED_MEANING: &str = "No declared outcome: the realization is unfinished. Either a \
                                   port this command runs reported an unmet obligation, and nothing \
@@ -1737,6 +1915,9 @@ enum Answer<'a> {
     /// The standard refusal for a body larger than the route reads, as the servers answer it
     /// today.
     TooLarge(u64),
+    /// The standard refusal for a call without the credential its route requires, with the
+    /// route's challenges, as both servers answer it (beyond10x/ess#681).
+    Unauthenticated(&'a [String]),
     /// A `rows` view's rows.
     Rows(&'a ResolvedView),
     /// A `single` view's one row, bare, or under the one member a wrapped body names
@@ -1763,17 +1944,20 @@ struct Member {
 /// A listed outcome answers its declared status, body and headers; an unlisted one keeps its
 /// derived status and the envelope. A standard refusal the binding overrides answers its declared
 /// status instead of today's: `not_granted` where the surface checks grants, `malformed` on a
-/// command with input, `unfinished` on every command. Every response carries `x-ess-outcomes`.
-fn bound_responses(
+/// command with input, `unfinished` on every command, `unauthenticated` where the route requires a
+/// scheme (`guard`, its challenges). Every response carries `x-ess-outcomes`.
+#[allow(clippy::too_many_arguments)]
+fn bound_responses<'a>(
     ir: &EssIr,
-    command: &ResolvedCommand,
+    command: &'a ResolvedCommand,
     publishes: &BTreeSet<EventHandle>,
     checks_grants: bool,
-    route: &ess_http::Route,
-    refusals: Option<&Refusals>,
+    route: &'a ess_http::Route,
+    refusals: Option<&'a Refusals>,
     bound_request: Option<u64>,
+    guard: Option<&'a [String]>,
 ) -> BTreeMap<String, Response> {
-    let mut by_status: BTreeMap<String, Vec<Answer<'_>>> = BTreeMap::new();
+    let mut by_status: BTreeMap<String, Vec<Answer<'a>>> = BTreeMap::new();
     for outcome in &command.outcomes {
         let listed = route.answer(outcome.name.as_str(), outcome.error.is_some());
         let status = listed.map_or_else(
@@ -1810,6 +1994,14 @@ fn bound_responses(
             ess_http::RefusalKey::Unfinished,
             true,
             Some((http::UNFINISHED, Answer::Unfinished)),
+        ),
+        (
+            ess_http::RefusalKey::Unauthenticated,
+            guard.is_some(),
+            Some((
+                http::UNAUTHENTICATED,
+                Answer::Unauthenticated(guard.unwrap_or_default()),
+            )),
         ),
     ];
     for (key, answers, today) in standard {
@@ -1854,9 +2046,22 @@ fn bound_view_responses<'a>(
     read_checked: bool,
     route: &'a ess_http::Route,
     refusals: Option<&'a Refusals>,
+    guard: Option<&'a [String]>,
 ) -> BTreeMap<String, Response> {
     let mut by_status: BTreeMap<String, Vec<Answer<'a>>> = BTreeMap::new();
     let overridden = |key| refusals.and_then(|refusals| refusals.get(&key).map(|r| (key, r)));
+    if let Some(challenges) = guard {
+        match overridden(ess_http::RefusalKey::Unauthenticated) {
+            Some((key, refusal)) => by_status
+                .entry(refusal.status.to_string())
+                .or_default()
+                .push(Answer::Refusal(key, refusal)),
+            None => by_status
+                .entry(http::UNAUTHENTICATED.to_owned())
+                .or_default()
+                .push(Answer::Unauthenticated(challenges)),
+        }
+    }
     match (route.body.form, &route.empty) {
         (ess_http::ViewBody::Single, Some(empty)) => {
             by_status
@@ -2083,6 +2288,7 @@ fn rendered(
         Answer::TooLarge(limit) => {
             Rendered::standard(Some(too_large_schema()), too_large_meaning(*limit))
         }
+        Answer::Unauthenticated(challenges) => unauthenticated_answer(challenges),
         Answer::Rows(view) => Rendered::standard(
             Some(json!({"$ref": reference(&view_key(view))})),
             view_description(ir, view),
@@ -3813,6 +4019,11 @@ struct Operation {
     /// Keyed by status as text, which sorts numerically while every status is three digits.
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     responses: BTreeMap<String, Response>,
+    /// The schemes the binding's route requires, any one sufficing, `[]` for an open route
+    /// (beyond10x/ess#681): authentication, beside `x-ess-may-invoke`, which is authorization.
+    /// Absent on a derived route and wherever the binding declares no `authentication`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    security: Option<Vec<BTreeMap<String, Vec<String>>>>,
 }
 
 /// A header, in this crate's case always a header.
@@ -3911,6 +4122,10 @@ struct PartEncoding {
 #[derive(Debug, serde::Serialize)]
 struct Components {
     schemas: BTreeMap<String, Fragment>,
+    /// The schemes an `ess-http/1` binding's routes on this component require, by name
+    /// (beyond10x/ess#681); absent without `authentication`.
+    #[serde(rename = "securitySchemes", skip_serializing_if = "BTreeMap::is_empty")]
+    security_schemes: BTreeMap<String, Value>,
 }
 
 /// Declared bounded mappings on operations reached by accessor bindings.

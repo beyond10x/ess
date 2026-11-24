@@ -353,3 +353,157 @@ fn a_listed_query_field_is_a_query_parameter_and_in_no_body() {
     let schema = &operation["requestBody"]["content"]["multipart/form-data"]["schema"];
     assert!(schema["properties"].get("tags").is_none(), "{schema}");
 }
+
+// --- authentication (beyond10x/ess#681, `story:an-http-binding-projects-its-security-schemes`) ---
+
+/// The orders fixture with an actor granted both commands: `authentication` needs an actor.
+fn guarded_orders() -> EssIr {
+    let text = include_str!("../../../specify/ess-http/tests/fixtures/orders.yaml").to_owned()
+        + "actors:\n  - name: catalog.orders.Clerk\n    may: [catalog.orders.NoteOrder, catalog.orders.PlaceOrder]\n";
+    model_of(&[("orders.yaml", &text)])
+}
+
+/// Four schemes, one of each kind; `PlaceOrder` takes a bearer token or a key, `NoteOrder` a
+/// `basic` credential or a client certificate and answers its own `unauthenticated`, and the view
+/// is open.
+const GUARDED: &str = "authentication:
+  schemes:
+    bearer_auth: {kind: bearer}
+    key_auth: {kind: api_key, in: header, name: X-Api-Key}
+    basic_auth: {kind: basic, realm: orders}
+    tls: {kind: mutual_tls}
+  required: [bearer_auth]
+routes:
+  - command: catalog.orders.PlaceOrder
+    method: post
+    path: /orders
+    authentication: [bearer_auth, key_auth]
+  - command: catalog.orders.NoteOrder
+    method: post
+    path: /orders/note
+    authentication: [basic_auth, tls]
+    refusals:
+      unauthenticated:
+        status: 401
+        body: {error: {literal: login_required}}
+        headers:
+          WWW-Authenticate: {challenge: {scheme: Basic, params: {realm: {literal: orders}}}}
+  - view: catalog.orders.OrderById
+    method: get
+    path: /orders/{order_id}
+    parameters: {order_id: param.order_id}
+    authentication: []
+";
+
+#[test]
+fn a_binding_projects_its_security_schemes_and_each_routes_requirement() {
+    let ir = guarded_orders();
+    let written = documents(&ir, binding(&ir, GUARDED));
+    let text = &written["openapi/orders-service.yaml"];
+    let document = as_json(text);
+    assert_eq!(
+        document["components"]["securitySchemes"],
+        json!({
+            "basic_auth": {"type": "http", "scheme": "basic"},
+            "bearer_auth": {"type": "http", "scheme": "bearer"},
+            "key_auth": {"type": "apiKey", "in": "header", "name": "X-Api-Key"},
+            "tls": {"type": "mutualTLS"},
+        }),
+        "{text}"
+    );
+    let paths = &document["paths"];
+    assert_eq!(
+        paths["/orders"]["post"]["security"],
+        json!([{"bearer_auth": []}, {"key_auth": []}])
+    );
+    assert_eq!(
+        paths["/orders/note"]["post"]["security"],
+        json!([{"basic_auth": []}, {"tls": []}])
+    );
+    assert_eq!(paths["/orders/{order_id}"]["get"]["security"], json!([]));
+    // The credential is no ordinary input: no parameter carries it.
+    for operation in [&paths["/orders"]["post"], &paths["/orders/note"]["post"]] {
+        for parameter in operation["parameters"].as_array().into_iter().flatten() {
+            let name = parameter["name"].as_str().unwrap_or_default();
+            assert!(
+                !name.eq_ignore_ascii_case("authorization")
+                    && !name.eq_ignore_ascii_case("x-api-key"),
+                "{operation}"
+            );
+        }
+    }
+}
+
+#[test]
+fn a_guarded_operation_lists_its_unauthenticated_answer() {
+    let ir = guarded_orders();
+    let written = documents(&ir, binding(&ir, GUARDED));
+    let document = as_json(&written["openapi/orders-service.yaml"]);
+    let paths = &document["paths"];
+
+    // The default: `401`, one `Bearer` challenge, `{"refused": "unauthenticated"}`.
+    let default = &paths["/orders"]["post"]["responses"]["401"];
+    let challenge = &default["headers"]["WWW-Authenticate"];
+    assert_eq!(challenge["required"], true, "{default}");
+    assert!(
+        challenge["description"]
+            .as_str()
+            .is_some_and(|text| text.contains("`Bearer`")),
+        "{default}"
+    );
+    assert_eq!(
+        default["content"]["application/json"]["schema"]["properties"]["refused"]["const"],
+        "unauthenticated",
+        "{default}"
+    );
+
+    // The route's override.
+    let own = &paths["/orders/note"]["post"]["responses"]["401"];
+    assert_eq!(
+        own["content"]["application/json"]["schema"]["properties"]["error"]["const"],
+        "login_required",
+        "{own}"
+    );
+    assert!(own["headers"].get("WWW-Authenticate").is_some(), "{own}");
+
+    // An open route answers no `401`.
+    assert!(
+        paths["/orders/{order_id}"]["get"]["responses"]
+            .get("401")
+            .is_none(),
+        "{document}"
+    );
+}
+
+#[test]
+fn a_binding_without_authentication_projects_no_security() {
+    let ir = guarded_orders();
+    let open = "routes:
+  - command: catalog.orders.PlaceOrder
+    method: post
+    path: /orders
+  - command: catalog.orders.NoteOrder
+    method: post
+    path: /orders/note
+  - view: catalog.orders.OrderById
+    method: get
+    path: /orders/{order_id}
+    parameters: {order_id: param.order_id}
+";
+    let written = documents(&ir, binding(&ir, open));
+    let text = &written["openapi/orders-service.yaml"];
+    assert!(!text.contains("unauthenticated"), "{text}");
+    let document = as_json(text);
+    assert!(
+        document["components"].get("securitySchemes").is_none(),
+        "{text}"
+    );
+    for (path, item) in document["paths"].as_object().expect("paths") {
+        for (method, operation) in item.as_object().expect("path item") {
+            assert!(
+                operation.get("security").is_none() && operation["responses"].get("401").is_none(),
+                "{method} {path}: {operation}"
+            );
+        }
+    }
+}

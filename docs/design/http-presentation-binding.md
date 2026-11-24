@@ -634,10 +634,10 @@ it when no quoted string carries the wire name (`ESS-HTTP-027`). `Content-Type`,
 `Content-Encoding`, `Content-Length` and `Transfer-Encoding` belong to the encoding, `Connection`
 to the server, and `Location` to `redirect`. Declaring any of them is refused.
 
-This states a header. It does not add authentication to the model: `security` and `securitySchemes`
-stay omitted for the reason `openapi.rs:164` and `openapi.rs:171-191` give (decided for stage 2,
-answer 8). A `401` with a challenge is the answer a declared outcome gives; how a caller proves who
-it is remains the realization's.
+This states a header. It does not add authentication to the model: a challenge never puts
+`security` or `securitySchemes` into the document (decided for stage 2, answer 8). A `401` with a
+challenge is the answer a declared outcome gives; how a caller proves who it is is the binding's
+`authentication` ("Authentication", under stage 3), from which alone the projection writes them.
 
 ### Redirects
 
@@ -787,7 +787,7 @@ k4 to k6 add no binding key:
 
 | unit | adds |
 |---|---|
-| k4 | the OpenAPI projection of every key above (below); `security` and `securitySchemes` stay omitted (answer 8) |
+| k4 | the OpenAPI projection of every key above (below); `security` and `securitySchemes` stay omitted (answer 8) until a binding declares `authentication` (stage 3) |
 | k5 | `ess generate synthesize --target rust --http FILE [--refines FILE]`, modelled first in `models/toolchain/domains/generate.yaml`; `--http` with any other target is refused by name, `go` included until k6; built |
 | k6 | `--http` admitted for `--target go`, with the Rust server's behaviour, byte for byte where both write the same answer; built |
 
