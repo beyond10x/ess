@@ -1375,3 +1375,288 @@ fn a_value_invariant_read_after_a_further_widget_names_the_subject() {
         "an observed widget_id after a further widget was published reads that widget: {wrong:#?}"
     );
 }
+
+/// A shelf created with a `title`, a `code` and a `layout` example, refused where the layout
+/// leaves its note out, and saved again by its owner: a second shelf is arranged for the refusals
+/// of `SaveShelf`.
+const SHELF: &str = "format: ess/33
+system: demo
+version: v1
+domain: demo.shelf
+types:
+  - {name: demo.shelf.ShelfId, kind: newtype, of: String}
+  - {name: demo.shelf.AccountId, kind: newtype, of: String}
+  - {name: demo.shelf.StyleRef, kind: newtype, of: String}
+  - name: demo.shelf.Layout
+    kind: struct
+    fields:
+      - {name: style, type: demo.shelf.StyleRef}
+      - {name: labels, type: \"List<String>\"}
+      - {name: note, type: \"Optional<String>\"}
+entities:
+  - name: demo.shelf.Shelf
+    identity: {name: shelf_id, type: demo.shelf.ShelfId}
+    fields:
+      - {name: account_id, type: demo.shelf.AccountId}
+      - {name: title, type: String}
+      - {name: code, type: demo.shelf.StyleRef}
+      - {name: layout, type: demo.shelf.Layout}
+      - {name: rev, type: Integer}
+    lifecycle: {initial: Open, states: [Open], terminal: [Open], transitions: []}
+actors:
+  - name: demo.shelf.Clerk
+    attributes:
+      - {name: account_id, type: demo.shelf.AccountId}
+    may: [demo.shelf.CreateShelf, demo.shelf.SaveShelf, demo.shelf.ShelfById]
+errors:
+  - {name: demo.shelf.ShelfExists, summary: A shelf of that id exists already.}
+  - {name: demo.shelf.ShelfNotFound, summary: No such shelf in the account.}
+  - {name: demo.shelf.StaleRev, summary: The shelf moved on.}
+  - {name: demo.shelf.BadLayout, summary: The layout is refused.}
+commands:
+  - name: demo.shelf.CreateShelf
+    input:
+      - {name: shelf_id, type: demo.shelf.ShelfId}
+      - {name: title, type: String, example: \"Pantry\"}
+      - {name: code, type: demo.shelf.StyleRef, example: \"walnut\"}
+      - name: layout
+        type: demo.shelf.Layout
+        example: {style: oak, labels: [jars], note: top}
+    outcomes:
+      - {name: bad-layout, when: \"not defined(input.layout.note)\", error: demo.shelf.BadLayout}
+      - {name: exists, existing_instance: true, error: demo.shelf.ShelfExists}
+      - name: created
+        creates: demo.shelf.Shelf
+        instance: shelf_id
+        sets: {account_id: {caller: account_id}, title: input.title, code: input.code, layout: input.layout, rev: 0}
+        emits: [demo.shelf.ShelfCreated]
+        payload:
+          demo.shelf.ShelfCreated: {shelf_id: input.shelf_id}
+  - name: demo.shelf.SaveShelf
+    input:
+      - {name: shelf_id, type: demo.shelf.ShelfId}
+      - {name: title, type: String, example: \"Pantry\"}
+      - {name: code, type: demo.shelf.StyleRef, example: \"walnut\"}
+      - name: layout
+        type: demo.shelf.Layout
+        example: {style: oak, labels: [jars], note: top}
+      - {name: base_rev, type: Integer}
+    outcomes:
+      - {name: missing, unknown_instance: true, error: demo.shelf.ShelfNotFound}
+      - name: other-account
+        when_subject: {predicate: account_id != caller.account_id}
+        error: demo.shelf.ShelfNotFound
+      - name: stale
+        when_subject: {predicate: rev != input.base_rev}
+        error: demo.shelf.StaleRev
+      - name: saved
+        updates: demo.shelf.Shelf
+        instance: shelf_id
+        sets: {title: input.title, code: input.code, layout: input.layout}
+        emits: [demo.shelf.ShelfSaved]
+        payload:
+          demo.shelf.ShelfSaved: {shelf_id: input.shelf_id}
+events:
+  - name: demo.shelf.ShelfCreated
+    fields:
+      - {name: shelf_id, type: demo.shelf.ShelfId}
+  - name: demo.shelf.ShelfSaved
+    fields:
+      - {name: shelf_id, type: demo.shelf.ShelfId}
+views:
+  - name: demo.shelf.ShelfById
+    source: demo.shelf.Shelf
+    consistency: read_your_writes
+    params:
+      - {name: shelf_id, type: demo.shelf.ShelfId}
+    filter: shelf_id == param.shelf_id
+    fields:
+      - {name: shelf_id, type: demo.shelf.ShelfId}
+      - {name: title, type: String}
+";
+
+/// Each `CreateShelf` input of a further shelf (its identity suffixed, `shelf_id-17`), by scenario.
+fn further_creates(
+    result: &Synthesis,
+) -> Vec<(String, std::collections::BTreeMap<String, ScenarioValue>)> {
+    executed(result, "demo.shelf.CreateShelf")
+        .into_iter()
+        .flat_map(|(id, inputs)| {
+            inputs
+                .into_iter()
+                .filter(|input| {
+                    matches!(
+                        input.get("shelf_id").and_then(ScenarioValue::as_literal),
+                        Some(Node::Text(identity)) if identity.starts_with("shelf_id-")
+                    )
+                })
+                .map(move |input| (id.clone(), input.clone()))
+        })
+        .collect()
+}
+
+/// The `layout` member `member` an input sends.
+fn layout_member<'i>(
+    input: &'i std::collections::BTreeMap<String, ScenarioValue>,
+    member: &str,
+) -> Option<&'i Node> {
+    match input.get("layout").and_then(ScenarioValue::as_literal)? {
+        Node::Map(members) => members.get(member),
+        _ => None,
+    }
+}
+
+#[test]
+fn a_further_create_keeps_the_example_at_every_leaf_its_guard_reads_only_for_presence() {
+    let result = synthesize(&ir(SHELF));
+    let further = further_creates(&result);
+    assert!(!further.is_empty(), "a further shelf is created");
+    let layout = yaml("{style: oak, labels: [jars], note: top}");
+    let text = |value: &str| Some(ScenarioValue::literal(Node::Text(value.to_owned())));
+    for (id, input) in &further {
+        assert_eq!(
+            input.get("layout"),
+            Some(&ScenarioValue::literal(layout.clone())),
+            "{id}: {input:#?}"
+        );
+        assert_eq!(input.get("title").cloned(), text("Pantry"), "{id}");
+        assert_eq!(input.get("code").cloned(), text("walnut"), "{id}");
+    }
+    passes_on_the_interpreter(SHELF, &result, result.suite.scenarios.len());
+}
+
+/// Every [`further_creates`] input sends the example at `labels` and `note`, and the further
+/// instance moved off the plain one keeps its own witness at `layout.style`, in `text`. A shelf
+/// a scenario creates for a second caller is a plain instance under another block's identity,
+/// and keeps the example there.
+fn assert_style_alone_moves(text: &str) {
+    let result = synthesize(&ir(text));
+    let further = further_creates(&result);
+    assert!(
+        further
+            .iter()
+            .any(|(_, input)| layout_member(input, "style")
+                == Some(&Node::Text("layout.style-1".to_owned()))),
+        "a further shelf keeps its own style: {further:#?}"
+    );
+    for (id, input) in &further {
+        assert_eq!(
+            layout_member(input, "labels"),
+            Some(&yaml("[jars]")),
+            "{id}: {input:#?}"
+        );
+        assert_eq!(
+            layout_member(input, "note"),
+            Some(&Node::Text("top".to_owned())),
+            "{id}: {input:#?}"
+        );
+    }
+    passes_on_the_interpreter(text, &result, result.suite.scenarios.len());
+}
+
+#[test]
+fn a_further_create_keeps_its_own_witness_only_at_a_member_its_guard_reads_by_value() {
+    assert_style_alone_moves(&with(
+        SHELF,
+        "when: \"not defined(input.layout.note)\"",
+        "when: \"input.layout.style == \\\"x\\\"\"",
+    ));
+}
+
+#[test]
+fn a_further_create_keeps_its_own_witness_only_at_a_member_a_view_filter_reads() {
+    let text = with(
+        SHELF,
+        "      - {name: rev, type: Integer}\n    lifecycle",
+        "      - {name: rev, type: Integer}\n      - {name: style, type: demo.shelf.StyleRef}\n    \
+         lifecycle",
+    );
+    let text = with(
+        &text,
+        "layout: input.layout, rev: 0}",
+        "layout: input.layout, rev: 0, style: input.layout.style}",
+    );
+    let text = format!(
+        "{text}  - name: demo.shelf.ShelvesByStyle
+    source: demo.shelf.Shelf
+    consistency: read_your_writes
+    params:
+      - {{name: style, type: demo.shelf.StyleRef}}
+    filter: style == param.style
+    fields:
+      - {{name: shelf_id, type: demo.shelf.ShelfId}}
+"
+    );
+    let text = with(
+        &text,
+        "demo.shelf.ShelfById]",
+        "demo.shelf.ShelfById, demo.shelf.ShelvesByStyle]",
+    );
+    assert_style_alone_moves(&text);
+}
+
+/// Each `SaveShelf` send expecting `outcome`, by scenario: whether its `title` moved off the
+/// example, and the members of its `layout` that differ from the example.
+fn moved_layout_members(text: &str, outcome: &str) -> Vec<(String, bool, Vec<String>)> {
+    let result = synthesize(&ir(text));
+    let Node::Map(example) = yaml("{style: oak, labels: [jars], note: top}") else {
+        unreachable!("a mapping")
+    };
+    let pantry = ScenarioValue::literal(Node::Text("Pantry".to_owned()));
+    let mut out = Vec::new();
+    for (id, inputs) in sent_expecting(&result, "demo.shelf.SaveShelf", outcome) {
+        for input in inputs {
+            let Some(Node::Map(layout)) = input.get("layout").and_then(ScenarioValue::as_literal)
+            else {
+                panic!("{id}: a layout: {input:#?}");
+            };
+            let moved = example
+                .iter()
+                .filter(|(name, value)| layout.get(*name) != Some(value))
+                .map(|(name, _)| name.clone())
+                .collect();
+            out.push((id.clone(), input.get("title") != Some(&pantry), moved));
+        }
+    }
+    passes_on_the_interpreter(text, &result, result.suite.scenarios.len());
+    out
+}
+
+/// Every send moved apart from the row moves `note` of the layout alone, and some send is.
+fn assert_note_alone_moves(sends: &[(String, bool, Vec<String>)]) {
+    let note = vec!["note".to_owned()];
+    assert!(
+        sends.iter().any(|(_, title, _)| *title),
+        "a send is moved apart from the row: {sends:#?}"
+    );
+    for (id, title, members) in sends {
+        if *title {
+            assert_eq!(members, &note, "{id}: {sends:#?}");
+        } else {
+            assert!(members.is_empty() || members == &note, "{id}: {sends:#?}");
+        }
+    }
+}
+
+#[test]
+fn a_complete_refusal_moves_one_member_of_an_exampled_layout() {
+    for outcome in ["stale", "other-account"] {
+        assert_note_alone_moves(&moved_layout_members(SHELF, outcome));
+    }
+}
+
+#[test]
+fn an_update_moves_one_member_of_an_exampled_layout_it_writes() {
+    let text = with(
+        SHELF,
+        "      - name: other-account
+        when_subject: {predicate: account_id != caller.account_id}
+        error: demo.shelf.ShelfNotFound
+      - name: stale
+        when_subject: {predicate: rev != input.base_rev}
+        error: demo.shelf.StaleRev
+",
+        "",
+    );
+    assert_note_alone_moves(&moved_layout_members(&text, "saved"));
+}

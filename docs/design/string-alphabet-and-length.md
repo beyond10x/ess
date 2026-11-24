@@ -338,7 +338,11 @@ further `Distinction` (`:1323-1324`). The base is now chosen in this order:
 3. **The path text**, as today.
 
 Examples are used at `PLAIN` only. A further instance falls back to rules 2 and 3, because an
-example is one value and rule 5 needs instances that differ. An author whose implementation refuses
+example is one value and rule 5 needs instances that differ. Synthesis then puts the example back
+leaf by leaf wherever nothing needs the instances told apart: on a further row's creation at every
+leaf no input guard reads by value and no field that tells rows apart copies, and, where a refusal
+or an update must send a value other than the one the row holds, by moving the fewest leaves (the
+members the example leaves out, else one scalar member). An author whose implementation refuses
 more than the type says should declare the constraint (`alphabet:`, an invariant). The type governs
 every instance; an example governs one. This is the witness module's own rule: "A witness is only
 as good as the type it is built from" (`:69-72`).

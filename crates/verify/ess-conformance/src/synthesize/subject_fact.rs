@@ -7696,28 +7696,31 @@ fn refused_writes_apart(
         if held.is_none() || ess_compiler::ir::read_input(&input, field) != held.as_ref() {
             continue;
         }
-        for nth in 1..=super::FRESH_WITNESSES {
-            let Some(moved) = candidates(ir, command, &[], Distinction::further(nth))
+        // The fewest leaves of an exampled input move (`fewest_moved`).
+        'witnesses: for nth in 1..=super::FRESH_WITNESSES {
+            let Some(further) = candidates(ir, command, &[], Distinction::further(nth))
                 .ok()
                 .and_then(|inputs| inputs.into_iter().next())
                 .and_then(|further| ess_compiler::ir::read_input(&further, field).cloned())
             else {
                 continue;
             };
-            if Some(&moved) == held.as_ref() {
-                continue;
-            }
-            let mut next = input.clone();
-            if !super::set_at(&mut next, field, Some(moved)) {
-                continue;
-            }
-            let still = selects(ir, command, entity, arrangement, &next, order)
-                .ok()
-                .flatten()
-                .is_some_and(|branch| branch.name == outcome.name);
-            if super::admitted(ir, command, &next) && still {
-                input = next;
-                break;
+            for moved in super::fewest_moved(ir, command, &input, field, &further) {
+                if Some(&moved) == held.as_ref() {
+                    continue;
+                }
+                let mut next = input.clone();
+                if !super::set_at(&mut next, field, Some(moved)) {
+                    continue;
+                }
+                let still = selects(ir, command, entity, arrangement, &next, order)
+                    .ok()
+                    .flatten()
+                    .is_some_and(|branch| branch.name == outcome.name);
+                if super::admitted(ir, command, &next) && still {
+                    input = next;
+                    break 'witnesses;
+                }
             }
         }
     }

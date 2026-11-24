@@ -9210,21 +9210,22 @@ fn with_listed(
 /// of `widget-2` was sent as a generated placeholder, and an implementation needing a member the
 /// example carries refused a create the specification says how to build.
 ///
-/// An input takes the plain instance's value where all of these hold, and keeps its own
-/// otherwise:
+/// An input takes the plain instance's value, leaf by leaf, where all of these hold, and keeps its
+/// own otherwise:
 ///
 /// - it declares an `example:` and no fixture input;
-/// - it is not the creating branch's identity input, and no branch decision of the creating
-///   command reads it: an input guard, an `input.` operand of a guard over stored rows, a related
-///   row's reference ([`decision_inputs`]);
+/// - it is not the creating branch's identity input, and no stored-row guard's `input.` operand
+///   or related row's reference reads it ([`decision_inputs`]);
 /// - it was sent as the further instance's own witness, not a value a scenario arranged;
-/// - no field the branch copies it into is the identity, read by a view over the entity (filter,
-///   order, grouping, aggregate input, computed field or reference), where further rows are told
-///   apart, ranked or counted, or read by any command's branch decision over a stored row of the
-///   entity (a uniqueness check's row selection, a related-row or subject predicate,
-///   [`decided_by`]): a search may have chosen that value to take or pass over such a branch, and
-///   the plain value could take the other side;
-/// - the plain value keeps the branch ([`keeps_branch`]).
+/// - a leaf an input guard reads by value keeps the further witness's value; one it reads only
+///   through `defined(…)` takes the example's (beyond10x/ess#736 widened per leaf);
+/// - a leaf the branch copies into a field that is the identity, read by a view over the entity
+///   (filter, order, grouping, aggregate input, computed field or reference), where further rows
+///   are told apart, ranked or counted, or read by any command's branch decision over a stored row
+///   of the entity (a uniqueness check's row selection, a related-row or subject predicate,
+///   [`decided_by`]) keeps the further witness's value: a search may have chosen that value to
+///   take or pass over such a branch, and the plain value could take the other side;
+/// - the value so made keeps the branch ([`keeps_branch`]).
 ///
 /// What the branch's `sets:` leave is read again from the input sent.
 fn exampled(
@@ -9258,20 +9259,30 @@ fn exampled(
         return;
     };
     let identity = existence::identity_input(creator.outcome);
-    let mut guarded: BTreeSet<&str> = input_guards(command)
+    // The leaves a decision tells apart: an input guard reading one by value, and a field the
+    // branch copies one into that something reads ([`told_apart`]); a stored-row guard's input
+    // operand or a related row's reference reads the whole input ([`decision_inputs`]).
+    let mut kept: Vec<String> = input_guards(command)
         .into_iter()
-        .flat_map(Predicate::fact_paths)
-        .map(FactPath::namespace)
+        .flat_map(read_by_value)
+        .map(guard_input_path)
         .collect();
-    guarded.extend(decision_inputs(command));
-    let told = told_apart(ir, entity, creator.outcome);
+    kept.extend(told_apart(ir, entity, creator.outcome));
+    let decided = decision_inputs(command);
     let mut swapped: BTreeSet<&str> = BTreeSet::new();
     for field in command.examples.keys() {
         let field = field.as_str();
+        let under = |leaf: &&String| {
+            leaf.as_str() == field
+                || leaf
+                    .strip_prefix(field)
+                    .is_some_and(|rest| rest.starts_with('.'))
+        };
+        let leaves: Vec<&String> = kept.iter().filter(under).collect();
         if command.fixture_inputs.contains_key(field)
             || identity == Some(field)
-            || guarded.contains(field)
-            || told.contains(field)
+            || decided.contains(field)
+            || leaves.iter().any(|leaf| leaf.as_str() == field)
         {
             continue;
         }
@@ -9283,6 +9294,18 @@ fn exampled(
         {
             continue;
         }
+        // The example, with each leaf a decision tells apart kept as the further witness has it.
+        let mut mixed = BTreeMap::from([(field.to_owned(), example.clone())]);
+        for leaf in &leaves {
+            set_at(
+                &mut mixed,
+                leaf,
+                ess_compiler::ir::read_input(&own, leaf).cloned(),
+            );
+        }
+        let Some(value) = mixed.remove(field).filter(|value| value != placeholder) else {
+            continue;
+        };
         let literals: BTreeMap<String, Node> = input
             .iter()
             .filter_map(|(name, value)| match value {
@@ -9290,10 +9313,10 @@ fn exampled(
                 _ => None,
             })
             .collect();
-        if !keeps_branch(ir, command, &literals, field, example) {
+        if !keeps_branch(ir, command, &literals, field, &value) {
             continue;
         }
-        input.insert(field.to_owned(), ScenarioValue::literal(example.clone()));
+        input.insert(field.to_owned(), ScenarioValue::literal(value));
         swapped.insert(field);
     }
     if swapped.is_empty() {
@@ -9318,15 +9341,11 @@ fn exampled(
     }
 }
 
-/// The inputs a creating branch copies into a field that tells its rows apart: the identity, a
-/// field a view over `entity` reads in its filter, order, grouping, aggregate input, computed
-/// fields or references, or a field some command's branch decision reads of a stored row
-/// ([`decided_by`]).
-fn told_apart<'o>(
-    ir: &EssIr,
-    entity: &EntityHandle,
-    outcome: &'o ResolvedOutcome,
-) -> BTreeSet<&'o str> {
+/// The input paths a creating branch copies into a field that tells its rows apart, dotted from
+/// the input field (`layout.style`, or `layout` for the whole input): the identity, a field a view
+/// over `entity` reads in its filter, order, grouping, aggregate input, computed fields or
+/// references, or a field some command's branch decision reads of a stored row ([`decided_by`]).
+fn told_apart(ir: &EssIr, entity: &EntityHandle, outcome: &ResolvedOutcome) -> BTreeSet<String> {
     let identity = &ir.entity(entity).identity.name;
     let views: Vec<&ResolvedView> = ir
         .views()
@@ -9371,16 +9390,21 @@ fn told_apart<'o>(
     told
 }
 
-/// Each input a `sets:` value reads, by its root field: copied, defaulted, computed or carried in
-/// a member of a struct.
-fn inputs_read<'o>(value: &'o ResolvedPayloadValue, found: &mut BTreeSet<&'o str>) {
+/// Each input path a `sets:` value reads, dotted from the input field: copied, defaulted,
+/// computed or carried in a member of a struct.
+fn inputs_read(value: &ResolvedPayloadValue, found: &mut BTreeSet<String>) {
     match value {
         ResolvedPayloadValue::InputField { field, .. }
         | ResolvedPayloadValue::InputOrGenerated { field, .. } => {
-            found.insert(field.split('.').next().unwrap_or(field));
+            found.insert(field.clone());
         }
         ResolvedPayloadValue::Expression { expr, .. } => {
-            found.extend(expr.reads().into_iter().filter_map(input_root));
+            found.extend(
+                expr.reads()
+                    .into_iter()
+                    .filter(|path| input_root(path).is_some())
+                    .map(guard_input_path),
+            );
         }
         ResolvedPayloadValue::Struct { fields } => {
             for field in fields {
@@ -9399,6 +9423,90 @@ fn input_root(path: &FactPath) -> Option<&str> {
         }
         _ => None,
     }
+}
+
+/// The paths a guard reads by value: every fact path but those it reads only through
+/// `defined(…)`, which a value with the leaf present decides as any other such value does.
+fn read_by_value(predicate: &Predicate) -> Vec<&FactPath> {
+    match predicate {
+        Predicate::Defined(_) => Vec::new(),
+        Predicate::All(children) | Predicate::Any(children) => {
+            children.iter().flat_map(read_by_value).collect()
+        }
+        Predicate::Not(inner) => read_by_value(inner),
+        other => other.fact_paths(),
+    }
+}
+
+/// The input path a guard's fact path reads, dotted from the input field (`layout.note`), with or
+/// without the `input.` namespace written before it.
+fn guard_input_path(path: &FactPath) -> String {
+    match path.segments() {
+        [root, rest @ ..]
+            if root == ess_domain::command::subject_fact::INPUT_NAMESPACE && !rest.is_empty() =>
+        {
+            rest.join(".")
+        }
+        segments => segments.join("."),
+    }
+}
+
+/// The values the input field `field` may move to where it holds the `example:` its input
+/// declares and must differ from what a row holds: first the members the example leaves out
+/// moved, then one member of the example (a scalar before a newtype, never a list or a mapping, in
+/// declaration order), then `further` whole, as before. A field without an example, or one that
+/// is no mapping, moves to `further` alone.
+pub(super) fn fewest_moved(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    input: &BTreeMap<String, Node>,
+    field: &str,
+    further: &Node,
+) -> Vec<Node> {
+    let whole = vec![further.clone()];
+    let (Some(Node::Map(example)), Some(Node::Map(sent)), Node::Map(moved)) =
+        (command.examples.get(field), input.get(field), further)
+    else {
+        return whole;
+    };
+    let mut out = Vec::new();
+    let mut unexampled = sent.clone();
+    for name in sent.keys().filter(|name| !example.contains_key(*name)) {
+        if let Some(value) = moved.get(name) {
+            unexampled.insert(name.clone(), value.clone());
+        }
+    }
+    if unexampled != *sent {
+        out.push(Node::Map(unexampled));
+    } else if let Some(members) =
+        input_type(ir, command, field).and_then(|type_ref| struct_members(ir, type_ref))
+    {
+        let rank = |member: &ess_compiler::ir::ResolvedField| match member.type_ref.required() {
+            ResolvedTypeRef::Primitive { .. } => Some(0),
+            ResolvedTypeRef::Declared { name } => match &ir.named_type(name).body {
+                ResolvedBody::Newtype { .. } => Some(1),
+                _ => None,
+            },
+            _ => None,
+        };
+        let mut ranked: Vec<(usize, &ess_compiler::ir::ResolvedField)> = members
+            .iter()
+            .filter_map(|member| rank(member).map(|rank| (rank, member)))
+            .collect();
+        ranked.sort_by_key(|(rank, _)| *rank);
+        for (_, member) in ranked {
+            let (Some(from), Some(to)) = (sent.get(&member.name), moved.get(&member.name)) else {
+                continue;
+            };
+            if from != to {
+                let mut one = sent.clone();
+                one.insert(member.name.clone(), to.clone());
+                out.push(Node::Map(one));
+            }
+        }
+    }
+    out.extend(whole);
+    out
 }
 
 /// Every guard over stored rows that decides a branch of `command`, with the entity whose stored
@@ -14692,27 +14800,30 @@ fn freshened(
         if already.is_none() || ess_compiler::ir::read_input(&input, field) != already.as_ref() {
             continue;
         }
-        for nth in 1..=FRESH_WITNESSES {
-            let Some(moved) = candidates(ir, command, &[], Distinction::further(nth))
+        'witnesses: for nth in 1..=FRESH_WITNESSES {
+            let Some(further) = candidates(ir, command, &[], Distinction::further(nth))
                 .ok()
                 .and_then(|inputs| inputs.into_iter().next())
                 .and_then(|further| ess_compiler::ir::read_input(&further, field).cloned())
             else {
                 continue;
             };
-            if Some(&moved) == already.as_ref() || equals_a_sibling(command, &input, field, &moved)
-            {
-                continue;
-            }
-            let mut next = input.clone();
-            if !set_at(&mut next, field, Some(moved)) {
-                continue;
-            }
-            if admitted(ir, command, &next)
-                && selects_branch(ir, command, outcome, held, &next).unwrap_or(false)
-            {
-                input = next;
-                break;
+            for moved in fewest_moved(ir, command, &input, field, &further) {
+                if Some(&moved) == already.as_ref()
+                    || equals_a_sibling(command, &input, field, &moved)
+                {
+                    continue;
+                }
+                let mut next = input.clone();
+                if !set_at(&mut next, field, Some(moved)) {
+                    continue;
+                }
+                if admitted(ir, command, &next)
+                    && selects_branch(ir, command, outcome, held, &next).unwrap_or(false)
+                {
+                    input = next;
+                    break 'witnesses;
+                }
             }
         }
     }
@@ -14853,24 +14964,27 @@ fn unread_apart(
         {
             continue;
         }
-        for nth in 1..=FRESH_WITNESSES {
-            let Some(moved) = candidates(ir, command, &[], Distinction::further(nth))
+        'witnesses: for nth in 1..=FRESH_WITNESSES {
+            let Some(further) = candidates(ir, command, &[], Distinction::further(nth))
                 .ok()
                 .and_then(|inputs| inputs.into_iter().next())
                 .and_then(|mut further| further.remove(&field.name))
             else {
                 continue;
             };
-            if stored.contains(&moved) || equals_a_sibling(command, &input, &field.name, &moved) {
-                continue;
-            }
-            let mut next = input.clone();
-            next.insert(field.name.clone(), moved);
-            if admitted(ir, command, &next)
-                && selects_branch(ir, command, outcome, held, &next).unwrap_or(false)
-            {
-                input = next;
-                break;
+            for moved in fewest_moved(ir, command, &input, &field.name, &further) {
+                if stored.contains(&moved) || equals_a_sibling(command, &input, &field.name, &moved)
+                {
+                    continue;
+                }
+                let mut next = input.clone();
+                next.insert(field.name.clone(), moved);
+                if admitted(ir, command, &next)
+                    && selects_branch(ir, command, outcome, held, &next).unwrap_or(false)
+                {
+                    input = next;
+                    break 'witnesses;
+                }
             }
         }
     }
@@ -15083,26 +15197,28 @@ fn moved_apart(
 ) -> Option<BTreeMap<String, Node>> {
     for moving in moving {
         for nth in 1..=FRESH_WITNESSES {
-            let Some(moved) = candidates(ir, command, &[], Distinction::further(nth))
+            let Some(further) = candidates(ir, command, &[], Distinction::further(nth))
                 .ok()
                 .and_then(|inputs| inputs.into_iter().next())
                 .and_then(|mut further| further.remove(moving))
             else {
                 continue;
             };
-            if input.get(moving) == Some(&moved) {
-                continue;
-            }
-            let mut next = input.clone();
-            next.insert(moving.to_owned(), moved);
-            if pinned
-                .iter()
-                .any(|(first, second)| next.get(*first) == next.get(*second))
-            {
-                continue;
-            }
-            if admitted(ir, command, &next) && keeps(&next) {
-                return Some(next);
+            for moved in fewest_moved(ir, command, input, moving, &further) {
+                if input.get(moving) == Some(&moved) {
+                    continue;
+                }
+                let mut next = input.clone();
+                next.insert(moving.to_owned(), moved);
+                if pinned
+                    .iter()
+                    .any(|(first, second)| next.get(*first) == next.get(*second))
+                {
+                    continue;
+                }
+                if admitted(ir, command, &next) && keeps(&next) {
+                    return Some(next);
+                }
             }
         }
     }
