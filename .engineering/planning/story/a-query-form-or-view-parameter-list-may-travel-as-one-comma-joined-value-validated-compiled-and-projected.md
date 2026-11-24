@@ -9,7 +9,7 @@ tags:
 - gap-reports-2026-11-24
 relations:
 - serves: vision:O2
-revision: 1
+revision: 2
 ---
 ## Need
 
@@ -141,6 +141,8 @@ rebase.
 ## Decisions
 
 Accept, redesigned. **AE-D13** (SECURITY: what generated servers parse), default A.
+
+Asked again by a ninth report, 2026-11-24; open with the owner.
 
 ## Size
 

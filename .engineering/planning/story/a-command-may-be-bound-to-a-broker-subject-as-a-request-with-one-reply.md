@@ -13,7 +13,7 @@ relations:
 - depends_on: story:an-ess-protospec-1-message-declares-header-fields-absent-fields-fixed-values-and-an-application-body
 - depends_on: story:an-ess-protospec-1-reply-answers-on-the-exchange-of-the-message-it-received-and-a-credential-header-is-named
 - depends_on: story:an-ess-protospec-1-participant-reads-named-members-of-one-message-in-any-case-and-may-ignore-the-others-and-a
-revision: 3
+revision: 4
 ---
 **Revised on 2026-11-24 after the owner's note and the operator's additions.** Request/reply is a
 command and its response, and the broker is only the transport. Correlation, the timeout, the
@@ -208,6 +208,8 @@ Unit c (projections and generators):
   (PR-D9 A). The case is in `crates/generate/ess-publisher/tests/generated.rs`.
 
 Each test runs within 60 s, and each test step within 120 s.
+
+Amendment (ninth gap report, 2026-11-24): the request's subject may read an input as a whole-token `{name}` parameter, as `ess-transport/2` subjects do.
 
 ## Scope
 

@@ -10,7 +10,7 @@ tags:
 relations:
 - serves: vision:O2
 - depends_on: story:a-query-form-or-view-parameter-list-may-travel-as-one-comma-joined-value-validated-compiled-and-projected
-revision: 1
+revision: 2
 ---
 ## Need
 
@@ -92,6 +92,8 @@ handles it.
 ## Decisions
 
 **AE-D13**, default A.
+
+Asked again by a ninth report, 2026-11-24; open with the owner.
 
 ## Size
 

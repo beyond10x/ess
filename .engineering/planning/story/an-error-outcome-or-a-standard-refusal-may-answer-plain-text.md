@@ -9,7 +9,7 @@ tags:
 - gap-reports-2026-11-24
 relations:
 - serves: vision:O2
-revision: 1
+revision: 3
 ---
 ## Need
 
@@ -78,6 +78,10 @@ Unit b (servers):
 - A generated UI that reads the binding's answers
   (`story:a-generated-ui-reads-the-answers-its-http-binding-declares`) reads a text error, or
   refuses the binding by name. Silent misreading is not acceptable.
+
+Amendment (ninth gap report, 2026-11-24): a text body is the field's one line followed by exactly one line feed, OpenAPI says so, and a target that answers without the line feed fails the suite.
+
+Amendment (ninth gap report, 2026-11-24): the `empty:` answer of a `single` view route (`EmptySpec`, `crates/specify/ess-http/src/lib.rs:782-789`, a `4xx` with `none` or one literal member) takes the text form of this story, so a route whose body is one line of text is stated and not left to a comment.
 
 ## Fit review
 

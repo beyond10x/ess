@@ -9,7 +9,7 @@ tags:
 - gap-reports-2026-11-24
 relations:
 - serves: vision:O2
-revision: 1
+revision: 2
 ---
 ## Need
 
@@ -83,6 +83,8 @@ story widens to error outcomes too, under the same distinguishability rule (`ESS
 ## Decisions
 
 **AC-D5**, default C. Options and costs are in `DECISIONS.md`.
+
+Asked again by a ninth report, 2026-11-24; open with the owner.
 
 ## Scope
 

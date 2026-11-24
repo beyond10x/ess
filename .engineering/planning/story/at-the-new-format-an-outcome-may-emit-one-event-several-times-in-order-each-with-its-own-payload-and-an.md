@@ -10,7 +10,7 @@ tags:
 relations:
 - serves: vision:O2
 - depends_on: story:the-specification-format-ess-38-is-open-as-the-newest-reads-and-compiles-every-specification-exactly-as-ess
-revision: 3
+revision: 4
 ---
 ## Need
 
@@ -107,6 +107,8 @@ Format (D77, 2026-11-24): this story's construct lands in `ess/38`, opened by st
 6. `docs/design/generic-language-features.md` § G2 (the effects table) and
    `docs/design/language-grids.md` state the new row. `website/docs/reference/spec-versions.md`
    states the format.
+
+Amendment (ninth gap report, 2026-11-24): a second reproduction holds three occurrences of one event in one outcome, with the payload pairs (empty, created), (created, active), (active, waiting); `ess specify compile` writes them in that order and the witness story asserts the three payloads in that order.
 
 ## Scope
 

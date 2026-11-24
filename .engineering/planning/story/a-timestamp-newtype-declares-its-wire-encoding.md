@@ -29,7 +29,7 @@ scope:
   path: crates/verify/ess-diff/src/change.rs
 - confidence: inferred
   path: docs/design/value-wire-encodings.md
-revision: 9
+revision: 10
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-10T00:42:13Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":1}}}
 - {from: "proposed", to: "active", at: "2026-11-10T00:42:14Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"review_outcome":1}}}
@@ -80,6 +80,8 @@ Format (D77, 2026-11-24): this story's construct lands in `ess/38`, opened by st
   regenerated.
 - `ess verify diff` reports a moved encoding as a breaking change of the type, under the diff kind
   the design page names.
+
+Amendment (ninth gap report, 2026-11-24, decision AE-D16 A): the copy of an encoded `Timestamp` input into a plain `Timestamp` event or stored field is admitted and converted; the epoch literal as a comparison operand is not established.
 
 ## Scope
 
