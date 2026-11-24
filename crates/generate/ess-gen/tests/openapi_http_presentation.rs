@@ -248,7 +248,9 @@ fn a_multipart_route_publishes_its_parts_as_multipart_form_data() {
             "{absent}: {schema}"
         );
     }
-    assert_eq!(schema["required"], json!(["caption", "tags", "count"]));
+    // `tags`, a `List`, repeats its part once per element: no part is the empty list, as both
+    // servers read it, so the part is not required.
+    assert_eq!(schema["required"], json!(["caption", "count"]));
     assert_eq!(schema["additionalProperties"], true);
     assert!(media.get("encoding").is_none(), "{media}");
     assert!(

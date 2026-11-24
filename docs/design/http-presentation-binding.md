@@ -395,7 +395,8 @@ repeating its part. A field without a flat spelling is refused as for `form` (`E
   its attributes read; every other part its field's schema. `media_types` is the part's Encoding
   Object `contentType`, joined by `, `. The route publishes no `{command}.Input`: that schema's
   `Bytes` member is base64 and it would hold the attribute fields. `required` lists the parts whose
-  fields are not `Optional`, and `unknown: ignore` opens the object.
+  fields are neither `Optional` nor a `List`: a `List` repeats its part once per element, so no
+  part is the empty list, as both servers read it. `unknown: ignore` opens the object.
 - The Rust server (`story:the-generated-rust-server-reads-a-multipart-request`) carries its own
   RFC 7578 reader, as it carries its own JSON reader, emitted only where a route is `multipart`:
   the body's boundary from `Content-Type`, a preamble and an epilogue ignored, transport padding

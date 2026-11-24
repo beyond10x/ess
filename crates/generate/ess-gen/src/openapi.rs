@@ -1473,7 +1473,8 @@ fn request_body(
 /// A file part ([`http::file_part`]) is a string of raw bytes, `contentMediaType`
 /// `application/octet-stream` and no `contentEncoding`, an array of them for a `List`, described
 /// with the input fields its attributes are read into; its `media_types` are its Encoding Object's
-/// `contentType`. Every other part has its field's schema. `None` when no part is left.
+/// `contentType`. Every other part has its field's schema. A `List` part is not required: no part
+/// is the empty list. `None` when no part is left.
 fn multipart(
     ir: &EssIr,
     command: &ResolvedCommand,
@@ -1503,6 +1504,13 @@ fn multipart(
         fields: &fields,
         undeclared_fields,
         ..Message::of_command(command)
+    });
+    // A `List` repeats its part once per element, so no part is the empty list, as both servers
+    // read it: the part is not required, as a `query` list's key is not.
+    node.required.retain(|wire| {
+        !fields
+            .iter()
+            .any(|field| types::wire_name(field) == wire && is_list(&field.type_ref))
     });
     let mut encoding = BTreeMap::new();
     for field in &fields {
@@ -1855,7 +1863,8 @@ fn bound_responses(
 
 /// The responses of a view whose route an `ess-http/1` binding answers its own way: `single` or
 /// `array`, or a standard refusal the view can answer, overridden by the binding or the route —
-/// `not_granted` where its read is checked, `malformed` where it declares a parameter. A view has
+/// `not_granted` where its read is checked, `malformed` where it declares a parameter or a
+/// representation, whose selector it answers so for a value no representation names. A view has
 /// no outcome, so its responses carry no `x-ess-outcomes`.
 fn bound_view_responses<'a>(
     ir: &EssIr,
@@ -1899,7 +1908,7 @@ fn bound_view_responses<'a>(
                 .push(Answer::NotGrantedRead),
         }
     }
-    if !view.params.is_empty() {
+    if !view.params.is_empty() || !route.representations.is_empty() {
         if let Some((key, refusal)) = overridden(ess_http::RefusalKey::Malformed) {
             by_status
                 .entry(refusal.status.to_string())

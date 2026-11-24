@@ -160,3 +160,20 @@ fn a_view_route_without_representations_keeps_its_answer() {
     assert!(read.get("x-ess-representations").is_none(), "{read}");
     assert!(read["content"].get("text/csv").is_none(), "{read}");
 }
+
+/// Review: a view route without parameters but with representations answers a selector value no
+/// representation names with the route's `malformed` refusal (both generated servers), so the
+/// document lists that refusal's status, as it does for a view that declares `params:`.
+#[test]
+fn review_a_representation_route_publishes_the_malformed_refusal_its_selector_answers() {
+    let ir = model();
+    let routes = format!(
+        "{ROWS}{CSV}    refusals:\n      malformed: {{status: 422, body: {{error: {{literal: unreadable}}}}}}\n"
+    );
+    let document = document(&ir, &routes);
+    let responses = &document["paths"]["/reports/rows"]["get"]["responses"];
+    assert!(
+        responses.get("422").is_some(),
+        "a selector value no representation names is answered 422, unpublished: {responses}"
+    );
+}
