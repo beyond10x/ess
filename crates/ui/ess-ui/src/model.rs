@@ -2180,11 +2180,58 @@ pub struct Chart {
     pub reads: Reads,
     /// Chart kind, fixed or chosen by data.
     pub chart: ChartKind,
-    /// X-axis field.
-    pub x: Option<String>,
-    /// Y fields.
-    #[serde(default)]
-    pub series: Vec<String>,
+    /// X-axis field: a name, or `{field, label, as, unit}` as a column takes it.
+    #[serde(default, deserialize_with = "chart_axis")]
+    pub x: Option<Box<Field>>,
+    /// Y fields, each a name or `{field, label, as, unit}`.
+    #[serde(default, deserialize_with = "chart_series")]
+    pub series: Vec<Field>,
+}
+
+/// A chart axis: a field written as a name or as `{field, label, as, unit}`; any other key of a
+/// column is refused there (beyond10x/ess#723).
+fn axis_field(value: Value) -> Result<Field, String> {
+    // A bare name is `{field: <name>}`; the node name is the field, as a column derives it.
+    let mut value = match value {
+        Value::String(name) => {
+            let mut entry = Mapping::new();
+            entry.insert(Value::from("field"), Value::String(name));
+            Value::Mapping(entry)
+        }
+        other => other,
+    };
+    if let Value::Mapping(entry) = &value {
+        if let Some(key) = entry
+            .keys()
+            .map(|key| key.as_str().unwrap_or_default())
+            .find(|key| !matches!(*key, "field" | "label" | "as" | "unit"))
+        {
+            return Err(format!(
+                "a chart axis takes `field`, `label`, `as` and `unit`, not `{key}`"
+            ));
+        }
+    }
+    if let Value::Mapping(entry) = &mut value {
+        if let Some(field) = entry.get("field").cloned() {
+            entry.insert(Value::from("name"), field);
+        }
+    }
+    ess_yaml::from_value(value).map_err(|error| error.to_string())
+}
+
+fn chart_axis<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Option<Box<Field>>, D::Error> {
+    Option::<Value>::deserialize(deserializer)?
+        .map(|value| axis_field(value).map(Box::new))
+        .transpose()
+        .map_err(D::Error::custom)
+}
+
+fn chart_series<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Vec<Field>, D::Error> {
+    Vec::<Value>::deserialize(deserializer)?
+        .into_iter()
+        .map(axis_field)
+        .collect::<Result<_, _>>()
+        .map_err(D::Error::custom)
 }
 
 /// A chart kind.

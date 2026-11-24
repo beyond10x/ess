@@ -16,6 +16,8 @@ use crate::Sink;
 #[cfg(test)]
 const CHECKED: &[&str] = &[
     "Action.export.as",
+    "chart.series.as",
+    "chart.x.as",
     "Channel.lifecycle",
     "Channel.scope",
     "Field.as",
@@ -114,6 +116,13 @@ fn body(sink: &mut Sink, path: &NodePath, body: &Body) {
         Body::Composite(Composite::Chart(chart)) => {
             if let ChartKind::Fixed(kind) = &chart.chart {
                 value(sink, path, "chart.chart", "chart", kind);
+            }
+            let x: Vec<&ess_ui::Field> = chart.x.as_deref().into_iter().collect();
+            let series: Vec<&ess_ui::Field> = chart.series.iter().collect();
+            for (at, axes) in [("chart.x.as", x), ("chart.series.as", series)] {
+                for written in axes.iter().filter_map(|axis| axis.field_as.as_deref()) {
+                    value(sink, path, at, "as", written);
+                }
             }
         }
         Body::Primitive(Primitive::Image(image)) => {
@@ -214,6 +223,8 @@ mod tests {
         "Field.tone",
         "Field.scale",
         "Field.unit",
+        "chart.series.unit",
+        "chart.x.unit",
         "HostSlot.stands_in_for",
         "Live.effect",
         "Live.when_paged_away",

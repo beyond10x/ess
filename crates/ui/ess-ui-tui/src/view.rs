@@ -1870,6 +1870,26 @@ fn labelled_cell(field: &Field, value: &Value) -> Option<String> {
     }
 }
 
+/// A chart axis written as a bare name.
+fn bare_field(name: &str) -> Field {
+    ess_yaml::from_value(Value::String(name.to_owned())).expect("a bare name is a field")
+}
+
+/// A chart axis's title: its label, else its field.
+fn axis_title(axis: &Field) -> String {
+    axis.label.clone().unwrap_or_else(|| axis.field.clone())
+}
+
+/// A chart axis's value in `row`: drawn by its `as` when it has one, else as before.
+fn axis_value(axis: &Field, row: &Value) -> String {
+    let value = &row[axis.field.as_str()];
+    if axis.field_as.is_some() {
+        cell_value(axis, value)
+    } else {
+        display(value)
+    }
+}
+
 /// A field's value, drawn by the field's `as`.
 fn cell_value(field: &Field, value: &Value) -> String {
     match field.field_as.as_deref() {
@@ -2599,12 +2619,21 @@ impl App {
                 .unwrap_or_else(|| "line".into()),
         };
         let fallback = self.plan.fallback(place.path, "no_charts");
-        let series: Vec<String> = if chart.series.is_empty() {
-            vec!["value".into()]
+        // An axis is a field as a column takes it: its label titles it, its `as` draws each value
+        // (beyond10x/ess#723).
+        let axes: Vec<Field> = if chart.series.is_empty() {
+            vec![bare_field("value")]
         } else {
             chart.series.clone()
         };
-        let x = chart.x.clone().unwrap_or_else(|| "x".into());
+        let series: Vec<String> = axes.iter().map(|axis| axis.field.clone()).collect();
+        let titles: Vec<String> = axes.iter().map(axis_title).collect();
+        let x_axis = chart
+            .x
+            .as_deref()
+            .cloned()
+            .unwrap_or_else(|| bare_field("x"));
+        let x_title = axis_title(&x_axis);
         let as_table = matches!(kind.as_str(), "table" | "list") || fallback == Some("table");
         if fallback == Some("metric") || kind == "single_number" {
             let last = result
@@ -2612,21 +2641,21 @@ impl App {
                 .last()
                 .map_or(Value::Null, |row| row[series[0].as_str()].clone());
             return vec![Line::from(vec![
-                Span::raw(format!("{}: ", series[0])),
+                Span::raw(format!("{}: ", titles[0])),
                 Span::styled(display(&last), bold()),
             ])];
         }
         if as_table {
-            let mut fields = vec![x.clone()];
-            fields.extend(series);
+            let mut fields = vec![(x_axis.clone(), x_title.clone())];
+            fields.extend(axes.iter().cloned().zip(titles.iter().cloned()));
             let widths: Vec<usize> = fields
                 .iter()
-                .map(|field| {
+                .map(|(field, title)| {
                     result
                         .rows
                         .iter()
-                        .map(|row| display(&row[field.as_str()]).width())
-                        .chain(std::iter::once(field.width()))
+                        .map(|row| axis_value(field, row).width())
+                        .chain(std::iter::once(title.width()))
                         .max()
                         .unwrap_or(0)
                 })
@@ -2635,7 +2664,7 @@ impl App {
                 fields
                     .iter()
                     .zip(&widths)
-                    .map(|(field, width)| pad(field, *width))
+                    .map(|((_, title), width)| pad(title, *width))
                     .collect::<Vec<_>>()
                     .join("  "),
                 bold(),
@@ -2645,16 +2674,16 @@ impl App {
                     fields
                         .iter()
                         .zip(&widths)
-                        .map(|(field, width)| pad(&display(&row[field.as_str()]), *width))
+                        .map(|((field, _), width)| pad(&axis_value(field, row), *width))
                         .collect::<Vec<_>>()
                         .join("  "),
                 ));
             }
             return lines;
         }
-        let width = series.iter().map(|name| name.width()).max().unwrap_or(0);
+        let width = titles.iter().map(|title| title.width()).max().unwrap_or(0);
         let mut lines = Vec::new();
-        for name in &series {
+        for (name, title) in series.iter().zip(&titles) {
             let values: Vec<f64> = result
                 .rows
                 .iter()
@@ -2670,7 +2699,7 @@ impl App {
                 })
                 .collect();
             lines.push(Line::from(vec![
-                Span::raw(format!("{} ", pad(name, width))),
+                Span::raw(format!("{} ", pad(title, width))),
                 Span::styled(spark, bold()),
                 Span::styled(format!("  max {}", trim_float(max)), dim()),
             ]));
@@ -2678,15 +2707,15 @@ impl App {
         let first = result
             .rows
             .first()
-            .map(|row| display(&row[x.as_str()]))
+            .map(|row| axis_value(&x_axis, row))
             .unwrap_or_default();
         let last = result
             .rows
             .last()
-            .map(|row| display(&row[x.as_str()]))
+            .map(|row| axis_value(&x_axis, row))
             .unwrap_or_default();
         lines.push(Line::styled(
-            format!("{kind} · {x}: {first} … {last}"),
+            format!("{kind} · {x_title}: {first} … {last}"),
             dim(),
         ));
         lines

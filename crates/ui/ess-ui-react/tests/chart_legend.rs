@@ -109,3 +109,72 @@ fn a_line_chart_has_a_series_legend_and_x_labels() {
     let out = project("line");
     node(&out, "line", &SCRIPT.replace("KIND", "\"line\""));
 }
+
+/// A chart's `x` and each `series` take a field as a column does (beyond10x/ess#723): with
+/// `x: {field: at, label: Day, as: date}` each tick is a date and the axis is titled `Day`, and a
+/// series `{field: count, label: Orders}` is titled `Orders` in the legend and the table header.
+#[test]
+fn a_chart_names_its_axes_and_formats_its_ticks() {
+    let text = DOC
+        .replace(
+            "reads: {view: deals.StageTotals}",
+            "reads: {view: deals.Events}",
+        )
+        .replace("x: stage", "x: {field: at, label: Day, as: date}")
+        .replace(
+            "series: [won_value, lost_value]",
+            "series: [{field: count, label: Orders}]",
+        );
+    let out = Path::new(env!("CARGO_TARGET_TMPDIR"))
+        .join("ess-ui-react-chart")
+        .join("axes");
+    if out.exists() {
+        std::fs::remove_dir_all(&out).expect("the old scratch project is removed");
+    }
+    let doc = ess_ui::load_str(&text).unwrap_or_else(|error| panic!("the document loads: {error}"));
+    ess_ui_react::generate(&doc, &root(), &out).unwrap_or_else(|error| panic!("{error}"));
+    let page = std::fs::read_to_string(out.join("src/pages/Totals.tsx")).expect("the page");
+    for written in [
+        r#"x={{ field: "at", label: "Day", as: "date" }}"#,
+        r#"series={[{ field: "count", label: "Orders" }]}"#,
+    ] {
+        assert!(page.contains(written), "{written}: {page}");
+    }
+    compile(&out, &["runtime/composites/chart.tsx", "runtime/data.ts"]);
+    node(
+        &out,
+        "axes",
+        r#"
+const { ChartView } = out("runtime/composites/chart");
+const { formatValue } = out("runtime/core");
+const data = out("runtime/data");
+const rows = [{ at: "2026-01-02T00:00:00Z", count: 3 }, { at: "2026-01-03T00:00:00Z", count: 5 }];
+data.setDataAdapter({ ...data.fixtureAdapter, read: async () => ({ rows }) });
+const has = (name) => (n) => n.props && typeof n.props.className === "string" && n.props.className.split(" ").includes(name);
+const text = (n) => (n.children || []).map((c) => (typeof c === "string" ? c : text(c))).join("");
+const days = rows.map((row) => formatValue(row.at, "date"));
+(async () => {
+  for (const kind of ["bar", "line", "table"]) {
+    const root = React.__root(jsx(ChartView, {
+      reads: { view: "deals.Events" },
+      chart: kind,
+      x: { field: "at", label: "Day", as: "date" },
+      series: [{ field: "count", label: "Orders" }],
+    }));
+    root.settle();
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    root.settle();
+    assert.notStrictEqual(days[0], rows[0].at, "a date is not its timestamp");
+    assert.deepStrictEqual(root.find(has("ui-legend-item")).map(text), ["Orders"], kind);
+    if (kind === "table") {
+      assert.deepStrictEqual(root.find((n) => n.tag === "th").map(text), ["Day", "Orders"]);
+      assert.deepStrictEqual(root.find((n) => n.tag === "tr").slice(1).map((r) => text(r.children[0])), days);
+    } else {
+      assert.deepStrictEqual(root.find(has("ui-chart-x-label")).map(text), days, kind);
+      assert.deepStrictEqual(root.find(has("ui-chart-x-title")).map(text), ["Day"], kind);
+    }
+  }
+})().catch((error) => { console.error(error); process.exit(1); });
+"#,
+    );
+}

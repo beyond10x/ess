@@ -383,3 +383,61 @@ pages:
         );
     }
 }
+
+/// Rows the read answers whatever it is asked.
+struct Answering(&'static str);
+impl DataAdapter for Answering {
+    fn read(&self, _: &ReadRequest) -> Result<ReadResult, String> {
+        Ok(ReadResult {
+            rows: ess_yaml::from_str(self.0).unwrap(),
+            total: None,
+        })
+    }
+    fn run(&mut self, _: &str, _: &BTreeMap<String, Value>) -> ess_ui::binding::Answer {
+        panic!("unexpected command")
+    }
+    fn load_state(&self, _: &str) -> Option<Value> {
+        None
+    }
+    fn store_state(&mut self, _: &str, _: Value) {}
+}
+
+/// A chart's `x` and each `series` take a field as a column does (beyond10x/ess#723): the
+/// terminal titles the axis and the series with their labels and draws each tick in the field's
+/// `as`, in the chart and in its table.
+#[test]
+fn a_chart_names_its_axes_and_formats_its_ticks() {
+    for kind in ["bar", "table"] {
+        let source = format!(
+            r"format: ess-ui/1
+app: charts
+model: t
+placement_profile: fat
+shells: {{app: {{regions: {{main: {{kind: page_outlet}}}}}}}}
+navigation: {{home: p, sections: [{{name: all, pages: [p]}}]}}
+pages:
+  p:
+    kind: detail_page
+    title: Events
+    sections:
+      - {{name: chart, component: chart, chart: {kind}, reads: {{view: t.Events}}, x: {{field: at, label: Day, as: date}}, series: [{{field: count, label: Orders}}]}}
+"
+        );
+        let state = Scratch::new("ess-chart-axes");
+        let mut app = App::with_adapter(
+            ess_ui::load_str(&source).unwrap_or_else(|error| panic!("{error}")),
+            Box::new(Answering(
+                "[{at: '2026-01-02T00:00:00Z', count: 3}, {at: '2026-01-03T00:00:00Z', count: 5}]",
+            )),
+            vec![],
+            Options::new(state.0.clone()),
+        )
+        .unwrap();
+        app.advance(Duration::from_secs(1));
+        let screen = app.render_text(120, 40);
+        assert!(screen.contains("Day"), "{kind}: {screen}");
+        assert!(screen.contains("Orders"), "{kind}: {screen}");
+        assert!(screen.contains("2026-01-02"), "{kind}: {screen}");
+        assert!(!screen.contains("T00:00:00Z"), "{kind}: {screen}");
+    }
+}

@@ -1279,8 +1279,8 @@ A renderer without charts shows the series as a table (degrade no\_charts).
 |---|---|---|---|---|
 | `reads` | [Reads](#reads) | yes |   | the series |
 | `chart` | one of: `line` \| `bar` \| `doughnut` \| `pie` \| `polar` \| `single_number` \| `list` \| `table` \| record \{ `binds`: `expr`, `options`: list of `string` \} | yes |   | chart kind, fixed or chosen by data |
-| `x` | `name` |   |   | x-axis field |
-| `series` | list of `name` |   |   | y fields |
+| `x` | one of: `name` \| record \{ `field`: `name`, `label`: optional `string`, `as`: optional (one of: `text` \| `number` \| `secret` \| `toggle` \| `choice` \| `tags` \| `time` \| `date` \| `timestamp` \| `date_range` \| `duration` \| `percent` \| `file` \| `rich_text` \| `json` \| `list` \| `map` \| `cron` \| `color` \| `badge` \| `audio` \| `link` \| `bytes`), `unit`: optional (one of: `ms` \| `s` \| `m` \| `h`) \} |   |   | x-axis field: a name, or `{field, label, as, unit}` as a column takes it; `label` titles the axis and `as` formats each tick |
+| `series` | list of (one of: `name` \| record \{ `field`: `name`, `label`: optional `string`, `as`: optional (one of: `text` \| `number` \| `secret` \| `toggle` \| `choice` \| `tags` \| `time` \| `date` \| `timestamp` \| `date_range` \| `duration` \| `percent` \| `file` \| `rich_text` \| `json` \| `list` \| `map` \| `cron` \| `color` \| `badge` \| `audio` \| `link` \| `bytes`), `unit`: optional (one of: `ms` \| `s` \| `m` \| `h`) \}) |   |   | y fields, each a name or `{field, label, as, unit}`; `label` titles the series in the legend and the table |
 
 **Example**
 

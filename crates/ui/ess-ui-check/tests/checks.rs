@@ -3057,3 +3057,33 @@ fn icon_names() {
         report.findings
     );
 }
+
+/// A chart's `x` and `series` take a field as a column does, `{field, label, as, unit}`, or a
+/// bare name (beyond10x/ess#723); any other key there is refused by path.
+#[test]
+fn a_chart_axis_takes_field_label_as_and_unit() {
+    let chart = |x: &str| {
+        doc(&[(
+            "pages",
+            &format!(
+                "{{p: {{kind: detail_page, title: P, sections: [{{name: c, component: chart, \
+                 chart: bar, reads: t.ById, x: {x}, series: [{{field: count, label: Orders}}, id]}}]}}}}"
+            ),
+        )])
+    };
+    let found = report(&chart("{field: at, label: Day, as: date}"));
+    assert!(
+        tripped(&found, "document_loads").is_empty(),
+        "{:#?}",
+        found.findings
+    );
+    let found = report(&chart("{field: at, tone: info}"));
+    assert!(
+        tripped(&found, "document_loads")
+            .iter()
+            .any(|finding| finding.path.starts_with("pages/p/sections/c")
+                && finding.message.contains("`tone`")),
+        "{:#?}",
+        found.findings
+    );
+}

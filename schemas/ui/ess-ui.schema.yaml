@@ -818,8 +818,8 @@ constructs:
     fields:
       reads:  {type: Reads, required: true, note: the series}
       chart:  {type: {one_of: [{enum: [line, bar, doughnut, pie, polar, single_number, list, table]}, {record: {binds: expr, options: {list: string}}}]}, required: true, note: "chart kind, fixed or chosen by data"}
-      x:      {type: name, note: x-axis field}
-      series: {type: {list: name}, note: y fields}
+      x:      {type: {one_of: [name, {record: {field: name, label: {optional: string}, as: {optional: {enum: [text, number, secret, toggle, choice, tags, time, date, timestamp, date_range, duration, percent, file, rich_text, json, list, map, cron, color, badge, audio, link, bytes]}}, unit: {optional: {enum: [ms, s, m, h]}}}}]}, note: "x-axis field: a name, or `{field, label, as, unit}` as a column takes it; `label` titles the axis and `as` formats each tick"}
+      series: {type: {list: {one_of: [name, {record: {field: name, label: {optional: string}, as: {optional: {enum: [text, number, secret, toggle, choice, tags, time, date, timestamp, date_range, duration, percent, file, rich_text, json, list, map, cron, color, badge, audio, link, bytes]}}, unit: {optional: {enum: [ms, s, m, h]}}}}]}}, note: "y fields, each a name or `{field, label, as, unit}`; `label` titles the series in the legend and the table"}
     example: {component: chart, chart: bar, reads: {view: deals.StageTotals, params: {window: state.window}}, x: stage, series: [count, value], degrades: {no_charts: table}}
 
   board:

@@ -67,6 +67,25 @@ fn navigate(navigate: &ess_ui::Navigate) -> String {
     ])
 }
 
+/// A chart axis as the runtime's `AxisSpec`: its field name when written bare, so a chart of bare
+/// names generates what it did, else `{ field, label, as, unit }` (beyond10x/ess#723).
+fn axis(field: &ess_ui::Field) -> String {
+    let unit = field
+        .unit
+        .as_ref()
+        .filter(|unit| !matches!(unit, ess_ui::DurationUnit::Unmapped(_)))
+        .map(|unit| ts::string(unit.as_str()));
+    if field.label.is_none() && field.field_as.is_none() && unit.is_none() {
+        return ts::string(&field.field);
+    }
+    ts::object([
+        ("field", Some(ts::string(&field.field))),
+        ("label", quoted(field.label.as_ref())),
+        ("as", quoted(field.field_as.as_ref())),
+        ("unit", unit),
+    ])
+}
+
 fn strings<'a>(values: impl IntoIterator<Item = &'a String>) -> String {
     ts::array(values.into_iter().map(|value| ts::string(value)))
 }
@@ -1794,8 +1813,11 @@ impl<'d> Gen<'d> {
                     .path_if(!opts.framed, &path)
                     .opt("reads", Self::own_reads(opts, Some(&c.reads)))
                     .expr("chart", chart)
-                    .opt("x", quoted(c.x.as_ref()))
-                    .opt("series", (!c.series.is_empty()).then(|| strings(&c.series)))
+                    .opt("x", c.x.as_deref().map(axis))
+                    .opt(
+                        "series",
+                        (!c.series.is_empty()).then(|| ts::array(c.series.iter().map(axis))),
+                    )
                     .opt("degrades", Self::degrades(opts))
                     .render()
             }
