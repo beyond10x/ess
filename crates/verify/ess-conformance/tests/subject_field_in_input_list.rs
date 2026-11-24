@@ -227,6 +227,198 @@ fn the_compact_membership_spelling_names_a_form_that_validates() {
     }
 }
 
+/// A profile whose stored `parties` the creating `DeclareProfile` checks against the roles of its
+/// `semantics` input, and whose `ReviseProfile` refuses when a stored party is a role of none of
+/// its own `semantics` (beyond10x/ess#734).
+const PROFILE: &str = "format: ess/35
+system: example
+version: v1
+domain: example.profile
+summary: A profile's parties must each be a role of a declared semantic.
+types:
+  - {name: example.profile.ProfileId, kind: newtype, of: Uuid}
+  - name: example.profile.Semantic
+    kind: struct
+    fields:
+      - {name: name, type: String}
+      - {name: roles, type: List<String>}
+entities:
+  - name: example.profile.Profile
+    identity: {name: profile_id, type: example.profile.ProfileId}
+    fields:
+      - {name: parties, type: List<String>}
+    lifecycle: {initial: Active, states: [Active], terminal: [Active]}
+actors:
+  - name: example.profile.Operator
+    may: [example.profile.DeclareProfile, example.profile.ReviseProfile]
+errors:
+  - {name: example.profile.PartyNotARole, summary: A party is no role., fields: []}
+  - {name: example.profile.UnknownProfile, summary: No such profile., fields: []}
+events:
+  - name: example.profile.Declared
+    fields: [{name: profile_id, type: example.profile.ProfileId}]
+  - name: example.profile.Revised
+    fields: [{name: profile_id, type: example.profile.ProfileId}]
+commands:
+  - name: example.profile.DeclareProfile
+    input:
+      - {name: profile_id, type: example.profile.ProfileId}
+      - {name: parties, type: List<String>}
+      - {name: semantics, type: List<example.profile.Semantic>}
+    outcomes:
+      - name: party-not-a-role
+        when: {not: {forall: {in: parties, as: p, that: {exists: {in: semantics, as: s, that: {exists: {in: s.roles, as: r, that: r == p}}}}}}}
+        error: example.profile.PartyNotARole
+      - name: declared
+        creates: example.profile.Profile
+        instance: profile_id
+        sets: {parties: input.parties}
+        emits: [example.profile.Declared]
+        payload: {example.profile.Declared: {profile_id: input.profile_id}}
+  - name: example.profile.ReviseProfile
+    input:
+      - {name: profile_id, type: example.profile.ProfileId}
+      - {name: semantics, type: List<example.profile.Semantic>}
+    outcomes:
+      - {name: unknown, unknown_instance: true, error: example.profile.UnknownProfile}
+      - name: party-not-a-role
+        when_subject:
+          predicate: {not: {forall: {in: parties, as: p, that: {exists: {in: input.semantics, as: s, that: {exists: {in: s.roles, as: r, that: r == p}}}}}}}
+        error: example.profile.PartyNotARole
+      - name: revised
+        updates: example.profile.Profile
+        instance: profile_id
+        emits: [example.profile.Revised]
+        payload: {example.profile.Revised: {profile_id: input.profile_id}}
+views:
+  - name: example.profile.Profiles
+    source: example.profile.Profile
+    consistency: read_your_writes
+    fields:
+      - {name: profile_id, type: example.profile.ProfileId}
+      - {name: parties, type: List<String>}
+";
+
+/// [`PROFILE`] with a flat `roles: List<String>` input in place of `semantics`.
+fn flat_profile() -> String {
+    PROFILE
+        .replace(
+            "      - {name: semantics, type: List<example.profile.Semantic>}",
+            "      - {name: roles, type: List<String>}",
+        )
+        .replace(
+            "{in: semantics, as: s, that: {exists: {in: s.roles, as: r, that: r == p}}}",
+            "{in: roles, as: r, that: r == p}",
+        )
+        .replace(
+            "{in: input.semantics, as: s, that: {exists: {in: s.roles, as: r, that: r == p}}}",
+            "{in: input.roles, as: r, that: r == p}",
+        )
+}
+
+/// Every string a node holds, at any depth.
+fn strings(node: &Node, out: &mut Vec<String>) {
+    match node {
+        Node::Text(text) => out.push(text.clone()),
+        Node::Seq(items) => items.iter().for_each(|item| strings(item, out)),
+        Node::Map(entries) => entries.values().for_each(|value| strings(value, out)),
+        _ => {}
+    }
+}
+
+/// The roles one command input sends: every string under `semantics` or `roles`.
+fn roles(input: &BTreeMap<String, ScenarioValue>) -> Vec<String> {
+    let mut out = Vec::new();
+    for name in ["semantics", "roles"] {
+        if let Some(node) = input.get(name).and_then(ScenarioValue::as_literal) {
+            strings(node, &mut out);
+        }
+    }
+    out
+}
+
+/// The refusal of `ReviseProfile` gets a scenario that declares a profile with a non-empty
+/// `parties`, each a role the declaration sends, and revises it with roles that miss a party; and
+/// the interpreted target passes every scenario of the suite.
+fn assert_arranged_non_empty(text: &str) {
+    let model = ir(text);
+    let synthesis = synthesize(&model);
+    assert!(synthesis.refusals.is_empty(), "{:#?}", synthesis.refusals);
+    let suite = synthesis.suite;
+    let scenario = suite
+        .scenarios
+        .values()
+        .find(|scenario| requires(scenario, "example.profile.ReviseProfile/party-not-a-role"))
+        .expect("the refusal has a scenario");
+    let declared = inputs(scenario, "example.profile.DeclareProfile");
+    let declared = declared.last().expect("a declaration");
+    let Some(Node::Seq(parties)) = declared.get("parties").and_then(ScenarioValue::as_literal)
+    else {
+        panic!("parties: {declared:?}");
+    };
+    let mut held = Vec::new();
+    for party in parties {
+        strings(party, &mut held);
+    }
+    assert!(!held.is_empty(), "a non-empty parties: {declared:?}");
+    let declared_roles = roles(declared);
+    assert!(
+        held.iter().all(|party| declared_roles.contains(party)),
+        "every party a declared role: {declared:?}"
+    );
+    let revised = inputs(scenario, "example.profile.ReviseProfile");
+    let revised = roles(revised.last().expect("a revision"));
+    assert!(
+        held.iter().any(|party| !revised.contains(party)),
+        "the revision misses a party: {held:?} against {revised:?}"
+    );
+    let admitted = ess_conformance::AdmittedSuite::from_suite(&suite).unwrap();
+    let report = ess_conformance::Runner::for_suite(&suite)
+        .run_admitted(
+            &admitted,
+            &ess_conformance::interpret::Interpreted::for_model(model),
+        )
+        .into_report();
+    for run in &report.scenarios {
+        assert_eq!(
+            run.status,
+            ess_conformance::report::Status::Passed,
+            "{}: {:?}",
+            run.scenario,
+            run.checks
+        );
+    }
+}
+
+#[test]
+fn a_stored_list_tied_to_a_creation_input_is_arranged_non_empty() {
+    assert_arranged_non_empty(PROFILE);
+}
+
+#[test]
+fn a_stored_list_tied_to_a_flat_creation_input_is_arranged_non_empty() {
+    assert_arranged_non_empty(&flat_profile());
+}
+
+#[test]
+fn a_creation_guard_no_list_can_pass_still_refuses() {
+    let text = PROFILE.replace(
+        "when: {not: {forall: {in: parties, as: p, that: {exists: {in: semantics, as: s, that: {exists: {in: s.roles, as: r, that: r == p}}}}}}}",
+        "when: parties.count >= 1",
+    );
+    let refusals = synthesize(&ir(&text)).refusals;
+    assert_eq!(refusals.len(), 1, "{refusals:#?}");
+    let text = refusals[0].to_string();
+    for line in [
+        "refusal[ESS-SYNTH-003]: outcome example.profile.ReviseProfile/party-not-a-role has no \
+         scenario `example.profile.ReviseProfile/outcome/party-not-a-role`",
+        "no candidate of the 1 tried satisfies ``example.profile.Profile` stored parties \
+         selecting this branch, over the rows 1 bounded arrangements left`",
+    ] {
+        assert!(text.contains(line), "{text}");
+    }
+}
+
 #[test]
 fn the_interpreted_target_passes_every_scenario() {
     for guard in [MEMBER.to_owned(), not_member()] {

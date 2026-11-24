@@ -5711,8 +5711,49 @@ fn creations(
     super::made::made(ir, key, make)
 }
 
+/// The inputs [`make_creations`] tries beside the plain witness, in order.
+fn creation_inputs(
+    ir: &EssIr,
+    entity: &EntityHandle,
+    creator: &Driver<'_>,
+    hints: &[Predicate],
+    distinction: Distinction,
+) -> Result<Vec<BTreeMap<String, Node>>, RefusalCause> {
+    // The rows whose stored collections hold several entries, where a quantifier over one
+    // compares its elements with the input (beyond10x/ess#240).
+    let mut inputs = hinted(ir, entity, creator, hints, distinction)?.unwrap_or_default();
+    inputs.extend(spread(ir, entity, creator, hints, distinction));
+    // And the rows taken toward the stored-field guards of the moves on the way, so a route
+    // through a move its own guards would refuse on the plain row finds a row to take it on.
+    let moves = move_guards(ir, entity);
+    let toward = if moves.is_empty() {
+        Vec::new()
+    } else {
+        hinted(ir, entity, creator, &moves, distinction)
+            .ok()
+            .flatten()
+            .unwrap_or_default()
+    };
+    for input in toward {
+        if !inputs.contains(&input) {
+            inputs.push(input);
+        }
+    }
+    // A stored collection a quantifier compares with the input, written from the branch's input,
+    // which no candidate above writes: the branch's own first witness holding entries there,
+    // grounded against its guards by the caller (beyond10x/ess#734).
+    if inputs.is_empty() {
+        inputs.extend(writing_collection(ir, creator, hints, distinction));
+    }
+    Ok(inputs)
+}
+
 /// The rows the creating branch can leave: its plain witness first, then one per input chosen
-/// toward the hints, then one per input chosen toward the stored-field guards of the moves.
+/// toward the hints, then one per input chosen toward the stored-field guards of the moves. Where
+/// none of those writes a stored collection a quantifier of the hints ranges over, the branch's
+/// first witness writing entries there is offered ([`writing_collection`]), and a candidate the
+/// branch's own input guards refuse is grounded against them before it is dropped
+/// ([`grounded_creation`], beyond10x/ess#734).
 fn make_creations(
     ir: &EssIr,
     entity: &EntityHandle,
@@ -5770,26 +5811,7 @@ fn make_creations(
     {
         return Ok(out);
     }
-    // And the rows whose stored collections hold several entries, where a quantifier over one
-    // compares its elements with the input (beyond10x/ess#240).
-    let mut inputs = hinted(ir, entity, creator, hints, distinction)?.unwrap_or_default();
-    inputs.extend(spread(ir, entity, creator, hints, distinction));
-    // And the rows taken toward the stored-field guards of the moves on the way, so a route
-    // through a move its own guards would refuse on the plain row finds a row to take it on.
-    let moves = move_guards(ir, entity);
-    let toward = if moves.is_empty() {
-        Vec::new()
-    } else {
-        hinted(ir, entity, creator, &moves, distinction)
-            .ok()
-            .flatten()
-            .unwrap_or_default()
-    };
-    for input in toward {
-        if !inputs.contains(&input) {
-            inputs.push(input);
-        }
-    }
+    let inputs = creation_inputs(ir, entity, creator, hints, distinction)?;
     // A candidate a guard is `Unknown` on only for an `Optional` input it left out is passed over
     // like a refuted one (beyond10x/ess#728): another candidate, one that supplies the input or
     // decides the guard `false`, may create the row. The first such cause is the refusal where no
@@ -5804,7 +5826,14 @@ fn make_creations(
             }
             Err(cause) => return Err(cause),
         };
-        if selected {
+        // A candidate the branch's own input guards refuse is grounded against them before it is
+        // dropped (beyond10x/ess#734).
+        let input = if selected {
+            Some(input)
+        } else {
+            grounded_creation(ir, creator, &input, distinction)
+        };
+        if let Some(input) = input {
             if let Ok(arrangement) = created(
                 ir,
                 entity,
@@ -5833,6 +5862,137 @@ fn make_creations(
         ));
     }
     Ok(out)
+}
+
+/// The first witness of `creator`'s own input guards that writes entries into a stored collection
+/// a quantifier of `hints` ranges over, where the branch's `sets:` fills that collection from an
+/// input field (beyond10x/ess#734). A guard comparing the collection's elements with the input
+/// steers nothing through [`hinted`], since its input side is the later command's; this is the
+/// row it needs entries on. `None` where no quantifier ranges over such a collection.
+fn writing_collection(
+    ir: &EssIr,
+    creator: &Driver<'_>,
+    hints: &[Predicate],
+    distinction: Distinction,
+) -> Option<BTreeMap<String, Node>> {
+    let mapping = mapped(creator.outcome);
+    let mut found = Vec::new();
+    for hint in hints {
+        leaves(hint, &mut found);
+    }
+    let written: BTreeSet<&str> = found
+        .iter()
+        .filter_map(|leaf| match leaf {
+            Predicate::Forall(quantified) | Predicate::Exists(quantified) => {
+                let over = quantified.over.fact()?;
+                mapping.get(over.namespace()).copied()
+            }
+            _ => None,
+        })
+        .collect();
+    if written.is_empty() {
+        return None;
+    }
+    let guards: Vec<&Predicate> = creator
+        .command
+        .outcomes
+        .iter()
+        .filter_map(|branch| input_guard(&branch.condition))
+        .collect();
+    candidates(ir, creator.command, &guards, distinction)
+        .ok()?
+        .into_iter()
+        .find(|input| {
+            written.iter().any(|field| match input.get(*field) {
+                Some(Node::Seq(items)) => !items.is_empty(),
+                Some(Node::Map(entries)) => !entries.is_empty(),
+                _ => false,
+            })
+        })
+}
+
+/// A candidate `input` of the creating branch that its own input guards refuse, grounded against
+/// those guards (beyond10x/ess#734): the inputs the branch's `sets:` writes into the row keep the
+/// values the candidate holds, and the others are searched for with every comparison those guards
+/// make with a kept value grounded on it, as a stored-field guard is grounded on the row
+/// ([`ground_leaf`]). A creation checking a stored `parties` against the roles of its `semantics`
+/// input keeps `parties: [x]` and is sent a `semantics` whose roles hold `x`. The first such input
+/// the branch selects, or `None`.
+fn grounded_creation(
+    ir: &EssIr,
+    creator: &Driver<'_>,
+    input: &BTreeMap<String, Node>,
+    distinction: Distinction,
+) -> Option<BTreeMap<String, Node>> {
+    let written: BTreeSet<&str> = mapped(creator.outcome)
+        .into_values()
+        .map(|field| field.split('.').next().unwrap_or(field))
+        .collect();
+    let settled: BTreeMap<String, super::Determined> = creator
+        .command
+        .input
+        .iter()
+        .filter(|field| written.contains(field.name.as_str()))
+        .filter_map(|field| {
+            let value = input.get(&field.name)?.clone();
+            Some((
+                field.name.clone(),
+                super::Determined {
+                    value: ScenarioValue::literal(value),
+                    type_ref: field.type_ref.clone(),
+                },
+            ))
+        })
+        .collect();
+    if settled.is_empty() {
+        return None;
+    }
+    // Every input the candidate does not keep is read as `input.<path>`, as a stored-field guard
+    // reads it, and every kept one as the value held.
+    let free = |path: &FactPath| {
+        let root = path.namespace();
+        if settled.contains_key(root)
+            || !creator.command.input.iter().any(|field| field.name == root)
+        {
+            return path.clone();
+        }
+        let mut segments = vec![ess_domain::command::subject_fact::INPUT_NAMESPACE.to_owned()];
+        segments.extend(path.segments().iter().cloned());
+        FactPath::from_segments(segments)
+    };
+    let guards: Vec<&Predicate> = creator
+        .command
+        .outcomes
+        .iter()
+        .filter_map(|branch| input_guard(&branch.condition))
+        .collect();
+    let mut grounded = Vec::new();
+    for guard in &guards {
+        let mut found = Vec::new();
+        leaves(&map_paths(guard, &free), &mut found);
+        for leaf in &found {
+            ground_leaf(&settled, &[], Some(&[]), leaf, &mut grounded);
+        }
+    }
+    if grounded.is_empty() {
+        return None;
+    }
+    let mut all = guards.clone();
+    all.extend(grounded.iter());
+    candidates(ir, creator.command, &all, distinction)
+        .ok()?
+        .into_iter()
+        .map(|mut candidate| {
+            for name in settled.keys() {
+                if let Some(value) = input.get(name) {
+                    candidate.insert(name.clone(), value.clone());
+                }
+            }
+            candidate
+        })
+        .find(|candidate| {
+            input_selects(ir, creator.command, creator.outcome, candidate).unwrap_or(false)
+        })
 }
 
 /// The copies one creating branch's `sets:` makes through one input naming a related row: the
