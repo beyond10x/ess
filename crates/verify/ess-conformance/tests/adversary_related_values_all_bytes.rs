@@ -41,10 +41,6 @@
 //! The suite digest of `aggregate-stored-guarded-move.yaml` is re-pinned to the bytes table for
 //! beyond10x/ess#472: its two `when_subject` refusals of one phase are sent once on a row both
 //! hold on, requiring the first declared. Its IR and refusal digests are unchanged.
-//!
-//! The suite digest of `defined-over-optional-aggregates.yaml` is re-pinned to the bytes table
-//! for beyond10x/ess#799: a view member written absent claims null only when the field is
-//! `null_when_absent`, so `metrics` loses its null claim. Its IR and refusal digests are unchanged.
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
