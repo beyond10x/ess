@@ -1,0 +1,19 @@
+{
+  "name": "diagnostic-type-009",
+  "card": "rotating",
+  "persona": "A specification author whose `ess specify validate` run printed `ESS-TYPE-009` and nothing they recognise.",
+  "task": "Find the meaning of diagnostic ESS-TYPE-009.",
+  "twists": ["The code is split into family and class on the page.", "Has no search box to paste the code into."],
+  "start": "/ess/docs",
+  "steps": [
+    { "open": { "role": "button", "name": "^Reference$" } },
+    { "click": { "role": "link", "name": "^Diagnostics$" } },
+    { "reveal": { "role": "cell", "name": "^009$" } }
+  ],
+  "truth": {
+    "path": "/ess/docs/reference/diagnostics",
+    "anchor": "classes",
+    "target": { "role": "cell", "name": "^009$" }
+  },
+  "expect": { "completion": "the 009 row of the classes table is in view", "max_actions": 5 }
+}

@@ -53,8 +53,7 @@ fn two_releases_never_share_a_reference_label() {
 #[test]
 fn a_hand_edit_of_any_row_is_refused() {
     let page = committed();
-    let block = format_history::render(FORMAT_HISTORY);
-    format_history::compare(&page, &block).expect("the committed page is current");
+    format_history::compare(&page, FORMAT_HISTORY).expect("the committed page is current");
     for entry in FORMAT_HISTORY {
         let prefix = format!("| `ess/{}` |", entry.major);
         let row = page
@@ -64,7 +63,7 @@ fn a_hand_edit_of_any_row_is_refused() {
         let edited = page.replacen(row, &row.replacen(" | ", " |  ", 1), 1);
         assert_ne!(edited, page);
         assert!(
-            format_history::compare(&edited, &block).is_err(),
+            format_history::compare(&edited, FORMAT_HISTORY).is_err(),
             "a hand edit of ess/{} passes --check",
             entry.major
         );
@@ -95,9 +94,14 @@ fn the_base_release_claim_for_an_unreleased_format_is_refused() {
         &row(&block),
         1,
     );
-    format_history::compare(&page, &block).expect("the page agrees with the unreleased catalogue");
-    let prefix = format!("| `ess/{major}` | unreleased |");
+    format_history::compare(&page, &history)
+        .expect("the page agrees with the unreleased catalogue");
+    let prefix = format!("| `ess/{major}` | <a id=\"ess-{major}\"></a>unreleased |");
     assert!(page.contains(&prefix), "{prefix}");
-    let claimed = page.replacen(&prefix, &format!("| `ess/{major}` | [0.54.0][r54] |"), 1);
-    assert!(format_history::compare(&claimed, &block).is_err());
+    let claimed = page.replacen(
+        &prefix,
+        &format!("| `ess/{major}` | <a id=\"ess-{major}\"></a>[0.54.0][r54] |"),
+        1,
+    );
+    assert!(format_history::compare(&claimed, &history).is_err());
 }

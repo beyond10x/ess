@@ -1,0 +1,10 @@
+{
+  "about": "A test result as Playwright reports it to an afterEach hook: the L2 test of the landing page at mobile-390 failed with two errors, one its open finding states and one no finding states (T39 of the R-04 report review). Read by specs/l1-findings.spec.ts.",
+  "spec": "website/ux/specs/l2-layout.spec.ts",
+  "title": "L2 /ess/ mobile-390",
+  "status": "failed",
+  "errors": [
+    "Error: /ess/ at mobile-390: hard gates 1, 2, 5, truncation and reduced motion\n\nExpected: \"none\"\nReceived: \"truncation mobile-390/dark: div.b10x-terminal__bar > span.b10x-terminal__title \\\"ess\\\"\"",
+    "Error: /ess/ at mobile-390: hard gates 1, 2, 5, truncation and reduced motion\n\nExpected: \"none\"\nReceived: \"gate 1 mobile-390/light: page scroll 412 px wider than the viewport\""
+  ]
+}

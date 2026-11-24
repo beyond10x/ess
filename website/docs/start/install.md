@@ -1,6 +1,7 @@
 ---
 title: Install ess
 description: Install the ess command from a verified release archive on macOS or Linux, with cargo, or through an agent plugin, and pin the release a project uses.
+release_numbers: written by cargo xtask docs --write
 ---
 
 # Install ess

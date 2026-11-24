@@ -1,6 +1,7 @@
 ---
 title: Explore the repository example
 description: Validate, compile, inspect and document the larger billing example from a checkout of the repository, and run its suite against the built-in reference implementation.
+release_numbers: written by cargo xtask docs --write
 ---
 
 # Explore the repository example

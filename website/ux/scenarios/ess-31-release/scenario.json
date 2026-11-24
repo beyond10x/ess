@@ -1,0 +1,19 @@
+{
+  "name": "ess-31-release",
+  "card": "rotating",
+  "persona": "A maintainer whose specification declares `format: ess/31` and who must name the oldest ess release that reads it.",
+  "task": "Find which release introduced ess/31.",
+  "twists": ["Knows only the format string.", "Has no search box to type it into."],
+  "start": "/ess/docs",
+  "steps": [
+    { "open": { "role": "button", "name": "^Reference$" } },
+    { "click": { "role": "link", "name": "^Format version history$" } },
+    { "reveal": { "role": "cell", "name": "^ess/31$" } }
+  ],
+  "truth": {
+    "path": "/ess/docs/reference/spec-versions",
+    "target": { "role": "cell", "name": "^ess/31$" },
+    "beside": { "role": "cell", "name": "^\\d+\\.\\d+\\.\\d+$" }
+  },
+  "expect": { "completion": "the ess/31 row of the format table is in view, its release cell beside it", "max_actions": 6 }
+}

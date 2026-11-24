@@ -9,6 +9,7 @@
 
 use std::{
     collections::{BTreeMap, BTreeSet},
+    fmt::Write as _,
     fs,
     path::Path,
 };
@@ -55,6 +56,269 @@ const INSTALL: &[&str] = &[
     "website/docs/start/runners/rust.md",
     "website/docs/start/explore-the-example.md",
 ];
+
+/// The front-matter line of a page whose release numbers `cargo xtask docs --write` writes. A reader
+/// and the site's own test tell a written release number from a hand-typed one by it.
+const RELEASE_WRITER: &str = "release_numbers: written by cargo xtask docs --write";
+
+/// The page that names the newest release and the ones before it, in the region between
+/// [`RELEASE_BEGIN`] and [`RELEASE_END`], which `cargo xtask docs --write` renders.
+const STATUS: &str = "website/docs/status/where-this-stands.md";
+const RELEASE_BEGIN: &str = "[ess-newest-release-begin]: #";
+const RELEASE_END: &str = "[ess-newest-release-end]: #";
+
+/// How many releases the status page's table lists.
+const RECENT: usize = 5;
+
+/// Writes the newest release, from the changelog's first dated heading, into every release number
+/// of the [`INSTALL`] pages, marks each with [`RELEASE_WRITER`], and renders the status page's
+/// release region from the changelog and `release-notes/`. Returns what it wrote.
+pub fn write(root: &Path) -> Result<String, String> {
+    let changelog = fs::read_to_string(root.join("CHANGELOG.md"))
+        .map_err(|error| format!("read CHANGELOG.md: {error}"))?;
+    let newest = newest_release(&changelog)?;
+    let mut written = Vec::new();
+    for page in INSTALL {
+        let text =
+            fs::read_to_string(root.join(page)).map_err(|error| format!("read {page}: {error}"))?;
+        let next = with_writer_line(&with_release(&text, &newest))
+            .map_err(|error| format!("{page}: {error}"))?;
+        if next != text {
+            fs::write(root.join(page), &next).map_err(|error| format!("write {page}: {error}"))?;
+            written.push(*page);
+        }
+    }
+    let region = release_region(&recent_releases(root, &changelog)?);
+    let text =
+        fs::read_to_string(root.join(STATUS)).map_err(|error| format!("read {STATUS}: {error}"))?;
+    let next = with_region(&text, &region).map_err(|error| format!("{STATUS}: {error}"))?;
+    if next != text {
+        fs::write(root.join(STATUS), &next).map_err(|error| format!("write {STATUS}: {error}"))?;
+        written.push(STATUS);
+    }
+    Ok(format!(
+        "docs: the newest release is {newest}; wrote {}\n",
+        if written.is_empty() {
+            "nothing, every page already names it".to_owned()
+        } else {
+            written.join(", ")
+        }
+    ))
+}
+
+/// What keeps the pages from being the ones [`write()`] writes: an [`INSTALL`] page without the
+/// [`RELEASE_WRITER`] line or with a release number other than the newest, and a status page
+/// whose release region is not the rendered one.
+fn release_writing_defects(root: &Path, changelog: &str) -> Result<Vec<String>, String> {
+    let newest = newest_release(changelog)?;
+    let mut defects = Vec::new();
+    for page in INSTALL {
+        let text =
+            fs::read_to_string(root.join(page)).map_err(|error| format!("read {page}: {error}"))?;
+        if !front_matter(&text)
+            .lines()
+            .any(|line| line == RELEASE_WRITER)
+        {
+            defects.push(format!(
+                "{page}: its front matter has no `{RELEASE_WRITER}` line"
+            ));
+        }
+        if with_release(&text, &newest) != text {
+            defects.push(format!(
+                "{page}: names a release number other than the newest release, {newest}"
+            ));
+        }
+    }
+    let region = release_region(&recent_releases(root, changelog)?);
+    let text =
+        fs::read_to_string(root.join(STATUS)).map_err(|error| format!("read {STATUS}: {error}"))?;
+    if with_region(&text, &region).map_err(|error| format!("{STATUS}: {error}"))? != text {
+        defects.push(format!(
+            "{STATUS}: its release region is not the one rendered from CHANGELOG.md and \
+             release-notes/"
+        ));
+    }
+    Ok(defects)
+}
+
+/// The refusal for pages that are not as [`write()`] writes them, if any.
+fn release_writing_refusal(root: &Path, changelog: &str) -> Result<Option<String>, String> {
+    let defects = release_writing_defects(root, changelog)?;
+    Ok((!defects.is_empty()).then(|| {
+        format!(
+            "the newest release is not written as `cargo xtask docs --write` writes it; run it:\n{}",
+            defects.join("\n")
+        )
+    }))
+}
+
+/// The front matter of a page, without its fences; empty when it has none.
+fn front_matter(text: &str) -> &str {
+    text.strip_prefix("---\n")
+        .and_then(|rest| rest.find("\n---\n").map(|end| &rest[..end]))
+        .unwrap_or_default()
+}
+
+/// The page with [`RELEASE_WRITER`] as the last line of its front matter, once.
+fn with_writer_line(text: &str) -> Result<String, String> {
+    if front_matter(text)
+        .lines()
+        .any(|line| line == RELEASE_WRITER)
+    {
+        return Ok(text.to_owned());
+    }
+    let rest = text
+        .strip_prefix("---\n")
+        .ok_or("the page has no front matter for the release_numbers line")?;
+    let end = rest
+        .find("\n---\n")
+        .ok_or("the page's front matter does not end")?;
+    Ok(format!(
+        "---\n{}\n{RELEASE_WRITER}{}",
+        &rest[..end],
+        &rest[end..]
+    ))
+}
+
+/// The text with every release number put to `newest`. A release number is a run of three numbers
+/// joined by dots, not part of a longer run of digits and dots: the one inside an archive name
+/// (`ess-0.98.0-x86_64`) and a path (`toolchains/0.98.0/ess`) count, unlike in [`versions_in`].
+fn with_release(text: &str, newest: &str) -> String {
+    let bytes = text.as_bytes();
+    let mut out = String::with_capacity(text.len());
+    let mut copied = 0;
+    let mut index = 0;
+    while index < bytes.len() {
+        if !bytes[index].is_ascii_digit() || (index > 0 && bytes[index - 1] == b'.') {
+            index += 1;
+            continue;
+        }
+        let start = index;
+        while index < bytes.len() && (bytes[index].is_ascii_digit() || bytes[index] == b'.') {
+            index += 1;
+        }
+        // A full stop after a release number ends the sentence, not the number.
+        while bytes[index - 1] == b'.' {
+            index -= 1;
+        }
+        let run = &text[start..index];
+        let parts: Vec<&str> = run.split('.').collect();
+        if parts.len() == 3 && parts.iter().all(|part| !part.is_empty()) {
+            out.push_str(&text[copied..start]);
+            out.push_str(newest);
+            copied = index;
+        }
+    }
+    out.push_str(&text[copied..]);
+    out
+}
+
+/// The newest [`RECENT`] dated releases, newest first: version, date and the lead of its
+/// `release-notes/<version>.md` without its full stop.
+fn recent_releases(root: &Path, changelog: &str) -> Result<Vec<(String, String, String)>, String> {
+    let mut recent = Vec::new();
+    for line in changelog.lines() {
+        let Some((version, date)) = line
+            .strip_prefix("## [")
+            .and_then(|rest| rest.split_once("] — "))
+        else {
+            continue;
+        };
+        if versions_in(version) != [version] {
+            continue;
+        }
+        let notes = format!("release-notes/{version}.md");
+        let text = fs::read_to_string(root.join(&notes))
+            .map_err(|error| format!("read {notes}: {error}"))?;
+        let lead = text.lines().next().unwrap_or_default().trim();
+        recent.push((
+            version.to_owned(),
+            date.trim().to_owned(),
+            lead.strip_suffix('.').unwrap_or(lead).to_owned(),
+        ));
+        if recent.len() == RECENT {
+            break;
+        }
+    }
+    if recent.is_empty() {
+        return Err("CHANGELOG.md has no dated release heading".to_owned());
+    }
+    Ok(recent)
+}
+
+/// `2026-11-23` as `23 November 2026`; the date as written when it is not one.
+fn long_date(date: &str) -> String {
+    const MONTHS: [&str; 12] = [
+        "January",
+        "February",
+        "March",
+        "April",
+        "May",
+        "June",
+        "July",
+        "August",
+        "September",
+        "October",
+        "November",
+        "December",
+    ];
+    let mut parts = date.splitn(3, '-');
+    let (Some(year), Some(month), Some(day)) = (parts.next(), parts.next(), parts.next()) else {
+        return date.to_owned();
+    };
+    let month = month
+        .parse::<usize>()
+        .ok()
+        .and_then(|month| month.checked_sub(1))
+        .and_then(|month| MONTHS.get(month));
+    match (month, day.parse::<u32>()) {
+        (Some(month), Ok(day)) => format!("{day} {month} {year}"),
+        _ => date.to_owned(),
+    }
+}
+
+/// The status page's release region, from the newest releases (newest first).
+fn release_region(recent: &[(String, String, String)]) -> String {
+    let mut region = format!(
+        "{RELEASE_BEGIN}\n\nWritten from `CHANGELOG.md` and `release-notes/` by `cargo xtask docs --write`.\n\n"
+    );
+    if let Some((version, date, _)) = recent.first() {
+        let _ = write!(
+            region,
+            "The newest release is [{version}](https://github.com/beyond10x/ess/releases/tag/{version}), \
+             dated {} in the changelog. Each release publishes archives for Linux and macOS on x86-64 \
+             and ARM64, plus `SHA256SUMS`; this page does not claim that they were downloaded, \
+             verified or run.\n\n",
+            long_date(date)
+        );
+    }
+    let _ = write!(
+        region,
+        "The last {} releases:\n\n| Release | What it added |\n|---|---|\n",
+        match recent.len() {
+            5 => "five".to_owned(),
+            count => count.to_string(),
+        }
+    );
+    for (version, _, lead) in recent {
+        let _ = writeln!(region, "| {version} | {lead} |");
+    }
+    region.push('\n');
+    region.push_str(RELEASE_END);
+    region
+}
+
+/// The page with its release region replaced by `region`.
+fn with_region(text: &str, region: &str) -> Result<String, String> {
+    let begin = text
+        .find(RELEASE_BEGIN)
+        .ok_or_else(|| format!("no `{RELEASE_BEGIN}` line"))?;
+    let end = text[begin..]
+        .find(RELEASE_END)
+        .map(|end| begin + end + RELEASE_END.len())
+        .ok_or_else(|| format!("no `{RELEASE_END}` line after `{RELEASE_BEGIN}`"))?;
+    Ok(format!("{}{region}{}", &text[..begin], &text[end..]))
+}
 
 /// The repository front page, which a reader lands on before any site page.
 ///
@@ -545,6 +809,7 @@ pub fn run(root: &Path) -> Result<String, String> {
             stale.join("\n")
         ));
     }
+    refusals.extend(release_writing_refusal(root, &changelog)?);
     if !pinned.is_empty() {
         refusals.push(format!(
             "the install walkthrough names a version that is not the newest release:\n{}",
@@ -1214,6 +1479,72 @@ fn names(text: &str, family: &str, version: u32) -> bool {
 mod tests {
     use super::*;
 
+    /// Change 4 of round R-06 (after UXF-016): the newest release was typed by hand in 16 places
+    /// of the docs. `--write` puts it into every release number of a page, archive names and
+    /// paths included, and marks the page; a second write changes nothing.
+    #[test]
+    fn write_puts_the_newest_release_into_every_release_number_of_a_page_and_marks_it() {
+        let page = "---\ntitle: Install\n---\n\n$ version=0.97.4\ness-0.97.4-x86_64.tar.gz: OK\n\
+                    ~/.cache/ess/toolchains/0.97.4/ess runs 0.97.4.\nnot 0.13.2.1 nor x86_64\n";
+        let written = with_writer_line(&with_release(page, "0.98.0")).expect("front matter");
+        assert_eq!(
+            written,
+            "---\ntitle: Install\nrelease_numbers: written by cargo xtask docs --write\n---\n\n\
+             $ version=0.98.0\ness-0.98.0-x86_64.tar.gz: OK\n\
+             ~/.cache/ess/toolchains/0.98.0/ess runs 0.98.0.\nnot 0.13.2.1 nor x86_64\n"
+        );
+        assert_eq!(
+            with_writer_line(&with_release(&written, "0.98.0")).expect("front matter"),
+            written
+        );
+        assert!(with_writer_line("# no front matter\n").is_err());
+    }
+
+    /// The status page's release region is rendered from the changelog's dated releases and the
+    /// lead of each one's release notes; the region is replaced whole, and a page without it is
+    /// refused.
+    #[test]
+    fn the_status_region_is_rendered_from_the_changelog_and_the_release_notes() {
+        let recent = [
+            ("0.98.0", "2026-11-23", "Lead of the newest"),
+            ("0.97.4", "2026-11-22", "Lead before it"),
+        ]
+        .map(|(version, date, lead)| (version.to_owned(), date.to_owned(), lead.to_owned()));
+        let region = release_region(&recent);
+        assert!(
+            region.starts_with(RELEASE_BEGIN) && region.ends_with(RELEASE_END),
+            "{region}"
+        );
+        assert!(
+            region.contains(
+                "The newest release is [0.98.0](https://github.com/beyond10x/ess/releases/tag/0.98.0), \
+                 dated 23 November 2026 in the changelog."
+            ),
+            "{region}"
+        );
+        assert!(region.contains("The last 2 releases:"), "{region}");
+        assert!(region.contains("| 0.97.4 | Lead before it |\n"), "{region}");
+        let page =
+            format!("# Where\n\n{RELEASE_BEGIN}\n\nold 0.97.3\n\n{RELEASE_END}\n\n## Next\n");
+        assert_eq!(
+            with_region(&page, &region).expect("region"),
+            format!("# Where\n\n{region}\n\n## Next\n")
+        );
+        assert!(with_region("# Where\n", &region).is_err());
+        assert_eq!(long_date("2026-11-03"), "3 November 2026");
+    }
+
+    /// The committed pages are the ones `cargo xtask docs --write` writes.
+    #[test]
+    fn the_committed_pages_carry_the_newest_release_as_the_writer_writes_it() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..");
+        let changelog = fs::read_to_string(root.join("CHANGELOG.md")).expect("changelog");
+        assert_eq!(
+            release_writing_defects(&root, &changelog),
+            Ok(Vec::<String>::new())
+        );
+    }
+
     fn released() -> BTreeMap<(&'static str, u32), &'static str> {
         format_releases()
             .iter()
@@ -1250,8 +1581,8 @@ mod tests {
             Vec::<String>::new()
         );
         let moved = page.replacen(
-            "| `ess/2` | [0.20.0][r20] |",
-            "| `ess/2` | [0.19.0][r19] |",
+            "| `ess/2` | <a id=\"ess-2\"></a>[0.20.0][r20] |",
+            "| `ess/2` | <a id=\"ess-2\"></a>[0.19.0][r19] |",
             1,
         );
         assert_ne!(moved, page, "the ess/2 row is where this test expects it");
@@ -1259,7 +1590,7 @@ mod tests {
             ess_release_mismatches(&moved, ess_domain::system::FORMAT_HISTORY),
             [format!(
                 "{HISTORY}: `ess/2` is introduced in 0.20.0 by FORMAT_HISTORY, and the page's \
-                 \"Introduced in\" cell says `[0.19.0][r19]`"
+                 \"Introduced in\" cell says `<a id=\"ess-2\"></a>[0.19.0][r19]`"
             )]
         );
         let missing = page

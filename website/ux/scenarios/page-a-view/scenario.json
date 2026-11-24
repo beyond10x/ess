@@ -1,0 +1,20 @@
+{
+  "name": "page-a-view",
+  "card": "rotating",
+  "persona": "An API designer whose list view returns ten thousand rows and who wants page and size parameters.",
+  "task": "Find how to page a view.",
+  "twists": ["Looks under Guides first.", "Expects the answer on the Views page, not the reference."],
+  "start": "/ess/docs",
+  "steps": [
+    { "open": { "role": "button", "name": "^(Expand|Collapse) sidebar category 'Guides'$" } },
+    { "click": { "role": "link", "name": "^Write a specification$" } },
+    { "click": { "role": "link", "name": "^Views$" } },
+    { "reveal": { "role": "heading", "name": "^A view can be paged" } }
+  ],
+  "truth": {
+    "path": "/ess/docs/guides/specify/views",
+    "anchor": "a-view-can-be-paged",
+    "target": { "role": "heading", "name": "^A view can be paged" }
+  },
+  "expect": { "completion": "the paging section heading is in view", "max_actions": 5 }
+}

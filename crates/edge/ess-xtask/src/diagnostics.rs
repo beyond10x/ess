@@ -280,6 +280,27 @@ fn render_sections(sections: &[Section]) -> String {
          # Diagnostics\n\n",
     );
     out.push_str(BEGIN);
+    // An index of the class numbers under the title, so a reader holding `ESS-<FAMILY>-<NNN>`
+    // reaches the row of `<NNN>` without scrolling (UXF-010 of the documentation site's UX loop).
+    // HTML links, as the anchors are: the site build's anchor check does not see an HTML `id` in a
+    // Markdown page; `the_page_opens_with_an_index_that_links_every_class_row` holds them.
+    // The list is a navigation landmark with a name of its own, so a screen-reader user can skip
+    // it, and each number shows its class's name beside the link (UXF-027).
+    let links: Vec<String> = codes::class::CATALOGUE
+        .iter()
+        .map(|class| {
+            format!(
+                "<a href=\"#class-{0:03}\"><code>{0:03}</code></a> {1}",
+                class.number, class.name
+            )
+        })
+        .collect();
+    let _ = write!(
+        out,
+        "\n\n<nav aria-label=\"Classes of the specification diagnostics\">\n\n\
+         Jump to the class of `ESS-<FAMILY>-<NNN>`: {}.\n\n</nav>",
+        links.join(" · ")
+    );
     out.push_str(
         "\n\n\
          Every diagnostic `ess` prints for a specification, a scenario, a suite, a history, a \
@@ -308,7 +329,7 @@ fn render_sections(sections: &[Section]) -> String {
     for class in codes::class::CATALOGUE {
         let _ = writeln!(
             out,
-            "| `{:03}` | `{}` | {} | {} |",
+            "| `{0:03}` | `{1}` | <a id=\"class-{0:03}\"></a>{2} | {3} |",
             class.number,
             class.name,
             sentence(class.meaning),
@@ -441,6 +462,32 @@ mod tests {
             assert!(
                 page.contains(&format!("| `{}` |", code.as_str())),
                 "{code:?}"
+            );
+        }
+    }
+
+    /// UXF-010 of the documentation site's UX loop: on a phone the `009` row of the classes table
+    /// took 7 actions against the card's 5. An index under the page's title links every class row,
+    /// and each row holds the anchor its link names, after its number and name so that a row
+    /// still opens with them.
+    #[test]
+    fn the_page_opens_with_an_index_that_links_every_class_row() {
+        let page = render().expect("every catalogued diagnostic has a summary");
+        let first_section = page.find("\n## ").expect("the page has a section");
+        for class in codes::class::CATALOGUE {
+            let number = class.number;
+            let link = format!("<a href=\"#class-{number:03}\"><code>{number:03}</code></a>");
+            let at = page
+                .find(&link)
+                .unwrap_or_else(|| panic!("the index links class {number:03}"));
+            assert!(at < first_section, "the index is above the first section");
+            let row = format!(
+                "| `{number:03}` | `{}` | <a id=\"class-{number:03}\"></a>",
+                class.name
+            );
+            assert!(
+                page.lines().any(|line| line.starts_with(&row)),
+                "the {number:03} row holds its anchor"
             );
         }
     }

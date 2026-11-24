@@ -1,0 +1,55 @@
+/* A link inside running text is underlined in both themes, so it is told apart without colour
+   (WCAG 1.4.1, axe link-in-text-block). Navigation, cards and heading anchors keep their own look. */
+.markdown :is(p, li, td, th, dd, blockquote) a:not(.hash-link) {
+  text-decoration: underline;
+}
+
+/* On a page shorter than its sidebar, the sidebar stays in view, below the navbar, halfway down
+   the page (UXF-022). A sticky sidebar can only move inside its column, so the docs sidebar is as
+   tall as its links (up to the viewport) and a short page's column is taller than the viewport;
+   the blog sidebar's row likewise. Only a page shorter than that minimum gets longer. */
+@media (min-width: 997px) {
+  .theme-doc-sidebar-container > div:first-child,
+  .theme-doc-sidebar-container > div:first-child > div:first-child {
+    height: auto;
+    max-height: 100vh;
+  }
+  .theme-doc-sidebar-container nav.menu {
+    min-height: 0;
+  }
+  html.docs-doc-page .main-wrapper {
+    min-height: calc(100vh + 10rem);
+  }
+  html.blog-wrapper .main-wrapper .container > .row:has(> aside) {
+    min-height: calc(100vh + 16rem);
+  }
+}
+
+/* A terminal's title wraps instead of being cut with an ellipsis, so its whole text is on screen
+   at a phone's width (UXF-009). The bar is named too: the shared theme's own rule for the title
+   comes later in the stylesheet and would win a tie. */
+.b10x-terminal__bar > .b10x-terminal__title {
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+/* A hero band in the primary colour (the release archive's title) takes the theme's text colour
+   for that background, so its heading meets the contrast minimum in both themes (UXF-006). The
+   heading takes it too: headings have a colour of their own (`--ifm-heading-color`). */
+.hero--primary {
+  --ifm-hero-text-color: var(--b10x-color-on-accent);
+  --ifm-heading-color: var(--b10x-color-on-accent);
+}
+
+/* A jump from an index list lands below the sticky navbar, and the row it lands on is marked while
+   it is the target (UXF-027). The targets are the empty anchors the generated reference tables put
+   in a row's cell. */
+.markdown a[id]:empty {
+  scroll-margin-top: calc(var(--ifm-navbar-height) + 1rem);
+}
+.markdown tr:has(a[id]:target) {
+  outline: 2px solid var(--ifm-color-primary);
+  outline-offset: -2px;
+}

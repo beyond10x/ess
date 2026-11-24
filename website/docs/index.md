@@ -7,12 +7,18 @@ description: Model system intent as validated typed data, then derive determinis
 
 # Executable System Specification
 
-ESS is a standalone Rust toolchain for describing systems as typed, validated data. A specification
-can be compiled into deterministic intermediate representation, inspected as a graph, compared
-semantically across revisions, projected into supported concrete formats, and used to generate the
-conformance scenarios an implementation must satisfy.
+ESS is a standalone Rust toolchain for describing systems as typed, validated data, and for
+deriving from them deterministic artifacts and the conformance scenarios an implementation must
+satisfy.
 
-The command is `ess`. Its first level is five areas (`specify`, `generate`, `verify`, `infra`, `ui`); the first four are shown:
+Start here:
+
+- [Install ess](./start/install.md)
+- [Run your first conformance suite](./start/first-conformance-run.md)
+- [Verify conformance](./guides/verify-conformance.md) of an implementation you already have
+- [Limitations and trust assumptions](./status/limitations.md)
+
+The command is `ess`; its first level is [five areas](./reference/cli.md). Four of them:
 
 ```shell-session
 $ ess specify validate --path spec                                      # is the specification consistent?

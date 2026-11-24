@@ -51,6 +51,7 @@ const config: Config = {
           onUntruncatedBlogPosts: 'throw',
           editUrl: 'https://github.com/beyond10x/ess/tree/main/website/',
         },
+        theme: {customCss: './src/css/custom.css'},
       } satisfies Preset.Options,
     ],
   ],

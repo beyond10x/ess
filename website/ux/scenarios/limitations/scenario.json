@@ -1,0 +1,18 @@
+{
+  "name": "limitations",
+  "card": "rotating",
+  "persona": "A security reviewer asked to sign off on ESS who reads the limits before the features.",
+  "task": "Find the list of limitations.",
+  "twists": ["Arrives on the landing page.", "Looks in the top navigation, not the sidebar."],
+  "start": "/ess/",
+  "steps": [
+    { "click": { "role": "link", "name": "^Status$" } },
+    { "click": { "role": "link", "name": "^Limitations and trust assumptions$" } },
+    { "reveal": { "role": "heading", "name": "^Limitations and trust assumptions$" } }
+  ],
+  "truth": {
+    "path": "/ess/docs/status/limitations",
+    "target": { "role": "heading", "name": "^Limitations and trust assumptions$" }
+  },
+  "expect": { "completion": "the page heading is in view", "max_actions": 3 }
+}

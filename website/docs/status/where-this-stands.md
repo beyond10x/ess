@@ -1,30 +1,34 @@
 ---
 title: Where this stands
 sidebar_position: 1
-description: Current-source ESS capabilities, a dated release observation, and their evidence boundaries.
-lede: ESS is experimental and standalone. What the current source does, the latest release observed, and the evidence behind each claim.
-source: Capabilities generated from website/data/status.json by cargo xtask site-data; the support block checked by cargo xtask support
+description: Current-source ESS capabilities, the newest release, and their evidence boundaries.
+lede: ESS is experimental and standalone. What the current source does, the newest release, and the evidence behind each claim.
+source: Capabilities generated from website/data/status.json by cargo xtask site-data; the support block checked by cargo xtask support; the newest release written by cargo xtask docs --write
 ---
 
 # Where this stands
 
+[Limitations and trust assumptions](./limitations.md): what ESS does not do or claim.
+
 ## Latest release
 
-The latest published release observed on 22 November 2026 is
-[0.97.3](https://github.com/beyond10x/ess/releases/tag/0.97.3). Its release record lists archives
-for Linux and macOS on x86-64 and ARM64, plus SHA256SUMS. This is a dated observation of the asset list.
-It does not claim that the archives were downloaded, their checksums verified, or the binary
-installed or run.
+[ess-newest-release-begin]: #
+
+Written from `CHANGELOG.md` and `release-notes/` by `cargo xtask docs --write`.
+
+The newest release is [0.98.0](https://github.com/beyond10x/ess/releases/tag/0.98.0), dated 23 November 2026 in the changelog. Each release publishes archives for Linux and macOS on x86-64 and ARM64, plus `SHA256SUMS`; this page does not claim that they were downloaded, verified or run.
 
 The last five releases:
 
 | Release | What it added |
 |---|---|
+| 0.98.0 | The Rust, Go and web targets carry a finite `Binary64`, and synthesis writes more scenarios for creating branches and row-set refusals |
+| 0.97.4 | Synthesis repeats less work, and the largest reported specification synthesizes in 416 s of CPU time instead of 717 s |
 | 0.97.3 | Synthesis and validation repeat less work, and a downstream specification synthesizes in 24.6 s of CPU time instead of 470.7 s |
+| 0.97.2 | Synthesis and validation repeat less work, and a downstream specification synthesizes in 24.6 s of CPU time instead of 470.7 s |
 | 0.97.1 | A suite synthesized for a command whose guard compares an input with the caller passes the interpreted target |
-| 0.97.0 | Test a program written in any language against its ESS specification |
-| 0.96.0 | Bind two errors of one wire name on one status without `alike:` when one always writes a field the other never writes |
-| 0.95.0 | Group record fields, collapse sections and draw sections in one shared frame on an `ess-ui/1` page |
+
+[ess-newest-release-end]: #
 
 [Format version history](../reference/spec-versions.md) says what every format version changed and
 which release introduced it, and the

@@ -1,0 +1,18 @@
+{
+  "name": "first-conformance-run",
+  "card": "anchor",
+  "persona": "A tech lead evaluating ESS who wants to see a conformance suite run against code before reading concepts.",
+  "task": "From the landing page, reach the first conformance run.",
+  "twists": ["Skips the introduction.", "Uses the keyboard only after the first click."],
+  "start": "/ess/",
+  "steps": [
+    { "click": { "role": "link", "name": "^Docs$" } },
+    { "click": { "role": "link", "name": "^Run your first conformance suite$" } },
+    { "reveal": { "role": "heading", "name": "^Run your first conformance suite$" } }
+  ],
+  "truth": {
+    "path": "/ess/docs/start/first-conformance-run",
+    "target": { "role": "heading", "name": "^Run your first conformance suite$" }
+  },
+  "expect": { "completion": "the page heading is in view", "max_actions": 3 }
+}

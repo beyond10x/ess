@@ -1,0 +1,19 @@
+{
+  "name": "install-linux-x86_64",
+  "card": "anchor",
+  "persona": "A backend developer on a Linux x86_64 laptop who heard of ESS and wants it installed before lunch.",
+  "task": "Find the install command for Linux x86_64.",
+  "twists": ["Arrives on the landing page, not the docs.", "Reads on a phone first, then on the laptop."],
+  "start": "/ess/",
+  "steps": [
+    { "click": { "role": "link", "name": "^Docs$" } },
+    { "click": { "role": "link", "name": "^Install ess$" } },
+    { "reveal": { "role": "heading", "name": "^From a release archive" } }
+  ],
+  "truth": {
+    "path": "/ess/docs/start/install",
+    "anchor": "from-a-release-archive",
+    "target": { "role": "heading", "name": "^From a release archive" }
+  },
+  "expect": { "completion": "the heading above the release-archive commands is in view", "max_actions": 4 }
+}

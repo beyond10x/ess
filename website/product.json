@@ -5,9 +5,11 @@
     "mark": "Es",
     "eyebrow": "Executable system specifications · experimental",
     "promise": ["Specify once.", "Derive contracts.", "Prove the code."],
-    "lede": "ESS turns system intent into a validated typed model, deterministic artifacts and an executable conformance suite. A specification is YAML; the compiler resolves every reference, the projections derive documentation and interface contracts from the result, and the same model generates the scenarios an implementation must pass. Nothing it does applies infrastructure.",
+    "lede": "ESS turns system intent into a validated typed model, deterministic artifacts and an executable conformance suite. Nothing it does applies infrastructure.",
     "actions": [
       {"label": "Get started", "href": "/docs/getting-started", "kind": "primary"},
+      {"label": "Run your first conformance suite", "href": "/docs/start/first-conformance-run"},
+      {"label": "Limitations and trust assumptions", "href": "/docs/status/limitations"},
       {"label": "See the model", "href": "#domain"}
     ],
     "meta": "Rust · YAML specifications · canonical JSON IR · Apache-2.0",
