@@ -212,6 +212,7 @@
 //! |---|---|
 //! | `request: {encoding: form}` | the request body is `application/x-www-form-urlencoded`, its schema `{command}.Input` |
 //! | `request: {encoding: query}` | no request body and no `{command}.Input`; each field the path does not carry is an `in: query` parameter under its wire name, a `List` with `style: form` and `explode: true` and not required, its absent key the empty list |
+//! | `request: {unknown: ignore}` beside `json` or `form` | `{command}.Input` is `additionalProperties: true`, and the request body says that what no field names is ignored and what the path carries must equal the path's value |
 //! | `outcomes.<o>.status` | the outcome is answered under that status instead of the derived one |
 //! | `body: response` | the command's `{command}.Result`, bare: no `outcome`, no `published` |
 //! | `body: response.<field>` | `{command}.{outcome}.Response` is that response field's schema alone |
@@ -250,6 +251,7 @@ use ess_compiler::ir::{
 };
 use ess_domain::binding::Delivery;
 use ess_domain::component::Reach;
+use ess_domain::types::UndeclaredFields;
 use ess_domain::view::Consistency;
 use serde_json::{json, Map, Value};
 
@@ -1380,22 +1382,32 @@ fn request_body(
         return None;
     }
     let schema = json!({"$ref": reference(&format!("{}.Input", command.name))});
+    // Under `unknown: ignore` (beyond10x/ess#752) what no field names is ignored, and what the
+    // path carries is admitted only when it equals the path's value.
+    let ignored = |what: &str| {
+        if request.unknown != ess_http::Unknown::Ignore {
+            String::new()
+        } else if carried.is_empty() {
+            format!(" A {what} no field names is ignored.")
+        } else {
+            format!(
+                " A {what} no field names is ignored, and a {what} the path carries must equal \
+                 the path's value."
+            )
+        }
+    };
     let (description, content) = match request.encoding {
         ess_http::Encoding::Form => (
             format!(
                 "The input `{}` declares, form-encoded as the `ess-http/1` binding declares: UTF-8, \
                  each field under its wire name, a list repeating its key once per element.{}",
                 command.name,
-                if request.unknown == ess_http::Unknown::Ignore {
-                    " A parameter no field names is ignored."
-                } else {
-                    ""
-                }
+                ignored("parameter")
             ),
             content_as(FORM_MEDIA_TYPE, schema),
         ),
         ess_http::Encoding::Json | ess_http::Encoding::Query => (
-            format!("The input `{}` declares.", command.name),
+            format!("The input `{}` declares.{}", command.name, ignored("member")),
             content(schema),
         ),
     };
@@ -2652,10 +2664,10 @@ fn command_schemas<'a>(
     roots: &mut Vec<&'a TypeHandle>,
 ) {
     let carried = carried(route);
-    let encoding = route
-        .and_then(|route| route.request.as_ref())
-        .map(|request| request.encoding)
+    let request = route
+        .and_then(|route| route.request.clone())
         .unwrap_or_default();
+    let encoding = request.encoding;
     let body: Vec<ResolvedField> = command
         .input
         .iter()
@@ -2665,10 +2677,18 @@ fn command_schemas<'a>(
     // A bare body is one field's own schema, which `field_leaves` below reaches; no object wraps it.
     let bare = http::bare_body(command, route).is_some();
     if !body.is_empty() && encoding != ess_http::Encoding::Query && !bare {
+        // A route that ignores what no field names (`unknown: ignore`, beyond10x/ess#752) reads an
+        // open body.
+        let undeclared_fields = if request.unknown == ess_http::Unknown::Ignore {
+            UndeclaredFields::Ignored
+        } else {
+            UndeclaredFields::Refused
+        };
         out.insert(
             format!("{}.Input", command.name),
             embedded(&types::message(&Message {
                 fields: &body,
+                undeclared_fields,
                 ..Message::of_command(command)
             })),
         );

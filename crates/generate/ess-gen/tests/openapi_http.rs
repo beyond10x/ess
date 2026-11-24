@@ -440,6 +440,56 @@ fn a_form_route_takes_a_form_urlencoded_request_body() {
         .is_none());
 }
 
+/// `request: {unknown: ignore}` (beyond10x/ess#752,
+/// `story:a-json-request-may-ignore-undeclared-members-and-echoed-path-fields`): on a `json`
+/// route `{command}.Input` is open and the request body says what is ignored and that a member
+/// the path carries must equal the path's value; a `form` route that ignores is open as well, and
+/// a route without `ignore` stays closed.
+#[test]
+fn a_route_that_ignores_unknown_members_publishes_an_open_input() {
+    let ir = model();
+    let routes = "routes:
+  - command: catalog.items.ListItem
+    method: put
+    path: /listings/{item_id}
+    parameters: {item_id: input.item_id}
+    request: {unknown: ignore}
+";
+    let document = bound(&ir, binding(&ir, routes));
+    let body = &document["paths"]["/listings/{item_id}"]["put"]["requestBody"];
+    let input = resolved(&document, &body["content"]["application/json"]["schema"]);
+    assert_eq!(input["additionalProperties"], true, "{input}");
+    assert_eq!(keys(&input["properties"]), ["title"]);
+    let description = body["description"].as_str().expect("a description");
+    assert!(
+        description.contains("A member no field names is ignored")
+            && description.contains("a member the path carries must equal the path's value"),
+        "{description}"
+    );
+
+    let closed = bound(&ir, binding(&ir, ONE_ROUTE));
+    let body = &closed["paths"]["/listings/{item_id}"]["put"]["requestBody"];
+    let input = resolved(&closed, &body["content"]["application/json"]["schema"]);
+    assert_eq!(input["additionalProperties"], false, "{input}");
+    assert_eq!(
+        body["description"],
+        "The input `catalog.items.ListItem` declares."
+    );
+
+    let (_, orders) = orders();
+    let body = &orders["paths"]["/api/orders"]["post"]["requestBody"];
+    let input = resolved(
+        &orders,
+        &body["content"]["application/x-www-form-urlencoded"]["schema"],
+    );
+    assert_eq!(input["additionalProperties"], true, "{input}");
+    let description = body["description"].as_str().expect("a description");
+    assert!(
+        description.ends_with(" A parameter no field names is ignored."),
+        "a route whose path carries nothing says nothing of it: {description}"
+    );
+}
+
 #[test]
 fn a_query_command_takes_its_unmapped_inputs_as_query_parameters_and_has_no_request_body() {
     let document = auth();
@@ -1209,6 +1259,8 @@ fn digest_of(text: &str) -> String {
     ess_gen::ess_http::digest(without_digests(text).as_bytes())
 }
 
+/// The two orders rows were re-recorded when a `form` route with `unknown: ignore` (`PlaceOrder`)
+/// started writing its `{command}.Input` with `additionalProperties: true` (beyond10x/ess#752).
 #[test]
 fn a_binding_that_declares_no_limit_keeps_every_stage_2_openapi_byte() {
     let orders = model_of("orders.yaml", ORDERS);
@@ -1227,9 +1279,9 @@ fn a_binding_that_declares_no_limit_keeps_every_stage_2_openapi_byte() {
     assert_eq!(
         digests,
         [
-            "sha256:b392cc20ec3639fc64a069de08e8832148412961cddddbc322d14a4d2acb5c75",
+            "sha256:58d9ead73146522044c1a8977ccb4a074426cfd15637c85ec481ad61497436a2",
             "sha256:3f9a5844122bf2eed0b5a920370eacc12397b6e153c59cc10998906ce2ffa7e3",
-            "sha256:989a90a67e8e0cedcbf674458c5a0e01121d7eab820c552fc4a0f5572d90e155",
+            "sha256:ca2bfe7d5d193be515362ff35c2a714f1c8fefd253ee8a69765ea3c894043ca9",
         ]
     );
 }

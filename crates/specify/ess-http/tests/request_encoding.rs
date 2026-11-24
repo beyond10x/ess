@@ -456,12 +456,6 @@ fn ess_http_020_request_on_a_view_and_unknown_out_of_its_rules_are_refused() {
     path: /items/{item_id}
     parameters: {item_id: param.item_id}
     request: {encoding: query}
-  - command: catalog.items.ListItem
-    method: post
-    request: {unknown: ignore}
-  - command: catalog.items.TouchItem
-    method: post
-    request: {encoding: json, unknown: ignore}
   - command: catalog.items.ShapeItems
     method: post
     path: /api/shape
@@ -473,14 +467,12 @@ fn ess_http_020_request_on_a_view_and_unknown_out_of_its_rules_are_refused() {
         [
             refused("ESS-HTTP-020", "routes[0].request"),
             refused("ESS-HTTP-020", "routes[1].request.unknown"),
-            refused("ESS-HTTP-020", "routes[2].request.unknown"),
-            refused("ESS-HTTP-020", "routes[3].request.unknown"),
             // The encoding itself is admitted, so its fields are still checked.
-            refused("ESS-HTTP-021", "routes[3].request.encoding"),
-            refused("ESS-HTTP-021", "routes[3].request.encoding"),
-            refused("ESS-HTTP-021", "routes[3].request.encoding"),
-            refused("ESS-HTTP-021", "routes[3].request.encoding"),
-            refused("ESS-HTTP-021", "routes[3].request.encoding"),
+            refused("ESS-HTTP-021", "routes[1].request.encoding"),
+            refused("ESS-HTTP-021", "routes[1].request.encoding"),
+            refused("ESS-HTTP-021", "routes[1].request.encoding"),
+            refused("ESS-HTTP-021", "routes[1].request.encoding"),
+            refused("ESS-HTTP-021", "routes[1].request.encoding"),
         ]
     );
     let shown = worded(result);
@@ -489,13 +481,9 @@ fn ess_http_020_request_on_a_view_and_unknown_out_of_its_rules_are_refused() {
         "{shown:?}"
     );
     assert!(
-        shown[1].contains("`json`") && shown[1].contains("`ignore`"),
-        "{shown:?}"
-    );
-    assert!(
-        shown[3].contains("`skip`")
-            && shown[3].contains("`refuse`")
-            && shown[3].contains("`ignore`"),
+        shown[1].contains("`skip`")
+            && shown[1].contains("`refuse`")
+            && shown[1].contains("`ignore`"),
         "{shown:?}"
     );
     // An empty `request` on a view is refused too: a view has no request to encode.
@@ -513,6 +501,56 @@ fn ess_http_020_request_on_a_view_and_unknown_out_of_its_rules_are_refused() {
         + "routes:\n  - command: catalog.items.ListItem\n    method: post\n    request: {media: form}\n";
     let error = HttpSpec::from_yaml(&text).expect_err("media").to_string();
     assert!(error.contains("unknown field `media`"), "{error}");
+}
+
+/// `unknown: ignore` beside a `json` body (beyond10x/ess#752,
+/// `story:a-json-request-may-ignore-undeclared-members-and-echoed-path-fields`): admitted with the
+/// encoding written out or left out, compiled as `{"unknown": "ignore"}` and read back to the same
+/// bytes. Beside a bare `body` it stays refused: one field's value has no member of the input to
+/// ignore.
+#[test]
+fn a_json_request_may_ignore_an_unknown_member() {
+    let ir = shaped_model();
+    let routes = "routes:
+  - command: catalog.items.ListItem
+    method: put
+    path: /items/{item_id}
+    parameters: {item_id: input.item_id}
+    request: {encoding: json, unknown: ignore}
+  - command: catalog.items.TouchItem
+    method: post
+    request: {unknown: ignore}
+";
+    let json = compiled(&ir, routes).expect("compiles").to_canonical_json();
+    assert_eq!(
+        json.matches("\"request\": {\n        \"unknown\": \"ignore\"\n      }")
+            .count(),
+        2,
+        "{json}"
+    );
+    assert_eq!(
+        HttpIr::from_json(&json)
+            .expect("reads back")
+            .to_canonical_json(),
+        json
+    );
+    let bare = "routes:
+  - command: catalog.items.ListItem
+    method: put
+    path: /items/{item_id}
+    parameters: {item_id: input.item_id}
+    request: {body: input.title, unknown: ignore}
+";
+    let result = compiled(&ir, bare);
+    assert_eq!(
+        located(result.clone()),
+        [refused("ESS-HTTP-020", "routes[0].request.unknown")]
+    );
+    let shown = worded(result);
+    assert!(
+        shown[0].contains("`ignore`") && shown[0].contains("bare body"),
+        "{shown:?}"
+    );
 }
 
 #[test]
@@ -680,7 +718,10 @@ fn compiled_ir_with_a_request_out_of_its_rules_is_refused_naming_the_key() {
             "\"request\": {\"encoding\": \"form\", \"unknown\": \"refuse\"}",
             "unknown",
         ),
-        ("\"request\": {\"unknown\": \"ignore\"}", "unknown"),
+        (
+            "\"request\": {\"body\": \"input.title\", \"unknown\": \"ignore\"}",
+            "unknown",
+        ),
         ("\"request\": {\"encoding\": \"query\"}", "encoding"),
         ("\"request\": {\"encoding\": \"xml\"}", "xml"),
         (

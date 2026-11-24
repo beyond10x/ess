@@ -1743,7 +1743,8 @@ pub(crate) struct Message<'a> {
     /// The authored examples of a command's input, by input name; `None` for every other message.
     pub(crate) examples: Option<&'a BTreeMap<String, ess_primitives::node::Node>>,
     /// What a reader does with a field it does not declare: `ignored` only for a command response
-    /// whose command declares it (`ess/24`), `refused` for every other message.
+    /// whose command declares it (`ess/24`) and a command input its route reads with
+    /// `unknown: ignore` (beyond10x/ess#752), `refused` for every other message.
     pub(crate) undeclared_fields: UndeclaredFields,
     /// What must hold of every value, as the entity declares it (beyond10x/ess#688). Empty for
     /// everything but an entity, for the reason `relations` is: a command input, an event or a

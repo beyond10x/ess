@@ -232,10 +232,11 @@ impl fmt::Display for Encoding {
 )]
 #[serde(rename_all = "snake_case")]
 pub enum Unknown {
-    /// A parameter no field names makes the request malformed.
+    /// A parameter or member no field names, or one the path carries, makes the request malformed.
     #[default]
     Refuse,
-    /// A parameter no field names is ignored (RFC 6749 §3.1).
+    /// A parameter or member no field names is ignored (RFC 6749 §3.1), and one the path carries
+    /// is admitted when its value is the path's (beyond10x/ess#752).
     Ignore,
 }
 
@@ -2744,7 +2745,7 @@ impl HttpIr {
     /// not have, or read one source from two variables; a source outside the operation's
     /// namespace; a `request` on a view, holding only defaults or writing a default out, encoded
     /// `query` on any method but `get` and `delete` or `json` or `form` on `get`, or `ignore`
-    /// beside `json`; `outcomes` on a view, or `body` or `empty` on a command; `outcomes` or `refusals` out of key
+    /// beside a bare `body`; `outcomes` on a view, or `body` or `empty` on a command; `outcomes` or `refusals` out of key
     /// order or empty; an outcome status outside `100..=599`, a `1xx` or a `3xx` other than the
     /// [`REDIRECTS`]; an outcome body that is `envelope` written out, a literal, a view's body, an
     /// error object under an empty member, or anything but `none` on `204`; an outcome `encoding`
@@ -3461,8 +3462,8 @@ fn headers_invariants(
 }
 
 /// The invariants of one compiled route's `request` (see [`HttpIr::from_json`]): it is on a
-/// command, not all defaults, and admitted for the route's method, with `ignore` beside `form` or
-/// `query` only, and a bare `body` beside `json` only, naming no field the path carries.
+/// command, not all defaults, and admitted for the route's method, with `ignore` beside no
+/// bare `body`, and a bare `body` beside `json` only, naming no field the path carries.
 fn request_invariants(route: &Route, request: &Request, at: &str) -> Result<(), String> {
     if let Operation::View(_) = route.operation {
         return Err(format!(
@@ -3502,9 +3503,10 @@ fn request_invariants(route: &Route, request: &Request, at: &str) -> Result<(), 
             request.encoding, route.method
         ));
     }
-    if request.encoding == Encoding::Json && request.unknown == Unknown::Ignore {
+    if request.body.is_some() && request.unknown == Unknown::Ignore {
         return Err(format!(
-            "`{at}.request.unknown` is `ignore` on a `json` body, which stays closed"
+            "`{at}.request.unknown` is `ignore` beside a bare `body`, which holds no member of the \
+             input to ignore"
         ));
     }
     Ok(())
@@ -3634,7 +3636,7 @@ impl Refusals {
 /// | `ESS-HTTP-011` | two templates of one component and method that cross: a request path matches both, and each holds a literal at some position the other holds a variable (`/{a}/x` beside `/y/{b}`), naming both operations, a path both match and the segments. From 0.89.0 a nested pair, where one template holds the literal at every position the two differ (`/items/current` beside `/items/{item_id}`), is admitted and the more specific answers |
 /// | `ESS-HTTP-013` | an operation with no HTTP surface: a command no component accepts, a view no `reached_by: network` component serves |
 /// | `ESS-HTTP-014` | a command on `get` with an input field no variable of the path maps, unless its request is encoded `query` |
-/// | `ESS-HTTP-020` | at `routes[i].request.encoding`: an encoding outside `json`, `form` and `query`, `json` or `form` written on a `get` command, or `query` on a method other than `get` and `delete`; at `routes[i].request.unknown`: a value outside `refuse` and `ignore`, or `ignore` with a `json` body; at `routes[i].request`: `request` on a view; at `routes[i].request.body`: `body` on a view, beside `form` or `query`, or on a `get` command, a body that is not `input.<field>` naming an input field of the command, one that is `Optional` or that the path carries, and, on a route with a path, each other input field the path does not carry |
+/// | `ESS-HTTP-020` | at `routes[i].request.encoding`: an encoding outside `json`, `form` and `query`, `json` or `form` written on a `get` command, or `query` on a method other than `get` and `delete`; at `routes[i].request.unknown`: a value outside `refuse` and `ignore`, or `ignore` beside a bare `body`; at `routes[i].request`: `request` on a view; at `routes[i].request.body`: `body` on a view, beside `form` or `query`, or on a `get` command, a body that is not `input.<field>` naming an input field of the command, one that is `Optional` or that the path carries, and, on a route with a path, each other input field the path does not carry |
 /// | `ESS-HTTP-021` | at `routes[i].request.encoding`: a `form` or `query` request carrying an input field whose type has no flat spelling, naming the field and its type. A flat field is a scalar (a primitive other than `Json`, an enum, or a newtype of a scalar), an `Optional` scalar or a `List` of scalars; a field mapped to the path is not carried |
 /// | `ESS-HTTP-022` | at `routes[i].outcomes.<name>`: a key that is not the local name of an outcome of the command, or one listed twice; at `routes[i].outcomes`: `outcomes` on a view; at `routes[i].errors`: `errors` on a view, or on a command none of whose outcomes reports an error without being listed under `outcomes`; at `routes[i].alike`: `alike` on a view, a group of fewer than two names, a name that is not the local name of an outcome of the command, one in two groups or twice in one, or one with no declared answer (neither listed under `outcomes` nor covered by `errors`) |
 /// | `ESS-HTTP-023` | at `routes[i].outcomes.<name>.status`, or `routes[i].errors.status` once for each outcome `errors` covers: a status outside `100..=599`, a `1xx`, a `3xx` other than `301`, `302`, `303`, `307` and `308`, a `2xx` on an outcome with an error, or a `4xx` or `5xx` on one without |
@@ -5411,7 +5413,7 @@ struct Checked {
 
 /// Holds a route's `request` to its rules (`ESS-HTTP-020`): no `request` on a view, an encoding of
 /// the set that the method admits when one is written (`query` on `get` or `delete` only, and on
-/// `get` nothing else written), an `unknown` of the set, `ignore` only beside `form` or `query`,
+/// `get` nothing else written), an `unknown` of the set, `ignore` beside no bare `body`,
 /// and a `body` only beside `json` off `get` ([`view_request`], [`admitted_body`]). An absent
 /// `request` is a `json` body refusing an unknown key, which a `get` command is in stage 1.
 fn request(
@@ -5490,12 +5492,14 @@ fn request(
             unknown
         }
     };
-    if parsed == Some(Encoding::Json) && unknown == Some(Unknown::Ignore) {
+    if parsed == Some(Encoding::Json) && written.body.is_some() && unknown == Some(Unknown::Ignore)
+    {
         refusals.refuse(
             "ESS-HTTP-020",
             format!("{path}.request.unknown"),
-            "`ignore` admits a request parameter no field names, which only a `form` or `query` \
-             request has; a `json` body stays closed, so `unknown` is `refuse` beside `json`",
+            "`ignore` admits a member no input field names, and a bare body is one input field's \
+             value, which holds no member of the input to ignore; `unknown` is `refuse` beside \
+             `body`",
         );
         refused = true;
     }

@@ -160,6 +160,19 @@ The document follows those keys on the routes that use them:
   the whole request body, bare: the request body's schema is the field's own, a list
   `{type: array, items: …}`, and no `{command}.Input` is written. The field may not be `Optional`,
   and the path must carry every other input field.
+- `unknown: ignore` beside `json`, `form` or `query` ignores a member or key no input field names,
+  for a client that sends a whole object back, and `{command}.Input` is written with
+  `additionalProperties: true`. A member the path carries is admitted when it equals the path's
+  value and malformed otherwise; under the default, `refuse`, both are malformed. A struct inside
+  the body stays as closed as it is declared, and a bare `body` takes no `unknown: ignore`:
+
+  ```yaml
+  - command: catalog.shelves.RelabelShelf
+    method: put
+    path: /shelves/{shelf_id}/label
+    parameters: {shelf_id: input.shelf_id}
+    request: {unknown: ignore}        # {"shelf_id": "s-1", "label": "A", "updated_at": "…"}
+  ```
 - A view's parameter the path does not carry is an `in: query` parameter under the parameter's flat
   `wire:` when it declares one, and both generated servers read it under that name only.
 - Each declared status is its own response. `body: response` answers the command's response

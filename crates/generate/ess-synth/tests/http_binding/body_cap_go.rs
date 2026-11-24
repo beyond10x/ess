@@ -29,9 +29,11 @@ const BINDING: &str = include_str!("../fixtures/body-cap-rust/http.yaml.in");
 
 /// The digest of the shop fixture's bound Go synthesis, joined as `path`, a line feed, `contents`
 /// in path order, captured on the tree before this change: a binding that declares no limit and no
-/// `too_large` refusal writes the bytes it wrote before.
+/// `too_large` refusal writes the bytes it wrote before. Re-recorded when the served document of
+/// the shop's `form` route with `unknown: ignore` (`Order`) wrote its input with
+/// `additionalProperties: true` (beyond10x/ess#752).
 const SHOP_WORKSPACE_DIGEST: &str =
-    "sha256:7f2e3e2f1d3cf5aeed0e7b39d258476a105c01ee4ea10c5a342e4f71d580b9b1";
+    "sha256:216cfffe4f080f85fdda2243ab229a3c4340d8a94135db54891e524d7ab121e6";
 
 fn fixture_ir() -> EssIr {
     let spec = Specification::assemble([(

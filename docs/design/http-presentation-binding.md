@@ -338,6 +338,23 @@ default, `refuse`, keeps ESS's closed bodies. A key whose percent-decoding fails
 because every declared name is UTF-8, so it is unknown: ignored with its value under `ignore`, and
 malformed under `refuse`.
 
+`unknown: ignore` is admitted beside `json` too (beyond10x/ess#752,
+`story:a-json-request-may-ignore-undeclared-members-and-echoed-path-fields`), for a client that
+reads a resource, changes one member and sends the whole object back. One rule holds for all three
+encodings:
+
+- under `refuse`, a key or member no field names, and one the path carries, is malformed;
+- under `ignore`, a key or member no field names is ignored silently, and one the path carries is
+  admitted when its value decodes to the path's value and malformed otherwise: two values for one
+  field, the rule a scalar key given twice already follows.
+
+Only the top level of a `json` body is opened: a struct inside it stays as closed as its
+declaration says (`undeclared_fields`). `unknown: ignore` beside a bare `body: input.<field>` is
+refused (`ESS-HTTP-020`): one field's value holds no member of the input to ignore. The OpenAPI
+document writes `{command}.Input` with `additionalProperties: true` for a route that ignores, and
+its request body says what is ignored and that a member the path carries must equal the path's
+value.
+
 A `json` request may take one input field as its whole body, bare: `request: {encoding: json,
 body: input.<field>}` (`encoding` may be left out). The field's JSON value is the body: a list,
 an object, a string or a number, as the field's type is, never wrapped in the input object. It
@@ -579,7 +596,7 @@ and its answers.
 
 | code | refused | names |
 |---|---|---|
-| `ESS-HTTP-020` | an encoding outside the set; `form` or `json` on `get`; `query` on anything but `get` or `delete`; `request:` on a view; `unknown: ignore` with `json`, or an `unknown` value outside `refuse` and `ignore`; a `body` on a view, beside `form` or `query`, or on a `get` command, one that is not `input.<field>` naming an input field of the command, one naming an `Optional` field or a field the path carries, and each other input field the path does not carry | `routes[i].request.encoding`, `routes[i].request.unknown` or `routes[i].request.body`, and for a field left out, the field |
+| `ESS-HTTP-020` | an encoding outside the set; `form` or `json` on `get`; `query` on anything but `get` or `delete`; `request:` on a view; `unknown: ignore` beside a bare `body`, or an `unknown` value outside `refuse` and `ignore`; a `body` on a view, beside `form` or `query`, or on a `get` command, one that is not `input.<field>` naming an input field of the command, one naming an `Optional` field or a field the path carries, and each other input field the path does not carry | `routes[i].request.encoding`, `routes[i].request.unknown` or `routes[i].request.body`, and for a field left out, the field |
 | `ESS-HTTP-021` | a `form` or `query` field whose type has no flat spelling (struct, nested list, map, `Json`) | the field and its type |
 | `ESS-HTTP-022` | an `outcomes:` key that is not an outcome of the command, or `outcomes:` on a view; `errors:` on a view, or on a route whose command has no outcome with `error` that `outcomes:` leaves unlisted; `alike:` on a view, or a group of one, a name that is not an outcome of the command, one in two groups or twice in one, or one with no declared answer | `routes[i].outcomes.<name>`, `routes[i].errors` or `routes[i].alike` |
 | `ESS-HTTP-023` | a status outside `100..=599`, in a class the outcome may not use, or a `3xx` other than `301`, `302`, `303`, `307` and `308` | the outcome, the status, the class |
@@ -733,8 +750,9 @@ servers already follow (`crates/generate/ess-synth/src/rust/http.rs:824-868`):
    answer (`http.rs:83-86`), before `malformed`, as today.
 6. The input cannot be read per `request` (not the declared media type, not UTF-8, a scalar key
    twice, an unknown key under `refuse`, a missing required field, a value its type refuses):
-   `refusals.malformed`, else today's `400`. A path variable's value wins over a body or query key
-   for the same field, and that key counts as unknown.
+   `refusals.malformed`, else today's `400`. A body or query key for a field the path carries is
+   malformed under `refuse`; under `ignore` it is admitted when its value decodes to the path's
+   value and malformed otherwise, in all three encodings.
 7. The command runs and takes an outcome: the route's `outcomes.<outcome>` if listed, else its
    `errors` for an outcome with `error`, else `outcome_status` and `envelope`. A view answers `rows`, `array`, or `single` with the row or `empty`.
 8. The realization is unfinished: `refusals.unfinished`, else today's `501`.
@@ -1016,9 +1034,11 @@ and none can be tightened later without refusing a document that compiled.
    (`ESS-HTTP-024`), because the object would hold that member twice. Rejected: a per-field rename
    map in the binding, a second mapping of names the model already owns, and one that two bindings
    of the same specification could spell differently.
-14. `request.unknown: ignore` is admitted with `form` and `query` only, and `request:` is refused on
-    a view (`ESS-HTTP-020`). A JSON body stays closed, as ESS's bodies are today; RFC 6749 §3.1's
-    "MUST ignore unrecognized request parameters" is about form and query parameters.
+14. `request.unknown: ignore` is admitted with `json`, `form` and `query`, beside no bare `body`,
+    and `request:` is refused on a view (`ESS-HTTP-020`). Taken first with `form` and `query` only,
+    RFC 6749 §3.1's "MUST ignore unrecognized request parameters" being about those, so that a
+    later release could relax it as an addition; beyond10x/ess#752 relaxed it for `json`, with one
+    rule for a key or member the path carries in all three encodings (§ "Request encoding").
 15. A `3xx` status is one of `301`, `302`, `303`, `307` and `308`, each with a `redirect`
     (`ESS-HTTP-023`, `ESS-HTTP-028`). `304` answers a conditional request, which the binding cannot
     state, and `300`, `305` and `306` name no answer an outcome gives.
