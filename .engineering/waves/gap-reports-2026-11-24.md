@@ -143,7 +143,8 @@ Two findings from lifting an existing page into `ess-ui/1`. No item of the first
   `story:one-rule-decides-which-external-addresses-a-document-may-name-and-ess-ui-check-and-both-renderers-apply-it` (M, about 280; one rule for which external addresses a document may name,
   applied alike by `ess ui check` and both renderers), `story:an-action-leads-to-an-address-outside-the-document-so-a-button-a-header-action-or-a-menu-item-needs-no-stub` (M, about 450; `href` as
   an action effect), `story:a-ui-test-asserts-that-an-action-opened-an-external-address-in-the-terminal-and-in-the-browser-without-a` (M, about 300; a test asserts an action opened an external
-  address), `story:an-entry-of-a-navigation-section-is-a-page-or-an-outside-address-in-one-ordered-list-so-a-menu-needs-no-stub` (M, about 500; `links` beside `pages` in a navigation section).
+  address), `story:an-entry-of-a-navigation-section-is-a-page-or-an-outside-address-in-one-ordered-list-so-a-menu-needs-no-stub` (M, about 560; an entry of a navigation section's `pages` may be an outside
+  address).
   `story:one-rule-decides-which-external-addresses-a-document-may-name-and-ess-ui-check-and-both-renderers-apply-it` answers the link question of
   `story:a-node-draws-text-written-in-markdown`.
 
@@ -470,10 +471,11 @@ Fifth list (a page lifted into a document):
 - LP-D7 (item 2): does the terminal open an external address. A: never, it shows the address,
   records the visit and shows a notice; B: opens it interactively. Default A.
 - LP-D8 (item 2): how a navigation menu entry leads to an outside address (the requester confirmed
-  such links sit in the menu). A: `NavSection` takes `links: [{name, label, href, icon?,
-  synonyms?}]` beside `pages`, drawn after the pages, as `story:an-entry-of-a-navigation-section-is-a-page-or-an-outside-address-in-one-ordered-list-so-a-menu-needs-no-stub`; B: a record
-  `{name, label, href}` inside `pages`; C: out, the application keeps a stub page per entry.
-  Default A (in).
+  such links sit between page entries). A: an entry of a fixed `pages` list may be `{name, label,
+  href, icon?, synonyms?}` instead of a page name, in its place, as `story:an-entry-of-a-navigation-section-is-a-page-or-an-outside-address-in-one-ordered-list-so-a-menu-needs-no-stub` (the Rust
+  type `NavPages::Fixed` changes; an older `ess` refuses it); B: a new ordered key `entries` that
+  replaces `pages` when present; C: `links` beside `pages`, drawn after them (no outside entry
+  between pages). Default A (in).
 
 Fourth report (a service contract):
 

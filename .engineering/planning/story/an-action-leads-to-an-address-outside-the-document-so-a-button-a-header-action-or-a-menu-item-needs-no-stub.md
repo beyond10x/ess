@@ -11,7 +11,7 @@ relations:
 - serves: vision:O2
 - depends_on: story:one-rule-decides-which-external-addresses-a-document-may-name-and-ess-ui-check-and-both-renderers-apply-it
 - depends_on: story:an-action-names-its-icon
-revision: 2
+revision: 3
 ---
 ## Need
 
@@ -179,10 +179,11 @@ word. Open questions:
   host's business, and a terminal that sometimes starts one behaves differently in a test.
 - **LP-D8. Does a navigation menu section list external entries?** It does: the requester said
   external links sit in the navigation menu, so this decision is now about how, and it is carried
-  by `lp2-nav-href`, not by this story. (A) In, as `links: [{name, label, href}]` beside `pages`.
-  (B) In, as a record inside `pages`. (C) Out: an account-menu entry or a header action with
-  `href`. **Recommended: (A).** Navigation entries stay out of this story, which keeps it at
-  about 450 lines.
+  by `lp2-nav-href`, not by this story. The requester also said the outside entry sits between
+  page entries. (A) An entry of `pages` may be `{name, label, href}`, in one ordered list. (B) A
+  new ordered key replacing `pages`. (C) `links` beside `pages`, drawn after them.
+  **Recommended: (A).** Navigation entries stay out of this story, which keeps it at about
+  450 lines.
 
 ## Scope
 
