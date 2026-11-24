@@ -66,8 +66,9 @@ use ess_compiler::ir::{
     ResolvedField, ResolvedMappingValue, ResolvedPayloadField, ResolvedRelatedTest,
     ResolvedSetSubject, ResolvedTypeRef, ResolvedView, TypeHandle,
 };
-use ess_domain::command::precedence::Phase;
+use ess_domain::command::precedence::{reads_one_rule, Phase};
 use ess_domain::component::Reach;
+use ess_domain::system::FormatVersion;
 use ess_gen::Provenance;
 
 /// The command that rewrites what this plan describes, named in every rendering of it.
@@ -756,7 +757,9 @@ fn related_precedence(ir: &EssIr, command: &ResolvedCommand) -> String {
             } => Some(field),
             _ => None,
         });
-    if let Some(field) = stored {
+    if has_related && reads_one_rule(ir.format()) {
+        one_rule_precedence(ir.format(), stored, several)
+    } else if let Some(field) = stored {
         format!(
             " Selection precedence: on commands with `when_related:` reading the stored reference \
              `{field}` of the addressed subject, choose the first declared input refusal whose \
@@ -799,6 +802,65 @@ fn related_precedence(ir: &EssIr, command: &ResolvedCommand) -> String {
     } else {
         String::new()
     }
+}
+
+/// The selection precedence of a command reading a related row from `ess/27`, the one rule
+/// (beyond10x/ess#798): one clause per phase, in the order [`Phase::step_in`] gives `format`, so
+/// the sentence and the plan the interpreter reads name one order.
+fn one_rule_precedence(format: FormatVersion, stored: Option<&String>, several: bool) -> String {
+    let mut phases: Vec<(u8, Phase)> = Phase::PRECEDENCE
+        .iter()
+        .filter_map(|phase| phase.step_in(format).map(|step| (step, *phase)))
+        .collect();
+    phases.sort_by_key(|(step, _)| *step);
+    let missing = if several {
+        " (read the related rows in the declaration order of their `exists: false` branches, and \
+         the first missing one answers)"
+    } else {
+        ""
+    };
+    let clauses: Vec<String> = phases
+        .into_iter()
+        .map(|(_, phase)| match phase {
+            Phase::InputAbsent => {
+                "answer a request with no input document (`input_absent:`)".to_owned()
+            }
+            Phase::RelatedRow => "check `existing_instance` then `exists: false`".to_owned(),
+            Phase::InputRefusal => "choose the first declared input refusal whose guard holds, \
+                 or `external:` refusal marked `before_row: true`, among them in declaration \
+                 order"
+                .to_owned(),
+            Phase::Existence => {
+                "check addressed-row existence (`existing_instance`, then `unknown_instance`)"
+                    .to_owned()
+            }
+            Phase::HeldState => "the held state (`when_subject_state` and `when_subject`), with \
+                 `wrong_state` only if the selected branch moves from a state the row does not \
+                 hold"
+                .to_owned(),
+            Phase::PresentRelated => match stored {
+                Some(field) => format!(
+                    "read the stored reference `{field}` as the subject held it before the \
+                     branch (absent, it selects no `when_related:` branch; naming an identity no \
+                     row carries, `exists: false`; naming a row, the present `when_related:` \
+                     predicate refusal whose predicate and optional input guard hold)"
+                ),
+                None => format!(
+                    "`exists: false`{missing}, then the first declared present `when_related:` \
+                     predicate refusal whose predicate and optional input guard hold"
+                ),
+            },
+            Phase::Accepting => {
+                "accepting and remaining external branches in declaration order".to_owned()
+            }
+            Phase::Default => "the default, where no branch answered".to_owned(),
+        })
+        .collect();
+    format!(
+        " Selection precedence: on commands with `when_related:`, {}. An accepting branch that \
+         moves nothing answers in every state.",
+        clauses.join("; then ")
+    )
 }
 
 /// A condition as a contract phrase.

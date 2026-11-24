@@ -6,6 +6,7 @@
 
 - Validation refuses `{subject: …}`, and a `{related: …}` read through a field of the subject, on a `deletes:` outcome naming `deletes:`, with a hint to read the row through an input such as `{related: {via: input.<id>, field: …}}`, where it said the outcome was a `creates:` outcome with no row before it and told the author to read the input (#796).
 - `ess generate synthesize --target rust` writes the port of a component that accepts no command and declares no view without a field nothing reads, so the generated workspace builds with warnings denied, where `cargo build` warned that `behaviors` is never read (#793).
+- The obligation contract in `PLAN.md` and `plan.json` of a command with `when_related:` from `ess/27` states the precedence the interpreted target and the suite follow: input refusals and `before_row: true` externals first, then existence, the held state, missing and present related rows, and the accepting branches, where it put `existing_instance` and `exists: false` before the input refusals (#798).
 
 ## [0.98.0] — 2026-11-23
 
