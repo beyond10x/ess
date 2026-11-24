@@ -10,9 +10,9 @@ tags:
 - gap-reports-2026-11-24
 relations:
 - blocks: story:a-specification-may-state-one-run-of-a-process-with-a-command-once-per-member-of-a-set-and-a-command-once-per
-revision: 2
+revision: 3
 ---
-Does a specification state a run of a process (a cause, a command per member of a set, a command once, a continuation after a refused member, an exit status), and as a binding cause, as its own document, or not at all: options A, B, C, D of RN-D1, an architecture decision with the owner. There is no default; nothing waiting on it takes one. The question was queued for the owner on 2026-11-24 and is not delivered yet.
+Does a specification state a run of a process (a cause, a command per member of a set, a command once, a continuation after a refused member, an exit status), and as a binding cause, as its own document, or not at all: options A, B, C, D of RN-D1, an architecture decision with the owner. There is no default; nothing waiting on it takes one. The question has been with the owner since 2026-11-24; there is no answer yet.
 
 ## What a run is
 

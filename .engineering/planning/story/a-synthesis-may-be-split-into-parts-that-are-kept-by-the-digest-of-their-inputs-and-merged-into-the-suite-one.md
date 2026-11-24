@@ -14,7 +14,7 @@ relations:
 - informed_by: story:a-committed-suite-is-checked-against-the-inputs-of-synthesis-without-synthesizing
 - informed_by: story:the-outcome-loop-of-a-whole-caller-reading-runs-on-several-threads-and-writes-the-suite-one-thread-writes
 - informed_by: story:a-run-with-component-says-what-it-covers-in-text-and-in-json
-revision: 4
+revision: 5
 ---
 ## Summary
 
@@ -75,7 +75,7 @@ Measurement from the reporter (ESS 0.97.4, one node, five `--component` parts ru
 
 Deferred. `decision-blocker:synthesis-parts-and-reuse` blocks this story and this story waits on it.
 
-ST-D5 (ARCHITECTURE): parts of a synthesis, a merge, and reuse across runs. Open, with the owner; no default; queued for the owner on 2026-11-24, not delivered yet. A: do not build it now; close need 2 and need 3 with the committed-suite recipe (ST-D1), `--jobs` and ST-D4, and record the measurement and the cause that decides whether parts are cheaper than the whole (`scoping_reproduces`, the actor-scope extension) as the condition for reopening; the story is closed, not built. B: parts and a merge, no reuse (a remainder part for the scenarios that cross components, a part document, working name `ess-conformance-part/1`, a merge command whose output is `cmp`-identical to `synthesize` over the corpus; a persisted format and a determinism claim). C: B plus reuse (parts kept under the digest of their inputs; B's cost and a stable unit under change, since a change to one command can move scenarios of commands that arrange through it and the memories are shared across commands). The coordinator recommends A, because no saving is shown for the reporter's cut and B or C commit a format and a determinism rule before the cost of a part is known; the owner decides. The Acceptance below is written for C and shrinks for B; option A closes the story with the evidence recorded.
+ST-D5 (ARCHITECTURE): parts of a synthesis, a merge, and reuse across runs. Open, with the owner; no default; with the owner since 2026-11-24, no answer yet. A: do not build it now; close need 2 and need 3 with the committed-suite recipe (ST-D1), `--jobs` and ST-D4, and record the measurement and the cause that decides whether parts are cheaper than the whole (`scoping_reproduces`, the actor-scope extension) as the condition for reopening; the story is closed, not built. B: parts and a merge, no reuse (a remainder part for the scenarios that cross components, a part document, working name `ess-conformance-part/1`, a merge command whose output is `cmp`-identical to `synthesize` over the corpus; a persisted format and a determinism claim). C: B plus reuse (parts kept under the digest of their inputs; B's cost and a stable unit under change, since a change to one command can move scenarios of commands that arrange through it and the memories are shared across commands). The coordinator recommends A, because no saving is shown for the reporter's cut and B or C commit a format and a determinism rule before the cost of a part is known; the owner decides. The Acceptance below is written for C and shrinks for B; option A closes the story with the evidence recorded.
 
 ## Acceptance
 

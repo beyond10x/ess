@@ -17,7 +17,7 @@ relations:
 - informed_by: story:periodic-binding-trigger-contract
 - informed_by: story:runtime-realizes-a-scheduled-job
 - informed_by: story:an-ordered-selection-may-be-counted-as-a-value-with-rows-before-this-one-and-its-head-may-be-the-subject-of-a
-revision: 2
+revision: 3
 ---
 ## Need
 
@@ -52,7 +52,7 @@ The authored scenario shows what exists: per-member outcomes for rows the author
 
 Deferred. `decision-blocker:run-of-a-process` blocks this story and this story waits on it.
 
-RN-D1 (ARCHITECTURE): does a specification state a run of a process, and how. Open, with the owner; no default; queued for the owner on 2026-11-24, not delivered yet. A: no run; ESS keeps one command per scenario, a scheduled process is a command-line process bound by `ess-cli`, the fan-out and the counts stay the handler's, and only the exit status per outcome of one forwarded command is added (RN-D2, RN-D3); need 2 is declined as out of the language. B: a run is a cause of bindings with a fan-out on the invocation (a run cause beside `event:` and `periodic:`; `invoke:` may repeat over a typed list; system-issued commands become admissible as invocations of that cause; one suite step observes the issuances of a run). C: a run is its own declaration (a document beside `ess-cli` and `ess-transport`, working name `ess-run/N`, with causes, ordered steps, a continuation policy and an exit table). D: a run stays a deployment fact (`ess-runtime` says when a process starts; ESS states nothing of what it issues or how it exits; both needs declined). The coordinator recommends B, taken in two steps so that nothing waits on it that need not: RN-D2 and RN-D3 first, which stand under A and B and give the exit status of a single-command process, then the run cause with fan-out. The Acceptance below is written for B and changes with the pick. Format follows the pick: A and D add nothing; B opens a source format by policy 2; C opens a document format.
+RN-D1 (ARCHITECTURE): does a specification state a run of a process, and how. Open, with the owner; no default; with the owner since 2026-11-24, no answer yet. A: no run; ESS keeps one command per scenario, a scheduled process is a command-line process bound by `ess-cli`, the fan-out and the counts stay the handler's, and only the exit status per outcome of one forwarded command is added (RN-D2, RN-D3); need 2 is declined as out of the language. B: a run is a cause of bindings with a fan-out on the invocation (a run cause beside `event:` and `periodic:`; `invoke:` may repeat over a typed list; system-issued commands become admissible as invocations of that cause; one suite step observes the issuances of a run). C: a run is its own declaration (a document beside `ess-cli` and `ess-transport`, working name `ess-run/N`, with causes, ordered steps, a continuation policy and an exit table). D: a run stays a deployment fact (`ess-runtime` says when a process starts; ESS states nothing of what it issues or how it exits; both needs declined). The coordinator recommends B, taken in two steps so that nothing waits on it that need not: RN-D2 and RN-D3 first, which stand under A and B and give the exit status of a single-command process, then the run cause with fan-out. The Acceptance below is written for B and changes with the pick. Format follows the pick: A and D add nothing; B opens a source format by policy 2; C opens a document format.
 
 Decided apart from it, taken on the default, 2026-11-24 16:29 CET (the coordinator, under the owner's delegation):
 
