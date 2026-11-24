@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:synthesis-witnesses-a-when-related-chain-with-a-decoy-at-each-step-and-a-missing-middle-row-and-generated-rust
 kind: story
-status: draft
+status: active
 title: Synthesis witnesses a when_related chain with a decoy at each step and a missing middle row, and generated Rust, Go and Entity Runtime name the chain they do not read
 tags:
 - gap-p2
@@ -12,7 +12,10 @@ relations:
 - derived_from: story:navigation-reaches-any-depth-in-guards
 - depends_on: story:at-the-new-format-a-when-related-via-is-a-chain-of-declared-references-validated-compiled-and-interpreted-its
 - depends_on: story:synthesis-witnesses-an-instance-and-an-each-in-that-name-a-member-of-a-struct-input-on-the-parent-s-minimal
-revision: 1
+revision: 3
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-24T03:25:00Z", actor: "human:timo", revision: 2}
+- {from: "proposed", to: "active", at: "2026-11-24T03:25:01Z", actor: "human:timo", revision: 3}
 ---
 ## Need
 

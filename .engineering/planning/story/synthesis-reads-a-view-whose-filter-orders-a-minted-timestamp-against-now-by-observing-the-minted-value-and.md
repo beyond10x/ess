@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:synthesis-reads-a-view-whose-filter-orders-a-minted-timestamp-against-now-by-observing-the-minted-value-and
 kind: story
-status: draft
+status: active
 title: Synthesis reads a view whose filter orders a minted `Timestamp` against `now`, by observing the minted value and holding the read's clock on each side of it, instead of skipping the read with ESS-SYNTH-005.
 tags:
 - issues-2026-11-24
@@ -14,7 +14,11 @@ relations:
 - depends_on: story:a-conformance-suite-s-view-read-may-hold-the-target-s-clock-at-an-instant-set-from-an-observed-value-and-every
 - depends_on: story:state-param-binds-from-post-command-state
 - depends_on: story:synthesis-arranges-the-related-rows-a-guard-or-read-needs
-revision: 2
+- depends_on: story:the-suite-pair-ess-conformance-66-and-67-is-open-read-wherever-64-and-65-are-and-written-by-nothing-yet
+revision: 5
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-24T03:25:12Z", actor: "human:timo", revision: 4}
+- {from: "proposed", to: "active", at: "2026-11-24T03:25:14Z", actor: "human:timo", revision: 5}
 ---
 # d819 part 2: a view ordering a minted Timestamp against now is read
 
@@ -27,8 +31,7 @@ Part 2 of 2 for beyond10x/ess#819: synthesis writes the held-clock view read tha
 Size: M (about 320 changed lines: 110 synthesis, 20 diagnostics text and docs, 190 test).
 Fixed suite bytes of committed models: only models with a view filter ordering a minted
 `Timestamp` against `now`, whose reads are skipped today (ESS-SYNTH-005); the suite of such a model
-gains reads and moves to the suite version of part 1 (`ess-conformance/64`/`/65`, or `/66`/`/67`
-under part 1's fallback). Every other suite keeps its version and bytes. No committed model is
+gains reads and moves to the suite version of part 1 (`ess-conformance/66`/`/67`). Every other suite keeps its version and bytes. No committed model is
 known to have the shape; the byte comparison under Gate decides, and a moved row names #819 beside
 its re-pin.
 Patch-release candidate: no.
@@ -80,6 +83,8 @@ Paths under `crates/verify/ess-conformance/src/`, lines at `41dd4aa9e`.
   events seen (`runner.rs:3426-3436`); part 1 lets a view read's held clock use it.
 
 ## Acceptance
+
+Suite pair (D77, 2026-11-24): this story's suite vocabulary is written at `ess-conformance/66` (ordinary) and `/67` (coverage), opened by story:the-suite-pair-ess-conformance-66-and-67-is-open-read-wherever-64-and-65-are-and-written-by-nothing-yet; where this text names `ess-conformance/64` and `/65`, "the new suite pair", "the next suite pair" or a pair "after `/63`" as the pair this story writes, read `/66` and `/67` (`/64` and `/65` opened in 0.93.0 and are written since 0.95.0).
 
 1. Red today: synthesizing `repro/819/` writes no ESS-SYNTH-005; the `lent` scenario and the `lend`
    transition's scenario each read `OverdueLoans` once with the read clock held past the observed

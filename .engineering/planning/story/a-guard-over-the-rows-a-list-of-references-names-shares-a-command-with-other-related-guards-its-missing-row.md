@@ -11,7 +11,7 @@ relations:
 - serves: vision:O2
 - depends_on: story:at-ess-38-a-when-related-via-an-all-element-and-a-missing-payload-source-name-a-member-of-a-struct-input-a
 - depends_on: story:the-specification-format-ess-38-is-open-as-the-newest-reads-and-compiles-every-specification-exactly-as-ess
-revision: 1
+revision: 3
 ---
 ## Need
 
@@ -66,6 +66,8 @@ predicate or row-set refusal over present rows. Below that format the refusal ke
 and its hint names the format.
 
 ## Acceptance
+
+Format (D77, 2026-11-24): this story's construct lands in `ess/38`, opened by story:the-specification-format-ess-38-is-open-as-the-newest-reads-and-compiles-every-specification-exactly-as-ess; where this text names `ess/37`, `ess/39`, "the new format", "the next source format" or a format still to be decided as the format of this construct, read `ess/38`, and where it names `ess/36` as the format below it, read `ess/37` (`ess/37` shipped empty in 0.93.0); a reproduction model keeps the format it declares.
 
 - Red first: `crates/specify/ess-domain/tests/related_list.rs` (existing binary) gains
   `a_list_guard_beside_another_related_row_validates_at_the_new_format`: the reproduction validates
@@ -139,6 +141,8 @@ existing precedence rule). Report item 10 covered. Open: `P2A-D4` (scope; defaul
 related guard kind and a second list) and `P2A-D6` (format; default A, `ess/38` if unreleased at
 landing, else `ess/39`). Not in this story, kept refused by name: a predicate over each listed row
 (waits for navigation in guard predicates, `generic-language-features.md:258-259`).
+
+- FMT-B (decided: A, 2026-11-24): this story moves to `ess/38` with the rest of the pull request (D77: no `ess/39`); the Acceptance line on the format says so.
 
 ## Scope
 

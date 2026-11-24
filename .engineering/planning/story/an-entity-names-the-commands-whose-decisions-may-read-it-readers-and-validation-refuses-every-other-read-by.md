@@ -10,8 +10,8 @@ tags:
 relations:
 - serves: vision:O2
 - depends_on: story:ess-specify-reads-prints-every-entity-each-command-s-decisions-read-by-kind-and-site-from-one-read-analysis
-- depends_on: story:the-specification-format-ess-39-is-open-as-the-newest-reads-and-compiles-every-specification-exactly-as-ess-38
-revision: 1
+- depends_on: story:the-specification-format-ess-38-is-open-as-the-newest-reads-and-compiles-every-specification-exactly-as-ess
+revision: 2
 ---
 ## Need
 
@@ -30,7 +30,7 @@ rule refuses deleting through `affects:` in another domain
 Minimal reproduction, written fresh and not run:
 
 ```yaml
-format: ess/39
+format: ess/38
 # …
 entities:
   - name: demo.review.Note
@@ -65,6 +65,8 @@ means no other command reads the entity. An entity without the key restricts not
 The design page says what the check cannot see.
 
 ## Acceptance
+
+Format (D77, 2026-11-24): this story's construct lands in `ess/38`, opened by story:the-specification-format-ess-38-is-open-as-the-newest-reads-and-compiles-every-specification-exactly-as-ess; where this text names `ess/37`, `ess/39`, "the new format", "the next source format" or a format still to be decided as the format of this construct, read `ess/38`, and where it names `ess/36` as the format below it, read `ess/37` (`ess/37` shipped empty in 0.93.0); a reproduction model keeps the format it declares.
 
 - Red first: `crates/specify/ess-domain/tests/entity_readers.rs` validates the reproduction and
   expects one refusal, with the message pinned:

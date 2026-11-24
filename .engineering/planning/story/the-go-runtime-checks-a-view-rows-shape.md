@@ -14,6 +14,7 @@ relations:
 - depends_on: story:a-view-read-checks-every-rows-shape
 - depends_on: story:ess-37-and-conformance-64-65-are-open-for-the-epics-constructs
 - serves: vision:O2
+- depends_on: story:the-suite-pair-ess-conformance-66-and-67-is-open-read-wherever-64-and-65-are-and-written-by-nothing-yet
 scope:
 - confidence: cited
   path: crates/verify/ess-conformance/src/go/mod.rs
@@ -21,7 +22,7 @@ scope:
   path: crates/verify/ess-conformance/src/go/runtime.go
 - confidence: inferred
   path: crates/verify/ess-conformance/tests/view_row_shape_go.rs
-revision: 6
+revision: 7
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-10T00:47:36Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"review_outcome":1}}}
 - {from: "proposed", to: "active", at: "2026-11-10T00:47:37Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":1}}}
@@ -37,6 +38,8 @@ fields (`go/runtime.go:3811` `rowMatches`), while it already checks an event pay
 shape (`go/runtime.go:4145` `holds`).
 
 ## Acceptance
+
+Suite pair (D77, 2026-11-24): this story's suite vocabulary is written at `ess-conformance/66` (ordinary) and `/67` (coverage), opened by story:the-suite-pair-ess-conformance-66-and-67-is-open-read-wherever-64-and-65-are-and-written-by-nothing-yet; where this text names `ess-conformance/64` and `/65`, "the new suite pair", "the next suite pair" or a pair "after `/63`" as the pair this story writes, read `/66` and `/67` (`/64` and `/65` opened in 0.93.0 and are written since 0.95.0).
 
 - The generated Go runtime admits `ess-conformance/64` and `/65`, and admits `shape` on
   `expect_view` and `eventually_view` only from /64 (a /63 suite carrying it is refused before any

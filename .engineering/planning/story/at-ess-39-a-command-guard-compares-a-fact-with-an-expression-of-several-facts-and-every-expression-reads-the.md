@@ -3,14 +3,14 @@ format: aep.planning-md/3
 id: story:at-ess-39-a-command-guard-compares-a-fact-with-an-expression-of-several-facts-and-every-expression-reads-the
 kind: story
 status: draft
-title: At ess/39 a command guard compares a fact with an expression of several facts, and every expression reads the length of a list as xs.count, validated, compiled and decided by the interpreted target
+title: At ess/38 a command guard compares a fact with an expression of several facts, and every expression reads the length of a list as xs.count, validated, compiled and decided by the interpreted target
 tags:
 - gap-p2
 - gap-reports-2026-11-24
 relations:
 - serves: vision:O2
-- depends_on: story:the-specification-format-ess-39-is-open-as-the-newest-reads-and-compiles-every-specification-exactly-as-ess-38
-revision: 1
+- depends_on: story:the-specification-format-ess-38-is-open-as-the-newest-reads-and-compiles-every-specification-exactly-as-ess
+revision: 3
 ---
 ## Need
 
@@ -102,6 +102,8 @@ At `ess/39`:
   (the value positions opened in `ess/27`).
 
 ## Acceptance
+
+Format (D77, 2026-11-24): this story's construct lands in `ess/38`, opened by story:the-specification-format-ess-38-is-open-as-the-newest-reads-and-compiles-every-specification-exactly-as-ess; where this text names `ess/37`, `ess/39`, "the new format", "the next source format" or a format still to be decided as the format of this construct, read `ess/38`, and where it names `ess/36` as the format below it, read `ess/37` (`ess/37` shipped empty in 0.93.0); a reproduction model keeps the format it declares.
 
 - First: a case in the existing target `crates/specify/ess-domain/tests/expression.rs` (no new
   test binary) with the reproduction at `ess/39`. Today it is refused (`type_mismatch`, the

@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-conformance-suite-s-view-read-may-hold-the-target-s-clock-at-an-instant-set-from-an-observed-value-and-every
 kind: story
-status: draft
+status: active
 title: A conformance suite's view read may hold the target's clock at an instant set from an observed value, and every runner and the interpreted target execute it.
 tags:
 - issues-2026-11-24
@@ -11,7 +11,11 @@ refs:
   reference: beyond10x/ess#819
 relations:
 - serves: vision:O2
-revision: 1
+- depends_on: story:the-suite-pair-ess-conformance-66-and-67-is-open-read-wherever-64-and-65-are-and-written-by-nothing-yet
+revision: 4
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-24T03:25:09Z", actor: "human:timo", revision: 3}
+- {from: "proposed", to: "active", at: "2026-11-24T03:25:10Z", actor: "human:timo", revision: 4}
 ---
 # d819 part 1: a view read step holds the read clock
 
@@ -29,16 +33,7 @@ Patch-release candidate: no (suite format).
 
 ## Suite version
 
-The step is written as `ess-conformance/64` (ordinary) and `/65` (coverage). The pair is open with
-no construct of its own (`CHANGELOG.md`, 0.93.0, "nothing writes `/64`, `/65` … yet"; the Go and
-TypeScript runners already admit up to `/65`), and the active
-`story:conformance-holds-missing-keeps-and-null-clears` is the construct that takes it. Under the
-owner's order of 2026-11-24 (every open issue other than the hotfix wave in one pull request, built
-serially) both land in that pull request and share the pair: whichever lands first adds the
-`/64`/`/65` format entry in `website/docs/reference/formats.md`, the second adds its row to it. If
-`/64` is released before this unit starts, this unit opens the next pair `/66`/`/67` in its own
-first commit, as `story:ess-37-and-conformance-64-65-are-open-for-the-epics-constructs` did for
-`/64`, and every reader admits it.
+The step is written as `ess-conformance/66` (ordinary) and `/67` (coverage), opened by story:the-suite-pair-ess-conformance-66-and-67-is-open-read-wherever-64-and-65-are-and-written-by-nothing-yet; `/64` and `/65` are written since 0.95.0, and `story:conformance-holds-missing-keeps-and-null-clears` takes `/66` and `/67` too.
 
 ## Need
 
@@ -58,6 +53,8 @@ TypeScript runners do the same. A suite without the field keeps its version and 
 
 ## Acceptance
 
+Suite pair (D77, 2026-11-24): this story's suite vocabulary is written at `ess-conformance/66` (ordinary) and `/67` (coverage), opened by story:the-suite-pair-ess-conformance-66-and-67-is-open-read-wherever-64-and-65-are-and-written-by-nothing-yet; where this text names `ess-conformance/64` and `/65`, "the new suite pair", "the next suite pair" or a pair "after `/63`" as the pair this story writes, read `/66` and `/67` (`/64` and `/65` opened in 0.93.0 and are written since 0.95.0).
+
 1. A suite written by the test with an `expect_view` that holds the clock 1 s past an observed
    `due_at` and a second that holds it 1 s before passes on the interpreted target over the part-2
    reproduction model (`repro/819/`), and fails on an interpreted variant whose filter ignores
@@ -65,7 +62,7 @@ TypeScript runners do the same. A suite without the field keeps its version and 
 2. The same suite runs under the Go and TypeScript runners with the same verdicts, or each refuses
    the step by name; neither ignores the hold.
 3. A suite with the held clock at `ess-conformance/62` is refused naming the version that carries
-   it (`/64`, or `/66` under the fallback above).
+   it (`/66`).
 4. Every committed suite keeps its version and bytes (the byte pins).
 5. `website/docs/reference/formats.md` (suite rows) names the step and the version.
 

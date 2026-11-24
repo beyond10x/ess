@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:the-interpreted-target-reads-and-synthesized-suites-expect-the-lifecycle-state-of-a-row-a-related-value-source
 kind: story
-status: draft
+status: active
 title: The interpreted target reads, and synthesized suites expect, the lifecycle state of a row a related value source selects with `where:` or as the head of an ordered selection.
 tags:
 - issues-2026-11-24
@@ -13,7 +13,10 @@ relations:
 - serves: vision:O2
 - depends_on: story:a-related-value-source-that-selects-its-row-with-where-may-read-the-row-s-lifecycle-state-with-field-state-as
 - decomposes: epic:generic-row-queries
-revision: 1
+revision: 3
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-24T03:25:05Z", actor: "human:timo", revision: 2}
+- {from: "proposed", to: "active", at: "2026-11-24T03:25:07Z", actor: "human:timo", revision: 3}
 ---
 # d822 part 2: a where-selected state is read by the interpreter and synthesis
 

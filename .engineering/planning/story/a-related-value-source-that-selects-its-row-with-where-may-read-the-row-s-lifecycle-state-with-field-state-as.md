@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-related-value-source-that-selects-its-row-with-where-may-read-the-row-s-lifecycle-state-with-field-state-as
 kind: story
-status: draft
+status: active
 title: 'A related value source that selects its row with `where:` may read the row''s lifecycle `state` with `field: state`, as the `via:` form already may, with the same handling of no row and several rows.'
 tags:
 - issues-2026-11-24
@@ -12,7 +12,11 @@ refs:
 relations:
 - serves: vision:O2
 - decomposes: epic:generic-row-queries
-revision: 2
+- depends_on: story:the-specification-format-ess-38-is-open-as-the-newest-reads-and-compiles-every-specification-exactly-as-ess
+revision: 5
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-24T03:25:02Z", actor: "human:timo", revision: 4}
+- {from: "proposed", to: "active", at: "2026-11-24T03:25:04Z", actor: "human:timo", revision: 5}
 ---
 # d822 part 1: a where-selected related value reads the row's state
 
@@ -111,9 +115,11 @@ Lines at `41dd4aa9e`.
 
 ## Acceptance
 
+Format (D77, 2026-11-24): this story's construct lands in `ess/38`, opened by story:the-specification-format-ess-38-is-open-as-the-newest-reads-and-compiles-every-specification-exactly-as-ess; where this text names `ess/37`, `ess/39`, "the new format", "the next source format" or a format still to be decided as the format of this construct, read `ess/38`, and where it names `ess/36` as the format below it, read `ess/37` (`ess/37` shipped empty in 0.93.0); a reproduction model keeps the format it declares.
+
 1. Red today: `repro/822/` with `format:` raised to the chosen format validates and compiles; the
    IR holds the new variant for `Joined.state`.
-2. At `ess/37` the same model is refused as `unsupported_format_version` naming the chosen format,
+2. At `ess/37` the same model is refused as `unsupported_format_version` naming `ess/38`,
    at the `state` line.
 3. The ordered-head form with `field: state` validates at the chosen format and is refused below
    it, the same way.
@@ -196,7 +202,7 @@ One `--test` at a time; no build-pool job over 10 minutes.
 
 ## Depends on
 
-DF-D5; under DF-D5 A, s0 of the story that opens `ess/38`.
+story:the-specification-format-ess-38-is-open-as-the-newest-reads-and-compiles-every-specification-exactly-as-ess (opens `ess/38`).
 
 ## Changelog
 

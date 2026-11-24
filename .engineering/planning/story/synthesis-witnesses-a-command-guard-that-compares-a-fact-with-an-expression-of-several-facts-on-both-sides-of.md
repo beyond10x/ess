@@ -10,7 +10,8 @@ tags:
 relations:
 - serves: vision:O2
 - depends_on: story:at-ess-39-a-command-guard-compares-a-fact-with-an-expression-of-several-facts-and-every-expression-reads-the
-revision: 1
+- depends_on: story:the-specification-format-ess-38-is-open-as-the-newest-reads-and-compiles-every-specification-exactly-as-ess
+revision: 3
 ---
 ## Need
 
@@ -49,6 +50,8 @@ Sixth list, item G12 (rank P2), the synthesis half.
   shapes. A model with no such operand keeps its suite bytes.
 
 ## Acceptance
+
+Format (D77, 2026-11-24): this story's construct lands in `ess/38`, opened by story:the-specification-format-ess-38-is-open-as-the-newest-reads-and-compiles-every-specification-exactly-as-ess; where this text names `ess/37`, `ess/39`, "the new format", "the next source format" or a format still to be decided as the format of this construct, read `ess/38`, and where it names `ess/36` as the format below it, read `ess/37` (`ess/37` shipped empty in 0.93.0); a reproduction model keeps the format it declares.
 
 - First: a case in the existing target `crates/verify/ess-conformance/tests/expression_arithmetic_and_time.rs`
   (no new test binary) with the reproduction
@@ -93,6 +96,8 @@ item G12). Tree `bcfc51555`, read-only.
 ## Decisions
 
 - None of its own. Follows SX-D4 and SX-D5.
+
+- FMT-B (decided: A, 2026-11-24): this story moves to `ess/38` with the rest of the pull request (D77: no `ess/39`); the Acceptance line on the format says so.
 
 ## Scope
 

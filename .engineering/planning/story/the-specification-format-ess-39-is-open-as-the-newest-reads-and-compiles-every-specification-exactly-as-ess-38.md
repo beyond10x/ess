@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:the-specification-format-ess-39-is-open-as-the-newest-reads-and-compiles-every-specification-exactly-as-ess-38
 kind: story
-status: draft
+status: archived
 title: The specification format ess/39 is open as the newest, reads and compiles every specification exactly as ess/38 does, and holds the gates the digest functions and declared readers use below it
 tags:
 - gap-p2
@@ -10,7 +10,9 @@ tags:
 relations:
 - serves: vision:O2
 - depends_on: story:the-specification-format-ess-38-is-open-as-the-newest-reads-and-compiles-every-specification-exactly-as-ess
-revision: 1
+revision: 2
+transitions:
+- {from: "draft", to: "archived", at: "2026-11-24T03:24:01Z", actor: "human:timo", revision: 2}
 ---
 ## Need
 

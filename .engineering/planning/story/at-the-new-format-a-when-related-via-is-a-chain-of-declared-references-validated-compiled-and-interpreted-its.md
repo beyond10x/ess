@@ -2,8 +2,8 @@
 format: aep.planning-md/3
 id: story:at-the-new-format-a-when-related-via-is-a-chain-of-declared-references-validated-compiled-and-interpreted-its
 kind: story
-status: draft
-title: 'At the new format a when_related via is a chain of declared references, validated, compiled and interpreted, its exists: false answering a missing row at any step'
+status: active
+title: 'At ess/38 a when_related via is a chain of declared references, validated, compiled and interpreted, its exists: false answering a missing row at any step'
 tags:
 - gap-p2
 - gap-reports-2026-11-24
@@ -11,7 +11,11 @@ relations:
 - serves: vision:O2
 - derived_from: story:navigation-reaches-any-depth-in-guards
 - depends_on: story:at-ess-38-instance-and-each-in-name-a-member-of-a-struct-input-and-the-documents-list-every-addressing
-revision: 2
+- depends_on: story:the-specification-format-ess-38-is-open-as-the-newest-reads-and-compiles-every-specification-exactly-as-ess
+revision: 6
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-24T03:24:57Z", actor: "human:timo", revision: 5}
+- {from: "proposed", to: "active", at: "2026-11-24T03:24:58Z", actor: "human:timo", revision: 6}
 ---
 ## Need
 
@@ -68,6 +72,8 @@ with every related-row guard. The interpreter and history checker read it. Below
 
 ## Acceptance
 
+Format (D77, 2026-11-24): this story's construct lands in `ess/38`, opened by story:the-specification-format-ess-38-is-open-as-the-newest-reads-and-compiles-every-specification-exactly-as-ess; where this text names `ess/37`, `ess/39`, "the new format", "the next source format" or a format still to be decided as the format of this construct, read `ess/38`, and where it names `ess/36` as the format below it, read `ess/37` (`ess/37` shipped empty in 0.93.0); a reproduction model keeps the format it declares.
+
 - Red first: `crates/specify/ess-domain/tests/related_guard.rs` (existing binary) gains
   `a_when_related_via_chain_validates_at_the_new_format`: the reproduction validates at the new
   format; on the base it fails to parse.
@@ -94,8 +100,9 @@ with every related-row guard. The interpreter and history checker read it. Below
   `docs/design/language-grids.md` grid R row `when_related:` names it; the format row of
   `website/docs/reference/formats.md` and the format history in `system.rs` name it;
   `CHANGELOG.md` `### Added` gets one line with its grid row (policy 3). The parent's `ess/37` lines
-  are superseded by the format of `P2A-D6`.
+  are superseded by `ess/38` (P2A-D6 A, D77, 2026-11-24).
 - Every new test under 5 s or named with its time; no new test binary.
+- Gate additions: `task test-xtask` (the step edits `CHANGELOG.md`) and the bounded slow lane `SLOT_TIMEOUT=30m cargo test -p ess-conformance --locked --test synthesis_suite_bytes_table -- --ignored every_repository_model_keeps_its_synthesized_bytes`.
 
 ## Fit review
 
@@ -114,7 +121,7 @@ step 4; Rust and Go owed by name; Entity Runtime refusal kept by decision). Addi
 
 ## Decisions
 
-**Accept as proposed** (the parent's decision). Open: `P2A-D6` (format). `P2A-D7` is applied on
+**Accept as proposed** (the parent's decision). `P2A-D6` is answered A: `ess/38` (D77). `P2A-D7` is applied on
 its default A: the parent's dependency on the view story is dropped, and the parent is delivered as
 these two units.
 

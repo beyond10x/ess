@@ -2,18 +2,21 @@
 format: aep.planning-md/3
 id: story:a-tagged-union-declares-that-its-tag-sits-beside-its-variant-s-members-in-one-flat-object
 kind: story
-status: draft
+status: active
 title: A tagged union may declare the flat layout, its tag beside its variant's members in one object
 tags:
 - gap-p1
 - gap-reports-2026-11-24
 relations:
 - serves: vision:O2
-- depends_on: story:the-specification-format-ess-39-is-open-as-the-newest-reads-and-compiles-every-specification-exactly-as-ess-38
 - derived_from: story:a-guard-reads-a-union-tag-and-a-union-names-its-content-key
 - depends_on: story:a-guard-reads-a-union-tag-and-a-union-names-its-content-key
 - depends_on: story:projections-use-a-unions-declared-content-key
-revision: 4
+- depends_on: story:the-specification-format-ess-38-is-open-as-the-newest-reads-and-compiles-every-specification-exactly-as-ess
+revision: 7
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-24T03:25:15Z", actor: "human:timo", revision: 6}
+- {from: "proposed", to: "active", at: "2026-11-24T03:25:16Z", actor: "human:timo", revision: 7}
 ---
 ## Need
 
@@ -74,6 +77,8 @@ generated target that does not yet read the flat form refuses the model by name 
 Decisions).
 
 ## Acceptance
+
+Format (D77, 2026-11-24): this story's construct lands in `ess/38`, opened by story:the-specification-format-ess-38-is-open-as-the-newest-reads-and-compiles-every-specification-exactly-as-ess; where this text names `ess/37`, `ess/39`, "the new format", "the next source format" or a format still to be decided as the format of this construct, read `ess/38`, and where it names `ess/36` as the format below it, read `ess/37` (`ess/37` shipped empty in 0.93.0); a reproduction model keeps the format it declares.
 
 - Red first, in `crates/specify/ess-domain/tests/`: the reproduction with `layout: flat` validates
   at the format named under Decisions. Below it, it is refused as `unsupported_format_version`,
@@ -139,8 +144,7 @@ accessor and its diff kind are the active stories'; this story adds only the fla
 - SL-D14 (the spelling) is settled by reading: `layout: adjacent | flat`, because the selector must
   also carry the keyed-by-variant encoding, which `tag_inline: true` cannot, and `wire:` already
   names an enum variant's spelling (`ess/5`).
-- Format: the format of the content-key stories; the format is decided in the format triage (D57)
-  before acceptance.
+- Format: `ess/38`, the format of the content-key stories (X1 answered `ess/38`, D77, 2026-11-24).
 
 ## Scope
 
@@ -159,8 +163,7 @@ accessor and its diff kind are the active stories'; this story adds only the fla
   authored union's `content:` key, the same struct). This story is derived from it.
 - `story:projections-use-a-unions-declared-content-key` (the IR field on the union, the accessor
   that takes the resolved union, the diff kind).
-- `story:the-specification-format-ess-39-is-open-as-the-newest-reads-and-compiles-every-specification-exactly-as-ess-38`
-  until the format triage (D57) names the format.
+- `story:the-specification-format-ess-38-is-open-as-the-newest-reads-and-compiles-every-specification-exactly-as-ess` (opens `ess/38`).
 
 ## Source
 
