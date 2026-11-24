@@ -124,6 +124,17 @@ pub fn scan(root: &Path) -> Result<Vec<Marked>, String> {
                 if let Some(error) = visitor.errors.into_iter().next() {
                     return Err(error);
                 }
+                if !visitor.found.is_empty() && !is_target_file(&tests, &file) {
+                    let line = text
+                        .lines()
+                        .position(|line| line.contains(MARKER))
+                        .map_or(1, |index| index + 1);
+                    return Err(format!(
+                        "{relative}:{line}: a `{MARKER}` marker sits in a file that is no test \
+                         target and that a target may include; a marker belongs in a file cargo \
+                         compiles as a test target: `tests/<name>.rs` or `tests/<name>/main.rs`"
+                    ));
+                }
                 for test in visitor.found {
                     marked.push(Marked {
                         package: package.clone(),
@@ -176,6 +187,20 @@ fn rust_files(directory: &Path, files: &mut Vec<PathBuf>) -> Result<(), String> 
         }
     }
     Ok(())
+}
+
+/// Whether `file` belongs to a test target cargo compiles: `tests/<name>.rs`, or a file below
+/// `tests/<name>/` when that directory holds a `main.rs`. A file in a directory without one is
+/// a module another target includes, and no `--test` name reaches it.
+fn is_target_file(tests: &Path, file: &Path) -> bool {
+    let Ok(rest) = file.strip_prefix(tests) else {
+        return false;
+    };
+    let mut parts = rest.components();
+    let (Some(first), second) = (parts.next(), parts.next()) else {
+        return false;
+    };
+    second.is_none() || tests.join(first.as_os_str()).join("main.rs").is_file()
 }
 
 fn target_of(tests: &Path, file: &Path) -> String {
@@ -232,6 +257,18 @@ impl Visitor<'_> {
 }
 
 impl<'ast> Visit<'ast> for Visitor<'_> {
+    fn visit_macro(&mut self, mac: &'ast syn::Macro) {
+        let tokens = mac.tokens.to_string();
+        if tokens.contains(&format!("ignore = \"{MARKER}")) {
+            self.errors.push(format!(
+                "{}: a `{MARKER}` marker sits inside a macro body or call, so the test it marks \
+                 cannot be named; mark a plain `fn` that carries #[test]",
+                self.file
+            ));
+        }
+        syn::visit::visit_macro(self, mac);
+    }
+
     fn visit_item_fn(&mut self, function: &'ast syn::ItemFn) {
         let name = function.sig.ident.to_string();
         let is_test = function.attrs.iter().any(|attribute| {

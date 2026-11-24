@@ -481,7 +481,9 @@ fn permutations(items: &[&'static str]) -> Vec<Vec<&'static str>> {
 /// Which orders of a rule a sweep tries.
 #[derive(Clone, Copy)]
 enum Sweep {
-    /// The rule's own order and each order one adjacent swap away from it: n orders.
+    /// The rule's own order, each order one adjacent swap away from it (n orders), and the two
+    /// transpositions of the non-adjacent pairs of the reproduction's requests that no adjacent
+    /// swap reverses: (no-source, sink-not-input) and (source-taken, no-sink).
     Adjacent,
     /// Every order of the rule: n! orders.
     Exhaustive,
@@ -496,6 +498,16 @@ fn orders(rule: &[&'static str], sweep: Sweep) -> Vec<Vec<&'static str>> {
                 let mut swapped = rule.to_vec();
                 swapped.swap(at, at + 1);
                 all.push(swapped);
+            }
+            for (a, b) in [(NS, SNI), (ST, NK)] {
+                if let (Some(x), Some(y)) = (
+                    rule.iter().position(|item| *item == a),
+                    rule.iter().position(|item| *item == b),
+                ) {
+                    let mut swapped = rule.to_vec();
+                    swapped.swap(x, y);
+                    all.push(swapped);
+                }
             }
             all
         }
@@ -1077,14 +1089,26 @@ fn adversary_a2_forall_without_named_rows_kills_forall_mutants_at_ess_31() {
     );
 }
 
-/// The step tries the rule and its adjacent swaps (n orders); the slow lane tries all n!.
+/// The step tries the rule, its adjacent swaps (n orders) and the two non-adjacent transpositions
+/// of the pairs the adjacent swaps leave in order; the slow lane tries all n!.
 #[test]
-fn the_adjacent_sweep_holds_n_orders_and_the_exhaustive_sweep_n_factorial() {
+fn the_adjacent_sweep_holds_n_plus_two_orders_and_the_exhaustive_sweep_n_factorial() {
     let rule = [NS, NK, SON, SNI, ST];
     let adjacent = orders(&rule, Sweep::Adjacent);
-    assert_eq!(adjacent.len(), 5);
+    assert_eq!(adjacent.len(), 7);
     assert_eq!(adjacent[0], rule.to_vec());
-    for other in &adjacent[1..] {
+    for (at, (a, b)) in [(5, (NS, SNI)), (6, (ST, NK))] {
+        let other = &adjacent[at];
+        let place = |list: &[&str], name: &str| list.iter().position(|i| *i == name).unwrap();
+        let before = |list: &[&str]| place(list, a) < place(list, b);
+        assert!(
+            before(other) != before(&rule),
+            "{other:?} reverses {a}, {b}"
+        );
+        let moved = (0..rule.len()).filter(|i| other[*i] != rule[*i]).count();
+        assert_eq!(moved, 2, "{other:?} is one transposition");
+    }
+    for other in &adjacent[1..5] {
         let moved: Vec<usize> = (0..rule.len())
             .filter(|at| other[*at] != rule[*at])
             .collect();

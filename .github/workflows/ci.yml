@@ -134,7 +134,7 @@ jobs:
         run: |
           set -euo pipefail
           skippable=('.engineering/?*' 'docs/*' 'website/*' '*.md' 'release-notes/*' 'crates/ui/*' 'crates/infra/*' 'crates/edge/ess-xtask/*')
-          needed=('.engineering/repro/*' 'website/docs/start/*' 'website/docs/getting-started.md' 'crates/edge/ess-xtask/src/slow_lane.rs')
+          needed=('.engineering/repro/*' 'website/docs/start/*' 'website/docs/getting-started.md' 'crates/edge/ess-xtask/src/slow_lane.rs' 'crates/edge/ess-xtask/src/main.rs' 'crates/edge/ess-xtask/Cargo.toml')
           decide() {
             echo "$2"
             echo "slow=$1" >> "$GITHUB_OUTPUT"
