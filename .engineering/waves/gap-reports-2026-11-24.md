@@ -389,6 +389,51 @@ amended draft.
   existing stories: `story:an-identity-may-be-a-composite-of-fields` (active) and
   `story:create-beside-a-move-on-the-same-key` (draft).
 
+### Open issues, 2026-11-24 (filed)
+
+Hotfix wave on the released line: #796, #793, #798, #809, #794 (one tree, serial). Every other open
+issue: one pull request, serial, after a relevance triage. #794 is not accepted: its check asks
+for a revision first (below).
+
+Twelve new stories (tag `issues-2026-11-24`, each with its issue as a `github` ref) and one
+amendment. Issue, story, size, status:
+
+- #796, `story:a-subject-read-on-a-deletes-outcome-is-refused-with-a-message-that-names-deletes-and-the-related-value-read`, S, accepted
+  (active). Message text only; no committed byte moves.
+- #793, `story:the-generated-rust-port-of-a-component-that-accepts-no-command-and-declares-no-view-builds-with-warnings`, S,
+  accepted (active).
+- #798, an amendment of the active `story:obligation-contracts-state-what-the-suite-checks` (S
+  added; its body now holds the amendment, no status move), rides that story.
+- #794, `story:synthesis-sends-the-steps-that-arrange-a-held-state-and-the-refusal-step-itself-as-a-caller-whose-attribute`, M, draft.
+- #795, `story:a-creating-command-beside-an-exists-false-related-row-refusal-puts-its-second-row-under-the-subject-s-existing`, M, draft.
+- #809, #804 and #816 item 4: the feature
+  `story:the-witness-search-and-the-interpreter-s-minting-choose-values-that-satisfy-every-declared-constraint-at-once` (umbrella, draft, not built
+  itself, not accepted), with three units derived from it:
+  `story:a-text-input-that-a-guard-reads-whose-type-s-invariant-refuses-its-base-witness-gets-candidates-of-the-lengths` (#809, S-M, accepted,
+  active), `story:an-exists-false-branch-beneath-several-input-refusals-is-sent-an-input-that-refutes-every-one-of-them-at-once` (#804, S,
+  draft) and `story:the-interpreted-target-mints-a-generated-true-value-of-a-text-newtype-whose-invariant-fixes-its-length-so` (#816 item 4, S,
+  draft, after the #809 unit). #734 and #726 are active stories, unchanged; the feature records
+  what they cover.
+- #799, `story:a-view-member-an-outcome-clears-is-claimed-by-the-suite-and-published-by-the-interpreted-target-in-the-member` (suite and
+  interpreter, M, draft) and
+  `story:the-generated-rust-and-go-servers-write-null-for-an-absent-member-declared-null-when-absent-in-view-rows-and` (servers, S-M,
+  draft); independent of each other.
+- #822, `story:a-related-value-source-that-selects-its-row-with-where-may-read-the-row-s-lifecycle-state-with-field-state-as`, M, draft; format: decided in
+  the format triage (D57) before acceptance (DF-D5); parent `epic:generic-row-queries`.
+- #819, `story:synthesis-reads-a-view-whose-filter-orders-a-minted-timestamp-against-now-by-observing-the-minted-value-and`, L, draft; format: decided
+  in the format triage (D57) before acceptance (DF-D6).
+
+Build order of the units: d796, d793, the #798 amendment with its story, d795, d794, d809 then
+d816 with d804 beside them, the two d799 units, d822 after the story that opens `ess/38`, d819.
+Pairs on one file: `synthesize.rs` (d795, d794, d799, d822, d819, in that order),
+`related_guard.rs` (d795 then d804; the active related-row story rewrites the same `unclaimed` and
+the second to land rebases), `witness.rs` (d809 then d816). Every unit that edits a source of the
+synthesis suite re-stamps `synthesis-sources.digest` in its own change.
+
+The check of 2026-11-24 found these texts in need of revision, filed as they are, the fix of each
+text to follow: d794, the #798 amendment, d799 (suite and interpreter) and d816. d819 and d822 are
+draft-only until their formats are decided.
+
 ### Store issues found
 
 Found while assessing the fourth report; no existing story was changed for them.
@@ -928,7 +973,34 @@ default is fail-closed. AC-D3, AC-D4, AC-D5 and PR-D1 to PR-D9 stay open.
   row. A: not now, the story stays a draft and is not scheduled; B: allow it, after a design page.
   Default A.
 
+Open issues (defects). DF-D1 to DF-D4 are taken on their defaults, 2026-11-24; DF-D5 and DF-D6
+read "decided in the format triage (D57) before acceptance".
+
+- DF-D1 (#796): is `{subject: ...}` admitted on a `deletes:` outcome. A: not in this unit; the
+  refusal names `deletes:` and its hint points at `{related: {via: input.<id>, field: ...}}`; B:
+  admit it from the next source format, in a story of its own; C: admit it at every format.
+  Default A. Taken: A.
+- DF-D2 (#804): how far the "every input refusal refuted" goal reaches. A: only in `unclaimed`,
+  after its existing goals; B: in `Directed::goals` for every directed search. Default A. Taken: A.
+- DF-D3 (#799): what no `presence:` means for a view member. A: the member is left out when
+  absent; B: `null`; C: either spelling. Default A. Taken: A.
+- DF-D4 (#799): does the suite claim that an `omitted_when_absent` member is left out. A: no, the
+  suite drops the `null` claim and adds no claim of absence; B: a new suite major with a per-field
+  presence. Default A. Taken: A.
+- DF-D5 (#822): which source format admits `field: state` in a `where:`-selected related value.
+  Decided in the format triage (D57) before acceptance.
+- DF-D6 (#819): how a view ordering a minted `Timestamp` against `now` is read. Decided in the
+  format triage (D57) before acceptance.
+
 ## Accepted
+
+Accepted 2026-11-24 for the hotfix wave (decision D76 of the coordinator, under the owner's
+delegation, on the owner's order of 03:10 CET to fix the top five issues as one hotfix wave):
+`story:a-subject-read-on-a-deletes-outcome-is-refused-with-a-message-that-names-deletes-and-the-related-value-read`,
+`story:the-generated-rust-port-of-a-component-that-accepts-no-command-and-declares-no-view-builds-with-warnings` and
+`story:a-text-input-that-a-guard-reads-whose-type-s-invariant-refuses-its-base-witness-gets-candidates-of-the-lengths`; #798 rides its already
+active story. `story:synthesis-sends-the-steps-that-arrange-a-held-state-and-the-refusal-step-itself-as-a-caller-whose-attribute` stays a
+draft: its check asks for a revision.
 
 Accepted 2026-11-24 by the coordinator under the operator's delegation, each with the defaults of
 its decisions as written; moved draft, proposed, active:
