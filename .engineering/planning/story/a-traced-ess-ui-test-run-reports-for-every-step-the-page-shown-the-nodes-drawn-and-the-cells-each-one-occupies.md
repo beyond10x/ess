@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-traced-ess-ui-test-run-reports-for-every-step-the-page-shown-the-nodes-drawn-and-the-cells-each-one-occupies
 kind: story
-status: draft
+status: active
 title: A traced `ess ui test` run reports, for every step, the page shown, the nodes drawn and the cells each one occupies
 tags:
 - gap-p1
@@ -10,7 +10,10 @@ tags:
 relations:
 - serves: vision:O2
 - depends_on: story:a-per-value-channel-script-that-names-no-session-is-reported
-revision: 2
+revision: 4
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-24T00:39:02Z", actor: "human:timo", revision: 3}
+- {from: "proposed", to: "active", at: "2026-11-24T00:39:04Z", actor: "human:timo", revision: 4}
 ---
 ## Need
 

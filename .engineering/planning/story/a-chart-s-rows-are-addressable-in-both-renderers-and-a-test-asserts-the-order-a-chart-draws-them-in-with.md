@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-chart-s-rows-are-addressable-in-both-renderers-and-a-test-asserts-the-order-a-chart-draws-them-in-with
 kind: story
-status: draft
+status: active
 title: A chart's rows are addressable in both renderers, and a test asserts the order a chart draws them in with `expect.rows`
 tags:
 - gap-p1
@@ -12,7 +12,10 @@ relations:
 - depends_on: story:a-chart-draws-its-rows-in-the-order-its-sort-declares-and-a-live-insert-keeps-that-order
 - depends_on: story:the-terminal-addresses-every-node-the-browser-addresses
 - depends_on: story:a-per-value-channel-script-that-names-no-session-is-reported
-revision: 1
+revision: 3
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-24T00:39:09Z", actor: "human:timo", revision: 2}
+- {from: "proposed", to: "active", at: "2026-11-24T00:39:11Z", actor: "human:timo", revision: 3}
 ---
 ## Need
 

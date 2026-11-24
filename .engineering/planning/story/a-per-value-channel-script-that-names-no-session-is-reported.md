@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-per-value-channel-script-that-names-no-session-is-reported
 kind: story
-status: draft
+status: active
 title: A script for a per-value channel that names no session, or a section that cannot match it, is reported
 summary: 'With session: {per} on a channel, the headless renderer applies no played event unless the script names the session and a read takes a parameter of that name; nothing says so (a consumer''s UI report, item 4)'
 tags:
@@ -17,7 +17,10 @@ tags:
 relations:
 - serves: vision:O2
 - informed_by: epic:ess-ui-renderer-neutral-ui
-revision: 4
+revision: 6
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-24T00:38:58Z", actor: "human:timo", revision: 5}
+- {from: "proposed", to: "active", at: "2026-11-24T00:39:00Z", actor: "human:timo", revision: 6}
 ---
 ## Need
 

@@ -448,8 +448,21 @@ Fourth report (a service contract):
   `precedes:` and both servers dispatch in that order; B: decline; C: admit a pair whose variable
   types cannot hold each other's literal. Default A.
 
+## Accepted
+
+Accepted 2026-11-24 by the coordinator under the operator's delegation, each with the defaults of
+its decisions as written; moved draft, proposed, active:
+
+- `story:a-per-value-channel-script-that-names-no-session-is-reported`
+- `story:a-traced-ess-ui-test-run-reports-for-every-step-the-page-shown-the-nodes-drawn-and-the-cells-each-one-occupies`
+- `story:a-chart-draws-its-rows-in-the-order-its-sort-declares-and-a-live-insert-keeps-that-order`
+- `story:a-chart-s-rows-are-addressable-in-both-renderers-and-a-test-asserts-the-order-a-chart-draws-them-in-with`
+- `story:a-number-with-no-declared-number-format-is-drawn-as-written-in-every-renderer`
+- `story:a-structured-value-reads-as-one-line-of-its-members-in-every-renderer`
+- `story:a-list-field-names-the-text-that-joins-its-items-in-every-renderer`
+
 ## Not accepted yet
 
-Every story here is a draft until its critics and the coordinator accept it. Item 7 is a defect: it
-is reproduced before it is fixed. No story here is dispatched in a wave before its fit review is
+Every other story here is a draft until its critics and the coordinator accept it. Item 7 is a
+defect: it is reproduced before it is fixed. No story here is dispatched in a wave before its fit review is
 accepted.

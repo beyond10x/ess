@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-chart-draws-its-rows-in-the-order-its-sort-declares-and-a-live-insert-keeps-that-order
 kind: story
-status: draft
+status: active
 title: A chart draws its rows in the order its sort declares, and a live insert keeps that order
 tags:
 - gap-p1
@@ -11,7 +11,10 @@ relations:
 - serves: vision:O2
 - depends_on: story:a-chart-names-its-axes-and-formats-its-ticks
 - depends_on: story:a-number-with-no-declared-number-format-is-drawn-as-written-in-every-renderer
-revision: 2
+revision: 4
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-24T00:39:06Z", actor: "human:timo", revision: 3}
+- {from: "proposed", to: "active", at: "2026-11-24T00:39:08Z", actor: "human:timo", revision: 4}
 ---
 ## Need
 

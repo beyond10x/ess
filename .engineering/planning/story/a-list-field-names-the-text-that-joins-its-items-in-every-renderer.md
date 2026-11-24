@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-list-field-names-the-text-that-joins-its-items-in-every-renderer
 kind: story
-status: draft
+status: active
 title: A list field names the text that joins its items, in every renderer
 tags:
 - gap-p1
@@ -10,7 +10,10 @@ tags:
 relations:
 - serves: vision:O2
 - depends_on: story:a-structured-value-reads-as-one-line-of-its-members-in-every-renderer
-revision: 2
+revision: 4
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-24T00:39:18Z", actor: "human:timo", revision: 3}
+- {from: "proposed", to: "active", at: "2026-11-24T00:39:20Z", actor: "human:timo", revision: 4}
 ---
 ## Need
 
