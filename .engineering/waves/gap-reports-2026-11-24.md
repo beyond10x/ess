@@ -138,9 +138,12 @@ answers the critics' 76 findings and the recheck's 8.
 - G12: the first report's item 3, `story:ess-ui-load-format-json-prints-the-document-the-loader-resolved-every-default-filled-as-the-versioned-format` and its units; no story of its own.
 - G13: an entity whose rows the deployment provides declares lifecycle moves the deployment makes.
   `story:an-entity-whose-rows-the-deployment-provides-declares-lifecycle-moves-the-deployment-makes-with-no-command` (M, about 330), `story:synthesis-reaches-every-state-of-a-provided-entity-through-its-provider-and-never-drives-a-move-the-deployment` (M, about 400).
-- F18: an event stream that no command opens. `story:an-http-route-streams-a-component-s-events-with-no-command-opening-it-and-frames-named-by-a-member-of-their` (M, about 480),
-  `story:a-generated-ui-s-live-channel-connects-to-the-stream-route-its-binding-declares-and-reads-its-frames` (M, about 320); it extends the existing
-  `story:an-event-channel-may-be-bound-to-server-sent-events` (active).
+- F18: an event stream that no command opens. After the owner's note of 2026-11-24 (section
+  below) the existing `story:an-event-channel-may-be-bound-to-server-sent-events` (revised) binds
+  the events one component publishes, and carries it (PR-D4). `story:an-http-route-streams-a-component-s-events-with-no-command-opening-it-and-frames-named-by-a-member-of-their` (draft) is
+  merged into that story: its withdrawal is proposed and the draft is left in the store.
+  `story:a-generated-ui-s-live-channel-connects-to-the-stream-route-its-binding-declares-and-reads-its-frames` (M, about 320) depends on the revised SSE story and reads frame naming
+  from the compiled binding.
 
 ### P1, third list (an application's own generator) (filed)
 
@@ -182,17 +185,19 @@ Four findings. Finding 1 is a defect being reproduced for a patch release after 
 - Finding 1 (defect): a second caller's run expects the identity it sent, also in a nested payload
   member. `story:a-second-caller-s-run-expects-the-identity-it-sent-also-in-a-nested-payload-member` (S, about 240 with tests).
 - Finding 2, stream half: existing `story:an-event-channel-may-be-bound-to-server-sent-events`
-  (existing, active; framing and `keepalive` covered), blocked on the existing
-  `story:an-exchange-is-declared-in-the-specification` and
-  `story:asyncapi-and-openapi-project-an-exchange` (both existing, active, unbuilt). Authentication
+  (existing, active, revised after the owner's note of 2026-11-24: it binds published events, with
+  frames, names and `keepalive` in the protocol document, and no longer waits for
+  `story:an-exchange-is-declared-in-the-specification` or
+  `story:asyncapi-and-openapi-project-an-exchange`). Authentication
   by header and by query token: existing `story:an-http-binding-declares-how-a-caller-authenticates`
   (existing, active), plus one amendment there (`bearer` with `in: query`, and the stream route takes
-  `authentication`). A route-less feed: decision AC-D1, which the second report's F18 shares; no
-  second stream design.
+  `authentication`). A route-less feed: PR-D4 A, which supersedes AC-D1 and SL-D12 (the second
+  report's F18 shares it); no second stream design.
 - Finding 2, bus request/reply half: `story:a-command-may-be-bound-to-a-broker-subject-as-a-request-with-one-reply` (M and S, about 700 over two
   units); beside the existing `story:a-broker-binding-carries-an-exchange` (existing, draft).
 - Finding 3, header-borne inputs: `story:an-http-route-may-read-an-input-field-or-a-view-parameter-from-a-request-header` (three units, about 1,000 lines; credential
-  headers refused, AC-D3). It gives the stream story's `Last-Event-ID` its request-side key.
+  headers refused, AC-D3). When a resume is designed, the stream story's `Last-Event-ID` is a
+  header of the stream's request message.
 - Finding 3, the `401` challenge: `story:a-401-answer-may-state-that-the-service-sends-no-www-authenticate-challenge` (S, about 250).
 - Finding 4, a `2xx` on an unreadable request: `story:an-unreadable-request-may-be-answered-with-a-2xx-status-and-no-body-where-the-service-does-so` (S, about 250).
 - Finding 4, plain-text error bodies: `story:an-error-outcome-or-a-standard-refusal-may-answer-plain-text` (two units, about 750).
@@ -265,6 +270,46 @@ before P2. No format version.
   where the read row has no creating command); sixth list G14 (none of the three adds validation
   cost). `story:an-outcome-that-keeps-its-subject-may-emit` builds on the amended story.
 - Idiom that works today: give the other entity a distinct identity type.
+
+### The owner's note on transport bindings (2026-11-24)
+
+The note, in three generic lines:
+
+- Request/reply is a command and its response; the broker is only the transport.
+- A server-sent-events stream is an event stream.
+- A header and a frame are protocol concepts, carried by the protocol specification kind
+  (`ess specify protocol`, `ess-protospec/1`); a binding names the protocol document and maps each
+  ESS message to one protocol message, and keeps the addresses (path, subject), methods, statuses
+  and authentication.
+
+Three existing stories get new bodies and titles, and four new units give the protocol kind what
+they need. The units are `gap-p1` drafts. No format version: every addition is optional within
+`ess-protospec/1` (PR-D3 A).
+
+- Revised, existing: `story:an-event-channel-may-be-bound-to-server-sent-events` (M 450 + S 200;
+  active; binds published events, frames in the protocol document, no longer waits for the exchange
+  layer; it also gains the tags `gap-reports-2026-11-24` and `gap-p1`; its status is untouched and
+  its new design is not yet reviewed),
+  `story:a-command-may-be-bound-to-a-broker-subject-as-a-request-with-one-reply` (M 520 + M 320 +
+  S 260; timeout, no-responders, correlation and reply members move to the protocol document, the
+  subject stays in the binding), and
+  `story:an-http-route-may-read-an-input-field-or-a-view-parameter-from-a-request-header` (M 480 +
+  M 400 + S 150; the header is declared in the protocol document and the route only maps it).
+  The UI live-channel draft `story:a-generated-ui-s-live-channel-connects-to-the-stream-route-its-binding-declares-and-reads-its-frames`
+  has a new body (title unchanged, M about 320) and depends on the revised SSE story.
+- New units, in landing order: `story:an-ess-protospec-1-message-declares-header-fields-absent-fields-fixed-values-and-an-application-body` (M, about 450; header fields,
+  `required: false`, fixed `value:` and an `application` slot), `story:an-ess-protospec-1-reply-answers-on-the-exchange-of-the-message-it-received-and-a-credential-header-is-named`
+  (S, about 260; value source `{kind: exchange}`, credential headers named and never valued),
+  `story:an-ess-protospec-1-participant-reads-named-members-of-one-message-in-any-case-and-may-ignore-the-others-and-a` (M, about 420; `participants[].reads`, any-case reading of named
+  members) and `story:an-ess-http-1-binding-names-the-protocol-document-its-routes-read-by-its-compiled-digest` (S, about 300; `ess-http/1` top-level
+  `protocol: sha256:` plus `--protocol`).
+- Left as it is: the commandless-stream draft (`story:an-http-route-streams-a-component-s-events-with-no-command-opening-it-and-frames-named-by-a-member-of-their`), merged into the revised SSE
+  story. Its withdrawal is proposed in the owner's note's map, and no text was added to it.
+  `story:a-response-stream-follows-one-row-until-a-terminal-state` has one sentence that goes stale
+  (the SSE story binds published events only); it is not edited. The exchange stories, the
+  authentication story and the protocol-timer story are unchanged.
+- Not written: a receiver-side close trigger in `ess-protospec/1`, and the exchange-opened SSE
+  stream (written when the exchange layer lands).
 
 ### Store issues found
 
@@ -381,6 +426,14 @@ first (it runs beside the units of the wave of 2026-11-24: s3 and s4 edit other 
 function, and after the amended story, so its hint names no form synthesis refuses), then
 `story:a-row-set-guard-that-selects-its-entity-s-row-by-identity-from-the-input-is-witnessed-on-both-sides-the` (after s4, or rebased on it; if it slips, `story:the-refusal-of-an-input-whose-identity-type-several-entities-share-on-a-branch-with-no-subject-names-the-forms` names
 only the `preserves:` form and `story:a-row-set-guard-that-selects-its-entity-s-row-by-identity-from-the-input-is-witnessed-on-both-sides-the` adds the second).
+
+Transport bindings (the owner's note): `story:an-ess-protospec-1-message-declares-header-fields-absent-fields-fixed-values-and-an-application-body` first; then
+`story:an-ess-protospec-1-reply-answers-on-the-exchange-of-the-message-it-received-and-a-credential-header-is-named`, `story:an-ess-protospec-1-participant-reads-named-members-of-one-message-in-any-case-and-may-ignore-the-others-and-a` and
+`story:an-ess-http-1-binding-names-the-protocol-document-its-routes-read-by-its-compiled-digest`, merged one after another (they share `protocol.rs` in three
+crates). After those, unit a of the SSE story, of the broker request story and of the header-input
+story; the SSE and header-input stories share `ess-http/src/lib.rs`, so they go in series. Every
+`pr0` unit and the UI live-channel link wait for PR-D1, PR-D2 and PR-D3 (architecture); the SSE
+story also for PR-D4, the header-input story for PR-D5.
 
 ## Format
 
@@ -504,7 +557,7 @@ P1 (second report):
 - SL-D11 (G13): how lifecycle moves only the deployment makes are declared. A: through `provided:
   true`, from `ess/39`, two units; B: decline, with the system-actor idiom; C: a `recorded_by`
   spelling. Default A.
-- SL-D12 (F18): how `ess-http/1` takes an event stream no command opens. A: widen the active SSE
+- SL-D12 (F18; superseded by PR-D4): how `ess-http/1` takes an event stream no command opens. A: widen the active SSE
   story with a commandless `stream:` and a UI unit; B: wait for the exchange layer; C: decline.
   Default A.
 - SL-D13 (G5): where the flat union layout is declared. A: on the union in the specification,
@@ -589,7 +642,7 @@ Fifth list (a page lifted into a document):
 
 Fourth report (a service contract):
 
-- AC-D1 (finding 2, also F18): may an event stream follow no row. A: amend the exchange story so
+- AC-D1 (finding 2, also F18; superseded by PR-D4): may an event stream follow no row. A: amend the exchange story so
   `follows` is optional; B: SSE binds only row-followed exchanges; C: an SSE route binds a
   component's `publishes:` events directly. Default A.
 - AC-D2 (finding 2): is bus request/reply designed now. A: design it, one command bound to a
@@ -649,6 +702,38 @@ Seventh report (a command that only reads one row):
 - RD-D3 (attempt 2): a row-set selector that pins an identity the target mints. A: synthesis sends
   the captured instance as the input, as `instance:` does, and witnesses both sides; B: refuse that
   branch by name and point to `preserves:` with `instance:`; C: change nothing. Default A.
+
+The owner's note on transport bindings. PR-D1 to PR-D5 are marked "architecture: waits for the
+owner": they do not take the 15-minute default. Defaults are what the stories are written to.
+
+- PR-D1 (architecture: waits for the owner): where header, frame, correlation and stream-end detail
+  are written. A: in an `ess-protospec/1` document that a binding names; B: in each binding; C: a
+  third document kind, a codec binding. Default A.
+- PR-D2 (architecture: waits for the owner): which way the link between a binding and a protocol
+  document points. A: binding to protocol, a top-level `protocol: sha256:<hex>` and `--protocol`
+  beside `--http` or `--transport`; B: protocol to specification (`ess-protospec/2`); C: a third
+  document that pairs them. Default A.
+- PR-D3 (architecture: waits for the owner): the format consequence of the protocol-kind additions.
+  A: additive within `ess-protospec/1`, each key skipped when empty, an old-reader test per unit;
+  B: `ess-protospec/2`. Default A.
+- PR-D4 (architecture: waits for the owner): what an SSE route binds. A: the events one component
+  publishes (supersedes AC-D1 and SL-D12); B: only a named exchange; C: AC-D1 A, `follows`
+  optional. Default A.
+- PR-D5 (architecture: waits for the owner): where a request header is declared for an HTTP route.
+  A: in the protocol document, the route names `request.message` and maps `request.headers`; B: in
+  `ess-http/1`; C: as A, and response headers move too. Default A.
+- PR-D6: what happens to the response headers `ess-http/1` declares. A: they stay, released and
+  unchanged; B: plan their move in `ess-http/2`. Default A.
+- PR-D7: how conformance runs the scenarios over the bound transport when no wire target exists. A:
+  each binding story proves the suite is byte-identical with and without the binding, and the wire
+  run is a `--target process` adapter; B: a loopback per story; C: a real wire target per story.
+  Default A.
+- PR-D8: who names a broker request's subjects. A: the binding (`requests[].subject` in
+  `ess-transport/3`), the reply subject is drawn by the requester; B: the protocol document; C: a
+  template in the protocol document filled by the binding. Default A.
+- PR-D9: do generators serve or call a broker request. A: no, `ess-publisher` and every generated
+  server refuse a transport document with `requests:` by name; B: `ess-publisher` skips it and
+  says so. Default A.
 
 ## Accepted
 
