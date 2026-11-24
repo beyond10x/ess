@@ -826,16 +826,18 @@ fn synthesize_rust_serves_the_binding_and_refuses_one_it_cannot_serve() {
         "{surface}"
     );
 
-    for (routes, refusal) in [
-        (ROUTES, "has an open route"),
+    for (routes, target, refusal) in [
+        (ROUTES, "rust", "has an open route"),
         (
             "routes:\n  - command: catalog.items.ListItem\n    method: post\n    path: /docs\n",
+            "rust",
             "a request for `/docs` would match",
         ),
         (
             "routes:\n  - command: catalog.items.ListItem\n    method: post\n    path: /items\n    \
              request: {encoding: multipart}\n",
-            "takes a `multipart` request, which the generated servers do not read yet",
+            "go",
+            "takes a `multipart` request, which the generated Go server does not read yet",
         ),
     ] {
         fixture.binding(routes);
@@ -845,7 +847,7 @@ fn synthesize_rust_serves_the_binding_and_refuses_one_it_cannot_serve() {
             "--path",
             "model",
             "--target",
-            "rust",
+            target,
             "--http",
             "http.yaml",
             "--out",

@@ -179,7 +179,7 @@ The document follows those keys on the routes that use them:
   `String` input fields and lists the `media_types` it may carry. A `get` command takes no
   `multipart`. The document publishes the body as `multipart/form-data`, a file part as
   `{type: string, contentMediaType: application/octet-stream}` with its `media_types` as the part's
-  `encoding.contentType`; the generated servers do not read it yet:
+  `encoding.contentType`. The generated Rust server reads it; the Go server does not yet:
 
   ```yaml
   - command: demo.reports.ImportRows

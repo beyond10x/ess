@@ -396,6 +396,19 @@ repeating its part. A field without a flat spelling is refused as for `form` (`E
   Object `contentType`, joined by `, `. The route publishes no `{command}.Input`: that schema's
   `Bytes` member is base64 and it would hold the attribute fields. `required` lists the parts whose
   fields are not `Optional`, and `unknown: ignore` opens the object.
+- The Rust server (`story:the-generated-rust-server-reads-a-multipart-request`) carries its own
+  RFC 7578 reader, as it carries its own JSON reader, emitted only where a route is `multipart`:
+  the body's boundary from `Content-Type`, a preamble and an epilogue ignored, transport padding
+  after a boundary admitted. A text part is read as a `form` value; a file part's bytes enter the
+  input as the base64 text the `Bytes` decoder reads, its filename from `Content-Disposition` and
+  its media type from `Content-Type` (`text/plain` where it states none, RFC 7578 §4.4), without
+  parameters. `malformed`, naming the part: a `Content-Type` that is not `multipart/form-data`
+  or has no boundary of 1 to 70 characters, a body not closed by its final boundary, a part
+  without a `form-data` name, a file part of a media type outside `media_types` (compared
+  ignoring case), a part that is not a `List` given twice, a part no field names or the path
+  carries under `refuse` (one the path carries must hold the path's value under `ignore`), and a
+  file part without the filename a required input reads. The body is read within the
+  route's request cap, as every body is.
 
 A `json` request may take one input field as its whole body, bare: `request: {encoding: json,
 body: input.<field>}` (`encoding` may be left out). The field's JSON value is the body: a list,

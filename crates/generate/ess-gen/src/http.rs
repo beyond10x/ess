@@ -422,31 +422,47 @@ impl Binding {
     /// or shadowing. `ess specify http validate` accepts such a route: the document is valid, and
     /// only the server cannot honour it.
     ///
-    /// A route taking a `multipart` request is refused the same way, by [`Reason::Multipart`],
-    /// until the servers read one (beyond10x/ess#754).
-    ///
     /// # Errors
     ///
-    /// [`Unprojectable`] naming each such route, by [`Reason::Reserved`] or [`Reason::Multipart`].
+    /// [`Unprojectable`] naming each such route, by [`Reason::Reserved`].
     pub fn servable(&self) -> Result<(), Unprojectable> {
         let refused: Vec<(ess_http::Operation, Reason)> = self
             .0
             .routes()
             .iter()
             .filter_map(|route| {
-                if route
-                    .request
-                    .as_ref()
-                    .is_some_and(|request| request.encoding == ess_http::Encoding::Multipart)
-                {
-                    return Some((route.operation.clone(), Reason::Multipart));
-                }
                 let segments = route.segments()?;
                 RESERVED
                     .into_iter()
                     .find(|reserved| template_matches(&segments, reserved))
                     .map(|reserved| (route.operation.clone(), Reason::Reserved(reserved)))
             })
+            .collect();
+        if refused.is_empty() {
+            Ok(())
+        } else {
+            Err(Unprojectable(refused))
+        }
+    }
+
+    /// Every route taking a `multipart` request, with its operation, in route order: the Go server
+    /// does not read one yet (beyond10x/ess#754), so its synthesis refuses each.
+    ///
+    /// # Errors
+    ///
+    /// [`Unprojectable`] naming each such route, by [`Reason::Multipart`].
+    pub fn without_multipart(&self) -> Result<(), Unprojectable> {
+        let refused: Vec<(ess_http::Operation, Reason)> = self
+            .0
+            .routes()
+            .iter()
+            .filter(|route| {
+                route
+                    .request
+                    .as_ref()
+                    .is_some_and(|request| request.encoding == ess_http::Encoding::Multipart)
+            })
+            .map(|route| (route.operation.clone(), Reason::Multipart))
             .collect();
         if refused.is_empty() {
             Ok(())
@@ -501,7 +517,7 @@ pub enum Reason {
     Method(ess_http::Method),
     /// Its template matches this path, which a served surface answers about itself.
     Reserved(&'static str),
-    /// It takes a `multipart` request, which the generated servers do not read yet
+    /// It takes a `multipart` request, which the generated Go server does not read yet
     /// (beyond10x/ess#754).
     Multipart,
 }
@@ -534,8 +550,8 @@ impl std::fmt::Display for Unprojectable {
                 )?,
                 Reason::Multipart => write!(
                     formatter,
-                    "{operation} takes a `multipart` request, which the generated servers do not read \
-                     yet"
+                    "{operation} takes a `multipart` request, which the generated Go server does not \
+                     read yet"
                 )?,
             }
         }
