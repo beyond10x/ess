@@ -78,8 +78,12 @@ size. "Existing" marks a story that was in the store before. A group not filed y
   `story:a-number-with-no-declared-number-format-is-drawn-as-written-in-every-renderer` (S, about 150).
 - G4: a list field names the text that joins its items. `story:a-list-field-names-the-text-that-joins-its-items-in-every-renderer` (S, about 220); the
   renderers agree today and the reference is silent, so it is not a defect.
-- G5: a structured value reads as one line (defect) and a tagged union reads as its variant and
-  content. `story:a-structured-value-reads-as-one-line-of-its-members-in-every-renderer` (S, about 150), `story:a-tagged-union-value-reads-as-its-variant-and-its-content-in-the-layout-its-model-declares-when-the-document` (M, about 420).
+- G5: a structured value reads as one line (defect), a tagged union declares a flat layout, the
+  generated codecs follow it, and a bound document reads the union as its variant and content in
+  the layout its model declares. `story:a-structured-value-reads-as-one-line-of-its-members-in-every-renderer` (S, about 150),
+  `story:a-tagged-union-declares-that-its-tag-sits-beside-its-variant-s-members-in-one-flat-object` (M, about 480; after `story:the-specification-format-ess-39-is-open-as-the-newest-reads-and-compiles-every-specification-exactly-as-ess-38`),
+  `story:generated-codecs-and-conformance-write-and-read-a-flat-union-in-the-layout-its-model-declares` (M, about 560), `story:a-tagged-union-value-reads-as-its-variant-and-its-content-when-the-document-is-bound-to-its-model` (M, about 450; its title is the
+  revised one, its artifact name is the earlier one).
 - G6: a time, date or timestamp field declares UTC or the reader's local zone.
   `story:a-time-date-or-timestamp-field-declares-whether-it-is-drawn-in-utc-or-the-reader-s-local-zone` (M, about 420).
 - G7: one host component stands in many slots. `story:one-host-component-stands-in-many-slots-that-receive-the-same-thing-each-slot-identified-by-its-node-path` (M, about 330); it follows
@@ -175,10 +179,10 @@ P0: `story:a-design-page-fixes-how-a-program-explores-the-ui-states-of-an-ess-ui
 (after `story:a-program-lists-the-ess-ui-test-1-steps-a-ui-state-offers-applies-one-and-forks-the-state-through-ess-ui-test`, same file), `story:the-generated-react-app-counts-new-live-rows-while-its-reader-is-paged-away-with-or-without-a-filter-and-keeps`; `story:ess-ui-state-prints-the-state-a-list-of-ess-ui-test-1-steps-reaches-and-the-steps-that-state-offers` after the
 state document; `story:the-model-holds-every-filled-default-as-a-plain-value-and-no-renderer-or-checker-keeps-a-fallback-of-its-own` last.
 
-Second report, five lanes built side by side, one after another within a lane:
+Second report, six lanes built side by side, one after another within a lane:
 
 - Renderer lane: `story:a-number-with-no-declared-number-format-is-drawn-as-written-in-every-renderer` (defect), `story:a-structured-value-reads-as-one-line-of-its-members-in-every-renderer` (defect),
-  `story:a-list-field-names-the-text-that-joins-its-items-in-every-renderer`, `story:a-tagged-union-value-reads-as-its-variant-and-its-content-in-the-layout-its-model-declares-when-the-document`, `story:a-time-date-or-timestamp-field-declares-whether-it-is-drawn-in-utc-or-the-reader-s-local-zone`, `story:a-duration-field-shows-the-time-between-two-instants-of-its-row-the-clock-standing-in-for-an-absent-end`;
+  `story:a-list-field-names-the-text-that-joins-its-items-in-every-renderer`, `story:a-tagged-union-value-reads-as-its-variant-and-its-content-when-the-document-is-bound-to-its-model`, `story:a-time-date-or-timestamp-field-declares-whether-it-is-drawn-in-utc-or-the-reader-s-local-zone`, `story:a-duration-field-shows-the-time-between-two-instants-of-its-row-the-clock-standing-in-for-an-absent-end`;
   `story:a-page-header-s-badge-takes-its-tone-and-words-from-its-value-as-a-badge-does` slots in after `story:a-number-with-no-declared-number-format-is-drawn-as-written-in-every-renderer`. `story:a-number-with-no-declared-number-format-is-drawn-as-written-in-every-renderer` also
   lands before `story:a-chart-draws-its-rows-in-the-order-its-sort-declares-and-a-live-insert-keeps-that-order` and before `story:a-chart-names-its-axes-and-formats-its-ticks`
   (same function).
@@ -186,9 +190,11 @@ Second report, five lanes built side by side, one after another within a lane:
   reused-template story).
 - HTTP lane: `story:a-view-route-answers-its-rows-under-a-named-member-and-views-of-one-component-may-share-a-route-by-their`, then `story:the-generated-rust-and-go-servers-answer-a-route-shared-by-several-views-with-one-object-of-their-rows` beside `story:a-generated-ui-reads-a-view-s-rows-from-the-member-its-route-declares`, then
   `story:an-http-route-streams-a-component-s-events-with-no-command-opening-it-and-frames-named-by-a-member-of-their` (after the active SSE story), then `story:a-generated-ui-s-live-channel-connects-to-the-stream-route-its-binding-declares-and-reads-its-frames`;
-  `story:a-tagged-union-value-reads-as-its-variant-and-its-content-in-the-layout-its-model-declares-when-the-document` shares `binding.rs` with `story:a-generated-ui-reads-a-view-s-rows-from-the-member-its-route-declares` and merges after it.
+  `story:a-tagged-union-value-reads-as-its-variant-and-its-content-when-the-document-is-bound-to-its-model` shares `binding.rs` with `story:a-generated-ui-reads-a-view-s-rows-from-the-member-its-route-declares` and merges after it.
 - Literal lane: `story:a-decimal-literal-sets-or-publishes-a-binary64-field-read-by-one-grammar-the-validator-and-every-target-share`.
 - Lifecycle lane: `story:an-entity-whose-rows-the-deployment-provides-declares-lifecycle-moves-the-deployment-makes-with-no-command` (after `story:the-specification-format-ess-39-is-open-as-the-newest-reads-and-compiles-every-specification-exactly-as-ess-38`), then `story:synthesis-reaches-every-state-of-a-provided-entity-through-its-provider-and-never-drives-a-move-the-deployment`.
+- Union wire lane: `story:a-tagged-union-declares-that-its-tag-sits-beside-its-variant-s-members-in-one-flat-object` (after `story:the-specification-format-ess-39-is-open-as-the-newest-reads-and-compiles-every-specification-exactly-as-ess-38`), then `story:generated-codecs-and-conformance-write-and-read-a-flat-union-in-the-layout-its-model-declares`;
+  `story:a-tagged-union-value-reads-as-its-variant-and-its-content-when-the-document-is-bound-to-its-model` waits for `story:a-tagged-union-declares-that-its-tag-sits-beside-its-variant-s-members-in-one-flat-object` under SL-D13 A.
 
 Third list: `story:a-live-insert-of-a-key-the-section-already-holds-shows-one-row-in-both-renderers` (patch 0.98.1, in progress); then `story:a-looping-fixture-script-repeats-at-its-last-entry-s-offset-in-the-browser-too-as-in-the-terminal-and-the-test` and
 `story:in-the-browser-a-live-event-that-arrives-before-the-section-s-read-has-answered-is-applied-once-it-answers-as` as one patch release 0.98.2 in two commits (`sp4` needs 0.98.1: a held
@@ -202,7 +208,7 @@ The fourth report: the landing order is written when its stories are filed.
 
 Stories that name `ess/38` or `ess/39`: `story:from-ess-39-a-view-s-filter-reads-the-row-a-parameter-names-one-hop-and-walks-that-row-s-list-fields`, `story:a-guard-over-the-rows-a-list-of-references-names-shares-a-command-with-other-related-guards-its-missing-row`,
 `story:a-when-related-predicate-reads-the-addressed-row-as-subject-field-and-subject-state-so-one-branch-is-selected`, `story:a-branch-that-creates-its-subject-declares-affects-over-rows-that-existed-before-the-outcome-validated-and`, `story:at-the-new-format-a-when-related-via-is-a-chain-of-declared-references-validated-compiled-and-interpreted-its`,
-`story:the-specification-format-ess-39-is-open-as-the-newest-reads-and-compiles-every-specification-exactly-as-ess-38`, `story:a-command-guard-compares-a-value-with-the-digest-of-several-named-inputs-hex-sha256-tuple-and-the-interpreted`, `story:an-entity-names-the-commands-whose-decisions-may-read-it-readers-and-validation-refuses-every-other-read-by`, `story:an-entity-whose-rows-the-deployment-provides-declares-lifecycle-moves-the-deployment-makes-with-no-command`
+`story:the-specification-format-ess-39-is-open-as-the-newest-reads-and-compiles-every-specification-exactly-as-ess-38`, `story:a-command-guard-compares-a-value-with-the-digest-of-several-named-inputs-hex-sha256-tuple-and-the-interpreted`, `story:an-entity-names-the-commands-whose-decisions-may-read-it-readers-and-validation-refuses-every-other-read-by`, `story:an-entity-whose-rows-the-deployment-provides-declares-lifecycle-moves-the-deployment-makes-with-no-command`, `story:a-tagged-union-declares-that-its-tag-sits-beside-its-variant-s-members-in-one-flat-object`,
 and, under SL-D8 option B, `story:a-decimal-literal-sets-or-publishes-a-binary64-field-read-by-one-grammar-the-validator-and-every-target-share`. `ess-diff/24` carries the diff kinds of
 `story:ess-verify-diff-reports-an-entity-s-readers-declared-removed-widened-or-narrowed-at-ess-diff-24`. For all of them: format: decided before acceptance (one source format per
 design decision, `docs/design/generic-language-features.md` § Policy, 2).
@@ -307,6 +313,13 @@ P1 (second report):
 - SL-D12 (F18): how `ess-http/1` takes an event stream no command opens. A: widen the active SSE
   story with a commandless `stream:` and a UI unit; B: wait for the exchange layer; C: decline.
   Default A.
+- SL-D13 (G5): where the flat union layout is declared. A: on the union in the specification,
+  `layout: flat` from `ess/39`, every target reads it and the UI binding carries it; B: a key in
+  the `ess-http/1` binding; C: the UI reads any object with the tag member and no `value` member
+  as flat; D: decline. Default A.
+- SL-D14 (G5): how the flat layout is spelled. A: `layout: adjacent | flat`, `adjacent` the
+  default; B: `tag_inline: true`; C: `wire: flat`, refused because `wire:` names an enum variant's
+  spelling. Default A.
 
 P1 (third list):
 
