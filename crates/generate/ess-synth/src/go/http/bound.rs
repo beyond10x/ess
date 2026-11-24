@@ -1542,6 +1542,42 @@ func echoedParts(request *http.Request, body []byte, carried []flatField, path [
 }
 "#;
 
+/// What a surface adds where a route lists `request.query` (beyond10x/ess#754): the join of the
+/// fields read from the query string with the body's, as the Rust server's `http::with_query`.
+pub(super) const QUERIED: &str = r#"
+// withQuery is value with the members the query string carries added (beyond10x/ess#754), each
+// of listed that query holds, in the order listed: a field the route's `request.query` lists is
+// read from the query string alone, and the body naming it is malformed.
+func withQuery(value any, query map[string]any, listed []flatField, at string) (any, error) {
+	object, ok := value.(map[string]any)
+	if !ok {
+		return value, nil
+	}
+	for _, field := range listed {
+		if _, read := query[field.wire]; !read {
+			continue
+		}
+		if _, present := object[field.wire]; present {
+			return nil, fmt.Errorf("%s: the query carries this field, so the body does not", nested(at, field.wire))
+		}
+	}
+	for wire, member := range query {
+		object[wire] = member
+	}
+	return object, nil
+}
+"#;
+
+/// Whether a route of `binding` lists `request.query`, which the surface joins with [`QUERIED`].
+pub(super) fn reads_query_beside_body(binding: &http::Binding) -> bool {
+    binding.ir().routes().iter().any(|route| {
+        route
+            .request
+            .as_ref()
+            .is_some_and(|request| !request.query.is_empty())
+    })
+}
+
 /// Whether a route of `binding` takes a `multipart` request, which the surface reads with
 /// [`MULTIPART`].
 pub(super) fn reads_multipart(binding: &http::Binding) -> bool {
@@ -2023,6 +2059,47 @@ fn flat_table(ir: &EssIr, fields: &[ResolvedField], route: &http::Route<'_>) -> 
     format!("[]flatField{{{}}}", rows.join(", "))
 }
 
+/// The closing statements of a bound command route's reader, as Go source: the body joined with
+/// the path's `members`, joined in turn with the fields the route's `request.query` lists, read
+/// from the query string as `encoding: query` reads them (beyond10x/ess#754), as the Rust server
+/// joins them. A route that lists none keeps its bytes.
+fn queried(
+    ir: &EssIr,
+    route: &http::Route<'_>,
+    command: &ResolvedCommand,
+    at: &str,
+    members: &str,
+) -> String {
+    let request = http::request(route);
+    if request.query.is_empty() {
+        return format!("\t\treturn withPath(value, {members}, {at})\n");
+    }
+    let rows: Vec<String> = request
+        .query_fields()
+        .filter_map(|name| command.input.iter().find(|field| field.name == name))
+        .map(|field| {
+            let shape = match http::flat(ir, &field.type_ref).map(|(shape, _)| shape) {
+                Some(http::Shape::Optional) => "shapeOptional",
+                Some(http::Shape::List) => "shapeList",
+                Some(http::Shape::One) | None => "shapeOne",
+            };
+            format!(
+                "{{{}, {}, {shape}}}",
+                go_string(ess_gen::schema::wire_field_name(field)),
+                flat_kind(ir, field)
+            )
+        })
+        .collect();
+    format!(
+        "\t\tjoined, err := withPath(value, {members}, {at})\n\t\tif err != nil {{\n\t\t\treturn \
+         nil, err\n\t\t}}\n\t\tlisted := []flatField{{{}}}\n\t\tquery, err := \
+         flatObject(request.URL.RawQuery, listed, nil, {}, \"query\")\n\t\tif err != nil \
+         {{\n\t\t\treturn nil, err\n\t\t}}\n\t\treturn withQuery(joined, query, listed, {at})\n",
+        rows.join(", "),
+        request.unknown == ess_http::Unknown::Ignore
+    )
+}
+
 /// A `multipart` request's `[]partField` literal (beyond10x/ess#754): every input field neither the
 /// path nor a part attribute carries, in declaration order, a `Bytes` field ([`http::file_part`]) a
 /// file part with the wire names its attributes read into, as the Rust server's table states it.
@@ -2141,10 +2218,13 @@ fn command(
     let request = http::request(route);
     let ignore = request.unknown == ess_http::Unknown::Ignore;
     let bare = http::bare_body(command, route.declared);
+    // What the path or the query string (beyond10x/ess#754) carries is not the body's to hold.
+    let mut outside = http::carried(ir, route);
+    outside.extend(http::queried(route.declared));
     let read = match request.encoding {
         Encoding::Json if bare.is_some() => format!(
             "bareBody(body, {}, {}, {})",
-            http::body_required_without(command, &http::carried(ir, route)),
+            http::body_required_without(command, &outside),
             go_string(
                 bare.map(ess_gen::schema::wire_field_name)
                     .unwrap_or_default()
@@ -2156,11 +2236,11 @@ fn command(
         ),
         Encoding::Json if ignore => format!(
             "openJSONBody(body, {})",
-            http::body_required_without(command, &http::carried(ir, route)),
+            http::body_required_without(command, &outside),
         ),
         Encoding::Json => format!(
             "jsonBody(body, {}, []string{{{}}})",
-            http::body_required_without(command, &http::carried(ir, route)),
+            http::body_required_without(command, &outside),
             command
                 .input
                 .iter()
@@ -2191,6 +2271,7 @@ fn command(
     });
     let (mut statements, members) = path_members(ir, route);
     let members = ignoring(ir, route, command, &at, &mut statements, members);
+    let joined = queried(ir, route, command, &at, &members);
     let suffix = refusal_suffix(ir, layout, route);
     let declares = http::declares_answers(route);
     let answer = if declares {
@@ -2204,7 +2285,7 @@ fn command(
          // binding declares.\nfunc serveBound{function}(system *{system}, request *http.Request, \
          body []byte, path []string) response {{\n\tvalue, err := func() (any, error) \
          {{\n\t\tvalue, err := {read}\n\t\tif err != nil {{\n\t\t\treturn nil, \
-         err\n\t\t}}\n{statements}\t\treturn withPath(value, {members}, {at})\n\t}}()\n\tif err \
+         err\n\t\t}}\n{statements}{joined}\t}}()\n\tif err \
          != nil {{\n\t\treturn refusalMalformed{suffix}(err.Error())\n\t}}\n\tinput, err := \
          decodeCommand{function}(value, \"body\")\n\tif err != nil {{\n\t\treturn \
          refusalMalformed{suffix}(err.Error())\n\t}}\n\toutcome, unmet := \

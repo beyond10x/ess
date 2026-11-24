@@ -1170,6 +1170,53 @@ pub fn echoed_parts(
 }
 "#;
 
+/// What the `http` module adds where a route lists `request.query` (beyond10x/ess#754): the join
+/// of the fields read from the query string with the body's.
+pub(super) const QUERIED: &str = r#"
+/// `value` with the members the query string carries added (beyond10x/ess#754): a field the
+/// route's `request.query` lists is read from the query string alone, and the body naming it is
+/// malformed.
+///
+/// # Errors
+///
+/// A refusal naming the member under `at` when `value` already holds one the query carries.
+pub fn with_query(
+    value: crate::json::Value,
+    query: crate::json::Value,
+    at: &str,
+) -> Result<crate::json::Value, String> {
+    let crate::json::Value::Object(read) = query else {
+        return Ok(value);
+    };
+    match value {
+        crate::json::Value::Object(mut members) => {
+            for (wire, _) in &read {
+                if members.iter().any(|(key, _)| key == wire) {
+                    return Err(format!(
+                        "{}: the query carries this field, so the body does not",
+                        crate::json::nested(at, wire)
+                    ));
+                }
+            }
+            members.extend(read);
+            Ok(crate::json::Value::Object(members))
+        }
+        // Not an object: the decoder refuses it by name.
+        other => Ok(other),
+    }
+}
+"#;
+
+/// Whether a route of `binding` lists `request.query`, which the surface joins with [`QUERIED`].
+pub(super) fn reads_query_beside_body(binding: &http::Binding) -> bool {
+    binding.ir().routes().iter().any(|route| {
+        route
+            .request
+            .as_ref()
+            .is_some_and(|request| !request.query.is_empty())
+    })
+}
+
 /// Whether a route of `binding` takes a `multipart` request, which the surface reads with
 /// [`MULTIPART`].
 pub(super) fn reads_multipart(binding: &http::Binding) -> bool {
@@ -1478,6 +1525,42 @@ fn joined(
     }
 }
 
+/// `joined`, the join of the body with the path's members, joined in turn with the fields the
+/// route's `request.query` lists, read from the query string as `encoding: query` reads them
+/// (beyond10x/ess#754). A route that lists none keeps `joined` and its bytes.
+fn queried(
+    server: &Server<'_>,
+    route: &http::Route<'_>,
+    command: &ResolvedCommand,
+    joined: String,
+) -> String {
+    let request = http::request(route);
+    if request.query.is_empty() {
+        return joined;
+    }
+    let rows: Vec<String> = request
+        .query_fields()
+        .filter_map(|name| command.input.iter().find(|field| field.name == name))
+        .map(|field| {
+            let (shape, flat) = http::flat(server.ir, &field.type_ref)
+                .unwrap_or((http::Shape::One, http::Flat::Text));
+            format!(
+                "({:?}, http::Flat::{}, http::Shape::{})",
+                ess_gen::schema::wire_field_name(field),
+                flat.as_str(),
+                shape.as_str()
+            )
+        })
+        .collect();
+    format!(
+        "let value = {{\n        {joined}\n        }}?;\n        let query = \
+         http::flat_object(&request.query, &[{}], &[], {}, \"query\")?;\n        \
+         http::with_query(value, query, \"body\")",
+        rows.join(", "),
+        request.unknown == ess_http::Unknown::Ignore
+    )
+}
+
 /// A `multipart` request's `(wire name, part, shape)` table, as Rust source (beyond10x/ess#754):
 /// every input field neither the path nor a part attribute carries, in declaration order, a
 /// `Bytes` field ([`http::file_part`]) a file part with the wire names its attributes read into.
@@ -1595,6 +1678,9 @@ fn command(
     let variables = !http::path_fields(ir, route).is_empty();
     let ignore = request.unknown == ess_http::Unknown::Ignore;
     let bare = http::bare_body(command, route.declared);
+    // What the path or the query string (beyond10x/ess#754) carries is not the body's to hold.
+    let mut outside = http::carried(ir, route);
+    outside.extend(http::queried(route.declared));
     let read = match request.encoding {
         // One input field's value is the whole body: read as the object holding that field alone,
         // or, where the body is not required, no body as the input `{}`.
@@ -1604,7 +1690,7 @@ fn command(
                 "json::Value::Object(vec![({wire:?}.to_owned(), http::json_body(&request.body, \
                  true)?)])"
             );
-            if http::body_required_without(command, &http::carried(ir, route)) {
+            if http::body_required_without(command, &outside) {
                 held
             } else {
                 format!(
@@ -1616,7 +1702,7 @@ fn command(
         }
         Encoding::Json => format!(
             "http::json_body(&request.body, {})?",
-            http::body_required_without(command, &http::carried(ir, route))
+            http::body_required_without(command, &outside)
         ),
         Encoding::Multipart => format!(
             "http::multipart_object(request, {}, {}, {ignore}, \"body\")?",
@@ -1643,7 +1729,7 @@ fn command(
         "body"
     };
     let path = if variables { "path" } else { "_path" };
-    let joined = joined(server, route, command, at);
+    let joined = queried(server, route, command, joined(server, route, command, at));
     let suffix = refusal_suffix(server, route);
     let declares = http::declares_answers(route);
     let answer = if declares {

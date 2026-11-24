@@ -194,8 +194,8 @@ The document follows those keys on the routes that use them:
   ```
 - `query: [input.<field>, …]` reads the fields it lists from the query string beside the body of
   a command on `post`, `put`, `patch` or `delete`, each under its wire name as `encoding: query`
-  spells it, and the document publishes each as an `in: query` parameter outside the body. The
-  generated servers do not read it yet:
+  spells it, and the document publishes each as an `in: query` parameter outside the body. Both
+  generated servers read it there:
 
   ```yaml
   - command: demo.reports.ImportRows

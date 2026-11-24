@@ -471,9 +471,14 @@ query` reads; every other field stays where the encoding puts it:
   `ESS-HTTP-012`. No format version: a reader without the key refuses it by name.
 - OpenAPI writes each listed field as an `in: query` parameter in the order listed, by the rules of
   `encoding: query` (required as the field is, a `List` with `style: form` and `explode: true`),
-  and leaves it out of the request body and of `{command}.Input`. The generated servers refuse such
-  a binding until they read it
-  (`story:generated-servers-read-chosen-inputs-from-the-query-beside-the-body`).
+  and leaves it out of the request body and of `{command}.Input`.
+- The Rust and Go servers
+  (`story:generated-servers-read-chosen-inputs-from-the-query-beside-the-body`) read the listed
+  fields from the query string as `encoding: query` reads it, after the body and the path:
+  a key no listed field names is `malformed` under `refuse` and ignored under `ignore`, a
+  listed key given twice where its field is not a `List` is `malformed`, and so is a body that
+  names a listed field (`body.<wire>: the query carries this field, so the body does not`),
+  whatever `unknown` says. A route without `request.query` keeps the server source it had.
 
 ### Response body per outcome
 
@@ -882,7 +887,8 @@ single` and no identity selection and no `empty` earns both `ESS-HTTP-030` and `
   request line spells it, read a `json` body with one reader (the Rust server's `json::parse`,
   ported: one document, nesting at most 64, the first of a repeated member), read a `multipart`
   body with one reader too (the Rust server's, ported; beyond10x/ess#754, cases in
-  `http_binding/multipart.rs`), and write a body the
+  `http_binding/multipart.rs`), join the fields `request.query` lists with the body
+  alike (`http_binding/query_beside_body.rs`), and write a body the
   binding declares with members in declaration order and the Rust server's string escaping. Two
   differences stay: `net/http` refuses a
   request line holding a malformed percent-escape with its own `400` before the surface reads it

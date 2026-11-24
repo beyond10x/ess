@@ -154,6 +154,28 @@ pub(super) fn server_package(
     artifacts
 }
 
+/// The readers of a bound request a route of `binding` needs beyond [`bound::BOUND`], each only
+/// where a route needs it, so every other surface keeps its bytes: a bare body, `unknown: ignore`,
+/// a `multipart` request and the fields `request.query` lists.
+fn request_readers(helpers: &mut String, emit: &Emit<'_>, binding: &http::Binding) {
+    if bound::reads_a_bare_body(binding) {
+        helpers.push_str(bound::BARE_BODY);
+    }
+    if bound::ignores_unknown(binding) {
+        helpers.push_str(bound::IGNORING);
+    }
+    if bound::reads_multipart(binding) {
+        emit.import("encoding/base64");
+        helpers.push_str(bound::MULTIPART);
+    }
+    if bound::echoes_parts(binding) {
+        helpers.push_str(bound::ECHOED_PARTS);
+    }
+    if bound::reads_query_beside_body(binding) {
+        helpers.push_str(bound::QUERIED);
+    }
+}
+
 /// The package's own file: what an answer is, how a body is read, and the two media types.
 ///
 /// One file for the package rather than one per served component, because Go would refuse the
@@ -230,19 +252,7 @@ fn helpers_file(
         if capped {
             helpers.push_str(bound::CAPPED);
         }
-        if bound::reads_a_bare_body(binding) {
-            helpers.push_str(bound::BARE_BODY);
-        }
-        if bound::ignores_unknown(binding) {
-            helpers.push_str(bound::IGNORING);
-        }
-        if bound::reads_multipart(binding) {
-            emit.import("encoding/base64");
-            helpers.push_str(bound::MULTIPART);
-        }
-        if bound::echoes_parts(binding) {
-            helpers.push_str(bound::ECHOED_PARTS);
-        }
+        request_readers(&mut helpers, &emit, binding);
         let checks_grant = served(ir, refusals).into_iter().any(|component| {
             http::bound_routes(ir, component, Some(binding))
                 .iter()

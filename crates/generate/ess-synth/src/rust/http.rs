@@ -223,11 +223,12 @@ pub(super) fn server_crate(
 
 /// The server crate's `http.rs`. A served binding decodes `form` and `query` requests with the
 /// query reader's helpers, so it carries them whatever its views declare, and the readers of
-/// `unknown: ignore` and of a `multipart` request only where a route needs them.
+/// `unknown: ignore`, of a `multipart` request and of `request.query` only where a route needs
+/// them.
 fn http_text(ir: &EssIr, server: &Server<'_>, provenance: &Provenance) -> String {
     if let Some(binding) = server.binding {
         format!(
-            "{}{}{QUERY}{}{}{}{}",
+            "{}{}{QUERY}{}{}{}{}{}",
             provenance.commented_for("//", REGENERATE),
             bound::served_http_module(HTTP, server.capped),
             bound::BOUND,
@@ -243,6 +244,11 @@ fn http_text(ir: &EssIr, server: &Server<'_>, provenance: &Provenance) -> String
             },
             if bound::echoes_parts(binding) {
                 bound::ECHOED_PARTS
+            } else {
+                ""
+            },
+            if bound::reads_query_beside_body(binding) {
+                bound::QUERIED
             } else {
                 ""
             }
