@@ -149,13 +149,21 @@ fn port_struct(
     types: &str,
     port: &str,
 ) {
+    let bounds = bound_list(ir, layout, component, types);
+    // With no handler and no query nothing reads the behaviours, so they are held under a name
+    // rustc's `dead_code` lint does not report (beyond10x/ess#793).
+    let (field, init) = if bounds.is_empty() {
+        ("_behaviors", "_behaviors: behaviors")
+    } else {
+        ("behaviors", "behaviors")
+    };
     let _ = writeln!(
         out,
         "\n/// {} — the port over the component's obligations.\n///\n/// `B` bundles every \
          behaviour and query this component owes; \
          constructing it over the domain's\n/// `obligations::Unimplemented` yields a component \
          that compiles and refuses, in the type system,\n/// everything not yet \
-         implemented.\npub struct {port}<B> {{\n    behaviors: B,\n    outbox: \
+         implemented.\npub struct {port}<B> {{\n    {field}: B,\n    outbox: \
          Vec<PublishedEvent>,\n}}",
         super::doc_text(
             component
@@ -167,12 +175,11 @@ fn port_struct(
         ),
     );
 
-    let bounds = bound_list(ir, layout, component, types);
     let _ = writeln!(
         out,
         "\nimpl<B> {port}<B> {{\n    /// A new port over the given obligation \
          implementations.\n    pub fn new(behaviors: B) -> Self {{\n        Self {{\n            \
-         behaviors,\n            outbox: Vec::new(),\n        }}\n    }}\n\n    /// Hands over \
+         {init},\n            outbox: Vec::new(),\n        }}\n    }}\n\n    /// Hands over \
          everything published since the last drain, in publication order.\n    ///\n    /// The \
          system's transport calls this; anything else reading it is taking events the \
          transport\n    /// will then never deliver.\n    pub fn drain_outbox(&mut self) -> \
