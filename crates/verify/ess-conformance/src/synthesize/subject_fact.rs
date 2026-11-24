@@ -3802,8 +3802,9 @@ pub(super) fn observe_relied(
 /// [`refusal_input`], with every guard in `also` required to hold beside `outcome`'s own.
 ///
 /// Where no candidate serves, the search is run once more with candidates also drawn over every
-/// quantifier across the input that the row must refute, grounded on the row
-/// ([`grounded_over_input`], beyond10x/ess#516): `audience-mismatch: not (exists audience in
+/// quantifier across the input that the row must refute, or that `outcome`'s own stored guard
+/// needs to hold, grounded on the row ([`grounded_over_input`], beyond10x/ess#516,
+/// beyond10x/ess#726): `audience-mismatch: not (exists audience in
 /// input.aud: audience == {fact: client_id})` is refuted only by a list holding the row's
 /// `client_id`, which no candidate drawn from the input guards alone carries. Only then, so a
 /// witness the first search found stays the one it was.
@@ -4055,8 +4056,17 @@ fn refusal_input_from(
     };
     let mut row_guards: Vec<Predicate> = if on_row { halves.clone() } else { Vec::new() };
     row_guards.extend(windowed.iter().cloned());
+    // The retry also grounds the branch's own stored guard on the row, which must hold there:
+    // `admitted: forall c in requires: exists g in input.granted: g == c` refused by the wrong
+    // state is selected only by a `granted` holding every stored element (beyond10x/ess#726).
+    let mut retry_guards = row_guards.clone();
+    if let (true, Some(own)) = (on_row, &own_stored) {
+        if !retry_guards.contains(own) {
+            retry_guards.push(own.clone());
+        }
+    }
     let over_input = match &retried {
-        Some(_) => grounded_over_input(ir, entity, &arrangement.settled, &row_guards),
+        Some(_) => grounded_over_input(ir, entity, &arrangement.settled, &retry_guards),
         None => Vec::new(),
     };
     if let (Some(cause), true) = (&retried, over_input.is_empty()) {
@@ -4065,7 +4075,7 @@ fn refusal_input_from(
     let (mut inputs, mut cut) =
         refusal_candidates(ir, entity, arrangement, command, &row_guards, distinction)?;
     if let Some(cause) = retried {
-        let grounded = grounded(ir, entity, &arrangement.settled, &row_guards);
+        let grounded = grounded(ir, entity, &arrangement.settled, &retry_guards);
         let guards: Vec<&Predicate> = command
             .outcomes
             .iter()

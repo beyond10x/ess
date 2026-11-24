@@ -491,7 +491,10 @@ as a closed domain. No entity field can be named `state`.
   plain wrong-state row, only where some input and row still reach it. Whether the guards answer
   `S` is decided by that search over every branch together, input halves included: where no input
   and row miss them all, their rows are the scenario. A branch that may be taken in `S` and that no
-  bounded arrangement reaches refuses the scenario with that cause; no state is dropped.
+  bounded arrangement reaches refuses the scenario with that cause; no state is dropped. Where the
+  moving branch's own guard compares the row with the input inside a quantifier (`forall c in
+  requires: exists g in input.granted: g == c`), the input is grounded on the arranged row as the
+  guards the row must refute are (beyond10x/ess#726).
 - **Claimed states.** From `ess/23` (beyond10x/ess#461) the same rule holds for a refusal's own
   scenario: a `complete_refusal` refusal whose predicate reads `state` is witnessed, beside its
   first row, on a further row in each other declared state where the predicate with `state` bound
