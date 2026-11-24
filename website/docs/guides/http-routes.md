@@ -193,6 +193,32 @@ The document follows those keys on the routes that use them:
 - A bare body names no branch, so every response of such a command carries `x-ess-outcomes`, the
   outcomes it answers. A challenge is a header only: the document declares no `securitySchemes`.
 
+### Answer a view as CSV
+
+A view route may answer its rows as CSV when the query holds a value you choose, and as JSON
+otherwise:
+
+```yaml
+routes:
+  - view: demo.reports.Rows
+    method: get
+    path: /reports/rows
+    body: array
+    representations:
+      - query: {format: csv}
+        encoding: {csv: {separator: ";", header: true}}
+        headers:
+          Content-Disposition: {literal: attachment}
+```
+
+`GET /reports/rows` answers the JSON array; `GET /reports/rows?format=csv` answers
+`text/csv; charset=utf-8`: a header line of the fields' wire names, then one line per row, `;`
+between fields and CRLF at each line end. Another value of `format` is `malformed`. `separator`
+is `","` (the default), `";"` or `"\t"`, and `header: false` leaves the header line out. Every
+field of the view is a scalar or an `Optional` scalar; an absent value is an empty field. A
+representation is refused (`ESS-HTTP-035`) on a command, a `single` view and a paged view, and its
+headers are literals only.
+
 ### Limit the request body
 
 A binding may state the largest request body its routes read, and the answer a larger one gets:

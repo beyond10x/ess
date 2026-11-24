@@ -63,6 +63,7 @@ pub const CODES: &[&str] = &[
     "ESS-HTTP-032",
     "ESS-HTTP-033",
     "ESS-HTTP-034",
+    "ESS-HTTP-035",
 ];
 
 /// The wording of a route collision, the same as the `OpenAPI` import's refusal of two operations
@@ -1725,6 +1726,61 @@ pub struct RouteSpec {
     /// the binding's. Only a command route that reads a body takes it.
     #[serde(default)]
     pub limits: Option<LimitsSpec>,
+    /// A view route's other representations of its rows, each selected by one literal value of one
+    /// query parameter (beyond10x/ess#753); absent, the route answers its `body` only.
+    #[serde(default)]
+    pub representations: Option<Vec<RepresentationSpec>>,
+}
+
+/// One `representations` entry of a view route, as written (beyond10x/ess#753).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RepresentationSpec {
+    /// The query parameter and the literal value that select it, as written; [`compile`] holds it
+    /// to exactly one entry.
+    pub query: Entries<String>,
+    /// How the rows are written; required.
+    pub encoding: RepresentationEncodingSpec,
+    /// The headers the representation adds to the route's answer, literals only; absent, none.
+    #[serde(default)]
+    pub headers: Option<Entries<HeaderSpec>>,
+}
+
+/// A representation's `encoding`, as written: `{csv: {separator, header}}`.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RepresentationEncodingSpec {
+    /// Delimited text, one line per row.
+    pub csv: CsvSpec,
+}
+
+/// A `csv` encoding, as written. `separator` is read as text, so that one outside the set is
+/// refused with a code (`ESS-HTTP-035`) rather than as a parse error.
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CsvSpec {
+    /// `","`, `";"` or a tab; absent, `","`.
+    #[serde(default)]
+    pub separator: Option<String>,
+    /// Whether a header line of wire names comes first; absent, `true`.
+    #[serde(default)]
+    pub header: Option<bool>,
+}
+
+impl RepresentationSpec {
+    /// The value a refinement compares (`ESS-HTTP-012`): a default written out or left out counts
+    /// as that default, and headers compare by name.
+    fn compared(&self) -> serde_json::Value {
+        let mut compared = serde_json::json!({
+            "query": compared_entries(Some(&self.query), |value: &String| serde_json::json!(value)),
+            "separator": self.encoding.csv.separator.as_deref().unwrap_or(","),
+            "header": self.encoding.csv.header.unwrap_or(true),
+        });
+        if let Some(headers) = compared_entries(self.headers.as_ref(), HeaderSpec::compared) {
+            compared["headers"] = headers;
+        }
+        compared
+    }
 }
 
 /// A `limits:` entry, as written: the largest request body a route reads.
@@ -2304,6 +2360,15 @@ pub struct Route {
     /// Absent when the binding's stands, and always absent on a route that reads no body.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub limits: Option<Limits>,
+    /// A `rows` or `array` view route's other representations of its rows, in the order written,
+    /// each selected by one value of one query parameter (beyond10x/ess#753). Absent when empty,
+    /// and always absent on a command; without the parameter the route answers its `body`.
+    #[serde(
+        default,
+        skip_serializing_if = "Vec::is_empty",
+        deserialize_with = "canonical_representations"
+    )]
+    pub representations: Vec<Representation>,
 }
 
 /// A compiled `limits`: the largest request body a route reads.
@@ -2312,6 +2377,187 @@ pub struct Route {
 pub struct Limits {
     /// The largest request body, in bytes, from 1 to [`MAX_REQUEST_BYTES`].
     pub request_bytes: u64,
+}
+
+/// A compiled representation of a view route's rows: what answers when the query holds its
+/// selector (beyond10x/ess#753).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Representation {
+    /// The query parameter and the value that select it.
+    pub query: Selector,
+    /// How the rows are written.
+    pub encoding: RepresentationEncoding,
+    /// The literal headers it adds to the route's answer, in name order, each name as authored.
+    /// Absent when empty.
+    #[serde(
+        default,
+        skip_serializing_if = "BTreeMap::is_empty",
+        deserialize_with = "canonical_headers"
+    )]
+    pub headers: BTreeMap<String, Header>,
+}
+
+/// One query parameter and the one literal value of it that selects a representation, written
+/// `{<parameter>: <value>}`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Selector {
+    /// The query parameter's name.
+    pub parameter: String,
+    /// The value that selects the representation.
+    pub value: String,
+}
+
+impl serde::Serialize for Selector {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeMap as _;
+        let mut map = serializer.serialize_map(Some(1))?;
+        map.serialize_entry(&self.parameter, &self.value)?;
+        map.end()
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for Selector {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let Entries(mut entries) =
+            <Entries<String> as serde::Deserialize>::deserialize(deserializer)?;
+        if entries.len() != 1 {
+            return Err(serde::de::Error::custom(format!(
+                "a representation's `query` holds {} parameters; compiled IR writes exactly one",
+                entries.len()
+            )));
+        }
+        let (parameter, value) = entries.remove(0);
+        Ok(Self { parameter, value })
+    }
+}
+
+/// A compiled representation's `encoding`: `{csv: {…}}`.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RepresentationEncoding {
+    /// Delimited text, one line per row.
+    pub csv: Csv,
+}
+
+/// A compiled `csv` encoding: each default omitted.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Csv {
+    /// What separates two fields of a line. Absent when `,`.
+    #[serde(
+        default,
+        skip_serializing_if = "Separator::is_default",
+        deserialize_with = "omitted_comma"
+    )]
+    pub separator: Separator,
+    /// Whether a header line of the columns' wire names comes first. Absent when `true`.
+    #[serde(
+        default = "header_line",
+        skip_serializing_if = "is_header_line",
+        deserialize_with = "omitted_header_line"
+    )]
+    pub header: bool,
+}
+
+impl Default for Csv {
+    fn default() -> Self {
+        Self {
+            separator: Separator::default(),
+            header: true,
+        }
+    }
+}
+
+/// What separates two fields of a CSV line.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum Separator {
+    /// `,`, the default.
+    #[default]
+    #[serde(rename = ",")]
+    Comma,
+    /// `;`.
+    #[serde(rename = ";")]
+    Semicolon,
+    /// A horizontal tab.
+    #[serde(rename = "\t")]
+    Tab,
+}
+
+impl Separator {
+    /// The separator `text` spells, if it is one.
+    pub fn parse(text: &str) -> Option<Self> {
+        match text {
+            "," => Some(Self::Comma),
+            ";" => Some(Self::Semicolon),
+            "\t" => Some(Self::Tab),
+            _ => None,
+        }
+    }
+
+    /// The character it is.
+    pub fn as_char(self) -> char {
+        match self {
+            Self::Comma => ',',
+            Self::Semicolon => ';',
+            Self::Tab => '\t',
+        }
+    }
+
+    // `skip_serializing_if` passes the field by reference.
+    #[allow(clippy::trivially_copy_pass_by_ref)]
+    fn is_default(&self) -> bool {
+        *self == Self::default()
+    }
+}
+
+fn header_line() -> bool {
+    true
+}
+
+// `skip_serializing_if` passes the field by reference.
+#[allow(clippy::trivially_copy_pass_by_ref)]
+fn is_header_line(header: &bool) -> bool {
+    *header
+}
+
+/// Reads a `csv` encoding's `separator` of compiled IR, refusing `,` written out.
+fn omitted_comma<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<Separator, D::Error> {
+    let separator = <Separator as serde::Deserialize>::deserialize(deserializer)?;
+    if separator.is_default() {
+        return Err(serde::de::Error::custom(
+            "a `csv` encoding's `separator` is `,`, its default, which compiled IR omits",
+        ));
+    }
+    Ok(separator)
+}
+
+/// Reads a `csv` encoding's `header` of compiled IR, refusing `true` written out.
+fn omitted_header_line<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<bool, D::Error> {
+    let header = <bool as serde::Deserialize>::deserialize(deserializer)?;
+    if header {
+        return Err(serde::de::Error::custom(
+            "a `csv` encoding's `header` is `true`, its default, which compiled IR omits",
+        ));
+    }
+    Ok(header)
+}
+
+/// Reads a route's `representations` of compiled IR, refusing them written empty: compiled IR
+/// omits a route's `representations` when it declares none.
+fn canonical_representations<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Vec<Representation>, D::Error> {
+    let representations = <Vec<Representation> as serde::Deserialize>::deserialize(deserializer)?;
+    if representations.is_empty() {
+        return Err(serde::de::Error::custom(
+            "a route's `representations` is empty; compiled IR omits it when the route declares \
+             none",
+        ));
+    }
+    Ok(representations)
 }
 
 impl Route {
@@ -2526,7 +2772,11 @@ impl HttpIr {
     /// operation the IR routes or derives; and `servers` out of component order or empty, a
     /// component's list empty, or a server URL that is neither absolute `http(s)://` with a host
     /// nor `/`-rooted, holds whitespace, `{`, `}`, `?`, `#` or userinfo, or is given twice for one
-    /// component. Beyond these, it refuses, naming
+    /// component; and a route's `representations` beside a command or a `single` body, a
+    /// `query` of other than one parameter, two on different parameters or one value, a name
+    /// that is a path variable, a name or value outside RFC 3986 `unreserved`, a `separator`
+    /// outside `,`, `;` and a tab, or a header that is not a literal a binding may declare
+    /// (beyond10x/ess#753). Beyond these, it refuses, naming
     /// the key, any IR that would not write back what it was given: a key compiled IR omits,
     /// written as an empty map or list, a `null` or a default.
     ///
@@ -2535,7 +2785,8 @@ impl HttpIr {
     /// `returns`, whether a `text` field is a `String`, whether an `alike` name is an outcome of
     /// the command and whether error objects alike share one wire name, the distinguishability of
     /// outcomes and overridden refusals on one status, a
-    /// `single` view's identity selection and paging, an `array` view's paging, whether the outcome supplies each header,
+    /// `single` view's identity selection and paging, an `array` view's paging, a representation's
+    /// view parameters and flat fields, whether the outcome supplies each header,
     /// param and redirect source and its type, and collisions on each component's surface.
     /// A reader that needs those compiles the authored binding instead.
     pub fn from_json(text: &str) -> Result<Self, serde_json::Error> {
@@ -2774,7 +3025,67 @@ fn route_invariants(route: &Route, at: &str) -> Result<(), String> {
         }
         limits_invariants(*limits, &format!("{at}.limits"))?;
     }
+    representations_invariants(route, &variables, at)?;
     answer_invariants(route, at)
+}
+
+/// Holds a route's compiled `representations` to what compiling guarantees without the
+/// specification (beyond10x/ess#753): only on a view route that answers `rows` or `array`, every
+/// selector on one parameter that is no path variable, each value once, names and values of
+/// `unreserved` characters, and literal headers only, under names a binding may declare.
+fn representations_invariants(route: &Route, variables: &[String], at: &str) -> Result<(), String> {
+    let Some(first) = route.representations.first() else {
+        return Ok(());
+    };
+    let key = format!("{at}.representations");
+    if !matches!(route.operation, Operation::View(_)) || route.body.form == ViewBody::Single {
+        return Err(format!(
+            "`{key}` is on {} answering `{}`; only a view route answering `rows` or `array` \
+             has representations",
+            route.operation, route.body
+        ));
+    }
+    let parameter = &first.query.parameter;
+    if !unreserved(parameter) || variables.contains(parameter) {
+        return Err(format!(
+            "`{key}[0].query` selects by `{parameter}`, which is not one or more `unreserved` \
+             characters or is a variable of the path"
+        ));
+    }
+    let mut values: Vec<&str> = Vec::new();
+    for (index, representation) in route.representations.iter().enumerate() {
+        let at = format!("{key}[{index}]");
+        let Selector {
+            parameter: name,
+            value,
+        } = &representation.query;
+        if name != parameter {
+            return Err(format!(
+                "`{at}.query` selects by `{name}`, and `{key}[0]` by `{parameter}`; every \
+                 representation of a route is selected by one parameter"
+            ));
+        }
+        if !unreserved(value) || values.contains(&value.as_str()) {
+            return Err(format!(
+                "`{at}.query` selects by the value `{value}`, which is not one or more \
+                 `unreserved` characters or selects another representation too"
+            ));
+        }
+        values.push(value);
+        for (name, header) in &representation.headers {
+            if !is_token(name)
+                || RESERVED_HEADERS
+                    .iter()
+                    .any(|(owned, _)| owned.eq_ignore_ascii_case(name))
+                || !matches!(header, Header::Literal(text) if field_value_reason(text).is_none())
+            {
+                return Err(format!(
+                    "`{at}.headers.{name}` is not a literal header a binding may declare"
+                ));
+            }
+        }
+    }
+    Ok(())
 }
 
 /// Holds a compiled `limits` to its range.
@@ -3329,7 +3640,7 @@ impl Refusals {
 /// | `ESS-HTTP-023` | at `routes[i].outcomes.<name>.status`, or `routes[i].errors.status` once for each outcome `errors` covers: a status outside `100..=599`, a `1xx`, a `3xx` other than `301`, `302`, `303`, `307` and `308`, a `2xx` on an outcome with an error, or a `4xx` or `5xx` on one without |
 /// | `ESS-HTTP-024` | at `routes[i].outcomes.<name>.body`, or `routes[i].errors.body` once for each outcome `errors` covers: a word no body form spells, `response` or `response.<field>` on an outcome without `returns: true` or with an error, `response.<field>` naming no field of the response or an `Optional` one, `input.<field>`, `error.<field>` or `error.wire` as a body, `{<member>: error}` on one without an error, under an empty `<member>` or one equal to the wire name of a field of the error, a literal body, `rows`, `array` or `single`, or any body but `none` on `204` when that status compiled, or beside a `redirect` on a redirect status; at `routes[i].body`: `body` on a command, a body other than `rows`, `array` and `single` on a view, or `single` or `array` on a paged view; at `routes[i].outcomes.<name>.encoding`, or `routes[i].errors.encoding` once for each outcome `errors` covers: a word other than `json` and `text`, or `text` beside any body but `response.<field>` or on a field that is not a `String` (a newtype of one counts) |
 /// | `ESS-HTTP-025` | at `routes[i].outcomes.<name>`, or `routes[i].errors` for an outcome `errors` covers: two outcomes of the command on one status whose bodies do not tell them apart (both `envelope`, or both `{<member>: error}` on one member with distinct error wire names, or with one wire name and one error always writing a field, its type not `Optional` through any newtype and its outcome not a `wrong_state` one that can answer an unknown instance, that the other never writes, do; one function decides the field rule for this check and for `alike`) and whose redirects do not either (both declare one and one always writes a parameter, its source not `Optional`, the other never writes, do), an outcome `errors` covers counted at the status and body of `errors`, any other the route does not list at its derived status ([`status::outcome_status`]) with `envelope`. Reported once, at the first listed outcome in document order, then the first covered one in declaration order, naming the others and the status; a pair already named together is not reported again, and an outcome left with none is not reported; at `refusals.<key>`: an override on a route the binding names, on the status of an outcome of its command, whose body does not tell the two apart (only `{<member>: {literal: <text>}}` beside `{<member>: error}` on one member, the text differing from the error's wire name, does), once per route, naming the route, the outcomes and the status; at `routes[i].refusals.<key>`: the same for a route's own override, which stands on that route in place of the binding's; two outcomes in one `alike` group are not a pair; at `routes[i].alike`: a group whose answers differ (the first differing key among `status`, `body`, `encoding`, `headers` and `redirect` named), or that the wire tells apart: `envelope` bodies, `{<member>: error}` bodies under distinct error wire names or over errors one of which always writes a field the other never writes (the message names the field), or that are not one answer, the fields of the errors differing otherwise (in an optional field, a type or an order), a header or challenge param reading `error.wire` under distinct error wire names, or redirects one of which always writes a parameter the other never does |
-/// | `ESS-HTTP-026` | at `routes[i].outcomes.<name>.headers.<Name>`, `routes[i].errors.headers.<Name>` (once for each outcome `errors` covers), `refusals.<key>.headers.<Name>` or `routes[i].refusals.<key>.headers.<Name>`: a name that is not an RFC 9110 token; `Content-Type`, `Content-Length`, `Transfer-Encoding` or `Location` in any case, which the encoding and `redirect` write; a name declared again ignoring case; a literal that is not a field value (visible US-ASCII, spaces and tabs, no space or tab at either end); a source outside `input.<field>`, `response.<field>`, `error.<field>` and `error.wire`, naming no field, naming one of a type other than a scalar or an `Optional` scalar, or one the outcome cannot supply (`response.` without `returns: true`, `error.` without an error), or `error.wire` where the error declares a field named `wire`; any source in a standard refusal's header. At `….challenge.params.<param>`: the same source refusals for a sourced challenge param |
+/// | `ESS-HTTP-026` | at `routes[i].outcomes.<name>.headers.<Name>`, `routes[i].errors.headers.<Name>` (once for each outcome `errors` covers), `refusals.<key>.headers.<Name>` or `routes[i].refusals.<key>.headers.<Name>` or `routes[i].representations[j].headers.<Name>`: a name that is not an RFC 9110 token; `Content-Type`, `Content-Length`, `Transfer-Encoding` or `Location` in any case, which the encoding and `redirect` write; a name declared again ignoring case; a literal that is not a field value (visible US-ASCII, spaces and tabs, no space or tab at either end); a source outside `input.<field>`, `response.<field>`, `error.<field>` and `error.wire`, naming no field, naming one of a type other than a scalar or an `Optional` scalar, or one the outcome cannot supply (`response.` without `returns: true`, `error.` without an error), or `error.wire` where the error declares a field named `wire`; any source in a standard refusal's header; any source or challenge in a representation's header. At `….challenge.params.<param>`: the same source refusals for a sourced challenge param |
 /// | `ESS-HTTP-027` | at `….headers.<Name>`: a challenge under any header but `WWW-Authenticate`; at `….challenge.scheme`: a scheme that is not a token; at `….challenge.params.<param>`: a param name that is not a token, one declared again ignoring case, or a literal a quoted string cannot carry; at `….headers`: an outcome or standard refusal on `401` without a `WWW-Authenticate` challenge (one refused for its scheme or params counts as declared) |
 /// | `ESS-HTTP-028` | at `routes[i].outcomes.<name>.redirect` or `routes[i].errors.redirect` (once for each outcome `errors` covers): a `redirect` on a compiled status other than `301`, `302`, `303`, `307` and `308`, or one of those without a `redirect`; at `….redirect.location`: a source the outcome cannot supply (as for `ESS-HTTP-026`), or of a type other than `String` or a newtype of `String`, `Optional` included; at `….redirect.mode`: none, or one outside `query` and `fragment`; at `….redirect.parameters.<name>`: a parameter written twice, or a source refused as a header source is |
 /// | `ESS-HTTP-029` | at `refusals.<key>`, or a route's own `routes[i].refusals.<key>`: a key outside `malformed`, `not_granted`, `too_large` and `unfinished`, or one written twice; at `….<key>.status`: a status outside its class, `4xx` for `malformed`, `not_granted` and `too_large`, `5xx` for `unfinished`; at `….<key>.body`: a body other than `none` or `{<member>: {literal: <text>}}` under a non-empty member |
@@ -3338,6 +3649,7 @@ impl Refusals {
 /// | `ESS-HTTP-032` | at `routes[i].operation_id`: an id outside `[A-Za-z_][A-Za-z0-9_.-]*`; one an earlier route already gives, naming both routes; or the qualified name of another command or view of the specification, which is that operation's derived `operationId` |
 /// | `ESS-HTTP-033` | at `servers.<component>`: a component the specification does not declare, one not `reached_by: network`, one written twice, or an empty list; at `servers.<component>[j].url`: a URL that is neither absolute `http://` or `https://` with a host nor `/`-rooted, one holding whitespace, `{`, `}`, `?`, `#` or userinfo, or one given twice for the component |
 /// | `ESS-HTTP-034` | at `limits.request_bytes` or `routes[i].limits.request_bytes`: a request size outside 1 to 16777216 bytes; at `routes[i].limits`: a limit on a route that reads no request body (a view, a `get` command or a `request: {encoding: query}` command) |
+/// | `ESS-HTTP-035` | at `routes[i].representations`: `representations` on a command route, on a `single` view or on a paged view, or an empty list; at `routes[i].representations[j].query`: a `query` holding other than exactly one parameter, a parameter other than the first representation's, a value an earlier representation has, a parameter name that is a view parameter's wire name or a path variable or is not RFC 3986 `unreserved` characters, or a value that is empty or not `unreserved` characters; at `routes[i].representations[j].encoding.csv.separator`: a separator other than `","`, `";"` and `"\t"`; at `routes[i].representations[j].encoding`: a view field whose type has no flat spelling (a struct, a union, a `List`, a `Map`, `Json`), naming the field (beyond10x/ess#753) |
 ///
 /// A listed outcome, a `single` view and a standard refusal are written into the IR with every
 /// default omitted: an outcome's `envelope`, a view's `rows`, an empty answer's `none` body, an
@@ -3368,7 +3680,7 @@ pub fn compile(
 /// | code | refused |
 /// |---|---|
 /// | `ESS-HTTP-003` | at `refines`: a value that is not `sha256:` and 64 lower-case hex digits; `refines` given and no refined binding supplied; the supplied binding's byte digest differs; the refined binding itself refines (a refinement of a refinement is refused in `/1`); or a refined binding supplied to a document that refines nothing |
-/// | `ESS-HTTP-012` | at `limits` or `routes[i].limits`: a request limit added, dropped or restated; at `routes[i].method` or `routes[i].path`: a method or path the refined binding fixed is changed, or a fixed path left open; at `routes[i].request.encoding`, `routes[i].request.unknown` or `routes[i].request.body`: a refined route's request restated with another value, a default written out or left out counting as that default, and a body added or dropped; at `routes[i].outcomes.<name>`, `routes[i].errors`, `routes[i].body` or `routes[i].empty`: a refined route's outcome, `errors` (its headers and redirect included), view body or empty answer (its body included, none written out or left out counting as none) added, dropped or restated with another status or body, by the same counting; at `routes[i].outcomes.<name>.headers` or `….redirect`: an outcome both list whose headers or redirect differ, compared in name order with an empty map counting as none; at `refusals.<key>`: a standard refusal added, dropped or changed; at `refusals.<key>.headers`: one both declare whose headers differ; at `routes[i].refusals.<key>` and `routes[i].refusals.<key>.headers`: the same for a route's own refusals; at `routes`: a route of the refined binding is dropped; at `routes[i].operation_id`: an operation id the refined route fixes changed or left out (one may be added where the refined route has none); at `routes[i].outcomes.<name>`: an outcome both list restated with another `encoding`, `json` written out or left out counting as `json`; at `routes[i].alike`: the groups added, dropped or restated, each compared in name order |
+/// | `ESS-HTTP-012` | at `limits` or `routes[i].limits`: a request limit added, dropped or restated; at `routes[i].representations`: a refined route's representations added, dropped or changed, a default written out or left out counting as that default; at `routes[i].method` or `routes[i].path`: a method or path the refined binding fixed is changed, or a fixed path left open; at `routes[i].request.encoding`, `routes[i].request.unknown` or `routes[i].request.body`: a refined route's request restated with another value, a default written out or left out counting as that default, and a body added or dropped; at `routes[i].outcomes.<name>`, `routes[i].errors`, `routes[i].body` or `routes[i].empty`: a refined route's outcome, `errors` (its headers and redirect included), view body or empty answer (its body included, none written out or left out counting as none) added, dropped or restated with another status or body, by the same counting; at `routes[i].outcomes.<name>.headers` or `….redirect`: an outcome both list whose headers or redirect differ, compared in name order with an empty map counting as none; at `refusals.<key>`: a standard refusal added, dropped or changed; at `refusals.<key>.headers`: one both declare whose headers differ; at `routes[i].refusals.<key>` and `routes[i].refusals.<key>.headers`: the same for a route's own refusals; at `routes`: a route of the refined binding is dropped; at `routes[i].operation_id`: an operation id the refined route fixes changed or left out (one may be added where the refined route has none); at `routes[i].outcomes.<name>`: an outcome both list restated with another `encoding`, `json` written out or left out counting as `json`; at `routes[i].alike`: the groups added, dropped or restated, each compared in name order |
 ///
 /// `servers` is not compared: each server binding states its own deployment.
 ///
@@ -4030,6 +4342,7 @@ fn changes(spec: &HttpSpec, refined: &HttpSpec, refusals: &mut Refusals) {
             }
         }
         answer_changes(route, fixed, &operation, index, at, refusals);
+        representation_changes(route, fixed, &operation, [index, at], refusals);
         refusal_changes(
             route.refusals.as_ref(),
             fixed.refusals.as_ref(),
@@ -4289,6 +4602,48 @@ fn answer_changes(
     }
 }
 
+/// Refuses a refined route whose `representations` are added, dropped or changed
+/// (`ESS-HTTP-012`), compared as a whole at `routes[i].representations`: in order, each by its
+/// selector, its encoding with a default written out or left out counting as that default, and
+/// its headers by name; an empty list counts as none.
+fn representation_changes(
+    route: &RouteSpec,
+    fixed: &RouteSpec,
+    operation: &Operation,
+    [index, at]: [usize; 2],
+    refusals: &mut Refusals,
+) {
+    let compared = |route: &RouteSpec| {
+        route
+            .representations
+            .as_ref()
+            .filter(|written| !written.is_empty())
+            .map(|written| {
+                written
+                    .iter()
+                    .map(RepresentationSpec::compared)
+                    .collect::<Vec<_>>()
+            })
+    };
+    if compared(route) != compared(fixed) {
+        let shown = |route: &RouteSpec| match &route.representations {
+            Some(written) if !written.is_empty() => format!("{} representations", written.len()),
+            _ => "no representation".to_owned(),
+        };
+        refusals.refuse(
+            "ESS-HTTP-012",
+            format!("routes[{index}].representations"),
+            format!(
+                "{operation} declares {} here, and the refined binding fixes {} at \
+                 `routes[{at}]`, or the same number differing; a refinement restates the \
+                 representations of every route it restates",
+                shown(route),
+                shown(fixed)
+            ),
+        );
+    }
+}
+
 /// A route's `errors` as a refinement compares it: status, body (its default counted), headers and
 /// redirect.
 type ComparedErrors = (
@@ -4488,7 +4843,8 @@ impl Target<'_> {
 /// field it carries (`021`), the unmapped `get` input (`014`), the answers (each listed outcome's
 /// name `022`, status `023`, body `024`, headers `026` and `027` and redirect `028` in document
 /// order, then `025`; a view's `outcomes`
-/// `022`, `body` `024`, `empty` `030` and identity `031`), and the operation routed twice (`005`).
+/// `022`, `body` `024`, `empty` `030` and identity `031`), the representations (`035`, their headers
+/// `026`), and the operation routed twice (`005`).
 fn routes(
     specs: &[RouteSpec],
     ir: &EssIr,
@@ -4544,6 +4900,7 @@ fn routes(
             &operation,
             target.as_ref(),
             &path,
+            &path_variables(segments.as_ref()),
             &standing,
             refusals,
         );
@@ -4578,6 +4935,7 @@ fn routes(
                     empty: answers.empty,
                     refusals: own,
                     limits: route_limits,
+                    representations: answers.representations,
                 })
             }
             _ => None,
@@ -5318,21 +5676,24 @@ struct Answers {
     alike: Vec<Vec<String>>,
     body: ViewAnswer,
     empty: Option<Empty>,
+    representations: Vec<Representation>,
 }
 
 /// The route's answers once every key of them is checked: a command's `outcomes` (`ESS-HTTP-022`
 /// to `-025`) and the view keys it may not carry (`ESS-HTTP-024`, `-030`), or a view's
-/// `outcomes`, `body` and `empty` (`ESS-HTTP-022`, `-024`, `-030`, `-031`).
+/// `outcomes`, `body` and `empty` (`ESS-HTTP-022`, `-024`, `-030`, `-031`), and the
+/// route's `representations` against the path's `variables` (`ESS-HTTP-035`, `-026`).
 fn answers(
     spec: &RouteSpec,
     operation: &Operation,
     target: Option<&Target<'_>>,
     path: &str,
+    variables: &[String],
     standard: &Standing,
     refusals: &mut Refusals,
 ) -> Result<Answers, Refused> {
     let before = refusals.0.len();
-    let answers = match operation {
+    let mut answers = match operation {
         Operation::Command(_) => {
             let command = target.and_then(|target| match target.served {
                 Served::Command(command) => Some((target.ir, command)),
@@ -5366,6 +5727,7 @@ fn answers(
                 alike,
                 body: ViewAnswer::default(),
                 empty: None,
+                representations: Vec::new(),
             }
         }
         Operation::View(_) => {
@@ -5376,6 +5738,10 @@ fn answers(
             view_answers(spec, operation, view, path, refusals)
         }
     };
+    if let Ok(representations) = representations(spec, operation, target, variables, path, refusals)
+    {
+        answers.representations = representations;
+    }
     if refusals.0.len() == before {
         Ok(answers)
     } else {
@@ -7421,6 +7787,7 @@ fn view_answers(
         alike: Vec::new(),
         body: body.unwrap_or_default(),
         empty,
+        representations: Vec::new(),
     }
 }
 
@@ -7494,6 +7861,255 @@ fn view_body(
         }
     }
     body
+}
+
+/// A view route's `representations`, checked and compiled in the order written
+/// (beyond10x/ess#753): refused (`ESS-HTTP-035`) on a command, a `single` view or a paged view,
+/// empty, with a `query` of other than one parameter, on a parameter other than the first
+/// representation's, a view parameter's wire name or a path variable, on a name or value that is
+/// not `unreserved` characters or a value given twice, with a `separator` outside `,`, `;` and a
+/// tab, or over a view field without a flat spelling; its headers are literals, each checked as an
+/// answer's header is (`ESS-HTTP-026`). Empty when the route declares none.
+fn representations(
+    spec: &RouteSpec,
+    operation: &Operation,
+    target: Option<&Target<'_>>,
+    variables: &[String],
+    path: &str,
+    refusals: &mut Refusals,
+) -> Result<Vec<Representation>, Refused> {
+    let Some(written) = &spec.representations else {
+        return Ok(Vec::new());
+    };
+    let before = refusals.0.len();
+    let key = format!("{path}.representations");
+    let view = target.and_then(|target| match target.served {
+        Served::View(view) => Some((target.ir, view)),
+        Served::Command(_) => None,
+    });
+    if let Some(reason) = misplaced(spec, operation, view) {
+        refusals.refuse("ESS-HTTP-035", key.as_str(), reason);
+    } else if written.is_empty() {
+        refusals.refuse(
+            "ESS-HTTP-035",
+            key.as_str(),
+            "`representations` is empty; a route that answers its `body` only leaves it out",
+        );
+    }
+    let mut selectors: Vec<Selector> = Vec::new();
+    let mut compiled = Vec::new();
+    for (index, representation) in written.iter().enumerate() {
+        let at = format!("{key}[{index}]");
+        let query = selector(representation, view, variables, &selectors, &at, refusals);
+        if let Some(query) = &query {
+            selectors.push(query.clone());
+        }
+        let csv = &representation.encoding.csv;
+        let separator = match csv.separator.as_deref() {
+            None => Some(Separator::default()),
+            Some(text) => Separator::parse(text).or_else(|| {
+                refusals.refuse(
+                    "ESS-HTTP-035",
+                    format!("{at}.encoding.csv.separator"),
+                    format!(
+                        "{text:?} is not a CSV separator: it is `\",\"`, `\";\"` or `\"\\t\"`, \
+                         a tab"
+                    ),
+                );
+                None
+            }),
+        };
+        if let Some((ir, view)) = view {
+            columns(ir, view, &at, refusals);
+        }
+        let headers = representation_headers(representation.headers.as_ref(), &at, refusals);
+        if let (Some(query), Some(separator), Ok(headers)) = (query, separator, headers) {
+            compiled.push(Representation {
+                query,
+                encoding: RepresentationEncoding {
+                    csv: Csv {
+                        separator,
+                        header: csv.header.unwrap_or(true),
+                    },
+                },
+                headers,
+            });
+        }
+    }
+    if refusals.0.len() == before {
+        Ok(compiled)
+    } else {
+        Err(Refused)
+    }
+}
+
+/// Why a route may not declare `representations`, or `None` where it may: a command route, a
+/// `single` view route and a paged view's route are refused (`ESS-HTTP-035`).
+fn misplaced(
+    spec: &RouteSpec,
+    operation: &Operation,
+    view: Option<(&EssIr, &ResolvedView)>,
+) -> Option<String> {
+    let single = match &spec.body {
+        Some(BodySpec::Word(form) | BodySpec::Wrapped { form, .. }) => form == "single",
+        _ => false,
+    };
+    match (operation, view) {
+        (Operation::Command(_), _) => Some(format!(
+            "{operation} answers per outcome, under `outcomes`; only a view route has \
+             representations of its rows"
+        )),
+        _ if single => Some(format!(
+            "{operation} answers `single`, one row, and a representation answers a list of rows"
+        )),
+        (_, Some((_, view))) if view.paging.is_some() => Some(format!(
+            "view `{}` is paged: its answer carries a page, which a representation of its rows \
+             cannot",
+            view.name
+        )),
+        _ => None,
+    }
+}
+
+/// Refuses each field of `view` that no CSV column spells (`ESS-HTTP-035`), at `{at}.encoding`:
+/// a column is a scalar or an `Optional` scalar ([`optional_scalar`]).
+fn columns(ir: &EssIr, view: &ResolvedView, at: &str, refusals: &mut Refusals) {
+    for field in &view.fields {
+        if !optional_scalar(&field.type_ref, ir) {
+            refusals.refuse(
+                "ESS-HTTP-035",
+                format!("{at}.encoding"),
+                format!(
+                    "view field `{}` has type `{}`, which has no flat spelling in a CSV column: a \
+                     column is a scalar or an `Optional` scalar, a scalar being a primitive other \
+                     than `Json`, an enum, or a newtype of a scalar",
+                    field.name, field.type_ref
+                ),
+            );
+        }
+    }
+}
+
+/// The variables of a route's path, in path order; none for an open path or one that did not
+/// parse.
+fn path_variables(segments: Option<&Option<Vec<Segment>>>) -> Vec<String> {
+    segments
+        .into_iter()
+        .flatten()
+        .flatten()
+        .filter_map(|segment| match segment {
+            Segment::Variable(name) => Some(name.clone()),
+            Segment::Literal(_) => None,
+        })
+        .collect()
+}
+
+/// A representation's `query`, checked (`ESS-HTTP-035`) at `{at}.query`: exactly one parameter,
+/// the one the first of `earlier` selects by, never a view parameter's wire name or a path
+/// variable, its name and value `unreserved` characters, and a value no earlier representation
+/// has. `None` once refused.
+fn selector(
+    representation: &RepresentationSpec,
+    view: Option<(&EssIr, &ResolvedView)>,
+    variables: &[String],
+    earlier: &[Selector],
+    at: &str,
+    refusals: &mut Refusals,
+) -> Option<Selector> {
+    let at = format!("{at}.query");
+    let [(parameter, value)] = &representation.query.0[..] else {
+        refusals.refuse(
+            "ESS-HTTP-035",
+            at,
+            format!(
+                "`query` holds {} parameters; a representation is selected by exactly one \
+                 parameter and one value of it, `{{<parameter>: <value>}}`",
+                representation.query.0.len()
+            ),
+        );
+        return None;
+    };
+    let before = refusals.0.len();
+    let mut refuse = |reason: String| refusals.refuse("ESS-HTTP-035", at.as_str(), reason);
+    if !unreserved(parameter) {
+        refuse(format!(
+            "{parameter:?} is not a selector parameter: a parameter name is one or more RFC 3986 \
+             `unreserved` characters, letters, digits and `-._~`"
+        ));
+    } else if let Some(first) = earlier
+        .first()
+        .filter(|first| first.parameter != *parameter)
+    {
+        refuse(format!(
+            "this representation is selected by `{parameter}`, and the first by `{}`; every \
+             representation of a route is selected by one parameter",
+            first.parameter
+        ));
+    } else if variables.contains(parameter) {
+        refuse(format!(
+            "`{parameter}` is a variable of the route's path; a representation is selected by a \
+             query parameter the route does not read otherwise"
+        ));
+    } else if let Some((_, view)) = view.filter(|(_, view)| {
+        view.params
+            .iter()
+            .any(|param| param.naming.wire.as_deref().unwrap_or(&param.name) == parameter)
+    }) {
+        refuse(format!(
+            "`{parameter}` is the wire name of a parameter of view `{}`; a representation is \
+             selected by a query parameter the route does not read otherwise",
+            view.name
+        ));
+    }
+    if !unreserved(value) {
+        refuse(format!(
+            "{value:?} is not a selector value: a value is one or more RFC 3986 `unreserved` \
+             characters, letters, digits and `-._~`"
+        ));
+    } else if earlier
+        .iter()
+        .any(|earlier| earlier.parameter == *parameter && earlier.value == *value)
+    {
+        refuse(format!(
+            "`{parameter}={value}` selects an earlier representation already; each value \
+             selects one"
+        ));
+    }
+    (refusals.0.len() == before).then(|| Selector {
+        parameter: parameter.clone(),
+        value: value.clone(),
+    })
+}
+
+/// A representation's `headers`, compiled: each a literal, checked as an answer's header is
+/// (`ESS-HTTP-026`); a source or a challenge is refused (`ESS-HTTP-026`), since a representation
+/// adds the same text to every answer.
+fn representation_headers(
+    written: Option<&Entries<HeaderSpec>>,
+    at: &str,
+    refusals: &mut Refusals,
+) -> Result<BTreeMap<String, Header>, Refused> {
+    let before = refusals.0.len();
+    let mut literals = Entries::default();
+    for (name, header) in written.map_or(&[][..], |entries| &entries.0[..]) {
+        match header {
+            HeaderSpec::Literal(_) => literals.0.push((name.clone(), header.clone())),
+            HeaderSpec::Source(_) | HeaderSpec::Challenge(_) => refusals.refuse(
+                "ESS-HTTP-026",
+                format!("{at}.headers.{name}"),
+                format!(
+                    "header `{name}` is not a literal: a representation's headers are \
+                     `{{literal: <text>}}`, the same text on every answer"
+                ),
+            ),
+        }
+    }
+    let headers = answer_headers(Some(&literals), None, None, at, refusals);
+    if refusals.0.len() == before {
+        headers
+    } else {
+        Err(Refused)
+    }
 }
 
 /// Whether `filter` holds only of the row whose `identity` equals a view parameter: it is

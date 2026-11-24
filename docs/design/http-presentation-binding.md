@@ -849,6 +849,67 @@ routes:
 | `ESS-HTTP-032` | an `operation_id` outside the grammar; one an earlier route gives; one equal to another operation's qualified name | `routes[i].operation_id`, and both routes for a duplicate |
 | `ESS-HTTP-033` | a `servers` component the specification does not declare, one not `reached_by: network`, one written twice, or an empty list; a URL outside the rule, or given twice for one component | `servers.<component>` or `servers.<component>[j].url` |
 
+## Representations of a view's answer
+
+A service may answer one list of rows in two representations on one route, picked by a query
+value: JSON by default, CSV with `?format=csv` (beyond10x/ess#753). The CSV is a second
+representation of the one view's answer, not a second view and not a second operation, so
+`ESS-HTTP-005` and `-010` keep their meaning and OpenAPI publishes one operation with two response
+media types.
+
+```yaml
+routes:
+  - view: demo.reports.Rows
+    method: get
+    path: /reports/rows
+    body: array
+    representations:
+      - query: {format: csv}
+        encoding: {csv: {separator: ";", header: true}}
+        headers:
+          Content-Disposition: {literal: attachment}
+```
+
+- **Selection.** Without the selector parameter the route answers its `body` as before. With it,
+  the value names one representation, and any other value is `malformed`. Every representation of
+  a route is selected by one parameter name, and its values are distinct. The name is not a view
+  parameter's wire name and not a path variable, and name and value are RFC 3986 `unreserved`
+  characters, so no encoding of the query changes them.
+- **`encoding: {csv: {separator, header}}`.** `separator` is `","` (the default), `";"` or
+  `"\t"`; `header` is a Boolean, `true` by default, for a first line of the columns' wire names.
+  One line per row in the order the JSON answer gives, CRLF line ends, the view's fields in
+  declaration order under their wire names, each value in the flat text spelling `form` and
+  `query` use, an absent `Optional` an empty field, and RFC 4180 quoting: a value holding the
+  separator, `"`, CR or LF is quoted, `"` doubled. `Content-Type: text/csv; charset=utf-8`. A view
+  field without a flat spelling (a struct, a union, a `List`, a `Map`, `Json`) is refused, naming
+  the field.
+- **`headers`** takes `{literal: <text>}` values only, under the checks an answer's headers have
+  (`ESS-HTTP-026`); a source or a challenge is refused with that code. A representation's headers
+  are added to the route's.
+- **Where.** A view route answering `rows` or `array`, bare or wrapped. A command route, a `single`
+  view and a paged view are refused: a command's answer has its own `encoding`, and a CSV of one row
+  or of a page has no defined shape. Selection by `Accept` is not offered; it is an unknown key.
+- **Refinement.** A refined route's `representations` added, dropped or changed is `ESS-HTTP-012`
+  at `routes[i].representations`, a default written out or left out counting as that default.
+- **IR.** `Route.representations` follows `limits`, in the order written, each `{query, encoding,
+  headers}` with `separator` and `header` omitted at their defaults and `headers` omitted when
+  empty; the list is omitted when empty, so a binding without it compiles to the bytes it compiled
+  to before. The reader refuses it beside a command or a `single` body, a `query` of other than one
+  parameter, two parameter names or one value twice, a name that is a path variable, a name or
+  value outside `unreserved`, a separator outside the set and a header that is not a literal.
+- **Targets.** OpenAPI and the Rust and Go servers read it in their own changes; the UI targets
+  refuse `--http`, and the interpreter and emitted runners speak no HTTP, so a comparison of the CSV
+  with the JSON answer waits for stage 3.
+- **Refused: two operations on one method and path** told apart by a query literal, with a second
+  view `RowsCsv` beside `Rows`, as first asked for. OpenAPI's Path Item holds one Operation per
+  method, so two operations cannot be published there, and a second view duplicates the model to
+  carry a wire choice. A `Content-Disposition` filename holding a timestamp cannot be stated: a
+  header is a literal, and no source reads the clock.
+
+| code | refused | names |
+|---|---|---|
+| `ESS-HTTP-035` | `representations` on a command route, a `single` view or a paged view, or empty; a `query` of other than one parameter; a parameter other than the first representation's, or a value given twice; a name that is a view parameter's wire name or a path variable; a name or value that is not `unreserved` characters; a `separator` outside the set; a view field without a flat spelling | `routes[i].representations`, `….representations[j].query`, `….encoding.csv.separator` or `….encoding` |
+
 ## Stage 3: an HTTP conformance target
 
 Today the runner is semantic only. `ConformanceTarget::execute_command` takes a
@@ -891,8 +952,9 @@ Formats: the `ess-conformance/*` documents do not change. `--target` gains one v
 
 - The `http:` key on a command or view in `ess/N`. The binding replaces it.
 - Any key in `ess/N`, `ess-realization` or `ess-transport` that carries a route.
-- Non-JSON response bodies in `ess-http/1`, except one: a `String` response field answered
-  `encoding: text` ("Response body per outcome"). Partial-segment path templates.
+- Non-JSON response bodies in `ess-http/1`, except two: a `String` response field answered
+  `encoding: text` ("Response body per outcome"), and a view's rows as CSV in a representation a
+  query value selects ("Representations of a view's answer"). Partial-segment path templates.
 - `--http` with an artifact that cannot honour it: `ess ui`, the clap, web and TypeScript targets,
   and any `--kind` other than `openapi`. Each refuses it by name rather than ignoring it.
 - Authentication: the binding states a status and a challenge, not how a caller proves who it is.
