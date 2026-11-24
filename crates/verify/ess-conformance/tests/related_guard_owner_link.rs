@@ -236,3 +236,127 @@ fn a_driven_start_reuses_the_owner_arranged_for_the_run() {
     }
     assert!(driven > 0, "some scenario drives Start");
 }
+
+/// A node bound only on the board that owns it: `Bind` refuses a missing board and a missing
+/// node, each by `exists: false`, then a node whose `board_id` is not the input's
+/// (beyond10x/ess#801).
+const BOARD: &str = "format: ess/25
+system: wiring
+version: v1
+domain: wiring.board
+summary: A node is bound only on the board that owns it.
+types:
+  - {name: wiring.board.BoardId, kind: newtype, of: Uuid}
+  - {name: wiring.board.NodeId, kind: newtype, of: Uuid}
+  - {name: wiring.board.BindingId, kind: newtype, of: Uuid}
+entities:
+  - name: wiring.board.Board
+    identity: {name: board_id, type: wiring.board.BoardId}
+    fields:
+      - {name: label, type: String}
+    relations:
+      - {name: nodes, kind: owns, target: wiring.board.Node, cardinality: many, via: board_id}
+    lifecycle: {initial: Open, states: [Open], terminal: [Open]}
+  - name: wiring.board.Node
+    identity: {name: node_id, type: wiring.board.NodeId}
+    fields:
+      - {name: board_id, type: wiring.board.BoardId}
+    lifecycle: {initial: Open, states: [Open], terminal: [Open]}
+  - name: wiring.board.Binding
+    identity: {name: binding_id, type: wiring.board.BindingId}
+    fields:
+      - {name: board_id, type: wiring.board.BoardId}
+      - {name: node_id, type: wiring.board.NodeId}
+    lifecycle: {initial: Live, states: [Live], terminal: [Live]}
+errors:
+  - {name: wiring.board.BoardNotFound, summary: No board carries this identity., fields: []}
+  - {name: wiring.board.NodeNotFound, summary: No node carries this identity., fields: []}
+  - {name: wiring.board.NodeOfAnotherBoard, summary: The node belongs to another board., fields: []}
+events:
+  - name: wiring.board.BoardOpened
+    fields: [{name: board_id, type: wiring.board.BoardId}]
+  - name: wiring.board.NodeAdded
+    fields: [{name: node_id, type: wiring.board.NodeId}]
+  - name: wiring.board.Bound
+    fields: [{name: binding_id, type: wiring.board.BindingId}]
+actors:
+  - name: wiring.board.Operator
+    may: [wiring.board.OpenBoard, wiring.board.AddNode, wiring.board.Bind]
+commands:
+  - name: wiring.board.OpenBoard
+    input:
+      - {name: label, type: String}
+    outcomes:
+      - name: opened
+        creates: wiring.board.Board
+        instance: board_id
+        emits: [wiring.board.BoardOpened]
+        payload: {wiring.board.BoardOpened: {board_id: {generated: true}}}
+        sets: {label: input.label}
+  - name: wiring.board.AddNode
+    input:
+      - {name: board_id, type: wiring.board.BoardId}
+    outcomes:
+      - name: no-board
+        when_related: {via: input.board_id, exists: false}
+        error: wiring.board.BoardNotFound
+      - name: added
+        creates: wiring.board.Node
+        instance: node_id
+        emits: [wiring.board.NodeAdded]
+        payload: {wiring.board.NodeAdded: {node_id: {generated: true}}}
+        sets: {board_id: input.board_id}
+  - name: wiring.board.Bind
+    input:
+      - {name: board_id, type: wiring.board.BoardId}
+      - {name: node_id, type: wiring.board.NodeId}
+    outcomes:
+      - name: no-board
+        when_related: {via: input.board_id, exists: false}
+        error: wiring.board.BoardNotFound
+      - name: no-node
+        when_related: {via: input.node_id, exists: false}
+        error: wiring.board.NodeNotFound
+      - name: other-board
+        when_related: {via: input.node_id, predicate: board_id != input.board_id}
+        error: wiring.board.NodeOfAnotherBoard
+      - name: bound
+        creates: wiring.board.Binding
+        instance: binding_id
+        emits: [wiring.board.Bound]
+        payload: {wiring.board.Bound: {binding_id: {generated: true}}}
+        sets: {board_id: input.board_id, node_id: input.node_id}
+views:
+  - name: wiring.board.Bindings
+    source: wiring.board.Binding
+    consistency: read_your_writes
+    fields:
+      - {name: binding_id, type: wiring.board.BindingId}
+      - {name: board_id, type: wiring.board.BoardId}
+      - {name: node_id, type: wiring.board.NodeId}
+";
+
+#[test]
+fn an_owner_link_guard_beside_an_owner_existence_guard_is_witnessed() {
+    use ess_conformance::{interpret::Interpreted, report::Status, AdmittedSuite, Runner};
+    let raw = RawSpecFile::parse(BOARD).unwrap_or_else(|error| panic!("{error}"));
+    let spec = Specification::assemble([(Source::new("board.yaml"), raw)])
+        .unwrap_or_else(|errors| panic!("{errors}"));
+    let ir: EssIr = compile(&spec, &SourceMap::new()).unwrap_or_else(|error| panic!("{error:?}"));
+    let synthesis = synthesize(&ir);
+    assert_eq!(refusals(&synthesis), Vec::<String>::new());
+    for branch in ["no-board", "no-node", "other-board", "bound"] {
+        scenario(&synthesis, &format!("wiring.board.Bind/outcome/{branch}"));
+    }
+    let admitted = AdmittedSuite::from_suite(&synthesis.suite).unwrap();
+    let report = Runner::for_suite(&synthesis.suite)
+        .run_admitted(&admitted, &Interpreted::for_model(ir))
+        .into_report();
+    let failed: Vec<String> = report
+        .scenarios
+        .iter()
+        .filter(|run| run.status != Status::Passed)
+        .map(|run| format!("{}: {:?}", run.scenario, run.checks))
+        .collect();
+    assert!(failed.is_empty(), "{failed:#?}");
+}
