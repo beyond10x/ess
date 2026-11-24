@@ -1898,6 +1898,10 @@ fn view(
         route.path,
         view.name,
     );
+    let representations = route
+        .declared
+        .map_or(&[][..], |declared| &declared.representations[..]);
+    out.push_str(&selection(representations, suffix));
     let arguments = if view.params.is_empty() {
         out.push_str("\t_, _ = request, path\n");
         String::new()
@@ -1938,6 +1942,15 @@ fn view(
          len(rows))\n\tfor _, row := range rows {{\n\t\tencoded = append(encoded, \
          encodeView{function}(row))\n\t}}\n"
     );
+    if !representations.is_empty() {
+        out.push_str(&csv_answer(view));
+    }
+    json_answer(out, route);
+}
+
+/// Go code answering a bound view route's encoded rows as JSON: `rows`, `array` or `single`, bare
+/// or under the member a wrapped body names, and a `single` view's empty answer.
+fn json_answer(out: &mut String, route: &http::Route<'_>) {
     let body = route
         .declared
         .map_or(ess_http::ViewBody::Rows, |declared| declared.body.form);
@@ -1988,6 +2001,88 @@ fn view(
         },
         _ => out.push_str("\treturn rendered(200, map[string]any{\"rows\": encoded})\n}\n"),
     }
+}
+
+/// Go code choosing the representation the query selects (beyond10x/ess#753), as the Rust server
+/// does: `chosen`, its `separator`, whether a `header` line comes first, and its `headers`; a value
+/// no representation names, and the parameter given twice, are `malformed`. Written only on a
+/// route that declares representations, so every other package keeps its bytes.
+fn selection(representations: &[ess_http::Representation], suffix: &str) -> String {
+    let Some(first) = representations.first() else {
+        return String::new();
+    };
+    let parameter = &first.query.parameter;
+    let values: Vec<String> = representations
+        .iter()
+        .map(|representation| format!("`{}`", representation.query.value))
+        .collect();
+    let expected = match &values[..] {
+        [only] => only.clone(),
+        several => format!("one of {}", several.join(", ")),
+    };
+    let mut cases = String::new();
+    for representation in representations {
+        let headers: Vec<String> = representation
+            .headers
+            .iter()
+            .filter_map(|(name, header)| match header {
+                Header::Literal(text) => {
+                    Some(format!("{{{}, {}}}", go_string(name), go_string(text)))
+                }
+                Header::Source(_) | Header::Challenge(_) => None,
+            })
+            .collect();
+        let _ = writeln!(
+            cases,
+            "\tcase value == {}:\n\t\tchosen, separator, header, headers = true, {}, {}, \
+             [][2]string{{{}}}",
+            go_string(&representation.query.value),
+            go_string(&representation.encoding.csv.separator.as_char().to_string()),
+            representation.encoding.csv.header,
+            headers.join(", ")
+        );
+    }
+    format!(
+        "\t// The representation the query selects: its separator, whether a header line comes \
+         first, and\n\t// its headers; none chosen answers the JSON body.\n\tselected, err := \
+         queryObject(request.URL.RawQuery, []queryParam{{{{wire: {parameter}, scalar: \
+         queryText}}}}, \"query\")\n\tif err != nil {{\n\t\treturn \
+         refusalMalformed{suffix}(err.Error())\n\t}}\n\tchosen, separator, header := false, \"\", \
+         false\n\tvar headers [][2]string\n\tswitch value, named := selected[{parameter}]; {{\n\tcase \
+         !named:\n{cases}\tdefault:\n\t\treturn refusalMalformed{suffix}({})\n\t}}\n",
+        go_string(&format!("query.{parameter}: expected {expected}")),
+        parameter = go_string(parameter),
+    )
+}
+
+/// Go code answering the encoded rows as CSV when [`selection`] chose a representation, as the
+/// Rust server writes it: the rows the JSON answer renders, read back, the view's fields in
+/// declaration order under their wire names, CRLF line ends, an absent value an empty field, each
+/// value in its flat text spelling, and a value holding the separator, `"`, CR or LF quoted with
+/// `"` doubled.
+fn csv_answer(view: &ResolvedView) -> String {
+    let columns: Vec<String> = view
+        .fields
+        .iter()
+        .map(|field| go_string(ess_gen::schema::wire_field_name(field)))
+        .collect();
+    format!(
+        "\tif chosen {{\n\t\tread, _ := parseJSON(rendered(200, encoded).body)\n\t\titems, _ := \
+         read.([]any)\n\t\tcolumns := []string{{{}}}\n\t\tvar out strings.Builder\n\t\tfield := \
+         func(text string) {{\n\t\t\tif strings.ContainsAny(text, separator+\"\\\"\\r\\n\") \
+         {{\n\t\t\t\tout.WriteByte('\"')\n\t\t\t\tout.WriteString(strings.ReplaceAll(text, \
+         \"\\\"\", \"\\\"\\\"\"))\n\t\t\t\tout.WriteByte('\"')\n\t\t\t}} else \
+         {{\n\t\t\t\tout.WriteString(text)\n\t\t\t}}\n\t\t}}\n\t\tif header {{\n\t\t\tfor index, \
+         column := range columns {{\n\t\t\t\tif index > 0 {{\n\t\t\t\t\tout.WriteString(separator)\
+         \n\t\t\t\t}}\n\t\t\t\tfield(column)\n\t\t\t}}\n\t\t\tout.WriteString(\"\\r\\n\")\n\t\t}}\n\t\t\
+         for _, row := range items {{\n\t\t\tfor index, column := range columns {{\n\t\t\t\tif index \
+         > 0 {{\n\t\t\t\t\tout.WriteString(separator)\n\t\t\t\t}}\n\t\t\t\tswitch value := \
+         memberOf(row, column).(type) {{\n\t\t\t\tcase nil:\n\t\t\t\t\tfield(\"\")\n\t\t\t\tcase \
+         string:\n\t\t\t\t\tfield(value)\n\t\t\t\tdefault:\n\t\t\t\t\tfield(bare(value))\n\t\t\t\t}}\
+         \n\t\t\t}}\n\t\t\tout.WriteString(\"\\r\\n\")\n\t\t}}\n\t\treturn response{{status: 200, \
+         contentType: \"text/csv; charset=utf-8\", body: out.String(), headers: headers}}\n\t}}\n",
+        columns.join(", ")
+    )
 }
 
 /// The standard refusals of a bound package's declared routes, as its binding answers them

@@ -905,8 +905,13 @@ routes:
   names in field order. A representation's header is a response header, never required, whose
   description names the selector value it applies to. `x-ess-operations`, the name first asked
   for, is not used: there is one operation.
-- **Targets.** The Rust and Go servers read it in their own changes; the UI targets
-  refuse `--http`, and the interpreter and emitted runners speak no HTTP, so a comparison of the CSV
+- **Servers.** The Rust and Go servers read the selector with the query reader a view's own
+  parameters use, so a percent-encoded value selects as its decoded text, the parameter given twice
+  is `malformed`, and the view's parameters keep their reading beside it. The CSV is written from
+  the rows the JSON answer renders, read back, so the two answers hold the same rows in the same
+  order and the two servers write the same bytes. A route without representations generates the
+  bytes it did.
+- **Targets.** The UI targets refuse `--http`, and the interpreter and emitted runners speak no HTTP, so a comparison of the CSV
   with the JSON answer waits for stage 3.
 - **Refused: two operations on one method and path** told apart by a query literal, with a second
   view `RowsCsv` beside `Rows`, as first asked for. OpenAPI's Path Item holds one Operation per

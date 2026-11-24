@@ -1351,7 +1351,10 @@ fn view(out: &mut String, server: &Server<'_>, route: &http::Route<'_>, view: &R
     let run = runner_ident(layout, &view.name);
     let variables = !http::path_fields(ir, route).is_empty();
     let path = if variables { "path" } else { "_path" };
-    let request = if view.params.is_empty() {
+    let representations = route
+        .declared
+        .map_or(&[][..], |declared| &declared.representations[..]);
+    let request = if view.params.is_empty() && representations.is_empty() {
         "_request"
     } else {
         "request"
@@ -1368,6 +1371,7 @@ fn view(out: &mut String, server: &Server<'_>, route: &http::Route<'_>, view: &R
         bound_ident(layout, &view.name),
         where_clause(server),
     );
+    out.push_str(&selection(representations, &suffix));
     if view.params.is_empty() {
         let _ = writeln!(out, "    let result = {run}(system);");
     } else {
@@ -1437,6 +1441,7 @@ fn view(out: &mut String, server: &Server<'_>, route: &http::Route<'_>, view: &R
             "http::Response::new(status, http::JSON, body)".to_owned(),
         ),
     };
+    let answer = represented(answer, view, representations);
     let _ = write!(
         out,
         "    match result {{\n        Ok(({status}, body)) => {answer},\n        Err(refused) => \
@@ -1451,6 +1456,109 @@ fn wrapped_json(member: &str, inner: &str) -> String {
     format!(
         "{{ let mut wrapped = String::from(\"{{\"); crate::json::member(&mut wrapped, \
          {member:?}); wrapped.push_str(&{inner}); wrapped.push('}}'); wrapped }}"
+    )
+}
+
+/// Rust code binding `selected`, the representation the query selects (beyond10x/ess#753): its
+/// separator, whether a header line comes first, and its headers, or `None` for the JSON answer.
+/// A value no representation names, and the parameter given twice, are `malformed`. Written only
+/// on a route that declares representations, so every other server keeps its bytes.
+pub(super) fn selection(representations: &[ess_http::Representation], suffix: &str) -> String {
+    let Some(first) = representations.first() else {
+        return String::new();
+    };
+    let parameter = &first.query.parameter;
+    let values: Vec<String> = representations
+        .iter()
+        .map(|representation| format!("`{}`", representation.query.value))
+        .collect();
+    let expected = match &values[..] {
+        [only] => only.clone(),
+        several => format!("one of {}", several.join(", ")),
+    };
+    let mut arms = String::new();
+    for representation in representations {
+        let headers: Vec<String> = representation
+            .headers
+            .iter()
+            .filter_map(|(name, header)| match header {
+                Header::Literal(text) => Some(format!("({name:?}, {text:?})")),
+                Header::Source(_) | Header::Challenge(_) => None,
+            })
+            .collect();
+        let _ = writeln!(
+            arms,
+            "            Some(json::Value::Text(value)) if value == {:?} => Some(({:?}, {}, &[{}])),",
+            representation.query.value,
+            representation.encoding.csv.separator.as_char(),
+            representation.encoding.csv.header,
+            headers.join(", ")
+        );
+    }
+    format!(
+        "    // The representation the query selects: its separator, whether a header line comes \
+         first, and\n    // its headers; `None` answers the JSON body.\n    let selected: \
+         Option<(char, bool, &[(&str, &str)])> =\n        match http::query_object(&request.query, \
+         &[({parameter:?}, http::Scalar::Text)], \"query\") {{\n            Err(detail) => return \
+         refusal_malformed{suffix}(&detail),\n            Ok(found) => match \
+         found.member({parameter:?}) {{\n            None => None,\n{arms}            Some(_) => {{\n                \
+         return refusal_malformed{suffix}({:?})\n            }}\n        }},\n    }};\n",
+        format!("query.{parameter}: expected {expected}")
+    )
+}
+
+/// `answer`, the JSON answer, as it stands, or beside the CSV one when the route declares
+/// `representations` (beyond10x/ess#753): `selected` chooses between them.
+fn represented(
+    answer: String,
+    view: &ResolvedView,
+    representations: &[ess_http::Representation],
+) -> String {
+    if representations.is_empty() {
+        return answer;
+    }
+    format!(
+        "match selected {{\n            None => {answer},\n            Some((separator, header, headers)) => {}\n        }}",
+        csv_answer(view)
+    )
+}
+
+/// Rust code answering the rows of `{"rows": [...]}` (`body`, at `status`) as CSV, for the
+/// `separator`, `header` and `headers` [`selection`] bound: the view's fields in declaration order
+/// under their wire names, CRLF line ends, an absent value an empty field, each value in its flat
+/// text spelling, and a value holding the separator, `"`, CR or LF quoted with `"` doubled.
+fn csv_answer(view: &ResolvedView) -> String {
+    let columns: Vec<String> = view
+        .fields
+        .iter()
+        .map(|field| format!("{:?}", ess_gen::schema::wire_field_name(field)))
+        .collect();
+    format!(
+        "{{\n                let read = json::parse(&body).unwrap_or(json::Value::Null);\n                \
+         let columns = [{}];\n                let field = |out: &mut String, text: &str| {{\n                    \
+         if text.contains([separator, '\"', '\\r', '\\n']) {{\n                        \
+         out.push('\"');\n                        out.push_str(&text.replace('\"', \"\\\"\\\"\"));\n                        \
+         out.push('\"');\n                    }} else {{\n                        \
+         out.push_str(text);\n                    }}\n                }};\n                let mut csv \
+         = String::new();\n                if header {{\n                    for (index, column) in \
+         columns.iter().enumerate() {{\n                        if index > 0 {{\n                            \
+         csv.push(separator);\n                        }}\n                        field(&mut csv, \
+         column);\n                    }}\n                    csv.push_str(\"\\r\\n\");\n                \
+         }}\n                if let Some(json::Value::Array(rows)) = read.member(\"rows\") {{\n                    \
+         for row in rows {{\n                        for (index, column) in \
+         columns.iter().enumerate() {{\n                            if index > 0 {{\n                                \
+         csv.push(separator);\n                            }}\n                            let text = \
+         match row.member(column) {{\n                                None | \
+         Some(json::Value::Null) => String::new(),\n                                \
+         Some(json::Value::Text(text)) => text.clone(),\n                                \
+         Some(value) => http::bare(Some(value)),\n                            }};\n                            \
+         field(&mut csv, &text);\n                        }}\n                        \
+         csv.push_str(\"\\r\\n\");\n                    }}\n                }}\n                let mut \
+         answer = http::Response::new(status, \"text/csv; charset=utf-8\", csv);\n                \
+         answer.headers.extend(\n                    headers\n                        .iter()\n                        \
+         .map(|(name, value)| ((*name).to_owned(), (*value).to_owned())),\n                );\n                \
+         answer\n            }}",
+        columns.join(", ")
     )
 }
 

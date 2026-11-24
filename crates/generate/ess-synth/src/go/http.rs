@@ -1498,6 +1498,13 @@ fn handlers(
             }
         }
         if declared {
+            if route
+                .declared
+                .is_some_and(|declared| !declared.representations.is_empty())
+            {
+                // A CSV representation's writer quotes with `strings` (beyond10x/ess#753).
+                emit.import("strings");
+            }
             bound::handler(
                 body,
                 ir,
