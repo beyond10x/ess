@@ -466,3 +466,140 @@ commands:
         assert_eq!(input.get("recipient"), Some(&nobody), "{input:?}");
     }
 }
+
+// ---- a related-row refusal answering before an input refusal (beyond10x/ess#554) -------------
+
+/// `already-initialized` refuses a stored session before the payload is read: `malformed` is
+/// narrowed to a session no row carries (`exists: false` over the same entity and `where:`), so
+/// the two hold together of no request and the declared order is the answer.
+const SESSIONS: &str = "format: ess/37
+system: demo
+version: v1
+domain: demo.session
+types:
+  - {name: demo.session.SessionId, kind: newtype, of: String}
+entities:
+  - name: demo.session.Session
+    identity: {name: session_id, type: demo.session.SessionId}
+    fields: []
+    lifecycle: {initial: Open, states: [Open], terminal: [Open], transitions: []}
+errors:
+  - {name: demo.session.AlreadyInitialized}
+  - {name: demo.session.Malformed}
+events:
+  - name: demo.session.Initialized
+    fields:
+      - {name: session_id, type: demo.session.SessionId}
+commands:
+  - name: demo.session.Initialize
+    input:
+      - {name: session_id, type: demo.session.SessionId}
+      - {name: payload_valid, type: Boolean}
+    outcomes:
+      - name: already-initialized
+        when_related: {entity: demo.session.Session, where: session_id == input.session_id, exists: true}
+        error: demo.session.AlreadyInitialized
+      - name: malformed
+        when: payload_valid == false
+        when_related: {entity: demo.session.Session, where: session_id == input.session_id, exists: false}
+        error: demo.session.Malformed
+      - name: initialized
+        creates: demo.session.Session
+        instance: session_id
+        emits: [demo.session.Initialized]
+        payload:
+          demo.session.Initialized: {session_id: input.session_id}
+";
+
+const ALREADY_INITIALIZED: &str = "demo.session.Initialize/outcome/already-initialized";
+
+/// The narrowing taken out and `malformed` declared first, as the precedence order reads it: a
+/// service that checks the payload before it looks for the stored session.
+fn payload_first() -> String {
+    let narrowing = "        when_related: {entity: demo.session.Session, where: session_id == input.session_id, exists: false}\n";
+    let refusal = "      - name: already-initialized\n        when_related: {entity: demo.session.Session, where: session_id == input.session_id, exists: true}\n        error: demo.session.AlreadyInitialized\n";
+    let malformed = "      - name: malformed\n        when: payload_valid == false\n        error: demo.session.Malformed\n";
+    let text = SESSIONS
+        .replace(narrowing, "")
+        .replace(malformed, "")
+        .replace(refusal, &format!("{malformed}{refusal}"));
+    assert!(text.find("name: malformed") < text.find("name: already-initialized"));
+    text
+}
+
+/// Every `Initialize` invocation of `id` that requires a branch, with the branch.
+fn initializations(
+    suite: &ConformanceSuite,
+    id: &str,
+) -> Vec<(BTreeMap<String, ScenarioValue>, String)> {
+    let scenario = suite
+        .scenarios
+        .iter()
+        .find(|(key, _)| key.to_string() == id)
+        .unwrap_or_else(|| panic!("no scenario {id}"))
+        .1;
+    let mut out = Vec::new();
+    let mut steps = scenario.steps.iter().peekable();
+    while let Some(step) = steps.next() {
+        let ScenarioStep::ExecuteCommand { command, input, .. } = step else {
+            continue;
+        };
+        if command.to_string() != "demo.session.Initialize" {
+            continue;
+        }
+        if let Some(ScenarioStep::ExpectOutcome { outcome }) = steps.peek() {
+            out.push((input.clone(), outcome.outcome.to_string()));
+        }
+    }
+    out
+}
+
+fn failing_on_interpreted(suite: &ConformanceSuite, model: &str) -> BTreeSet<String> {
+    let admitted = AdmittedSuite::from_suite(suite).unwrap();
+    Runner::for_suite(suite)
+        .run_admitted(
+            &admitted,
+            &ess_conformance::interpret::Interpreted::for_model(ir(model)),
+        )
+        .into_report()
+        .scenarios
+        .into_iter()
+        .filter(|scenario| scenario.status != Status::Passed)
+        .map(|scenario| scenario.scenario.to_string())
+        .collect()
+}
+
+#[test]
+fn a_related_row_refusal_is_sent_at_its_siblings_input_conjunct() {
+    let suite = suite_of(SESSIONS);
+    let sent = initializations(&suite, ALREADY_INITIALIZED);
+    let invalid = literal(Node::Bool(false));
+    assert!(
+        sent.iter()
+            .any(|(input, outcome)| outcome == "already-initialized"
+                && input.get("payload_valid") == Some(&invalid)),
+        "{sent:#?}"
+    );
+    assert_eq!(failing_on_interpreted(&suite, SESSIONS), BTreeSet::new());
+}
+
+#[test]
+fn a_target_that_checks_the_payload_first_fails_the_overlap() {
+    let suite = suite_of(SESSIONS);
+    assert_eq!(
+        failing_on_interpreted(&suite, &payload_first()),
+        BTreeSet::from([ALREADY_INITIALIZED.to_owned()])
+    );
+}
+
+#[test]
+fn no_overlap_scenario_without_a_complementary_row_test() {
+    let suite = suite_of(&payload_first());
+    let invalid = literal(Node::Bool(false));
+    let sent = initializations(&suite, ALREADY_INITIALIZED);
+    assert!(
+        sent.iter()
+            .all(|(input, _)| input.get("payload_valid") != Some(&invalid)),
+        "{sent:#?}"
+    );
+}

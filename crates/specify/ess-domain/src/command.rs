@@ -4002,6 +4002,27 @@ impl CommandSpec {
                     .step_in(format)
                     .map_or_else(|| phase.to_string(), |step| step.to_string())
             };
+            let mut hint = format!(
+                "declare `{}` before `{}`: step {} answers first in either order",
+                outcome.name,
+                earlier.name,
+                step(place.phase)
+            );
+            // An input refusal below a related-row refusal keeps the declared order when it is
+            // narrowed to the rows the refusal above does not take (beyond10x/ess#554).
+            if place.phase == precedence::Phase::InputRefusal
+                && earlier.error.is_some()
+                && matches!(
+                    earlier.condition,
+                    OutcomeCondition::Related { .. } | OutcomeCondition::RelatedSet { .. }
+                )
+            {
+                let _ = write!(
+                    hint,
+                    "; or keep the order and narrow `{}` with `when_related: {{…, exists: false}}`",
+                    outcome.name
+                );
+            }
             errors.push(
                 ValidationError::at(
                     self.site().key("outcomes").named(outcome.name.as_str()),
@@ -4016,12 +4037,7 @@ impl CommandSpec {
                         step(read.phase)
                     ),
                 )
-                .with_hint(format!(
-                    "declare `{}` before `{}`: step {} answers first in either order",
-                    outcome.name,
-                    earlier.name,
-                    step(place.phase)
-                )),
+                .with_hint(hint),
             );
         }
         errors

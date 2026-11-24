@@ -4784,6 +4784,7 @@ fn outcome_scenario_noting(
     let format = models.arrangement.format();
     if row_set::routes(format, command, outcome) && !row_set::beside_named(format, command, outcome)
     {
+        steps.extend(complement_sends(models, command, outcome, actors, &run));
         return Some((
             id,
             ConformanceScenario::new(purpose(command, outcome), steps, source),
@@ -20257,6 +20258,126 @@ fn boundary_inputs(
             }
         }
         _ => {}
+    }
+    rows
+}
+
+/// The further invocations of a row-set refusal's own scenario at [`complement_rows`]: each sends
+/// the scenario's input with the sibling's guard satisfied, on the rows the scenario arranged, and
+/// requires the refusal and its error. A field the scenario sends as an arranged instance keeps it.
+fn complement_sends(
+    models: &caller::InvocationModels<'_>,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    run: &Run,
+) -> Vec<ScenarioStep> {
+    let ir = models.arrangement;
+    let primary: BTreeMap<String, Node> = run
+        .input
+        .iter()
+        .filter_map(|(field, value)| Some((field.clone(), value.as_literal()?.clone())))
+        .collect();
+    let command_ref = CommandRef::new(command.name.clone());
+    let outcome_ref = OutcomeRef::new(command_ref.clone(), outcome.name.clone());
+    let mut steps = Vec::new();
+    for row in complement_rows(ir, command, outcome, &primary) {
+        if row == primary || !admitted(ir, command, &row) {
+            continue;
+        }
+        let mut supplied = run.input.clone();
+        for (field, value) in &row {
+            let moved = match run.input.get(field) {
+                None => true,
+                Some(sent) => sent.as_literal().is_some_and(|sent| sent != value),
+            };
+            if moved {
+                supplied.insert(field.clone(), ScenarioValue::literal(value.clone()));
+            }
+        }
+        for field in primary.keys().filter(|field| !row.contains_key(*field)) {
+            supplied.remove(field);
+        }
+        let expected = outcome
+            .error
+            .as_ref()
+            .map(|error| expect_error(ir, outcome, error, &supplied, &BTreeMap::new()));
+        steps.push(ScenarioStep::ExecuteCommand {
+            caller: BTreeMap::new(),
+            command: command_ref.clone(),
+            actor: actors.get(&command.name).cloned(),
+            input: supplied,
+        });
+        steps.push(ScenarioStep::ExpectOutcome {
+            outcome: outcome_ref.clone(),
+        });
+        steps.extend(expected);
+    }
+    models.mark(caller::InvocationPhase::Act, &mut steps);
+    steps
+}
+
+/// The inputs a refusal requiring some selected row (`when_related: {entity, where, exists: true}`)
+/// is sent again at, one per sibling refusal narrowed to the rows it does not take: a sibling
+/// testing `exists: false` over the same entity and `where:` beside a `when:` guard
+/// (beyond10x/ess#554). Each satisfies the sibling's guard and keeps every input the selection
+/// reads as `primary` sends it, so the row the scenario arranged is still selected and the refusal
+/// declared first still answers; a target that reads the guard before the row answers the sibling
+/// and fails. A sibling without that narrowing adds nothing: the order rule refuses it below the
+/// refusal wherever the two hold together.
+fn complement_rows(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    primary: &BTreeMap<String, Node>,
+) -> Vec<BTreeMap<String, Node>> {
+    let ResolvedCondition::RelatedSet {
+        selection,
+        test: ess_compiler::ir::ResolvedRowSetTest::Exists(true),
+        input: None,
+    } = &outcome.condition
+    else {
+        return Vec::new();
+    };
+    if outcome.error.is_none() {
+        return Vec::new();
+    }
+    let read: Vec<&str> = selection
+        .filter
+        .fact_paths()
+        .into_iter()
+        .filter_map(|path| match path.segments() {
+            [root, field] if root == ess_domain::command::subject_fact::INPUT_NAMESPACE => {
+                Some(field.as_str())
+            }
+            _ => None,
+        })
+        .collect();
+    let mut rows = Vec::new();
+    for sibling in &command.outcomes {
+        let ResolvedCondition::RelatedSet {
+            selection: theirs,
+            test: ess_compiler::ir::ResolvedRowSetTest::Exists(false),
+            input: Some(guard),
+        } = &sibling.condition
+        else {
+            continue;
+        };
+        if sibling.error.is_none() || theirs != selection {
+            continue;
+        }
+        let Ok(found) = candidates(ir, command, &[guard], Distinction::PLAIN) else {
+            continue;
+        };
+        let sent = found.into_iter().find_map(|mut candidate| {
+            for field in &read {
+                set_at(&mut candidate, field, primary.get(*field).cloned());
+            }
+            let holds = flatten(ir, command, &candidate)
+                .is_ok_and(|facts| facts.decide(guard) == Decision::Satisfied);
+            holds.then_some(candidate)
+        });
+        rows.extend(sent);
     }
     rows
 }
