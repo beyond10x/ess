@@ -835,7 +835,7 @@ fn synthesize_rust_serves_the_binding_and_refuses_one_it_cannot_serve() {
         (
             "routes:\n  - command: catalog.items.ListItem\n    method: post\n    path: /items\n    \
              request: {encoding: multipart}\n",
-            "takes a `multipart` request, which no projection reads yet",
+            "takes a `multipart` request, which the generated servers do not read yet",
         ),
     ] {
         fixture.binding(routes);

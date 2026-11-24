@@ -1,6 +1,6 @@
 # The fixture `tests/multipart.rs` binds: a command taking an uploaded file with its filename beside
-# plain fields, one taking an optional photo with its name and media type, and one whose input has
-# a struct no part can carry.
+# plain fields, one taking an optional photo with its name and media type, one whose input has
+# a struct no part can carry, and one taking a list of files.
 format: ess/22
 system: demo
 version: v1
@@ -45,6 +45,15 @@ commands:
         emits: [demo.imports.Attached]
         payload:
           demo.imports.Attached: {report_id: input.report_id}
+  - name: demo.imports.AttachFiles
+    input:
+      - {name: report_id, type: String}
+      - {name: files, type: List<Bytes>}
+    outcomes:
+      - name: attached
+        emits: [demo.imports.Attached]
+        payload:
+          demo.imports.Attached: {report_id: input.report_id}
   - name: demo.imports.ShapeRows
     input:
       - {name: report_id, type: String}
@@ -60,5 +69,9 @@ components:
     reached_by: network
     owns: {domains: [demo.imports]}
     accepts:
-      commands: [demo.imports.ImportRows, demo.imports.AttachPhoto, demo.imports.ShapeRows]
+      commands:
+        - demo.imports.ImportRows
+        - demo.imports.AttachPhoto
+        - demo.imports.AttachFiles
+        - demo.imports.ShapeRows
     publishes: {events: [demo.imports.Imported, demo.imports.Attached]}

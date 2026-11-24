@@ -5,6 +5,10 @@
 //! A route's `operation_id` is its operation's `operationId`; an operation without one keeps its
 //! qualified name. A component's `servers` are that component's document `servers`, after `info`,
 //! in the order written, and no other document has any.
+//!
+//! A `multipart` route's request body is `multipart/form-data`, one part per input field, a file
+//! part a string of raw bytes (beyond10x/ess#754,
+//! `story:openapi-publishes-a-multipart-request-with-file-parts`).
 
 use ess_compiler::resolve::compile as compile_model;
 use ess_compiler::source::SourceMap;
@@ -36,7 +40,8 @@ fn model_of(files: &[(&str, &str)]) -> EssIr {
 
 fn binding(ir: &EssIr, keys: &str) -> Binding {
     let text = format!(
-        "type: ess-http/1\nspecification:\n  system: catalog\n  version: v1\n  source_digest: sha256:{}\n{keys}",
+        "type: ess-http/1\nspecification:\n  system: {}\n  version: v1\n  source_digest: sha256:{}\n{keys}",
+        ir.system(),
         ir.source_digest()
     );
     let spec = ess_http::HttpSpec::from_yaml(&text).expect("parses");
@@ -136,4 +141,147 @@ routes:
     let served: Value =
         serde_json::from_str(&bound_json(&ir, component, Some(&binding(&ir, keys)))).unwrap();
     assert_eq!(served["servers"], document["servers"]);
+}
+
+/// The model the `multipart` routes bind: a file with its filename beside plain fields, an
+/// optional photo with its name and media type, and a list of files.
+const IMPORTS: &str = include_str!("../../../specify/ess-http/tests/fixtures/imports.yaml");
+
+const MULTIPART: &str = "routes:
+  - command: demo.imports.ImportRows
+    method: post
+    path: /reports/rows/import
+    request:
+      encoding: multipart
+      parts:
+        file:
+          filename: input.file_name
+          media_types: [text/csv, application/vnd.ms-excel]
+  - command: demo.imports.AttachPhoto
+    method: post
+    path: /reports/{report_id}/photos
+    parameters: {report_id: input.report_id}
+    request:
+      encoding: multipart
+      unknown: ignore
+      parts:
+        photo: {filename: input.photo_name, media_type: input.photo_type}
+  - command: demo.imports.AttachFiles
+    method: post
+    path: /reports/{report_id}/files
+    parameters: {report_id: input.report_id}
+    request: {encoding: multipart}
+";
+
+#[test]
+fn a_multipart_route_publishes_its_parts_as_multipart_form_data() {
+    let ir = model_of(&[("imports.yaml", IMPORTS)]);
+    let documents = documents(&ir, binding(&ir, MULTIPART));
+    let document = as_json(&documents["openapi/imports.yaml"]);
+    let body = &document["paths"]["/reports/rows/import"]["post"]["requestBody"];
+    assert_eq!(
+        body["content"].as_object().map(serde_json::Map::len),
+        Some(1),
+        "{body}"
+    );
+    assert_eq!(body["required"], true, "{body}");
+    let media = &body["content"]["multipart/form-data"];
+    let schema = &media["schema"];
+    assert_eq!(
+        schema["properties"]["file"],
+        json!({
+            "type": "string",
+            "contentMediaType": "application/octet-stream",
+            "description": "A file part, holding the bytes as sent. Its filename is read into the \
+                            input field `file_name`.",
+        }),
+        "{schema}"
+    );
+    let mut named: Vec<&str> = schema["properties"]
+        .as_object()
+        .expect("properties")
+        .keys()
+        .map(String::as_str)
+        .collect();
+    named.sort_unstable();
+    assert_eq!(named, ["dry_run", "file", "format"], "{schema}");
+    assert!(
+        schema["properties"]["format"]["$ref"]
+            .as_str()
+            .is_some_and(|reference| reference.ends_with("demo.imports.Format")),
+        "{schema}"
+    );
+    assert_eq!(schema["properties"]["dry_run"]["type"], "boolean");
+    assert_eq!(schema["required"], json!(["file", "format", "dry_run"]));
+    assert_eq!(schema["additionalProperties"], false);
+    assert_eq!(
+        media["encoding"],
+        json!({"file": {"contentType": "text/csv, application/vnd.ms-excel"}})
+    );
+    let components = &document["components"]["schemas"];
+    assert!(
+        components.get("demo.imports.ImportRows.Input").is_none(),
+        "a multipart route's parts are not `{{command}}.Input`"
+    );
+
+    // An `Optional` photo whose filename and media type are read into the input, beside a path
+    // variable, under `unknown: ignore`.
+    let body = &document["paths"]["/reports/{report_id}/photos"]["post"]["requestBody"];
+    let media = &body["content"]["multipart/form-data"];
+    let schema = &media["schema"];
+    assert_eq!(
+        schema["properties"]["photo"],
+        json!({
+            "type": "string",
+            "contentMediaType": "application/octet-stream",
+            "description": "A file part, holding the bytes as sent. Its filename is read into the \
+                            input field `photo_name`. Its media type is read into the input field \
+                            `photo_type`.",
+        }),
+        "{schema}"
+    );
+    for absent in ["photo_name", "photo_type", "report_id"] {
+        assert!(
+            schema["properties"].get(absent).is_none(),
+            "{absent}: {schema}"
+        );
+    }
+    assert_eq!(schema["required"], json!(["caption", "tags", "count"]));
+    assert_eq!(schema["additionalProperties"], true);
+    assert!(media.get("encoding").is_none(), "{media}");
+    assert!(
+        body["description"]
+            .as_str()
+            .is_some_and(|text| text.contains("A part no field names is ignored")),
+        "{body}"
+    );
+
+    // A `List<Bytes>`: one file part per element.
+    let schema = &document["paths"]["/reports/{report_id}/files"]["post"]["requestBody"]["content"]
+        ["multipart/form-data"]["schema"];
+    assert_eq!(
+        schema["properties"]["files"],
+        json!({
+            "type": "array",
+            "items": {"type": "string", "contentMediaType": "application/octet-stream"},
+            "description": "One file part per element, each holding the bytes as sent.",
+        }),
+        "{schema}"
+    );
+}
+
+#[test]
+fn a_binding_with_a_multipart_route_is_not_served_yet() {
+    let ir = model_of(&[("imports.yaml", IMPORTS)]);
+    let refused = binding(&ir, MULTIPART)
+        .servable()
+        .expect_err("refused")
+        .to_string();
+    assert!(
+        refused.contains(
+            "command `demo.imports.ImportRows` takes a `multipart` request, which the generated \
+             servers do not read yet"
+        ),
+        "{refused}"
+    );
 }

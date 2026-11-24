@@ -388,6 +388,14 @@ repeating its part. A field without a flat spelling is refused as for `form` (`E
   bytes it did. No format version moves: an older reader refuses `multipart` by name.
 - A refinement keeps the `parts` of a route it restates, each attribute as written
   (`ESS-HTTP-012`).
+- The OpenAPI document (`story:openapi-publishes-a-multipart-request-with-file-parts`) writes the
+  request body as `multipart/form-data` holding an object of the parts under their wire names: a
+  file part `{type: string, contentMediaType: application/octet-stream}`, OpenAPI 3.1's raw-bytes
+  form, with no `contentEncoding` (an array of them for a `List`), described with the input fields
+  its attributes read; every other part its field's schema. `media_types` is the part's Encoding
+  Object `contentType`, joined by `, `. The route publishes no `{command}.Input`: that schema's
+  `Bytes` member is base64 and it would hold the attribute fields. `required` lists the parts whose
+  fields are not `Optional`, and `unknown: ignore` opens the object.
 
 A `json` request may take one input field as its whole body, bare: `request: {encoding: json,
 body: input.<field>}` (`encoding` may be left out). The field's JSON value is the body: a list,

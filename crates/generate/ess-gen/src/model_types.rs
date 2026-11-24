@@ -444,8 +444,9 @@ fn bound_response(ir: &EssIr, command: &ResolvedCommand, binding: &Binding) -> b
 /// route carries in its path, built from the same message. A command the binding does not route
 /// keeps its derived route, which carries nothing in its path.
 ///
-/// `Err` says why the document publishes no body: the route is encoded `query`, takes one input
-/// field as its bare body, its path carries every input field, or the command has no input field.
+/// `Err` says why the document publishes no `{command}.Input`: the route is encoded `query` or
+/// `multipart`, takes one input field as its bare body, its path carries every input field, or the
+/// command has no input field.
 fn bound_input<'a>(
     command: &'a ResolvedCommand,
     binding: &Binding,
@@ -472,6 +473,13 @@ fn bound_input<'a>(
         return Err(
             "its route is encoded `query`, so every input field its path does not carry is in \
              the query string"
+                .to_owned(),
+        );
+    }
+    if encoding == ess_http::Encoding::Multipart {
+        return Err(
+            "its route is encoded `multipart`, whose parts the document writes in the request \
+             body rather than as an input schema"
                 .to_owned(),
         );
     }

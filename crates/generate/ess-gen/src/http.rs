@@ -388,8 +388,7 @@ impl Binding {
     /// not a route anything can be sent to, so a document publishing it would have to invent a
     /// path; the server binding that refines it fills the path in (decided for stage 1, answer 1).
     /// A method a route is never served on (`head`, `options`, `trace`) is refused the same way,
-    /// though compiled IR cannot hold one (`ESS-HTTP-006`), and so is a route taking a `multipart`
-    /// request, which neither the published document nor a server reads yet.
+    /// though compiled IR cannot hold one (`ESS-HTTP-006`).
     pub fn new(http: ess_http::HttpIr) -> Result<Self, Unprojectable> {
         let refused: Vec<(ess_http::Operation, Reason)> = http
             .routes()
@@ -399,12 +398,6 @@ impl Binding {
                     Some((route.operation.clone(), Reason::Open))
                 } else if Method::of(route.method).is_none() {
                     Some((route.operation.clone(), Reason::Method(route.method)))
-                } else if route
-                    .request
-                    .as_ref()
-                    .is_some_and(|request| request.encoding == ess_http::Encoding::Multipart)
-                {
-                    Some((route.operation.clone(), Reason::Multipart))
                 } else {
                     None
                 }
@@ -429,15 +422,25 @@ impl Binding {
     /// or shadowing. `ess specify http validate` accepts such a route: the document is valid, and
     /// only the server cannot honour it.
     ///
+    /// A route taking a `multipart` request is refused the same way, by [`Reason::Multipart`],
+    /// until the servers read one (beyond10x/ess#754).
+    ///
     /// # Errors
     ///
-    /// [`Unprojectable`] naming each such route, by [`Reason::Reserved`].
+    /// [`Unprojectable`] naming each such route, by [`Reason::Reserved`] or [`Reason::Multipart`].
     pub fn servable(&self) -> Result<(), Unprojectable> {
         let refused: Vec<(ess_http::Operation, Reason)> = self
             .0
             .routes()
             .iter()
             .filter_map(|route| {
+                if route
+                    .request
+                    .as_ref()
+                    .is_some_and(|request| request.encoding == ess_http::Encoding::Multipart)
+                {
+                    return Some((route.operation.clone(), Reason::Multipart));
+                }
                 let segments = route.segments()?;
                 RESERVED
                     .into_iter()
@@ -498,7 +501,8 @@ pub enum Reason {
     Method(ess_http::Method),
     /// Its template matches this path, which a served surface answers about itself.
     Reserved(&'static str),
-    /// It takes a `multipart` request, which no projection reads yet (beyond10x/ess#754).
+    /// It takes a `multipart` request, which the generated servers do not read yet
+    /// (beyond10x/ess#754).
     Multipart,
 }
 
@@ -530,7 +534,8 @@ impl std::fmt::Display for Unprojectable {
                 )?,
                 Reason::Multipart => write!(
                     formatter,
-                    "{operation} takes a `multipart` request, which no projection reads yet"
+                    "{operation} takes a `multipart` request, which the generated servers do not read \
+                     yet"
                 )?,
             }
         }
@@ -910,6 +915,42 @@ pub fn request(route: &Route<'_>) -> ess_http::Request {
         .declared
         .and_then(|declared| declared.request.clone())
         .unwrap_or_default()
+}
+
+/// The input fields a `multipart` route's part attributes read (`parts.<field>.filename` and
+/// `….media_type`, beyond10x/ess#754): each travels as an attribute of its file part, never as a
+/// part of its own. Empty for every other route.
+pub fn attribute_fields(declared: Option<&ess_http::Route>) -> std::collections::BTreeSet<&str> {
+    declared
+        .and_then(|route| route.request.as_ref())
+        .into_iter()
+        .flat_map(|request| request.parts.values())
+        .flat_map(|part| [&part.filename, &part.media_type])
+        .flatten()
+        .map(ess_http::Source::field)
+        .collect()
+}
+
+/// How a `multipart` request carries a field of `type_ref` (beyond10x/ess#754): `Some(false)` for
+/// one file part, a `Bytes` value or a newtype of one, `Optional` or not; `Some(true)` for a `List`
+/// of them, one file part per element; `None` for a text part.
+pub fn file_part(ir: &EssIr, type_ref: &ess_compiler::ir::ResolvedTypeRef) -> Option<bool> {
+    use ess_compiler::ir::ResolvedTypeRef;
+    fn bytes(ir: &EssIr, type_ref: &ResolvedTypeRef) -> bool {
+        match type_ref {
+            ResolvedTypeRef::Primitive { name } => *name == ess_domain::types::Primitive::Bytes,
+            ResolvedTypeRef::Declared { name } => match &ir.named_type(name).body {
+                ess_compiler::ir::ResolvedBody::Newtype { of, .. } => bytes(ir, of),
+                _ => false,
+            },
+            _ => false,
+        }
+    }
+    match type_ref {
+        ResolvedTypeRef::Optional { of } => bytes(ir, of).then_some(false),
+        ResolvedTypeRef::List { of } => bytes(ir, of).then_some(true),
+        _ => bytes(ir, type_ref).then_some(false),
+    }
 }
 
 /// The input field of `command` a bound route takes as its whole request body, bare

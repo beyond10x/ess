@@ -177,7 +177,9 @@ The document follows those keys on the routes that use them:
   does not carry, a `Bytes` field a file part holding the raw bytes, every other field a text part
   spelled as `form` spells it. `parts` reads a file part's `filename` and `media_type` into
   `String` input fields and lists the `media_types` it may carry. A `get` command takes no
-  `multipart`, and the OpenAPI document and the generated servers do not read it yet:
+  `multipart`. The document publishes the body as `multipart/form-data`, a file part as
+  `{type: string, contentMediaType: application/octet-stream}` with its `media_types` as the part's
+  `encoding.contentType`; the generated servers do not read it yet:
 
   ```yaml
   - command: demo.reports.ImportRows

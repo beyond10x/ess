@@ -279,6 +279,9 @@ const TEXT_MEDIA_TYPE: &str = "text/plain";
 /// the only place a request is not [`MEDIA_TYPE`], and only because a binding says so.
 const FORM_MEDIA_TYPE: &str = "application/x-www-form-urlencoded";
 
+/// The media type of a `multipart` request body (RFC 7578, beyond10x/ess#754).
+const MULTIPART_MEDIA_TYPE: &str = "multipart/form-data";
+
 /// The header a redirect's URI travels in; a binding never declares it, `redirect` writes it.
 const LOCATION: &str = "Location";
 
@@ -917,12 +920,7 @@ fn operation(
             .collect(),
         consistency: None,
         parameters,
-        request_body: request_body(
-            command,
-            &carried,
-            &request,
-            http::bare_body(command, declared),
-        ),
+        request_body: request_body(ir, command, &carried, &request, declared),
         // A route without a stage-2 key, and a derived one, keeps the stage-1 answers and bytes.
         responses: match declared {
             Some(route) if answered_by_binding(declared, refusals) => bound_responses(
@@ -1346,19 +1344,21 @@ fn idempotency(ir: &EssIr, command: &ResolvedCommand) -> Option<Parameter> {
 /// bound route `carried` in its path, and a field carried there is not in the body. A route encoded
 /// `query` has no body either, and one encoded `form` sends the same fields form-encoded. A route
 /// whose body is one input field (`bare`) sends that field's value as the whole body, its schema
-/// the field's own.
+/// the field's own. A route encoded `multipart` sends one part per input field ([`multipart`]).
 fn request_body(
+    ir: &EssIr,
     command: &ResolvedCommand,
     carried: &BTreeSet<&str>,
     request: &ess_http::Request,
-    bare: Option<&ResolvedField>,
+    declared: Option<&ess_http::Route>,
 ) -> Option<RequestBody> {
-    if let Some(field) = bare {
+    if let Some(field) = http::bare_body(command, declared) {
         let mut content = BTreeMap::new();
         content.insert(
             MEDIA_TYPE.to_owned(),
             MediaType {
                 schema: embedded(&types::field(field)),
+                encoding: None,
             },
         );
         return Some(RequestBody {
@@ -1397,8 +1397,10 @@ fn request_body(
         }
     };
     let (description, content) = match request.encoding {
-        // `Binding::new` refuses a `multipart` request, which this document does not publish yet.
-        ess_http::Encoding::Form | ess_http::Encoding::Multipart => (
+        ess_http::Encoding::Multipart => {
+            return multipart(ir, command, carried, request, declared, &ignored("part"));
+        }
+        ess_http::Encoding::Form => (
             format!(
                 "The input `{}` declares, form-encoded as the `ess-http/1` binding declares: UTF-8, \
                  each field under its wire name, a list repeating its key once per element.{}",
@@ -1418,6 +1420,118 @@ fn request_body(
         required: http::body_required_without(command, carried),
         content,
     })
+}
+
+/// A `multipart` route's request body (beyond10x/ess#754): `multipart/form-data` holding an object
+/// of one part per input field neither the path nor a part attribute carries, under its wire name.
+/// A file part ([`http::file_part`]) is a string of raw bytes, `contentMediaType`
+/// `application/octet-stream` and no `contentEncoding`, an array of them for a `List`, described
+/// with the input fields its attributes are read into; its `media_types` are its Encoding Object's
+/// `contentType`. Every other part has its field's schema. `None` when no part is left.
+fn multipart(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    carried: &BTreeSet<&str>,
+    request: &ess_http::Request,
+    declared: Option<&ess_http::Route>,
+    ignored: &str,
+) -> Option<RequestBody> {
+    let read = http::attribute_fields(declared);
+    let mut outside = carried.clone();
+    outside.extend(read.iter().copied());
+    let fields: Vec<ResolvedField> = command
+        .input
+        .iter()
+        .filter(|field| !outside.contains(field.name.as_str()))
+        .cloned()
+        .collect();
+    if fields.is_empty() {
+        return None;
+    }
+    let undeclared_fields = if request.unknown == ess_http::Unknown::Ignore {
+        UndeclaredFields::Ignored
+    } else {
+        UndeclaredFields::Refused
+    };
+    let mut node = types::message(&Message {
+        fields: &fields,
+        undeclared_fields,
+        ..Message::of_command(command)
+    });
+    let mut encoding = BTreeMap::new();
+    for field in &fields {
+        let Some(list) = http::file_part(ir, &field.type_ref) else {
+            continue;
+        };
+        let wire = types::wire_name(field);
+        let part = request.parts.get(&field.name);
+        if let Some(property) = node.properties.get_mut(wire) {
+            let mut file = types::file_part(list);
+            file.title = property.title.take();
+            file.ess_field = property.ess_field.take();
+            file.description = Some(file_description(field, part, list));
+            *property = file;
+        }
+        if let Some(part) = part.filter(|part| !part.media_types.is_empty()) {
+            encoding.insert(
+                wire.to_owned(),
+                PartEncoding {
+                    content_type: part.media_types.join(", "),
+                },
+            );
+        }
+    }
+    let mut content = BTreeMap::new();
+    content.insert(
+        MULTIPART_MEDIA_TYPE.to_owned(),
+        MediaType {
+            schema: embedded(&node),
+            encoding: (!encoding.is_empty()).then_some(encoding),
+        },
+    );
+    Some(RequestBody {
+        description: format!(
+            "The input `{}` declares, as `multipart/form-data` parts as the `ess-http/1` binding \
+             declares: each field one part under its wire name, a `Bytes` field a file part \
+             holding its bytes as sent, every other field a text part spelled as a form field, a \
+             list repeating its part.{ignored}",
+            command.name
+        ),
+        required: http::body_required_without(command, &outside),
+        content,
+    })
+}
+
+/// What a file part's property says: the field's own summary, that the part (one per element of a
+/// `list`) holds the bytes as sent, and the input fields its filename and media type are read into.
+fn file_description(field: &ResolvedField, part: Option<&ess_http::Part>, list: bool) -> String {
+    use std::fmt::Write as _;
+    let mut text = field
+        .naming
+        .summary
+        .as_ref()
+        .map(|summary| format!("{summary} "))
+        .unwrap_or_default();
+    text.push_str(if list {
+        "One file part per element, each holding the bytes as sent."
+    } else {
+        "A file part, holding the bytes as sent."
+    });
+    if let Some(source) = part.and_then(|part| part.filename.as_ref()) {
+        let _ = write!(
+            text,
+            " Its filename is read into the input field `{}`.",
+            source.field()
+        );
+    }
+    if let Some(source) = part.and_then(|part| part.media_type.as_ref()) {
+        let _ = write!(
+            text,
+            " Its media type is read into the input field `{}`.",
+            source.field()
+        );
+    }
+    text
 }
 
 /// One response per status the command's outcomes reach, and the `501` every served command can
@@ -2677,7 +2791,10 @@ fn command_schemas<'a>(
         .collect();
     // A bare body is one field's own schema, which `field_leaves` below reaches; no object wraps it.
     let bare = http::bare_body(command, route).is_some();
-    if !body.is_empty() && encoding != ess_http::Encoding::Query && !bare {
+    // A `multipart` request writes its parts in its request body, not as `{command}.Input`
+    // (beyond10x/ess#754): a file part is not the base64 string that schema holds.
+    let parted = encoding == ess_http::Encoding::Multipart;
+    if !body.is_empty() && encoding != ess_http::Encoding::Query && !bare && !parted {
         // A route that ignores what no field names (`unknown: ignore`, beyond10x/ess#752) reads an
         // open body.
         let undeclared_fields = if request.unknown == ess_http::Unknown::Ignore {
@@ -3479,6 +3596,7 @@ fn content_as(media_type: &str, schema: Value) -> BTreeMap<String, MediaType> {
         media_type.to_owned(),
         MediaType {
             schema: written(schema),
+            encoding: None,
         },
     );
     out
@@ -3735,6 +3853,18 @@ struct ResponseHeader {
 #[derive(Debug, serde::Serialize)]
 struct MediaType {
     schema: Fragment,
+    /// How a `multipart` request's file parts are encoded, by wire name: the media types each may
+    /// carry (beyond10x/ess#754). Absent everywhere else.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    encoding: Option<BTreeMap<String, PartEncoding>>,
+}
+
+/// One part's Encoding Object: the media types it may carry, comma-separated (`OpenAPI` 3.1
+/// § 4.8.15).
+#[derive(Debug, serde::Serialize)]
+struct PartEncoding {
+    #[serde(rename = "contentType")]
+    content_type: String,
 }
 
 /// Everything the document's `$ref`s resolve against.
