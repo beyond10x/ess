@@ -5753,8 +5753,13 @@ fn run_as(
         // A refusal acting on no row has nothing of its own to arrange: the rows its list
         // names are the whole arrangement. Beside a sibling acting on a row the input names, it
         // is sent for such a row, which is checked before the list is read (beyond10x/ess#761);
-        // the not-found branch alone is sent for none.
-        let (mut setup, input) = if outcome.subject.is_none() && outcome.error.is_some() {
+        // the not-found branch alone is sent for none. A refusal guarded on the stored fields of
+        // the row it names has a row of its own to arrange, one holding its guard, as without the
+        // list: a row the sibling acts on would hold the guard by chance or not at all.
+        let (mut setup, input) = if outcome.subject.is_none()
+            && outcome.error.is_some()
+            && subject_fact::stored(&outcome.condition).is_none()
+        {
             let input = candidates(ir, command, &[], Distinction::PLAIN)
                 .map_err(RefusalCause::NoWitness)?
                 .into_iter()

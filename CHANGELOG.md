@@ -30,6 +30,7 @@
 
 - Synthesis witnesses a scenario that needs a related row with chosen field values, a grant whose `name` is `mail` or whose `mode` is `denied` for instance, where the row's creating branch reads several related rows through its input: the setup run is arranged as that branch's own scenario with the chosen values sent, where the scenario was refused (`ESS-SYNTH-003`). The `any:` legs of a refusal over such a row and the scenarios that need it in a later state are witnessed. Suites where the strict search already found the run keep their bytes.
 - A synthesized suite for a command that two actors with attributes are both granted, and that creates its identity, expected the first run's identity in the swapped second run: an event or error payload that copies the identity into a struct member the scenario does not set whole (asserted as `data.id`) held the first run's value while the run sent a fresh one, so the suite failed against a correct implementation. The swapped run now expects the identity it sends in that member, at any depth.
+- A command with a refusal over a list of references and a `when_subject:` refusal on a stored field that no command writes to the value it needs got a scenario expecting that refusal on a row the creating command stored, and so did each one-time disclosure cell that sends it; the scenario failed on every target. Synthesis now arranges such a refusal on a row that holds its guard, and refuses it and its disclosure cells (`ESS-SYNTH-003`) naming the stored field where no row does.
 
 ## [0.98.2] — 2026-11-24
 
