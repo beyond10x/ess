@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.99.1] — 2026-11-24
+
 ### Fixed
 
 - `ess verify conform synthesize` witnesses a row-set guard that selects rows by a literal identity and by membership in an input list, such as `code == "classics"` beside `exists: {in: input.genres, as: g, that: code == g}`, where every branch of the command was refused `ESS-SYNTH-001` as selecting rows by no equality with the input. From `ess/23` such a membership counts as that equality with each element sent, and a branch that needs the literal's row is sent a list holding it. Suites without such a selector keep their bytes.
