@@ -11,7 +11,8 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ess_ui::binding::{Answer, Binding};
 use ess_ui::{
     Action, ActionAs, ActionConfirm, Body, Columns, Composite, Document, Effect, Field, FilterBar,
-    Form, GuardThen, Live, NavPages, NodePath, Overlay, Page, PagedAway, Reads, Section, TabFields,
+    Form, GuardThen, Live, NavPages, Node, NodePath, Overlay, Page, PagedAway, Reads, Section,
+    TabFields,
 };
 use ess_yaml::{Mapping, Value};
 
@@ -71,6 +72,18 @@ pub struct Region {
     /// The node's whole text where the screen may cut it or does not show it: a row's cells, a
     /// cell's value, a column's label, an action's label. `None`: the text is what `area` shows.
     pub text: Option<String>,
+    /// The key that runs the action drawn here, where the terminal offers it under one: a test
+    /// presses it to act on the action at `path` (beyond10x/ess#722).
+    pub key: Option<char>,
+}
+
+/// Where an action a view offers is drawn, below the node of that view.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum At {
+    /// Below the cursor row: `rows/<key>/<suffix>`.
+    Row(String),
+    /// Below the view itself: `<suffix>`.
+    View(String),
 }
 
 /// A node's place inside a list of lines, before the list is placed on the screen.
@@ -85,6 +98,8 @@ pub(crate) struct Mark {
     pub width: Option<usize>,
     /// [`Region::text`].
     pub text: Option<String>,
+    /// [`Region::key`].
+    pub key: Option<char>,
 }
 
 /// The lifecycle state a section is in.
@@ -2132,9 +2147,29 @@ impl App {
         ctx: &Ctx<'_>,
         view_keys: &str,
     ) -> Vec<(char, Action)> {
+        let offers: Vec<(At, Action)> = actions
+            .iter()
+            .map(|action| (At::View(String::new()), action.clone()))
+            .collect();
+        self.keyed_offers(&offers, ctx, view_keys)
+            .into_iter()
+            .map(|(key, _, action)| (key, action))
+            .collect()
+    }
+
+    /// The actions a view offers ([`crate::view::collection_offers`],
+    /// [`crate::view::record_offers`]) with their keys, as [`App::action_keys_besides`] keys
+    /// them: one key space for all of them, so a row's, its item's, its expand's and the view's
+    /// own actions never share a key.
+    pub(crate) fn keyed_offers(
+        &self,
+        offers: &[(At, Action)],
+        ctx: &Ctx<'_>,
+        view_keys: &str,
+    ) -> Vec<(char, At, Action)> {
         let mut taken = view_keys.to_owned();
         let mut keyed = Vec::new();
-        for action in actions {
+        for (at, action) in offers {
             if !self.visible(action.visible.as_ref().map(|expr| expr.0.as_str()), ctx) {
                 continue;
             }
@@ -2146,10 +2181,24 @@ impl App {
                 .find(|key| !RESERVED.contains(*key) && !taken.contains(*key));
             if let Some(key) = key {
                 taken.push(key);
-                keyed.push((key, action.clone()));
+                keyed.push((key, at.clone(), action.clone()));
             }
         }
         keyed
+    }
+
+    /// The child nodes of the section `section`, whose button actions its own view offers under
+    /// its keys; none outside a section.
+    pub(crate) fn own_children(&self, section: Option<&str>) -> Vec<Node> {
+        section
+            .and_then(|name| {
+                self.page_def()
+                    .sections
+                    .iter()
+                    .find(|section| section.name == name)
+            })
+            .map(|section| section.children.clone())
+            .unwrap_or_default()
     }
 
     // ── live ────────────────────────────────────────────────────────────────────────────────
@@ -3153,6 +3202,13 @@ impl App {
             ..ctx
         };
         let actions = self.action_keys(&collection.row_actions, &row_ctx);
+        let children = if overlay {
+            Vec::new()
+        } else {
+            self.own_children(section)
+        };
+        let offers = crate::view::collection_offers(collection, self.ui(ui).expanded, &children);
+        let keyed = self.keyed_offers(&offers, &row_ctx, "");
         let path = section.map(|section| self.section_path(section));
         let moves = path
             .as_ref()
@@ -3321,7 +3377,11 @@ impl App {
                 }
             }
             KeyCode::Char(letter) => {
-                if let Some((_, action)) = actions.into_iter().find(|(key, _)| *key == letter) {
+                if let Some((_, at, action)) = keyed.into_iter().find(|(key, _, _)| *key == letter)
+                {
+                    // A row's, its item's and its expand's actions see the row; the
+                    // collection's own and its section's child buttons do not.
+                    let row = if matches!(at, At::Row(_)) { row } else { None };
                     self.run_action_at(ui, &action, row);
                 }
             }
@@ -3356,11 +3416,16 @@ impl App {
                     row: row.as_ref(),
                     ..ctx
                 };
-                let actions = crate::view::record_actions(record, tab);
-                if let Some((_, action)) = self
-                    .action_keys(&actions, &row_ctx)
+                let children = if overlay {
+                    Vec::new()
+                } else {
+                    self.own_children(section)
+                };
+                let offers = crate::view::record_offers(record, tab, &children);
+                if let Some((_, _, action)) = self
+                    .keyed_offers(&offers, &row_ctx, "")
                     .into_iter()
-                    .find(|(key, _)| *key == letter)
+                    .find(|(key, _, _)| *key == letter)
                 {
                     self.run_action_at(ui, &action, row);
                 }

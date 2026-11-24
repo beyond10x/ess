@@ -111,6 +111,15 @@ impl Screen {
         self.regions.iter().find(|region| region.path == path)
     }
 
+    /// The key the terminal offers the action drawn at `path` under ([`Region::key`]), when it
+    /// drew one there.
+    pub fn key_at(&self, path: &str) -> Option<char> {
+        self.regions
+            .iter()
+            .filter(|region| region.path == path)
+            .find_map(|region| region.key)
+    }
+
     /// Whether any node was placed at a path `wanted` accepts.
     pub fn region_where(&self, wanted: impl Fn(&str) -> bool) -> bool {
         self.regions.iter().any(|region| wanted(&region.path))

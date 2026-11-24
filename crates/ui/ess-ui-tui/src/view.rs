@@ -19,14 +19,14 @@ use ratatui::widgets::{Block, Clear, Paragraph};
 use ratatui::{Frame, Terminal};
 
 use ess_ui::{
-    Body, ChartKind, Composite, Field, Form, HostSlot, MetricFormat, Node, NodePath, Primitive,
-    TabFields, TextFormat, TextStyle, Tone,
+    Action, Body, ChartKind, Composite, Field, Form, HostSlot, MetricFormat, Node, NodePath,
+    Primitive, TabFields, TextFormat, TextStyle, Tone,
 };
 
 use crate::app::{
     aggregate, bar_items, board_rows, client_sizes, columns_of, form_fields, graph_collection,
-    group_names, paged, references_collection, App, BarItem, Ctx, Focus, Lifecycle, Mark, Prompt,
-    ReadState, Region,
+    group_names, paged, references_collection, App, At, BarItem, Ctx, Focus, Lifecycle, Mark,
+    Prompt, ReadState, Region,
 };
 use crate::expr::{display, field_path, reads_row, row_key, truthy};
 
@@ -125,6 +125,10 @@ struct SectionBlock {
     marks: Vec<Mark>,
 }
 
+/// An action on a hint line: its key, the path it is recorded at with the row it is under (none
+/// where the hint records nothing), and the action.
+type Hinted = (char, Option<(String, Option<String>)>, Action);
+
 /// What a refusal shown in a view was sent by.
 #[derive(Clone, Copy)]
 enum Refusing<'a> {
@@ -158,6 +162,7 @@ impl App {
             row,
             area,
             text,
+            key: None,
         });
     }
 
@@ -192,6 +197,9 @@ impl App {
                 },
                 mark.text,
             );
+            if let Some(region) = self.regions.borrow_mut().last_mut() {
+                region.key = mark.key;
+            }
         }
     }
 
@@ -583,6 +591,7 @@ impl App {
                     x,
                     width: Some(label.width()),
                     text: Some(browser_label(action)),
+                    key: None,
                 });
                 x += label.width() + 1;
             }
@@ -613,6 +622,7 @@ impl App {
             x: 0,
             width: None,
             text: Some(text.clone()),
+            key: None,
         });
         Line::styled(format!("? {text}"), dim())
     }
@@ -684,6 +694,7 @@ impl App {
                 x: 0,
                 width: None,
                 text: None,
+                key: None,
             });
             for mut mark in marks {
                 mark.line += start + 1;
@@ -824,6 +835,7 @@ impl App {
                             x: 0,
                             width: None,
                             text: None,
+                            key: None,
                         });
                     }
                     lines.extend(drawn);
@@ -1127,6 +1139,7 @@ impl App {
                                 x: 0,
                                 width: None,
                                 text: None,
+                                key: None,
                             });
                         }
                         lines.extend(drawn);
@@ -1136,8 +1149,28 @@ impl App {
                 for node in &record.item {
                     lines.extend(self.node_lines(node, &inner));
                 }
-                let actions = record_actions(record, tab);
-                lines.extend(self.action_hint(&actions, &inner.ctx, ""));
+                // A section's or an overlay's own record records each action it offers at its
+                // path with its key, and offers its section's child buttons too.
+                let children = if place.record {
+                    self.own_children(place.ctx.section)
+                } else {
+                    Vec::new()
+                };
+                let offers = record_offers(record, tab, &children);
+                let keyed: Vec<_> = self
+                    .keyed_offers(&offers, &inner.ctx, "")
+                    .into_iter()
+                    .map(|(key, at, action)| {
+                        let path = match at {
+                            At::Row(suffix) | At::View(suffix) => {
+                                place.path.to_string() + "/" + &suffix
+                            }
+                        };
+                        (key, place.record.then_some((path, None)), action)
+                    })
+                    .collect();
+                lines.extend(self.offer_hint(&keyed, &inner.ctx, lines.len()));
+                let actions: Vec<Action> = offers.into_iter().map(|(_, action)| action).collect();
                 lines.extend(self.refusal_lines(place.ui, Refusing::Actions(&actions)));
                 lines
             }
@@ -1268,10 +1301,9 @@ impl App {
 
     /// Records each row action a recorded row offers at `<rows>/<key>/<segment>/<name>`, carrying
     /// the label its control shows in the generated React project, which renders the actions on
-    /// every row. The cursor row's actions are placed on their entry in the hint line drawn at
-    /// `hint_line` ([`App::action_hint`]); another row's, which the terminal offers once its
-    /// row has the cursor, on that row's line.
-    #[allow(clippy::too_many_arguments)]
+    /// every row. The cursor row's are placed on the hint line with their keys
+    /// ([`App::offer_hint`]); another row's, which the terminal offers once its row has the
+    /// cursor, on that row's line.
     fn mark_row_actions(
         &self,
         actions: &[ess_ui::Action],
@@ -1279,42 +1311,29 @@ impl App {
         segment: &str,
         recorded: &[(String, usize, &Value)],
         cursor_key: Option<&str>,
-        hint_line: usize,
         place: &Place<'_>,
     ) {
         for (key, line, row) in recorded {
+            if cursor_key == Some(key.as_str()) {
+                continue;
+            }
             let ctx = Ctx {
                 row: Some(row),
                 ..place.ctx
             };
-            // Where each keyed action's label starts in the hint: `<key> <switch><label>`, joined
-            // by ` · `.
-            let mut hinted = std::collections::BTreeMap::new();
-            if cursor_key == Some(key.as_str()) {
-                let mut x = 0;
-                for (letter, action) in self.action_keys(actions, &ctx) {
-                    let shown = action.label.clone().unwrap_or_else(|| action.name.clone());
-                    let start = x + letter.len_utf8() + 1 + self.switch_mark(&action, &ctx).width();
-                    hinted.insert(action.name.clone(), (start, shown.width()));
-                    x = start + shown.width() + " · ".width();
-                }
-            }
             for action in actions {
                 if !self.visible(action.visible.as_ref().map(|expr| expr.0.as_str()), &ctx) {
                     continue;
                 }
-                let (line, x, width) = match hinted.get(&action.name) {
-                    Some((x, width)) => (hint_line, *x, Some(*width)),
-                    None => (*line, 0, None),
-                };
                 self.mark(Mark {
                     path: format!("{rows_path}/{key}/{segment}/{}", action.name),
                     row: Some(key.clone()),
-                    line,
+                    line: *line,
                     height: 1,
-                    x,
-                    width,
+                    x: 0,
+                    width: None,
                     text: Some(browser_label(action)),
+                    key: None,
                 });
             }
         }
@@ -1355,14 +1374,28 @@ impl App {
         ctx: &Ctx<'_>,
         view_keys: &str,
     ) -> Vec<Line<'static>> {
-        let keyed = self.action_keys_besides(actions, ctx, view_keys);
+        let keyed: Vec<Hinted> = self
+            .action_keys_besides(actions, ctx, view_keys)
+            .into_iter()
+            .map(|(key, action)| (key, None, action))
+            .collect();
+        self.offer_hint(&keyed, ctx, 0)
+    }
+
+    /// The hint line of `keyed` actions, `<glyph> <key> <switch><label>` joined by ` · `. An
+    /// entry with a path (and the row it is under) is recorded there with its key and its label's cells, as the hint is
+    /// drawn at `line`, so a test presses the key the terminal offers the action under
+    /// (beyond10x/ess#722).
+    fn offer_hint(&self, keyed: &[Hinted], ctx: &Ctx<'_>, line: usize) -> Vec<Line<'static>> {
         if keyed.is_empty() {
             return Vec::new();
         }
         let mut spans = Vec::new();
-        for (at, (key, action)) in keyed.iter().enumerate() {
+        let mut x = 0;
+        for (at, (key, path, action)) in keyed.iter().enumerate() {
             if at > 0 {
                 spans.push(Span::styled(" · ", dim()));
+                x += " · ".width();
             }
             // An action's icon glyph goes before its key, and its tone is drawn as emphasis
             // (beyond10x/ess#723).
@@ -1377,14 +1410,23 @@ impl App {
                 Some(ess_ui::ButtonTone::Danger) => bold().add_modifier(Modifier::UNDERLINED),
                 _ => dim(),
             };
-            spans.push(Span::styled(
-                format!(
-                    "{glyph}{key} {}{}",
-                    self.switch_mark(action, ctx),
-                    action.label.clone().unwrap_or_else(|| action.name.clone())
-                ),
-                style,
-            ));
+            let switch = self.switch_mark(action, ctx);
+            let shown = action.label.clone().unwrap_or_else(|| action.name.clone());
+            let start = x + glyph.width() + key.len_utf8() + 1 + switch.width();
+            if let Some((path, row)) = path {
+                self.mark(Mark {
+                    path: path.clone(),
+                    row: row.clone(),
+                    line,
+                    height: 1,
+                    x: start,
+                    width: Some(shown.width()),
+                    text: Some(browser_label(action)),
+                    key: Some(*key),
+                });
+            }
+            x = start + shown.width();
+            spans.push(Span::styled(format!("{glyph}{key} {switch}{shown}"), style));
         }
         vec![Line::from(spans)]
     }
@@ -1530,6 +1572,7 @@ impl App {
                             x: *x,
                             width: Some(*width),
                             text: Some(browser_field_label(field)),
+                            key: None,
                         });
                     }
                 }
@@ -1616,6 +1659,7 @@ impl App {
                     x: 0,
                     width: None,
                     text: Some(whole),
+                    key: None,
                 });
                 recorded.push((key.clone(), lines.len(), row));
                 let mut x = 2;
@@ -1643,6 +1687,7 @@ impl App {
                             x: at,
                             width: Some(cells),
                             text: Some(shown),
+                            key: None,
                         });
                     }
                 }
@@ -1703,7 +1748,13 @@ impl App {
             if state.expanded {
                 if let Some(expand) = &collection.expand {
                     let start = lines.len();
-                    for line in self.node_lines(expand, &inner) {
+                    // Its actions are offered on the collection's hint line, under keys of the
+                    // collection's key space ([`collection_offers`]).
+                    let mut expand = (**expand).clone();
+                    if let Body::Composite(Composite::Record(record)) = &mut expand.body {
+                        record.actions.clear();
+                    }
+                    for line in self.node_lines(&expand, &inner) {
                         let mut spans = vec![Span::raw("    ")];
                         spans.extend(line.spans);
                         lines.push(Line::from(spans));
@@ -1721,6 +1772,7 @@ impl App {
                                 x: 0,
                                 width: None,
                                 text: None,
+                                key: None,
                             });
                         }
                     }
@@ -1783,12 +1835,39 @@ impl App {
                 segment,
                 &recorded,
                 cursor_key.as_deref(),
-                lines.len(),
                 place,
             );
         }
-        lines.extend(self.action_hint(&collection.row_actions, &row_ctx, ""));
-        lines.extend(self.refusal_lines(place.ui, Refusing::Actions(&collection.row_actions)));
+        // The cursor row's actions, its item's buttons and its expand's actions, and the
+        // collection's own actions and its section's child buttons: one hint, each entry recorded
+        // at its path with its key when this is a section's or an overlay's own collection.
+        let children = if place.record {
+            self.own_children(place.ctx.section)
+        } else {
+            Vec::new()
+        };
+        let offers = collection_offers(collection, state.expanded, &children);
+        let cursor_key = rows.get(cursor).map(|row| row_key(row, &key_field));
+        let marked = row_actions_at.is_some();
+        let keyed: Vec<_> = self
+            .keyed_offers(&offers, &row_ctx, "")
+            .into_iter()
+            .map(|(key, at, action)| {
+                let path = match at {
+                    At::Row(suffix) => cursor_key.as_ref().map(|row| {
+                        (
+                            format!("{container}/rows/{row}/{suffix}"),
+                            Some(row.clone()),
+                        )
+                    }),
+                    At::View(suffix) => Some((format!("{container}/{suffix}"), None)),
+                };
+                (key, path.filter(|_| marked), action)
+            })
+            .collect();
+        lines.extend(self.offer_hint(&keyed, &row_ctx, lines.len()));
+        let offered: Vec<Action> = offers.into_iter().map(|(_, action)| action).collect();
+        lines.extend(self.refusal_lines(place.ui, Refusing::Actions(&offered)));
         let bulk = crate::app::bulk_keys(&collection.bulk_actions);
         if !bulk.is_empty() {
             let offered: Vec<String> = bulk
@@ -2254,6 +2333,7 @@ impl App {
                     x: 0,
                     width: None,
                     text: Some(format!("{} {read}", label_of(field))),
+                    key: None,
                 });
             }
             let style = if current {
@@ -2285,7 +2365,15 @@ impl App {
             dim(),
         ));
         lines.extend(self.refusal_lines(place.ui, Refusing::Form));
-        lines.extend(self.action_hint(&form.actions, &place.ctx, crate::app::FORM_KEYS));
+        let keyed: Vec<_> = self
+            .action_keys_besides(&form.actions, &place.ctx, crate::app::FORM_KEYS)
+            .into_iter()
+            .map(|(key, action)| {
+                let path = format!("{}/actions/{}", place.path, action.name);
+                (key, place.record.then_some((path, None)), action)
+            })
+            .collect();
+        lines.extend(self.offer_hint(&keyed, &place.ctx, lines.len()));
         lines.extend(self.refusal_lines(place.ui, Refusing::Actions(&form.actions)));
         for group in &form.groups {
             lines.extend(self.action_hint(&group.actions, &place.ctx, crate::app::FORM_KEYS));
@@ -2875,16 +2963,89 @@ fn labelled(field: &Field, row: &Value) -> Line<'static> {
     ])
 }
 
-/// The actions a record offers on the tab shown: its own, then the tab's `form` when that is an
-/// action. Drawing and key handling read the same list, so a hint's key runs its action.
-pub(crate) fn record_actions(record: &ess_ui::Record, tab: usize) -> Vec<ess_ui::Action> {
-    let mut actions = record.actions.clone();
-    if let Some(ess_ui::TabForm::Action(action)) =
-        record.tabs.get(tab).and_then(|tab| tab.form.as_ref())
-    {
-        actions.push((**action).clone());
+/// The actions of the button nodes in `nodes`, each at `<under>/<name>` and shown with its
+/// button's label, as the generated app draws it.
+fn button_offers(nodes: &[Node], under: &str, at: fn(String) -> At) -> Vec<(At, Action)> {
+    nodes
+        .iter()
+        .filter_map(|node| match (&node.common.name, &node.body) {
+            (Some(name), Body::Primitive(Primitive::Button(button))) => {
+                let mut action = button.action.clone();
+                action.label = Some(button.label.clone());
+                Some((at(format!("{under}/{name}")), action))
+            }
+            _ => None,
+        })
+        .collect()
+}
+
+/// The actions of an expand that is a record, which the collection offers for its cursor row.
+fn expand_actions(collection: &ess_ui::Collection) -> &[Action] {
+    match collection.expand.as_deref().map(|node| &node.body) {
+        Some(Body::Composite(Composite::Record(record))) => &record.actions,
+        _ => &[],
     }
-    actions
+}
+
+/// What a collection offers under its keys, in key order: the cursor row's actions, its `item`
+/// buttons, its expand's actions while `expanded`, the collection's own `actions`, and the
+/// buttons of `children`, its section's child nodes (beyond10x/ess#722 items 14, 16 and 25).
+pub(crate) fn collection_offers(
+    collection: &ess_ui::Collection,
+    expanded: bool,
+    children: &[Node],
+) -> Vec<(At, Action)> {
+    let mut offers: Vec<(At, Action)> = collection
+        .row_actions
+        .iter()
+        .map(|action| {
+            (
+                At::Row(format!("row_actions/{}", action.name)),
+                action.clone(),
+            )
+        })
+        .collect();
+    offers.extend(button_offers(&collection.item, "item", At::Row));
+    if expanded {
+        offers.extend(expand_actions(collection).iter().map(|action| {
+            (
+                At::Row(format!("expand/actions/{}", action.name)),
+                action.clone(),
+            )
+        }));
+    }
+    offers.extend(
+        collection
+            .actions
+            .iter()
+            .map(|action| (At::View(format!("actions/{}", action.name)), action.clone())),
+    );
+    offers.extend(button_offers(children, "children", At::View));
+    offers
+}
+
+/// What a record offers under its keys: its actions and its tab's action,
+/// then the buttons of `children`, its section's child nodes (beyond10x/ess#722 item 15).
+pub(crate) fn record_offers(
+    record: &ess_ui::Record,
+    tab: usize,
+    children: &[Node],
+) -> Vec<(At, Action)> {
+    let mut offers: Vec<(At, Action)> = record
+        .actions
+        .iter()
+        .map(|action| (At::View(format!("actions/{}", action.name)), action.clone()))
+        .collect();
+    if let Some(tab) = record.tabs.get(tab) {
+        if let Some(ess_ui::TabForm::Action(action)) = &tab.form {
+            offers.push((
+                At::View(format!("tabs/{}/form", tab.name)),
+                (**action).clone(),
+            ));
+        }
+    }
+    offers.extend(button_offers(children, "children", At::View));
+    offers
 }
 
 impl App {
@@ -2905,6 +3066,7 @@ impl App {
             x: 0,
             width: None,
             text: Some(format!("{} │{}│", label_of(field), host_label(slot))),
+            key: None,
         });
     }
 
@@ -2924,6 +3086,7 @@ impl App {
                 x,
                 width: Some(width),
                 text: Some(label),
+                key: None,
             });
             x += width + 1;
         }

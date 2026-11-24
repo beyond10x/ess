@@ -147,7 +147,11 @@ declares a default for it.
 
 ### act
 
-Runs an action: a row's action, a header action, a section's action, a bulk action. On an open
+Runs an action: a row's action, a header action, a section's action, a bulk action, an overlay's
+action, a button in a row's `item` (`…/rows/<key>/item/<node>`) or in a section's `children`
+(`…/children/<node>`), an action of a row's `expand` (`…/rows/<key>/expand/actions/<name>`) and
+a collection's own `actions`. The terminal presses the key it offers the action under; an action
+the place does not offer is refused naming the place. On an open
 overlay's own path it runs the overlay's primary action: a confirm confirms, a form submits. On a
 section whose body is a form it submits the form. On a collection's column
 (`…/columns/<name>`) it sorts by that column as a click on its header does: ascending, or

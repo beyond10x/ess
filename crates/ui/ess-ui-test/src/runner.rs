@@ -570,24 +570,7 @@ impl<'d> Runner<'d> {
             .as_ref()
             .filter(|_| target.row_overlay().is_none())
         {
-            self.select_row(target, row)?;
-            if target.node == row.container {
-                self.app.keys("<enter>");
-                return Ok(());
-            }
-            let action = self.action(target)?;
-            let lines = self.section_box(&row_section(target, row)?)?.lines;
-            let key = hint_key(lines.iter().map(|line| line.text.as_str()), &action).ok_or_else(
-                || {
-                    format!(
-                        "{}: the row does not offer {}",
-                        target.written,
-                        label(&action)
-                    )
-                },
-            )?;
-            self.app.keys(&key_spec(key));
-            return Ok(());
+            return self.act_in_row(target, row);
         }
         if let Some((_, path)) = target.overlay() {
             self.require_overlay(target)?;
@@ -607,6 +590,9 @@ impl<'d> Runner<'d> {
                         target.written
                     )),
                 };
+            }
+            if self.press_offered(target) {
+                return Ok(());
             }
             let action = self.action(target)?;
             if let Body::Composite(Composite::Confirm(confirm)) = &overlay_body {
@@ -639,8 +625,15 @@ impl<'d> Runner<'d> {
         if self.act_on_form_or_column(target)? {
             return Ok(());
         }
-        let action = self.action(target)?;
         self.require_no_overlay(target)?;
+        if let Some(section) = target.section() {
+            self.app.focus_section(&section);
+            self.select_tab(target)?;
+            if self.press_offered(target) {
+                return Ok(());
+            }
+        }
+        let action = self.action(target)?;
         if let ["pages", _, "header", "actions", _] = segments.as_slice() {
             self.app.keys(&format!(
                 ":do: {}<enter>",
@@ -661,6 +654,31 @@ impl<'d> Runner<'d> {
             hint_key(lines.iter().map(|line| line.text.as_str()), &action).ok_or_else(|| {
                 format!(
                     "{}: the section does not offer {}",
+                    target.written,
+                    label(&action)
+                )
+            })?;
+        self.app.keys(&key_spec(key));
+        Ok(())
+    }
+
+    /// `act` at a row, or at an action drawn for it: Enter on the row itself, else the key the
+    /// terminal offers the action under.
+    fn act_in_row(&mut self, target: &Target, row: &Row) -> Result<(), String> {
+        self.select_row(target, row)?;
+        if target.node == row.container {
+            self.app.keys("<enter>");
+            return Ok(());
+        }
+        if self.press_offered(target) {
+            return Ok(());
+        }
+        let action = self.action(target)?;
+        let lines = self.section_box(&row_section(target, row)?)?.lines;
+        let key =
+            hint_key(lines.iter().map(|line| line.text.as_str()), &action).ok_or_else(|| {
+                format!(
+                    "{}: the row does not offer {}",
                     target.written,
                     label(&action)
                 )
@@ -1262,6 +1280,25 @@ impl<'d> Runner<'d> {
         }
     }
 
+    /// Presses the key the terminal drew the action at `target` under, wherever it drew it (a
+    /// row's, an item's or an expand's action, an overlay's, a section's child button).
+    /// Whether it drew one there.
+    fn press_offered(&mut self, target: &Target) -> bool {
+        // The terminal records a row's nodes under the row, as the path is written.
+        let path = if target.row.is_some() {
+            &target.written
+        } else {
+            &target.node
+        };
+        match self.screen().key_at(path) {
+            Some(key) => {
+                self.app.keys(&key_spec(key));
+                true
+            }
+            None => false,
+        }
+    }
+
     fn action(&self, target: &Target) -> Result<Action, String> {
         self.doc
             .nodes()
@@ -1443,7 +1480,8 @@ fn hint_key<'a>(lines: impl Iterator<Item = &'a str>, action: &Action) -> Option
             .split_once(" selected: ")
             .map_or(line, |(_, hints)| hints);
         for hint in line.split(" · ") {
-            let hint = hint.trim();
+            // A hint inside an overlay starts after its border.
+            let hint = hint.trim().trim_start_matches('│').trim_start();
             let mut chars = hint.chars();
             if let (Some(key), Some(' ')) = (chars.next(), chars.next()) {
                 let shown = chars.as_str();

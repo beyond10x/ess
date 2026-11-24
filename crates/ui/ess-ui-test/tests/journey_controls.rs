@@ -811,3 +811,271 @@ fn adversary2_a_closed_group_refuses_a_field_or_group_named_groups() {
     }
     assert!(wrong.is_empty(), "{}", wrong.join("\n"));
 }
+
+/// A page whose actions sit where no section or row hint used to offer them: a row's `item`
+/// button, a row's `expand` record, a drawer form's own actions, a drawer whose body is a
+/// collection and a section's child buttons (beyond10x/ess#722 items 13 to 16 and 25).
+const PLACES: &str = r"format: ess-ui/1
+app: probe
+model: probe.system
+placement_profile: fat
+fixtures: {views: {shelf.Items: views.yaml, shelf.ItemById: views.yaml, shelf.Kinds: views.yaml}}
+shells:
+  app:
+    regions:
+      main: {kind: page_outlet}
+      overlay: {kind: overlay_outlet}
+navigation:
+  home: items
+  sections: [{name: all, pages: [items, item]}]
+pages:
+  items:
+    kind: list_page
+    shell: app
+    title: Items
+    state:
+      mode: {type: string, class: page_state, default: fast}
+    header: {actions: [{name: lines, opens: lines, label: Lines}]}
+    sections:
+      - name: list
+        component: collection
+        reads: {view: shelf.Items}
+        columns: [name]
+        row_actions: [{name: open, opens: edit, label: Open}]
+        item: [{name: go, primitive: button, label: Ship it, action: {name: ship, does: shelf.Ship, bind: {id: row.id}}}]
+        expand: {component: record, reads: {view: shelf.ItemById, params: {id: row.id}}, fields: [note], actions: [{name: plain, does: shelf.Plain, bind: {id: row.id, mode: state.mode}, label: Plain}]}
+    overlays:
+      edit: {kind: drawer, component: form, title: Edit, does: shelf.Save, fields: [name], actions: [{name: void, does: shelf.Void, label: Void item}]}
+      lines: {kind: drawer, component: collection, title: Lines, reads: {view: shelf.Kinds}, columns: [title], actions: [{name: add, opens: create, label: Add line}]}
+      create: {kind: dialog, component: form, title: Create line, does: shelf.Create, fields: [name]}
+  item:
+    kind: detail_page
+    shell: app
+    title: Item
+    sections:
+      - name: card
+        component: record
+        reads: {view: shelf.ItemById, params: {id: it-1}}
+        fields: [note]
+        children:
+          - {name: home, primitive: button, label: Go home, action: {name: home, navigate: {to: items}}}
+          - {name: ping, primitive: button, label: Ping, action: {name: ping, does: shelf.Ping}}
+";
+
+/// An overlay of `kind` whose body is `component`, opened by the header action `show`, with an
+/// action that sends a command, an upload and an action hidden while `state.mode` is `fast`.
+fn overlay_document(kind: &str, component: &str) -> String {
+    let body = match component {
+        "record" => "reads: {view: shelf.ItemById, params: {id: it-1}}\n        fields: [note]",
+        _ => "does: shelf.Save\n        fields: [name]",
+    };
+    format!(
+        r"format: ess-ui/1
+app: probe
+model: probe.system
+placement_profile: fat
+fixtures: {{views: {{shelf.Items: views.yaml, shelf.ItemById: views.yaml}}}}
+shells:
+  app:
+    regions:
+      main: {{kind: page_outlet}}
+      overlay: {{kind: overlay_outlet}}
+navigation:
+  home: items
+  sections: [{{name: all, pages: [items]}}]
+pages:
+  items:
+    kind: list_page
+    shell: app
+    title: Items
+    state:
+      mode: {{type: string, class: page_state, default: fast}}
+    header: {{actions: [{{name: show, opens: o, label: Show}}]}}
+    sections:
+      - name: list
+        component: collection
+        reads: {{view: shelf.Items}}
+        columns: [name]
+    overlays:
+      o:
+        kind: {kind}
+        component: {component}
+        title: Panel
+        {body}
+        actions:
+          - {{name: void, does: shelf.Void, label: Void item}}
+          - {{name: take, upload: {{accept: [text/csv], does: shelf.Import}}, label: Take file}}
+          - {{name: hidden, does: shelf.Hidden, label: Hidden, visible: state.mode == slow}}
+"
+    )
+}
+
+/// `act` at an overlay's action runs it for every overlay kind and both components that carry
+/// actions, and `upload` at one sends its command (B11-1, beyond10x/ess#722 item 13).
+#[test]
+fn act_runs_an_overlays_action_for_every_kind_and_component() {
+    for kind in ["dialog", "drawer", "fullscreen", "popover"] {
+        for component in ["record", "form"] {
+            let text = overlay_document(kind, component);
+            let name = format!("overlay_{kind}_{component}");
+            passed(&run_document(
+                &text,
+                &name,
+                &[
+                    "open: items",
+                    "act: pages/items/header/actions/show",
+                    "act: pages/items/overlays/o/actions/void",
+                    "expect_command: {command: shelf.Void}",
+                ],
+            ));
+            passed(&run_document(
+                &text,
+                &format!("{name}_upload"),
+                &[
+                    "open: items",
+                    "act: pages/items/header/actions/show",
+                    "upload: {at: pages/items/overlays/o/actions/take, file: stock.csv}",
+                    "expect_command: {command: shelf.Import, input: {name: stock.csv, content: \"id,name\\nit-9,Wrench\\n\"}}",
+                ],
+            ));
+        }
+    }
+}
+
+/// An action the overlay does not offer (hidden by its `visible`) is refused naming the overlay,
+/// and nothing is sent.
+#[test]
+fn act_refuses_an_action_the_overlay_does_not_offer() {
+    let outcome = run_document(
+        &overlay_document("drawer", "form"),
+        "overlay_hidden",
+        &[
+            "open: items",
+            "act: pages/items/header/actions/show",
+            "act: pages/items/overlays/o/actions/hidden",
+        ],
+    );
+    assert_eq!(outcome.status, Status::Failed, "{outcome:#?}");
+    assert_eq!(outcome.step, Some(3), "{outcome:#?}");
+    let message = outcome.message.unwrap_or_default();
+    assert!(
+        message.contains("the overlay does not offer Hidden"),
+        "{message}"
+    );
+}
+
+/// `act` at a row's `item` button sends its action's command with the row's binds (item 14).
+#[test]
+fn act_runs_a_rows_item_button() {
+    passed(&run_document(
+        PLACES,
+        "item_button",
+        &[
+            "open: items",
+            "act: pages/items/sections/list/rows/it-2/item/go",
+            "expect_command: {command: shelf.Ship, input: {id: it-2}}",
+        ],
+    ));
+}
+
+/// `act` at a row's expand action sends its command with its binds, a `state.<name>` bind at the
+/// state's value (item 25).
+#[test]
+fn act_runs_an_action_of_a_rows_expand() {
+    let expand = format!("select: {PLACES_ROWS}/it-1/expand");
+    let plain = format!("act: {PLACES_ROWS}/it-1/expand/actions/plain");
+    passed(&run_document(
+        PLACES,
+        "expand_action",
+        &[
+            "open: items",
+            &expand,
+            &plain,
+            "expect_command: {command: shelf.Plain, input: {id: it-1, mode: fast}}",
+        ],
+    ));
+}
+
+/// A drawer form's own action runs, and a drawer whose body is a collection draws its `actions`
+/// and runs one: `opens` shows the overlay it names (items 13 and 16).
+#[test]
+fn act_runs_a_drawer_forms_action_and_a_drawer_collections_action() {
+    let open = format!("act: {PLACES_ROWS}/it-1/row_actions/open");
+    passed(&run_document(
+        PLACES,
+        "drawer_form",
+        &[
+            "open: items",
+            &open,
+            "act: pages/items/overlays/edit/actions/void",
+            "expect_command: {command: shelf.Void}",
+        ],
+    ));
+    passed(&run_document(
+        PLACES,
+        "drawer_collection",
+        &[
+            "open: items",
+            "act: pages/items/header/actions/lines",
+            "expect: {at: pages/items/overlays/lines, text: Add line}",
+            "act: pages/items/overlays/lines/actions/add",
+            "expect: {at: pages/items/overlays/create, text: Create line}",
+        ],
+    ));
+}
+
+/// `act` at a section's child button runs its action: `does` sends the command and `navigate`
+/// opens the page (item 15).
+#[test]
+fn act_runs_a_sections_child_button() {
+    passed(&run_document(
+        PLACES,
+        "child_button",
+        &[
+            "open: item",
+            "act: pages/item/sections/card/children/ping",
+            "expect_command: {command: shelf.Ping}",
+            "act: pages/item/sections/card/children/home",
+            "expect: {at: pages/items/sections/list, text: Anvil}",
+        ],
+    ));
+}
+
+/// The Playwright spec clicks each of those actions at its path.
+#[test]
+fn the_playwright_spec_clicks_each_action_at_its_path() {
+    let document = document_of(PLACES, "places_playwright");
+    let steps = [
+        "open: items",
+        "act: pages/items/sections/list/rows/it-2/item/go",
+        "act: pages/items/sections/list/rows/it-1/expand/actions/plain",
+        "act: pages/items/overlays/edit/actions/void",
+        "act: pages/items/overlays/lines/actions/add",
+        "open: item",
+        "act: pages/item/sections/card/children/ping",
+    ];
+    let mut text =
+        "format: ess-ui-test/1\ndocument: ui.yaml\ntests:\n- name: spec\n  steps:\n".to_owned();
+    for step in steps {
+        text.push_str("  - ");
+        text.push_str(step);
+        text.push('\n');
+    }
+    let file = ess_ui_test::parse_str(&text, &document.with_file_name("journey.yaml"))
+        .unwrap_or_else(|error| panic!("{error}"));
+    let loaded = ess_ui::load_path(&document).expect("the document loads");
+    let spec = ess_ui_test::playwright(&[file], &loaded);
+    for path in [
+        "pages/items/sections/list/rows/it-2/item/go",
+        "pages/items/sections/list/rows/it-1/expand/actions/plain",
+        "pages/items/overlays/edit/actions/void",
+        "pages/items/overlays/lines/actions/add",
+        "pages/item/sections/card/children/ping",
+    ] {
+        let wanted = format!("[data-ui-path=\"{path}\"]').click();");
+        assert!(spec.contains(&wanted), "{wanted}\n{spec}");
+    }
+    assert!(!spec.contains("test.fixme"), "{spec}");
+}
+
+const PLACES_ROWS: &str = "pages/items/sections/list/rows";
