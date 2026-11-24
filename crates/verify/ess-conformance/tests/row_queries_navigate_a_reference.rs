@@ -427,3 +427,108 @@ fn two_rows_in_one_branch_refuse_only_together() {
     assert_ne!(from, to, "a wire is sent two ports facing opposite ways");
     passes_on_the_interpreter(model, &suite);
 }
+
+/// Windows counted while their incident is resolved and approved: a filter of two conjuncts through
+/// one reference (beyond10x/ess#564).
+const COUNTED: &str = "format: ess/36
+system: demo
+version: v1
+domain: demo.ops
+summary: Windows counted while their incident is resolved and approved.
+types:
+  - {name: demo.ops.WindowId, kind: newtype, of: Uuid}
+  - {name: demo.ops.IncidentId, kind: newtype, of: Uuid}
+entities:
+  - name: demo.ops.Incident
+    identity: {name: incident_id, type: demo.ops.IncidentId}
+    fields:
+      - {name: approved, type: Boolean}
+    lifecycle:
+      initial: Open
+      states: [Open, Resolved]
+      terminal: [Resolved]
+      transitions:
+        - {name: resolve, from: [Open], to: Resolved}
+  - name: demo.ops.Window
+    identity: {name: window_id, type: demo.ops.WindowId}
+    fields:
+      - {name: incident_id, type: demo.ops.IncidentId}
+    relations:
+      - {name: incident, kind: references, target: demo.ops.Incident, cardinality: one, via: incident_id}
+    lifecycle: {initial: Open, states: [Open], terminal: [Open]}
+actors:
+  - name: demo.ops.Operator
+    may: [demo.ops.OpenIncident, demo.ops.ResolveIncident, demo.ops.OpenWindow]
+errors:
+  - {name: demo.ops.NotFound, summary: Not found., fields: []}
+  - {name: demo.ops.NotOpen, summary: Not open., fields: []}
+events:
+  - name: demo.ops.IncidentOpened
+    fields: [{name: incident_id, type: demo.ops.IncidentId}]
+  - name: demo.ops.IncidentResolved
+    fields: [{name: incident_id, type: demo.ops.IncidentId}]
+  - name: demo.ops.WindowOpened
+    fields: [{name: window_id, type: demo.ops.WindowId}]
+commands:
+  - name: demo.ops.OpenIncident
+    input:
+      - {name: approved, type: Boolean}
+    outcomes:
+      - name: opened
+        creates: demo.ops.Incident
+        instance: incident_id
+        sets: {approved: input.approved}
+        emits: [demo.ops.IncidentOpened]
+        payload: {demo.ops.IncidentOpened: {incident_id: {generated: true}}}
+  - name: demo.ops.ResolveIncident
+    input:
+      - {name: incident_id, type: demo.ops.IncidentId}
+    outcomes:
+      - {name: unknown, unknown_instance: true, error: demo.ops.NotFound}
+      - {name: not-open, wrong_state: true, error: demo.ops.NotOpen}
+      - name: resolved
+        moves: demo.ops.Incident.resolve
+        instance: incident_id
+        emits: [demo.ops.IncidentResolved]
+        payload: {demo.ops.IncidentResolved: {incident_id: input.incident_id}}
+  - name: demo.ops.OpenWindow
+    input:
+      - {name: incident_id, type: demo.ops.IncidentId}
+    outcomes:
+      - name: opened
+        creates: demo.ops.Window
+        instance: window_id
+        sets: {incident_id: input.incident_id}
+        emits: [demo.ops.WindowOpened]
+        payload: {demo.ops.WindowOpened: {window_id: {generated: true}}}
+views:
+  - name: demo.ops.CountedWindows
+    source: demo.ops.Window
+    consistency: read_your_writes
+    filter: [incident_id.state == Resolved, incident_id.approved == true]
+    fields:
+      - {name: window_id, type: demo.ops.WindowId}
+      - {name: incident_state, type: Optional<demo.ops.Incident.State>, field: {related: {via: incident_id, field: state}}}
+  - name: demo.ops.Incidents
+    source: demo.ops.Incident
+    consistency: read_your_writes
+    fields:
+      - {name: incident_id, type: demo.ops.IncidentId}
+      - {name: state, type: demo.ops.Incident.State}
+";
+
+#[test]
+fn a_reference_scenario_reads_every_navigated_conjunct_of_the_filter() {
+    let model = ir(COUNTED);
+    let suite = suite(&model);
+    let witness = scenario(&suite, "demo.ops.CountedWindows/reference/incident_id");
+    // After the approved incident is resolved, its window is shown with the state it reads.
+    let shown_resolved = witness.steps.iter().any(|step| {
+        matches!(step, ScenarioStep::ExpectView {
+            expectation: ViewExpectation::Contains { fields }, ..
+        } if fields.get("incident_state").and_then(ScenarioValue::as_literal)
+            == Some(&Node::Text("Resolved".to_owned())))
+    });
+    assert!(shown_resolved, "{:#?}", witness.steps);
+    passes_on_the_interpreter(model, &suite);
+}
