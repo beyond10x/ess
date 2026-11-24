@@ -10,9 +10,9 @@ tags:
 - gap-reports-2026-11-24
 relations:
 - blocks: story:a-synthesis-may-be-split-into-parts-that-are-kept-by-the-digest-of-their-inputs-and-merged-into-the-suite-one
-revision: 2
+revision: 3
 ---
-Does ESS split a synthesis into persisted parts that together hold every scenario of the system, merge them into the suite one synthesis writes, and reuse parts across runs by the digest of their inputs: options A, B, C of ST-D5, an architecture decision with the owner. There is no default; nothing waiting on it takes one. The question went to the owner at about 16:27 CET on 2026-11-24 and is unanswered.
+Does ESS split a synthesis into persisted parts that together hold every scenario of the system, merge them into the suite one synthesis writes, and reuse parts across runs by the digest of their inputs: options A, B, C of ST-D5, an architecture decision with the owner. There is no default; nothing waiting on it takes one. The question was queued for the owner on 2026-11-24 and is not delivered yet.
 
 ## What the report asks
 
