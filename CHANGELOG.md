@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.98.2] — 2026-11-24
+
 ### Fixed
 
 - Validation refuses `{subject: …}`, and a `{related: …}` read through a field of the subject, on a `deletes:` outcome naming `deletes:`, with a hint to read the row through an input such as `{related: {via: input.<id>, field: …}}`, where it said the outcome was a `creates:` outcome with no row before it and told the author to read the input (#796).
