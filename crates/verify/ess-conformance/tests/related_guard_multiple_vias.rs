@@ -856,9 +856,8 @@ fn a_chosen_value_the_branchs_own_guard_refuses_is_not_sent() {
     all_pass("not-asked", &passed);
 }
 
-/// `(own-scenario arrangements, strict searches, open)` of `CHOSEN`, as measured. 123 arrangements
-/// before beyond10x/ess#795: a further row filed under a site the scenario holds goes under it.
-const CHOSEN_OWN_WORK: (u64, u64, usize) = (108, 123, 1);
+/// `(own-scenario arrangements, strict searches, open)` of `CHOSEN`, as measured.
+const CHOSEN_OWN_WORK: (u64, u64, usize) = (123, 123, 1);
 
 #[test]
 fn the_chosen_values_are_arranged_in_counted_work() {

@@ -2736,68 +2736,6 @@ pub(super) fn drive(
     .map(|(invocation, _)| invocation)
 }
 
-/// [`drive`] for a creation filed under an owner row of `owner`'s entity that the caller holds:
-/// `bound[field]` names it, and it is arranged by the steps `known` holds or is one the scenario
-/// already holds, as the subject's owner a ranked view's further row goes under.
-///
-/// Where every branch reading that row through `field` asks only whether it exists (`exists:
-/// false`), the row is there, so the run is decided on it as [`on_held`] decides a held row and
-/// sent naming it: a second row under one owner, where [`drive`] stops at the bound field and the
-/// further row went under an owner of its own (beyond10x/ess#795). Any other guard on the row
-/// reads its state or fields, which the caller does not know here, so the run is [`drive`]'s.
-// One argument per thing an arranging run is told, as [`drive`] takes them.
-#[allow(clippy::too_many_arguments)]
-pub(super) fn drive_owned(
-    ir: &EssIr,
-    driver: &super::Driver<'_>,
-    actors: &BTreeMap<QualifiedName, ActorRef>,
-    distinction: Distinction,
-    (bound, known): (
-        &BTreeMap<String, crate::scenario::InstanceName>,
-        &[super::ScenarioStep],
-    ),
-    input: Option<&BTreeMap<String, Node>>,
-    arranging: &[&EntityHandle],
-    owner: Option<(&EntityHandle, &str, &Arrangement)>,
-) -> Result<super::Invocation, RefusalCause> {
-    if let Some((of, field, row)) = owner {
-        let existence_only = driver.command.outcomes.iter().all(|outcome| {
-            !matches!(
-                &outcome.condition,
-                ResolvedCondition::Related { via, test, also, .. }
-                    if via.field() == field
-                        && !(matches!(test, ResolvedRelatedTest::Absent) && also.is_empty())
-            )
-        });
-        let reads_owner = read(driver.command).is_some_and(|(via, entity)| {
-            matches!(via, ResolvedRelatedVia::Input { .. }) && via.field() == field && entity == of
-        });
-        let names_subject = driver.outcome.subject.as_ref().is_some_and(|subject| {
-            matches!(&subject.instance, ResolvedInstance::Supplied { field: named } if named.name == field)
-        });
-        if existence_only
-            && reads_owner
-            && !names_subject
-            && !is_absent(driver.outcome)
-            && stored::field(driver.command).is_none()
-            && !several(driver.command)
-            && bound.get(field) == Some(&row.instance)
-        {
-            return on_held(ir, driver, None, actors, distinction, bound, input, row);
-        }
-    }
-    drive(
-        ir,
-        driver,
-        None,
-        actors,
-        distinction,
-        (bound, known),
-        input,
-        arranging,
-    )
-}
-
 /// [`drive`] with `input` chosen and the related row steered toward the values it holds: the
 /// fields other than the one the guard reads are the arrangement's decision, as a struct identity
 /// is (beyond10x/ess#521), so a guard comparing the row with one of them — `revision !=
