@@ -571,6 +571,9 @@ fn wire_file(
             &emit.primitive_ctor(Primitive::Binary64),
         ));
     }
+    if body.contains("closedAt(value, at, ") {
+        body.push_str(CLOSED_AT);
+    }
     emit.file_at(format!("{}/{WIRE}.go", package.dir), provenance, "", &body)
 }
 
@@ -697,11 +700,23 @@ fn type_decoder(out: &mut String, emit: &Emit<'_>, declared: &ResolvedType) {
             }
         }
         ResolvedBody::Struct { fields, .. } => {
-            let _ = writeln!(
-                out,
-                "\tif _, err := objectAt(value, at, \"an object\"); err != nil {{\n\t\treturn out, \
-                 err\n\t}}"
-            );
+            // Closed unless the struct declares `undeclared_fields: ignored` (`ess/24`), as the
+            // Rust server's decoder and the published schema are at every place it is reached.
+            if emit.ir.undeclared_fields(&declared.name).is_ignored() {
+                let _ = writeln!(
+                    out,
+                    "\tif _, err := objectAt(value, at, \"an object\"); err != nil {{\n\t\treturn \
+                     out, err\n\t}}"
+                );
+            } else {
+                closure(
+                    out,
+                    &fields
+                        .iter()
+                        .map(ess_gen::schema::wire_field_name)
+                        .collect::<Vec<_>>(),
+                );
+            }
             let mut slot = 0;
             for field in fields {
                 decode_member(
@@ -764,6 +779,9 @@ fn union_decoder(
     let labels: Vec<String> = variants.keys().cloned().collect();
     let expected = go_string(&variant_list(&labels));
     let tag_text = go_string(tag);
+    // Each branch's published object is closed: its tag, and its content where it has one, as the
+    // Rust server's decoder reads it.
+    closure(out, &[tag, content]);
     let _ = writeln!(
         out,
         "\ttagged, tagAt, err := required(value, at, {tag_text})\n\tif err != nil {{\n\t\t\
@@ -814,6 +832,20 @@ fn unit_variant_decoder(
          {}{{}}, nil",
         go_string(&format!("no `{content}`: `{label}` carries nothing")),
         emit.reference_variant(union, label)
+    );
+}
+
+/// The check that the value is an object holding no member but `wires`, refused at its path.
+fn closure(out: &mut String, wires: &[&str]) {
+    let wires = wires
+        .iter()
+        .map(|wire| go_string(wire))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let _ = writeln!(
+        out,
+        "\tif err := closedAt(value, at, []string{{{wires}}}); err != nil {{\n\t\treturn out, \
+         err\n\t}}"
     );
 }
 
@@ -2294,6 +2326,35 @@ const SERVER_DOC: &str = "// Package server is the HTTP surface of every compone
                           null.\n";
 
 /// The fixed helpers the generated codecs call.
+/// The reader of a closed struct or union branch, which follows the decoders only in a wire file
+/// that has one, so every other wire file keeps its bytes.
+const CLOSED_AT: &str = r#"
+// closedAt is the object at this path holding no member but fields: a closed struct or a union
+// branch, as its published schema is. The standard decoder keeps no member order, so of several
+// such members the least by name is the one named, where the Rust server names the first to
+// arrive.
+func closedAt(value any, at string, fields []string) error {
+	object, err := objectAt(value, at, "an object")
+	if err != nil {
+		return err
+	}
+	unnamed, found := "", false
+	for name := range object {
+		named := false
+		for _, field := range fields {
+			named = named || field == name
+		}
+		if !named && (!found || name < unnamed) {
+			unnamed, found = name, true
+		}
+	}
+	if !found {
+		return nil
+	}
+	return DecodeError{At: nested(at, unnamed), Expected: "no member: no field is named so", Found: describes(object[unnamed])}
+}
+"#;
+
 const WIRE_HELPERS: &str = r#"
 // DecodeError is a refusal at one path, with what the declaration says belongs there and what
 // arrived instead.

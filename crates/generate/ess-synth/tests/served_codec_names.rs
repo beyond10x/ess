@@ -939,7 +939,9 @@ fn digest(result: Result<Synthesis, SynthesisFailure>) -> String {
 /// and Go rows were re-recorded for 0.87.0, the web rows unchanged: the served `OpenAPI` document
 /// those trees embed calls an event published to consumers only when the component publishes it
 /// (story:the-openapi-says-published-only-for-events-the-component-publishes). Every row was
-/// re-recorded when a generated file stopped carrying the whole-model digest.
+/// re-recorded when a generated file stopped carrying the whole-model digest. The `labelled go` row
+/// was re-recorded when the Go `server/wire.go` union decoder refused a member beside the tag and
+/// the content (`closedAt`, story `the-go-server-refuses-an-undeclared-member-at-any-depth`).
 const BEFORE_DERIVED_LABELS: &[(&str, &str)] = &[
     ("aliased rust-workspace", "25 artifact(s) 0626c5fa6e565804"),
     ("aliased rust-crate", "22 artifact(s) e21f4f2c7c54536c"),
@@ -951,7 +953,7 @@ const BEFORE_DERIVED_LABELS: &[(&str, &str)] = &[
     ("labelled rust-workspace", "25 artifact(s) d951d0654c63c9c0"),
     ("labelled rust-crate", "22 artifact(s) 82bd9e41b26d8423"),
     ("labelled web", "14 artifact(s) 5be6472be683b0b6"),
-    ("labelled go", "19 artifact(s) b4358e2d6232f611"),
+    ("labelled go", "19 artifact(s) ddbab8c4c1bfdfa4"),
 ];
 
 #[test]
