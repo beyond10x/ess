@@ -19,7 +19,7 @@ in the priority order below, ahead of other feature work.
 
 Priority, as given: P0, then P1 (first report items 4 to 8a), then the second report, then a third
 list of five findings from an application's own generator, then a fourth report of four findings
-(owed), then P2.
+(a service contract), then P2.
 
 - P0: first report items 1, 2, 3.
 - P1: first report items 4, 5, 6, 7, 8, 8a; then the second report's G1, G2, G6, G7, G8, G10, G13,
