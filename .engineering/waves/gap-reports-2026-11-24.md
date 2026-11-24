@@ -26,7 +26,7 @@ list of five findings from an application's own generator, then a fourth report 
   G11 (the semantic half), F18 and the three generator defects G3, G4, G5. G12 is the first report's
   item 3. G9 and the colour half of G11 are styling and not ESS's.
 - Third list (an application's own generator): five findings on `ess` 0.98.0, items 1 to 5 below.
-- Fourth report of four findings: stories not filed yet.
+- Fourth report (a service contract): four findings, below.
 - P2: first report items 9 to 17.
 
 ## Map
@@ -119,9 +119,46 @@ defects of the React runtime.
 - Item 5: a terminal test checks what a host slot is handed. `story:a-terminal-test-checks-what-a-host-slot-is-handed-its-resolved-reads-its-commands-and-the-page-s-parameters` (M, about
   350); after `story:a-test-opens-one-section-overlay-or-widget-of-a-document-alone-at-a-given-terminal-width-and-the-terminal` and `story:one-host-component-stands-in-many-slots-that-receive-the-same-thing-each-slot-identified-by-its-node-path`.
 
-### Fourth report of four findings
+### Fourth report (a service contract) (filed)
 
-Stories not filed yet.
+Four findings. Finding 1 is a defect being reproduced for a patch release after 0.98.1.
+
+- Finding 1 (defect): a second caller's run expects the identity it sent, also in a nested payload
+  member. `story:a-second-caller-s-run-expects-the-identity-it-sent-also-in-a-nested-payload-member` (S, about 240 with tests).
+- Finding 2, stream half: existing `story:an-event-channel-may-be-bound-to-server-sent-events`
+  (existing, active; framing and `keepalive` covered), blocked on the existing
+  `story:an-exchange-is-declared-in-the-specification` and
+  `story:asyncapi-and-openapi-project-an-exchange` (both existing, active, unbuilt). Authentication
+  by header and by query token: existing `story:an-http-binding-declares-how-a-caller-authenticates`
+  (existing, active), plus one amendment there (`bearer` with `in: query`, and the stream route takes
+  `authentication`). A route-less feed: decision AC-D1, which the second report's F18 shares; no
+  second stream design.
+- Finding 2, bus request/reply half: `story:a-command-may-be-bound-to-a-broker-subject-as-a-request-with-one-reply` (M and S, about 700 over two
+  units); beside the existing `story:a-broker-binding-carries-an-exchange` (existing, draft).
+- Finding 3, header-borne inputs: `story:an-http-route-may-read-an-input-field-or-a-view-parameter-from-a-request-header` (three units, about 1,000 lines; credential
+  headers refused, AC-D3). It gives the stream story's `Last-Event-ID` its request-side key.
+- Finding 3, the `401` challenge: `story:a-401-answer-may-state-that-the-service-sends-no-www-authenticate-challenge` (S, about 250).
+- Finding 4, a `2xx` on an unreadable request: `story:an-unreadable-request-may-be-answered-with-a-2xx-status-and-no-body-where-the-service-does-so` (S, about 250).
+- Finding 4, plain-text error bodies: `story:an-error-outcome-or-a-standard-refusal-may-answer-plain-text` (two units, about 750).
+- Finding 4, unknown JSON fields ignored: existing
+  `story:a-json-request-may-ignore-undeclared-members-and-echoed-path-fields` and
+  `story:generated-servers-ignore-undeclared-json-members-and-check-echoed-path-fields` (both
+  existing, active); no new story.
+- Finding 4, crossed routes (`ESS-HTTP-011`): `story:two-crossed-route-templates-may-be-served-in-an-order-the-binding-declares` (M, about 400).
+- Finding 4, the OpenAPI document lists outbound commands: existing
+  `story:an-http-binding-may-declare-that-an-accepted-command-or-a-served-view-has-no-route`
+  (existing, draft); this report is a second need for it.
+
+### Store issues found
+
+Found while assessing the fourth report; no existing story was changed for them.
+
+- `story:an-http-binding-declares-how-a-caller-authenticates` names its new refusal code
+  `ESS-HTTP-034`. That code is taken by `limits` (the request-body cap). It needs the next free
+  code, and so do `story:an-http-route-may-read-an-input-field-or-a-view-parameter-from-a-request-header` and any other new code: each is numbered when it lands.
+- `story:an-exchange-is-declared-in-the-specification` says `ess/37`. `ess/37` shipped in 0.93.0
+  with no construct. The exchange layer would join `ess/38` (opened by the next wave, unreleased)
+  or take `ess/39`.
 
 ### P2, first report (filed)
 
@@ -202,7 +239,13 @@ event re-applied after the answer must not duplicate a row; both edit `runtime/l
 `story:ess-ui-check-model-warns-when-a-live-event-lacks-a-field-the-section-it-feeds-shows-or-the-field-that-matches` after or beside the item-7 story (same check list); `story:a-terminal-test-checks-what-a-host-slot-is-handed-its-resolved-reads-its-commands-and-the-page-s-parameters`
 after SP-D5 and after `story:a-test-opens-one-section-overlay-or-widget-of-a-document-alone-at-a-given-terminal-width-and-the-terminal` (same `spec.rs` and parity table).
 
-The fourth report: the landing order is written when its stories are filed.
+Fourth report: `story:a-second-caller-s-run-expects-the-identity-it-sent-also-in-a-nested-payload-member` first (a defect, patch release after
+0.98.1); `story:an-unreadable-request-may-be-answered-with-a-2xx-status-and-no-body-where-the-service-does-so` before `story:an-error-outcome-or-a-standard-refusal-may-answer-plain-text` (shared body checks in
+`lib.rs`); `story:an-http-route-may-read-an-input-field-or-a-view-parameter-from-a-request-header` after the authentication story; `story:a-401-answer-may-state-that-the-service-sends-no-www-authenticate-challenge` and
+`story:two-crossed-route-templates-may-be-served-in-an-order-the-binding-declares` have no dependency; `story:a-command-may-be-bound-to-a-broker-subject-as-a-request-with-one-reply` and
+`story:a-broker-binding-carries-an-exchange` both open `ess-transport/3`, so one after the other.
+The stream finding waits on the existing exchange stories (`story:an-exchange-is-declared-in-the-specification`,
+`story:asyncapi-and-openapi-project-an-exchange`, both active and unbuilt).
 
 ## Format
 
@@ -366,7 +409,25 @@ P2B (items 14 to 17):
 - P2B-D5 (items 15, 16): A: their constructs join `ess/38`; B: they land in `ess/39`, opened by
   `story:the-specification-format-ess-39-is-open-as-the-newest-reads-and-compiles-every-specification-exactly-as-ess-38`. Default B.
 
-The fourth report: its decisions are added when its stories are filed.
+Fourth report (a service contract):
+
+- AC-D1 (finding 2, also F18): may an event stream follow no row. A: amend the exchange story so
+  `follows` is optional; B: SSE binds only row-followed exchanges; C: an SSE route binds a
+  component's `publishes:` events directly. Default A.
+- AC-D2 (finding 2): is bus request/reply designed now. A: design it, one command bound to a
+  broker subject in `ess-transport/3` with a requester timeout; B: decline; C: only the SSE half
+  now. Default A.
+- AC-D3 (finding 3): may a credential header be bound to a command input. A: no, `Authorization`,
+  `Proxy-Authorization`, `Cookie` and a scheme's `api_key` header are refused; B: admit it; C: admit
+  a value derived from it. Default A (a security boundary).
+- AC-D4 (finding 3): may a declared `401` omit the `WWW-Authenticate` challenge. A: admit
+  `headers: {WWW-Authenticate: none}`, a bare `401` stays refused; B: decline; C: only on
+  `api_key` or `mutual_tls` routes. Default A (a security boundary).
+- AC-D5 (finding 4): may an error answer use a `2xx` status. A: any error outcome and `malformed`;
+  B: decline; C: a `2xx` with no body on `malformed` only. Default C (a security boundary).
+- AC-D6 (finding 4): may two crossed route templates both be bound. A: a route declares
+  `precedes:` and both servers dispatch in that order; B: decline; C: admit a pair whose variable
+  types cannot hold each other's literal. Default A.
 
 ## Not accepted yet
 
