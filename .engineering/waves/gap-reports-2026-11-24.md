@@ -224,9 +224,12 @@ they are not the second report's G-items and not the first report's items 12 to 
   `story:a-row-set-branch-s-search-arranges-the-rows-of-a-selector-once-per-distinct-prefix-of-counts-not-once-per` (S, about 200; the arrangement of a selector's rows is built once
   per distinct prefix of counts, with an output-identical result and a work counter),
   `story:a-row-set-branch-s-search-does-not-arrange-a-combination-of-counts-that-provably-cannot-take-the-branch-and` (L; a combination of counts that provably cannot take the branch
-  is not arranged, after a design page, with an exact fallback; after `story:a-row-set-branch-s-search-arranges-the-rows-of-a-selector-once-per-distinct-prefix-of-counts-not-once-per`)
+  is not arranged, after a design page, with an exact fallback; after `story:a-row-set-branch-s-search-arranges-the-rows-of-a-selector-once-per-distinct-prefix-of-counts-not-once-per`;
+  tag `gap-p2`, a draft, not scheduled: it does not shorten the reported case (at most 6 of its 37
+  refusals qualify, none on the command that holds 94 % of the time); gains only with a
+  linked-selector allowance, open as PF-D4)
   and `story:a-branch-the-row-set-strategy-prepares-is-prepared-once-per-model-branch-actors-and-arrangement-context-and` (M; a branch the row-set strategy prepares is prepared once per model,
-  branch, actors and arrangement context; after the other two).
+  branch, actors and arrangement context; after `story:a-row-set-branch-s-search-arranges-the-rows-of-a-selector-once-per-distinct-prefix-of-counts-not-once-per`, accepted).
 - G15, P1: fixtures are not typed against the model. `story:with-model-ess-ui-check-refuses-a-fixture-row-or-a-script-payload-whose-value-contradicts-the-type-the-model` (L, about 560;
   `ess ui check --model` finds a fixture row or a script payload whose value contradicts the
   declared type, SX-D1 to SX-D2) and `story:ess-ui-test-model-refuses-to-start-on-mistyped-document-fixtures-and-fails-a-test-whose-own-fixtures` (M, about 350; `ess ui test
@@ -476,8 +479,8 @@ Fourth report: `story:a-second-caller-s-run-expects-the-identity-it-sent-also-in
 The stream finding waits on the existing exchange stories (`story:an-exchange-is-declared-in-the-specification`,
 `story:asyncapi-and-openapi-project-an-exchange`, both active and unbuilt).
 
-Sixth list: G14 first, as P0: `story:a-row-set-branch-s-search-arranges-the-rows-of-a-selector-once-per-distinct-prefix-of-counts-not-once-per`, then `story:a-row-set-branch-s-search-does-not-arrange-a-combination-of-counts-that-provably-cannot-take-the-branch-and`, then
-`story:a-branch-the-row-set-strategy-prepares-is-prepared-once-per-model-branch-actors-and-arrangement-context-and` (one file, one after another). `story:with-model-ess-ui-check-refuses-a-fixture-row-or-a-script-payload-whose-value-contradicts-the-type-the-model` after `g07-session-script` and `story:ess-ui-check-model-warns-when-a-live-event-lacks-a-field-the-section-it-feeds-shows-or-the-field-that-matches` (same
+Sixth list: G14 first, as P0: `story:a-row-set-branch-s-search-arranges-the-rows-of-a-selector-once-per-distinct-prefix-of-counts-not-once-per`, then `story:a-branch-the-row-set-strategy-prepares-is-prepared-once-per-model-branch-actors-and-arrangement-context-and` (one file, one
+after another); `story:a-row-set-branch-s-search-does-not-arrange-a-combination-of-counts-that-provably-cannot-take-the-branch-and` is not scheduled (PF-D4). `story:with-model-ess-ui-check-refuses-a-fixture-row-or-a-script-payload-whose-value-contradicts-the-type-the-model` after `g07-session-script` and `story:ess-ui-check-model-warns-when-a-live-event-lacks-a-field-the-section-it-feeds-shows-or-the-field-that-matches` (same
 `CHECKS` list and schema check list; not a hard dependency, the later story rebases), then
 `story:ess-ui-test-model-refuses-to-start-on-mistyped-document-fixtures-and-fails-a-test-whose-own-fixtures`; `story:a-command-that-records-its-caller-and-is-granted-to-a-system-actor-is-refused-naming-that-actor-as-the-system` any time; `story:at-ess-39-a-command-guard-compares-a-fact-with-an-expression-of-several-facts-and-every-expression-reads-the` once
 `ess/39` is open (`story:the-specification-format-ess-39-is-open-as-the-newest-reads-and-compiles-every-specification-exactly-as-ess-38`, one opener only), then `story:synthesis-witnesses-a-command-guard-that-compares-a-fact-with-an-expression-of-several-facts-on-both-sides-of` and
@@ -887,6 +890,10 @@ default is fail-closed. AC-D3, AC-D4, AC-D5 and PR-D1 to PR-D9 stay open.
 - AE-D16 (item 11): may an encoded `Timestamp` newtype be copied into a plain `Timestamp` field. A:
   yes, amend the encoding story and its codec story to convert; B: no. Default A.
 
+- PF-D4 (G14): may the skip rule of the second row-set story allow a selector linked to the input
+  row. A: not now, the story stays a draft and is not scheduled; B: allow it, after a design page.
+  Default A.
+
 ## Accepted
 
 Accepted 2026-11-24 by the coordinator under the operator's delegation, each with the defaults of
@@ -917,8 +924,11 @@ The three P0 follow-ups (`story:the-model-holds-every-filled-default-as-a-plain-
 `story:the-generated-react-app-counts-new-live-rows-while-its-reader-is-paged-away-with-or-without-a-filter-and-keeps`) stay drafts.
 
 Accepted 2026-11-24 by the coordinator under the owner's delegation: `story:a-row-set-branch-s-search-arranges-the-rows-of-a-selector-once-per-distinct-prefix-of-counts-not-once-per`,
-an output-identical change with a measured work counter. `story:a-row-set-branch-s-search-does-not-arrange-a-combination-of-counts-that-provably-cannot-take-the-branch-and` and
-`story:a-branch-the-row-set-strategy-prepares-is-prepared-once-per-model-branch-actors-and-arrangement-context-and` wait for their check.
+an output-identical change with a measured work counter. `story:a-branch-the-row-set-strategy-prepares-is-prepared-once-per-model-branch-actors-and-arrangement-context-and` is accepted after
+its check (decision D72 of the coordinator, under the owner's delegation).
+`story:a-row-set-branch-s-search-does-not-arrange-a-combination-of-counts-that-provably-cannot-take-the-branch-and` stays a draft and leaves the P0 group (tag `gap-p2`): it does not
+shorten the reported case (at most 6 of its 37 refusals qualify, none on the command that holds
+94 % of the time); gains only with a linked-selector allowance, open as PF-D4; not scheduled.
 
 ## Not accepted yet
 
