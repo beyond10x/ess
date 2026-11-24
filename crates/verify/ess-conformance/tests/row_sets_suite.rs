@@ -274,3 +274,71 @@ fn each_fault_fails_a_synthesized_scenario() {
         }
     }
 }
+
+/// `tests/fixtures/row-set-literal-and-input-list.yaml`: `Enrol` is `enrolled-featured` where a
+/// held genre is both the one the literal names and one of the genres the input lists, and
+/// `enrolled` otherwise. The selector compares no field with the input by `==`; its membership
+/// in the input list is that equality, element by element.
+const LITERAL_AND_LIST: &str = include_str!("fixtures/row-set-literal-and-input-list.yaml");
+
+const LITERAL_AND_LIST_BRANCHES: [&str; 2] = [
+    "demo.shelf.Enrol/outcome/enrolled-featured",
+    "demo.shelf.Enrol/outcome/enrolled",
+];
+
+fn run_on(
+    suite: &ConformanceSuite,
+    target: &ess_conformance::interpret::Interpreted,
+) -> BTreeMap<String, Status> {
+    let admitted = AdmittedSuite::from_suite(suite).unwrap_or_else(|error| panic!("{error}"));
+    Runner::new(
+        RunnerConfig::default(),
+        AdvancingClock::default(),
+        Ids::for_suite(suite),
+    )
+    .run_admitted(&admitted, target)
+    .into_report()
+    .scenarios
+    .into_iter()
+    .map(|scenario| (scenario.scenario.to_string(), scenario.status))
+    .collect()
+}
+
+#[test]
+fn a_selector_by_a_literal_identity_and_an_input_list_is_witnessed_on_each_branch() {
+    let synthesis = synthesize(&model(LITERAL_AND_LIST));
+    let refusals: Vec<String> = synthesis.refusals.iter().map(ToString::to_string).collect();
+    assert_eq!(refusals, Vec::<String>::new(), "no branch is refused");
+    let suite = suite(LITERAL_AND_LIST, &LITERAL_AND_LIST_BRANCHES);
+    let statuses = run_on(
+        &suite,
+        &ess_conformance::interpret::Interpreted::for_model(model(LITERAL_AND_LIST)),
+    );
+    assert_eq!(failed(&statuses), BTreeSet::new(), "{statuses:#?}");
+}
+
+#[test]
+fn a_target_dropping_the_literal_or_the_list_membership_fails_a_branch() {
+    let suite = suite(LITERAL_AND_LIST, &LITERAL_AND_LIST_BRANCHES);
+    let literal = "              - 'code == \"classics\"'\n";
+    let membership = "              - exists: {in: input.genres, as: g, that: code == g}\n";
+    for dropped in [literal, membership] {
+        assert!(
+            LITERAL_AND_LIST.contains(dropped),
+            "`{dropped}` is in the model"
+        );
+        let mutant = LITERAL_AND_LIST.replace(dropped, "");
+        let statuses = run_on(
+            &suite,
+            &ess_conformance::interpret::Interpreted::for_model(model(&mutant)),
+        );
+        let failed = failed(&statuses);
+        assert!(
+            LITERAL_AND_LIST_BRANCHES
+                .iter()
+                .any(|branch| failed.contains(branch)),
+            "a target without `{}` fails a branch: {statuses:#?}",
+            dropped.trim()
+        );
+    }
+}
