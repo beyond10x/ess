@@ -616,6 +616,7 @@ fn type_encoder(out: &mut String, emit: &Emit<'_>, declared: &ResolvedType, memb
                     &field.type_ref,
                     &mut slot,
                     members,
+                    null_when_absent(field),
                 );
             }
             out.push_str("\treturn out\n");
@@ -656,6 +657,7 @@ fn type_encoder(out: &mut String, emit: &Emit<'_>, declared: &ResolvedType, memb
                         payload,
                         &mut slot,
                         members,
+                        false,
                     );
                 }
                 out.push_str("\t\treturn out\n");
@@ -893,6 +895,7 @@ fn record_encoder(
             &field.type_ref,
             &mut slot,
             members,
+            null_when_absent(field),
         );
     }
     out.push_str("\treturn out\n}\n");
@@ -937,7 +940,9 @@ fn command_decoder(out: &mut String, emit: &Emit<'_>, command: &ResolvedCommand)
 
 // ---- the two walkers ---------------------------------------------------------------------------
 
-/// One member of an object being written — or nothing at all where an optional value is absent.
+/// One member of an object being written — or, where an optional value is absent, nothing at all,
+/// or the key and `null` where the field is declared `presence: null_when_absent`
+/// (`null_when_absent`, beyond10x/ess#799).
 #[allow(clippy::too_many_arguments)]
 fn encode_member(
     out: &mut String,
@@ -948,6 +953,7 @@ fn encode_member(
     type_ref: &ResolvedTypeRef,
     slot: &mut usize,
     members: Members,
+    null_when_absent: bool,
 ) {
     if let ResolvedTypeRef::Optional { of } = type_ref {
         let held = format!("held{}", next(slot));
@@ -956,11 +962,21 @@ fn encode_member(
         let inner = format!("{indent}\t");
         let expression = encode_into(out, layout, &inner, &held, of, slot);
         let _ = writeln!(out, "{indent}\t{}", members.set(wire, &expression));
+        if null_when_absent {
+            let _ = writeln!(out, "{indent}}} else {{");
+            let _ = writeln!(out, "{indent}\t{}", members.set(wire, "nil"));
+        }
         let _ = writeln!(out, "{indent}}}");
         return;
     }
     let expression = encode_into(out, layout, indent, source, type_ref, slot);
     let _ = writeln!(out, "{indent}{}", members.set(wire, &expression));
+}
+
+/// Whether `field` is declared `presence: null_when_absent`: its key is written with `null` when it
+/// holds nothing, as the published schema requires it (beyond10x/ess#799).
+fn null_when_absent(field: &ResolvedField) -> bool {
+    field.naming.presence == Some(ess_domain::types::Presence::NullWhenAbsent)
 }
 
 /// Emits whatever statements one value needs and returns the expression that is its JSON.
@@ -977,9 +993,9 @@ fn encode_into(
         ResolvedTypeRef::Declared { name } => {
             format!("encode{}({source})", ident(layout, name.name()))
         }
-        // An absent optional inside a list or a map is `null`, which is the one place this
-        // rendering differs from an absent *member*: a member is omitted, because that is what the
-        // published contract's `required` list says, and a hole in an array has no such spelling.
+        // An absent optional inside a list or a map is `null`, where an absent *member* is omitted
+        // unless declared `null_when_absent`, because that is what the published contract's
+        // `required` list says, and a hole in an array has no such spelling.
         ResolvedTypeRef::Optional { of } => {
             let target = format!("held{}", next(slot));
             let _ = writeln!(out, "{indent}var {target} any");

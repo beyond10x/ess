@@ -148,6 +148,7 @@ fn type_encoder(
                     &format!("value.{}", name::value_ident(&field.name)),
                     &field.type_ref,
                     0,
+                    null_when_absent(field),
                 );
             }
             out.push_str("    out.push('}');\n");
@@ -185,7 +186,16 @@ fn type_encoder(
                      json::member(out, {tag:?});\n            json::push_text(out, {label:?});",
                     layout.variant(&declared.name, label)
                 );
-                encode_member(out, layout, "            ", content, "*held", payload, 0);
+                encode_member(
+                    out,
+                    layout,
+                    "            ",
+                    content,
+                    "*held",
+                    payload,
+                    0,
+                    false,
+                );
                 out.push_str("            out.push('}');\n        }\n");
             }
             out.push_str("    }\n");
@@ -473,6 +483,7 @@ fn record_encoder(
             &format!("value.{}", name::value_ident(&field.name)),
             &field.type_ref,
             0,
+            null_when_absent(field),
         );
     }
     out.push_str("    out.push('}');\n}\n");
@@ -744,8 +755,10 @@ pub(crate) fn published_list(
 
 // ---- the two walkers ------------------------------------------------------------------------------
 
-/// One member of an object being written: the separator, the key, and the value — or nothing at
-/// all when an optional value is absent.
+/// One member of an object being written: the separator, the key, and the value — or, when an
+/// optional value is absent, nothing at all, or the key and `null` where the field is declared
+/// `presence: null_when_absent` (`null_when_absent`, beyond10x/ess#799).
+#[allow(clippy::too_many_arguments)]
 fn encode_member(
     out: &mut String,
     layout: &RustLayout,
@@ -754,6 +767,7 @@ fn encode_member(
     expr: &str,
     type_ref: &ResolvedTypeRef,
     depth: usize,
+    null_when_absent: bool,
 ) {
     if let ResolvedTypeRef::Optional { of } = type_ref {
         let held = format!("held{depth}");
@@ -769,11 +783,24 @@ fn encode_member(
             of,
             depth + 1,
         );
+        if null_when_absent {
+            let _ = writeln!(
+                out,
+                "{indent}}} else {{\n{indent}    json::member(out, {wire:?});\n{indent}    \
+                 out.push_str(\"null\");"
+            );
+        }
         let _ = writeln!(out, "{indent}}}");
         return;
     }
     let _ = writeln!(out, "{indent}json::member(out, {wire:?});");
     encode_value(out, layout, indent, expr, type_ref, depth);
+}
+
+/// Whether `field` is declared `presence: null_when_absent`: its key is written with `null` when it
+/// holds nothing, as the published schema requires it (beyond10x/ess#799).
+fn null_when_absent(field: &ResolvedField) -> bool {
+    field.naming.presence == Some(ess_domain::types::Presence::NullWhenAbsent)
 }
 
 /// The statements that write one value of a declared type as JSON.
