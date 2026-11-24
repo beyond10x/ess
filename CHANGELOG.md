@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.99.0] — 2026-11-24
+
 ### Added
 
 - An `ess-http/1` view route answering `rows` or `array` may declare `representations: [{query: {<parameter>: <value>}, encoding: {csv: {separator, header}}, headers}]`: the same rows as CSV when the query holds that value, `separator` `","` (the default), `";"` or a tab, `header` `true` by default, and literal headers only (`ESS-HTTP-026`). `ess specify http compile` writes them into `ess-http-ir/1` in the order written, each default omitted, and a binding without them keeps its compiled bytes. The new code `ESS-HTTP-035` refuses them on a command, a `single` view or a paged view, an empty list, a `query` of other than one parameter, two parameter names or one value twice, a view parameter or path variable as the parameter, a name or value outside RFC 3986 `unreserved`, another separator and a view field without a flat spelling; a refinement that changes them is `ESS-HTTP-012`. In the `ess-http` library `Route` has a new field `representations` and `RouteSpec` a new field `representations` (beyond10x/ess#753).
