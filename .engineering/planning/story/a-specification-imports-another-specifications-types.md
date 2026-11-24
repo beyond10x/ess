@@ -30,7 +30,7 @@ scope:
   path: docs/design/composition-type-conformance.md
 - confidence: inferred
   path: website/docs/reference/cli.md
-revision: 10
+revision: 12
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-10T00:41:50Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"review_outcome":1}}}
 - {from: "proposed", to: "active", at: "2026-11-10T00:41:51Z", actor: "human:timo", revision: 10, decided_on: {"recorded":{"review_outcome":1}}}
@@ -65,14 +65,22 @@ exit 2
 
 ## Acceptance
 
-- `ess specify vendor --from owner --type example.owner.orders.OrderSummary --into
-  example.consumer.board --out vendored.yaml --conformances conformances.yaml` (exit 0) writes:
-  `vendored.yaml`, a source file with `domain: example.consumer.board` declaring
-  `example.consumer.board.OrderSummary`, `.OrderId` and `.Stage` (the named closure of the type,
-  renamed into the domain, every field, wire name, presence, invariant and variant attribute kept),
-  headed by a comment naming the owner's system, version and IR digest; and `conformances.yaml`,
-  the owner's `services:` entry pinned to that digest and one `conformances:` entry per vendored
-  type.
+The verb is new (no `vendor` verb or file exists on `main`); its neighbour is `ess specify compose`,
+whose `--service KEY=PATH` it reuses.
+
+- `ess specify vendor --from owner=owner --service consumer=consumer --component board --type
+  example.owner.orders.OrderSummary --into example.consumer.board --out vendored.yaml
+  --conformances conformances.yaml` (exit 0) writes: `vendored.yaml`, a source file with `domain:
+  example.consumer.board` declaring `example.consumer.board.OrderSummary`, `.OrderId` and `.Stage`
+  (the named closure of the type, renamed into the domain, every field, wire name, presence,
+  invariant and variant attribute kept), headed by a comment naming the owner's system, version and
+  IR digest; and `conformances.yaml`, a composition fragment holding the `services:` entry of each
+  side and one `conformances:` entry per vendored type. The `owner` entry (the `--from` key) carries
+  the owner's system, version and IR digest and the one component of the owner that owns the type's
+  domain; the `consumer` entry (the `--service` key) carries the consumer's system, version, the IR
+  digest of the consumer taken with `vendored.yaml` in it, and `--component`. Each conformance reads
+  `local: {service: consumer, type: example.consumer.board.<T>}` and `conforms_to: {service: owner,
+  type: example.owner.orders.<T>}`.
 - Dropping `vendored.yaml` into the consumer and composing with the written entries passes
   `ess specify compose` with no `type_conformance_drift`; the same command run twice writes
   identical bytes.
@@ -80,8 +88,14 @@ exit 2
   write and exits 1 naming each differing type when the owner changed (scenario
   `an_imported_type_changed_upstream_is_refused_until_repinned`).
 - Refused by name, exit 1: a `--type` the owner does not declare; a renamed type colliding with a
-  type the consumer already declares under another shape; an `--into` that is not a qualified
-  domain name.
+  type the consumer (the source of `--service`) already declares under another shape (the same shape
+  is no collision: a second run and `--check` read the consumer with the file in it); an `--into`
+  that is not a qualified domain name; a `--type` whose domain no component of the owner owns; a
+  `--from` or `--service` not written `key=path` or with an empty path (the messages of `compose`'s
+  `--service`); the same key under both; a `--component` the consumer does not declare; and, where
+  `--into` is owned by no component of the consumer, no `--component` at all. A missing `--from`,
+  `--service`, `--type`, `--into`, `--out` or `--conformances` is refused by the argument parser
+  naming the flag.
 - No source, composition or IR format changes; `docs/design/composition-type-conformance.md` gains
   a section "Generating the copy".
 
@@ -131,6 +145,35 @@ source-format change (D132, `approval-record:d132-types-across-specifications-by
 2026-10-28). The reserved scenario names change: `an_imported_type_resolves_by_pinned_digest` becomes
 `a_vendored_copy_composes_without_drift`; `generated_code_references_the_imported_type_once` is
 dropped (two types remain by design).
+
+**Names of `ess specify vendor`: decided: `--from <KEY=PATH>`, `--service <KEY=PATH>`, `--component
+<NAME>`, 2026-11-24, by the coordinator under the owner's delegation (D94).** The first draft named
+only `--from`, `--type`, `--into`, `--out`, `--conformances` and `--check`, and left out what the
+written `services:` and `conformances:` entries need: the consumer specification, both service keys
+and the consumer component. No flag name is invented: `--service` and `--component` already exist in this
+command area, and `--from` takes the owner's key in the same `KEY=PATH` form:
+
+- `--from KEY=PATH`: the owner, as the `service-key=path` value `ess specify compose --service`
+  takes (`crates/edge/ess-cli/src/main.rs:182-184`, `ServiceInput`), so the owner's key travels with its
+  source and the story's `--from` keeps its name. Required.
+- `--service KEY=PATH`: the consumer, again as `compose` spells it: the consumer is one of its
+  `--service` bindings in every `compose` call (`--service consumer=consumer`), and the key it
+  carries is the `local: {service: …}` of each conformance. Given once, required, no default: a key
+  is the author's choice in a composition (`owner`, `consumer` in the design page).
+- `--component NAME`: the consumer's component, the existing flag for "a declared component" of
+  the specification (`validate`, `conform`, `mutate`). Default: the component whose `owns` names
+  `--into`; where `--into` is owned by none, required.
+- The owner's component takes no flag: it is the one whose `owns` names the domain of `--type`, and
+  a domain has at most one owner (`ess-domain/src/component.rs:1368`, "owned by more than one
+  component"); where none owns it, the verb refuses.
+- Dropped: `--path` for the consumer plus a new `--local KEY` (one new name, and the consumer's key
+  and path already travel together as `--service`); `--owner-service KEY` and `--local-service KEY`
+  (two new names, and `KEY=PATH` is how `compose` already spells a key bound to a source); two
+  `--service` bindings with `--from` dropped (the owner and the consumer would differ only by
+  order, and the story's `--from` would go).
+- Consequence for `source_digest`: the consumer's entry is pinned to the consumer with `vendored.yaml`
+  in it, so the verb compiles the consumer and the new declarations together in memory; the digest
+  is the one `compose` computes once the file is dropped in.
 
 ## Source
 

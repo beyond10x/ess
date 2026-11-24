@@ -13,7 +13,7 @@ tags:
 relations:
 - serves: vision:O2
 - decomposes: epic:adopter-gaps-domain-language
-revision: 3
+revision: 4
 ---
 ## Need
 
@@ -51,3 +51,11 @@ Same refusals with `format: ess/30` on 0.68.0.
 
 Not a 0.68.0 regression: identical refusal on 0.67.0 and 0.68.0. Commits `071b98401`, `c4d3237c7` and `082e59982` in
 `0.67.0..52bd110dd` touch `set_effects.rs` (ess/30 selector work, a Clippy fix) and leave `RawInstances` at `where` only. Gap. Does not block 0.68.0.
+
+## Acceptance
+
+A `limit` on an `instances:` selection with a total `order_by` removes at most that many rows, the first in that order, and `{count: changed}` equals the rows removed; the rows beyond it read as arranged.
+
+## Decisions
+
+SW-D5, the cap (tenth gap report, same refusal `unknown field limit`). A: `limit` with a required `order_by`, totalised by identity ascending, as G2 breaks ties. B: `limit` alone, order unspecified; the suite checks "at most N and every removed row matches" only. C: decline, repeated calls; fails policy 1 because the suite no longer checks the bound. Decided: A, 2026-11-24 (the coordinator, under the owner's delegation). The story stays a draft.

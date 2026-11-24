@@ -30,7 +30,7 @@ scope:
   path: docs/design/http-presentation-binding.md
 - confidence: cited
   path: website/docs/guides/http-routes.md
-revision: 10
+revision: 11
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-10T00:42:21Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"review_outcome":1}}}
 - {from: "proposed", to: "active", at: "2026-11-10T00:42:22Z", actor: "human:timo", revision: 10, decided_on: {"recorded":{"review_outcome":1}}}
@@ -73,8 +73,11 @@ same run), so only the binding refuses it.
   (`$ref` to `demo.apps.AppId`, `format: uuid`).
 - The generated Rust and Go servers run `POST /apps/0b6f3c1e-8f0a-4c55-9d0e-6f1a2b3c4d5e/reset_key`
   and answer `GET /apps/<that uuid>` with the row; `/apps/not-a-uuid` is `malformed` (`400`, or the
-  binding's `refusals.malformed`), naming `path.uuid`; both servers answer alike
-  (`the_go_and_rust_servers_answer_one_binding_alike` gains the case).
+  binding's `refusals.malformed`), naming the field as the input's decoder reads it, `query.<wire>` for a view route and `body.<wire>`
+  for a command route, not `path.uuid` (built, commit `87ca1f6f2`: `crates/generate/ess-synth/tests/http_binding/uuid_segments.rs:145-146`);
+  both servers answer alike (the case is the `uuid_segments` module of the `http_binding` target,
+  `both_servers_read_a_uuid_from_a_path_segment`, which runs both generated servers, and not a
+  case added to `the_go_and_rust_servers_answer_one_binding_alike`).
 - `docs/design/http-presentation-binding.md` § "Path templates" and the `ESS-HTTP-009` row state
   the admitted set; `website/docs/guides/http-routes.md` names it.
 
@@ -128,6 +131,8 @@ confidence: medium
 `format: uuid`, refusal of an unparsable segment as `malformed`. Changed: the column opens to
 `Boolean`, `Decimal`, `Timestamp` and `Duration` as well, as the requester suggested; no lower-case
 rule is added. Constrained newtypes stay refused.
+
+- decided 2026-11-24 (D93): the acceptance names the location the build gives, `query.<wire>` on a view and `body.<wire>` on a command, alike from the Rust and Go servers, and a segment that is not a UUID is `malformed` (`400`); naming `path.<name>` would change the generated server text of every binding, so it is the backlog draft `story:a-malformed-path-segment-is-reported-at-path-name-by-the-generated-rust-and-go-servers-not-at-the-query-name`, which lands with a format step.
 
 ## Source
 
