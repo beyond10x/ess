@@ -347,3 +347,117 @@ fn max_over_an_ordered_enum() {
         ),
     );
 }
+
+/// The suite passes against the interpreted target of `model`, and the scenario of `view` alone
+/// fails against the interpreted target of `faulty`.
+fn executed_over(model: &str, suite: &ConformanceSuite, view: &str, faulty: &str) {
+    let id = format!("demo.ledger.{view}/aggregate");
+    let passing = statuses(suite, &Interpreted::for_model(ir(model)));
+    let failing: Vec<_> = passing.iter().filter(|(_, s)| *s != "passed").collect();
+    assert!(failing.is_empty(), "{failing:#?}");
+    let wrong = statuses(suite, &Interpreted::for_model(ir(faulty)));
+    let failed: Vec<&str> = wrong
+        .iter()
+        .filter(|(_, status)| *status != "passed")
+        .map(|(scenario, _)| scenario.as_str())
+        .collect();
+    assert_eq!(failed, [id.as_str()], "{wrong:#?}");
+}
+
+/// MTTR over windows of which some are still open (beyond10x/ess#561): `ended_at` is optional and
+/// the mean skips a window without it. One group holds two closed windows of different durations
+/// beside an open one, and its figure is the mean of the two closed durations; a target reading the
+/// open window as lasting nothing fails.
+#[test]
+fn an_expression_measure_skipping_absent_values_is_witnessed() {
+    let open = MODEL
+        .replace(
+            "{name: ended_at, type: Timestamp}",
+            "{name: ended_at, type: Optional<Timestamp>}",
+        )
+        .replace(
+            "aggregate: {avg: {expr: \"ended_at - started_at\"}}",
+            "aggregate: {avg: {expr: \"ended_at - started_at\"}, skip_absent: true}",
+        );
+    assert_eq!(open.matches("Optional<Timestamp>").count(), 2);
+    assert!(open.contains("skip_absent: true"));
+    let synthesis = synthesize(&ir(&open));
+    assert!(synthesis.refusals.is_empty(), "{:#?}", synthesis.refusals);
+    let scenario = scenario(&synthesis.suite, "Mttr");
+    let windows = windows(scenario);
+    let asserted = asserted(scenario, "mttr");
+    let mut witnessed = false;
+    let mut all_open = false;
+    for (incident, figure) in &asserted {
+        let rows = &windows[incident];
+        let seconds: Vec<i64> = rows
+            .iter()
+            .filter(|window| window.contains_key("ended_at"))
+            .map(|window| {
+                instant(&window["ended_at"])
+                    .whole_seconds_since(instant(&window["started_at"]))
+                    .expect("whole seconds apart")
+            })
+            .collect();
+        if seconds.is_empty() {
+            assert_eq!(figure, &Node::Null, "`{incident}`: {rows:#?}");
+            all_open = true;
+            continue;
+        }
+        assert!(
+            same_number(figure, &mean(&seconds)),
+            "`{incident}`: asserted {figure:?}, the mean of {seconds:?} is {:?}",
+            mean(&seconds)
+        );
+        let mut distinct = seconds.clone();
+        distinct.sort_unstable();
+        distinct.dedup();
+        if distinct.len() >= 2 && rows.len() > seconds.len() {
+            witnessed = true;
+        }
+    }
+    assert!(
+        witnessed,
+        "a group of two closed windows of different durations beside an open one is asserted: \
+         {asserted:#?} over {windows:#?}"
+    );
+    assert!(
+        all_open,
+        "a group whose every window is open is asserted absent: {asserted:#?} over {windows:#?}"
+    );
+    executed_over(
+        &open,
+        &synthesis.suite,
+        "Mttr",
+        &open.replace(
+            "{expr: \"ended_at - started_at\"}, skip_absent: true",
+            "{expr: \"coalesce(ended_at, started_at) - started_at\"}",
+        ),
+    );
+}
+
+/// Weighted downtime over the windows that lasted at all: `where: duration_s > 0` beside the
+/// expression. The scenario arranges a window the condition excludes beside windows it admits, and
+/// a target ignoring the condition fails.
+#[test]
+fn an_expression_measure_with_a_condition_is_witnessed() {
+    let measure = "aggregate: {sum: {expr: \"duration_s * level.weight\"}}";
+    let conditioned_measure =
+        "aggregate: {sum: {expr: \"duration_s * level.weight\"}, where: \"duration_s > 0\"}";
+    let conditioned = MODEL.replace(measure, conditioned_measure);
+    assert_ne!(conditioned, MODEL);
+    let synthesis = synthesize(&ir(&conditioned));
+    assert!(synthesis.refusals.is_empty(), "{:#?}", synthesis.refusals);
+    let scenario = scenario(&synthesis.suite, "Downtime");
+    let windows = windows(scenario);
+    let excluded = windows
+        .values()
+        .flatten()
+        .any(|window| integer(&window["duration_s"]) <= 0);
+    let admitted = windows
+        .values()
+        .flatten()
+        .any(|window| integer(&window["duration_s"]) > 0);
+    assert!(excluded && admitted, "{windows:#?}");
+    executed_over(&conditioned, &synthesis.suite, "Downtime", MODEL);
+}
