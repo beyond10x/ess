@@ -1805,6 +1805,12 @@ every other scenario sending a row-set command keeps only the branch its rows de
 A selector needs an equality between a `String` or `Uuid` field and the input or the subject, so a scenario
 counts only its own rows.
 
+From `ess/23` membership in an input list, `exists: {in: input.genres, as: g, that: code == g}`,
+counts as that equality with each element the scenario sends. Where the selector also pins the
+field to a literal, `code == "classics"`, a branch no row can be selected for with the plain list
+is sent one holding the literal and one other element: the literal's row is selected, and a row
+holding the other element is its decoy.
+
 From `ess/23` a `String` or `Uuid` member of a struct identity counts as
 such a field: `at.region == input.place.region` beside `at.shelf == input.place.shelf` selects the
 record the place names, its decoys are arranged under other identities, and no scenario creates an
