@@ -227,6 +227,7 @@
 //! | `refusals.<key>` (`not_granted`, `malformed`, `unfinished`, `too_large`) | replaces the standard refusal's response on every bound operation that can answer it |
 //! | `routes[i].refusals.<key>` | replaces it on that route alone, in place of the binding's |
 //! | `limits.request_bytes`, `routes[i].limits.request_bytes` | `x-ess-request-max-bytes` on each operation that reads a body, and a response at the `too_large` status |
+//! | a view's `representations` | an optional `in: query` parameter, the selector, a `string` whose `enum` holds each value; at `200`, `text/csv` as a `string` beside the JSON answer, `x-ess-representations` naming each representation's selector, media type, separator, header line and columns, and each declared header described with the value that selects it |
 //!
 //! A bare body names no branch, so every response of a command whose route uses a stage-2 key
 //! carries `x-ess-outcomes`: the outcomes it answers, in the order the command declares them, and
@@ -717,6 +718,7 @@ fn answered_by_binding(declared: Option<&ess_http::Route>, refusals: Option<&Ref
             || route.declares_answers()
             || route.body != ess_http::ViewAnswer::default()
             || route.empty.is_some()
+            || !route.representations.is_empty()
             || !route.refusals.is_empty()
             || refusals.is_some_and(|refusals| !refusals.is_empty())
     })
@@ -1038,7 +1040,7 @@ fn query(
     // A read-granted view on a surface that checks grants answers the standard refusal too
     // (beyond10x/ess#286); an open view, and every view of a model naming none, keeps its bytes.
     let read_checked = checks_grants && ir.read_granted(&view.name);
-    let responses = match declared {
+    let mut responses = match declared {
         Some(route) if answered_by_binding(declared, refusals) => {
             bound_view_responses(ir, view, read_checked, route, refusals)
         }
@@ -1064,6 +1066,12 @@ fn query(
             responses
         }
     };
+    if let Some(route) = declared.filter(|route| !route.representations.is_empty()) {
+        parameters.push(selector_parameter(&route.representations));
+        if let Some(read) = responses.get_mut(READ) {
+            represent(read, view, &route.representations);
+        }
+    }
     Operation {
         id: declared
             .and_then(|route| route.operation_id.clone())
@@ -1088,6 +1096,142 @@ fn query(
         parameters,
         request_body: None,
         responses,
+    }
+}
+
+/// The media type of a CSV representation (beyond10x/ess#753).
+const CSV_MEDIA_TYPE: &str = "text/csv";
+
+/// How a representation's separator is named in a sentence.
+fn separator_name(separator: ess_http::Separator) -> &'static str {
+    match separator {
+        ess_http::Separator::Comma => "`,`",
+        ess_http::Separator::Semicolon => "`;`",
+        ess_http::Separator::Tab => "a tab",
+    }
+}
+
+/// The query parameter that selects a view route's other representations (beyond10x/ess#753):
+/// optional, a `string` whose `enum` holds each selecting value in the order written. Compiling
+/// holds every representation of a route to one parameter.
+fn selector_parameter(representations: &[ess_http::Representation]) -> Parameter {
+    let name = representations
+        .first()
+        .map(|representation| representation.query.parameter.clone())
+        .unwrap_or_default();
+    let values: Vec<&str> = representations
+        .iter()
+        .map(|representation| representation.query.value.as_str())
+        .collect();
+    let selected: Vec<String> = representations
+        .iter()
+        .map(|representation| {
+            format!(
+                "`{}` answers the rows as CSV (`{CSV_MEDIA_TYPE}`), fields separated by {}",
+                representation.query.value,
+                separator_name(representation.encoding.csv.separator)
+            )
+        })
+        .collect();
+    Parameter {
+        name,
+        location: "query",
+        description: format!(
+            "Selects another representation of the rows: {}. Absent, the route answers \
+             `{MEDIA_TYPE}`.",
+            list(&selected)
+        ),
+        required: false,
+        style: None,
+        explode: None,
+        schema: written(json!({"type": "string", "enum": values})),
+    }
+}
+
+/// One representation as `x-ess-representations` names it: its selector, media type, separator,
+/// whether a header line comes first, and the columns as wire names in field order.
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+struct RepresentationDoc {
+    query: BTreeMap<String, String>,
+    media_type: &'static str,
+    separator: String,
+    header: bool,
+    columns: Vec<String>,
+}
+
+/// Adds a view route's representations to its `200` response (beyond10x/ess#753): `text/csv` as
+/// a `string` beside the JSON answer, `x-ess-representations` in the order written, and each
+/// representation's headers, described with the value that selects them and never required, since
+/// the JSON answer writes none.
+fn represent(
+    response: &mut Response,
+    view: &ResolvedView,
+    representations: &[ess_http::Representation],
+) {
+    response
+        .content
+        .get_or_insert_with(BTreeMap::new)
+        .extend(content_as(CSV_MEDIA_TYPE, json!({"type": "string"})));
+    let columns: Vec<String> = view
+        .fields
+        .iter()
+        .map(|field| types::wire_name(field).to_owned())
+        .collect();
+    response.representations = Some(
+        representations
+            .iter()
+            .map(|representation| RepresentationDoc {
+                query: [(
+                    representation.query.parameter.clone(),
+                    representation.query.value.clone(),
+                )]
+                .into_iter()
+                .collect(),
+                media_type: CSV_MEDIA_TYPE,
+                separator: representation.encoding.csv.separator.as_char().to_string(),
+                header: representation.encoding.csv.header,
+                columns: columns.clone(),
+            })
+            .collect(),
+    );
+    let mut declared: BTreeMap<&str, Vec<(String, &str)>> = BTreeMap::new();
+    for representation in representations {
+        let selector = format!(
+            "{}={}",
+            representation.query.parameter, representation.query.value
+        );
+        for (name, header) in &representation.headers {
+            // Compiling admits a literal only (`ESS-HTTP-026`).
+            if let ess_http::Header::Literal(text) = header {
+                declared
+                    .entry(name)
+                    .or_default()
+                    .push((selector.clone(), text));
+            }
+        }
+    }
+    for (name, values) in declared {
+        let sentences: Vec<String> = values
+            .iter()
+            .map(|(selector, text)| format!("`{text}` when `{selector}` selects the CSV answer"))
+            .collect();
+        let schema = match &values[..] {
+            [(_, text), rest @ ..] if rest.iter().all(|(_, other)| other == text) => {
+                json!({"type": "string", "const": text})
+            }
+            _ => json!({"type": "string"}),
+        };
+        response
+            .headers
+            .entry(name.to_owned())
+            .or_insert(ResponseHeader {
+                description: format!(
+                    "Written as {}; not written on the JSON answer.",
+                    list(&sentences)
+                ),
+                required: None,
+                schema: written(schema),
+            });
     }
 }
 
@@ -1721,6 +1865,7 @@ fn bound_response(
                 })
                 .collect()
         }),
+        representations: None,
     }
 }
 
@@ -3532,6 +3677,13 @@ struct Response {
     /// absent everywhere else.
     #[serde(rename = "x-ess-outcomes", skip_serializing_if = "Option::is_none")]
     outcomes: Option<Vec<String>>,
+    /// A view route's other representations of its rows, in the order written, on its `200`
+    /// response only (beyond10x/ess#753); absent everywhere else.
+    #[serde(
+        rename = "x-ess-representations",
+        skip_serializing_if = "Option::is_none"
+    )]
+    representations: Option<Vec<RepresentationDoc>>,
 }
 
 impl Response {
@@ -3542,6 +3694,7 @@ impl Response {
             headers: BTreeMap::new(),
             content,
             outcomes: None,
+            representations: None,
         }
     }
 }

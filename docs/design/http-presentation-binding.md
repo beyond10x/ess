@@ -897,7 +897,15 @@ routes:
   to before. The reader refuses it beside a command or a `single` body, a `query` of other than one
   parameter, two parameter names or one value twice, a name that is a path variable, a name or
   value outside `unreserved`, a separator outside the set and a header that is not a literal.
-- **Targets.** OpenAPI and the Rust and Go servers read it in their own changes; the UI targets
+- **OpenAPI.** One operation: the selector is an optional `in: query` parameter, a `string` whose
+  `enum` holds each value in the order written, described with what each selects and that its
+  absence selects the JSON answer. The `200` response holds `application/json` as before and
+  `text/csv` as `{type: string}`, and carries `x-ess-representations`, one entry per
+  representation in order: `query`, `media_type`, `separator`, `header` and `columns`, the wire
+  names in field order. A representation's header is a response header, never required, whose
+  description names the selector value it applies to. `x-ess-operations`, the name first asked
+  for, is not used: there is one operation.
+- **Targets.** The Rust and Go servers read it in their own changes; the UI targets
   refuse `--http`, and the interpreter and emitted runners speak no HTTP, so a comparison of the CSV
   with the JSON answer waits for stage 3.
 - **Refused: two operations on one method and path** told apart by a query literal, with a second
