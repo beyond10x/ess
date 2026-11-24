@@ -1193,6 +1193,378 @@ pub(super) fn ignores_unknown(binding: &http::Binding) -> bool {
     })
 }
 
+/// The reader of a `multipart` request (beyond10x/ess#754), which follows [`BOUND`] only in a
+/// surface whose binding has a `multipart` route, so every other bound surface keeps its bytes. It
+/// reads as the Rust server's `http::multipart_object` does, with the same refusals.
+pub(super) const MULTIPART: &str = r#"
+// ---- a `multipart/form-data` request (RFC 7578), served -----------------------------------------
+
+// mediaMultipart is the media type of a `multipart` request body.
+const mediaMultipart = "multipart/form-data"
+
+// partAttribute is the input field a file part's filename or media type is read into.
+type partAttribute struct {
+	wire     string
+	required bool
+}
+
+// partField is one field a `multipart` request carries, by its wire name: a text part, read as a
+// `form` value of kind is, or a file part, whose bytes are read as base64 text, its filename and
+// media type into the input fields filename and mediaType name, of one of mediaTypes or of any
+// where that is empty.
+type partField struct {
+	wire       string
+	kind       flatKind
+	shape      flatShape
+	file       bool
+	filename   *partAttribute
+	mediaType  *partAttribute
+	mediaTypes []string
+}
+
+// sentPart is one part of a `multipart/form-data` body, as sent: its `Content-Disposition` name
+// and filename, if it has one, its media type without parameters (`text/plain` where it states
+// none, RFC 7578 §4.4) and its content.
+type sentPart struct {
+	name      string
+	filename  *string
+	mediaType string
+	content   []byte
+}
+
+// sameASCII is whether two texts are equal but for ASCII case.
+func sameASCII(one string, other string) bool {
+	if len(one) != len(other) {
+		return false
+	}
+	for index := 0; index < len(one); index++ {
+		left, right := one[index], other[index]
+		if 'A' <= left && left <= 'Z' {
+			left += 'a' - 'A'
+		}
+		if 'A' <= right && right <= 'Z' {
+			right += 'a' - 'A'
+		}
+		if left != right {
+			return false
+		}
+	}
+	return true
+}
+
+// unquoted is a header parameter's value: a quoted string unquoted, its \ escapes undone, or the
+// token.
+func unquoted(text string) string {
+	if len(text) < 2 || !strings.HasPrefix(text, "\"") || !strings.HasSuffix(text, "\"") {
+		return text
+	}
+	var out strings.Builder
+	escaped := false
+	for _, character := range text[1 : len(text)-1] {
+		if escaped || character != '\\' {
+			out.WriteRune(character)
+			escaped = false
+		} else {
+			escaped = true
+		}
+	}
+	return out.String()
+}
+
+// parameters is a header value's first item and its name=value parameters, each name in lower
+// case, split at each ; outside a quoted string.
+func parameters(value string) (string, [][2]string) {
+	items := []string{}
+	var item strings.Builder
+	quoted, escaped := false, false
+	for _, character := range value {
+		switch {
+		case escaped:
+			escaped = false
+		case character == '\\' && quoted:
+			escaped = true
+		case character == '"':
+			quoted = !quoted
+		case character == ';' && !quoted:
+			items = append(items, item.String())
+			item.Reset()
+			continue
+		}
+		item.WriteRune(character)
+	}
+	items = append(items, item.String())
+	pairs := [][2]string{}
+	for _, one := range items[1:] {
+		name, text, ok := strings.Cut(one, "=")
+		if ok {
+			pairs = append(pairs, [2]string{strings.ToLower(strings.TrimSpace(name)), unquoted(strings.TrimSpace(text))})
+		}
+	}
+	return strings.TrimSpace(items[0]), pairs
+}
+
+// multipartBoundary is the boundary of a `multipart/form-data` request, or a refusal where its
+// Content-Type is not `multipart/form-data` or states no boundary of 1 to 70 characters.
+func multipartBoundary(request *http.Request) (string, error) {
+	essence, pairs := parameters(request.Header.Get("Content-Type"))
+	if !sameASCII(essence, mediaMultipart) {
+		return "", fmt.Errorf("the body is not `multipart/form-data`")
+	}
+	for _, pair := range pairs {
+		if pair[0] == "boundary" && len(pair[1]) >= 1 && len(pair[1]) <= 70 {
+			return pair[1], nil
+		}
+	}
+	return "", fmt.Errorf("the body is `multipart/form-data` without a `boundary`")
+}
+
+// sentPartOf is one part read from its header section and content.
+func sentPartOf(head []byte, content []byte) (sentPart, error) {
+	if !utf8.Valid(head) {
+		return sentPart{}, fmt.Errorf("a part's headers are not UTF-8")
+	}
+	var name, filename *string
+	mediaType := "text/plain"
+	for _, line := range strings.Split(string(head), "\r\n") {
+		if line == "" {
+			continue
+		}
+		key, value, ok := strings.Cut(line, ":")
+		if !ok {
+			return sentPart{}, fmt.Errorf("a part's header is not `name: value`: `%s`", line)
+		}
+		key = strings.TrimSpace(key)
+		if sameASCII(key, "content-disposition") {
+			kind, pairs := parameters(value)
+			if !sameASCII(kind, "form-data") {
+				return sentPart{}, fmt.Errorf("a part's disposition is `%s`, not `form-data`", kind)
+			}
+			for _, pair := range pairs {
+				text := pair[1]
+				switch pair[0] {
+				case "name":
+					name = &text
+				case "filename":
+					filename = &text
+				}
+			}
+		} else if sameASCII(key, "content-type") {
+			mediaType, _ = parameters(value)
+		}
+	}
+	if name == nil {
+		return sentPart{}, fmt.Errorf("a part has no `Content-Disposition: form-data` name")
+	}
+	return sentPart{name: *name, filename: filename, mediaType: mediaType, content: content}, nil
+}
+
+// multipartParts is the parts of a `multipart/form-data` body, in the order sent (RFC 2046
+// §5.1.1): what precedes the first boundary and follows the closing one is ignored. A request
+// that is not `multipart/form-data` with a boundary, holds no boundary, is not closed by its final
+// boundary, or holds a part without a `form-data` name is malformed.
+func multipartParts(request *http.Request, body []byte) ([]sentPart, error) {
+	boundary, err := multipartBoundary(request)
+	if err != nil {
+		return nil, err
+	}
+	delimiter := []byte("--" + boundary)
+	closing := append([]byte("\r\n"), delimiter...)
+	unclosed := fmt.Errorf("the body is not closed by its final boundary")
+	at := 0
+	if bytes.HasPrefix(body, delimiter) {
+		at = len(delimiter)
+	} else {
+		start := bytes.Index(body, closing)
+		if start < 0 {
+			return nil, fmt.Errorf("the body holds no `multipart` boundary")
+		}
+		at = start + len(closing)
+	}
+	parts := []sentPart{}
+	for {
+		if bytes.HasPrefix(body[at:], []byte("--")) {
+			return parts, nil
+		}
+		for at < len(body) && (body[at] == ' ' || body[at] == '\t') {
+			at++
+		}
+		if !bytes.HasPrefix(body[at:], []byte("\r\n")) {
+			return nil, unclosed
+		}
+		at += 2
+		head, start := body[at:at], at+2
+		if !bytes.HasPrefix(body[at:], []byte("\r\n")) {
+			end := bytes.Index(body[at:], []byte("\r\n\r\n"))
+			if end < 0 {
+				return nil, unclosed
+			}
+			head, start = body[at:at+end], at+end+4
+		}
+		end := bytes.Index(body[start:], closing)
+		if end < 0 {
+			return nil, unclosed
+		}
+		part, err := sentPartOf(head, body[start:start+end])
+		if err != nil {
+			return nil, err
+		}
+		parts = append(parts, part)
+		at = start + end + len(closing)
+	}
+}
+
+// multipartObject is a `multipart` body as the object the input's decoder reads: one member per
+// declared field a part names, keyed by its wire name, a list as an array, empty when no part
+// names it, and a file part's filename and media type under the wire names it reads them into. A
+// part the path carries, or no field declares, is unknown: ignored where ignore, and malformed
+// otherwise. A part that is not a list's given twice, a text part that is not UTF-8 or is empty
+// for a field that is not a `String`, a file part of a media type it may not carry and one
+// without the filename a required input field reads are malformed.
+func multipartObject(request *http.Request, body []byte, fields []partField, carried []string, ignore bool, at string) (map[string]any, error) {
+	parts, err := multipartParts(request, body)
+	if err != nil {
+		return nil, err
+	}
+	found := make([][]sentPart, len(fields))
+	for _, part := range parts {
+		place := nested(at, part.name)
+		index := -1
+		for position, field := range fields {
+			if field.wire == part.name {
+				index = position
+				break
+			}
+		}
+		pathCarries := false
+		for _, wire := range carried {
+			if wire == part.name {
+				pathCarries = true
+			}
+		}
+		if index < 0 || pathCarries {
+			if ignore {
+				continue
+			}
+			if pathCarries {
+				return nil, fmt.Errorf("%s: the path carries this field, so it is not a part here", place)
+			}
+			return nil, fmt.Errorf("%s: no field of this request is named so", place)
+		}
+		found[index] = append(found[index], part)
+	}
+	object := map[string]any{}
+	for index, field := range fields {
+		place := nested(at, field.wire)
+		if field.shape != shapeList && len(found[index]) > 1 {
+			return nil, fmt.Errorf("%s: expected one part, found %d", place, len(found[index]))
+		}
+		values := []any{}
+		for _, part := range found[index] {
+			value, err := partValue(part, field, place, object)
+			if err != nil {
+				return nil, err
+			}
+			values = append(values, value)
+		}
+		if field.shape == shapeList {
+			object[field.wire] = values
+		} else if len(values) == 1 {
+			object[field.wire] = values[0]
+		}
+	}
+	return object, nil
+}
+
+// partValue is one part's value, a file part's filename and media type set on object.
+func partValue(part sentPart, field partField, place string, object map[string]any) (any, error) {
+	if !field.file {
+		if !utf8.Valid(part.content) {
+			return nil, fmt.Errorf("%s: expected UTF-8 text", place)
+		}
+		return flatValue(string(part.content), field.kind, place)
+	}
+	if len(field.mediaTypes) > 0 {
+		admitted := false
+		spelled := []string{}
+		for _, one := range field.mediaTypes {
+			admitted = admitted || sameASCII(one, part.mediaType)
+			spelled = append(spelled, "`"+one+"`")
+		}
+		if !admitted {
+			return nil, fmt.Errorf("%s: the part's media type is `%s`, not one of %s", place, part.mediaType, strings.Join(spelled, ", "))
+		}
+	}
+	if field.filename != nil {
+		if part.filename != nil {
+			object[field.filename.wire] = *part.filename
+		} else if field.filename.required {
+			return nil, fmt.Errorf("%s: the part has no filename, which input field `%s` requires", place, field.filename.wire)
+		}
+	}
+	if field.mediaType != nil {
+		object[field.mediaType.wire] = part.mediaType
+	}
+	return base64.StdEncoding.EncodeToString(part.content), nil
+}
+"#;
+
+/// What a surface adds where a `multipart` route has a path variable and `unknown: ignore`: a part
+/// the path carries is held to the path's value, as a `form` key is ([`IGNORING`]'s
+/// `echoedKeys`).
+pub(super) const ECHOED_PARTS: &str = r#"
+// echoedParts holds each part of a `multipart` body read under `unknown: ignore` that the path
+// carries to the path's value, read as its field reads it: a part whose text does not decode or is
+// not the path's is malformed.
+func echoedParts(request *http.Request, body []byte, carried []flatField, path []pathMember, at string) error {
+	parts, err := multipartParts(request, body)
+	if err != nil {
+		return err
+	}
+	for _, part := range parts {
+		for index, field := range carried {
+			if field.wire != part.name {
+				continue
+			}
+			place := nested(at, part.name)
+			if !utf8.Valid(part.content) {
+				return fmt.Errorf("%s: expected UTF-8 text", place)
+			}
+			read, err := flatValue(string(part.content), field.kind, place)
+			if err != nil {
+				return err
+			}
+			if !sameValue(read, path[index].value) {
+				return echoed(at, part.name)
+			}
+		}
+	}
+	return nil
+}
+"#;
+
+/// Whether a route of `binding` takes a `multipart` request, which the surface reads with
+/// [`MULTIPART`].
+pub(super) fn reads_multipart(binding: &http::Binding) -> bool {
+    binding.ir().routes().iter().any(|route| {
+        route
+            .request
+            .as_ref()
+            .is_some_and(|request| request.encoding == ess_http::Encoding::Multipart)
+    })
+}
+
+/// Whether a `multipart` route of `binding` has a path variable and `unknown: ignore`, which the
+/// surface reads with [`ECHOED_PARTS`].
+pub(super) fn echoes_parts(binding: &http::Binding) -> bool {
+    binding.ir().routes().iter().any(|route| {
+        !route.parameters.is_empty()
+            && route.request.as_ref().is_some_and(|request| {
+                request.encoding == ess_http::Encoding::Multipart
+                    && request.unknown == ess_http::Unknown::Ignore
+            })
+    })
+}
+
 /// The reader of a bare request body (`request: {body: input.<field>}`), which follows [`BOUND`]
 /// only in a surface whose binding declares one, so every other bound surface keeps its bytes.
 pub(super) const BARE_BODY: &str = r#"
@@ -1592,6 +1964,12 @@ fn ignoring(
                 .collect::<Vec<_>>()
                 .join(", ")
         ),
+        Encoding::Multipart => write!(
+            statements,
+            "\t\tif err := echoedParts(request, body, {}, carried, {at}); err != nil \
+             {{\n\t\t\treturn nil, err\n\t\t}}\n",
+            carried_flat_table(ir, route)
+        ),
         encoding => write!(
             statements,
             "\t\tif err := echoedKeys({}, {}, carried, {at}); err != nil {{\n\t\t\treturn nil, \
@@ -1643,6 +2021,71 @@ fn flat_table(ir: &EssIr, fields: &[ResolvedField], route: &http::Route<'_>) -> 
         })
         .collect();
     format!("[]flatField{{{}}}", rows.join(", "))
+}
+
+/// A `multipart` request's `[]partField` literal (beyond10x/ess#754): every input field neither the
+/// path nor a part attribute carries, in declaration order, a `Bytes` field ([`http::file_part`]) a
+/// file part with the wire names its attributes read into, as the Rust server's table states it.
+fn part_table(ir: &EssIr, command: &ResolvedCommand, route: &http::Route<'_>) -> String {
+    let carried = http::carried(ir, route);
+    let read = http::attribute_fields(route.declared);
+    let request = http::request(route);
+    // The input field an attribute reads, as a `*partAttribute` literal.
+    let attribute = |source: Option<&ess_http::Source>| {
+        source
+            .and_then(|source| {
+                command
+                    .input
+                    .iter()
+                    .find(|field| field.name == source.field())
+            })
+            .map_or_else(
+                || "nil".to_owned(),
+                |field| {
+                    format!(
+                        "&partAttribute{{{}, {}}}",
+                        go_string(ess_gen::schema::wire_field_name(field)),
+                        !field.type_ref.is_optional()
+                    )
+                },
+            )
+    };
+    let rows: Vec<String> = command
+        .input
+        .iter()
+        .filter(|field| {
+            !carried.contains(field.name.as_str()) && !read.contains(field.name.as_str())
+        })
+        .map(|field| {
+            let shape = match http::flat(ir, &field.type_ref).map(|(shape, _)| shape) {
+                Some(http::Shape::Optional) => "shapeOptional",
+                Some(http::Shape::List) => "shapeList",
+                Some(http::Shape::One) | None => "shapeOne",
+            };
+            let wire = go_string(ess_gen::schema::wire_field_name(field));
+            if http::file_part(ir, &field.type_ref).is_none() {
+                return format!(
+                    "{{{wire}, {}, {shape}, false, nil, nil, nil}}",
+                    flat_kind(ir, field)
+                );
+            }
+            let declared = request.parts.get(&field.name);
+            let types: Vec<String> = declared
+                .map(|part| part.media_types.iter().map(|it| go_string(it)).collect())
+                .unwrap_or_default();
+            format!(
+                "{{{wire}, flatText, {shape}, true, {}, {}, {}}}",
+                attribute(declared.and_then(|part| part.filename.as_ref())),
+                attribute(declared.and_then(|part| part.media_type.as_ref())),
+                if types.is_empty() {
+                    "nil".to_owned()
+                } else {
+                    format!("[]string{{{}}}", types.join(", "))
+                }
+            )
+        })
+        .collect();
+    format!("[]partField{{{}}}", rows.join(", "))
 }
 
 /// The wire names of the fields the path carries, as a `[]string` literal.
@@ -1725,9 +2168,12 @@ fn command(
                 .collect::<Vec<_>>()
                 .join(", ")
         ),
-        // Synthesis refuses a `multipart` request, which this server does not read yet
-        // (`Binding::without_multipart`).
-        Encoding::Form | Encoding::Multipart => format!(
+        Encoding::Multipart => format!(
+            "multipartObject(request, body, {}, {}, {ignore}, \"body\")",
+            part_table(ir, command, route),
+            carried_table(ir, route)
+        ),
+        Encoding::Form => format!(
             "formObject(request, body, {}, {}, {ignore})",
             flat_table(ir, &command.input, route),
             carried_table(ir, route)

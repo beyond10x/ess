@@ -236,6 +236,13 @@ fn helpers_file(
         if bound::ignores_unknown(binding) {
             helpers.push_str(bound::IGNORING);
         }
+        if bound::reads_multipart(binding) {
+            emit.import("encoding/base64");
+            helpers.push_str(bound::MULTIPART);
+        }
+        if bound::echoes_parts(binding) {
+            helpers.push_str(bound::ECHOED_PARTS);
+        }
         let checks_grant = served(ir, refusals).into_iter().any(|component| {
             http::bound_routes(ir, component, Some(binding))
                 .iter()

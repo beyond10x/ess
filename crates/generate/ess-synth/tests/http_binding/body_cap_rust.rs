@@ -231,6 +231,10 @@ fn the_cap_lookup_of_a_route_above_the_fixed_bound_is_that_route_cap() {
     assert!(row("POST", "/labels")
         .result
         .starts_with("Some((256, refusal_too_large_"));
+    // A `multipart` route is capped as every route reading a body (beyond10x/ess#754).
+    assert!(row("POST", "/attachments")
+        .result
+        .starts_with("Some((256, refusal_too_large)"));
     assert_eq!(row("GET", "/parcels").result, "None");
     assert_eq!(row("GET", "/openapi.json").result, "None");
     assert_eq!(row("GET", "/docs").result, "None");
@@ -333,15 +337,27 @@ impl Reply {
     }
 }
 
-/// Sends `method path` announcing `announced` bytes and writing `body`; reads the answer by its
-/// `Content-Length`.
+/// Sends `method path` of `application/json` announcing `announced` bytes and writing `body`.
 fn send(address: &str, method: &str, path: &str, announced: usize, body: &[u8]) -> Reply {
+    send_typed(address, method, path, "application/json", announced, body)
+}
+
+/// Sends `method path` of `media` announcing `announced` bytes and writing `body`; reads the
+/// answer by its `Content-Length`.
+fn send_typed(
+    address: &str,
+    method: &str,
+    path: &str,
+    media: &str,
+    announced: usize,
+    body: &[u8],
+) -> Reply {
     let mut stream = TcpStream::connect(address).expect("connects");
     stream
         .set_read_timeout(Some(Duration::from_secs(10)))
         .expect("timeout");
     let head = format!(
-        "{method} {path} HTTP/1.1\r\nHost: {address}\r\nContent-Type: application/json\r\n\
+        "{method} {path} HTTP/1.1\r\nHost: {address}\r\nContent-Type: {media}\r\n\
          Content-Length: {announced}\r\n\r\n"
     );
     stream.write_all(head.as_bytes()).expect("writes the head");
@@ -418,6 +434,40 @@ fn a_body_of_the_cap_is_read_and_one_byte_more_is_refused() {
     assert_eq!(accepted.status, baseline, "{}", accepted.body);
     assert_ne!(accepted.status, 422, "{}", accepted.body);
     let refused = post(&address, "/parcels", 65);
+    assert_eq!(refused.status, 422, "{}", refused.body);
+    assert_eq!(refused.body, r#"{"error":"too_big"}"#);
+    assert_eq!(refused.header("X-Limit"), Some("64"));
+}
+
+/// The media type of [`multipart_of`]'s bodies.
+const MULTIPART: &str = "multipart/form-data; boundary=B";
+
+/// An `Attach` `multipart` body of exactly `size` bytes, with a fresh `parcel_id`
+/// (beyond10x/ess#754).
+fn multipart_of(size: usize) -> Vec<u8> {
+    let id = FRESH.fetch_add(1, Ordering::Relaxed);
+    let head = format!(
+        "--B\r\nContent-Disposition: form-data; name=\"parcel_id\"\r\n\r\n{id}\r\n\
+         --B\r\nContent-Disposition: form-data; name=\"note\"\r\n\r\n"
+    );
+    let tail = "\r\n--B--";
+    assert!(size >= head.len() + tail.len(), "{size} holds a part");
+    let body = format!("{head}{}{tail}", "n".repeat(size - head.len() - tail.len()));
+    assert_eq!(body.len(), size);
+    body.into_bytes()
+}
+
+/// A `multipart` body is read within its route's cap like every body, and one byte more is the
+/// binding's `too_large`.
+#[test]
+fn a_multipart_body_of_the_cap_is_read_and_one_byte_more_is_refused() {
+    let (_served, address) = serve();
+    let baseline = baseline(&address);
+    let body = multipart_of(256);
+    let accepted = send_typed(&address, "POST", "/attachments", MULTIPART, 256, &body);
+    assert_eq!(accepted.status, baseline, "{}", accepted.body);
+    let body = multipart_of(257);
+    let refused = send_typed(&address, "POST", "/attachments", MULTIPART, 257, &body);
     assert_eq!(refused.status, 422, "{}", refused.body);
     assert_eq!(refused.body, r#"{"error":"too_big"}"#);
     assert_eq!(refused.header("X-Limit"), Some("64"));

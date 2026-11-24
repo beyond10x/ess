@@ -2,7 +2,7 @@ type: ess-http/1
 specification:
   system: parcel
   version: v1
-  source_digest: sha256:273e862c9c2a93ca7b5fb2d2297c522ce437021f13c9a3e2138b31bf73027714
+  source_digest: sha256:25f44b2f7e0e0ba080e0a5cbd7bcd6d12d200ffa77dec5087615db51fc606335
 limits: {request_bytes: 64}
 refusals:
   too_large: {status: 422, body: {error: {literal: too_big}}, headers: {X-Limit: {literal: '64'}}}
@@ -18,4 +18,9 @@ routes:
     method: post
     path: /bulk
     limits: {request_bytes: 2097152}
+  - command: parcel.intake.Attach
+    method: post
+    path: /attachments
+    limits: {request_bytes: 256}
+    request: {encoding: multipart}
   - {view: parcel.intake.AllParcels, method: get, path: /parcels}

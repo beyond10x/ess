@@ -1,17 +1,19 @@
-//! A `multipart/form-data` request (RFC 7578) sent to the generated Rust server (beyond10x/ess#754,
-//! `story:the-generated-rust-server-reads-a-multipart-request`): a text part is read as a `form`
-//! value, a file part's bytes as the input's `Bytes`, its filename and media type into the input
-//! fields `parts` names, and a request out of the rules is `malformed`, naming the part.
+//! A `multipart/form-data` request (RFC 7578) sent to the generated Rust and Go servers
+//! (beyond10x/ess#754, `story:the-generated-rust-server-reads-a-multipart-request`,
+//! `story:the-generated-go-server-reads-a-multipart-request-as-the-rust-server-does`): a text part
+//! is read as a `form` value, a file part's bytes as the input's `Bytes`, its filename and media
+//! type into the input fields `parts` names, and a request out of the rules is `malformed`, naming
+//! the part. The Go server answers every request with the Rust server's bytes.
 //!
 //! A request line holds no line break, so a body spells each CRLF as the four characters `\r\n`,
-//! which the harness turns back into the two bytes before it sends the body.
+//! which each harness turns back into the two bytes before it sends the body.
 
 use std::collections::BTreeMap;
 
 use ess_synth::{synthesize_bound, OutputLayout, Synthesis, Target};
 
 use super::super::shared::{self, Answer};
-use super::adversary_k6_pass1::{ir_of, rust_run_with};
+use super::adversary_k6_pass1::{go_run_with, ir_of, rust_run_with};
 
 /// The shop gains a `Format` enum and three commands taking files, each emitting an event that
 /// carries every input field, so the answer's envelope shows what the server read.
@@ -326,23 +328,78 @@ fn rust_harness() -> String {
     )
 }
 
-/// The Rust server's answers to [`REQUESTS`], once per test binary.
-fn rust() -> &'static BTreeMap<String, Answer> {
-    static RUST: std::sync::OnceLock<BTreeMap<String, Answer>> = std::sync::OnceLock::new();
-    RUST.get_or_init(|| {
+/// The Go harness, sending each body with its `\r\n` spelled back as CRLF.
+fn go_harness() -> String {
+    let fields = "contentType, body := fields[0], fields[1], fields[2], fields[3], fields[4], \
+                  fields[5], fields[6]\n";
+    assert!(super::HARNESS.contains(fields), "the harness reads a body");
+    super::HARNESS.replace(
+        fields,
+        &format!("{fields}\t\tbody = strings.ReplaceAll(body, `\\r\\n`, \"\\r\\n\")\n"),
+    )
+}
+
+/// Both servers' answers to [`REQUESTS`]: `(rust, go)`, once per test binary.
+fn both() -> &'static (BTreeMap<String, Answer>, BTreeMap<String, Answer>) {
+    static BOTH: std::sync::OnceLock<(BTreeMap<String, Answer>, BTreeMap<String, Answer>)> =
+        std::sync::OnceLock::new();
+    BOTH.get_or_init(|| {
         let ir = ir_of(&model());
         let bound = shared::binding(&ir, ROUTES);
-        let synthesis: Synthesis =
-            synthesize_bound(&ir, Target::Rust, OutputLayout::Workspace, Some(&bound))
-                .unwrap_or_else(|failure| panic!("synthesizes for Rust: {failure}"));
-        rust_run_with("w754multipart", &synthesis, REQUESTS, &rust_harness())
+        let synthesis = |target| -> Synthesis {
+            synthesize_bound(&ir, target, OutputLayout::Workspace, Some(&bound))
+                .unwrap_or_else(|failure| panic!("synthesizes for {target:?}: {failure}"))
+        };
+        (
+            rust_run_with(
+                "w754multipart",
+                &synthesis(Target::Rust),
+                REQUESTS,
+                &rust_harness(),
+            ),
+            go_run_with(
+                "w754multipart",
+                &synthesis(Target::Go),
+                REQUESTS,
+                &go_harness(),
+            ),
+        )
     })
 }
 
+/// The Rust server's answer to `label`, the Go server's held to its status, `Content-Type`, body
+/// bytes and headers.
 fn answered(label: &str) -> &'static Answer {
-    rust()
+    let (rust, go) = both();
+    let rust = rust
         .get(label)
-        .unwrap_or_else(|| panic!("the Rust server answered `{label}`"))
+        .unwrap_or_else(|| panic!("the Rust server answered `{label}`"));
+    let go = go
+        .get(label)
+        .unwrap_or_else(|| panic!("the Go server answered `{label}`"));
+    assert_eq!(
+        (
+            rust.status,
+            rust.content_type.as_str(),
+            rust.body.as_str(),
+            &rust.headers
+        ),
+        (
+            go.status,
+            go.content_type.as_str(),
+            go.body.as_str(),
+            &go.headers
+        ),
+        "{label}: the servers disagree:\n  rust {rust:?}\n  go   {go:?}"
+    );
+    rust
+}
+
+#[test]
+fn the_go_server_answers_every_multipart_request_as_the_rust_server_does() {
+    for [label, ..] in REQUESTS {
+        answered(label);
+    }
 }
 
 /// `label` answered the default `malformed`, naming `detail`.

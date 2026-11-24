@@ -470,12 +470,6 @@ pub fn synthesize_bound(
         binding
             .servable()
             .map_err(|refused| SynthesisFailure::Binding(BindingRefusal::Unservable(refused)))?;
-        // The Go server reads no `multipart` request yet (beyond10x/ess#754).
-        if target == Target::Go {
-            binding.without_multipart().map_err(|refused| {
-                SynthesisFailure::Binding(BindingRefusal::Unservable(refused))
-            })?;
-        }
     }
     Ok(emit(ir, target, layout, http)?)
 }

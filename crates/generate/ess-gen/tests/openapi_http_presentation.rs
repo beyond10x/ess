@@ -269,19 +269,3 @@ fn a_multipart_route_publishes_its_parts_as_multipart_form_data() {
         "{schema}"
     );
 }
-
-#[test]
-fn a_binding_with_a_multipart_route_is_not_served_by_go_yet() {
-    let ir = model_of(&[("imports.yaml", IMPORTS)]);
-    let refused = binding(&ir, MULTIPART)
-        .without_multipart()
-        .expect_err("refused")
-        .to_string();
-    assert!(
-        refused.contains(
-            "command `demo.imports.ImportRows` takes a `multipart` request, which the generated Go \
-             server does not read yet"
-        ),
-        "{refused}"
-    );
-}

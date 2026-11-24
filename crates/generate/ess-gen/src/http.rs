@@ -445,32 +445,6 @@ impl Binding {
         }
     }
 
-    /// Every route taking a `multipart` request, with its operation, in route order: the Go server
-    /// does not read one yet (beyond10x/ess#754), so its synthesis refuses each.
-    ///
-    /// # Errors
-    ///
-    /// [`Unprojectable`] naming each such route, by [`Reason::Multipart`].
-    pub fn without_multipart(&self) -> Result<(), Unprojectable> {
-        let refused: Vec<(ess_http::Operation, Reason)> = self
-            .0
-            .routes()
-            .iter()
-            .filter(|route| {
-                route
-                    .request
-                    .as_ref()
-                    .is_some_and(|request| request.encoding == ess_http::Encoding::Multipart)
-            })
-            .map(|route| (route.operation.clone(), Reason::Multipart))
-            .collect();
-        if refused.is_empty() {
-            Ok(())
-        } else {
-            Err(Unprojectable(refused))
-        }
-    }
-
     /// The standard refusal `key` the binding answers its own way, if it overrides it.
     pub fn refusal(&self, key: ess_http::RefusalKey) -> Option<&ess_http::Refusal> {
         self.0.refusals().get(&key)
@@ -517,9 +491,6 @@ pub enum Reason {
     Method(ess_http::Method),
     /// Its template matches this path, which a served surface answers about itself.
     Reserved(&'static str),
-    /// It takes a `multipart` request, which the generated Go server does not read yet
-    /// (beyond10x/ess#754).
-    Multipart,
 }
 
 /// The routes of a binding [`Binding::new`] refuses, each with its operation, in route order.
@@ -547,11 +518,6 @@ impl std::fmt::Display for Unprojectable {
                     formatter,
                     "{operation} has a path a request for `{path}` would match, and a served \
                      surface answers `{path}` itself; route it elsewhere"
-                )?,
-                Reason::Multipart => write!(
-                    formatter,
-                    "{operation} takes a `multipart` request, which the generated Go server does not \
-                     read yet"
                 )?,
             }
         }

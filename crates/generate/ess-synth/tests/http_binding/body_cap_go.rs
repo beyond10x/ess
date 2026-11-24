@@ -376,8 +376,26 @@ fn send_with(
     extra: &str,
     body: &[u8],
 ) -> Reply {
+    send_typed(
+        address,
+        [method, path, "application/json"],
+        announced,
+        extra,
+        body,
+    )
+}
+
+/// Sends `method path` of `media` announcing `announced` bytes, with `extra` header lines, and
+/// writes `body`.
+fn send_typed(
+    address: &str,
+    [method, path, media]: [&str; 3],
+    announced: usize,
+    extra: &str,
+    body: &[u8],
+) -> Reply {
     let head = format!(
-        "{method} {path} HTTP/1.1\r\nHost: {address}\r\nContent-Type: application/json\r\n\
+        "{method} {path} HTTP/1.1\r\nHost: {address}\r\nContent-Type: {media}\r\n\
          Content-Length: {announced}\r\n{extra}\r\n"
     );
     exchange(address, &head, body)
@@ -442,6 +460,48 @@ fn a_body_of_the_cap_is_read_and_one_byte_more_is_refused() {
     assert_eq!(accepted.status, baseline, "{}", accepted.body);
     assert_ne!(accepted.status, 422, "{}", accepted.body);
     let refused = post(&address, "/parcels", 65);
+    assert_eq!(refused.status, 422, "{}", refused.body);
+    assert_eq!(refused.body, r#"{"error":"too_big"}"#);
+    assert_eq!(refused.header("X-Limit"), Some("64"));
+}
+
+/// The media type of [`multipart_of`]'s bodies.
+const MULTIPART: &str = "multipart/form-data; boundary=B";
+
+/// An `Attach` `multipart` body of exactly `size` bytes, with a fresh `parcel_id`
+/// (beyond10x/ess#754).
+fn multipart_of(size: usize) -> Vec<u8> {
+    let id = FRESH.fetch_add(1, Ordering::Relaxed);
+    let head = format!(
+        "--B\r\nContent-Disposition: form-data; name=\"parcel_id\"\r\n\r\n{id}\r\n\
+         --B\r\nContent-Disposition: form-data; name=\"note\"\r\n\r\n"
+    );
+    let tail = "\r\n--B--";
+    assert!(size >= head.len() + tail.len(), "{size} holds a part");
+    let body = format!("{head}{}{tail}", "n".repeat(size - head.len() - tail.len()));
+    assert_eq!(body.len(), size);
+    body.into_bytes()
+}
+
+/// A `multipart` body is read within its route's cap like every body, and one byte more is the
+/// binding's `too_large`, as the Rust server answers it.
+#[test]
+fn a_multipart_body_of_the_cap_is_read_and_one_byte_more_is_refused() {
+    let (_served, address) = serve();
+    let baseline = baseline(&address);
+    let post = |size| {
+        let body = multipart_of(size);
+        send_typed(
+            &address,
+            ["POST", "/attachments", MULTIPART],
+            size,
+            "",
+            &body,
+        )
+    };
+    let accepted = post(256);
+    assert_eq!(accepted.status, baseline, "{}", accepted.body);
+    let refused = post(257);
     assert_eq!(refused.status, 422, "{}", refused.body);
     assert_eq!(refused.body, r#"{"error":"too_big"}"#);
     assert_eq!(refused.header("X-Limit"), Some("64"));

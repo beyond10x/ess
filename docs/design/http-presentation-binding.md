@@ -409,6 +409,11 @@ repeating its part. A field without a flat spelling is refused as for `form` (`E
   carries under `refuse` (one the path carries must hold the path's value under `ignore`), and a
   file part without the filename a required input reads. The body is read within the
   route's request cap, as every body is.
+- The Go server
+  (`story:the-generated-go-server-reads-a-multipart-request-as-the-rust-server-does`) carries the
+  same reader, written in Go rather than taken from `mime/multipart`, so it reads and refuses
+  every request as the Rust server does and answers it with the same bytes. It too is emitted
+  only where a route is `multipart`, and the body it reads is the one its route's cap admitted.
 
 A `json` request may take one input field as its whole body, bare: `request: {encoding: json,
 body: input.<field>}` (`encoding` may be left out). The field's JSON value is the body: a list,
@@ -847,7 +852,9 @@ single` and no identity selection and no `empty` earns both `ESS-HTTP-030` and `
   (`crates/generate/ess-synth/tests/http_binding/go.rs`,
   `the_go_and_rust_servers_answer_one_binding_alike`). Both match routes on the path as the
   request line spells it, read a `json` body with one reader (the Rust server's `json::parse`,
-  ported: one document, nesting at most 64, the first of a repeated member), and write a body the
+  ported: one document, nesting at most 64, the first of a repeated member), read a `multipart`
+  body with one reader too (the Rust server's, ported; beyond10x/ess#754, cases in
+  `http_binding/multipart.rs`), and write a body the
   binding declares with members in declaration order and the Rust server's string escaping. Two
   differences stay: `net/http` refuses a
   request line holding a malformed percent-escape with its own `400` before the surface reads it
