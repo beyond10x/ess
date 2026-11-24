@@ -6230,6 +6230,41 @@ fn advanced(
     next
 }
 
+/// [`advanced`] for a branch that also reads a related row: the row is arranged and the input
+/// pointed at it by [`super::related_guard::drive`]; `None` where no related row serves.
+fn related_advanced(
+    ir: &EssIr,
+    (entity, driver): (&EntityHandle, &Driver<'_>),
+    arrangement: &Arrangement,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    input: &BTreeMap<String, Node>,
+    before: Vec<ScenarioStep>,
+    follow: &Follow,
+) -> Option<Arrangement> {
+    let invoked = super::related_guard::drive(
+        ir,
+        driver,
+        Some(&arrangement.instance),
+        actors,
+        Distinction::PLAIN,
+        (&BTreeMap::new(), &[]),
+        Some(input),
+        &[entity],
+    )
+    .ok()?;
+    let mut next = arrangement.clone();
+    next.steps.extend(before);
+    next.steps.extend(invoked.steps);
+    next.steps.push(ScenarioStep::ExpectNoError);
+    next.source.extend(invoked.source);
+    next.absorb(driver.outcome, invoked.settled);
+    follow.raise(ir, driver, &arrangement.settled, &mut next.settled);
+    if let Some(transition) = driver.effect.transition() {
+        next.state = transition.to.clone();
+    }
+    Some(next)
+}
+
 /// The rows a branch of a command that itself reads stored fields can leave from `arrangement`:
 /// one per input the row selects it for, the facts it reads observed first as far as a view
 /// publishes them, and the rest carried on the row as unobserved, for the scenario's note to name
@@ -6266,16 +6301,34 @@ fn selected_successors(
         .flatten()
         .is_some_and(|name| name == driver.outcome.name)
         {
-            let mut next = advanced(
-                ir,
-                driver,
-                arrangement,
-                actors,
-                &input,
-                observation.steps.clone(),
-                true,
-                follow,
-            );
+            // A branch that also reads a related row is sent with that row arranged first and the
+            // input pointed at it (beyond10x/ess#554): `sealed` beside `not-approved: when_related:
+            // approved == false` needs an approved review, which a bare send names none of.
+            let next = if super::related_guard::uses(driver.command) {
+                related_advanced(
+                    ir,
+                    (entity, driver),
+                    arrangement,
+                    actors,
+                    &input,
+                    observation.steps.clone(),
+                    follow,
+                )
+            } else {
+                Some(advanced(
+                    ir,
+                    driver,
+                    arrangement,
+                    actors,
+                    &input,
+                    observation.steps.clone(),
+                    true,
+                    follow,
+                ))
+            };
+            let Some(mut next) = next else {
+                continue;
+            };
             next.unobserved
                 .extend(observation.unobserved.iter().cloned());
             out.push(next);
