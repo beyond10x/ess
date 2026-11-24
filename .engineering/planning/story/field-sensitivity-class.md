@@ -6,7 +6,8 @@ status: draft
 title: A field can carry a sensitivity class from a declared vocabulary
 relations:
 - serves: vision:O2
-revision: 1
+- informed_by: story:a-secret-value-appears-in-no-output-of-the-process
+revision: 2
 ---
 ## Outcome
 
@@ -29,3 +30,13 @@ and every consumer (projections, the compiled IR, downstream stores) reads it fr
 
 - ESS does not generate the EKR ontology document. EKR owns that generator and reads ESS's compiled
   IR or docs-ir export, so ESS does not track EKR's format versions.
+
+Append a section, text only (no acceptance line changes):
+
+## Related (2026-11-24)
+
+A class that the vocabulary marks secret is the one `story:a-secret-value-appears-in-no-output-of-the-process`
+reads, to check that no event, answer or output line of a process under test carries a value of it,
+for a field's value and for one a process reads from its environment. Whether a class is secret and
+what that forbids is SV-D6 of `decision-blocker:secret-values-and-their-output-lines`, with the
+owner; this story declares and carries the class and checks nothing about outputs.
