@@ -1280,17 +1280,49 @@ fn existing_subject_field<'a>(
         return None;
     };
     if !existing {
+        // The outcome's own effect says why (beyond10x/ess#796): a deleting outcome reads its row
+        // through the identity it names it by, not as its subject.
+        let input = "read the value from the command's input instead";
+        let (why, hint) = match outcome
+            .subject
+            .as_ref()
+            .map(|subject| (subject, &subject.effect))
+        {
+            Some((subject, Effect::Deletes)) => (
+                "a `deletes:` outcome does not read the row it deletes as its subject",
+                if what != "`{subject: …}`" {
+                    "name the row through an input field instead: `via: input.<field>`".to_owned()
+                } else if field != entity.identity.name
+                    && context.command.input_field(&subject.instance).is_some()
+                {
+                    format!(
+                        "read the row through the input that names it: \
+                         `{{related: {{via: input.{}, field: {field}}}}}`",
+                        subject.instance
+                    )
+                } else {
+                    input.to_owned()
+                },
+            ),
+            None
+            | Some((
+                _,
+                Effect::Creates | Effect::Preserves | Effect::Moves { .. } | Effect::Updates,
+            )) => (
+                "a `creates:` outcome has no row before it",
+                input.to_owned(),
+            ),
+        };
         errors.push(
             ValidationError::at(
                 at.clone(),
                 ValidationCode::ConflictingDeclaration,
                 format!(
-                    "{what} reads `{}` as it was before outcome `{}`, and a `creates:` outcome \
-                     has no row before it",
+                    "{what} reads `{}` as it was before outcome `{}`, and {why}",
                     entity.name, outcome.name
                 ),
             )
-            .with_hint("read the value from the command's input instead"),
+            .with_hint(hint),
         );
         return None;
     }
