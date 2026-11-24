@@ -1,13 +1,19 @@
 //! beyond10x/ess#766: the caller-swapped run renames only the instance and instant names it binds.
 //! An authored field named `instance` or `instant`, in any authored position, keeps the value the
 //! run sends, so the interpreter, which is correct, passes every synthesized scenario.
+//!
+//! The same run expects the identity it sends wherever a copy of it sits in an event payload or an
+//! error's fields, at any depth: a struct with a member the scenario does not determine is asserted
+//! member by member under a dotted key (`data.id`), and the swapped run's fresh identity replaces
+//! the first run's there too.
 
 use ess_compiler::{ir::EssIr, resolve::compile, source::SourceMap};
 use ess_conformance::interpret::Interpreted;
 use ess_conformance::report::Status;
 use ess_conformance::synthesize::synthesize;
-use ess_conformance::{AdmittedSuite, ConformanceSuite, Runner};
+use ess_conformance::{AdmittedSuite, ConformanceSuite, Runner, ScenarioStep, ScenarioValue};
 use ess_domain::{spec::RawSpecFile, system::Source, Specification};
+use ess_primitives::node::Node;
 
 const MODEL: &str = r"format: ess/19
 system: example
@@ -141,4 +147,175 @@ fn an_authored_field_named_instant_keeps_its_value_in_the_swapped_run() {
         .replace("instance", "instant")
         .replace("instant: order_id", "instance: order_id");
     assert_all_pass(&text);
+}
+
+/// A command two actors, each with a `desk` attribute and no role in common, are both granted,
+/// creating a ticket from an input identity it echoes into a struct member of the event it emits;
+/// the struct's `label` is generated, so the member is asserted under the dotted key `data.id`. The
+/// swapped run exchanges the callers and draws a fresh identity.
+const TICKETS: &str = r"format: ess/37
+system: demo
+version: v1
+summary: An input identity echoed into a nested event member, sent by two actors.
+domain: demo.tickets
+types:
+  - {name: demo.tickets.TicketId, kind: newtype, of: Uuid}
+  - name: demo.tickets.Receipt
+    kind: struct
+    fields:
+      - {name: id, type: demo.tickets.TicketId}
+      - {name: label, type: String}
+entities:
+  - name: demo.tickets.Ticket
+    identity: {name: ticket_id, type: demo.tickets.TicketId}
+    fields:
+      - {name: note, type: String}
+      - {name: desk, type: String}
+    lifecycle: {initial: Open, states: [Open], terminal: [Open]}
+events:
+  - name: demo.tickets.TicketSubmitted
+    fields:
+      - {name: ticket_id, type: demo.tickets.TicketId}
+      - {name: data, type: demo.tickets.Receipt}
+actors:
+  - name: demo.tickets.Clerk
+    attributes: [{name: desk, type: String}]
+    may: [demo.tickets.SubmitTicket]
+  - name: demo.tickets.Agent
+    attributes: [{name: desk, type: String}]
+    may: [demo.tickets.SubmitTicket]
+commands:
+  - name: demo.tickets.SubmitTicket
+    input:
+      - {name: ticket_id, type: demo.tickets.TicketId}
+      - {name: note, type: String}
+    outcomes:
+      - name: submitted
+        creates: demo.tickets.Ticket
+        instance: ticket_id
+        sets: {note: input.note, desk: {caller: desk}}
+        emits: [demo.tickets.TicketSubmitted]
+        payload:
+          demo.tickets.TicketSubmitted:
+            ticket_id: input.ticket_id
+            data: {id: input.ticket_id, label: {generated: true}}
+";
+
+const SUBMITTED: &str = "demo.tickets.SubmitTicket/outcome/submitted";
+const NESTED: &str = "data: {id: input.ticket_id, label: {generated: true}}";
+
+/// The identity each send of `SubmitTicket` carries, and what each event or error expectation of
+/// the scenario `id` holds under `key` (the member `member` of it, where it holds a struct).
+fn sent_and_expected(
+    sender: &str,
+    text: &str,
+    id: &str,
+    key: &str,
+    member: Option<&str>,
+) -> (Vec<Node>, Vec<Node>) {
+    let ir = ir(text);
+    let synthesis = synthesize(&ir);
+    let scenario = synthesis
+        .suite
+        .scenarios
+        .iter()
+        .find(|(name, _)| name.to_string() == id)
+        .map_or_else(|| panic!("no scenario {id}"), |(_, scenario)| scenario);
+    let (mut sent, mut expected) = (Vec::new(), Vec::new());
+    let mut held = |value: Option<&Node>| {
+        let Some(value) = value else { return };
+        expected.push(match (member, value) {
+            (Some(name), Node::Map(members)) => members[name].clone(),
+            _ => value.clone(),
+        });
+    };
+    for step in &scenario.steps {
+        match step {
+            // A run creates its ticket by sending a literal identity and addresses it afterwards
+            // by the instance it created; a refusal for a ticket that does not exist sends one.
+            ScenarioStep::ExecuteCommand { command, input, .. }
+                if command.to_string().ends_with(sender) =>
+            {
+                if let Some(ScenarioValue::Literal { value }) = input.get("ticket_id") {
+                    sent.push(value.clone());
+                }
+            }
+            ScenarioStep::ExpectEvent { payload, .. } => held(payload.get(key)),
+            ScenarioStep::ExpectEventValues { payload, .. } => {
+                if let Some(ScenarioValue::Literal { value }) = payload.get(key) {
+                    held(Some(value));
+                }
+            }
+            ScenarioStep::ExpectError { fields, .. } => held(fields.get(key)),
+            _ => {}
+        }
+    }
+    (sent, expected)
+}
+
+fn assert_each_run_expects_what_it_sends(
+    sender: &str,
+    text: &str,
+    id: &str,
+    key: &str,
+    member: Option<&str>,
+) {
+    let (sent, expected) = sent_and_expected(sender, text, id, key, member);
+    assert_eq!(
+        sent.len(),
+        2,
+        "the first run and the reversed one: {sent:?}"
+    );
+    assert_ne!(sent[0], sent[1], "the reversed run sends its own identity");
+    assert_eq!(
+        sent, expected,
+        "each run expects under `{key}` the identity it sent"
+    );
+    let ir = ir(text);
+    let results = statuses(&synthesize(&ir).suite, &ir);
+    let ran: Vec<_> = results.iter().filter(|(name, _)| name == id).collect();
+    assert_eq!(ran.len(), 1, "{id} ran once: {results:#?}");
+    assert_eq!(ran[0].1, Status::Passed, "the interpreter passes {id}");
+}
+
+#[test]
+fn a_reversed_run_expects_its_own_identity_in_a_nested_event_member() {
+    assert_each_run_expects_what_it_sends("SubmitTicket", TICKETS, SUBMITTED, "data.id", None);
+}
+
+#[test]
+fn a_reversed_run_expects_its_own_identity_in_a_nested_error_member() {
+    let text = TICKETS
+        .replace(
+            "commands:\n",
+            "errors:\n  - name: demo.tickets.Refused\n    summary: The note is refused.\n    fields:\n      - {name: data, type: demo.tickets.Receipt}\ncommands:\n",
+        )
+        .replace(
+            "    outcomes:\n      - name: submitted\n",
+            "    outcomes:\n      - name: refused\n        when: note == \"bad\"\n        error: demo.tickets.Refused\n        payload:\n          demo.tickets.Refused:\n            data: {id: input.ticket_id, label: {generated: true}}\n      - name: submitted\n",
+        );
+    assert_each_run_expects_what_it_sends(
+        "SubmitTicket",
+        &text,
+        "demo.tickets.SubmitTicket/outcome/refused",
+        "data.id",
+        None,
+    );
+}
+
+#[test]
+fn a_reversed_run_expects_its_own_identity_in_a_top_level_event_field() {
+    let text = TICKETS
+        .replace(
+            "- {name: data, type: demo.tickets.Receipt}",
+            "- {name: id, type: demo.tickets.TicketId}",
+        )
+        .replace(NESTED, "id: input.ticket_id");
+    assert_each_run_expects_what_it_sends("SubmitTicket", &text, SUBMITTED, "id", None);
+}
+
+#[test]
+fn a_reversed_run_expects_its_own_identity_in_a_struct_set_whole() {
+    let text = TICKETS.replace("label: {generated: true}", "label: submitted");
+    assert_each_run_expects_what_it_sends("SubmitTicket", &text, SUBMITTED, "data", Some("id"));
 }
