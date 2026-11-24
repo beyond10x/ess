@@ -17,11 +17,14 @@ relations:
 - informed_by: story:periodic-binding-trigger-contract
 - informed_by: story:runtime-realizes-a-scheduled-job
 - informed_by: story:an-ordered-selection-may-be-counted-as-a-value-with-rows-before-this-one-and-its-head-may-be-the-subject-of-a
-revision: 3
+- informed_by: story:ess-cli-flag-and-repeated-sources
+revision: 8
 ---
 ## Need
 
 A downstream application reported on 2026-11-24 (twelfth gap report; reporter name kept out). A scheduled process reads a set (one row per member), issues command X once per member, continues with the other members after one is skipped, and issues command Y once per run. The specification says that a system actor may issue a command, and nothing says how many times one run issues it or over which records. Synthesis refuses the scenarios of a system-issued command that names no single record (`ESS-SYNTH-023`), and a synthesized scenario awaits one issuance on one record, so no scenario observes a whole run.
+
+A downstream application reported on 2026-11-24 (fourteenth gap report; reporter name kept out). The process is started with a command-line argument, a valueless switch among them, and the commands it issues take some input fields from that argument and the rest from the rows it reads. A command-line binding cannot say this: a forwarded callable must carry the command's whole input and every field of it comes from the command line (`resolve.rs:263-269`, `:388-391`), and a `local` callable names no command. A valueless switch is `story:ess-cli-flag-and-repeated-sources` (built on pull request 826, not released).
 
 Status: architecture decision pending (RN-D1). The Acceptance below is written for option B and changes with the pick.
 
@@ -48,6 +51,8 @@ The authored scenario shows what exists: per-member outcomes for rows the author
 6. Cost: per RN-D1. Option B: binding keys and a source format (policy 2), one suite major and one step, a target capability in Rust, Go and TypeScript, diff classes, docs. Option C: a document kind beside `ess-cli` and `ess-transport`, an IR, diff, every target.
 7. Alternatives: A (no run; handler fans out), B (run cause with fan-out), C (a run document), D (deployment only): `DECISIONS.md` RN-D1.
 
+Fourteenth report (2026-11-24): a run's own arguments bound to some input fields of the issued commands with the rest from what the run reads, and a scenario that starts the run with and without a valueless switch. The switch itself is `story:ess-cli-flag-and-repeated-sources`; its spelling on the command line stays the `ess-cli` binding's.
+
 ## Decisions
 
 Deferred. `decision-blocker:run-of-a-process` blocks this story and this story waits on it.
@@ -60,6 +65,8 @@ Decided apart from it, taken on the default, 2026-11-24 16:29 CET (the coordinat
 - RN-D5, the one-shot scheduled process and the periodic cause. Decided: A, a process started per schedule by the deployment is not a periodic binding; the wall-clock story records that, and the cause of such a process is the run of RN-D1. B (widen the periodic cause to a one-shot process) changes a released contract.
 - The exit status of a single-command process: `story:a-command-line-binding-declares-the-exit-status-of-each-outcome-of-the-command-it-forwards-and-a-suite-reads`.
 
+RA-D1 (where a run's arguments are declared) rides on RN-D1 and arises under B or C only; recommendation A (the arguments declared on the run, typed, mapped from the command line by the `ess-cli` binding), no default before the pick; open until RN-D1 is picked as B or C.
+
 ## Acceptance
 
 Written for option B.
@@ -70,6 +77,10 @@ Written for option B.
 - the_run_ends_with_the_declared_status: the run's exit status follows the outcomes' declared exits (`story:a-command-line-binding-declares-the-exit-status-of-each-outcome-of-the-command-it-forwards-and-a-suite-reads`): 0 when every member was processed or skipped, the declared non-zero status on an external refusal.
 - a_binding_may_invoke_a_system_issued_command_under_the_run_cause: the refusal at `system_issued.rs:105-125` stays for every other cause and is lifted only for the run cause.
 - unimplemented_targets_refuse_by_name: a target without the run capability answers unsupported by name; an older reader refuses the suite by version.
+
+- a_run_argument_feeds_an_input_field_of_the_commands_the_run_issues: a run declares typed arguments (a Boolean among them, absent meaning false) and an issued command's input field takes its value from one of them while its other fields come from the member's row; a model that maps a field to an argument the run does not declare, to a type the field does not accept, or leaves a required field of the command with no source, is refused by name.
+
+- a_scenario_starts_the_run_with_and_without_the_argument: a scenario takes the run with the argument and again without it and reads the input of each issued command; the field carries the argument's value in each, the member's fields are unchanged, and a target that ignores the argument or passes the other run's value fails.
 
 ## Scope
 
