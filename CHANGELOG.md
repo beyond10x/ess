@@ -5,6 +5,7 @@
 ### Fixed
 
 - Validation refuses `{subject: …}`, and a `{related: …}` read through a field of the subject, on a `deletes:` outcome naming `deletes:`, with a hint to read the row through an input such as `{related: {via: input.<id>, field: …}}`, where it said the outcome was a `creates:` outcome with no row before it and told the author to read the input (#796).
+- `ess generate synthesize --target rust` writes the port of a component that accepts no command and declares no view without a field nothing reads, so the generated workspace builds with warnings denied, where `cargo build` warned that `behaviors` is never read (#793).
 
 ## [0.98.0] — 2026-11-23
 
