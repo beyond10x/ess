@@ -18,13 +18,14 @@ in the priority order below, ahead of other feature work.
   default.
 
 Priority, as given: P0, then P1 (first report items 4 to 8a), then the second report, then a third
-list of five gaps (owed), then a fourth report of four findings (owed), then P2.
+list of five findings from an application's own generator, then a fourth report of four findings
+(owed), then P2.
 
 - P0: first report items 1, 2, 3.
 - P1: first report items 4, 5, 6, 7, 8, 8a; then the second report's G1, G2, G6, G7, G8, G10, G13,
   G11 (the semantic half), F18 and the three generator defects G3, G4, G5. G12 is the first report's
   item 3. G9 and the colour half of G11 are styling and not ESS's.
-- Third list of five gaps: stories not filed yet.
+- Third list (an application's own generator): five findings on `ess` 0.98.0, items 1 to 5 below.
 - Fourth report of four findings: stories not filed yet.
 - P2: first report items 9 to 17.
 
@@ -78,7 +79,7 @@ size. "Existing" marks a story that was in the store before. A group not filed y
 - G4: a list field names the text that joins its items. `story:a-list-field-names-the-text-that-joins-its-items-in-every-renderer` (S, about 220); the
   renderers agree today and the reference is silent, so it is not a defect.
 - G5: a structured value reads as one line (defect) and a tagged union reads as its variant and
-  content. `story:a-structured-value-reads-as-one-line-of-its-members-in-every-renderer` (S, about 150), `story:a-tagged-union-value-reads-as-its-variant-and-its-content-when-the-document-is-bound-to-its-model` (M, about 420).
+  content. `story:a-structured-value-reads-as-one-line-of-its-members-in-every-renderer` (S, about 150), `story:a-tagged-union-value-reads-as-its-variant-and-its-content-in-the-layout-its-model-declares-when-the-document` (M, about 420).
 - G6: a time, date or timestamp field declares UTC or the reader's local zone.
   `story:a-time-date-or-timestamp-field-declares-whether-it-is-drawn-in-utc-or-the-reader-s-local-zone` (M, about 420).
 - G7: one host component stands in many slots. `story:one-host-component-stands-in-many-slots-that-receive-the-same-thing-each-slot-identified-by-its-node-path` (M, about 330); it follows
@@ -97,7 +98,24 @@ size. "Existing" marks a story that was in the store before. A group not filed y
   `story:a-generated-ui-s-live-channel-connects-to-the-stream-route-its-binding-declares-and-reads-its-frames` (M, about 320); it extends the existing
   `story:an-event-channel-may-be-bound-to-server-sent-events` (active).
 
-### Third list of five gaps, fourth report of four findings
+### P1, third list (an application's own generator) (filed)
+
+`sp1` is being fixed as patch release 0.98.1; `sp3` may ride the same patch; `sp3` and `sp4` are
+defects of the React runtime.
+
+- Item 1 (defect): a live insert of a key the section already holds shows one row, in both
+  renderers. `story:a-live-insert-of-a-key-the-section-already-holds-shows-one-row-in-both-renderers` (S, about 150; hotfix 0.98.1).
+- Item 2: `ess ui check --model` warns when a live event lacks a field the section it feeds shows,
+  or the field that matches its row. `story:ess-ui-check-model-warns-when-a-live-event-lacks-a-field-the-section-it-feeds-shows-or-the-field-that-matches` (M, about 300). Beside
+  `story:a-per-value-channel-script-that-names-no-session-is-reported` (`informed_by`, no order).
+- Item 3 (defect): a looping fixture script repeats at its last entry's offset in the browser too.
+  `story:a-looping-fixture-script-repeats-at-its-last-entry-s-offset-in-the-browser-too-as-in-the-terminal-and-the-test` (S, about 100; hotfix-sized).
+- Item 4 (defect): in the browser, a live event that arrives before the section's read has
+  answered is applied once it answers. `story:in-the-browser-a-live-event-that-arrives-before-the-section-s-read-has-answered-is-applied-once-it-answers-as` (S to M, about 150; after item 1).
+- Item 5: a terminal test checks what a host slot is handed. `story:a-terminal-test-checks-what-a-host-slot-is-handed-its-resolved-reads-its-commands-and-the-page-s-parameters` (M, about
+  350); after `story:a-test-opens-one-section-overlay-or-widget-of-a-document-alone-at-a-given-terminal-width-and-the-terminal` and `story:one-host-component-stands-in-many-slots-that-receive-the-same-thing-each-slot-identified-by-its-node-path`.
+
+### Fourth report of four findings
 
 Stories not filed yet.
 
@@ -160,7 +178,7 @@ state document; `story:the-model-holds-every-filled-default-as-a-plain-value-and
 Second report, five lanes built side by side, one after another within a lane:
 
 - Renderer lane: `story:a-number-with-no-declared-number-format-is-drawn-as-written-in-every-renderer` (defect), `story:a-structured-value-reads-as-one-line-of-its-members-in-every-renderer` (defect),
-  `story:a-list-field-names-the-text-that-joins-its-items-in-every-renderer`, `story:a-tagged-union-value-reads-as-its-variant-and-its-content-when-the-document-is-bound-to-its-model`, `story:a-time-date-or-timestamp-field-declares-whether-it-is-drawn-in-utc-or-the-reader-s-local-zone`, `story:a-duration-field-shows-the-time-between-two-instants-of-its-row-the-clock-standing-in-for-an-absent-end`;
+  `story:a-list-field-names-the-text-that-joins-its-items-in-every-renderer`, `story:a-tagged-union-value-reads-as-its-variant-and-its-content-in-the-layout-its-model-declares-when-the-document`, `story:a-time-date-or-timestamp-field-declares-whether-it-is-drawn-in-utc-or-the-reader-s-local-zone`, `story:a-duration-field-shows-the-time-between-two-instants-of-its-row-the-clock-standing-in-for-an-absent-end`;
   `story:a-page-header-s-badge-takes-its-tone-and-words-from-its-value-as-a-badge-does` slots in after `story:a-number-with-no-declared-number-format-is-drawn-as-written-in-every-renderer`. `story:a-number-with-no-declared-number-format-is-drawn-as-written-in-every-renderer` also
   lands before `story:a-chart-draws-its-rows-in-the-order-its-sort-declares-and-a-live-insert-keeps-that-order` and before `story:a-chart-names-its-axes-and-formats-its-ticks`
   (same function).
@@ -168,11 +186,17 @@ Second report, five lanes built side by side, one after another within a lane:
   reused-template story).
 - HTTP lane: `story:a-view-route-answers-its-rows-under-a-named-member-and-views-of-one-component-may-share-a-route-by-their`, then `story:the-generated-rust-and-go-servers-answer-a-route-shared-by-several-views-with-one-object-of-their-rows` beside `story:a-generated-ui-reads-a-view-s-rows-from-the-member-its-route-declares`, then
   `story:an-http-route-streams-a-component-s-events-with-no-command-opening-it-and-frames-named-by-a-member-of-their` (after the active SSE story), then `story:a-generated-ui-s-live-channel-connects-to-the-stream-route-its-binding-declares-and-reads-its-frames`;
-  `story:a-tagged-union-value-reads-as-its-variant-and-its-content-when-the-document-is-bound-to-its-model` shares `binding.rs` with `story:a-generated-ui-reads-a-view-s-rows-from-the-member-its-route-declares` and merges after it.
+  `story:a-tagged-union-value-reads-as-its-variant-and-its-content-in-the-layout-its-model-declares-when-the-document` shares `binding.rs` with `story:a-generated-ui-reads-a-view-s-rows-from-the-member-its-route-declares` and merges after it.
 - Literal lane: `story:a-decimal-literal-sets-or-publishes-a-binary64-field-read-by-one-grammar-the-validator-and-every-target-share`.
 - Lifecycle lane: `story:an-entity-whose-rows-the-deployment-provides-declares-lifecycle-moves-the-deployment-makes-with-no-command` (after `story:the-specification-format-ess-39-is-open-as-the-newest-reads-and-compiles-every-specification-exactly-as-ess-38`), then `story:synthesis-reaches-every-state-of-a-provided-entity-through-its-provider-and-never-drives-a-move-the-deployment`.
 
-The third list and the fourth report: the landing order is written when their stories are filed.
+Third list: `story:a-live-insert-of-a-key-the-section-already-holds-shows-one-row-in-both-renderers` (patch 0.98.1, in progress); then `story:a-looping-fixture-script-repeats-at-its-last-entry-s-offset-in-the-browser-too-as-in-the-terminal-and-the-test` and
+`story:in-the-browser-a-live-event-that-arrives-before-the-section-s-read-has-answered-is-applied-once-it-answers-as` as one patch release 0.98.2 in two commits (`sp4` needs 0.98.1: a held
+event re-applied after the answer must not duplicate a row; both edit `runtime/live.ts.tmpl`);
+`story:ess-ui-check-model-warns-when-a-live-event-lacks-a-field-the-section-it-feeds-shows-or-the-field-that-matches` after or beside the item-7 story (same check list); `story:a-terminal-test-checks-what-a-host-slot-is-handed-its-resolved-reads-its-commands-and-the-page-s-parameters`
+after SP-D5 and after `story:a-test-opens-one-section-overlay-or-widget-of-a-document-alone-at-a-given-terminal-width-and-the-terminal` (same `spec.rs` and parity table).
+
+The fourth report: the landing order is written when its stories are filed.
 
 ## Format
 
@@ -284,6 +308,21 @@ P1 (second report):
   story with a commandless `stream:` and a UI unit; B: wait for the exchange layer; C: decline.
   Default A.
 
+P1 (third list):
+
+- SP-D1 (item 1): should a looping script that re-inserts held keys be reported. A: no report, a
+  doc sentence only; B: a check warning on every such script; C: a note line in the text report of
+  `ess ui test`. Default A.
+- SP-D2 (item 2): severity and reach. A: a warning with `--model`, exit status unchanged; B: an
+  error; C: A plus fixture-script payloads without `--model`. Default A.
+- SP-D3 (item 3): a looping script's period. A: the last entry's `at`, everywhere; B: a fixed 1 s
+  gap after the last entry; C: A plus a later `period:` key. Default A.
+- SP-D4 (item 4): a live event during an outstanding read. A: hold and apply it to the answer, for
+  every outstanding read; B: only during the first read; C: the terminal drops it too. Default A.
+- SP-D5 (item 5): what of a host slot a test can check. A: what ESS hands the slot, `handed:`, in
+  the terminal, `test.fixme` in the browser; B: a stand-in declared in the test file; C: decline.
+  Default A.
+
 P2A (items 9 to 13):
 
 - P2A-D1 (item 9): A: the existing row-set idiom, documented and pinned; B: a `forall` over rows in
@@ -314,7 +353,7 @@ P2B (items 14 to 17):
 - P2B-D5 (items 15, 16): A: their constructs join `ess/38`; B: they land in `ess/39`, opened by
   `story:the-specification-format-ess-39-is-open-as-the-newest-reads-and-compiles-every-specification-exactly-as-ess-38`. Default B.
 
-The third list and the fourth report: their decisions are added when their stories are filed.
+The fourth report: its decisions are added when its stories are filed.
 
 ## Not accepted yet
 
