@@ -1207,6 +1207,61 @@ pub fn with_query(
 }
 "#;
 
+/// The credential checks of a route whose binding requires a scheme (beyond10x/ess#681), which
+/// follow [`BOUND`] only in a surface whose binding declares `authentication`, so every other
+/// bound surface keeps its bytes. Each says whether the request carries a credential where the
+/// scheme puts one; none reads or keeps its value beyond the check, and none reads the query.
+pub(super) const CREDENTIALS: &str = r#"
+/// Whether the request carries exactly one `Authorization` header under the auth scheme `scheme`,
+/// compared ignoring case, followed by one or more spaces and a token68 (RFC 9110 §11.4, §11.2).
+pub fn authorization(request: &Request, scheme: &str) -> bool {
+    let mut given = request.headers.iter().filter(|(name, _)| name == "authorization");
+    let (Some((_, value)), None) = (given.next(), given.next()) else {
+        return false;
+    };
+    let Some((named, credentials)) = value.split_once(' ') else {
+        return false;
+    };
+    let token = credentials.trim_start_matches(' ');
+    let body = token.trim_end_matches('=');
+    named.eq_ignore_ascii_case(scheme)
+        && !body.is_empty()
+        && body
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || b"-._~+/".contains(&byte))
+}
+
+/// Whether the request carries exactly one header `name` (lower case) that is not empty.
+pub fn key_header(request: &Request, name: &str) -> bool {
+    let mut given = request.headers.iter().filter(|(given, _)| given == name);
+    matches!((given.next(), given.next()), (Some((_, value)), None) if !value.trim().is_empty())
+}
+
+/// Whether a `Cookie` header carries the cookie `name` with a value that is not empty
+/// (RFC 6265 §5.4).
+pub fn key_cookie(request: &Request, name: &str) -> bool {
+    request
+        .headers
+        .iter()
+        .filter(|(given, _)| given == "cookie")
+        .flat_map(|(_, value)| value.split(';'))
+        .any(|pair| {
+            pair.trim()
+                .split_once('=')
+                .is_some_and(|(key, value)| key == name && !value.is_empty())
+        })
+}
+"#;
+
+/// Whether a route of `binding` requires a scheme, which the surface checks with [`CREDENTIALS`].
+pub(super) fn authenticates(binding: &http::Binding) -> bool {
+    binding
+        .ir()
+        .routes()
+        .iter()
+        .any(|route| !binding.credentials_on(route).is_empty())
+}
+
 /// Whether a route of `binding` lists `request.query`, which the surface joins with [`QUERIED`].
 pub(super) fn reads_query_beside_body(binding: &http::Binding) -> bool {
     binding.ir().routes().iter().any(|route| {
@@ -1342,7 +1397,7 @@ fn answer_call(
     } else {
         "not_granted".to_owned()
     };
-    let mut call = String::new();
+    let mut call = credential_check(server, route);
     match route.serves {
         Served::Command(handle) => {
             let command = ir.command(handle);
@@ -2299,6 +2354,11 @@ pub(super) fn refusals(out: &mut String, server: &Server<'_>, routes: &[http::Ro
             .declared
             .is_some_and(|declared| binding.ir().bounds_request(declared))
     };
+    let guarded = |route: &http::Route<'_>| {
+        route
+            .declared
+            .is_some_and(|declared| !binding.credentials_on(declared).is_empty())
+    };
     let shared: Vec<&http::Route<'_>> = declared
         .iter()
         .copied()
@@ -2313,6 +2373,7 @@ pub(super) fn refusals(out: &mut String, server: &Server<'_>, routes: &[http::Ro
                 from: "",
                 checked: shared.iter().any(|route| checked(route)),
                 too_large: shared.iter().any(|route| bounded(route)),
+                authenticated: shared.iter().any(|route| guarded(route)),
             },
             |key| binding.refusal(key),
         );
@@ -2329,6 +2390,7 @@ pub(super) fn refusals(out: &mut String, server: &Server<'_>, routes: &[http::Ro
                 from: "routes[].",
                 checked: checked(route),
                 too_large: bounded(route),
+                authenticated: guarded(route),
             },
             |key| binding.refusal_on(own, key),
         );
@@ -2343,6 +2405,7 @@ struct RefusalSet {
     from: &'static str,
     checked: bool,
     too_large: bool,
+    authenticated: bool,
 }
 
 /// The functions answering each standard refusal for `set`: `refusal_malformed`,
@@ -2426,6 +2489,9 @@ fn refusal_set<'a>(
     if set.too_large {
         refusal_too_large(out, set, lookup(RefusalKey::TooLarge));
     }
+    if set.authenticated {
+        refusal_unauthenticated(out, set, lookup(RefusalKey::Unauthenticated));
+    }
     let _ = write!(
         out,
         "\n/// What {on}'s shared path refused, as its binding answers it.\nfn \
@@ -2465,6 +2531,94 @@ fn refusal_too_large(out: &mut String, set: &RefusalSet, refusal: Option<&ess_ht
             );
         }
     }
+}
+
+/// `refusal_unauthenticated`, with `set.suffix`: the override for a call without the credential
+/// its route requires, else `401` with `{"refused": "unauthenticated"}` and one `WWW-Authenticate`
+/// per challenge the route passes (beyond10x/ess#681). Written only where a guarded route answers
+/// through `set`.
+fn refusal_unauthenticated(
+    out: &mut String,
+    set: &RefusalSet,
+    refusal: Option<&ess_http::Refusal>,
+) {
+    let RefusalSet {
+        suffix, on, from, ..
+    } = set;
+    let _ = write!(
+        out,
+        "\n/// A call without the credential {on} requires: `{from}refusals.unauthenticated`, else \
+         `401` with\n/// the route's challenges.\n"
+    );
+    match refusal {
+        Some(refusal) => {
+            let _ = write!(
+                out,
+                "fn refusal_unauthenticated{suffix}(_challenges: &[&str]) -> http::Response \
+                 {{\n{}}}\n",
+                overridden(refusal)
+            );
+        }
+        None => {
+            let _ = write!(
+                out,
+                "fn refusal_unauthenticated{suffix}(challenges: &[&str]) -> http::Response {{\n    \
+                 let mut answer = http::Response::refusal({}, {:?});\n    for challenge in \
+                 challenges {{\n        answer\n            .headers\n            \
+                 .push((\"{}\".to_owned(), (*challenge).to_owned()));\n    }}\n    answer\n}}\n",
+                http::UNAUTHENTICATED,
+                http::UNAUTHENTICATED_REFUSED,
+                ess_http::CHALLENGE_HEADER
+            );
+        }
+    }
+}
+
+/// The check a guarded route runs before its grant and before it decodes anything
+/// (beyond10x/ess#681): a call authenticated as no actor, or carrying no credential where any one
+/// of the route's schemes puts it, is answered `unauthenticated` and runs nothing. Empty for a
+/// route the binding leaves open.
+fn credential_check(server: &Server<'_>, route: &http::Route<'_>) -> String {
+    let (Some(binding), Some(declared)) = (server.binding, route.declared) else {
+        return String::new();
+    };
+    let credentials = binding.credentials_on(declared);
+    if credentials.is_empty() {
+        return String::new();
+    }
+    let mut alternatives = Vec::new();
+    let mut handshake = false;
+    for credential in credentials {
+        match credential {
+            http::Credential::Authorization(scheme) => {
+                alternatives.push(format!("http::authorization(request, {scheme:?})"));
+            }
+            http::Credential::Header(name) => alternatives.push(format!(
+                "http::key_header(request, {:?})",
+                name.to_ascii_lowercase()
+            )),
+            http::Credential::Cookie(name) => {
+                alternatives.push(format!("http::key_cookie(request, {name:?})"));
+            }
+            http::Credential::Handshake => handshake = true,
+            http::Credential::Unread => {}
+        }
+    }
+    let condition = match alternatives.len() {
+        _ if handshake => "caller.is_none()".to_owned(),
+        1 => format!("caller.is_none() || !{}", alternatives[0]),
+        _ => format!("caller.is_none() || !({})", alternatives.join(" || ")),
+    };
+    let challenges: Vec<String> = binding
+        .challenges_on(declared)
+        .iter()
+        .map(|challenge| format!("{challenge:?}"))
+        .collect();
+    format!(
+        "            if {condition} {{\n                return refusal_unauthenticated{}(&[{}]);\n            }}\n",
+        refusal_suffix(server, route),
+        challenges.join(", ")
+    )
 }
 
 /// Whether a bound surface answers the standard `403` (`not_granted`) anywhere: on a route the

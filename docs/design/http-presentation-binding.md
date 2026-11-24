@@ -1125,9 +1125,16 @@ routes:
   `routes[i].authentication`.
 - **What the artifacts do.** The OpenAPI projection writes `components.securitySchemes` and a
   per-operation `security`, and the `unauthenticated` answer among a guarded operation's responses.
-  The Rust and Go servers answer a call on a guarded route that carries no credential with the
-  `unauthenticated` refusal before the body is read, and never run the command or view for it.
-  A credential is never an ordinary input: no log line, error body or generated example holds it.
+  The Rust and Go servers check a guarded route before its grant: a call the realization's
+  `authenticate` mapped to no actor, or one carrying no credential where any of the route's
+  schemes puts it, is answered with the `unauthenticated` refusal and never runs the command or
+  view. A `bearer` or `basic` credential is exactly one `Authorization` header under that scheme,
+  compared ignoring case, with a token68; an `api_key` one is a header or a cookie of its name,
+  not empty. The server only checks presence and shape; `authenticate` decides who the caller is,
+  and alone decides a `mutual_tls` scheme, whose certificate the TLS layer in front checks. No
+  credential is read from the query while it is undecided whether one may travel there, so a
+  route requiring only `in: query` keys is refused at synthesis. A credential is never an ordinary input: no log line, error body or
+  generated example holds it.
 - **Format.** `ess-http/1` and `ess-http-ir/1` gain optional keys: `authentication` (the schemes
   by name, in name order, and `required` when not empty) after `servers`, and each route's
   `authentication` after its `operation_id`, both absent when not declared, so every binding

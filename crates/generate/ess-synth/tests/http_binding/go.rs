@@ -1785,3 +1785,6 @@ mod ignored_members;
 mod multipart;
 #[path = "query_beside_body.rs"]
 mod query_beside_body;
+
+#[path = "authentication.rs"]
+mod authentication;
