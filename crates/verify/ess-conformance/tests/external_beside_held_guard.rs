@@ -881,6 +881,10 @@ fn unclaimed_external_witnesses_keep_their_bytes() {
 /// row below `ess/27` as well, requiring the first declared, and that row's complete subject
 /// observed where the refusal is a complete one (beyond10x/ess#472,
 /// story:overlap-witnesses-per-phase), their refusals and claimable lists unchanged.
+/// The suites of `input-value-paths.yaml`, `defined-over-optional-aggregates.yaml` and
+/// `related-values-chained.yaml` were re-pinned to the bytes table for beyond10x/ess#799: a view
+/// member written absent claims null only when the field is `null_when_absent`, their refusals
+/// and claimable lists unchanged.
 const BASE: &str = include_str!("fixtures/external-beside-held-guard-base.tsv");
 
 fn root() -> PathBuf {

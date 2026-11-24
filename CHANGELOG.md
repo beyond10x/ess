@@ -29,6 +29,7 @@
 - CI: a `slow` job runs `task test-slow` beside the test shards and `Gate` carries it; a pull request skips it only when every changed path is a plan, documentation, UI, infrastructure or `ess-xtask` path, and every other run (`main`, nightly, queue, merge group, release) runs it, so a run that skipped it never stands in for a release (story:the-test-step-meets-the-test-budget).
 - CI: the seeded and order sweeps of `adversary_u22_pass1` and `adversary_ess0700a_identity_beside_row_set_2` run a reduced set in the test step and the full set in the `slow` lane.
 - CI: `synthesis_suite_bytes_table` compares a digest of the sources of synthesis and of every model with a committed stamp in the test step; the byte comparison against the committed tables, with another whole-corpus synthesis test, runs in the slow lane (story:the-test-step-meets-the-test-budget).
+- **Breaking.** A view member an outcome clears, or sets from an `Optional` input sent absent, directly or through a related row, is no longer claimed as `null` by a synthesized suite unless it is declared `presence: null_when_absent`, and the interpreted target leaves such a member with no presence out of the row, as its published row schema says. A suite stored from an earlier release that claims `null` for such a member now fails on the interpreted target: synthesize it again. Under `omitted_when_absent` the interpreted target now passes ESS's own suite (#799).
 
 ### Fixed
 
