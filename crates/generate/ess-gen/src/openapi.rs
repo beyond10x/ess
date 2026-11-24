@@ -212,6 +212,7 @@
 //! |---|---|
 //! | `request: {encoding: form}` | the request body is `application/x-www-form-urlencoded`, its schema `{command}.Input` |
 //! | `request: {encoding: query}` | no request body and no `{command}.Input`; each field the path does not carry is an `in: query` parameter under its wire name, a `List` with `style: form` and `explode: true` and not required, its absent key the empty list |
+//! | `request: {query: [input.<field>, …]}` beside a body | each listed field is an `in: query` parameter under its wire name, in the order listed, by the rules of `encoding: query`, and is in neither the request body nor `{command}.Input` (beyond10x/ess#754) |
 //! | `request: {unknown: ignore}` beside `json` or `form` | `{command}.Input` is `additionalProperties: true`, and the request body says that what no field names is ignored and what the path carries must equal the path's value |
 //! | `outcomes.<o>.status` | the outcome is answered under that status instead of the derived one |
 //! | `body: response` | the command's `{command}.Result`, bare: no `outcome`, no `published` |
@@ -868,6 +869,7 @@ fn operation(
         .and_then(|route| route.request.clone())
         .unwrap_or_default();
     let carried = carried(declared);
+    let queried = http::queried(declared);
     let mut parameters = path_parameters(&command.input, declared, |field| {
         format!(
             "The input field `{}`, carried in the path rather than the request body.",
@@ -877,6 +879,10 @@ fn operation(
     if request.encoding == ess_http::Encoding::Query {
         parameters.extend(query_parameters(command, &carried));
     }
+    parameters.extend(listed_parameters(command, &request));
+    // What the path or the query string carries is not in the body.
+    let mut outside = carried.clone();
+    outside.extend(queried.iter().copied());
     parameters.extend(idempotency(ir, command));
     Operation {
         id: declared
@@ -920,7 +926,7 @@ fn operation(
             .collect(),
         consistency: None,
         parameters,
-        request_body: request_body(ir, command, &carried, &request, declared),
+        request_body: request_body(ir, command, &outside, &request, declared),
         // A route without a stage-2 key, and a derived one, keeps the stage-1 answers and bytes.
         responses: match declared {
             Some(route) if answered_by_binding(declared, refusals) => bound_responses(
@@ -964,6 +970,30 @@ fn query_parameters(command: &ResolvedCommand, carried: &BTreeSet<&str>) -> Vec<
                 )
             }),
             required: !field.type_ref.is_optional() && !is_list(&field.type_ref) && !answers_absent,
+            style: is_list(&field.type_ref).then_some("form"),
+            explode: is_list(&field.type_ref).then_some(true),
+            schema: embedded(&types::field(field)),
+        })
+        .collect()
+}
+
+/// The input fields a route's `request.query` reads beside its body (beyond10x/ess#754), each an
+/// `in: query` parameter under its wire name, in the order the binding lists them, by the rules of
+/// [`query_parameters`]: required as the field is, a `List` repeating its key once per element.
+fn listed_parameters(command: &ResolvedCommand, request: &ess_http::Request) -> Vec<Parameter> {
+    request
+        .query_fields()
+        .filter_map(|name| command.input.iter().find(|field| field.name == name))
+        .map(|field| Parameter {
+            name: types::wire_name(field).to_owned(),
+            location: "query",
+            description: field.naming.summary.clone().unwrap_or_else(|| {
+                format!(
+                    "The input field `{}`, read from the query string beside the request body.",
+                    field.name
+                )
+            }),
+            required: !field.type_ref.is_optional() && !is_list(&field.type_ref),
             style: is_list(&field.type_ref).then_some("form"),
             explode: is_list(&field.type_ref).then_some(true),
             schema: embedded(&types::field(field)),
@@ -1341,10 +1371,11 @@ fn idempotency(ir: &EssIr, command: &ResolvedCommand) -> Option<Parameter> {
 ///
 /// A command with no input gets no body at all rather than an empty object: `{}` in a request would
 /// be a shape a client has to construct for no reason. Neither does one whose every input field a
-/// bound route `carried` in its path, and a field carried there is not in the body. A route encoded
-/// `query` has no body either, and one encoded `form` sends the same fields form-encoded. A route
-/// whose body is one input field (`bare`) sends that field's value as the whole body, its schema
-/// the field's own. A route encoded `multipart` sends one part per input field ([`multipart`]).
+/// bound route `carried` in its path or its `request.query`, and a field carried there is not in
+/// the body. A route encoded `query` has no body either, and one encoded `form` sends the same
+/// fields form-encoded. A route whose body is one input field (`bare`) sends that field's value as
+/// the whole body, its schema the field's own. A route encoded `multipart` sends one part per input
+/// field ([`multipart`]).
 fn request_body(
     ir: &EssIr,
     command: &ResolvedCommand,
@@ -1365,8 +1396,14 @@ fn request_body(
             description: field.naming.summary.clone().unwrap_or_else(|| {
                 format!(
                     "The input field `{}` of `{}`, bare: the whole body is its value, and the \
-                     path carries every other input field.",
-                    field.name, command.name
+                     path {} every other input field.",
+                    field.name,
+                    command.name,
+                    if request.query.is_empty() {
+                        "carries"
+                    } else {
+                        "and the query string carry"
+                    }
                 )
             }),
             required: http::body_required_without(command, carried),
@@ -1387,7 +1424,7 @@ fn request_body(
     let ignored = |what: &str| {
         if request.unknown != ess_http::Unknown::Ignore {
             String::new()
-        } else if carried.is_empty() {
+        } else if declared.is_none_or(|route| route.parameters.is_empty()) {
             format!(" A {what} no field names is ignored.")
         } else {
             format!(
@@ -2778,7 +2815,9 @@ fn command_schemas<'a>(
     out: &mut BTreeMap<String, Fragment>,
     roots: &mut Vec<&'a TypeHandle>,
 ) {
-    let carried = carried(route);
+    // What the path or the query string carries (beyond10x/ess#754) is not in the body.
+    let mut carried = carried(route);
+    carried.extend(http::queried(route));
     let request = route
         .and_then(|route| route.request.clone())
         .unwrap_or_default();

@@ -166,6 +166,38 @@ fn a_body_beside_an_input_the_path_does_not_carry_is_refused() {
     assert!(shown[0].contains("`board_id`"), "{shown:?}");
 }
 
+/// The path or `request.query` carries every input field but the bare body (beyond10x/ess#754,
+/// `story:a-command-route-reads-chosen-inputs-from-the-query-beside-its-body`).
+#[test]
+fn a_bare_body_beside_an_input_the_query_carries_compiles() {
+    let ir = model();
+    let routes = "routes:
+  - command: catalog.board.SetCardPriorities
+    method: put
+    path: /boards/priority
+    request: {body: input.priorities, query: [input.board_id]}
+";
+    let http = compiled(&ir, routes).expect("compiles");
+    let json = http.to_canonical_json();
+    assert!(
+        json.contains(
+            "      \"request\": {\n        \"body\": \"input.priorities\",\n        \"query\": [\n          \"input.board_id\"\n        ]\n      }\n"
+        ),
+        "{json}"
+    );
+    let read = HttpIr::from_json(&json).expect("the compiled IR reads back");
+    assert_eq!(read.to_canonical_json(), json, "round trip changed bytes");
+    // Listing the body itself in the query leaves it in two places.
+    let twice = routes.replace(
+        "query: [input.board_id]",
+        "query: [input.board_id, input.priorities]",
+    );
+    assert_eq!(
+        located(&compiled(&ir, &twice)),
+        [("ESS-HTTP-020", "routes[0].request.query".to_owned())]
+    );
+}
+
 #[test]
 fn a_body_on_a_view_route_or_beside_form_or_query_is_refused() {
     let ir = model();

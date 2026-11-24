@@ -611,6 +611,155 @@ fn ess_http_021_a_form_or_query_field_without_a_flat_spelling_is_refused() {
     assert_eq!(located(compiled(&ir, json)), []);
 }
 
+/// `FindItems` with `request.query` listing `labels` and `flag`, in that order, beside the body
+/// `encoding` on `method` (beyond10x/ess#754,
+/// `story:a-command-route-reads-chosen-inputs-from-the-query-beside-its-body`).
+fn listing(encoding: &str, method: &str) -> String {
+    format!(
+        "routes:
+  - command: catalog.items.FindItems
+    method: {method}
+    path: /find
+    request: {{encoding: {encoding}, query: [input.labels, input.flag]}}
+"
+    )
+}
+
+#[test]
+fn a_query_beside_a_body_compiles_in_the_order_written() {
+    let ir = shaped_model();
+    for (encoding, method) in [
+        ("json", "post"),
+        ("form", "put"),
+        ("multipart", "patch"),
+        ("json", "delete"),
+    ] {
+        let http = compiled(&ir, &listing(encoding, method))
+            .unwrap_or_else(|refused| panic!("{encoding} on {method}: {refused}"));
+        let request = http
+            .route(&Operation::Command("catalog.items.FindItems".into()))
+            .and_then(|route| route.request.as_ref())
+            .expect("FindItems records its request");
+        assert_eq!(
+            request.query_fields().collect::<Vec<_>>(),
+            ["labels", "flag"],
+            "{encoding} on {method}"
+        );
+        let json = http.to_canonical_json();
+        assert!(
+            json.contains(
+                "\"query\": [\n          \"input.labels\",\n          \"input.flag\"\n        ]"
+            ),
+            "{json}"
+        );
+        let read = HttpIr::from_json(&json).expect("the compiled IR reads back");
+        assert_eq!(read.to_canonical_json(), json, "round trip changed bytes");
+    }
+}
+
+#[test]
+fn ess_http_020_a_query_out_of_its_rules_is_refused_at_its_key() {
+    let ir = shaped_model();
+    let at = || [refused("ESS-HTTP-020", "routes[0].request.query")];
+    let find = |request: &str| {
+        format!(
+            "routes:
+  - command: catalog.items.FindItems
+    method: post
+    path: /find/{{item_id}}
+    parameters: {{item_id: input.item_id}}
+    request: {request}
+"
+        )
+    };
+    let cases = [
+        (
+            "beside `encoding: query`",
+            "routes:
+  - command: catalog.items.FindItems
+    method: delete
+    path: /find
+    request: {encoding: query, query: [input.flag]}
+"
+            .to_owned(),
+        ),
+        (
+            "on a `get` command",
+            "routes:
+  - command: catalog.items.TouchItem
+    method: get
+    path: /touch/{item_id}
+    parameters: {item_id: input.item_id}
+    request: {query: [input.item_id]}
+"
+            .to_owned(),
+        ),
+        ("not `input.<field>`", find("{query: [param.flag]}")),
+        ("naming no input field", find("{query: [input.nope]}")),
+        ("listed twice", find("{query: [input.flag, input.flag]}")),
+        ("carried by the path", find("{query: [input.item_id]}")),
+        (
+            "named by `request.body`",
+            find(
+                "{body: input.labels, query: [input.limit, input.shade, input.flag, input.labels]}",
+            ),
+        ),
+        ("written empty", find("{query: []}")),
+    ];
+    for (case, routes) in cases {
+        assert_eq!(located(compiled(&ir, &routes)), at(), "{case}");
+    }
+}
+
+#[test]
+fn ess_http_021_a_query_field_without_a_flat_spelling_is_refused() {
+    let ir = shaped_model();
+    let routes = "routes:
+  - command: catalog.items.ShapeItems
+    method: post
+    path: /shape
+    request: {query: [input.pair]}
+";
+    let result = compiled(&ir, routes);
+    assert_eq!(
+        located(result.clone()),
+        [refused("ESS-HTTP-021", "routes[0].request.query")]
+    );
+    let shown = worded(result);
+    assert!(
+        shown[0].contains("`pair`") && shown[0].contains("`catalog.items.Pair`"),
+        "{shown:?}"
+    );
+}
+
+/// The `multipart` route of `story:a-command-route-takes-a-multipart-request-with-file-parts`,
+/// with its `query: [input.dry_run]` line: `dry_run` is read from the query string, not a part.
+#[test]
+fn a_multipart_route_reads_a_listed_field_from_the_query() {
+    let ir = model_from(include_str!("fixtures/imports.yaml"));
+    let header = header(&ir).replace("system: catalog", "system: demo");
+    let routes = "routes:
+  - command: demo.imports.ImportRows
+    method: post
+    path: /reports/rows/import
+    request:
+      encoding: multipart
+      parts:
+        file: {filename: input.file_name, media_types: [text/csv]}
+      query: [input.dry_run]
+";
+    let spec = HttpSpec::from_yaml(&(header + routes)).expect("parses");
+    let http =
+        compile(&spec, &ir, &derived(&ir)).unwrap_or_else(|refused| panic!("compiles: {refused}"));
+    let request = http
+        .route(&Operation::Command("demo.imports.ImportRows".into()))
+        .and_then(|route| route.request.as_ref())
+        .expect("ImportRows records its request");
+    assert_eq!(request.encoding, Encoding::Multipart);
+    assert_eq!(request.query_fields().collect::<Vec<_>>(), ["dry_run"]);
+    assert_eq!(request.parts.keys().collect::<Vec<_>>(), ["file"]);
+}
+
 /// A protocol binding fixing a form-encoded `ListItem` that ignores unknown parameters.
 const PROTOCOL: &str = "routes:
   - command: catalog.items.ListItem

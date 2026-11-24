@@ -424,13 +424,22 @@ impl Binding {
     ///
     /// # Errors
     ///
-    /// [`Unprojectable`] naming each such route, by [`Reason::Reserved`].
+    /// [`Unprojectable`] naming each such route, by [`Reason::Reserved`], and each route reading
+    /// input fields from the query string beside its body, by [`Reason::Query`], until the servers
+    /// read them (beyond10x/ess#754).
     pub fn servable(&self) -> Result<(), Unprojectable> {
         let refused: Vec<(ess_http::Operation, Reason)> = self
             .0
             .routes()
             .iter()
             .filter_map(|route| {
+                if route
+                    .request
+                    .as_ref()
+                    .is_some_and(|request| !request.query.is_empty())
+                {
+                    return Some((route.operation.clone(), Reason::Query));
+                }
                 let segments = route.segments()?;
                 RESERVED
                     .into_iter()
@@ -491,6 +500,9 @@ pub enum Reason {
     Method(ess_http::Method),
     /// Its template matches this path, which a served surface answers about itself.
     Reserved(&'static str),
+    /// It reads input fields from the query string beside its body, which the generated servers do
+    /// not read yet (beyond10x/ess#754).
+    Query,
 }
 
 /// The routes of a binding [`Binding::new`] refuses, each with its operation, in route order.
@@ -518,6 +530,11 @@ impl std::fmt::Display for Unprojectable {
                     formatter,
                     "{operation} has a path a request for `{path}` would match, and a served \
                      surface answers `{path}` itself; route it elsewhere"
+                )?,
+                Reason::Query => write!(
+                    formatter,
+                    "{operation} reads input fields from the query string beside its body, which \
+                     the generated servers do not read yet"
                 )?,
             }
         }
@@ -910,6 +927,16 @@ pub fn attribute_fields(declared: Option<&ess_http::Route>) -> std::collections:
         .flat_map(|part| [&part.filename, &part.media_type])
         .flatten()
         .map(ess_http::Source::field)
+        .collect()
+}
+
+/// The input fields a route's `request.query` reads from the query string beside its body, by
+/// local name (beyond10x/ess#754): none of them travels in the body. Empty for every other route.
+pub fn queried(declared: Option<&ess_http::Route>) -> std::collections::BTreeSet<&str> {
+    declared
+        .and_then(|route| route.request.as_ref())
+        .into_iter()
+        .flat_map(ess_http::Request::query_fields)
         .collect()
 }
 

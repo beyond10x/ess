@@ -192,6 +192,17 @@ The document follows those keys on the routes that use them:
           filename: input.file_name
           media_types: [text/csv, application/vnd.ms-excel]
   ```
+- `query: [input.<field>, …]` reads the fields it lists from the query string beside the body of
+  a command on `post`, `put`, `patch` or `delete`, each under its wire name as `encoding: query`
+  spells it, and the document publishes each as an `in: query` parameter outside the body. The
+  generated servers do not read it yet:
+
+  ```yaml
+  - command: demo.reports.ImportRows
+    method: post
+    path: /reports/rows/import
+    request: {encoding: multipart, query: [input.dry_run]}   # …/import?dry_run=true
+  ```
 - A view's parameter the path does not carry is an `in: query` parameter under the parameter's flat
   `wire:` when it declares one, and both generated servers read it under that name only.
 - Each declared status is its own response. `body: response` answers the command's response

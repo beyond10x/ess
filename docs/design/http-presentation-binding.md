@@ -205,7 +205,7 @@ Every refusal is returned at once, with a stable code and the path of the offend
 | `ESS-HTTP-009` | a source in the wrong namespace, naming no field, or of a type a segment cannot carry (any but `String`, `Integer`, `Boolean`, `Decimal`, `Timestamp`, `Duration`, `Uuid`, an enum, or an unconstrained newtype of one of them) | `routes[i].parameters.<name>`, the source, its type |
 | `ESS-HTTP-010` | two operations of one component on one method and template (variable names ignored), declared or derived | both operations; the message reuses the import's wording, "two operations claim the same method and path" (`ess-openapi/src/lib.rs:76-80`) |
 | `ESS-HTTP-011` | two templates of one component and one method that cross: a request path matches both, and each holds a literal at some position the other holds a variable (`/{a}/x` beside `/y/{b}`; `/{tenant}/tasks` beside `/tasks/{id}`). Until 0.88.0 it refused every overlap; from 0.89.0 a nested pair, where one template holds the literal at every position the two differ (`/items/current` beside `/items/{item_id}`), is admitted and the more specific answers ("Path templates") | both operations, a path both match, and the segment where each holds its literal |
-| `ESS-HTTP-012` | a refinement that changes a fixed method or path, leaves a fixed path open, drops a route of the refined binding, or adds, drops or changes a route's `request.body` | `routes[i].method`, `routes[i].path` or `routes[i].request.body`, the refined value and the new one; `routes` and the refined `routes[j]` for a dropped route |
+| `ESS-HTTP-012` | a refinement that changes a fixed method or path, leaves a fixed path open, drops a route of the refined binding, or adds, drops or changes a route's `request.body` or `request.query` | `routes[i].method`, `routes[i].path`, `routes[i].request.body` or `routes[i].request.query`, the refined value and the new one; `routes` and the refined `routes[j]` for a dropped route |
 | `ESS-HTTP-013` | an operation that has no HTTP surface: a command no component accepts, a view no network component serves | the operation |
 | `ESS-HTTP-014` | a command on `get` with an input field that is neither mapped to the path nor (stage 2) query-encoded | the command and the field |
 
@@ -431,9 +431,8 @@ mirrors `response.<field>` on the response side
 
 - The body names one input field of the command that is not `Optional`, by `input.<field>`, and
   the path does not carry it.
-- The path carries every other input field. `ess-http/1` has no per-field query placement beside
-  a JSON body, so a field left in neither place is refused rather than moved to the query string.
-  On an open route that rule waits for the path: a protocol binding may fix the body of a route
+- The path or `request.query` (below) carries every other input field, so a field left in neither
+  place, nor in the body, is refused. On an open route that rule waits for the path: a protocol binding may fix the body of a route
   whose path each server binding chooses, and the server binding, which restates the body
   (`ESS-HTTP-012` for adding, dropping or changing it), is held to the rule when it fills the path
   in.
@@ -447,6 +446,34 @@ mirrors `response.<field>` on the response side
 - Compiled IR writes `body` only when it is declared, so every binding without one compiles to the
   bytes it compiled to before. No format version: a reader without the key refuses `request.body`
   as an unknown field by name, as stage 1 refused every stage-2 key.
+
+A command route on `post`, `put`, `patch` or `delete` may read chosen input fields from the query
+string beside its body: `request.query`, a list of `input.<field>`
+(`story:a-command-route-reads-chosen-inputs-from-the-query-beside-its-body`, beyond10x/ess#754).
+Each listed field is a query parameter under its wire name with the flat spelling `encoding:
+query` reads; every other field stays where the encoding puts it:
+
+```yaml
+  - command: demo.reports.ImportRows
+    method: post
+    path: /reports/rows/import
+    request: {encoding: json, query: [input.dry_run]}   # POST /reports/rows/import?dry_run=true
+```
+
+- `query` stands beside `encoding: json` (written or not), `form` or `multipart`, and beside a
+  bare `body`, which then needs the path or the query to carry every other field. `ESS-HTTP-020`
+  refuses it, at `routes[i].request.query`, beside `encoding: query`, on a `get` command, or
+  written empty, and refuses an entry that is not `input.<field>` naming an input field, one
+  listed twice, and one the path, the bare `body` or a part of a `multipart` request carries.
+  `ESS-HTTP-021` refuses a listed field without a flat spelling there too.
+- Compiled IR writes `query` in the order written, only when it is declared, so every binding
+  without it compiles to the bytes it compiled to before; a refinement that changes the list is
+  `ESS-HTTP-012`. No format version: a reader without the key refuses it by name.
+- OpenAPI writes each listed field as an `in: query` parameter in the order listed, by the rules of
+  `encoding: query` (required as the field is, a `List` with `style: form` and `explode: true`),
+  and leaves it out of the request body and of `{command}.Input`. The generated servers refuse such
+  a binding until they read it
+  (`story:generated-servers-read-chosen-inputs-from-the-query-beside-the-body`).
 
 ### Response body per outcome
 
@@ -656,8 +683,8 @@ and its answers.
 
 | code | refused | names |
 |---|---|---|
-| `ESS-HTTP-020` | an encoding outside the set; `form`, `json` or `multipart` on `get`; `query` on anything but `get` or `delete`; `request:` on a view; `unknown: ignore` beside a bare `body`, or an `unknown` value outside `refuse` and `ignore`; a `body` on a view, beside `form` or `query`, or on a `get` command, one that is not `input.<field>` naming an input field of the command, one naming an `Optional` field or a field the path carries, and each other input field the path does not carry | `routes[i].request.encoding`, `routes[i].request.unknown` or `routes[i].request.body`, and for a field left out, the field |
-| `ESS-HTTP-021` | a `form`, `query` or `multipart` field whose type has no flat spelling (struct, nested list, map, `Json`) | the field and its type |
+| `ESS-HTTP-020` | an encoding outside the set; `form`, `json` or `multipart` on `get`; `query` on anything but `get` or `delete`; `request:` on a view; `unknown: ignore` beside a bare `body`, or an `unknown` value outside `refuse` and `ignore`; a `body` on a view, beside `form` or `query`, or on a `get` command, one that is not `input.<field>` naming an input field of the command, one naming an `Optional` field or a field the path carries, and each other input field neither the path nor `request.query` carries; a `query` beside `encoding: query`, on a `get` command or written empty, an entry that is not `input.<field>` naming an input field, one listed twice, and one the path, the bare `body` or a part carries | `routes[i].request.encoding`, `routes[i].request.unknown`, `routes[i].request.body` or `routes[i].request.query`, and for a field left out, the field |
+| `ESS-HTTP-021` | a `form`, `query` or `multipart` field, or a field `request.query` lists, whose type has no flat spelling (struct, nested list, map, `Json`) | the field and its type |
 | `ESS-HTTP-022` | an `outcomes:` key that is not an outcome of the command, or `outcomes:` on a view; `errors:` on a view, or on a route whose command has no outcome with `error` that `outcomes:` leaves unlisted; `alike:` on a view, or a group of one, a name that is not an outcome of the command, one in two groups or twice in one, or one with no declared answer | `routes[i].outcomes.<name>`, `routes[i].errors` or `routes[i].alike` |
 | `ESS-HTTP-023` | a status outside `100..=599`, in a class the outcome may not use, or a `3xx` other than `301`, `302`, `303`, `307` and `308` | the outcome, the status, the class |
 | `ESS-HTTP-024` | a body form not admitted for the outcome or operation: `response` or `response.<field>` on an outcome without `returns: true` or with `error`, and so under `errors`; `response.<field>` naming no response field or an `Optional` one, or a source other than `response.<field>` as a body; `{…: error}` without `error`; `{…: {literal: …}}` on an outcome; a body other than `none` on `204` or beside a `redirect`; `single`, `array` or `rows` on a command, or an outcome form on a view; `single` or `array` on a paged view; a `<member>` that is empty or equals the wire name of one of the error's fields; an `encoding` other than `json` and `text`, or `text` beside any body but `response.<field>`, on a field that is not a `String`, or under `errors` | the outcome (or `routes[i].body`) and the form, or `….encoding` |
@@ -720,6 +747,7 @@ same bytes.
 | `routes[].request.encoding` | `json`, `form`, `query`, `multipart` | `json`, omitted | k1 |
 | `routes[].request.unknown` | `refuse`, `ignore` | `refuse`, omitted; `request` itself is omitted when both are defaults | k1 |
 | `routes[].request.parts` | per `Bytes` input field of a `multipart` request: `filename` and `media_type` (`input.<field>`), `media_types` (a list) | absent, omitted; each attribute omitted when absent | beyond10x/ess#754 |
+| `routes[].request.query` | the input fields read from the query string beside the body, `input.<field>` each, off `get` and beside every encoding but `query` | absent, omitted; written in the order listed | beyond10x/ess#754 |
 | `routes[].outcomes.<outcome>` | an object per listed outcome of the command, keyed by its local name | absent: the outcome keeps `outcome_status` and `envelope` | k2 |
 | `routes[].outcomes.<outcome>.status` | an integer; **required** in a listed outcome | always written | k2 |
 | `routes[].outcomes.<outcome>.body` | `envelope`, `response`, `response.<field>`, `none`, `{<member>: error}` | `envelope`, omitted | k2; `response.<field>` 0.69.0 |

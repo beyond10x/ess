@@ -297,6 +297,11 @@ pub struct RequestSpec {
     /// carries (beyond10x/ess#754); held to their rules by [`compile`] (`ESS-HTTP-036`).
     #[serde(default)]
     pub parts: Option<BTreeMap<String, PartSpec>>,
+    /// `input.<field>` each: the input fields read from the query string beside the body, each under
+    /// its wire name with the flat spelling `encoding: query` reads (beyond10x/ess#754); held to
+    /// their rules by [`compile`] (`ESS-HTTP-020`, `ESS-HTTP-021`).
+    #[serde(default)]
+    pub query: Option<Vec<String>>,
 }
 
 /// One file part's attributes, as written: what reads its filename and its media type into the
@@ -366,6 +371,28 @@ fn written_parts<'de, D: serde::Deserializer<'de>>(
     Ok(parts)
 }
 
+/// Reads a compiled request's `query`, refusing it written empty, which compiled IR omits, and an
+/// entry that is not `input.<field>`.
+fn written_query<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Vec<Source>, D::Error> {
+    let query = <Vec<Source> as serde::Deserialize>::deserialize(deserializer)?;
+    if query.is_empty() {
+        return Err(serde::de::Error::custom(
+            "`request.query` is written empty, which compiled IR omits",
+        ));
+    }
+    if let Some(source) = query
+        .iter()
+        .find(|source| matches!(source, Source::Param(_)))
+    {
+        return Err(serde::de::Error::custom(format!(
+            "`request.query` lists `{source}`; it lists input fields of a command, `input.<field>`"
+        )));
+    }
+    Ok(query)
+}
+
 /// Whether `text` is an RFC 6838 media type without parameters, `type/subtype`: each name 1 to 127
 /// characters, starting with a letter or a digit, of letters, digits and ``!#$&-^_.+``.
 pub fn is_media_type(text: &str) -> bool {
@@ -413,6 +440,14 @@ pub struct Request {
         deserialize_with = "written_parts"
     )]
     pub parts: BTreeMap<String, Part>,
+    /// The input fields read from the query string beside the body (`input.<field>`), in the order
+    /// written; empty, and omitted, when the binding lists none (beyond10x/ess#754).
+    #[serde(
+        default,
+        skip_serializing_if = "Vec::is_empty",
+        deserialize_with = "written_query"
+    )]
+    pub query: Vec<Source>,
     /// What a request parameter no field names does.
     #[serde(
         default,
@@ -426,6 +461,12 @@ impl Request {
     /// The input field the body carries bare, by its local name, if it carries one.
     pub fn body_field(&self) -> Option<&str> {
         self.body.as_ref().map(Source::field)
+    }
+
+    /// The input fields read from the query string beside the body, by their local names, in the
+    /// order written.
+    pub fn query_fields(&self) -> impl Iterator<Item = &str> {
+        self.query.iter().map(Source::field)
     }
 }
 
@@ -3611,7 +3652,47 @@ fn request_invariants(route: &Route, request: &Request, at: &str) -> Result<(), 
              input to ignore"
         ));
     }
-    parts_invariants(route, request, at)
+    parts_invariants(route, request, at)?;
+    query_invariants(route, request, at)
+}
+
+/// The invariants of a compiled request's `query` (see [`HttpIr::from_json`]): beside a body
+/// encoding off `get` only; each field listed once and carried nowhere else, neither by the path,
+/// the bare `body`, a part nor a part attribute.
+fn query_invariants(route: &Route, request: &Request, at: &str) -> Result<(), String> {
+    if request.query.is_empty() {
+        return Ok(());
+    }
+    if request.encoding == Encoding::Query || route.method == Method::Get {
+        return Err(format!(
+            "`{at}.request.query` is beside `{}` on `{}`; it lists the input fields read from the \
+             query string beside a body",
+            request.encoding, route.method
+        ));
+    }
+    for (index, source) in request.query.iter().enumerate() {
+        let attribute = request.parts.values().any(|part| {
+            part.filename.as_ref() == Some(source) || part.media_type.as_ref() == Some(source)
+        });
+        let carrier = if request.query[..index].contains(source) {
+            Some("listed twice")
+        } else if route.parameters.values().any(|carried| carried == source) {
+            Some("carried by the path")
+        } else if request.body.as_ref() == Some(source) {
+            Some("the bare body")
+        } else if request.parts.contains_key(source.field()) || attribute {
+            Some("read from a part")
+        } else {
+            None
+        };
+        if let Some(carrier) = carrier {
+            return Err(format!(
+                "`{at}.request.query` lists `{source}`, which is {carrier}; a field travels in \
+                 one place"
+            ));
+        }
+    }
+    Ok(())
 }
 
 /// The invariants of a compiled request's `parts` (see [`HttpIr::from_json`]): beside `multipart`
@@ -3789,8 +3870,8 @@ impl Refusals {
 /// | `ESS-HTTP-011` | two templates of one component and method that cross: a request path matches both, and each holds a literal at some position the other holds a variable (`/{a}/x` beside `/y/{b}`), naming both operations, a path both match and the segments. From 0.89.0 a nested pair, where one template holds the literal at every position the two differ (`/items/current` beside `/items/{item_id}`), is admitted and the more specific answers |
 /// | `ESS-HTTP-013` | an operation with no HTTP surface: a command no component accepts, a view no `reached_by: network` component serves |
 /// | `ESS-HTTP-014` | a command on `get` with an input field no variable of the path maps, unless its request is encoded `query` |
-/// | `ESS-HTTP-020` | at `routes[i].request.encoding`: an encoding outside `json`, `form`, `query` and `multipart`, `json`, `form` or `multipart` written on a `get` command, or `query` on a method other than `get` and `delete`; at `routes[i].request.unknown`: a value outside `refuse` and `ignore`, or `ignore` beside a bare `body`; at `routes[i].request`: `request` on a view; at `routes[i].request.body`: `body` on a view, beside `form` or `query`, or on a `get` command, a body that is not `input.<field>` naming an input field of the command, one that is `Optional` or that the path carries, and, on a route with a path, each other input field the path does not carry |
-/// | `ESS-HTTP-021` | at `routes[i].request.encoding`: a `form`, `query` or `multipart` request carrying an input field whose type has no flat spelling, naming the field and its type. A flat field is a scalar (a primitive other than `Json`, an enum, or a newtype of a scalar), an `Optional` scalar or a `List` of scalars; a field mapped to the path is not carried |
+/// | `ESS-HTTP-020` | at `routes[i].request.encoding`: an encoding outside `json`, `form`, `query` and `multipart`, `json`, `form` or `multipart` written on a `get` command, or `query` on a method other than `get` and `delete`; at `routes[i].request.unknown`: a value outside `refuse` and `ignore`, or `ignore` beside a bare `body`; at `routes[i].request`: `request` on a view; at `routes[i].request.body`: `body` on a view, beside `form` or `query`, or on a `get` command, a body that is not `input.<field>` naming an input field of the command, one that is `Optional` or that the path carries, and, on a route with a path, each other input field neither the path nor `request.query` carries; at `routes[i].request.query`: `query` beside `encoding: query`, on a `get` command, or written empty, an entry that is not `input.<field>` naming an input field of the command, one listed twice, and one the path, the bare `body` or a part of a `multipart` request carries |
+/// | `ESS-HTTP-021` | at `routes[i].request.encoding`: a `form`, `query` or `multipart` request carrying an input field whose type has no flat spelling, naming the field and its type. A flat field is a scalar (a primitive other than `Json`, an enum, or a newtype of a scalar), an `Optional` scalar or a `List` of scalars; a field mapped to the path is not carried; at `routes[i].request.query`: a field `query` lists whose type has no flat spelling, beside any encoding |
 /// | `ESS-HTTP-022` | at `routes[i].outcomes.<name>`: a key that is not the local name of an outcome of the command, or one listed twice; at `routes[i].outcomes`: `outcomes` on a view; at `routes[i].errors`: `errors` on a view, or on a command none of whose outcomes reports an error without being listed under `outcomes`; at `routes[i].alike`: `alike` on a view, a group of fewer than two names, a name that is not the local name of an outcome of the command, one in two groups or twice in one, or one with no declared answer (neither listed under `outcomes` nor covered by `errors`) |
 /// | `ESS-HTTP-023` | at `routes[i].outcomes.<name>.status`, or `routes[i].errors.status` once for each outcome `errors` covers: a status outside `100..=599`, a `1xx`, a `3xx` other than `301`, `302`, `303`, `307` and `308`, a `2xx` on an outcome with an error, or a `4xx` or `5xx` on one without |
 /// | `ESS-HTTP-024` | at `routes[i].outcomes.<name>.body`, or `routes[i].errors.body` once for each outcome `errors` covers: a word no body form spells, `response` or `response.<field>` on an outcome without `returns: true` or with an error, `response.<field>` naming no field of the response or an `Optional` one, `input.<field>`, `error.<field>` or `error.wire` as a body, `{<member>: error}` on one without an error, under an empty `<member>` or one equal to the wire name of a field of the error, a literal body, `rows`, `array` or `single`, or any body but `none` on `204` when that status compiled, or beside a `redirect` on a redirect status; at `routes[i].body`: `body` on a command, a body other than `rows`, `array` and `single` on a view, or `single` or `array` on a paged view; at `routes[i].outcomes.<name>.encoding`, or `routes[i].errors.encoding` once for each outcome `errors` covers: a word other than `json` and `text`, or `text` beside any body but `response.<field>` or on a field that is not a `String` (a newtype of one counts) |
@@ -3836,7 +3917,7 @@ pub fn compile(
 /// | code | refused |
 /// |---|---|
 /// | `ESS-HTTP-003` | at `refines`: a value that is not `sha256:` and 64 lower-case hex digits; `refines` given and no refined binding supplied; the supplied binding's byte digest differs; the refined binding itself refines (a refinement of a refinement is refused in `/1`); or a refined binding supplied to a document that refines nothing |
-/// | `ESS-HTTP-012` | at `limits` or `routes[i].limits`: a request limit added, dropped or restated; at `routes[i].representations`: a refined route's representations added, dropped or changed, a default written out or left out counting as that default; at `routes[i].method` or `routes[i].path`: a method or path the refined binding fixed is changed, or a fixed path left open; at `routes[i].request.encoding`, `routes[i].request.unknown` or `routes[i].request.body`: a refined route's request restated with another value, a default written out or left out counting as that default, and a body added or dropped; at `routes[i].request.parts`: a refined route's `parts` added, dropped or restated with another attribute; at `routes[i].outcomes.<name>`, `routes[i].errors`, `routes[i].body` or `routes[i].empty`: a refined route's outcome, `errors` (its headers and redirect included), view body or empty answer (its body included, none written out or left out counting as none) added, dropped or restated with another status or body, by the same counting; at `routes[i].outcomes.<name>.headers` or `….redirect`: an outcome both list whose headers or redirect differ, compared in name order with an empty map counting as none; at `refusals.<key>`: a standard refusal added, dropped or changed; at `refusals.<key>.headers`: one both declare whose headers differ; at `routes[i].refusals.<key>` and `routes[i].refusals.<key>.headers`: the same for a route's own refusals; at `routes`: a route of the refined binding is dropped; at `routes[i].operation_id`: an operation id the refined route fixes changed or left out (one may be added where the refined route has none); at `routes[i].outcomes.<name>`: an outcome both list restated with another `encoding`, `json` written out or left out counting as `json`; at `routes[i].alike`: the groups added, dropped or restated, each compared in name order |
+/// | `ESS-HTTP-012` | at `limits` or `routes[i].limits`: a request limit added, dropped or restated; at `routes[i].representations`: a refined route's representations added, dropped or changed, a default written out or left out counting as that default; at `routes[i].method` or `routes[i].path`: a method or path the refined binding fixed is changed, or a fixed path left open; at `routes[i].request.encoding`, `routes[i].request.unknown` or `routes[i].request.body`: a refined route's request restated with another value, a default written out or left out counting as that default, and a body added or dropped; at `routes[i].request.parts`: a refined route's `parts` added, dropped or restated with another attribute; at `routes[i].request.query`: a refined route's `query` added, dropped or restated with other fields or another order; at `routes[i].outcomes.<name>`, `routes[i].errors`, `routes[i].body` or `routes[i].empty`: a refined route's outcome, `errors` (its headers and redirect included), view body or empty answer (its body included, none written out or left out counting as none) added, dropped or restated with another status or body, by the same counting; at `routes[i].outcomes.<name>.headers` or `….redirect`: an outcome both list whose headers or redirect differ, compared in name order with an empty map counting as none; at `refusals.<key>`: a standard refusal added, dropped or changed; at `refusals.<key>.headers`: one both declare whose headers differ; at `routes[i].refusals.<key>` and `routes[i].refusals.<key>.headers`: the same for a route's own refusals; at `routes`: a route of the refined binding is dropped; at `routes[i].operation_id`: an operation id the refined route fixes changed or left out (one may be added where the refined route has none); at `routes[i].outcomes.<name>`: an outcome both list restated with another `encoding`, `json` written out or left out counting as `json`; at `routes[i].alike`: the groups added, dropped or restated, each compared in name order |
 ///
 /// `servers` is not compared: each server binding states its own deployment.
 ///
@@ -4898,7 +4979,7 @@ fn extras_changes(
 
 /// Refuses (`ESS-HTTP-012`) a `request` key of `route`, at `routes[index]`, written otherwise than
 /// the refined binding's `fixed` route at `routes[at]` writes it: a default written out or left out
-/// counts as that default, and `parts` are compared attribute by attribute.
+/// counts as that default, `parts` are compared attribute by attribute and `query` in the order written.
 fn request_changes(
     route: &RouteSpec,
     fixed: &RouteSpec,
@@ -4935,6 +5016,24 @@ fn request_changes(
                 "{operation} states other `request.parts` here than the refined binding fixes at \
                  `routes[{at}]`; a refinement restates the parts of every route it restates, each \
                  attribute as written"
+            ),
+        );
+    }
+    let query = |route: &RouteSpec| {
+        route
+            .request
+            .as_ref()
+            .and_then(|request| request.query.clone())
+            .unwrap_or_default()
+    };
+    if query(route) != query(fixed) {
+        refusals.refuse(
+            "ESS-HTTP-012",
+            format!("routes[{index}].request.query"),
+            format!(
+                "{operation} lists other `request.query` fields here than the refined binding \
+                 fixes at `routes[{at}]`; a refinement restates the query of every route it \
+                 restates, in the order written"
             ),
         );
     }
@@ -5471,17 +5570,45 @@ fn carried(
     refusals: &mut Refusals,
 ) -> Result<Option<Request>, Refused> {
     let checked = request(spec, operation, method, path, refusals);
+    // What `request.query` lists, by local name, refused or not: neither the bare body nor the
+    // flat spelling of the encoding holds it.
+    let listed: Vec<String> = checked
+        .query
+        .iter()
+        .flatten()
+        .filter_map(|text| Source::parse(text))
+        .map(|source| source.field().to_owned())
+        .collect();
+    let mut beside = mapped.to_vec();
+    beside.extend(listed.iter().map(|field| format!("input.{field}")));
+    let query = match (target, &checked.query) {
+        (Some(target), Some(written)) => query_fields(
+            written,
+            target,
+            spec.request.as_ref(),
+            mapped,
+            path,
+            refusals,
+        ),
+        (None, Some(_)) => Err(Refused),
+        (_, None) => Ok(Vec::new()),
+    };
     let bare = match (target, &checked.body) {
-        (Some(target), Some(text)) => {
-            bare_body(target, text, mapped, spec.path.is_none(), path, refusals)
-        }
+        (Some(target), Some(text)) => bare_body(
+            target,
+            text,
+            [mapped, &listed],
+            spec.path.is_none(),
+            path,
+            refusals,
+        ),
         _ => Ok(None),
     };
     let flat = match (target, checked.encoding) {
         (
             Some(target),
             Some(encoding @ (Encoding::Form | Encoding::Query | Encoding::Multipart)),
-        ) => flat_input(target, encoding, mapped, path, refusals),
+        ) => flat_input(target, encoding, &beside, path, refusals),
         _ => true,
     };
     let unmapped = match (target, method, checked.encoding) {
@@ -5502,13 +5629,16 @@ fn carried(
         (None, Some(_)) => Err(Refused),
         (_, None) => Ok(BTreeMap::new()),
     };
-    match (bare, parts) {
-        (Ok(_), Ok(_)) if checked.refused || !flat || unmapped => Err(Refused),
-        (Err(Refused), _) | (_, Err(Refused)) => Err(Refused),
-        (Ok(None), Ok(parts)) if parts.is_empty() => Ok(checked.request),
-        (Ok(body), Ok(parts)) => Ok(Some(Request {
+    match (bare, parts, query) {
+        (Ok(_), Ok(_), Ok(_)) if checked.refused || !flat || unmapped => Err(Refused),
+        (Err(Refused), _, _) | (_, Err(Refused), _) | (_, _, Err(Refused)) => Err(Refused),
+        (Ok(None), Ok(parts), Ok(query)) if parts.is_empty() && query.is_empty() => {
+            Ok(checked.request)
+        }
+        (Ok(body), Ok(parts), Ok(query)) => Ok(Some(Request {
             body,
             parts,
+            query,
             ..checked.request.unwrap_or_default()
         })),
     }
@@ -5704,8 +5834,9 @@ fn of_primitive_value(type_ref: &ResolvedTypeRef, wanted: Primitive, ir: &EssIr)
 
 /// The input field a route's `request.body` names (`text`), once it is held to its rules
 /// (`ESS-HTTP-020`, at `routes[i].request.body`): it is `input.<field>` naming an input field of
-/// the command that is not `Optional` and that the path does not carry, and the path carries every
-/// other input field. A body that names no such field is the only refusal reported for it.
+/// the command that is not `Optional` and that the path does not carry, and the path (`mapped`) or
+/// `request.query` (`listed`, by local name) carries every other input field. A body that names no
+/// such field is the only refusal reported for it.
 ///
 /// On an `open` route, one without a path yet, whether the path carries every other input field
 /// is the document's to answer that fills the path in: a protocol binding may fix the body of a
@@ -5714,7 +5845,7 @@ fn of_primitive_value(type_ref: &ResolvedTypeRef, wanted: Primitive, ir: &EssIr)
 fn bare_body(
     target: &Target<'_>,
     text: &str,
-    mapped: &[String],
+    [mapped, listed]: [&[String]; 2],
     open: bool,
     path: &str,
     refusals: &mut Refusals,
@@ -5761,16 +5892,19 @@ fn bare_body(
     };
     let mut refused = false;
     for other in target.fields.iter().filter(|_| !open) {
-        if other.name == source.field() || mapped.contains(&format!("input.{}", other.name)) {
+        if other.name == source.field()
+            || mapped.contains(&format!("input.{}", other.name))
+            || listed.contains(&other.name)
+        {
             continue;
         }
         refusals.refuse(
             "ESS-HTTP-020",
             at.as_str(),
             format!(
-                "input field `{}` is in neither the path nor the body: a route whose body is \
-                 `{text}` carries every other input field in its path, so map `{}` to a variable \
-                 of the path",
+                "input field `{}` is in neither the path, the query nor the body: the path or \
+                 `request.query` carries every input field but the body `{text}`, so map `{}` to a \
+                 variable of the path or list it in `request.query`",
                 other.name, other.name
             ),
         );
@@ -5796,6 +5930,9 @@ struct Checked {
     /// `request.body` as written, when the encoding and the method admit one; the input field it
     /// names is [`bare_body`]'s to check.
     body: Option<String>,
+    /// `request.query` as written, when the encoding and the method admit one; the input fields it
+    /// lists are [`query_fields`]'s to check.
+    query: Option<Vec<String>>,
 }
 
 /// Why `encoding` is refused on a command route on `method` (`ESS-HTTP-020`), if it is: a body
@@ -5838,6 +5975,7 @@ fn request(
             request: None,
             encoding: Some(Encoding::Json),
             body: None,
+            query: None,
         };
     };
     if let Operation::View(_) = operation {
@@ -5904,11 +6042,17 @@ fn request(
         .as_deref()
         .and_then(|text| admitted_body(text, method, parsed, path, refusals));
     refused |= written.body.is_some() && body.is_none();
+    let query = written
+        .query
+        .as_ref()
+        .and_then(|listed| admitted_query(listed, method, parsed, path, refusals));
+    refused |= written.query.is_some() && query.is_none();
     let request = match (refused, encoding, unknown) {
         (false, Some(encoding), Some(unknown)) => Some(Request {
             body: None,
             encoding,
             parts: BTreeMap::new(),
+            query: Vec::new(),
             unknown,
         })
         .filter(|request| *request != Request::default()),
@@ -5920,6 +6064,149 @@ fn request(
         // A refused body leaves the input it would carry unchecked, as a refused encoding does.
         encoding: encoding.filter(|_| body.is_some() || written.body.is_none()),
         body,
+        query,
+    }
+}
+
+/// `request.query` as written (`listed`), when a body encoding off `get` sits beside it; otherwise
+/// refused at `routes[i].request.query` (`ESS-HTTP-020`) and `None`. An encoding outside the set
+/// (`parsed` `None`) is refused by its own key, and leaves the list to [`query_fields`].
+fn admitted_query(
+    listed: &[String],
+    method: Option<Method>,
+    parsed: Option<Encoding>,
+    path: &str,
+    refusals: &mut Refusals,
+) -> Option<Vec<String>> {
+    let rule = match (method, parsed) {
+        (_, Some(Encoding::Query)) => {
+            "`query` lists the input fields read from the query string beside a body, and a \
+             request encoded `query` carries every field there already; list none, or encode the \
+             body `json`, `form` or `multipart`"
+                .to_owned()
+        }
+        (Some(Method::Get), _) => {
+            "`query` lists the input fields read from the query string beside a body, and `get` \
+             carries none; a command on `get` is encoded `query`"
+                .to_owned()
+        }
+        _ if listed.is_empty() => {
+            "`query` is empty: it lists at least one input field, and is left out to read none \
+             from the query string"
+                .to_owned()
+        }
+        _ => return Some(listed.to_vec()),
+    };
+    refusals.refuse("ESS-HTTP-020", format!("{path}.request.query"), rule);
+    None
+}
+
+/// The input fields a route's `request.query` lists (`listed`), once each is held to its rules
+/// (`ESS-HTTP-020` and `ESS-HTTP-021`, at `routes[i].request.query`): `input.<field>` naming an
+/// input field of the command, listed once, that neither the path, the bare `body` nor a part of a
+/// `multipart` request carries, of a type with a flat spelling.
+fn query_fields(
+    listed: &[String],
+    target: &Target<'_>,
+    written: Option<&RequestSpec>,
+    mapped: &[String],
+    path: &str,
+    refusals: &mut Refusals,
+) -> Result<Vec<Source>, Refused> {
+    let at = format!("{path}.request.query");
+    let field_of = |text: &str| {
+        Source::parse(text)
+            .filter(|source| matches!(source, Source::Input(_)))
+            .map(|source| source.field().to_owned())
+    };
+    let body = written
+        .and_then(|request| request.body.as_deref())
+        .and_then(field_of);
+    let parts = written
+        .and_then(|request| request.parts.as_ref())
+        .map(|parts| {
+            let mut read: Vec<String> = parts.keys().cloned().collect();
+            read.extend(
+                parts
+                    .values()
+                    .flat_map(|part| [&part.filename, &part.media_type])
+                    .flatten()
+                    .filter_map(|text| field_of(text)),
+            );
+            read
+        })
+        .unwrap_or_default();
+    let mut sources: Vec<Source> = Vec::new();
+    let mut refused = false;
+    for text in listed {
+        let source = Source::parse(text).filter(|source| matches!(source, Source::Input(_)));
+        let field = source.as_ref().and_then(|source| {
+            target
+                .fields
+                .iter()
+                .find(|field| field.name == source.field())
+        });
+        let rule = match (&source, field) {
+            (None, _) => Some((
+                "ESS-HTTP-020",
+                format!(
+                    "`{text}` is not `input.<field>`: `query` lists input fields of the command, \
+                     each named by its namespace and its name"
+                ),
+            )),
+            (Some(source), None) => Some((
+                "ESS-HTTP-020",
+                format!(
+                    "`{text}` names no input field: the command declares no input field `{}`",
+                    source.field()
+                ),
+            )),
+            (Some(source), Some(_)) if sources.contains(source) => Some((
+                "ESS-HTTP-020",
+                format!("`{text}` is listed twice, and a field is read from the query string once"),
+            )),
+            (Some(_), Some(field)) if mapped.contains(&format!("input.{}", field.name)) => Some((
+                "ESS-HTTP-020",
+                format!(
+                    "`{text}` is carried by the path already, and a field travels in one place"
+                ),
+            )),
+            (Some(_), Some(field)) if body.as_deref() == Some(field.name.as_str()) => Some((
+                "ESS-HTTP-020",
+                format!("`{text}` is the bare `body` already, and a field travels in one place"),
+            )),
+            (Some(_), Some(field)) if parts.contains(&field.name) => Some((
+                "ESS-HTTP-020",
+                format!(
+                    "`{text}` is read from a part of the `multipart` request already, and a field \
+                 travels in one place"
+                ),
+            )),
+            (Some(_), Some(field)) if !flat_type(&field.type_ref, target.ir) => Some((
+                "ESS-HTTP-021",
+                format!(
+                    "input field `{}` has type `{}`, which has no flat spelling in the query \
+                     string: a field `query` lists is a scalar, an `Optional` scalar or a `List` \
+                     of scalars, a scalar being a primitive other than `Json`, an enum, or a \
+                     newtype of a scalar",
+                    field.name, field.type_ref
+                ),
+            )),
+            _ => None,
+        };
+        if let Some((code, rule)) = rule {
+            refusals.refuse(code, at.as_str(), rule);
+            refused = true;
+            continue;
+        }
+        if let Some(source) = source {
+            sources.push(source);
+        }
+    }
+    if refused {
+        Err(Refused)
+    } else {
+        Ok(sources)
     }
 }
 
@@ -5953,6 +6240,7 @@ fn view_request(
         request: None,
         encoding: None,
         body: None,
+        query: None,
     }
 }
 
