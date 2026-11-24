@@ -48,19 +48,42 @@ Built side by side within a group, one group after another.
 One line per report item, in priority order: the need, then the stories that carry it with their
 size. "Existing" marks a story that was in the store before. A group not filed yet says so.
 
-### P0 (filed)
+### P0 (filed, revised after four critics and one recheck)
+
+Thirteen units in eight rounds, plus three follow-up drafts that are not in P0. Each unit's text
+answers the critics' 76 findings and the recheck's 8.
 
 - Item 1: the actions available in a UI state, and a state that can be cloned. Five units:
-  `story:a-design-page-fixes-how-a-program-explores-the-ui-states-of-an-ess-ui-1-document-one-session-the-steps-a-state` (S, prose only), `story:a-running-terminal-app-forks-into-a-copy-that-shares-no-mutable-state-with-it-and-keeps-file-placed-state-in` (M, about 300), `story:a-program-lists-the-ess-ui-test-1-steps-a-ui-state-offers-applies-one-and-forks-the-state-through-ess-ui-test`
-  (L, about 550), `story:a-ui-state-prints-as-ess-ui-state-1-with-a-digest-and-two-routes-to-one-state-print-the-same-bytes-and-the` (L, about 560), `story:ess-ui-state-prints-the-state-a-list-of-ess-ui-test-1-steps-reaches-and-the-steps-that-state-offers` (M, about 350).
+  `story:a-design-page-fixes-how-a-program-explores-the-ui-states-of-an-ess-ui-1-document-one-session-the-steps-a-state` (S, about 290, prose only), `story:a-running-terminal-app-forks-into-a-copy-that-shares-no-mutable-state-with-it-and-keeps-file-placed-state-in` (M, about 400),
+  `story:a-program-lists-the-ess-ui-test-1-steps-a-ui-state-offers-applies-one-and-forks-the-state-through-ess-ui-test` (L, about 570), `story:a-ui-state-prints-as-ess-ui-state-1-with-a-digest-and-two-routes-to-one-state-print-the-same-bytes-and-the` (L, about 590),
+  `story:ess-ui-state-prints-the-state-a-list-of-ess-ui-test-1-steps-reaches-and-the-steps-that-state-offers` (M, about 380).
 - Item 2: a canonical byte form and digest of a UI document and of a UI state.
   `story:an-ess-ui-1-document-has-one-canonical-byte-form-and-one-digest-the-same-for-every-key-order-yaml-spelling` (S to M, about 260) and `story:a-ui-state-prints-as-ess-ui-state-1-with-a-digest-and-two-routes-to-one-state-print-the-same-bytes-and-the`.
-- Item 3: the loader prints the resolved UI document with every default filled in. Ten units:
-  `story:the-ess-ui-loader-writes-every-constant-default-the-schema-declares-into-the-document-before-reading-it-from` (M, about 480), `story:ess-ui-load-format-json-prints-the-document-the-loader-resolved-every-default-filled-as-the-versioned-format` (M, about 420),
-  `story:with-model-ess-ui-resolved-1-carries-the-route-table-the-stock-generators-bind-the-document-s-views-and` (S, about 180), `story:the-loader-fills-the-defaults-a-renderer-reads-differently-today-and-both-renderers-then-show-what-the-schema` (M, about 480),
-  `story:a-document-that-leaves-out-actor-runs-from-the-session-in-both-renderers-as-ess-ui-1-documents-and-the-test` (S to M, about 220), `story:the-loader-resolves-every-state-s-store-and-scope-and-every-read-s-cache-store-from-the-placement-profile-once` (L, about 520),
-  `story:with-a-model-the-loader-fills-a-form-s-fields-from-its-command-s-input-fields-and-a-form-without-fields-shows` (M, about 280), `story:the-terminal-keeps-a-section-s-rows-while-its-read-runs-again-and-marks-rows-only-in-a-collection-that` (M, about 260),
-  `story:the-generated-react-app-counts-new-live-rows-while-its-reader-is-paged-away-with-or-without-a-filter-and-keeps` (M, about 250), `story:the-model-holds-every-filled-default-as-a-plain-value-and-no-renderer-or-checker-keeps-a-fallback-of-its-own` (L, about 550).
+- Item 3: the loader prints the resolved UI document with every default filled in. Seven units:
+  `story:the-ess-ui-loader-writes-every-constant-default-the-schema-declares-into-the-document-before-reading-it-from` (M, about 570), `story:a-document-that-leaves-out-actor-runs-from-the-session-in-both-renderers-as-ess-ui-1-documents-and-the-test` (M, about 260),
+  `story:with-a-model-the-loader-fills-a-form-s-fields-from-its-command-s-input-fields-and-a-form-without-fields-shows` (M, about 300), `story:the-loader-resolves-every-state-s-store-and-scope-and-every-read-s-cache-store-from-the-placement-profile-once` (M, about 450),
+  `story:the-loader-fills-the-defaults-a-renderer-reads-differently-today-and-both-renderers-then-show-what-the-schema` (L, about 560), `story:ess-ui-load-format-json-prints-the-document-the-loader-resolved-every-default-filled-as-the-versioned-format` (M, about 450),
+  `story:with-model-ess-ui-resolved-1-carries-the-route-table-the-stock-generators-bind-the-document-s-views-and` (S, about 220).
+- Rounds, at most three units at once and no two units of one round change one file:
+
+  | round | units | wave |
+  |---|---|---|
+  | R1 | `story:a-design-page-fixes-how-a-program-explores-the-ui-states-of-an-ess-ui-1-document-one-session-the-steps-a-state`, `story:the-ess-ui-loader-writes-every-constant-default-the-schema-declares-into-the-document-before-reading-it-from`, `story:a-running-terminal-app-forks-into-a-copy-that-shares-no-mutable-state-with-it-and-keeps-file-placed-state-in` | 1 |
+  | R2 | `story:a-document-that-leaves-out-actor-runs-from-the-session-in-both-renderers-as-ess-ui-1-documents-and-the-test`, `story:with-a-model-the-loader-fills-a-form-s-fields-from-its-command-s-input-fields-and-a-form-without-fields-shows` | 1 |
+  | R3 | `story:a-program-lists-the-ess-ui-test-1-steps-a-ui-state-offers-applies-one-and-forks-the-state-through-ess-ui-test`, `story:the-loader-resolves-every-state-s-store-and-scope-and-every-read-s-cache-store-from-the-placement-profile-once` | 2 |
+  | R4 | `story:the-loader-fills-the-defaults-a-renderer-reads-differently-today-and-both-renderers-then-show-what-the-schema` | 2 |
+  | R5 | `story:an-ess-ui-1-document-has-one-canonical-byte-form-and-one-digest-the-same-for-every-key-order-yaml-spelling` | 3 |
+  | R6 | `story:ess-ui-load-format-json-prints-the-document-the-loader-resolved-every-default-filled-as-the-versioned-format` | 3 |
+  | R7 | `story:a-ui-state-prints-as-ess-ui-state-1-with-a-digest-and-two-routes-to-one-state-print-the-same-bytes-and-the`, `story:with-model-ess-ui-resolved-1-carries-the-route-table-the-stock-generators-bind-the-document-s-views-and` | 3 |
+  | R8 | `story:ess-ui-state-prints-the-state-a-list-of-ess-ui-test-1-steps-reaches-and-the-steps-that-state-offers` | 3 |
+
+  R5 to R8 are one release: it publishes `ess-ui-resolved/1` and `ess-ui-state/1` once, complete,
+  after every fill unit has landed.
+- Follow-up, not in P0 (tag `gap-p0` stays; no P0 unit waits on them, and no P0 round runs them):
+  `story:the-model-holds-every-filled-default-as-a-plain-value-and-no-renderer-or-checker-keeps-a-fallback-of-its-own` (L, about 550; the filled `Option` fields become plain fields and
+  the renderers' dead fallbacks go; it depends on every P0 unit),
+  `story:the-terminal-keeps-a-section-s-rows-while-its-read-runs-again-and-marks-rows-only-in-a-collection-that` (M, about 340; a terminal defect story) and
+  `story:the-generated-react-app-counts-new-live-rows-while-its-reader-is-paged-away-with-or-without-a-filter-and-keeps` (M, about 200; a React defect story).
 
 ### P1, first report (filed)
 
@@ -295,13 +318,12 @@ quantifier story; `story:the-specification-format-ess-39-is-open-as-the-newest-r
 `story:ess-specify-reads-prints-every-entity-each-command-s-decisions-read-by-kind-and-site-from-one-read-analysis` (no dependency, may run beside item 14), `story:an-entity-names-the-commands-whose-decisions-may-read-it-readers-and-validation-refuses-every-other-read-by`,
 `story:ess-verify-diff-reports-an-entity-s-readers-declared-removed-widened-or-narrowed-at-ess-diff-24`; `story:each-node-of-the-resolved-ui-document-says-whether-it-is-a-host-slot-so-a-precondition-over-a-document-is` right after P0's story for item 3.
 
-P0: `story:a-design-page-fixes-how-a-program-explores-the-ui-states-of-an-ess-ui-1-document-one-session-the-steps-a-state`, `story:a-running-terminal-app-forks-into-a-copy-that-shares-no-mutable-state-with-it-and-keeps-file-placed-state-in` and `story:the-ess-ui-loader-writes-every-constant-default-the-schema-declares-into-the-document-before-reading-it-from` can start at once; then
-`story:a-program-lists-the-ess-ui-test-1-steps-a-ui-state-offers-applies-one-and-forks-the-state-through-ess-ui-test` and `story:ess-ui-load-format-json-prints-the-document-the-loader-resolved-every-default-filled-as-the-versioned-format`; `story:an-ess-ui-1-document-has-one-canonical-byte-form-and-one-digest-the-same-for-every-key-order-yaml-spelling` after the resolved document;
-`story:a-ui-state-prints-as-ess-ui-state-1-with-a-digest-and-two-routes-to-one-state-print-the-same-bytes-and-the`, `story:with-model-ess-ui-resolved-1-carries-the-route-table-the-stock-generators-bind-the-document-s-views-and` (after the digest, same output function),
-`story:with-a-model-the-loader-fills-a-form-s-fields-from-its-command-s-input-fields-and-a-form-without-fields-shows`, `story:the-loader-fills-the-defaults-a-renderer-reads-differently-today-and-both-renderers-then-show-what-the-schema`; then `story:a-document-that-leaves-out-actor-runs-from-the-session-in-both-renderers-as-ess-ui-1-documents-and-the-test`,
-`story:the-loader-resolves-every-state-s-store-and-scope-and-every-read-s-cache-store-from-the-placement-profile-once` (after `story:a-running-terminal-app-forks-into-a-copy-that-shares-no-mutable-state-with-it-and-keeps-file-placed-state-in`, same file), `story:the-terminal-keeps-a-section-s-rows-while-its-read-runs-again-and-marks-rows-only-in-a-collection-that`
-(after `story:a-program-lists-the-ess-ui-test-1-steps-a-ui-state-offers-applies-one-and-forks-the-state-through-ess-ui-test`, same file), `story:the-generated-react-app-counts-new-live-rows-while-its-reader-is-paged-away-with-or-without-a-filter-and-keeps`; `story:ess-ui-state-prints-the-state-a-list-of-ess-ui-test-1-steps-reaches-and-the-steps-that-state-offers` after the
-state document; `story:the-model-holds-every-filled-default-as-a-plain-value-and-no-renderer-or-checker-keeps-a-fallback-of-its-own` last.
+P0, 13 units in 8 rounds (the table under P0 above): R1 `story:a-design-page-fixes-how-a-program-explores-the-ui-states-of-an-ess-ui-1-document-one-session-the-steps-a-state`,
+`story:the-ess-ui-loader-writes-every-constant-default-the-schema-declares-into-the-document-before-reading-it-from`, `story:a-running-terminal-app-forks-into-a-copy-that-shares-no-mutable-state-with-it-and-keeps-file-placed-state-in`; R2 `story:a-document-that-leaves-out-actor-runs-from-the-session-in-both-renderers-as-ess-ui-1-documents-and-the-test`, `story:with-a-model-the-loader-fills-a-form-s-fields-from-its-command-s-input-fields-and-a-form-without-fields-shows`; R3
+`story:a-program-lists-the-ess-ui-test-1-steps-a-ui-state-offers-applies-one-and-forks-the-state-through-ess-ui-test`, `story:the-loader-resolves-every-state-s-store-and-scope-and-every-read-s-cache-store-from-the-placement-profile-once`; R4 `story:the-loader-fills-the-defaults-a-renderer-reads-differently-today-and-both-renderers-then-show-what-the-schema`; R5
+`story:an-ess-ui-1-document-has-one-canonical-byte-form-and-one-digest-the-same-for-every-key-order-yaml-spelling`; R6 `story:ess-ui-load-format-json-prints-the-document-the-loader-resolved-every-default-filled-as-the-versioned-format`; R7 `story:a-ui-state-prints-as-ess-ui-state-1-with-a-digest-and-two-routes-to-one-state-print-the-same-bytes-and-the`, `story:with-model-ess-ui-resolved-1-carries-the-route-table-the-stock-generators-bind-the-document-s-views-and`; R8
+`story:ess-ui-state-prints-the-state-a-list-of-ess-ui-test-1-steps-reaches-and-the-steps-that-state-offers`. R5 to R8 are one release. The follow-ups `story:the-terminal-keeps-a-section-s-rows-while-its-read-runs-again-and-marks-rows-only-in-a-collection-that`,
+`story:the-generated-react-app-counts-new-live-rows-while-its-reader-is-paged-away-with-or-without-a-filter-and-keeps` and `story:the-model-holds-every-filled-default-as-a-plain-value-and-no-renderer-or-checker-keeps-a-fallback-of-its-own` run after P0, in no P0 round.
 
 Second report, six lanes built side by side, one after another within a lane:
 
@@ -371,43 +393,51 @@ The other stories add no format version.
 Each has a default. Without an answer the default is taken and said so in the next report; every
 option is reversible until its story's code is merged.
 
-P0 (items 1 to 3):
+P0 (items 1 to 3). P0-D14 (B) and P0-D17 (B) are settled; P0-D18 (A) is settled by the coordinator,
+2026-11-24; the others are taken on their defaults:
 
 - P0-D1 (item 1): where the exploration surface lives. A: `ess_ui_test::Session`; B: a new crate; C:
-  in `ess-ui`; D: decline. Default A.
+  in `ess-ui`; D: decline. Taken: A.
 - P0-D2 (item 1): how a state is reached without replay. A: fork in process, `ess-ui-state/1`
-  describes and restores nothing; B: restore from the document; C: the document carries its step
-  path. Default A.
-- P0-D3 (item 1): a command-line verb. A: `ess ui state`, last in order; B: library only. Default A.
+  describes the state and its digest and restores nothing; B: restore from the document; C: the
+  document carries its step path. Taken: A.
+- P0-D3 (item 1): a command-line verb. A: `ess ui state`, last in order; B: library only. Taken: A.
 - P0-D4 (item 1): steps with a free value. A: offered by target, the caller supplies the value; B:
-  ESS picks values; C: left out. Default A.
+  ESS picks values; C: left out. Taken: A.
 - P0-D5 (item 1): the clock in a state's identity. A: absolute virtual time plus script positions;
-  B: durations until each pending event. Default A.
-- P0-D6 (item 2): the canonical rule. A: the published InfraIR scheme (compact key-sorted JSON,
-  bare SHA-256); B: RFC 8785 with a prefix; C: the EssIr struct-order style. Default A.
-- P0-D7 (item 2): does the digest cover author text and traceability keys. A: yes; B: no; C: both
-  as two digests. Default A.
-- P0-D8 (item 3): is `ess ui load --format json` versioned. A: yes, `ess-ui-resolved/1`; B: no; C:
-  decline. Default A.
+  B: durations until each pending event. Taken: A.
+- P0-D6 (item 2): the canonical rule. A: the `InfraIR` scheme with the ECMAScript number rule
+  (compact key-sorted JSON, bare SHA-256, no trailing newline); B: RFC 8785 with a prefix; C: the
+  `EssIr` struct-order style. Taken: A.
+- P0-D7 (item 2): does the digest cover author text and traceability keys. A: yes, one digest is
+  one document; B: no; C: both as two digests. Taken: A.
+- P0-D8 (item 3): is `ess ui load --format json` versioned. A: yes, `ess-ui-resolved/1`, published
+  once and complete; B: no; C: decline. Taken: A.
 - P0-D9 (item 3): the document part. A: the loader's filled tree in `ess-ui/1` keys; B: `Serialize`
-  on `Document`; C: a new shape. Default A.
+  on `Document`; C: a new shape. Taken: A.
 - P0-D10 (item 3): does the React generator read the printed JSON. A: no, a round-trip test; B:
-  yes. Default A.
-- P0-D11 (item 3): what `--model` adds. A: the existing `Binding`; B: enums only; C: binding plus
-  row field types. Default A.
+  yes. Taken: A.
+- P0-D11 (item 3): what `--model` adds. A: the existing `Binding`, only under `--format json`; B:
+  enums only; C: binding plus row field types. Taken: A.
 - P0-D12 (item 3): `Field.label` default. A: the field name with `_` as a space, schema corrected;
-  B: field labels in the specification language; C: leave unfilled. Default A.
-- P0-D13 (item 3): where `Field.tone: neutral` is filled. A: only beside `tone_by`; B:
-  everywhere; C: nowhere. Default A.
-- P0-D14 (item 3): React's server-state key once `scope` is always filled. A: bare key at the
-  store's default scope, `scope:key` otherwise; B: always `scope:key`; C: do not fill `scope`.
-  Default A.
+  B: field labels in the specification language; C: leave unfilled. Taken: A.
+- P0-D13 (item 3): where `Field.tone: neutral` is filled. A: only beside `tone_by`, schema note
+  corrected; B: everywhere; C: nowhere. Taken: A.
+- P0-D14 (item 3): how React keys a server state once `scope` is always filled. A: the loader
+  records the filled keys; B: a bare key wherever the scope equals its store's default, written or
+  not (the partner portal's `layout` moves once; a CHANGELOG line under Changed, breaking for a
+  generated React project); C: do not fill `scope`. Settled: B. No record of filled keys exists.
 - P0-D15 (item 3): `form.fields`. A: from the model when `--model` is given; B: each renderer
-  derives it; C: `--format json` requires `--model`. Default A.
+  derives it; C: `--format json` requires `--model`. Taken: A.
 - P0-D16 (item 3): `Reads.key` and `Live.match`. A: each from the other, else `id`, except on a
-  choice's read; B: `id` everywhere; C: only from each other. Default A.
-- P0-D17 (item 3): where both renderers agree against the schema's default. A: the schema, as
-  ordered; B: correct the schema to what both do; C: per key. Default A.
+  choice's read; B: `id` everywhere; C: only from each other. Taken: A.
+- P0-D17 (item 3): where both renderers agree with each other against the schema's default
+  (`confirm_label`, `rich_text.syntax`, `DynamicNavEntries.label`). A: the schema; B: correct the
+  schema to what both do. Settled: B, by the operator, per key. `Document.actor` was taken out.
+- P0-D18 (item 3): which actor rule both renderers follow. A: the reference's row source with
+  React's sign-in condition (the first row of the first view the home page's shell preloads,
+  signed in under `from_session` only when that row exists; the terminal stops signing in without a
+  row); B: React's rule in both; C: the terminal's rule in both. Settled: A.
 
 P1 (first report):
 
