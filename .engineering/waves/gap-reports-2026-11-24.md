@@ -28,6 +28,8 @@ lifted into a document), then a fourth report of four findings (a service contra
 - Third list (an application's own generator): five findings on `ess` 0.98.0, items 1 to 5 below.
 - Fifth list (a page lifted into a document): two findings on `ess` 0.98.0.
 - Fourth report (a service contract): four findings, below.
+- Eighth list (the fourth report's application, contract gaps): twelve items, ranked with the fourth
+  report, below.
 - Seventh report (a command that only reads one row): three attempts, ranked with the fourth
   report, below.
 - Sixth list (items G12 to G15): G14 (P0, validation and synthesis time, three stories), G15 (P1),
@@ -205,7 +207,9 @@ Four findings. Finding 1 is a defect being reproduced for a patch release after 
   `story:a-json-request-may-ignore-undeclared-members-and-echoed-path-fields` and
   `story:generated-servers-ignore-undeclared-json-members-and-check-echoed-path-fields` (both
   existing, active); no new story.
-- Finding 4, crossed routes (`ESS-HTTP-011`): `story:two-crossed-route-templates-may-be-served-in-an-order-the-binding-declares` (M, about 400).
+- Finding 4, crossed routes (`ESS-HTTP-011`): `story:two-crossed-route-templates-may-be-served-in-an-order-the-binding-declares` (M, about 400). Archived
+  on 2026-11-24 under AE-D1 A: no finding stands behind it (the eighth list's several operations on
+  one path meet `ESS-HTTP-010`, not `ESS-HTTP-011`).
 - Finding 4, the OpenAPI document lists outbound commands: existing
   `story:an-http-binding-may-declare-that-an-accepted-command-or-a-served-view-has-no-route`
   (existing, draft); this report is a second need for it.
@@ -310,6 +314,65 @@ they need. The units are `gap-p1` drafts. No format version: every addition is o
   authentication story and the protocol-timer story are unchanged.
 - Not written: a receiver-side close trigger in `ess-protospec/1`, and the exchange-opened SSE
   stream (written when the exchange layer lands).
+
+### The eighth list (a service contract, second pass) (filed)
+
+The application of the fourth report, twelve items on `ess` 0.98.0, read at the integration tree and
+not run ("read, not run" marks an idiom checked by reading the validator only). It ranks with the
+fourth report: P1, after the first application's lists, before P2. Fifteen new drafts, and one
+amended draft.
+
+- Item 1: several operations on one method and path, told apart by the body (`ESS-HTTP-010`).
+  Gap. Six units: `story:a-json-request-may-carry-an-input-field-in-a-nested-member-of-its-body-validated-compiled-and-projected` (M, about 420),
+  `story:several-command-routes-may-share-one-method-and-path-each-chosen-by-literal-values-of-members-of-the-json-body` (M, about 550),
+  `story:the-openapi-projection-writes-a-route-shared-by-body-selection-as-one-operation-whose-request-body-is-one-of` (M, about 350),
+  `story:the-generated-rust-and-go-servers-read-an-input-field-from-the-nested-body-member-its-binding-names` (M, about 350),
+  `story:the-generated-rust-and-go-servers-send-a-request-on-a-shared-route-to-the-command-its-body-members-select-and` (M, about 500) and
+  `story:the-generated-react-and-terminal-apps-send-the-select-members-and-nested-members-a-bound-route-declares-or` (S, about 250). AE-D1 to AE-D4.
+- Item 2: reply member names read in any letter case. Covered by the protocol revision
+  (`story:an-ess-protospec-1-participant-reads-named-members-of-one-message-in-any-case-and-may-ignore-the-others-and-a`). No story here.
+- Item 3: which origins may read an answer (CORS). Gap. `story:an-http-binding-declares-which-origins-may-read-its-answers-and-the-openapi-projection-states-the-preflight`
+  (M, about 480) and `story:the-generated-rust-and-go-servers-answer-the-cors-preflight-and-let-only-the-origins-their-binding-declares`
+  (M, about 420). AE-D5.
+- Item 4: a top-level JSON error body. Two of three shapes are expressible today (an error whose
+  wire name is the code, `{<member>: error}`, literal payload fields; read, not run). The third, an
+  error object with no member naming it, is the gap: `story:an-error-outcome-may-answer-its-error-s-fields-as-the-whole-json-body-with-no-member-naming-the-error`
+  (M, about 400; lands after `story:an-error-outcome-or-a-standard-refusal-may-answer-plain-text`).
+  AE-D6. One route's `500` for an unreadable body amends
+  `story:an-unreadable-request-may-be-answered-with-a-2xx-status-and-no-body-where-the-service-does-so`
+  (AE-D7); no amendment text was filed with this list, so that story is not changed here.
+- Item 5: one route on any method. Declined, with the idiom: route the method callers send (AE-D8).
+  No story.
+- Item 6: a second port for admin routes. Expressible today (read, not run): a second component owns
+  those commands' domain and has its own `servers:` entry (AE-D9). No story.
+- Item 7: a URL taken from a setting. Expressible today: the callee's path stays in the binding, the
+  caller's address is a `settings:` entry, and an `ess-runtime` endpoint slot carries it per
+  environment (AE-D12). No story.
+- Item 8: callers without a route. Expressible today (an actor with `may:` grants); the refusal's
+  hint misleads: `story:the-refusal-of-a-component-that-owns-accepts-and-publishes-nothing-names-the-actor-as-the-home-of-a-caller` (S, about 40). AE-D10.
+- Items 9 and 10: one event type emitted several times from one outcome, and an event only for a
+  value that changed. One feature, gap: `story:at-the-new-format-an-outcome-may-emit-one-event-several-times-in-order-each-with-its-own-payload-and-an`
+  (L, about 580), `story:synthesis-and-the-interpreter-witness-every-emission-of-an-outcome-in-order-and-both-sides-of-a-conditional` (L, about
+  550) and `story:generated-rust-and-go-behaviour-emits-repeated-and-conditional-emissions-as-the-model-declares-generated-docs` (M, about 450). AE-D11. Touch
+  point, not covered: `story:an-outcome-that-keeps-its-subject-may-emit`.
+- Item 11: milliseconds since the epoch read as a `Timestamp`. Covered by the active stories of
+  beyond10x/ess#758 (`story:a-timestamp-newtype-declares-its-wire-encoding` and its codec,
+  projection and synthesis stories). One amendment under AE-D16 A (the copy between encodings is
+  admitted and converted); no amendment text was filed with this list, so those stories are not
+  changed here. Not built yet.
+- Item 12: from the protocol models. A filter list as comma-joined text is the HTTP binding's:
+  `story:a-query-form-or-view-parameter-list-may-travel-as-one-comma-joined-value-validated-compiled-and-projected` (M, about 350) and
+  `story:the-generated-servers-split-and-the-generated-apps-join-a-list-the-binding-declares-comma-joined` (M, about 300), AE-D13. A configurable
+  bound revises the existing draft `story:a-protocol-timer-takes-its-duration-from-a-message-field`
+  (title and body replaced; M, about 380; it also gains the tags `gap-reports-2026-11-24` and
+  `gap-p1` and edges to the three `pr0` units that edit `protocol.rs`), AE-D14, format per PR-D3. A
+  counter not kept across a restart is expressible today (a local `restart` input), AE-D15; no
+  story.
+- Archived: `story:two-crossed-route-templates-may-be-served-in-an-order-the-binding-declares`
+  (AE-D1 A; no finding stands behind it; the lifecycle makes `archived` final).
+- The README-style "open gaps" of the same application that are not in this list are covered by
+  existing stories: `story:an-identity-may-be-a-composite-of-fields` (active) and
+  `story:create-beside-a-move-on-the-same-key` (draft).
 
 ### Store issues found
 
@@ -435,7 +498,38 @@ story; the SSE and header-input stories share `ess-http/src/lib.rs`, so they go 
 `pr0` unit and the UI live-channel link wait for PR-D1, PR-D2 and PR-D3 (architecture); the SSE
 story also for PR-D4, the header-input story for PR-D5.
 
+Eighth list (every lane is serial within itself; lanes run side by side except where a file is
+named):
+
+- HTTP binding lane (`crates/specify/ess-http/src/lib.rs`, one at a time): `story:a-json-request-may-carry-an-input-field-in-a-nested-member-of-its-body-validated-compiled-and-projected`,
+  `story:several-command-routes-may-share-one-method-and-path-each-chosen-by-literal-values-of-members-of-the-json-body`,
+  `story:an-http-binding-declares-which-origins-may-read-its-answers-and-the-openapi-projection-states-the-preflight`, `story:a-query-form-or-view-parameter-list-may-travel-as-one-comma-joined-value-validated-compiled-and-projected`;
+  then `story:an-error-outcome-may-answer-its-error-s-fields-as-the-whole-json-body-with-no-member-naming-the-error` after the 2xx-refusal story and unit a of
+  the plain-text story, which are already ordered that way.
+- OpenAPI (`crates/generate/ess-gen/src/openapi.rs`): `story:the-openapi-projection-writes-a-route-shared-by-body-selection-as-one-operation-whose-request-body-is-one-of`
+  after `ae1a`; `ae3a`, `ae4` and `ae12a` also edit it, in the binding lane's order.
+- Server lane (`rust/http/bound.rs`, `go/http/bound.rs`): `story:the-generated-rust-and-go-servers-read-an-input-field-from-the-nested-body-member-its-binding-names`,
+  `story:the-generated-rust-and-go-servers-send-a-request-on-a-shared-route-to-the-command-its-body-members-select-and`,
+  `story:the-generated-rust-and-go-servers-answer-the-cors-preflight-and-let-only-the-origins-their-binding-declares`,
+  `story:the-generated-servers-split-and-the-generated-apps-join-a-list-the-binding-declares-comma-joined`; the server half of `ae4` joins where it lands.
+- App lane (`crates/ui/`): `story:the-generated-react-and-terminal-apps-send-the-select-members-and-nested-members-a-bound-route-declares-or` after `ae1a` and
+  `ae1d`; `story:the-generated-servers-split-and-the-generated-apps-join-a-list-the-binding-declares-comma-joined` touches the same two app files and
+  goes after `ae1f`.
+- Language lane: `story:at-the-new-format-an-outcome-may-emit-one-event-several-times-in-order-each-with-its-own-payload-and-an` once its source format
+  is open, then `ae9b` and `ae9c` side by side (different crates).
+- Protocol lane: the revised timer draft after the `pr0` units that edit `protocol.rs`, once PR-D3
+  is decided.
+- Any time: `story:the-refusal-of-a-component-that-owns-accepts-and-publishes-nothing-names-the-actor-as-the-home-of-a-caller`.
+
 ## Format
+
+Eighth list: `story:at-the-new-format-an-outcome-may-emit-one-event-several-times-in-order-each-with-its-own-payload-and-an` needs a new source-format
+version (the `emits` row of the effect by target grid), and `story:synthesis-and-the-interpreter-witness-every-emission-of-an-outcome-in-order-and-both-sides-of-a-conditional`
+possibly a suite-format pair: format: decided before acceptance. The revised timer draft follows
+PR-D3 (additive within `ess-protospec/1` under A, `/2` under B). Every `ess-http/1` story of the
+list (`ae1a`, `ae1d`, `ae3a`, `ae4`, `ae12a`) adds optional keys or words, so absent compiles to the
+same bytes and an older reader refuses the key by name; `ae3a` adds one refusal code (the next
+free number when it lands). The other stories add no version.
 
 Stories that name `ess/38` or `ess/39`: `story:at-ess-39-a-command-guard-compares-a-fact-with-an-expression-of-several-facts-and-every-expression-reads-the`, `story:synthesis-witnesses-a-command-guard-that-compares-a-fact-with-an-expression-of-several-facts-on-both-sides-of`,
 `story:every-target-names-what-it-does-with-a-guard-over-an-expression-of-several-facts-generated-rust-and-go`,`story:from-ess-39-a-view-s-filter-reads-the-row-a-parameter-names-one-hop-and-walks-that-row-s-list-fields`, `story:a-guard-over-the-rows-a-list-of-references-names-shares-a-command-with-other-related-guards-its-missing-row`,
@@ -656,7 +750,7 @@ Fourth report (a service contract):
   `api_key` or `mutual_tls` routes. Default A (a security boundary).
 - AC-D5 (finding 4): may an error answer use a `2xx` status. A: any error outcome and `malformed`;
   B: decline; C: a `2xx` with no body on `malformed` only. Default C (a security boundary).
-- AC-D6 (finding 4): may two crossed route templates both be bound. A: a route declares
+- AC-D6 (finding 4; moot under AE-D1 A, the story is archived): may two crossed route templates both be bound. A: a route declares
   `precedes:` and both servers dispatch in that order; B: decline; C: admit a pair whose variable
   types cannot hold each other's literal. Default A.
 
@@ -734,6 +828,64 @@ owner": they do not take the 15-minute default. Defaults are what the stories ar
 - PR-D9: do generators serve or call a broker request. A: no, `ess-publisher` and every generated
   server refuse a transport document with `requests:` by name; B: `ess-publisher` skips it and
   says so. Default A.
+
+The eighth list (a service contract, second pass). A decision marked SECURITY (what a generated
+server answers or parses, who may call a route, which origin may read an answer, which port serves a
+route, where a URL comes from) or ARCHITECTURE (a new link between formats, a new kind of binding, a
+new protocol-format version) waits for the owner and does not take the 15-minute default; its
+default is fail-closed. AC-D3, AC-D4, AC-D5 and PR-D1 to PR-D9 stay open.
+
+- AE-D1 (item 1): what happens to the crossed-templates story. A: archive it, "no finding: the
+  reported need is several operations on one path"; B: keep it as a draft, deferred; C: revise it
+  into the body-selection story. Default A. Taken: A, the story is archived.
+- AE-D2 (item 1; SECURITY: waits for the owner): how one route tells several operations apart. A:
+  `select:` per route, member-path equality with `String`, `Boolean` or `Integer` literals; a route
+  without `select` is the catch-all, and with none an unmatched body is `malformed`; B: one
+  `discriminator: <member>` per shared path; C: decline. Default A.
+- AE-D3 (item 1): which `operationId` OpenAPI gives a shared method and path. A: the first sharing
+  route's, all listed in `x-ess-operations`; B: a `group_id` key; C: refuse the projection. Default
+  A.
+- AE-D4 (item 1; SECURITY: waits for the owner): may a JSON request read an input field from a
+  nested member. A: `request.members: {<field>: <member.path>}`, the model's input stays flat, a
+  missing required field at any level is `malformed`; B: a struct input holding the envelope; C:
+  decline. Default A.
+- AE-D5 (item 3; SECURITY: waits for the owner): may a binding state which origins read its answers.
+  A: a `cors:` policy in `ess-http/1` (listed origins or `any`, `credentials`, headers, `max_age`;
+  `any` with credentials refused; absent means no cross-origin reads); B: authored literal headers
+  and an `OPTIONS` route; C: decline, it is gateway policy. Default A.
+- AE-D6 (item 4; SECURITY: waits for the owner): may an error outcome answer its error's fields as
+  the whole body. A: `body: error`, the error object bare; B: `{<member>: error}` with `member:
+  none`; C: decline. Default A.
+- AE-D7 (item 4; SECURITY: waits for the owner): may `malformed` answer a `5xx`. A: amend the
+  2xx-refusal story so it may, with `body: none` or a literal (`not_granted` and `too_large` keep
+  `4xx`); B: decline; C: split `malformed` in two. Default A.
+- AE-D8 (item 5; SECURITY: waits for the owner): may one route answer any method. A: decline, with
+  the idiom; B: `method:` may be a list; C: `method: any`. Default A. A story only under B or C.
+- AE-D9 (item 6; SECURITY: waits for the owner): may some routes of a component be served on a
+  second port. A: the idiom, a second component with its own `servers:` entry; B: per-route
+  `servers:`; C: OpenAPI-only per-operation servers. Default A.
+- AE-D10 (item 8): is a caller that serves nothing a component. A: no, it is an actor with `may:`
+  grants and the refusal's hint says so; B: change nothing; C: a component kind `caller`. Default A.
+- AE-D11 (items 9 and 10): may an outcome emit one event several times, and an emission hold only
+  under a predicate. A: an `emits:` entry may be an occurrence `{event, payload, when}` at a new
+  source format (format: decided before acceptance); B: a chain of moves and the branch product
+  idiom; C: only `when:`. Default A.
+- AE-D12 (item 7; SECURITY: waits for the owner): where a URL taken from a setting lives. A: the
+  idiom, a `settings:` entry on the caller and an `ess-runtime` endpoint slot, no link to the
+  route; B: `servers[].url` from a component setting; C: a declared link from setting to operation,
+  ARCHITECTURE. Default A.
+- AE-D13 (item 12; SECURITY: waits for the owner): may a list travel comma-joined. A: `lists:
+  {<name>: comma}` on a route, written strictly; B: A plus declared leniencies; C: decline. Default
+  A.
+- AE-D14 (item 12; ARCHITECTURE under B, or if PR-D3 B makes a new protocol format: waits for the
+  owner then): where a protocol timer's non-literal duration comes from. A: revise the timer draft
+  so a duration reads an `Integer` field of the trigger or a local field below a ceiling; B:
+  top-level `parameters:` swept by exploration; C: decline. Default A.
+- AE-D15 (item 12; ARCHITECTURE under B: waits for the owner then): does the protocol kind get a
+  declared restart. A: no, a restart is a local input resetting volatile fields and timers; B: a
+  declared fault; C: A now, B when a model needs durable timers. Default A.
+- AE-D16 (item 11): may an encoded `Timestamp` newtype be copied into a plain `Timestamp` field. A:
+  yes, amend the encoding story and its codec story to convert; B: no. Default A.
 
 ## Accepted
 

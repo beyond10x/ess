@@ -2,14 +2,16 @@
 format: aep.planning-md/3
 id: story:two-crossed-route-templates-may-be-served-in-an-order-the-binding-declares
 kind: story
-status: draft
+status: archived
 title: Two crossed route templates may be served in an order the binding declares
 tags:
 - gap-p1
 - gap-reports-2026-11-24
 relations:
 - serves: vision:O2
-revision: 1
+revision: 2
+transitions:
+- {from: "draft", to: "archived", at: "2026-11-24T01:46:16Z", actor: "human:timo", revision: 2}
 ---
 ## Need
 
