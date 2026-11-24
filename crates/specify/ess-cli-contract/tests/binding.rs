@@ -848,9 +848,11 @@ fn an_older_plan_reader_refuses_a_flag_and_a_repeated_option_by_name() {
         .unwrap_err()
         .to_string();
     assert!(error.contains("unknown field `repeated`"), "{error}");
-    let plain = launch(LAUNCH_MODEL, LAUNCH_BINDING).unwrap().to_canonical_json();
-    let plain: serde_json::Value = serde_json::from_str(&plain).unwrap();
-    for argument in plain["commands"][0]["arguments"].as_array().unwrap() {
+    let unflagged = launch(LAUNCH_MODEL, LAUNCH_BINDING)
+        .unwrap()
+        .to_canonical_json();
+    let unflagged: serde_json::Value = serde_json::from_str(&unflagged).unwrap();
+    for argument in unflagged["commands"][0]["arguments"].as_array().unwrap() {
         serde_json::from_value::<OlderArgumentSource>(argument["source"].clone())
             .unwrap_or_else(|error| panic!("{argument}: {error}"));
     }

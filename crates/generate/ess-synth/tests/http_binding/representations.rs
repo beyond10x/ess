@@ -132,12 +132,60 @@ const REQUESTS: &[[&str; 7]] = &[
     ],
     // After every request above, so `Listing` answers its three rows: six titles a spreadsheet
     // would read as a formula, each opening with one of `=`, `+`, `-`, `@`, a tab and a CR.
-    ["put-equals", "y", "PUT", "/items/r-4", "", "", r#"{"title":"=1+2","rank":-7}"#],
-    ["put-plus", "y", "PUT", "/items/r-5", "", "", r#"{"title":"+1","rank":-7}"#],
-    ["put-minus", "y", "PUT", "/items/r-6", "", "", r#"{"title":"-1","rank":-7}"#],
-    ["put-at", "y", "PUT", "/items/r-7", "", "", r#"{"title":"@a","rank":-7}"#],
-    ["put-tab", "y", "PUT", "/items/r-8", "", "", r#"{"title":"\tt","rank":-7}"#],
-    ["put-return", "y", "PUT", "/items/r-9", "", "", r#"{"title":"\rr","rank":-7}"#],
+    [
+        "put-equals",
+        "y",
+        "PUT",
+        "/items/r-4",
+        "",
+        "",
+        r#"{"title":"=1+2","rank":-7}"#,
+    ],
+    [
+        "put-plus",
+        "y",
+        "PUT",
+        "/items/r-5",
+        "",
+        "",
+        r#"{"title":"+1","rank":-7}"#,
+    ],
+    [
+        "put-minus",
+        "y",
+        "PUT",
+        "/items/r-6",
+        "",
+        "",
+        r#"{"title":"-1","rank":-7}"#,
+    ],
+    [
+        "put-at",
+        "y",
+        "PUT",
+        "/items/r-7",
+        "",
+        "",
+        r#"{"title":"@a","rank":-7}"#,
+    ],
+    [
+        "put-tab",
+        "y",
+        "PUT",
+        "/items/r-8",
+        "",
+        "",
+        r#"{"title":"\tt","rank":-7}"#,
+    ],
+    [
+        "put-return",
+        "y",
+        "PUT",
+        "/items/r-9",
+        "",
+        "",
+        r#"{"title":"\rr","rank":-7}"#,
+    ],
     ["ranked", "y", "GET", "/ranked", "format=csv", "", ""],
 ];
 
@@ -160,7 +208,10 @@ fn rust() -> String {
     edited(
         &rust_harness(),
         &[
-            ("ItemsTitledQuery, ", "ItemsTitledQuery, ListingQuery, RankedQuery, "),
+            (
+                "ItemsTitledQuery, ",
+                "ItemsTitledQuery, ListingQuery, RankedQuery, ",
+            ),
             (
                 "fn clean(text: &str) -> String {",
                 "impl ListingQuery for Ports {
