@@ -106,7 +106,7 @@ pub fn write(root: &Path) -> Result<String, String> {
     ))
 }
 
-/// What keeps the pages from being the ones [`write`] writes: an [`INSTALL`] page without the
+/// What keeps the pages from being the ones [`write()`] writes: an [`INSTALL`] page without the
 /// [`RELEASE_WRITER`] line or with a release number other than the newest, and a status page
 /// whose release region is not the rendered one.
 fn release_writing_defects(root: &Path, changelog: &str) -> Result<Vec<String>, String> {
@@ -141,7 +141,7 @@ fn release_writing_defects(root: &Path, changelog: &str) -> Result<Vec<String>, 
     Ok(defects)
 }
 
-/// The refusal for pages that are not as [`write`] writes them, if any.
+/// The refusal for pages that are not as [`write()`] writes them, if any.
 fn release_writing_refusal(root: &Path, changelog: &str) -> Result<Option<String>, String> {
     let defects = release_writing_defects(root, changelog)?;
     Ok((!defects.is_empty()).then(|| {

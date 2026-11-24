@@ -905,7 +905,7 @@ fn covers(decision: &Decision, lane: Option<&str>, scenario: &str, metric: &str)
         || lane.is_some_and(|lane| decision.keys.contains(&format!("{lane}: {scenario}")))
 }
 
-/// [`update`] under a decision that names the keys it covers.
+/// `update` under a decision that names the keys it covers.
 pub(crate) fn update_with(
     baseline: &Baseline,
     round: &Round,
