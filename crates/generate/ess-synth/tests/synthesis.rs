@@ -1467,3 +1467,84 @@ fn a_null_when_absent_struct_field_is_written_null() {
         "{go}"
     );
 }
+
+/// A component that accepts no command and declares no view holds its behaviours under a name
+/// rustc's `dead_code` lint does not report, so its crate builds with warnings denied
+/// (beyond10x/ess#793); a port with a handler or a query keeps `behaviors` and reads it.
+#[test]
+fn a_port_with_no_handler_and_no_query_leaves_no_field_unread() {
+    let ir = fixture(&[
+        (
+            "system.yaml",
+            "format: ess/37\nsystem: depot\nversion: v1\ndomains:\n  - depot.shelf\n  - depot.label\n",
+        ),
+        (
+            "components.yaml",
+            "components:
+  - component: stock
+    summary: Holds the shelves.
+    owns: {domains: [depot.shelf]}
+    accepts: {commands: [depot.shelf.AddShelf]}
+    publishes: {events: [depot.shelf.ShelfAdded]}
+    reached_by: in_process
+  - component: labels
+    summary: Holds the label types and accepts nothing.
+    owns: {domains: [depot.label]}
+    reached_by: in_process
+",
+        ),
+        (
+            "domains/label.yaml",
+            "domain: depot.label\ntypes:\n  - {name: depot.label.LabelText, kind: newtype, of: String}\n",
+        ),
+        (
+            "domains/shelf.yaml",
+            "domain: depot.shelf
+entities:
+  - name: depot.shelf.Shelf
+    identity: {name: shelf_id, type: Uuid}
+    fields:
+      - {name: name, type: String}
+    lifecycle: {initial: Open, states: [Open], terminal: [Open]}
+actors:
+  - {name: depot.shelf.Clerk, may: [depot.shelf.AddShelf]}
+commands:
+  - name: depot.shelf.AddShelf
+    input:
+      - {name: name, type: String}
+    outcomes:
+      - name: added
+        creates: depot.shelf.Shelf
+        instance: shelf_id
+        sets: {name: input.name}
+        emits: [depot.shelf.ShelfAdded]
+        payload:
+          depot.shelf.ShelfAdded: {shelf_id: {generated: true}, name: input.name}
+events:
+  - name: depot.shelf.ShelfAdded
+    fields:
+      - {name: shelf_id, type: Uuid}
+      - {name: name, type: String}
+views:
+  - name: depot.shelf.Shelves
+    source: depot.shelf.Shelf
+    consistency: read_your_writes
+    fields:
+      - {name: shelf_id, type: Uuid}
+      - {name: name, type: String}
+",
+        ),
+    ]);
+    let synthesis = synthesize_for(&ir, Target::Rust)
+        .unwrap_or_else(|refusal| panic!("the depot has a Rust workspace: {refusal:?}"));
+    let labels = artifact(&synthesis, "crates/labels/src/lib.rs");
+    assert!(labels.contains("    _behaviors: B,\n"), "{labels}");
+    assert!(!labels.contains("    behaviors: B,\n"), "{labels}");
+    assert!(
+        labels.contains("pub fn new(behaviors: B) -> Self"),
+        "{labels}"
+    );
+    let stock = artifact(&synthesis, "crates/stock/src/lib.rs");
+    assert!(stock.contains("    behaviors: B,\n"), "{stock}");
+    assert!(stock.contains("self.behaviors"), "{stock}");
+}

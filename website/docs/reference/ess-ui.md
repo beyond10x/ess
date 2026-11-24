@@ -2185,7 +2185,7 @@ One user-triggered effect: run a command (`does`), open an overlay, navigate, ex
 
 Sample data per view and event scripts per channel, so renderers run without a backend.
 
-In fixture mode a renderer answers every read from a fixture file and plays each channel's script, honouring delivery and coalesce. A script file holds `events` (the entries below) and may say `channel`, `session` and `loop: true`, which repeats the script from the start after its last entry (default: it plays once). A file holds one view or several; `derived` answers ById views from a list fixture. Placeholders name their fixture on the read itself.
+In fixture mode a renderer answers every read from a fixture file and plays each channel's script, honouring delivery and coalesce. A script file holds `events` (the entries below) and may say `channel`, `session` and `loop: true`, which repeats the script from the start after its last entry: the next cycle begins at the last entry's `at` (default: it plays once, and so does a script whose last entry is at 0 s). A file holds one view or several; `derived` answers ById views from a list fixture. Placeholders name their fixture on the read itself.
 
 **Properties**
 
@@ -2304,7 +2304,7 @@ buffer: {type: {list: ChatEvent}, class: channel_buffer}
 
 How a section, or a nested composite that reads, applies a channel's events to its rows.
 
-`effect` decides what an event does: patch a row, insert or patch, insert at the top of a feed, remove, replace, or re-read. `only_if: matches(params)` drops live rows outside the section's filters; `when_paged_away: count_new` shows "12 new" instead of shifting rows. Every effect acts on rows, whatever shows them: a record shows the first row, a metric takes its value or aggregate from the rows, a list shows them all.
+`effect` decides what an event does: patch a row, insert or patch, insert at the top of a feed, remove, replace, or re-read. `only_if: matches(params)` drops live rows outside the section's filters; `when_paged_away: count_new` shows "12 new" instead of shifting rows. Every effect acts on rows, whatever shows them: a record shows the first row, a metric takes its value or aggregate from the rows, a list shows them all. A row path names one row: an `insert_top` event whose key the section already holds adds no second row, the held row takes the event's fields and moves to the top (`max_rows` then applies).
 
 **Properties**
 

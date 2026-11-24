@@ -552,3 +552,76 @@ assert.deepEqual(visible.rows, [{id:'a',label:'new'}], 'ordinary read completion
 ",
     );
 }
+
+#[test]
+fn a_looping_fixture_script_repeats_at_its_last_entry_s_time() {
+    let out = project("loop-period");
+    let source = DOCUMENT.replace("pages:\n  p:", "channels: {lines: {carries: {events: [t.Changed]}, direction: server_to_client, delivery: every_event, resume: refetch}}\npages:\n  p:")
+        .replace("columns: [id]}", "columns: [id], live: {channel: lines, effect: insert_or_patch}}");
+    ess_ui_react::generate(&ess_ui::load_str(&source).unwrap(), Path::new("."), &out).unwrap();
+    support::compile(&out, &["runtime/live.ts"]);
+    support::node(
+        &out,
+        "loop-period",
+        r"
+const {fixturePlayer} = out('runtime/live');
+const {fixtures} = out('fixtures');
+const timers = [];
+global.setTimeout = (callback, ms) => { timers.push({callback, ms}); return timers.length; };
+global.clearTimeout = () => {};
+const play = events => {
+  timers.length = 0;
+  fixtures.scripts.lines = {channel: 'lines', loop: true, events};
+  fixturePlayer({name: 'lines', events: ['t.Changed']}).start(() => {}, () => {});
+  return timers.map(timer => timer.ms);
+};
+const entry = at => ({at, event: 't.Changed', payload: {id: 'a'}});
+const first = play([entry(1000), entry(4000)]);
+assert.deepEqual(first, [1000, 4000, 4000], 'the next round starts when the last entry plays');
+timers[2].callback();
+assert.deepEqual(timers.slice(3).map(timer => timer.ms), [1000, 4000, 4000], 'the second round has the same shape');
+assert.deepEqual(play([entry(0)]), [0], 'a script whose last entry is at 0 s plays once');
+",
+    );
+}
+
+#[test]
+fn an_insert_top_of_a_held_key_moves_that_row_to_the_top_once() {
+    let out = project("insert-top-held");
+    let source = DOCUMENT.replace("pages:\n  p:", "channels: {updates: {carries: {events: [t.Changed]}, direction: server_to_client, delivery: every_event, resume: refetch}}\npages:\n  p:")
+        .replace("columns: [id]}", "columns: [id], live: {channel: updates, effect: insert_top, max_rows: 5}}");
+    ess_ui_react::generate(&ess_ui::load_str(&source).unwrap(), Path::new("."), &out).unwrap();
+    support::compile(&out, &["runtime/live.ts"]);
+    support::node(
+        &out,
+        "insert-top-held",
+        r"
+const {useLive, useNetworkChannels} = out('runtime/live');
+let source;
+global.EventSource = class { constructor() { source = this; } close() {} };
+useNetworkChannels('http://app.test');
+const base = [{id: 1, label: 'Tea'}, {id: 2, label: 'Milk'}, {id: 3, label: 'Rice'}];
+const script = [{id: 4, label: 'Salt'}, {id: 5, label: 'Oil'}, {id: 6, label: 'Flour'}, {id: 2, label: 'Cream'}];
+for (const keep of [undefined, () => true]) {
+  let seen;
+  function Reader() {
+    seen = useLive({status: 'ready', rows: base, params: {}, refetch() {}}, {channel: 'updates', effect: 'insert_top', maxRows: 5}, undefined, keep);
+    return null;
+  }
+  const root = React.__root(jsx(Reader, {})).settle();
+  const keys = () => seen.rows.map(row => row.id).join(',');
+  let step = 0;
+  const play = count => { for (let i = 0; i < count; i += 1) { source.onmessage({data: JSON.stringify({event: 't.Changed', payload: script[step++ % script.length]})}); root.settle(); } };
+  play(3);
+  assert.equal(keys(), '6,5,4,1,2', `keep ${!!keep}: three new keys, capped at five`);
+  play(1);
+  assert.equal(keys(), '2,6,5,4,1', `keep ${!!keep}: a held key moves to the top once`);
+  assert.equal(seen.rows[0].label, 'Cream', `keep ${!!keep}: the held row takes the event's values`);
+  play(3);
+  assert.equal(keys(), '6,5,4,2,1', `keep ${!!keep}: events 4, 5 and 6 again`);
+  play(5);
+  assert.equal(new Set(seen.rows.map(row => row.id)).size, seen.rows.length, `keep ${!!keep}: two rows share a key: ${keys()}`);
+}
+",
+    );
+}
