@@ -28,6 +28,8 @@ lifted into a document), then a fourth report of four findings (a service contra
 - Third list (an application's own generator): five findings on `ess` 0.98.0, items 1 to 5 below.
 - Fifth list (a page lifted into a document): two findings on `ess` 0.98.0.
 - Fourth report (a service contract): four findings, below.
+- Seventh report (a command that only reads one row): three attempts, ranked with the fourth
+  report, below.
 - Sixth list (items G12 to G15): G14 (P0, a performance defect, diagnosed apart, its story
   follows), G15 (P1), G12 and G13 (P2), below.
 - P2: first report items 9 to 17.
@@ -209,6 +211,31 @@ they are not the second report's G-items and not the first report's items 12 to 
   `story:a-system-issued-creating-command-is-witnessed` (active), which covers the report's second
   sentence (`ESS-SYNTH-023` on a creating command).
 
+### Seventh report (a command that only reads one row) (filed)
+
+One application, three attempts to make a read-only command (404 when the row is absent, otherwise
+the row, changing nothing) synthesize on `ess` 0.98.0. The base shape is not a defect: nothing
+declares that the input names a row. The other four commands of the same shape were inferred by
+the requester and not run. Ranked with the fourth report: after the first application's P1 lists,
+before P2. No format version.
+
+- Attempt 3 (`preserves:` with `instance:` needs a full `read_your_writes` view): not a new story.
+  It amends the existing draft `story:a-branch-may-leave-its-addressed-record-unchanged-without-a-view`
+  (decided 2026-10-22, never shipped): its Need, Acceptance, Scope and line references gain the
+  read-only case, its title names it, and it gains the tags `gap-reports-2026-11-24` and `gap-p1`
+  (M, about 300; synthesis only, about 30 lines of source). RD-D1.
+- Attempt 1 (`when_related` with `via`, `ESS-COMMAND-004`, an identity type shared by two
+  entities): `story:the-refusal-of-an-input-whose-identity-type-several-entities-share-on-a-branch-with-no-subject-names-the-forms` (S, about 120; the refusal names the forms that say which
+  entity, a refusal-only change). RD-D2.
+- Attempt 2 (a row-set `exists: false` whose passing branch is not arranged, cause not
+  established): `story:a-row-set-guard-that-selects-its-entity-s-row-by-identity-from-the-input-is-witnessed-on-both-sides-the` (M, about 450, a guess until the first acceptance; the
+  passing branch is witnessed on a row created under that identity, a side it cannot arrange is
+  refused naming why). RD-D3.
+- Touch points, not covered: first report items 10 to 13; second report G13 (`sl13-provided-*`,
+  where the read row has no creating command); sixth list G14 (none of the three adds validation
+  cost). `story:an-outcome-that-keeps-its-subject-may-emit` builds on the amended story.
+- Idiom that works today: give the other entity a distinct identity type.
+
 ### Store issues found
 
 Found while assessing the fourth report; no existing story was changed for them.
@@ -317,6 +344,13 @@ Sixth list: `story:with-model-ess-ui-check-refuses-a-fixture-row-or-a-script-pay
 `story:ess-ui-test-model-refuses-to-start-on-mistyped-document-fixtures-and-fails-a-test-whose-own-fixtures`; `story:a-command-that-records-its-caller-and-is-granted-to-a-system-actor-is-refused-naming-that-actor-as-the-system` any time; `story:at-ess-39-a-command-guard-compares-a-fact-with-an-expression-of-several-facts-and-every-expression-reads-the` once
 `ess/39` is open (`story:the-specification-format-ess-39-is-open-as-the-newest-reads-and-compiles-every-specification-exactly-as-ess-38`, one opener only), then `story:synthesis-witnesses-a-command-guard-that-compares-a-fact-with-an-expression-of-several-facts-on-both-sides-of` and
 `story:every-target-names-what-it-does-with-a-guard-over-an-expression-of-several-facts-generated-rust-and-go` side by side.
+
+Seventh report: the amended `story:a-branch-may-leave-its-addressed-record-unchanged-without-a-view`
+first (it runs beside the units of the wave of 2026-11-24: s3 and s4 edit other functions of
+`synthesize.rs`), then `story:the-refusal-of-an-input-whose-identity-type-several-entities-share-on-a-branch-with-no-subject-names-the-forms` (after s1 of that wave, which edits the same
+function, and after the amended story, so its hint names no form synthesis refuses), then
+`story:a-row-set-guard-that-selects-its-entity-s-row-by-identity-from-the-input-is-witnessed-on-both-sides-the` (after s4, or rebased on it; if it slips, `story:the-refusal-of-an-input-whose-identity-type-several-entities-share-on-a-branch-with-no-subject-names-the-forms` names
+only the `preserves:` form and `story:a-row-set-guard-that-selects-its-entity-s-row-by-identity-from-the-input-is-witnessed-on-both-sides-the` adds the second).
 
 ## Format
 
@@ -561,6 +595,22 @@ Sixth list (items G12, G13, G15):
   (`ess/39`); C: decline, with the documented idiom (an automated actor with an identity is a
   caller with `attributes:`, not `system: true`) and a refusal that names both. Default C. A and
   B touch who is recorded as having done something, an audit and authority boundary.
+
+Seventh report (a command that only reads one row):
+
+- RD-D1: how the amended preserve-without-view story is delivered. A: a unit beside the wave of
+  2026-11-24, released with it; B: a patch release from 0.98.0 on the hotfix route, ahead of the
+  wave (a tag is an operator decision; its fit review classes it a gap); C: after the wave.
+  Default A.
+- RD-D2 (attempt 1): how an author says which entity an input names when its identity type is
+  shared and the branch acts on no subject. A: no new surface, the refusal's hint names
+  `preserves:` with `instance:` and the row-set selector by identity; B: a `references: <entity>`
+  key on an input field (`ess/39`, every target); C: the requester's `entity:` beside `via:` in
+  `when_related` (`ess/39`, a second spelling against `docs/design/filtered-related-reads.md:39`).
+  Default A.
+- RD-D3 (attempt 2): a row-set selector that pins an identity the target mints. A: synthesis sends
+  the captured instance as the input, as `instance:` does, and witnesses both sides; B: refuse that
+  branch by name and point to `preserves:` with `instance:`; C: change nothing. Default A.
 
 ## Accepted
 
