@@ -224,8 +224,9 @@
 //! | `redirect` | a required `Location` header, `format: uri`, saying which parameters go into its query or fragment |
 //! | a view's `body: single` | the row schema at `200` and no content at its `empty` status, or the one literal member its `empty.body` declares |
 //! | a view's `body: array` | at `200`, an array of the row schema, with no `{view}.Response` |
-//! | `refusals.<key>` | replaces the standard refusal's response on every bound operation that can answer it |
+//! | `refusals.<key>` (`not_granted`, `malformed`, `unfinished`, `too_large`) | replaces the standard refusal's response on every bound operation that can answer it |
 //! | `routes[i].refusals.<key>` | replaces it on that route alone, in place of the binding's |
+//! | `limits.request_bytes`, `routes[i].limits.request_bytes` | `x-ess-request-max-bytes` on each operation that reads a body, and a response at the `too_large` status |
 //!
 //! A bare body names no branch, so every response of a command whose route uses a stage-2 key
 //! carries `x-ess-outcomes`: the outcomes it answers, in the order the command declares them, and
@@ -658,7 +659,44 @@ fn description(
              no security scheme is declared.",
         );
     }
+    text.push_str(request_bound_paragraph(ir, component, binding));
     text
+}
+
+/// The paragraph said once where some operation of `component` names `x-ess-request-max-bytes`,
+/// else nothing.
+fn request_bound_paragraph(
+    ir: &EssIr,
+    component: &ResolvedComponent,
+    binding: Option<&http::Binding>,
+) -> &'static str {
+    let bounded = http::bound_routes(ir, component, binding)
+        .iter()
+        .any(|route| bound_request(binding, route.declared).is_some());
+    if bounded {
+        "\n\nAn operation that names `x-ess-request-max-bytes` reads at most that many bytes of \
+         its request body: a larger body is refused with the response the operation lists for \
+         it. A client sends `Content-Length`; a server may answer `411` to a request without it."
+    } else {
+        ""
+    }
+}
+
+/// The largest request body, in bytes, the operation of `declared` reads: `Some` only where the
+/// binding bounds it ([`ess_http::HttpIr::bounds_request`]), the one answer the servers read too.
+fn bound_request(
+    binding: Option<&http::Binding>,
+    declared: Option<&ess_http::Route>,
+) -> Option<u64> {
+    binding
+        .zip(declared)
+        .filter(|(binding, declared)| binding.ir().bounds_request(declared))
+        .map(|(binding, declared)| {
+            binding
+                .ir()
+                .request_bytes(declared)
+                .unwrap_or(ess_http::FIXED_REQUEST_BYTES)
+        })
 }
 
 /// The standard refusals a binding answers its own way; `None` without a binding.
@@ -741,6 +779,7 @@ fn paths(
                 checked,
                 route.declared,
                 refusals,
+                bound_request(binding, route.declared),
             ),
             http::Served::View(handle) => query(ir, handle, checked, route.declared, refusals),
         };
@@ -805,6 +844,7 @@ fn path_parameters(
 }
 
 /// One command, as an operation.
+#[allow(clippy::too_many_arguments)]
 fn operation(
     ir: &EssIr,
     handle: &CommandHandle,
@@ -813,6 +853,7 @@ fn operation(
     checks_grants: bool,
     declared: Option<&ess_http::Route>,
     refusals: Option<&Refusals>,
+    bound_request: Option<u64>,
 ) -> Operation {
     let command = ir.command(handle);
     let domain = ir.domain(&command.domain);
@@ -835,6 +876,7 @@ fn operation(
             .and_then(|route| route.operation_id.clone())
             .unwrap_or_else(|| command.name.to_string()),
         route_source: declared.map(|_| ROUTE_SOURCE),
+        max_request_bytes: bound_request,
         periodic: ir
             .bindings()
             .values()
@@ -879,10 +921,16 @@ fn operation(
         ),
         // A route without a stage-2 key, and a derived one, keeps the stage-1 answers and bytes.
         responses: match declared {
-            Some(route) if answered_by_binding(declared, refusals) => {
-                bound_responses(ir, command, publishes, checks_grants, route, refusals)
-            }
-            _ => responses(ir, command, publishes, checks_grants),
+            Some(route) if answered_by_binding(declared, refusals) => bound_responses(
+                ir,
+                command,
+                publishes,
+                checks_grants,
+                route,
+                refusals,
+                bound_request,
+            ),
+            _ => responses(ir, command, publishes, checks_grants, bound_request),
         },
     }
 }
@@ -1021,6 +1069,7 @@ fn query(
             .and_then(|route| route.operation_id.clone())
             .unwrap_or_else(|| view.name.to_string()),
         route_source: declared.map(|_| ROUTE_SOURCE),
+        max_request_bytes: None,
         periodic: Vec::new(),
         summary: Some(view.naming.display_or(&view.name).to_owned()),
         description: view.naming.summary.clone(),
@@ -1227,6 +1276,7 @@ fn responses(
     command: &ResolvedCommand,
     publishes: &BTreeSet<EventHandle>,
     checks_grants: bool,
+    bound_request: Option<u64>,
 ) -> BTreeMap<String, Response> {
     let mut out: BTreeMap<String, Response> = by_status(ir, command)
         .into_iter()
@@ -1296,7 +1346,37 @@ fn responses(
             Some(content(unfinished_schema())),
         ),
     );
+    if let Some(limit) = bound_request {
+        out.insert(
+            http::TOO_LARGE.to_owned(),
+            Response::new(too_large_meaning(limit), Some(content(too_large_schema()))),
+        );
+    }
     out
+}
+
+/// What a body larger than the bound means, for the `413` response's description.
+fn too_large_meaning(limit: u64) -> String {
+    format!(
+        "No declared outcome: the request body is larger than the {limit} bytes this operation \
+         reads (`x-ess-request-max-bytes`). It is refused before the operation runs, so nothing \
+         was run, written or published."
+    )
+}
+
+/// The refusal of a body larger than the bound: `{"refused": <words>}`.
+fn too_large_schema() -> Value {
+    json!({
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["refused"],
+        "properties": {
+            "refused": {
+                "type": "string",
+                "description": "Why the body was refused, in words.",
+            },
+        },
+    })
 }
 
 /// What the unfinished realization means, for the `501` response's description.
@@ -1346,6 +1426,9 @@ enum Answer<'a> {
     NotGrantedRead,
     /// The unfinished realization, as today.
     Unfinished,
+    /// The standard refusal for a body larger than the route reads, as the servers answer it
+    /// today.
+    TooLarge(u64),
     /// A `rows` view's rows.
     Rows(&'a ResolvedView),
     /// A `single` view's one row, bare.
@@ -1379,6 +1462,7 @@ fn bound_responses(
     checks_grants: bool,
     route: &ess_http::Route,
     refusals: Option<&Refusals>,
+    bound_request: Option<u64>,
 ) -> BTreeMap<String, Response> {
     let mut by_status: BTreeMap<String, Vec<Answer<'_>>> = BTreeMap::new();
     for outcome in &command.outcomes {
@@ -1404,6 +1488,14 @@ fn bound_responses(
             ess_http::RefusalKey::Malformed,
             !command.input.is_empty(),
             None,
+        ),
+        (
+            ess_http::RefusalKey::TooLarge,
+            bound_request.is_some(),
+            Some((
+                http::TOO_LARGE,
+                Answer::TooLarge(bound_request.unwrap_or(ess_http::FIXED_REQUEST_BYTES)),
+            )),
         ),
         (
             ess_http::RefusalKey::Unfinished,
@@ -1678,6 +1770,9 @@ fn rendered(
         Answer::Unfinished => {
             Rendered::standard(Some(unfinished_schema()), UNFINISHED_MEANING.to_owned())
         }
+        Answer::TooLarge(limit) => {
+            Rendered::standard(Some(too_large_schema()), too_large_meaning(*limit))
+        }
         Answer::Rows(view) => Rendered::standard(
             Some(json!({"$ref": reference(&view_key(view))})),
             view_description(ir, view),
@@ -1910,6 +2005,7 @@ fn refusal_sentence(key: ess_http::RefusalKey, refusal: &ess_http::Refusal) -> S
     let what = match key {
         ess_http::RefusalKey::Malformed => "a request whose input cannot be read",
         ess_http::RefusalKey::NotGranted => "a caller no grant admits",
+        ess_http::RefusalKey::TooLarge => "a request whose body is larger than the route reads",
         ess_http::RefusalKey::Unfinished => "a realization that is unfinished",
     };
     let body = match &refusal.body {
@@ -3279,6 +3375,13 @@ struct Operation {
     /// where they are derived, so a document generated without a binding keeps its bytes.
     #[serde(rename = "x-ess-route-source", skip_serializing_if = "Option::is_none")]
     route_source: Option<&'static str>,
+    /// The largest request body, in bytes, the operation reads; absent where nothing bounds it, so
+    /// a document generated without a limit keeps its bytes.
+    #[serde(
+        rename = "x-ess-request-max-bytes",
+        skip_serializing_if = "Option::is_none"
+    )]
+    max_request_bytes: Option<u64>,
     #[serde(
         rename = "x-ess-binding-accessors",
         skip_serializing_if = "Vec::is_empty"

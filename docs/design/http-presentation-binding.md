@@ -534,13 +534,22 @@ The served surface refuses some requests without a declared outcome: an actor no
 input where the command declares that answer (`400`, `http.rs:83-86`), and a malformed request or a
 path nothing declares (`rust/http.rs:1566-1579`). A protocol states its own answer for some of them
 (RFC 6749 §5.2, `invalid_request`, `invalid_client`). Top-level `refusals:` takes `not_granted`,
-`unfinished` and `malformed`, each with `status`, a literal body and headers. A refusal not listed
+`too_large`, `unfinished` and `malformed`, each with `status`, a literal body and headers. A refusal not listed
 keeps today's answer.
 
 A route may state its own: `routes[i].refusals:` takes the same keys and the same checks, and on
 that route only stands in place of the top-level entry of the same key. One endpoint of a protocol
 can answer a malformed request with its own error while the binding's other routes keep theirs
 (`story:ess-http-admits-text-bodies-route-refusals-empty-bodies-and-array-views`).
+
+Request size: `limits: {request_bytes: N}` at the top of a binding, and under a route, states the
+largest request body a route reads, a whole number of bytes from 1 to 16,777,216; the route's own
+value stands in place of the binding's. It applies to the routes the binding names that read a body
+(a command on `json` or `form`, not on `get`, not `request: {encoding: query}`), never to a view and
+never to a derived route, and a route `limits` on a route that reads no body is `ESS-HTTP-034`.
+`too_large` answers a body over the bound with a `4xx` of its own (`413` when absent), a literal
+body or none, and headers. A binding that declares neither keeps today's fixed 1 MiB bound
+and its answers.
 
 ### What compiling checks (stage 2)
 
@@ -555,9 +564,10 @@ can answer a malformed request with its own error while the binding's other rout
 | `ESS-HTTP-026` | a header name that is not a token, a header the server (`Connection`), the encoding (`Content-Type`, `Content-Encoding`, `Content-Length`, `Transfer-Encoding`) or `redirect` (`Location`) owns, a literal that is not a field value, `error.wire` whose wire name is not a field value, a header declared twice ignoring case, a source that names no field or names a non-scalar, a source the outcome cannot supply (`response.` without `returns: true`, `error.` without `error`), `error.wire` on an outcome whose error declares a field named `wire`, or any `source` in a `refusals:` header | the header and the source |
 | `ESS-HTTP-027` | a challenge whose scheme or param name is not a token, a param declared twice, a literal param or a param reading `error.wire` whose text no quoted string carries, a challenge under any header but `WWW-Authenticate`, or a declared `401` (outcome or refusal) without a `WWW-Authenticate` challenge | the header, the param |
 | `ESS-HTTP-028` | `redirect` without a `3xx` status, a `3xx` without `redirect`, a `location` that is not a `String` or a newtype of `String`, or is `Optional`, or that reads `error.wire`; a `mode` absent or outside the set, a parameter name that is not one or more RFC 3986 `unreserved` characters, a parameter declared twice, a parameter source that names no field, names a non-scalar or that the outcome cannot supply | the outcome and the key |
-| `ESS-HTTP-029` | a `refusals:` key outside the set; a status in the wrong class for it (`4xx` for `malformed` and `not_granted`, `5xx` for `unfinished`); a body other than `{<member>: {literal: …}}` or `none`; the same under a route's own `refusals:` | `refusals.<key>` or `routes[i].refusals.<key>` |
+| `ESS-HTTP-029` | a `refusals:` key outside the set; a status in the wrong class for it (`4xx` for `malformed`, `not_granted` and `too_large`, `5xx` for `unfinished`); a body other than `{<member>: {literal: …}}` or `none`; the same under a route's own `refusals:` | `refusals.<key>` or `routes[i].refusals.<key>` |
 | `ESS-HTTP-030` | `body: single` without `empty`, `empty` without `single`, an `empty` status outside `4xx`, or an `empty` body other than `none` and `{<member>: {literal: …}}` | `routes[i]`, or `routes[i].empty.body` |
 | `ESS-HTTP-031` | `body: single` on a view whose filter does not select by its source entity's identity: neither the filter nor a member of a top-level `all` (nested `all` included) is `<identity field> == param.<name>`, compared by value, in either operand order | `routes[i].body`, the view, its source entity and the entity's identity field |
+| `ESS-HTTP-034` | a `limits.request_bytes` outside 1 to 16777216 bytes; a route `limits` on a route that reads no request body (a view, a `get` command, a `request: {encoding: query}` command) | `limits.request_bytes`, `routes[i].limits.request_bytes` or `routes[i].limits` |
 
 A refinement may not change a refined route's stage-2 keys either; that is `ESS-HTTP-012`. A
 missing `status` in a listed outcome or refusal, and an unknown key anywhere, are parse refusals
@@ -568,8 +578,12 @@ naming the key, as a missing `method` is in stage 1.
 - **OpenAPI.** `requestBody` takes the declared media type. Each declared status gets its own
   response: the bare schema, the error object, or no content; headers as response `headers`, with a
   redirect's `Location`. The `outcome` discriminator is gone from a bare body, so each response
-  carries `x-ess-outcomes` naming the outcomes it answers.
+  carries `x-ess-outcomes` naming the outcomes it answers. A bounded operation carries
+  `x-ess-request-max-bytes` and a response at the status its `too_large` refusal declares, `413`
+  where it declares none.
 - **Rust and Go servers.** Form and query decoders; status, header, challenge and redirect writers.
+  They read at most the bound of the route a request matches and refuse a larger body before
+  reading it.
   The status a server writes today comes from `http::outcome_status` (`rust/http.rs:1244`,
   `go/http.rs:1546-1557`); a binding's status replaces it in the same place, so the document and the
   servers still read one answer.
@@ -581,7 +595,9 @@ naming the key, as a missing `method` is in stage 1.
 The format stays `ess-http/1` and `ess-http-ir/1`. A document that uses no stage-2 key compiles to
 the same IR bytes under a stage-2 reader: absent keys are omitted, never written as defaults. An
 OpenAPI document generated from such a binding keeps its stage-1 bytes. Header and parameter maps
-are `BTreeMap`s, so the emitted order is the name order, not the authored order.
+are `BTreeMap`s, so the emitted order is the name order, not the authored order. A binding with
+neither `limits` nor `too_large` changes no byte of the OpenAPI document or the servers; no format
+version moves.
 
 ### Stage 2: keys, precedence and the units that build them
 
@@ -611,7 +627,9 @@ same bytes.
 | `routes[].empty.status` (view route) | an integer, `4xx`; **required** with `single` | written with `single` | k2 |
 | `routes[].empty.body` (view route) | `none`, `{<member>: {literal: <text>}}` | `none`, omitted | 0.77.0 |
 | `routes[].refusals.<key>` | as `refusals.<key>` with its `status`, `body` and `headers`; on that route in place of the top-level entry | absent, omitted when the route states none | 0.77.0 |
-| `refusals.<key>` | `malformed`, `not_granted`, `unfinished` | absent: today's answer | k2 |
+| `limits.request_bytes` | a whole number of bytes from 1 to 16777216; **required** under `limits` | absent: the fixed 1 MiB; written only where declared | this wave |
+| `routes[].limits.request_bytes` | as `limits.request_bytes`; on a command route that reads a body (`json` or `form`, not `get`), in place of the binding's | absent, omitted | this wave |
+| `refusals.<key>` | `malformed`, `not_granted`, `too_large`, `unfinished` | absent: today's answer | k2 |
 | `refusals.<key>.status` | an integer; **required** | always written | k2 |
 | `refusals.<key>.body` | `{<member>: {literal: <text>}}`, `none`; **required** | always written | k2 |
 | `routes[].outcomes.<outcome>.headers.<Name>` | `{literal: <text>}`, `{source: <path>}`, `{challenge: {scheme, params}}` | absent, omitted when empty; ordered by name | k3 |
@@ -645,6 +663,7 @@ k4 to k6 add no binding key:
 | k2 | `ESS-HTTP-022`, `-023`, `-024` (except its `redirect` clause), `-025`, `-029`, `-030`, `-031` | `ESS-HTTP-012` covers `outcomes` (status, body), `body`, `empty` and `refusals` |
 | k3 | `ESS-HTTP-026`, `-027`, `-028`, and `-024`'s clause for a body beside a `redirect` | `ESS-HTTP-012` covers headers and redirects |
 | k4, k5, k6 | no code | — |
+| request limits | `ESS-HTTP-034` | `ESS-HTTP-029` (key set), `ESS-HTTP-012` (limits) |
 
 k3 refuses a `3xx` outcome without a `redirect` (`ESS-HTTP-028`) and a `401` without a challenge
 (`ESS-HTTP-027`), which k2 alone compiled; no release falls between the two units. k3 also widens
@@ -664,7 +683,9 @@ A refining document restates each stage-2 key of every route of the refined bind
 adds, changes or drops on such a route is `ESS-HTTP-012`, naming the key, the refined value and the
 new one. A route's `errors` is compared as one value, at `routes[i].errors`, and its `empty` as
 status and body. Its top-level `refusals:` equals the refined binding's, both absent or both the
-same, and so does each refined route's own `refusals:`, compared at `routes[i].refusals.<key>`. A
+same, and so does each refined route's own `refusals:`, compared at `routes[i].refusals.<key>`. Its
+`limits:` equals the refined binding's, and each refined route's own `limits:` is restated, compared
+at `limits` and `routes[i].limits`. A
 route the refining document adds may carry any stage-2 key. The comparison is over the compiled
 values, so writing a default explicitly is not a change.
 
@@ -674,6 +695,12 @@ A served request on a bound route is answered by the first of these that applies
 servers already follow (`crates/generate/ess-synth/src/rust/http.rs:824-868`):
 
 1. A request the HTTP layer cannot read (framing, header lines): today's `400`, never overridden.
+1a. The body is larger than the bound that applies: the bound of the route the request's method
+   and path match when the binding bounds it, else the fixed 1 MiB. The answer is
+   `refusals.too_large` (the route's own first), else today's `413`. The request head decides,
+   before the body is read and before the 404, the 405 and the grant check, as the fixed bound
+   does today. That holds for a request whose `Content-Length` exceeds the bound; a body of
+   unannounced length (chunked) is handled per target ("What the servers write").
 2. No route matches: today's `404`. `/openapi.json` and `/docs` keep their answers; no bound route
    can match them (above).
 3. The path matches and the method does not: today's `405`.
@@ -711,6 +738,14 @@ single` and no identity selection and no `empty` earns both `ESS-HTTP-030` and `
   `unfinished` answer. `query` appends the parameters to any query the URI already has, `fragment`
   writes them as the fragment, both `application/x-www-form-urlencoded` (RFC 6749 Appendix B), in
   name order; an absent optional is omitted.
+- **Request size.** The bound is `limits.request_bytes` of the matched route, else of the binding,
+  else 1 MiB (`FIXED_REQUEST_BYTES`). It applies to a route the binding names that reads a body,
+  never to a view, a `get` command, a `query`-encoded command or a derived route. A body announced
+  above it is refused before it is read. A body of unannounced length differs per target. Rust: a
+  chunked request is answered `411` and its body is not read, at any size (the server reads a body
+  announced by `Content-Length` only). Go: a chunked body is read up to the bound plus one byte,
+  then refused with the `too_large` answer. A client that must work against both sends
+  `Content-Length`. The refusal is `refusals.too_large`, or `413` with `{"refused": ...}`.
 - **Go and Rust alike (k6).** The Go server answers a bound request with the Rust server's status,
   headers and body bytes wherever the binding writes the answer
   (`crates/generate/ess-synth/tests/http_binding/go.rs`,
@@ -722,7 +757,9 @@ single` and no identity selection and no `empty` earns both `ESS-HTTP-030` and `
   request line holding a malformed percent-escape with its own `400` before the surface reads it
   (step 1 of "Precedence"), where the Rust server refuses the path variable as `malformed`; and an
   answer the binding does not write (an envelope, a derived refusal, `rows`) keeps each server's
-  member order, as it does without a binding.
+  member order, as it does without a binding. The default `413` words differ too (Rust names the
+  announced length, Go does not), as an answer the binding does not write keeps each server's
+  words.
 
 #### What OpenAPI writes (k4)
 
@@ -737,7 +774,10 @@ as if listed with that answer; headers as response `headers`, a challenge as a `
 the order the command declares them. A view route with `single` answers the row schema at `200` and,
 at its `empty` status, no content or the literal object its `empty.body` names; one with `array`
 answers an array of the row schema. A `refusals:` override replaces the standard refusal's response
-on every bound operation that can answer it, and a route's own override on that route only.
+on every bound operation that can answer it, and a route's own override on that route only. A route
+the binding bounds carries `x-ess-request-max-bytes` and the `too_large` answer as one more response
+(`413` with `{"refused": ...}` where the binding declares no `too_large`); a binding that declares
+neither key writes no new byte.
 
 ## Operation ids and servers
 

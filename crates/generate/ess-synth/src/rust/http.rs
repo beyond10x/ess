@@ -63,6 +63,9 @@ pub(super) struct Server<'a> {
     types: String,
     /// The `ess-http/1` binding whose routes the surface serves, if one was given.
     binding: Option<&'a http::Binding>,
+    /// Whether the binding bounds the request of any route (`limits`, or a `too_large` refusal):
+    /// the `http` module then reads through each surface's `body_limit`. Computed once.
+    capped: bool,
 }
 
 /// The wire emitter's seam. The server carries the whole generated wire rather than the slice one
@@ -138,6 +141,7 @@ pub(super) fn server_crate(
         layout,
         types: Layout::crate_ident(layout.package()),
         binding,
+        capped: binding.is_some_and(|binding| binding.ir().bounds_requests()),
     };
     let package = layout.server_package();
     let provenance = &plan.provenance;
@@ -185,7 +189,7 @@ pub(super) fn server_crate(
                 format!(
                     "{}{}{QUERY}{}",
                     provenance.commented_for("//", REGENERATE),
-                    bound::http_module(HTTP),
+                    bound::served_http_module(HTTP, server.capped),
                     bound::BOUND
                 )
             } else {
@@ -465,6 +469,9 @@ fn surface_module(
         bound::dispatch(&mut out, server, &routes);
     } else {
         dispatch(&mut out, server, &routes);
+    }
+    if server.capped {
+        bound::body_limit(&mut out, server, &routes);
     }
     entry_point(&mut out, server, component, &routes);
     if http::checks_grants(ir) && (commands_served(&routes) || reads_checked(ir, &routes)) {
@@ -763,7 +770,20 @@ fn serve_function(
     } else {
         "if !ROUTES.iter().any(|(_, path)| *path == request.path) {"
     };
-    let body = SERVE_BODY.replace("    let listener", "    let static_root = static_root.map(std::fs::canonicalize).transpose()?;\n    if static_root.as_ref().is_some_and(|root| !root.is_dir()) { return Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, \"static root is not a directory\")); }\n    let listener").replace("Ok(request) => (dispatch(system, &request), false),", &format!("Ok(request) => {{\n                {unrouted}\n                    if let Some(root) = &static_root {{\n                        let _ = crate::static_assets::answer(reader.get_mut(), root, &request);\n                        continue;\n                    }}\n                }}\n                (dispatch(system, &request), false)\n            }},"));
+    let serve_body = if server.capped {
+        let capped = SERVE_BODY.replace(
+            "http::read(&mut reader)",
+            "http::read(&mut reader, &body_limit)",
+        );
+        assert!(
+            capped != SERVE_BODY,
+            "the listener no longer calls `http::read(&mut reader)`"
+        );
+        capped
+    } else {
+        SERVE_BODY.to_owned()
+    };
+    let body = serve_body.replace("    let listener", "    let static_root = static_root.map(std::fs::canonicalize).transpose()?;\n    if static_root.as_ref().is_some_and(|root| !root.is_dir()) { return Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, \"static root is not a directory\")); }\n    let listener").replace("Ok(request) => (dispatch(system, &request), false),", &format!("Ok(request) => {{\n                {unrouted}\n                    if let Some(root) = &static_root {{\n                        let _ = crate::static_assets::answer(reader.get_mut(), root, &request);\n                        continue;\n                    }}\n                }}\n                (dispatch(system, &request), false)\n            }},"));
     out.push_str(&if grants {
         body.replace(
             "dispatch(system, &request)",

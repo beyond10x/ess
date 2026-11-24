@@ -370,6 +370,7 @@ fn control_the_same_chain_with_six_decoys_has_its_scenario() {
 /// into cases for (`adversary_u22_pass3.rs` holds the same chain at sixteen and seventeen). The
 /// refusal must be there before what it says is checked.
 #[test]
+#[ignore = "slow lane: synthesizes a chain until the step bound cuts it short"]
 fn a_refusal_the_step_bound_cut_short_names_the_bound() {
     let chain = every_variant_glue_chain(17);
     let ir = model(&chain);
@@ -552,24 +553,70 @@ fn seeded_chain(seed: u64, length: usize) -> Chain {
 /// Attacks 1 and 2 over the adopter's own input shape: sixteen-refusal chains drawn from fixed
 /// seeds, with `not:` and nested `any:` beside `==`, each reachable branch held to its scenario.
 #[test]
+#[ignore = "slow lane: sweeps 24 seeded sixteen-refusal chains"]
 fn every_reachable_branch_of_seeded_sixteen_refusal_chains_over_the_adopter_shape_has_its_scenario()
 {
+    sweep(0..24, seeded_chain_of_sixteen, false);
+}
+
+/// Seeds swept of the seeded chains by the short twin: 7.4 s per seed, load 31.
+const STEP_SEEDS_SEEDED: u64 = 2;
+
+/// The first seeds of the seeded sixteen-refusal sweep, the same assertions as its full range.
+#[test]
+fn the_first_seeds_of_the_seeded_sixteen_refusal_chains_have_their_scenario_in_the_step() {
+    sweep(0..STEP_SEEDS_SEEDED, seeded_chain_of_sixteen, false);
+}
+
+fn seeded_chain_of_sixteen(seed: u64) -> Chain {
+    seeded_chain(seed, 16)
+}
+
+/// The refusals a sweep of `seeds` chains of `refusals` each may drop as unreachable: strictly
+/// fewer than a quarter of them.
+fn dropped_allowed(seeds: usize, refusals: usize) -> usize {
+    (seeds * refusals).div_ceil(4)
+}
+
+/// Every chain of `seeds` has a scenario for each reachable branch; fewer than a quarter of the
+/// refusals are dropped as unreachable. `plain` names the failing seeds with their guards.
+fn sweep(seeds: std::ops::Range<u64>, chain: impl Fn(u64) -> Chain, plain: bool) {
+    let count = usize::try_from(seeds.end.saturating_sub(seeds.start)).expect("a few seeds");
     let mut failures = Vec::new();
     let mut dropped = 0;
-    for seed in 0..24u64 {
-        let chain = seeded_chain(seed, 16);
-        let (chain, ir, gone) = live(&chain);
+    for seed in seeds {
+        let (chain, ir, gone) = live(&chain(seed));
         dropped += gone;
         let (synthesis, steps) = directed_steps(|| synthesize(&ir));
         let missing = missing(&chain, &ir, &synthesis);
         if !missing.is_empty() {
-            failures.push((seed, steps, missing));
+            let guards: Vec<String> = chain
+                .refusals
+                .iter()
+                .map(|(n, g)| format!("{n}: {g}"))
+                .collect();
+            failures.push(if plain {
+                format!("{:#?}", (seed, steps, missing, guards))
+            } else {
+                format!("{:#?}", (seed, steps, missing))
+            });
         }
     }
-    assert!(failures.is_empty(), "seed, steps, missing: {failures:#?}");
-    eprintln!("refusals dropped as unreachable: {dropped} of {}", 24 * 16);
+    if plain {
+        assert!(
+            failures.is_empty(),
+            "{} failing seeds: {failures:#?}",
+            failures.len()
+        );
+    } else {
+        assert!(failures.is_empty(), "seed, steps, missing: {failures:#?}");
+    }
+    eprintln!(
+        "refusals dropped as unreachable: {dropped} of {}",
+        count * 16
+    );
     assert!(
-        dropped * 4 < 24 * 16,
+        dropped < dropped_allowed(count, 16),
         "{dropped} refusals dropped as unreachable"
     );
 }
@@ -680,48 +727,51 @@ fn plain_guard(random: &mut Seeded) -> String {
 /// Acceptance, in the adopter's syntax: sixteen-refusal chains of plain conjunctions over the
 /// adopter's input shape, from fixed seeds; every reachable branch has its scenario.
 #[test]
+#[ignore = "slow lane: sweeps 48 seeded plain sixteen-refusal chains"]
 fn every_reachable_branch_of_seeded_plain_sixteen_refusal_chains_has_its_scenario() {
-    let mut failures = Vec::new();
-    let mut dropped = 0;
-    for seed in 100..148u64 {
-        let mut random = Seeded(seed);
-        let chain = Chain {
-            inputs: adopter_inputs(),
-            refusals: (0..16)
-                .map(|at| (format!("refuse-{at}"), plain_guard(&mut random)))
-                .collect(),
-        };
-        let (chain, ir, gone) = live(&chain);
-        dropped += gone;
-        let (synthesis, steps) = directed_steps(|| synthesize(&ir));
-        let missing = missing(&chain, &ir, &synthesis);
-        if !missing.is_empty() {
-            let guards: Vec<String> = chain
-                .refusals
-                .iter()
-                .map(|(n, g)| format!("{n}: {g}"))
-                .collect();
-            failures.push((seed, steps, missing, guards));
-        }
+    sweep(100..148, plain_chain, true);
+}
+
+/// Seeds swept of the plain chains by the short twin: 5.6 s per seed, load 31.
+const STEP_SEEDS_PLAIN: u64 = 2;
+
+/// The first seeds of the plain sixteen-refusal sweep, the same assertions as its full range.
+#[test]
+fn the_first_seeds_of_the_plain_sixteen_refusal_chains_have_their_scenario_in_the_step() {
+    sweep(100..100 + STEP_SEEDS_PLAIN, plain_chain, true);
+}
+
+fn plain_chain(seed: u64) -> Chain {
+    let mut random = Seeded(seed);
+    Chain {
+        inputs: adopter_inputs(),
+        refusals: (0..16)
+            .map(|at| (format!("refuse-{at}"), plain_guard(&mut random)))
+            .collect(),
     }
-    assert!(
-        failures.is_empty(),
-        "{} failing seeds: {failures:#?}",
-        failures.len()
-    );
-    eprintln!("refusals dropped as unreachable: {dropped} of {}", 48 * 16);
-    assert!(
-        dropped * 4 < 48 * 16,
-        "{dropped} refusals dropped as unreachable"
-    );
 }
 
 /// Attack 3: two runs of one chain give the same suite bytes.
 #[test]
+#[ignore = "slow lane: synthesizes a sixteen-refusal chain twice"]
 fn a_seeded_chain_synthesizes_the_same_suite_twice() {
     let chain = seeded_chain(7, 16);
     let ir = model(&chain);
     let first = serde_json::to_string(&synthesize(&ir).suite).expect("serializes");
     let second = serde_json::to_string(&synthesize(&ir).suite).expect("serializes");
     assert_eq!(first, second);
+}
+
+/// The refusals a sweep of `seeds` chains of `refusals` each may drop as unreachable: strictly
+/// fewer than a quarter of them.
+#[test]
+fn the_dropped_bound_scales_with_the_seeds_swept() {
+    for (seeds, refusals, allowed) in [(24, 16, 96), (48, 16, 192), (4, 16, 16)] {
+        assert_eq!(dropped_allowed(seeds, refusals), allowed);
+        assert!(
+            (allowed - 1) * 4 < seeds * refusals && allowed * 4 >= seeds * refusals,
+            "{seeds} seeds of {refusals}: `dropped < {allowed}` is `dropped * 4 < {}`",
+            seeds * refusals
+        );
+    }
 }

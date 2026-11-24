@@ -10,6 +10,7 @@
 //! synthesis of a caller-attribute model is still refused.
 
 use std::collections::BTreeMap;
+use std::num::NonZeroUsize;
 
 use ess_compiler::ir::EssIr;
 use ess_compiler::{resolve::compile, source::SourceMap};
@@ -17,7 +18,7 @@ use ess_conformance::authored;
 use ess_conformance::report::Status;
 use ess_conformance::scenario::{InstanceName, ScenarioValue};
 use ess_conformance::synthesize::{
-    synthesize, synthesize_with_seeds, AdmittedSeeds, SeedSelection, Synthesis,
+    synthesize, synthesize_with_seeds, with_jobs, AdmittedSeeds, SeedSelection, Synthesis,
 };
 use ess_conformance::{AdmittedSuite, ConformanceScenario, ConformanceSuite, Runner, ScenarioStep};
 use ess_domain::{spec::RawSpecFile, system::Source, Specification};
@@ -526,4 +527,47 @@ assert:
         })
     });
     assert!(issued_as_owner, "{:#?}", synthesis.suite.scenarios.keys());
+}
+
+/// Everything a synthesis writes, as it prints.
+fn written(synthesis: &Synthesis) -> String {
+    format!(
+        "{}\n--- refusals\n{}\n--- notes\n{}\n--- outside\n{}",
+        synthesis.suite.to_canonical_json().unwrap(),
+        rendered(synthesis).join("\n"),
+        synthesis
+            .notes
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>()
+            .join("\n"),
+        synthesis
+            .outside
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>()
+            .join("\n"),
+    )
+}
+
+#[test]
+fn the_arranged_callers_stage_writes_the_same_bytes_at_four_jobs() {
+    let at = |text: &str, count: usize| {
+        with_jobs(NonZeroUsize::new(count).unwrap(), || synthesize(&ir(text)))
+    };
+    for (label, text) in [
+        ("tokens", TOKENS.to_owned()),
+        ("affecting", affecting()),
+        ("related", related()),
+    ] {
+        let one = at(&text, 1);
+        let four = at(&text, 4);
+        assert_eq!(written(&four), written(&one), "{label}");
+        if label == "tokens" {
+            assert!(
+                has(&four, REVOKED),
+                "the arranged stage adopts the revoked scenario at 4 jobs"
+            );
+        }
+    }
 }

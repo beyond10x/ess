@@ -16,8 +16,8 @@
 //! | `` ```text ess-tutorial files=tasks/go/essconform `` | the body lists every file below that directory, one relative path per line, sorted |
 //! | `` ```go ess-tutorial interface=tasks/go/essconform/runtime.go `` | the body is a declaration in that file, compared with comments and blank lines dropped and each line trimmed |
 //! | `` ```shell-session ess-tutorial `` (or `console`) | commands, each `$ ` line followed by the output it prints |
-//! | `… requires=node` | run only with `ESS_TUTORIAL_NETWORK=1` set and `node` and `npm` on `PATH`; otherwise print the skip and its reason |
-//! | `… requires=go` | run only with `go` on `PATH`; otherwise print the skip and its reason |
+//! | `… requires=node` | skipped in the test step, which prints the skip and names the slow lane; the slow lane runs it, and needs `ESS_TUTORIAL_NETWORK=1`, `node` and `npm` |
+//! | `… requires=go` | skipped in the test step, which prints the skip and names the slow lane; the slow lane runs it, and needs `go` |
 //! | `… checkout` | run in a copy of the repository's `examples/`, apart from the walkthrough's directory |
 //!
 //! Any other fence attribute, such as Docusaurus's `title="…"`, is ignored.
@@ -48,12 +48,13 @@
 //! under this package's version, with its `SHA256SUMS`, so the command runs offline and prints
 //! what it prints for the real download.
 //!
-//! `ESS_TUTORIAL_NETWORK=1` is the one switch this test reads. The `requires=node` blocks run
-//! `npm install`, which fetches from the npm registry, so the offline gate skips them by default;
-//! CI's workspace test shards set the variable, and they install Node.js. The `requires=go` blocks
-//! need no network: the generated Go package imports the standard library only, and `go` runs with
-//! `GOPROXY=off` and `GOTOOLCHAIN=local`, keeping the build and module caches it would have used
-//! under the real home directory.
+//! `ESS_TUTORIAL_NETWORK=1` is the one switch this file reads, and only the slow lane's
+//! `the_walkthrough_runs_the_npm_and_go_blocks_too` reads it: `task test-slow` sets it, and that
+//! test fails without it. The `requires=node` blocks run `npm install`, which fetches from the npm
+//! registry, and the `requires=go` blocks spend a `go build`, so the test step skips both and runs
+//! every `ess` command. The `requires=go` blocks need no network: the generated Go package imports
+//! the standard library only, and `go` runs with `GOPROXY=off` and `GOTOOLCHAIN=local`, keeping the
+//! build and module caches it would have used under the real home directory.
 //!
 //! A shell block on a page that shows `$ ess` and is not an `ess-tutorial` block is refused, so a
 //! command cannot be added to the walkthrough without being run; and a published page carrying an
@@ -400,7 +401,7 @@ fn release(directory: &Path) {
     let binary = fs::read(env!("CARGO_BIN_EXE_ess")).expect("read the built ess");
     let mut builder = tar::Builder::new(flate2::write::GzEncoder::new(
         Vec::new(),
-        flate2::Compression::fast(),
+        flate2::Compression::none(),
     ));
     let mut header = tar::Header::new_gnu();
     header.set_size(binary.len() as u64);
@@ -468,8 +469,44 @@ struct Walkthrough {
     go_mod_cache: Option<OsString>,
 }
 
+/// Whether the walkthrough runs the `requires=node` and `requires=go` blocks.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Toolchains {
+    /// The test step: every `ess` command runs, the toolchain blocks print a skip naming the slow
+    /// lane, and no `go` process starts.
+    Skipped,
+    /// The slow lane: the blocks run when the environment allows it.
+    Present,
+}
+
+/// What `Walkthrough::new` holds for the toolchain blocks: why the node blocks are skipped, why
+/// the go blocks are, and the go caches (read with `go env`, and only when the go blocks run).
+#[allow(clippy::type_complexity)]
+fn toolchain_state(
+    toolchains: Toolchains,
+) -> (
+    Option<&'static str>,
+    Option<&'static str>,
+    Option<OsString>,
+    Option<OsString>,
+) {
+    let (node_skipped, go_skipped) = match toolchains {
+        Toolchains::Skipped => (
+            Some("skipped in the test step: the slow lane runs the npm blocks"),
+            Some("skipped in the test step: the slow lane runs the go blocks"),
+        ),
+        Toolchains::Present => (node_skipped(), go_skipped()),
+    };
+    let (go_cache, go_mod_cache) = if go_skipped.is_none() {
+        (go_env("GOCACHE"), go_env("GOMODCACHE"))
+    } else {
+        (None, None)
+    };
+    (node_skipped, go_skipped, go_cache, go_mod_cache)
+}
+
 impl Walkthrough {
-    fn new(scratch: &Path) -> Self {
+    fn new(scratch: &Path, toolchains: Toolchains) -> Self {
         let home = scratch.join("home");
         let releases = scratch.join("releases");
         let checkout = scratch.join("checkout");
@@ -480,18 +517,13 @@ impl Walkthrough {
         let npm_cache = std::env::var_os("npm_config_cache").or_else(|| {
             std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".npm").into_os_string())
         });
-        let go_skipped = go_skipped();
-        let (go_cache, go_mod_cache) = if go_skipped.is_none() {
-            (go_env("GOCACHE"), go_env("GOMODCACHE"))
-        } else {
-            (None, None)
-        };
+        let (node_skipped, go_skipped, go_cache, go_mod_cache) = toolchain_state(toolchains);
         Walkthrough {
             here: home.clone(),
             checkout_here: checkout,
             home,
             releases,
-            node_skipped: node_skipped(),
+            node_skipped,
             go_skipped,
             npm_cache,
             go_cache,
@@ -759,8 +791,9 @@ impl Walkthrough {
     }
 }
 
-#[test]
-fn the_walkthrough_runs_and_prints_what_the_pages_record() {
+/// Runs the walkthrough over [`PAGES`] and prints its summary line. Returns the blocks run, the
+/// command lines they hold, and the kinds of block skipped.
+fn run_walkthrough(toolchains: Toolchains) -> (usize, usize, Vec<&'static str>) {
     let blocks = walkthrough_blocks();
     let tutorial: Vec<&Block> = blocks.iter().filter(|b| b.tutorial()).collect();
     for page in PAGES {
@@ -774,7 +807,12 @@ fn the_walkthrough_runs_and_prints_what_the_pages_record() {
         "the walkthrough has no `{MARK}` file block or no `{MARK}` command block"
     );
     let scratch = tempfile::tempdir().expect("a temporary directory");
-    let mut walkthrough = Walkthrough::new(scratch.path());
+    let started = std::time::Instant::now();
+    let mut walkthrough = Walkthrough::new(scratch.path(), toolchains);
+    println!(
+        "{:7.1}s after the release directory and the examples copy",
+        started.elapsed().as_secs_f64()
+    );
     let mut commands = 0;
     for block in &tutorial {
         if block.shell() {
@@ -783,8 +821,13 @@ fn the_walkthrough_runs_and_prints_what_the_pages_record() {
         if let Err(failure) = walkthrough.block(block) {
             panic!("{failure}");
         }
+        println!(
+            "{:7.1}s after {}",
+            started.elapsed().as_secs_f64(),
+            block.at()
+        );
     }
-    let skipped: Vec<&str> = [
+    let skipped: Vec<&'static str> = [
         walkthrough.node_skipped.map(|_| "requires=node"),
         walkthrough.go_skipped.map(|_| "requires=go"),
     ]
@@ -802,6 +845,32 @@ fn the_walkthrough_runs_and_prints_what_the_pages_record() {
         }
     );
     std::io::stdout().flush().ok();
+    (tutorial.len(), commands, skipped)
+}
+
+#[test]
+fn the_walkthrough_runs_and_prints_what_the_pages_record() {
+    let (_, _, skipped) = run_walkthrough(Toolchains::Skipped);
+    assert_eq!(skipped, ["requires=node", "requires=go"]);
+}
+
+#[test]
+#[ignore = "slow lane: runs npm install and go build in the walkthrough"]
+fn the_walkthrough_runs_the_npm_and_go_blocks_too() {
+    assert!(
+        std::env::var_os(NETWORK).is_some_and(|value| value == "1"),
+        "{NETWORK}=1 is required: the slow lane sets it"
+    );
+    for (program, version) in [
+        ("node", "--version"),
+        ("npm", "--version"),
+        ("go", "version"),
+    ] {
+        assert!(on_path(program, version), "`{program}` is not on PATH");
+    }
+    let (blocks, _, skipped) = run_walkthrough(Toolchains::Present);
+    assert!(blocks > 0, "the walkthrough ran no block");
+    assert!(skipped.is_empty(), "blocks were skipped: {skipped:?}");
 }
 
 #[test]
@@ -990,4 +1059,17 @@ fn a_declaration_compares_without_comments_and_a_changed_method_does_not_match()
     ];
     assert_ne!(declaration_lines(renamed), declaration_lines(written));
     assert!(declaration(source, "type Missing interface {").is_none());
+}
+
+#[test]
+fn the_toolchain_blocks_are_skipped_in_the_step_and_named_for_the_slow_lane() {
+    let (node_skipped, go_skipped, go_cache, go_mod_cache) = toolchain_state(Toolchains::Skipped);
+    for reason in [node_skipped, go_skipped] {
+        let reason = reason.expect("the step skips the toolchain blocks");
+        assert!(reason.contains("slow lane"), "{reason}");
+    }
+    assert!(
+        go_cache.is_none() && go_mod_cache.is_none(),
+        "a skipped walkthrough started `go env`"
+    );
 }

@@ -478,6 +478,42 @@ fn permutations(items: &[&'static str]) -> Vec<Vec<&'static str>> {
     all
 }
 
+/// Which orders of a rule a sweep tries.
+#[derive(Clone, Copy)]
+enum Sweep {
+    /// The rule's own order, each order one adjacent swap away from it (n orders), and the two
+    /// transpositions of the non-adjacent pairs of the reproduction's requests that no adjacent
+    /// swap reverses: (no-source, sink-not-input) and (source-taken, no-sink).
+    Adjacent,
+    /// Every order of the rule: n! orders.
+    Exhaustive,
+}
+
+fn orders(rule: &[&'static str], sweep: Sweep) -> Vec<Vec<&'static str>> {
+    match sweep {
+        Sweep::Exhaustive => permutations(rule),
+        Sweep::Adjacent => {
+            let mut all = vec![rule.to_vec()];
+            for at in 0..rule.len().saturating_sub(1) {
+                let mut swapped = rule.to_vec();
+                swapped.swap(at, at + 1);
+                all.push(swapped);
+            }
+            for (a, b) in [(NS, SNI), (ST, NK)] {
+                if let (Some(x), Some(y)) = (
+                    rule.iter().position(|item| *item == a),
+                    rule.iter().position(|item| *item == b),
+                ) {
+                    let mut swapped = rule.to_vec();
+                    swapped.swap(x, y);
+                    all.push(swapped);
+                }
+            }
+            all
+        }
+    }
+}
+
 /// Whether `order` answers every reachable request as `rule` does.
 fn equivalent(rule: &[&str], order: &[&str], pairs: &[(&str, &str)]) -> bool {
     let at = |list: &[&str], name: &str| list.iter().position(|item| *item == name);
@@ -491,7 +527,7 @@ fn equivalent(rule: &[&str], order: &[&str], pairs: &[(&str, &str)]) -> bool {
 
 /// For each variant: synthesis refuses nothing and witnesses every refusal, the suite passes the
 /// rule's own order, and fails exactly the orders the rule tells apart on a reachable request.
-fn every_order_told_apart(variants: &[Variant]) {
+fn every_order_told_apart(variants: &[Variant], sweep: Sweep) {
     let mut report = Vec::new();
     for variant in variants {
         let synthesis = synthesize(&model(&variant.text));
@@ -517,7 +553,7 @@ fn every_order_told_apart(variants: &[Variant]) {
         let mut uncaught = Vec::new();
         let mut overcaught = Vec::new();
         let mut disagreements = Vec::new();
-        for order in permutations(&variant.rule) {
+        for order in orders(&variant.rule, sweep) {
             let target = Ordered {
                 inner: Interpreted::for_model(model(&variant.text)),
                 shape: variant.shape,
@@ -571,10 +607,9 @@ fn every_order_told_apart(variants: &[Variant]) {
 }
 
 /// The reproduction in each declaration order of its step-4 refusals.
-#[test]
-fn adversary_a2_every_step_4_order_is_told_apart_across_declaration_orders() {
+fn variants_declaration_orders() -> Vec<Variant> {
     let rule_plain = vec![NS, NK, SON, SNI, ST];
-    every_order_told_apart(&[
+    vec![
         Variant {
             label: "reproduction",
             text: REPRO.to_owned(),
@@ -610,19 +645,31 @@ fn adversary_a2_every_step_4_order_is_told_apart_across_declaration_orders() {
             pairs: source_sink_pairs(),
             shape: PLAIN,
         },
-    ]);
+    ]
+}
+
+/// Every order of the rule, in the slow lane.
+#[test]
+#[ignore = "slow lane: tries every order of the rule"]
+fn adversary_a2_every_step_4_order_is_told_apart_across_declaration_orders() {
+    every_order_told_apart(&variants_declaration_orders(), Sweep::Exhaustive);
+}
+
+/// The rule's own order and its adjacent swaps, in the test step.
+#[test]
+fn adversary_a2_every_step_4_order_is_told_apart_across_declaration_orders_in_adjacent_swaps() {
+    every_order_told_apart(&variants_declaration_orders(), Sweep::Adjacent);
 }
 
 /// `count: {gte: 2}`: the scenario of a refusal answering before the row set has to hold two
 /// selected wires, not one, or a target reading the row set first passes.
-#[test]
-fn adversary_a2_count_row_set_orders_are_told_apart() {
+fn variants_count_row_set() -> Vec<Variant> {
     let count = edited(
         REPRO,
         "          exists: true\n",
         "          count: {gte: 2}\n",
     );
-    every_order_told_apart(&[
+    vec![
         Variant {
             label: "count gte 2",
             text: count.clone(),
@@ -647,12 +694,24 @@ fn adversary_a2_count_row_set_orders_are_told_apart() {
                 ..PLAIN
             },
         },
-    ]);
+    ]
+}
+
+/// Every order of the rule, in the slow lane.
+#[test]
+#[ignore = "slow lane: tries every order of the rule"]
+fn adversary_a2_count_row_set_orders_are_told_apart() {
+    every_order_told_apart(&variants_count_row_set(), Sweep::Exhaustive);
+}
+
+/// The rule's own order and its adjacent swaps, in the test step.
+#[test]
+fn adversary_a2_count_row_set_orders_are_told_apart_in_adjacent_swaps() {
+    every_order_told_apart(&variants_count_row_set(), Sweep::Adjacent);
 }
 
 /// The row set over the sink: an occupied sink beside a missing or input-facing source.
-#[test]
-fn adversary_a2_row_set_over_the_other_named_row_orders_are_told_apart() {
+fn variants_row_set_over_other_row() -> Vec<Variant> {
     let sink = edited(
         REPRO,
         "          where: from_port == input.from_port\n",
@@ -666,7 +725,7 @@ fn adversary_a2_row_set_over_the_other_named_row_orders_are_told_apart() {
         (NS, ST),
         (SON, ST),
     ];
-    every_order_told_apart(&[Variant {
+    vec![Variant {
         label: "row set over the sink",
         text: sink,
         rule: vec![NS, NK, SON, SNI, ST],
@@ -675,14 +734,26 @@ fn adversary_a2_row_set_over_the_other_named_row_orders_are_told_apart() {
             by_sink: true,
             ..PLAIN
         },
-    }]);
+    }]
+}
+
+/// Every order of the rule, in the slow lane.
+#[test]
+#[ignore = "slow lane: tries every order of the rule"]
+fn adversary_a2_row_set_over_the_other_named_row_orders_are_told_apart() {
+    every_order_told_apart(&variants_row_set_over_other_row(), Sweep::Exhaustive);
+}
+
+/// The rule's own order and its adjacent swaps, in the test step.
+#[test]
+fn adversary_a2_row_set_over_the_other_named_row_orders_are_told_apart_in_adjacent_swaps() {
+    every_order_told_apart(&variants_row_set_over_other_row(), Sweep::Adjacent);
 }
 
 /// A row set over a named row that is itself the missing one: an unguarded import lays a wire from
 /// a port no row carries, so `no-source` and `source-taken` hold together and the rule answers
 /// `no-source`. Also the row set over an input-facing source, and with one named row only.
-#[test]
-fn adversary_a2_row_set_over_a_missing_named_row_orders_are_told_apart() {
+fn variants_row_set_over_missing_row() -> Vec<Variant> {
     let import = with_import(REPRO);
     let all = vec![
         (NS, NK),
@@ -699,7 +770,7 @@ fn adversary_a2_row_set_over_a_missing_named_row_orders_are_told_apart() {
         ..PLAIN
     };
     let one_row = edited(&edited(REPRO, NO_SINK, ""), SINK_NOT_INPUT, "");
-    every_order_told_apart(&[
+    vec![
         Variant {
             label: "imported wires",
             text: import.clone(),
@@ -721,14 +792,26 @@ fn adversary_a2_row_set_over_a_missing_named_row_orders_are_told_apart() {
             pairs: vec![(NS, ST), (SON, ST)],
             shape,
         },
-    ]);
+    ]
+}
+
+/// Every order of the rule, in the slow lane.
+#[test]
+#[ignore = "slow lane: tries every order of the rule"]
+fn adversary_a2_row_set_over_a_missing_named_row_orders_are_told_apart() {
+    every_order_told_apart(&variants_row_set_over_missing_row(), Sweep::Exhaustive);
+}
+
+/// The rule's own order and its adjacent swaps, in the test step.
+#[test]
+fn adversary_a2_row_set_over_a_missing_named_row_orders_are_told_apart_in_adjacent_swaps() {
+    every_order_told_apart(&variants_row_set_over_missing_row(), Sweep::Adjacent);
 }
 
 /// The row set's rows created by a command other than the one under test: a creator with no other
 /// row input, one whose other input is the same entity as the named row, and one whose other input
 /// is a third entity the scenario's own send never names.
-#[test]
-fn adversary_a2_separate_creator_orders_are_told_apart() {
+fn variants_separate_creator() -> Vec<Variant> {
     let lay_source = "      - name: lay-no-source
         when_related: {via: input.from_port, exists: false}
         error: wiring.board.SourceNotFound
@@ -747,7 +830,7 @@ fn adversary_a2_separate_creator_orders_are_told_apart() {
         lays: LAYER_LAYS,
         ..PLAIN
     };
-    every_order_told_apart(&[
+    vec![
         Variant {
             label: "creator reads the source only",
             text: with_layer(lay_source, false),
@@ -769,7 +852,20 @@ fn adversary_a2_separate_creator_orders_are_told_apart() {
             pairs,
             shape,
         },
-    ]);
+    ]
+}
+
+/// Every order of the rule, in the slow lane.
+#[test]
+#[ignore = "slow lane: tries every order of the rule"]
+fn adversary_a2_separate_creator_orders_are_told_apart() {
+    every_order_told_apart(&variants_separate_creator(), Sweep::Exhaustive);
+}
+
+/// The rule's own order and its adjacent swaps, in the test step.
+#[test]
+fn adversary_a2_separate_creator_orders_are_told_apart_in_adjacent_swaps() {
+    every_order_told_apart(&variants_separate_creator(), Sweep::Adjacent);
 }
 
 const FORALL: &str = "        when_related:
@@ -835,8 +931,7 @@ fn forall_without_named_rows_at_31() -> String {
 /// (story:row-set-beside-named-rows-suite-tells-every-order-apart): `sink-not-input` answers only
 /// where the ports differ. The row-set branch is still witnessed, and every order the rule tells
 /// apart fails, in both declaration orders of the row set.
-#[test]
-fn adversary_a2_when_beside_a_named_refusal_orders_are_told_apart() {
+fn variants_when_beside_refusal() -> Vec<Variant> {
     let apart = edited(
         REPRO,
         "        when_related: {via: input.to_port, predicate: direction != input}\n",
@@ -848,7 +943,7 @@ fn adversary_a2_when_beside_a_named_refusal_orders_are_told_apart() {
         sink_apart: true,
         ..PLAIN
     };
-    every_order_told_apart(&[
+    vec![
         Variant {
             label: "when: beside a named refusal",
             text: apart.clone(),
@@ -863,7 +958,20 @@ fn adversary_a2_when_beside_a_named_refusal_orders_are_told_apart() {
             pairs: source_sink_pairs(),
             shape,
         },
-    ]);
+    ]
+}
+
+/// Every order of the rule, in the slow lane.
+#[test]
+#[ignore = "slow lane: tries every order of the rule"]
+fn adversary_a2_when_beside_a_named_refusal_orders_are_told_apart() {
+    every_order_told_apart(&variants_when_beside_refusal(), Sweep::Exhaustive);
+}
+
+/// The rule's own order and its adjacent swaps, in the test step.
+#[test]
+fn adversary_a2_when_beside_a_named_refusal_orders_are_told_apart_in_adjacent_swaps() {
+    every_order_told_apart(&variants_when_beside_refusal(), Sweep::Adjacent);
 }
 
 const FORALL_LINE: &str = "          forall: to_port != input.to_port\n";
@@ -947,15 +1055,27 @@ fn adversary_a2_forall_beside_named_rows_kills_forall_mutants() {
 /// The same model: synthesis refuses nothing, `duplicate` has its scenario, and every order of the
 /// named-row refusals and the default the rule tells apart fails
 /// (story:row-set-beside-named-rows-suite-tells-every-order-apart).
-#[test]
-fn adversary_a2_forall_beside_named_rows_witnesses_every_branch() {
-    every_order_told_apart(&[Variant {
+fn variants_forall_beside_named_rows() -> Vec<Variant> {
+    vec![Variant {
         label: "forall beside named rows",
         text: forall_beside_named_rows(),
         rule: vec![NS, NK, SON, SNI, DUP],
         pairs: vec![(NS, NK), (NS, SNI), (SON, NK), (SON, SNI)],
         shape: PLAIN,
-    }]);
+    }]
+}
+
+/// Every order of the rule, in the slow lane.
+#[test]
+#[ignore = "slow lane: tries every order of the rule"]
+fn adversary_a2_forall_beside_named_rows_witnesses_every_branch() {
+    every_order_told_apart(&variants_forall_beside_named_rows(), Sweep::Exhaustive);
+}
+
+/// The rule's own order and its adjacent swaps, in the test step.
+#[test]
+fn adversary_a2_forall_beside_named_rows_witnesses_every_branch_in_adjacent_swaps() {
+    every_order_told_apart(&variants_forall_beside_named_rows(), Sweep::Adjacent);
 }
 
 /// The same `forall` mutants on the `ess/31` control, which has no named-row guard: the accepting
@@ -967,6 +1087,44 @@ fn adversary_a2_forall_without_named_rows_kills_forall_mutants_at_ess_31() {
         "forall without named rows at ess/31",
         &forall_without_named_rows_at_31(),
     );
+}
+
+/// The step tries the rule, its adjacent swaps (n orders) and the two non-adjacent transpositions
+/// of the pairs the adjacent swaps leave in order; the slow lane tries all n!.
+#[test]
+fn the_adjacent_sweep_holds_n_plus_two_orders_and_the_exhaustive_sweep_n_factorial() {
+    let rule = [NS, NK, SON, SNI, ST];
+    let adjacent = orders(&rule, Sweep::Adjacent);
+    assert_eq!(adjacent.len(), 7);
+    assert_eq!(adjacent[0], rule.to_vec());
+    for (at, (a, b)) in [(5, (NS, SNI)), (6, (ST, NK))] {
+        let other = &adjacent[at];
+        let place = |list: &[&str], name: &str| list.iter().position(|i| *i == name).unwrap();
+        let before = |list: &[&str]| place(list, a) < place(list, b);
+        assert!(
+            before(other) != before(&rule),
+            "{other:?} reverses {a}, {b}"
+        );
+        let moved = (0..rule.len()).filter(|i| other[*i] != rule[*i]).count();
+        assert_eq!(moved, 2, "{other:?} is one transposition");
+    }
+    for other in &adjacent[1..5] {
+        let moved: Vec<usize> = (0..rule.len())
+            .filter(|at| other[*at] != rule[*at])
+            .collect();
+        assert_eq!(
+            moved.len(),
+            2,
+            "{other:?} differs from the rule by one swap"
+        );
+        assert_eq!(moved[1], moved[0] + 1, "{other:?} swaps neighbours");
+        assert_eq!(other[moved[0]], rule[moved[1]]);
+        assert_eq!(other[moved[1]], rule[moved[0]]);
+    }
+    let exhaustive = orders(&rule, Sweep::Exhaustive);
+    assert_eq!(exhaustive.len(), 120);
+    let distinct: std::collections::BTreeSet<_> = exhaustive.iter().collect();
+    assert_eq!(distinct.len(), 120);
 }
 
 /// The same model synthesizes the same suite twice in one process, for every variant here.

@@ -38,6 +38,16 @@ pub fn replays_run<R>(run: impl FnOnce() -> R) -> (R, u64) {
     (out, REPLAYS.with(std::cell::Cell::get) - before)
 }
 
+/// The count of [`REPLAYS`] on this thread.
+pub(crate) fn taken_replays() -> u64 {
+    REPLAYS.with(std::cell::Cell::get)
+}
+
+/// Adds `more` to the count of [`REPLAYS`] on this thread.
+pub(crate) fn add_replays(more: u64) {
+    REPLAYS.with(|it| it.set(it.get() + more));
+}
+
 /// Two rows tying on every key of `order` and ranking first, in a read of `entity`.
 pub(super) struct Tie {
     /// The entity whose rows tie.

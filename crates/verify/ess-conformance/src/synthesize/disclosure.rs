@@ -24,6 +24,16 @@ pub fn followup_origins_built<R>(run: impl FnOnce() -> R) -> (R, u64) {
     (out, ORIGINS_BUILT.with(std::cell::Cell::get) - before)
 }
 
+/// The count of [`ORIGINS_BUILT`] on this thread.
+pub(super) fn taken_origins_built() -> u64 {
+    ORIGINS_BUILT.with(std::cell::Cell::get)
+}
+
+/// Adds `more` to the count of [`ORIGINS_BUILT`] on this thread.
+pub(super) fn add_origins_built(more: u64) {
+    ORIGINS_BUILT.with(|it| it.set(it.get() + more));
+}
+
 /// The marked branch's own run every follow-up cell of its fields starts with
 /// ([`followups`]): `exercise` of the origin under the default actors, which reads the model, the
 /// branch and those actors and nothing of the cell but its id, named by the refusals it writes.

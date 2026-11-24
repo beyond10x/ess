@@ -68,6 +68,7 @@ jobs:
       PLAN_ONLY_CANDIDATE: ${{ inputs.checkout-ref == '' && github.event_name == 'pull_request' && !(startsWith(github.head_ref, 'queue/') && github.event.pull_request.head.repo.full_name == github.repository) }}
     outputs:
       plan-only: ${{ steps.plan-only.outputs.plan-only }}
+      slow: ${{ steps.slow.outputs.slow }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         if: ${{ env.PLAN_ONLY_CANDIDATE == 'true' }}
@@ -126,6 +127,52 @@ jobs:
           [ "$count" -gt 0 ] || decide false "running every job: the pull request changes no path"
           decide true "skipping the test archives and the test shards: all $count changed paths match ${plan[*]} and none ${tested[*]}"
 
+      - name: Decide whether any changed path can reach a slow test
+        id: slow
+        if: ${{ env.PLAN_ONLY_CANDIDATE == 'true' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          skippable=('.engineering/?*' 'docs/*' 'website/*' '*.md' 'release-notes/*' 'crates/ui/*' 'crates/infra/*' 'crates/edge/ess-xtask/*')
+          needed=('.engineering/repro/*' 'website/docs/start/*' 'website/docs/getting-started.md' 'crates/edge/ess-xtask/src/slow_lane.rs' 'crates/edge/ess-xtask/src/main.rs' 'crates/edge/ess-xtask/Cargo.toml')
+          decide() {
+            echo "$2"
+            echo "slow=$1" >> "$GITHUB_OUTPUT"
+            exit 0
+          }
+          # Prints why path $1 can reach a slow test; prints nothing when it cannot.
+          reaches_slow() {
+            local pattern
+            for pattern in "${needed[@]}"; do
+              # shellcheck disable=SC2053
+              if [[ "$1" == $pattern ]]; then
+                echo "a slow test reads $1 ($pattern)"
+                return
+              fi
+            done
+            for pattern in "${skippable[@]}"; do
+              # shellcheck disable=SC2053
+              [[ "$1" == $pattern ]] && return
+            done
+            echo "$1 matches none of ${skippable[*]}"
+          }
+          parents=$(git rev-list --parents --max-count=1 HEAD 2> /dev/null) \
+            || decide true "running the slow lane: HEAD cannot be read"
+          read -r -a commits <<< "$parents"
+          [ "${#commits[@]}" -eq 3 ] \
+            || decide true "running the slow lane: HEAD is not the two-parent merge commit of a pull request"
+          list="$RUNNER_TEMP/changed-paths-slow"
+          git diff --no-renames --name-only -z "HEAD^1" HEAD > "$list" \
+            || decide true "running the slow lane: the paths HEAD changes against its base cannot be listed"
+          count=0
+          while IFS= read -r -d '' path; do
+            count=$((count + 1))
+            reason=$(reaches_slow "$path")
+            [ -z "$reason" ] || decide true "running the slow lane: $reason"
+          done < "$list"
+          [ "$count" -gt 0 ] || decide true "running the slow lane: the pull request changes no path"
+          decide false "skipping the slow lane: all $count changed paths match ${skippable[*]} and none ${needed[*]}"
+
   checks:
     name: Checks
     runs-on: ubuntu-latest
@@ -180,6 +227,10 @@ jobs:
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: "22"
+
+      - uses: taiki-e/install-action@9983c65e42da123ff25d1f78505eb6de315aa172 # v2.87.20
+        with:
+          tool: cargo-nextest@0.9.143
 
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
         with:
@@ -312,6 +363,15 @@ jobs:
             /usr/local/.ghcup /usr/lib/jvm /usr/share/swift /usr/local/share/powershell \
             /usr/local/share/chromium /usr/local/julia* /opt/microsoft /opt/google /opt/az
           df -h /
+
+      # The Go the generated Go server `body-cap-go-server` is built with: it is built here once
+      # and archived beside the test archives. Installed after the disk is freed, which deletes
+      # /opt/hostedtoolcache, where setup-go puts it. The generated modules intentionally have no
+      # go.sum, so setup-go's automatic cache would only warn.
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version: "1.25.10"
+          cache: false
 
       - name: Fetch locked dependencies
         run: cargo fetch --locked
@@ -640,8 +700,6 @@ jobs:
 
       - name: Workspace tests ${{ matrix.group }} ${{ matrix.part }}
         if: ${{ !cancelled() && steps.go-task.outcome == 'success' && (steps.archives.outcome == 'success' || steps.archives-retry.outcome == 'success' || steps.archives-retry-2.outcome == 'success') }}
-        env:
-          ESS_TUTORIAL_NETWORK: "1"
         run: task test-shard GROUP=${{ matrix.group }} PART=${{ matrix.part }}
 
       - name: Disk after the workspace tests
@@ -671,6 +729,83 @@ jobs:
           df -h /
           du -sh target "$RUNNER_TEMP" /tmp 2>/dev/null || true
           cat "${DISK_WATCH_LOG:-/dev/null}" || true
+
+  slow:
+    name: Slow lane
+    needs: [diff]
+    if: ${{ needs.diff.outputs.slow != 'false' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      CARGO_PROFILE_DEV_DEBUG: "0"
+      CARGO_PROFILE_TEST_DEBUG: "0"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ inputs.checkout-ref || github.sha }}
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Read the pinned rustc
+        id: pin
+        shell: bash
+        run: |
+          toolchain=$(sed -n 's/^channel = "\([0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\)"$/\1/p' rust-toolchain.toml)
+          if [ -z "$toolchain" ] || [ "$(printf '%s\n' "$toolchain" | wc -l)" -ne 1 ]; then
+            echo "::error::rust-toolchain.toml does not pin exactly one rustc: '$toolchain'" >&2
+            exit 1
+          fi
+          echo "toolchain=$toolchain" >> "$GITHUB_OUTPUT"
+
+      - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable
+        with:
+          toolchain: ${{ steps.pin.outputs.toolchain }}
+          components: clippy
+          targets: wasm32-unknown-unknown
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version: "1.25.10"
+          cache: false
+
+      - name: Install go-task
+        id: go-task
+        env:
+          TASK_VERSION: "3.52.0"
+          TASK_SHA256: 02c679ffae53dca791804847d78b31731615894e292948397c971c87ac9e95bd
+        run: |
+          curl --fail --silent --show-error --location --retry 5 --retry-all-errors \
+            --output "$RUNNER_TEMP/task.tar.gz" \
+            "https://github.com/go-task/task/releases/download/v$TASK_VERSION/task_linux_amd64.tar.gz"
+          echo "$TASK_SHA256  $RUNNER_TEMP/task.tar.gz" | sha256sum --check --strict
+          mkdir -p "$RUNNER_TEMP/task-bin"
+          tar -xzf "$RUNNER_TEMP/task.tar.gz" -C "$RUNNER_TEMP/task-bin" task
+          echo "$RUNNER_TEMP/task-bin" >> "$GITHUB_PATH"
+
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: "22"
+
+      - name: Install the TypeScript toolchain the conformance cases need
+        run: |
+          npm install --global typescript@6.0.3 prettier@3.8.1 esbuild@0.28.2
+          npm install --prefix "$RUNNER_TEMP/ess-types" @types/node@26.3.0
+          echo "ESS_TYPES_NODE=$RUNNER_TEMP/ess-types/node_modules" >> "$GITHUB_ENV"
+
+      - uses: taiki-e/install-action@9983c65e42da123ff25d1f78505eb6de315aa172 # v2.87.20
+        with:
+          tool: cargo-nextest@0.9.143
+
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+        with:
+          key: slow
+          save-if: ${{ github.ref == 'refs/heads/main' && github.event_name != 'workflow_dispatch' || github.event_name == 'pull_request' }}
+
+      - name: Fetch locked dependencies
+        run: cargo fetch --locked
+
+      - name: Slow lane
+        run: task test-slow
 
   transport-network:
     name: Transport validator and JetStream execution
@@ -771,10 +906,11 @@ jobs:
 
   gate:
     name: Gate
-    needs: [diff, checks, build-tests, build-feature-off, test, transport-network, msrv]
+    needs: [diff, checks, build-tests, build-feature-off, test, slow, transport-network, msrv]
     # A skipped required check reads as passing, so this runs whatever the jobs did and fails
-    # unless every one of them succeeded. The one exception is the three jobs a plan-only pull
-    # request skips (`diff`), skipped when `diff` succeeded and said so.
+    # unless every one of them succeeded. The exceptions are the three jobs a plan-only pull
+    # request skips (`diff`), skipped when `diff` succeeded and said so, and `slow`, skipped when
+    # `diff` succeeded and said that no changed path can reach a slow test.
     if: ${{ always() }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -787,6 +923,8 @@ jobs:
           BUILD_TESTS: ${{ needs.build-tests.result }}
           BUILD_FEATURE_OFF: ${{ needs.build-feature-off.result }}
           TEST: ${{ needs.test.result }}
+          SLOW: ${{ needs.slow.result }}
+          SLOW_SKIPPABLE: ${{ needs.diff.outputs.slow }}
           TRANSPORT_NETWORK: ${{ needs.transport-network.result }}
           MSRV: ${{ needs.msrv.result }}
         run: |
@@ -796,7 +934,7 @@ jobs:
             plan_only=true
             echo "diff decided that the pull request changes only plan-only paths"
           fi
-          for job in "diff=$DIFF" "checks=$CHECKS" "build-tests=$BUILD_TESTS" "build-feature-off=$BUILD_FEATURE_OFF" "test=$TEST" "transport-network=$TRANSPORT_NETWORK" "msrv=$MSRV"; do
+          for job in "diff=$DIFF" "checks=$CHECKS" "build-tests=$BUILD_TESTS" "build-feature-off=$BUILD_FEATURE_OFF" "test=$TEST" "slow=$SLOW" "transport-network=$TRANSPORT_NETWORK" "msrv=$MSRV"; do
             echo "$job"
             name="${job%%=*}"
             result="${job#*=}"
@@ -807,6 +945,14 @@ jobs:
               case "$name" in
                 build-tests | build-feature-off | test)
                   echo "the $name job was skipped because the diff is plan-only"
+                  continue
+                  ;;
+              esac
+            fi
+            if [ "$result" = skipped ] && [ "$DIFF" = success ] && [ "$SLOW_SKIPPABLE" = false ]; then
+              case "$name" in
+                slow)
+                  echo "the slow job was skipped because no changed path can reach a slow test"
                   continue
                   ;;
               esac

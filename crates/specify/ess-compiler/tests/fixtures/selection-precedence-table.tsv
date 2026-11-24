@@ -1,4 +1,4 @@
-#	models=406	commands=842
+#	models=407	commands=847
 crates/edge/ess-cli/tests/fixtures/adversary-shorthand-binary64/spec.yaml	ir=c87449d062a2da60a227a5a4fe21bf6e78c1108f81fca3463834272ed4c44788:14663
 crates/edge/ess-cli/tests/fixtures/adversary-shorthand-binary64/spec.yaml	tracker.ops.Record	default: recorded
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	ir=d47970055f083eda582673dfe528f0af87f902defa07339aa014f6c8d50be57f:5099
@@ -233,6 +233,12 @@ crates/ui/ess-ui-check/tests/fixtures/model/system.yaml	ASSEMBLE
 crates/ui/ess-ui-react/tests/fixtures/fixture-command-effect/spec/system.yaml	ASSEMBLE
 crates/ui/ess-ui-test/tests/fixtures/adversary-t3-fixture-command-effect/spec/system.yaml	ASSEMBLE
 crates/ui/ess-ui-test/tests/fixtures/fixture-command-effect/spec/system.yaml	ASSEMBLE
+crates/verify/ess-conformance/tests/fixtures/a-creator-chosen-values-beside-several-rows.yaml	ir=bc27d8b18463047338bf3d24eb73805de84aefa8566e8ef1cea9a88ffbf50717:24583
+crates/verify/ess-conformance/tests/fixtures/a-creator-chosen-values-beside-several-rows.yaml	shop.desk.IssueGrant	present_related: no-site, no-desk, elsewhere | default: issued
+crates/verify/ess-conformance/tests/fixtures/a-creator-chosen-values-beside-several-rows.yaml	shop.desk.OpenDesk	present_related: no-site | default: opened
+crates/verify/ess-conformance/tests/fixtures/a-creator-chosen-values-beside-several-rows.yaml	shop.desk.OpenSite	default: opened
+crates/verify/ess-conformance/tests/fixtures/a-creator-chosen-values-beside-several-rows.yaml	shop.desk.RevokeGrant	existence: no-grant | held_state: wrong-state | default: revoked
+crates/verify/ess-conformance/tests/fixtures/a-creator-chosen-values-beside-several-rows.yaml	shop.desk.UseGrant	present_related: no-grant, grant-refused | default: used
 crates/verify/ess-conformance/tests/fixtures/a-creator-reading-several-related-rows.yaml	ir=84a4e46f221f1b6b278253b0e3b05aa1b3d37d30ca056b0b77429d2d70d00d34:35666
 crates/verify/ess-conformance/tests/fixtures/a-creator-reading-several-related-rows.yaml	shop.desk.AddClerk	default: added
 crates/verify/ess-conformance/tests/fixtures/a-creator-reading-several-related-rows.yaml	shop.desk.IssueGrant	present_related: no-site, no-desk, elsewhere | default: issued

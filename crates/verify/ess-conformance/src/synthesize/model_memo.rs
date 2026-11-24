@@ -76,6 +76,16 @@ pub(super) fn absent_built<R>(run: impl FnOnce() -> R) -> (R, u64) {
     (out, ABSENT_BUILT.with(Cell::get) - before)
 }
 
+/// The count of [`ABSENT_BUILT`] on this thread.
+pub(super) fn taken_absent_built() -> u64 {
+    ABSENT_BUILT.with(std::cell::Cell::get)
+}
+
+/// Adds `more` to the count of [`ABSENT_BUILT`] on this thread.
+pub(super) fn add_absent_built(more: u64) {
+    ABSENT_BUILT.with(|it| it.set(it.get() + more));
+}
+
 /// `f` over the answers kept for `ir`, where `ir` is the model kept innermost.
 fn with_kept<R>(ir: &EssIr, f: impl FnOnce(&mut Kept) -> R) -> Option<R> {
     KEPT.with(|kept| {

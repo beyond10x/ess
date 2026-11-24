@@ -706,6 +706,7 @@ fn corpus() -> Vec<(String, EssIr)> {
 /// No synthesized suite of any example, model or fixture carries a step the check refuses, and no
 /// synthesis refuses one.
 #[test]
+#[ignore = "slow lane: synthesizes every corpus suite"]
 fn no_corpus_suite_requires_a_branch_the_precedence_takes_elsewhere() {
     let corpus = corpus();
     eprintln!("corpus: {} specifications", corpus.len());

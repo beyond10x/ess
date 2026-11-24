@@ -40,6 +40,19 @@
 //! Under `/5` a reader may also state no alphabet or a wider one, no prefix or a shorter one the
 //! imported prefix starts with, a subset of the imported invariants, and a subset of the imported
 //! attributes, each agreeing in type and in value on every variant matched by wire name.
+//!
+//! A writer assertion (`writer: true`, `ess-composition/6`) asks the dual question: can the local
+//! type send a value the imported type's reader refuses? For presence it admits a field whose
+//! written absent spellings are among those the imported field reads, and a required local value
+//! where the imported one is `Optional`, at any position; a local `Optional` where the imported
+//! value is required is drift. Beyond presence it admits what a sender may narrow: a local newtype,
+//! through any chain, where the imported reference is what it wraps; a local enum where the
+//! imported reference is `String`; enum variants, and union variants under the same tag, that are a
+//! subset of the imported ones by wire name; a struct or a `String`-keyed map where the imported
+//! reference is `Map<String, Json>`; a subset of an imported struct's fields, the omitted ones
+//! `Optional` and readable as missing; extra fields against an imported struct or command response
+//! that ignores undeclared fields (`ess/24`); and, under `/5`, a narrower alphabet, a longer prefix
+//! and more invariants. Variant attributes stay exact.
 
 use std::collections::BTreeSet;
 
@@ -51,8 +64,8 @@ use ess_domain::types::{EnumVariant, Presence, Primitive, TypeRef};
 use ess_primitives::predicate::Predicate;
 
 use crate::{
-    Admission, CommandPart, CompositionCode, CompositionDiagnostic, CompositionSpec,
-    ConformanceEnd, TypeBinding, TypeConformance, PAYLOAD_COMPOSITION_FORMAT,
+    at_least_payload, Admission, CommandPart, CompositionCode, CompositionDiagnostic,
+    CompositionSpec, ConformanceEnd, TypeBinding, TypeConformance,
 };
 
 /// Admits both ends of every assertion and compares their shapes.
@@ -72,7 +85,8 @@ pub(crate) fn resolve_conformances(
             local: local_ir,
             imported: imported_ir,
             reader: asserted.reader(),
-            constraints: specification.format() == PAYLOAD_COMPOSITION_FORMAT,
+            writer: asserted.writer(),
+            constraints: at_least_payload(specification.format()),
             visiting: BTreeSet::new(),
             drifts: Vec::new(),
         };
@@ -105,6 +119,9 @@ enum Shape<'ir> {
         fields: &'ir [ResolvedField],
         /// What the payload is, as a drift names it: `an event payload`.
         what: &'static str,
+        /// Whether the end ignores a field it does not declare (`ess/24`): a command response that
+        /// says so; an event, an error and a command input never do.
+        ignores: bool,
     },
 }
 
@@ -124,6 +141,7 @@ fn shape<'ir>(
                 name: &event.name,
                 fields: &event.fields,
                 what: "an event payload",
+                ignores: false,
             }
         }
         ConformanceEnd::Error(name) => {
@@ -132,6 +150,7 @@ fn shape<'ir>(
                 name: &error.name,
                 fields: &error.fields,
                 what: "an error payload",
+                ignores: false,
             }
         }
         ConformanceEnd::Command { command, part } => {
@@ -141,6 +160,7 @@ fn shape<'ir>(
                     name: &resolved.name,
                     fields: &resolved.input,
                     what: "a command input",
+                    ignores: false,
                 },
                 CommandPart::Response if resolved.response.is_empty() => {
                     diagnostics.push(CompositionDiagnostic::new(
@@ -158,6 +178,7 @@ fn shape<'ir>(
                     name: &resolved.name,
                     fields: &resolved.response,
                     what: "a command response",
+                    ignores: resolved.undeclared_fields.is_ignored(),
                 },
             }
         }
@@ -181,6 +202,7 @@ pub(crate) fn compare_inputs(
         local,
         imported: contract,
         reader: false,
+        writer: false,
         constraints: false,
         visiting: BTreeSet::new(),
         drifts: Vec::new(),
@@ -224,6 +246,10 @@ struct Comparison<'ir> {
     imported: &'ir EssIr,
     /// A reader assertion (`ess-composition/3`): the widenings [`Comparison::widened`] names apply.
     reader: bool,
+    /// A writer assertion (`ess-composition/6`): the local type only sends the imported one, so a
+    /// difference is admitted where the local type can send no value the imported type's reader
+    /// refuses.
+    writer: bool,
     /// Value constraints and variant attributes are compared too (`ess-composition/5`): newtype
     /// alphabets, prefixes and invariants, struct invariants and enum variant attributes.
     constraints: bool,
@@ -245,7 +271,7 @@ impl Comparison<'_> {
         let theirs = fields(self.imported, imported);
         match (mine.fields, theirs.fields) {
             (Some(own), Some(sent)) => {
-                self.structs("", (mine.name, own), (theirs.name, sent));
+                self.structs("", (mine.name, own), (theirs.name, sent), theirs.ignores);
                 self.invariants(
                     "",
                     (mine.name, mine.invariants),
@@ -291,7 +317,11 @@ impl Comparison<'_> {
         }
         if matches!(own.type_ref, ResolvedTypeRef::Optional { .. })
             && matches!(field.type_ref, ResolvedTypeRef::Optional { .. })
-            && own.naming.presence != field.naming.presence
+            && !(if self.writer {
+                writes_within(own.naming.presence, field.naming.presence)
+            } else {
+                own.naming.presence == field.naming.presence
+            })
         {
             self.drifts.push(format!(
                 "field `{at}`: presence {} where `{imported}` has {}",
@@ -302,18 +332,24 @@ impl Comparison<'_> {
     }
 
     /// Two structs' fields, matched by name. A reader may omit an imported field, and may add one
-    /// the imported struct lacks when it is `Optional` and not `null_when_absent`.
+    /// the imported struct lacks when it is `Optional` and not `null_when_absent`. A writer may
+    /// omit an imported field that is omittable, and may add any field when the imported struct
+    /// `ignores` undeclared fields; a field that travels as an imported key is compared with it.
     fn structs(
         &mut self,
         path: &str,
         (local, mine): (&QualifiedName, &[ResolvedField]),
         (imported, theirs): (&QualifiedName, &[ResolvedField]),
+        ignores: bool,
     ) {
         for field in theirs {
             let at = join(path, &field.name);
             match mine.iter().find(|candidate| candidate.name == field.name) {
                 // A reader may leave out a field it does not read.
                 None if self.reader => {}
+                // A sender may leave out an imported field whose reader accepts a missing key
+                // (`omittable`, which reads `absent_read`).
+                None if self.writer && omittable(field) => {}
                 None => self.drifts.push(format!(
                     "field `{at}`: `{imported}` declares it and `{local}` does not"
                 )),
@@ -330,7 +366,7 @@ impl Comparison<'_> {
             let at = join(path, &field.name);
             // A reader decodes by wire name: a local field that travels as a key the imported
             // struct sends reads that field, whatever either end calls it, omitted or not.
-            if self.reader {
+            if self.reader || self.writer {
                 if let Some(sent) = theirs
                     .iter()
                     .find(|candidate| wire_name(candidate) == wire_name(field))
@@ -339,6 +375,11 @@ impl Comparison<'_> {
                     self.references(&at, &field.type_ref, &sent.type_ref);
                     continue;
                 }
+            }
+            // A sender may send a field the imported reader ignores: every declared field stays
+            // required and typed, which the first loop checked.
+            if self.writer && ignores {
+                continue;
             }
             let optional = matches!(field.type_ref, ResolvedTypeRef::Optional { .. });
             if !(self.reader && optional) {
@@ -380,10 +421,35 @@ impl Comparison<'_> {
         }
     }
 
+    /// Wire names a writer's enum sends that the imported enum lacks: a sender may know fewer
+    /// variants than the imported enum, never one it would refuse.
+    fn wire_subset(
+        &mut self,
+        path: &str,
+        (local, mine): (&QualifiedName, &[EnumVariant]),
+        (imported, theirs): (&QualifiedName, &[EnumVariant]),
+    ) {
+        let known: BTreeSet<_> = theirs.iter().map(EnumVariant::wire).collect();
+        let unknown: BTreeSet<_> = mine
+            .iter()
+            .map(EnumVariant::wire)
+            .filter(|wire| !known.contains(wire))
+            .map(str::to_owned)
+            .collect();
+        if !unknown.is_empty() {
+            self.drifts.push(format!(
+                "{}: `{local}` has wire names {} that `{imported}` lacks",
+                at(path),
+                names(&unknown)
+            ));
+        }
+    }
+
     /// Two invariant lists, compared as sets of conditions: each invariant's parsed predicate,
     /// split at its conjunctions, so neither spelling, order nor grouping into invariants
     /// matters. Exact ends must state the same conditions; a reader may omit the owner's, since
-    /// that rejects nothing the owner sends, but may not add one the owner lacks.
+    /// that rejects nothing the owner sends, but may not add one the owner lacks; a writer may add
+    /// conditions the owner lacks, since it sends fewer values, but may not omit the owner's.
     fn invariants(
         &mut self,
         path: &str,
@@ -408,18 +474,23 @@ impl Comparison<'_> {
                 ));
             }
         }
-        for statement in missing(&mine, &theirs) {
-            self.drifts.push(format!(
-                "{}: invariant `{statement}` in `{local}` and not in `{imported}`",
-                at(path)
-            ));
+        // A sender may state conditions the imported type does not: it sends fewer values.
+        if !self.writer {
+            for statement in missing(&mine, &theirs) {
+                self.drifts.push(format!(
+                    "{}: invariant `{statement}` in `{local}` and not in `{imported}`",
+                    at(path)
+                ));
+            }
         }
     }
 
     /// A newtype's `alphabet` or `prefix`. Exact ends must agree: an alphabet as a set of
     /// characters, a prefix as text. A reader rejects nothing the owner sends when it states none,
     /// or when its alphabet holds every character of the owner's, or its prefix starts the
-    /// owner's.
+    /// owner's. A writer sends nothing the owner rejects when the owner states none, or when its
+    /// alphabet holds only characters of the owner's, or its prefix starts with the owner's; a
+    /// writer that states none sends any text, so it conforms only to an owner that states none.
     fn text_constraint(
         &mut self,
         path: &str,
@@ -449,6 +520,17 @@ impl Comparison<'_> {
                 return;
             }
         }
+        if self.writer {
+            let sends_within = match (what, mine, theirs) {
+                (_, _, None) => true,
+                (_, None, Some(_)) => false,
+                ("alphabet", Some(mine), Some(theirs)) => mine.chars().all(|c| theirs.contains(c)),
+                (_, Some(mine), Some(theirs)) => mine.starts_with(theirs),
+            };
+            if sends_within {
+                return;
+            }
+        }
         let stated = |value: Option<&str>| {
             value.map_or_else(|| format!("no {what}"), |value| format!("{what} `{value}`"))
         };
@@ -463,7 +545,8 @@ impl Comparison<'_> {
     /// Two enums' variant attributes (`ess/23`). Exact ends declare the same attributes, of
     /// conforming types, and give each variant the same values; a reader may declare a subset, each
     /// of which the owner declares, and must agree on it. Variants are matched by name, a reader's
-    /// by wire name; an unmatched variant is the variant comparison's to report.
+    /// by wire name; an unmatched variant is the variant comparison's to report. A writer's
+    /// variants are a subset matched by wire name, with the same attributes and values.
     fn attributes(
         &mut self,
         path: &str,
@@ -509,7 +592,7 @@ impl Comparison<'_> {
         }
         for variant in mine {
             let Some(sent) = theirs.iter().find(|candidate| {
-                if self.reader {
+                if self.reader || self.writer {
                     candidate.wire() == variant.wire()
                 } else {
                     candidate.name == variant.name
@@ -645,6 +728,7 @@ impl Comparison<'_> {
                     path,
                     (&local.name, mine.as_slice()),
                     (&imported.name, theirs),
+                    self.imported.undeclared_fields(&imported.name).is_ignored(),
                 );
                 self.value_constraints(path, local, imported);
             }
@@ -653,12 +737,12 @@ impl Comparison<'_> {
                 self.value_constraints(path, local, imported);
             }
             (ResolvedBody::Enum { variants: mine }, ResolvedBody::Enum { variants: theirs }) => {
+                let own = (&local.name, mine.as_slice());
+                let sent = (&imported.name, theirs.as_slice());
                 if self.reader {
-                    self.wire_names(
-                        path,
-                        (&local.name, mine.as_slice()),
-                        (&imported.name, theirs),
-                    );
+                    self.wire_names(path, own, sent);
+                } else if self.writer {
+                    self.wire_subset(path, own, sent);
                 } else {
                     self.spellings(path, mine, (&imported.name, theirs));
                 }
@@ -683,7 +767,12 @@ impl Comparison<'_> {
                 }
                 let my_names: BTreeSet<_> = mine.keys().cloned().collect();
                 let their_names: BTreeSet<_> = theirs.keys().cloned().collect();
-                if my_names == their_names {
+                let covered = if self.writer {
+                    my_names.is_subset(&their_names)
+                } else {
+                    my_names == their_names
+                };
+                if covered {
                     for (name, shape) in mine {
                         match (shape, &theirs[name]) {
                             (Some(shape), Some(their_shape)) => {
@@ -736,15 +825,30 @@ impl Comparison<'_> {
             | (ResolvedTypeRef::List { of: mine }, ResolvedTypeRef::List { of: theirs }) => {
                 self.references(path, mine, theirs);
             }
-            // The tolerance: a reader may treat a required value as optional.
-            (ResolvedTypeRef::Optional { of: mine }, theirs) => self.references(path, mine, theirs),
+            // A writer: a required value where the imported one may be absent writes what every
+            // reader accepts, at any position.
+            (local, ResolvedTypeRef::Optional { of: theirs }) if self.writer => {
+                self.references(path, local, theirs);
+            }
+            // The tolerance, a reader's: a reader may treat a required value as optional.
+            (ResolvedTypeRef::Optional { of: mine }, theirs) if !self.writer => {
+                self.references(path, mine, theirs);
+            }
             (
                 ResolvedTypeRef::Primitive { name: mine },
                 ResolvedTypeRef::Primitive { name: theirs },
             ) if mine == theirs => {}
             // A value that is always a JSON object is read by `Map<String, Json>`.
             (local, imported)
-                if self.reader && reads_any_object(local) && self.object_shaped(imported) => {}
+                if self.reader
+                    && reads_any_object(local)
+                    && object_shaped(self.imported, imported) => {}
+            // A value that is always a JSON object is accepted by `Map<String, Json>`: the
+            // sender's struct or `String`-keyed map.
+            (local, imported)
+                if self.writer
+                    && reads_any_object(imported)
+                    && object_shaped(self.local, local) => {}
             (
                 ResolvedTypeRef::Map {
                     key: my_key,
@@ -762,6 +866,7 @@ impl Comparison<'_> {
                 self.named(path, mine.name(), theirs.name());
             }
             _ if self.reader && self.widened(path, local, imported) => {}
+            _ if self.writer && self.narrowed(path, local, imported) => {}
             _ => self.drifts.push(format!(
                 "{}: `{}` where the imported type has `{}`",
                 at(path),
@@ -803,26 +908,54 @@ impl Comparison<'_> {
         }
     }
 
-    /// Whether every value of the imported reference is a JSON object: a map with `String` keys,
-    /// or a struct, directly or through a chain of newtypes. `Json`, `Optional` (which may be
-    /// `null`), lists, enums and unions are not.
-    fn object_shaped(&self, imported: &ResolvedTypeRef) -> bool {
-        match imported {
-            ResolvedTypeRef::Map { key, .. } => *key == Primitive::String,
-            ResolvedTypeRef::Declared { name } => {
-                match self
-                    .imported
-                    .types()
-                    .get(name.name())
-                    .map(|found| &found.body)
-                {
-                    Some(ResolvedBody::Struct { .. }) => true,
-                    Some(ResolvedBody::Newtype { of, .. }) => self.object_shaped(of),
-                    _ => false,
-                }
+    /// A writer's narrowing of a local reference that is a declared type against an imported one
+    /// that is not, or `false` when none applies: a local newtype, through any chain, is what it
+    /// wraps; a local enum is `String`. The newtype's own constraints only narrow, so they are not
+    /// compared. A narrowing that applies but recurses into a drift records it and still returns
+    /// `true`.
+    fn narrowed(
+        &mut self,
+        path: &str,
+        local: &ResolvedTypeRef,
+        imported: &ResolvedTypeRef,
+    ) -> bool {
+        let ResolvedTypeRef::Declared { name } = local else {
+            return false;
+        };
+        let Some(declared) = self.local.types().get(name.name()) else {
+            return false;
+        };
+        match &declared.body {
+            ResolvedBody::Newtype { of, .. } => {
+                self.references(path, of, imported);
+                true
             }
-            _ => false,
+            ResolvedBody::Enum { .. } => matches!(
+                imported,
+                ResolvedTypeRef::Primitive {
+                    name: Primitive::String
+                }
+            ),
+            ResolvedBody::Struct { .. } | ResolvedBody::Union { .. } => false,
         }
+    }
+}
+
+/// Whether every value of the reference is a JSON object: a map with `String` keys, or a struct,
+/// directly or through a chain of newtypes. `Json`, `Optional` (which may be `null`), lists, enums
+/// and unions are not. It reads the types of `ir`, the model the reference is in: the imported one
+/// for a reader, the local one for a writer.
+fn object_shaped(ir: &EssIr, reference: &ResolvedTypeRef) -> bool {
+    match reference {
+        ResolvedTypeRef::Map { key, .. } => *key == Primitive::String,
+        ResolvedTypeRef::Declared { name } => {
+            match ir.types().get(name.name()).map(|found| &found.body) {
+                Some(ResolvedBody::Struct { .. }) => true,
+                Some(ResolvedBody::Newtype { of, .. }) => object_shaped(ir, of),
+                _ => false,
+            }
+        }
+        _ => false,
     }
 }
 
@@ -834,15 +967,23 @@ struct Compared<'s> {
     fields: Option<&'s [ResolvedField]>,
     /// A struct type's invariants; a payload has none.
     invariants: &'s [Invariant],
+    /// Whether the end ignores a field it does not declare (`ess/24`).
+    ignores: bool,
 }
 
 fn fields<'s>(ir: &'s EssIr, shape: &Shape<'s>) -> Compared<'s> {
     match *shape {
-        Shape::Payload { name, fields, what } => Compared {
+        Shape::Payload {
+            name,
+            fields,
+            what,
+            ignores,
+        } => Compared {
             name,
             kind: what,
             fields: Some(fields),
             invariants: &[],
+            ignores,
         },
         Shape::Named(name) => {
             let body = ir.types().get(name).map(|found| &found.body);
@@ -857,6 +998,7 @@ fn fields<'s>(ir: &'s EssIr, shape: &Shape<'s>) -> Compared<'s> {
                 kind: body.map_or("undeclared", kind),
                 fields,
                 invariants,
+                ignores: fields.is_some() && ir.undeclared_fields(name).is_ignored(),
             }
         }
     }
@@ -874,6 +1016,13 @@ fn reads_any_object(local: &ResolvedTypeRef) -> bool {
 /// A field's key on the wire.
 fn wire_name(field: &ResolvedField) -> &str {
     field.naming.wire.as_deref().unwrap_or(&field.name)
+}
+
+/// Whether an imported field may be absent from what a sender writes: `Optional`, and its
+/// reader accepts a missing key. The presence rule is `w1`'s `absent_read`, the one home of it.
+fn omittable(field: &ResolvedField) -> bool {
+    matches!(field.type_ref, ResolvedTypeRef::Optional { .. })
+        && absent_read(field.naming.presence).omitted
 }
 
 fn join(path: &str, name: &str) -> String {
@@ -965,4 +1114,59 @@ fn variant_spelling(variant: &EnumVariant) -> String {
 
 fn presence(value: Option<Presence>) -> String {
     value.map_or_else(|| "unstated".to_owned(), |value| format!("`{value}`"))
+}
+
+/// The absent spellings a field can carry on the wire.
+#[derive(Clone, Copy)]
+struct Absent {
+    omitted: bool,
+    null: bool,
+}
+
+/// What a sender of a field with `presence` writes when the value is absent. A field with no
+/// presence is projected as `omitted_when_absent` is, so it leaves the key out.
+fn absent_written(presence: Option<Presence>) -> Absent {
+    match presence {
+        Some(Presence::NullWhenAbsent) => Absent {
+            omitted: false,
+            null: true,
+        },
+        Some(Presence::OmittedWhenAbsent) | None => Absent {
+            omitted: true,
+            null: false,
+        },
+        Some(Presence::OmittedOrNull) => Absent {
+            omitted: true,
+            null: true,
+        },
+    }
+}
+
+/// What a reader of a field with `presence` accepts when the value is absent. As the published
+/// schema reads it, a field with no presence accepts only a missing key.
+fn absent_read(presence: Option<Presence>) -> Absent {
+    match presence {
+        Some(Presence::NullWhenAbsent) => Absent {
+            omitted: false,
+            null: true,
+        },
+        Some(Presence::OmittedWhenAbsent) | None => Absent {
+            omitted: true,
+            null: false,
+        },
+        Some(Presence::OmittedOrNull) => Absent {
+            omitted: true,
+            null: true,
+        },
+    }
+}
+
+/// Whether every absent spelling a writer's `own` presence can produce is one the imported
+/// field's `theirs` reads. Equal forms always conform.
+fn writes_within(own: Option<Presence>, theirs: Option<Presence>) -> bool {
+    if own == theirs {
+        return true;
+    }
+    let (writes, reads) = (absent_written(own), absent_read(theirs));
+    (!writes.omitted || reads.omitted) && (!writes.null || reads.null)
 }

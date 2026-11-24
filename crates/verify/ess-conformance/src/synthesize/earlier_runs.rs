@@ -41,6 +41,11 @@ pub(super) fn scenario() -> Scenario {
     Scenario { previous }
 }
 
+/// Whether a scope [`scenario`] opened is open on this thread.
+pub(super) fn open() -> bool {
+    EARLIER.with(|scope| scope.borrow().is_some())
+}
+
 /// Every instance name the steps of a run capture, recorded for the runs after it.
 pub(super) fn record(steps: &[ScenarioStep]) {
     EARLIER.with(|scope| {

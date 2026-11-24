@@ -187,6 +187,39 @@ The document follows those keys on the routes that use them:
 - A bare body names no branch, so every response of such a command carries `x-ess-outcomes`, the
   outcomes it answers. A challenge is a header only: the document declares no `securitySchemes`.
 
+### Limit the request body
+
+A binding may state the largest request body its routes read, and the answer a larger one gets:
+
+```yaml
+limits: {request_bytes: 64}
+refusals:
+  too_large: {status: 418, body: {error: {literal: too_big}}}
+routes:
+  - command: catalog.orders.PlaceOrder
+    method: post
+    path: /api/orders
+  - command: catalog.orders.NoteOrder
+    method: post
+    path: /api/orders/{order_id}/note
+    parameters: {order_id: input.order_id}
+    limits: {request_bytes: 256}
+```
+
+- It applies to a route the binding names that reads a body. A view, a `get` command, a
+  `query`-encoded command and a route the binding does not name keep the fixed 1 MiB bound.
+- `request_bytes` is at least 1 and at most 16777216 (16 MiB). A route's own `limits` replaces the
+  binding's on that route; a limit on a route that reads no body is refused (`ESS-HTTP-034`).
+- A binding that declares nothing keeps the 1 MiB bound, unchanged.
+- `refusals.too_large` takes a `4xx` status. Its body and headers are written as for the other
+  refusals; without it the answer is `413` with `{"refused": ...}`. A route's own `too_large`
+  replaces the binding's on that route.
+- Both servers refuse a body whose `Content-Length` is larger from the request head, before the
+  body is read. A chunked request is answered `411` by the Rust server; the Go server reads a
+  chunked body up to the bound plus one byte and then refuses it. Send `Content-Length`.
+- The OpenAPI document names the bound of each such operation under `x-ess-request-max-bytes` and
+  lists the answer as one more response.
+
 ### Operation ids and servers
 
 A route may name the `operationId` a protocol or a client generator expects, and a binding may name

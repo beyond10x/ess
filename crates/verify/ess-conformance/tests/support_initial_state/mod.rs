@@ -199,7 +199,8 @@ pub fn wasm_case(
     use std::fmt::Write as _;
     use std::{fs, path::Path, process::Command};
     let root = super::support_go::directory("initial-state-wasm");
-    fs::create_dir_all(root.join("src")).unwrap();
+    let shared = Path::new(env!("CARGO_TARGET_TMPDIR")).join("initial-state-wasm-host");
+    fs::create_dir_all(shared.join("src")).unwrap();
     let conformance = Path::new(env!("CARGO_MANIFEST_DIR"));
     let mut manifest = "[package]\nname = \"initial-state-host\"\nversion = \"0.0.0\"\nedition = \"2021\"\n[workspace]\n[lib]\ncrate-type = [\"cdylib\"]\n[dependencies]\nserde_json = {version = \"1\", features = [\"arbitrary_precision\"]}\n".to_owned();
     for (name, path) in [
@@ -221,7 +222,7 @@ pub fn wasm_case(
         )
         .unwrap();
     }
-    fs::write(root.join("Cargo.toml"), manifest).unwrap();
+    write_if_changed(&shared.join("Cargo.toml"), manifest.as_bytes());
     // Compile the identical stateful target into WASM. Test functions stay in the host crate.
     let source = include_str!("../adversary_287_pass1.rs")
         .split("#[test]")
@@ -250,11 +251,10 @@ pub fn wasm_case(
         serde_json::to_vec(&json!({"item_case":case,"faults":faults})).unwrap(),
     )
     .unwrap();
-    fs::write(
-        root.join("src/lib.rs"),
-        format!("#![allow(dead_code, unused_imports)]\n{source}\n{WASM_HOST}"),
-    )
-    .unwrap();
+    write_if_changed(
+        &shared.join("src/lib.rs"),
+        format!("#![allow(dead_code, unused_imports)]\n{source}\n{WASM_HOST}").as_bytes(),
+    );
     let run = |command: &mut Command| {
         let output = command.output().unwrap();
         assert!(
@@ -265,12 +265,14 @@ pub fn wasm_case(
         );
         output
     };
-    run(Command::new("cargo")
-        .args(["generate-lockfile", "--offline"])
-        .current_dir(&root));
+    if !shared.join("Cargo.lock").exists() {
+        run(Command::new("cargo")
+            .args(["generate-lockfile", "--offline"])
+            .current_dir(&shared));
+    }
     let cache = std::env::var_os("CARGO_TARGET_DIR")
-        .map_or_else(|| root.join("target"), std::path::PathBuf::from);
-    run(Command::new("cargo")
+        .map_or_else(|| shared.join("target"), std::path::PathBuf::from);
+    let build = run(Command::new("cargo")
         .args([
             "build",
             "--offline",
@@ -280,7 +282,11 @@ pub fn wasm_case(
         ])
         .arg("--target-dir")
         .arg(&cache)
-        .current_dir(&root));
+        .current_dir(&shared));
+    eprintln!(
+        "wasm host build: {}",
+        String::from_utf8_lossy(&build.stderr)
+    );
     let page = include_str!("../../../../generate/ess-synth/src/web/page.rs");
     let glue = page
         .split("const GLUE_BODY: &str = r#\"")
@@ -307,6 +313,17 @@ console.log(JSON.stringify(cases.faults.map(fault=>module.request({suite,fault,i
         .arg(cache.join("wasm32-unknown-unknown/debug/initial_state_host.wasm"))
         .current_dir(&root));
     serde_json::from_slice(&output.stdout).unwrap()
+}
+
+/// Writes `bytes` to `path` only when they differ, through a rename, so two test processes never
+/// see a half-written file and an unchanged file keeps its mtime.
+fn write_if_changed(path: &std::path::Path, bytes: &[u8]) {
+    if std::fs::read(path).is_ok_and(|held| held == bytes) {
+        return;
+    }
+    let beside = path.with_extension(format!("{}.tmp", std::process::id()));
+    std::fs::write(&beside, bytes).unwrap();
+    std::fs::rename(&beside, path).unwrap();
 }
 
 const WASM_HOST: &str = r#"

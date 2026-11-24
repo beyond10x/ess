@@ -121,24 +121,29 @@ thread_local! {
 /// of the same model (`synthesize::caller`). The guard holds the models, so no address it keeps can
 /// be taken by another model while their answers are parked.
 pub(crate) struct Keeping {
-    models: Vec<std::rc::Rc<EssIr>>,
+    models: Vec<std::sync::Arc<EssIr>>,
+    /// A Keeping pops the stack of the thread that opened it, so it is not sent to another thread.
+    _thread: std::marker::PhantomData<*const ()>,
 }
 
 impl Keeping {
     /// A new innermost scope, holding no model yet.
     pub(crate) fn open() -> Self {
         KEPT.with(|kept| kept.borrow_mut().push(BTreeMap::new()));
-        Self { models: Vec::new() }
+        Self {
+            models: Vec::new(),
+            _thread: std::marker::PhantomData,
+        }
     }
 
     /// Keeps the answers about `ir` for as long as this guard lives.
-    pub(crate) fn keep(&mut self, ir: &std::rc::Rc<EssIr>) {
+    pub(crate) fn keep(&mut self, ir: &std::sync::Arc<EssIr>) {
         KEPT.with(|kept| {
             if let Some(scope) = kept.borrow_mut().last_mut() {
                 scope.entry(address(ir)).or_insert(None);
             }
         });
-        self.models.push(std::rc::Rc::clone(ir));
+        self.models.push(std::sync::Arc::clone(ir));
     }
 }
 
@@ -420,7 +425,8 @@ struct Work {
 #[cfg(test)]
 fn counted<T>(run: impl FnOnce() -> T) -> (T, usize, usize) {
     WORK.with(|work| *work.borrow_mut() = Some(Work::default()));
-    let out = run();
+    // `WORK` and `GENERATIONS` are per thread, and a key holds the model's address.
+    let out = crate::synthesize::with_jobs(std::num::NonZeroUsize::MIN, run);
     let work = WORK
         .with(|work| work.borrow_mut().take())
         .expect("the counter was installed");

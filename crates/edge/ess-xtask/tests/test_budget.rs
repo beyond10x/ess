@@ -12,7 +12,16 @@ use ess_yaml::Value;
 const REPORT: &str = "target/nextest/ci/junit.xml";
 
 /// The tasks that run `cargo nextest run` today.
-const NEXTEST_TASKS: [&str; 3] = ["test-feature-off", "test-packages", "test-shard"];
+const NEXTEST_TASKS: [&str; 5] = [
+    "test-feature-off",
+    "test-packages",
+    "test-shard",
+    "test-slow",
+    "test-xtask",
+];
+
+/// The task that runs the slow lane: nextest in a loop, one run per package, in one command.
+const SLOW_TASK: &str = "test-slow";
 
 const SAMPLE: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 <testsuites name="nextest-run" tests="12" skipped="0" failures="1" errors="0" uuid="x" timestamp="2026-11-22T00:12:28.633+01:00" time="99.0">
@@ -163,8 +172,31 @@ fn the_ci_profile_writes_the_junit_report_test_slowest_reads() {
     );
     let command = slowest_command(&taskfile());
     assert!(
-        command.contains(&format!("report={REPORT}")),
-        "test-slowest does not read {REPORT}"
+        command.contains(&format!("report=\"${{SLOWEST_REPORT:-{REPORT}}}\"")),
+        "test-slowest does not read ${{SLOWEST_REPORT}}, defaulting to {REPORT}"
+    );
+    let taskfile = taskfile();
+    let slow = string_commands(&taskfile, SLOW_TASK);
+    assert!(
+        slow.iter().any(|command| command
+            .contains("SLOWEST_REPORT=target/nextest/slow/junit.xml task test-slowest")),
+        "`{SLOW_TASK}` does not call `task test-slowest` with SLOWEST_REPORT=target/nextest/slow/junit.xml: {slow:?}"
+    );
+}
+
+#[test]
+fn the_slow_profile_kills_a_test_after_twenty_minutes_and_writes_junit() {
+    let config = nextest_config();
+    assert_eq!(
+        table(&config, "[profile.slow]"),
+        [
+            "slow-timeout = { period = \"120s\", terminate-after = 10 }",
+            "final-status-level = \"slow\""
+        ]
+    );
+    assert_eq!(
+        table(&config, "[profile.slow.junit]"),
+        ["path = \"junit.xml\""]
     );
 }
 
@@ -181,9 +213,13 @@ fn every_nextest_run_in_the_taskfile_uses_the_ci_profile() {
     for task in &tasks {
         for command in string_commands(&taskfile, task) {
             if command.contains("cargo nextest run") {
+                let ci = passes(&command, "--profile", "ci");
+                let slow = passes(&command, "--profile", "slow")
+                    && passes(&command, "--run-ignored", "only")
+                    && command.split_whitespace().any(|word| word == "-E");
                 assert!(
-                    passes(&command, "--profile", "ci"),
-                    "`{task}` runs nextest without `--profile ci`: {command}"
+                    ci || slow,
+                    "`{task}` runs nextest without `--profile ci`, or `--profile slow` with `--run-ignored only` and `-E`: {command}"
                 );
             }
         }
@@ -197,6 +233,22 @@ fn every_nextest_run_prints_its_ten_slowest_tests_even_when_it_fails() {
         let commands = taskfile["tasks"][task.as_str()]["cmds"]
             .as_sequence()
             .expect("cmds is a sequence");
+        if task == SLOW_TASK {
+            let command = commands
+                .iter()
+                .filter_map(|entry| entry.as_str())
+                .find(|command| command.contains("cargo nextest run"))
+                .expect("the task runs nextest");
+            let run = command.find("cargo nextest run").unwrap();
+            let Some(failed) = command[run..].find("|| status=1") else {
+                panic!("`{task}` does not record a failed run with `|| status=1`")
+            };
+            assert!(
+                command[run + failed..].contains("task test-slowest"),
+                "`{task}` does not run `task test-slowest` after a failed run"
+            );
+            continue;
+        }
         let deferred = commands
             .iter()
             .position(|entry| entry["defer"]["task"].as_str() == Some("test-slowest"))

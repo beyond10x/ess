@@ -1,7 +1,8 @@
 # A consumer names an owner's types, and proves its own copy matches
 
 beyond10x/ess#162. Composition format `ess-composition/2`; reader assertions (#191) are
-`ess-composition/3`. The source format (`ess/N`) and the suite formats do not move.
+`ess-composition/3`; writer assertions are `ess-composition/6`. `ess-composition/5` adds payload
+ends and value constraints, as the sections below do. The source format (`ess/N`) and the suite formats do not move.
 
 ## The gap
 
@@ -182,18 +183,85 @@ Display names and summaries are still not compared. A `/2` to `/4` document comp
 and keeps its result; moving it to `/5` is how a consumer opts in. Contract roles (`/4`) compare
 inputs without it under every format.
 
+## Writer assertions (`ess-composition/6`)
+
+A consumer that only sends an imported type (a request it builds, an event it publishes) differs
+from it in ways a plain entry refuses and a sender can afford. Under `ess-composition/6` a
+conformance entry may carry `writer: true`:
+
+```yaml
+format: ess-composition/6
+conformances:
+  - local: {service: relay, type: relay.session.Opened}
+    conforms_to: {service: wire, type: wire.session.Opened}
+    writer: true
+```
+
+The question is the dual of the reader's: can the local type send a value the imported type's
+reader refuses? If it cannot, the difference is admitted. If it can, it stays
+`type_conformance_drift`.
+
+A field's `presence` conforms when every absent spelling the local field writes is one the imported
+field reads:
+
+| local writes \ imported reads | required | `null_when_absent` | `omitted_when_absent` | `omitted_or_null` | unstated |
+|---|---|---|---|---|---|
+| required | yes | yes | yes | yes | yes |
+| `null_when_absent` | drift | yes | drift | yes | drift |
+| `omitted_when_absent` | drift | drift | yes | yes | yes |
+| `omitted_or_null` | drift | drift | drift | yes | drift |
+| unstated | drift | drift | yes | yes | yes |
+
+A field with no `presence:` is projected as `omitted_when_absent` is (optional, not nullable;
+`ess-gen`'s `object_annotated`), and the interpreted target leaves its absent value out. As the
+published schema reads it, it writes and reads only a missing key, so its row and column are those
+of `omitted_when_absent`; equal forms always conform.
+
+| narrowing | admitted under `writer: true` | still drift |
+|---|---|---|
+| optionality | a local required value where the imported one is `Optional`, at any position | a local `Optional` where the imported value is required (the plain entry's tolerance does not apply) |
+| newtype | a local newtype, through any chain, over what the imported reference is | a different primitive |
+| enum as `String` | a local enum where the imported reference is `String` | a local `String` where the imported one is an enum |
+| variants | local wire names a subset of the imported wire names | a local wire name the imported enum lacks |
+| union | the same tag, local variants a subset of the imported ones by tag value, each conforming as a writer | a local variant the imported union lacks |
+| object as a map | a local struct or `String`-keyed map where the imported reference is `Map<String, Json>` | anything that is not always an object |
+| field subset | omitting an imported field that is `Optional` and whose presence admits omission (`omitted_when_absent`, `omitted_or_null`, unstated) | omitting a required or `null_when_absent` imported field |
+| extra fields | a local field the imported struct lacks, when the imported struct declares `undeclared_fields: ignored` (`EssIr::undeclared_fields`, `ess/24`) | the same against a closed imported struct |
+| value constraints (`/5` rules) | a local alphabet that is a subset, a prefix that starts with the imported prefix, a superset of the imported invariants | a wider alphabet, a shorter or other prefix, a missing imported invariant |
+
+A required local value is admitted where the imported one is `Optional`, at any position; the plain
+entry's tolerance (a local `Optional` against a required value) does not apply to a writer. Enum
+variant attributes, wire names, map keys, lists and every rule not in the tables are compared as
+without `writer`. The same rules apply to an `event`, `error` or command `part` end.
+
+`writer: true` with `reader: true` on one entry is refused when the document is read, naming both
+keys. `writer`, whatever its value (`null` included), under `/2` to `/5` is `unsupported_format`
+naming `ess-composition/6`. A role's `implements` comparison never reads it.
+
+**Precondition.** An extra field against an ignoring struct holds only because the imported struct
+declares `undeclared_fields: ignored` (`ess/24`); the comparison reads that key, the author asserts
+nothing.
+
+**Departure.** None from an issue; the presence table's `unstated` row and column follow the published schema, where a field with no
+presence is `omitted_when_absent`'s projection.
+
 ## Compatibility
 
-- `SUPPORTED_COMPOSITION_FORMATS` is `[1, 2, 3, 4, 5]` (`/4`, contract roles, is
+- `SUPPORTED_COMPOSITION_FORMATS` is `[1, 2, 3, 4, 5, 6]` (`/4`, contract roles, is
   [composition-contract-roles.md](composition-contract-roles.md)); `cargo xtask docs` reads it, so
   a new major without a release row and a reference page is refused.
 - Under `/1` to `/4` an `event`, `error`, `command` or `part` key on a conformance end is refused
   when read, as the unknown field it was, with a clause naming `/5`. A `type` end reads and writes
   `{service, type}` under every format, so earlier documents keep their authored and compiled
-  bytes. `/5` admits `reader` and `roles` as `/3` and `/4` do.
+  bytes. `/5` admits `reader` and `roles` as `/3` and `/4` do; `/6` admits them, `reader`, `writer`
+  and `roles` as `/5` does.
 - A `/1` or `/2` document whose conformance entry carries `reader`, whatever its value (`false` and
   `null` included), is refused as `unsupported_format`, naming `/3`. `/3` keeps the key as written; an entry without it is
   serialised without it, so a `/2` entry's authored and compiled bytes are unchanged.
+- A `/1` to `/5` document whose conformance entry carries `writer`, whatever its value (`false` and
+  `null` included), is refused as `unsupported_format`, naming `/6`. `/6` keeps the key as written;
+  an entry without it is serialised without it, so an earlier entry's authored and compiled bytes
+  are unchanged.
 - A `/1` document carrying `conformances`, even `[]`, is refused as `unsupported_format`. `/1`
   documents compile exactly as before.
 - The compiled composition echoes the authored marker. A `/1` composition's compiled bytes do not
@@ -201,6 +269,6 @@ inputs without it under every format.
 - The client plan (`ess-client-plan/1`) does not change for any composition: owner-declared types
   are referenceable, not added to a service's `types` closure, so generated clients and their
   `TYPES` lists are identical for the same services and references.
-- `ess specify compose` passes the key through the same closed reader; the CLI needs no change.
+- `ess specify compose` passes the key through the same closed reader; its help names `/1` to `/6`.
 - The Entity Runtime, generated targets and the Go/TypeScript conformance runtimes never read a
   composition; nothing there lowers or refuses this construct.

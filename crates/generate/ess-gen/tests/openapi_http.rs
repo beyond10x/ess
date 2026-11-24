@@ -1165,3 +1165,246 @@ fn a_bare_list_body_is_an_array_request_schema() {
     assert_eq!(parameters[0]["name"], "board_id");
     assert_eq!(parameters[0]["in"], "path");
 }
+
+// Request limits (`docs/design/http-presentation-binding.md`, "What OpenAPI writes (k4)").
+
+const EXTENSION: &str = "x-ess-request-max-bytes";
+
+/// The schema of the default answer to a body larger than the bound.
+fn too_large_schema() -> Value {
+    json!({
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["refused"],
+        "properties": {"refused": {"type": "string", "description": "Why the body was refused, in words."}},
+    })
+}
+
+const ORDERS_VIEW: &str = "routes:
+  - view: catalog.orders.OrderById
+    method: get
+    path: /orders/{order_id}
+    parameters: {order_id: param.order_id}
+    body: single
+    empty: {status: 404}
+";
+
+fn orders_with(front: &str) -> Value {
+    let ir = model_of("orders.yaml", ORDERS);
+    bound_document(
+        &ir,
+        binding(&ir, &format!("{front}{ORDERS_ROUTES}")),
+        "orders-service",
+    )
+}
+
+fn bound_text(ir: &EssIr, routes: &str, component: &str) -> String {
+    let artifacts = run(&BoundOpenApi(binding(ir, routes)), ir).expect("generates");
+    artifacts[&format!("openapi/{component}.yaml")]
+        .contents
+        .clone()
+}
+
+fn digest_of(text: &str) -> String {
+    ess_gen::ess_http::digest(without_digests(text).as_bytes())
+}
+
+#[test]
+fn a_binding_that_declares_no_limit_keeps_every_stage_2_openapi_byte() {
+    let orders = model_of("orders.yaml", ORDERS);
+    let auth = model_of("auth.yaml", AUTH);
+    let refused = format!(
+        "refusals:
+  malformed: {{status: 400, body: {{error: {{literal: invalid_request}}}}}}
+  unfinished: {{status: 503, body: none, headers: {{Retry-After: {{literal: '120'}}}}}}
+{ORDERS_ROUTES}"
+    );
+    let digests = [
+        digest_of(&bound_text(&orders, ORDERS_ROUTES, "orders-service")),
+        digest_of(&bound_text(&auth, AUTH_ROUTES, "auth-service")),
+        digest_of(&bound_text(&orders, &refused, "orders-service")),
+    ];
+    assert_eq!(
+        digests,
+        [
+            "sha256:b392cc20ec3639fc64a069de08e8832148412961cddddbc322d14a4d2acb5c75",
+            "sha256:3f9a5844122bf2eed0b5a920370eacc12397b6e153c59cc10998906ce2ffa7e3",
+            "sha256:989a90a67e8e0cedcbf674458c5a0e01121d7eab820c552fc4a0f5572d90e155",
+        ]
+    );
+}
+
+#[test]
+fn a_bounded_stage_1_route_documents_its_bound_and_one_more_response() {
+    let ir = model();
+    let limitless = bound(&ir, binding(&ir, ON_ONE_PATH));
+    let document = bound(
+        &ir,
+        binding(
+            &ir,
+            &format!("limits: {{request_bytes: 64}}\n{ON_ONE_PATH}"),
+        ),
+    );
+    let item = &document["paths"]["/items/{item_id}"];
+    for method in ["put", "delete"] {
+        let operation = &item[method];
+        assert_eq!(operation[EXTENSION], json!(64), "{method}");
+        let answer = &operation["responses"]["413"];
+        assert!(answer.get("x-ess-outcomes").is_none(), "{answer}");
+        assert_eq!(
+            answer["content"]["application/json"]["schema"],
+            too_large_schema()
+        );
+        let words = answer["description"].as_str().expect("description");
+        assert!(words.starts_with("No declared outcome:"), "{words}");
+        assert!(words.contains("64"), "{words}");
+        let mut others = operation["responses"].clone();
+        others.as_object_mut().expect("responses").remove("413");
+        assert_eq!(
+            others,
+            limitless["paths"]["/items/{item_id}"][method]["responses"]
+        );
+    }
+    let view = &item["get"];
+    assert!(view.get(EXTENSION).is_none(), "{view}");
+    assert!(view["responses"].get("413").is_none(), "{view}");
+    let text = document.to_string();
+    assert_eq!(text.matches("\"413\"").count(), 2, "{text}");
+}
+
+#[test]
+fn a_bounded_route_in_the_bound_form_documents_the_same_answer() {
+    let ir = model_of("orders.yaml", ORDERS);
+    let (_, limitless) = orders();
+    let document = orders_with("limits: {request_bytes: 64}\n");
+    for path in ["/api/orders", "/api/orders/{order_id}/note"] {
+        let operation = &document["paths"][path]["post"];
+        assert_eq!(operation[EXTENSION], json!(64), "{path}");
+        let answer = &operation["responses"]["413"];
+        assert_eq!(answer["x-ess-outcomes"], json!([]), "{path}");
+        assert_eq!(
+            answer["content"]["application/json"]["schema"],
+            too_large_schema()
+        );
+        let words = answer["description"].as_str().expect("description");
+        assert!(words.starts_with("No declared outcome:"), "{words}");
+        assert!(words.contains("64"), "{words}");
+        let mut others = operation["responses"].clone();
+        others.as_object_mut().expect("responses").remove("413");
+        assert_eq!(
+            others, limitless["paths"][path]["post"]["responses"],
+            "{path}"
+        );
+    }
+    let view = &document["paths"]["/orders/{order_id}"]["get"];
+    assert!(view.get(EXTENSION).is_none(), "{view}");
+    assert!(view["responses"].get("413").is_none(), "{view}");
+    let unbound = unbound_document(&ir, "orders-service");
+    let mut kept = 0;
+    for (path, item) in unbound["paths"].as_object().expect("paths") {
+        if let Some(bound) = document["paths"].get(path) {
+            assert_eq!(bound, item, "{path}");
+            kept += 1;
+        }
+    }
+    assert!(kept > 0, "some derived route is left to compare");
+}
+
+#[test]
+fn a_route_limit_and_a_declared_too_large_replace_the_binding_ones() {
+    let ir = model_of("orders.yaml", ORDERS);
+    let routes = ORDERS_ROUTES.replace(
+        "    path: /api/orders/{order_id}/note\n",
+        "    path: /api/orders/{order_id}/note\n    limits: {request_bytes: 256}\n    refusals: {too_large: {status: 413, body: none}}\n",
+    );
+    let routes = format!(
+        "limits: {{request_bytes: 64}}
+refusals:
+  too_large: {{status: 418, body: {{error: {{literal: too_big}}}}, headers: {{X-Limit: {{literal: '64'}}}}}}
+{routes}"
+    );
+    let document = bound_document(&ir, binding(&ir, &routes), "orders-service");
+    let place = &document["paths"]["/api/orders"]["post"];
+    assert_eq!(place[EXTENSION], json!(64));
+    assert!(place["responses"].get("413").is_none(), "{place}");
+    let refused = &place["responses"]["418"];
+    assert_eq!(
+        refused["content"]["application/json"]["schema"],
+        json!({
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["error"],
+            "properties": {"error": {"type": "string", "const": "too_big"}},
+        })
+    );
+    assert_eq!(
+        refused["headers"]["X-Limit"]["schema"],
+        json!({"type": "string", "const": "64"})
+    );
+    let note = &document["paths"]["/api/orders/{order_id}/note"]["post"];
+    assert_eq!(note[EXTENSION], json!(256));
+    assert!(note["responses"]["413"].get("content").is_none(), "{note}");
+    assert!(note["responses"].get("418").is_none(), "{note}");
+}
+
+#[test]
+fn a_too_large_refusal_without_a_limit_documents_the_fixed_bound() {
+    let document = orders_with("refusals: {too_large: {status: 413, body: none}}\n");
+    assert_eq!(ess_http::FIXED_REQUEST_BYTES, 1_048_576);
+    for path in ["/api/orders", "/api/orders/{order_id}/note"] {
+        let operation = &document["paths"][path]["post"];
+        assert_eq!(
+            operation[EXTENSION],
+            json!(ess_http::FIXED_REQUEST_BYTES),
+            "{path}"
+        );
+        assert!(operation["responses"]["413"].get("content").is_none());
+    }
+    let view = &document["paths"]["/orders/{order_id}"]["get"];
+    assert!(view.get(EXTENSION).is_none(), "{view}");
+    assert!(view["responses"].get("413").is_none(), "{view}");
+}
+
+#[test]
+fn a_limit_that_no_route_can_apply_changes_no_byte() {
+    let ir = model_of("orders.yaml", ORDERS);
+    let with = bound_text(
+        &ir,
+        &format!("limits: {{request_bytes: 64}}\n{ORDERS_VIEW}"),
+        "orders-service",
+    );
+    assert_eq!(with, bound_text(&ir, ORDERS_VIEW, "orders-service"));
+    assert!(!with.contains(EXTENSION) && !with.contains("413"), "{with}");
+    let auth = model_of("auth.yaml", AUTH);
+    let with = bound_text(
+        &auth,
+        &format!("limits: {{request_bytes: 64}}\n{AUTH_ROUTES}"),
+        "auth-service",
+    );
+    assert_eq!(with, bound_text(&auth, AUTH_ROUTES, "auth-service"));
+    assert!(!with.contains(EXTENSION), "{with}");
+}
+
+#[test]
+fn the_description_names_the_bound_only_where_a_route_is_bounded() {
+    let bounded = orders_with("limits: {request_bytes: 64}\n");
+    let words = bounded["info"]["description"]
+        .as_str()
+        .expect("description");
+    assert!(words.contains(EXTENSION), "{words}");
+    let ir = model_of("orders.yaml", ORDERS);
+    let view = format!("limits: {{request_bytes: 64}}\n{ORDERS_VIEW}");
+    let document = bound_document(&ir, binding(&ir, &view), "orders-service");
+    let plain = document["info"]["description"]
+        .as_str()
+        .expect("description");
+    assert!(!plain.contains(EXTENSION), "{plain}");
+    let (_, limitless) = orders();
+    let held = limitless["info"]["description"]
+        .as_str()
+        .expect("description");
+    assert!(
+        words.starts_with(held),
+        "the paragraphs it holds today are kept"
+    );
+}

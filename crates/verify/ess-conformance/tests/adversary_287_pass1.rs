@@ -1523,7 +1523,7 @@ fn caller_upsert_go_and_typescript_match_actual_native_outcomes() {
     }
 }
 
-#[ignore = "slow probe: `task test-slow-probes`"]
+#[ignore = "slow lane: native and WebAssembly outcomes of a caller upsert agree, over 180 s at load 108"]
 #[test]
 fn caller_upsert_wasm_matches_actual_native_outcomes() {
     for case in [
@@ -1675,7 +1675,7 @@ fn caller_set_go_and_typescript_match_actual_native_outcomes() {
     live_foreign(&suite, &faults, plant);
 }
 
-#[ignore = "slow probe: `task test-slow-probes`"]
+#[ignore = "slow lane: native and WebAssembly outcomes of a caller set agree, over 180 s at load 108"]
 #[test]
 fn caller_set_wasm_matches_actual_native_outcomes() {
     let suite = caller_set_suite();

@@ -174,6 +174,16 @@ pub fn format_feature_scans<R>(run: impl FnOnce() -> R) -> (R, u64) {
     (out, FEATURE_SCANS.with(std::cell::Cell::get) - before)
 }
 
+/// The count of [`FEATURE_SCANS`] on this thread.
+pub(crate) fn taken_feature_scans() -> u64 {
+    FEATURE_SCANS.with(std::cell::Cell::get)
+}
+
+/// Adds `more` to the count of [`FEATURE_SCANS`] on this thread.
+pub(crate) fn add_feature_scans(more: u64) {
+    FEATURE_SCANS.with(|it| it.set(it.get() + more));
+}
+
 thread_local! {
     static SERIALIZED: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
 }
@@ -185,6 +195,16 @@ pub fn suites_serialized<R>(run: impl FnOnce() -> R) -> (R, u64) {
     let before = SERIALIZED.with(std::cell::Cell::get);
     let out = run();
     (out, SERIALIZED.with(std::cell::Cell::get) - before)
+}
+
+/// The count of [`SERIALIZED`] on this thread.
+pub(crate) fn taken_serialized() -> u64 {
+    SERIALIZED.with(std::cell::Cell::get)
+}
+
+/// Adds `more` to the count of [`SERIALIZED`] on this thread.
+pub(crate) fn add_serialized(more: u64) {
+    SERIALIZED.with(|it| it.set(it.get() + more));
 }
 
 impl ConformanceSuite {

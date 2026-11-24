@@ -1,0 +1,144 @@
+format: ess/37
+system: shop
+version: v1
+domain: shop.desk
+summary: >-
+  A grant is issued only to a desk of the site the caller names; a grant is used only when it is
+  not revoked, carries the mail name and is not denied.
+types:
+  - {name: shop.desk.SiteId, kind: newtype, of: Uuid}
+  - {name: shop.desk.DeskId, kind: newtype, of: Uuid}
+  - {name: shop.desk.GrantId, kind: newtype, of: Uuid}
+  - {name: shop.desk.GrantName, kind: enum, variants: [chat, mail, push]}
+  - {name: shop.desk.Mode, kind: enum, variants: [free, asked, denied]}
+entities:
+  - name: shop.desk.Site
+    identity: {name: site_id, type: shop.desk.SiteId}
+    relations:
+      - {name: desks, kind: owns, target: shop.desk.Desk, cardinality: many, via: site_id}
+    lifecycle: {initial: Open, states: [Open], terminal: [Open]}
+  - name: shop.desk.Desk
+    identity: {name: desk_id, type: shop.desk.DeskId}
+    fields:
+      - {name: site_id, type: shop.desk.SiteId}
+    relations:
+      - {name: grants, kind: owns, target: shop.desk.Grant, cardinality: many, via: desk_id}
+    lifecycle: {initial: Open, states: [Open], terminal: [Open]}
+  - name: shop.desk.Grant
+    identity: {name: grant_id, type: shop.desk.GrantId}
+    fields:
+      - {name: desk_id, type: shop.desk.DeskId}
+      - {name: site_id, type: shop.desk.SiteId}
+      - {name: name, type: shop.desk.GrantName}
+      - {name: mode, type: shop.desk.Mode}
+    lifecycle:
+      initial: Granted
+      states: [Granted, Revoked]
+      terminal: [Revoked]
+      transitions:
+        - {name: revoke, from: [Granted], to: Revoked}
+errors:
+  - {name: shop.desk.SiteNotFound, summary: No site carries this identity., fields: []}
+  - {name: shop.desk.DeskNotFound, summary: No desk carries this identity., fields: []}
+  - {name: shop.desk.DeskElsewhere, summary: The desk belongs to another site., fields: []}
+  - {name: shop.desk.GrantNotFound, summary: No grant carries this identity., fields: []}
+  - {name: shop.desk.GrantRefused, summary: The grant is revoked or does not allow this., fields: []}
+events:
+  - name: shop.desk.SiteOpened
+    fields: [{name: site_id, type: shop.desk.SiteId}]
+  - name: shop.desk.DeskOpened
+    fields: [{name: desk_id, type: shop.desk.DeskId}]
+  - name: shop.desk.GrantIssued
+    fields: [{name: grant_id, type: shop.desk.GrantId}]
+  - name: shop.desk.GrantRevoked
+    fields: [{name: grant_id, type: shop.desk.GrantId}]
+  - name: shop.desk.GrantUsed
+    fields: [{name: grant_id, type: shop.desk.GrantId}]
+actors:
+  - name: shop.desk.Keeper
+    may: [shop.desk.OpenSite, shop.desk.OpenDesk, shop.desk.IssueGrant, shop.desk.RevokeGrant, shop.desk.UseGrant]
+commands:
+  - name: shop.desk.OpenSite
+    input: []
+    outcomes:
+      - name: opened
+        creates: shop.desk.Site
+        instance: site_id
+        emits: [shop.desk.SiteOpened]
+        payload: {shop.desk.SiteOpened: {site_id: {generated: true}}}
+  - name: shop.desk.OpenDesk
+    input:
+      - {name: site_id, type: shop.desk.SiteId}
+    outcomes:
+      - name: no-site
+        when_related: {via: input.site_id, exists: false}
+        error: shop.desk.SiteNotFound
+      - name: opened
+        creates: shop.desk.Desk
+        instance: desk_id
+        emits: [shop.desk.DeskOpened]
+        payload: {shop.desk.DeskOpened: {desk_id: {generated: true}}}
+        sets: {site_id: input.site_id}
+  - name: shop.desk.IssueGrant
+    input:
+      - {name: site_id, type: shop.desk.SiteId}
+      - {name: desk_id, type: shop.desk.DeskId}
+      - {name: name, type: shop.desk.GrantName}
+      - {name: mode, type: shop.desk.Mode}
+    outcomes:
+      - name: no-site
+        when_related: {via: input.site_id, exists: false}
+        error: shop.desk.SiteNotFound
+      - name: no-desk
+        when_related: {via: input.desk_id, exists: false}
+        error: shop.desk.DeskNotFound
+      - name: elsewhere
+        when_related: {via: input.desk_id, predicate: site_id != input.site_id}
+        error: shop.desk.DeskElsewhere
+      - name: issued
+        creates: shop.desk.Grant
+        instance: grant_id
+        emits: [shop.desk.GrantIssued]
+        payload: {shop.desk.GrantIssued: {grant_id: {generated: true}}}
+        sets: {desk_id: input.desk_id, site_id: input.site_id, name: input.name, mode: input.mode}
+  - name: shop.desk.RevokeGrant
+    input:
+      - {name: grant_id, type: shop.desk.GrantId}
+    outcomes:
+      - name: no-grant
+        unknown_instance: true
+        error: shop.desk.GrantNotFound
+      - name: revoked
+        moves: shop.desk.Grant.revoke
+        instance: grant_id
+        emits: [shop.desk.GrantRevoked]
+        payload: {shop.desk.GrantRevoked: {grant_id: input.grant_id}}
+      - name: wrong-state
+        wrong_state: true
+        error: shop.desk.GrantRefused
+  - name: shop.desk.UseGrant
+    input:
+      - {name: grant_id, type: shop.desk.GrantId}
+    outcomes:
+      - name: no-grant
+        when_related: {via: input.grant_id, exists: false}
+        error: shop.desk.GrantNotFound
+      - name: grant-refused
+        when_related:
+          via: input.grant_id
+          predicate:
+            any:
+              - state == Revoked
+              - {name: {none_of: [mail]}}
+              - mode == denied
+        error: shop.desk.GrantRefused
+      - name: used
+        emits: [shop.desk.GrantUsed]
+        payload: {shop.desk.GrantUsed: {grant_id: input.grant_id}}
+views:
+  - name: shop.desk.Grants
+    source: shop.desk.Grant
+    consistency: read_your_writes
+    fields:
+      - {name: grant_id, type: shop.desk.GrantId}
+      - {name: mode, type: shop.desk.Mode}

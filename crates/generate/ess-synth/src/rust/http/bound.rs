@@ -77,6 +77,114 @@ pub(super) fn http_module(base: &str) -> String {
     module
 }
 
+/// [`http_module`] of `base`, read through each surface's `body_limit` when `capped`.
+pub(super) fn served_http_module(base: &str, capped: bool) -> String {
+    let module = http_module(base);
+    if capped {
+        capped_read(&module)
+    } else {
+        module
+    }
+}
+
+/// The `HTTP` module text of a surface whose binding bounds a request (`limits`, or a `too_large`
+/// refusal): `read` asks the surface's `body_limit` for the matched route's cap and refusal after
+/// the head is parsed and before the body is allocated, and the default refusal is
+/// `body_too_large`. Applied after [`http_module`], in capped mode only, so every other surface
+/// keeps its bytes.
+pub(super) fn capped_read(module: &str) -> String {
+    let mut module = module.to_owned();
+    for (from, to) in [
+        (
+            "pub fn read(reader: &mut std::io::BufReader<std::net::TcpStream>) -> Result<Request, \
+             Response> {",
+            "pub fn read(\n    reader: &mut std::io::BufReader<std::net::TcpStream>,\n    limit: \
+             &dyn Fn(&str, &str) -> Option<(usize, fn(usize, usize) -> Response)>,\n) -> \
+             Result<Request, Response> {",
+        ),
+        (
+            "    if length > MAX_BODY {\n        return Err(Response::refusal(\n            413,\n            \
+             &format!(\"the body is {length} bytes and this surface reads at most \
+             {MAX_BODY}\"),\n        ));\n    }\n",
+            "    // The matched route's cap and refusal, from the binding; the fixed bound and its \
+             answer where the\n    // binding bounds nothing for this request.\n    let (cap, \
+             too_large): (usize, fn(usize, usize) -> Response) =\n        limit(&method, \
+             &path).unwrap_or((MAX_BODY, body_too_large));\n    if length > cap {\n        return \
+             Err(too_large(length, cap));\n    }\n",
+        ),
+        (
+            "/// One line of the request head, read within what is left of [`MAX_HEAD`]",
+            "/// The default answer to a body larger than the cap its route reads: `413` with the \
+             sizes.\npub fn body_too_large(length: usize, cap: usize) -> Response {\n    \
+             Response::refusal(\n        413,\n        &format!(\"the body is {length} bytes and \
+             this surface reads at most {cap}\"),\n    )\n}\n\n/// One line of the request head, \
+             read within what is left of [`MAX_HEAD`]",
+        ),
+    ] {
+        assert!(
+            module.contains(from),
+            "the HTTP module no longer holds what a capped read rewrites: {from}"
+        );
+        module = module.replacen(from, to, 1);
+    }
+    module
+}
+
+/// `body_limit`: for a request's method and path, the cap of the row that answers it and the
+/// function that refuses a larger body, or `None` where the fixed bound stands. One block per row
+/// in [`http::dispatch_order`], as [`dispatch`] walks them, so a literal row answers before a
+/// variable row, and a row that bounds nothing (a document, a derived route, a declared route that
+/// reads no body) answers `None` before a later, more general row can capture its request.
+pub(super) fn body_limit(out: &mut String, server: &Server<'_>, routes: &[http::Route<'_>]) {
+    let ir = server.ir;
+    let Some(binding) = server.binding else {
+        return;
+    };
+    out.push_str(
+        "\n/// The most body bytes the route a request matches reads, and the refusal a larger one \
+         gets (`limits`,\n/// `refusals.too_large`); `None` where the fixed bound of \
+         [`http::MAX_BODY`] stands. Asked after the head is\n/// parsed and before the body is \
+         read.\nfn body_limit(method: &str, path: &str) -> Option<(usize, fn(usize, usize) -> \
+         http::Response)> {\n",
+    );
+    let rows = table(routes, ir);
+    let keys: Vec<(&str, &str)> = rows
+        .iter()
+        .map(|(method, path, _, _)| (*method, path.as_str()))
+        .collect();
+    for (method, path, _, _) in http::dispatch_order(&keys)
+        .into_iter()
+        .map(|index| rows[index].clone())
+    {
+        let route = routes
+            .iter()
+            .find(|route| route.path == path && route.method.as_str() == method);
+        let declared = route.and_then(|route| route.declared);
+        let opening = if declared.is_some() {
+            format!("    if http::matched({path:?}, path).is_some() {{\n")
+        } else {
+            format!("    if path == {path:?} {{\n")
+        };
+        out.push_str(&opening);
+        let _ = writeln!(out, "        if method == {method:?} {{");
+        let result = match (route, declared) {
+            (Some(route), Some(declared)) if binding.ir().bounds_request(declared) => {
+                let cap = binding
+                    .ir()
+                    .request_bytes(declared)
+                    .unwrap_or(ess_http::FIXED_REQUEST_BYTES);
+                format!(
+                    "Some(({cap}, refusal_too_large{}))",
+                    refusal_suffix(server, route)
+                )
+            }
+            _ => "None".to_owned(),
+        };
+        let _ = writeln!(out, "            return {result};\n        }}\n    }}");
+    }
+    out.push_str("    None\n}\n");
+}
+
 /// The reason phrases a bound surface adds, for every status a binding may declare that the
 /// derived surface never answers (RFC 9110 §15), and the arm for everything else.
 const REASONS: &str = "        201 => \"Created\",
@@ -1337,6 +1445,11 @@ pub(super) fn refusals(out: &mut String, server: &Server<'_>, routes: &[http::Ro
         Served::Command(_) => http::checks_grants(ir),
         Served::View(handle) => http::read_checked(ir, handle.name()),
     };
+    let bounded = |route: &http::Route<'_>| {
+        route
+            .declared
+            .is_some_and(|declared| binding.ir().bounds_request(declared))
+    };
     let shared: Vec<&http::Route<'_>> = declared
         .iter()
         .copied()
@@ -1350,6 +1463,7 @@ pub(super) fn refusals(out: &mut String, server: &Server<'_>, routes: &[http::Ro
                 on: "a bound route".to_owned(),
                 from: "",
                 checked: shared.iter().any(|route| checked(route)),
+                too_large: shared.iter().any(|route| bounded(route)),
             },
             |key| binding.refusal(key),
         );
@@ -1365,6 +1479,7 @@ pub(super) fn refusals(out: &mut String, server: &Server<'_>, routes: &[http::Ro
                 on: format!("`{} {}`", route.method.as_str(), route.path),
                 from: "routes[].",
                 checked: checked(route),
+                too_large: bounded(route),
             },
             |key| binding.refusal_on(own, key),
         );
@@ -1378,6 +1493,7 @@ struct RefusalSet {
     on: String,
     from: &'static str,
     checked: bool,
+    too_large: bool,
 }
 
 /// The functions answering each standard refusal for `set`: `refusal_malformed`,
@@ -1458,6 +1574,9 @@ fn refusal_set<'a>(
             }
         }
     }
+    if set.too_large {
+        refusal_too_large(out, set, lookup(RefusalKey::TooLarge));
+    }
     let _ = write!(
         out,
         "\n/// What {on}'s shared path refused, as its binding answers it.\nfn \
@@ -1467,6 +1586,36 @@ fn refusal_set<'a>(
          refusal_unfinished{suffix}(&refused.to_string(), refused.committed())\n        }}\n        \
          other => http::Response::from(other),\n    }}\n}}\n"
     );
+}
+
+/// `refusal_too_large`, with `set.suffix`: the override for a body larger than the cap a route
+/// reads, else the default `413` of `http::body_too_large`. Written only where a bounded route
+/// answers through `set`.
+fn refusal_too_large(out: &mut String, set: &RefusalSet, refusal: Option<&ess_http::Refusal>) {
+    let RefusalSet {
+        suffix, on, from, ..
+    } = set;
+    let _ = write!(
+        out,
+        "\n/// A body larger than the cap {on} reads: `{from}refusals.too_large`, else `413`.\n"
+    );
+    match refusal {
+        Some(refusal) => {
+            let _ = write!(
+                out,
+                "fn refusal_too_large{suffix}(_length: usize, _cap: usize) -> http::Response \
+                 {{\n{}}}\n",
+                overridden(refusal)
+            );
+        }
+        None => {
+            let _ = write!(
+                out,
+                "fn refusal_too_large{suffix}(length: usize, cap: usize) -> http::Response \
+                 {{\n    http::body_too_large(length, cap)\n}}\n"
+            );
+        }
+    }
 }
 
 /// Whether a bound surface answers the standard `403` (`not_granted`) anywhere: on a route the

@@ -73,12 +73,37 @@ pub(super) fn counting<R>(run: impl FnOnce() -> R) -> (R, u64, u64) {
     )
 }
 
+/// The count of [`ASKED`] on this thread.
+pub(super) fn taken_asked() -> u64 {
+    ASKED.with(std::cell::Cell::get)
+}
+
+/// The count of [`MADE`] on this thread.
+pub(super) fn taken_made() -> u64 {
+    MADE.with(std::cell::Cell::get)
+}
+
+/// Adds `more` to the count of [`MADE`] on this thread.
+pub(super) fn add_made(more: u64) {
+    MADE.with(|it| it.set(it.get() + more));
+}
+
+/// Adds `more` to the count of [`ASKED`] on this thread.
+pub(super) fn add_asked(more: u64) {
+    ASKED.with(|it| it.set(it.get() + more));
+}
+
 /// What `run` returns with every branch run made afresh, as before the memory existed.
 pub(super) fn unkept<R>(run: impl FnOnce() -> R) -> R {
     let previous = UNKEPT.with(|it| it.replace(true));
     let out = run();
     UNKEPT.with(|it| it.set(previous));
     out
+}
+
+/// Whether every one is made afresh on this thread ([`unkept`]).
+pub(super) fn is_unkept() -> bool {
+    UNKEPT.with(Cell::get)
 }
 
 /// [`super::run`] of `outcome`, from memory where the model remembered innermost ran it in the same

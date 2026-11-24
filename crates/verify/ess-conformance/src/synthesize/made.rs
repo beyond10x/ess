@@ -79,6 +79,16 @@ pub(super) fn counting<R>(run: impl FnOnce() -> R) -> (R, u64) {
     (out, MAKES.with(std::cell::Cell::get) - before)
 }
 
+/// The count of [`MAKES`] on this thread.
+pub(super) fn taken_makes() -> u64 {
+    MAKES.with(std::cell::Cell::get)
+}
+
+/// Adds `more` to the count of [`MAKES`] on this thread.
+pub(super) fn add_makes(more: u64) {
+    MAKES.with(|it| it.set(it.get() + more));
+}
+
 thread_local! {
     /// How many times a row and an input were checked on this thread for the branch they select.
     static PICKS: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
@@ -90,6 +100,16 @@ pub(super) fn picks<R>(run: impl FnOnce() -> R) -> (R, u64) {
     let before = PICKS.with(std::cell::Cell::get);
     let out = run();
     (out, PICKS.with(std::cell::Cell::get) - before)
+}
+
+/// The count of [`PICKS`] on this thread.
+pub(super) fn taken_picks() -> u64 {
+    PICKS.with(std::cell::Cell::get)
+}
+
+/// Adds `more` to the count of [`PICKS`] on this thread.
+pub(super) fn add_picks(more: u64) {
+    PICKS.with(|it| it.set(it.get() + more));
 }
 
 /// Counts one row and input checked for the branch they select ([`picks`]).
@@ -109,6 +129,16 @@ pub(super) fn related_picks<R>(run: impl FnOnce() -> R) -> (R, u64) {
     let before = RELATED_PICKS.with(std::cell::Cell::get);
     let out = run();
     (out, RELATED_PICKS.with(std::cell::Cell::get) - before)
+}
+
+/// The count of [`RELATED_PICKS`] on this thread.
+pub(super) fn taken_related_picks() -> u64 {
+    RELATED_PICKS.with(std::cell::Cell::get)
+}
+
+/// Adds `more` to the count of [`RELATED_PICKS`] on this thread.
+pub(super) fn add_related_picks(more: u64) {
+    RELATED_PICKS.with(|it| it.set(it.get() + more));
 }
 
 /// Counts one related row and input checked for the branch they select ([`related_picks`]).
@@ -320,24 +350,29 @@ thread_local! {
 /// is keyed as before, so nothing a search decides changes. The guard holds the models, so no
 /// address it keeps can be taken by another model while their memory is parked.
 pub(super) struct Keeping {
-    models: Vec<Rc<EssIr>>,
+    models: Vec<std::sync::Arc<EssIr>>,
+    /// A Keeping pops the stack of the thread that opened it, so it is not sent to another thread.
+    _thread: std::marker::PhantomData<*const ()>,
 }
 
 impl Keeping {
     /// A new innermost scope, holding no model yet.
     pub(super) fn open() -> Self {
         KEPT.with(|kept| kept.borrow_mut().push(BTreeMap::new()));
-        Self { models: Vec::new() }
+        Self {
+            models: Vec::new(),
+            _thread: std::marker::PhantomData,
+        }
     }
 
     /// Keeps what `ir` makes for as long as this guard lives.
-    pub(super) fn keep(&mut self, ir: &Rc<EssIr>) {
+    pub(super) fn keep(&mut self, ir: &std::sync::Arc<EssIr>) {
         KEPT.with(|kept| {
             if let Some(scope) = kept.borrow_mut().last_mut() {
                 scope.entry(address(ir)).or_insert(None);
             }
         });
-        self.models.push(Rc::clone(ir));
+        self.models.push(std::sync::Arc::clone(ir));
     }
 }
 

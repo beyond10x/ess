@@ -139,6 +139,10 @@ pub fn read_checked(ir: &EssIr, view: &ess_domain::name::QualifiedName) -> bool 
 /// effect and its events stand, and a retry would perform the command twice.
 pub const UNFINISHED: &str = "501";
 
+/// The request body is larger than the bound the route reads. The status a server answers by
+/// default, when the binding declares no `refusals.too_large`.
+pub const TOO_LARGE: &str = "413";
+
 /// Whether a request for `command` must carry a body.
 ///
 /// The one answer for the document that declares the `requestBody` and the servers that read it.

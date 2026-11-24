@@ -333,6 +333,11 @@ pub(crate) fn with_added_grant<R>(added: Option<AddedGrant>, synthesize: impl Fn
     synthesize()
 }
 
+/// The added grant [`with_added_grant`] holds on this thread, if any.
+pub(super) fn added_grant() -> Option<AddedGrant> {
+    ADDED.with(|it| it.borrow().clone())
+}
+
 /// The actor [`with_added_grant`] names for `command`, where `ir` declares it, it holds the grant,
 /// carries no attributes and the command reads none.
 fn added_sender<'a>(
@@ -386,6 +391,11 @@ pub(crate) fn with_dropped_grant<R>(
     let previous = DROPPED.with(|it| it.replace(dropped));
     let _restore = Restore(previous);
     synthesize()
+}
+
+/// The dropped grant [`with_dropped_grant`] holds on this thread, if any.
+pub(super) fn dropped_grant() -> Option<DroppedGrant> {
+    DROPPED.with(|it| it.borrow().clone())
 }
 
 /// The actor [`with_dropped_grant`] names for `command`, where `ir` declares it and it lacks the

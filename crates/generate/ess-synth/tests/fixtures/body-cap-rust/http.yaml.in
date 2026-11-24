@@ -1,0 +1,21 @@
+type: ess-http/1
+specification:
+  system: parcel
+  version: v1
+  source_digest: sha256:273e862c9c2a93ca7b5fb2d2297c522ce437021f13c9a3e2138b31bf73027714
+limits: {request_bytes: 64}
+refusals:
+  too_large: {status: 422, body: {error: {literal: too_big}}, headers: {X-Limit: {literal: '64'}}}
+routes:
+  - {command: parcel.intake.Receive, method: post, path: /parcels}
+  - command: parcel.intake.Label
+    method: post
+    path: /labels
+    limits: {request_bytes: 256}
+    refusals:
+      too_large: {status: 413, body: none}
+  - command: parcel.intake.Discard
+    method: post
+    path: /bulk
+    limits: {request_bytes: 2097152}
+  - {view: parcel.intake.AllParcels, method: get, path: /parcels}

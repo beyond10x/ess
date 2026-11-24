@@ -139,11 +139,12 @@ Re-enable the lane when a named external adopter pins a released `ess/N` and its
 artifacts, and a change reaches that adopter undetected by conformance, `ess verify diff` or a
 format refusal.
 
-The gate is offline and runs formatting, strict Clippy, all workspace tests, rustdoc, command smoke
-tests, and the dependency boundary test. Land nothing on `main` until the `Gate` job is green.
-`ESS_TUTORIAL_NETWORK=1` (set on CI's workspace test shards) additionally runs the Start-here
-pages' `npm` steps in `tutorial_page.rs`, which need the npm registry; unset, they print a skip. Its
-`go` steps need no network and run wherever `go` is on `PATH`.
+`task check` runs formatting, strict Clippy, all workspace tests (`test`), the slow lane
+(`test-slow`), rustdoc, command smoke tests, and the dependency boundary test. Its test step is
+offline. Its slow lane is not: `task test-slow` sets `ESS_TUTORIAL_NETWORK=1`, which makes
+`the_walkthrough_runs_the_npm_and_go_blocks_too` run the Start-here pages' `npm` and `go` steps, and
+those need the npm registry and `go`; the test step's walkthrough runs every `ess` command and
+skips those blocks. Land nothing on `main` until the `Gate` job is green.
 
 For a pull request, CI owns the full gate. Before pushing, run only the crates the change touches
 — `task fmt-check` (not `cargo fmt --all --check`, which also rewrites the byte-pinned generated crates), `cargo clippy -p <crate> --all-targets --locked -- -D warnings`,
@@ -217,9 +218,25 @@ red there):
 
 Re-pin a moved row only where the change claims it, and name the cause beside the pin.
 
-`task test-browser-product` and `task test-slow-probes` run in no CI lane (those Firefox tests and
-slow probes are ignored in the CI test shards); run them locally when a change touches what they
-cover. `test-browser-product` builds its wasm host once into one shared target and took 1120 s for 30 tests on 2026-10-22 at debuginfo 0 (about 6.8 h before, when each test built its own host on one core). To reproduce the whole gate locally, mind that `task test` alone builds about 45 GiB into
+These targets are gated by name as before. In the test step `synthesis_suite_bytes_table` compares a
+digest of the sources of synthesis and of every model with
+`crates/verify/ess-conformance/tests/fixtures/synthesis-sources.digest` and synthesizes nothing; the
+byte comparison itself (the two tables, and the whole-corpus `enum_presence_guard` case) runs in the
+slow lane. A change under `src/` of `ess-conformance`, `ess-gen`, `ess-transport`, `ess-http`,
+`ess-compiler`, `ess-domain`, `ess-primitives` or `ess-yaml`, or to a model file, re-stamps with the
+command the failing `the_synthesis_sources_digest_matches_the_committed_stamp` prints, in the same
+change.
+
+`task test-browser-product` runs in no CI lane (those Firefox tests are ignored in the CI test
+shards); run it locally when a change touches what it covers. The slow lane, `task test-slow`, runs
+every test marked `#[ignore = "slow lane: <reason>"]` (`cargo xtask slow-list` names them). The CI
+job `slow` carries the lane and `Gate` carries the job: a pull request runs it unless every changed
+path is in the `skippable` list of the `diff` job's `slow` step, and the `main` push, the nightly
+run, a `queue/**` head, a merge group and the release gate always run it, so a run that skipped it
+never counts for a release. The full release gate and a reused qualifying run include the whole
+lane; the targeted gate of a patch tag (§ Hotfix, step 5) runs the slow-lane tests of the crates it
+tests.
+`test-browser-product` builds its wasm host once into one shared target and took 1120 s for 30 tests on 2026-10-22 at debuginfo 0 (about 6.8 h before, when each test built its own host on one core). To reproduce the whole gate locally, mind that `task test` alone builds about 45 GiB into
 the tree's `target/` (44.8 GiB measured on 2026-10-07 at 0.56.0), so start it only with that much
 free disk beyond what other work on the machine needs, and watch free space during the step rather
 than only between steps.
@@ -233,8 +250,11 @@ in `adversary_287_pass1` fail with `TS2688: Cannot find type definition file for
 the variable set, or its Rust cases fail naming the task. The same holds for `task
 append-set-harness` (`append_set`, through `ESS_APPEND_SET_HARNESS`), `task binary64-harness`
 (`binary64_rust`, through `ESS_BINARY64_HARNESS`), `task json-body-harnesses` (`json_body_closure` and `adversary_w1_gen1_security`, through
-`ESS_JSON_BODY_CLOSURE_HARNESS` and `ESS_JSON_BODY_SECURITY_HARNESS`) and `task ui-http-servers`
-(`ess-cli`'s `generate_ui_http`, through `ESS_UI_HTTP_SHELF_SERVER` and `ESS_UI_HTTP_ITEMS_SERVER`).
+`ESS_JSON_BODY_CLOSURE_HARNESS` and `ESS_JSON_BODY_SECURITY_HARNESS`), `task ui-http-servers`
+(`ess-cli`'s `generate_ui_http`, through `ESS_UI_HTTP_SHELF_SERVER` and `ESS_UI_HTTP_ITEMS_SERVER`),
+`task body-cap-rust-server` (`ess-synth`'s `body_cap_rust` cases, through
+`ESS_BODY_CAP_RUST_SERVER`) and `task body-cap-go-server` (`ess-synth`'s `body_cap_go` cases,
+through `ESS_BODY_CAP_GO_SERVER`).
 Each generates its server from a committed model and `http.yaml.in` binding beside the test; a
 change to either needs the task run again.
 Put the JavaScript tools `ci.yml` installs globally on `PATH` too (`typescript@6.0.3`,
@@ -470,7 +490,7 @@ within one hour of the reproduction.
    the tag. The tag's release workflow is the gate. No wave. For a patch tag it runs a targeted
    gate instead of the 20 test shards: `Hotfix checks` (`task ci-lint` and `task ci-smoke`) and
    `Hotfix tests` (the crates changed since the previous tag and their direct dependents, chosen by
-   `.github/scripts/hotfix-scope.sh`), beside the package builds. A change the script cannot map to
+   `.github/scripts/hotfix-scope.sh`), beside the package builds; `Hotfix tests` then runs `task test-slow` on the same crates. A change the script cannot map to
    crates, such as a workflow, the Taskfile or a dependency, runs the full gate.
 6. In the same minute, push the branch and open its pull request to `main`. The main ruleset needs
    its required checks on the tagged commit itself, and the tag's release run does not count; a pull

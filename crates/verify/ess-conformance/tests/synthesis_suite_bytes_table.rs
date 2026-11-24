@@ -32,14 +32,24 @@
 //! synthesis time; after it, the test passes with nothing else edited. The walker is that of
 //! `crates/generate/ess-entity-runtime/tests/lowered_definitions_table.rs`: each ESS source file
 //! alone, and each directory holding a `system.yaml` as one system, as the `ess` CLI reads it.
+//!
+//! The test step synthesizes nothing here: `the_synthesis_sources_digest_matches_the_committed_stamp`
+//! compares a SHA-256 over the `src/` of the crates synthesis runs through and over every model
+//! file with `tests/fixtures/synthesis-sources.digest`. The tests that re-synthesize every model
+//! are marked for the slow lane (`task test-slow`) and compare the bytes with the tables.
+//! `SYNTHESIS_SOURCES_STAMP_WRITE=<path>` writes the stamp to `<path>` instead of comparing it:
+//! `SYNTHESIS_SOURCES_STAMP_WRITE="$PWD/crates/verify/ess-conformance/tests/fixtures/\
+//! synthesis-sources.digest" cargo test -p ess-conformance --test synthesis_suite_bytes_table
+//! the_synthesis_sources_digest_matches_the_committed_stamp`.
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
+use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 use ess_compiler::ir::EssIr;
 use ess_compiler::{resolve::compile, source::SourceMap};
-use ess_conformance::synthesize::{synthesize, synthesize_for};
+use ess_conformance::synthesize::{synthesize, synthesize_for, with_jobs};
 use ess_domain::spec::{RawSpecFile, Specification};
 use ess_domain::system::Source;
 use sha2::{Digest, Sha256};
@@ -56,20 +66,22 @@ const HEADER: &str = "#\tmodels=";
 const REPIN: &str = "re-pin from the repository root with \
      SYNTHESIS_SUITE_BYTES_TABLE_WRITE=\"$PWD/crates/verify/ess-conformance/tests/fixtures/\
      synthesis-suite-bytes-table.tsv\" cargo test -p ess-conformance --locked --test \
-     synthesis_suite_bytes_table, which writes the header counts with the table; nothing else \
+     synthesis_suite_bytes_table -- --ignored every_repository_model_keeps_its_synthesized_bytes, \
+     which writes the header counts with the table; nothing else \
      needs editing";
 
 /// How to re-pin the component table.
 const COMPONENT_REPIN: &str = "re-pin from the repository root with \
      SYNTHESIS_COMPONENT_SUITES_TABLE_WRITE=\"$PWD/crates/verify/ess-conformance/tests/fixtures/\
      synthesis-component-suites-table.tsv\" cargo test -p ess-conformance --locked --test \
-     synthesis_suite_bytes_table, which writes the header counts with the table; nothing else \
+     synthesis_suite_bytes_table every_repository_component_keeps_its_synthesized_bytes, \
+     which writes the header counts with the table; nothing else \
      needs editing";
 
 /// The models these tables do not synthesize, each pinned as `EXCLUDED` in the whole-suite table:
 /// synthesis of `conditional-measures-generated.yaml` takes minutes in a debug build (about 224
 /// seconds measured). Its suite bytes are pinned by the slow probe
-/// `adversary_244b_window_free_bytes` (`task test-slow-probes`), as `external_beside_held_guard.rs`
+/// `adversary_244b_window_free_bytes` (`#[ignore = "slow lane: ..."]`, run by `task test-slow`), as `external_beside_held_guard.rs`
 /// excludes it.
 const UNAFFORDABLE: &[&str] =
     &["crates/generate/ess-synth/tests/fixtures/conditional-measures-generated.yaml"];
@@ -126,6 +138,11 @@ fn walk(dir: &Path, out: &mut Vec<PathBuf>) {
     }
 }
 
+/// Whether a YAML file is an ESS source: a line starts `format: ess/`.
+fn is_ess_source(text: &str) -> bool {
+    text.lines().any(|line| line.starts_with("format: ess/"))
+}
+
 /// The documents and sources of one model; `None` for one that does not parse.
 type Model = Option<(Vec<(Source, RawSpecFile)>, SourceMap)>;
 
@@ -142,7 +159,7 @@ fn models(root: &Path) -> Vec<(String, Model)> {
         let Ok(text) = std::fs::read_to_string(path) else {
             continue;
         };
-        if !text.lines().any(|line| line.starts_with("format: ess/")) {
+        if !is_ess_source(&text) {
             continue;
         }
         if path.file_name().is_some_and(|name| name == "system.yaml") {
@@ -352,7 +369,190 @@ fn compare<'t>(
         .collect()
 }
 
+/// The crates whose `src/` synthesis runs through: `ess-conformance` and what it depends on
+/// (`ess-gen` through `ess-transport` and `ess-http`, `ess-compiler`, `ess-domain`,
+/// `ess-primitives`, `ess-yaml`). `ess-synth` depends on `ess-conformance`, so it is not here.
+const SYNTHESIS_CRATES: &[&str] = &[
+    "ess-compiler",
+    "ess-conformance",
+    "ess-domain",
+    "ess-gen",
+    "ess-http",
+    "ess-primitives",
+    "ess-transport",
+    "ess-yaml",
+];
+
+/// The stamp of the sources of synthesis, written by the command the failing test prints.
+const STAMP_PATH: &str = "tests/fixtures/synthesis-sources.digest";
+
+/// How to write the stamp.
+const STAMP_REPIN: &str = "re-stamp from the repository root with \
+     SYNTHESIS_SOURCES_STAMP_WRITE=\"$PWD/crates/verify/ess-conformance/tests/fixtures/\
+     synthesis-sources.digest\" cargo test -p ess-conformance --locked --test \
+     synthesis_suite_bytes_table the_synthesis_sources_digest_matches_the_committed_stamp, in \
+     the same change as the source or model it follows";
+
+/// Every file under `dir`, recursively, in no order.
+fn files_under(dir: &Path, out: &mut Vec<PathBuf>) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries {
+        let path = entry.unwrap().path();
+        if path.is_dir() {
+            files_under(&path, out);
+        } else {
+            out.push(path);
+        }
+    }
+}
+
+/// The SHA-256 of the sources of synthesis, the crate count and the model count. It hashes, as
+/// sorted records, every file under `src/` of each crate of [`SYNTHESIS_CRATES`] found under
+/// `crates/<area>/<crate>/` (`S`, by path) and every model file [`walk`] finds (`M`, by label).
+/// Manifests, lock files and `.tsv` tables are not hashed, so a version bump re-stamps nothing.
+fn sources_digest(root: &Path) -> (String, usize, usize) {
+    let mut records: Vec<(u8, String, Vec<u8>)> = Vec::new();
+    let mut crates = 0;
+    for area in std::fs::read_dir(root.join("crates")).unwrap() {
+        let area = area.unwrap().path();
+        let Ok(members) = std::fs::read_dir(&area) else {
+            continue;
+        };
+        for member in members {
+            let member = member.unwrap().path();
+            let name = member.file_name().unwrap().to_string_lossy().to_string();
+            if !SYNTHESIS_CRATES.contains(&name.as_str()) || !member.join("src").is_dir() {
+                continue;
+            }
+            crates += 1;
+            let mut files = Vec::new();
+            files_under(&member.join("src"), &mut files);
+            for file in files {
+                let label = file
+                    .strip_prefix(root)
+                    .unwrap()
+                    .components()
+                    .map(|part| part.as_os_str().to_string_lossy().to_string())
+                    .collect::<Vec<_>>()
+                    .join("/");
+                records.push((b'S', label, std::fs::read(&file).unwrap()));
+            }
+        }
+    }
+    let mut yaml = Vec::new();
+    walk(root, &mut yaml);
+    let mut models = 0;
+    for path in yaml {
+        let Ok(text) = std::fs::read_to_string(&path) else {
+            continue;
+        };
+        if !is_ess_source(&text) {
+            continue;
+        }
+        models += 1;
+        let label = path.strip_prefix(root).unwrap().display().to_string();
+        records.push((b'M', label, text.into_bytes()));
+    }
+    records.sort_by(|a, b| (a.0, a.1.as_bytes()).cmp(&(b.0, b.1.as_bytes())));
+    let mut hasher = Sha256::new();
+    for (kind, label, bytes) in &records {
+        hasher.update([*kind, 0]);
+        hasher.update(label.as_bytes());
+        hasher.update([0]);
+        hasher.update(bytes.len().to_string().as_bytes());
+        hasher.update([0]);
+        hasher.update(bytes);
+    }
+    let hex = hasher
+        .finalize()
+        .iter()
+        .fold(String::new(), |mut hex, byte| {
+            write!(hex, "{byte:02x}").unwrap();
+            hex
+        });
+    (hex, crates, models)
+}
+
 #[test]
+fn the_synthesis_sources_digest_matches_the_committed_stamp() {
+    let (hex, crates, models) = sources_digest(&root());
+    let computed = format!("#\tsources={hex}\tcrates={crates}\tmodels={models}\n");
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join(STAMP_PATH);
+    if let Ok(target) = std::env::var("SYNTHESIS_SOURCES_STAMP_WRITE") {
+        std::fs::write(target, computed).unwrap();
+        return;
+    }
+    let stored = std::fs::read_to_string(&path).unwrap_or_default();
+    assert_eq!(
+        stored, computed,
+        "the sources of synthesis or a model moved since the stamp was written: stored {stored:?}, \
+         computed {computed:?} ({crates} crates, {models} models); {STAMP_REPIN}"
+    );
+}
+
+#[test]
+fn the_sources_digest_moves_with_a_source_byte_a_model_byte_and_a_new_model_and_ignores_a_manifest()
+{
+    let root = Path::new(env!("CARGO_TARGET_TMPDIR")).join("sources-digest-scratch");
+    let _ = std::fs::remove_dir_all(&root);
+    let put = |relative: &str, text: &str| {
+        let path = root.join(relative);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, text).unwrap();
+    };
+    put("crates/area/ess-gen/src/lib.rs", "pub fn a() {}\n");
+    put("crates/area/ess-yaml/src/lib.rs", "pub fn b() {}\n");
+    put(
+        "crates/area/ess-gen/Cargo.toml",
+        "[package]\nversion = \"1\"\n",
+    );
+    put("crates/area/ess-gen/tests/fixtures/t.tsv", "a\tb\n");
+    put("crates/area/other/src/lib.rs", "pub fn c() {}\n");
+    put("models/m.yaml", "format: ess/1\nname: m\n");
+    put("models/not-a-model.yaml", "name: plain\n");
+    let base = sources_digest(&root);
+    assert_eq!((base.1, base.2), (2, 1), "two crates, one model");
+
+    put("crates/area/other/src/lib.rs", "pub fn d() {}\n");
+    put(
+        "crates/area/ess-gen/Cargo.toml",
+        "[package]\nversion = \"2\"\n",
+    );
+    put("crates/area/ess-gen/tests/fixtures/t.tsv", "c\td\n");
+    assert_eq!(
+        sources_digest(&root),
+        base,
+        "a manifest, a table and another crate"
+    );
+
+    put("crates/area/ess-gen/src/lib.rs", "pub fn a() {} \n");
+    let source = sources_digest(&root);
+    assert_ne!(source.0, base.0, "a source byte");
+    put("crates/area/ess-gen/src/lib.rs", "pub fn a() {}\n");
+    assert_eq!(sources_digest(&root), base);
+
+    put("models/m.yaml", "format: ess/1\nname: n\n");
+    assert_ne!(sources_digest(&root).0, base.0, "a model byte");
+    put("models/m.yaml", "format: ess/1\nname: m\n");
+
+    put("models/second.yaml", "format: ess/1\n");
+    let added = sources_digest(&root);
+    assert_ne!(added.0, base.0, "a new model");
+    assert_eq!(added.2, 2);
+    std::fs::remove_file(root.join("models/second.yaml")).unwrap();
+
+    std::fs::rename(
+        root.join("crates/area/ess-gen/src/lib.rs"),
+        root.join("crates/area/ess-gen/src/main.rs"),
+    )
+    .unwrap();
+    assert_ne!(sources_digest(&root).0, base.0, "a renamed source file");
+}
+
+#[test]
+#[ignore = "slow lane: re-synthesizes every repository model and compares its suite bytes"]
 fn every_repository_model_keeps_its_synthesized_bytes() {
     let (here, written) = table(model_lines, "SYNTHESIS_SUITE_BYTES_TABLE_WRITE");
     if written {
@@ -371,10 +571,46 @@ fn every_repository_model_keeps_its_synthesized_bytes() {
 }
 
 #[test]
+#[ignore = "slow lane: re-synthesizes every repository component and compares its suite bytes, 31.8 s at load 50"]
 fn every_repository_component_keeps_its_synthesized_bytes() {
     let (here, written) = table(component_lines, "SYNTHESIS_COMPONENT_SUITES_TABLE_WRITE");
     if written {
         return;
     }
     compare(COMPONENT_TABLE, &here, COMPONENT_REPIN);
+}
+
+/// Every model's lines by `lines` inside `with_jobs(count, ..)`, in walk order.
+fn lines_at(count: usize, lines: fn(&str, Model) -> Vec<String>) -> Vec<(String, Vec<String>)> {
+    with_jobs(NonZeroUsize::new(count).unwrap(), || {
+        models(&root())
+            .into_iter()
+            .map(|(label, model)| {
+                let made = lines(&label, model);
+                (label, made)
+            })
+            .collect()
+    })
+}
+
+#[test]
+#[ignore = "slow lane: every model and component synthesized at 1, 2 and 7 jobs, about 450 s"]
+fn every_repository_model_and_component_writes_its_bytes_at_one_two_and_seven_jobs() {
+    for (name, lines) in [
+        ("model", model_lines as fn(&str, Model) -> Vec<String>),
+        ("component", component_lines),
+    ] {
+        let one = lines_at(1, lines);
+        for count in [2, 7] {
+            let many = lines_at(count, lines);
+            assert_eq!(one.len(), many.len(), "{name} lines at {count} jobs");
+            for ((label, at_one), (_, at_many)) in one.iter().zip(&many) {
+                assert!(
+                    at_one == at_many,
+                    "{name} `{label}` at {count} jobs differs from 1 job\n  1 job : {at_one:?}\n  \
+                     {count} jobs: {at_many:?}"
+                );
+            }
+        }
+    }
 }

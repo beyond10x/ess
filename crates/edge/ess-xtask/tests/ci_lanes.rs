@@ -1798,14 +1798,26 @@ fn test_builds_are_cheap_to_compile_link_and_run() {
 #[test]
 fn the_archive_jobs_build_the_test_binaries_without_debug_information() {
     let ci = yaml(".github/workflows/ci.yml");
-    let builders: BTreeSet<String> = lane_invocations(&ci)
+    let archivers: BTreeSet<String> = lane_invocations(&ci)
         .into_iter()
         .filter(|lane| lane.task.starts_with("test-archive"))
         .map(|lane| lane.job)
         .collect();
     assert!(
-        !builders.is_empty(),
+        !archivers.is_empty(),
         "no job of ci.yml builds a test archive"
+    );
+    // The slow lane compiles its own test binaries and archives none.
+    let mut builders = archivers.clone();
+    builders.extend(
+        lane_invocations(&ci)
+            .into_iter()
+            .filter(|lane| lane.task == "test-slow")
+            .map(|lane| lane.job),
+    );
+    assert!(
+        builders.len() > archivers.len(),
+        "no job of ci.yml runs `task test-slow`"
     );
     for id in &builders {
         let env = &ci["jobs"][id.as_str()]["env"];
@@ -1816,6 +1828,9 @@ fn the_archive_jobs_build_the_test_binaries_without_debug_information() {
                 "`{id}` builds test binaries with debug information: `{variable}` is not \"0\""
             );
         }
+    }
+    for id in &archivers {
+        let env = &ci["jobs"][id.as_str()]["env"];
         for variable in ["CARGO_PROFILE_DEV_STRIP", "CARGO_PROFILE_TEST_STRIP"] {
             assert_eq!(
                 scalar_or_empty(&env[variable]),
@@ -4853,6 +4868,46 @@ fn run_prior_gate_qualifies(
     code == Some(0)
 }
 
+const RUN_OWN: &str = "owner/repository";
+const RUN_COMMIT: &str = "3ec2deb977bb19c292a611dcf92a3e676352864a";
+
+/// The runs of `ci.yml` the skip decisions are held to: the event, `github.head_ref`, the pull
+/// request's head repository, `inputs.checkout-ref`, and whether the run may skip.
+fn candidate_runs() -> [(&'static str, &'static str, &'static str, &'static str, bool); 11] {
+    let (own, commit) = (RUN_OWN, RUN_COMMIT);
+    [
+        ("push", "", "", "", false),
+        ("schedule", "", "", "", false),
+        ("pull_request", "queue/pr-119", own, "", false),
+        ("merge_group", "", "", "", false),
+        // A call from release.yml: a tag push, and a backfill dispatched from any branch.
+        ("push", "", "", commit, false),
+        ("workflow_dispatch", "", "", commit, false),
+        ("workflow_dispatch", "", "", "", false),
+        ("pull_request", "feat/x", own, commit, false),
+        // A pull request from an ordinary head, and from a fork, which can name a branch anything.
+        ("pull_request", "feat/x", own, "", true),
+        ("pull_request", "queue/pr-119", "fork/repository", "", true),
+        ("pull_request", "main", "fork/repository", "", true),
+    ]
+}
+
+/// The workflow runs `prior-gate` reads, each the ci.yml run it describes: event, head branch,
+/// head repository.
+fn described_runs() -> [(&'static str, &'static str, &'static str); 8] {
+    let own = RUN_OWN;
+    [
+        ("push", "main", own),
+        ("schedule", "main", own),
+        ("pull_request", "queue/pr-119", own),
+        ("pull_request", "feat/x", own),
+        ("pull_request", "queue/pr-119", "fork/repository"),
+        ("merge_group", "gh-readonly-queue/main/pr-7", own),
+        ("workflow_dispatch", "main", own),
+        ("push", "queue/pr-119", own),
+    ]
+}
+
 /// A plan-only skip is never possible on a run that has to test everything: a `main` push, the
 /// nightly run, the pull request of a `queue/` head of this repository, a merge-group run, a
 /// backfill, and a call from `release.yml` (`checkout-ref` set). And no run that may skip ever
@@ -4886,26 +4941,8 @@ fn no_run_that_must_test_everything_or_stands_in_for_a_release_can_skip_for_a_pl
         );
     }
 
-    let own = "owner/repository";
-    let commit = "3ec2deb977bb19c292a611dcf92a3e676352864a";
-    // The event, `github.head_ref`, the pull request's head repository, `inputs.checkout-ref`,
-    // and whether the run may skip.
-    let runs = [
-        ("push", "", "", "", false),
-        ("schedule", "", "", "", false),
-        ("pull_request", "queue/pr-119", own, "", false),
-        ("merge_group", "", "", "", false),
-        // A call from release.yml: a tag push, and a backfill dispatched from any branch.
-        ("push", "", "", commit, false),
-        ("workflow_dispatch", "", "", commit, false),
-        ("workflow_dispatch", "", "", "", false),
-        ("pull_request", "feat/x", own, commit, false),
-        // A pull request from an ordinary head, and from a fork, which can name a branch anything.
-        ("pull_request", "feat/x", own, "", true),
-        ("pull_request", "queue/pr-119", "fork/repository", "", true),
-        ("pull_request", "main", "fork/repository", "", true),
-    ];
-    let wrong: Vec<String> = runs
+    let commit = RUN_COMMIT;
+    let wrong: Vec<String> = candidate_runs()
         .iter()
         .filter(|&&(event, head_ref, repository, checkout, may)| {
             plan_only_candidate(&ci, &ci_context(event, head_ref, repository, checkout)) != may
@@ -4917,24 +4954,12 @@ fn no_run_that_must_test_everything_or_stands_in_for_a_release_can_skip_for_a_pl
         "the plan-only decision may run wrongly on: {wrong:?}"
     );
 
-    // The workflow runs `prior-gate` reads, each the ci.yml run it describes: event, head branch,
-    // head repository.
-    let described = [
-        ("push", "main", own),
-        ("schedule", "main", own),
-        ("pull_request", "queue/pr-119", own),
-        ("pull_request", "feat/x", own),
-        ("pull_request", "queue/pr-119", "fork/repository"),
-        ("merge_group", "gh-readonly-queue/main/pr-7", own),
-        ("workflow_dispatch", "main", own),
-        ("push", "queue/pr-119", own),
-    ];
     let case = Scratch::new("plan-only-qualifies");
     let function = prior_gate_qualifies(&release);
     let mut qualifying = 0;
     let mut skippable = 0;
     let mut stands_in = Vec::new();
-    for (index, (event, branch, repository)) in described.into_iter().enumerate() {
+    for (index, (event, branch, repository)) in described_runs().into_iter().enumerate() {
         let run = workflow_run(
             ".github/workflows/ci.yml",
             event,
@@ -4967,8 +4992,13 @@ fn no_run_that_must_test_everything_or_stands_in_for_a_release_can_skip_for_a_pl
 }
 
 /// Runs `Gate`'s step with the results `results` gives each job it needs, and `plan_only` as the
-/// deciding job's output. Returns whether it passed, and its log.
-fn run_gate(case: &Path, results: &BTreeMap<String, String>, plan_only: &str) -> (bool, String) {
+/// deciding job's output, `slow` as its `slow` output. Returns whether it passed, and its log.
+fn run_gate(
+    case: &Path,
+    results: &BTreeMap<String, String>,
+    plan_only: &str,
+    slow: &str,
+) -> (bool, String) {
     let ci = yaml(".github/workflows/ci.yml");
     let gate = &ci["jobs"]["gate"];
     let steps: Vec<&Value> = gate["steps"].as_sequence().into_iter().flatten().collect();
@@ -4985,6 +5015,8 @@ fn run_gate(case: &Path, results: &BTreeMap<String, String>, plan_only: &str) ->
         let value = text(value);
         let supplied = if value == "${{ needs.diff.outputs.plan-only }}" {
             plan_only.to_owned()
+        } else if value == "${{ needs.diff.outputs.slow }}" {
+            slow.to_owned()
         } else {
             let need = value
                 .strip_prefix("${{ needs.")
@@ -5041,7 +5073,7 @@ fn the_gate_passes_skipped_test_jobs_only_for_a_plan_only_diff() {
     let mut wrong = Vec::new();
     let mut expect =
         |name: String, results: BTreeMap<String, String>, plan_only: &str, pass: bool| {
-            let (passed, log) = run_gate(&case.0, &results, plan_only);
+            let (passed, log) = run_gate(&case.0, &results, plan_only, "");
             if passed != pass {
                 wrong.push(format!("{name}: passed {passed}, expected {pass}\n{log}"));
             }
@@ -5107,29 +5139,25 @@ fn the_gate_passes_skipped_test_jobs_only_for_a_plan_only_diff() {
     );
 }
 
-/// Runs the deciding job's `plan-only` step in `checkout` the way Actions does, and returns the
-/// decision it wrote and its log. The step must exit 0 whatever it finds: an error decides
-/// `false`, it never fails the job.
-fn run_plan_only_step(case: &Path, checkout: &Path) -> (String, String) {
+/// Runs the deciding job's step `id` (`plan-only` or `slow`) in `checkout` the way Actions does,
+/// and returns the decision it wrote and its log. The step must exit 0 whatever it finds: an
+/// error decides, it never fails the job.
+fn run_plan_only_step(case: &Path, checkout: &Path, id: &str) -> (String, String) {
     let ci = yaml(".github/workflows/ci.yml");
     let step = ci["jobs"][PLAN_ONLY_JOB]["steps"]
         .as_sequence()
         .into_iter()
         .flatten()
-        .find(|step| text(&step["id"]) == "plan-only")
-        .expect("the deciding job has a `plan-only` step");
-    assert_eq!(
-        text(&step["shell"]),
-        "bash",
-        "the plan-only step is not bash"
-    );
+        .find(|step| text(&step["id"]) == id)
+        .unwrap_or_else(|| panic!("the deciding job has no `{id}` step"));
+    assert_eq!(text(&step["shell"]), "bash", "the {id} step is not bash");
     assert!(
         step["env"].is_null(),
-        "the plan-only step reads an environment this harness does not supply"
+        "the {id} step reads an environment this harness does not supply"
     );
     let temp = case.join("runner-temp");
     fs::create_dir_all(&temp).unwrap();
-    let script = case.join("plan-only.sh");
+    let script = case.join(format!("{id}.sh"));
     fs::write(&script, text(&step["run"])).unwrap();
     let output_file = case.join("github-output");
     fs::write(&output_file, "").unwrap();
@@ -5147,19 +5175,19 @@ fn run_plan_only_step(case: &Path, checkout: &Path) -> (String, String) {
         + &String::from_utf8_lossy(&output.stderr);
     assert!(
         output.status.success(),
-        "the plan-only step failed the job instead of deciding: {log}"
+        "the {id} step failed the job instead of deciding: {log}"
     );
     let written = fs::read_to_string(&output_file).unwrap();
     let decisions: Vec<&str> = written
         .lines()
-        .filter_map(|line| line.strip_prefix("plan-only="))
+        .filter_map(|line| line.strip_prefix(&format!("{id}=")))
         .collect();
     let [decision] = decisions.as_slice() else {
-        panic!("the plan-only step wrote {decisions:?}, not one decision: {log}")
+        panic!("the {id} step wrote {decisions:?}, not one decision: {log}")
     };
     assert!(
         matches!(*decision, "true" | "false"),
-        "the plan-only step decided `{decision}`: {log}"
+        "the {id} step decided `{decision}`: {log}"
     );
     ((*decision).to_owned(), log)
 }
@@ -5319,7 +5347,7 @@ fn the_plan_only_decision_is_every_changed_path_under_the_plan_store() {
         );
         git(&origin, &["branch", &format!("merge-{index}"), "HEAD"]);
         let checkout = plan_only_checkout(&case.0, &origin, &format!("merge-{index}"), 2);
-        let (decision, log) = run_plan_only_step(&case.0, &checkout);
+        let (decision, log) = run_plan_only_step(&case.0, &checkout, "plan-only");
         if decision != *expected {
             wrong.push(format!("{name}: {decision}, expected {expected}\n{log}"));
         }
@@ -5336,7 +5364,7 @@ fn the_plan_only_decision_is_every_changed_path_under_the_plan_store() {
         ("a head that is no merge commit", plain),
         ("no repository", empty),
     ] {
-        let (decision, log) = run_plan_only_step(&case.0, &checkout);
+        let (decision, log) = run_plan_only_step(&case.0, &checkout, "plan-only");
         if decision != "false" {
             wrong.push(format!("{name}: {decision}, expected false\n{log}"));
         }
@@ -5402,5 +5430,698 @@ fn no_archived_test_reads_the_plan_store_outside_its_reproductions() {
         readers.is_empty(),
         "these archived tests read the plan store outside {PLAN_ONLY_EXCEPT}, so a plan-only \
          diff would skip the tests of what it changed: {readers:#?}"
+    );
+}
+
+/// The commands of `test-xtask` with each `{{.NAME}}` of the task's `vars` expanded.
+fn test_xtask_commands(taskfile: &Value) -> Vec<String> {
+    let task = &taskfile["tasks"]["test-xtask"];
+    let vars: Vec<(String, String)> = task["vars"]
+        .as_mapping()
+        .into_iter()
+        .flatten()
+        .map(|(name, value)| (text(name).to_owned(), text(value).to_owned()))
+        .collect();
+    shell_commands(taskfile, "test-xtask")
+        .into_iter()
+        .map(|mut command| {
+            for (name, value) in &vars {
+                command = command.replace(&format!("{{{{.{name}}}}}"), value);
+            }
+            command
+        })
+        .collect()
+}
+
+#[test]
+fn test_xtask_sets_no_wrapper_and_no_build_jobs() {
+    let taskfile = yaml("Taskfile.yml");
+    let task = &taskfile["tasks"]["test-xtask"];
+    let mut texts = shell_commands(&taskfile, "test-xtask");
+    texts.extend(
+        task["vars"]
+            .as_mapping()
+            .into_iter()
+            .flatten()
+            .map(|(_, value)| text(value).to_owned()),
+    );
+    let mut found = Vec::new();
+    for command in &texts {
+        for word in command.split_whitespace() {
+            let name = word.split('=').next().unwrap_or("");
+            let forbidden = [
+                "RUSTC_WRAPPER",
+                "RUSTC_WORKSPACE_WRAPPER",
+                "CARGO_BUILD_RUSTC_WRAPPER",
+                "CARGO_BUILD_RUSTC_WORKSPACE_WRAPPER",
+            ]
+            .contains(&name)
+                || word.starts_with("CARGO_BUILD_JOBS")
+                || word.starts_with("SCCACHE_")
+                || word == "-j"
+                || word == "--jobs";
+            if forbidden {
+                found.push(word.to_owned());
+            }
+        }
+    }
+    assert!(
+        found.is_empty(),
+        "`test-xtask` empties the host's compile wrapper or sets build jobs: {found:?}"
+    );
+}
+
+#[test]
+fn test_xtask_builds_before_it_runs() {
+    let taskfile = yaml("Taskfile.yml");
+    let commands = test_xtask_commands(&taskfile);
+    assert_eq!(
+        commands.len(),
+        2,
+        "`test-xtask` is a build line and a nextest run line: {commands:?}"
+    );
+    assert!(
+        commands[0].trim_end().ends_with("--no-run"),
+        "the first command does not end `--no-run`: {}",
+        commands[0]
+    );
+    assert!(
+        commands[1].contains("cargo nextest run") && commands[1].contains("--profile ci"),
+        "the second command is not a nextest run under the `ci` profile: {}",
+        commands[1]
+    );
+    assert!(
+        !commands[1].contains("--no-run"),
+        "the second command is the run and does not build only: {}",
+        commands[1]
+    );
+    for command in &commands {
+        for needed in [
+            "--package ess-xtask --locked",
+            "RUSTUP_TOOLCHAIN=1.98.1",
+            "-fuse-ld=lld",
+            "CARGO_INCREMENTAL=0",
+            "CARGO_PROFILE_DEV_DEBUG=0",
+            "CARGO_PROFILE_TEST_DEBUG=0",
+        ] {
+            assert!(
+                command.contains(needed),
+                "`{needed}` is missing from: {command}"
+            );
+        }
+    }
+}
+
+/// The words of the `task …` lines of `step`: a one-line step or a line of a script.
+fn task_words(step: &Value) -> Vec<String> {
+    text(&step["run"])
+        .lines()
+        .filter_map(|line| line.trim().strip_prefix("task "))
+        .flat_map(|rest| {
+            rest.split_whitespace()
+                .take_while(|word| {
+                    !word.contains('=') && !word.contains('$') && !word.starts_with('-')
+                })
+                .map(|word| word.trim_matches('"').to_owned())
+                .collect::<Vec<_>>()
+        })
+        .collect()
+}
+
+/// The jobs of `workflow` that run a task reaching `target`, each with the index of its first
+/// such step.
+fn jobs_reaching(workflow: &Value, taskfile: &Value, target: &str) -> Vec<(String, usize)> {
+    let mut found = Vec::new();
+    let Some(jobs) = workflow["jobs"].as_mapping() else {
+        return found;
+    };
+    for (id, job) in jobs {
+        for (index, step) in job["steps"].as_sequence().into_iter().flatten().enumerate() {
+            let mut covered = BTreeSet::new();
+            for task in task_words(step) {
+                reached(taskfile, &task, &mut covered);
+            }
+            if covered.contains(target) {
+                found.push((text(id).to_owned(), index));
+                break;
+            }
+        }
+    }
+    found
+}
+
+/// Every job of `ci.yml` and `release.yml` that reaches `body-cap-go-server` installs Go with the
+/// `test` job's pinned action and version, after the step that frees the runner's disk (which
+/// deletes the hosted tool cache) and before the step that runs the task; and the task builds.
+fn assert_the_go_server_has_its_go(ci: &Value, release: &Value, taskfile: &Value) {
+    let builds = shell_commands(taskfile, "body-cap-go-server");
+    assert!(
+        builds.iter().any(|command| command.contains("go build")),
+        "`body-cap-go-server` runs no `go build`: {builds:?}"
+    );
+    let (_, reference) = step_using(&ci["jobs"]["test"], "actions/setup-go")
+        .expect("the `test` job of ci.yml installs Go");
+    let mut found = 0;
+    for (file, workflow) in [("ci.yml", ci), ("release.yml", release)] {
+        for (id, task_step) in jobs_reaching(workflow, taskfile, "body-cap-go-server") {
+            found += 1;
+            let job = &workflow["jobs"][id.as_str()];
+            let (go_step, go) = step_using(job, "actions/setup-go").unwrap_or_else(|| {
+                panic!("`{id}` of {file} builds the Go server and installs no Go")
+            });
+            let pinned = text(&go["uses"]);
+            let (_, commit) = pinned.split_once('@').expect("a ref");
+            assert!(
+                commit.len() >= 40 && commit[..40].chars().all(|c| c.is_ascii_hexdigit()),
+                "`{id}` of {file} does not pin setup-go to a commit: {pinned}"
+            );
+            assert_eq!(
+                pinned,
+                text(&reference["uses"]),
+                "`{id}` of {file} pins another setup-go than the `test` job"
+            );
+            assert_eq!(
+                text(&go["with"]["go-version"]),
+                text(&reference["with"]["go-version"]),
+                "`{id}` of {file} installs another Go than the `test` job"
+            );
+            assert_eq!(
+                go["with"]["cache"],
+                Value::Bool(false),
+                "`{id}` of {file} caches Go"
+            );
+            for (index, step) in job["steps"].as_sequence().unwrap().iter().enumerate() {
+                if text(&step["name"]) == "Free runner disk" {
+                    assert!(
+                        go_step > index,
+                        "`{id}` of {file} installs Go before it frees the disk, which deletes it"
+                    );
+                }
+            }
+            assert!(
+                go_step < task_step,
+                "`{id}` of {file} installs Go after the step that builds the Go server"
+            );
+        }
+    }
+    assert!(
+        found >= 2,
+        "{found} job(s) reach `body-cap-go-server`; build-tests and hotfix-tests are expected"
+    );
+}
+
+#[test]
+fn a_job_that_builds_the_go_server_installs_go_after_it_frees_the_disk() {
+    let ci = yaml(".github/workflows/ci.yml");
+    let release = yaml(".github/workflows/release.yml");
+    let taskfile = yaml("Taskfile.yml");
+    assert_the_go_server_has_its_go(&ci, &release, &taskfile);
+    let jobs: Vec<String> = [&ci, &release]
+        .iter()
+        .flat_map(|workflow| jobs_reaching(workflow, &taskfile, "body-cap-go-server"))
+        .map(|(id, _)| id)
+        .collect();
+    assert!(
+        jobs.contains(&"build-tests".to_owned()) && jobs.contains(&"hotfix-tests".to_owned()),
+        "{jobs:?}"
+    );
+
+    let caught = |ci: &Value, release: &Value, what: &str| {
+        assert!(
+            std::panic::catch_unwind(|| assert_the_go_server_has_its_go(ci, release, &taskfile))
+                .is_err(),
+            "{what} went unnoticed"
+        );
+    };
+    let go_index = |job: &Value| step_using(job, "actions/setup-go").unwrap().0;
+
+    let mut mutated = ci.clone();
+    let at = go_index(&ci["jobs"]["build-tests"]);
+    let removed = mutated["jobs"]["build-tests"]["steps"]
+        .as_sequence_mut()
+        .unwrap()
+        .remove(at);
+    caught(&mutated, &release, "build-tests without Go");
+
+    let steps = mutated["jobs"]["build-tests"]["steps"]
+        .as_sequence_mut()
+        .unwrap();
+    let disk = steps
+        .iter()
+        .position(|step| text(&step["name"]) == "Free runner disk")
+        .unwrap();
+    steps.insert(disk, removed);
+    caught(&mutated, &release, "Go installed before the disk is freed");
+
+    let mut mutated = release.clone();
+    let at = go_index(&release["jobs"]["hotfix-tests"]);
+    mutated["jobs"]["hotfix-tests"]["steps"]
+        .as_sequence_mut()
+        .unwrap()
+        .remove(at);
+    caught(&ci, &mutated, "hotfix-tests without Go");
+}
+
+#[test]
+fn the_tutorial_network_is_set_by_the_slow_lane_and_by_no_test_step() {
+    const VARIABLE: &str = "ESS_TUTORIAL_NETWORK";
+    let sets = |env: &Value| {
+        env.as_mapping()
+            .is_some_and(|env| env.keys().any(|key| key.as_str() == Some(VARIABLE)))
+    };
+    let ci = yaml(".github/workflows/ci.yml");
+    let taskfile = yaml("Taskfile.yml");
+    let mut offenders = Vec::new();
+    for (name, job) in ci["jobs"].as_mapping().expect("ci.yml has jobs") {
+        if sets(&job["env"]) {
+            offenders.push(format!("{}: job env", text(name)));
+        }
+        for step in job["steps"].as_sequence().into_iter().flatten() {
+            if sets(&step["env"]) {
+                offenders.push(format!("{}: {}", text(name), text(&step["name"])));
+            }
+        }
+    }
+    assert!(
+        offenders.is_empty(),
+        "{VARIABLE} is set outside the slow lane: {offenders:?}"
+    );
+    assert_eq!(
+        taskfile["tasks"]["test-slow"]["env"][VARIABLE].as_str(),
+        Some("1"),
+        "`test-slow` does not set {VARIABLE}: \"1\""
+    );
+}
+
+/// The condition of the `slow` job: it runs unless the deciding job said no changed path reaches a
+/// slow test.
+const SLOW_IF: &str = "${{ needs.diff.outputs.slow != 'false' }}";
+
+fn job_steps(job: &Value) -> Vec<&Value> {
+    job["steps"].as_sequence().into_iter().flatten().collect()
+}
+
+fn assert_the_slow_job_is_gated_bounded_and_runs_the_slow_task(ci: &Value) {
+    let job = &ci["jobs"]["slow"];
+    assert!(job.is_mapping(), "ci.yml has no slow job");
+    assert_eq!(
+        needs_of(job),
+        BTreeSet::from(["diff".to_owned()]),
+        "`slow` waits for something besides `diff`"
+    );
+    assert_eq!(text(&job["if"]), SLOW_IF, "`slow` has the wrong condition");
+    assert!(
+        !text(&job["if"]).contains("plan-only"),
+        "`slow` is skipped on a plan-only diff"
+    );
+    assert_eq!(job["timeout-minutes"].as_u64(), Some(30));
+    assert!(
+        job_steps(job)
+            .iter()
+            .any(|step| text(&step["run"]).trim() == "task test-slow"),
+        "`slow` runs no `task test-slow` step"
+    );
+    for variable in ["CARGO_PROFILE_DEV_DEBUG", "CARGO_PROFILE_TEST_DEBUG"] {
+        assert_eq!(scalar_or_empty(&job["env"][variable]), "0", "{variable}");
+    }
+    let gate = &ci["jobs"]["gate"];
+    assert!(needs_of(gate).contains("slow"), "Gate does not need `slow`");
+    let read: String = job_steps(gate)
+        .iter()
+        .map(|step| ess_yaml::to_string(step).unwrap())
+        .collect();
+    assert!(
+        read.contains("needs.slow.result"),
+        "Gate never reads the result of `slow`"
+    );
+}
+
+/// The `slow` job runs `task test-slow` inside its bound and is a gated job `Gate` reads; losing
+/// the condition, the bound, the step or the place in `Gate`'s `needs` fails here.
+#[test]
+fn the_slow_job_is_gated_bounded_and_runs_the_slow_task() {
+    let ci = yaml(".github/workflows/ci.yml");
+    assert_the_slow_job_is_gated_bounded_and_runs_the_slow_task(&ci);
+    for (output, runs) in [("false", false), ("true", true), ("", true)] {
+        let context = BTreeMap::from([("needs.diff.outputs.slow", output)]);
+        assert_eq!(
+            evaluate(SLOW_IF, &context).truthy(),
+            runs,
+            "a decision of `{output}`"
+        );
+    }
+
+    let mut no_if = ci.clone();
+    no_if["jobs"]["slow"]["if"] = Value::Null;
+    let mut no_bound = ci.clone();
+    no_bound["jobs"]["slow"]["timeout-minutes"] = Value::Null;
+    let mut no_step = ci.clone();
+    for step in no_step["jobs"]["slow"]["steps"].as_sequence_mut().unwrap() {
+        if text(&step["run"]) == "task test-slow" {
+            step["run"] = Value::String("task test-xtask".to_owned());
+        }
+    }
+    let mut no_need = ci.clone();
+    no_need["jobs"]["gate"]["needs"] = Value::Sequence(
+        needs_of(&ci["jobs"]["gate"])
+            .into_iter()
+            .filter(|need| need != "slow")
+            .map(Value::String)
+            .collect(),
+    );
+    for (name, mutant) in [
+        ("no condition", no_if),
+        ("no bound", no_bound),
+        ("no task step", no_step),
+        ("not in Gate", no_need),
+    ] {
+        assert!(
+            std::panic::catch_unwind(|| {
+                assert_the_slow_job_is_gated_bounded_and_runs_the_slow_task(&mutant);
+            })
+            .is_err(),
+            "a slow job with {name} passes"
+        );
+    }
+}
+
+fn slow_decision_step(ci: &Value) -> &Value {
+    job_steps(&ci["jobs"][PLAN_ONLY_JOB])
+        .into_iter()
+        .find(|step| text(&step["id"]) == "slow")
+        .expect("the deciding job has no `slow` step")
+}
+
+/// The `slow` decision is made on the same runs as the plan-only one, a pull request of an
+/// ordinary head or a fork, and on no other.
+#[test]
+fn the_slow_decision_may_skip_only_a_pull_request_of_an_ordinary_head() {
+    let ci = yaml(".github/workflows/ci.yml");
+    assert_eq!(
+        text(&ci["jobs"][PLAN_ONLY_JOB]["outputs"]["slow"]),
+        "${{ steps.slow.outputs.slow }}",
+        "`{PLAN_ONLY_JOB}` reports a `slow` decision its `slow` step did not make"
+    );
+    assert_eq!(
+        text(&slow_decision_step(&ci)["if"]),
+        PLAN_ONLY_STEP_IF,
+        "the `slow` step runs on a run that may not skip"
+    );
+    let wrong: Vec<String> = candidate_runs()
+        .iter()
+        .filter(|&&(event, head_ref, repository, checkout, may)| {
+            plan_only_candidate(&ci, &ci_context(event, head_ref, repository, checkout)) != may
+        })
+        .map(|run| format!("{run:?}"))
+        .collect();
+    assert!(
+        wrong.is_empty(),
+        "the slow decision may run wrongly on: {wrong:?}"
+    );
+}
+
+/// No run that `prior-gate` accepts as a release's gate is a run that may skip the slow lane.
+#[test]
+fn no_run_that_stands_in_for_a_release_can_skip_the_slow_lane() {
+    let ci = yaml(".github/workflows/ci.yml");
+    let release = yaml(".github/workflows/release.yml");
+    assert_eq!(
+        text(&slow_decision_step(&ci)["if"]),
+        PLAN_ONLY_STEP_IF,
+        "the `slow` step runs on a run that may not skip"
+    );
+    let case = Scratch::new("slow-qualifies");
+    let function = prior_gate_qualifies(&release);
+    let (mut qualifying, mut skippable) = (0, 0);
+    let mut stands_in = Vec::new();
+    for (index, (event, branch, repository)) in described_runs().into_iter().enumerate() {
+        let run = workflow_run(
+            ".github/workflows/ci.yml",
+            event,
+            Some(branch),
+            repository,
+            RUN_COMMIT,
+        );
+        let qualifies = run_prior_gate_qualifies(&case.0, &function, 200 + index, &run, RUN_COMMIT);
+        let (head_ref, head_repository) = if event == "pull_request" {
+            (branch, repository)
+        } else {
+            ("", "")
+        };
+        let may_skip = plan_only_candidate(&ci, &ci_context(event, head_ref, head_repository, ""));
+        qualifying += usize::from(qualifies);
+        skippable += usize::from(may_skip);
+        if qualifies && may_skip {
+            stands_in.push(format!("{event} {branch} {repository}"));
+        }
+    }
+    assert!(
+        qualifying > 0 && skippable > 0,
+        "the case reads nothing: {qualifying} qualifying runs, {skippable} that may skip"
+    );
+    assert!(
+        stands_in.is_empty(),
+        "a run that may skip the slow lane stands in for a release's gate: {stands_in:?}"
+    );
+}
+
+/// The slow decision is `false` only when every changed path is in the skippable list and none is
+/// one a slow test reads, read from the merge commit against its first parent, as plan-only is.
+/// Anything the step cannot read, an empty change included, runs the lane.
+#[test]
+#[allow(clippy::too_many_lines)]
+fn the_slow_decision_is_every_changed_path_in_the_skippable_list() {
+    let case = Scratch::new("slow-decision");
+    let origin = case.0.join("origin");
+    fs::create_dir_all(&origin).unwrap();
+    git(&origin, &["init", "--quiet", "--initial-branch=main"]);
+    for (path, contents) in [
+        ("crates/lib.rs", "lib"),
+        ("AGENTS.md", "agents"),
+        ("docs/x.md", "docs"),
+        ("website/docs/other.md", "other"),
+        ("website/docs/start/install.md", "install"),
+        (".engineering/repro/501/system.yaml", "repro"),
+    ] {
+        let file = origin.join(path);
+        fs::create_dir_all(file.parent().unwrap()).unwrap();
+        fs::write(file, contents).unwrap();
+    }
+    git(&origin, &["add", "--all"]);
+    git(&origin, &["commit", "--quiet", "--message", "base"]);
+    let base = git(&origin, &["rev-parse", "HEAD"]);
+    fs::write(origin.join("crates/b.rs"), "b").unwrap();
+    git(&origin, &["add", "--all"]);
+    git(
+        &origin,
+        &["commit", "--quiet", "--message", "main moves on"],
+    );
+
+    let cases: &[(&str, &[&str], &str)] = &[
+        ("docs only", &["docs/x.md"], "false"),
+        ("AGENTS.md only", &["AGENTS.md"], "false"),
+        (
+            "a UI path and docs",
+            &["crates/ui/ess-ui/src/lib.rs", "docs/x.md"],
+            "false",
+        ),
+        (
+            "an infrastructure path",
+            &["crates/infra/infra-spec/src/lib.rs"],
+            "false",
+        ),
+        (
+            "an ess-xtask test",
+            &["crates/edge/ess-xtask/tests/layout.rs"],
+            "false",
+        ),
+        (
+            "an ess-xtask source slow-list does not run on",
+            &["crates/edge/ess-xtask/src/support.rs"],
+            "false",
+        ),
+        (
+            "the dispatcher of slow-list",
+            &["crates/edge/ess-xtask/src/main.rs"],
+            "true",
+        ),
+        (
+            "the manifest that builds slow-list",
+            &["crates/edge/ess-xtask/Cargo.toml"],
+            "true",
+        ),
+        ("a release note", &["release-notes/0.99.0.md"], "false"),
+        (
+            "a plan story",
+            &[".engineering/planning/story/x.md"],
+            "false",
+        ),
+        (
+            "a verifier path",
+            &["crates/verify/ess-diff/src/lib.rs"],
+            "true",
+        ),
+        (
+            "a reproduction a test reads",
+            &[".engineering/repro/501/system.yaml"],
+            "true",
+        ),
+        ("a start page", &["website/docs/start/install.md"], "true"),
+        ("another site page", &["website/docs/other.md"], "false"),
+        (
+            "the slow-list reader",
+            &["crates/edge/ess-xtask/src/slow_lane.rs"],
+            "true",
+        ),
+        ("the workflow", &[".github/workflows/ci.yml"], "true"),
+        ("the Taskfile", &["Taskfile.yml"], "true"),
+        ("the lock file", &["Cargo.lock"], "true"),
+        (
+            "a generator path",
+            &["crates/generate/ess-gen/src/lib.rs"],
+            "true",
+        ),
+        ("an example", &["examples/a.yaml"], "true"),
+        (
+            "a skippable and another path",
+            &["docs/x.md", "crates/lib.rs"],
+            "true",
+        ),
+        ("no change", &[], "true"),
+    ];
+
+    let mut wrong = Vec::new();
+    for (index, (name, paths, expected)) in cases.iter().enumerate() {
+        let branch = format!("case-{index}");
+        git(&origin, &["checkout", "--quiet", "-b", &branch, &base]);
+        for path in *paths {
+            let file = origin.join(path);
+            fs::create_dir_all(file.parent().unwrap()).unwrap();
+            fs::write(file, format!("changed by {name}")).unwrap();
+        }
+        git(&origin, &["add", "--all"]);
+        git(
+            &origin,
+            &["commit", "--quiet", "--allow-empty", "--message", name],
+        );
+        git(&origin, &["checkout", "--quiet", "--detach", "main"]);
+        git(
+            &origin,
+            &["merge", "--quiet", "--no-ff", "--message", name, &branch],
+        );
+        git(&origin, &["branch", &format!("merge-{index}"), "HEAD"]);
+        let checkout = plan_only_checkout(&case.0, &origin, &format!("merge-{index}"), 2);
+        let (decision, log) = run_plan_only_step(&case.0, &checkout, "slow");
+        if decision != *expected {
+            wrong.push(format!("{name}: {decision}, expected {expected}\n{log}"));
+        }
+    }
+
+    let shallow = plan_only_checkout(&case.0, &origin, "merge-0", 1);
+    let plain = plan_only_checkout(&case.0, &origin, "case-0", 2);
+    let empty = case.0.join("no-repository");
+    fs::create_dir_all(&empty).unwrap();
+    for (name, checkout) in [
+        ("a checkout without the base", shallow),
+        ("a head that is no merge commit", plain),
+        ("no repository", empty),
+    ] {
+        let (decision, log) = run_plan_only_step(&case.0, &checkout, "slow");
+        if decision != "true" {
+            wrong.push(format!("{name}: {decision}, expected true\n{log}"));
+        }
+    }
+    assert!(
+        wrong.is_empty(),
+        "the slow step decides wrongly:\n{}",
+        wrong.join("\n")
+    );
+}
+
+/// `Gate` passes a skipped `slow` job only when `diff` succeeded and said `false`, and says so.
+#[test]
+fn the_gate_passes_a_skipped_slow_job_only_when_the_diff_said_so() {
+    let ci = yaml(".github/workflows/ci.yml");
+    let needs = needs_of(&ci["jobs"]["gate"]);
+    assert!(needs.contains("slow"), "Gate does not need `slow`");
+    let case = Scratch::new("slow-gate");
+    let with = |changes: &[(&str, &str)]| {
+        let mut results: BTreeMap<String, String> = needs
+            .iter()
+            .map(|need| (need.clone(), "success".to_owned()))
+            .collect();
+        for (job, result) in changes {
+            results.insert((*job).to_owned(), (*result).to_owned());
+        }
+        results
+    };
+    let mut wrong = Vec::new();
+    let mut expect = |name: &str, changes: &[(&str, &str)], slow: &str, pass: bool| {
+        let (passed, log) = run_gate(&case.0, &with(changes), "", slow);
+        if passed != pass {
+            wrong.push(format!("{name}: passed {passed}, expected {pass}\n{log}"));
+        }
+        log
+    };
+    expect("every job passed", &[], "false", true);
+    expect("slow ran on a `true` decision", &[], "true", true);
+    let log = expect(
+        "slow skipped on `false`",
+        &[("slow", "skipped")],
+        "false",
+        true,
+    );
+    assert!(
+        log.contains("the slow job was skipped because no changed path can reach a slow test"),
+        "Gate does not say why `slow` was skipped: {log}"
+    );
+    expect(
+        "slow skipped without a decision",
+        &[("slow", "skipped")],
+        "",
+        false,
+    );
+    expect(
+        "slow skipped on `true`",
+        &[("slow", "skipped")],
+        "true",
+        false,
+    );
+    for result in ["failure", "cancelled"] {
+        expect(
+            &format!("slow {result} on `false`"),
+            &[("slow", result)],
+            "false",
+            false,
+        );
+    }
+    for result in ["failure", "cancelled", "skipped"] {
+        expect(
+            &format!("diff {result} and slow skipped on `false`"),
+            &[("slow", "skipped"), ("diff", result)],
+            "false",
+            false,
+        );
+    }
+    assert!(
+        wrong.is_empty(),
+        "Gate decides wrongly:\n{}",
+        wrong.join("\n")
+    );
+}
+
+/// `task check` runs the slow lane directly after the tests, as the forge does.
+#[test]
+fn the_check_task_runs_the_slow_lane_after_the_tests() {
+    let taskfile = yaml("Taskfile.yml");
+    let check = direct_subtasks(&taskfile, "check");
+    let test = check
+        .iter()
+        .position(|step| step == "test")
+        .expect("`task check` runs no `test`");
+    assert_eq!(
+        check.get(test + 1).map(String::as_str),
+        Some("test-slow"),
+        "`task check` does not run `test-slow` directly after `test`: {check:?}"
     );
 }

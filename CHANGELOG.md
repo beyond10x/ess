@@ -2,6 +2,35 @@
 
 ## [Unreleased]
 
+### Added
+
+- An `ess-http/1` binding declares `limits: {request_bytes: N}` at the top and on a route, and `refusals.too_large`: both generated servers read at most that many bytes of the matched route's body and refuse a larger one, the OpenAPI document names the bound under `x-ess-request-max-bytes`, a binding declaring neither keeps every byte it writes, and `ESS-HTTP-034` refuses a limit outside 1 to 16777216 or on a route that reads no body.
+- `format: ess-composition/6`: a `conformances` entry may carry `writer: true`, the assertion that the local type only sends the imported one. The pair conforms when the local type can send no value the imported type's reader refuses: a field's `presence` conforms when every absent spelling it writes is one the imported field reads, a required local value is admitted where the imported one is `Optional`, and a newtype, an enum where the imported reference is `String`, a subset of an enum's or a union's variants, a struct or `String`-keyed map where the imported reference is `Map<String, Json>`, an imported `Optional` field left out, an extra field where the imported struct declares `undeclared_fields: ignored`, and a narrower alphabet, a longer prefix or more invariants are admitted. `writer: true` with `reader: true` on one entry is refused when read. `ess-composition/1` to `/5` refuse `writer`, whatever its value, as `unsupported_format` and keep their bytes.
+- `ess verify conform synthesize` and `ess verify conform run` take `--jobs <JOBS>` (1 to 256,
+  default 1, or `ESS_SYNTH_JOBS` when it is set), which runs the caller readings of a synthesis on
+  that many threads: each model a caller reading reuses runs on one thread, and the suite, the
+  refusals and the notes are the bytes one job writes. The library offers the same as
+  `ess_conformance::synthesize::with_jobs`. A command that synthesizes refuses an `ESS_SYNTH_JOBS`
+  that is not a whole number from 1 to 256 with exit 1; `conform run --suite` synthesizes nothing
+  and does not read it, and the library falls back to 1. No format version changes
+  (`docs/design/parallel-caller-readings.md`).
+
+### Changed
+
+- Testing: a test marked `#[ignore = "slow lane: <reason>"]` runs only in `task test-slow`, under the nextest profile `slow`, and `cargo xtask slow-list` names it; the byte-identity and WebAssembly probes that `task test-slow-probes` ran by hand carry the marker, and that task is gone (story:the-test-step-meets-the-test-budget).
+- CI: the Start-here walkthrough test runs the `ess` commands of the pages in the test step and runs their `npm` and `go` blocks in the `slow` lane, where `ESS_TUTORIAL_NETWORK=1` is set; no test step sets it (story:the-test-step-meets-the-test-budget).
+- CI: `task test-xtask` builds through the host's compile cache and job pool instead of an emptied `RUSTC_WRAPPER` and `CARGO_BUILD_JOBS=2`, compiles in one command and runs the `ess-xtask` tests under nextest, one process per test; no test moved to the slow lane.
+- CI: the nine tests of `generated_view_queries` that build generated Rust or Go with `cargo` or `go` run in the `slow` lane; the generation and plan tests of the file stay in the test step.
+- In the `ess-composition` library, `WRITER_COMPOSITION_FORMAT`, `TypeConformance::{for_writer, writer}` and `CompositionSpec::with_writer_conformances` are new, `SUPPORTED_COMPOSITION_FORMATS` lists `6`, and `TypeConformance` has a new field `writer`.
+- CI: a `slow` job runs `task test-slow` beside the test shards and `Gate` carries it; a pull request skips it only when every changed path is a plan, documentation, UI, infrastructure or `ess-xtask` path, and every other run (`main`, nightly, queue, merge group, release) runs it, so a run that skipped it never stands in for a release; the targeted gate of a patch tag (`Hotfix tests`) runs the slow-lane tests of the crates it tests (story:the-test-step-meets-the-test-budget).
+- CI: the seeded and order sweeps of `adversary_u22_pass1` and `adversary_ess0700a_identity_beside_row_set_2` run a reduced set in the test step and the full set in the `slow` lane.
+- CI: `synthesis_suite_bytes_table` compares a digest of the sources of synthesis and of every model with a committed stamp in the test step; the byte comparison against the committed tables, with another whole-corpus synthesis test, runs in the slow lane (story:the-test-step-meets-the-test-budget).
+
+### Fixed
+
+- Synthesis witnesses a scenario that needs a related row with chosen field values, a grant whose `name` is `mail` or whose `mode` is `denied` for instance, where the row's creating branch reads several related rows through its input: the setup run is arranged as that branch's own scenario with the chosen values sent, where the scenario was refused (`ESS-SYNTH-003`). The `any:` legs of a refusal over such a row and the scenarios that need it in a later state are witnessed. Suites where the strict search already found the run keep their bytes.
+- A synthesized suite for a command that two actors with attributes are both granted, and that creates its identity, expected the first run's identity in the swapped second run: an event or error payload that copies the identity into a struct member the scenario does not set whole (asserted as `data.id`) held the first run's value while the run sent a fresh one, so the suite failed against a correct implementation. The swapped run now expects the identity it sends in that member, at any depth.
+
 ## [0.98.2] — 2026-11-24
 
 ### Fixed

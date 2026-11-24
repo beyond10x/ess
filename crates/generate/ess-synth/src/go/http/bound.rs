@@ -52,6 +52,60 @@ pub(super) fn surface_helpers(base: &str) -> String {
     helpers
 }
 
+/// Whether the binding bounds the request of some declared route of `routes`: the package then
+/// reads every body through [`capped_read_body`] and its surface's `bodyLimit`. Otherwise no byte
+/// of the package changes. Decided once per site, never re-derived per call.
+pub(super) fn caps_a_request(binding: &http::Binding, routes: &[http::Route<'_>]) -> bool {
+    routes.iter().any(|route| {
+        route
+            .declared
+            .is_some_and(|declared| binding.ir().bounds_request(declared))
+    })
+}
+
+/// How the requests of one served component are read: whether this component caps a request, and
+/// whether any component of its package does (the package's `readBody` then takes the bound).
+#[derive(Clone, Copy)]
+pub(super) struct Reading {
+    pub(super) capped: bool,
+    pub(super) package_capped: bool,
+}
+
+/// `readBody` of `base` as a capped package has it: the bound comes from the route the request
+/// matches (`bodyLimit`), and a body announced longer than that bound is refused before one byte
+/// of it is read.
+///
+/// # Panics
+///
+/// When `base` no longer holds the `readBody` this rewrites: the two cannot drift apart.
+pub(super) fn capped_read_body(base: &str) -> String {
+    let from = "// readBody reads at most maxBody bytes of a request, or the refusal that says why it could not.\nfunc readBody(request *http.Request) ([]byte, *response) {\n\tif request.Body == nil {\n\t\treturn nil, nil\n\t}\n\tdefer func() { _ = request.Body.Close() }()\n\tbody, err := io.ReadAll(io.LimitReader(request.Body, maxBody+1))\n\tif err != nil {\n\t\tanswer := refusal(400, fmt.Sprintf(\"the body could not be read: %s\", err))\n\t\treturn nil, &answer\n\t}\n\tif len(body) > maxBody {\n\t\tanswer := refusal(413, fmt.Sprintf(\"the body is longer than %d bytes, which is all this surface reads\", maxBody))\n\t\treturn nil, &answer\n\t}\n\treturn body, nil\n}\n";
+    let to = "// readBody reads at most reading.limit bytes of a request, or the refusal that says why it could\n// not. A body announced longer is refused before any of it is read: nothing waits for bytes the\n// caller has not sent, and the body is never closed on that path. A body of unannounced length\n// (ContentLength -1) is read up to the limit plus one byte and refused if it goes past.\nfunc readBody(request *http.Request, reading bodyCap) ([]byte, *response) {\n\tif request.Body == nil {\n\t\treturn nil, nil\n\t}\n\tif request.ContentLength > int64(reading.limit) {\n\t\tanswer := reading.tooLarge(reading.limit)\n\t\treturn nil, &answer\n\t}\n\tdefer func() { _ = request.Body.Close() }()\n\tbody, err := io.ReadAll(io.LimitReader(request.Body, int64(reading.limit)+1))\n\tif err != nil {\n\t\tanswer := refusal(400, fmt.Sprintf(\"the body could not be read: %s\", err))\n\t\treturn nil, &answer\n\t}\n\tif len(body) > reading.limit {\n\t\tanswer := reading.tooLarge(reading.limit)\n\t\treturn nil, &answer\n\t}\n\treturn body, nil\n}\n";
+    assert!(
+        base.contains(from),
+        "the surface helpers no longer hold the `readBody` a capped package rewrites: {from}"
+    );
+    base.replacen(from, to, 1)
+}
+
+/// What a capped package adds after [`BOUND`]: the most body bytes a request reads and the answer
+/// to a larger one, per matched route (`bodyLimit`, in the surface).
+pub(super) const CAPPED: &str = r#"
+// ---- a request bound, declared by the binding ---------------------------------------------------
+
+// bodyCap is how many body bytes the route a request matches reads, and the answer to a larger one.
+type bodyCap struct {
+	limit    int
+	tooLarge func(limit int) response
+}
+
+// bodyTooLarge is the answer to a body past the fixed bound, where the binding bounds nothing for
+// the route: a 413 naming the bound.
+func bodyTooLarge(limit int) response {
+	return refusal(413, fmt.Sprintf("the body is longer than %d bytes, which is all this surface reads", limit))
+}
+"#;
+
 /// What a bound package adds after the query reader: template matching, the `form` and `query`
 /// decoders, and the writers of a declared answer. The Rust server's `http` module, function for
 /// function, refusal for refusal.
@@ -1132,6 +1186,7 @@ pub(super) fn reads_a_bare_body(binding: &http::Binding) -> bool {
 /// matching row answers; one no row matches is `404`, naming the path as it was spelled.
 ///
 /// Every text from the model or the binding is written into Go source with [`go_string`].
+#[allow(clippy::too_many_arguments)]
 pub(super) fn dispatch(
     body: &mut String,
     ir: &EssIr,
@@ -1140,9 +1195,19 @@ pub(super) fn dispatch(
     rows: &[Row],
     system: &str,
     exported: &str,
+    reading: Reading,
 ) {
     let grants = http::checks_grants(ir);
     let caller = if grants { "caller *Caller, " } else { "" };
+    let read = if reading.capped {
+        format!("readBody(request, bodyLimit{exported}(request.Method, spelledPath(request)))")
+    } else if reading.package_capped {
+        // A component the binding bounds nothing of, in a package whose `readBody` takes a bound:
+        // it reads the fixed bound, as it does without a binding.
+        "readBody(request, bodyCap{limit: maxBody, tooLarge: bodyTooLarge})".to_owned()
+    } else {
+        "readBody(request)".to_owned()
+    };
     let _ = write!(
         body,
         "\n// dispatch{exported} answers one request.\n//\n// The routes are templates an \
@@ -1151,7 +1216,7 @@ pub(super) fn dispatch(
          matches under another method is a 405 naming every method its routes answer.\nfunc \
          dispatch{exported}(system *{system}, {caller}request *http.Request) response {{\n\tif \
          refused := tooManyHeaders(request); refused != nil {{\n\t\treturn *refused\n\t}}\n\tbody, \
-         refused := readBody(request)\n\tif refused != nil {{\n\t\treturn *refused\n\t}}\n\t// \
+         refused := {read}\n\tif refused != nil {{\n\t\treturn *refused\n\t}}\n\t// \
          Held from the port call through Pump and TakePublished: the system is shared by\n\t// \
          every connection.\n\tserving.Lock()\n\tdefer serving.Unlock()\n\tspelled := \
          spelledPath(request)\n\tallowed := []string{{}}\n"
@@ -1209,6 +1274,70 @@ pub(super) fn dispatch(
          surface declares; `GET /openapi.json` publishes every one that is\", spelled))\n\t}\n\t\
          return boundMethodNotAllowed(allowed)\n}\n",
     );
+}
+
+/// `bodyLimit{exported}`: for a request's method and spelled path, the cap of the row that answers
+/// it and the function that refuses a larger body. One block per row in [`http::dispatch_order`],
+/// as [`dispatch`] walks them, so a literal row answers before a variable row, and a row that
+/// bounds nothing (a document, a derived route, a declared route that reads no body) answers the
+/// fixed bound before a later, more general row can capture its request. Asked before the body is
+/// read, as `dispatch` is.
+pub(super) fn body_limit(
+    out: &mut String,
+    binding: &http::Binding,
+    ir: &EssIr,
+    layout: &Layout,
+    routes: &[http::Route<'_>],
+    rows: &[Row],
+    exported: &str,
+) {
+    let _ = write!(
+        out,
+        "\n// bodyLimit{exported} says how many body bytes the route a request matches reads, and the \
+         answer to a larger\n// one (`limits`, `refusals.too_large`); the fixed bound and its 413 \
+         where the binding bounds nothing.\nfunc bodyLimit{exported}(method string, spelled string) \
+         bodyCap {{\n"
+    );
+    let fixed = "bodyCap{limit: maxBody, tooLarge: bodyTooLarge}";
+    let keys: Vec<(&str, &str)> = rows
+        .iter()
+        .map(|(method, path, _, _)| (*method, path.as_str()))
+        .collect();
+    for (method, path, _, _) in http::dispatch_order(&keys)
+        .into_iter()
+        .map(|index| &rows[index])
+    {
+        let route = routes
+            .iter()
+            .find(|route| &route.path == path && route.method.as_str() == *method);
+        let declared = route.and_then(|route| route.declared);
+        let path_text = go_string(path);
+        let opening = if declared.is_some() {
+            format!("\tif _, ok := matched({path_text}, spelled); ok {{\n")
+        } else {
+            format!("\tif spelled == {path_text} {{\n")
+        };
+        out.push_str(&opening);
+        let result = match (route, declared) {
+            (Some(route), Some(declared)) if binding.ir().bounds_request(declared) => {
+                let cap = binding
+                    .ir()
+                    .request_bytes(declared)
+                    .unwrap_or(ess_http::FIXED_REQUEST_BYTES);
+                format!(
+                    "bodyCap{{limit: {cap}, tooLarge: refusalTooLarge{}}}",
+                    refusal_suffix(ir, layout, route)
+                )
+            }
+            _ => fixed.to_owned(),
+        };
+        let _ = writeln!(
+            out,
+            "\t\tif method == {} {{\n\t\t\treturn {result}\n\t\t}}\n\t}}",
+            go_string(method)
+        );
+    }
+    let _ = writeln!(out, "\treturn {fixed}\n}}");
 }
 
 /// What one matched row does under its own method: check the grant, then answer.
@@ -1822,14 +1951,16 @@ fn view(
 
 /// The standard refusals of a bound package's declared routes, as its binding answers them
 /// (`refusals:`), and today's answer for each the binding does not override. `refusalNotGranted`
-/// only where some declared route checks a grant, so nothing emitted goes unused.
-pub(super) fn refusals(binding: &http::Binding, checks_grant: bool) -> String {
+/// only where some declared route checks a grant, and `refusalTooLarge` only where one it answers
+/// bounds its request, so nothing emitted goes unused.
+pub(super) fn refusals(binding: &http::Binding, checks_grant: bool, too_large: bool) -> String {
     refusal_set(
         &RefusalSet {
             suffix: "",
             on: "a bound route".to_owned(),
             from: "",
             checks_grant,
+            too_large,
         },
         |key| binding.refusal(key),
     )
@@ -1860,6 +1991,7 @@ pub(super) fn route_refusals(
                 on: format!("`{} {}`", route.method.as_str(), route.path),
                 from: "routes[].",
                 checks_grant,
+                too_large: binding.ir().bounds_request(own),
             },
             |key| binding.refusal_on(own, key),
         ));
@@ -1884,12 +2016,14 @@ fn refusal_suffix<'a>(ir: &EssIr, layout: &'a Layout, route: &http::Route<'_>) -
 }
 
 /// One set of standard-refusal functions: their name suffix, the route they answer on, as the
-/// comments name it, where the overrides are declared, and whether a grant is checked.
+/// comments name it, where the overrides are declared, whether a grant is checked and whether a
+/// route answering through the set bounds its request.
 struct RefusalSet<'a> {
     suffix: &'a str,
     on: String,
     from: &'static str,
     checks_grant: bool,
+    too_large: bool,
 }
 
 /// The functions answering each standard refusal for `set`: `refusalMalformed`,
@@ -1962,6 +2096,29 @@ fn refusal_set<'a>(
                     out,
                     "func refusalNotGranted{suffix}(standard response) response {{\n\treturn \
                      standard\n}}\n"
+                );
+            }
+        }
+    }
+    if set.too_large {
+        let _ = write!(
+            out,
+            "\n// refusalTooLarge{suffix} is a body past the most {on} reads: \
+             `{from}refusals.too_large`, else the\n// 413 naming the limit.\n"
+        );
+        match lookup(RefusalKey::TooLarge) {
+            Some(refusal) => {
+                let _ = write!(
+                    out,
+                    "func refusalTooLarge{suffix}(_ int) response {{\n{}}}\n",
+                    overridden(refusal)
+                );
+            }
+            None => {
+                let _ = write!(
+                    out,
+                    "func refusalTooLarge{suffix}(limit int) response {{\n\treturn \
+                     bodyTooLarge(limit)\n}}\n"
                 );
             }
         }

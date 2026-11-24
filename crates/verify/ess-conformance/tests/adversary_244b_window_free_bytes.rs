@@ -825,7 +825,7 @@ const INTENDED: &[(&str, &str)] = &[
     ),
 ];
 
-#[ignore = "slow probe: `task test-slow-probes`"]
+#[ignore = "slow lane: byte identity of every window-free model against a pinned base, over 180 s at load 83"]
 #[test]
 fn adversary_244b_every_window_free_model_keeps_its_bytes_against_3b1684d1a() {
     let here = digests(&root());

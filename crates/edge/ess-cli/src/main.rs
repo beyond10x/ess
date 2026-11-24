@@ -176,13 +176,13 @@ enum SpecifyCommand {
     },
     /// Compile exact component surfaces into composition IR and generated clients.
     Compose {
-        /// An `ess-composition/1` to `/5` JSON or YAML document.
+        /// An `ess-composition/1` to `/6` JSON or YAML document.
         #[arg(long)]
         path: PathBuf,
         /// A compiled ESS source, written `service-key=path`. Repeat for every import.
         #[arg(long = "service", value_name = "KEY=PATH", required = true)]
         services: Vec<ServiceInput>,
-        /// Where to write canonical composition IR; its format echoes the input's (`/1`–`/5`).
+        /// Where to write canonical composition IR; its format echoes the input's (`/1`–`/6`).
         #[arg(long)]
         out: Option<PathBuf>,
         /// Where to write canonical `ess-client-plan/1`.
@@ -685,6 +685,13 @@ enum ConformCommand {
             action = clap::ArgAction::Append
         )]
         synthesis_seed: Vec<String>,
+        /// Run the caller readings of the synthesis on at most JOBS threads.
+        ///
+        /// The suite, the refusals and the notes are the same bytes at every count; only the time
+        /// and the memory change. Without `--jobs`, `ESS_SYNTH_JOBS` sets the count when it is
+        /// set, and otherwise it is 1.
+        #[arg(long, value_name = "JOBS", value_parser = clap::value_parser!(u16).range(1..=256))]
+        jobs: Option<u16>,
     },
     /// Compile the scenarios an author wrote, and nothing the specification obliges.
     ///
@@ -822,6 +829,14 @@ enum ConformCommand {
         accounting_out: Option<PathBuf>,
         #[arg(long, value_enum, default_value_t = Format::Text)]
         format: Format,
+        /// Run the caller readings of the synthesis, where the suite is synthesized rather than
+        /// named by `--suite`, on at most JOBS threads.
+        ///
+        /// The suite, the refusals and the notes are the same bytes at every count; only the time
+        /// and the memory change. Without `--jobs`, `ESS_SYNTH_JOBS` sets the count when it is
+        /// set, and otherwise it is 1.
+        #[arg(long, value_name = "JOBS", value_parser = clap::value_parser!(u16).range(1..=256))]
+        jobs: Option<u16>,
     },
     /// Serve a built-in reference implementation over `ess-conformance-target/1`.
     ///
@@ -3802,15 +3817,18 @@ fn conform(command: ConformCommand) -> Result<ExitCode> {
             compact,
             check,
             synthesis_seed,
-        } => synthesize_suite(
-            &input,
-            target,
-            out.as_deref(),
-            component.as_deref(),
-            scenarios.as_deref(),
-            (&suite_format, compact, check),
-            &synthesis_seed,
-        ),
+            jobs,
+        } => with_job_count(jobs, || {
+            synthesize_suite(
+                &input,
+                target,
+                out.as_deref(),
+                component.as_deref(),
+                scenarios.as_deref(),
+                (&suite_format, compact, check),
+                &synthesis_seed,
+            )
+        })?,
         ConformCommand::Author {
             input,
             scenarios,
@@ -3837,6 +3855,12 @@ fn conform(command: ConformCommand) -> Result<ExitCode> {
             out,
         } => coverage::select(suite.as_deref(), suite_input.as_deref(), &ids, &out),
         ConformCommand::Diff { from, to, format } => conform_diff(&from, &to, format),
+        command @ ConformCommand::Run {
+            suite: None,
+            suite_input: None,
+            jobs,
+            ..
+        } => with_job_count(jobs, || conform_run(command))?,
         command @ ConformCommand::Run { .. } => conform_run(command),
         ConformCommand::Serve { target } => Ok(conform_serve(target)),
         command @ ConformCommand::Report { .. } => Ok(conform_report_mode(command)),
@@ -4296,6 +4320,37 @@ fn check_history(
     ExitCode::from(report.exit_code())
 }
 
+/// The count of threads for the caller readings: the flag, else `ESS_SYNTH_JOBS`, else 1.
+fn job_count(
+    flag: Option<u16>,
+    variable: Option<std::ffi::OsString>,
+) -> Result<std::num::NonZeroUsize> {
+    if let Some(count) = flag {
+        return std::num::NonZeroUsize::new(usize::from(count))
+            .context("--jobs takes a whole number from 1 to 256");
+    }
+    let Some(value) = variable else {
+        return Ok(std::num::NonZeroUsize::MIN);
+    };
+    value
+        .to_str()
+        .and_then(|text| text.parse::<usize>().ok())
+        .filter(|count| (1..=256).contains(count))
+        .and_then(std::num::NonZeroUsize::new)
+        .with_context(|| {
+            format!(
+                "ESS_SYNTH_JOBS is `{}`; it takes a whole number from 1 to 256",
+                value.to_string_lossy()
+            )
+        })
+}
+
+/// Runs `run` with the synthesis's caller readings on the threads `job_count` names.
+fn with_job_count<R>(flag: Option<u16>, run: impl FnOnce() -> R) -> Result<R> {
+    let count = job_count(flag, std::env::var_os("ESS_SYNTH_JOBS"))?;
+    Ok(ess_conformance::synthesize::with_jobs(count, run))
+}
+
 /// `ess verify conform run`: one suite against one built-in target.
 fn conform_run(command: ConformCommand) -> Result<ExitCode> {
     let ConformCommand::Run {
@@ -4313,6 +4368,7 @@ fn conform_run(command: ConformCommand) -> Result<ExitCode> {
         known_failing,
         accounting_out,
         format,
+        jobs: _,
     } = command
     else {
         unreachable!("dispatched on `Run` only");
@@ -7006,5 +7062,51 @@ mod tests {
             "no-such-scenarios.yaml is not a directory of scenarios"
         );
         assert_eq!(started, 0, "syntheses started before the refusal");
+    }
+
+    #[test]
+    fn the_flag_reaches_the_threads_of_a_synthesis() {
+        let text = include_str!(
+            "../../../verify/ess-conformance/tests/fixtures/caller-swap-related-tie.yaml"
+        );
+        let raw = ess_domain::spec::RawSpecFile::parse(text).expect("the fixture parses");
+        let spec = ess_domain::spec::Specification::assemble([(
+            ess_domain::system::Source::new("caller-swap-related-tie.yaml"),
+            raw,
+        )])
+        .expect("the fixture assembles");
+        let ir = ess_compiler::resolve::compile(&spec, &ess_compiler::source::SourceMap::new())
+            .expect("the fixture compiles");
+        let off_thread = |jobs: u16| {
+            with_job_count(Some(jobs), || {
+                ess_conformance::synthesize::readings_off_thread(|| {
+                    ess_conformance::synthesize::synthesize(&ir)
+                })
+                .1
+            })
+            .expect("the count is valid")
+        };
+        let (one, two, four) = (off_thread(1), off_thread(2), off_thread(4));
+        assert_eq!(one, 0, "readings off the calling thread at 1 job");
+        assert!(two > 0, "no reading ran off the calling thread at 2 jobs");
+        assert_eq!(two, four, "every reading runs off thread above 1 job");
+        let seen = with_job_count(Some(4), ess_conformance::synthesize::current_jobs)
+            .expect("the count is valid");
+        assert_eq!(seen.get(), 4);
+    }
+
+    #[test]
+    fn the_variable_reaches_the_job_count_and_the_flag_wins() {
+        let var = |text: &str| Some(std::ffi::OsString::from(text));
+        assert_eq!(job_count(None, var("4")).unwrap().get(), 4);
+        assert_eq!(job_count(Some(2), var("nonsense")).unwrap().get(), 2);
+        assert_eq!(job_count(None, None).unwrap().get(), 1);
+        for bad in ["0", "257", "two"] {
+            assert!(job_count(None, var(bad)).is_err(), "{bad} was accepted");
+        }
+        assert_eq!(
+            job_count(None, var("two")).unwrap_err().to_string(),
+            "ESS_SYNTH_JOBS is `two`; it takes a whole number from 1 to 256"
+        );
     }
 }

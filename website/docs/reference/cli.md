@@ -602,9 +602,9 @@ ess specify compose [OPTIONS] --path <PATH> --service <KEY=PATH>
 
 | Argument | Value | Required | Default | Description |
 |---|---|---|---|---|
-| `--path` | `<PATH>` | yes |  | An `ess-composition/1` to `/5` JSON or YAML document |
+| `--path` | `<PATH>` | yes |  | An `ess-composition/1` to `/6` JSON or YAML document |
 | `--service` | `<KEY=PATH>`… | yes |  | A compiled ESS source, written `service-key=path`. Repeat for every import |
-| `--out` | `<OUT>` | no |  | Where to write canonical composition IR; its format echoes the input's (`/1`–`/5`) |
+| `--out` | `<OUT>` | no |  | Where to write canonical composition IR; its format echoes the input's (`/1`–`/6`) |
 | `--client-plan-out` | `<CLIENT_PLAN_OUT>` | no |  | Where to write canonical `ess-client-plan/1` |
 | `--client-rust-out` | `<CLIENT_RUST_OUT>` | no |  | Root for the generated dependency-free Rust composition client |
 | `--ownership-root` | `<OWNERSHIP_ROOT>` | no |  | One enclosing ownership anchor for every composition output |
@@ -1511,6 +1511,7 @@ ess verify conform synthesize [OPTIONS]
 | `--compact` |  | no |  | Write fresh IR as compact JSON with one trailing newline; requires --target ir |
 | `--check` |  | no |  | Refuse when `--out` differs from the suite this command would write, writing nothing.<br /><br />Compares the `--target ir` file, or every file of the `go` or `typescript` package, byte for byte with what the same command without `--check` would write, `--compact` and `--suite-format` included. Exit 0 when `--out` is current, 1 with one line per drifted file. |
 | `--synthesis-seed` | `<FILE>`… | no |  | Offer the `setup` row of arrangement INSTANCE in the authored document FILE as an explicit synthesis seed; repeatable.<br /><br />A seed supplies only that nominated initial row: never the document's timeline, assertions or any state its timeline reaches, and it appends no authored scenario (`--scenarios` does that, independently). Ordinary arrangement is tried first; a row is established only where no bounded arrangement reaches one of the two obligations a seed serves: the primary witness of a branch that reads its stored subject row, and one side of a stored counter's limit. The real command and assertions follow it. A set move's filter (`instances:` or an `affects:` entry) is not one of them: its refusal names the seed rows of the filtered entity. Any seed selects suite/42 (or /43 with `--suite-format 5`), suite/44 (/45) where an act also claims one event more than once, suite/46 (/47) where a response reaches a constrained String newtype, suite/48 (/49) where a response or a struct it reaches ignores undeclared fields, suite/50 (/51) where a scenario holds `now` for a command, or suite/52 (/53) where a view observes a value type's invariants at a wrapped position, and records its source, row and uses. |
+| `--jobs` | `<JOBS>` | no |  | Run the caller readings of the synthesis on at most JOBS threads.<br /><br />The suite, the refusals and the notes are the same bytes at every count; only the time and the memory change. Without `--jobs`, `ESS_SYNTH_JOBS` sets the count when it is set, and otherwise it is 1. |
 
 #### `ess verify conform author`
 
@@ -1608,6 +1609,7 @@ ess verify conform run [OPTIONS] --target <TARGET> [-- <COMMAND>...]
 | `--known-failing` | `<KNOWN_FAILING>` | no |  | An `ess-known-failures/1` declaration: scenarios this build of the target is known to fail, bound to the exact suite bytes, specification, implementation and build (the running `ess` executable's SHA-256). Accounted in `--accounting-out`; the report, its verdict and the exit status are unchanged. Requires `--report-format 2` and `--report-out`. A declaration that does not bind this run, or names a scenario that did not fail, exits 2 and writes nothing |
 | `--accounting-out` | `<ACCOUNTING_OUT>` | no |  | Where to write the `ess-known-failure-accounting/1` document: a new file, not an input and not `--report-out` |
 | `--format` | `<FORMAT>` | no | `text` | One of `text`, `yaml`, `json`. |
+| `--jobs` | `<JOBS>` | no |  | Run the caller readings of the synthesis, where the suite is synthesized rather than named by `--suite`, on at most JOBS threads.<br /><br />The suite, the refusals and the notes are the same bytes at every count; only the time and the memory change. Without `--jobs`, `ESS_SYNTH_JOBS` sets the count when it is set, and otherwise it is 1. |
 
 #### `ess verify conform serve`
 

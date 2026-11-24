@@ -14,6 +14,8 @@ vars:
   JSON_BODY_SECURITY_HARNESS: '{{.ROOT_DIR}}/{{.NEXTEST_ARCHIVES}}/json-body-security-harness'
   UI_HTTP_SHELF_SERVER: '{{.ROOT_DIR}}/{{.NEXTEST_ARCHIVES}}/ui-http-shelf-server'
   UI_HTTP_ITEMS_SERVER: '{{.ROOT_DIR}}/{{.NEXTEST_ARCHIVES}}/ui-http-items-server'
+  BODY_CAP_RUST_SERVER: '{{.ROOT_DIR}}/{{.NEXTEST_ARCHIVES}}/body-cap-rust-server'
+  BODY_CAP_GO_SERVER: '{{.ROOT_DIR}}/{{.NEXTEST_ARCHIVES}}/body-cap-go-server'
   CLAP_SHARED_BINARY: '{{.ROOT_DIR}}/{{.NEXTEST_ARCHIVES}}/clap-shared-binary'
   BINARY64_HARNESS: '{{.ROOT_DIR}}/{{.NEXTEST_ARCHIVES}}/binary64-harness'
   # The feature-off cases a pull request runs, when `FEATURE_OFF=number-semantics`: every package
@@ -82,6 +84,8 @@ tasks:
       ESS_JSON_BODY_SECURITY_HARNESS: '{{.JSON_BODY_SECURITY_HARNESS}}'
       ESS_UI_HTTP_SHELF_SERVER: '{{.UI_HTTP_SHELF_SERVER}}'
       ESS_UI_HTTP_ITEMS_SERVER: '{{.UI_HTTP_ITEMS_SERVER}}'
+      ESS_BODY_CAP_RUST_SERVER: '{{.BODY_CAP_RUST_SERVER}}'
+      ESS_BODY_CAP_GO_SERVER: '{{.BODY_CAP_GO_SERVER}}'
       ESS_CLAP_SHARED_BINARY: '{{.CLAP_SHARED_BINARY}}'
       ESS_BINARY64_HARNESS: '{{.BINARY64_HARNESS}}'
     cmds:
@@ -89,6 +93,8 @@ tasks:
       - task: append-set-harness
       - task: json-body-harnesses
       - task: ui-http-servers
+      - task: body-cap-rust-server
+      - task: body-cap-go-server
       - task: clap-shared-binary
       - task: binary64-harness
       - cargo test --workspace --exclude ess-xtask --locked
@@ -112,6 +118,8 @@ tasks:
       ESS_JSON_BODY_SECURITY_HARNESS: '{{.JSON_BODY_SECURITY_HARNESS}}'
       ESS_UI_HTTP_SHELF_SERVER: '{{.UI_HTTP_SHELF_SERVER}}'
       ESS_UI_HTTP_ITEMS_SERVER: '{{.UI_HTTP_ITEMS_SERVER}}'
+      ESS_BODY_CAP_RUST_SERVER: '{{.BODY_CAP_RUST_SERVER}}'
+      ESS_BODY_CAP_GO_SERVER: '{{.BODY_CAP_GO_SERVER}}'
       ESS_CLAP_SHARED_BINARY: '{{.CLAP_SHARED_BINARY}}'
       ESS_BINARY64_HARNESS: '{{.BINARY64_HARNESS}}'
     cmds:
@@ -119,6 +127,8 @@ tasks:
       - task: append-set-harness
       - task: json-body-harnesses
       - task: ui-http-servers
+      - task: body-cap-rust-server
+      - task: body-cap-go-server
       - task: clap-shared-binary
       - task: binary64-harness
       - defer: { task: test-slowest }
@@ -157,6 +167,8 @@ tasks:
       - task: append-set-harness
       - task: json-body-harnesses
       - task: ui-http-servers
+      - task: body-cap-rust-server
+      - task: body-cap-go-server
       - task: clap-shared-binary
       - task: binary64-harness
 
@@ -284,6 +296,42 @@ tasks:
       - cp {{.WORK}}/target/debug/items-server {{.UI_HTTP_ITEMS_SERVER}}
       - rm -rf {{.WORK}}
 
+  body-cap-rust-server:
+    desc: >-
+      Build the generated Rust server ess-synth's body_cap_rust drives, at BODY_CAP_RUST_SERVER
+      (no test builds with cargo, no_test_builds.rs).
+    vars:
+      WORK: target/body-cap-rust-server
+      FIXTURES: crates/generate/ess-synth/tests/fixtures/body-cap-rust
+    cmds:
+      - cargo build --workspace --exclude ess-xtask --locked --bin ess
+      - rm -rf {{.WORK}}
+      - mkdir -p {{.WORK}} {{.NEXTEST_ARCHIVES}}
+      - cp {{.FIXTURES}}/model.yaml.in {{.WORK}}/parcel.yaml
+      - target/debug/ess generate synthesize --target rust --layout crate --path {{.WORK}}/parcel.yaml --http {{.FIXTURES}}/http.yaml.in --out {{.WORK}}/parcel
+      - >-
+        env -u CARGO_TARGET_DIR -u CARGO_ENCODED_RUSTFLAGS -u RUSTC_WRAPPER CARGO_INCREMENTAL=0 RUSTFLAGS='-D warnings'
+        cargo build --offline --quiet --features server --bin parcel-server --manifest-path {{.WORK}}/parcel/Cargo.toml --target-dir {{.WORK}}/target
+      - cp {{.WORK}}/target/debug/parcel-server {{.BODY_CAP_RUST_SERVER}}
+      - rm -rf {{.WORK}}
+
+  body-cap-go-server:
+    desc: >-
+      Build the generated Go server ess-synth's body_cap_go drives, at BODY_CAP_GO_SERVER, from the
+      model and binding of body-cap-rust-server (no test builds with go, no_test_builds.rs).
+    vars:
+      WORK: target/body-cap-go-server
+      FIXTURES: crates/generate/ess-synth/tests/fixtures/body-cap-rust
+    cmds:
+      - cargo build --workspace --exclude ess-xtask --locked --bin ess
+      - rm -rf {{.WORK}}
+      - mkdir -p {{.WORK}} {{.NEXTEST_ARCHIVES}}
+      - cp {{.FIXTURES}}/model.yaml.in {{.WORK}}/parcel.yaml
+      - target/debug/ess generate synthesize --target go --path {{.WORK}}/parcel.yaml --http {{.FIXTURES}}/http.yaml.in --out {{.WORK}}/parcel
+      - cd {{.WORK}}/parcel && env GOFLAGS=-mod=mod GOPROXY=off GOTOOLCHAIN=local go vet ./...
+      - cd {{.WORK}}/parcel && env GOFLAGS=-mod=mod GOPROXY=off GOTOOLCHAIN=local CGO_ENABLED=0 go build -trimpath -o {{.BODY_CAP_GO_SERVER}} ./cmd/parcel-server
+      - rm -rf {{.WORK}}
+
   clap-shared-binary:
     desc: >-
       Build the clap binary ess-synth's clap_shared_binary runs, generated from two components
@@ -322,11 +370,31 @@ tasks:
     cmds:
       - cargo test --locked -p ess-cli --test browser_response_conformance --test browser_product_adversary -- --include-ignored --test-threads=1
 
-  test-slow-probes:
-    desc: Run the slow byte-identity and WASM-parity probes the CI test shards leave out; run before tagging a release.
+  test-slow:
+    desc: Run every test marked for the slow lane under the nextest profile `slow`, one run per package (optional PACKAGES), and print the ten slowest of each.
+    env:
+      ESS_TUTORIAL_NETWORK: "1"
     cmds:
-      - cargo test --locked -p ess-synth --test adversary_e_u2_bytes --test adversary_e_u6_bytes -- --ignored --test-threads=1
-      - cargo test --locked -p ess-conformance --test adversary_244b_window_free_bytes --test adversary_w3_266_267_dump --test adversary_287_pass1 -- --ignored --test-threads=1
+      - |
+        set -eu
+        status=0
+        wanted="{{.PACKAGES | default ""}}"
+        if [ -z "$(cargo xtask slow-list --packages)" ]; then
+          echo 'test-slow: no test is marked #[ignore = "slow lane: ..."]'
+          exit 1
+        fi
+        for package in $(cargo xtask slow-list --packages); do
+          if [ -n "$wanted" ] && ! echo " $wanted " | grep -q " $package "; then
+            continue
+          fi
+          targets=""
+          for target in $(cargo xtask slow-list --package "$package" --targets); do
+            targets="$targets --test $target"
+          done
+          cargo nextest run --locked --profile slow --run-ignored only --no-fail-fast --package "$package" $targets -E "$(cargo xtask slow-list --package "$package" --filter)" || status=1
+          SLOWEST_REPORT=target/nextest/slow/junit.xml task test-slowest
+        done
+        exit "$status"
 
   # The shards extract into the checkout's own `target/`: test binaries bake
   # `env!("CARGO_BIN_EXE_…")` and `env!("CARGO_TARGET_TMPDIR")` in at build time, so extracted
@@ -348,6 +416,8 @@ tasks:
       ESS_JSON_BODY_SECURITY_HARNESS: '{{.JSON_BODY_SECURITY_HARNESS}}'
       ESS_UI_HTTP_SHELF_SERVER: '{{.UI_HTTP_SHELF_SERVER}}'
       ESS_UI_HTTP_ITEMS_SERVER: '{{.UI_HTTP_ITEMS_SERVER}}'
+      ESS_BODY_CAP_RUST_SERVER: '{{.BODY_CAP_RUST_SERVER}}'
+      ESS_BODY_CAP_GO_SERVER: '{{.BODY_CAP_GO_SERVER}}'
       ESS_CLAP_SHARED_BINARY: '{{.CLAP_SHARED_BINARY}}'
       ESS_BINARY64_HARNESS: '{{.BINARY64_HARNESS}}'
     cmds:
@@ -384,7 +454,7 @@ tasks:
     cmds:
       - |
         export LC_ALL=C
-        report=target/nextest/ci/junit.xml
+        report="${SLOWEST_REPORT:-target/nextest/ci/junit.xml}"
         if [ ! -f "$report" ]; then
           echo "test-slowest: no JUnit report at $report"
           exit 0
@@ -403,19 +473,20 @@ tasks:
 
   test-xtask:
     desc: Run the ess-xtask tests under the consumer-check native profile.
+    vars:
+      XTASK_ENV: >-
+        env -u CARGO_ENCODED_RUSTFLAGS RUSTUP_TOOLCHAIN=1.98.1
+        RUSTFLAGS='-C link-arg=-fuse-ld=lld'
+        CARGO_INCREMENTAL=0
+        CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0
+        CARGO_PROFILE_DEV_INCREMENTAL=false CARGO_PROFILE_TEST_INCREMENTAL=false
     cmds:
       # The metadata authority regression executes the compiled provider. Its test
       # build needs the consumer-check profile. Keep that native profile scoped to
       # xtask: workspace tests also build Wasm, whose linker rejects native flags.
-      - >-
-        env -u CARGO_ENCODED_RUSTFLAGS RUSTUP_TOOLCHAIN=1.98.1
-        RUSTFLAGS='-C link-arg=-fuse-ld=lld'
-        RUSTC_WRAPPER= RUSTC_WORKSPACE_WRAPPER=
-        CARGO_BUILD_RUSTC_WRAPPER= CARGO_BUILD_RUSTC_WORKSPACE_WRAPPER=
-        CARGO_BUILD_JOBS=2 CARGO_INCREMENTAL=0
-        CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0
-        CARGO_PROFILE_DEV_INCREMENTAL=false CARGO_PROFILE_TEST_INCREMENTAL=false
-        cargo test --package ess-xtask --locked
+      - '{{.XTASK_ENV}} cargo test --package ess-xtask --locked --no-run'
+      - defer: { task: test-slowest }
+      - '{{.XTASK_ENV}} cargo nextest run --package ess-xtask --locked --profile ci --no-fail-fast'
 
   doc-check:
     env:
@@ -640,6 +711,7 @@ tasks:
       - task: fmt-check
       - task: clippy
       - task: test
+      - task: test-slow
       - task: doc-check
       - task: example-check
       - task: projection-check
@@ -655,3 +727,10 @@ tasks:
       - task: fuzz-check
       - task: release-check
       - task: action-check
+
+  synth-jobs-profile:
+    desc: Measure one synthesis at 1, 2 and 4 jobs (wall, CPU, peak memory); refuses differing suites.
+    cmds:
+      - SLOT_TIMEOUT=30m cargo build --release --locked -p ess-cli
+      - cargo build --locked -p ess-xtask
+      - target/debug/ess-xtask synth-jobs {{.CLI_ARGS}}
